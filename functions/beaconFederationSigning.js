@@ -107,14 +107,15 @@ async function persistPendingDoc (fs, doc) {
 
 /**
  * @param {object} epochPayload full epoch incl. sidechain / contracts heads
- * @param {{ validators: string[], threshold: number }} policy
+ * @param {{ validators?: string[], threshold?: number }} [policy]
  * @param {{ version?: number, signatures?: object }|null} [initialWitness]
  * @returns {object} pending round
  */
-function createRound (epochPayload, policy, initialWitness = null) {
+function createRound (epochPayload, policy = {}, initialWitness = null) {
+  const pol = policy && typeof policy === 'object' ? policy : {};
   const commitmentDigest = epochCommitmentDigestHex(epochPayload);
-  const validators = (policy.validators || []).map((v) => String(v).trim()).filter(Boolean);
-  const threshold = Math.max(1, Number(policy.threshold) || 1);
+  const validators = (pol.validators || []).map((v) => String(v).trim()).filter(Boolean);
+  const threshold = Math.max(1, Number(pol.threshold) || 1);
   return {
     commitmentDigest,
     payload: epochPayload,

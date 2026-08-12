@@ -1,5 +1,4 @@
 $ npm i
-npm warn Unknown env config "devdir". This will error in a future major version of npm. See `npm help npmrc` for supported config options.
 npm warn deprecated crypto-js@4.2.0: Active development of CryptoJS has been discontinued. This library is no longer maintained.
 npm notice run @fabric/core@0.1.0-RC1 install
 npm notice run node scripts/install-native.js

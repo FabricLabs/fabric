@@ -35,4 +35,26 @@ describe('@fabric/core/functions/beaconFederationSigning', function () {
     assert.strictEqual(parsed.ok, true);
     assert.strictEqual(parsed.commitmentDigest, 'abcd');
   });
+
+  it('createRound tolerates omitted policy (empty validators)', function () {
+    const epoch = { clock: 1, blockHash: 'bb'.repeat(32), height: 1 };
+    const round = bfs.createRound(epoch);
+    assert.ok(round);
+    assert.deepStrictEqual(round.validators, []);
+    assert.strictEqual(round.status, 'collecting');
+    assert.strictEqual(bfs.roundMeetsThreshold(round), true);
+  });
+
+  it('addSignature rejects further signatures once status is ready', function () {
+    const k1 = new Key({ private: '2222222222222222222222222222222222222222222222222222222222222222' });
+    const epoch = { clock: 2, blockHash: 'cc'.repeat(32), height: 2 };
+    const round = bfs.createRound(epoch, { validators: [k1.pubkey], threshold: 1 });
+    const msg = bfs.messageBufferForPayload(epoch);
+    const first = bfs.addSignature(round, k1.pubkey, k1.signSchnorr(msg).toString('hex'));
+    assert.strictEqual(first.sealed, true);
+    assert.strictEqual(round.status, 'ready');
+    const again = bfs.addSignature(round, k1.pubkey, k1.signSchnorr(msg).toString('hex'));
+    assert.strictEqual(again.ok, false);
+    assert.match(again.error, /not open/i);
+  });
 });

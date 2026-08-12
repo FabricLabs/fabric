@@ -200,6 +200,8 @@ Implementation: [`functions/contractSpend.js`](../functions/contractSpend.js) (`
 21. **Eager `messageHex`:** Peer hot paths still materialize hex wire forms eagerly — laziness / cache invalidation is performance work.
 22. **`API.md` regeneration:** run `npm run make:api` when next syncing field docs for gossip / `tryParseMessageBody` / `resolveSpend` opts.
 23. ~~**Empty tip `signers` spend widen:**~~ `tipSpendKeys` treats explicit `signers: []` as authoritative so reader-only folds do not replace genesis Taproot validators with participant `members` (`resolveSpend` keeps genesis keys).
+24. ~~**`createRound` omitted policy:**~~ defaults to `{}` (empty validators / threshold 1) instead of throwing.
+25. **Beacon federation `ready` finalization:** `addSignature` correctly stops collecting once `ready`; Hub should idempotently retry `submitFederationEpochSignature` for already-`ready` rounds if persist fails (do not reopen for new signatures).
 
 ### Dual P2TR surfaces → single authority ladder
 | Surface | Role |

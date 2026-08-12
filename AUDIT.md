@@ -51,7 +51,7 @@ audit report.
 
 ### PR #183 review triage (feature/rsi)
 
-Most CodeRabbit / automation actionable items on [#183](https://github.com/FabricLabs/fabric/pull/183) are addressed on tip (`533546c4…`) plus staged follow-ups. Security review at `533546c4` Highs (empty tip `signers` → Taproot `members` widen) are fixed in `tipSpendKeys`. Still open / deferred on purpose:
+Most CodeRabbit / automation actionable items on [#183](https://github.com/FabricLabs/fabric/pull/183) are addressed on tip (`51ad619c…`). Security review at `51ad619c` reports prior Highs closed; **1 Medium** remains (blinded-execution `at` bind — deferred).
 
 | Item | Status |
 |------|--------|
@@ -60,10 +60,12 @@ Most CodeRabbit / automation actionable items on [#183](https://github.com/Fabri
 | `engines.npm: >=12` vs Node 24.15.0 bundled npm | Intentional — keep; DEVELOPERS.md documents upgrade |
 | Empty tip `signers: []` widening spend keys to `members` | Fixed — `tipSpendKeys` treats explicit empty `signers` as authoritative; `resolveSpend` keeps genesis validators |
 | Reader-role fold vs `members.set` test flake | Fixed — commutative `member.add` seed (hash-ordered fold) |
-| Bind `at` into `decisionSigningMessage` | Deferred (protocol bump) — ARC §8 / AUDIT #18; Medium on tip security review |
+| Hallmark malformed digest / mutable magic export | Fixed — omit bad digests; export fresh `HALLMARK_MAGIC` Buffer |
+| `createRound` omitted `policy` TypeError | Fixed — default `policy = {}` |
+| Bind `at` into `decisionSigningMessage` | Deferred (protocol bump) — ARC §8 / AUDIT #18; **Medium** on tip security review |
 | Verified-pubkey peering self-suppress | Deferred — AUDIT #16 |
 | Eager `messageHex` / `contractIdentifier` rename / journal caps | Deferred — ARC §8 |
-| Beacon federation `ready` before durable persist | Deferred — retry/durability follow-up on Hub Beacon path |
+| Beacon federation `ready` before durable persist | Deferred — Hub `submitFederationEpochSignature` should idempotently finalize `ready` rounds (not reopen for new sigs) |
 | `uuid` via `jayson` (GHSA-w5hq-g745-h8pq) | Mitigated — override `uuid@11.1.1` (avoid `npm audit fix --force` → jayson 2.x) |
 
 ## Recommendations before a non-experimental tag
