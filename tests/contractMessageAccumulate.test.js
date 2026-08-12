@@ -303,11 +303,14 @@ describe('@fabric/core contractMessageAccumulate', function () {
     assert.deepStrictEqual(res.tip.content.signers, []);
     assert.deepStrictEqual(res.tip.content.members, [pubkeyXOnly(reader.pubkey)]);
 
-    // Owner already a signer: reader add keeps owner in signers and leaves reader out.
+    // Owner already a signer via member.add (commutes with reader add under
+    // hash-ordered fold). Avoid members.set here — a later-sorted set would
+    // clear the reader and flake this assertion.
     const store2 = createMemoryStore();
     const seed = ingestMessageBuffer(store2, contractId, signContractMessage(owner, contractId, 'GroupChange', {
-      action: 'members.set',
-      members: [owner.pubkey]
+      action: 'member.add',
+      member: owner.pubkey,
+      role: 'signer'
     }).toBuffer(), { origin: 'mesh', genesis });
     assert.strictEqual(seed.accepted, true);
     const withReader = ingestMessageBuffer(store2, contractId, change.toBuffer(), {

@@ -153,7 +153,7 @@ function roundMeetsThreshold (round) {
  * @returns {{ ok: boolean, round?: object, error?: string, sealed?: boolean }}
  */
 function addSignature (round, pubkey, signatureHex) {
-  if (!round || round.status === 'sealed') {
+  if (!round || round.status === 'sealed' || round.status === 'ready') {
     return { ok: false, error: 'round not open' };
   }
   const pk = String(pubkey || '').trim();
