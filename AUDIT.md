@@ -45,6 +45,9 @@ audit report.
 13. ~~**Withdrawal `requestId` bind**~~ — `validateWithdrawalRequest` rejects unless `requestId === computeWithdrawalRequestId(…)` (destination/fee/vault commitment).
 14. **Outstanding ARC / Peer follow-ups** — journal / re-fold caps ([docs/ARC.md](docs/ARC.md) §8); coordinated `contractId` → `contractIdentifier` rename; eager `messageHex` laziness; regenerate `API.md` field docs for `SCHEMA_P2P_PEER_GOSSIP` / `tryParseMessageBody` / `resolveSpend` opts when next running `npm run make:api`.
 15. ~~**Beacon/ARC `CONTRACT_PUBLISH` authority collector**~~ — `collectContractAuthorityPubkeys` walks nested `members.signers` / `spendPolicy.validators` (not only top-level arrays), so Beacon genesis no longer fail-opens first-claim to any AMP signer.
+16. **Peering self-suppress trust** — candidate host/port validation + default-port normalize on self-key refuse + NOISE self-check fail-closed are in; still open: only suppress dials from a verified pubkey binding (not remote-controlled `obj.pubkey` alone).
+17. **OP_RETURN hallmarks** — core short-format encode/verify (`functions/fabricHallmark`); Hub publish/scan is operator opt-in. Remaining: broader BIP-compliance report coverage and any Hub-side mainnet policy gates outside this repo.
+18. **Blinded-execution `at` bind** — decision timestamps are recorded but not yet part of `decisionSigningMessage` (idempotent replays by actor/proposal/decision still apply).
 
 ## Recommendations before a non-experimental tag
 

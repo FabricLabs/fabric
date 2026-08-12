@@ -1207,7 +1207,15 @@ class Peer extends Service {
    * @param {string} [meta.pubkey] Optional advertised Fabric pubkey (skip if own).
    */
   _enqueuePeeringCandidate (host, port, meta = {}) {
-    const key = `${String(host)}:${Number(port)}`;
+    const normalizedHost = typeof host === 'string' ? host.trim() : '';
+    const normalizedPort = Number(port);
+    if (!normalizedHost ||
+        !Number.isInteger(normalizedPort) ||
+        normalizedPort < 1 ||
+        normalizedPort > 65535) {
+      return;
+    }
+    const key = `${normalizedHost}:${normalizedPort}`;
     if (this._isSelfDialSuppressed(key)) return;
     if (meta.pubkey && this._isOwnFabricPubkey(meta.pubkey)) {
       this.emit('warning',
@@ -1228,8 +1236,8 @@ class Peer extends Service {
     const pubkey = meta.pubkey ? normalizePeerPubkeyHex(meta.pubkey) : '';
     // Omit empty pubkey — callers historically expect `{ host, port }` when unknown.
     this.candidates.push(pubkey
-      ? { host, port: Number(port), pubkey }
-      : { host, port: Number(port) });
+      ? { host: normalizedHost, port: normalizedPort, pubkey }
+      : { host: normalizedHost, port: normalizedPort });
   }
 
   /**
@@ -1274,8 +1282,12 @@ class Peer extends Service {
     const ttl = Number(ttlMs);
     const until = Date.now() + (Number.isFinite(ttl) && ttl > 0 ? ttl : 600000);
     if (!this._selfDialSuppressUntil) this._selfDialSuppressUntil = new Map();
+    // Sweep expired entries, then FIFO-cap (remote peers drive insertion).
+    const now = Date.now();
+    for (const [k, v] of this._selfDialSuppressUntil) {
+      if (!(v > now)) this._selfDialSuppressUntil.delete(k);
+    }
     this._selfDialSuppressUntil.set(addr, until);
-    // FIFO-cap map growth (insertion order); expired entries also drop on read.
     const max = Number(this.settings && this.settings.selfDialSuppressMax) > 0
       ? Number(this.settings.selfDialSuppressMax)
       : 256;
@@ -1889,7 +1901,9 @@ class Peer extends Service {
     if (id && this._isOwnFabricPubkey(id)) {
       this.emit('warning',
         `[FABRIC:PEER:_connect] Refusing dial to ${target}: pinned pubkey is our own`);
-      this._suppressSelfDialAddress(target.includes('@') ? target.split('@').pop() : target);
+      // Match later dial checks (`host:7777`) when the pin omits an explicit port.
+      const normalizedAddress = `${url.hostname}:${url.port || P2P_PORT}`;
+      this._suppressSelfDialAddress(normalizedAddress);
       this.emit('peer:self', { address: target, reason: 'pinned pubkey is own Fabric key' });
       return;
     }
@@ -3256,11 +3270,13 @@ class Peer extends Service {
           const connCount = Object.keys(this.connections || {}).length;
           const maxPeers = (this.settings.constraints && this.settings.constraints.peers && this.settings.constraints.peers.max) || MAX_PEERS;
           if (connCount < maxPeers) {
-            // Prefer explicit offer pubkey, else verified AMP signer (generic bodies
-            // usually have no `actor` — do not leave candidates with pubkey: null).
+            // Prefer explicit offer pubkey, else verified AMP signer, else actor id.
+            // Actor id is not a pubkey — keep it after signerPubkeyHex so a Fabric
+            // actor identifier cannot eclipse the verified AMP signer.
             const advertised = obj.pubkey
-              || (message.actor && (message.actor.pubkey || message.actor.publicKey || message.actor.id))
+              || (message.actor && (message.actor.pubkey || message.actor.publicKey))
               || signerPubkeyHex
+              || (message.actor && message.actor.id)
               || '';
             this._enqueuePeeringCandidate(obj.host, obj.port, { pubkey: advertised });
           }
@@ -4919,7 +4935,11 @@ class Peer extends Service {
         this.emit('peer:self', { address: null, reason: 'NOISE remote static matches Fabric identity' });
         return done(null, false);
       }
-    } catch (_) { /* accept below */ }
+    } catch (exception) {
+      this.emit('warning',
+        `[FABRIC:PEER] NOISE verify rejected: self-key check failed: ${exception && exception.message ? exception.message : exception}`);
+      return done(null, false);
+    }
     done(null, true);
   }
 

@@ -1733,6 +1733,36 @@ describe('@fabric/core/types/peer', function () {
         assert.ok(server._isSelfDialSuppressed(connAddress));
       });
 
+      it('rejects malformed peering candidates and normalizes self-suppress to host:port', function () {
+        const server = new Peer({ listen: false, peersDb: null });
+        server._enqueuePeeringCandidate('', 7777);
+        server._enqueuePeeringCandidate('127.0.0.1', NaN);
+        server._enqueuePeeringCandidate('127.0.0.1', 0);
+        server._enqueuePeeringCandidate('127.0.0.1', 70000);
+        assert.strictEqual(server.candidates.length, 0);
+
+        server._enqueuePeeringCandidate(' 127.0.0.1 ', 7777);
+        assert.strictEqual(server.candidates.length, 1);
+        assert.deepStrictEqual(server.candidates[0], { host: '127.0.0.1', port: 7777 });
+
+        const ownHex = server._localFabricPubkeyHex();
+        server._connect(`${ownHex}@192.0.2.10`);
+        assert.ok(server._isSelfDialSuppressed('192.0.2.10:7777'));
+        assert.ok(!server._isSelfDialSuppressed('192.0.2.10'));
+      });
+
+      it('_verifyNOISE rejects when self-key normalization throws', function (done) {
+        const server = new Peer({ listen: false, peersDb: null });
+        const orig = server._isOwnFabricPubkey.bind(server);
+        server._isOwnFabricPubkey = () => { throw new Error('boom'); };
+        server._verifyNOISE(Buffer.alloc(32), Buffer.alloc(33, 1), Buffer.alloc(33, 2), (err, ok) => {
+          server._isOwnFabricPubkey = orig;
+          assert.ifError(err);
+          assert.strictEqual(ok, false);
+          done();
+        });
+      });
+
       it('on P2P_SESSION_OFFER registers peer, sets _addressToId, emits peer, and sends P2P_SESSION_OPEN via _writeFabric', function (done) {
         const server = new Peer({ listen: false, peersDb: null });
         const connAddress = '127.0.0.1:9999';

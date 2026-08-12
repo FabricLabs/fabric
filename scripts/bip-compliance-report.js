@@ -357,6 +357,93 @@ const EVALUATION_SUITE = [
     why: 'Rising wallet adoption for non-interactive private receives; inclusion as stretch goal.',
     patterns: ['BIP352', 'Silent Payment', 'silent payment', 'sp1q'],
     expected: { core: 'absent', hub: 'absent', passport: 'absent', application: 'absent' }
+  },
+  // --- Round-2 additions (product-adjacent specialized / Complete standards) ---
+  {
+    bip: 66,
+    title: 'Strict DER signatures',
+    status: 'Deployed',
+    layer: 'Consensus (soft fork)',
+    adoption: 'universal',
+    why: 'Baseline ECDSA encoding consensus rule; wallets inherit via signing libraries.',
+    patterns: ['BIP66', 'BIP-66', 'strict DER', 'isCanonicalDER', 'checkSignatureEncoding'],
+    expected: { core: 'dependent', hub: 'dependent', passport: 'dependent', application: 'dependent' },
+    notes: 'No first-party BIP66 module; ECDSA paths rely on bitcoinjs / bitcoind DER rules.'
+  },
+  {
+    bip: 69,
+    title: 'Lexicographical Indexing of Transaction Inputs and Outputs',
+    status: 'Complete',
+    layer: 'Applications',
+    adoption: 'common',
+    why: 'Deterministic vin/vout ordering used by privacy-preserving and collaborative tx builders.',
+    patterns: ['BIP69', 'BIP-69', 'lexicographical indexing', 'bip69'],
+    expected: { core: 'absent', hub: 'absent', passport: 'absent', application: 'absent' },
+    notes: 'Fabric sorts keys / JSON canonically elsewhere; not BIP69 tx input/output ordering.'
+  },
+  {
+    bip: 85,
+    title: 'Deterministic Entropy From BIP32 Keychains',
+    status: 'Deployed',
+    layer: 'Applications',
+    adoption: 'common',
+    why: 'Derive app-specific entropy (extra mnemonics, Lightning seeds) from one BIP32 root.',
+    patterns: ['BIP85', 'BIP-85', 'deterministic entropy', "m/83696968'"],
+    expected: { core: 'absent', hub: 'absent', passport: 'absent', application: 'absent' }
+  },
+  {
+    bip: 321,
+    title: 'URI Scheme (Complete successor)',
+    status: 'Complete',
+    layer: 'Applications',
+    adoption: 'common',
+    why: 'BIP21 successor with richer query grammar; wallets increasingly advertise BIP321.',
+    patterns: ['BIP321', 'BIP-321', 'bitcoin:', 'lightning=', 'pj='],
+    expected: { core: 'partial', hub: 'partial', passport: 'absent', application: 'partial' },
+    notes: 'Stack emits classic bitcoin: URIs (BIP21). Full BIP321 query grammar is not claimed.'
+  },
+  {
+    bip: 322,
+    title: 'Generic Signed Message Format',
+    status: 'Complete',
+    layer: 'Applications',
+    adoption: 'common',
+    why: 'Cross-wallet proof-of-funds / address ownership proofs beyond legacy signmessage.',
+    patterns: ['BIP322', 'BIP-322', 'bip322', 'Generic Signed Message'],
+    expected: { core: 'absent', hub: 'absent', passport: 'absent', application: 'absent' },
+    notes: 'Fabric Message / Peer use BIP340 Schnorr with Fabric tags — not BIP322 address proofs.'
+  },
+  {
+    bip: 48,
+    title: 'Multi-Script Hierarchy for Multi-Sig Wallets',
+    status: 'Deployed',
+    layer: 'Applications',
+    adoption: 'specialized',
+    why: 'Standard purpose-48 paths for multisig script types; relevant to group / federation wallets.',
+    patterns: ['BIP48', 'BIP-48', "m/48'", 'multi-script hierarchy'],
+    expected: { core: 'absent', hub: 'absent', passport: 'absent', application: 'absent' },
+    notes: 'Group/federation vaults sort keys and build scripts, but do not advertise BIP48 path trees.'
+  },
+  {
+    bip: 382,
+    title: 'Segwit Output Script Descriptors',
+    status: 'Deployed',
+    layer: 'Applications',
+    adoption: 'common',
+    why: 'wpkh()/wsh() descriptor forms used by Core descriptor wallets and Fabric examples.',
+    patterns: ['BIP382', 'wpkh(', 'wsh(', 'Segwit Output Script Descriptor'],
+    expected: { core: 'partial', hub: 'partial', passport: 'partial', application: 'partial' },
+    notes: 'Examples and RPC flows emit wpkh()/wsh() strings; no first-party BIP382 parser.'
+  },
+  {
+    bip: 388,
+    title: 'Wallet Policies for Descriptor Wallets',
+    status: 'Complete',
+    layer: 'Applications',
+    adoption: 'specialized',
+    why: 'Hardware-wallet / multisig policy language built on descriptors (Ledger, etc.).',
+    patterns: ['BIP388', 'BIP-388', 'wallet policy', 'Wallet Policies'],
+    expected: { core: 'absent', hub: 'absent', passport: 'absent', application: 'absent' }
   }
 ];
 
@@ -367,7 +454,8 @@ const EXCLUDED_NOTES = [
   'BIP-70…75 Payment Protocol — Deployed historically but industry-deprecated; Fabric uses BIP21 + Fabric Message / Lightning instead.',
   'Peer-service P2P BIPs (14, 31, 35, …) — bitcoind/CLN responsibility when Fabric embeds them.',
   'BIP-38 passphrase-encrypted WIF — uncommon in HD-mnemonic wallets; not scored.',
-  'BIP-47/48/85/87/88/129/322/328/373/387/388 — specialized; revisit when product scope expands.'
+  'BIP-47 reusable payment codes — privacy sibling to BIP352; revisit with Silent Payments work.',
+  'BIP-87/88/129/328/373/387 — remaining specialized multisig / MuSig2 / tapscript-descriptor items; revisit after BIP48/382/388 land or MuSig2 becomes product-critical.'
 ];
 
 const LEVEL_RANK = {
@@ -405,7 +493,7 @@ function resolveComponents () {
         core: '@fabric/core',
         hub: 'hub.fabric.pub',
         passport: 'fabric-browser-extension',
-        application: 'application'
+        application: 'star-citizen-live (GoonCitizen)'
       })[id],
       root: fs.existsSync(root) ? root : null
     };
@@ -668,7 +756,7 @@ function markdownFromReport (report) {
   lines.push('');
   lines.push('## Evaluation suite');
   lines.push('');
-  lines.push('| BIP | Adoption | Title | Core | Hub | Passport | Application | Stack |');
+  lines.push('| BIP | Adoption | Title | Core | Hub | Passport | GoonCitizen | Stack |');
   lines.push('|---:|---|---|---|---|---|---|---:|');
   for (const row of report.suite) {
     lines.push(
