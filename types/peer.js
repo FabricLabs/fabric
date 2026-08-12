@@ -2515,7 +2515,9 @@ class Peer extends Service {
         break;
       }
       case 'P2P_CHAT_MESSAGE': {
-        // Body = raw UTF-8 chat text only (no JSON). Author is AMP header / signature.
+        // Body = raw UTF-8 chat text only (no JSON chat envelope). Author is AMP header /
+        // signature. Optional FabricOnionChatSeal JSON keeps onion tips confidential to
+        // the path recipient (see functions/onionChatSeal).
         const text = messageDataToString(message.data);
         if (!text || !String(text).trim()) {
           this.emit('warning', '[FABRIC:PEER] P2P_CHAT_MESSAGE empty body');
@@ -2538,12 +2540,38 @@ class Peer extends Service {
             }
           } catch (_) { /* not JSON — treat as text */ }
         }
+        let deliverText = String(text);
+        let onionSealed = false;
+        try {
+          const {
+            isOnionChatSeal,
+            tryOpenOnionChatText
+          } = require('../functions/onionChatSeal');
+          if (isOnionChatSeal(deliverText)) {
+            onionSealed = true;
+            const opened = tryOpenOnionChatText(deliverText, { keyOrPrivate: this.key });
+            if (!opened.opened || opened.text == null) {
+              this.emit('warning', '[FABRIC:PEER] P2P_CHAT_MESSAGE onion seal present but not openable locally');
+              break;
+            }
+            deliverText = opened.text;
+          }
+        } catch (err) {
+          this.emit('warning',
+            `[FABRIC:PEER] onion chat seal handling failed: ${err && err.message ? err.message : err}`);
+          break;
+        }
         const chatSigner = this._verifiedFabricSignerPubkeyHex(message);
-        this.emit('chat', { text: String(text), type: 'P2P_CHAT_MESSAGE' }, {
+        this.emit('chat', {
+          text: deliverText,
+          type: 'P2P_CHAT_MESSAGE',
+          ...(onionSealed ? { onionSealed: true } : {})
+        }, {
           origin,
           signer: chatSigner || null,
           wireMessage: message,
-          peeledForward: opts.peeledForward === true
+          peeledForward: opts.peeledForward === true,
+          onionSealed
         });
         // Onion peel / RELAY unwrap: deliver locally only. Mesh relay under the TCP
         // last hop would burn that neighbor's chat budget for an originator's frame.

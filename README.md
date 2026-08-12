@@ -175,7 +175,7 @@ Either Fabric libraries or projects running Fabric, this list encompasses the mo
 | [`@fabric/http`][http-plugin] | HTTP bridge | Active | In RC |
 | [`hub.fabric.pub`](https://hub.fabric.pub) | Public hub | See Edge Nodes | — |
 | [`labs.fabric.pub`](https://labs.fabric.pub) | Labs hub | OFFLINE | — |
-| `sensemaker.io` | — | — | No |
+| Downstream apps | Application Resource Contracts on `@fabric/core` | — | — |
 | `verse.pub` | — | — | — |
 
 ## Learning More

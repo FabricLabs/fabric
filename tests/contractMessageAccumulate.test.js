@@ -159,6 +159,18 @@ describe('@fabric/core contractMessageAccumulate', function () {
     assert.strictEqual(tipFromDoc(loadDoc(store, contractId)).stateDigest, tip0);
   });
 
+  it('rejects frames larger than Peer MAX_MESSAGE_SIZE before parse', function () {
+    const { HEADER_SIZE, MAX_MESSAGE_SIZE } = require('../constants');
+    const store = createMemoryStore();
+    const huge = Buffer.alloc(HEADER_SIZE + MAX_MESSAGE_SIZE + 1, 0xab);
+    const res = ingestMessageBuffer(store, contractId, huge, {
+      origin: 'paste',
+      genesis: { signers: ['02' + '11'.repeat(32)] }
+    });
+    assert.strictEqual(res.accepted, false);
+    assert.match(res.error, /MAX_MESSAGE_SIZE/);
+  });
+
   it('rejects GroupChat from non-reader/non-signer', function () {
     const owner = new Key();
     const outsider = new Key();

@@ -31,8 +31,8 @@ const BITCOIN_KEY_DERIVATION_PATH = "m/44'/0'/0'/0/0";
  * @returns {string}
  */
 function fabricIdentityDerivationPath (account = 0, index = 0) {
-  const a = Math.max(0, Math.floor(Number(account) || 0));
-  const i = Math.max(0, Math.floor(Number(index) || 0));
+  const a = assertBip32ChildIndex(account, 'account');
+  const i = assertBip32ChildIndex(index, 'index');
   return `m/44'/${FABRIC_COIN_TYPE}'/${a}'/0/${i}`;
 }
 
@@ -43,8 +43,8 @@ function fabricIdentityDerivationPath (account = 0, index = 0) {
  * @returns {string}
  */
 function bitcoinReceiveDerivationPath (account = 0, index = 0) {
-  const a = Math.max(0, Math.floor(Number(account) || 0));
-  const i = Math.max(0, Math.floor(Number(index) || 0));
+  const a = assertBip32ChildIndex(account, 'account');
+  const i = assertBip32ChildIndex(index, 'index');
   return `m/44'/${BITCOIN_COIN_TYPE}'/${a}'/0/${i}`;
 }
 
@@ -55,9 +55,23 @@ function bitcoinReceiveDerivationPath (account = 0, index = 0) {
  * @returns {string}
  */
 function bitcoinChangeDerivationPath (account = 0, index = 0) {
-  const a = Math.max(0, Math.floor(Number(account) || 0));
-  const i = Math.max(0, Math.floor(Number(index) || 0));
+  const a = assertBip32ChildIndex(account, 'account');
+  const i = assertBip32ChildIndex(index, 'index');
   return `m/44'/${BITCOIN_COIN_TYPE}'/${a}'/1/${i}`;
+}
+
+/**
+ * BIP32 child index domain: finite integer in [0, 0x7fffffff].
+ * @param {*} value
+ * @param {string} label
+ * @returns {number}
+ */
+function assertBip32ChildIndex (value, label = 'index') {
+  const n = Number(value);
+  if (!Number.isFinite(n) || !Number.isInteger(n) || n < 0 || n > 0x7fffffff) {
+    throw new RangeError(`BIP32 ${label} must be an integer in [0, 0x7fffffff]`);
+  }
+  return n;
 }
 
 const FIXTURE_SEED = 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about';
@@ -297,6 +311,7 @@ module.exports = {
   fabricIdentityDerivationPath,
   bitcoinReceiveDerivationPath,
   bitcoinChangeDerivationPath,
+  assertBip32ChildIndex,
   FABRIC_USER_AGENT,
   FIXTURE_SEED,
   FIXTURE_XPUB,

@@ -178,16 +178,13 @@ function runExecutionProgram (program, options = {}) {
       deterministic: true,
       allowedOpcodes: allowList.length ? allowList : null
     });
-  if (allowList.length && options.machine instanceof Machine) {
-    // Prefer explicit opts / genesis list when an existing Machine is injected.
-    const existing = machine.allowedOpcodes || [];
-    if (!existing.length) {
+  if (options.machine instanceof Machine) {
+    if (allowList.length) {
+      // Prefer explicit opts / genesis list over any preloaded Machine allow-list.
       machine.setAllowedOpcodes(allowList);
     } else {
-      allowList = existing;
+      allowList = machine.allowedOpcodes || [];
     }
-  } else if (!allowList.length && options.machine instanceof Machine) {
-    allowList = machine.allowedOpcodes || [];
   }
 
   // Structured execution owns the stack; clear any prior compute residue.

@@ -12,12 +12,16 @@
  * address published for that hostname.
  *
  * @param {Object} [opts]
- * @param {string} [opts.interface] Explicit settings override
+ * @param {string} [opts.interface] Settings fallback when env unset
  * @param {string} [opts.host] Alias for `interface`
  * @param {string} [opts.fallback='0.0.0.0']
  * @param {string[]} [opts.envKeys]
  * @param {NodeJS.ProcessEnv} [opts.env]
  * @returns {string}
+ *
+ * Precedence: environment (`FABRIC_INTERFACE` / `FABRIC_PEER_INTERFACE`) →
+ * `opts.interface` / `opts.host` → `opts.fallback`. Operators pin the NIC via
+ * env so process settings cannot silently override a host-specific bind.
  */
 function resolveFabricPeerInterface (opts = {}) {
   const env = opts.env || process.env;

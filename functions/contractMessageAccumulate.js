@@ -17,6 +17,7 @@
 const crypto = require('crypto');
 const Message = require('../types/message');
 const Key = require('../types/key');
+const { HEADER_SIZE, MAX_MESSAGE_SIZE } = require('../constants');
 const { OUTER, CONTRACT_BODY_TYPES, isKnownContractBodyType } = require('./applicationNamespaces');
 const { pubkeyXOnly, pubkeyCompressed } = require('./groupChatSeal');
 const {
@@ -928,6 +929,17 @@ function ingestMessageBuffer (store, contractId, bufferOrPaste, meta = {}) {
       entry: null,
       tip: tipFromDoc(loadDoc(store, id)),
       error: e.message || 'invalid buffer'
+    };
+  }
+
+  // Match Peer wire gate: drop oversized frames before parse / verify / JSON.
+  if (buffer.length > HEADER_SIZE + MAX_MESSAGE_SIZE) {
+    return {
+      accepted: false,
+      duplicate: false,
+      entry: null,
+      tip: tipFromDoc(loadDoc(store, id)),
+      error: `message exceeds MAX_MESSAGE_SIZE (${MAX_MESSAGE_SIZE})`
     };
   }
 

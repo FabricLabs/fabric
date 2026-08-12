@@ -5,10 +5,11 @@
  *
  * Always runs offline (in-process Peer). Optional live dial when
  * FABRIC_PLAYNET_PUBLISH=1 (connects FABRIC_PLAYNET_PEERS, default
- * 127.0.0.1:7777) — skipped unless that env is set.
+ * 127.0.0.1:7777) — skipped unless that env is set. Live mode also requires
+ * an explicit FABRIC_MNEMONIC (no public fallback).
  *
  *   npm test -- --grep 'playnet contract publish'
- *   FABRIC_PLAYNET_PUBLISH=1 npm test -- --grep 'playnet contract publish live'
+ *   FABRIC_PLAYNET_PUBLISH=1 FABRIC_MNEMONIC='…' npm test -- --grep 'playnet contract publish live'
  */
 
 const assert = require('assert');
@@ -41,11 +42,7 @@ describe('playnet contract publish + re-publish', function () {
     peer.on('contract:publish', () => { publishes++; });
 
     const wire = Message.fromVector(['CONTRACT_PUBLISH', JSON.stringify(definition)]).signWithKey(owner);
-    peer._handleGenericMessage({
-      type: 'CONTRACT_PUBLISH',
-      actor: { publicKey: ownerPub },
-      object: definition
-    }, { name: '127.0.0.1:18444' });
+    peer._handleFabricMessage(wire.toBuffer(), { name: '127.0.0.1:18444' });
 
     assert.ok(peer.contracts[contractId] || Object.keys(peer.contracts || {}).length >= 1);
     const id = peer.contracts[contractId] ? contractId : Object.keys(peer.contracts)[0];
@@ -65,7 +62,6 @@ describe('playnet contract publish + re-publish', function () {
       're-publish must not grant patch rights to a new wire signer'
     );
 
-    void wire;
     assert.ok(publishes >= 0);
   });
 
@@ -87,15 +83,14 @@ describe('playnet contract publish + re-publish', function () {
 
 describe('playnet contract publish live', function () {
   const runLive = process.env.FABRIC_PLAYNET_PUBLISH === '1' || process.env.FABRIC_PLAYNET_PUBLISH === 'true';
+  const mnemonic = String(process.env.FABRIC_MNEMONIC || '').trim();
 
-  (runLive ? it : it.skip)('dials configured peers and emits CONTRACT_PUBLISH', async function () {
+  (runLive && mnemonic ? it : it.skip)('dials configured peers and emits CONTRACT_PUBLISH', async function () {
     this.timeout(60000);
     const peers = String(process.env.FABRIC_PLAYNET_PEERS || '127.0.0.1:7777')
       .split(',')
       .map((s) => s.trim())
       .filter(Boolean);
-    const mnemonic = String(process.env.FABRIC_MNEMONIC ||
-      'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about').trim();
 
     const peer = new Peer({
       listen: false,
@@ -105,31 +100,33 @@ describe('playnet contract publish live', function () {
       peersDb: null
     });
     peer.on('error', () => {});
-    await peer.start();
+    try {
+      await peer.start();
 
-    const deadline = Date.now() + Number(process.env.FABRIC_PLAYNET_WAIT_MS || 20000);
-    while (Date.now() < deadline && Object.keys(peer.connections || {}).length === 0) {
-      await new Promise((r) => setTimeout(r, 250));
+      const deadline = Date.now() + Number(process.env.FABRIC_PLAYNET_WAIT_MS || 20000);
+      while (Date.now() < deadline && Object.keys(peer.connections || {}).length === 0) {
+        await new Promise((r) => setTimeout(r, 250));
+      }
+      const conns = Object.keys(peer.connections || {});
+      assert.ok(conns.length > 0, `expected at least one connection to ${peers.join(',')}`);
+
+      const ownerPub = String(peer.key.pubkey).toLowerCase();
+      const definition = {
+        name: 'PlaynetLivePublish',
+        version: 1,
+        parties: [ownerPub],
+        state: { network: process.env.FABRIC_FLUSH_NETWORK || 'regtest' }
+      };
+      const msg = Message.fromVector(['CONTRACT_PUBLISH', JSON.stringify(definition)]).signWithKey(peer.key);
+      peer.broadcast(msg.toBuffer());
+
+      // Brief observe, then re-publish once.
+      await new Promise((r) => setTimeout(r, 1000));
+      const msg2 = Message.fromVector(['CONTRACT_PUBLISH', JSON.stringify(definition)]).signWithKey(peer.key);
+      peer.broadcast(msg2.toBuffer());
+      await new Promise((r) => setTimeout(r, 1000));
+    } finally {
+      await peer.stop();
     }
-    const conns = Object.keys(peer.connections || {});
-    assert.ok(conns.length > 0, `expected at least one connection to ${peers.join(',')}`);
-
-    const ownerPub = String(peer.key.pubkey).toLowerCase();
-    const definition = {
-      name: 'PlaynetLivePublish',
-      version: 1,
-      parties: [ownerPub],
-      state: { network: process.env.FABRIC_FLUSH_NETWORK || 'regtest' }
-    };
-    const msg = Message.fromVector(['CONTRACT_PUBLISH', JSON.stringify(definition)]).signWithKey(peer.key);
-    peer.broadcast(msg.toBuffer());
-
-    // Brief observe, then re-publish once.
-    await new Promise((r) => setTimeout(r, 1000));
-    const msg2 = Message.fromVector(['CONTRACT_PUBLISH', JSON.stringify(definition)]).signWithKey(peer.key);
-    peer.broadcast(msg2.toBuffer());
-    await new Promise((r) => setTimeout(r, 1000));
-
-    await peer.stop();
   });
 });

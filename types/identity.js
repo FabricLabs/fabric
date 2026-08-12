@@ -6,7 +6,8 @@ const Hash256 = require('./hash256');
 const Key = require('./key');
 const {
   FABRIC_KEY_DERIVATION_PATH,
-  fabricIdentityDerivationPath
+  fabricIdentityDerivationPath,
+  assertBip32ChildIndex
 } = require('../constants');
 
 /**
@@ -14,7 +15,8 @@ const {
  * Protocol identity (pubkey / Schnorr sign / Bech32 id) uses the Fabric derivation path
  * <code>m/44'/7778'/account'/0/index</code> (see {@link Identity#derivation} and IDENTITY.md).
  * The HD <strong>master</strong> remains available as {@link Identity#master} / {@link Identity#key}
- * so Bitcoin funds can derive under BIP44 coin type <code>0</code> (see {@link BITCOIN_KEY_DERIVATION_PATH}
+ * so Bitcoin funds can derive under BIP44 coin type <code>0</code> (see
+ * <code>BITCOIN_KEY_DERIVATION_PATH</code> in <code>constants.js</code>
  * / Wallet) without mixing protocol identity keys with spend keys.
  * <strong>Important:</strong> this class overrides {@link Actor#id} with <code>toString()</code>
  * (human-facing / Bech32-style identity), <strong>not</strong> the content-addressed
@@ -66,8 +68,14 @@ class Identity extends Actor {
 
     this._state = {
       content: {
-        account: this.settings.account != null ? Number(this.settings.account) : 0,
-        index: this.settings.index != null ? Number(this.settings.index) : 0
+        account: assertBip32ChildIndex(
+          this.settings.account != null ? this.settings.account : 0,
+          'account'
+        ),
+        index: assertBip32ChildIndex(
+          this.settings.index != null ? this.settings.index : 0,
+          'index'
+        )
       }
     };
 
@@ -130,7 +138,7 @@ class Identity extends Actor {
   }
 
   loadAccountByID (id = 0) {
-    this._state.content.account = id;
+    this._state.content.account = assertBip32ChildIndex(id, 'account');
     this.commit();
     return this;
   }

@@ -25,7 +25,7 @@ describe('contractSpend / ARC resolveSpend', function () {
   it('normalizeArcGenesis maps proposedPolicy + messageTypes', function () {
     const a = new Key();
     const arc = normalizeArcGenesis({
-      name: 'GoonCitizenGroup',
+      name: 'DemoGroup',
       messageTypes: ['GroupChat', 'GroupChange'],
       proposedPolicy: { validators: [a.pubkey], threshold: 1 },
       creator: a.pubkey,
@@ -33,7 +33,7 @@ describe('contractSpend / ARC resolveSpend', function () {
       softMode: 'reduced',
       depositMaturityBlocks: 144
     });
-    assert.strictEqual(arc.name, 'GoonCitizenGroup');
+    assert.strictEqual(arc.name, 'DemoGroup');
     assert.deepStrictEqual(arc.primitives.messageTypes, ['GroupChat', 'GroupChange']);
     assert.strictEqual(arc.members.signers.length, 1);
     assert.strictEqual(arc.spendPolicy.validators.length, 1);

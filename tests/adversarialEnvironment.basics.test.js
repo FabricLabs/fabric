@@ -34,6 +34,6 @@ describe('adversarialEnvironment.basics (@fabric/core)', function () {
       state: {},
       program: { language: 'fabric-opcodes', steps: ['OP_TRUE'] }
     });
-    assert.throws(() => finalizeBlindedExecution({ session }), /at least one accept/);
+    assert.throws(() => finalizeBlindedExecution({ session }), /at least one evaluator accept/);
   });
 });

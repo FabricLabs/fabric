@@ -2,7 +2,7 @@
 
 /**
  * Fabric application namespaces — the common outer + contract-body type set
- * shared by Hub, Sensemaker, and other downstream Application Resource Contracts.
+ * shared by Hub and other downstream Application Resource Contracts.
  *
  * Model (see docs/APPLICATION_NAMESPACES.md):
  *   1. Global shoutbox — P2P_CHAT_MESSAGE (not contract-namespaced)

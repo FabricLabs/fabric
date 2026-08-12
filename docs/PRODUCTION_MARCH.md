@@ -180,7 +180,7 @@ Observed baseline after hardening (historical March pass):
 - `50 pending`
 - `0 failing`
 
-Current `@fabric/core` baseline (see Progress Log **2026-08-12**): `1831 passing`, `1 pending`, `0 failing`. Suite-wide product packages (http / hub / GoonCitizen / Passport) also green on that run.
+Current `@fabric/core` baseline (see Progress Log **2026-08-12**): `1831 passing`, `1 pending`, `0 failing`. Suite-wide packages (http / hub / application / browser extension) also green on that run.
 
 Working buckets for pending tests:
 
@@ -227,16 +227,16 @@ Execution order:
 Use this section as an append-only log (newest first).
 
 ### 2026-08-12
-- Re-ran the Fabric product suite end-to-end (unrestricted host; Passport Playwright needs Crashpad/xattr outside agent sandboxes). Log: `/tmp/fabric-suite-tests-1786512851.log`.
+- Re-ran the Fabric package suite end-to-end (unrestricted host; browser-extension Playwright needs Crashpad/xattr outside agent sandboxes). Log: `/tmp/fabric-suite-tests-1786512851.log`.
 - **`@fabric/core`** (`npm test`): `1831 passing`, `1 pending`, `0 failing`.
 - **`@fabric/http`** (`npm test`): `157 passing`, `21 pending`, `0 failing`.
 - **`@fabric/hub`** (`npm run test:unit`): `539 passing`, `4 pending`, `0 failing`.
-- **GoonCitizen** (`star-citizen-live` `npm test`): mocha fabric `43 passing`; fabric expectations `45 pass`; relay `322 pass` / `2 skipped` / `0 fail`.
-- **Passport** (`fabric-browser-extension` `npm test`): unit `55 passing` + extension Playwright `5 passing`, `0 failing`.
+- **application** (`star-citizen-live` `npm test`): mocha fabric `43 passing`; fabric expectations `45 pass`; relay `322 pass` / `2 skipped` / `0 fail`.
+- **browser extension** (`fabric-browser-extension` `npm test`): unit `55 passing` + extension Playwright `5 passing`, `0 failing`.
 - Suite hardening carried in from recent failure triage (not all in this repo):
-  - identity Schnorr resolution / leaf-key site-login paths (`@fabric/http` + Passport verify coverage);
-  - GoonCitizen chat receipts when `fabric.enable` is off under `NODE_ENV=test`, mission Accept → apply, device-link verify via `Identity#fabricKey`;
-  - Passport webpack CSS includes for npm-linked `@fabric/http` assets; extension launcher defaults to bundled Chromium and ignores `--disable-extensions`.
+  - identity Schnorr resolution / leaf-key site-login paths (`@fabric/http` + browser-extension verify coverage);
+  - application chat receipts when `fabric.enable` is off under `NODE_ENV=test`, mission Accept → apply, device-link verify via `Identity#fabricKey`;
+  - browser-extension webpack CSS includes for npm-linked `@fabric/http` assets; extension launcher defaults to bundled Chromium and ignores `--disable-extensions`.
 - Core baseline vs earlier march entries: JS suite grew well past the March `834` mark; still `0 failing`. Remaining core pending is a single skip (triage under Coverage + Test Reliability).
 
 ### 2026-03-24

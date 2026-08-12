@@ -1,7 +1,7 @@
 # Fabric application namespaces
 
 Canonical model for multi-app mesh traffic across **Hub**, light peers,
-**Sensemaker**, and other `@fabric/core` consumers.
+and other `@fabric/core` consumers.
 
 Formal ARC genesis / tip / spend: [`ARC.md`](ARC.md).  
 Code catalog: [`functions/applicationNamespaces.js`](../functions/applicationNamespaces.js).  
@@ -98,7 +98,7 @@ it is hashed into the contract `Actor` id.
 | **@fabric/core** Peer | Relays + `chat` event | Relays + `contract:publish` / `contract:message` | Source of truth for opcodes |
 | **Hub** | SubmitChatMessage → P2P mesh; WS often `ChatMessage` | Tracks publish; **opaque CONTRACT_MESSAGE queue** + later-relay on connect | Invites also appear in chat JSON historically |
 | **Light peer / desktop** | `global` channel | App genesis + per-group Federation contracts | Groups-as-Federations; product types in app catalog |
-| **Sensemaker** | Global UI sends/receives `P2P_CHAT_MESSAGE`; Peer `chat` + contract events attached | Emits `fabric:contract:*`; ignore-unknown by default | AI stream stays off mesh; Federation `CONTRACT_PUBLISH` optional next |
+| **Downstream app** | Global UI sends/receives `P2P_CHAT_MESSAGE`; Peer `chat` + contract events attached | Emits `fabric:contract:*`; ignore-unknown by default | App-local streams stay off mesh; Federation `CONTRACT_PUBLISH` optional next |
 
 ## Convergence rules
 

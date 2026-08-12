@@ -243,13 +243,33 @@ function composeGarblerPublish (opts = {}) {
 }
 
 /**
+ * Pubkeys allowed to record accept/reject on a session (garbler ∪ evaluators).
+ * @param {object} session
+ * @returns {Set<string>}
+ */
+function sessionRolePubkeys (session) {
+  const allowed = new Set();
+  const add = (raw) => {
+    const s = String(raw || '').trim().toLowerCase().replace(/^0x/i, '');
+    if (/^(02|03)[0-9a-f]{64}$/.test(s)) allowed.add(s);
+  };
+  add(session.garbler);
+  for (const p of session.parties || []) add(p);
+  if (session.roles && typeof session.roles === 'object') {
+    add(session.roles.garbler);
+    for (const e of session.roles.evaluators || []) add(e);
+  }
+  return allowed;
+}
+
+/**
  * Verify a ContractProposal and record accept/reject against the session.
  *
  * @param {object} opts
  * @param {object} opts.session
  * @param {object} opts.proposalPayload from buildContractProposalPayload
  * @param {'accept'|'reject'} opts.decision
- * @param {string} opts.actorPubkey compressed hex
+ * @param {string} opts.actorPubkey compressed hex (must be session garbler or evaluator)
  * @returns {object} updated session (shallow clone)
  */
 function recordProposalDecision (opts = {}) {
@@ -269,6 +289,9 @@ function recordProposalDecision (opts = {}) {
   const actorPubkey = String(opts.actorPubkey || '').trim().toLowerCase().replace(/^0x/i, '');
   if (!/^(02|03)[0-9a-f]{64}$/.test(actorPubkey)) {
     throw new Error('recordProposalDecision: actorPubkey must be 33-byte compressed hex');
+  }
+  if (!sessionRolePubkeys(session).has(actorPubkey)) {
+    throw new Error('recordProposalDecision: actorPubkey is not a session party');
   }
 
   const proposalPayload = opts.proposalPayload;
@@ -306,10 +329,12 @@ function recordProposalDecision (opts = {}) {
 }
 
 /**
- * Require ≥1 accept; fold coordination (+ optional run) into final digests.
+ * Require ≥1 evaluator accept; fold coordination (+ optional run) into final digests.
  *
  * Hashlock binds `SHA256(preimage)` where preimage is the 32-byte finalized
- * circuit commitment, so revealing that digest opens the L1 leaf.
+ * circuit commitment. Because that digest is public, the L1 leaf MUST also
+ * require a Schnorr sig from an authorized key (`preimage+sig`) — see
+ * {@link bindBlindedExecutionToHashlock}.
  *
  * @param {object} opts
  * @param {object} opts.session
@@ -325,9 +350,13 @@ function finalizeBlindedExecution (opts = {}) {
     throw new Error('finalizeBlindedExecution: session already finalized');
   }
 
+  const evaluators = new Set(
+    normalizeParties(session.parties || (session.roles && session.roles.evaluators) || [])
+  );
   const accepts = (session.decisions || []).filter((d) => d.decision === 'accept');
-  if (accepts.length < 1) {
-    throw new Error('finalizeBlindedExecution: at least one accept is required');
+  const evaluatorAccept = accepts.some((d) => evaluators.has(String(d.actorPubkey || '').toLowerCase()));
+  if (!evaluatorAccept) {
+    throw new Error('finalizeBlindedExecution: at least one evaluator accept is required');
   }
 
   let runCommitmentHex = opts.runCommitmentHex != null
@@ -393,25 +422,27 @@ function bindBlindedExecutionToHashlock (opts = {}) {
   const threshold = Math.max(1, Number(opts.threshold) || 1);
   const csvBlocks = Math.max(1, Number(opts.csvBlocks) || DEFAULT_CSV_BLOCKS);
 
+  // Public circuit commitment must not be a pure-preimage leaf (any observer
+  // could recompute and sweep). Bind hashlock+pubkey so spend needs Schnorr.
+  const hashlock = {
+    commitmentHex: session.hashlockCommitmentHex,
+    id: HASHLOCK_LEAF_ID,
+    pubkeyHex: publisher
+  };
+
   const policy = synthesizeDefaultLadder({
     validators,
     threshold,
     publisher,
     network,
     csvBlocks,
-    hashlock: {
-      commitmentHex: session.hashlockCommitmentHex,
-      id: HASHLOCK_LEAF_ID
-    }
+    hashlock
   });
 
   const tree = composeTaprootTree({
     network,
     policy,
-    hashlock: {
-      commitmentHex: session.hashlockCommitmentHex,
-      id: HASHLOCK_LEAF_ID
-    }
+    hashlock
   });
 
   const ladderOnly = synthesizeDefaultLadder({
@@ -451,13 +482,14 @@ function bindBlindedExecutionToHashlock (opts = {}) {
     },
     /**
      * @param {object} finOpts
-     * @param {string} finOpts.psbtBase64
+     * @param {string} finOpts.psbtBase64 signed PSBT (tapScriptSig for publisher)
+     * @param {string} [finOpts.witnessShape='preimage+sig']
      */
     finalizeWithdrawal (finOpts = {}) {
       return finalizeHashlockPsbt({
         psbtBase64: finOpts.psbtBase64,
         preimage32: Buffer.from(session.hashlockPreimageHex, 'hex'),
-        witnessShape: finOpts.witnessShape || 'preimage'
+        witnessShape: finOpts.witnessShape || 'preimage+sig'
       });
     }
   };
@@ -469,6 +501,7 @@ module.exports = {
   sha256Hex,
   digestCanonical,
   normalizeParties,
+  sessionRolePubkeys,
   computeBaseCircuitCommitment,
   computeCoordinationRoot,
   composeGarblerPublish,

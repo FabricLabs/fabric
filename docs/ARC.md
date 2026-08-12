@@ -196,7 +196,7 @@ Implementation: [`functions/contractSpend.js`](../functions/contractSpend.js) (`
 7. ~~Align Hub tracked-contract accept path with this genesis shape~~
 8. Call sites must pass `meta.genesis.signers` (or persist genesis) for any `GroupChange` path
 9. ~~**Enforce** GroupChat reader∪signer authz + BIP340 withdrawal witness / MessageReceipt~~ — `authorizeIngest` + `verifyWithdrawalWitnessSignature` / `markReceipt` (PR #183 review follow-up)
-10. **RC deploy:** tag `@fabric/core`, bump Hub + GoonCitizen/`relay.goon.vc` to the tag, verify AcceptTrackedApplicationContract attaches `spendAddress` + tip `bitcoinAnchor`
+10. **RC deploy:** tag `@fabric/core`, bump Hub + application / relay deploy to the tag, verify AcceptTrackedApplicationContract attaches `spendAddress` + tip `bitcoinAnchor`
 11. **Network promotion:** `beacon/NETWORK` binding + `FABRIC_BEACON_RESET_NETWORK=1` when flipping regtest → signet/mainnet (see `functions/beaconNetworkGuard.js`)
 12. **Beacon as native ARC:** Hub auto-publishes `fabric-beacon` via `functions/beaconContractDefinition` on `startBeacon` (see Hub `docs/DISTRIBUTED_CONTRACT_EXECUTION.md`)
 13. **Optional hashlock / composable trees:** `composeTaprootTree`, leaf builders, `prepareHashlockWithdrawalPsbt` — Hub vault PSBT uses full `policy` leaves; wallet UIs list `leaves[]`
@@ -236,4 +236,4 @@ Hub asserts vault `spendAddress` ≡ accepted `fabric-beacon` ARC after `startBe
 - Full isolate/vm for arbitrary JS Programs (see `AUDIT.md`)
 - Sphinx-level onion privacy inside ARC payloads
 - Collapsing Beacon **epoch sealing** (`BEACON_EPOCH` / `beacon/CHAIN`) into application CONTRACT_MESSAGE traffic — the Beacon **service** stays the L1 clock; the Beacon **ARC** is the authority/spend/namespace surface under the same tracked-contract path
-- Rewriting frozen GoonCitizen / Group Actor ids — Hub **normalizes** legacy `messageTypes` / `proposedPolicy` into ARC fields without republishing genesis
+- Rewriting frozen application / Group Actor ids — Hub **normalizes** legacy `messageTypes` / `proposedPolicy` into ARC fields without republishing genesis

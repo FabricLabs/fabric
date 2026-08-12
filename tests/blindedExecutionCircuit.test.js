@@ -63,7 +63,7 @@ describe('functions/blindedExecutionCircuit', function () {
     assert.strictEqual(a.coordinationRoot, null);
   });
 
-  it('recordProposalDecision reject then accept; finalize needs an accept', function () {
+  it('recordProposalDecision reject then accept; finalize needs an evaluator accept', function () {
     let session = composeGarblerPublish({
       name: 'coord-demo',
       network: 'regtest',
@@ -73,6 +73,7 @@ describe('functions/blindedExecutionCircuit', function () {
       program: { language: 'fabric-opcodes', steps: ['OP_TRUE'] }
     });
 
+    const outsider = new Key();
     const rejectInner = Message.fromVector([
       'P2P_BASE_MESSAGE',
       JSON.stringify({ type: 'StateHint', object: { reject: true } })
@@ -82,6 +83,14 @@ describe('functions/blindedExecutionCircuit', function () {
       messages: [rejectInner],
       statePatch: [{ op: 'replace', path: '/open', value: false }]
     });
+
+    assert.throws(() => recordProposalDecision({
+      session,
+      proposalPayload: rejectProposal,
+      decision: 'accept',
+      actorPubkey: outsider.pubkey,
+      at: 999
+    }), /not a session party/);
 
     session = recordProposalDecision({
       session,
@@ -94,7 +103,25 @@ describe('functions/blindedExecutionCircuit', function () {
     assert.ok(session.coordinationRoot);
     const afterReject = session.coordinationRoot;
 
-    assert.throws(() => finalizeBlindedExecution({ session }), /at least one accept/);
+    assert.throws(() => finalizeBlindedExecution({ session }), /evaluator accept/);
+
+    // Garbler-only accept is not enough — need an evaluator.
+    const garblerAcceptProposal = buildContractProposalPayload({
+      contractId: session.circuitId,
+      messages: [Message.fromVector([
+        'P2P_BASE_MESSAGE',
+        JSON.stringify({ type: 'StateHint', object: { accept: true } })
+      ])],
+      statePatch: [{ op: 'add', path: '/garblerOk', value: true }]
+    });
+    session = recordProposalDecision({
+      session,
+      proposalPayload: garblerAcceptProposal,
+      decision: 'accept',
+      actorPubkey: pk(0),
+      at: 1500
+    });
+    assert.throws(() => finalizeBlindedExecution({ session }), /evaluator accept/);
 
     const acceptInner = Message.fromVector([
       'P2P_BASE_MESSAGE',
@@ -113,7 +140,7 @@ describe('functions/blindedExecutionCircuit', function () {
       actorPubkey: pk(2),
       at: 2000
     });
-    assert.strictEqual(session.decisions.length, 2);
+    assert.strictEqual(session.decisions.length, 3);
     assert.notStrictEqual(session.coordinationRoot, afterReject);
 
     const baseCommitment = session.circuitCommitment;
@@ -124,7 +151,12 @@ describe('functions/blindedExecutionCircuit', function () {
     assert.ok(/^[0-9a-f]{64}$/.test(finalized.hashlockPreimageHex));
   });
 
-  it('binds finalized session to hashlock Taproot and spends with circuit preimage', async function () {
+  it('binds finalized session to hashlock+pubkey Taproot (public preimage alone insufficient)', async function () {
+    const bitcoin = require('bitcoinjs-lib');
+    const ecc = require('../types/ecc');
+    bitcoin.initEccLib(ecc);
+    const { Psbt } = bitcoin;
+
     let session = composeGarblerPublish({
       name: 'hashlock-bind',
       network: 'regtest',
@@ -173,11 +205,11 @@ describe('functions/blindedExecutionCircuit', function () {
     });
 
     assert.notStrictEqual(bound.address, bound.ladderOnlyAddress);
-    assert.ok(bound.tree.leaves.some((l) => l.kind === 'hashlock' && l.id === HASHLOCK_LEAF_ID));
-    assert.strictEqual(
-      bound.tree.leaves.find((l) => l.kind === 'hashlock').commitmentHex,
-      session.hashlockCommitmentHex
-    );
+    const hl = bound.tree.leaves.find((l) => l.kind === 'hashlock' && l.id === HASHLOCK_LEAF_ID);
+    assert.ok(hl);
+    assert.strictEqual(hl.commitmentHex, session.hashlockCommitmentHex);
+    assert.strictEqual(String(hl.pubkeyHex).toLowerCase(), pk(0).toLowerCase());
+    assert.strictEqual(hl.witnessShape, 'preimage+sig');
 
     const ladderOnly = synthesizeDefaultLadder({
       validators: [pk(0), pk(1)],
@@ -205,12 +237,27 @@ describe('functions/blindedExecutionCircuit', function () {
     });
     assert.ok(prepared.psbtBase64);
     assert.strictEqual(prepared.action, 'hashlock');
-    assert.strictEqual(prepared.witnessShape, 'preimage');
+    assert.strictEqual(prepared.witnessShape, 'preimage+sig');
 
-    const fin = bound.finalizeWithdrawal({ psbtBase64: prepared.psbtBase64 });
+    const priv = Buffer.isBuffer(keys[0].private)
+      ? keys[0].private
+      : Buffer.from(String(keys[0].private), 'hex');
+    const publicKey = Buffer.from(ecc.pointFromScalar(priv, true));
+    const signer = {
+      publicKey,
+      sign (hash) { return Buffer.from(ecc.sign(hash, priv)); },
+      signSchnorr (hash) { return Buffer.from(ecc.signSchnorr(hash, priv)); }
+    };
+    const psbt = Psbt.fromBase64(prepared.psbtBase64);
+    psbt.signInput(0, signer);
+
+    const fin = bound.finalizeWithdrawal({
+      psbtBase64: psbt.toBase64(),
+      witnessShape: 'preimage+sig'
+    });
     assert.ok(fin.txHex);
     assert.ok(fin.txid);
     const spent = bitcoin.Transaction.fromHex(fin.txHex);
-    assert.strictEqual(spent.ins[0].witness.length, 3);
+    assert.strictEqual(spent.ins[0].witness.length, 4);
   });
 });

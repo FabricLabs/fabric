@@ -142,7 +142,7 @@ These are routed from decoded JSON bodies (often received as `P2P_BASE_MESSAGE` 
 **Code catalog:** [`functions/applicationNamespaces.js`](functions/applicationNamespaces.js)
 
 Fabric uses a small, consistent pattern for multi-app mesh traffic (Hub,
-Sensemaker, light peers, …):
+light peers, downstream apps, …):
 
 1. **Global shoutbox** — `P2P_CHAT_MESSAGE` (not contract-namespaced).
 2. **Contract discovery** — `CONTRACT_PUBLISH` / `P2P_CONTRACT_PUBLISH` →

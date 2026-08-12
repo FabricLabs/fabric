@@ -15,7 +15,7 @@ node for spendable UTXOs — `@fabric/core` `Identity` signs on `7778`; `Wallet`
 
 Additional identities may be loaded by modifying the account index in the derivation path:
 
-```
+```text
 Identity #1 [0]: m/44'/7778'/0'/0/0
 Identity #2 [1]: m/44'/7778'/1'/0/0
 ...
@@ -24,7 +24,7 @@ Identity #2 [1]: m/44'/7778'/1'/0/0
 Fabric will encode each identity address index as specified by BIP 44 for the Fabric coin type
 (not Bitcoin funds):
 
-```
+```text
 Identity account 0, address 1: m/44'/7778'/0'/0/1
 ```
 
@@ -32,7 +32,7 @@ Identity account 0, address 1: m/44'/7778'/0'/0/1
 `id = bech32m("id", sha256(bip44(derivation_path, hd_tree).public))`
 
 ### An Example Fabric Identity:
-```
+```text
 Pubkey:
 ID: 
 ```
