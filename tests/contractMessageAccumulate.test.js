@@ -323,6 +323,16 @@ describe('@fabric/core contractMessageAccumulate', function () {
     });
     assert.strictEqual(blocked.accepted, false);
     assert.match(blocked.error, /not allowed/i);
+
+    const emptyAllow = ingestMessageBuffer(store, contractId, chat.toBuffer(), {
+      origin: 'mesh',
+      genesis: {
+        signers: [author.pubkey],
+        primitives: { messageTypes: [] }
+      }
+    });
+    assert.strictEqual(emptyAllow.accepted, false);
+    assert.match(emptyAllow.error, /not allowed/i);
   });
 
   it('custom genesis messageTypes still require reader/signer membership', function () {
@@ -366,6 +376,16 @@ describe('@fabric/core contractMessageAccumulate', function () {
     assert.strictEqual(res.accepted, true);
     assert.strictEqual(res.tip.bitcoinBlockHash, hash);
     assert.strictEqual(res.tip.bitcoinHeight, 100);
+
+    const bad = ingestMessageBuffer(store, contractId, signContractMessage(author, contractId, 'GroupChat', {
+      body: 'bad-hash'
+    }).toBuffer(), {
+      origin: 'mesh',
+      genesis: { signers: [author.pubkey] },
+      bitcoinBlockHash: 'not-a-hash'
+    });
+    assert.strictEqual(bad.accepted, false);
+    assert.match(bad.error, /bitcoinBlockHash/i);
   });
 
   it('bufferFromPaste accepts fabric: prefix', function () {
@@ -528,6 +548,20 @@ describe('@fabric/core contractMessageCommit', function () {
     assert.throws(() => markReceipt(record, a.pubkey, null, 'ab'.repeat(32)), /invalid receiptSig/);
     const wrong = Buffer.from(a.signSchnorr(receiptSigningMessage('other'))).toString('hex');
     assert.throws(() => markReceipt(record, a.pubkey, null, wrong), /invalid receiptSig/);
+  });
+
+  it('markReceived initializes peers map when missing (legacy records)', function () {
+    const a = new Key();
+    const x = require('../functions/groupChatSeal').pubkeyXOnly(a.pubkey);
+    const record = {
+      id: 'm4',
+      contractId: 'c'.repeat(64),
+      readers: [x],
+      peers: null
+    };
+    markReceived(record, a.pubkey);
+    assert.ok(record.peers && record.peers[x] && record.peers[x].receivedAt);
+    assert.throws(() => markReceived(record, new Key().pubkey), /reader set|invalid reader/);
   });
 
   it('preserves public reader wildcard and fail-closes empty delivery-ack authz', function () {

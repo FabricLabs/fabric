@@ -22,7 +22,7 @@ function getPath (state, path) {
   return cur;
 }
 
-const OPS = Object.freeze({
+const OPS = Object.freeze(Object.assign(Object.create(null), {
   tipClockGte (pred, ctx) {
     const tip = Number(ctx && ctx.tipClock);
     const need = Number(pred && pred.value);
@@ -35,7 +35,7 @@ const OPS = Object.freeze({
     const actual = getPath(ctx && ctx.contractState, pred.path);
     return actual === pred.value;
   }
-});
+}));
 
 /**
  * @param {object|null|undefined} when
@@ -50,6 +50,8 @@ function evaluateTierWhen (when, ctx = {}) {
   for (const pred of allOf) {
     if (!pred || typeof pred !== 'object') return false;
     const op = String(pred.op || '');
+    // Own keys only — never inherit Object.prototype (constructor, toString, …).
+    if (!Object.prototype.hasOwnProperty.call(OPS, op)) return false;
     const fn = OPS[op];
     if (typeof fn !== 'function') return false;
     if (!fn(pred, ctx)) return false;

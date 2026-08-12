@@ -51,6 +51,10 @@ const {
   xOnlyEquals,
   toXOnlyPeerId
 } = require('../functions/fabricOnion');
+const {
+  isOnionChatSeal,
+  tryOpenOnionChatText
+} = require('../functions/onionChatSeal');
 
 /** @private Max UTF-8 code units for first-class P2P_CHAT_MESSAGE body (text only). */
 const P2P_CHAT_MAX_CHARS = 2000;
@@ -1241,6 +1245,14 @@ class Peer extends Service {
     const until = Date.now() + (Number.isFinite(ttl) && ttl > 0 ? ttl : 600000);
     if (!this._selfDialSuppressUntil) this._selfDialSuppressUntil = new Map();
     this._selfDialSuppressUntil.set(addr, until);
+    // FIFO-cap map growth (insertion order); expired entries also drop on read.
+    const max = Number(this.settings && this.settings.selfDialSuppressMax) > 0
+      ? Number(this.settings.selfDialSuppressMax)
+      : 256;
+    while (this._selfDialSuppressUntil.size > max) {
+      const oldest = this._selfDialSuppressUntil.keys().next().value;
+      this._selfDialSuppressUntil.delete(oldest);
+    }
   }
 
   /**
@@ -2545,10 +2557,6 @@ class Peer extends Service {
         let deliverText = String(text);
         let onionSealed = false;
         try {
-          const {
-            isOnionChatSeal,
-            tryOpenOnionChatText
-          } = require('../functions/onionChatSeal');
           if (isOnionChatSeal(deliverText)) {
             onionSealed = true;
             const opened = tryOpenOnionChatText(deliverText, { keyOrPrivate: this.key });
@@ -2563,14 +2571,13 @@ class Peer extends Service {
             `[FABRIC:PEER] onion chat seal handling failed: ${err && err.message ? err.message : err}`);
           break;
         }
-        const chatSigner = this._verifiedFabricSignerPubkeyHex(message);
         this.emit('chat', {
           text: deliverText,
           type: 'P2P_CHAT_MESSAGE',
           ...(onionSealed ? { onionSealed: true } : {})
         }, {
           origin,
-          signer: chatSigner || null,
+          signer: signerPubkeyHex || null,
           wireMessage: message,
           peeledForward: opts.peeledForward === true,
           onionSealed

@@ -398,14 +398,9 @@ class Contract extends Service {
   }
 
   /**
-   * Build deterministic P2TR spend tree from settings.spendLadder or synthesized
-   * validators / publisher policy.
-   * @param {object} [overrides]
-   * @returns {object} {@link module:functions/contractTaproot.buildContractTaproot}
-   */
-  /**
    * Shared spend-policy inputs for {@link Contract#toTaprootContract}.
    * Subclasses (e.g. Federation) may override to supply validators from state.
+   * @private
    * @param {object} [overrides]
    * @returns {object}
    */
@@ -439,6 +434,12 @@ class Contract extends Service {
     return { validators, threshold, publisher, network, csvBlocks };
   }
 
+  /**
+   * Build deterministic P2TR spend tree from settings.spendLadder or synthesized
+   * validators / publisher policy.
+   * @param {object} [overrides]
+   * @returns {object} {@link module:functions/contractTaproot.buildContractTaproot}
+   */
   toTaprootContract (overrides = {}) {
     const tap = require('../functions/contractTaproot');
     const ladder = overrides.spendLadder || this.settings.spendLadder || null;
@@ -452,10 +453,9 @@ class Contract extends Service {
       return tap.buildContractTaproot({ ...ladder, ...overrides, network });
     }
     const inputs = this._taprootPolicyInputs(overrides);
-    return tap.buildContractTaproot(tap.synthesizeDefaultLadder({
-      ...inputs,
-      ...overrides
-    }));
+    // Do not re-spread overrides after inputs — falsy override fields must not
+    // undo resolved validators / threshold / csvBlocks / network.
+    return tap.buildContractTaproot(tap.synthesizeDefaultLadder(inputs));
   }
 
   /**

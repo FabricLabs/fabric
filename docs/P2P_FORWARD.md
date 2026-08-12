@@ -89,3 +89,8 @@ node examples/onion-forward.js
 ## Downstream
 - Hub JSON-RPC **`SendOnion`** — TCP Peer on the hub agent; Bridge drops WS `P2P_FORWARD`.
 - `@fabric/http` does not terminate onions (see `docs/MESSAGE_SPEC.md`).
+
+## Work remaining
+- ~~**Seal AAD:**~~ tip + participant AES-GCM AAD bound in `groupChatSeal` / `onionChatSeal` (see [ARC.md](ARC.md) §8).
+- **Hop encryption:** Sphinx/BOLT4-class routing metadata protection remains out of scope for 0.1 (accepted risk above).
+- **Journal / re-fold growth** and **API renaming** remain tracked in [ARC.md](ARC.md) §8 / [AUDIT.md](../AUDIT.md).

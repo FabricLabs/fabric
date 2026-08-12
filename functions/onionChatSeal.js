@@ -109,7 +109,14 @@ function tryOpenOnionChatText (text, opts = {}) {
 function onionPathRecipientXOnly (path) {
   if (!Array.isArray(path) || !path.length) return null;
   const tip = path[path.length - 1];
-  if (Buffer.isBuffer(tip)) return tip.toString('hex').toLowerCase();
+  if (Buffer.isBuffer(tip)) {
+    // Compressed SEC pubkey → drop format byte; already-x-only 32-byte tips stay as-is.
+    if (tip.length === 33 && (tip[0] === 0x02 || tip[0] === 0x03)) {
+      return tip.subarray(1).toString('hex').toLowerCase();
+    }
+    if (tip.length === 32) return tip.toString('hex').toLowerCase();
+    return null;
+  }
   return pubkeyXOnly(tip);
 }
 

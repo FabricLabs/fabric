@@ -68,7 +68,16 @@ function createPending (opts = {}) {
 function _peerSlot (record, pubkey) {
   const x = pubkeyXOnly(pubkey);
   if (!x) throw new Error('invalid reader pubkey');
-  if (!record.peers[x] && record.readers.includes(x)) {
+  // Records loaded without a peers map (legacy / partial) — init from readers
+  // before slot access, matching phaseFlags' `record.peers` guard.
+  if (!record.peers || typeof record.peers !== 'object') {
+    record.peers = Object.create(null);
+    for (const r of record.readers || []) {
+      const rx = pubkeyXOnly(r);
+      if (rx) record.peers[rx] = {};
+    }
+  }
+  if (!record.peers[x] && Array.isArray(record.readers) && record.readers.includes(x)) {
     record.peers[x] = {};
   }
   if (!record.peers[x]) {

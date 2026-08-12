@@ -18,6 +18,9 @@ describe('contractTierWhen', function () {
     assert.strictEqual(evaluateTierWhen({ allOf: [] }), false);
     assert.strictEqual(evaluateTierWhen({}), false);
     assert.strictEqual(evaluateTierWhen({ allOf: [{ op: 'unknown' }] }), false);
+    assert.strictEqual(evaluateTierWhen({ allOf: [{ op: 'constructor' }] }), false);
+    assert.strictEqual(evaluateTierWhen({ allOf: [{ op: 'toString' }] }), false);
+    assert.strictEqual(evaluateTierWhen({ allOf: [{ op: 'valueOf' }] }), false);
     assert.strictEqual(evaluateTierWhen('nope'), false);
   });
 

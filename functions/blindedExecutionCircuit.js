@@ -19,6 +19,7 @@
 const crypto = require('crypto');
 
 const Actor = require('../types/actor');
+const Key = require('../types/key');
 const Program = require('../types/program');
 const fabricCanonicalJson = require('./fabricCanonicalJson');
 const { jsonSafe } = fabricCanonicalJson;
@@ -36,6 +37,18 @@ const {
 
 const SESSION_VERSION = 1;
 const HASHLOCK_LEAF_ID = 'blinded-execution-hashlock';
+
+/**
+ * Canonical UTF-8 message for BIP340 accept/reject attestations.
+ * @param {object} fields
+ * @returns {string}
+ */
+function decisionSigningMessage (fields = {}) {
+  const sessionId = String(fields.sessionId || '').trim().toLowerCase();
+  const proposalMerkleRoot = String(fields.proposalMerkleRoot || '').trim().toLowerCase();
+  const decision = String(fields.decision || '').trim().toLowerCase();
+  return `fabric:blinded-execution-decision:1:${sessionId}:${proposalMerkleRoot}:${decision}`;
+}
 
 /**
  * @param {string|Buffer} hexOrBuf
@@ -270,6 +283,7 @@ function sessionRolePubkeys (session) {
  * @param {object} opts.proposalPayload from buildContractProposalPayload
  * @param {'accept'|'reject'} opts.decision
  * @param {string} opts.actorPubkey compressed hex (must be session garbler or evaluator)
+ * @param {string} opts.signature BIP340 hex over {@link decisionSigningMessage}
  * @returns {object} updated session (shallow clone)
  */
 function recordProposalDecision (opts = {}) {
@@ -312,10 +326,29 @@ function recordProposalDecision (opts = {}) {
     throw new Error('recordProposalDecision: proposal contractId does not match session');
   }
 
+  const sessionId = String(session.circuitId || session.id || '').trim().toLowerCase();
+  if (!sessionId) {
+    throw new Error('recordProposalDecision: session id required');
+  }
+  const sigHex = String(opts.signature || '').trim().toLowerCase().replace(/^0x/i, '');
+  if (!/^[0-9a-f]{128}$/.test(sigHex)) {
+    throw new Error('recordProposalDecision: signature required (64-byte BIP340 hex)');
+  }
+  const msg = decisionSigningMessage({
+    sessionId,
+    proposalMerkleRoot,
+    decision
+  });
+  const verifyKey = new Key({ public: actorPubkey });
+  if (!verifyKey.verifySchnorr(msg, Buffer.from(sigHex, 'hex'))) {
+    throw new Error('recordProposalDecision: invalid decision signature');
+  }
+
   const entry = {
     decision,
     actorPubkey,
     proposalMerkleRoot,
+    signature: sigHex,
     at: opts.at != null ? Number(opts.at) : Date.now()
   };
 
@@ -504,6 +537,7 @@ module.exports = {
   sessionRolePubkeys,
   computeBaseCircuitCommitment,
   computeCoordinationRoot,
+  decisionSigningMessage,
   composeGarblerPublish,
   recordProposalDecision,
   finalizeBlindedExecution,

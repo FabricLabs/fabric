@@ -46,6 +46,10 @@ describe('@fabric/core onionChatSeal', function () {
       xOnlyFromKey(b).toString('hex')
     ]);
     assert.strictEqual(tip, xOnlyFromKey(b).toString('hex'));
+
+    const compressed = Buffer.from(b.public.encodeCompressed('hex'), 'hex');
+    assert.strictEqual(onionPathRecipientXOnly([compressed]), xOnlyFromKey(b).toString('hex'));
+    assert.strictEqual(onionPathRecipientXOnly([xOnlyFromKey(b)]), xOnlyFromKey(b).toString('hex'));
   });
 
   it('Peer peels sealed onion chat and emits plaintext', function () {

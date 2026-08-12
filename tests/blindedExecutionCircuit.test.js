@@ -14,6 +14,7 @@ const {
   recordProposalDecision,
   finalizeBlindedExecution,
   bindBlindedExecutionToHashlock,
+  decisionSigningMessage,
   HASHLOCK_LEAF_ID
 } = require('../functions/blindedExecutionCircuit');
 const { toAddress, synthesizeDefaultLadder } = require('../functions/contractTaproot');
@@ -24,6 +25,17 @@ describe('functions/blindedExecutionCircuit', function () {
     for (let i = 0; i < 3; i++) keys.push(new Key());
   });
   function pk (i) { return keys[i].pubkey; }
+  function signDecision (keyIndex, session, proposalPayload, decision) {
+    const merkle = proposalPayload.chain && proposalPayload.chain.merkleRoot
+      ? String(proposalPayload.chain.merkleRoot).toLowerCase()
+      : '';
+    const msg = decisionSigningMessage({
+      sessionId: session.circuitId,
+      proposalMerkleRoot: merkle,
+      decision
+    });
+    return Buffer.from(keys[keyIndex].signSchnorr(msg)).toString('hex');
+  }
 
   it('composeGarblerPublish requires an evaluator party and is digest-stable', function () {
     assert.throws(() => composeGarblerPublish({
@@ -89,14 +101,24 @@ describe('functions/blindedExecutionCircuit', function () {
       proposalPayload: rejectProposal,
       decision: 'accept',
       actorPubkey: outsider.pubkey,
+      signature: 'aa'.repeat(64),
       at: 999
     }), /not a session party/);
+
+    assert.throws(() => recordProposalDecision({
+      session,
+      proposalPayload: rejectProposal,
+      decision: 'reject',
+      actorPubkey: pk(1),
+      at: 1000
+    }), /signature required/);
 
     session = recordProposalDecision({
       session,
       proposalPayload: rejectProposal,
       decision: 'reject',
       actorPubkey: pk(1),
+      signature: signDecision(1, session, rejectProposal, 'reject'),
       at: 1000
     });
     assert.strictEqual(session.decisions.length, 1);
@@ -119,6 +141,7 @@ describe('functions/blindedExecutionCircuit', function () {
       proposalPayload: garblerAcceptProposal,
       decision: 'accept',
       actorPubkey: pk(0),
+      signature: signDecision(0, session, garblerAcceptProposal, 'accept'),
       at: 1500
     });
     assert.throws(() => finalizeBlindedExecution({ session }), /evaluator accept/);
@@ -133,11 +156,21 @@ describe('functions/blindedExecutionCircuit', function () {
       statePatch: [{ op: 'add', path: '/settled', value: true }]
     });
 
+    assert.throws(() => recordProposalDecision({
+      session,
+      proposalPayload: acceptProposal,
+      decision: 'accept',
+      actorPubkey: pk(2),
+      signature: signDecision(1, session, acceptProposal, 'accept'),
+      at: 2000
+    }), /invalid decision signature/);
+
     session = recordProposalDecision({
       session,
       proposalPayload: acceptProposal,
       decision: 'accept',
       actorPubkey: pk(2),
+      signature: signDecision(2, session, acceptProposal, 'accept'),
       at: 2000
     });
     assert.strictEqual(session.decisions.length, 3);
@@ -180,6 +213,7 @@ describe('functions/blindedExecutionCircuit', function () {
       proposalPayload: acceptProposal,
       decision: 'accept',
       actorPubkey: pk(1),
+      signature: signDecision(1, session, acceptProposal, 'accept'),
       at: 3000
     });
 

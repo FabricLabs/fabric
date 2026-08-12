@@ -104,13 +104,65 @@ function chatSealSalt (contractId, memberPubkeys) {
 }
 
 /**
+ * Require a non-negative integer clock (no coercion to 0).
+ * @param {*} value
+ * @param {string} label
+ * @returns {number}
+ * @private
+ */
+function requireNonNegativeIntegerClock (value, label) {
+  if (value == null || (typeof value === 'string' && value.trim() === '')) {
+    throw new Error(`${label}: clock must be a non-negative integer`);
+  }
+  const clock = typeof value === 'number' ? value : Number(value);
+  if (!Number.isInteger(clock) || clock < 0) {
+    throw new Error(`${label}: clock must be a non-negative integer`);
+  }
+  return clock;
+}
+
+/**
+ * Canonical AES-GCM AAD for tip-bound group-chat seals (scheme + tip fields).
+ * @param {{ scheme: string, basisClock: number, stateDigest: string }} meta
+ * @returns {Buffer}
+ * @private
+ */
+function groupChatSealAad (meta) {
+  const scheme = String(meta && meta.scheme || '');
+  const basisClock = Number(meta && meta.basisClock);
+  const stateDigest = String(meta && meta.stateDigest || '').trim().toLowerCase();
+  return Buffer.from(
+    `FabricGroupChat/aad/v1\0${scheme}\0${basisClock}\0${stateDigest}`,
+    'utf8'
+  );
+}
+
+/**
+ * Canonical AES-GCM AAD for participant / onion seals (binds namespace + tip when present).
+ * @param {object} meta
+ * @returns {Buffer}
+ * @private
+ */
+function participantGroupChatSealAad (meta = {}) {
+  const scheme = String(meta.scheme || SEAL_SCHEME_PARTICIPANT);
+  const contractId = String(meta.contractId || '').trim().toLowerCase();
+  const basisClock = meta.basisClock != null ? Number(meta.basisClock) : '';
+  const stateDigest = String(meta.stateDigest || '').trim().toLowerCase();
+  const ephemeralPub = String(meta.ephemeralPub || '').trim().toLowerCase();
+  return Buffer.from(
+    `FabricGroupChat/aad/v1\0${scheme}\0${contractId}\0${basisClock}\0${stateDigest}\0${ephemeralPub}`,
+    'utf8'
+  );
+}
+
+/**
  * Derive 32-byte AES key for a contract timeline tip (v1).
  * @param {object} opts
  * @returns {Buffer}
  */
 function deriveTimelineCipherKey (opts = {}) {
   const contractId = String(opts.contractId || '').trim().toLowerCase();
-  const clock = Number(opts.clock) || 0;
+  const clock = requireNonNegativeIntegerClock(opts.clock, 'deriveTimelineCipherKey');
   const stateDigest = String(opts.stateDigest || '').trim().toLowerCase();
   if (!contractId) throw new Error('deriveTimelineCipherKey: contractId required');
   if (!/^[0-9a-f]{64}$/.test(stateDigest)) {
@@ -138,9 +190,10 @@ function deriveTimelineCipherKey (opts = {}) {
 /**
  * @param {string|Buffer} plaintextUtf8
  * @param {Buffer} key32
+ * @param {Buffer|string|null} [aad] additional authenticated data
  * @returns {{ nonce: string, ciphertext: string }}
  */
-function aesGcmSealUtf8 (plaintextUtf8, key32) {
+function aesGcmSealUtf8 (plaintextUtf8, key32, aad = null) {
   const key = Buffer.isBuffer(key32) ? key32 : Buffer.from(String(key32), 'hex');
   if (key.length !== 32) throw new Error('aesGcmSealUtf8: key must be 32 bytes');
   const iv = crypto.randomBytes(12);
@@ -148,6 +201,9 @@ function aesGcmSealUtf8 (plaintextUtf8, key32) {
     ? plaintextUtf8
     : Buffer.from(String(plaintextUtf8), 'utf8');
   const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+  if (aad != null) {
+    cipher.setAAD(Buffer.isBuffer(aad) ? aad : Buffer.from(String(aad), 'utf8'));
+  }
   const enc = Buffer.concat([cipher.update(plain), cipher.final()]);
   const tag = cipher.getAuthTag();
   return {
@@ -159,9 +215,10 @@ function aesGcmSealUtf8 (plaintextUtf8, key32) {
 /**
  * @param {{ nonce: string, ciphertext: string }} sealed
  * @param {Buffer} key32
+ * @param {Buffer|string|null} [aad] additional authenticated data (must match seal)
  * @returns {string}
  */
-function aesGcmOpenUtf8 (sealed, key32) {
+function aesGcmOpenUtf8 (sealed, key32, aad = null) {
   const key = Buffer.isBuffer(key32) ? key32 : Buffer.from(String(key32), 'hex');
   if (key.length !== 32) throw new Error('aesGcmOpenUtf8: key must be 32 bytes');
   const iv = Buffer.from(String(sealed && sealed.nonce || ''), 'base64');
@@ -171,6 +228,9 @@ function aesGcmOpenUtf8 (sealed, key32) {
   const tag = ct.subarray(ct.length - 16);
   const data = ct.subarray(0, ct.length - 16);
   const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
+  if (aad != null) {
+    decipher.setAAD(Buffer.isBuffer(aad) ? aad : Buffer.from(String(aad), 'utf8'));
+  }
   decipher.setAuthTag(tag);
   return Buffer.concat([decipher.update(data), decipher.final()]).toString('utf8');
 }
@@ -226,6 +286,17 @@ function sealParticipantGroupChatBody (opts = {}) {
     throw new Error('sealParticipantGroupChatBody: at least one member pubkey required');
   }
 
+  let basisClock;
+  if (opts.clock != null) {
+    basisClock = requireNonNegativeIntegerClock(opts.clock, 'sealParticipantGroupChatBody');
+  }
+  const stateDigest = opts.stateDigest != null
+    ? String(opts.stateDigest).trim().toLowerCase()
+    : undefined;
+  const contractId = opts.contractId != null
+    ? String(opts.contractId).trim().toLowerCase()
+    : undefined;
+
   const contentKey = crypto.randomBytes(32);
   const ephemeral = new Key();
   if (!ephemeral.private || !ephemeral.pubkey) {
@@ -246,7 +317,13 @@ function sealParticipantGroupChatBody (opts = {}) {
     });
   }
 
-  const sealed = aesGcmSealUtf8(body, contentKey);
+  const sealed = aesGcmSealUtf8(body, contentKey, participantGroupChatSealAad({
+    scheme: SEAL_SCHEME_PARTICIPANT,
+    contractId,
+    basisClock,
+    stateDigest,
+    ephemeralPub
+  }));
   const out = {
     scheme: SEAL_SCHEME_PARTICIPANT,
     ephemeralPub,
@@ -254,13 +331,9 @@ function sealParticipantGroupChatBody (opts = {}) {
     nonce: sealed.nonce,
     ciphertext: sealed.ciphertext
   };
-  if (opts.clock != null) out.basisClock = Number(opts.clock) || 0;
-  if (opts.stateDigest != null) {
-    out.stateDigest = String(opts.stateDigest).trim().toLowerCase();
-  }
-  if (opts.contractId != null) {
-    out.contractId = String(opts.contractId).trim().toLowerCase();
-  }
+  if (basisClock != null) out.basisClock = basisClock;
+  if (stateDigest != null) out.stateDigest = stateDigest;
+  if (contractId != null) out.contractId = contractId;
   return out;
 }
 
@@ -310,7 +383,14 @@ function openParticipantGroupChatBody (seal, opts = {}) {
   if (!/^[0-9a-f]{64}$/i.test(contentKeyHex)) {
     throw new Error('openParticipantGroupChatBody: bad content key');
   }
-  return aesGcmOpenUtf8(seal, Buffer.from(contentKeyHex, 'hex'));
+  const aad = participantGroupChatSealAad({
+    scheme: SEAL_SCHEME_PARTICIPANT,
+    contractId: seal.contractId,
+    basisClock: seal.basisClock,
+    stateDigest: seal.stateDigest,
+    ephemeralPub: String(seal.ephemeralPub || '').trim().toLowerCase()
+  });
+  return aesGcmOpenUtf8(seal, Buffer.from(contentKeyHex, 'hex'), aad);
 }
 
 /**
@@ -325,11 +405,18 @@ function sealGroupChatBody (opts = {}) {
   const body = opts.body != null ? String(opts.body) : '';
   if (!body.trim()) throw new Error('sealGroupChatBody: body required');
   const key = deriveTimelineCipherKey(opts);
-  const sealed = aesGcmSealUtf8(body, key);
+  const basisClock = requireNonNegativeIntegerClock(opts.clock, 'sealGroupChatBody');
+  const stateDigest = String(opts.stateDigest || '').trim().toLowerCase();
+  const aad = groupChatSealAad({
+    scheme: SEAL_SCHEME,
+    basisClock,
+    stateDigest
+  });
+  const sealed = aesGcmSealUtf8(body, key, aad);
   return {
     scheme: SEAL_SCHEME,
-    basisClock: Number(opts.clock) || 0,
-    stateDigest: String(opts.stateDigest || '').trim().toLowerCase(),
+    basisClock,
+    stateDigest,
     nonce: sealed.nonce,
     ciphertext: sealed.ciphertext
   };
@@ -337,6 +424,12 @@ function sealGroupChatBody (opts = {}) {
 
 /**
  * Open a sealed GroupChat body (v1 tip or v2 participant).
+ *
+ * For v1 tip seals, `tipOpts.clock` / `tipOpts.stateDigest` are **caller-input
+ * checks** against the seal metadata (not peer-tip authorization). AES-GCM
+ * (with AAD over scheme/basisClock/stateDigest) is what authenticates the
+ * ciphertext under the tip-derived key and rejects a wrong or tampered tip.
+ *
  * @param {object} seal
  * @param {object} tipOpts
  * @returns {string}
@@ -351,8 +444,9 @@ function openGroupChatBody (seal, tipOpts = {}) {
   if (seal.scheme !== SEAL_SCHEME) {
     throw new Error('openGroupChatBody: unsupported or missing seal');
   }
-  const clock = Number(tipOpts.clock);
+  const clock = requireNonNegativeIntegerClock(tipOpts.clock, 'openGroupChatBody');
   const digest = String(tipOpts.stateDigest || '').trim().toLowerCase();
+  // Caller-input validation vs seal metadata (not network tip authorization).
   if (Number(seal.basisClock) !== clock) {
     throw new Error('openGroupChatBody: tip clock does not match seal.basisClock');
   }
@@ -365,7 +459,12 @@ function openGroupChatBody (seal, tipOpts = {}) {
     stateDigest: digest,
     memberPubkeys: tipOpts.memberPubkeys
   });
-  return aesGcmOpenUtf8(seal, key);
+  const aad = groupChatSealAad({
+    scheme: SEAL_SCHEME,
+    basisClock: Number(seal.basisClock),
+    stateDigest: digest
+  });
+  return aesGcmOpenUtf8(seal, key, aad);
 }
 
 /**

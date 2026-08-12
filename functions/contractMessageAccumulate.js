@@ -432,7 +432,8 @@ function messageTypeAllowed (doc, type, meta = {}) {
     ? meta.primitives.messageTypes.map(String)
     : null;
   const allowed = fromGenesis || fromMeta;
-  if (allowed && allowed.length) return allowed.includes(type);
+  // Explicit empty allowlist is deny-all (presence of the array is the policy signal).
+  if (allowed) return allowed.includes(type);
   return isKnownContractBodyType(type);
 }
 
@@ -944,6 +945,8 @@ function tipFromDoc (doc) {
 function ingestMessageBuffer (store, contractId, bufferOrPaste, meta = {}) {
   const id = normalizeContractId(contractId);
   const origin = ORIGINS.includes(meta.origin) ? meta.origin : 'mesh';
+  // Load once so rejected paths still return tipFromDoc without re-reading.
+  const doc = loadDoc(store, id);
   let buffer;
   try {
     buffer = Buffer.isBuffer(bufferOrPaste)
@@ -954,7 +957,7 @@ function ingestMessageBuffer (store, contractId, bufferOrPaste, meta = {}) {
       accepted: false,
       duplicate: false,
       entry: null,
-      tip: tipFromDoc(loadDoc(store, id)),
+      tip: tipFromDoc(doc),
       error: e.message || 'invalid buffer'
     };
   }
@@ -965,7 +968,7 @@ function ingestMessageBuffer (store, contractId, bufferOrPaste, meta = {}) {
       accepted: false,
       duplicate: false,
       entry: null,
-      tip: tipFromDoc(loadDoc(store, id)),
+      tip: tipFromDoc(doc),
       error: `message exceeds MAX_MESSAGE_SIZE (${MAX_MESSAGE_SIZE})`
     };
   }
@@ -978,7 +981,7 @@ function ingestMessageBuffer (store, contractId, bufferOrPaste, meta = {}) {
       accepted: false,
       duplicate: false,
       entry: null,
-      tip: tipFromDoc(loadDoc(store, id)),
+      tip: tipFromDoc(doc),
       error: e.message || 'parse failed'
     };
   }
@@ -988,7 +991,7 @@ function ingestMessageBuffer (store, contractId, bufferOrPaste, meta = {}) {
       accepted: false,
       duplicate: false,
       entry: null,
-      tip: tipFromDoc(loadDoc(store, id)),
+      tip: tipFromDoc(doc),
       error: 'invalid signature'
     };
   }
@@ -999,7 +1002,7 @@ function ingestMessageBuffer (store, contractId, bufferOrPaste, meta = {}) {
       accepted: false,
       duplicate: false,
       entry: null,
-      tip: tipFromDoc(loadDoc(store, id)),
+      tip: tipFromDoc(doc),
       error: 'not a CONTRACT_MESSAGE body'
     };
   }
@@ -1008,13 +1011,12 @@ function ingestMessageBuffer (store, contractId, bufferOrPaste, meta = {}) {
       accepted: false,
       duplicate: false,
       entry: null,
-      tip: tipFromDoc(loadDoc(store, id)),
+      tip: tipFromDoc(doc),
       error: 'contract id mismatch'
     };
   }
 
   const hash = messageHashHex(msg);
-  const doc = loadDoc(store, id);
   applyGenesisMeta(doc, meta);
 
   if (doc.entries.some((e) => e && e.hash === hash)) {
@@ -1039,6 +1041,23 @@ function ingestMessageBuffer (store, contractId, bufferOrPaste, meta = {}) {
     };
   }
 
+  let bitcoinBlockHash = null;
+  let bitcoinHeight = null;
+  if (meta.bitcoinBlockHash != null && String(meta.bitcoinBlockHash).trim() !== '') {
+    const bh = String(meta.bitcoinBlockHash).trim().toLowerCase();
+    if (!/^[0-9a-f]{64}$/.test(bh)) {
+      return {
+        accepted: false,
+        duplicate: false,
+        entry: null,
+        tip: tipFromDoc(doc),
+        error: 'meta.bitcoinBlockHash must be 64 hex chars'
+      };
+    }
+    bitcoinBlockHash = bh;
+    if (meta.bitcoinHeight != null) bitcoinHeight = Number(meta.bitcoinHeight);
+  }
+
   const entry = {
     hash,
     type: body.type,
@@ -1054,9 +1073,9 @@ function ingestMessageBuffer (store, contractId, bufferOrPaste, meta = {}) {
   doc.clock = state.clock;
   doc.content = state.content;
 
-  if (meta.bitcoinBlockHash) {
-    doc.bitcoinBlockHash = String(meta.bitcoinBlockHash).trim().toLowerCase();
-    if (meta.bitcoinHeight != null) doc.bitcoinHeight = Number(meta.bitcoinHeight);
+  if (bitcoinBlockHash) {
+    doc.bitcoinBlockHash = bitcoinBlockHash;
+    if (bitcoinHeight != null) doc.bitcoinHeight = bitcoinHeight;
   } else if (!doc.bitcoinBlockHash && doc.genesis && doc.genesis.bitcoinAnchor) {
     doc.bitcoinBlockHash = doc.genesis.bitcoinAnchor.blockHash;
     if (doc.genesis.bitcoinAnchor.height != null) {

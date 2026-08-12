@@ -21,13 +21,11 @@ function wireMock (writes) {
 
 describe('Peer P2P_FORWARD onion', function () {
   it('peels when nextPeer is local and delivers inner chat', function () {
-    const destKey = new Key();
     const originKey = new Key();
-    const peer = new Peer(offlinePeerSettings({
-      key: { mnemonic: destKey.mnemonic }
-    }));
+    // Peer derives Identity.fabricKey from the seed; nextPeer must be that key's
+    // x-only id (not the master Key from the same mnemonic).
+    const peer = new Peer(offlinePeerSettings());
     const localX = xOnlyFromKey(peer.key);
-    assert.strictEqual(localX.toString('hex'), xOnlyFromKey(destKey).toString('hex'));
     const addr = '127.0.0.1:9100';
     peer.connections[addr] = wireMock([]);
     peer.peers[addr] = { id: 'relay', publicKey: originKey.public.encodeCompressed('hex') };

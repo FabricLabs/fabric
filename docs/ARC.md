@@ -178,8 +178,8 @@ Implementation: [`functions/contractSpend.js`](../functions/contractSpend.js) (`
 
 ## 8. Work remaining
 1. ~~**Fix** `GroupChange` / member mutation authz in accumulate (PR #183 High)~~
-2. ~~**Enforce** `primitives.messageTypes` at ingest~~
-3. ~~**Thread** `bitcoinBlockHash` through withdrawal messages~~
+2. ~~**Enforce** `primitives.messageTypes` at ingest~~ — empty declared array is deny-all (not fail-open)
+3. ~~**Thread** `bitcoinBlockHash` through withdrawal messages~~ — reject non-64-hex `meta.bitcoinBlockHash` before tip mutate
 4. ~~**Wire** Token grants into member checks~~
 5. ~~**Document** Machine `opcodes[]` / Program bind when Program interface is attached~~ — see `docs/PROGRAM.md` + `contractProgramBind`
 6. ~~**Complete** L1 payment observation on `Contract`~~ — `functions/contractPaymentObserve` + `Contract#_handleBitcoinTransaction`
@@ -192,6 +192,9 @@ Implementation: [`functions/contractSpend.js`](../functions/contractSpend.js) (`
 13. **Optional hashlock / composable trees:** `composeTaprootTree`, leaf builders, `prepareHashlockWithdrawalPsbt` — Hub vault PSBT uses full `policy` leaves; wallet UIs list `leaves[]`
 14. ~~**ExecutionRun → FabricProgramRun / full Machine runner:**~~ Hub uses `fabric-execution` on `Machine`/`Program` (`executionProgramRunner`); digests via `executionRunBridge`
 15. ~~**Enforce** genesis `primitives.opcodes` on `Machine.loadProgram` / `define`~~ — `functions/opcodeAllowList.js` + `Machine.setAllowedOpcodes` / `applyGenesisOpcodes` (fail closed when set; unrestricted legacy soft-coerce otherwise)
+16. **API naming (Author Style):** public short ids such as `contractId` → `contractIdentifier` (and kin) where call sites allow — breaking; coordinate Hub / `@fabric/http` / apps (see root `AGENTS.md`)
+17. **Journal / re-fold growth:** accumulate entry lists and tip re-fold cost stay unbounded beyond duplicate-skip — add caps, compaction, or eviction for long-lived contracts
+18. ~~**Seal AAD:**~~ tip-bound `groupChatSeal` and participant / onion seals bind scheme (+ tip / contract / ephemeral) as AES-GCM AAD. Journal growth (17) and public API renames (16) remain.
 ### Dual P2TR surfaces → single authority ladder
 | Surface | Role |
 |---------|------|

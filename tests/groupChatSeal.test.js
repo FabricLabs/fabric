@@ -67,6 +67,21 @@ describe('@fabric/core groupChatSeal', function () {
     assert.notStrictEqual(k0.toString('hex'), kMembers.toString('hex'));
   });
 
+  it('deriveTimelineCipherKey rejects missing or non-integer clocks', function () {
+    const base = {
+      contractId,
+      stateDigest: digest,
+      memberPubkeys: [a.pubkey]
+    };
+    assert.throws(() => deriveTimelineCipherKey({ ...base }), /non-negative integer/);
+    assert.throws(() => deriveTimelineCipherKey({ ...base, clock: null }), /non-negative integer/);
+    assert.throws(() => deriveTimelineCipherKey({ ...base, clock: 'nope' }), /non-negative integer/);
+    assert.throws(() => deriveTimelineCipherKey({ ...base, clock: 1.5 }), /non-negative integer/);
+    assert.throws(() => deriveTimelineCipherKey({ ...base, clock: -1 }), /non-negative integer/);
+    const ok = deriveTimelineCipherKey({ ...base, clock: 0 });
+    assert.ok(Buffer.isBuffer(ok) && ok.length === 32);
+  });
+
   it('seal/open round-trip (v1 tip)', function () {
     const tip = {
       contractId,
@@ -93,6 +108,40 @@ describe('@fabric/core groupChatSeal', function () {
     assert.throws(() => openGroupChatBody(seal, { ...tip, clock: 3 }), /clock/);
   });
 
+  it('open fails on wrong stateDigest, roster, or tampered ciphertext', function () {
+    const tip = {
+      contractId,
+      clock: 2,
+      stateDigest: digest,
+      memberPubkeys: [a.pubkey, b.pubkey]
+    };
+    const seal = sealGroupChatBody({ body: 'secret', ...tip });
+
+    const otherDigest = require('crypto').createHash('sha256').update('other-tip').digest('hex');
+    assert.throws(
+      () => openGroupChatBody(seal, { ...tip, stateDigest: otherDigest }),
+      /stateDigest/
+    );
+
+    // Same clock/digest but different roster → different HKDF salt → AES-GCM auth fail.
+    const c = new Key();
+    assert.throws(
+      () => openGroupChatBody(seal, {
+        ...tip,
+        memberPubkeys: [a.pubkey, b.pubkey, c.pubkey]
+      }),
+      /auth|Unsupported state|bad decrypt|unable to authenticate/i
+    );
+
+    const ct = Buffer.from(seal.ciphertext, 'base64');
+    ct[0] ^= 0xff;
+    const tamperedSeal = { ...seal, ciphertext: ct.toString('base64') };
+    assert.throws(
+      () => openGroupChatBody(tamperedSeal, tip),
+      /auth|Unsupported state|bad decrypt|unable to authenticate/i
+    );
+  });
+
   it('participant seal opens for each member and not for outsiders', function () {
     const seal = sealParticipantGroupChatBody({
       body: 'hub-blind ops',
@@ -106,8 +155,35 @@ describe('@fabric/core groupChatSeal', function () {
     assert.ok(isSealedGroupChat({ seal }));
     assert.ok(Array.isArray(seal.wraps) && seal.wraps.length === 2);
     assert.ok(seal.ephemeralPub);
-    // Tip metadata is advisory only for v2.
+    // Tip fields on the seal are bound as AES-GCM AAD (not key material).
     assert.strictEqual(seal.basisClock, 9);
+    assert.strictEqual(seal.contractId, contractId);
+    assert.strictEqual(seal.stateDigest, digest);
+
+    assert.throws(
+      () => sealParticipantGroupChatBody({
+        body: 'x',
+        memberPubkeys: [a.pubkey],
+        clock: -1
+      }),
+      /non-negative integer/
+    );
+    assert.throws(
+      () => sealParticipantGroupChatBody({
+        body: 'x',
+        memberPubkeys: [a.pubkey],
+        clock: 1.5
+      }),
+      /non-negative integer/
+    );
+    assert.throws(
+      () => sealParticipantGroupChatBody({
+        body: 'x',
+        memberPubkeys: [a.pubkey],
+        clock: 'nope'
+      }),
+      /non-negative integer/
+    );
 
     assert.strictEqual(
       openGroupChatBody(seal, { keyOrPrivate: a }),
@@ -123,9 +199,15 @@ describe('@fabric/core groupChatSeal', function () {
       () => openGroupChatBody(seal, { keyOrPrivate: outsider }),
       /no wrap/
     );
+
+    // Cut-and-paste across contract id fails AAD auth even with a valid wrap key.
+    assert.throws(
+      () => openGroupChatBody({ ...seal, contractId: 'b'.repeat(64) }, { keyOrPrivate: a }),
+      /auth|Unsupported state|bad decrypt|unable to authenticate/i
+    );
   });
 
-  it('participant seal is independent of tip digest (hub tip holders stay blind)', function () {
+  it('participant seal does not use tip HKDF (hub tip holders stay blind)', function () {
     const seal = sealGroupChatBody({
       mode: 'participant',
       body: 'still secret',
@@ -134,7 +216,7 @@ describe('@fabric/core groupChatSeal', function () {
       clock: 1,
       stateDigest: digest
     });
-    // Opening with private key works even if tip fields are wrong / omitted.
+    // ECDH wrap opens without supplying tip opts; tip holders without privkeys stay blind.
     assert.strictEqual(
       openGroupChatBody(seal, { keyOrPrivate: a.xprv ? { xprv: a.xprv } : a }),
       'still secret'

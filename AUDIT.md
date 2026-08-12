@@ -36,6 +36,11 @@ audit report.
 4. **CLI `settings/local.js`** — Gitignored operator overlay. Packaged installs should ship/copy [settings/local.example.js](settings/local.example.js); shell loads example when local is absent.
 5. **Exact Node pin** — `engines.node` is `24.15.0`. Documented for CI parity; broad consumers may need a range in a later release.
 6. **Adversarial completeness** — Historical fuzz (`randomAmpFrame`, `P2P_BASE_MESSAGE` chaos) proves crash resilience more than semantic malice. Prefer expanding [`tests/protocol-v1/`](tests/protocol-v1/README.md) (well-formed signed frames × delivery modes) before claiming mesh-wide adversarial hardness. Unregistered AMP opcodes must remain `UNKNOWN_MESSAGE` (not aliased to `P2P_BASE_MESSAGE`).
+7. ~~**Peer `_selfDialSuppressUntil`**~~ — FIFO-capped (default 256; `settings.selfDialSuppressMax`); expired entries still drop on read.
+8. **Eager `messageHex`** — hot paths still materialize hex wire forms eagerly; laziness / cache invalidation is outstanding performance work, not a correctness claim.
+9. ~~**Chat / onion seal AAD**~~ — tip + participant AES-GCM AAD lands in `groupChatSeal` / `onionChatSeal` (see [docs/ARC.md](docs/ARC.md) §8).
+10. **Public API short names** — `contractId` and similar remain until a coordinated rename to `contractIdentifier`-style identifiers (Author Style in `AGENTS.md`).
+11. **Blinded-execution decisions** — accept/reject now require BIP340 over `decisionSigningMessage` (`functions/blindedExecutionCircuit.js`); composition remains a scaffold (not Yao GC).
 
 ## Recommendations before a non-experimental tag
 
