@@ -265,6 +265,9 @@ never Beacon authority.</p>
 <dt><a href="#SCHEMA_P2P_FORWARD">SCHEMA_P2P_FORWARD</a></dt>
 <dd><p>Directed onion hop — see <a href="module:@fabric/core/functions/fabricOnion">module:@fabric/core/functions/fabricOnion</a>.</p>
 </dd>
+<dt><a href="#SCHEMA_P2P_PEER_GOSSIP">SCHEMA_P2P_PEER_GOSSIP</a></dt>
+<dd><p>Discovery / peering field layouts (Phase B); JSON bodies remain accepted.</p>
+</dd>
 <dt><a href="#P2P_CHAT_MAX_CHARS">P2P_CHAT_MAX_CHARS</a></dt>
 <dd><p>Max UTF-8 code units for first-class P2P_CHAT_MESSAGE body (text only).</p>
 </dd>
@@ -307,6 +310,12 @@ L1 Bitcoin redeem scaffolding for <code>bitcoin-script</code>.</p>
 <dt><a href="#typeEquals">typeEquals(a, b)</a> ⇒ <code>boolean</code></dt>
 <dd><p>True when two type references name the same AMP opcode (number, wire name, or friendly alias).
 Unregistered string labels only match via exact trim equality.</p>
+</dd>
+<dt><a href="#_optionalFieldDefault">_optionalFieldDefault(def)</a></dt>
+<dd><p>Default for an optional field when the wire body ends before that field.</p>
+</dd>
+<dt><a href="#tryParseMessageBody">tryParseMessageBody(message)</a> ⇒ <code>Object</code> | <code>Object</code></dt>
+<dd><p>Parse an inbound AMP body: prefer JSON (legacy), else registered field schema.</p>
 </dd>
 </dl>
 
@@ -870,6 +879,7 @@ Author Schnorr over signingString (gossip).
     * [.start()](#Contract+start) ⇒ [<code>Contract</code>](#Contract)
     * [._taprootPolicyInputs([overrides])](#Contract+_taprootPolicyInputs) ⇒ <code>object</code>
     * [.toAddress([network])](#Contract+toAddress) ⇒ <code>string</code>
+    * [.resolveSpend([opts])](#Contract+resolveSpend) ⇒ <code>object</code>
     * [._appendWarning(msg)](#Service+_appendWarning) ⇒ [<code>Service</code>](#Service)
     * [.init()](#Service+init)
     * [.tick()](#Service+tick) ⇒ <code>Number</code>
@@ -915,7 +925,7 @@ Start the Contract.
 <a name="Contract+_taprootPolicyInputs"></a>
 
 ### bond.\_taprootPolicyInputs([overrides]) ⇒ <code>object</code>
-Shared spend-policy inputs for [#toTaprootContract](#toTaprootContract).
+Shared spend-policy inputs for [Contract#toTaprootContract](Contract#toTaprootContract).
 Subclasses (e.g. Federation) may override to supply validators from state.
 
 **Kind**: instance method of [<code>Bond</code>](#Bond)  
@@ -934,6 +944,21 @@ Bech32m P2TR address for this contract's spend policy.
 | Param | Type |
 | --- | --- |
 | [network] | <code>string</code> | 
+
+<a name="Contract+resolveSpend"></a>
+
+### bond.resolveSpend([opts]) ⇒ <code>object</code>
+Resolve tip + genesis spend policy to the public P2TR surface (ARC).
+
+**Kind**: instance method of [<code>Bond</code>](#Bond)  
+**Returns**: <code>object</code> - [module:functions/contractSpend.resolveSpend](module:functions/contractSpend.resolveSpend)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| [opts] | <code>object</code> |  |
+| [opts.tip] | <code>object</code> |  |
+| [opts.genesis] | <code>object</code> | defaults to this.settings |
+| [opts.overrides] | <code>object</code> |  |
 
 <a name="Service+_appendWarning"></a>
 
@@ -2053,6 +2078,7 @@ Loads [State](#State) into memory.
     * [.start()](#Contract+start) ⇒ [<code>Contract</code>](#Contract)
     * [._taprootPolicyInputs([overrides])](#Contract+_taprootPolicyInputs) ⇒ <code>object</code>
     * [.toAddress([network])](#Contract+toAddress) ⇒ <code>string</code>
+    * [.resolveSpend([opts])](#Contract+resolveSpend) ⇒ <code>object</code>
     * [._appendWarning(msg)](#Service+_appendWarning) ⇒ [<code>Service</code>](#Service)
     * [.init()](#Service+init)
     * [.tick()](#Service+tick) ⇒ <code>Number</code>
@@ -2100,7 +2126,7 @@ Start the Contract.
 <a name="Contract+_taprootPolicyInputs"></a>
 
 ### contract.\_taprootPolicyInputs([overrides]) ⇒ <code>object</code>
-Shared spend-policy inputs for [#toTaprootContract](#toTaprootContract).
+Shared spend-policy inputs for [Contract#toTaprootContract](Contract#toTaprootContract).
 Subclasses (e.g. Federation) may override to supply validators from state.
 
 **Kind**: instance method of [<code>Contract</code>](#Contract)  
@@ -2119,6 +2145,21 @@ Bech32m P2TR address for this contract's spend policy.
 | Param | Type |
 | --- | --- |
 | [network] | <code>string</code> | 
+
+<a name="Contract+resolveSpend"></a>
+
+### contract.resolveSpend([opts]) ⇒ <code>object</code>
+Resolve tip + genesis spend policy to the public P2TR surface (ARC).
+
+**Kind**: instance method of [<code>Contract</code>](#Contract)  
+**Returns**: <code>object</code> - [module:functions/contractSpend.resolveSpend](module:functions/contractSpend.resolveSpend)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| [opts] | <code>object</code> |  |
+| [opts.tip] | <code>object</code> |  |
+| [opts.genesis] | <code>object</code> | defaults to this.settings |
+| [opts.overrides] | <code>object</code> |  |
 
 <a name="Service+_appendWarning"></a>
 
@@ -6225,6 +6266,7 @@ see [Message](#Message) wire vs friendly names and <code>constants</code> opcode
     * [._peerBans](#Peer+_peerBans) : <code>Map.&lt;string, {until: number, reason: string}&gt;</code>
     * [._candidateKeys](#Peer+_candidateKeys)
     * [._outboundDialTargets](#Peer+_outboundDialTargets)
+    * [._selfDialSuppressUntil](#Peer+_selfDialSuppressUntil) : <code>Map.&lt;string, number&gt;</code>
     * ~~[.address](#Peer+address)~~
     * [._gossipPayloadDedupKey(msg)](#Peer+_gossipPayloadDedupKey) ⇒ <code>string</code>
     * [._logicalRegistrationKey(type, object)](#Peer+_logicalRegistrationKey) ⇒ <code>string</code> \| <code>null</code>
@@ -6241,7 +6283,13 @@ see [Message](#Message) wire vs friendly names and <code>constants</code> opcode
     * [._derankPeerForWireTraffic(originName, penalty, reason)](#Peer+_derankPeerForWireTraffic)
     * [._peeringOfferPayloadDedupKey(msg)](#Peer+_peeringOfferPayloadDedupKey) ⇒ <code>string</code>
     * [._peeringRateLimitAllow(originName)](#Peer+_peeringRateLimitAllow) ⇒ <code>boolean</code>
-    * [._enqueuePeeringCandidate(host, port)](#Peer+_enqueuePeeringCandidate)
+    * [._enqueuePeeringCandidate(host, port, [meta])](#Peer+_enqueuePeeringCandidate)
+    * [._localFabricPubkeyHex()](#Peer+_localFabricPubkeyHex) ⇒ <code>string</code>
+    * [._isOwnFabricPubkey(hex)](#Peer+_isOwnFabricPubkey) ⇒ <code>boolean</code>
+    * [._isOwnFabricActorId(id)](#Peer+_isOwnFabricActorId) ⇒ <code>boolean</code>
+    * [._suppressSelfDialAddress(address, [ttlMs])](#Peer+_suppressSelfDialAddress)
+    * [._isSelfDialSuppressed(address)](#Peer+_isSelfDialSuppressed) ⇒ <code>boolean</code>
+    * [._abortSelfFabricSession(connAddress, [reason])](#Peer+_abortSelfFabricSession) ⇒ [<code>Peer</code>](#Peer)
     * [.broadcast(message)](#Peer+broadcast)
     * [._localXOnlyPeerId()](#Peer+_localXOnlyPeerId) ⇒ <code>Buffer</code>
     * [._resolveAddressByXOnly(peerId)](#Peer+_resolveAddressByXOnly) ⇒ <code>string</code> \| <code>null</code>
@@ -6260,6 +6308,7 @@ see [Message](#Message) wire vs friendly names and <code>constants</code> opcode
     * [._handleFabricMessage(buffer, [origin], [socket], [options])](#Peer+_handleFabricMessage) ⇒ [<code>Peer</code>](#Peer)
     * [._relayWirePayload()](#Peer+_relayWirePayload)
     * [._relayGenericPayload()](#Peer+_relayGenericPayload)
+    * [._attachNoiseStreamErrorHandlers(noiseStream, [label])](#Peer+_attachNoiseStreamErrorHandlers)
     * [._buildDocumentParsedForPublish(documentId, content)](#Peer+_buildDocumentParsedForPublish) ⇒ <code>Object</code>
     * [._collectDocumentCatalogInventoryItems([req])](#Peer+_collectDocumentCatalogInventoryItems) ⇒ <code>Array.&lt;object&gt;</code>
     * [._sendLocalInventoryDocumentsWireResponse(originName, items, [opts])](#Peer+_sendLocalInventoryDocumentsWireResponse) ⇒ <code>boolean</code>
@@ -6464,6 +6513,13 @@ socket (mesh star): otherwise RPC paths that use the listen address (e.g. ChainS
 see `peer not connected` while an ephemeral inbound key remains.
 
 **Kind**: instance property of [<code>Peer</code>](#Peer)  
+<a name="Peer+_selfDialSuppressUntil"></a>
+
+### peer.\_selfDialSuppressUntil : <code>Map.&lt;string, number&gt;</code>
+Addresses suppressed after a self-session (own Fabric key on the wire).
+Map `host:port` → expiry ms (Date.now()).
+
+**Kind**: instance property of [<code>Peer</code>](#Peer)  
 <a name="Peer+address"></a>
 
 ### ~~peer.address~~
@@ -6654,15 +6710,73 @@ Stable id for peering-offer *logical* content (ignores advisory `peeringHop`).
 
 <a name="Peer+_enqueuePeeringCandidate"></a>
 
-### peer.\_enqueuePeeringCandidate(host, port)
+### peer.\_enqueuePeeringCandidate(host, port, [meta])
 Enqueue a fabric candidate from [P2P_PEERING_OFFER](P2P_PEERING_OFFER); FIFO-capped and deduped by host:port.
 
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
 
+| Param | Type | Description |
+| --- | --- | --- |
+| host | <code>string</code> |  |
+| port | <code>number</code> |  |
+| [meta] | <code>Object</code> |  |
+| [meta.pubkey] | <code>string</code> | Optional advertised Fabric pubkey (skip if own). |
+
+<a name="Peer+_localFabricPubkeyHex"></a>
+
+### peer.\_localFabricPubkeyHex() ⇒ <code>string</code>
+Local Fabric session pubkey (x-only hex), same normalization as wire signers.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+<a name="Peer+_isOwnFabricPubkey"></a>
+
+### peer.\_isOwnFabricPubkey(hex) ⇒ <code>boolean</code>
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
 | Param | Type |
 | --- | --- |
-| host | <code>string</code> | 
-| port | <code>number</code> | 
+| hex | <code>\*</code> | 
+
+<a name="Peer+_isOwnFabricActorId"></a>
+
+### peer.\_isOwnFabricActorId(id) ⇒ <code>boolean</code>
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type |
+| --- | --- |
+| id | <code>\*</code> | 
+
+<a name="Peer+_suppressSelfDialAddress"></a>
+
+### peer.\_suppressSelfDialAddress(address, [ttlMs])
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Default |
+| --- | --- | --- |
+| address | <code>string</code> |  | 
+| [ttlMs] | <code>number</code> | <code>600000</code> | 
+
+<a name="Peer+_isSelfDialSuppressed"></a>
+
+### peer.\_isSelfDialSuppressed(address) ⇒ <code>boolean</code>
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type |
+| --- | --- |
+| address | <code>string</code> | 
+
+<a name="Peer+_abortSelfFabricSession"></a>
+
+### peer.\_abortSelfFabricSession(connAddress, [reason]) ⇒ [<code>Peer</code>](#Peer)
+Tear down a TCP/NOISE session that presented our own Fabric identity.
+Emits `peer:self` so apps can drop the address from dial lists.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Default |
+| --- | --- | --- |
+| connAddress | <code>string</code> \| <code>null</code> \| <code>undefined</code> |  | 
+| [reason] | <code>string</code> | <code>&quot;own Fabric identity&quot;</code> | 
 
 <a name="Peer+broadcast"></a>
 
@@ -6866,6 +6980,22 @@ bit-identical (no hop re-sign). Otherwise the local agent originates a new signe
 and may wrap it in {@code P2P_RELAY} for mesh delivery.
 
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
+<a name="Peer+_attachNoiseStreamErrorHandlers"></a>
+
+### peer.\_attachNoiseStreamErrorHandlers(noiseStream, [label])
+Bind encrypt/decrypt 'error' before piping. noise-protocol-stream calls
+stream.destroy(err) on handshake failure; without listeners Node raises
+uncaught Exceptions (e.g. `noise_stream_new`, `malloc`).
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| noiseStream | <code>Object</code> |  | noise-protocol-stream duplex pair |
+| noiseStream.encrypt | <code>stream.Duplex</code> |  |  |
+| noiseStream.decrypt | <code>stream.Duplex</code> |  |  |
+| [label] | <code>string</code> | <code>&quot;&#x27;NOISE&#x27;&quot;</code> |  |
+
 <a name="Peer+_buildDocumentParsedForPublish"></a>
 
 ### peer.\_buildDocumentParsedForPublish(documentId, content) ⇒ <code>Object</code>
@@ -7696,6 +7826,7 @@ Parse an Object into a corresponding Fabric state.
     * [._peerBans](#Peer+_peerBans) : <code>Map.&lt;string, {until: number, reason: string}&gt;</code>
     * [._candidateKeys](#Peer+_candidateKeys)
     * [._outboundDialTargets](#Peer+_outboundDialTargets)
+    * [._selfDialSuppressUntil](#Peer+_selfDialSuppressUntil) : <code>Map.&lt;string, number&gt;</code>
     * ~~[.address](#Peer+address)~~
     * [._gossipPayloadDedupKey(msg)](#Peer+_gossipPayloadDedupKey) ⇒ <code>string</code>
     * [._logicalRegistrationKey(type, object)](#Peer+_logicalRegistrationKey) ⇒ <code>string</code> \| <code>null</code>
@@ -7712,7 +7843,13 @@ Parse an Object into a corresponding Fabric state.
     * [._derankPeerForWireTraffic(originName, penalty, reason)](#Peer+_derankPeerForWireTraffic)
     * [._peeringOfferPayloadDedupKey(msg)](#Peer+_peeringOfferPayloadDedupKey) ⇒ <code>string</code>
     * [._peeringRateLimitAllow(originName)](#Peer+_peeringRateLimitAllow) ⇒ <code>boolean</code>
-    * [._enqueuePeeringCandidate(host, port)](#Peer+_enqueuePeeringCandidate)
+    * [._enqueuePeeringCandidate(host, port, [meta])](#Peer+_enqueuePeeringCandidate)
+    * [._localFabricPubkeyHex()](#Peer+_localFabricPubkeyHex) ⇒ <code>string</code>
+    * [._isOwnFabricPubkey(hex)](#Peer+_isOwnFabricPubkey) ⇒ <code>boolean</code>
+    * [._isOwnFabricActorId(id)](#Peer+_isOwnFabricActorId) ⇒ <code>boolean</code>
+    * [._suppressSelfDialAddress(address, [ttlMs])](#Peer+_suppressSelfDialAddress)
+    * [._isSelfDialSuppressed(address)](#Peer+_isSelfDialSuppressed) ⇒ <code>boolean</code>
+    * [._abortSelfFabricSession(connAddress, [reason])](#Peer+_abortSelfFabricSession) ⇒ [<code>Peer</code>](#Peer)
     * [.broadcast(message)](#Peer+broadcast)
     * [._localXOnlyPeerId()](#Peer+_localXOnlyPeerId) ⇒ <code>Buffer</code>
     * [._resolveAddressByXOnly(peerId)](#Peer+_resolveAddressByXOnly) ⇒ <code>string</code> \| <code>null</code>
@@ -7731,6 +7868,7 @@ Parse an Object into a corresponding Fabric state.
     * [._handleFabricMessage(buffer, [origin], [socket], [options])](#Peer+_handleFabricMessage) ⇒ [<code>Peer</code>](#Peer)
     * [._relayWirePayload()](#Peer+_relayWirePayload)
     * [._relayGenericPayload()](#Peer+_relayGenericPayload)
+    * [._attachNoiseStreamErrorHandlers(noiseStream, [label])](#Peer+_attachNoiseStreamErrorHandlers)
     * [._buildDocumentParsedForPublish(documentId, content)](#Peer+_buildDocumentParsedForPublish) ⇒ <code>Object</code>
     * [._collectDocumentCatalogInventoryItems([req])](#Peer+_collectDocumentCatalogInventoryItems) ⇒ <code>Array.&lt;object&gt;</code>
     * [._sendLocalInventoryDocumentsWireResponse(originName, items, [opts])](#Peer+_sendLocalInventoryDocumentsWireResponse) ⇒ <code>boolean</code>
@@ -7935,6 +8073,13 @@ socket (mesh star): otherwise RPC paths that use the listen address (e.g. ChainS
 see `peer not connected` while an ephemeral inbound key remains.
 
 **Kind**: instance property of [<code>Peer</code>](#Peer)  
+<a name="Peer+_selfDialSuppressUntil"></a>
+
+### peer.\_selfDialSuppressUntil : <code>Map.&lt;string, number&gt;</code>
+Addresses suppressed after a self-session (own Fabric key on the wire).
+Map `host:port` → expiry ms (Date.now()).
+
+**Kind**: instance property of [<code>Peer</code>](#Peer)  
 <a name="Peer+address"></a>
 
 ### ~~peer.address~~
@@ -8125,15 +8270,73 @@ Stable id for peering-offer *logical* content (ignores advisory `peeringHop`).
 
 <a name="Peer+_enqueuePeeringCandidate"></a>
 
-### peer.\_enqueuePeeringCandidate(host, port)
+### peer.\_enqueuePeeringCandidate(host, port, [meta])
 Enqueue a fabric candidate from [P2P_PEERING_OFFER](P2P_PEERING_OFFER); FIFO-capped and deduped by host:port.
 
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
 
+| Param | Type | Description |
+| --- | --- | --- |
+| host | <code>string</code> |  |
+| port | <code>number</code> |  |
+| [meta] | <code>Object</code> |  |
+| [meta.pubkey] | <code>string</code> | Optional advertised Fabric pubkey (skip if own). |
+
+<a name="Peer+_localFabricPubkeyHex"></a>
+
+### peer.\_localFabricPubkeyHex() ⇒ <code>string</code>
+Local Fabric session pubkey (x-only hex), same normalization as wire signers.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+<a name="Peer+_isOwnFabricPubkey"></a>
+
+### peer.\_isOwnFabricPubkey(hex) ⇒ <code>boolean</code>
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
 | Param | Type |
 | --- | --- |
-| host | <code>string</code> | 
-| port | <code>number</code> | 
+| hex | <code>\*</code> | 
+
+<a name="Peer+_isOwnFabricActorId"></a>
+
+### peer.\_isOwnFabricActorId(id) ⇒ <code>boolean</code>
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type |
+| --- | --- |
+| id | <code>\*</code> | 
+
+<a name="Peer+_suppressSelfDialAddress"></a>
+
+### peer.\_suppressSelfDialAddress(address, [ttlMs])
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Default |
+| --- | --- | --- |
+| address | <code>string</code> |  | 
+| [ttlMs] | <code>number</code> | <code>600000</code> | 
+
+<a name="Peer+_isSelfDialSuppressed"></a>
+
+### peer.\_isSelfDialSuppressed(address) ⇒ <code>boolean</code>
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type |
+| --- | --- |
+| address | <code>string</code> | 
+
+<a name="Peer+_abortSelfFabricSession"></a>
+
+### peer.\_abortSelfFabricSession(connAddress, [reason]) ⇒ [<code>Peer</code>](#Peer)
+Tear down a TCP/NOISE session that presented our own Fabric identity.
+Emits `peer:self` so apps can drop the address from dial lists.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Default |
+| --- | --- | --- |
+| connAddress | <code>string</code> \| <code>null</code> \| <code>undefined</code> |  | 
+| [reason] | <code>string</code> | <code>&quot;own Fabric identity&quot;</code> | 
 
 <a name="Peer+broadcast"></a>
 
@@ -8337,6 +8540,22 @@ bit-identical (no hop re-sign). Otherwise the local agent originates a new signe
 and may wrap it in {@code P2P_RELAY} for mesh delivery.
 
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
+<a name="Peer+_attachNoiseStreamErrorHandlers"></a>
+
+### peer.\_attachNoiseStreamErrorHandlers(noiseStream, [label])
+Bind encrypt/decrypt 'error' before piping. noise-protocol-stream calls
+stream.destroy(err) on handshake failure; without listeners Node raises
+uncaught Exceptions (e.g. `noise_stream_new`, `malloc`).
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| noiseStream | <code>Object</code> |  | noise-protocol-stream duplex pair |
+| noiseStream.encrypt | <code>stream.Duplex</code> |  |  |
+| noiseStream.decrypt | <code>stream.Duplex</code> |  |  |
+| [label] | <code>string</code> | <code>&quot;&#x27;NOISE&#x27;&quot;</code> |  |
+
 <a name="Peer+_buildDocumentParsedForPublish"></a>
 
 ### peer.\_buildDocumentParsedForPublish(documentId, content) ⇒ <code>Object</code>
@@ -14477,6 +14696,12 @@ Thin re-export kept for one release so Hub / older requires keep working.***
 Directed onion hop — see [module:@fabric/core/functions/fabricOnion](module:@fabric/core/functions/fabricOnion).
 
 **Kind**: global constant  
+<a name="SCHEMA_P2P_PEER_GOSSIP"></a>
+
+## SCHEMA\_P2P\_PEER\_GOSSIP
+Discovery / peering field layouts (Phase B); JSON bodies remain accepted.
+
+**Kind**: global constant  
 <a name="P2P_CHAT_MAX_CHARS"></a>
 
 ## P2P\_CHAT\_MAX\_CHARS
@@ -15061,6 +15286,28 @@ Unregistered string labels only match via exact trim equality.
 | --- | --- |
 | a | <code>number</code> \| <code>string</code> \| <code>null</code> \| <code>undefined</code> | 
 | b | <code>number</code> \| <code>string</code> \| <code>null</code> \| <code>undefined</code> | 
+
+<a name="_optionalFieldDefault"></a>
+
+## \_optionalFieldDefault(def)
+Default for an optional field when the wire body ends before that field.
+
+**Kind**: global function  
+
+| Param | Type |
+| --- | --- |
+| def | <code>Object</code> | 
+
+<a name="tryParseMessageBody"></a>
+
+## tryParseMessageBody(message) ⇒ <code>Object</code> \| <code>Object</code>
+Parse an inbound AMP body: prefer JSON (legacy), else registered field schema.
+
+**Kind**: global function  
+
+| Param | Type |
+| --- | --- |
+| message | [<code>Message</code>](#Message) | 
 
 <a name="BitcoinCookieProbeConstraints"></a>
 

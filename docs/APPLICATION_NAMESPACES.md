@@ -3,6 +3,7 @@
 Canonical model for multi-app mesh traffic across **Hub**, light peers,
 **Sensemaker**, and other `@fabric/core` consumers.
 
+Formal ARC genesis / tip / spend: [`ARC.md`](ARC.md).  
 Code catalog: [`functions/applicationNamespaces.js`](../functions/applicationNamespaces.js).  
 Wire opcodes: [`MESSAGES.md`](../MESSAGES.md) §1 and §3.
 
@@ -36,23 +37,36 @@ trees) belong in **app catalogs**, not this core list.
 |-------------|---------|
 | `FederationContractInvite` | Co-signer / join invite (`v: 2` + `proposedPolicy`) |
 | `FederationContractInviteResponse` | Accept / reject |
-| `GroupChat` | Chat under a group / pair Application Resource Contract (optional tip-bound seal: `functions/groupChatSeal.js`) |
+| `GroupChat` | Chat under a group / pair Application Resource Contract (optional seal: tip-bound v1 or participant-key v2 in `functions/groupChatSeal.js`) |
 | `GroupChange` | Membership / meta on a group Federation contract |
+| `GroupChangeProposal` | Proposed membership/meta change; accumulates validator votes before adopt |
+| `GroupChangeVote` | BIP340 validator vote on a `GroupChangeProposal` |
 | `GroupJournalRequest` | Request missing Statechain journal entries (`fromClock` → tip) |
 | `GroupJournalBatch` | Catch-up batch of journal rows + tip Schnorr (`ContractStateTip`) |
 | `GroupStateJournal` | Optional tip attestation: folded `stateDigest` signed to threshold |
 | `ContractCapabilityGrant` | Token-backed reader/signer grant (`OP_CONTRACT_READ` / `OP_CONTRACT_SIGN`) |
 | `ContractWithdrawalRequest` | Spend or decay-migrate from contract Taproot UTXO |
 | `ContractWithdrawalWitness` | Co-signer witness for withdrawal / migration |
-| `MessageReceived` | Phase-1 delivery ACK (reader received the wire frame) |
-| `MessageReceipt` | Phase-2 BIP340 receipt over message / content hash |
+| `MessageReceived` | Phase-1 delivery ACK for **any** sync-tracked wire frame — stored/relayed as `CONTRACT_MESSAGE`; 2PC sidecar only (does not advance tip clock) |
+| `MessageReceipt` | Phase-2 BIP340 receipt over message / content hash — same path; tip digest unchanged |
+
 
 **Multi-origin accumulate:** publisher and participants ingest the same signed
 AMP bytes from mesh, opaque hub queues, or copy-paste (`fabric:<hex>`) via
 [`functions/contractMessageAccumulate.js`](../functions/contractMessageAccumulate.js).
-Fold is idempotent by message hash and arrival-order independent. Delivery 2PC
-lives in [`functions/contractMessageCommit.js`](../functions/contractMessageCommit.js)
-(sidecar; does not alter content `stateDigest`).
+Fold is idempotent by message hash and arrival-order independent. **Delivery
+synchronization filter:** sync-tracked body types (default: all except delivery
+ACKs and `GroupJournalRequest`) open a per-reader 2PC row in
+[`functions/contractMessageCommit.js`](../functions/contractMessageCommit.js)
+when accumulated; `MessageReceived` / `MessageReceipt` close those phases and
+never open a new pending row. Override via genesis
+`primitives.deliverySync` (`mode`: `all` | `none` | `include` | `exclude`).
+The sidecar does not alter content `stateDigest`.
+
+**Opaque hub queue:** relays MAY persist AMP hex by `contractId` without opening
+sealed bodies via [`functions/contractMessageQueue.js`](../functions/contractMessageQueue.js).
+Hub stores under `contract-message-queue/` and later-relays on peer connect
+(`ListContractMessageQueue` / `DrainContractMessageQueue`).
 
 **Tip attestation:** journal tips use
 [`functions/contractStateSigning`](../functions/contractStateSigning.js)
@@ -82,7 +96,7 @@ it is hashed into the contract `Actor` id.
 | Product | Shoutbox (`P2P_CHAT_MESSAGE`) | Contract namespaces | Notes |
 |---------|-------------------------------|---------------------|-------|
 | **@fabric/core** Peer | Relays + `chat` event | Relays + `contract:publish` / `contract:message` | Source of truth for opcodes |
-| **Hub** | SubmitChatMessage → P2P mesh; WS often `ChatMessage` | Tracks publish once per id; counts messages in memory | Invites also appear in chat JSON historically |
+| **Hub** | SubmitChatMessage → P2P mesh; WS often `ChatMessage` | Tracks publish; **opaque CONTRACT_MESSAGE queue** + later-relay on connect | Invites also appear in chat JSON historically |
 | **Light peer / desktop** | `global` channel | App genesis + per-group Federation contracts | Groups-as-Federations; product types in app catalog |
 | **Sensemaker** | Global UI sends/receives `P2P_CHAT_MESSAGE`; Peer `chat` + contract events attached | Emits `fabric:contract:*`; ignore-unknown by default | AI stream stays off mesh; Federation `CONTRACT_PUBLISH` optional next |
 

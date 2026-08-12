@@ -82,29 +82,33 @@ describe('contractTaproot', function () {
     assert.notStrictEqual(toAddress(child), built.address);
   });
 
-  it('legacy Hub single-leaf vault address is stable', function () {
+  it('legacy Hub single-leaf vault address is stable (opt-in)', function () {
     const vals = [pk(0), pk(1), pk(2)];
     const a = buildFederationVaultFromPolicy({
       validatorPubkeysHex: vals,
       threshold: 2,
-      networkName: 'regtest'
+      networkName: 'regtest',
+      legacySingleLeaf: true
     });
     const b = buildFederationVaultFromPolicy({
       validatorPubkeysHex: [pk(2), pk(0), pk(1)],
       threshold: 2,
-      networkName: 'regtest'
+      networkName: 'regtest',
+      legacySingleLeaf: true
     });
     assert.strictEqual(a.address, b.address);
     assert.ok(a.multisigScript.length);
     assert.strictEqual(a.policy, null);
+    assert.match(a.scheme, /legacy/);
   });
 
-  it('publisher + csvBlocks selects failover ladder without useLadder', function () {
+  it('default vault uses authority ladder (k-of-n + soft after 144 CSV)', function () {
     const vals = [pk(0), pk(1), pk(2)];
     const legacy = buildFederationVaultFromPolicy({
       validatorPubkeysHex: vals,
       threshold: 2,
-      networkName: 'regtest'
+      networkName: 'regtest',
+      legacySingleLeaf: true
     });
     const ladder = buildFederationVaultFromPolicy({
       validatorPubkeysHex: vals,
@@ -116,6 +120,47 @@ describe('contractTaproot', function () {
     assert.ok(ladder.policy);
     assert.notStrictEqual(ladder.address, legacy.address);
     assert.ok(ladder.leaves.length >= 2);
+    assert.strictEqual(ladder.scheme, 'taproot-authority-ladder-v1');
+    assert.ok(ladder.softTier);
+    assert.strictEqual(ladder.csvBlocks, 144);
+    const softActive = selectActiveTiers(ladder.policy, { utxoAgeBlocks: 144 });
+    assert.ok(softActive.some((t) => t.id === 't1-soft' || t.id === 't1-publisher'));
+  });
+
+  it('default vault address matches synthesizeDefaultLadder', function () {
+    const vals = [pk(0), pk(1), pk(2)];
+    const vault = buildFederationVaultFromPolicy({
+      validatorPubkeysHex: vals,
+      threshold: 2,
+      networkName: 'regtest',
+      publisher: pk(0),
+      csvBlocks: 144
+    });
+    const addr = toAddress(synthesizeDefaultLadder({
+      validators: vals,
+      threshold: 2,
+      publisher: pk(0),
+      network: 'regtest',
+      csvBlocks: 144
+    }));
+    assert.strictEqual(vault.address, addr);
+  });
+
+  it('reduced softMode lowers threshold after CSV window', function () {
+    const vals = [pk(0), pk(1), pk(2), pk(3)];
+    const policy = synthesizeDefaultLadder({
+      validators: vals,
+      threshold: 3,
+      publisher: pk(0),
+      network: 'regtest',
+      csvBlocks: 144,
+      softMode: 'reduced',
+      softThreshold: 2
+    });
+    const soft = policy.tiers.find((t) => t.id === 't1-soft');
+    assert.ok(soft);
+    assert.strictEqual(soft.threshold, 2);
+    assert.strictEqual(soft.keys.length, 4);
   });
 
   it('Contract.toAddress prefers overrides.spendLadder', function () {

@@ -23,7 +23,10 @@ const FIXTURE_XPRV = 'xprv9s21ZrQH143K2cCWaTZPjPDwac1CzTW4LKMfzLFEMNZJUoDYppxpyP
 
 // Message Constants
 const MAGIC_BYTES = 0xC0D3F33D;
-const VERSION_NUMBER = 0x02; // bumped for 208-byte header (optional preimage field)
+/** Wire protocol version for `@fabric/core` 0.1.x pre-release (`0x01`).
+ * 208-byte header (incl. Lightning-style `preimage`) is the V1 frame under this version —
+ * not a bump to `0x02`. Keep in sync with `FABRIC_MESSAGE_VERSION` in `src/constants.h`. */
+const VERSION_NUMBER = 0x01;
 /* magic, version, parent, author, type, size, hash, preimage, signature — then body */
 const HEADER_SIZE = 208;
 const LARGE_COLLECTION_SIZE = 10; // TODO: test with 1,000,000

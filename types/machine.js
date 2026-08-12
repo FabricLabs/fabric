@@ -20,6 +20,12 @@ const {
   defineOpcode: defineOpcodeEntry,
   resolveOpcodeContract
 } = require('../functions/opcodeRegistry');
+const {
+  normalizeOpcodeAllowList,
+  opcodesFromGenesis,
+  opcodeAllowed,
+  assertStepsAllowed
+} = require('../functions/opcodeAllowList');
 
 // Strict JSON
 const { parsePersistedJson } = require('../functions/wireJson');
@@ -76,7 +82,9 @@ class Machine extends Actor {
       key: null,
       precision: 8,
       script: [],
-      type: 'x86'
+      type: 'x86',
+      /** @type {string[]|null} null/empty = unrestricted (legacy soft compute) */
+      allowedOpcodes: null
     }, settings);
 
     // machine key
@@ -93,6 +101,7 @@ class Machine extends Actor {
     this.opcodes = createDefaultOpcodeRegistry();
     this.stack = []; // output
     this.history = []; // State tree
+    this._allowedOpcodes = normalizeOpcodeAllowList(this.settings.allowedOpcodes || []);
 
     this._state = {
       content: {
@@ -123,6 +132,40 @@ class Machine extends Actor {
   get tip () {
     this.log(`tip requested, history: ${JSON.stringify(this.history)}`);
     return this.history[this.history.length - 1] || null;
+  }
+
+  /**
+   * Active opcode allow-list (empty = unrestricted).
+   * @returns {string[]}
+   */
+  get allowedOpcodes () {
+    return this._allowedOpcodes.slice();
+  }
+
+  /**
+   * Restrict `define` / `loadProgram` / `compute` to this opcode set.
+   * Empty / null clears the restriction (legacy soft unknown-op behavior).
+   * @param {Iterable<*>|null} list
+   * @returns {Machine}
+   */
+  setAllowedOpcodes (list) {
+    this._allowedOpcodes = normalizeOpcodeAllowList(list || []);
+    this.settings.allowedOpcodes = this._allowedOpcodes.length
+      ? this._allowedOpcodes.slice()
+      : null;
+    return this;
+  }
+
+  /**
+   * Apply ARC / Program genesis `primitives.opcodes` as the Machine allow-list.
+   * No-op when genesis has no opcodes (keeps unrestricted).
+   * @param {object} [genesis]
+   * @returns {Machine}
+   */
+  applyGenesisOpcodes (genesis) {
+    const list = opcodesFromGenesis(genesis);
+    if (list.length) this.setAllowedOpcodes(list);
+    return this;
   }
 
   bit () {
@@ -169,13 +212,22 @@ class Machine extends Actor {
 
     this.emit('tick', this.clock);
 
+    const allow = this._allowedOpcodes;
+    const restricted = allow && allow.length > 0;
+
     for (const i in this.script) {
       const instruction = this.script[i];
+      const name = String(instruction == null ? '' : instruction);
+      if (restricted && !opcodeAllowed(allow, name)) {
+        throw new Error(`opcode not in primitives.opcodes allow-list: ${name}`);
+      }
       const method = this.known[instruction];
 
       if (method) {
         const data = method.call(this.state, input);
         this.stack.push(data);
+      } else if (restricted) {
+        throw new Error(`opcode not defined (fail closed under allow-list): ${name}`);
       } else {
         this.stack.push(instruction | 0);
       }
@@ -198,11 +250,20 @@ class Machine extends Actor {
 
   // register a local function
   define (name, op, definition = {}) {
-    this.known[name] = op.bind(this.state);
-    defineOpcodeEntry(this.opcodes, name, Object.assign({}, definition, {
+    const opName = String(name == null ? '' : name);
+    if (!opName) throw new Error('opcode name required');
+    if (this._allowedOpcodes && this._allowedOpcodes.length
+      && !opcodeAllowed(this._allowedOpcodes, opName)) {
+      throw new Error(`define rejected: opcode not in primitives.opcodes allow-list: ${opName}`);
+    }
+    if (typeof op !== 'function') {
+      throw new Error(`define requires a function for opcode: ${opName}`);
+    }
+    this.known[opName] = op.bind(this.state);
+    defineOpcodeEntry(this.opcodes, opName, Object.assign({}, definition, {
       implementation: true
     }));
-    return this.known[name];
+    return this.known[opName];
   }
 
   defineOpcode (name, op, definition = {}) {
@@ -246,23 +307,43 @@ class Machine extends Actor {
 
   /**
    * Load a {@link Program} onto this machine (sets script steps).
-   * @param {Program} program
+   * When an opcode allow-list is active (ctor `allowedOpcodes`,
+   * {@link Machine#setAllowedOpcodes}, {@link Machine#applyGenesisOpcodes},
+   * or Program/genesis `primitives.opcodes`), steps and javascript `source`
+   * keys must be listed — fail closed.
+   * @param {Program|object} program
+   * @param {{ genesis?: object }} [opts]
    * @returns {Machine}
    */
-  loadProgram (program) {
+  loadProgram (program, opts = {}) {
     const Program = require('./program');
     const prog = program instanceof Program ? program : Program.from(program || {});
     const compiled = prog.compile();
     if (!compiled.ok) {
       throw new Error(compiled.error || 'program compile failed');
     }
+
+    // Program or caller genesis may install an allow-list when unrestricted.
+    const fromExtra = normalizeOpcodeAllowList(
+      opcodesFromGenesis(opts.genesis || {})
+        .concat(opcodesFromGenesis(prog))
+        .concat(opcodesFromGenesis(prog.settings || {}))
+    );
+    if (fromExtra.length && !(this._allowedOpcodes && this._allowedOpcodes.length)) {
+      this.setAllowedOpcodes(fromExtra);
+    }
+
+    const steps = prog.steps.slice();
+    const stepCheck = assertStepsAllowed(this._allowedOpcodes, steps);
+    if (!stepCheck.ok) throw new Error(stepCheck.error);
+
     if (prog.language === 'javascript' && prog.source && typeof prog.source === 'object' &&
         !Array.isArray(prog.source)) {
       for (const [name, fn] of Object.entries(prog.source)) {
         if (typeof fn === 'function') this.define(name, fn);
       }
     }
-    this.settings.script = prog.steps.slice();
+    this.settings.script = steps;
     this._program = prog;
     return this;
   }
@@ -271,11 +352,39 @@ class Machine extends Actor {
    * Load and compute a Program; return stack tip + run commitment for L1 binding.
    * @param {Program|Object} program
    * @param {*} [input]
+   * @param {{ genesis?: object }} [opts] ARC genesis for `primitives.opcodes` allow-list
    * @returns {Promise.<{ok: boolean, stack: Array, tip: *, trace: Array, runCommitmentHex: (string|null), error: (string|undefined)}>}
    */
-  async runProgram (program, input) {
+  async runProgram (program, input, opts = {}) {
     try {
-      this.loadProgram(program);
+      const Program = require('./program');
+      const prog = program instanceof Program ? program : Program.from(program || {});
+      if (prog.language === 'fabric-execution') {
+        const {
+          runExecutionProgram
+        } = require('../functions/executionProgramRunner');
+        const src = prog.settings.source && typeof prog.settings.source === 'object'
+          ? prog.settings.source
+          : program;
+        const result = runExecutionProgram(src, Object.assign({}, opts, {
+          machine: this,
+          allowedOpcodes: this._allowedOpcodes
+        }));
+        return {
+          ok: result.ok,
+          stack: result.stack || [],
+          tip: result.tip != null
+            ? result.tip
+            : (result.stack && result.stack.length ? result.stack[result.stack.length - 1] : null),
+          trace: result.trace || [],
+          runCommitmentHex: result.runCommitmentHex || null,
+          programHash: result.programHash || null,
+          stepsExecuted: result.stepsExecuted,
+          error: result.error,
+          program: result.program || prog
+        };
+      }
+      this.loadProgram(program, opts);
       const beforeLen = this.stack.length;
       await this.compute(input);
       const trace = this.stack.slice(beforeLen);
@@ -288,7 +397,9 @@ class Machine extends Actor {
         stack: this.stack.slice(),
         tip,
         trace,
-        runCommitmentHex
+        runCommitmentHex,
+        programHash: this._program ? this._program.programHash : null,
+        program: this._program || null
       };
     } catch (err) {
       return {
@@ -297,6 +408,7 @@ class Machine extends Actor {
         tip: null,
         trace: [],
         runCommitmentHex: null,
+        programHash: null,
         error: err && err.message ? err.message : String(err)
       };
     }

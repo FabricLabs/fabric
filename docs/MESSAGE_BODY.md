@@ -7,12 +7,16 @@ layouts**, not JSON documents. JSON appears only at the **`@fabric/http`**
 ## Wire frame (unchanged)
 
 **Header (208 bytes)** ‖ **body** (`size` bytes), as in
-[`C-JS-PARITY.md`](./C-JS-PARITY.md) / `src/message.h`:
+[`C-JS-PARITY.md`](./C-JS-PARITY.md) / `src/message.h`.
+
+**Wire `version` field:** `0x00000001` (`VERSION_NUMBER` / `FABRIC_MESSAGE_VERSION`) for the
+`@fabric/core` **0.1.x** pre-release. The 208-byte layout (including Lightning-style
+`preimage`) is the V1 frame under this version — not a bump to `0x02`.
 
 | Offset | Size | Field |
 |--------|------|--------|
 | 0 | 4 | magic |
-| 4 | 4 | version |
+| 4 | 4 | version (`0x01`) |
 | 8 | 32 | parent |
 | 40 | 32 | author |
 | 72 | 4 | type (opcode) |
@@ -82,6 +86,20 @@ API: `types/message.js` body codec helpers (`Message.encodeBody` /
 - **Opaque UTF-8 exceptions:** `P2P_CHAT_MESSAGE` and `P2P_PEER_ALIAS` use the
   body bytes as the UTF-8 text / nickname itself (no field schema, no JSON).
   Build with `Message.fromVector(['P2P_CHAT_MESSAGE', text])` (string body).
+
+## Deprecated / legacy paths (still handled)
+
+These remain accepted where needed for Hub / older peers, but are **deprecated**
+for new code toward the `0x01` / 0.1.x pre-release:
+
+| Legacy | Prefer |
+|--------|--------|
+| 176-byte header sketches (no `preimage` field) | 208-byte V1 header under version `0x01` |
+| Defaulting wire `preimage` to SHA256(body) | Zero preimage for public frames; explicit 32-byte secret only for HTLC/circuit |
+| First-class mesh/session types inside `P2P_BASE_MESSAGE` / `GENERIC_MESSAGE` JSON | First-class AMP opcodes (`P2P_SESSION_*`, `P2P_CHAT_MESSAGE`, …) |
+| Message constructor `@type` / `@data` | `type` / `data` |
+| JSON-stringified object bodies for types with registered field schemas | `Message.fromFields` / typed field layouts |
+| Legacy inventory JSON `type: 'INVENTORY_REQUEST'` via base carrier | `P2P_INVENTORY_REQUEST` when originating new traffic (base carrier still accepted) |
 
 ## Not the same as content-address digests
 

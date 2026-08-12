@@ -23,7 +23,7 @@ Historical drafts and analysis notes are listed in [docs/NON_CANONICAL.md](docs/
 | Offset | Size | Field |
 |--------|------|--------|
 | 0 | 4 | magic |
-| 4 | 4 | version |
+| 4 | 4 | version (`0x01`) |
 | 8 | 32 | parent |
 | 40 | 32 | author |
 | 72 | 4 | type (opcode) |

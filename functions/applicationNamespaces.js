@@ -57,6 +57,10 @@ const CONTRACT_BODY_TYPES = Object.freeze({
   GroupChat: 'GroupChat',
   /** Membership / meta mutation on a group Federation contract. */
   GroupChange: 'GroupChange',
+  /** Proposed membership/meta change pending validator votes (k-of-n). */
+  GroupChangeProposal: 'GroupChangeProposal',
+  /** Validator vote (BIP340) on a GroupChangeProposal. */
+  GroupChangeVote: 'GroupChangeVote',
   /** Request missing Statechain journal entries (fromClock → tip). */
   GroupJournalRequest: 'GroupJournalRequest',
   /** Catch-up batch of accepted journal rows + tip Schnorr (k-of-n members). */

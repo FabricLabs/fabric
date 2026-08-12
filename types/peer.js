@@ -3430,7 +3430,9 @@ class Peer extends Service {
    * Bind encrypt/decrypt 'error' before piping. noise-protocol-stream calls
    * stream.destroy(err) on handshake failure; without listeners Node raises
    * uncaught Exceptions (e.g. `noise_stream_new`, `malloc`).
-   * @param {{encrypt: import('stream').Duplex, decrypt: import('stream').Duplex}} noiseStream
+   * @param {Object} noiseStream noise-protocol-stream duplex pair
+   * @param {stream.Duplex} noiseStream.encrypt
+   * @param {stream.Duplex} noiseStream.decrypt
    * @param {string} [label='NOISE']
    */
   _attachNoiseStreamErrorHandlers (noiseStream, label = 'NOISE') {

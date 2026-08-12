@@ -10,8 +10,14 @@ const {
   stateDigest,
   bufferFromPaste,
   tipFromDoc,
-  loadDoc
+  loadDoc,
+  normalizeGenesis
 } = require('../functions/contractMessageAccumulate');
+const { pubkeyXOnly } = require('../functions/groupChatSeal');
+const {
+  OP_CONTRACT_SIGN,
+  issueContractCapability
+} = require('../functions/contractCapability');
 const {
   createPending,
   markReceived,
@@ -60,6 +66,7 @@ describe('@fabric/core contractMessageAccumulate', function () {
   it('arrival-order independence across peers', function () {
     const aKey = new Key();
     const bKey = new Key();
+    const genesis = { signers: [aKey.pubkey] };
     const m1 = signContractMessage(aKey, contractId, 'GroupChange', {
       action: 'members.set',
       members: [aKey.pubkey, bKey.pubkey]
@@ -69,17 +76,17 @@ describe('@fabric/core contractMessageAccumulate', function () {
     const bufs = [m1.toBuffer(), m2.toBuffer(), m3.toBuffer()];
 
     const storeA = createMemoryStore();
-    for (const buf of bufs) ingestMessageBuffer(storeA, contractId, buf, { origin: 'mesh' });
+    for (const buf of bufs) ingestMessageBuffer(storeA, contractId, buf, { origin: 'mesh', genesis });
 
     const storeB = createMemoryStore();
     for (const buf of [bufs[2], bufs[0], bufs[1]]) {
-      ingestMessageBuffer(storeB, contractId, buf, { origin: 'mesh' });
+      ingestMessageBuffer(storeB, contractId, buf, { origin: 'mesh', genesis });
     }
 
     const storeC = createMemoryStore();
-    ingestMessageBuffer(storeC, contractId, `fabric:${bufs[1].toString('hex')}`, { origin: 'paste' });
-    ingestMessageBuffer(storeC, contractId, bufs[0], { origin: 'queue' });
-    ingestMessageBuffer(storeC, contractId, bufs[2], { origin: 'mesh' });
+    ingestMessageBuffer(storeC, contractId, `fabric:${bufs[1].toString('hex')}`, { origin: 'paste', genesis });
+    ingestMessageBuffer(storeC, contractId, bufs[0], { origin: 'queue', genesis });
+    ingestMessageBuffer(storeC, contractId, bufs[2], { origin: 'mesh', genesis });
 
     const tipA = tipFromDoc(loadDoc(storeA, contractId));
     const tipB = tipFromDoc(loadDoc(storeB, contractId));
@@ -143,6 +150,130 @@ describe('@fabric/core contractMessageAccumulate', function () {
     assert.strictEqual(tipFromDoc(loadDoc(store, contractId)).stateDigest, tip0);
   });
 
+  it('rejects GroupChange from non-signer (F1)', function () {
+    const owner = new Key();
+    const attacker = new Key();
+    const store = createMemoryStore();
+    const genesis = { signers: [owner.pubkey] };
+
+    const takeover = signContractMessage(attacker, contractId, 'GroupChange', {
+      action: 'members.set',
+      members: [attacker.pubkey]
+    });
+    const bad = ingestMessageBuffer(store, contractId, takeover.toBuffer(), {
+      origin: 'mesh',
+      genesis
+    });
+    assert.strictEqual(bad.accepted, false);
+    assert.match(bad.error, /not authorized|fail closed|genesis/i);
+    assert.strictEqual(loadDoc(store, contractId).entries.length, 0);
+
+    const ok = ingestMessageBuffer(store, contractId, signContractMessage(owner, contractId, 'GroupChange', {
+      action: 'members.set',
+      members: [owner.pubkey]
+    }).toBuffer(), { origin: 'mesh', genesis });
+    assert.strictEqual(ok.accepted, true);
+    assert.deepStrictEqual(ok.tip.content.members, [pubkeyXOnly(owner.pubkey)]);
+  });
+
+  it('rejects GroupChange with no genesis signers (fail closed)', function () {
+    const anyone = new Key();
+    const store = createMemoryStore();
+    const res = ingestMessageBuffer(store, contractId, signContractMessage(anyone, contractId, 'GroupChange', {
+      action: 'member.add',
+      member: anyone.pubkey
+    }).toBuffer(), { origin: 'mesh' });
+    assert.strictEqual(res.accepted, false);
+    assert.match(res.error, /genesis|fail closed/i);
+  });
+
+  it('accepts GroupChange via verified OP_CONTRACT_SIGN token', function () {
+    const owner = new Key();
+    const delegate = new Key();
+    const store = createMemoryStore();
+    const genesis = { signers: [owner.pubkey] };
+    const tok = issueContractCapability({
+      issuerKey: owner,
+      subject: delegate.pubkey,
+      contractId,
+      capability: OP_CONTRACT_SIGN
+    });
+    const change = signContractMessage(delegate, contractId, 'GroupChange', {
+      action: 'member.add',
+      member: delegate.pubkey
+    });
+    const without = ingestMessageBuffer(store, contractId, change.toBuffer(), {
+      origin: 'mesh',
+      genesis
+    });
+    assert.strictEqual(without.accepted, false);
+
+    const withTok = ingestMessageBuffer(store, contractId, change.toBuffer(), {
+      origin: 'mesh',
+      genesis,
+      capabilityToken: tok
+    });
+    assert.strictEqual(withTok.accepted, true);
+    assert.ok(withTok.tip.content.members.includes(pubkeyXOnly(delegate.pubkey)));
+    assert.ok(withTok.tip.content.signers.includes(pubkeyXOnly(delegate.pubkey)));
+  });
+
+  it('reader-role GroupChange widens members but not signers', function () {
+    const owner = new Key();
+    const reader = new Key();
+    const store = createMemoryStore();
+    const genesis = { signers: [owner.pubkey] };
+    const change = signContractMessage(owner, contractId, 'GroupChange', {
+      action: 'member.add',
+      member: reader.pubkey,
+      role: 'reader'
+    });
+    const res = ingestMessageBuffer(store, contractId, change.toBuffer(), {
+      origin: 'mesh',
+      genesis
+    });
+    assert.strictEqual(res.accepted, true);
+    assert.ok(res.tip.content.members.includes(pubkeyXOnly(reader.pubkey)));
+    assert.ok(!res.tip.content.signers.includes(pubkeyXOnly(reader.pubkey)));
+  });
+
+  it('rejects unknown body types and enforces genesis primitives', function () {
+    const author = new Key();
+    const store = createMemoryStore();
+    const unknown = ingestMessageBuffer(store, contractId, signContractMessage(author, contractId, 'EvilCustom', {
+      body: 'nope'
+    }).toBuffer(), { origin: 'mesh' });
+    assert.strictEqual(unknown.accepted, false);
+    assert.match(unknown.error, /not allowed/i);
+
+    const chat = signContractMessage(author, contractId, 'GroupChat', { body: 'hi' });
+    const blocked = ingestMessageBuffer(store, contractId, chat.toBuffer(), {
+      origin: 'mesh',
+      genesis: {
+        signers: [author.pubkey],
+        primitives: { messageTypes: ['GroupChange'] }
+      }
+    });
+    assert.strictEqual(blocked.accepted, false);
+    assert.match(blocked.error, /not allowed/i);
+  });
+
+  it('threads bitcoinBlockHash onto tip', function () {
+    const author = new Key();
+    const store = createMemoryStore();
+    const hash = 'ab'.repeat(32);
+    const res = ingestMessageBuffer(store, contractId, signContractMessage(author, contractId, 'GroupChat', {
+      body: 'anchored'
+    }).toBuffer(), {
+      origin: 'mesh',
+      bitcoinBlockHash: hash,
+      bitcoinHeight: 100
+    });
+    assert.strictEqual(res.accepted, true);
+    assert.strictEqual(res.tip.bitcoinBlockHash, hash);
+    assert.strictEqual(res.tip.bitcoinHeight, 100);
+  });
+
   it('bufferFromPaste accepts fabric: prefix', function () {
     const buf = Buffer.from('abcd', 'hex');
     assert.ok(bufferFromPaste(`fabric:${buf.toString('hex')}`).equals(buf));
@@ -157,6 +288,98 @@ describe('@fabric/core contractMessageAccumulate', function () {
     assert.strictEqual(state.content.messages[0].body, 'a');
     assert.strictEqual(state.clock, 2);
     assert.ok(stateDigest(state));
+  });
+
+  it('MessageReceipt stores + relays without advancing tip digest; updates 2PC sidecar', function () {
+    const a = new Key();
+    const b = new Key();
+    const genesis = { signers: [a.pubkey], readers: [a.pubkey, b.pubkey] };
+    const chat = signContractMessage(a, contractId, 'GroupChat', {
+      body: 'o7',
+      author: a.pubkey,
+      ts: '2026-01-01T00:00:00.000Z'
+    });
+    const store = createMemoryStore();
+    const chatRes = ingestMessageBuffer(store, contractId, chat.toBuffer(), {
+      origin: 'local',
+      genesis
+    });
+    assert.strictEqual(chatRes.accepted, true);
+    const tipBefore = chatRes.tip.stateDigest;
+    const clockBefore = chatRes.tip.clock;
+    assert.ok(store.get('contractmessagecommits', chatRes.entry.hash), 'sync filter opens pending 2PC');
+
+    const wireHash = chatRes.entry.hash;
+    const receipt = signContractMessage(b, contractId, 'MessageReceipt', {
+      messageId: wireHash,
+      receiptAt: '2026-01-01T00:00:01.000Z'
+    });
+    const rx = ingestMessageBuffer(store, contractId, receipt.toBuffer(), {
+      origin: 'mesh',
+      genesis
+    });
+    assert.strictEqual(rx.accepted, true, rx.error);
+    assert.strictEqual(rx.entry.type, 'MessageReceipt');
+    assert.ok(rx.entry.hex);
+    assert.strictEqual(rx.tip.stateDigest, tipBefore);
+    assert.strictEqual(rx.tip.clock, clockBefore);
+    assert.strictEqual(loadDoc(store, contractId).entries.length, 2);
+    assert.strictEqual(
+      store.get('contractmessagecommits', rx.entry.hash),
+      null,
+      'ACK frames do not open a new pending row'
+    );
+
+    const sidecar = store.get('contractmessagecommits', wireHash);
+    assert.ok(sidecar);
+    assert.strictEqual(phaseFlags(sidecar, b.pubkey).receipt, true);
+    assert.ok(Array.isArray(sidecar.ackMessages));
+    assert.strictEqual(sidecar.ackMessages[0].type, 'MessageReceipt');
+  });
+
+  it('delivery sync filter tracks GroupChange and respects deliverySync.none', function () {
+    const {
+      isSyncTrackedType,
+      ensureDeliveryPending
+    } = require('../functions/contractMessageAccumulate');
+    assert.strictEqual(isSyncTrackedType('GroupChange'), true);
+    assert.strictEqual(isSyncTrackedType('GroupChat'), true);
+    assert.strictEqual(isSyncTrackedType('MessageReceipt'), false);
+    assert.strictEqual(isSyncTrackedType('GroupJournalRequest'), false);
+
+    const a = new Key();
+    const genesis = {
+      signers: [a.pubkey],
+      readers: [a.pubkey],
+      primitives: { deliverySync: { mode: 'none' } }
+    };
+    const change = signContractMessage(a, contractId, 'GroupChange', {
+      action: 'members.set',
+      members: [a.pubkey]
+    });
+    const store = createMemoryStore();
+    const res = ingestMessageBuffer(store, contractId, change.toBuffer(), {
+      origin: 'local',
+      genesis
+    });
+    assert.strictEqual(res.accepted, true);
+    assert.strictEqual(
+      store.get('contractmessagecommits', res.entry.hash),
+      null,
+      'deliverySync.none skips pending 2PC'
+    );
+    assert.strictEqual(isSyncTrackedType('GroupChange', loadDoc(store, contractId), { genesis }), false);
+
+    // include mode tracks only listed types
+    const includeDoc = {
+      genesis: normalizeGenesis({
+        signers: [a.pubkey],
+        primitives: { deliverySync: { mode: 'include', types: ['GroupShare'] } }
+      })
+    };
+    assert.strictEqual(isSyncTrackedType('GroupChat', includeDoc), false);
+    assert.strictEqual(isSyncTrackedType('GroupShare', includeDoc), true);
+    assert.ok(ensureDeliveryPending);
   });
 });
 

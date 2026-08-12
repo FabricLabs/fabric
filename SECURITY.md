@@ -87,6 +87,9 @@ Adversarial Peer coverage under the assumption that **NOISE payloads are raw, we
 `P2P_PEER_ANNOUNCE`. Peer typed handlers accept **JSON or field layouts**. Chat/alias remain
 raw UTF-8. Coverage: `tests/protocol-v1/phase-b.typed-bodies.js`.
 
+## Application Resource Contract accumulate
+`functions/contractMessageAccumulate.ingestMessageBuffer` folds signed `CONTRACT_MESSAGE` frames into a tip. **Signer mutations** (`GroupChange`, capability grants, withdrawal request/witness, journal batch/state) require the AMP author to be in **genesis.signers** (when tip members are empty) or the **current tip member set**, or to present a **verified** `OP_CONTRACT_SIGN` Token (`meta.capabilityToken`) issued by a current signer. AMP signature alone is not sufficient. Body `type` must appear in genesis `primitives.messageTypes` when declared; otherwise only known core `CONTRACT_BODY_TYPES` are accepted. **Withdrawals** must bind `stateDigest` + `bitcoinBlockHash` to the current tip (`functions/contractSpend`). See [`docs/ARC.md`](docs/ARC.md).
+
 ## Inventory HTLC binding
 Buyers must rebuild the buyer-bound P2TR (`validateInventoryHtlcOffer`) and must not fund a seller-advertised `paymentAddress` that does not match. When an AMP signer is known (`inventoryResponse.signerPubkeyHex` / offer `ampSignerPubkey` / HTLC `sellerPublicKeyHex`), it must match the resolved seller x-only key before funding.
 

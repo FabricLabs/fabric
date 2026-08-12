@@ -182,7 +182,7 @@ The Fabric CLI (`npm i -g @fabric/core`) is the reference shell. Discussion happ
 #### 3. Resources
 Fabric’s decentralized “web” is built around the **Resource** type: a committed agreement to deliver data (often with payment), frequently using HTLC-style flows on the chosen L2.
 
-These are sometimes called **Application Resource Contracts (ARCs)** — the allowed storylines for a contract.
+These are sometimes called **Application Resource Contracts (ARCs)** — the allowed storylines for a contract. Wire + tip + spend: [`docs/ARC.md`](docs/ARC.md).
 
 ##### Example resource
 `resources/document.json`:

@@ -3,11 +3,14 @@
 const assert = require('assert');
 const {
   SEAL_SCHEME,
+  SEAL_SCHEME_PARTICIPANT,
   sortedMemberXOnlys,
   deriveTimelineCipherKey,
   sealGroupChatBody,
+  sealParticipantGroupChatBody,
   openGroupChatBody,
-  isSealedGroupChat
+  isSealedGroupChat,
+  isParticipantSealedGroupChat
 } = require('../functions/groupChatSeal');
 const Key = require('../types/key');
 
@@ -58,7 +61,7 @@ describe('@fabric/core groupChatSeal', function () {
     assert.notStrictEqual(k0.toString('hex'), kMembers.toString('hex'));
   });
 
-  it('seal/open round-trip', function () {
+  it('seal/open round-trip (v1 tip)', function () {
     const tip = {
       contractId,
       clock: 2,
@@ -82,5 +85,53 @@ describe('@fabric/core groupChatSeal', function () {
     };
     const seal = sealGroupChatBody({ body: 'secret', ...tip });
     assert.throws(() => openGroupChatBody(seal, { ...tip, clock: 3 }), /clock/);
+  });
+
+  it('participant seal opens for each member and not for outsiders', function () {
+    const seal = sealParticipantGroupChatBody({
+      body: 'hub-blind ops',
+      memberPubkeys: [a.pubkey, b.pubkey],
+      contractId,
+      clock: 9,
+      stateDigest: digest
+    });
+    assert.strictEqual(seal.scheme, SEAL_SCHEME_PARTICIPANT);
+    assert.ok(isParticipantSealedGroupChat(seal));
+    assert.ok(isSealedGroupChat({ seal }));
+    assert.ok(Array.isArray(seal.wraps) && seal.wraps.length === 2);
+    assert.ok(seal.ephemeralPub);
+    // Tip metadata is advisory only for v2.
+    assert.strictEqual(seal.basisClock, 9);
+
+    assert.strictEqual(
+      openGroupChatBody(seal, { keyOrPrivate: a }),
+      'hub-blind ops'
+    );
+    assert.strictEqual(
+      openGroupChatBody(seal, { keyOrPrivate: b }),
+      'hub-blind ops'
+    );
+
+    const outsider = new Key();
+    assert.throws(
+      () => openGroupChatBody(seal, { keyOrPrivate: outsider }),
+      /no wrap/
+    );
+  });
+
+  it('participant seal is independent of tip digest (hub tip holders stay blind)', function () {
+    const seal = sealGroupChatBody({
+      mode: 'participant',
+      body: 'still secret',
+      memberPubkeys: [a.pubkey, b.pubkey],
+      contractId,
+      clock: 1,
+      stateDigest: digest
+    });
+    // Opening with private key works even if tip fields are wrong / omitted.
+    assert.strictEqual(
+      openGroupChatBody(seal, { keyOrPrivate: a.xprv ? { xprv: a.xprv } : a }),
+      'still secret'
+    );
   });
 });

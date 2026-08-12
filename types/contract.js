@@ -320,9 +320,58 @@ class Contract extends Service {
     });
   }
 
-  _handleBitcoinTransaction () {
-    // TODO: parse on-chain transaction for update to contract balance
-    // Does this transaction pay to this contract?
+  /**
+   * Observe an on-chain transaction for payments to this contract's spend address.
+   * On success (and when `apply` is not false), folds matched sats into tip balances.
+   *
+   * @param {string|object} txInput raw tx hex or bitcoin.Transaction
+   * @param {object} [opts]
+   * @param {string} [opts.network]
+   * @param {string} [opts.address] override spend address
+   * @param {number} [opts.amountSats] minimum matched sats
+   * @param {boolean} [opts.apply=true] fold into `_state.content` on success
+   * @returns {object} observation from {@link module:functions/contractPaymentObserve.observePaymentToAddress}
+   */
+  _handleBitcoinTransaction (txInput, opts = {}) {
+    const {
+      observePaymentToAddress,
+      applyPaymentObservationToTip
+    } = require('../functions/contractPaymentObserve');
+    const network = opts.network || this.settings.network || 'regtest';
+    let address = opts.address || null;
+    if (!address) {
+      try {
+        address = this.toAddress(network);
+      } catch (e) {
+        return {
+          ok: false,
+          code: 'NO_ADDRESS',
+          error: e && e.message ? e.message : 'contract spend address unavailable'
+        };
+      }
+    }
+    const observation = observePaymentToAddress({
+      tx: txInput,
+      address,
+      network,
+      amountSats: opts.amountSats
+    });
+    if (observation.ok && opts.apply !== false) {
+      const tip = {
+        content: (this._state && this._state.content) || this.settings.state || {}
+      };
+      const next = applyPaymentObservationToTip(tip, observation);
+      if (!this._state) this._state = { content: {} };
+      this._state.content = next.content;
+      if (this.settings && this.settings.state) {
+        this.settings.state = next.content;
+      }
+      observation.applied = true;
+      observation.balances = next.content.balances;
+    } else if (observation.ok) {
+      observation.applied = false;
+    }
+    return observation;
   }
 
   _toUnsignedTransaction () {
@@ -390,6 +439,35 @@ class Contract extends Service {
   toAddress (network) {
     const built = this.toTaprootContract(network ? { network } : {});
     return built.address;
+  }
+
+  /**
+   * Resolve tip + genesis spend policy to the public P2TR surface (ARC).
+   * @param {object} [opts]
+   * @param {object} [opts.tip]
+   * @param {object} [opts.genesis] defaults to this.settings
+   * @param {object} [opts.overrides]
+   * @returns {object} {@link module:functions/contractSpend.resolveSpend}
+   */
+  resolveSpend (opts = {}) {
+    const { resolveSpend } = require('../functions/contractSpend');
+    return resolveSpend({
+      genesis: opts.genesis || this.settings,
+      tip: opts.tip || {
+        contractId: this.id || null,
+        content: (this._state && this._state.content) || this.settings.state || {},
+        stateDigest: opts.stateDigest || null,
+        bitcoinBlockHash: opts.bitcoinBlockHash
+          || (this.settings.bitcoinAnchor && this.settings.bitcoinAnchor.blockHash)
+          || null,
+        bitcoinHeight: opts.bitcoinHeight
+          || (this.settings.bitcoinAnchor && this.settings.bitcoinAnchor.height)
+          || null,
+        clock: (this._state && this._state.content && this._state.content.clock) || 0
+      },
+      contractId: opts.contractId || this.id || null,
+      overrides: opts.overrides
+    });
   }
 }
 

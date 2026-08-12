@@ -1,12 +1,14 @@
 'use strict';
 
 /**
- * Deterministic Contract → P2TR spend policy (failover ladder).
+ * Deterministic Contract → P2TR spend policy (failover ladder) + composable trees.
  *
  * Tiers compile to tapscript leaves (k-of-n + optional CSV/CLTV `after`).
  * `until` expires tiers off-chain (and schedules decay migration leaves).
+ * Optional hashlock / arbitrary script leaves compose via {@link composeTaprootTree}.
  *
  * @see docs/DISTRIBUTED_EXECUTION.md
+ * @see docs/ARC.md
  * @see functions/contractTierWhen.js
  */
 
@@ -14,6 +16,7 @@ const bitcoin = require('bitcoinjs-lib');
 const ecc = require('../types/ecc');
 const bip341 = require('bitcoinjs-lib/src/payments/bip341');
 const { payments, networks, script, Psbt } = bitcoin;
+const psbtutils = require('bitcoinjs-lib/src/psbt/psbtutils');
 const { evaluateTierWhen } = require('./contractTierWhen');
 
 bitcoin.initEccLib(ecc);
@@ -162,46 +165,90 @@ function resolveKeyList (keysRef, keySets, publisher) {
 }
 
 /**
- * Synthesize a 2-tier ladder from legacy vault fields.
+ * Synthesize the canonical 2-tier authority spend ladder:
+ *   t0-authority — k-of-n validators/signers (immediate)
+ *   t1-soft      — after ~csvBlocks (default 144) CSV, a softer rule
+ *                  (default: 1-of-publisher; optional reduced threshold)
+ *
+ * This is the single P2TR surface for Hub Beacon Federation vaults and ARC
+ * contract spend addresses when keys + network + csvBlocks match.
+ *
+ * @param {object} opts
+ * @param {string[]} [opts.validators]
+ * @param {string[]} [opts.validatorPubkeysHex]
+ * @param {number} [opts.threshold]
+ * @param {string} [opts.publisher] soft-tier key when softMode=publisher
+ * @param {number} [opts.csvBlocks=144] degradation window (BIP68 relative)
+ * @param {string} [opts.network]
+ * @param {string} [opts.softMode='publisher'] `publisher` | `reduced`
+ * @param {number} [opts.softThreshold] when softMode=reduced (default ceil(k/2))
+ * @param {object} [opts.hashlock] optional L1 hashlock leaf (`commitmentHex` / `runCommitmentHex`)
+ * @param {object[]} [opts.extraLeaves] additional composable leaves (script / spend / hashlock)
+ * @returns {object} normalized spend policy
  */
 function synthesizeDefaultLadder (opts = {}) {
   const validators = Array.isArray(opts.validators)
     ? opts.validators
     : (Array.isArray(opts.validatorPubkeysHex) ? opts.validatorPubkeysHex : []);
   const threshold = Math.max(1, Number(opts.threshold) || 1);
+  const sorted = parseCompressedPubkeysSorted(validators).map((b) => b.toString('hex'));
+  if (!sorted.length) throw new Error('synthesizeDefaultLadder requires validators');
   const publisher = opts.publisher
     ? String(opts.publisher).trim().toLowerCase()
-    : (validators[0] ? String(validators[0]).trim().toLowerCase() : null);
+    : sorted[0];
   const csvBlocks = Math.max(1, Number(opts.csvBlocks) || DEFAULT_CSV_BLOCKS);
-  const network = opts.network || opts.networkName || 'regtest';
-  if (!validators.length) throw new Error('synthesizeDefaultLadder requires validators');
+  const network = opts.network || opts.networkName || null;
+  if (!network) {
+    throw new Error('synthesizeDefaultLadder: bitcoin network required (no silent regtest default)');
+  }
   if (!publisher) throw new Error('synthesizeDefaultLadder requires publisher');
 
-  return normalizeContractSpendPolicy({
+  const softMode = String(opts.softMode || 'publisher').toLowerCase();
+  let softTier;
+  if (softMode === 'reduced' || softMode === 'threshold') {
+    const softThr = Math.max(
+      1,
+      Number(opts.softThreshold) || Math.max(1, Math.ceil(threshold / 2))
+    );
+    softTier = {
+      id: 't1-soft',
+      threshold: Math.min(softThr, sorted.length),
+      keys: 'full',
+      after: { type: 'csv', blocks: csvBlocks },
+      until: null
+    };
+  } else {
+    softTier = {
+      id: 't1-soft',
+      threshold: 1,
+      keys: 'publisher',
+      after: { type: 'csv', blocks: csvBlocks },
+      until: null
+    };
+  }
+
+  const policyIn = {
     version: 1,
     network,
     publisher,
     keySets: {
-      full: validators.map((v) => String(v).trim().toLowerCase())
+      full: sorted
     },
     decay: { mode: 'policy' },
     tiers: [
       {
-        id: 't0-federation',
-        threshold,
+        id: 't0-authority',
+        threshold: Math.min(threshold, sorted.length),
         keys: 'full',
         after: null,
         until: null
       },
-      {
-        id: 't1-publisher',
-        threshold: 1,
-        keys: 'publisher',
-        after: { type: 'csv', blocks: csvBlocks },
-        until: null
-      }
-    ]
-  });
+      softTier
+    ],
+    hashlock: opts.hashlock || null,
+    extraLeaves: Array.isArray(opts.extraLeaves) ? opts.extraLeaves : null
+  };
+  return normalizeContractSpendPolicy(policyIn);
 }
 
 /**
@@ -316,7 +363,9 @@ function normalizeContractSpendPolicy (raw = {}) {
       migrateKeys,
       migrateThreshold
     },
-    tiers
+    tiers,
+    hashlock: raw.hashlock ? normalizeHashlockSpec(raw.hashlock) : null,
+    extraLeaves: normalizeExtraLeafSpecs(raw.extraLeaves)
   };
 }
 
@@ -366,7 +415,9 @@ function policyAfterDecay (policy, atLock) {
       after: t.after,
       until: t.until,
       when: t.when
-    }))
+    })),
+    hashlock: p.hashlock || null,
+    extraLeaves: p.extraLeaves || null
   });
 }
 
@@ -393,8 +444,292 @@ function prependLock (lock, innerScript) {
 }
 
 /**
- * Build leaf descriptors for a normalized policy.
- * @returns {{ kind: string, id: string, script: Buffer, after: object|null, tierIndex?: number, decayAt?: object }[]}
+ * Normalize optional hashlock leaf options (JSON-safe).
+ * `commitmentHex` MAY be Machine `runCommitmentHex` or SHA256(preimage).
+ * @param {object} raw
+ * @returns {{ commitmentHex: string, pubkeyHex: string|null, after: object|null, id: string }|null}
+ */
+function normalizeHashlockSpec (raw) {
+  if (raw == null) return null;
+  if (typeof raw !== 'object') throw new Error('hashlock must be an object');
+  const commitmentHex = String(
+    raw.commitmentHex || raw.runCommitmentHex || raw.paymentHashHex || ''
+  ).trim().toLowerCase().replace(/^0x/i, '');
+  if (!/^[0-9a-f]{64}$/.test(commitmentHex)) {
+    throw new Error('hashlock.commitmentHex must be 32-byte hex');
+  }
+  let pubkeyHex = null;
+  const pkRaw = raw.pubkeyHex || raw.pubkey || null;
+  if (pkRaw) {
+    const s = String(pkRaw).trim().toLowerCase();
+    if (!/^(02|03)[0-9a-f]{64}$/.test(s)) {
+      throw new Error('hashlock.pubkeyHex must be 33-byte compressed hex');
+    }
+    pubkeyHex = s;
+  } else if (raw.requirePubkey === true) {
+    throw new Error('hashlock.requirePubkey set but pubkeyHex missing');
+  }
+  const id = raw.id != null && String(raw.id).trim()
+    ? String(raw.id).trim().slice(0, 128)
+    : 'hashlock';
+  return {
+    commitmentHex,
+    pubkeyHex,
+    after: normalizeLock(raw.after),
+    id
+  };
+}
+
+/**
+ * @param {unknown} list
+ * @returns {object[]}
+ */
+function normalizeExtraLeafSpecs (list) {
+  if (!Array.isArray(list) || !list.length) return [];
+  return list.map((raw, i) => {
+    if (!raw || typeof raw !== 'object') {
+      throw new Error(`extraLeaves[${i}] must be an object`);
+    }
+    const kind = String(raw.kind || 'script').toLowerCase();
+    if (kind === 'hashlock') {
+      const spec = normalizeHashlockSpec(raw);
+      return Object.assign({ kind: 'hashlock' }, spec);
+    }
+    if (kind === 'spend') {
+      const keys = parseCompressedPubkeysSorted(raw.keys || raw.validators || [])
+        .map((b) => b.toString('hex'));
+      if (!keys.length) throw new Error(`extraLeaves[${i}] spend leaf requires keys`);
+      const threshold = Math.max(1, Number(raw.threshold) || 1);
+      if (threshold > keys.length) {
+        throw new Error(`extraLeaves[${i}] threshold exceeds key count`);
+      }
+      return {
+        kind: 'spend',
+        id: raw.id != null && String(raw.id).trim()
+          ? String(raw.id).trim().slice(0, 128)
+          : `extra-spend-${i}`,
+        keys,
+        threshold,
+        after: normalizeLock(raw.after)
+      };
+    }
+    const scriptHex = String(raw.scriptHex || raw.tapscriptHex || '').trim().replace(/^0x/i, '');
+    const asm = raw.asm != null ? String(raw.asm).trim() : '';
+    if (!scriptHex && !asm && !Buffer.isBuffer(raw.script)) {
+      throw new Error(`extraLeaves[${i}] script leaf requires scriptHex, asm, or script`);
+    }
+    return {
+      kind: 'script',
+      id: raw.id != null && String(raw.id).trim()
+        ? String(raw.id).trim().slice(0, 128)
+        : `extra-script-${i}`,
+      scriptHex: scriptHex || (Buffer.isBuffer(raw.script) ? raw.script.toString('hex') : ''),
+      asm: asm || null,
+      after: normalizeLock(raw.after),
+      witnessShape: raw.witnessShape ? String(raw.witnessShape) : 'custom',
+      meta: raw.meta && typeof raw.meta === 'object' ? raw.meta : null
+    };
+  });
+}
+
+/**
+ * Hashlock tapscript: SHA256(preimage) == commitment [+ optional CHECKSIG].
+ * @param {{ commitmentHex: string, pubkeyHex?: string|null }} opts
+ * @returns {Buffer}
+ */
+function buildHashlockTapscript (opts = {}) {
+  const commitmentHex = String(opts.commitmentHex || '').trim().toLowerCase().replace(/^0x/i, '');
+  if (!/^[0-9a-f]{64}$/.test(commitmentHex)) {
+    throw new Error('buildHashlockTapscript: commitmentHex must be 32-byte hex');
+  }
+  const commitment = Buffer.from(commitmentHex, 'hex');
+  if (opts.pubkeyHex) {
+    const pk = Buffer.from(String(opts.pubkeyHex).trim().toLowerCase(), 'hex');
+    const x = toXOnly(pk);
+    if (!x) throw new Error('buildHashlockTapscript: invalid pubkeyHex');
+    return script.compile([
+      script.OPS.OP_SHA256,
+      commitment,
+      script.OPS.OP_EQUALVERIFY,
+      x,
+      script.OPS.OP_CHECKSIG
+    ]);
+  }
+  return script.compile([
+    script.OPS.OP_SHA256,
+    commitment,
+    script.OPS.OP_EQUAL
+  ]);
+}
+
+/**
+ * First-class hashlock leaf (optional on authority trees).
+ * @param {object} opts
+ * @returns {object}
+ */
+function buildHashlockLeaf (opts = {}) {
+  const spec = normalizeHashlockSpec(opts);
+  if (!spec) throw new Error('buildHashlockLeaf: options required');
+  let body = buildHashlockTapscript(spec);
+  body = prependLock(spec.after, body);
+  return {
+    kind: 'hashlock',
+    id: spec.id,
+    script: Buffer.from(body),
+    after: spec.after,
+    until: null,
+    commitmentHex: spec.commitmentHex,
+    pubkeyHex: spec.pubkeyHex,
+    witnessShape: spec.pubkeyHex ? 'preimage+sig' : 'preimage',
+    meta: {
+      commitmentHex: spec.commitmentHex,
+      pubkeyHex: spec.pubkeyHex
+    }
+  };
+}
+
+/**
+ * First-class k-of-n spend leaf (composable outside policy tiers).
+ * @param {object} opts
+ * @returns {object}
+ */
+function buildSpendLeaf (opts = {}) {
+  const keysHex = parseCompressedPubkeysSorted(opts.keys || opts.validators || [])
+    .map((b) => b.toString('hex'));
+  if (!keysHex.length) throw new Error('buildSpendLeaf: keys required');
+  const threshold = Math.max(1, Number(opts.threshold) || 1);
+  if (threshold > keysHex.length) {
+    throw new Error('buildSpendLeaf: threshold exceeds key count');
+  }
+  const after = normalizeLock(opts.after);
+  const id = opts.id != null && String(opts.id).trim()
+    ? String(opts.id).trim().slice(0, 128)
+    : 'spend';
+  let body = buildKOfNTapscript(parseCompressedPubkeysSorted(keysHex), threshold);
+  body = prependLock(after, body);
+  return {
+    kind: 'spend',
+    id,
+    script: Buffer.from(body),
+    after,
+    until: null,
+    threshold,
+    keys: keysHex,
+    witnessShape: 'sigs'
+  };
+}
+
+/**
+ * Arbitrary tapscript leaf from hex / ASM / Buffer (wallet UI composition).
+ * @param {object} opts
+ * @returns {object}
+ */
+function buildScriptLeaf (opts = {}) {
+  let scriptBuf = null;
+  if (Buffer.isBuffer(opts.script)) {
+    scriptBuf = Buffer.from(opts.script);
+  } else if (opts.scriptHex || opts.tapscriptHex) {
+    scriptBuf = Buffer.from(
+      String(opts.scriptHex || opts.tapscriptHex).trim().replace(/^0x/i, ''),
+      'hex'
+    );
+  } else if (opts.asm) {
+    scriptBuf = script.fromASM(String(opts.asm).trim());
+  }
+  if (!scriptBuf || !scriptBuf.length) {
+    throw new Error('buildScriptLeaf: script, scriptHex, or asm required');
+  }
+  const after = normalizeLock(opts.after);
+  if (after) scriptBuf = prependLock(after, scriptBuf);
+  const id = opts.id != null && String(opts.id).trim()
+    ? String(opts.id).trim().slice(0, 128)
+    : 'script';
+  return {
+    kind: 'script',
+    id,
+    script: Buffer.from(scriptBuf),
+    after,
+    until: null,
+    witnessShape: opts.witnessShape ? String(opts.witnessShape) : 'custom',
+    meta: opts.meta && typeof opts.meta === 'object' ? opts.meta : null
+  };
+}
+
+/**
+ * Normalize a leaf descriptor into a Buffer-backed leaf.
+ * @param {object} raw
+ * @returns {object}
+ */
+function normalizeLeaf (raw = {}) {
+  if (raw && Buffer.isBuffer(raw.script) && raw.kind) {
+    return {
+      kind: String(raw.kind),
+      id: raw.id != null ? String(raw.id) : 'leaf',
+      script: Buffer.from(raw.script),
+      after: raw.after || null,
+      until: raw.until || null,
+      decayAt: raw.decayAt || null,
+      threshold: raw.threshold,
+      keys: raw.keys,
+      commitmentHex: raw.commitmentHex || null,
+      pubkeyHex: raw.pubkeyHex || null,
+      witnessShape: raw.witnessShape || null,
+      meta: raw.meta || null,
+      tierIndex: raw.tierIndex
+    };
+  }
+  const kind = String((raw && raw.kind) || 'script').toLowerCase();
+  if (kind === 'hashlock') {
+    if (raw.commitmentHex || raw.runCommitmentHex || raw.paymentHashHex) {
+      return buildHashlockLeaf(raw);
+    }
+    // Rehydrate from compiled hex (wallet UI round-trip).
+    const leaf = buildScriptLeaf(Object.assign({}, raw, {
+      id: raw.id || 'hashlock',
+      witnessShape: raw.witnessShape || (raw.pubkeyHex ? 'preimage+sig' : 'preimage')
+    }));
+    leaf.kind = 'hashlock';
+    leaf.commitmentHex = raw.commitmentHex || null;
+    leaf.pubkeyHex = raw.pubkeyHex || null;
+    leaf.meta = raw.meta || {
+      commitmentHex: leaf.commitmentHex,
+      pubkeyHex: leaf.pubkeyHex
+    };
+    return leaf;
+  }
+  if (kind === 'spend') return buildSpendLeaf(raw);
+  if (kind === 'migrate') {
+    // Migrate leaves are normally produced by compileLeaves; allow explicit rebuild.
+    return buildSpendLeaf(Object.assign({}, raw, {
+      id: raw.id || 'migrate',
+      keys: raw.keys,
+      threshold: raw.threshold
+    }));
+  }
+  return buildScriptLeaf(raw);
+}
+
+function leafPublicView (l) {
+  return {
+    kind: l.kind,
+    id: l.id,
+    tierIndex: l.tierIndex,
+    tapscriptHex: l.script.toString('hex'),
+    after: l.after || null,
+    until: l.until || null,
+    decayAt: l.decayAt || null,
+    threshold: l.threshold,
+    keys: l.keys,
+    commitmentHex: l.commitmentHex || (l.meta && l.meta.commitmentHex) || null,
+    pubkeyHex: l.pubkeyHex || (l.meta && l.meta.pubkeyHex) || null,
+    witnessShape: l.witnessShape || null,
+    meta: l.meta || null
+  };
+}
+
+/**
+ * Build leaf descriptors for a normalized policy (+ optional hashlock / extras).
+ * @returns {object[]}
  */
 function compileLeaves (policy) {
   const p = normalizeContractSpendPolicy(policy);
@@ -411,7 +746,8 @@ function compileLeaves (policy) {
       after: t.after,
       until: t.until,
       threshold: t.threshold,
-      keys: t.keys
+      keys: t.keys,
+      witnessShape: 'sigs'
     });
   }
 
@@ -438,10 +774,24 @@ function compileLeaves (policy) {
           after: b.until,
           decayAt: b.until,
           threshold: p.decay.migrateThreshold,
-          keys: p.decay.migrateKeys
+          keys: p.decay.migrateKeys,
+          witnessShape: 'sigs'
         });
       }
     }
+  }
+
+  if (p.hashlock) {
+    leaves.push(buildHashlockLeaf(p.hashlock));
+  }
+  for (const spec of p.extraLeaves || []) {
+    leaves.push(normalizeLeaf(spec));
+  }
+
+  const seen = new Set();
+  for (const l of leaves) {
+    if (seen.has(l.id)) throw new Error(`duplicate leaf id: ${l.id}`);
+    seen.add(l.id);
   }
   return leaves;
 }
@@ -463,6 +813,100 @@ function scriptTreeFromLeaves (leaves) {
     scriptTreeFromLeaves(leaves.slice(0, mid)),
     scriptTreeFromLeaves(leaves.slice(mid))
   ];
+}
+
+/**
+ * Compose an arbitrary Taproot tree for wallet UIs / custom scripts.
+ * Policy ladder leaves come first; `hashlock` / `extraLeaves` append.
+ * Adding optional leaves **changes** the address vs ladder-only.
+ *
+ * @param {object} opts
+ * @param {string} opts.network
+ * @param {object} [opts.policy] spend policy (tiers / validators)
+ * @param {object[]} [opts.leaves] full leaf list (skips policy compile when set alone)
+ * @param {object} [opts.hashlock] optional hashlock sugar
+ * @param {object[]} [opts.extraLeaves] additional leaves
+ * @param {string} [opts.internalPubkeyHex] x-only; default NUMS
+ * @returns {object}
+ */
+function composeTaprootTree (opts = {}) {
+  const network = opts.network || opts.networkName;
+  if (!network) throw new Error('composeTaprootTree: network required');
+
+  let policy = null;
+  let leaves = [];
+  if (Array.isArray(opts.leaves) && opts.leaves.length && !opts.policy) {
+    leaves = opts.leaves.map((l) => normalizeLeaf(l));
+  } else if (opts.policy) {
+    const policyInput = Object.assign({}, opts.policy, {
+      network: opts.policy.network || opts.policy.networkName || network,
+      hashlock: opts.policy.hashlock || opts.hashlock || null,
+      extraLeaves: opts.policy.extraLeaves || opts.extraLeaves || null
+    });
+    // When compose passes hashlock/extraLeaves at top-level without policy.hashlock,
+    // prefer top-level for extras-after-policy.
+    if (opts.hashlock && !opts.policy.hashlock) {
+      policyInput.hashlock = opts.hashlock;
+    }
+    if (Array.isArray(opts.extraLeaves) && !(opts.policy.extraLeaves && opts.policy.extraLeaves.length)) {
+      policyInput.extraLeaves = opts.extraLeaves;
+    }
+    policy = normalizeContractSpendPolicy(policyInput);
+    leaves = compileLeaves(policy);
+  } else {
+    if (opts.hashlock) leaves.push(buildHashlockLeaf(opts.hashlock));
+    if (Array.isArray(opts.extraLeaves)) {
+      for (const spec of opts.extraLeaves) leaves.push(normalizeLeaf(spec));
+    }
+  }
+
+  if (!leaves.length) throw new Error('composeTaprootTree: no leaves');
+
+  const seen = new Set();
+  for (const l of leaves) {
+    if (seen.has(l.id)) throw new Error(`duplicate leaf id: ${l.id}`);
+    seen.add(l.id);
+  }
+
+  let internalPubkey = TAPROOT_INTERNAL_NUMS;
+  if (opts.internalPubkeyHex) {
+    const hex = String(opts.internalPubkeyHex).trim().toLowerCase().replace(/^0x/i, '');
+    if (!/^[0-9a-f]{64}$/.test(hex)) {
+      throw new Error('composeTaprootTree: internalPubkeyHex must be 32-byte x-only hex');
+    }
+    if (hex !== TAPROOT_INTERNAL_NUMS.toString('hex')) {
+      throw new Error(
+        'composeTaprootTree: custom internal keys are not yet supported (NUMS script-path only)'
+      );
+    }
+    internalPubkey = Buffer.from(hex, 'hex');
+  }
+
+  const scriptTree = scriptTreeFromLeaves(leaves);
+  const btcNet = networkForFabricName(network);
+  const pay = payments.p2tr({
+    internalPubkey,
+    scriptTree,
+    network: btcNet
+  });
+  if (!pay.address || !pay.output) throw new Error('p2tr did not produce address.');
+  const hashTree = bip341.toHashTree(scriptTree);
+  return {
+    address: pay.address,
+    spendAddress: pay.address,
+    output: Buffer.isBuffer(pay.output) ? pay.output : Buffer.from(pay.output),
+    network: String(network),
+    policy,
+    leaves: leaves.map(leafPublicView),
+    /** Buffer-backed leaves for control-block / PSBT helpers. */
+    leafScripts: leaves,
+    scriptTree,
+    merkleRootHex: hashTree && hashTree.hash
+      ? Buffer.from(hashTree.hash).toString('hex')
+      : null,
+    internalPubkeyHex: internalPubkey.toString('hex'),
+    scheme: policy ? 'taproot-authority-ladder-v1' : 'taproot-composed-v1'
+  };
 }
 
 function buildControlBlockForLeaf (leaves, leafScript) {
@@ -487,32 +931,17 @@ function buildControlBlockForLeaf (leaves, leafScript) {
  */
 function buildContractTaproot (policy) {
   const p = normalizeContractSpendPolicy(policy);
-  const leaves = compileLeaves(p);
-  const network = networkForFabricName(p.network);
-  const scriptTree = scriptTreeFromLeaves(leaves);
-  const pay = payments.p2tr({
-    internalPubkey: TAPROOT_INTERNAL_NUMS,
-    scriptTree,
-    network
-  });
-  if (!pay.address || !pay.output) throw new Error('p2tr did not produce address.');
+  const composed = composeTaprootTree({ network: p.network, policy: p });
   return {
-    address: pay.address,
-    output: Buffer.isBuffer(pay.output) ? pay.output : Buffer.from(pay.output),
-    network: p.network,
+    address: composed.address,
+    output: composed.output,
+    network: composed.network,
     policy: p,
-    leaves: leaves.map((l) => ({
-      kind: l.kind,
-      id: l.id,
-      tierIndex: l.tierIndex,
-      tapscriptHex: l.script.toString('hex'),
-      after: l.after,
-      until: l.until,
-      decayAt: l.decayAt,
-      threshold: l.threshold,
-      keys: l.keys
-    })),
-    internalPubkeyHex: TAPROOT_INTERNAL_NUMS.toString('hex')
+    leaves: composed.leaves,
+    leafScripts: composed.leafScripts,
+    internalPubkeyHex: composed.internalPubkeyHex,
+    merkleRootHex: composed.merkleRootHex,
+    scheme: composed.scheme
   };
 }
 
@@ -653,7 +1082,12 @@ function prepareLeafPsbt (opts = {}) {
     tapscriptHex: ms.toString('hex'),
     controlBlockHex: controlBlock.toString('hex'),
     sequence: sequence != null ? Number(sequence) : undefined,
-    locktime: locktime != null ? Number(locktime) : undefined
+    locktime: locktime != null ? Number(locktime) : undefined,
+    preimageHex: opts.preimage32
+      ? (Buffer.isBuffer(opts.preimage32)
+        ? opts.preimage32.toString('hex')
+        : String(opts.preimage32).replace(/^0x/i, '').toLowerCase())
+      : undefined
   };
 }
 
@@ -698,7 +1132,9 @@ function prepareTierWithdrawalPsbt (opts = {}) {
     ...result,
     tierId: tier.id,
     action: 'spend',
+    leafId: leaf.id,
     address: built.address,
+    leaves: built.leaves,
     signingNotes: 'Co-sign tapscript leaf for active non-expired tier. Witness: sigs then script then control block.'
   };
 }
@@ -734,27 +1170,173 @@ function prepareDecayMigrationPsbt (opts = {}) {
   return {
     ...result,
     action: 'migrate',
+    leafId: leaf.id,
     decayAt: target.decayAt,
     childAddress: childAddr,
     childPolicy: target.childPolicy,
     address: built.address,
+    leaves: built.leaves,
     signingNotes: 'Decay migration: output is constrained to child toAddress(policyAfterDecay).'
   };
 }
 
 /**
- * Legacy Hub vault API: single k-of-n leaf (address-stable with prior Hub vault).
- * Pass `{ failover: true }` or `publisher` + positive `csvBlocks` to use the full default ladder.
+ * Prepare hashlock-path PSBT. Pure hashlock needs only a preimage at finalize;
+ * hashlock+pubkey needs a Schnorr sig then preimage (inventory-style).
+ *
+ * @param {object} opts
+ * @param {object} [opts.policy]
+ * @param {object[]} [opts.leaves] Buffer-backed or public leaves (+ tapscriptHex)
+ * @param {string|Buffer} [opts.preimage32]
+ * @returns {object}
+ */
+function prepareHashlockWithdrawalPsbt (opts = {}) {
+  let networkName = opts.networkName || opts.network;
+  let vaultAddress = opts.vaultAddress || opts.address;
+  let leaves;
+  let publicLeaves = null;
+
+  if (opts.policy) {
+    const built = buildContractTaproot(opts.policy);
+    networkName = networkName || built.network;
+    vaultAddress = vaultAddress || built.address;
+    leaves = compileLeaves(built.policy);
+    publicLeaves = built.leaves;
+  } else if (Array.isArray(opts.leaves) && opts.leaves.length) {
+    leaves = opts.leaves.map((l) => {
+      if (l && Buffer.isBuffer(l.script)) return normalizeLeaf(l);
+      if (l && l.tapscriptHex) {
+        return normalizeLeaf({
+          kind: l.kind || 'hashlock',
+          id: l.id,
+          scriptHex: l.tapscriptHex,
+          after: l.after,
+          commitmentHex: l.commitmentHex,
+          pubkeyHex: l.pubkeyHex,
+          witnessShape: l.witnessShape,
+          meta: l.meta
+        });
+      }
+      return normalizeLeaf(l);
+    });
+  } else {
+    throw new Error('prepareHashlockWithdrawalPsbt: policy or leaves required');
+  }
+  if (!networkName) throw new Error('prepareHashlockWithdrawalPsbt: network required');
+  if (!vaultAddress) throw new Error('prepareHashlockWithdrawalPsbt: vaultAddress required');
+
+  const leafId = opts.leafId || opts.hashlockId || null;
+  const leaf = leaves.find((l) => l.kind === 'hashlock' && (!leafId || l.id === leafId));
+  if (!leaf) throw new Error('hashlock leaf missing from tree');
+
+  let preimage32 = opts.preimage32 || null;
+  if (typeof preimage32 === 'string') {
+    const hex = preimage32.trim().replace(/^0x/i, '');
+    if (!/^[0-9a-fA-F]{64}$/.test(hex)) {
+      throw new Error('preimage32 must be 32-byte hex when provided as string');
+    }
+    preimage32 = Buffer.from(hex, 'hex');
+  }
+
+  const result = prepareLeafPsbt({
+    networkName,
+    fundedTxHex: opts.fundedTxHex,
+    vaultAddress,
+    leafScript: leaf.script,
+    leaves,
+    destinationAddress: opts.destinationAddress,
+    feeSats: opts.feeSats,
+    after: leaf.after,
+    preimage32: preimage32 || undefined
+  });
+
+  const witnessShape = leaf.witnessShape
+    || (leaf.pubkeyHex ? 'preimage+sig' : 'preimage');
+
+  return {
+    ...result,
+    action: 'hashlock',
+    leafId: leaf.id,
+    commitmentHex: leaf.commitmentHex || (leaf.meta && leaf.meta.commitmentHex) || null,
+    pubkeyHex: leaf.pubkeyHex || (leaf.meta && leaf.meta.pubkeyHex) || null,
+    witnessShape,
+    address: vaultAddress,
+    leaves: publicLeaves || leaves.map(leafPublicView),
+    signingNotes: witnessShape === 'preimage+sig'
+      ? 'Witness: <schnorr_sig> <preimage32> <script> <controlBlock>. Sign then finalizeHashlockPsbt.'
+      : 'Witness: <preimage32> <script> <controlBlock>. Call finalizeHashlockPsbt with preimage (no co-signer).'
+  };
+}
+
+/**
+ * Finalize a hashlock script-path PSBT (pure preimage or preimage+sig).
+ * @param {object} opts
+ * @param {string} opts.psbtBase64
+ * @param {string|Buffer} opts.preimage32
+ * @param {string} [opts.witnessShape='preimage']
+ * @returns {{ txHex: string, txid: string }}
+ */
+function finalizeHashlockPsbt (opts = {}) {
+  const psbt = Psbt.fromBase64(String(opts.psbtBase64 || '').trim());
+  let preimage = opts.preimage32;
+  if (typeof preimage === 'string') {
+    preimage = Buffer.from(String(preimage).trim().replace(/^0x/i, ''), 'hex');
+  }
+  if (!Buffer.isBuffer(preimage) || preimage.length !== 32) {
+    throw new Error('finalizeHashlockPsbt: preimage32 must be 32 bytes');
+  }
+  const shape = String(opts.witnessShape || 'preimage').toLowerCase();
+
+  psbt.finalizeInput(0, (_inputIndex, input) => {
+    const leaf = (input.tapLeafScript || [])[0];
+    if (!leaf || !leaf.script || !leaf.controlBlock) {
+      throw new Error('Missing tapLeafScript on PSBT input.');
+    }
+    let witness;
+    if (shape === 'preimage+sig' || shape === 'sig+preimage') {
+      const lh = Buffer.from(bip341.tapleafHash({
+        output: leaf.script,
+        version: leaf.leafVersion
+      }));
+      const tss = (input.tapScriptSig || []).find((t) => Buffer.from(t.leafHash).equals(lh));
+      if (!tss) throw new Error('Missing tapscript signature for hashlock+pubkey leaf.');
+      const sig = tss.signature.length >= 64 ? tss.signature.subarray(0, 64) : tss.signature;
+      witness = [sig, preimage, leaf.script, leaf.controlBlock];
+    } else {
+      witness = [preimage, leaf.script, leaf.controlBlock];
+    }
+    return { finalScriptWitness: psbtutils.witnessStackToScriptWitness(witness) };
+  });
+
+  const extracted = psbt.extractTransaction();
+  return { txHex: extracted.toHex(), txid: extracted.getId() };
+}
+
+/**
+ * Authority P2TR vault from validator/signer set.
+ *
+ * **Default (RC):** 2-tier ladder — k-of-n authority now; softer rule after
+ * `csvBlocks` (default 144) CSV. Same tree as {@link synthesizeDefaultLadder} /
+ * {@link module:functions/contractSpend.resolveSpend} when inputs match.
+ *
+ * **Legacy:** pass `{ legacySingleLeaf: true }` for the pre-ladder single k-of-n
+ * leaf address (opt-in only; not used by Hub vault summary).
+ *
+ * @param {object} opts
+ * @returns {object}
  */
 function buildFederationVaultFromPolicy (opts = {}) {
   const {
-    validatorPubkeysHex,
     threshold,
     networkName,
     publisher,
     csvBlocks,
-    failover
+    failover,
+    softMode,
+    softThreshold,
+    legacySingleLeaf
   } = opts;
+  const validatorPubkeysHex = opts.validatorPubkeysHex || opts.validators || [];
   const pks = parseCompressedPubkeysSorted(validatorPubkeysHex);
   if (!pks.length) throw new Error('At least one validator pubkey is required.');
   const thr = Number(threshold);
@@ -765,35 +1347,74 @@ function buildFederationVaultFromPolicy (opts = {}) {
     throw new Error(`threshold ${thr} exceeds unique key count ${pks.length}`);
   }
 
-  if (failover || (publisher && csvBlocks != null && Number(csvBlocks) > 0)) {
+  const network = networkName || opts.network;
+  if (!network) {
+    throw new Error('buildFederationVaultFromPolicy: networkName required');
+  }
+
+  const useLegacy = legacySingleLeaf === true
+    && failover !== true
+    && !(publisher && csvBlocks != null && Number(csvBlocks) > 0);
+
+  if (!useLegacy) {
     const built = buildContractTaproot(synthesizeDefaultLadder({
       validators: validatorPubkeysHex,
       threshold: thr,
-      network: networkName,
+      network,
       publisher: publisher || pks[0].toString('hex'),
-      csvBlocks: csvBlocks != null ? csvBlocks : DEFAULT_CSV_BLOCKS
+      csvBlocks: csvBlocks != null ? csvBlocks : DEFAULT_CSV_BLOCKS,
+      softMode,
+      softThreshold
     }));
-    const t0 = built.leaves.find((l) => l.kind === 'spend');
+    const t0 = built.leaves.find((l) => l.kind === 'spend' && (l.id === 't0-authority' || l.id === 't0-federation'))
+      || built.leaves.find((l) => l.kind === 'spend');
+    const soft = built.policy && built.policy.tiers
+      ? built.policy.tiers.find((t) => t.id === 't1-soft' || t.id === 't1-publisher')
+      : null;
     return {
       address: built.address,
+      /** Alias aligned with ARC / tracked summaries. */
+      spendAddress: built.address,
       output: built.output,
       multisigScript: Buffer.from(t0.tapscriptHex, 'hex'),
-      network: networkName,
+      network,
       threshold: thr,
+      validators: pks.map((b) => b.toString('hex')),
       validatorsSortedHex: pks.map((b) => b.toString('hex')),
+      publisher: String(publisher || pks[0].toString('hex')).toLowerCase(),
+      softMode: softMode
+        ? (String(softMode).toLowerCase() === 'reduced' ? 'reduced' : 'publisher')
+        : 'publisher',
       internalPubkeyHex: TAPROOT_INTERNAL_NUMS.toString('hex'),
-      depositMaturityBlocks: DEFAULT_CSV_BLOCKS,
+      depositMaturityBlocks: csvBlocks != null ? Number(csvBlocks) : DEFAULT_CSV_BLOCKS,
+      csvBlocks: soft && soft.after && soft.after.blocks != null
+        ? Number(soft.after.blocks)
+        : DEFAULT_CSV_BLOCKS,
+      softTier: soft || null,
+      scheme: 'taproot-authority-ladder-v1',
+      spendPolicy: {
+        publisher: String(publisher || pks[0].toString('hex')).toLowerCase(),
+        validators: pks.map((b) => b.toString('hex')),
+        threshold: thr,
+        csvBlocks: soft && soft.after && soft.after.blocks != null
+          ? Number(soft.after.blocks)
+          : (csvBlocks != null ? Number(csvBlocks) : DEFAULT_CSV_BLOCKS),
+        softMode: softMode
+          ? (String(softMode).toLowerCase() === 'reduced' ? 'reduced' : 'publisher')
+          : 'publisher',
+        network
+      },
       policy: built.policy,
       leaves: built.leaves
     };
   }
 
   const multisigScript = buildKOfNTapscript(pks, thr);
-  const network = networkForFabricName(networkName);
+  const btcNet = networkForFabricName(network);
   const pay = payments.p2tr({
     internalPubkey: TAPROOT_INTERNAL_NUMS,
     scriptTree: { output: multisigScript },
-    network
+    network: btcNet
   });
   if (!pay.address || !pay.output) throw new Error('p2tr did not produce vault address.');
   const msBuf = Buffer.isBuffer(multisigScript) ? multisigScript : Buffer.from(multisigScript);
@@ -802,11 +1423,12 @@ function buildFederationVaultFromPolicy (opts = {}) {
     address: pay.address,
     output: outBuf,
     multisigScript: msBuf,
-    network: networkName,
+    network,
     threshold: thr,
     validatorsSortedHex: pks.map((b) => b.toString('hex')),
     internalPubkeyHex: TAPROOT_INTERNAL_NUMS.toString('hex'),
     depositMaturityBlocks: DEFAULT_CSV_BLOCKS,
+    scheme: 'taproot-tapscript-k-of-n-legacy-v0',
     policy: null,
     leaves: [{ kind: 'spend', id: 't0-federation', tapscriptHex: msBuf.toString('hex') }]
   };
@@ -820,8 +1442,31 @@ function buildVaultControlBlock (multisigScript) {
 }
 
 function prepareVaultWithdrawalPsbt (opts = {}) {
+  // Prefer full policy / composed leaves (authority ladder + optional extras).
+  if (opts.policy) {
+    if (opts.action === 'hashlock' || opts.leafKind === 'hashlock' || opts.leafId === 'hashlock') {
+      return prepareHashlockWithdrawalPsbt(opts);
+    }
+    if (opts.leafId) {
+      const built = buildContractTaproot(opts.policy);
+      const leaves = compileLeaves(built.policy);
+      const leaf = leaves.find((l) => l.id === opts.leafId);
+      if (!leaf) throw new Error(`leaf ${opts.leafId} not in tree`);
+      if (leaf.kind === 'hashlock') {
+        return prepareHashlockWithdrawalPsbt(Object.assign({}, opts, {
+          policy: built.policy,
+          leafId: leaf.id
+        }));
+      }
+      if (leaf.kind === 'migrate') {
+        return prepareDecayMigrationPsbt(opts);
+      }
+      return prepareTierWithdrawalPsbt(Object.assign({}, opts, { tierId: leaf.id }));
+    }
+    return prepareTierWithdrawalPsbt(opts);
+  }
   // Legacy: single leaf tree
-  if (opts.multisigScript && !opts.policy) {
+  if (opts.multisigScript) {
     const ms = Buffer.isBuffer(opts.multisigScript)
       ? opts.multisigScript
       : Buffer.from(String(opts.multisigScript || '').replace(/^0x/i, ''), 'hex');
@@ -838,7 +1483,7 @@ function prepareVaultWithdrawalPsbt (opts = {}) {
       signingNotes: 'Validators partially sign the same PSBT input (tapscript leaf).'
     };
   }
-  return prepareTierWithdrawalPsbt(opts);
+  throw new Error('prepareVaultWithdrawalPsbt: policy or multisigScript required');
 }
 
 module.exports = {
@@ -856,12 +1501,23 @@ module.exports = {
   normalizeContractSpendPolicy,
   policyAfterDecay,
   compileLeaves,
+  scriptTreeFromLeaves,
+  composeTaprootTree,
+  normalizeHashlockSpec,
+  normalizeLeaf,
+  buildHashlockTapscript,
+  buildHashlockLeaf,
+  buildSpendLeaf,
+  buildScriptLeaf,
   buildContractTaproot,
   toAddress,
   selectActiveTiers,
   selectMigrateTarget,
+  prepareLeafPsbt,
   prepareTierWithdrawalPsbt,
   prepareDecayMigrationPsbt,
+  prepareHashlockWithdrawalPsbt,
+  finalizeHashlockPsbt,
   buildFederationVaultFromPolicy,
   prepareVaultWithdrawalPsbt,
   buildVaultControlBlock,
