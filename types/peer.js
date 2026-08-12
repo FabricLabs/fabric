@@ -229,16 +229,33 @@ function collectContractAuthorityPubkeys (object) {
     const h = normalizePeerPubkeyHex(hex);
     if (/^[0-9a-f]{64}$/.test(h) || /^[0-9a-f]{66}$/.test(h)) set.add(h);
   };
-  const def = object && typeof object === 'object' ? object : {};
-  const lists = [def.validators, def.parties, def.owners, def.members, def.authorities];
-  for (const list of lists) {
-    if (!Array.isArray(list)) continue;
+  const addList = (list) => {
+    if (!Array.isArray(list)) return;
     for (const entry of list) {
       if (typeof entry === 'string') add(entry);
       else if (entry && typeof entry === 'object') {
         add(entry.pubkey || entry.publicKey || entry.id);
       }
     }
+  };
+  const def = object && typeof object === 'object' ? object : {};
+  // Flat publish bodies + ARC/Beacon genesis (`members.signers`, `spendPolicy.validators`).
+  addList(def.validators);
+  addList(def.parties);
+  addList(def.owners);
+  addList(def.authorities);
+  if (Array.isArray(def.members)) {
+    addList(def.members);
+  } else if (def.members && typeof def.members === 'object') {
+    addList(def.members.signers);
+    addList(def.members.validators);
+    addList(def.members.parties);
+    addList(def.members.owners);
+    addList(def.members.authorities);
+  }
+  if (def.spendPolicy && typeof def.spendPolicy === 'object') {
+    addList(def.spendPolicy.validators);
+    addList(def.spendPolicy.parties);
   }
   return set;
 }
@@ -4732,7 +4749,8 @@ class Peer extends Service {
     if (!this._contractPublishSignerAuthorized(object, publisherPubkeyHex)) {
       this.emit('warning',
         `[FABRIC:PEER] CONTRACT_PUBLISH rejected for ${actor.id}: ` +
-        'wire signer is not listed in parties/validators/owners/members/authorities');
+        'wire signer is not listed in parties/validators/owners/members(.signers)/' +
+        'authorities/spendPolicy.validators');
       return false;
     }
 
@@ -4753,8 +4771,9 @@ class Peer extends Service {
    * registered contract. Called only on first registration of a contract id —
    * republishes must not invoke this (see {@link Peer#_registerContract}).
    * Membership is taken **only** from body authority arrays (`parties`,
-   * `validators`, `owners`, `members`, `authorities`). The wire signer is never
-   * granted rights unless already listed there.
+   * `validators`, `owners`, `members` / `members.signers`, `authorities`,
+   * `spendPolicy.validators`). The wire signer is never granted rights unless
+   * already listed there.
    * @param {string} contractId
    * @param {object} object contract publish body
    * @param {string|null} [_publisherPubkeyHex] ignored (kept for call-site compat)

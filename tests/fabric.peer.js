@@ -1597,6 +1597,28 @@ describe('@fabric/core/types/peer', function () {
         assert.ok(warned);
         assert.strictEqual(peer._state.content.contracts[contractId].value, 1);
       });
+      it('CONTRACT_PUBLISH Beacon/ARC members.signers rejects non-validator front-run', function () {
+        const peer = new Peer({ listen: false, peersDb: null });
+        const Key = require('../types/key');
+        const { beaconContractDefinition } = require('../functions/beaconContractDefinition');
+        const owner = new Key();
+        const attacker = new Key();
+        const ownerPub = String(owner.pubkey).toLowerCase();
+        const attackerPub = String(attacker.pubkey).toLowerCase();
+        const definition = beaconContractDefinition({
+          validators: [ownerPub],
+          threshold: 1,
+          publisher: ownerPub
+        });
+
+        assert.strictEqual(peer._registerContract(definition, attackerPub), false);
+        assert.strictEqual(Object.keys(peer.contracts).length, 0);
+        assert.strictEqual(peer._registerContract(definition, ownerPub), true);
+        const contractId = Object.keys(peer.contracts)[0];
+        assert.ok(peer._signerMayPatchContract(contractId, ownerPub));
+        assert.strictEqual(peer._signerMayPatchContract(contractId, attackerPub), false);
+      });
+
       it('CONTRACT_PUBLISH front-run by non-party does not register or burn logical slot', function () {
         const peer = new Peer({ listen: false, peersDb: null });
         const Key = require('../types/key');
