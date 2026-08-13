@@ -151,6 +151,8 @@ function roundMeetsThreshold (round) {
 
 /**
  * Add / replace one validator signature; verify before accepting.
+ * `ready` stays closed to new signatures. Callers retry durable seal via
+ * `Beacon#submitFederationEpochSignature` (idempotent finalize), not here.
  * @returns {{ ok: boolean, round?: object, error?: string, sealed?: boolean }}
  */
 function addSignature (round, pubkey, signatureHex) {

@@ -88,4 +88,55 @@ describe('@fabric/core/types/beacon', function () {
     const parsed = JSON.parse(raw);
     assert.ok(Array.isArray(parsed.messages) && parsed.messages.length === 1);
   });
+
+  it('finalizes an already-ready federation round instead of rejecting round not open', async function () {
+    const beaconFederationSigning = require('../functions/beaconFederationSigning');
+    const beacon = new Beacon({ regtest: true, mineOnStart: false, interval: 0 });
+    beacon.fs = memoryFs();
+    const payload = { clock: 3, height: 3, blockHash: 'cc'.repeat(32) };
+    const digest = beaconFederationSigning.epochCommitmentDigestHex(payload);
+    beacon._pendingEpochRounds.set(digest, {
+      commitmentDigest: digest,
+      payload,
+      validators: ['aa'],
+      threshold: 1,
+      witness: { version: 1, signatures: { aa: '00' } },
+      status: 'ready',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    });
+    const result = await beacon.submitFederationEpochSignature(digest, 'aa', '00');
+    assert.strictEqual(result.status, 'success');
+    assert.strictEqual(result.sealed, true);
+    assert.strictEqual(beacon._epochChain.tip.payload.clock, 3);
+    assert.strictEqual(beacon._pendingEpochRounds.has(digest), false);
+  });
+
+  it('does not double-append when the ready round is already on the epoch chain', async function () {
+    const beaconFederationSigning = require('../functions/beaconFederationSigning');
+    const Chain = require('../types/chain');
+    const beacon = new Beacon({ regtest: true, mineOnStart: false, interval: 0 });
+    beacon.fs = memoryFs();
+    const payload = { clock: 4, height: 4, blockHash: 'dd'.repeat(32) };
+    const digest = beaconFederationSigning.epochCommitmentDigestHex(payload);
+    const round = {
+      commitmentDigest: digest,
+      payload,
+      validators: ['aa'],
+      threshold: 1,
+      witness: { version: 1, signatures: { aa: '00' } },
+      status: 'ready',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    beacon._epochChain = Chain.fromBeaconMessages([
+      { type: 'BEACON_EPOCH', payload, federationWitness: round.witness }
+    ]);
+    beacon._pendingEpochRounds.set(digest, round);
+    const result = await beacon.submitFederationEpochSignature(digest, 'aa', '00');
+    assert.strictEqual(result.status, 'success');
+    assert.strictEqual(result.sealed, true);
+    assert.strictEqual(beacon._epochChain.height, 1);
+    assert.strictEqual(beacon._pendingEpochRounds.has(digest), false);
+  });
 });

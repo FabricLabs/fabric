@@ -36,7 +36,7 @@ audit report.
 4. **CLI `settings/local.js`** — Gitignored operator overlay. Packaged installs should ship/copy [settings/local.example.js](settings/local.example.js); shell loads example when local is absent.
 5. **Exact Node pin** — `engines.node` is `24.15.0`. Documented for CI parity; broad consumers may need a range in a later release.
 6. **Adversarial completeness** — Historical fuzz (`randomAmpFrame`, `P2P_BASE_MESSAGE` chaos) proves crash resilience more than semantic malice. Prefer expanding [`tests/protocol-v1/`](tests/protocol-v1/README.md) (well-formed signed frames × delivery modes) before claiming mesh-wide adversarial hardness. Unregistered AMP opcodes must remain `UNKNOWN_MESSAGE` (not aliased to `P2P_BASE_MESSAGE`).
-7. ~~**Peer `_selfDialSuppressUntil`**~~ — FIFO-capped (default 256; `settings.selfDialSuppressMax`); expired entries still drop on read.
+7. ~~**Peer `_selfDialSuppressUntil`**~~ — FIFO-capped (default 256; `settings.selfDialSuppressMax`); expired entries still drop on read. Self-dial suppress from peering offers/announces uses **verified AMP signer** only (`meta.verifiedPubkey`), not attacker-controlled `obj.pubkey`.
 8. **Eager `messageHex`** — hot paths still materialize hex wire forms eagerly; laziness / cache invalidation is outstanding performance work, not a correctness claim.
 9. ~~**Chat / onion seal AAD**~~ — tip + participant AES-GCM AAD lands in `groupChatSeal` / `onionChatSeal` (see [docs/ARC.md](docs/ARC.md) §8).
 10. **Public API short names** — `contractId` and similar remain until a coordinated rename to `contractIdentifier`-style identifiers (Author Style in `AGENTS.md`).
@@ -45,13 +45,13 @@ audit report.
 13. ~~**Withdrawal `requestId` bind**~~ — `validateWithdrawalRequest` rejects unless `requestId === computeWithdrawalRequestId(…)` (destination/fee/vault commitment).
 14. **Outstanding ARC / Peer follow-ups** — journal / re-fold caps ([docs/ARC.md](docs/ARC.md) §8); coordinated `contractId` → `contractIdentifier` rename; eager `messageHex` laziness; regenerate `API.md` field docs for `SCHEMA_P2P_PEER_GOSSIP` / `tryParseMessageBody` / `resolveSpend` opts when next running `npm run make:api`. Blinded-execution `decisionSigningMessage` still omits `at` (idempotent replays by actor/proposal/decision); binding `at` is a deliberate protocol-string bump (see ARC §8 item 19).
 15. ~~**Beacon/ARC `CONTRACT_PUBLISH` authority collector**~~ — `collectContractAuthorityPubkeys` walks nested `members.signers` / `spendPolicy.validators` (not only top-level arrays), so Beacon genesis no longer fail-opens first-claim to any AMP signer.
-16. **Peering self-suppress trust** — candidate host/port validation + default-port normalize on self-key refuse + NOISE self-check fail-closed are in; still open: only suppress dials from a verified pubkey binding (not remote-controlled `obj.pubkey` alone).
+16. ~~**Peering self-suppress trust**~~ — candidate host/port validation + default-port normalize on self-key refuse + NOISE self-check fail-closed; offer/announce enqueue suppresses only when `verifiedPubkey` (AMP signer) is our key. Advertised `obj.pubkey` is informational.
 17. **OP_RETURN hallmarks** — core short-format encode/verify (`functions/fabricHallmark`); Hub publish/scan is operator opt-in. Remaining: broader BIP-compliance report coverage and any Hub-side mainnet policy gates outside this repo.
 18. **Blinded-execution `at` bind** — decision timestamps are recorded but not yet part of `decisionSigningMessage` (idempotent replays by actor/proposal/decision still apply).
 
 ### PR #183 review triage (feature/rsi)
 
-Most CodeRabbit / automation actionable items on [#183](https://github.com/FabricLabs/fabric/pull/183) are addressed on tip (`51ad619c…`). Security review at `51ad619c` reports prior Highs closed; **1 Medium** remains (blinded-execution `at` bind — deferred).
+Most CodeRabbit / automation actionable items on [#183](https://github.com/FabricLabs/fabric/pull/183) are addressed on tip (`3c963834…` plus this pass). Latest security review on that SHA reported **2 Mediums**; the peering self-suppress path is now fixed in core. **1 Medium** remains (blinded-execution `at` bind — deferred).
 
 | Item | Status |
 |------|--------|
@@ -62,10 +62,10 @@ Most CodeRabbit / automation actionable items on [#183](https://github.com/Fabri
 | Reader-role fold vs `members.set` test flake | Fixed — commutative `member.add` seed (hash-ordered fold) |
 | Hallmark malformed digest / mutable magic export | Fixed — omit bad digests; export fresh `HALLMARK_MAGIC` Buffer |
 | `createRound` omitted `policy` TypeError | Fixed — default `policy = {}` |
-| Bind `at` into `decisionSigningMessage` | Deferred (protocol bump) — ARC §8 / AUDIT #18; **Medium** on tip security review |
-| Verified-pubkey peering self-suppress | Deferred — AUDIT #16 |
+| Bind `at` into `decisionSigningMessage` | Deferred (protocol bump) — ARC §8 / AUDIT #18; **Medium** remaining |
+| Verified-pubkey peering self-suppress | Fixed — `_enqueuePeeringCandidate` uses `verifiedPubkey` (AMP signer) only |
 | Eager `messageHex` / `contractIdentifier` rename / journal caps | Deferred — ARC §8 |
-| Beacon federation `ready` before durable persist | Deferred — Hub `submitFederationEpochSignature` should idempotently finalize `ready` rounds (not reopen for new sigs) |
+| Beacon federation `ready` before durable persist | Fixed in core `Beacon#submitFederationEpochSignature` — idempotent finalize of `ready`/`sealed` rounds; `addSignature` still rejects new sigs. Hub `contracts/beacon.js` still duplicates this override (safe to drop after pinning this core). |
 | `uuid` via `jayson` (GHSA-w5hq-g745-h8pq) | Mitigated — override `uuid@11.1.1` (avoid `npm audit fix --force` → jayson 2.x) |
 
 ## Recommendations before a non-experimental tag

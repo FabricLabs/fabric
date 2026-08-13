@@ -1204,7 +1204,8 @@ class Peer extends Service {
    * @param {string} host
    * @param {number} port
    * @param {Object} [meta]
-   * @param {string} [meta.pubkey] Optional advertised Fabric pubkey (skip if own).
+   * @param {string} [meta.pubkey] Optional advertised Fabric pubkey (informational).
+   * @param {string} [meta.verifiedPubkey] AMP/session-verified pubkey; self-dial suppress uses this only.
    */
   _enqueuePeeringCandidate (host, port, meta = {}) {
     const normalizedHost = typeof host === 'string' ? host.trim() : '';
@@ -1217,9 +1218,11 @@ class Peer extends Service {
     }
     const key = `${normalizedHost}:${normalizedPort}`;
     if (this._isSelfDialSuppressed(key)) return;
-    if (meta.pubkey && this._isOwnFabricPubkey(meta.pubkey)) {
+    // Only suppress from a verified AMP/session pubkey — remote `obj.pubkey` is
+    // attacker-controlled and must not poison dial targets for ~10 minutes.
+    if (meta.verifiedPubkey && this._isOwnFabricPubkey(meta.verifiedPubkey)) {
       this.emit('warning',
-        `[FABRIC:PEER] Skipping peering candidate ${key}: advertised pubkey is our own`);
+        `[FABRIC:PEER] Skipping peering candidate ${key}: verified pubkey is our own`);
       this._suppressSelfDialAddress(key);
       return;
     }
@@ -3283,7 +3286,10 @@ class Peer extends Service {
               || signerPubkeyHex
               || (message.actor && message.actor.id)
               || '';
-            this._enqueuePeeringCandidate(obj.host, obj.port, { pubkey: advertised });
+            this._enqueuePeeringCandidate(obj.host, obj.port, {
+              pubkey: advertised,
+              verifiedPubkey: signerPubkeyHex
+            });
           }
         }
         if (wireMessage) this.relayFrom(origin.name, wireMessage);
@@ -3359,7 +3365,8 @@ class Peer extends Service {
         const port = announceObj && announceObj.port;
         if (host != null && port != null) {
           this._enqueuePeeringCandidate(host, port, {
-            pubkey: announceObj.pubkey || signerPubkeyHex
+            pubkey: announceObj.pubkey || signerPubkeyHex,
+            verifiedPubkey: signerPubkeyHex
           });
         }
         break;

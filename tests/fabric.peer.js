@@ -1751,6 +1751,29 @@ describe('@fabric/core/types/peer', function () {
         assert.ok(!server._isSelfDialSuppressed('192.0.2.10'));
       });
 
+      it('does not self-suppress from an unverified advertised pubkey', function () {
+        const server = new Peer({ listen: false, peersDb: null });
+        const own = server._localFabricPubkeyHex();
+        const attacker = new Key();
+        server._enqueuePeeringCandidate('192.0.2.55', 7777, {
+          pubkey: own,
+          verifiedPubkey: attacker.pubkey
+        });
+        assert.strictEqual(server.candidates.length, 1);
+        assert.ok(!server._isSelfDialSuppressed('192.0.2.55:7777'));
+
+        server._enqueuePeeringCandidate('192.0.2.57', 7777, { pubkey: own });
+        assert.ok(server.candidates.some((c) => c && c.host === '192.0.2.57'));
+        assert.ok(!server._isSelfDialSuppressed('192.0.2.57:7777'));
+
+        server._enqueuePeeringCandidate('192.0.2.56', 7777, {
+          pubkey: own,
+          verifiedPubkey: own
+        });
+        assert.ok(server._isSelfDialSuppressed('192.0.2.56:7777'));
+        assert.ok(!server.candidates.some((c) => c && c.host === '192.0.2.56'));
+      });
+
       it('_verifyNOISE rejects when self-key normalization throws', function (done) {
         const server = new Peer({ listen: false, peersDb: null });
         const orig = server._isOwnFabricPubkey.bind(server);

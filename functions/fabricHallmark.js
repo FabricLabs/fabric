@@ -27,6 +27,7 @@ const HALLMARK_MAGIC = Buffer.from(HALLMARK_MAGIC_HEX, 'hex');
  * @param {string} hex
  * @param {number} byteLen
  * @returns {Buffer}
+ * @private
  */
 function requireHexBytes (hex, byteLen) {
   const h = String(hex || '').replace(/\s+/g, '').replace(/^0x/i, '').toLowerCase();
@@ -59,6 +60,7 @@ function tipHashSuffixFromBlockHash (blockHashHex) {
  * Normalize optional `{ clock, stateDigest }` snapshot for commitment.
  * @param {object|null|undefined} snap
  * @returns {{ clock: number, stateDigest: string|null }|null}
+ * @private
  */
 function normalizeStateHead (snap) {
   if (snap == null) return null;

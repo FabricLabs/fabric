@@ -6,8 +6,8 @@
  * Regtest: `createEpoch()` mines one block (`generatetoaddress`) then appends
  * a `BEACON_EPOCH` entry. Non-regtest: `recordEpochFromBlock` follows tips.
  *
- * Hub product wiring historically lived in hub.fabric.pub `contracts/beacon.js`;
- * that module re-exports this type.
+ * Hub product wiring lives in hub.fabric.pub `contracts/beacon.js` (extends this
+ * type). Ready-round retry finalize is implemented here so Hub and CLI share it.
  */
 
 const merge = require('lodash.merge');
@@ -252,8 +252,21 @@ class Beacon extends Actor {
       return { status: 'error', message: 'unknown pending epoch round' };
     }
 
+    // addSignature marks the round `ready` before durable persist. A crash or
+    // persist failure then makes retries hit `round not open`. Finalize the
+    // existing ready round instead of reopening it for new signatures.
+    if (round.status === 'ready' || round.status === 'sealed') {
+      return this._finalizeReadyFederationRound(digest, round);
+    }
+
     const added = beaconFederationSigning.addSignature(round, pubkey, signatureHex);
     if (!added.ok) {
+      if (added.error === 'round not open') {
+        const again = this._pendingEpochRounds.get(digest);
+        if (again && (again.status === 'ready' || again.status === 'sealed')) {
+          return this._finalizeReadyFederationRound(digest, again);
+        }
+      }
       return { status: 'error', message: added.error || 'signature rejected' };
     }
 
@@ -271,6 +284,34 @@ class Beacon extends Actor {
         commitmentDigest: digest,
         signatureCount: Object.keys(round.witness.signatures || {}).length,
         threshold: round.threshold
+      };
+    }
+
+    return this._finalizeReadyFederationRound(digest, round);
+  }
+
+  /**
+   * Persist a threshold-ready round onto the epoch chain. Idempotent if the
+   * digest is already sealed.
+   * @param {string} digest
+   * @param {object} round
+   * @returns {Promise<object>}
+   * @private
+   */
+  async _finalizeReadyFederationRound (digest, round) {
+    if (this._epochAlreadySealed(digest, round)) {
+      this._pendingEpochRounds.delete(digest);
+      try {
+        const doc = beaconFederationSigning.loadPendingDoc(this.fs);
+        delete doc.rounds[digest];
+        await beaconFederationSigning.persistPendingDoc(this.fs, doc);
+      } catch (_) { /* ignore */ }
+      return {
+        status: 'success',
+        sealed: true,
+        commitmentDigest: digest,
+        payload: round.payload,
+        federationWitness: round.witness
       };
     }
 
@@ -300,6 +341,31 @@ class Beacon extends Actor {
       payload: entry.payload,
       federationWitness: entry.federationWitness
     };
+  }
+
+  /**
+   * @param {string} digest
+   * @param {object} round
+   * @returns {boolean}
+   * @private
+   */
+  _epochAlreadySealed (digest, round) {
+    try {
+      const msgs = typeof this._epochChain.toBeaconMessages === 'function'
+        ? this._epochChain.toBeaconMessages()
+        : [];
+      return msgs.some((e) => {
+        if (!e || !e.payload) return false;
+        try {
+          return beaconFederationSigning.epochCommitmentDigestHex(e.payload) === digest;
+        } catch (_) {
+          const clock = round && round.payload && round.payload.clock;
+          return clock != null && e.payload.clock === clock;
+        }
+      });
+    } catch (_) {
+      return false;
+    }
   }
 
   listPendingFederationEpochRounds () {
