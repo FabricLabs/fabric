@@ -82,7 +82,6 @@
 ./types/token.js:    // TODO: determine rounding preference (secwise)
 ./types/token.js:    // TODO: reconcile with JWT spec
 ./types/circuit.js:    // TODO: generate polynomial for circuit
-./types/contract.js:    // TODO: parse on-chain transaction for update to contract balance
 ./types/bitcoin/transaction.js:// TODO: PSBTs
 ./types/hash256.js:  // TODO: document `hash256.value`
 ./types/bond.js:      content: Buffer.alloc(4) // TODO: Bitcoin encoded values?

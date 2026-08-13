@@ -30,9 +30,22 @@ const {
   withdrawalWitnessSigningMessage,
   verifyWithdrawalWitnessSignature
 } = require('./contractSpend');
+const {
+  GOVERNANCE_ACTIONS,
+  proposalIdOf,
+  verifyProposalVote,
+  applyGroupChangeAction,
+  foldProposals
+} = require('./groupChangeGovernance');
+
+const Actor = require('../types/actor');
 
 const COLLECTION = 'contractmessages';
 const ORIGINS = Object.freeze(['mesh', 'queue', 'paste', 'local']);
+/** Compactable journal rows (mutations are never dropped). */
+const COMPACTABLE_TYPES = Object.freeze(['GroupChat', 'MessageReceived', 'MessageReceipt']);
+const ABSOLUTE_MAX_JOURNAL_ENTRIES = 20000;
+const DEFAULT_MAX_JOURNAL_ENTRIES = ABSOLUTE_MAX_JOURNAL_ENTRIES;
 
 /**
  * Body types that require current signer / federation validator (or verified
@@ -78,6 +91,61 @@ const DEFAULT_SYNC_EXCLUDE = Object.freeze([
 
 function isDeliveryAckType (type) {
   return DELIVERY_ACK_TYPES.includes(String(type || ''));
+}
+
+function isCompactableType (type) {
+  return COMPACTABLE_TYPES.includes(String(type || ''));
+}
+
+function clampJournalEntries (value, fallback = DEFAULT_MAX_JOURNAL_ENTRIES) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return fallback;
+  return Math.min(Math.floor(n), ABSOLUTE_MAX_JOURNAL_ENTRIES);
+}
+
+/**
+ * Drop lowest-hash compactable rows until length ≤ max. Mutation / governance
+ * rows are never evicted (fold must still reconstruct the roster).
+ * @param {object[]} entries
+ * @param {number} maxEntries
+ * @returns {object[]}
+ */
+function compactJournalEntries (entries, maxEntries) {
+  const list = Array.isArray(entries) ? entries : [];
+  const max = clampJournalEntries(maxEntries, DEFAULT_MAX_JOURNAL_ENTRIES);
+  if (list.length <= max) return list;
+  const pinned = [];
+  const compactable = [];
+  for (const row of list) {
+    if (isCompactableType(row && row.type)) compactable.push(row);
+    else pinned.push(row);
+  }
+  const overflow = pinned.length + compactable.length - max;
+  if (overflow <= 0) return list;
+  compactable.sort((a, b) => {
+    const ha = String(a && a.hash || '');
+    const hb = String(b && b.hash || '');
+    if (ha < hb) return -1;
+    if (ha > hb) return 1;
+    return 0;
+  });
+  const keptCompact = compactable.slice(overflow);
+  return pinned.concat(keptCompact);
+}
+
+function resolveMaxJournalEntries (doc, meta = {}) {
+  if (meta.maxJournalEntries != null) {
+    return clampJournalEntries(meta.maxJournalEntries, DEFAULT_MAX_JOURNAL_ENTRIES);
+  }
+  const fromGenesis = doc && doc.genesis && doc.genesis.primitives
+    && doc.genesis.primitives.maxJournalEntries;
+  if (fromGenesis != null) {
+    return clampJournalEntries(fromGenesis, DEFAULT_MAX_JOURNAL_ENTRIES);
+  }
+  if (doc && doc.maxJournalEntries != null) {
+    return clampJournalEntries(doc.maxJournalEntries, DEFAULT_MAX_JOURNAL_ENTRIES);
+  }
+  return DEFAULT_MAX_JOURNAL_ENTRIES;
 }
 
 function _commit () {
@@ -272,7 +340,14 @@ function authorAllowedByReaders (readers, authorXOnly) {
 function normalizeGenesis (raw = {}) {
   const src = raw && typeof raw === 'object' ? raw : {};
   const members = src.members && typeof src.members === 'object' ? src.members : {};
-  const signers = normalizePubkeyList(src.signers || members.signers || []);
+  const signers = normalizePubkeyList(
+    src.signers
+    || members.signers
+    || src.validators
+    || src.parties
+    || (src.spendPolicy && src.spendPolicy.validators)
+    || []
+  );
   const readers = normalizePubkeyList(src.readers || members.readers || []);
   let primitives = null;
   if (src.primitives && typeof src.primitives === 'object') {
@@ -291,6 +366,12 @@ function normalizeGenesis (raw = {}) {
           ? ds.types.map((t) => String(t || '').trim()).filter(Boolean)
           : []
       };
+    }
+    if (src.primitives.maxJournalEntries != null) {
+      primitives.maxJournalEntries = clampJournalEntries(
+        src.primitives.maxJournalEntries,
+        DEFAULT_MAX_JOURNAL_ENTRIES
+      );
     }
   }
   let bitcoinAnchor = null;
@@ -357,6 +438,9 @@ function loadDoc (store, contractId) {
       content: existing.content && typeof existing.content === 'object' ? existing.content : {},
       entries: Array.isArray(existing.entries) ? existing.entries.slice() : [],
       genesis: existing.genesis && typeof existing.genesis === 'object' ? existing.genesis : null,
+      maxJournalEntries: existing.maxJournalEntries != null
+        ? Number(existing.maxJournalEntries)
+        : null,
       bitcoinBlockHash: existing.bitcoinBlockHash
         ? String(existing.bitcoinBlockHash).toLowerCase()
         : null,
@@ -370,6 +454,7 @@ function loadDoc (store, contractId) {
     content: {},
     entries: [],
     genesis: null,
+    maxJournalEntries: null,
     bitcoinBlockHash: null,
     bitcoinHeight: null
   };
@@ -384,6 +469,7 @@ function persistDoc (store, doc) {
     entries: doc.entries
   };
   if (doc.genesis) row.genesis = doc.genesis;
+  if (doc.maxJournalEntries != null) row.maxJournalEntries = doc.maxJournalEntries;
   if (doc.bitcoinBlockHash) row.bitcoinBlockHash = doc.bitcoinBlockHash;
   if (doc.bitcoinHeight != null) row.bitcoinHeight = doc.bitcoinHeight;
   store.put(COLLECTION, doc.id, row);
@@ -647,6 +733,40 @@ function authorizeIngest (doc, type, authorXOnly, meta = {}, bodyObject = null) 
     }
   }
 
+  if (type === 'GroupChangeProposal' && bodyObject) {
+    const action = String(bodyObject.action || '');
+    if (!GOVERNANCE_ACTIONS.includes(action)) {
+      return { ok: false, error: 'unsupported proposal action' };
+    }
+    if (!proposalIdOf(bodyObject)) {
+      return { ok: false, error: 'proposal id required' };
+    }
+  }
+
+  if (type === 'GroupChangeVote' && bodyObject) {
+    const voter = pubkeyXOnly(bodyObject.voter) || String(bodyObject.voter || '').toLowerCase();
+    if (voter !== authorXOnly) {
+      return { ok: false, error: 'vote voter must match AMP author' };
+    }
+    const sig = String(bodyObject.signature || '').trim().toLowerCase();
+    if (sig.startsWith('local:')) {
+      return { ok: false, error: 'local vote signatures are not valid on the wire' };
+    }
+    if (!/^[0-9a-f]{128}$/.test(sig)) {
+      return { ok: false, error: 'vote signature required (64-byte BIP340 hex)' };
+    }
+    const pid = String(bodyObject.proposalId || '').trim();
+    if (!pid) return { ok: false, error: 'vote proposalId required' };
+    const prior = (doc.entries || []).find((row) => {
+      return row && row.type === 'GroupChangeProposal' && proposalIdOf(row.object) === pid;
+    });
+    if (prior && prior.object) {
+      if (!verifyProposalVote(prior.object, authorXOnly, sig)) {
+        return { ok: false, error: 'invalid vote signature' };
+      }
+    }
+  }
+
   return { ok: true };
 }
 
@@ -655,7 +775,7 @@ function authorizeIngest (doc, type, authorXOnly, meta = {}, bodyObject = null) 
  * @param {object[]} entries
  * @returns {{ version: number, clock: number, content: object }}
  */
-function foldContractState (entries = []) {
+function foldContractState (entries = [], genesis = null) {
   const sorted = (Array.isArray(entries) ? entries.slice() : []).sort((a, b) => {
     // Byte-order / plain lexicographic on hex — not ICU localeCompare (tips must
     // converge across Node ICU builds).
@@ -665,52 +785,19 @@ function foldContractState (entries = []) {
     if (ha > hb) return 1;
     return 0;
   });
-  const members = new Set();
-  const signers = new Set();
-  let readerOnlyAdds = false;
+  const ctx = {
+    members: new Set(),
+    signers: new Set(),
+    readerOnlyAdds: false,
+    threshold: genesis && genesis.threshold != null ? Number(genesis.threshold) : null
+  };
   const messages = [];
   const withdrawals = Object.create(null);
   for (const row of sorted) {
     const type = String(row.type || '');
     const obj = row.object && typeof row.object === 'object' ? row.object : {};
     if (type === 'GroupChange') {
-      const action = String(obj.action || '');
-      const role = String(obj.role || 'signer').toLowerCase() === 'reader' ? 'reader' : 'signer';
-      if (action === 'member.add' && obj.member) {
-        const x = pubkeyXOnly(obj.member);
-        if (x) {
-          members.add(x);
-          if (role === 'signer') signers.add(x);
-          else readerOnlyAdds = true;
-        }
-      } else if (action === 'member.remove' && obj.member) {
-        const x = pubkeyXOnly(obj.member);
-        if (x) {
-          members.delete(x);
-          signers.delete(x);
-        }
-      } else if (action === 'members.set' && Array.isArray(obj.members)) {
-        members.clear();
-        signers.clear();
-        readerOnlyAdds = false;
-        for (const m of obj.members) {
-          const x = pubkeyXOnly(m);
-          if (x) {
-            members.add(x);
-            signers.add(x);
-          }
-        }
-      } else if (action === 'signers.set' && Array.isArray(obj.signers)) {
-        signers.clear();
-        readerOnlyAdds = true;
-        for (const m of obj.signers) {
-          const x = pubkeyXOnly(m);
-          if (x) {
-            signers.add(x);
-            members.add(x);
-          }
-        }
-      }
+      applyGroupChangeAction(ctx, obj);
     } else if (type === 'GroupChat') {
       const authorRaw = row.author || obj.author || null;
       const author = pubkeyXOnly(authorRaw) || authorRaw;
@@ -760,16 +847,26 @@ function foldContractState (entries = []) {
       }
     }
   }
-  const memberList = Array.from(members).sort();
-  const signerList = readerOnlyAdds
-    ? Array.from(signers).sort()
-    : (signers.size ? Array.from(signers).sort() : memberList.slice());
+  const proposals = foldProposals(
+    sorted,
+    ctx,
+    ctx.threshold,
+    genesis && Array.isArray(genesis.signers) ? genesis.signers : []
+  );
+  const memberList = Array.from(ctx.members).sort();
+  const signerList = ctx.readerOnlyAdds
+    ? Array.from(ctx.signers).sort()
+    : (ctx.signers.size ? Array.from(ctx.signers).sort() : memberList.slice());
   const content = {
     members: memberList,
     signers: signerList,
     messages,
     withdrawals: Object.keys(withdrawals).sort().map((k) => withdrawals[k])
   };
+  if (proposals.length) content.proposals = proposals;
+  if (ctx.threshold != null && Number.isFinite(Number(ctx.threshold))) {
+    content.threshold = Math.max(1, Math.floor(Number(ctx.threshold)));
+  }
   // Delivery ACKs are persisted in entries but do not advance tip clock / digest.
   const tipEntries = sorted.filter((row) => !isDeliveryAckType(row.type));
   const state = {
@@ -1068,7 +1165,10 @@ function ingestMessageBuffer (store, contractId, bufferOrPaste, meta = {}) {
     acceptedAt: new Date().toISOString()
   };
   doc.entries.push(entry);
-  const state = foldContractState(doc.entries);
+  const maxJournal = resolveMaxJournalEntries(doc, meta);
+  doc.maxJournalEntries = maxJournal;
+  doc.entries = compactJournalEntries(doc.entries, maxJournal);
+  const state = foldContractState(doc.entries, doc.genesis);
   doc.version = state.version;
   doc.clock = state.clock;
   doc.content = state.content;
@@ -1100,6 +1200,69 @@ function ingestMessageBuffer (store, contractId, bufferOrPaste, meta = {}) {
     entry,
     tip: tipFromDoc(doc)
   };
+}
+
+/**
+ * Persist ARC genesis from a signed CONTRACT_PUBLISH so later GroupChange
+ * ingest does not need meta.genesis on every call (first write wins).
+ * @param {{ get: Function, put: Function }} store
+ * @param {Buffer|string} bufferOrPaste
+ * @param {object} [meta]
+ * @returns {{ accepted: boolean, duplicate: boolean, contractId: string|null, genesis: object|null, error?: string }}
+ */
+function ingestContractPublishBuffer (store, bufferOrPaste, meta = {}) {
+  let buffer;
+  try {
+    buffer = Buffer.isBuffer(bufferOrPaste) ? bufferOrPaste : bufferFromPaste(bufferOrPaste);
+  } catch (e) {
+    return { accepted: false, duplicate: false, contractId: null, genesis: null, error: e.message || 'invalid buffer' };
+  }
+  if (buffer.length > HEADER_SIZE + MAX_MESSAGE_SIZE) {
+    return { accepted: false, duplicate: false, contractId: null, genesis: null, error: 'message exceeds MAX_MESSAGE_SIZE' };
+  }
+  let msg;
+  try {
+    msg = Message.fromBuffer(buffer);
+  } catch (e) {
+    return { accepted: false, duplicate: false, contractId: null, genesis: null, error: e.message || 'parse failed' };
+  }
+  if (msg.type !== OUTER.CONTRACT_PUBLISH && msg.type !== 'P2P_CONTRACT_PUBLISH') {
+    return { accepted: false, duplicate: false, contractId: null, genesis: null, error: 'not a CONTRACT_PUBLISH' };
+  }
+  if (!verifyMessageSignature(msg)) {
+    return { accepted: false, duplicate: false, contractId: null, genesis: null, error: 'invalid signature' };
+  }
+  let raw = msg.body != null ? msg.body : (msg.raw && msg.raw.data);
+  if (Buffer.isBuffer(raw)) raw = raw.toString('utf8');
+  let definition;
+  try {
+    definition = typeof raw === 'string' ? JSON.parse(raw) : raw;
+  } catch (e) {
+    return { accepted: false, duplicate: false, contractId: null, genesis: null, error: 'invalid publish body' };
+  }
+  if (!definition || typeof definition !== 'object') {
+    return { accepted: false, duplicate: false, contractId: null, genesis: null, error: 'invalid publish body' };
+  }
+  const contractId = new Actor(definition).id;
+  const genesis = normalizeGenesis(definition);
+  const author = authorXOnlyHex(msg);
+  if (genesis.signers.length && author && !genesis.signers.includes(author)) {
+    return {
+      accepted: false,
+      duplicate: false,
+      contractId,
+      genesis: null,
+      error: 'publish signer not in genesis authorities'
+    };
+  }
+  const doc = loadDoc(store, contractId);
+  if (doc.genesis && typeof doc.genesis === 'object') {
+    return { accepted: false, duplicate: true, contractId, genesis: doc.genesis };
+  }
+  applyGenesisMeta(doc, { genesis: definition, ...meta });
+  if (!doc.genesis) doc.genesis = genesis;
+  persistDoc(store, doc);
+  return { accepted: true, duplicate: false, contractId, genesis: doc.genesis };
 }
 
 /**
@@ -1152,6 +1315,11 @@ module.exports = {
   ensureDeliveryPending,
   applyDeliveryAckEntry,
   ingestMessageBuffer,
+  ingestContractPublishBuffer,
+  compactJournalEntries,
+  clampJournalEntries,
+  ABSOLUTE_MAX_JOURNAL_ENTRIES,
+  COMPACTABLE_TYPES,
   createMemoryStore,
   messageHashHex,
   authorXOnlyHex

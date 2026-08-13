@@ -174,6 +174,15 @@ describe('@fabric/core/types/peer', function () {
         assert.strictEqual(writtenA, false);
         assert.strictEqual(writtenB, true);
       });
+
+      it('returns the number of edges written', function () {
+        const peer = new Peer({ listen: false, peersDb: null });
+        const buf = Buffer.from('count');
+        peer.connections['a'] = { _writeFabric: () => {} };
+        peer.connections['b'] = { _writeFabric: () => {} };
+        assert.strictEqual(peer.broadcast(buf, 'a'), 1);
+        assert.strictEqual(peer.broadcast(buf), 2);
+      });
     });
 
     describe('connectTo', function () {

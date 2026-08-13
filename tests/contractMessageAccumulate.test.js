@@ -6,6 +6,7 @@ const Message = require('../types/message');
 const {
   createMemoryStore,
   ingestMessageBuffer,
+  ingestContractPublishBuffer,
   foldContractState,
   stateDigest,
   bufferFromPaste,
@@ -14,6 +15,9 @@ const {
   normalizeGenesis
 } = require('../functions/contractMessageAccumulate');
 const { pubkeyXOnly } = require('../functions/groupChatSeal');
+const {
+  signProposalVote
+} = require('../functions/groupChangeGovernance');
 const {
   OP_CONTRACT_SIGN,
   issueContractCapability
@@ -516,6 +520,210 @@ describe('@fabric/core contractMessageAccumulate', function () {
     assert.strictEqual(isSyncTrackedType('GroupChat', includeDoc), false);
     assert.strictEqual(isSyncTrackedType('GroupShare', includeDoc), true);
     assert.ok(ensureDeliveryPending);
+  });
+
+  it('threshold-1 GroupChangeProposal from a signer adopts member.add', function () {
+    const owner = new Key();
+    const recruit = new Key();
+    const store = createMemoryStore();
+    const genesis = { signers: [owner.pubkey], threshold: 1 };
+    const proposal = {
+      id: 'gprop-t1',
+      contractId,
+      action: 'member.add',
+      member: recruit.pubkey,
+      role: 'signer',
+      proposedBy: pubkeyXOnly(owner.pubkey),
+      createdAt: '2026-01-01T00:00:00.000Z',
+      threshold: 1
+    };
+    const res = ingestMessageBuffer(
+      store,
+      contractId,
+      signContractMessage(owner, contractId, 'GroupChangeProposal', proposal).toBuffer(),
+      { origin: 'mesh', genesis }
+    );
+    assert.strictEqual(res.accepted, true);
+    const adopted = (res.tip.content.proposals || []).find((p) => p.id === 'gprop-t1');
+    assert.ok(adopted);
+    assert.strictEqual(adopted.status, 'adopted');
+    assert.ok(res.tip.content.members.includes(pubkeyXOnly(recruit.pubkey)));
+    assert.ok(res.tip.content.members.includes(pubkeyXOnly(owner.pubkey)));
+    assert.ok(res.tip.content.signers.includes(pubkeyXOnly(recruit.pubkey)));
+  });
+
+  it('threshold-2 proposal stays pending until a BIP340 vote', function () {
+    const a = new Key();
+    const b = new Key();
+    const recruit = new Key();
+    const store = createMemoryStore();
+    const genesis = { signers: [a.pubkey, b.pubkey], threshold: 2 };
+    const proposal = {
+      id: 'gprop-t2',
+      contractId,
+      action: 'member.add',
+      member: recruit.pubkey,
+      role: 'signer',
+      proposedBy: pubkeyXOnly(a.pubkey),
+      createdAt: '2026-01-01T00:00:00.000Z',
+      threshold: 2
+    };
+    const first = ingestMessageBuffer(
+      store,
+      contractId,
+      signContractMessage(a, contractId, 'GroupChangeProposal', proposal).toBuffer(),
+      { origin: 'mesh', genesis }
+    );
+    assert.strictEqual(first.accepted, true);
+    assert.strictEqual(first.tip.content.proposals[0].status, 'pending');
+    assert.ok(!first.tip.content.members.includes(pubkeyXOnly(recruit.pubkey)));
+
+    const signed = signProposalVote(b, proposal);
+    const vote = ingestMessageBuffer(
+      store,
+      contractId,
+      signContractMessage(b, contractId, 'GroupChangeVote', {
+        proposalId: proposal.id,
+        voter: pubkeyXOnly(b.pubkey),
+        signature: signed.signature
+      }).toBuffer(),
+      { origin: 'mesh', genesis }
+    );
+    assert.strictEqual(vote.accepted, true);
+    assert.strictEqual(vote.tip.content.proposals[0].status, 'adopted');
+    assert.ok(vote.tip.content.members.includes(pubkeyXOnly(recruit.pubkey)));
+  });
+
+  it('rejects GroupChangeVote with voter/AMP mismatch or bad signature', function () {
+    const a = new Key();
+    const b = new Key();
+    const store = createMemoryStore();
+    const genesis = { signers: [a.pubkey, b.pubkey], threshold: 2 };
+    const proposal = {
+      id: 'gprop-bad',
+      contractId,
+      action: 'member.add',
+      member: new Key().pubkey,
+      proposedBy: pubkeyXOnly(a.pubkey),
+      createdAt: '2026-01-01T00:00:00.000Z',
+      threshold: 2
+    };
+    ingestMessageBuffer(
+      store,
+      contractId,
+      signContractMessage(a, contractId, 'GroupChangeProposal', proposal).toBuffer(),
+      { origin: 'mesh', genesis }
+    );
+    const mismatch = ingestMessageBuffer(
+      store,
+      contractId,
+      signContractMessage(b, contractId, 'GroupChangeVote', {
+        proposalId: proposal.id,
+        voter: pubkeyXOnly(a.pubkey),
+        signature: 'ab'.repeat(64)
+      }).toBuffer(),
+      { origin: 'mesh', genesis }
+    );
+    assert.strictEqual(mismatch.accepted, false);
+    assert.match(mismatch.error, /voter must match/i);
+
+    const badSig = ingestMessageBuffer(
+      store,
+      contractId,
+      signContractMessage(b, contractId, 'GroupChangeVote', {
+        proposalId: proposal.id,
+        voter: pubkeyXOnly(b.pubkey),
+        signature: 'ab'.repeat(64)
+      }).toBuffer(),
+      { origin: 'mesh', genesis }
+    );
+    assert.strictEqual(badSig.accepted, false);
+    assert.match(badSig.error, /invalid vote/i);
+  });
+
+  it('persists genesis from CONTRACT_PUBLISH so GroupChange needs no meta.genesis', function () {
+    const owner = new Key();
+    const store = createMemoryStore();
+    const definition = {
+      name: 'ArcGenesisSeed',
+      members: { signers: [owner.pubkey], threshold: 1 },
+      primitives: { messageTypes: ['GroupChange', 'GroupChat'] }
+    };
+    const pub = Message.fromVector(['CONTRACT_PUBLISH', JSON.stringify(definition)]).signWithKey(owner);
+    const seeded = ingestContractPublishBuffer(store, pub.toBuffer());
+    assert.strictEqual(seeded.accepted, true);
+    assert.ok(seeded.contractId);
+    const change = ingestMessageBuffer(
+      store,
+      seeded.contractId,
+      signContractMessage(owner, seeded.contractId, 'GroupChange', {
+        action: 'member.add',
+        member: owner.pubkey
+      }).toBuffer(),
+      { origin: 'mesh' }
+    );
+    assert.strictEqual(change.accepted, true, change.error);
+    assert.ok(change.tip.content.members.includes(pubkeyXOnly(owner.pubkey)));
+  });
+
+  it('second GroupChange reuses stored genesis without meta.signers', function () {
+    const owner = new Key();
+    const other = new Key();
+    const store = createMemoryStore();
+    const genesis = { signers: [owner.pubkey] };
+    const first = ingestMessageBuffer(
+      store,
+      contractId,
+      signContractMessage(owner, contractId, 'GroupChange', {
+        action: 'member.add',
+        member: owner.pubkey
+      }).toBuffer(),
+      { origin: 'mesh', genesis }
+    );
+    assert.strictEqual(first.accepted, true);
+    const second = ingestMessageBuffer(
+      store,
+      contractId,
+      signContractMessage(owner, contractId, 'GroupChange', {
+        action: 'member.add',
+        member: other.pubkey
+      }).toBuffer(),
+      { origin: 'mesh' }
+    );
+    assert.strictEqual(second.accepted, true, second.error);
+    assert.ok(second.tip.content.members.includes(pubkeyXOnly(other.pubkey)));
+  });
+
+  it('journal cap drops GroupChat by hash but keeps GroupChange', function () {
+    const owner = new Key();
+    const store = createMemoryStore();
+    const genesis = { signers: [owner.pubkey] };
+    const change = ingestMessageBuffer(
+      store,
+      contractId,
+      signContractMessage(owner, contractId, 'GroupChange', {
+        action: 'members.set',
+        members: [owner.pubkey]
+      }).toBuffer(),
+      { origin: 'mesh', genesis, maxJournalEntries: 3 }
+    );
+    assert.strictEqual(change.accepted, true);
+    for (let i = 0; i < 5; i++) {
+      ingestMessageBuffer(
+        store,
+        contractId,
+        signContractMessage(owner, contractId, 'GroupChat', {
+          body: `m${i}`,
+          author: owner.pubkey,
+          ts: `2026-01-0${i + 1}T00:00:00.000Z`
+        }).toBuffer(),
+        { origin: 'mesh', maxJournalEntries: 3 }
+      );
+    }
+    const doc = loadDoc(store, contractId);
+    assert.ok(doc.entries.length <= 3);
+    assert.ok(doc.entries.some((e) => e.type === 'GroupChange'));
+    assert.ok(doc.content.members.includes(pubkeyXOnly(owner.pubkey)));
   });
 });
 

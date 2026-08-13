@@ -631,6 +631,8 @@ class Peer extends Service {
     this._authorizedDocumentKeyReveals = new Map();
     /** contractId → Set of lowercase compressed pubkeys allowed to apply state ops. */
     this._contractPatchAllowList = Object.create(null);
+    /** contractId → original CONTRACT_PUBLISH body (ARC genesis for ingest). */
+    this._contractGenesis = Object.create(null);
     /** Buyer-side verified blob reassembly (DocumentBlobIndex). */
     this.blobTransfers = new DocumentBlobTransferBook();
     /** Ciphertext awaiting content-key reveal: documentId → meta. */
@@ -3517,7 +3519,8 @@ class Peer extends Service {
           messageId: wireMessage && wireMessage.id ? wireMessage.id : null,
           messageHex: wireMessage && typeof wireMessage.toBuffer === 'function'
             ? wireMessage.toBuffer().toString('hex')
-            : null
+            : null,
+          genesis: this._contractGenesis[contractId] || null
         });
         // Same outermost-only flood rule as CONTRACT_PUBLISH / chat / gossip.
         if (delivery.allowMeshRelay && origin && origin.name && wireMessage) {
@@ -4784,6 +4787,7 @@ class Peer extends Service {
 
     this.contracts[actor.id] = actor;
     this._state.content.contracts[actor.id] = object.state;
+    this._contractGenesis[actor.id] = object;
     // Patch rights come only from declared authority arrays — never from the AMP
     // wire signer alone (front-run with identical body must not elevate attacker).
     this._mergeContractPatchAllowList(actor.id, object, publisherPubkeyHex);
