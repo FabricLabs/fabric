@@ -1,6 +1,9 @@
 # `@fabric/core` Changelog
 Recent changes to Fabric Core.
 
+## 2026-08-14
+- **Review follow-ups (PR #183):** sealed restore reports `ok: false` on a rejected password; `--password=VALUE` is honoured; idle `--timeout` rejects non-integers; wallet writes are rename-atomic and `touchWallet` no longer truncates an existing file; idle-lock handlers no longer `removeAllListeners`; sealed documents keep `walletVersion`; `CONTRACT_PUBLISH` meta cannot replace the signed genesis; `_fillPeerSlots` does not suppress dials from an advertised own pubkey; Beacon `createRound` is `ready` when the threshold is already met; recovered ready rounds must still meet the federation threshold; pending rounds are kept if epoch-chain persist fails.
+
 ## 2026-08-13
 - **GroupChangeProposal vote string v2** — BIP340 votes bind canonical `members` / `signers` so a colliding proposal `id` cannot reuse honest signatures on a swapped roster. Quorum remains genesis/tip k-of-n.
 - **Wallet lock follow-ups** — `setWallet` throws instead of `process.exit`; `fabric setup` fails closed on an invalid `--wallet` path; auto-unlock reads only `FABRIC_PASSWORD` (not generic `PASSWORD`); `/unlock` passwords are redacted from CLI history; idle-lock timers `unref()`.

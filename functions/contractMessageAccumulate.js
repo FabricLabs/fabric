@@ -1278,7 +1278,7 @@ function ingestContractPublishBuffer (store, bufferOrPaste, meta = {}) {
   if (doc.genesis && typeof doc.genesis === 'object') {
     return { accepted: false, duplicate: true, contractId, genesis: doc.genesis };
   }
-  applyGenesisMeta(doc, { genesis: definition, ...meta });
+  applyGenesisMeta(doc, { ...meta, genesis: definition });
   if (!doc.genesis) doc.genesis = genesis;
   persistDoc(store, doc);
   return { accepted: true, duplicate: false, contractId, genesis: doc.genesis };

@@ -476,7 +476,7 @@ function restoreWalletFromFile (environment, sourcePath, opts = {}) {
           environment.unlockWallet(opts.password);
         } catch (exception) {
           return {
-            ok: true,
+            ok: false,
             locked: true,
             walletId: environment.walletPublic && environment.walletPublic.id,
             snapshot: snapshotEnvironment(environment),
@@ -663,8 +663,13 @@ async function runSetupCli (environment, opts = {}) {
   }
 
   if (opts.timeout !== undefined && opts.timeout !== false) {
-    const minutes = opts.timeout === true ? 0 : Number(opts.timeout);
-    environment.setLockTimeoutMinutes(minutes);
+    const raw = opts.timeout === true ? '0' : String(opts.timeout).trim();
+    if (!/^\d+$/.test(raw)) {
+      console.error('[FABRIC:CLI]', 'Idle timeout must be a non-negative integer (minutes).');
+      process.exitCode = 1;
+      return { ok: false, error: 'Idle timeout must be a non-negative integer (minutes).' };
+    }
+    environment.setLockTimeoutMinutes(Number(raw));
     console.log('[FABRIC:CLI]', 'Lock timeout:', environment.lockSession.timeoutMinutes, 'min');
     return { ok: true, snapshot: snapshotEnvironment(environment) };
   }

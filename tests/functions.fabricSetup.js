@@ -187,6 +187,17 @@ describe('@fabric/core/functions/fabricSetup', function () {
         assert.strictEqual(restored.ok, true);
         assert.strictEqual(fabricSetup.snapshotEnvironment(environment).identity, identity);
 
+        environment.destroyWallet();
+        environment.wallet = false;
+        environment.walletLocked = false;
+        environment.walletPublic = null;
+        const badPassword = fabricSetup.restoreWalletFromFile(environment, backupPath, {
+          force: true,
+          password: 'wrong-password-xx'
+        });
+        assert.strictEqual(badPassword.ok, false);
+        assert.ok(badPassword.error);
+
         const again = fabricSetup.restoreWalletFromFile(environment, backupPath);
         assert.strictEqual(again.ok, false);
 
@@ -319,6 +330,20 @@ describe('@fabric/core/functions/fabricSetup', function () {
         assert.ok(fs.existsSync(dest));
       } finally {
         console.log = origLog;
+        fs.rmSync(home, { recursive: true, force: true });
+      }
+    });
+
+    it('rejects a non-numeric --timeout', async function () {
+      const { home, environment } = isolatedEnv();
+      const origErr = console.error;
+      console.error = function () {};
+      try {
+        const result = await fabricSetup.runSetupCli(environment, { timeout: 'abc' });
+        assert.strictEqual(result.ok, false);
+        assert.match(result.error, /integer/i);
+      } finally {
+        console.error = origErr;
         fs.rmSync(home, { recursive: true, force: true });
       }
     });

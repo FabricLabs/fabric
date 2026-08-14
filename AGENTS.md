@@ -1,7 +1,7 @@
 # Fabric Agents
 See also [DEVELOPERS.md](DEVELOPERS.md) (repo layout, tests) and [docs/PRODUCTION.md](docs/PRODUCTION.md) (release gate).
 
-### Release posture
+## Release posture
 - **Target:** `0.1.0-RC1` reference client — not a production-hardened VM claim
   ([PUBLIC_API.md](PUBLIC_API.md), [AUDIT.md](AUDIT.md)).
 - **Gate:** `npm run ci` on Node **24.15.0**. Tag **core before** bumping Hub / http.

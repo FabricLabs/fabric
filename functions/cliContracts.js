@@ -119,7 +119,7 @@ const CLI_CONTRACTS = Object.freeze([
   defineContract({
     id: 'wallet',
     title: 'Wallet',
-    description: 'Wallet, funding, and identity lock',
+    description: 'Wallet and funding',
     commands: {
       wallet: '_handleWalletCommand',
       fund: '_handleFundRequest',

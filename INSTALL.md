@@ -1,6 +1,7 @@
 # Installing Fabric
 ## Prerequisites
 - Node.js 24.15.0
+- npm 12+ (`npm -v`); Node 24.15.0 may ship npm 11.x — upgrade with `npm install -g npm@12`. `@fabric/core` keeps npm’s default `allow-git=none` (no git deps).
 
 ## Quick Start
 ```

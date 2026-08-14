@@ -35,7 +35,8 @@ execution. Distributed Beacon / federation orchestration is Hub-composed and
 requires; do not rely on `Fabric.*` statics in production.
 
 Password-sealed JSON and in-memory lock sessions (CLI / setup wallets):
-`@fabric/core/functions/sealedBlob`, `@fabric/core/functions/identityLock`.
+`@fabric/core/functions/sealedBlob`, `@fabric/core/functions/identityLock`
+(ambient stubs `functions/sealedBlob.d.ts` / `functions/identityLock.d.ts`).
 
 ### Services
 

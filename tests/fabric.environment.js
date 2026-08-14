@@ -278,6 +278,7 @@ describe('@fabric/core/types/environment', function () {
         assert.strictEqual(doc.format, 'aes-256-gcm-pbkdf2-sha256');
         assert.ok(doc.seal && doc.seal.ciphertext);
         assert.ok(doc.object && doc.object.xpub);
+        assert.ok(doc.walletVersion != null);
         assert.ok(!JSON.stringify(doc.object).includes('xprv'));
         assert.ok(!raw.includes(FIXTURE_SEED));
 
@@ -291,8 +292,45 @@ describe('@fabric/core/types/environment', function () {
         assert.strictEqual(reloaded.walletLocked, true);
         reloaded.unlockWallet(password);
         assert.ok(reloaded.wallet && reloaded.wallet.key);
+        assert.strictEqual(reloaded.wallet.version, doc.walletVersion);
         assert.ok(String(reloaded.wallet.key.seed || '').includes(FIXTURE_SEED.split(' ')[0]));
         reloaded.lockWallet();
+      } finally {
+        for (const k of Object.keys(prev)) {
+          if (prev[k] === undefined) delete process.env[k];
+          else process.env[k] = prev[k];
+        }
+        fs.rmSync(home, { recursive: true, force: true });
+      }
+    });
+
+    it('preserves external lock listeners across unlock', function () {
+      const prev = {
+        NODE_ENV: process.env.NODE_ENV,
+        FABRIC_SEED: process.env.FABRIC_SEED,
+        FABRIC_XPRV: process.env.FABRIC_XPRV,
+        FABRIC_XPUB: process.env.FABRIC_XPUB,
+        FABRIC_PASSWORD: process.env.FABRIC_PASSWORD
+      };
+      const home = fs.mkdtempSync(path.join(os.tmpdir(), 'fabric-env-lock-l-'));
+      const store = path.join(home, '.fabric');
+      const walletPath = path.join(store, 'wallet.json');
+      try {
+        delete process.env.FABRIC_SEED;
+        delete process.env.FABRIC_XPRV;
+        delete process.env.FABRIC_XPUB;
+        delete process.env.FABRIC_PASSWORD;
+        process.env.NODE_ENV = 'production';
+        const environment = new Environment({ home, path: walletPath, store, lockTimeoutMinutes: 0 });
+        environment.start();
+        const wallet = new Wallet({ key: { seed: FIXTURE_SEED } });
+        environment.setWallet(wallet, true, { password: 'test-pass-ok!' });
+        let external = 0;
+        environment.lockSession.on('lock', () => { external += 1; });
+        environment.lockWallet();
+        environment.unlockWallet('test-pass-ok!');
+        environment.lockWallet();
+        assert.ok(external >= 2);
       } finally {
         for (const k of Object.keys(prev)) {
           if (prev[k] === undefined) delete process.env[k];

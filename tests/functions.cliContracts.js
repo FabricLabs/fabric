@@ -19,6 +19,7 @@ describe('functions/cliContracts', function () {
     assert.ok(core.required);
     assert.ok(core.commands.unlock);
     assert.ok(core.commands.lock);
+    assert.ok(core.commands.contracts);
     assert.ok(!core.commands.apps);
     const market = findCliContract('documents-market');
     assert.ok(market.commands.refund);

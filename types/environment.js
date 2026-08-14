@@ -135,10 +135,40 @@ class Environment extends Entity {
    */
   _writeWalletDocument (document) {
     const content = JSON.stringify(document, null, '  ') + '\n';
-    fs.writeFileSync(this.WALLET_FILE, content, { encoding: 'utf8', mode: 0o600 });
+    const target = this.WALLET_FILE;
+    const temporary = `${target}.${process.pid}.tmp`;
+    fs.writeFileSync(temporary, content, { encoding: 'utf8', mode: 0o600 });
     try {
-      fs.chmodSync(this.WALLET_FILE, 0o600);
+      fs.chmodSync(temporary, 0o600);
     } catch (_) { /* best-effort */ }
+    try {
+      fs.renameSync(temporary, target);
+    } catch (exception) {
+      try { fs.unlinkSync(temporary); } catch (_) { /* ignore */ }
+      throw exception;
+    }
+    try {
+      fs.chmodSync(target, 0o600);
+    } catch (_) { /* best-effort */ }
+  }
+
+  /**
+   * Bind the idle-lock wipe handler without dropping other `lock` listeners
+   * (shell warnings, setup TUI).
+   * @private
+   */
+  _installWalletLockHandler () {
+    if (this._walletLockHandler) {
+      this.lockSession.removeListener('lock', this._walletLockHandler);
+    }
+    this._walletLockHandler = () => {
+      if (this.wallet && this.wallet.key && typeof this.wallet.key.secure === 'function') {
+        try { this.wallet.key.secure(); } catch (_) { /* wipe is best-effort */ }
+      }
+      this.wallet = false;
+      this.walletLocked = true;
+    };
+    this.lockSession.on('lock', this._walletLockHandler);
   }
 
   /**
@@ -190,7 +220,8 @@ class Environment extends Entity {
         seed: inner.seed,
         xprv: inner.xprv,
         xpub: inner.xpub
-      }
+      },
+      version: input.walletVersion
     });
     this.wallet.start();
     this.walletLocked = false;
@@ -200,14 +231,7 @@ class Environment extends Entity {
     if (input.lockTimeoutMinutes != null) {
       this.lockSession.setTimeoutMinutes(clampLockTimeoutMinutes(input.lockTimeoutMinutes));
     }
-    this.lockSession.removeAllListeners('lock');
-    this.lockSession.on('lock', () => {
-      if (this.wallet && this.wallet.key && typeof this.wallet.key.secure === 'function') {
-        try { this.wallet.key.secure(); } catch (_) { /* wipe is best-effort */ }
-      }
-      this.wallet = false;
-      this.walletLocked = true;
-    });
+    this._installWalletLockHandler();
     this.lockSession.unlock({ unlocked: true });
     return this;
   }
@@ -739,7 +763,9 @@ class Environment extends Entity {
     try {
       fs.utimesSync(this.settings.path, time, time);
     } catch {
-      fs.closeSync(fs.openSync(this.settings.path, 'w'));
+      if (!fs.existsSync(this.settings.path)) {
+        fs.closeSync(fs.openSync(this.settings.path, 'w'));
+      }
     }
 
     return true;
@@ -927,6 +953,7 @@ class Environment extends Entity {
           type: 'FabricWallet',
           format: SEAL_SCHEME,
           version: 2,
+          walletVersion: exported.version,
           passwordProtected: true,
           lockTimeoutMinutes: this.lockSession.timeoutMinutes,
           object: publicRecord,
@@ -934,14 +961,7 @@ class Environment extends Entity {
         });
         this.walletPublic = publicRecord;
         this.walletLocked = false;
-        this.lockSession.removeAllListeners('lock');
-        this.lockSession.on('lock', () => {
-          if (this.wallet && this.wallet.key && typeof this.wallet.key.secure === 'function') {
-            try { this.wallet.key.secure(); } catch (_) { /* wipe is best-effort */ }
-          }
-          this.wallet = false;
-          this.walletLocked = true;
-        });
+        this._installWalletLockHandler();
         this.lockSession.unlock({ unlocked: true });
       } else {
         const document = Object.assign({

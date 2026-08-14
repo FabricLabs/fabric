@@ -139,6 +139,8 @@ async function main () {
   }
 
   const passwordFromArgv = (() => {
+    const inline = argv.find((a) => String(a).startsWith('--password='));
+    if (inline) return String(inline).slice('--password='.length);
     const i = argv.indexOf('--password');
     if (i >= 0 && argv[i + 1] && !String(argv[i + 1]).startsWith('-')) return argv[i + 1];
     return process.env.FABRIC_PASSWORD || '';

@@ -116,7 +116,7 @@ function createRound (epochPayload, policy = {}, initialWitness = null) {
   const commitmentDigest = epochCommitmentDigestHex(epochPayload);
   const validators = (pol.validators || []).map((v) => String(v).trim()).filter(Boolean);
   const threshold = Math.max(1, Number(pol.threshold) || 1);
-  return {
+  const round = {
     commitmentDigest,
     payload: epochPayload,
     validators,
@@ -129,6 +129,8 @@ function createRound (epochPayload, policy = {}, initialWitness = null) {
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
   };
+  if (roundMeetsThreshold(round)) round.status = 'ready';
+  return round;
 }
 
 function messageBufferForPayload (payload) {

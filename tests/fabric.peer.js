@@ -1799,6 +1799,17 @@ describe('@fabric/core/types/peer', function () {
         assert.ok(!server.candidates.some((c) => c && c.host === '192.0.2.56'));
       });
 
+      it('_fillPeerSlots does not suppress from an advertised own pubkey', function () {
+        const server = new Peer({ listen: false, peersDb: null, networking: false });
+        const own = server._localFabricPubkeyHex();
+        server.settings.constraints.peers.max = 8;
+        server._enqueuePeeringCandidate('192.0.2.88', 7777, { pubkey: own });
+        assert.strictEqual(server.candidates.length, 1);
+        server._connect = () => {};
+        server._fillPeerSlots();
+        assert.ok(!server._isSelfDialSuppressed('192.0.2.88:7777'));
+      });
+
       it('_verifyNOISE rejects when self-key normalization throws', function (done) {
         const server = new Peer({ listen: false, peersDb: null });
         const orig = server._isOwnFabricPubkey.bind(server);

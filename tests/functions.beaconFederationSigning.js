@@ -41,7 +41,7 @@ describe('@fabric/core/functions/beaconFederationSigning', function () {
     const round = bfs.createRound(epoch);
     assert.ok(round);
     assert.deepStrictEqual(round.validators, []);
-    assert.strictEqual(round.status, 'collecting');
+    assert.strictEqual(round.status, 'ready');
     assert.strictEqual(bfs.roundMeetsThreshold(round), true);
   });
 

@@ -256,6 +256,10 @@ class Beacon extends Actor {
     // persist failure then makes retries hit `round not open`. Finalize the
     // existing ready round instead of reopening it for new signatures.
     if (round.status === 'ready' || round.status === 'sealed') {
+      if (!beaconFederationSigning.roundMeetsThreshold(round) &&
+          !this._epochAlreadySealed(digest, round)) {
+        return { status: 'error', message: 'recovered round failed federation threshold' };
+      }
       return this._finalizeReadyFederationRound(digest, round);
     }
 
@@ -300,6 +304,15 @@ class Beacon extends Actor {
    */
   async _finalizeReadyFederationRound (digest, round) {
     if (this._epochAlreadySealed(digest, round)) {
+      const persisted = await this._persistEpochChain();
+      if (!persisted) {
+        return {
+          status: 'error',
+          pending: true,
+          message: 'failed to persist epoch chain',
+          commitmentDigest: digest
+        };
+      }
       this._pendingEpochRounds.delete(digest);
       try {
         const doc = beaconFederationSigning.loadPendingDoc(this.fs);
@@ -324,7 +337,17 @@ class Beacon extends Actor {
       federationWitness: round.witness
     };
     this._epochChain.append(entry);
-    await this._persistEpochChain();
+    const persisted = await this._persistEpochChain();
+    if (!persisted) {
+      return {
+        status: 'error',
+        pending: true,
+        message: 'failed to persist epoch chain',
+        commitmentDigest: digest,
+        payload: round.payload,
+        federationWitness: round.witness
+      };
+    }
 
     this._pendingEpochRounds.delete(digest);
     try {
@@ -451,13 +474,15 @@ class Beacon extends Actor {
   }
 
   async _persistEpochChain () {
-    if (!this.fs || typeof this.fs.publish !== 'function') return;
+    if (!this.fs || typeof this.fs.publish !== 'function') return true;
     try {
       const messages = this._epochChain.toBeaconMessages();
       const merkle = { root: this._computeMerkleRoot(), leaves: this._epochChain.height };
       await this.fs.publish(BEACON_CHAIN_PATH, { messages, merkle });
+      return true;
     } catch (err) {
       this.emit('warning', '[BEACON] Failed to persist epoch chain:', err && err.message ? err.message : err);
+      return false;
     }
   }
 

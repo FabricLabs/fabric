@@ -1247,10 +1247,14 @@ class Peer extends Service {
     }
     this._candidateKeys.add(key);
     const pubkey = meta.pubkey ? normalizePeerPubkeyHex(meta.pubkey) : '';
+    const verifiedPubkey = meta.verifiedPubkey
+      ? normalizePeerPubkeyHex(meta.verifiedPubkey)
+      : '';
     // Omit empty pubkey — callers historically expect `{ host, port }` when unknown.
-    this.candidates.push(pubkey
-      ? { host: normalizedHost, port: normalizedPort, pubkey }
-      : { host: normalizedHost, port: normalizedPort });
+    const candidate = { host: normalizedHost, port: normalizedPort };
+    if (pubkey) candidate.pubkey = pubkey;
+    if (verifiedPubkey) candidate.verifiedPubkey = verifiedPubkey;
+    this.candidates.push(candidate);
   }
 
   /**
@@ -2303,7 +2307,11 @@ class Peer extends Service {
         if (pubkey && this._isOwnFabricPubkey(pubkey)) {
           this.emit('warning',
             `[FABRIC:PEER] Dropping candidate ${addr}: pubkey is our own`);
-          this._suppressSelfDialAddress(addr);
+          // Advertised pubkeys are attacker-controlled; only verified AMP
+          // signers may suppress the address (see _enqueuePeeringCandidate).
+          if (candidate.verifiedPubkey && this._isOwnFabricPubkey(candidate.verifiedPubkey)) {
+            this._suppressSelfDialAddress(addr);
+          }
           if (this._candidateKeys) this._candidateKeys.delete(addr);
           continue;
         }

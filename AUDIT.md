@@ -52,7 +52,7 @@ audit report.
 
 ### PR #183 review triage (feature/rsi)
 
-Most CodeRabbit / automation actionable items on [#183](https://github.com/FabricLabs/fabric/pull/183) are addressed on tip. Latest security review on `3745041e3` reported **1 High** (`members.set` / `signers.set` omitted from the proposal vote string); that bind is landed (`signingStringForGroupChangeProposal` v2).
+Most CodeRabbit / automation actionable items on [#183](https://github.com/FabricLabs/fabric/pull/183) are addressed on tip. Cursor security review on `a85a372a8` reports **no remaining High/Medium/Critical** (GroupChangeProposal vote string v2 closed the prior High). A follow-up slice covers CodeRabbit wallet/Beacon/publish quick wins; remaining deferred items are journal-cap consensus (`meta.maxJournalEntries`), RFC6902 multi-op fidelity, and eager `messageHex`.
 
 | Item | Status |
 |------|--------|
