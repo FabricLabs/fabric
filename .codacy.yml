@@ -13,6 +13,8 @@ engines:
       - "functions/cliDocumentExchange.js"
       - "functions/contractSidechainLocal.js"
       - "functions/fabricSetup.js"
+      - "functions/fabricHomeEnv.js"
+      - "functions/fabricWalletIdentity.js"
       - "types/environment.js"
   # Codacy Opengrep (Semgrep fork) may re-report the same path-construction patterns.
   opengrep:
@@ -22,6 +24,8 @@ engines:
       - "functions/cliDocumentExchange.js"
       - "functions/contractSidechainLocal.js"
       - "functions/fabricSetup.js"
+      - "functions/fabricHomeEnv.js"
+      - "functions/fabricWalletIdentity.js"
       - "types/environment.js"
   # Cppcheck still scanned src/ despite root exclude_paths; tool-specific paths are reliable for PR gates.
   cppcheck:

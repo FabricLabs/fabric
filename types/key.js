@@ -296,6 +296,7 @@ class Key extends EventEmitter {
         this.xpub = root.neutered().toBase58();
         this.master = root;
         this._point = secpPointFromPrivateKey(root.privateKey);
+        this.status = 'seeded';
         break;
       }
       case 'FROM_WIF':

@@ -4,6 +4,8 @@
  * Load operator identity from `~/.fabric/wallet.json` (Environment).
  *
  * Sealed wallets need `FABRIC_PASSWORD`. Public object never contains seed/xprv.
+ * Always reads the wallet file (`loadWallet({ fromFile: true })`) so a leftover
+ * `FABRIC_SEED` / `NODE_ENV=test` fixture cannot replace the file identity.
  *
  * @fileoverview Wallet-file identity fallback for suite loaders.
  * @module functions/fabricWalletIdentity
@@ -33,7 +35,10 @@ function loadIdentityFromWalletFile (opts = {}) {
     store
   });
   try {
-    environment.loadWallet({ password: opts.password || environment.readVariable('FABRIC_PASSWORD') });
+    environment.loadWallet({
+      password: opts.password || environment.readVariable('FABRIC_PASSWORD'),
+      fromFile: true
+    });
   } catch (_) {
     return null;
   }

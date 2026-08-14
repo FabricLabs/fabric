@@ -50,7 +50,7 @@ function parseRawSeedHex (value) {
 
 /**
  * @param {*} value
- * @returns {{ kind: string|null, xprv?: string, seed?: string, mnemonic?: string }}
+ * @returns {Object} `kind` plus at most one of `xprv`, `seed`, `mnemonic`
  */
 function classifyFabricKeyMaterial (value) {
   const trimmed = value == null ? '' : String(value).trim();
@@ -71,7 +71,7 @@ function classifyFabricKeyMaterial (value) {
  * Precedence: `FABRIC_XPRV` → `FABRIC_SEED` → `FABRIC_MNEMONIC`.
  *
  * @param {NodeJS.ProcessEnv} [env]
- * @returns {{ xprv?: string, seed?: string, mnemonic?: string }|null}
+ * @returns {Object|null} Key settings with `xprv`, `seed`, or `mnemonic`
  */
 function keySettingsFromEnv (env = process.env) {
   const xprv = String((env && env.FABRIC_XPRV) || '').trim();

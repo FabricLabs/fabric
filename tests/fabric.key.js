@@ -46,6 +46,7 @@ describe('@fabric/core/types/key', function () {
       const fromHex = new Key({ seed: hex });
       assert.equal(fromHex.xprv, fromMnemonic.xprv);
       assert.equal(fromHex.seed, hex);
+      assert.equal(fromHex.status, 'seeded');
       assert.equal(fromHex.public.encodeCompressed('hex'), fromMnemonic.public.encodeCompressed('hex'));
     });
 

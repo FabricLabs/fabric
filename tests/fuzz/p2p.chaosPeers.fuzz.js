@@ -136,14 +136,18 @@ describe('fuzz: live peer chaos (TCP + NOISE)', function () {
     let exchanges = 0;
 
     for (let i = 0; i < n; i++) {
-      const sender = (i % 2 === 0) ? hub : client;
+      const prefer = (i % 2 === 0) ? hub : client;
+      const sender = connectionKeys(prefer).length
+        ? prefer
+        : (connectionKeys(hub).length ? hub : (connectionKeys(client).length ? client : null));
+      if (!sender) break;
       const label = sender === hub ? 'hub' : 'client';
-      const keys = connectionKeys(sender);
-      if (!keys.length) break;
 
       const roll = crypto.randomInt(0, 10);
       let buf;
-      if (roll < 6) {
+      // Land a dozen signed frames first so a hostile random AMP that
+      // tears the session cannot fail the storm before it starts.
+      if (exchanges < 12 || roll < 6) {
         const body = randomGenericPayload(sender);
         const msg = Message.fromVector(['P2P_BASE_MESSAGE', JSON.stringify(body)]);
         msg.signWithKey(sender.key);
@@ -290,7 +294,10 @@ describe('fuzz: playnet neighbor chaos', function () {
     try { fs.mkdirSync(outDir, { recursive: true }); } catch (_) { /* ignore */ }
     fs.writeFileSync(path.join(outDir, 'playnet-chaos-neighbors.json'), JSON.stringify(report, null, 2));
 
-    assert.ok(writes.ok >= 8, `expected signed writes, got ${writes.ok}`);
+    // writes.ok is invocations after `_writeFabric` returned; a closed stream
+    // skips without throwing. Fail on unexpected peer errors instead.
+    assert.ok(writes.ok >= 8, `expected signed write attempts, got ${writes.ok}`);
+    assert.strictEqual(hardErrors.length, 0, `unexpected peer errors: ${JSON.stringify(hardErrors)}`);
     } finally {
       await stopClient();
     }

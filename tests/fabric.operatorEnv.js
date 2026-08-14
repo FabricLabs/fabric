@@ -99,6 +99,30 @@ describe('@fabric/core operator env (seed hex + home admin token)', function () 
     }
   });
 
+  it('loads wallet.json even when FABRIC_SEED is invalid nonempty text', function () {
+    const iso = withIsolatedHome('fabric-wallet-fromfile-');
+    try {
+      iso.clearIdentityEnv();
+      process.env.NODE_ENV = 'test';
+      process.env.FABRIC_SEED = 'not-a-seed-or-mnemonic';
+      const environment = new Environment({
+        home: iso.home,
+        path: iso.walletPath,
+        store: iso.store
+      });
+      environment.setWallet(new Wallet({ key: { seed: FIXTURE_SEED } }), true, { encrypt: false });
+      const loaded = loadIdentityFromWalletFile({
+        home: iso.home,
+        store: iso.store,
+        walletPath: iso.walletPath
+      });
+      assert.ok(loaded);
+      assert.strictEqual(loaded.xprv, new Key({ mnemonic: FIXTURE_SEED }).xprv);
+    } finally {
+      iso.restore();
+    }
+  });
+
   it('mints a Hub admin token and reads it from ~/.fabric/hub-admin-token', function () {
     const iso = withIsolatedHome('fabric-home-token-');
     try {

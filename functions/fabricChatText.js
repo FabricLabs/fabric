@@ -43,7 +43,9 @@ function chatTextOf (chat) {
  * Actor / author id (pubkey) from Hub UI shape or Peer meta/signer.
  * Prefers x-only when the value is a parseable secp256k1 pubkey hex.
  * @param {object|null|undefined} chat
- * @param {{ defaultActorId?: string|null, signer?: string|null }} [opts]
+ * @param {Object} [opts]
+ * @param {string|null} [opts.defaultActorId]
+ * @param {string|null} [opts.signer]
  * @returns {string|null}
  */
 function chatActorIdOf (chat, opts = {}) {
