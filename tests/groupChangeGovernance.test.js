@@ -133,4 +133,65 @@ describe('@fabric/core groupChangeGovernance', function () {
     assert.ok(ctx.members.has(cx));
     assert.ok(ctx.signers.has(cx));
   });
+
+  it('signing string v2 binds members/signers (order-insensitive)', function () {
+    const a = pubkeyXOnly(new Key().pubkey);
+    const b = pubkeyXOnly(new Key().pubkey);
+    const first = [a, b].sort();
+    const second = [b, a];
+    const left = JSON.parse(signingStringForGroupChangeProposal({
+      id: 'p-set',
+      action: 'members.set',
+      members: first
+    }));
+    const right = JSON.parse(signingStringForGroupChangeProposal({
+      id: 'p-set',
+      action: 'members.set',
+      members: second
+    }));
+    assert.strictEqual(left.v, 2);
+    assert.deepStrictEqual(left.members, right.members);
+    assert.strictEqual(left.signers, null);
+  });
+
+  it('foldProposals rejects votes when members.set roster is swapped after signing', function () {
+    const owner = new Key();
+    const co = new Key();
+    const attacker = new Key();
+    const ox = pubkeyXOnly(owner.pubkey);
+    const cx = pubkeyXOnly(co.pubkey);
+    const ax = pubkeyXOnly(attacker.pubkey);
+    const ctx = { members: new Set([ox, cx]), signers: new Set([ox, cx]), readerOnlyAdds: false, threshold: 2 };
+    const honest = {
+      id: 'p-roster',
+      action: 'members.set',
+      members: [ox, cx],
+      proposedBy: ox
+    };
+    const vote = signProposalVote(co, honest);
+    const entries = [{
+      hash: 'dd',
+      type: 'GroupChangeProposal',
+      author: ox,
+      object: {
+        id: 'p-roster',
+        action: 'members.set',
+        members: [ax],
+        proposedBy: ox
+      }
+    }, {
+      hash: 'ee',
+      type: 'GroupChangeVote',
+      author: cx,
+      object: {
+        proposalId: 'p-roster',
+        voter: cx,
+        signature: vote.signature
+      }
+    }];
+    const out = foldProposals(entries, ctx, 2, [ox, cx]);
+    assert.strictEqual(out[0].status, 'pending');
+    assert.ok(ctx.members.has(ox) && ctx.members.has(cx));
+    assert.strictEqual(ctx.members.has(ax), false);
+  });
 });

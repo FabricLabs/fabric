@@ -175,6 +175,7 @@ class IdentityLock extends EventEmitter {
       this._timer = null;
       this.lock();
     }, ms);
+    if (this._timer && typeof this._timer.unref === 'function') this._timer.unref();
   }
 }
 

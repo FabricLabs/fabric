@@ -1,6 +1,8 @@
 # Security
 Fabric aims to maximize the security of a sensible default configuration while keeping dependencies understandable and reviewable.
 
+**Outstanding queue:** [docs/OUTSTANDING.md](docs/OUTSTANDING.md). Production march: [docs/PRODUCTION_MARCH.md](docs/PRODUCTION_MARCH.md).
+
 ## Adversarial environment
 Fabric networks are intended for deployment where **peers, relays, hubs, and operators may be hostile**. Design and review against:
 
@@ -111,9 +113,11 @@ raw UTF-8. Coverage: `tests/protocol-v1/phase-b.typed-bodies.js`.
 
 **Blinded-execution decisions:** `recordProposalDecision` verifies BIP340 over `decisionSigningMessage` v2 (`at` bound). Same actor/proposal/decision/`at` is idempotent; a different `at` conflicts. Still not Yao GC.
 
+**GroupChangeProposal votes:** BIP340 over `signingStringForGroupChangeProposal` v2 (`members` / `signers` bound as canonical x-only lists). Quorum is genesis/tip k-of-n; a proposer-chosen `threshold` cannot lower the bar. Colliding proposal `id` values cannot reuse honest votes on a swapped roster.
+
 **Identity coin types:** Fabric protocol derivation uses **7777** on Bitcoin mainnet and **7778** otherwise ([IDENTITY.md](IDENTITY.md)). Do not mix Fabric coin-type keys with BIP44 coin-type-0 Bitcoin funds. Downstream Hub/Passport hard-codes of `7778` should pass `network` into `fabricIdentityDerivationPath` when promoting to mainnet.
 
-**Still open (non-blocking for this PR pass):** eager `messageHex` on Peer hot paths; `contractId` → `contractIdentifier` rename; Hub/Passport callers still on hard-coded `7778` until they adopt `fabricIdentityDerivationPath`; `API.md` index sync via `make:api` for gossip / parse / `resolveSpend` option docs. Blinded-execution remains a scaffold (not Yao GC) even with signed decisions + hashlock+pubkey leaves — `decisionSigningMessage` v2 binds `at` (PR #183 Medium closed). Beacon federation rounds stop collecting at `ready`; core `Beacon#submitFederationEpochSignature` idempotently finalizes already-`ready` rounds if epoch-chain persist fails ([docs/ARC.md](docs/ARC.md) §8 item 25). Peering self-dial suppress uses verified AMP signer (`verifiedPubkey`) only — advertised `obj.pubkey` is informational (FIFO-capped). OP_RETURN hallmarks ([docs/STATECHAIN.md](docs/STATECHAIN.md) / `functions/fabricHallmark`) are encode/verify in core; Hub opt-in publish+scan is separate — no P2P hallmark broadcast. Evaluator accepts for blinded-execution finalization exclude the garbler key.
+**Still open (non-blocking for this PR pass):** eager `messageHex` on Peer hot paths; `contractId` → `contractIdentifier` rename; Hub/Passport callers still on hard-coded `7778` until they adopt `fabricIdentityDerivationPath`; `API.md` index sync via `make:api` for gossip / parse / `resolveSpend` option docs. Blinded-execution remains a scaffold (not Yao GC) even with signed decisions + hashlock+pubkey leaves — `decisionSigningMessage` v2 binds `at` (PR #183 Medium closed). GroupChangeProposal votes bind canonical `members` / `signers` (v2; PR #183 High closed). Beacon federation rounds stop collecting at `ready`; core `Beacon#submitFederationEpochSignature` idempotently finalizes already-`ready` rounds if epoch-chain persist fails ([docs/ARC.md](docs/ARC.md) §8 item 25). Peering self-dial suppress uses verified AMP signer (`verifiedPubkey`) only — advertised `obj.pubkey` is informational (FIFO-capped). OP_RETURN hallmarks ([docs/STATECHAIN.md](docs/STATECHAIN.md) / `functions/fabricHallmark`) are encode/verify in core; Hub opt-in publish+scan is separate — no P2P hallmark broadcast. Evaluator accepts for blinded-execution finalization exclude the garbler key.
 
 ~~**Beacon/ARC publish authority fail-open**~~ — `Peer.collectContractAuthorityPubkeys` includes nested `members.signers` / `spendPolicy.validators` so Beacon genesis front-runs by non-validators are rejected.
 

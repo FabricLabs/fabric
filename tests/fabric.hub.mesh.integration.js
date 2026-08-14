@@ -23,16 +23,6 @@ const {
   getFreePort
 } = require('./helpers/peer');
 
-function sendGeneric (fromPeer, remoteKey, payload) {
-  const conn = fromPeer.connections[remoteKey];
-  if (!conn || !conn._writeFabric) {
-    throw new Error(`No Fabric connection to ${remoteKey} (have: ${Object.keys(fromPeer.connections).join(',')})`);
-  }
-  const msg = Message.fromVector(['P2P_BASE_MESSAGE', JSON.stringify(payload)]);
-  msg.signWithKey(fromPeer.key);
-  conn._writeFabric(msg.toBuffer());
-}
-
 async function waitForHubConnections (hub, n, timeoutMs = 15000) {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
@@ -156,10 +146,10 @@ describe('@fabric/core Hub mesh integration', function () {
     assert.strictEqual(alicePricing[0].rateSats, askSats);
 
     const hubAddrAlice = remoteHubAddress(alice);
-    sendGeneric(alice, hubAddrAlice, {
-      type: 'INVENTORY_REQUEST',
-      object: { offerBtc: true, maxSats: 500_000, reason: 'verify_l1_hash_before_spend' }
-    });
+    assert.strictEqual(alice.requestPeerInventory(hubAddrAlice, {
+      offerBtc: true,
+      maxSats: 500_000
+    }), true);
     await waitUntil(() => aliceInventory.length >= 1 && aliceFiles.length >= 1);
 
     assert.strictEqual(aliceInventory.length, 1);
@@ -187,10 +177,10 @@ describe('@fabric/core Hub mesh integration', function () {
     assert.strictEqual(bobPublishes.length, 0, 'late joiner should not receive earlier broadcast');
 
     const hubAddrBob = remoteHubAddress(bob);
-    sendGeneric(bob, hubAddrBob, {
-      type: 'INVENTORY_REQUEST',
-      object: { offerBtc: true, maxSats: 1_000_000, joiner: 'late' }
-    });
+    assert.strictEqual(bob.requestPeerInventory(hubAddrBob, {
+      offerBtc: true,
+      maxSats: 1_000_000
+    }), true);
     await waitUntil(() => bobInventory.length >= 1 && bobFiles.length >= 1);
 
     assert.strictEqual(bobInventory.length, 1);

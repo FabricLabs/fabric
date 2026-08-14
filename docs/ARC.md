@@ -202,6 +202,7 @@ Implementation: [`functions/contractSpend.js`](../functions/contractSpend.js) (`
 23. ~~**Empty tip `signers` spend widen:**~~ `tipSpendKeys` treats explicit `signers: []` as authoritative so reader-only folds do not replace genesis Taproot validators with participant `members` (`resolveSpend` keeps genesis keys).
 24. ~~**`createRound` omitted policy:**~~ defaults to `{}` (empty validators / threshold 1) instead of throwing.
 25. ~~**Beacon federation `ready` finalization:**~~ `addSignature` stays closed at `ready`; core `Beacon#submitFederationEpochSignature` idempotently finalizes already-`ready` rounds if persist fails (does not reopen for new signatures).
+26. ~~**GroupChangeProposal roster bind:**~~ vote string v2 includes canonical `members` / `signers`; fold still uses genesis/tip k-of-n (proposer `threshold` cannot lower the bar).
 
 ### Dual P2TR surfaces → single authority ladder
 | Surface | Role |

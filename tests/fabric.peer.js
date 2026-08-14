@@ -738,20 +738,36 @@ describe('@fabric/core/types/peer', function () {
         });
         peer._handleFabricMessage(buf, { name: 'o' });
       });
-      it('dispatches GenericMessage to _handleGenericMessage', function (done) {
+      it('does not escalate INVENTORY_REQUEST from P2P_BASE_MESSAGE (generic carrier)', function (done) {
         const peer = new Peer({ listen: false, peersDb: null });
-        peer.once('inventory', () => done());
+        peer.on('inventory', () => done(new Error('generic carrier must not emit inventory')));
+        peer.on('warning', (w) => {
+          if (/Ignoring INVENTORY_REQUEST via generic carrier/.test(String(w))) done();
+        });
         const content = { type: 'INVENTORY_REQUEST', object: {}, message: {}, origin: {} };
         const msg = Message.fromVector(['P2P_BASE_MESSAGE', JSON.stringify(content)]);
         msg.signWithKey(peer.key);
         peer._handleFabricMessage(msg.toBuffer(), { name: 'o' });
       });
-      it('dispatches outer GENERIC_MESSAGE (15103) to _handleGenericMessage', function (done) {
+      it('does not escalate INVENTORY_REQUEST from outer GENERIC_MESSAGE (15103)', function (done) {
         const peer = new Peer({ listen: false, peersDb: null });
-        peer.once('inventory', () => done());
+        peer.on('inventory', () => done(new Error('generic carrier must not emit inventory')));
+        peer.on('warning', (w) => {
+          if (/Ignoring INVENTORY_REQUEST via generic carrier/.test(String(w))) done();
+        });
         const content = { type: 'INVENTORY_REQUEST', object: {}, message: {}, origin: {} };
         const msg = Message.fromVector(['GenericMessage', JSON.stringify(content)]);
         assert.strictEqual(msg.type, 'GENERIC_MESSAGE');
+        msg.signWithKey(peer.key);
+        peer._handleFabricMessage(msg.toBuffer(), { name: 'o' });
+      });
+      it('dispatches first-class P2P_INVENTORY_REQUEST to inventory', function (done) {
+        const peer = new Peer({ listen: false, peersDb: null });
+        peer.once('inventory', (ev) => {
+          assert.strictEqual(ev.message.type, 'INVENTORY_REQUEST');
+          done();
+        });
+        const msg = Message.fromVector(['P2P_INVENTORY_REQUEST', JSON.stringify({ offerBtc: true })]);
         msg.signWithKey(peer.key);
         peer._handleFabricMessage(msg.toBuffer(), { name: 'o' });
       });

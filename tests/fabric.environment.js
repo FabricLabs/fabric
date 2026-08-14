@@ -333,6 +333,79 @@ describe('@fabric/core/types/environment', function () {
       }
     });
 
+    it('rethrows wallet write errors instead of exiting the process', function () {
+      const prev = {
+        NODE_ENV: process.env.NODE_ENV,
+        FABRIC_SEED: process.env.FABRIC_SEED,
+        FABRIC_XPRV: process.env.FABRIC_XPRV,
+        FABRIC_XPUB: process.env.FABRIC_XPUB
+      };
+      const home = fs.mkdtempSync(path.join(os.tmpdir(), 'fabric-env-write-'));
+      const store = path.join(home, '.fabric');
+      const walletPath = path.join(store, 'wallet.json');
+      try {
+        delete process.env.FABRIC_SEED;
+        delete process.env.FABRIC_XPRV;
+        delete process.env.FABRIC_XPUB;
+        process.env.NODE_ENV = 'production';
+        const environment = new Environment({ home, path: walletPath, store, lockTimeoutMinutes: 0 });
+        environment.start();
+        const wallet = new Wallet({ key: { seed: FIXTURE_SEED } });
+        environment._writeWalletDocument = function () {
+          const err = new Error('ENOSPC');
+          err.code = 'ENOSPC';
+          throw err;
+        };
+        assert.throws(
+          () => environment.setWallet(wallet, true, { password: 'test-pass-ok!' }),
+          (err) => err && err.code === 'ENOSPC'
+        );
+      } finally {
+        for (const k of Object.keys(prev)) {
+          if (prev[k] === undefined) delete process.env[k];
+          else process.env[k] = prev[k];
+        }
+        fs.rmSync(home, { recursive: true, force: true });
+      }
+    });
+
+    it('does not auto-unlock from a generic PASSWORD environment variable', function () {
+      const prev = {
+        NODE_ENV: process.env.NODE_ENV,
+        FABRIC_SEED: process.env.FABRIC_SEED,
+        FABRIC_XPRV: process.env.FABRIC_XPRV,
+        FABRIC_XPUB: process.env.FABRIC_XPUB,
+        FABRIC_PASSWORD: process.env.FABRIC_PASSWORD,
+        PASSWORD: process.env.PASSWORD
+      };
+      const home = fs.mkdtempSync(path.join(os.tmpdir(), 'fabric-env-pwd-'));
+      const store = path.join(home, '.fabric');
+      const walletPath = path.join(store, 'wallet.json');
+      const password = 'test-pass-ok!';
+      try {
+        delete process.env.FABRIC_SEED;
+        delete process.env.FABRIC_XPRV;
+        delete process.env.FABRIC_XPUB;
+        delete process.env.FABRIC_PASSWORD;
+        process.env.NODE_ENV = 'production';
+        const environment = new Environment({ home, path: walletPath, store, lockTimeoutMinutes: 0 });
+        environment.start();
+        environment.setWallet(new Wallet({ key: { seed: FIXTURE_SEED } }), true, { password });
+        environment.lockWallet();
+        process.env.PASSWORD = password;
+        const reloaded = new Environment({ home, path: walletPath, store, lockTimeoutMinutes: 0 });
+        reloaded.start();
+        assert.strictEqual(reloaded.wallet, false);
+        assert.strictEqual(reloaded.walletLocked, true);
+      } finally {
+        for (const k of Object.keys(prev)) {
+          if (prev[k] === undefined) delete process.env[k];
+          else process.env[k] = prev[k];
+        }
+        fs.rmSync(home, { recursive: true, force: true });
+      }
+    });
+
     describe('bitcoin.conf helpers', function () {
       it('_parseConfigValue unwraps quotes and coerces primitives', function () {
         const e = new Environment();

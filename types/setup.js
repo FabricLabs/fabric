@@ -53,7 +53,10 @@ class SetupTui {
    */
   async start () {
     if (this.settings.walletFile) {
-      fabricSetup.applyWalletFileOption(this.environment, this.settings.walletFile);
+      const applied = fabricSetup.applyWalletFileOption(this.environment, this.settings.walletFile);
+      if (!applied.ok) {
+        throw new Error(applied.error || 'Invalid --wallet path.');
+      }
     }
     if (this.settings.password && this.environment.walletLocked) {
       try {

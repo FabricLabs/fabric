@@ -9,7 +9,11 @@ This is the single living document for driving `@fabric/core` to production read
 Related docs:
 - `docs/PRODUCTION.md`
 - `docs/RELEASE_CHECKLIST.md`
+- `docs/OUTSTANDING.md` — **security-first queue** (this repo)
+- `SECURITY.md` / `AUDIT.md`
 - `AGENTS.md`
+
+**Suite security blocker (not a core patch):** Hub / `@fabric/http` login and device-link **redeem** still treat QR `sessionId` as the capability. Advance that in http, then Hub, Passport, GoonCitizen — see those repos’ `docs/OUTSTANDING.md`.
 
 ## Working Area
 ### Bad Classes (work to reduce)
@@ -169,10 +173,11 @@ Definition of done:
 - Coverage reflects shipped behavior, and failures clearly indicate product risk.
 
 ## Immediate Priority Queue
-1. **Finalize keep/remove matrix for classes** and lock the target type tree.
-2. **Trim docs generation target set** to production-relevant modules.
-3. **Trim example set** to Hub-facing workflows (documents, contracts, signing/delegation, network).
-4. **Resolve unfinished behavior in active APIs** before adding more coverage-only tests.
+1. **Security leftovers** in [OUTSTANDING.md](OUTSTANDING.md) — do not paper over AUDIT known gaps; coordinate http possession-proof for site-login / device-link redeem on shared hosts.
+2. **Finalize keep/remove matrix for classes** and lock the target type tree (`Scribe` / `Reader` / Global clutter).
+3. **Trim docs generation target set** to production-relevant modules.
+4. **Trim example set** to Hub-facing workflows (documents, contracts, signing/delegation, network).
+5. **Resolve unfinished behavior in active APIs** before adding more coverage-only tests.
 
 ## Pending Test Triage (First Logical Pass)
 Observed baseline after hardening (historical March pass):
@@ -225,6 +230,12 @@ Execution order:
 
 ## Progress Log
 Use this section as an append-only log (newest first).
+
+### 2026-08-13
+- Core `3745041e` (wallet lock / Environment) is on GitHub `feature/rsi`; http `e167d8e` and Hub `5441f838` follow.
+- Added [OUTSTANDING.md](OUTSTANDING.md) as the security-first queue; Hub / http / Passport / GoonCitizen / Discord have matching files.
+- Immediate queue now leads with security leftovers. **Suite blocker** remains http possession proof for `/sessions` and `/device-links` redeem (not a core patch).
+- Class-surface work (`Scribe` / `Reader` / Global) stays the in-repo march after that coordination.
 
 ### 2026-08-12
 - Re-ran the Fabric package suite end-to-end (unrestricted host; browser-extension Playwright needs Crashpad/xattr outside agent sandboxes). Log: `/tmp/fabric-suite-tests-1786512851.log`.

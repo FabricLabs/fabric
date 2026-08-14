@@ -48,10 +48,11 @@ audit report.
 16. ~~**Peering self-suppress trust**~~ — candidate host/port validation + default-port normalize on self-key refuse + NOISE self-check fail-closed; offer/announce enqueue suppresses only when `verifiedPubkey` (AMP signer) is our key. Advertised `obj.pubkey` is informational.
 17. **OP_RETURN hallmarks** — core short-format encode/verify (`functions/fabricHallmark`); Hub publish/scan is operator opt-in. Hallmarks are not a BIP; `npm run report:bip-compliance` last run **2026-08-13** (mean stack **2.47**, 37 BIPs, no grade movement vs 2026-08-12). Remaining: Hub mainnet hallmark policy gates; BIP suite gaps (49/69/85/322/48/370/352/388) in `reports/bip-compliance.md`.
 18. ~~**Blinded-execution `at` bind**~~ — `decisionSigningMessage` v2 includes `at`; `recordProposalDecision` requires it and rejects timestamp swaps under a valid signature.
+19. ~~**GroupChangeProposal roster bind**~~ — `signingStringForGroupChangeProposal` v2 includes canonical `members` / `signers` so BIP340 votes cannot be reused on a colliding `id` with a swapped roster.
 
 ### PR #183 review triage (feature/rsi)
 
-Most CodeRabbit / automation actionable items on [#183](https://github.com/FabricLabs/fabric/pull/183) are addressed on tip (`3c963834…` plus this pass). Latest security review on that SHA reported **2 Mediums**; the peering self-suppress path is now fixed in core. **0 Mediums** remain from that review (blinded-execution `at` bind is landed).
+Most CodeRabbit / automation actionable items on [#183](https://github.com/FabricLabs/fabric/pull/183) are addressed on tip. Latest security review on `3745041e3` reported **1 High** (`members.set` / `signers.set` omitted from the proposal vote string); that bind is landed (`signingStringForGroupChangeProposal` v2).
 
 | Item | Status |
 |------|--------|
@@ -64,6 +65,8 @@ Most CodeRabbit / automation actionable items on [#183](https://github.com/Fabri
 | `createRound` omitted `policy` TypeError | Fixed — default `policy = {}` |
 | Bind `at` into `decisionSigningMessage` | Fixed — v2 protocol string includes `at`; first-delivery timestamp swap rejected |
 | Verified-pubkey peering self-suppress | Fixed — `_enqueuePeeringCandidate` uses `verifiedPubkey` (AMP signer) only |
+| GroupChangeProposal quorum `threshold` | Fixed — fold uses genesis/tip k-of-n; proposer-chosen values cannot lower the bar |
+| GroupChangeProposal roster bind | Fixed — vote string v2 includes canonical `members` / `signers`; colliding `id` cannot reuse votes on a swapped set |
 | Eager `messageHex` / `contractIdentifier` rename | Deferred — ARC §8 (performance / breaking rename) |
 | Beacon federation `ready` before durable persist | Fixed in core `Beacon#submitFederationEpochSignature` — idempotent finalize of `ready`/`sealed` rounds; `addSignature` still rejects new sigs. Hub `contracts/beacon.js` still duplicates this override (safe to drop after pinning this core). |
 | `uuid` via `jayson` (GHSA-w5hq-g745-h8pq) | Mitigated — override `uuid@11.1.1` (avoid `npm audit fix --force` → jayson 2.x) |

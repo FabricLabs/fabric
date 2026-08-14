@@ -279,6 +279,7 @@ describe('@fabric/core/functions/fabricSetup', function () {
         assert.ok(doc.seal && doc.seal.ciphertext);
         assert.ok(!JSON.stringify(doc.object).includes('xprv'));
       } finally {
+        environment.setLockTimeoutMinutes(0);
         fs.rmSync(home, { recursive: true, force: true });
       }
     });
@@ -351,6 +352,16 @@ describe('@fabric/core/types/setup', function () {
         if (prev[k] === undefined) delete process.env[k];
         else process.env[k] = prev[k];
       }
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  it('fails closed on an invalid --wallet path before opening the TUI', async function () {
+    const { home, environment } = isolatedEnv();
+    try {
+      const ui = new SetupTui(environment, { render: false, walletFile: 'bad\0path.json' });
+      await assert.rejects(() => ui.start(), /Invalid --wallet path/);
+    } finally {
       fs.rmSync(home, { recursive: true, force: true });
     }
   });

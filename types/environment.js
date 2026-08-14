@@ -198,7 +198,7 @@ class Environment extends Entity {
       ? Object.assign({}, input.object)
       : this._publicRecordFromWallet(this.wallet);
     if (input.lockTimeoutMinutes != null) {
-      this.lockSession.setTimeoutMinutes(input.lockTimeoutMinutes);
+      this.lockSession.setTimeoutMinutes(clampLockTimeoutMinutes(input.lockTimeoutMinutes));
     }
     this.lockSession.removeAllListeners('lock');
     this.lockSession.on('lock', () => {
@@ -811,9 +811,9 @@ class Environment extends Entity {
             ? Object.assign({}, input.object)
             : {};
           if (input.lockTimeoutMinutes != null) {
-            this.lockSession.setTimeoutMinutes(input.lockTimeoutMinutes);
+            this.lockSession.setTimeoutMinutes(clampLockTimeoutMinutes(input.lockTimeoutMinutes));
           }
-          const password = opts.password || this.readVariable('FABRIC_PASSWORD') || this.readVariable('PASSWORD');
+          const password = opts.password || this.readVariable('FABRIC_PASSWORD');
           if (password) {
             try {
               this.unlockWallet(password);
@@ -955,11 +955,8 @@ class Environment extends Entity {
         this.walletLocked = false;
       }
     } catch (exception) {
-      if (exception && (exception.code === 'FABRIC_PASSWORD_POLICY' || exception.code === 'FABRIC_SEAL_DECRYPT')) {
-        throw exception;
-      }
-      if (this.emit) this.emit('error', `[FABRIC:ENV] Could not write wallet file: ${exception.message || exception}`);
-      process.exit(1);
+      if (this.emit) this.emit('warning', `[FABRIC:ENV] Could not write wallet file: ${exception.message || exception}`);
+      throw exception;
     }
 
     return this;

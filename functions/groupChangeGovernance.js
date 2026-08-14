@@ -16,7 +16,29 @@ const { pubkeyXOnly } = require('./groupChatSeal');
 const GOVERNANCE_ACTIONS = Object.freeze(['member.add', 'member.remove', 'members.set', 'signers.set', 'update']);
 
 /**
+ * Canonical unique sorted x-only pubkeys for BIP340 proposal votes.
+ * @param {*} list
+ * @returns {string[]|null}
+ * @private
+ */
+function canonicalPubkeyList (list) {
+  if (!Array.isArray(list)) return null;
+  const seen = new Set();
+  const out = [];
+  for (const item of list) {
+    const x = pubkeyXOnly(item);
+    if (!x || seen.has(x)) continue;
+    seen.add(x);
+    out.push(x);
+  }
+  out.sort();
+  return out;
+}
+
+/**
  * Canonical UTF-8 string validators BIP340-sign for a proposal.
+ * v2 binds `members` / `signers` so votes cannot be reused on a colliding
+ * `id` with a swapped roster (`members.set` / `signers.set`).
  * @param {object} proposal
  * @returns {string}
  */
@@ -24,13 +46,15 @@ function signingStringForGroupChangeProposal (proposal) {
   const p = proposal && typeof proposal === 'object' ? proposal : {};
   const body = {
     type: 'GroupChangeProposal',
-    v: 1,
+    v: 2,
     id: String(p.id || ''),
     contractId: String(p.contractId || '').toLowerCase(),
     groupId: String(p.groupId || ''),
     action: String(p.action || ''),
     member: p.member != null ? String(p.member).toLowerCase() : null,
     role: p.role != null ? String(p.role) : null,
+    members: canonicalPubkeyList(p.members),
+    signers: canonicalPubkeyList(p.signers),
     patch: p.patch && typeof p.patch === 'object' ? p.patch : null,
     proposedBy: String(p.proposedBy || '').toLowerCase(),
     createdAt: String(p.createdAt || '')

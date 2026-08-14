@@ -2158,8 +2158,17 @@ class CLI extends FabricShell {
     if (!content) return self._appendMessage('No message provided.');
     if (content.length > MAX_CHAT_MESSAGE_LENGTH) return self._appendMessage(`Message exceeds maximum length (${MAX_CHAT_MESSAGE_LENGTH}).`);
 
-    // Modify history
-    self.history.push(data.input);
+    const raw = String(data.input || '');
+    const tokens = raw.trim().split(/\s+/);
+    const head = String(tokens[0] || '').replace(/^\//, '').toLowerCase();
+    const sub = String(tokens[1] || '').toLowerCase();
+    if (head === 'unlock') {
+      self.history.push('/unlock ***');
+    } else if (head === 'wallet' && sub === 'unlock') {
+      self.history.push('/wallet unlock ***');
+    } else {
+      self.history.push(data.input);
+    }
 
     // Send as Chat Message if no handler registered
     if (!self._processInput(data.input)) {

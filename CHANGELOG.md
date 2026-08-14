@@ -2,6 +2,8 @@
 Recent changes to Fabric Core.
 
 ## 2026-08-13
+- **GroupChangeProposal vote string v2** — BIP340 votes bind canonical `members` / `signers` so a colliding proposal `id` cannot reuse honest signatures on a swapped roster. Quorum remains genesis/tip k-of-n.
+- **Wallet lock follow-ups** — `setWallet` throws instead of `process.exit`; `fabric setup` fails closed on an invalid `--wallet` path; auto-unlock reads only `FABRIC_PASSWORD` (not generic `PASSWORD`); `/unlock` passwords are redacted from CLI history; idle-lock timers `unref()`.
 - **`fabric setup` TUI** — lightweight Blessed screen (`types/setup.js`) over headless `functions/fabricSetup.js`: public environment snapshot (paths, identity, XPUB), backup, restore from file or seed, generate / regenerate, unlock / lock / idle timeout, encrypt plaintext. One-shot flags `--json`, `--backup [FILE]`, `--restore <FILE>`, `--unlock`, `--lock`, `--timeout <MINUTES>`, `--no-tui`, `--force` skip the TUI. Snapshot never includes seed/xprv.
 - **Encrypted wallets by default** — new `~/.fabric/wallet.json` files are password-sealed JSON (`seal` blob: AES-256-GCM + PBKDF2-SHA256, same scheme as Hub identity backup v2). Public fields stay outside the blob. `--password` / `FABRIC_PASSWORD` is the encryption password (min 8); `--passphrase` remains BIP39. Generic APIs: `functions/sealedBlob.js`, `functions/identityLock.js` (default 30-minute idle auto-lock; `0` disables). Shell: `/unlock`, `/lock`, `/lock timeout`, `/wallet status|unlock|lock|timeout`. Legacy plaintext wallets still load.
 

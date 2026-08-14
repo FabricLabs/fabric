@@ -112,17 +112,33 @@ function signContractMessage (key, contractId, type, object) {
  * Canonical proposal signing string used by application vote helpers.
  * Kept inline so core CI does not import application repos.
  */
+function applicationCanonicalPubkeyList (list) {
+  if (!Array.isArray(list)) return null;
+  const seen = new Set();
+  const out = [];
+  for (const item of list) {
+    const x = pubkeyXOnly(item);
+    if (!x || seen.has(x)) continue;
+    seen.add(x);
+    out.push(x);
+  }
+  out.sort();
+  return out;
+}
+
 function applicationProposalSigningString (proposal) {
   const p = proposal && typeof proposal === 'object' ? proposal : {};
   return JSON.stringify({
     type: 'GroupChangeProposal',
-    v: 1,
+    v: 2,
     id: String(p.id || ''),
     contractId: String(p.contractId || '').toLowerCase(),
     groupId: String(p.groupId || ''),
     action: String(p.action || ''),
     member: p.member != null ? String(p.member).toLowerCase() : null,
     role: p.role != null ? String(p.role) : null,
+    members: applicationCanonicalPubkeyList(p.members),
+    signers: applicationCanonicalPubkeyList(p.signers),
     patch: p.patch && typeof p.patch === 'object' ? p.patch : null,
     proposedBy: String(p.proposedBy || '').toLowerCase(),
     createdAt: String(p.createdAt || '')
