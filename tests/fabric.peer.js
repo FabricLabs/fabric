@@ -426,6 +426,19 @@ describe('@fabric/core/types/peer', function () {
         peer._fillPeerSlots();
         assert.strictEqual(peer.candidates.length, 1);
       });
+
+      it('does not immediately redial the same candidate', function () {
+        const peer = new Peer({ listen: false, peersDb: null, networking: false });
+        peer.settings.constraints.peers.max = 8;
+        peer.settings.peering = { candidateRetryMs: 60000 };
+        let dials = 0;
+        peer._connect = () => { dials += 1; };
+        peer._enqueuePeeringCandidate('192.0.2.77', 7778);
+        peer._fillPeerSlots();
+        peer._fillPeerSlots();
+        assert.strictEqual(dials, 1);
+        assert.strictEqual(peer.candidates.length, 1);
+      });
     });
 
     describe('_registerContract', function () {
@@ -1823,6 +1836,13 @@ describe('@fabric/core/types/peer', function () {
         server._connect = () => {};
         server._fillPeerSlots();
         assert.ok(server._isSelfDialSuppressed('192.0.2.91:7777'));
+      });
+
+      it('_isTransientSocketError matches ECONNREFUSED without error.code', function () {
+        const peer = new Peer({ listen: false, peersDb: null, networking: false });
+        assert.strictEqual(peer._isTransientSocketError({ code: 'ECONNREFUSED' }), true);
+        assert.strictEqual(peer._isTransientSocketError(new Error('connect ECONNREFUSED 65.21.231.149:7778')), true);
+        assert.strictEqual(peer._isTransientSocketError(new Error('application protocol failure')), false);
       });
 
       it('records verifiedPubkey on queued third-party candidates', function () {

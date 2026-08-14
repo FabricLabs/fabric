@@ -10,6 +10,7 @@ Related docs:
 - `docs/PRODUCTION.md`
 - `docs/RELEASE_CHECKLIST.md`
 - `docs/OUTSTANDING.md` — **security-first queue** (this repo)
+- `docs/TYPES_AND_SERVICES.md` — cross-package `types/` + `services/` homes (http / Hub / Passport / GoonCitizen)
 - `SECURITY.md` / `AUDIT.md`
 - `AGENTS.md`
 

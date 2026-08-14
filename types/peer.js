@@ -11,6 +11,7 @@ const {
   PEERING_OFFER_MAX_PAYLOAD_CACHE,
   PEERING_OFFER_MAX_RELAYS_PER_ORIGIN_PER_MINUTE,
   PEER_MAX_CANDIDATES_QUEUE,
+  PEER_CANDIDATE_RETRY_MS,
   P2P_PEER_GOSSIP,
   P2P_PEERING_OFFER,
   P2P_PEER_ALIAS,
@@ -690,6 +691,8 @@ class Peer extends Service {
     this._peerBans = new Map();
     /** `host:port` keys for {@link P2P_PEERING_OFFER} candidate queue dedup. */
     this._candidateKeys = new Set();
+    /** `host:port` → next allowed dial (ms). Caps refused-candidate storms. */
+    this._candidateRetryAt = new Map();
     /**
      * `host:port` strings we opened via {@link Peer#_connect} (outbound dials).
      * {@link P2P_SESSION_OFFER} must not destroy these when the same peer also opens an inbound
@@ -1970,21 +1973,16 @@ class Peer extends Service {
       this.emit('warning', msg);
       socket.destroy(new Error(msg));
     });
-    socket.once('connect', () => socket.setTimeout(0));
 
-    const client = noise({
-      initiator: true,
-      prologue: Buffer.from(PROLOGUE),
-      // privateKey: _derived.privkey — enable when NOISE static === Fabric derived key.
-      verify: this._verifyNOISE.bind(this)
-    });
+    socket._destroyFabric = () => {
+      this._destroyFabric(socket, target);
+    };
 
     socket.on('error', (error) => {
       this.emit('debug', `--- debug error from _connect() ---`);
-      if (error && (error.code === 'EPIPE' || error.code === 'ECONNRESET' ||
-          error.code === 'ECONNREFUSED' || error.code === 'EHOSTUNREACH' ||
-          error.code === 'ENETUNREACH' || error.code === 'ETIMEDOUT')) {
-        this.emit('warning', `Suppressing transient outbound socket error (${error.code}) from _connect().`);
+      if (this._isTransientSocketError(error)) {
+        const code = (error && error.code) || 'ECONNREFUSED';
+        this.emit('warning', `Suppressing transient outbound socket error (${code}) from _connect().`);
       } else {
         const msg = `Socket error: ${error}`;
         // Avoid crashing consumers/tests that haven't registered an 'error' listener.
@@ -1999,7 +1997,7 @@ class Peer extends Service {
 
     socket.on('close', (info) => {
       this.emit('debug', `Outbound socket closed: (${target}) ${info}`);
-      socket._destroyFabric();
+      if (typeof socket._destroyFabric === 'function') socket._destroyFabric();
       // this._scheduleReconnect(target);
     });
 
@@ -2008,28 +2006,29 @@ class Peer extends Service {
       // delete this.connections[target];
     });
 
-    // Attach before pipe — noise-protocol-stream destroy(err) emits on encrypt/decrypt;
-    // missing listeners become uncaught Exceptions (noise_stream_new / malloc).
-    this._attachNoiseStreamErrorHandlers(client, 'NOISE');
-
-    // Handle trusted Fabric messages
-    client.decrypt.on('data', (data) => {
-      this._handleFabricMessage(data, { name: target }, client);
-    });
-
-    // Start stream
-    client.encrypt.pipe(socket).pipe(client.decrypt);
-
-    // TODO: output stream
-    // client.decrypt.pipe(this.stream);
-
-    this._registerNOISEClient(target, socket, client);
-    this._beginFabricHandshake(client);
-
-    this.emit('connections:open', {
-      address: target,
-      id: target,
-      url: url
+    // Do not construct NOISE until TCP is up. noise-protocol-stream shares one
+    // EventEmitter for handshake callbacks; refused dials were leaking listeners.
+    socket.once('connect', () => {
+      socket.setTimeout(0);
+      if (socket.destroyed) return;
+      const client = noise({
+        initiator: true,
+        prologue: Buffer.from(PROLOGUE),
+        // privateKey: _derived.privkey — enable when NOISE static === Fabric derived key.
+        verify: this._verifyNOISE.bind(this)
+      });
+      this._attachNoiseStreamErrorHandlers(client, 'NOISE');
+      client.decrypt.on('data', (data) => {
+        this._handleFabricMessage(data, { name: target }, client);
+      });
+      client.encrypt.pipe(socket).pipe(client.decrypt);
+      this._registerNOISEClient(target, socket, client);
+      this._beginFabricHandshake(client);
+      this.emit('connections:open', {
+        address: target,
+        id: target,
+        url: url
+      });
     });
   }
 
@@ -2051,7 +2050,8 @@ class Peer extends Service {
   }
 
   _destroyFabric (socket, target) {
-    if (socket._keepalive) clearInterval(socket._keepalive);
+    if (socket && socket._keepalive) clearInterval(socket._keepalive);
+    this._teardownNoiseClient(socket);
 
     if (this._outboundDialTargets) this._outboundDialTargets.delete(target);
 
@@ -2293,8 +2293,13 @@ class Peer extends Service {
   _fillPeerSlots () {
     if (this.connections.length >= this.settings.constraints.peers.max) return;
     const openCount = this.settings.constraints.peers.max - Object.keys(this.connections).length;
+    if (!this._candidateRetryAt) this._candidateRetryAt = new Map();
+    const retryAfter = Number(this.settings.peering && this.settings.peering.candidateRetryMs) ||
+      PEER_CANDIDATE_RETRY_MS;
+    const now = Date.now();
+    const deferred = [];
     for (let i = 0; i < openCount; i++) {
-      if (!this.candidates.length) continue;
+      if (!this.candidates.length) break;
       const candidate = this.candidates.shift();
       this.emit('debug', `Filling peer slot ${i} of ${openCount} (max ${this.settings.constraints.peers.max}) with candidate: ${JSON.stringify(candidate, null, '  ')}`);
 
@@ -2315,14 +2320,22 @@ class Peer extends Service {
           if (this._candidateKeys) this._candidateKeys.delete(addr);
           continue;
         }
+        const nextOk = this._candidateRetryAt.get(addr) || 0;
+        if (now < nextOk ||
+            this.connections[addr] ||
+            (this._outboundDialTargets && this._outboundDialTargets.has(addr))) {
+          deferred.push(candidate);
+          continue;
+        }
+        this._candidateRetryAt.set(addr, now + retryAfter);
         this._connect(addr);
       } catch (exception) {
         this.emit('error', `Unable to fill open peer slot ${i}: ${exception}`);
       }
 
-      // Place the candidate back in the list
-      this.candidates.push(candidate);
+      deferred.push(candidate);
     }
+    for (const c of deferred) this.candidates.push(c);
 
     return this;
   }
@@ -3548,6 +3561,22 @@ class Peer extends Service {
   }
 
   /**
+   * True when a TCP/NOISE error is a routine connect/reset (not an application fault).
+   * Node sometimes omits `error.code` and only puts `ECONNREFUSED` in the message.
+   * @param {*} error
+   * @returns {boolean}
+   */
+  _isTransientSocketError (error) {
+    const code = error && error.code;
+    if (code === 'EPIPE' || code === 'ECONNRESET' || code === 'ECONNREFUSED' ||
+        code === 'EHOSTUNREACH' || code === 'ENETUNREACH' || code === 'ETIMEDOUT') {
+      return true;
+    }
+    const text = String((error && error.message) || error || '');
+    return /ECONNREFUSED|ECONNRESET|EPIPE|ETIMEDOUT|EHOSTUNREACH|ENETUNREACH/.test(text);
+  }
+
+  /**
    * Bind encrypt/decrypt 'error' before piping. noise-protocol-stream calls
    * stream.destroy(err) on handshake failure; without listeners Node raises
    * uncaught Exceptions (e.g. `noise_stream_new`, `malloc`).
@@ -3558,9 +3587,13 @@ class Peer extends Service {
    */
   _attachNoiseStreamErrorHandlers (noiseStream, label = 'NOISE') {
     if (!noiseStream || !noiseStream.encrypt || !noiseStream.decrypt) return;
+    if (noiseStream._fabricNoiseErrorHandlers) {
+      this._detachNoiseStreamErrorHandlers(noiseStream);
+    }
     const onSide = (side) => (error) => {
-      if (error && (error.code === 'EPIPE' || error.code === 'ECONNRESET')) {
-        this.emit('warning', `Suppressing transient ${label} ${side} error (${error.code}).`);
+      if (this._isTransientSocketError(error)) {
+        const code = (error && error.code) || 'ECONNRESET';
+        this.emit('warning', `Suppressing transient ${label} ${side} error (${code}).`);
         return;
       }
       const text = String((error && error.message) || error || '');
@@ -3573,8 +3606,66 @@ class Peer extends Service {
       if (this.listenerCount('error') > 0) this.emit('error', msg);
       else this.emit('warning', msg);
     };
-    noiseStream.encrypt.on('error', onSide('encrypt'));
-    noiseStream.decrypt.on('error', onSide('decrypt'));
+    const onEncrypt = onSide('encrypt');
+    const onDecrypt = onSide('decrypt');
+    noiseStream.encrypt.on('error', onEncrypt);
+    noiseStream.decrypt.on('error', onDecrypt);
+    noiseStream._fabricNoiseErrorHandlers = { onEncrypt, onDecrypt };
+  }
+
+  /**
+   * Remove encrypt/decrypt 'error' listeners attached by {@link Peer#_attachNoiseStreamErrorHandlers}.
+   * @param {Object} noiseStream
+   * @returns {void}
+   */
+  _detachNoiseStreamErrorHandlers (noiseStream) {
+    const handlers = noiseStream && noiseStream._fabricNoiseErrorHandlers;
+    if (!handlers) return;
+    try {
+      if (noiseStream.encrypt && typeof noiseStream.encrypt.removeListener === 'function') {
+        noiseStream.encrypt.removeListener('error', handlers.onEncrypt);
+      }
+    } catch (_) { /* ignore */ }
+    try {
+      if (noiseStream.decrypt && typeof noiseStream.decrypt.removeListener === 'function') {
+        noiseStream.decrypt.removeListener('error', handlers.onDecrypt);
+      }
+    } catch (_) { /* ignore */ }
+    noiseStream._fabricNoiseErrorHandlers = null;
+  }
+
+  /**
+   * Unpipe and destroy a NOISE pair so shared handshake emitters do not leak listeners.
+   * @param {object|null} socket
+   * @returns {void}
+   */
+  _teardownNoiseClient (socket) {
+    if (!socket) return;
+    const noiseClient = socket._noiseClient || socket._noiseHandler;
+    if (!noiseClient) return;
+    this._detachNoiseStreamErrorHandlers(noiseClient);
+    try {
+      if (noiseClient.encrypt && typeof noiseClient.encrypt.unpipe === 'function') {
+        noiseClient.encrypt.unpipe(socket);
+      }
+    } catch (_) { /* ignore */ }
+    try {
+      if (typeof socket.unpipe === 'function' && noiseClient.decrypt) {
+        socket.unpipe(noiseClient.decrypt);
+      }
+    } catch (_) { /* ignore */ }
+    try {
+      if (noiseClient.encrypt && typeof noiseClient.encrypt.destroy === 'function') {
+        noiseClient.encrypt.destroy();
+      }
+    } catch (_) { /* ignore */ }
+    try {
+      if (noiseClient.decrypt && typeof noiseClient.decrypt.destroy === 'function') {
+        noiseClient.decrypt.destroy();
+      }
+    } catch (_) { /* ignore */ }
+    socket._noiseClient = null;
+    socket._noiseHandler = null;
   }
 
   _NOISESocketHandler (socket) {
@@ -3605,8 +3696,9 @@ class Peer extends Service {
     // Handle low-level socket errors for inbound connections
     socket.on('error', (error) => {
       if (this.settings.debug) this.emit('debug', `--- debug error from _NOISESocketHandler() ---`);
-      if (error && (error.code === 'EPIPE' || error.code === 'ECONNRESET')) {
-        this.emit('warning', `Suppressing transient inbound socket error (${error.code}) from _NOISESocketHandler().`);
+      if (this._isTransientSocketError(error)) {
+        const code = (error && error.code) || 'ECONNRESET';
+        this.emit('warning', `Suppressing transient inbound socket error (${code}) from _NOISESocketHandler().`);
       } else {
         this.emit('error', `Inbound socket error: ${error}`);
       }
@@ -3640,6 +3732,7 @@ class Peer extends Service {
     });
 
     this._attachNoiseStreamErrorHandlers(handler, 'NOISE');
+    socket._noiseHandler = handler;
 
     handler.decrypt.on('close', (data) => {
       if (this.settings.debug) this.emit('debug', `Peer decrypt close: ${data}`);
@@ -4897,6 +4990,7 @@ class Peer extends Service {
     socket._failureCount = 0;
     socket._lastMessage = null;
     socket._messageLog = [];
+    socket._noiseClient = client;
 
     this._startFabricPingKeepalive(socket, client.encrypt);
 

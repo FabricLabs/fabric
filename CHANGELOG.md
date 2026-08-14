@@ -2,6 +2,8 @@
 Recent changes to Fabric Core.
 
 ## 2026-08-14
+- **IdentityCrossSign lift:** `functions/identityCrossSign.js`, `fabricIdentitySchnorr.js`, `identityCrossSignVerify.js` (+ `.d.ts`) are the canonical gossip strings and BIP340 helpers. HTTP site-login / device-link stay in `@fabric/http` and re-export these leaves.
+- **Peer dial storms:** `_fillPeerSlots` waits `PEER_CANDIDATE_RETRY_MS` (60s) before redialing the same candidate; refused TCP no longer constructs NOISE (shared handshake EventEmitter was leaking listeners). Transient `ECONNREFUSED` is recognized from the error message when Node omits `error.code`.
 - **Tests:** coverage for `--password=VALUE` (`functions/cliPasswordArgv`), GroupChange `signers.set` vote bind, wallet atomic write / touchWallet truncate, advertised vs verified peering suppress, Beacon persist-fail retain, `Environment.stop()` key wipe, and related lock/setup fail-closed paths.
 - **Codacy (PR #183):** timing-safe setup password confirm; setup TUI treats cancel as a non-string password (no `== null`); hallmark hex length uses a literal class (no `new RegExp`); tier `when` paths skip `__proto__`/`constructor`/`prototype`; BIP65 lock constants avoid 32-bit hex literals; Semgrep/Opengrep exclude path-hardened `fabricSetup` / `environment` (containment already tested).
 - **Shutdown / create:** `Environment.stop()` calls `lockWallet()` so seed/xprv/plaintext keys wipe even when the idle-lock handler was never installed; `touchWallet` creates a missing file with exclusive `wx` and does not truncate on `EEXIST`.

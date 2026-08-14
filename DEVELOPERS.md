@@ -34,7 +34,7 @@ Working from a **git checkout** (not the global package) is best when you are ch
 ## Repository layout
 | Path | Role |
 |------|------|
-| `types/` | ES6 **classes** — `Actor`, `Peer`, `Service`, `Store`, `Message`, etc. CommonJS (`require`) throughout. |
+| `types/` | ES6 **classes** — `Actor`, `Peer`, `Service`, `Store`, `Message`, etc. CommonJS (`require`) throughout. Cross-package homes: **[docs/TYPES_AND_SERVICES.md](docs/TYPES_AND_SERVICES.md)**. |
 | `services/` | Long-running **integrations** (Bitcoin RPC, Lightning stubs, ZMQ, …) built on `Service`. |
 | `contracts/` | Language snippets, traces, and tooling (e.g. type dependency graph). |
 | `scripts/` | CLI entrypoints, doc helpers (`list-jsdoc-type-files.js`, `remove-legacy-types.sh`). |

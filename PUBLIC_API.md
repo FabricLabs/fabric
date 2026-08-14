@@ -38,6 +38,12 @@ Password-sealed JSON and in-memory lock sessions (CLI / setup wallets):
 `@fabric/core/functions/sealedBlob`, `@fabric/core/functions/identityLock`
 (ambient stubs `functions/sealedBlob.d.ts` / `functions/identityLock.d.ts`).
 
+Protocol identity Schnorr + IdentityCrossSign (device-link gossip strings):
+`@fabric/core/functions/fabricIdentitySchnorr`,
+`@fabric/core/functions/identityCrossSign`,
+`@fabric/core/functions/identityCrossSignVerify`. HTTP site-login / device-link
+handlers stay in `@fabric/http` and re-export these leaves.
+
 ### Services
 
 `@fabric/core/services/bitcoin`, `@fabric/core/services/lightning` — optional RPC

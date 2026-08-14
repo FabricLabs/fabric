@@ -37,4 +37,4 @@ One-off reports and analysis files in the repo root are listed in **[NON_CANONIC
 
 ## Downstream
 
-**hub.fabric.pub** (rendezvous hub, HTTP bridge) and **@fabric/http** are separate repos; align versions per **[docs/PRODUCTION.md](PRODUCTION.md)** and **[../DEVELOPERS.md](../DEVELOPERS.md)**.
+**hub.fabric.pub** (rendezvous hub, HTTP bridge) and **@fabric/http** are separate repos; align versions per **[docs/PRODUCTION.md](PRODUCTION.md)** and **[../DEVELOPERS.md](../DEVELOPERS.md)**. Cross-package `types/` + `services/` ownership (including Passport and GoonCitizen): **[TYPES_AND_SERVICES.md](TYPES_AND_SERVICES.md)**.

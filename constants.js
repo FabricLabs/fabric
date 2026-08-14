@@ -194,6 +194,11 @@ const PEERING_OFFER_MAX_RELAYS_PER_ORIGIN_PER_MINUTE = 60;
 const PEERING_OFFER_MAX_PAYLOAD_CACHE = 50000;
 /** Max queued connection candidates from {@link P2P_PEERING_OFFER} (FIFO eviction). */
 const PEER_MAX_CANDIDATES_QUEUE = 128;
+/**
+ * Minimum delay before {@link Peer#_fillPeerSlots} redials the same candidate.
+ * Immediate requeue plus `connections:close` was a tight ECONNREFUSED loop.
+ */
+const PEER_CANDIDATE_RETRY_MS = 60000;
 /** Max wire-hash dedup entries in {@link Peer} (bounded memory). */
 const PEER_MAX_WIRE_HASH_CACHE = 10000;
 /**
@@ -430,6 +435,7 @@ module.exports = {
   PEERING_OFFER_MAX_RELAYS_PER_ORIGIN_PER_MINUTE,
   PEERING_OFFER_MAX_PAYLOAD_CACHE,
   PEER_MAX_CANDIDATES_QUEUE,
+  PEER_CANDIDATE_RETRY_MS,
   PEER_MAX_WIRE_HASH_CACHE,
   PEER_MAX_LOGICAL_REGISTER_CACHE,
   PEER_SCORE_BODY_HASH_MISMATCH_PENALTY,
