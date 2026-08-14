@@ -176,7 +176,7 @@ describe('@fabric/core/types/environment', function () {
     });
 
     it('can instantiate from a seed', async function () {
-      const environment = new Environment({ xpub: FIXTURE_SEED });
+      const environment = new Environment({ seed: FIXTURE_SEED });
       await environment.start();
       await environment.stop();
       assert.ok(environment);

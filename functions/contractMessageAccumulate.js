@@ -134,9 +134,6 @@ function compactJournalEntries (entries, maxEntries) {
 }
 
 function resolveMaxJournalEntries (doc, meta = {}) {
-  if (meta.maxJournalEntries != null) {
-    return clampJournalEntries(meta.maxJournalEntries, DEFAULT_MAX_JOURNAL_ENTRIES);
-  }
   const fromGenesis = doc && doc.genesis && doc.genesis.primitives
     && doc.genesis.primitives.maxJournalEntries;
   if (fromGenesis != null) {
@@ -144,6 +141,10 @@ function resolveMaxJournalEntries (doc, meta = {}) {
   }
   if (doc && doc.maxJournalEntries != null) {
     return clampJournalEntries(doc.maxJournalEntries, DEFAULT_MAX_JOURNAL_ENTRIES);
+  }
+  // Local bootstrap only: never overrides a contract-wide cap.
+  if (meta.maxJournalEntries != null) {
+    return clampJournalEntries(meta.maxJournalEntries, DEFAULT_MAX_JOURNAL_ENTRIES);
   }
   return DEFAULT_MAX_JOURNAL_ENTRIES;
 }
@@ -1265,7 +1266,10 @@ function ingestContractPublishBuffer (store, bufferOrPaste, meta = {}) {
   const contractId = new Actor(definition).id;
   const genesis = normalizeGenesis(definition);
   const author = authorXOnlyHex(msg);
-  if (genesis.signers.length && author && !genesis.signers.includes(author)) {
+  if (!/^[0-9a-f]{64}$/.test(String(author || ''))) {
+    return { accepted: false, duplicate: false, contractId, genesis: null, error: 'invalid publish author' };
+  }
+  if (genesis.signers.length && !genesis.signers.includes(author)) {
     return {
       accepted: false,
       duplicate: false,
@@ -1337,6 +1341,7 @@ module.exports = {
   ingestContractPublishBuffer,
   compactJournalEntries,
   clampJournalEntries,
+  resolveMaxJournalEntries,
   ABSOLUTE_MAX_JOURNAL_ENTRIES,
   COMPACTABLE_TYPES,
   createMemoryStore,

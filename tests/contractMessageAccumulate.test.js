@@ -12,7 +12,8 @@ const {
   bufferFromPaste,
   tipFromDoc,
   loadDoc,
-  normalizeGenesis
+  normalizeGenesis,
+  resolveMaxJournalEntries
 } = require('../functions/contractMessageAccumulate');
 const { pubkeyXOnly } = require('../functions/groupChatSeal');
 const {
@@ -765,6 +766,24 @@ describe('@fabric/core contractMessageAccumulate', function () {
     assert.ok(doc.entries.length <= 3);
     assert.ok(doc.entries.some((e) => e.type === 'GroupChange'));
     assert.ok(doc.content.members.includes(pubkeyXOnly(owner.pubkey)));
+  });
+
+  it('prefers genesis journal cap over peer-local meta.maxJournalEntries', function () {
+    const genesis = {
+      primitives: { maxJournalEntries: 10 }
+    };
+    assert.strictEqual(
+      resolveMaxJournalEntries({ genesis, maxJournalEntries: 8 }, { maxJournalEntries: 3 }),
+      10
+    );
+    assert.strictEqual(
+      resolveMaxJournalEntries({ maxJournalEntries: 8 }, { maxJournalEntries: 3 }),
+      8
+    );
+    assert.strictEqual(
+      resolveMaxJournalEntries({}, { maxJournalEntries: 3 }),
+      3
+    );
   });
 });
 

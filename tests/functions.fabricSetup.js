@@ -229,6 +229,53 @@ describe('@fabric/core/functions/fabricSetup', function () {
       }
     });
 
+    it('rejects plaintext restore when the encryption password is missing', function () {
+      const { home, store, environment } = isolatedEnv();
+      try {
+        const created = fabricSetup.generateWallet(environment, { encrypt: false });
+        assert.strictEqual(created.ok, true);
+        const backupPath = path.join(store, 'backups', 'plaintext.json');
+        const backed = fabricSetup.backupWallet(environment, backupPath);
+        assert.strictEqual(backed.ok, true);
+
+        environment.destroyWallet();
+        environment.wallet = false;
+        environment.walletLocked = false;
+        environment.walletPublic = null;
+
+        const missing = fabricSetup.restoreWalletFromFile(environment, backupPath);
+        assert.strictEqual(missing.ok, false);
+        assert.match(String(missing.error), /at least/i);
+        assert.strictEqual(environment.walletExists(), false);
+      } finally {
+        fs.rmSync(home, { recursive: true, force: true });
+      }
+    });
+
+    it('does not print the master xprv even when FABRIC_DEBUG is set', function () {
+      const warnings = [];
+      const logs = [];
+      const origWarn = console.warn;
+      const origLog = console.log;
+      console.warn = (...args) => warnings.push(args.join(' '));
+      console.log = (...args) => logs.push(args.join(' '));
+      try {
+        withEnv({ FABRIC_DEBUG: '1' }, () => {
+          fabricSetup.printGeneratedWallet('abandon ability able', {
+            walletId: 'id1',
+            xpub: 'xpubPUBLIC',
+            xprv: 'xprvTESTSECRET'
+          });
+        });
+      } finally {
+        console.warn = origWarn;
+        console.log = origLog;
+      }
+      const text = warnings.concat(logs).join('\n');
+      assert.ok(!/xprvTESTSECRET/.test(text));
+      assert.ok(/abandon ability able/.test(text));
+    });
+
     it('rejects an invalid seed phrase', function () {
       const { home, environment } = isolatedEnv();
       try {

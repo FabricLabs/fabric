@@ -515,9 +515,17 @@ function restoreWalletFromFile (environment, sourcePath, opts = {}) {
     }
 
     const wallet = walletFromBackupObject(pr.value, opts.passphrase || '');
+    const encrypt = opts.encrypt !== false;
+    const password = opts.password != null ? String(opts.password) : '';
+    if (encrypt && password.length < PASSWORD_MIN_LENGTH) {
+      return {
+        ok: false,
+        error: `Encryption password must be at least ${PASSWORD_MIN_LENGTH} characters (use --password).`
+      };
+    }
     environment.setWallet(wallet, true, {
-      password: opts.password || '',
-      encrypt: opts.encrypt !== false
+      password,
+      encrypt
     });
     try {
       fs.chmodSync(environment.WALLET_FILE, WALLET_FILE_MODE);
@@ -609,7 +617,6 @@ function shouldLaunchTui (opts = {}, io = {}) {
  * @param {string} [extra.walletId]
  * @param {string} [extra.xpub]
  * @param {string} [extra.walletPath]
- * @param {string} [extra.xprv]
  */
 function printGeneratedWallet (phrase, extra = {}) {
   console.warn('[FABRIC:CLI]', '---');
@@ -623,9 +630,6 @@ function printGeneratedWallet (phrase, extra = {}) {
   if (extra.xpub) console.log('[FABRIC:CLI]', 'XPUB (public):', extra.xpub);
   if (extra.walletPath) console.log('[FABRIC:CLI]', 'Saved to:', extra.walletPath);
   console.log('[FABRIC:CLI]', 'Next: run `fabric` to open the shell, or `fabric setup` to review this environment.');
-  if (extra.xprv && debugEnabled()) {
-    console.warn('[FABRIC:CLI]', `Your master xprv: ${extra.xprv}`);
-  }
 }
 
 /**
@@ -731,12 +735,10 @@ async function runSetupCli (environment, opts = {}) {
     return result;
   }
 
-  const secrets = revealSecrets(environment);
   printGeneratedWallet(result.seed, {
     walletId: result.walletId,
     xpub: result.snapshot && result.snapshot.xpub,
-    walletPath: environment.WALLET_FILE,
-    xprv: secrets.ok ? secrets.xprv : null
+    walletPath: environment.WALLET_FILE
   });
   return result;
 }

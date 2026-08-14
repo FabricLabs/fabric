@@ -1,7 +1,7 @@
 # Outstanding (security-first)
 Living queue for this repo. Detail and closed items live in [SECURITY.md](../SECURITY.md) and [AUDIT.md](../AUDIT.md). Suite production march: [PRODUCTION_MARCH.md](PRODUCTION_MARCH.md).
 
-**Last reviewed:** 2026-08-14. Codacy `5e8` + CodeRabbit wallet/CLI quick wins staged; remaining queue below.
+**Last reviewed:** 2026-08-14. Codacy `500000000` rewritten as `Number('500000000')`; genesis journal cap and publish-author fail-closed on existing files.
 
 ## Blockers before shared-host / non-experimental tag
 1. **Third-party review** of `types/peer.js`, inventory HTLC, sealed exchange, `publishedDocumentEnvelope` ([AUDIT.md](../AUDIT.md) recommendations).
@@ -14,15 +14,16 @@ Living queue for this repo. Detail and closed items live in [SECURITY.md](../SEC
 - [ ] Eager `messageHex` laziness on Peer hot paths (performance, not a correctness claim).
 - [ ] Coordinated `contractId` → `contractIdentifier` rename.
 - [ ] Hub / Passport callers still hard-coding BIP44 **7778** on mainnet should use `fabricIdentityDerivationPath(…, network)` (**7777** mainnet / **7778** otherwise).
-- [ ] Genesis journal cap vs peer-local `meta.maxJournalEntries` (consensus-visible compact).
 - [ ] Blinded-execution remains a **scaffold** (not Yao GC) even with signed `at`.
 - [ ] Keep `.codacy.yml` Semgrep/Opengrep exclusions for `functions/fabricSetup.js` and `types/environment.js` unless a replacement SAST job covers those path-construction helpers (CodeRabbit asked to drop the excludes; Codacy still ignores `nosemgrep`).
 
 ## Closed this pass (do not re-open)
 - Blinded-execution `at` bind; Beacon `ready` finalize; peering self-suppress via verified AMP signer; empty `signers: []` spend-key widen; Beacon ARC authority walk.
 - Gossip-network `P2P_PEERING_OFFER` candidate expect includes AMP `verifiedPubkey` (`tests/fabric.peer.gossip-network.js`).
-- Codacy `no-loss-of-precision` on `functions/contractTaproot.js` `CLTV_TIMESTAMP_THRESHOLD` (`5e8` → BIP65 `500000000`). Do not restore scientific notation; it fails the PR check even though IEEE-754 is exact.
+- Codacy `no-loss-of-precision` on `functions/contractTaproot.js` `CLTV_TIMESTAMP_THRESHOLD` — use `Number('500000000')` (decimal and `5e8` both trip the PR check).
 - `setWallet` restores in-memory state and unlinks a placeholder `wallet.json` after a failed first save; CLI `--password` stops at `--`, accepts `-secret`, and does not env-fallback when the flag is present.
+- Genesis `primitives.maxJournalEntries` wins over peer-local `meta.maxJournalEntries`; `CONTRACT_PUBLISH` rejects a non-64-hex author.
+- `printGeneratedWallet` never prints the master xprv (`FABRIC_DEBUG` included). Plaintext restore validates encryption password before `setWallet`.
 
 ## PRs
-[#183](https://github.com/FabricLabs/fabric/pull/183) — mocha + codecov green at `ca1fcb691`; remaining GitHub check was Codacy (`5e8`). Cursor review on `ca1fcb691` reports **no remaining High/Medium/Critical**. Still deferred: genesis journal cap vs peer-local `meta.maxJournalEntries`; `sealedBlob`/`identityLock` `.d.ts` stubs (new files); RFC6902 multi-op JSON bridge (http); eager `messageHex`; `withIsolatedHome` test helper; wallet tmp-name random suffix.
+[#183](https://github.com/FabricLabs/fabric/pull/183) — mocha + codecov green at `4d7351ee3`; remaining GitHub check was Codacy (`500000000` literal). Cursor review on `4d7351ee3` reports **no remaining High/Medium/Critical**. Still deferred: IdentityCrossSign lift (file cap); `sealedBlob`/`identityLock` `.d.ts` stubs (new files); RFC6902 multi-op JSON bridge (http); eager `messageHex`; `withIsolatedHome` test helper; wallet tmp-name random suffix; `.codacy.yml` Semgrep excludes stay until a replacement SAST job exists.

@@ -90,7 +90,7 @@ JS-canonical protocol for 0.1.0; Lightning-style wire preimage; unsigned documen
 CLI first-run setup, L1 document settle in core, ranked offers, multi-blob exchange, private paid relay.
 
 **CLI**
-- **Setup gate** — `fabric --help` / `--version` without a wallet; no auto-setup; bare `fabric` hints `fabric setup`. Quieter `contracts/setup.js` (seed + xpub/path; `FABRIC_DEBUG=1` for xprv).
+- **Setup gate** — `fabric --help` / `--version` without a wallet; no auto-setup; bare `fabric` hints `fabric setup`. Quieter `contracts/setup.js` (seed + xpub/path; master xprv is not printed).
 - **Document exchange** — `/publish` + rate; `/inventory [peer] [btc]`; `/offers`; `/buy` / `/confirm`; `/request` with `maxSats`; `/pending` / `/approve` / `/deny`; `/relayfees`; `/send <doc> <peer>`.
 
 **Peer / functions**
