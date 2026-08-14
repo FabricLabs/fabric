@@ -24,6 +24,9 @@ describe('functions/cliContracts', function () {
     const market = findCliContract('documents-market');
     assert.ok(market.commands.refund);
     assert.ok(market.commands.refunds);
+    const wallet = findCliContract('wallet');
+    assert.ok(wallet.commands.wallet);
+    assert.ok(!/identity lock/i.test(wallet.description));
     const execution = findCliContract('execution');
     assert.ok(execution.commands.create);
     assert.ok(execution.commands.deploy);

@@ -763,8 +763,10 @@ class Environment extends Entity {
     try {
       fs.utimesSync(this.settings.path, time, time);
     } catch {
-      if (!fs.existsSync(this.settings.path)) {
-        fs.closeSync(fs.openSync(this.settings.path, 'w'));
+      try {
+        fs.closeSync(fs.openSync(this.settings.path, 'wx'));
+      } catch (exception) {
+        if (!exception || exception.code !== 'EEXIST') throw exception;
       }
     }
 
@@ -1009,9 +1011,9 @@ class Environment extends Entity {
 
   stop () {
     this._state.status = 'STOPPING';
-    if (this.lockSession && typeof this.lockSession.lock === 'function') {
-      this.lockSession.lock();
-    }
+    // lockWallet() wipes seed/xprv/plaintext keys even when the idle-lock
+    // handler was never installed (loadWallet does not bind it on those paths).
+    this.lockWallet();
     this._state.status = 'STOPPED';
     return this;
   }

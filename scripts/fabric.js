@@ -43,6 +43,7 @@ const { Command } = require('commander');
 
 // Fabric Types
 const Environment = require('../types/environment');
+const { readCliPasswordFromArgv } = require('../functions/cliPasswordArgv');
 
 // Contracts
 const OP_START = require('../contracts/node');
@@ -138,13 +139,7 @@ async function main () {
     return;
   }
 
-  const passwordFromArgv = (() => {
-    const inline = argv.find((a) => String(a).startsWith('--password='));
-    if (inline) return String(inline).slice('--password='.length);
-    const i = argv.indexOf('--password');
-    if (i >= 0 && argv[i + 1] && !String(argv[i + 1]).startsWith('-')) return argv[i + 1];
-    return process.env.FABRIC_PASSWORD || '';
-  })();
+  const passwordFromArgv = readCliPasswordFromArgv(argv);
 
   if (environment.walletLocked && passwordFromArgv) {
     try {

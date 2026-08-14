@@ -9,6 +9,10 @@ describe('contractTierWhen', function () {
     assert.strictEqual(getPath(state, '/a/b'), 1);
     assert.strictEqual(getPath(state, '/__proto__'), undefined);
     assert.strictEqual(getPath(state, '/constructor'), undefined);
+    const polluted = {};
+    Object.defineProperty(polluted, '__proto__', { value: { pwned: true }, enumerable: true });
+    assert.strictEqual(getPath(polluted, '/__proto__'), undefined);
+    assert.strictEqual(getPath(polluted, '/__proto__/pwned'), undefined);
     assert.strictEqual(getPath(state, '/a/missing'), undefined);
     assert.strictEqual(getPath(null, '/a'), undefined);
   });

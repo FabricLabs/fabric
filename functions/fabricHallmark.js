@@ -30,9 +30,15 @@ const HALLMARK_MAGIC = Buffer.from(HALLMARK_MAGIC_HEX, 'hex');
  * @private
  */
 function requireHexBytes (hex, byteLen) {
+  const n = Math.floor(Number(byteLen));
+  if (!Number.isInteger(n) || n < 1 || n > 64) {
+    throw new Error('invalid byte length');
+  }
+  const expect = n * 2;
   const h = String(hex || '').replace(/\s+/g, '').replace(/^0x/i, '').toLowerCase();
-  if (!new RegExp(`^[0-9a-f]{${byteLen * 2}}$`).test(h)) {
-    throw new Error(`expected ${byteLen * 2} hex chars, got ${h.length}`);
+  // Literal character class only — length is checked separately (no dynamic RegExp).
+  if (h.length !== expect || !/^[0-9a-f]+$/.test(h)) {
+    throw new Error(`expected ${expect} hex chars, got ${h.length}`);
   }
   return Buffer.from(h, 'hex');
 }

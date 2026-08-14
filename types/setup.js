@@ -180,9 +180,12 @@ class SetupTui {
         if (self._busy) return;
         const action = MENU[index];
         if (!action) return;
-        if (action.id === 'quit') {
-          finish();
-          return;
+        switch (action.id) {
+          case 'quit':
+            finish();
+            return;
+          default:
+            break;
         }
         self._busy = true;
         try {
@@ -213,13 +216,14 @@ class SetupTui {
     const body = fabricSetup.formatSnapshot(snapshot);
     if (this.elements.config) this.elements.config.setContent(body);
     if (this.elements.header) {
-      const label = snapshot.status === 'unlocked'
-        ? '{green-fg}unlocked{/green-fg}'
-        : snapshot.status === 'locked'
-          ? '{yellow-fg}locked{/yellow-fg}'
-          : snapshot.status === 'unreadable'
-            ? '{red-fg}unreadable{/red-fg}'
-            : '{yellow-fg}no wallet{/yellow-fg}';
+      const statusLabels = {
+        unlocked: '{green-fg}unlocked{/green-fg}',
+        locked: '{yellow-fg}locked{/yellow-fg}',
+        unreadable: '{red-fg}unreadable{/red-fg}'
+      };
+      const label = Object.prototype.hasOwnProperty.call(statusLabels, snapshot.status)
+        ? statusLabels[snapshot.status]
+        : '{yellow-fg}no wallet{/yellow-fg}';
       this.elements.header.setContent(` Local environment · keys · backup   status: ${label}`);
     }
     if (this.screen) this.screen.render();
@@ -329,7 +333,7 @@ class SetupTui {
     const required = opts.required !== false;
     const confirm = opts.confirm !== false;
     const password = await this._askSecret(opts.label || 'Encryption password (min 8):');
-    if (password == null) return null;
+    if (typeof password !== 'string') return null;
     if (!String(password).trim()) {
       if (required) {
         this._setStatus('Encryption password required.', true);
@@ -343,7 +347,7 @@ class SetupTui {
     }
     if (confirm) {
       const again = await this._askSecret('Confirm encryption password:');
-      if (again !== password) {
+      if (!fabricSetup.passwordsMatch(again, password)) {
         this._setStatus('Passwords did not match.', true);
         return null;
       }
@@ -457,7 +461,7 @@ class SetupTui {
       confirm: false,
       label: 'Encryption password:'
     });
-    if (password == null || !String(password).trim()) {
+    if (typeof password !== 'string' || !password.trim()) {
       this._setStatus('Unlock cancelled.');
       return;
     }
@@ -504,7 +508,7 @@ class SetupTui {
       confirm: true,
       label: 'New encryption password (min 8):'
     });
-    if (password == null || !String(password).trim()) {
+    if (typeof password !== 'string' || !password.trim()) {
       this._setStatus('Encrypt cancelled.');
       return;
     }
@@ -591,7 +595,7 @@ class SetupTui {
       confirm: false,
       label: 'Encryption password (unlock sealed backup, or seal a plaintext restore):'
     });
-    if (password == null) {
+    if (typeof password !== 'string') {
       this._setStatus('Restore cancelled.');
       return;
     }
@@ -630,7 +634,7 @@ class SetupTui {
       confirm: true,
       label: 'Encryption password (min 8, required):'
     });
-    if (password == null || !String(password).trim()) {
+    if (typeof password !== 'string' || !password.trim()) {
       this._setStatus('Restore cancelled (encryption password required).');
       return;
     }
@@ -665,7 +669,7 @@ class SetupTui {
       confirm: true,
       label: 'Encryption password (min 8, required):'
     });
-    if (password == null || !String(password).trim()) {
+    if (typeof password !== 'string' || !password.trim()) {
       this._setStatus('Generate cancelled (encryption password required).');
       return;
     }

@@ -186,4 +186,34 @@ describe('@fabric/core/types/beacon', function () {
     assert.strictEqual(beacon._epochChain.height, 1);
     assert.strictEqual(beacon._pendingEpochRounds.has(digest), false);
   });
+
+  it('retains an already-sealed round when epoch-chain persist fails', async function () {
+    const beaconFederationSigning = require('../functions/beaconFederationSigning');
+    const Chain = require('../types/chain');
+    const beacon = new Beacon({ regtest: true, mineOnStart: false, interval: 0 });
+    const fs = memoryFs();
+    fs.publish = async function () { throw new Error('disk full'); };
+    beacon.fs = fs;
+    const payload = { clock: 7, height: 7, blockHash: 'aa'.repeat(32) };
+    const digest = beaconFederationSigning.epochCommitmentDigestHex(payload);
+    const round = {
+      commitmentDigest: digest,
+      payload,
+      validators: ['aa'],
+      threshold: 1,
+      witness: { version: 1, signatures: { aa: '00' } },
+      status: 'ready',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    beacon._epochChain = Chain.fromBeaconMessages([
+      { type: 'BEACON_EPOCH', payload, federationWitness: round.witness }
+    ]);
+    beacon._pendingEpochRounds.set(digest, round);
+    const result = await beacon.submitFederationEpochSignature(digest, 'aa', '00');
+    assert.strictEqual(result.status, 'error');
+    assert.match(String(result.message), /persist/i);
+    assert.strictEqual(result.pending, true);
+    assert.ok(beacon._pendingEpochRounds.has(digest));
+  });
 });

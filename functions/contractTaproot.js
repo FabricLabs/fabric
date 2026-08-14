@@ -30,8 +30,10 @@ const TAPROOT_INTERNAL_NUMS = Buffer.from(
 const DEFAULT_CSV_BLOCKS = 144;
 
 /** BIP65: nLockTime / CLTV values ≥ this threshold are unix timestamps. */
-const CLTV_TIMESTAMP_THRESHOLD = 500000000;
-const MAX_LOCKTIME = 0xffffffff;
+const CLTV_TIMESTAMP_THRESHOLD = 5e8;
+/** nLockTime / nSequence max (2^32 − 1). Avoid a 32-bit hex literal. */
+const MAX_LOCKTIME = (2 ** 32) - 1;
+const SEQUENCE_NONFINAL = MAX_LOCKTIME - 1;
 
 function networkForFabricName (name = '') {
   const n = String(name || '').toLowerCase();
@@ -1046,7 +1048,7 @@ function prepareLeafPsbt (opts = {}) {
   } else if (afterLock && afterLock.type === 'cltv') {
     locktime = afterLock.value;
     // CLTV requires a non-final nSequence on the input.
-    if (sequence == null || sequence === 0xffffffff) sequence = 0xfffffffe;
+    if (sequence == null || sequence === MAX_LOCKTIME) sequence = SEQUENCE_NONFINAL;
   }
 
   const controlBlock = buildControlBlockForLeaf(leaves, ms);

@@ -11,6 +11,7 @@
  * @module functions/fabricSetup
  */
 
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
@@ -40,6 +41,26 @@ function debugEnabled (v) {
  */
 function isSet (value) {
   return value != null && String(value).trim() !== '';
+}
+
+/**
+ * Constant-time UTF-8 compare (password confirmation / similar secrets).
+ * Length is not leaked by an early return: both sides are padded to the
+ * same buffer before `crypto.timingSafeEqual`.
+ *
+ * @param {*} left
+ * @param {*} right
+ * @returns {boolean}
+ */
+function passwordsMatch (left, right) {
+  const a = Buffer.from(String(left == null ? '' : left), 'utf8');
+  const b = Buffer.from(String(right == null ? '' : right), 'utf8');
+  const n = Math.max(a.length, b.length, 1);
+  const pa = Buffer.alloc(n);
+  const pb = Buffer.alloc(n);
+  a.copy(pa);
+  b.copy(pb);
+  return crypto.timingSafeEqual(pa, pb) && a.length === b.length;
 }
 
 /**
@@ -743,5 +764,6 @@ module.exports = {
   snapshotEnvironment,
   walletFromBackupObject,
   walletFromPhrase,
-  walletFromXprv
+  walletFromXprv,
+  passwordsMatch
 };

@@ -347,6 +347,37 @@ describe('@fabric/core/functions/fabricSetup', function () {
         fs.rmSync(home, { recursive: true, force: true });
       }
     });
+
+    it('accepts integer --timeout including 0', async function () {
+      const { home, environment } = isolatedEnv();
+      const origLog = console.log;
+      console.log = function () {};
+      try {
+        fabricSetup.generateWallet(environment, { password: TEST_PASSWORD });
+        const zero = await fabricSetup.runSetupCli(environment, { timeout: '0' });
+        assert.strictEqual(zero.ok, true);
+        assert.strictEqual(environment.lockSession.timeoutMinutes, 0);
+        const fifteen = await fabricSetup.runSetupCli(environment, { timeout: 15 });
+        assert.strictEqual(fifteen.ok, true);
+        assert.strictEqual(environment.lockSession.timeoutMinutes, 15);
+      } finally {
+        console.log = origLog;
+        fs.rmSync(home, { recursive: true, force: true });
+      }
+    });
+  });
+
+  describe('applyWalletFileOption', function () {
+    it('fails closed on an invalid path', function () {
+      const { home, environment } = isolatedEnv();
+      try {
+        const result = fabricSetup.applyWalletFileOption(environment, 'bad\0path.json');
+        assert.strictEqual(result.ok, false);
+        assert.match(result.error, /Invalid --wallet path/i);
+      } finally {
+        fs.rmSync(home, { recursive: true, force: true });
+      }
+    });
   });
 });
 
@@ -379,6 +410,14 @@ describe('@fabric/core/types/setup', function () {
       }
       fs.rmSync(home, { recursive: true, force: true });
     }
+  });
+
+  it('compares encryption passwords in constant time', function () {
+    assert.ok(fabricSetup.passwordsMatch('same-secret', 'same-secret'));
+    assert.ok(!fabricSetup.passwordsMatch('same-secret', 'same-secreT'));
+    assert.ok(!fabricSetup.passwordsMatch('short', 'longer-than-short'));
+    assert.ok(!fabricSetup.passwordsMatch(null, 'x'));
+    assert.ok(fabricSetup.passwordsMatch(null, null));
   });
 
   it('fails closed on an invalid --wallet path before opening the TUI', async function () {

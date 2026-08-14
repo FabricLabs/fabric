@@ -194,4 +194,59 @@ describe('@fabric/core groupChangeGovernance', function () {
     assert.ok(ctx.members.has(ox) && ctx.members.has(cx));
     assert.strictEqual(ctx.members.has(ax), false);
   });
+
+  it('foldProposals rejects votes when signers.set roster is swapped after signing', function () {
+    const owner = new Key();
+    const co = new Key();
+    const attacker = new Key();
+    const ox = pubkeyXOnly(owner.pubkey);
+    const cx = pubkeyXOnly(co.pubkey);
+    const ax = pubkeyXOnly(attacker.pubkey);
+    const ctx = { members: new Set([ox, cx]), signers: new Set([ox, cx]), readerOnlyAdds: false, threshold: 2 };
+    const honest = {
+      id: 'p-signers',
+      action: 'signers.set',
+      signers: [ox, cx],
+      proposedBy: ox
+    };
+    const vote = signProposalVote(co, honest);
+    const entries = [{
+      hash: 'ff',
+      type: 'GroupChangeProposal',
+      author: ox,
+      object: {
+        id: 'p-signers',
+        action: 'signers.set',
+        signers: [ax],
+        proposedBy: ox
+      }
+    }, {
+      hash: '00',
+      type: 'GroupChangeVote',
+      author: cx,
+      object: {
+        proposalId: 'p-signers',
+        voter: cx,
+        signature: vote.signature
+      }
+    }];
+    const out = foldProposals(entries, ctx, 2, [ox, cx]);
+    assert.strictEqual(out[0].status, 'pending');
+    assert.ok(ctx.signers.has(ox) && ctx.signers.has(cx));
+    assert.strictEqual(ctx.signers.has(ax), false);
+  });
+
+  it('signing string v2 unique-sorts duplicate members and signers', function () {
+    const a = pubkeyXOnly(new Key().pubkey);
+    const b = pubkeyXOnly(new Key().pubkey);
+    const parsed = JSON.parse(signingStringForGroupChangeProposal({
+      id: 'p-dup',
+      action: 'members.set',
+      members: [b, a, a],
+      signers: [b, b, a]
+    }));
+    assert.strictEqual(parsed.v, 2);
+    assert.deepStrictEqual(parsed.members, [a, b].sort());
+    assert.deepStrictEqual(parsed.signers, [a, b].sort());
+  });
 });

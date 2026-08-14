@@ -387,6 +387,9 @@ describe('contractTaproot', function () {
     assert.ok(unixOk);
     assert.strictEqual(unixOk.value, 500000000);
     assert.strictEqual(unixOk.unix, 500000000);
+    const { CLTV_TIMESTAMP_THRESHOLD, MAX_LOCKTIME } = require('../functions/contractTaproot');
+    assert.strictEqual(CLTV_TIMESTAMP_THRESHOLD, 500000000);
+    assert.strictEqual(MAX_LOCKTIME, (2 ** 32) - 1);
     assert.strictEqual(unixOk.height, undefined);
   });
 

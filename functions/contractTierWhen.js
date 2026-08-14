@@ -16,8 +16,11 @@ function getPath (state, path) {
   let cur = state;
   for (const p of parts) {
     if (cur == null || typeof cur !== 'object') return undefined;
-    if (!Object.prototype.hasOwnProperty.call(cur, p)) return undefined;
-    cur = cur[p];
+    // Refuse prototype-walk keys even if they exist as own properties.
+    if (p === '__proto__' || p === 'constructor' || p === 'prototype') return undefined;
+    const desc = Object.getOwnPropertyDescriptor(cur, p);
+    if (!desc) return undefined;
+    cur = desc.value;
   }
   return cur;
 }

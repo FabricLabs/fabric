@@ -686,6 +686,27 @@ describe('@fabric/core contractMessageAccumulate', function () {
     assert.ok(!doc.genesis.signers.includes(unexpected));
   });
 
+  it('does not let meta.signers replace the signed CONTRACT_PUBLISH body', function () {
+    const owner = new Key();
+    const attacker = new Key();
+    const store = createMemoryStore();
+    const definition = {
+      name: 'SignedGenesisSignersAuthoritative',
+      members: { signers: [owner.pubkey], threshold: 1 }
+    };
+    const pub = Message.fromVector(['CONTRACT_PUBLISH', JSON.stringify(definition)]).signWithKey(owner);
+    const seeded = ingestContractPublishBuffer(store, pub.toBuffer(), {
+      signers: [attacker.pubkey],
+      threshold: 1
+    });
+    assert.strictEqual(seeded.accepted, true, seeded.error);
+    const doc = loadDoc(store, seeded.contractId);
+    const expected = pubkeyXOnly(owner.pubkey);
+    const unexpected = pubkeyXOnly(attacker.pubkey);
+    assert.ok(doc.genesis.signers.includes(expected));
+    assert.ok(!doc.genesis.signers.includes(unexpected));
+  });
+
   it('second GroupChange reuses stored genesis without meta.signers', function () {
     const owner = new Key();
     const other = new Key();

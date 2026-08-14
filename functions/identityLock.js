@@ -19,6 +19,8 @@ const MIN_LOCK_TIMEOUT_MINUTES = 1;
 const MAX_LOCK_TIMEOUT_MINUTES = 24 * 60;
 
 /**
+ * Clamp idle-lock minutes. `0` disables auto-lock. Negative or non-numeric
+ * input becomes {@link DEFAULT_LOCK_TIMEOUT_MINUTES} (does not throw).
  * @param {number} minutes
  * @returns {number} Clamped minutes (0 disables).
  */

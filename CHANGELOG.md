@@ -2,6 +2,9 @@
 Recent changes to Fabric Core.
 
 ## 2026-08-14
+- **Tests:** coverage for `--password=VALUE` (`functions/cliPasswordArgv`), GroupChange `signers.set` vote bind, wallet atomic write / touchWallet truncate, advertised vs verified peering suppress, Beacon persist-fail retain, `Environment.stop()` key wipe, and related lock/setup fail-closed paths.
+- **Codacy (PR #183):** timing-safe setup password confirm; setup TUI treats cancel as a non-string password (no `== null`); hallmark hex length uses a literal class (no `new RegExp`); tier `when` paths skip `__proto__`/`constructor`/`prototype`; BIP65 lock constants avoid 32-bit hex literals; Semgrep/Opengrep exclude path-hardened `fabricSetup` / `environment` (containment already tested).
+- **Shutdown / create:** `Environment.stop()` calls `lockWallet()` so seed/xprv/plaintext keys wipe even when the idle-lock handler was never installed; `touchWallet` creates a missing file with exclusive `wx` and does not truncate on `EEXIST`.
 - **Review follow-ups (PR #183):** sealed restore reports `ok: false` on a rejected password; `--password=VALUE` is honoured; idle `--timeout` rejects non-integers; wallet writes are rename-atomic and `touchWallet` no longer truncates an existing file; idle-lock handlers no longer `removeAllListeners`; sealed documents keep `walletVersion`; `CONTRACT_PUBLISH` meta cannot replace the signed genesis; `_fillPeerSlots` does not suppress dials from an advertised own pubkey; Beacon `createRound` is `ready` when the threshold is already met; recovered ready rounds must still meet the federation threshold; pending rounds are kept if epoch-chain persist fails.
 
 ## 2026-08-13

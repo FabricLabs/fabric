@@ -1810,6 +1810,33 @@ describe('@fabric/core/types/peer', function () {
         assert.ok(!server._isSelfDialSuppressed('192.0.2.88:7777'));
       });
 
+      it('_fillPeerSlots suppresses when candidate.verifiedPubkey is our own', function () {
+        const server = new Peer({ listen: false, peersDb: null, networking: false });
+        const own = server._localFabricPubkeyHex();
+        server.settings.constraints.peers.max = 8;
+        server.candidates.push({
+          host: '192.0.2.91',
+          port: 7777,
+          pubkey: own,
+          verifiedPubkey: own
+        });
+        server._connect = () => {};
+        server._fillPeerSlots();
+        assert.ok(server._isSelfDialSuppressed('192.0.2.91:7777'));
+      });
+
+      it('records verifiedPubkey on queued third-party candidates', function () {
+        const server = new Peer({ listen: false, peersDb: null });
+        const attacker = new Key();
+        server._enqueuePeeringCandidate('192.0.2.92', 7777, {
+          pubkey: attacker.pubkey,
+          verifiedPubkey: attacker.pubkey
+        });
+        assert.strictEqual(server.candidates.length, 1);
+        assert.ok(/^[0-9a-f]{64}$/.test(server.candidates[0].verifiedPubkey));
+        assert.ok(!server._isSelfDialSuppressed('192.0.2.92:7777'));
+      });
+
       it('_verifyNOISE rejects when self-key normalization throws', function (done) {
         const server = new Peer({ listen: false, peersDb: null });
         const orig = server._isOwnFabricPubkey.bind(server);

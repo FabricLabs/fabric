@@ -133,6 +133,12 @@ describe('@fabric/core/functions/fabricHallmark', function () {
     assert.strictEqual(withBad, without);
   });
 
+  it('rejects non-hex and wrong-length tip hashes without a dynamic RegExp', function () {
+    assert.throws(() => fh.tipHashBytesFromBlockHash('zz'.repeat(32)), /expected 64 hex chars/);
+    assert.throws(() => fh.tipHashBytesFromBlockHash('ab'.repeat(31)), /expected 64 hex chars/);
+    assert.throws(() => fh.tipHashBytesFromBlockHash(''), /expected 64 hex chars/);
+  });
+
   it('exports a copy of HALLMARK_MAGIC (mutation-safe)', function () {
     const a = fh.HALLMARK_MAGIC;
     a[0] = 0xff;

@@ -93,4 +93,13 @@ describe('@fabric/core/functions/identityLock', function () {
     assert.strictEqual(lock.locked, false);
     assert.strictEqual(lock.timeoutMinutes, 0);
   });
+
+  it('unref()s the idle timer so Node can exit', function () {
+    const lock = new IdentityLock({ timeoutMinutes: 30 });
+    lock.unlock({ ok: true });
+    assert.ok(lock._timer);
+    assert.strictEqual(typeof lock._timer.unref, 'function');
+    assert.strictEqual(lock._timer.hasRef(), false);
+    lock.lock();
+  });
 });
