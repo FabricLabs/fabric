@@ -29,8 +29,8 @@ const TAPROOT_INTERNAL_NUMS = Buffer.from(
 
 const DEFAULT_CSV_BLOCKS = 144;
 
-/** BIP65: nLockTime / CLTV values ≥ this threshold are unix timestamps. */
-const CLTV_TIMESTAMP_THRESHOLD = 5e8;
+/** BIP65 LOCKTIME_THRESHOLD: nLockTime / CLTV values ≥ this are unix timestamps. */
+const CLTV_TIMESTAMP_THRESHOLD = 500000000;
 /** nLockTime / nSequence max (2^32 − 1). Avoid a 32-bit hex literal. */
 const MAX_LOCKTIME = (2 ** 32) - 1;
 const SEQUENCE_NONFINAL = MAX_LOCKTIME - 1;

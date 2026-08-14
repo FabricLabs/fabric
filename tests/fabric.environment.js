@@ -517,6 +517,10 @@ describe('@fabric/core/types/environment', function () {
           () => environment.setWallet(wallet, true, { password: 'short' }),
           (err) => err && err.code === 'FABRIC_PASSWORD_POLICY'
         );
+        assert.strictEqual(fs.existsSync(walletPath), false);
+        assert.ok(!environment.wallet);
+        environment.setWallet(wallet, false, { password: 'test-pass-ok!' });
+        assert.strictEqual(fs.existsSync(walletPath), true);
       } finally {
         for (const k of Object.keys(prev)) {
           if (prev[k] === undefined) delete process.env[k];
@@ -553,6 +557,11 @@ describe('@fabric/core/types/environment', function () {
           () => environment.setWallet(wallet, true, { password: 'test-pass-ok!' }),
           (err) => err && err.code === 'ENOSPC'
         );
+        assert.strictEqual(fs.existsSync(walletPath), false);
+        assert.ok(!environment.wallet);
+        delete environment._writeWalletDocument;
+        environment.setWallet(wallet, false, { password: 'test-pass-ok!' });
+        assert.strictEqual(fs.existsSync(walletPath), true);
       } finally {
         for (const k of Object.keys(prev)) {
           if (prev[k] === undefined) delete process.env[k];

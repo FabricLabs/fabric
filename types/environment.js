@@ -938,12 +938,20 @@ class Environment extends Entity {
     const encrypt = opts.encrypt !== false;
     const password = opts.password != null ? String(opts.password) : '';
 
+    if (this.walletExists() && !force) throw new Error('Wallet file already exists.');
+
+    const previousWallet = this.wallet;
+    const previousPublic = this.walletPublic;
+    const previousLocked = this.walletLocked;
+    const preexisting = this.walletExists();
+
     // Attach before saving
     this.wallet = wallet;
 
-    // Filter user error
-    if (this.walletExists() && !force) throw new Error('Wallet file already exists.');
-    if (!this.touchWallet()) throw new Error('Could not touch wallet.  Check permissions, disk space.');
+    if (!this.touchWallet()) {
+      this.wallet = previousWallet;
+      throw new Error('Could not touch wallet.  Check permissions, disk space.');
+    }
 
     try {
       const exported = wallet.export();
@@ -977,6 +985,12 @@ class Environment extends Entity {
         this.walletLocked = false;
       }
     } catch (exception) {
+      this.wallet = previousWallet;
+      this.walletPublic = previousPublic;
+      this.walletLocked = previousLocked;
+      if (!preexisting) {
+        try { fs.unlinkSync(this.WALLET_FILE); } catch (_) { /* best-effort */ }
+      }
       if (this.emit) this.emit('warning', `[FABRIC:ENV] Could not write wallet file: ${exception.message || exception}`);
       throw exception;
     }
