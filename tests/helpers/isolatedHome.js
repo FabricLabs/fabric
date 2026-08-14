@@ -39,8 +39,9 @@ function withIsolatedHome (prefix = 'fabric-env-') {
         return fs.readdirSync(store).filter((name) => {
           return name.startsWith(base + '.') && name.endsWith('.tmp');
         });
-      } catch (_) {
-        return [];
+      } catch (error) {
+        if (error && error.code === 'ENOENT') return [];
+        throw error;
       }
     },
     restore () {

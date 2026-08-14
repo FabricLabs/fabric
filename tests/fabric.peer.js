@@ -265,6 +265,38 @@ describe('@fabric/core/types/peer', function () {
         }
       });
 
+      it('canonicalizes pubkey@host:port onto the same outbound dial slot', function () {
+        const originalCreateConnection = net.createConnection;
+        const peer = new Peer({ listen: false, peersDb: null });
+        let created = 0;
+        let createdSocket = null;
+        net.createConnection = function () {
+          created += 1;
+          const sock = new EventEmitter();
+          sock.destroyed = false;
+          sock.setTimeout = function () {};
+          sock.unref = function () {};
+          sock.destroy = function () {
+            sock.destroyed = true;
+            sock.emit('close');
+          };
+          createdSocket = sock;
+          return sock;
+        };
+        try {
+          peer._connect('aa'.repeat(32) + '@127.0.0.1:9');
+          peer._connect('127.0.0.1:9');
+          assert.strictEqual(created, 1);
+          assert.strictEqual(peer._outboundDialTargets.has('127.0.0.1:9'), true);
+        } finally {
+          net.createConnection = originalCreateConnection;
+          if (createdSocket && typeof createdSocket.destroy === 'function') createdSocket.destroy();
+          if (typeof peer._destroyFabric === 'function') {
+            try { peer._destroyFabric(createdSocket || {}, '127.0.0.1:9'); } catch (_) { /* ignore */ }
+          }
+        }
+      });
+
       it('emits derived key debug summaries for missing/short/long public keys', function () {
         const originalCreateConnection = net.createConnection;
         net.createConnection = function () {

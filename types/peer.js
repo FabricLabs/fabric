@@ -1924,19 +1924,21 @@ class Peer extends Service {
     this.emit('debug', `[FABRIC:PEER:_connect] Attempting to connect to: ${target}`);
     const url = new URL(`tcp://${target}`);
     const id = url.username;
+    const host = url.hostname;
+    const port = url.port || P2P_PORT;
+    // Dedup on host:port so pubkey@host:port and host:port share one in-flight slot.
+    const canonical = host.includes(':') ? `[${host}]:${port}` : `${host}:${port}`;
 
     // pubkey@host:port — refuse when the pin is our own Fabric key (pre-TCP).
     if (id && this._isOwnFabricPubkey(id)) {
       this.emit('warning',
         `[FABRIC:PEER:_connect] Refusing dial to ${target}: pinned pubkey is our own`);
-      // Match later dial checks (`host:7777`) when the pin omits an explicit port.
-      const normalizedAddress = `${url.hostname}:${url.port || P2P_PORT}`;
-      this._suppressSelfDialAddress(normalizedAddress);
+      this._suppressSelfDialAddress(canonical);
       this.emit('peer:self', { address: target, reason: 'pinned pubkey is own Fabric key' });
       return;
     }
 
-    if (!url.port) target += `:${P2P_PORT}`;
+    target = canonical;
 
     // After normalizing port, check suppress and in-flight dials on host:port.
     if (this._isSelfDialSuppressed(target)) {
@@ -2389,7 +2391,9 @@ class Peer extends Service {
     const peeledForward = suppressTcpOriginPunish; // soft-punish alias for nested handlers
     const scoreOrigin = delivery.scoreOrigin;
 
-    // Frame-size gate before parse / hash / signature work.
+    // Frame-size gate before parse / hash / signature work. Undersize frames are
+    // not body-hash mismatches — treating them as such would hard-ban a TCP peer
+    // for a partial NOISE chunk. Unparseable frames are dropped the same way.
     let wire = buffer;
     if (!Buffer.isBuffer(wire)) {
       if (wire instanceof Uint8Array) wire = Buffer.from(wire);
@@ -2403,6 +2407,11 @@ class Peer extends Service {
         `[FABRIC:PEER] Dropping oversized frame (${wire.length} > ${maxWire}) from ${originName || 'unknown'}`);
       return this;
     }
+    if (wire.length < HEADER_SIZE) {
+      this.emit('warning',
+        `[FABRIC:PEER] Dropping undersize frame (${wire.length} < ${HEADER_SIZE}) from ${originName || 'unknown'}`);
+      return this;
+    }
 
     if (originName && this._isPeerBanned(originName)) {
       this.emit('warning', `[FABRIC:PEER] Dropping message from banned peer ${originName}`);
@@ -2412,7 +2421,16 @@ class Peer extends Service {
     }
 
     const hash = crypto.createHash('sha256').update(wire).digest('hex');
-    const message = Message.fromBuffer(wire);
+    let message;
+    try {
+      message = Message.fromBuffer(wire);
+    } catch (err) {
+      this.emit('warning',
+        `[FABRIC:PEER] Dropping unparseable frame from ${originName || 'unknown'}: ` +
+        `${err && err.message ? err.message : err}`);
+      return this;
+    }
+    if (!message) return this;
     if (this.settings.debug) this.emit('debug', `Got Fabric message: ${message}`);
 
     // Have we seen this exact wire envelope before? (silent — no score change)
