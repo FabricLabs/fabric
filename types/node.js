@@ -61,8 +61,12 @@ class Node extends Service {
       self.emit('log', `connection close: ${JSON.stringify(data)}`);
     });
 
-    source.on('chat', function (chat) {
-      self.emit('chat', chat);
+    source.on('chat', function (chat, meta) {
+      self.emit('chat', chat, meta);
+    });
+
+    source.on('peerAlias', function (ev, meta) {
+      self.emit('peerAlias', ev, meta);
     });
 
     source.on('info', function (info) {

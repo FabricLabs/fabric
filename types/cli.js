@@ -33,6 +33,7 @@ const Key = require('./key');
 
 // Functions
 const truncateMiddle = require('../functions/truncateMiddle');
+const { chatTextOf, chatActorIdOf, formatChatLogLine } = require('../functions/fabricChatText');
 const { tryParsePersistedJson, tryParseWireJson, messageDataToString } = require('../functions/wireJson');
 const {
   CliDocumentExchange,
@@ -366,6 +367,7 @@ class CLI extends FabricShell {
 
     // Create and assign Peer instance as the `node` property
     this.node = new Peer(peerOpts);
+    this._peerAliasByPubkey = this._peerAliasByPubkey || {};
 
     if (this.settings.debug) {
       this.node.on('debug', (msg) => {
@@ -480,6 +482,7 @@ class CLI extends FabricShell {
     this.node.on('commit', this._handlePeerCommit.bind(this));
     this.node.on('state', this._handlePeerState.bind(this));
     this.node.on('chat', this._handlePeerChat.bind(this));
+    this.node.on('peerAlias', this._handlePeerAlias.bind(this));
     this.node.on('upnp', this._handlePeerUPNP.bind(this));
     this.node.on('actorset', this._handleActorSet.bind(this));
     this.node.on('contractset', this._handleContractSet.bind(this));
@@ -2010,11 +2013,26 @@ class CLI extends FabricShell {
     // this._appendDebug(`[NODE] [COMMIT] ${JSON.stringify(_commit)}`);
   }
 
-  async _handlePeerChat (chat) {
-    const actor = chat.actor || {};
-    const idPrefer = actor.id != null && String(actor.id).length ? String(actor.id) : null;
-    const truncatedId = truncateMiddle(idPrefer || actor.username || '', 10, '…', 5);
-    this._appendMessage(`[@${truncatedId}]: ${chat.object.content}`);
+  async _handlePeerChat (chat, meta = {}) {
+    const text = chatTextOf(chat);
+    if (!text.trim()) return;
+    const actorId = chatActorIdOf(chat, {
+      signer: meta && meta.signer,
+      defaultActorId: this.node && this.node.id
+    });
+    const aliases = this._peerAliasByPubkey || {};
+    const alias = (actorId && aliases[actorId]) || (meta && meta.signer && aliases[meta.signer]) || null;
+    this._appendMessage(formatChatLogLine(actorId, alias, text, truncateMiddle));
+  }
+
+  async _handlePeerAlias (ev) {
+    const alias = ev && ev.alias != null ? String(ev.alias).trim().slice(0, 64) : '';
+    const signer = ev && ev.signer ? String(ev.signer) : '';
+    if (!alias || !signer) return;
+    this._peerAliasByPubkey = this._peerAliasByPubkey || {};
+    this._peerAliasByPubkey[signer] = alias;
+    const xonly = chatActorIdOf(null, { signer });
+    if (xonly && xonly !== signer) this._peerAliasByPubkey[xonly] = alias;
   }
 
   async _handlePeerUPNP (upnp) {
@@ -2039,16 +2057,11 @@ class CLI extends FabricShell {
           this._appendError('Could not parse <ChatMessage> data: expected object');
           break;
         }
-        const actor = parsed.actor;
-        const obj = parsed.object;
-        const truncatedId = truncateMiddle(
-          actor && (actor.username || actor),
-          10,
-          '…',
-          5
-        );
-        const content = obj && obj.content != null ? String(obj.content) : '';
-        this._appendMessage(`[@${truncatedId}]: ${content}`);
+        const content = chatTextOf(parsed);
+        const actorId = chatActorIdOf(parsed, { defaultActorId: this.node && this.node.id });
+        const aliases = this._peerAliasByPubkey || {};
+        const alias = (actorId && aliases[actorId]) || null;
+        this._appendMessage(formatChatLogLine(actorId, alias, content, truncateMiddle));
         break;
       }
       case 'BlockCandidate':
@@ -2170,34 +2183,21 @@ class CLI extends FabricShell {
       self.history.push(data.input);
     }
 
-    // Send as Chat Message if no handler registered
+    // Mesh shoutbox: first-class UTF-8 P2P_CHAT_MESSAGE (Hub UI + GoonCitizen).
     if (!self._processInput(data.input)) {
-      // Describe the activity for use in P2P message
-      const msg = {
-        type: 'P2P_CHAT_MESSAGE',
-        actor: {
-          id: self.node.id
-        },
-        object: {
-          created: Date.now(),
-          content: content
-        },
-        target: '/messages'
-      };
-
-      let message = Message.fromVector(['ChatMessage', JSON.stringify(msg)]);
+      const text = String(content);
+      let message = Message.fromVector(['P2P_CHAT_MESSAGE', text]);
       message = message.signWithKey(this.key);
 
       self.setPane('messages');
 
-      // Log own message
-      self._handlePeerChat(msg);
+      self._handlePeerChat({ text, type: 'P2P_CHAT_MESSAGE' }, {
+        signer: self.node && self.node.id
+      });
 
-      // Relay to peers
       self.node.relayFrom(self.node.id, message);
 
-      // Notify services
-      self._sendToAllServices(msg);
+      self._sendToAllServices({ type: 'P2P_CHAT_MESSAGE', text });
     }
 
     self.elements['form'].reset();

@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * RC1 first-tier contract — the four production-readiness "green" domains.
+ * @fileoverview RC1 first-tier contract — the four production-readiness "green" domains.
  *
  * These invariants are what a score of 100 means for a shared hostile mesh:
  * wire integrity, gossip/peering bounds, peer scoring/bans, identity/wallets.
@@ -44,7 +44,7 @@ describe('@fabric/core RC1 first-tier contract', function () {
 
   function wireConn (writes) {
     return {
-      _writeFabric (buf) { writes.push(Buffer.isBuffer(buf) ? Buffer.from(buf) : Buffer.from(buf)); },
+      _writeFabric (buf) { writes.push(Buffer.from(buf)); },
       destroy () { this.destroyed = true; },
       destroyed: false
     };
@@ -108,8 +108,8 @@ describe('@fabric/core RC1 first-tier contract', function () {
       const wasDestroyed = seedScore(peer, origin, 'peer-author', 200);
       const key = new Key();
       const buf = Buffer.from(signPing(key, 'author-flip').toBuffer());
-      const hash = crypto.createHash('sha256').update(buf).digest('hex');
       buf[40] ^= 0xff;
+      const hash = crypto.createHash('sha256').update(buf).digest('hex');
 
       peer._handleFabricMessage(buf, { name: origin }, null);
       assert.strictEqual(peer.messages[hash], undefined);

@@ -85,5 +85,49 @@ describe('@fabric/core/types/cli (non-render guards)', function () {
     cli._handleFormSubmit({ input: '/help' });
     assert.deepStrictEqual(cli.history, ['/unlock ***', '/wallet unlock ***', '/help']);
   });
+
+  it('sends mesh shoutbox as UTF-8 P2P_CHAT_MESSAGE (not ChatMessage JSON)', function () {
+    const Key = require('../types/key');
+    const { messageDataToString } = require('../functions/wireJson');
+    const sent = [];
+    const lines = [];
+    const cli = Object.create(CLI.prototype);
+    cli.history = [];
+    cli.key = new Key();
+    cli.node = {
+      id: 'aa'.repeat(32),
+      relayFrom (_from, message) { sent.push(message); }
+    };
+    cli._peerAliasByPubkey = {};
+    cli._processInput = () => false;
+    cli._appendMessage = (line) => { lines.push(line); };
+    cli.setPane = () => {};
+    cli._sendToAllServices = () => {};
+    cli.elements = { form: { reset () {} } };
+    cli.screen = { render () {} };
+
+    cli._handleFormSubmit({ input: 'hello mesh' });
+    assert.strictEqual(sent.length, 1);
+    assert.strictEqual(sent[0].type, 'P2P_CHAT_MESSAGE');
+    const body = messageDataToString(sent[0].raw ? sent[0].raw.data : sent[0].data);
+    assert.strictEqual(body, 'hello mesh');
+    assert.ok(lines.some((l) => /hello mesh/.test(l)));
+    assert.ok(!body.startsWith('{'));
+  });
+
+  it('renders Peer { text } + signer and P2P_PEER_ALIAS nicknames', async function () {
+    const lines = [];
+    const cli = Object.create(CLI.prototype);
+    cli.node = { id: 'local' };
+    cli._peerAliasByPubkey = {};
+    cli._appendMessage = (line) => { lines.push(line); };
+
+    await cli._handlePeerAlias({ alias: 'neorion', signer: 'aa'.repeat(32) });
+    await cli._handlePeerChat(
+      { text: 'from hub', type: 'P2P_CHAT_MESSAGE' },
+      { signer: 'aa'.repeat(32) }
+    );
+    assert.deepStrictEqual(lines, ['[neorion]: from hub']);
+  });
 });
 

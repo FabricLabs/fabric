@@ -89,6 +89,39 @@ describe('@fabric/core/types/peer', function () {
       assert.strictEqual(peer.documentation.name, 'Fabric');
     });
 
+    describe('commit and socket actor leaks', function () {
+      it('does not alias caller Hub collections into observed peer content', function () {
+        const collections = { documents: { leak: { id: 'leak' } } };
+        const shared = { collections: collections, documents: { keep: 'x' } };
+        const peer = new Peer({ listen: false, peersDb: null, state: shared });
+        collections.documents.more = { id: 'more' };
+        shared.documents.keep = 'mutated';
+        assert.strictEqual(peer._state.content.documents.keep, 'x');
+        assert.ok(!peer._state.content.collections);
+        assert.notStrictEqual(peer._state.content, shared);
+      });
+
+      it('unregisters ephemeral socket actors on disconnect', function () {
+        const peer = new Peer({ listen: false, peersDb: null });
+        const address = '127.0.0.1:59999';
+        peer._registerActor({ name: address });
+        const actorId = new Actor({ name: address }).id;
+        assert.ok(peer.actors[actorId]);
+        peer.connections[address] = { destroy () {} };
+        peer._disconnect(address);
+        assert.ok(!peer.actors[actorId]);
+        assert.ok(!peer._actorsByName[address]);
+      });
+
+      it('does not commit on _writeFabric', function () {
+        const peer = new Peer({ listen: false, peersDb: null });
+        const commits = [];
+        peer.on('commit', (c) => commits.push(c));
+        peer._writeFabric(Buffer.from('hi'), null);
+        assert.strictEqual(commits.length, 0);
+      });
+    });
+
     describe('getters', function () {
       it('exposes id from key.pubkey', function () {
         const peer = new Peer({ listen: false, peersDb: null });
@@ -156,6 +189,7 @@ describe('@fabric/core/types/peer', function () {
           assert.ok(ev.created);
           assert.ok(ev.initial);
           assert.ok(ev.state);
+          assert.ok(!ev.state.collections);
           done();
         });
         const out = peer.beat();
@@ -188,9 +222,31 @@ describe('@fabric/core/types/peer', function () {
 
     describe('connectTo', function () {
       it('calls _connect and returns this', function () {
+        const originalCreateConnection = net.createConnection;
         const peer = new Peer({ listen: false, peersDb: null });
-        const out = peer.connectTo('127.0.0.1:9'); // invalid port, will fail but we only assert chain
-        assert.strictEqual(out, peer);
+        let createdSocket = null;
+        net.createConnection = function () {
+          const sock = new EventEmitter();
+          sock.destroyed = false;
+          sock.setTimeout = function () {};
+          sock.unref = function () {};
+          sock.destroy = function () {
+            sock.destroyed = true;
+            sock.emit('close');
+          };
+          createdSocket = sock;
+          return sock;
+        };
+        try {
+          const out = peer.connectTo('127.0.0.1:9');
+          assert.strictEqual(out, peer);
+        } finally {
+          net.createConnection = originalCreateConnection;
+          if (createdSocket && typeof createdSocket.destroy === 'function') createdSocket.destroy();
+          if (typeof peer._destroyFabric === 'function') {
+            try { peer._destroyFabric(createdSocket || {}, '127.0.0.1:9'); } catch (_) { /* ignore */ }
+          }
+        }
       });
     });
 
@@ -261,6 +317,40 @@ describe('@fabric/core/types/peer', function () {
           if (createdSocket && typeof createdSocket.destroy === 'function') createdSocket.destroy();
           if (typeof peer._destroyFabric === 'function') {
             try { peer._destroyFabric(createdSocket || {}, '127.0.0.1:9'); } catch (_) { /* ignore */ }
+          }
+        }
+      });
+
+      it('strips URL IPv6 brackets before dialing [::1]', function () {
+        const originalCreateConnection = net.createConnection;
+        const peer = new Peer({ listen: false, peersDb: null });
+        let createdHost = null;
+        let createdPort = null;
+        let createdSocket = null;
+        net.createConnection = function (port, hostname) {
+          createdPort = port;
+          createdHost = hostname;
+          const sock = new EventEmitter();
+          sock.destroyed = false;
+          sock.setTimeout = function () {};
+          sock.unref = function () {};
+          sock.destroy = function () {
+            sock.destroyed = true;
+            sock.emit('close');
+          };
+          createdSocket = sock;
+          return sock;
+        };
+        try {
+          peer._connect('[::1]:9');
+          assert.strictEqual(createdHost, '::1');
+          assert.strictEqual(Number(createdPort), 9);
+          assert.strictEqual(peer._outboundDialTargets.has('[::1]:9'), true);
+        } finally {
+          net.createConnection = originalCreateConnection;
+          if (createdSocket && typeof createdSocket.destroy === 'function') createdSocket.destroy();
+          if (typeof peer._destroyFabric === 'function') {
+            try { peer._destroyFabric(createdSocket || {}, '[::1]:9'); } catch (_) { /* ignore */ }
           }
         }
       });

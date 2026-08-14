@@ -331,6 +331,30 @@ describe('@fabric/core/types/service', function () {
       assert.strictEqual(commits.length, 1);
       assert.ok(commits[0].id && typeof commits[0].id === 'string');
       assert.ok(commits[0].id.length > 0);
+      assert.strictEqual(commits[0].type, 'Commit');
+      assert.ok(commits[0].state === undefined);
+    });
+
+    it('does not embed service state in commit actors', async function () {
+      const service = new Service(FAST_SERVICE);
+      await service.start();
+      const commits = [];
+      service.on('commit', (c) => commits.push(c));
+      service.set('/visibilityBlob', { pad: 'z'.repeat(2048) });
+      await service.stop();
+      assert.ok(commits[0]);
+      assert.ok(commits[0].id);
+      assert.ok(!('state' in commits[0]));
+      assert.ok(typeof commits[0].clock === 'number');
+    });
+
+    it('caps patch history at commitHistoryMax', async function () {
+      const service = new Service({ ...FAST_SERVICE, commitHistoryMax: 3 });
+      await service.start();
+      for (let i = 0; i < 8; i++) service.set('/cap' + i, i);
+      await service.stop();
+      assert.ok(service.history.length <= 3);
+      assert.strictEqual(service.history.length, 3);
     });
 
     it('patches and history expose RFC6902 deltas for audits', async function () {

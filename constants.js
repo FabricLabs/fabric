@@ -132,7 +132,8 @@ const MAX_CHANNEL_VALUE = 100000000;
 
 // Machine Constraints
 const MACHINE_MAX_MEMORY = MAX_MEMORY_ALLOC * MAX_MESSAGE_SIZE;
-const MAX_CHAT_MESSAGE_LENGTH = 2048;
+/** Matches Peer `P2P_CHAT_MAX_CHARS` so TUI send is not dropped on the mesh. */
+const MAX_CHAT_MESSAGE_LENGTH = 2000;
 
 // Playnet
 const FABRIC_PLAYNET_ADDRESS = ''; // unset until a published playnet P2TR deposit address is chosen
@@ -231,6 +232,11 @@ const CHAT_MAX_RELAYS_PER_ORIGIN_PER_MINUTE = 30;
 const PEER_MAX_PENDING_SEALED_DELIVERIES = 32;
 /** Max private DocumentRequest reverse-route entries. */
 const PEER_MAX_DOCUMENT_RELAY_ROUTES = 256;
+/**
+ * Max RFC6902 patch batches retained on {@link Service#history} (FIFO).
+ * Unbounded history plus full-state commit snapshots OOMed Hub under reconnects.
+ */
+const SERVICE_COMMIT_HISTORY_MAX = 256;
 const P2P_GENERIC = 0x80; // 128 in decimal
 const P2P_IDENT_REQUEST = 0x01; // 1, or the identity
 const P2P_IDENT_RESPONSE = 0x11;
@@ -453,6 +459,7 @@ module.exports = {
   CHAT_MAX_RELAYS_PER_ORIGIN_PER_MINUTE,
   PEER_MAX_PENDING_SEALED_DELIVERIES,
   PEER_MAX_DOCUMENT_RELAY_ROUTES,
+  SERVICE_COMMIT_HISTORY_MAX,
   P2P_IDENT_REQUEST,
   P2P_IDENT_RESPONSE,
   P2P_CHAIN_SYNC_REQUEST,

@@ -62,6 +62,54 @@ const P2P_CHAT_MAX_CHARS = 2000;
 /** @private Max UTF-8 code units for first-class P2P_PEER_ALIAS body (nickname). */
 const P2P_PEER_ALIAS_MAX_CHARS = 64;
 
+/**
+ * Peer-owned content maps. Hub passes `new Peer(this.settings)` so lodash.merge
+ * would otherwise alias nested `collections` / message logs into the observed
+ * tree; commits then JSON-cloned Hub state on every socket.
+ * @param {object} [input]
+ * @returns {object}
+ * @private
+ */
+function isolatePeerContent (input) {
+  const defaults = {
+    actors: {},
+    channels: {},
+    contracts: {},
+    documents: {},
+    documentRates: {},
+    documentSealed: {},
+    documentContentKeys: {},
+    messages: {},
+    services: {}
+  };
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    return defaults;
+  }
+  const out = Object.assign({}, defaults);
+  for (const key of Object.keys(defaults)) {
+    if (input[key] && typeof input[key] === 'object' && !Array.isArray(input[key])) {
+      out[key] = Object.assign({}, input[key]);
+    }
+  }
+  return out;
+}
+
+/**
+ * Node's URL parser keeps brackets on IPv6 hostnames (`tcp://[::1]:7777`
+ * → hostname `[::1]`). Strip one pair so `net.createConnection` gets `::1`
+ * and canonical keys stay `[::1]:port` rather than `[[::1]]:port`.
+ * @param {*} hostname
+ * @returns {string}
+ * @private
+ */
+function hostnameWithoutIpv6Brackets (hostname) {
+  const h = String(hostname || '');
+  if (h.length >= 4 && h.charAt(0) === '[' && h.charAt(h.length - 1) === ']') {
+    return h.slice(1, -1);
+  }
+  return h;
+}
+
 // Dependencies
 const net = require('net');
 const crypto = require('crypto');
@@ -509,6 +557,7 @@ class Peer extends Service {
       // Optionally relay INVENTORY_RESPONSE to peers other than the sender.
       relayInventoryResponse: false,
       connectTimeout: 5000,
+      commitHistoryMax: 256,
       // Relay amplification controls for P2P_PEER_GOSSIP.
       gossip: {
         maxHops: GOSSIP_MAX_HOPS,
@@ -625,6 +674,8 @@ class Peer extends Service {
 
     // Internal properties
     this.actors = {};
+    /** @type {Object<string, string>} connection name (`host:port`) → Actor id */
+    this._actorsByName = Object.create(null);
     this.contracts = {};
     this.chains = {};
     this.candidates = [];
@@ -719,6 +770,7 @@ class Peer extends Service {
       }
     };
 
+    this.settings.state = isolatePeerContent(this.settings.state);
     this._state = {
       content: this.settings.state,
       peers: {}, // Peer registry keyed by public key (id). Persisted to LevelDB.
@@ -1553,14 +1605,14 @@ class Peer extends Service {
   }
 
   beat () {
-    const initial = new Actor(this.state);
     const now = (new Date()).toISOString();
-
+    const clock = this._clock | 0;
     this.commit();
     this.emit('beat', {
       created: now,
-      initial: initial.toGenericMessage(),
-      state: this.state
+      clock: clock,
+      initial: { type: 'FabricActorState', object: { clock: clock } },
+      state: { clock: clock }
     });
 
     return this;
@@ -1924,7 +1976,7 @@ class Peer extends Service {
     this.emit('debug', `[FABRIC:PEER:_connect] Attempting to connect to: ${target}`);
     const url = new URL(`tcp://${target}`);
     const id = url.username;
-    const host = url.hostname;
+    const host = hostnameWithoutIpv6Brackets(url.hostname);
     const port = url.port || P2P_PORT;
     // Dedup on host:port so pubkey@host:port and host:port share one in-flight slot.
     const canonical = host.includes(':') ? `[${host}]:${port}` : `${host}:${port}`;
@@ -1973,7 +2025,7 @@ class Peer extends Service {
       this._upsertPeerRegistry(target, { address: target });
 
       // Set up the NOISE socket
-      socket = net.createConnection(url.port || P2P_PORT, url.hostname);
+      socket = net.createConnection(url.port || P2P_PORT, host);
     } catch (err) {
       if (this._outboundDialTargets) this._outboundDialTargets.delete(target);
       throw err;
@@ -1987,7 +2039,7 @@ class Peer extends Service {
       : 5000;
     socket.setTimeout(connectTimeoutMs);
     socket.once('timeout', () => {
-      const msg = `Socket timeout: connect ${url.hostname}:${url.port || P2P_PORT} after ${connectTimeoutMs}ms`;
+      const msg = `Socket timeout: connect ${host}:${url.port || P2P_PORT} after ${connectTimeoutMs}ms`;
       this.emit('warning', msg);
       socket.destroy(new Error(msg));
     });
@@ -2083,6 +2135,7 @@ class Peer extends Service {
     delete this.peers[target];
     if (this._inboundNoiseStaticPubkeyByAddress) delete this._inboundNoiseStaticPubkeyByAddress[target];
     if (this._addressToId) delete this._addressToId[target];
+    this._unregisterSocketActor(target);
 
     this.emit('connections:close', {
       address: target,
@@ -2325,6 +2378,11 @@ class Peer extends Service {
     const now = Date.now();
     for (const [addr, until] of this._candidateRetryAt) {
       if (until <= now) this._candidateRetryAt.delete(addr);
+    }
+    const maxRetry = (this.settings.peering && this.settings.peering.maxCandidates) || PEER_MAX_CANDIDATES_QUEUE;
+    while (this._candidateRetryAt.size > maxRetry) {
+      const oldest = this._candidateRetryAt.keys().next().value;
+      this._candidateRetryAt.delete(oldest);
     }
     const deferred = [];
     for (let i = 0; i < openCount; i++) {
@@ -2981,8 +3039,6 @@ class Peer extends Service {
         }
         break;
     }
-
-    this.commit();
 
     return this;
   }
@@ -4892,10 +4948,30 @@ class Peer extends Service {
     if (this.actors[actor.id]) return this;
 
     this.actors[actor.id] = actor;
-    this.commit();
+    const name = object && object.name != null ? String(object.name) : '';
+    if (name) this._actorsByName[name] = actor.id;
     this.emit('actorset', this.actors);
 
     return this;
+  }
+
+  /**
+   * Drop the ephemeral socket Actor keyed by `host:port`.
+   * @param {string} address
+   * @returns {void}
+   */
+  _unregisterSocketActor (address) {
+    if (!address) return;
+    const name = String(address);
+    let id = this._actorsByName[name];
+    if (!id) id = new Actor({ name: name }).id;
+    delete this._actorsByName[name];
+    if (!this.actors[id]) return;
+    delete this.actors[id];
+    if (this._state.content && this._state.content.actors) {
+      delete this._state.content.actors[id];
+    }
+    this.emit('actorset', this.actors);
   }
 
   /**
@@ -5120,7 +5196,6 @@ class Peer extends Service {
   _writeFabric (msg, stream) {
     const hash = crypto.createHash('sha256').update(msg).digest('hex');
     this._rememberWireHash(hash);
-    this.commit();
     if (!stream || !stream.encrypt) return;
 
     const encrypt = stream.encrypt;
@@ -5385,6 +5460,7 @@ class Peer extends Service {
     if (this._outboundDialTargets) this._outboundDialTargets.delete(address);
     delete this.connections[address];
     delete this.peers[address];
+    this._unregisterSocketActor(address);
     if (typeof socket.destroy === 'function') socket.destroy();
 
     this._upsertPeerRegistry(address, { lastSeen: new Date().toISOString() });
