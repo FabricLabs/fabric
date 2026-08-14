@@ -85,7 +85,7 @@ Rationale:
 
 ### Step B: Fast reductions
 
-- [ ] Mark `Scribe` and `Reader` with explicit deprecation notes in code comments/docs.
+- [x] Mark `Scribe` and `Reader` with explicit deprecation notes in code comments/docs.
 - [ ] Stop advertising non-core classes in onboarding docs/examples.
 - [ ] Keep runtime compatibility for one release cycle through aliasing only where needed.
 

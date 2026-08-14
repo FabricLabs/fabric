@@ -18,6 +18,7 @@ const {
 } = require('../functions/identityLock');
 
 // Dependencies
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
@@ -136,7 +137,7 @@ class Environment extends Entity {
   _writeWalletDocument (document) {
     const content = JSON.stringify(document, null, '  ') + '\n';
     const target = this.WALLET_FILE;
-    const temporary = `${target}.${process.pid}.tmp`;
+    const temporary = `${target}.${process.pid}.${crypto.randomBytes(8).toString('hex')}.tmp`;
     fs.writeFileSync(temporary, content, { encoding: 'utf8', mode: 0o600 });
     try {
       fs.chmodSync(temporary, 0o600);

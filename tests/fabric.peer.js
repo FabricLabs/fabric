@@ -232,6 +232,31 @@ describe('@fabric/core/types/peer', function () {
         peer._connect('127.0.0.1:9999');
       });
 
+      it('skips overlapping outbound dials before connections[target] is set', function () {
+        const originalCreateConnection = net.createConnection;
+        const peer = new Peer({ listen: false, peersDb: null });
+        let created = 0;
+        net.createConnection = function () {
+          created += 1;
+          const sock = originalCreateConnection.apply(this, arguments);
+          if (typeof sock.unref === 'function') sock.unref();
+          return sock;
+        };
+        try {
+          peer._connect('127.0.0.1:9');
+          peer._connect('127.0.0.1:9');
+          assert.strictEqual(created, 1);
+          assert.strictEqual(peer._outboundDialTargets.has('127.0.0.1:9'), true);
+        } finally {
+          net.createConnection = originalCreateConnection;
+          const sock = peer.connections['127.0.0.1:9'];
+          if (sock && typeof sock.destroy === 'function') sock.destroy();
+          if (typeof peer._destroyFabric === 'function') {
+            try { peer._destroyFabric(sock || {}, '127.0.0.1:9'); } catch (_) { /* ignore */ }
+          }
+        }
+      });
+
       it('emits derived key debug summaries for missing/short/long public keys', function () {
         const originalCreateConnection = net.createConnection;
         net.createConnection = function () {

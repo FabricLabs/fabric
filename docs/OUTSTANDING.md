@@ -1,7 +1,7 @@
 # Outstanding (security-first)
 Living queue for this repo. Detail and closed items live in [SECURITY.md](../SECURITY.md) and [AUDIT.md](../AUDIT.md). Suite production march: [PRODUCTION_MARCH.md](PRODUCTION_MARCH.md).
 
-**Last reviewed:** 2026-08-14. Codacy `500000000` rewritten as `Number('500000000')`; genesis journal cap and publish-author fail-closed on existing files.
+**Last reviewed:** 2026-08-14. [#185](https://github.com/FabricLabs/fabric/pull/185) follow-up: lazy `messageHex`, wallet tmp suffix, `Reader` deprecation.
 
 ## Blockers before shared-host / non-experimental tag
 1. **Third-party review** of `types/peer.js`, inventory HTLC, sealed exchange, `publishedDocumentEnvelope` ([AUDIT.md](../AUDIT.md) recommendations).
@@ -9,16 +9,18 @@ Living queue for this repo. Detail and closed items live in [SECURITY.md](../SEC
 3. Downstream **site-login / device-link redeem** is not a core bug; Hub/`@fabric/http` still treat QR `sessionId` as the capability. Tracked in those repos.
 
 ## Next slices (this repo)
-- [ ] Type-tree keep/remove lock in [PRODUCTION_MARCH.md](PRODUCTION_MARCH.md) (`Scribe` / `Reader` / Global docs clutter).
-- [ ] Eager `messageHex` laziness on Peer hot paths (performance, not a correctness claim).
+- [ ] Type-tree keep/remove lock in [PRODUCTION_MARCH.md](PRODUCTION_MARCH.md) (inventory remaining classes; `Scribe`/`Reader` deprecation notes are in).
 - [ ] Coordinated `contractId` → `contractIdentifier` rename.
-- [ ] Hub / Passport callers still hard-coding BIP44 **7778** on mainnet should use `fabricIdentityDerivationPath(…, network)` (**7777** mainnet / **7778** otherwise).
+- [ ] Hub / Passport callers still hard-coding BIP44 **7778** on mainnet should use `fabricIdentityDerivationPath(…, network)` (**7777** mainnet / **7778** otherwise). Do not silently re-derive existing Hub identities.
 - [ ] Blinded-execution remains a **scaffold** (not Yao GC) even with signed `at`.
 - [ ] Keep `.codacy.yml` Semgrep/Opengrep exclusions for `functions/fabricSetup.js` and `types/environment.js` unless a replacement SAST job covers those path-construction helpers (CodeRabbit asked to drop the excludes; Codacy still ignores `nosemgrep`).
 
 ## Closed this pass (do not re-open)
 - IdentityCrossSign / identity Schnorr / verify lifted into `functions/` after [#183](https://github.com/FabricLabs/fabric/pull/183) merge (was held for the CodeRabbit file cap).
-- `_fillPeerSlots` candidate retry cooldown + NOISE-after-TCP-connect (playnet `:7778` ECONNREFUSED / MaxListeners storm).
+- `_fillPeerSlots` candidate retry cooldown + NOISE-after-TCP-connect (playnet `:7778` ECONNREFUSED / MaxListeners storm). `_connect` also skips in-flight `_outboundDialTargets`.
+- `signCrossSign` localPubkey is the Fabric signing pubkey (not Bech32 `id` / HD master).
+- Wallet tmp files use `pid` + random suffix; Environment tests share `tests/helpers/isolatedHome.js`.
+- `contract:message` `messageHex` is lazy (getter). `Reader` is `@deprecated` (fold into Peer/Message ingest).
 - Blinded-execution `at` bind; Beacon `ready` finalize; peering self-suppress via verified AMP signer; empty `signers: []` spend-key widen; Beacon ARC authority walk.
 - Gossip-network `P2P_PEERING_OFFER` candidate expect includes AMP `verifiedPubkey` (`tests/fabric.peer.gossip-network.js`).
 - Codacy `no-loss-of-precision` on `functions/contractTaproot.js` `CLTV_TIMESTAMP_THRESHOLD` — use `Number('500000000')` (decimal and `5e8` both trip the PR check).
@@ -27,4 +29,4 @@ Living queue for this repo. Detail and closed items live in [SECURITY.md](../SEC
 - `printGeneratedWallet` never prints the master xprv (`FABRIC_DEBUG` included). Plaintext restore validates encryption password before `setWallet`.
 
 ## PRs
-[#183](https://github.com/FabricLabs/fabric/pull/183) — **merged** 2026-08-14 (`a80e8aa7e`). This follow-up stages IdentityCrossSign leaves + Peer dial-storm fixes. Still deferred: RFC6902 multi-op JSON bridge (http); eager `messageHex`; `withIsolatedHome` test helper; wallet tmp-name random suffix; `.codacy.yml` Semgrep excludes stay until a replacement SAST job exists.
+[#185](https://github.com/FabricLabs/fabric/pull/185) — WIP ARC polish on `feature/rsi` after [#183](https://github.com/FabricLabs/fabric/pull/183) merge. Bugbot Highs (wrong cross-sign pubkey; duplicate outbound dials) addressed. This slice also: wallet tmp suffix, lazy `messageHex`, `withIsolatedHome`. Still deferred: RFC6902 multi-op JSON bridge (http); `.codacy.yml` Semgrep excludes stay until a replacement SAST job exists.

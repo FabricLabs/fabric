@@ -9,6 +9,9 @@ const {
 const merge = require('lodash.merge');
 const EventEmitter = require('events').EventEmitter;
 /**
+ * @deprecated Frame-scan helpers belong on {@link Peer} / {@link Message} ingest
+ * for RC. Do not take a new production dependency on {@link Reader}; keep this
+ * class as a compatibility scanner only.
  * Read from a byte stream, seeking valid Fabric messages.
  */
 class Reader extends EventEmitter {

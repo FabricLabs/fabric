@@ -1903,8 +1903,9 @@ class Peer extends Service {
       return;
     }
 
-    if (this.connections[target]) {
-      this.emit('debug', `[FABRIC:PEER:_connect] Already connected to ${target}; skipping`);
+    if (this.connections[target] ||
+        (this._outboundDialTargets && this._outboundDialTargets.has(target))) {
+      this.emit('debug', `[FABRIC:PEER:_connect] Already connected or dialing ${target}; skipping`);
       return;
     }
 
@@ -1935,31 +1936,44 @@ class Peer extends Service {
 
     if (!url.port) target += `:${P2P_PORT}`;
 
-    // After normalizing port, check suppress on host:port form.
+    // After normalizing port, check suppress and in-flight dials on host:port.
     if (this._isSelfDialSuppressed(target)) {
       this.emit('warning', `[FABRIC:PEER:_connect] Refusing dial to self-suppressed ${target}`);
       return;
     }
 
-    this._outboundDialTargets.add(target);
-
-    const _derived = this.identity.key.derive(FABRIC_KEY_DERIVATION_PATH);
-    this.emit('debug', `[FABRIC:PEER:_connect] Local derived key (public hex, truncated): ${peerDebugDerivedPublicSummary(_derived)} path=${FABRIC_KEY_DERIVATION_PATH}`);
-
-    // Store the user's public key if provided
-    if (id) {
-      this.peers[target] = {
-        ...this.peers[target],
-        publicKey: id
-      };
+    if (this.connections[target] ||
+        (this._outboundDialTargets && this._outboundDialTargets.has(target))) {
+      this.emit('debug', `[FABRIC:PEER:_connect] Already connected or dialing ${target}; skipping`);
+      return;
     }
 
-    this._registerActor({ name: target });
-    this._registerPeer({ identity: id });
-    this._upsertPeerRegistry(target, { address: target });
+    this._outboundDialTargets.add(target);
 
-    // Set up the NOISE socket
-    const socket = net.createConnection(url.port || P2P_PORT, url.hostname);
+    let socket;
+    let _derived;
+    try {
+      _derived = this.identity.key.derive(FABRIC_KEY_DERIVATION_PATH);
+      this.emit('debug', `[FABRIC:PEER:_connect] Local derived key (public hex, truncated): ${peerDebugDerivedPublicSummary(_derived)} path=${FABRIC_KEY_DERIVATION_PATH}`);
+
+      // Store the user's public key if provided
+      if (id) {
+        this.peers[target] = {
+          ...this.peers[target],
+          publicKey: id
+        };
+      }
+
+      this._registerActor({ name: target });
+      this._registerPeer({ identity: id });
+      this._upsertPeerRegistry(target, { address: target });
+
+      // Set up the NOISE socket
+      socket = net.createConnection(url.port || P2P_PORT, url.hostname);
+    } catch (err) {
+      if (this._outboundDialTargets) this._outboundDialTargets.delete(target);
+      throw err;
+    }
     // Don't keep the test runner alive just because we're connecting.
     if (typeof socket.unref === 'function') socket.unref();
 
@@ -3546,10 +3560,15 @@ class Peer extends Service {
           // Bit-identical AMP frame for journal / audit attach (apps ignore if unused).
           wireMessage: wireMessage || null,
           messageId: wireMessage && wireMessage.id ? wireMessage.id : null,
-          messageHex: wireMessage && typeof wireMessage.toBuffer === 'function'
-            ? wireMessage.toBuffer().toString('hex')
-            : null,
-          genesis: this._contractGenesis[contractId] || null
+          genesis: this._contractGenesis[contractId] || null,
+          // Lazy: skip toBuffer() unless a listener reads messageHex.
+          get messageHex () {
+            if (this._cachedMessageHex !== undefined) return this._cachedMessageHex;
+            this._cachedMessageHex = wireMessage && typeof wireMessage.toBuffer === 'function'
+              ? wireMessage.toBuffer().toString('hex')
+              : null;
+            return this._cachedMessageHex;
+          }
         });
         // Same outermost-only flood rule as CONTRACT_PUBLISH / chat / gossip.
         if (delivery.allowMeshRelay && origin && origin.name && wireMessage) {
@@ -5193,6 +5212,7 @@ class Peer extends Service {
       const registry = this._state.peers;
       const toReconnect = Object.keys(registry).filter((addr) => {
         if (this.connections[addr]) return false;
+        if (this._outboundDialTargets && this._outboundDialTargets.has(addr)) return false;
         const listenAddr = this.listenAddress || `${this.interface}:${this.port}`;
         if (addr === listenAddr) return false;
         if (this._isPeerBanned(addr)) return false;

@@ -143,4 +143,31 @@ describe('@fabric/core/functions/identityCrossSignVerify', function () {
     assert.strictEqual(v.ok, true);
     assert.strictEqual(v.kind, REVOKE_TYPE);
   });
+
+  it('signs a raw HD Key with fabricKey pubkey, not the master', function () {
+    const master = new Key();
+    const ident = new Identity(master);
+    const peer = new Identity(new Key());
+    const obj = signCrossSign(master, { peerPubkey: peer.pubkey, nonce: nonce() });
+    assert.strictEqual(obj.localPubkey.toLowerCase(), ident.fabricKey.pubkey.toLowerCase());
+    assert.notStrictEqual(obj.localPubkey.toLowerCase(), String(master.pubkey).toLowerCase());
+    const v = verifyCrossSignObject(obj);
+    assert.strictEqual(v.ok, true);
+  });
+
+  it('signs Passport-style leaf private + fabric-path xpub', function () {
+    const ident = new Identity(new Key());
+    const fabric = ident.fabricKey;
+    const priv = Buffer.isBuffer(fabric.private)
+      ? fabric.private.toString('hex')
+      : String(fabric.private);
+    const peer = new Identity(new Key());
+    const obj = signCrossSign({
+      privateKeyHex: priv,
+      xpub: fabric.xpub
+    }, { peerPubkey: peer.pubkey, nonce: nonce() });
+    assert.strictEqual(obj.localPubkey.toLowerCase(), fabric.pubkey.toLowerCase());
+    const v = verifyCrossSignObject(obj);
+    assert.strictEqual(v.ok, true);
+  });
 });

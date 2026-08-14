@@ -8,6 +8,7 @@
 
 const {
   buildFabricIdentitySignedPayload,
+  resolveFabricSigningIdentity,
   verifyIdentitySchnorr
 } = require('./fabricIdentitySchnorr');
 const {
@@ -40,13 +41,17 @@ function _messageFor (kind, rec) {
 }
 
 /**
- * @param {object} identity unlocked Fabric identity (xprv / mnemonic)
+ * @param {object} identity unlocked Fabric Identity, HD Key, or Passport
+ *   `{ privateKeyHex, xpub }` leaf. Canonical `localPubkey` is the Fabric
+ *   signing key (`fabricKey.pubkey`), never Bech32 `identity.id` or the
+ *   HD master pubkey.
  * @param {object} fields { peerPubkey, nonce, createdAt? }
  * @param {string} [kind]
  * @returns {object}
  */
 function signCrossSign (identity, fields, kind = SIGN_TYPE) {
-  const localPubkey = identity && (identity.pubkey || identity.id);
+  const { fabricKey } = resolveFabricSigningIdentity(identity);
+  const localPubkey = String(fabricKey.pubkey || '');
   const rec = {
     localPubkey,
     peerPubkey: fields.peerPubkey,
