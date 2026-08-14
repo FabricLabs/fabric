@@ -1,6 +1,10 @@
 # `@fabric/core` Changelog
 Recent changes to Fabric Core.
 
+## 2026-08-13
+- **`fabric setup` TUI** — lightweight Blessed screen (`types/setup.js`) over headless `functions/fabricSetup.js`: public environment snapshot (paths, identity, XPUB), backup, restore from file or seed, generate / regenerate, unlock / lock / idle timeout, encrypt plaintext. One-shot flags `--json`, `--backup [FILE]`, `--restore <FILE>`, `--unlock`, `--lock`, `--timeout <MINUTES>`, `--no-tui`, `--force` skip the TUI. Snapshot never includes seed/xprv.
+- **Encrypted wallets by default** — new `~/.fabric/wallet.json` files are password-sealed JSON (`seal` blob: AES-256-GCM + PBKDF2-SHA256, same scheme as Hub identity backup v2). Public fields stay outside the blob. `--password` / `FABRIC_PASSWORD` is the encryption password (min 8); `--passphrase` remains BIP39. Generic APIs: `functions/sealedBlob.js`, `functions/identityLock.js` (default 30-minute idle auto-lock; `0` disables). Shell: `/unlock`, `/lock`, `/lock timeout`, `/wallet status|unlock|lock|timeout`. Legacy plaintext wallets still load.
+
 ## 2026-08-11
 - **Full Machine runner for Hub execution contracts:** `language: 'fabric-execution'` + `functions/executionProgramRunner.js`; Hub `fabricExecutionMachine` is a thin registry-aware wrapper. `programDigest` = `Program.programHash`; run digests via `Program.runCommitmentHex` / `executionRunBridge`.
 - **Contract L1 payment observation:** `functions/contractPaymentObserve.js` + `Contract#_handleBitcoinTransaction` — match outputs to spend address, UNDERPAID / NO_MATCH failure codes, fold balances into tip on success.

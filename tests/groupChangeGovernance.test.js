@@ -12,7 +12,7 @@ const {
 const { pubkeyXOnly } = require('../functions/groupChatSeal');
 
 describe('@fabric/core groupChangeGovernance', function () {
-  it('signs and verifies a proposal vote (GoonCitizen string)', function () {
+  it('signs and verifies a proposal vote (canonical application string)', function () {
     const a = new Key();
     const proposal = {
       id: 'gprop-test',
@@ -69,5 +69,68 @@ describe('@fabric/core groupChangeGovernance', function () {
     const out = foldProposals(entries, ctx, 1, [ox]);
     assert.strictEqual(out[0].status, 'adopted');
     assert.ok(ctx.members.has(ox) && ctx.members.has(rx));
+  });
+
+  it('foldProposals adopts member.remove and update threshold (Federation actions)', function () {
+    const owner = new Key();
+    const extra = new Key();
+    const ox = pubkeyXOnly(owner.pubkey);
+    const ex = pubkeyXOnly(extra.pubkey);
+    const ctx = { members: new Set([ox, ex]), signers: new Set([ox, ex]), readerOnlyAdds: false, threshold: 2 };
+    const remove = {
+      hash: '11',
+      type: 'GroupChangeProposal',
+      author: ox,
+      object: {
+        id: 'p-remove',
+        action: 'member.remove',
+        member: ex,
+        proposedBy: ox,
+        threshold: 1
+      }
+    };
+    const removed = foldProposals([remove], ctx, 1, [ox, ex]);
+    assert.strictEqual(removed[0].status, 'adopted');
+    assert.ok(!ctx.members.has(ex));
+
+    const update = {
+      hash: '22',
+      type: 'GroupChangeProposal',
+      author: ox,
+      object: {
+        id: 'p-update',
+        action: 'update',
+        patch: { threshold: 1, pinnedChannels: ['discord:ops'] },
+        proposedBy: ox,
+        threshold: 1
+      }
+    };
+    const updated = foldProposals([update], ctx, 1, [ox]);
+    assert.strictEqual(updated[0].status, 'adopted');
+    assert.strictEqual(ctx.threshold, 1);
+  });
+
+  it('foldProposals ignores a proposer-chosen threshold below genesis k-of-n', function () {
+    const owner = new Key();
+    const co = new Key();
+    const ox = pubkeyXOnly(owner.pubkey);
+    const cx = pubkeyXOnly(co.pubkey);
+    const ctx = { members: new Set([ox, cx]), signers: new Set([ox, cx]), readerOnlyAdds: false, threshold: 2 };
+    const entries = [{
+      hash: 'cc',
+      type: 'GroupChangeProposal',
+      author: ox,
+      object: {
+        id: 'p-bypass',
+        action: 'members.set',
+        members: [ox],
+        proposedBy: ox,
+        threshold: 1
+      }
+    }];
+    const out = foldProposals(entries, ctx, 2, [ox, cx]);
+    assert.strictEqual(out[0].status, 'pending');
+    assert.ok(ctx.members.has(cx));
+    assert.ok(ctx.signers.has(cx));
   });
 });

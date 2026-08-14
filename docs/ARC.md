@@ -184,7 +184,7 @@ Implementation: [`functions/contractSpend.js`](../functions/contractSpend.js) (`
 5. ~~**Document** Machine `opcodes[]` / Program bind when Program interface is attached~~ — see `docs/PROGRAM.md` + `contractProgramBind`
 6. ~~**Complete** L1 payment observation on `Contract`~~ — `functions/contractPaymentObserve` + `Contract#_handleBitcoinTransaction`
 7. ~~Align Hub tracked-contract accept path with this genesis shape~~
-8. Call sites must pass `meta.genesis.signers` (or persist genesis) for any `GroupChange` path
+8. ~~Call sites must pass `meta.genesis.signers` (or persist genesis)~~ — `ingestContractPublishBuffer` seeds genesis; later `GroupChange` reuses it
 9. ~~**Enforce** GroupChat reader∪signer authz + BIP340 withdrawal witness / MessageReceipt~~ — `authorizeIngest` + `verifyWithdrawalWitnessSignature` / `markReceipt` (PR #183 review follow-up)
 10. **RC deploy:** tag `@fabric/core`, bump Hub + application / relay deploy to the tag, verify AcceptTrackedApplicationContract attaches `spendAddress` + tip `bitcoinAnchor`
 11. **Network promotion:** `beacon/NETWORK` binding + `FABRIC_BEACON_RESET_NETWORK=1` when flipping regtest → signet/mainnet (see `functions/beaconNetworkGuard.js`)
@@ -193,9 +193,9 @@ Implementation: [`functions/contractSpend.js`](../functions/contractSpend.js) (`
 14. ~~**ExecutionRun → FabricProgramRun / full Machine runner:**~~ Hub uses `fabric-execution` on `Machine`/`Program` (`executionProgramRunner`); digests via `executionRunBridge`
 15. ~~**Enforce** genesis `primitives.opcodes` on `Machine.loadProgram` / `define`~~ — `functions/opcodeAllowList.js` + `Machine.setAllowedOpcodes` / `applyGenesisOpcodes` (fail closed when set; unrestricted legacy soft-coerce otherwise)
 16. **API naming (Author Style):** public short ids such as `contractId` → `contractIdentifier` (and kin) where call sites allow — breaking; coordinate Hub / `@fabric/http` / apps (see root `AGENTS.md`)
-17. **Journal / re-fold growth:** accumulate entry lists and tip re-fold cost stay unbounded beyond duplicate-skip — add caps, compaction, or eviction for long-lived contracts
-18. ~~**Seal AAD:**~~ tip-bound `groupChatSeal` and participant / onion seals bind scheme (+ tip / contract / ephemeral) as AES-GCM AAD. Journal growth (17) and public API renames (16) remain.
-19. **Blinded-execution `at` bind (PR #183 follow-up):** `decisionSigningMessage` still omits `at`; replays with a new timestamp are idempotent by actor/proposal/decision. Binding `at` is a protocol-string bump — do it with coordinated callers/tests, not opportunistically.
+17. ~~**Journal / re-fold growth:**~~ compactable types (`GroupChat`, `MessageReceived`, `MessageReceipt`) drop by hex-hash order above `maxJournalEntries` (genesis/meta; hard cap 20000); mutations are never evicted
+18. ~~**Seal AAD:**~~ tip-bound `groupChatSeal` and participant / onion seals bind scheme (+ tip / contract / ephemeral) as AES-GCM AAD. Public API renames (16) remain.
+19. ~~**Blinded-execution `at` bind (PR #183 follow-up):**~~ `decisionSigningMessage` v2 includes `at`; `recordProposalDecision` requires it. Same actor/proposal/decision/`at` is idempotent; a different `at` conflicts.
 20. ~~**Peering self-suppress trust:**~~ offer/announce enqueue suppresses only from verified AMP `verifiedPubkey`, not remote-advertised `obj.pubkey` ([AUDIT.md](../AUDIT.md) §16).
 21. **Eager `messageHex`:** Peer hot paths still materialize hex wire forms eagerly — laziness / cache invalidation is performance work.
 22. **`API.md` regeneration:** run `npm run make:api` when next syncing field docs for gossip / `tryParseMessageBody` / `resolveSpend` opts.

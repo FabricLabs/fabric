@@ -12,8 +12,8 @@
  *   node scripts/bip-compliance-report.js
  *   npm run report:bip-compliance
  *
- * Optional sibling roots (defaults: ~/hub.fabric.pub, ~/fabric-browser-extension,
- * ~/star-citizen-live):
+ * Optional sibling roots (defaults: ~/hub.fabric.pub, ~/fabric-browser-extension;
+ * set FABRIC_APPLICATION for a product/app tree):
  *   FABRIC_HUB=/path FABRIC_PASSPORT=/path FABRIC_APPLICATION=/path
  *
  * Writes:
@@ -59,8 +59,8 @@ const EVALUATION_SUITE = [
     adoption: 'universal',
     why: 'Default payment deep-link / QR format across wallets.',
     patterns: ['bitcoin:', 'BIP21', 'bip21', 'bitcoinUri'],
-    expected: { core: 'strong', hub: 'strong', passport: 'partial', application: 'partial' },
-    notes: 'Core inventory HTLC funding hints emit bitcoin: URIs with amount='
+    expected: { core: 'strong', hub: 'strong', passport: 'absent', application: 'partial' },
+    notes: 'Core inventory HTLC funding hints emit bitcoin: URIs with amount=. Passport uses fabric: deep links, not bitcoin:.'
   },
   {
     bip: 32,
@@ -103,8 +103,8 @@ const EVALUATION_SUITE = [
     adoption: 'universal',
     why: 'Default multi-account path template; still dominant for legacy P2PKH + many apps.',
     patterns: ['BIP44', 'BITCOIN_KEY_DERIVATION_PATH', "m/44'/0'", "m/44'/7777'", "m/44'/7778'", 'bitcoinReceiveDerivationPath', 'fabricCoinTypeForNetwork'],
-    expected: { core: 'full', hub: 'strong', passport: 'partial', application: 'strong' },
-    notes: 'Core constants encode BIP44 Bitcoin funds + Fabric coin-type 7777 (mainnet) / 7778 (other) identity.'
+    expected: { core: 'full', hub: 'strong', passport: 'absent', application: 'strong' },
+    notes: 'Core constants encode BIP44 Bitcoin funds + Fabric coin-type 7777 (mainnet) / 7778 (other) identity. Passport receive UI is BIP84, not BIP44 path templates.'
   },
   {
     bip: 49,
@@ -155,7 +155,7 @@ const EVALUATION_SUITE = [
     layer: 'Applications',
     adoption: 'common',
     why: 'Dominant interactive Payjoin profile for privacy-preserving receives.',
-    patterns: ['BIP78', 'Payjoin', 'payjoin', 'pj=', 'SubmitPayjoinProposal', 'text/plain', 'autoAcpBoost'],
+    patterns: ['BIP78', 'Payjoin', 'payjoin', 'pj=', 'SubmitPayjoinProposal', 'autoAcpBoost'],
     expected: { core: 'partial', hub: 'strong', passport: 'absent', application: 'absent' },
     notes: 'Hub PayjoinService BIP78 text/plain I/O + absolute pj=; optional auto ACP on regtest.'
   },
@@ -189,8 +189,8 @@ const EVALUATION_SUITE = [
     adoption: 'common',
     why: 'Standard Taproot single-key receive path (bc1p).',
     patterns: ['BIP86', "m/86'", 'p2tr', 'Key Derivation for Single'],
-    expected: { core: 'partial', hub: 'partial', passport: 'absent', application: 'partial' },
-    notes: 'P2TR address generation exists; dedicated BIP86 path template is not the default funds path.'
+    expected: { core: 'partial', hub: 'partial', passport: 'absent', application: 'absent' },
+    notes: 'P2TR address generation exists in core/hub; dedicated BIP86 path template is not the default funds path. GoonCitizen has no BIP86 surface.'
   },
   {
     bip: 112,
@@ -200,7 +200,7 @@ const EVALUATION_SUITE = [
     adoption: 'universal',
     why: 'Opcode companion to BIP68; required for relative-lock scripts.',
     patterns: ['CHECKSEQUENCEVERIFY', 'OP_CSV', 'BIP112'],
-    expected: { core: 'strong', hub: 'dependent', passport: 'n/a', application: 'partial' }
+    expected: { core: 'strong', hub: 'dependent', passport: 'n/a', application: 'absent' }
   },
   {
     bip: 125,
@@ -284,7 +284,7 @@ const EVALUATION_SUITE = [
     adoption: 'universal',
     why: 'P2TR outputs, script trees, NUMS internal keys — Fabric contracts & HTLCs.',
     patterns: ['BIP341', 'BIP 341', 'Taproot', 'taproot', 'toHashTree', 'tapleafHash', 'NUMS'],
-    expected: { core: 'strong', hub: 'strong', passport: 'partial', application: 'strong' }
+    expected: { core: 'strong', hub: 'strong', passport: 'absent', application: 'strong' }
   },
   {
     bip: 342,
@@ -294,7 +294,7 @@ const EVALUATION_SUITE = [
     adoption: 'universal',
     why: 'Script-path validation rules for Taproot leaves Fabric builds.',
     patterns: ['BIP342', 'Tapscript', 'tapscript', 'LEAF_VERSION_TAPSCRIPT'],
-    expected: { core: 'strong', hub: 'dependent', passport: 'n/a', application: 'partial' }
+    expected: { core: 'strong', hub: 'dependent', passport: 'n/a', application: 'absent' }
   },
   {
     bip: 350,
@@ -304,7 +304,8 @@ const EVALUATION_SUITE = [
     adoption: 'universal',
     why: 'bc1p + Fabric id…/fa… bech32m strings.',
     patterns: ['BIP 350', 'BIP350', 'bech32m', 'BECH32M', '2bc830a3'],
-    expected: { core: 'full', hub: 'strong', passport: 'full', application: 'strong' }
+    expected: { core: 'full', hub: 'strong', passport: 'full', application: 'strong' },
+    notes: 'First-party codec lives in core/Passport. GoonCitizen consumes those ids (0 local hits → scanner Partial).'
   },
   {
     bip: 370,
@@ -487,15 +488,16 @@ function resolveComponents () {
   /** @type {Record<ComponentId, { id: ComponentId, label: string, root: string|null }>} */
   const out = {};
   for (const [id, root] of Object.entries(candidates)) {
+    const resolved = root ? String(root) : '';
     out[/** @type {ComponentId} */ (id)] = {
       id: /** @type {ComponentId} */ (id),
       label: ({
         core: '@fabric/core',
         hub: 'hub.fabric.pub',
         passport: 'fabric-browser-extension',
-        application: 'star-citizen-live (GoonCitizen)'
+        application: 'application'
       })[id],
-      root: fs.existsSync(root) ? root : null
+      root: resolved && fs.existsSync(resolved) ? resolved : null
     };
   }
   return out;
@@ -756,7 +758,7 @@ function markdownFromReport (report) {
   lines.push('');
   lines.push('## Evaluation suite');
   lines.push('');
-  lines.push('| BIP | Adoption | Title | Core | Hub | Passport | GoonCitizen | Stack |');
+  lines.push('| BIP | Adoption | Title | Core | Hub | Passport | Application | Stack |');
   lines.push('|---:|---|---|---|---|---|---|---:|');
   for (const row of report.suite) {
     lines.push(

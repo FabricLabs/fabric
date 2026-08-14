@@ -15,7 +15,8 @@ const {
   finalizeBlindedExecution,
   bindBlindedExecutionToHashlock,
   decisionSigningMessage,
-  HASHLOCK_LEAF_ID
+  HASHLOCK_LEAF_ID,
+  DECISION_SIGNING_VERSION
 } = require('../functions/blindedExecutionCircuit');
 const { toAddress, synthesizeDefaultLadder } = require('../functions/contractTaproot');
 
@@ -25,14 +26,15 @@ describe('functions/blindedExecutionCircuit', function () {
     for (let i = 0; i < 3; i++) keys.push(new Key());
   });
   function pk (i) { return keys[i].pubkey; }
-  function signDecision (keyIndex, session, proposalPayload, decision) {
+  function signDecision (keyIndex, session, proposalPayload, decision, at) {
     const merkle = proposalPayload.chain && proposalPayload.chain.merkleRoot
       ? String(proposalPayload.chain.merkleRoot).toLowerCase()
       : '';
     const msg = decisionSigningMessage({
       sessionId: session.circuitId,
       proposalMerkleRoot: merkle,
-      decision
+      decision,
+      at
     });
     return Buffer.from(keys[keyIndex].signSchnorr(msg)).toString('hex');
   }
@@ -95,6 +97,48 @@ describe('functions/blindedExecutionCircuit', function () {
     assert.ok(!session.parties.includes(pk(0).toLowerCase()));
   });
 
+  it('binds at into decisionSigningMessage v2 (relay cannot swap timestamp)', function () {
+    assert.strictEqual(DECISION_SIGNING_VERSION, 2);
+    const msg = decisionSigningMessage({
+      sessionId: 'aa'.repeat(32),
+      proposalMerkleRoot: 'bb'.repeat(32),
+      decision: 'accept',
+      at: 42
+    });
+    assert.strictEqual(
+      msg,
+      `fabric:blinded-execution-decision:2:${'aa'.repeat(32)}:${'bb'.repeat(32)}:accept:42`
+    );
+    assert.throws(() => decisionSigningMessage({
+      sessionId: 'aa'.repeat(32),
+      proposalMerkleRoot: 'bb'.repeat(32),
+      decision: 'accept'
+    }), /at must be a non-negative safe integer/);
+
+    const session = composeGarblerPublish({
+      network: 'regtest',
+      garbler: pk(0),
+      parties: [pk(1)],
+      state: { v: 1 },
+      program: { language: 'fabric-opcodes', steps: ['OP_TRUE'] }
+    });
+    const proposal = buildContractProposalPayload({
+      contractId: session.circuitId,
+      messages: [Message.fromVector([
+        'P2P_BASE_MESSAGE',
+        JSON.stringify({ type: 'StateHint', object: { go: true } })
+      ])],
+      statePatch: [{ op: 'add', path: '/ok', value: true }]
+    });
+    assert.throws(() => recordProposalDecision({
+      session,
+      proposalPayload: proposal,
+      decision: 'accept',
+      actorPubkey: pk(1),
+      signature: signDecision(1, session, proposal, 'accept', 7)
+    }), /at required/);
+  });
+
   it('recordProposalDecision reject then accept; finalize needs an evaluator accept', function () {
     let session = composeGarblerPublish({
       name: 'coord-demo',
@@ -138,25 +182,45 @@ describe('functions/blindedExecutionCircuit', function () {
       proposalPayload: rejectProposal,
       decision: 'reject',
       actorPubkey: pk(1),
-      signature: signDecision(1, session, rejectProposal, 'reject'),
+      signature: signDecision(1, session, rejectProposal, 'reject', 1000),
       at: 1000
     });
     assert.strictEqual(session.decisions.length, 1);
     assert.ok(session.coordinationRoot);
     const afterReject = session.coordinationRoot;
 
-    // Replay of the same actor/proposal/decision (even with a new `at`) is idempotent.
+    // Same actor/proposal/decision/`at` is idempotent.
     const replayed = recordProposalDecision({
       session,
       proposalPayload: rejectProposal,
       decision: 'reject',
       actorPubkey: pk(1),
-      signature: signDecision(1, session, rejectProposal, 'reject'),
-      at: 9999
+      signature: signDecision(1, session, rejectProposal, 'reject', 1000),
+      at: 1000
     });
     assert.strictEqual(replayed.decisions.length, 1);
     assert.strictEqual(replayed.coordinationRoot, afterReject);
     assert.strictEqual(replayed.decisions[0].at, 1000);
+
+    // A relay cannot swap `at` under a valid signature (v2 binds timestamp).
+    assert.throws(() => recordProposalDecision({
+      session,
+      proposalPayload: rejectProposal,
+      decision: 'reject',
+      actorPubkey: pk(1),
+      signature: signDecision(1, session, rejectProposal, 'reject', 1000),
+      at: 9999
+    }), /invalid decision signature/);
+
+    // A later different `at` with a fresh signature is a conflict, not a second row.
+    assert.throws(() => recordProposalDecision({
+      session,
+      proposalPayload: rejectProposal,
+      decision: 'reject',
+      actorPubkey: pk(1),
+      signature: signDecision(1, session, rejectProposal, 'reject', 9999),
+      at: 9999
+    }), /conflicting at/);
 
     assert.throws(() => finalizeBlindedExecution({ session }), /evaluator accept/);
 
@@ -174,7 +238,7 @@ describe('functions/blindedExecutionCircuit', function () {
       proposalPayload: garblerAcceptProposal,
       decision: 'accept',
       actorPubkey: pk(0),
-      signature: signDecision(0, session, garblerAcceptProposal, 'accept'),
+      signature: signDecision(0, session, garblerAcceptProposal, 'accept', 1500),
       at: 1500
     });
     assert.throws(() => finalizeBlindedExecution({ session }), /evaluator accept/);
@@ -194,7 +258,7 @@ describe('functions/blindedExecutionCircuit', function () {
       proposalPayload: acceptProposal,
       decision: 'accept',
       actorPubkey: pk(2),
-      signature: signDecision(1, session, acceptProposal, 'accept'),
+      signature: signDecision(1, session, acceptProposal, 'accept', 2000),
       at: 2000
     }), /invalid decision signature/);
 
@@ -203,7 +267,7 @@ describe('functions/blindedExecutionCircuit', function () {
       proposalPayload: acceptProposal,
       decision: 'accept',
       actorPubkey: pk(2),
-      signature: signDecision(2, session, acceptProposal, 'accept'),
+      signature: signDecision(2, session, acceptProposal, 'accept', 2000),
       at: 2000
     });
     assert.strictEqual(session.decisions.length, 3);
@@ -246,7 +310,7 @@ describe('functions/blindedExecutionCircuit', function () {
       proposalPayload: acceptProposal,
       decision: 'accept',
       actorPubkey: pk(1),
-      signature: signDecision(1, session, acceptProposal, 'accept'),
+      signature: signDecision(1, session, acceptProposal, 'accept', 3000),
       at: 3000
     });
 

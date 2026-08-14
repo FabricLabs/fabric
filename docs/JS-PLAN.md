@@ -5,7 +5,7 @@ This tracks **JS-only** work for `@fabric/core` after wire/Message parity and pr
 - **Message** — double-SHA256 body hash; `fromBuffer` preserves on-wire hash; signing uses tagged `"Fabric/Message"` + BIP340.
 - **Peer** — body integrity check matches C; `stop()` tears down connections safely.
 - **Hash256** — `doubleDigest` via `functions/fabricNativeAccel` (optional `fabric.node`, else @noble).
-- **CLI** — `scripts/fabric.js` harness; default `chat` → Blessed TUI (`types/cli.js`).
+- **CLI** — `scripts/fabric.js` harness; `setup` → lightweight Blessed key TUI (`types/setup.js`); default `chat` → Blessed TUI (`types/cli.js`). New wallets are password-sealed JSON (`functions/sealedBlob` + `functions/identityLock`); shell `/unlock` `/lock` with idle timeout.
 - **CI** — `smoke`, `lint:types`, `lint:pkg`, tests; install report via `report:install-ci`.
 
 ## Near term (JS)

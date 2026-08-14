@@ -8,8 +8,8 @@
  *   # alias:
  *   FABRIC_PEER_INTERFACE=65.21.231.149
  *
- * Used by Hub / LiveRelay / bare Peer so `relay.goon.vc` can bind only the
- * address published for that hostname.
+ * Used by Hub, application relays, and bare Peer so a published hostname
+ * (for example a dedicated NIC address) can bind only that listen interface.
  *
  * @param {Object} [opts]
  * @param {string} [opts.interface] Settings fallback when env unset

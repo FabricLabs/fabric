@@ -52,7 +52,7 @@ fabric
 
 | 🚨 Stop here! |
 |--------------|
-| The output of `fabric setup` includes your **SEED**. Never share it or store it in plain text in cloud-synced folders. Write it down offline or use a password manager. |
+| The TUI (and `--no-tui` generate) for **`fabric setup`** can show your **SEED**. Never share it or store it in plain text in cloud-synced folders. Write it down offline or use a password manager. New wallets are encrypted at rest (`--password` / `FABRIC_PASSWORD`; min 8). `--passphrase` is BIP39 only. |
 
 For help, try entering "insert mode" by pressing the "i" key then typing `/help` and pressing enter — you'll get a short help prompt followed by a list of available commands.  Feel free to explore!
 

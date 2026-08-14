@@ -9,7 +9,7 @@ fabric setup
 fabric
 ```
 
-This installs the `fabric` binary, generates a wallet under `~/.fabric/`, then opens the interactive shell. For development from git, use e.g. `npm i -g FabricLabs/fabric#master` instead of the npm package.
+This installs the `fabric` binary, opens `fabric setup` (TTY: lightweight key TUI; generates a password-sealed `~/.fabric/wallet.json` if needed), then opens the interactive shell. For development from git, use e.g. `npm i -g FabricLabs/fabric#master` instead of the npm package.
 
 ## Playnet
 By default, the Fabric CLI connects to `playnet` for an initial set of peers.  You can add new peers manually by running `/connect <address>` where `<address`> is the peer's public hostname and port.

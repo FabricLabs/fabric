@@ -26,7 +26,7 @@ audit report.
 | Application contract sandbox | **Not** claimed — `Machine.define` binds host JS; see [PUBLIC_API.md](PUBLIC_API.md) |
 | External security review | **Outstanding** before dropping “experimental” language |
 | npm audit (runtime) | Clean after `uuid@11.1.1` override (jayson); track `npm run report:security` → `reports/SECURITY-AUDIT.md` for docs-toolchain noise |
-| Strict Protocol V1 adversarial suite | In progress — [`tests/protocol-v1/`](tests/protocol-v1/README.md) matrix + typed NOISE storm; expand until every mesh opcode is covered |
+| Strict Protocol V1 adversarial suite | Landed — [`tests/protocol-v1/`](tests/protocol-v1/README.md) matrix + typed NOISE storm; expand if new mesh opcodes appear |
 
 ## Known gaps (do not paper over)
 
@@ -40,31 +40,31 @@ audit report.
 8. **Eager `messageHex`** — hot paths still materialize hex wire forms eagerly; laziness / cache invalidation is outstanding performance work, not a correctness claim.
 9. ~~**Chat / onion seal AAD**~~ — tip + participant AES-GCM AAD lands in `groupChatSeal` / `onionChatSeal` (see [docs/ARC.md](docs/ARC.md) §8).
 10. **Public API short names** — `contractId` and similar remain until a coordinated rename to `contractIdentifier`-style identifiers (Author Style in `AGENTS.md`).
-11. **Blinded-execution decisions** — accept/reject require BIP340 over `decisionSigningMessage`; same actor/proposal/decision replays are idempotent (signature does not bind `at`). Composition remains a scaffold (not Yao GC).
+11. **Blinded-execution decisions** — accept/reject require BIP340 over `decisionSigningMessage` v2 (`sessionId` / `proposalMerkleRoot` / `decision` / `at`). Same actor/proposal/decision/`at` replays are idempotent; a different `at` conflicts. Composition remains a scaffold (not Yao GC).
 12. **Fabric coin-type dual path** — protocol identity is **7777** on Bitcoin mainnet and **7778** on all other networks (`fabricCoinTypeForNetwork` / `Identity#network`). Default Peer / Identity (regtest) stays on **7778**. Hub / Passport / extension callers that hard-code `m/44'/7778'/…` should switch to `fabricIdentityDerivationPath(…, network)` when targeting mainnet; re-derive any keys previously treated as “mainnet” under 7778.
 13. ~~**Withdrawal `requestId` bind**~~ — `validateWithdrawalRequest` rejects unless `requestId === computeWithdrawalRequestId(…)` (destination/fee/vault commitment).
-14. **Outstanding ARC / Peer follow-ups** — journal / re-fold caps ([docs/ARC.md](docs/ARC.md) §8); coordinated `contractId` → `contractIdentifier` rename; eager `messageHex` laziness; regenerate `API.md` field docs for `SCHEMA_P2P_PEER_GOSSIP` / `tryParseMessageBody` / `resolveSpend` opts when next running `npm run make:api`. Blinded-execution `decisionSigningMessage` still omits `at` (idempotent replays by actor/proposal/decision); binding `at` is a deliberate protocol-string bump (see ARC §8 item 19).
+14. **Outstanding ARC / Peer follow-ups** — coordinated `contractId` → `contractIdentifier` rename; eager `messageHex` laziness; regenerate `API.md` field docs for `SCHEMA_P2P_PEER_GOSSIP` / `tryParseMessageBody` / `resolveSpend` opts when next running `npm run make:api`. Journal / re-fold caps and blinded-execution `at` bind are landed (see ARC §8).
 15. ~~**Beacon/ARC `CONTRACT_PUBLISH` authority collector**~~ — `collectContractAuthorityPubkeys` walks nested `members.signers` / `spendPolicy.validators` (not only top-level arrays), so Beacon genesis no longer fail-opens first-claim to any AMP signer.
 16. ~~**Peering self-suppress trust**~~ — candidate host/port validation + default-port normalize on self-key refuse + NOISE self-check fail-closed; offer/announce enqueue suppresses only when `verifiedPubkey` (AMP signer) is our key. Advertised `obj.pubkey` is informational.
 17. **OP_RETURN hallmarks** — core short-format encode/verify (`functions/fabricHallmark`); Hub publish/scan is operator opt-in. Hallmarks are not a BIP; `npm run report:bip-compliance` last run **2026-08-13** (mean stack **2.47**, 37 BIPs, no grade movement vs 2026-08-12). Remaining: Hub mainnet hallmark policy gates; BIP suite gaps (49/69/85/322/48/370/352/388) in `reports/bip-compliance.md`.
-18. **Blinded-execution `at` bind** — decision timestamps are recorded but not yet part of `decisionSigningMessage` (idempotent replays by actor/proposal/decision still apply).
+18. ~~**Blinded-execution `at` bind**~~ — `decisionSigningMessage` v2 includes `at`; `recordProposalDecision` requires it and rejects timestamp swaps under a valid signature.
 
 ### PR #183 review triage (feature/rsi)
 
-Most CodeRabbit / automation actionable items on [#183](https://github.com/FabricLabs/fabric/pull/183) are addressed on tip (`3c963834…` plus this pass). Latest security review on that SHA reported **2 Mediums**; the peering self-suppress path is now fixed in core. **1 Medium** remains (blinded-execution `at` bind — deferred).
+Most CodeRabbit / automation actionable items on [#183](https://github.com/FabricLabs/fabric/pull/183) are addressed on tip (`3c963834…` plus this pass). Latest security review on that SHA reported **2 Mediums**; the peering self-suppress path is now fixed in core. **0 Mediums** remain from that review (blinded-execution `at` bind is landed).
 
 | Item | Status |
 |------|--------|
 | Blinded-execution evaluator ≠ garbler | Fixed in `composeGarblerPublish` / `finalizeBlindedExecution` |
-| Playnet live publish asserts fan-out | Fixed (`Peer#broadcast` returns send count) |
+| Hub / Federation `proposedPolicy` genesis | Fixed — `normalizeGenesis` + Peer `collectContractAuthorityPubkeys` read `proposedPolicy.validators` and top-level `messageTypes` |
 | `engines.npm: >=12` vs Node 24.15.0 bundled npm | Intentional — keep; DEVELOPERS.md documents upgrade |
 | Empty tip `signers: []` widening spend keys to `members` | Fixed — `tipSpendKeys` treats explicit empty `signers` as authoritative; `resolveSpend` keeps genesis validators |
 | Reader-role fold vs `members.set` test flake | Fixed — commutative `member.add` seed (hash-ordered fold) |
 | Hallmark malformed digest / mutable magic export | Fixed — omit bad digests; export fresh `HALLMARK_MAGIC` Buffer |
 | `createRound` omitted `policy` TypeError | Fixed — default `policy = {}` |
-| Bind `at` into `decisionSigningMessage` | Deferred (protocol bump) — ARC §8 / AUDIT #18; **Medium** remaining |
+| Bind `at` into `decisionSigningMessage` | Fixed — v2 protocol string includes `at`; first-delivery timestamp swap rejected |
 | Verified-pubkey peering self-suppress | Fixed — `_enqueuePeeringCandidate` uses `verifiedPubkey` (AMP signer) only |
-| Eager `messageHex` / `contractIdentifier` rename / journal caps | Deferred — ARC §8 |
+| Eager `messageHex` / `contractIdentifier` rename | Deferred — ARC §8 (performance / breaking rename) |
 | Beacon federation `ready` before durable persist | Fixed in core `Beacon#submitFederationEpochSignature` — idempotent finalize of `ready`/`sealed` rounds; `addSignature` still rejects new sigs. Hub `contracts/beacon.js` still duplicates this override (safe to drop after pinning this core). |
 | `uuid` via `jayson` (GHSA-w5hq-g745-h8pq) | Mitigated — override `uuid@11.1.1` (avoid `npm audit fix --force` → jayson 2.x) |
 

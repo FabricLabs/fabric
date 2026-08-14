@@ -340,12 +340,19 @@ function authorAllowedByReaders (readers, authorXOnly) {
 function normalizeGenesis (raw = {}) {
   const src = raw && typeof raw === 'object' ? raw : {};
   const members = src.members && typeof src.members === 'object' ? src.members : {};
+  const proposed = src.proposedPolicy && typeof src.proposedPolicy === 'object'
+    ? src.proposedPolicy
+    : {};
+  const spendPolicy = src.spendPolicy && typeof src.spendPolicy === 'object'
+    ? src.spendPolicy
+    : {};
   const signers = normalizePubkeyList(
     src.signers
     || members.signers
     || src.validators
     || src.parties
-    || (src.spendPolicy && src.spendPolicy.validators)
+    || spendPolicy.validators
+    || proposed.validators
     || []
   );
   const readers = normalizePubkeyList(src.readers || members.readers || []);
@@ -374,6 +381,13 @@ function normalizeGenesis (raw = {}) {
       );
     }
   }
+  // Hub / Federation application genesis may declare messageTypes at the top level.
+  if (Array.isArray(src.messageTypes)) {
+    if (!primitives) primitives = {};
+    if (!Array.isArray(primitives.messageTypes)) {
+      primitives.messageTypes = src.messageTypes.map((t) => String(t || '').trim()).filter(Boolean);
+    }
+  }
   let bitcoinAnchor = null;
   if (src.bitcoinAnchor && src.bitcoinAnchor.blockHash) {
     bitcoinAnchor = {
@@ -381,9 +395,14 @@ function normalizeGenesis (raw = {}) {
       height: src.bitcoinAnchor.height != null ? Number(src.bitcoinAnchor.height) : undefined
     };
   }
-  const threshold = src.threshold != null
-    ? Number(src.threshold)
-    : (members.threshold != null ? Number(members.threshold) : undefined);
+  const thresholdRaw = src.threshold != null
+    ? src.threshold
+    : (members.threshold != null
+      ? members.threshold
+      : (proposed.threshold != null
+        ? proposed.threshold
+        : spendPolicy.threshold));
+  const threshold = thresholdRaw != null ? Number(thresholdRaw) : undefined;
   return {
     signers,
     readers,

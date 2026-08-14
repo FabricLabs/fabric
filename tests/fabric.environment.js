@@ -195,7 +195,7 @@ describe('@fabric/core/types/environment', function () {
         version: 1
       });
 
-      environment.setWallet(wallet);
+      environment.setWallet(wallet, false, { encrypt: false });
       assert.ok(environment);
       environment.destroyWallet();
     });
@@ -246,6 +246,91 @@ describe('@fabric/core/types/environment', function () {
       const environment = new Environment();
       environment.readContracts();
       assert.ok(environment);
+    });
+
+    it('defaults new wallets to a password-sealed JSON store', function () {
+      const prev = {
+        NODE_ENV: process.env.NODE_ENV,
+        FABRIC_SEED: process.env.FABRIC_SEED,
+        FABRIC_XPRV: process.env.FABRIC_XPRV,
+        FABRIC_XPUB: process.env.FABRIC_XPUB,
+        FABRIC_PASSWORD: process.env.FABRIC_PASSWORD
+      };
+      const home = fs.mkdtempSync(path.join(os.tmpdir(), 'fabric-env-seal-'));
+      const store = path.join(home, '.fabric');
+      const walletPath = path.join(store, 'wallet.json');
+      const password = 'test-pass-ok!';
+      try {
+        delete process.env.FABRIC_SEED;
+        delete process.env.FABRIC_XPRV;
+        delete process.env.FABRIC_XPUB;
+        delete process.env.FABRIC_PASSWORD;
+        process.env.NODE_ENV = 'production';
+
+        const environment = new Environment({ home, path: walletPath, store, lockTimeoutMinutes: 0 });
+        environment.start();
+        const wallet = new Wallet({ key: { seed: FIXTURE_SEED } });
+        environment.setWallet(wallet, true, { password });
+
+        const raw = fs.readFileSync(walletPath, 'utf8');
+        const doc = JSON.parse(raw);
+        assert.strictEqual(doc.passwordProtected, true);
+        assert.strictEqual(doc.format, 'aes-256-gcm-pbkdf2-sha256');
+        assert.ok(doc.seal && doc.seal.ciphertext);
+        assert.ok(doc.object && doc.object.xpub);
+        assert.ok(!JSON.stringify(doc.object).includes('xprv'));
+        assert.ok(!raw.includes(FIXTURE_SEED));
+
+        environment.lockWallet();
+        assert.strictEqual(environment.wallet, false);
+        assert.strictEqual(environment.walletLocked, true);
+
+        const reloaded = new Environment({ home, path: walletPath, store, lockTimeoutMinutes: 0 });
+        reloaded.start();
+        assert.strictEqual(reloaded.wallet, false);
+        assert.strictEqual(reloaded.walletLocked, true);
+        reloaded.unlockWallet(password);
+        assert.ok(reloaded.wallet && reloaded.wallet.key);
+        assert.ok(String(reloaded.wallet.key.seed || '').includes(FIXTURE_SEED.split(' ')[0]));
+        reloaded.lockWallet();
+      } finally {
+        for (const k of Object.keys(prev)) {
+          if (prev[k] === undefined) delete process.env[k];
+          else process.env[k] = prev[k];
+        }
+        fs.rmSync(home, { recursive: true, force: true });
+      }
+    });
+
+    it('throws a password-policy error instead of exiting when encrypting without a password', function () {
+      const prev = {
+        NODE_ENV: process.env.NODE_ENV,
+        FABRIC_SEED: process.env.FABRIC_SEED,
+        FABRIC_XPRV: process.env.FABRIC_XPRV,
+        FABRIC_XPUB: process.env.FABRIC_XPUB
+      };
+      const home = fs.mkdtempSync(path.join(os.tmpdir(), 'fabric-env-policy-'));
+      const store = path.join(home, '.fabric');
+      const walletPath = path.join(store, 'wallet.json');
+      try {
+        delete process.env.FABRIC_SEED;
+        delete process.env.FABRIC_XPRV;
+        delete process.env.FABRIC_XPUB;
+        process.env.NODE_ENV = 'production';
+        const environment = new Environment({ home, path: walletPath, store, lockTimeoutMinutes: 0 });
+        environment.start();
+        const wallet = new Wallet({ key: { seed: FIXTURE_SEED } });
+        assert.throws(
+          () => environment.setWallet(wallet, true, { password: 'short' }),
+          (err) => err && err.code === 'FABRIC_PASSWORD_POLICY'
+        );
+      } finally {
+        for (const k of Object.keys(prev)) {
+          if (prev[k] === undefined) delete process.env[k];
+          else process.env[k] = prev[k];
+        }
+        fs.rmSync(home, { recursive: true, force: true });
+      }
     });
 
     describe('bitcoin.conf helpers', function () {

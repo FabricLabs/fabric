@@ -5,6 +5,17 @@ const {
   FIXTURE_SEED
 } = require('../constants');
 const { tryParsePersistedJson } = require('../functions/wireJson');
+const {
+  sealJson,
+  openSealedJson,
+  isPasswordProtectedDocument,
+  SEAL_SCHEME
+} = require('../functions/sealedBlob');
+const {
+  IdentityLock,
+  clampLockTimeoutMinutes,
+  DEFAULT_LOCK_TIMEOUT_MINUTES
+} = require('../functions/identityLock');
 
 // Dependencies
 const fs = require('fs');
@@ -16,6 +27,7 @@ const merge = require('lodash.merge');
 const Actor = require('./actor');
 const Entity = require('./entity');
 const Wallet = require('./wallet');
+const Identity = require('./identity');
 
 // Filters
 const any = (candidate => (candidate && typeof candidate !== 'undefined'));
@@ -43,6 +55,12 @@ class Environment extends Entity {
 
     this.local = null;
     this.wallet = null;
+    this.walletPublic = null;
+    this.walletLocked = false;
+    this.lockSession = new IdentityLock({
+      timeoutMinutes: this._defaultLockTimeoutMinutes(),
+      timeoutMs: Number.isFinite(this.settings.lockTimeoutMs) ? this.settings.lockTimeoutMs : undefined
+    });
     this.bitcoinConfig = null;
 
     this._state = {
@@ -68,6 +86,160 @@ class Environment extends Entity {
 
   get WALLET_FILE () {
     return this.settings.path;
+  }
+
+  /**
+   * @returns {number}
+   * @private
+   */
+  _defaultLockTimeoutMinutes () {
+    if (this.settings.lockTimeoutMinutes != null) {
+      return clampLockTimeoutMinutes(this.settings.lockTimeoutMinutes);
+    }
+    if (process.env.FABRIC_LOCK_TIMEOUT_MINUTES != null && process.env.FABRIC_LOCK_TIMEOUT_MINUTES !== '') {
+      return clampLockTimeoutMinutes(process.env.FABRIC_LOCK_TIMEOUT_MINUTES);
+    }
+    return DEFAULT_LOCK_TIMEOUT_MINUTES;
+  }
+
+  /**
+   * Public (non-secret) fields derived from an unlocked wallet.
+   * @param {Wallet} wallet
+   * @returns {object}
+   * @private
+   */
+  _publicRecordFromWallet (wallet) {
+    const record = {
+      id: wallet && wallet.id ? String(wallet.id) : null,
+      xpub: (wallet && (wallet.xpub || (wallet.key && wallet.key.xpub))) || null,
+      identity: null,
+      pubkey: null,
+      derivation: null
+    };
+    try {
+      if (wallet && wallet.key) {
+        const identity = new Identity(wallet.key);
+        const network = this.settings.network || process.env.FABRIC_NETWORK || 'regtest';
+        identity._state.content.network = String(network);
+        record.identity = identity.toString();
+        record.pubkey = identity.pubkey || null;
+        record.derivation = identity.derivation || null;
+      }
+    } catch (_) { /* public record is best-effort */ }
+    return record;
+  }
+
+  /**
+   * @param {object} document
+   * @private
+   */
+  _writeWalletDocument (document) {
+    const content = JSON.stringify(document, null, '  ') + '\n';
+    fs.writeFileSync(this.WALLET_FILE, content, { encoding: 'utf8', mode: 0o600 });
+    try {
+      fs.chmodSync(this.WALLET_FILE, 0o600);
+    } catch (_) { /* best-effort */ }
+  }
+
+  /**
+   * @returns {object|null}
+   */
+  readWalletDocument () {
+    if (!this.walletExists()) return null;
+    const data = this.readWallet();
+    const text = typeof data === 'string' ? data : String(data ?? '');
+    if (text.trim() === '') return null;
+    const pr = tryParsePersistedJson(text);
+    if (!pr.ok) throw pr.error;
+    return pr.value;
+  }
+
+  /**
+   * Drop in-memory secrets; public snapshot remains.
+   * @returns {Environment}
+   */
+  lockWallet () {
+    if (this.wallet && this.wallet.key && typeof this.wallet.key.secure === 'function') {
+      try {
+        this.wallet.key.secure();
+      } catch (_) { /* wipe is best-effort */ }
+    }
+    this.wallet = false;
+    this.walletLocked = !!(this.walletPublic && (this.walletPublic.xpub || this.walletPublic.id));
+    this.lockSession.lock();
+    return this;
+  }
+
+  /**
+   * Decrypt a password-protected wallet into memory and start the idle timer.
+   * @param {string} password
+   * @returns {Environment}
+   */
+  unlockWallet (password) {
+    const input = this.readWalletDocument();
+    if (!input) throw new Error('No wallet file to unlock.');
+    if (!isPasswordProtectedDocument(input)) {
+      throw new Error('Wallet is not password-protected.');
+    }
+    const inner = openSealedJson(input, password);
+    if (!inner || (!inner.xprv && !inner.seed)) {
+      throw new Error('Sealed wallet is missing key material.');
+    }
+    this.wallet = new Wallet({
+      key: {
+        seed: inner.seed,
+        xprv: inner.xprv,
+        xpub: inner.xpub
+      }
+    });
+    this.wallet.start();
+    this.walletLocked = false;
+    this.walletPublic = (input.object && typeof input.object === 'object')
+      ? Object.assign({}, input.object)
+      : this._publicRecordFromWallet(this.wallet);
+    if (input.lockTimeoutMinutes != null) {
+      this.lockSession.setTimeoutMinutes(input.lockTimeoutMinutes);
+    }
+    this.lockSession.removeAllListeners('lock');
+    this.lockSession.on('lock', () => {
+      if (this.wallet && this.wallet.key && typeof this.wallet.key.secure === 'function') {
+        try { this.wallet.key.secure(); } catch (_) { /* wipe is best-effort */ }
+      }
+      this.wallet = false;
+      this.walletLocked = true;
+    });
+    this.lockSession.unlock({ unlocked: true });
+    return this;
+  }
+
+  /**
+   * Persist idle-lock timeout on the wallet document (public field).
+   * @param {number} minutes
+   * @returns {Environment}
+   */
+  setLockTimeoutMinutes (minutes) {
+    const n = clampLockTimeoutMinutes(minutes);
+    this.lockSession.setTimeoutMinutes(n);
+    if (!this.walletExists()) return this;
+    try {
+      const doc = this.readWalletDocument();
+      if (!doc) return this;
+      doc.lockTimeoutMinutes = n;
+      this._writeWalletDocument(doc);
+    } catch (_) { /* timeout is still applied in-memory */ }
+    return this;
+  }
+
+  /**
+   * Encrypt a legacy plaintext wallet file in place.
+   * @param {string} password
+   * @returns {Environment}
+   */
+  encryptWallet (password) {
+    if (!this.wallet || !this.wallet.key) {
+      throw new Error('Unlock or load a plaintext wallet before encrypting.');
+    }
+    return this.setWallet(this.wallet, true, { password: password, encrypt: true });
   }
 
   get XPRV_FILE () {
@@ -587,7 +759,7 @@ class Environment extends Entity {
     return this;
   }
 
-  loadWallet () {
+  loadWallet (opts = {}) {
     if (this.seed) {
       this.wallet = new Wallet({
         key: {
@@ -595,18 +767,24 @@ class Environment extends Entity {
           passphrase: this.passphrase
         }
       });
+      this.walletLocked = false;
+      this.walletPublic = this._publicRecordFromWallet(this.wallet);
     } else if (this.xprv) {
       this.wallet = new Wallet({
         key: {
           xprv: this.xprv
         }
       });
+      this.walletLocked = false;
+      this.walletPublic = this._publicRecordFromWallet(this.wallet);
     } else if (this.xpub) {
       this.wallet = new Wallet({
         key: {
           xpub: this.xpub
         }
       });
+      this.walletLocked = false;
+      this.walletPublic = this._publicRecordFromWallet(this.wallet);
     } else if (this.walletExists()) {
       try {
         const data = this.readWallet();
@@ -617,12 +795,36 @@ class Environment extends Entity {
             this.emit('warning', `[FABRIC:KEYGEN] Wallet file is empty (${this.settings.path}); remove it or regenerate with fabric setup`);
           }
           this.wallet = false;
+          this.walletLocked = false;
+          this.walletPublic = null;
           return this;
         }
 
         const pr = tryParsePersistedJson(text);
         if (!pr.ok) throw pr.error;
         const input = pr.value;
+
+        if (isPasswordProtectedDocument(input)) {
+          this.wallet = false;
+          this.walletLocked = true;
+          this.walletPublic = (input.object && typeof input.object === 'object')
+            ? Object.assign({}, input.object)
+            : {};
+          if (input.lockTimeoutMinutes != null) {
+            this.lockSession.setTimeoutMinutes(input.lockTimeoutMinutes);
+          }
+          const password = opts.password || this.readVariable('FABRIC_PASSWORD') || this.readVariable('PASSWORD');
+          if (password) {
+            try {
+              this.unlockWallet(password);
+            } catch (exception) {
+              if (this.emit) {
+                this.emit('warning', `[FABRIC:KEYGEN] Wallet is locked (unlock failed): ${exception.message || exception}`);
+              }
+            }
+          }
+          return this;
+        }
 
         if (!input.object || !input.object.xprv) {
           throw new Error(`Corrupt or out-of-date wallet: ${this.settings.path}`);
@@ -635,13 +837,18 @@ class Environment extends Entity {
             xpub: input.object.xpub
           }
         });
+        this.walletLocked = false;
+        this.walletPublic = this._publicRecordFromWallet(this.wallet);
       } catch (exception) {
         // Recoverable user-data issue; do not emit "error" (EventEmitter kills the process with no listeners).
         if (this.emit) this.emit('warning', `[FABRIC:KEYGEN] Could not load wallet data: ${exception.message || exception}`);
         this.wallet = false;
+        this.walletLocked = false;
       }
     } else {
       this.wallet = false;
+      this.walletLocked = false;
+      this.walletPublic = null;
     }
 
     return this;
@@ -689,11 +896,20 @@ class Environment extends Entity {
 
   /**
    * Configure the Environment to use a Fabric {@link Wallet}.
+   * New wallets default to a password-sealed JSON document (`seal` blob).
+   * Pass `{ encrypt: false }` only for tests / explicit plaintext.
    * @param {Wallet} wallet Wallet to attach.
    * @param {Boolean} force Force existing wallets to be destroyed.
+   * @param {Object} [opts]
+   * @param {string} [opts.password] Encryption password (required unless `encrypt` is false).
+   * @param {boolean} [opts.encrypt=true]
    * @returns {Environment} The Fabric Environment.
    */
-  setWallet (wallet, force = false) {
+  setWallet (wallet, force = false, opts = {}) {
+    if (opts && typeof opts === 'object' && opts.force) force = true;
+    const encrypt = opts.encrypt !== false;
+    const password = opts.password != null ? String(opts.password) : '';
+
     // Attach before saving
     this.wallet = wallet;
 
@@ -702,19 +918,46 @@ class Environment extends Entity {
     if (!this.touchWallet()) throw new Error('Could not touch wallet.  Check permissions, disk space.');
 
     try {
-      // Get standard object
-      const object = wallet.export();
-      // TODO: encrypt inner store with password (`object` property)
-      const encrypted = Object.assign({
-        // Defaults
-        type: /*/ 'Encrypted' + /**/'FabricWallet',
-        format: 'aes-256-cbc',
-        version: object.version
-      }, object);
+      const exported = wallet.export();
+      const publicRecord = this._publicRecordFromWallet(wallet);
 
-      const content = JSON.stringify(encrypted, null, '  ') + '\n';
-      fs.writeFileSync(this.WALLET_FILE, content);
+      if (encrypt) {
+        const seal = sealJson(exported.object, password);
+        this._writeWalletDocument({
+          type: 'FabricWallet',
+          format: SEAL_SCHEME,
+          version: 2,
+          passwordProtected: true,
+          lockTimeoutMinutes: this.lockSession.timeoutMinutes,
+          object: publicRecord,
+          seal: seal
+        });
+        this.walletPublic = publicRecord;
+        this.walletLocked = false;
+        this.lockSession.removeAllListeners('lock');
+        this.lockSession.on('lock', () => {
+          if (this.wallet && this.wallet.key && typeof this.wallet.key.secure === 'function') {
+            try { this.wallet.key.secure(); } catch (_) { /* wipe is best-effort */ }
+          }
+          this.wallet = false;
+          this.walletLocked = true;
+        });
+        this.lockSession.unlock({ unlocked: true });
+      } else {
+        const document = Object.assign({
+          type: 'FabricWallet',
+          format: 'plaintext',
+          version: exported.version,
+          passwordProtected: false
+        }, exported);
+        this._writeWalletDocument(document);
+        this.walletPublic = publicRecord;
+        this.walletLocked = false;
+      }
     } catch (exception) {
+      if (exception && (exception.code === 'FABRIC_PASSWORD_POLICY' || exception.code === 'FABRIC_SEAL_DECRYPT')) {
+        throw exception;
+      }
       if (this.emit) this.emit('error', `[FABRIC:ENV] Could not write wallet file: ${exception.message || exception}`);
       process.exit(1);
     }
@@ -749,6 +992,9 @@ class Environment extends Entity {
 
   stop () {
     this._state.status = 'STOPPING';
+    if (this.lockSession && typeof this.lockSession.lock === 'function') {
+      this.lockSession.lock();
+    }
     this._state.status = 'STOPPED';
     return this;
   }

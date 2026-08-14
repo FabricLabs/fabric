@@ -3,9 +3,9 @@
 /**
  * ARC GroupChangeProposal / GroupChangeVote helpers.
  *
- * Wire signing string matches GoonCitizen `functions/groupChangeProposal.js`
- * so validator votes interoperate. Fold applies an adopted proposal as the
- * equivalent GroupChange (k-of-n) without requiring a second AMP frame.
+ * Canonical BIP340 signing string is shared with application vote helpers so
+ * validator votes interoperate across the mesh. Fold applies an adopted
+ * proposal as the equivalent GroupChange (k-of-n) without a second AMP frame.
  *
  * @module functions/groupChangeGovernance
  */
@@ -217,7 +217,17 @@ function foldProposals (entries, ctx, genesisThreshold, genesisSigners) {
   for (const id of ids) {
     const rec = proposals[id];
     if (rec.status === 'adopted') continue;
-    const need = Math.max(1, Number(rec.threshold || genesisThreshold || ctx.threshold) || 1);
+    // Quorum is genesis/ctx threshold. Proposal `threshold` is not in the
+    // BIP340 signing string — never let a proposer lower the bar.
+    const genesisNeed = Math.max(1, Number(
+      (genesisThreshold != null && Number.isFinite(Number(genesisThreshold)))
+        ? genesisThreshold
+        : ctx.threshold
+    ) || 1);
+    const proposedNeed = Number(rec.threshold);
+    const need = Number.isFinite(proposedNeed)
+      ? Math.max(genesisNeed, Math.max(1, proposedNeed))
+      : genesisNeed;
     let n = 0;
     const signers = signerList();
     if (!signers.length) continue;

@@ -127,6 +127,28 @@ function entropyToMnemonic (entropy, wordlist = DEFAULT_WORDLIST) {
 }
 
 /**
+ * CSPRNG bytes. Node `crypto.randomBytes` when present; otherwise Web Crypto
+ * `getRandomValues` (browser / Android WebView). Some bundlers stub `crypto`
+ * as `{}`, which makes `randomBytes` throw "is not a function".
+ * @param {number} n
+ * @returns {Buffer}
+ * @private
+ */
+function randomBytesSecure (n) {
+  const size = n >>> 0;
+  if (typeof crypto.randomBytes === 'function') return crypto.randomBytes(size);
+  const web = (typeof globalThis !== 'undefined' && globalThis.crypto) ||
+    (typeof window !== 'undefined' && window.crypto) ||
+    null;
+  if (web && typeof web.getRandomValues === 'function') {
+    const out = Buffer.alloc(size);
+    web.getRandomValues(out);
+    return out;
+  }
+  throw new Error('secure randomBytes unavailable');
+}
+
+/**
  * @param {number} [strength=128] 128 → 12 words, 256 → 24 words
  * @param {string[]} [wordlist]
  * @returns {string}
@@ -136,7 +158,7 @@ function generateMnemonic (strength = 128, wordlist = DEFAULT_WORDLIST) {
   if (strength % 32 !== 0 || strength < 128 || strength > 256) {
     throw new Error('Strength must be 128–256 in steps of 32');
   }
-  const entropy = crypto.randomBytes(strength / 8);
+  const entropy = randomBytesSecure(strength / 8);
   return entropyToMnemonic(entropy, wordlist);
 }
 

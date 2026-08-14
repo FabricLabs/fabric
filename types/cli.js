@@ -2742,12 +2742,75 @@ class CLI extends FabricShell {
   }
 
   _handleIdentityRequest () {
+    const env = this.operatorEnvironment || this.environment;
+    const locked = !!(env && env.walletLocked);
+    const pub = (env && env.walletPublic) || {};
+    const lockSnap = env && env.lockSession && env.lockSession.snapshot();
     this._appendMessage(`Local Identity: ${JSON.stringify({
-      id: this.identity.id,
-      pubkey: this.identity.pubkey,
-      address: this.node.server.address(),
-      endpoint: `${this.identity.id}@${this.settings.host}:${this.settings.port}`
+      id: (this.identity && this.identity.id) || pub.identity,
+      pubkey: (this.identity && this.identity.pubkey) || pub.pubkey,
+      xpub: pub.xpub || (this.wallet && this.wallet.xpub),
+      locked,
+      lockTimeoutMinutes: lockSnap && lockSnap.timeoutMinutes,
+      address: this.node && this.node.server && this.node.server.address(),
+      endpoint: this.identity ? `${this.identity.id}@${this.settings.host}:${this.settings.port}` : null
     }, null, '  ')}`);
+  }
+
+  _operatorEnv () {
+    return this.operatorEnvironment || this.environment;
+  }
+
+  _touchLock () {
+    const env = this._operatorEnv();
+    if (env && env.lockSession && !env.lockSession.locked) env.lockSession.touch();
+  }
+
+  _handleUnlockRequest (params) {
+    const env = this._operatorEnv();
+    if (!env || typeof env.unlockWallet !== 'function') {
+      this._appendError('No operator environment to unlock.');
+      return false;
+    }
+    const password = (params.slice(1).join(' ') || this.settings.password || process.env.FABRIC_PASSWORD || '').trim();
+    if (!password) {
+      this._appendError('Usage: /unlock <password>');
+      return false;
+    }
+    try {
+      env.unlockWallet(password);
+      if (env.wallet) {
+        this.attachWallet(env.wallet);
+        this.assumeIdentity(env.wallet.settings.key);
+      }
+      this._appendMessage('Wallet unlocked. Idle lock is armed. Use /lock to re-lock.');
+      return true;
+    } catch (exception) {
+      this._appendError(exception.message || String(exception));
+      return false;
+    }
+  }
+
+  _handleLockRequest (params) {
+    const env = this._operatorEnv();
+    if (!env) {
+      this._appendError('No operator environment to lock.');
+      return false;
+    }
+    const sub = params[1];
+    if (sub === 'timeout' || sub === 'idle') {
+      if (params[2] == null) {
+        const snap = env.lockSession && env.lockSession.snapshot();
+        this._appendMessage(`Idle lock timeout: ${snap ? snap.timeoutMinutes : '?'} minutes (0 = off).`);
+        return true;
+      }
+      env.setLockTimeoutMinutes(params[2]);
+      this._appendMessage(`Idle lock timeout set to ${env.lockSession.timeoutMinutes} minutes.`);
+      return true;
+    }
+    if (typeof env.lockWallet === 'function') env.lockWallet();
+    this._appendMessage('Wallet locked. Public identity remains; /unlock <password> to sign.');
+    return true;
   }
 
   _handleSettingsRequest () {
@@ -2785,7 +2848,9 @@ class CLI extends FabricShell {
           `  /pending /approve /deny - Consent inbound file requests\n` +
           `  /relayfees [sats|bps] - Private relay fee policy\n` +
           `  /send <id> <peer> - Push a held document (or /send <addr> <btc>)\n` +
-          `  /identity      - Show your identity\n` +
+          `  /identity      - Show your identity (lock status)\n` +
+          `  /unlock <pw>   - Unlock the sealed wallet\n` +
+          `  /lock          - Re-lock secrets now (/lock timeout <min>)\n` +
           `  /quit          - Exit the application`;
         break;
     }
@@ -2803,6 +2868,7 @@ class CLI extends FabricShell {
 
       if (this.commands[parts[0]]) {
         this.commands[parts[0]].apply(this, [ parts ]);
+        this._touchLock();
         return true;
       }
 
@@ -4007,6 +4073,10 @@ class CLI extends FabricShell {
       this._appendMessage('  wallet send <address> <amount> - Send funds to address');
       this._appendMessage('  wallet receive - Generate a new receive address');
       this._appendMessage('  wallet unspent - List unspent outputs');
+      this._appendMessage('  wallet status - Lock / unlock / timeout');
+      this._appendMessage('  wallet unlock <password> - Unlock sealed wallet');
+      this._appendMessage('  wallet lock - Re-lock secrets now');
+      this._appendMessage('  wallet timeout [minutes] - Idle auto-lock (0 off)');
       return false;
     }
 
@@ -4019,6 +4089,14 @@ class CLI extends FabricShell {
         return this._handleReceiveAddressRequest(params);
       case 'unspent':
         return this._handleUnspentRequest(params);
+      case 'status':
+        return this._handleIdentityRequest(params);
+      case 'unlock':
+        return this._handleUnlockRequest(params.slice(1));
+      case 'lock':
+        return this._handleLockRequest(['lock'].concat(params.slice(2)));
+      case 'timeout':
+        return this._handleLockRequest(['lock', 'timeout'].concat(params.slice(2)));
       default:
         this._appendError(`Unknown wallet command: ${params[1]}`);
         return false;

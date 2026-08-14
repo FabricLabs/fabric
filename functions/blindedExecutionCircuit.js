@@ -37,9 +37,26 @@ const {
 
 const SESSION_VERSION = 1;
 const HASHLOCK_LEAF_ID = 'blinded-execution-hashlock';
+/** Protocol string version for {@link decisionSigningMessage} (v2 binds `at`). */
+const DECISION_SIGNING_VERSION = 2;
+
+/**
+ * Normalize a decision timestamp for signing / coordination.
+ * @param {*} value
+ * @returns {number} non-negative safe integer
+ */
+function normalizeDecisionAt (value) {
+  const n = typeof value === 'bigint' ? Number(value) : Number(value);
+  if (!Number.isFinite(n) || !Number.isInteger(n) || n < 0 || n > Number.MAX_SAFE_INTEGER) {
+    throw new Error('blindedExecutionCircuit: at must be a non-negative safe integer');
+  }
+  return n;
+}
 
 /**
  * Canonical UTF-8 message for BIP340 accept/reject attestations.
+ * Version 2 binds `at` so a relay cannot pair a valid signature with an
+ * arbitrary timestamp on first delivery (PR #183).
  * @param {object} fields
  * @returns {string}
  */
@@ -47,7 +64,8 @@ function decisionSigningMessage (fields = {}) {
   const sessionId = String(fields.sessionId || '').trim().toLowerCase();
   const proposalMerkleRoot = String(fields.proposalMerkleRoot || '').trim().toLowerCase();
   const decision = String(fields.decision || '').trim().toLowerCase();
-  return `fabric:blinded-execution-decision:1:${sessionId}:${proposalMerkleRoot}:${decision}`;
+  const at = normalizeDecisionAt(fields.at);
+  return `fabric:blinded-execution-decision:${DECISION_SIGNING_VERSION}:${sessionId}:${proposalMerkleRoot}:${decision}:${at}`;
 }
 
 /**
@@ -291,6 +309,7 @@ function sessionRolePubkeys (session) {
  * @param {'accept'|'reject'} opts.decision
  * @param {string} opts.actorPubkey compressed hex (must be session garbler or evaluator)
  * @param {string} opts.signature BIP340 hex over {@link decisionSigningMessage}
+ * @param {number} opts.at non-negative integer bound into the signature and coordination root
  * @returns {object} updated session (shallow clone)
  */
 function recordProposalDecision (opts = {}) {
@@ -337,6 +356,10 @@ function recordProposalDecision (opts = {}) {
   if (!sessionId) {
     throw new Error('recordProposalDecision: session id required');
   }
+  if (opts.at == null) {
+    throw new Error('recordProposalDecision: at required (bound into decision signature)');
+  }
+  const at = normalizeDecisionAt(opts.at);
   const sigHex = String(opts.signature || '').trim().toLowerCase().replace(/^0x/i, '');
   if (!/^[0-9a-f]{128}$/.test(sigHex)) {
     throw new Error('recordProposalDecision: signature required (64-byte BIP340 hex)');
@@ -344,7 +367,8 @@ function recordProposalDecision (opts = {}) {
   const msg = decisionSigningMessage({
     sessionId,
     proposalMerkleRoot,
-    decision
+    decision,
+    at
   });
   const verifyKey = new Key({ public: actorPubkey });
   if (!verifyKey.verifySchnorr(msg, Buffer.from(sigHex, 'hex'))) {
@@ -358,9 +382,12 @@ function recordProposalDecision (opts = {}) {
     String(d.proposalMerkleRoot || '').toLowerCase() === proposalMerkleRoot &&
     String(d.decision || '').toLowerCase() === decision
   );
-  // Same actor/proposal/decision is idempotent — signature does not bind `at`,
-  // so replaying with a new timestamp must not grow decisions or change the root.
+  // Same actor/proposal/decision is idempotent. `at` is bound into the signature,
+  // so a relay cannot swap timestamps; a later different `at` is a conflict.
   if (existing) {
+    if (Number(existing.at) !== at) {
+      throw new Error('recordProposalDecision: conflicting at for existing decision');
+    }
     if (String(existing.signature || '').toLowerCase() !== sigHex) {
       throw new Error('recordProposalDecision: conflicting signature for existing decision');
     }
@@ -375,7 +402,7 @@ function recordProposalDecision (opts = {}) {
     actorPubkey,
     proposalMerkleRoot,
     signature: sigHex,
-    at: opts.at != null ? Number(opts.at) : Date.now()
+    at
   };
 
   const decisions = prior.concat([entry]);
@@ -564,10 +591,12 @@ function bindBlindedExecutionToHashlock (opts = {}) {
 
 module.exports = {
   SESSION_VERSION,
+  DECISION_SIGNING_VERSION,
   HASHLOCK_LEAF_ID,
   sha256Hex,
   digestCanonical,
   normalizeParties,
+  normalizeDecisionAt,
   sessionRolePubkeys,
   computeBaseCircuitCommitment,
   computeCoordinationRoot,

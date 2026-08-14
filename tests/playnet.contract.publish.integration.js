@@ -65,6 +65,27 @@ describe('playnet contract publish + re-publish', function () {
     assert.ok(publishes >= 0);
   });
 
+  it('broadcast writes CONTRACT_PUBLISH frames to connected peers', function () {
+    const peer = new Peer({ listen: false, peersDb: null, networking: false });
+    const writes = [];
+    peer.connections['127.0.0.1:7777'] = {
+      _writeFabric (buf) { writes.push(Buffer.isBuffer(buf) ? Buffer.from(buf) : Buffer.from(buf)); }
+    };
+    const owner = new Key();
+    const definition = {
+      name: 'PlaynetWriteAssert',
+      version: 1,
+      parties: [String(owner.pubkey).toLowerCase()],
+      state: { network: 'regtest' }
+    };
+    const msg = Message.fromVector(['CONTRACT_PUBLISH', JSON.stringify(definition)]).signWithKey(owner);
+    const sent = peer.broadcast(msg.toBuffer());
+    assert.ok(sent > 0, `expected CONTRACT_PUBLISH fan-out > 0, got ${sent}`);
+    assert.strictEqual(writes.length, 1);
+    const parsed = Message.fromBuffer(writes[0]);
+    assert.strictEqual(parsed.type, 'CONTRACT_PUBLISH');
+  });
+
   it('deterministic Actor id is stable across JSON clone (re-publish body)', function () {
     const owner = new Key();
     const ownerPub = String(owner.pubkey).toLowerCase();

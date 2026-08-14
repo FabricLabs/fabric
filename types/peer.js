@@ -257,6 +257,12 @@ function collectContractAuthorityPubkeys (object) {
     addList(def.spendPolicy.validators);
     addList(def.spendPolicy.parties);
   }
+  // Hub / Federation application genesis: proposedPolicy.validators.
+  if (def.proposedPolicy && typeof def.proposedPolicy === 'object') {
+    addList(def.proposedPolicy.validators);
+    addList(def.proposedPolicy.parties);
+    addList(def.proposedPolicy.signers);
+  }
   return set;
 }
 
@@ -393,6 +399,8 @@ const FIRST_CLASS_OPCODE_ONLY_TYPES = new Set([
   'CONTRACT_PROPOSAL',
   'P2P_INVENTORY_REQUEST',
   'P2P_INVENTORY_RESPONSE',
+  'INVENTORY_REQUEST',
+  'INVENTORY_RESPONSE',
   'P2P_FILE_SEND',
   'P2P_DOCUMENT_PUBLISH',
   'P2P_FLUSH_CHAIN',
@@ -4781,7 +4789,7 @@ class Peer extends Service {
       this.emit('warning',
         `[FABRIC:PEER] CONTRACT_PUBLISH rejected for ${actor.id}: ` +
         'wire signer is not listed in parties/validators/owners/members(.signers)/' +
-        'authorities/spendPolicy.validators');
+        'authorities/spendPolicy.validators/proposedPolicy.validators');
       return false;
     }
 
