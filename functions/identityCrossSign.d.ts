@@ -8,9 +8,11 @@ interface CrossSignRecordFields {
   identity?: object | null;
 }
 
+type CrossSignKind = 'IdentityCrossSign' | 'IdentityCrossSignRevoke';
+
 interface CrossSignRecord {
-  type: string;
-  '@type': string;
+  type: CrossSignKind;
+  '@type': CrossSignKind;
   localPubkey: string;
   peerPubkey: string;
   nonce: string;

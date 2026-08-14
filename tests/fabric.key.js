@@ -39,6 +39,16 @@ describe('@fabric/core/types/key', function () {
       assert.equal(key.public.encodeCompressed('hex'), '0223cffd5e94da3c8915c6b868f06d15183c1aeffad8ddf58fcb35a428e3158e71');
     });
 
+    it('can load from a raw BIP32 seed hex (FABRIC_SEED)', function () {
+      const bip39 = require('../functions/bip39');
+      const fromMnemonic = new Key({ mnemonic: SAMPLE.seed });
+      const hex = bip39.mnemonicToSeedSync(SAMPLE.seed).toString('hex');
+      const fromHex = new Key({ seed: hex });
+      assert.equal(fromHex.xprv, fromMnemonic.xprv);
+      assert.equal(fromHex.seed, hex);
+      assert.equal(fromHex.public.encodeCompressed('hex'), fromMnemonic.public.encodeCompressed('hex'));
+    });
+
     it('can load from a WIF', function () {
       const origin = new Key();
       const wif = origin.toWIF();

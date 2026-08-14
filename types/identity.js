@@ -30,7 +30,8 @@ class Identity extends Actor {
   /**
    * Create an instance of an Identity.
    * @param {Object} [settings] Settings for the Identity.
-   * @param {String} [settings.seed] BIP 39 seed phrase.
+   * @param {String} [settings.seed] Raw BIP32 seed hex, or a legacy BIP39 mnemonic.
+   * @param {String} [settings.mnemonic] BIP39 mnemonic (preferred over putting words in `seed`).
    * @param {String} [settings.xprv] Serialized BIP 32 master private key.
    * @param {String} [settings.xpub] Serialized BIP 32 master public key.
    * @param {Number} [settings.account=0] BIP 44 account index (Fabric coin type 7777/7778).
@@ -46,6 +47,7 @@ class Identity extends Actor {
 
     this.settings = Object.assign({
       seed: null,
+      mnemonic: null,
       xprv: null,
       passphrase: null,
       account: 0,
@@ -58,6 +60,7 @@ class Identity extends Actor {
       this.key = settings;
     } else {
       this.key = new Key({
+        mnemonic: this.settings.mnemonic,
         seed: this.settings.seed,
         xprv: this.settings.xprv,
         passphrase: this.settings.passphrase

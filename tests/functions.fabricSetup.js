@@ -43,16 +43,19 @@ describe('@fabric/core/functions/fabricSetup', function () {
 
   let prevNodeEnv;
   let prevSeed;
+  let prevMnemonic;
   let prevXprv;
   let prevXpub;
 
   beforeEach(function () {
     prevNodeEnv = process.env.NODE_ENV;
     prevSeed = process.env.FABRIC_SEED;
+    prevMnemonic = process.env.FABRIC_MNEMONIC;
     prevXprv = process.env.FABRIC_XPRV;
     prevXpub = process.env.FABRIC_XPUB;
     process.env.NODE_ENV = 'production';
     delete process.env.FABRIC_SEED;
+    delete process.env.FABRIC_MNEMONIC;
     delete process.env.FABRIC_XPRV;
     delete process.env.FABRIC_XPUB;
   });
@@ -62,6 +65,8 @@ describe('@fabric/core/functions/fabricSetup', function () {
     else process.env.NODE_ENV = prevNodeEnv;
     if (prevSeed === undefined) delete process.env.FABRIC_SEED;
     else process.env.FABRIC_SEED = prevSeed;
+    if (prevMnemonic === undefined) delete process.env.FABRIC_MNEMONIC;
+    else process.env.FABRIC_MNEMONIC = prevMnemonic;
     if (prevXprv === undefined) delete process.env.FABRIC_XPRV;
     else process.env.FABRIC_XPRV = prevXprv;
     if (prevXpub === undefined) delete process.env.FABRIC_XPUB;
@@ -435,11 +440,13 @@ describe('@fabric/core/types/setup', function () {
     const prev = {
       NODE_ENV: process.env.NODE_ENV,
       FABRIC_SEED: process.env.FABRIC_SEED,
+      FABRIC_MNEMONIC: process.env.FABRIC_MNEMONIC,
       FABRIC_XPRV: process.env.FABRIC_XPRV,
       FABRIC_XPUB: process.env.FABRIC_XPUB
     };
     process.env.NODE_ENV = 'production';
     delete process.env.FABRIC_SEED;
+    delete process.env.FABRIC_MNEMONIC;
     delete process.env.FABRIC_XPRV;
     delete process.env.FABRIC_XPUB;
     const { home, environment } = isolatedEnv();

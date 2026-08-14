@@ -10,6 +10,7 @@ module.exports = {
   name: process.env.NAME,
   namespace: process.env.NAMESPACE,
   seed: process.env.FABRIC_SEED,
+  mnemonic: process.env.FABRIC_MNEMONIC,
   xprv: process.env.FABRIC_XPRV,
   xpub: process.env.FABRIC_XPUB,
   /** Fabric Peer TCP/NOISE listen port. */

@@ -7,9 +7,12 @@ const path = require('path');
 const IDENTITY_ENV = [
   'NODE_ENV',
   'FABRIC_SEED',
+  'FABRIC_MNEMONIC',
   'FABRIC_XPRV',
   'FABRIC_XPUB',
-  'FABRIC_PASSWORD'
+  'FABRIC_PASSWORD',
+  'FABRIC_HUB_ADMIN_TOKEN',
+  'FABRIC_HUB_ADMIN_TOKEN_FILE'
 ];
 
 /**
@@ -29,9 +32,12 @@ function withIsolatedHome (prefix = 'fabric-env-') {
     walletPath,
     clearIdentityEnv () {
       delete process.env.FABRIC_SEED;
+      delete process.env.FABRIC_MNEMONIC;
       delete process.env.FABRIC_XPRV;
       delete process.env.FABRIC_XPUB;
       delete process.env.FABRIC_PASSWORD;
+      delete process.env.FABRIC_HUB_ADMIN_TOKEN;
+      delete process.env.FABRIC_HUB_ADMIN_TOKEN_FILE;
     },
     leftoverWalletTemporaryFiles () {
       try {

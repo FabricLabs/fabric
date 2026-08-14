@@ -279,9 +279,22 @@ class Environment extends Entity {
     return this.readVariable('PASSPHRASE');
   }
 
+  get mnemonic () {
+    const explicit = [
+      this.settings.mnemonic,
+      this['FABRIC_MNEMONIC'],
+      this.readVariable('FABRIC_MNEMONIC')
+    ];
+    const normalized = explicit.map((candidate) => (
+      typeof candidate === 'string' ? candidate.trim() : candidate
+    ));
+    return normalized.find(any);
+  }
+
   get seed () {
     // Precedence: settings / env only. CWD `.FABRIC_SEED` (`this.local`) is opt-in
     // via `settings.allowCwdSeed` so a planted file cannot outrank `~/.fabric/wallet.json`.
+    // FABRIC_SEED is raw BIP32 seed hex (or a legacy mnemonic / xprv string).
     const explicit = [
       this.settings.seed,
       this['FABRIC_SEED'],
@@ -789,7 +802,18 @@ class Environment extends Entity {
   }
 
   loadWallet (opts = {}) {
-    if (this.seed) {
+    // NODE_ENV=test injects FIXTURE_SEED into `seed`; keep that ahead of a
+    // developer FABRIC_XPRV so mocha stays deterministic.
+    const preferFixtureSeed = process.env.NODE_ENV === 'test' && this.seed;
+    if (!preferFixtureSeed && this.xprv) {
+      this.wallet = new Wallet({
+        key: {
+          xprv: this.xprv
+        }
+      });
+      this.walletLocked = false;
+      this.walletPublic = this._publicRecordFromWallet(this.wallet);
+    } else if (this.seed) {
       this.wallet = new Wallet({
         key: {
           seed: this.seed,
@@ -798,10 +822,11 @@ class Environment extends Entity {
       });
       this.walletLocked = false;
       this.walletPublic = this._publicRecordFromWallet(this.wallet);
-    } else if (this.xprv) {
+    } else if (this.mnemonic) {
       this.wallet = new Wallet({
         key: {
-          xprv: this.xprv
+          mnemonic: this.mnemonic,
+          passphrase: this.passphrase
         }
       });
       this.walletLocked = false;

@@ -9,6 +9,7 @@ Living queue for this repo. Detail and closed items live in [SECURITY.md](../SEC
 3. Downstream **site-login / device-link redeem** is not a core bug; Hub/`@fabric/http` still treat QR `sessionId` as the capability. Tracked in those repos.
 
 ## Next slices (this repo)
+- [ ] Production Hub still OOMs ~20m at ~4 GiB on `9f2eb9453` + Hub `dcf8fb4` (GHSA drop is not the remaining leak). Numeric `P2P_PEERING_OFFER` (opcode **98**) was hitting unhandled generic dump — patched locally; Hub must stop piping every Peer `debug` to stdout.
 - [ ] Type-tree keep/remove lock in [PRODUCTION_MARCH.md](PRODUCTION_MARCH.md) (inventory remaining classes; `Scribe`/`Reader` deprecation notes are in).
 - [ ] Coordinated `contractId` → `contractIdentifier` rename.
 - [ ] Hub / Passport callers still hard-coding BIP44 **7778** on mainnet should use `fabricIdentityDerivationPath(…, network)` (**7777** mainnet / **7778** otherwise). Do not silently re-derive existing Hub identities.
@@ -22,6 +23,7 @@ Living queue for this repo. Detail and closed items live in [SECURITY.md](../SEC
 - `signCrossSign` localPubkey is the Fabric signing pubkey (not Bech32 `id` / HD master). Canonical cross-sign pubkeys are compressed or x-only hex; unknown `kind` is rejected. `fabricIdentityIdFromPubkeyHex` requires compressed 66-hex (no truncated `Buffer.from(..., 'hex')`). `createdAt` is unsigned display metadata. `.d.ts` files declare real arities / `ok` unions.
 - `_fillPeerSlots` candidate retry cooldown + NOISE-after-TCP-connect (playnet `:7778` ECONNREFUSED / MaxListeners storm). `_connect` also skips in-flight `_outboundDialTargets`. Dial keys are canonical `host:port` so `pubkey@host:port` cannot duplicate `host:port`. Node URL IPv6 hostnames keep brackets — strip one pair before `createConnection` so `[::1]:port` does not become `[[::1]]:port`. `_candidateRetryAt` is pruned and capped to `maxCandidates`; `_disconnect` and inbound encrypt-end / banned-static paths tear down NOISE; outbound connect setup is try/caught.
 - Wallet tmp files use `pid` + random suffix; Environment tests share `tests/helpers/isolatedHome.js`.
+- `FABRIC_XPRV` / raw-hex `FABRIC_SEED` / `FABRIC_MNEMONIC` plus `~/.fabric/env` and `~/.fabric/hub-admin-token` (`functions/fabricHomeEnv`, `fabricKeyMaterial`, `fabricWalletIdentity`). `Key` `FROM_SEED` accepts 16–64 byte hex. `NODE_ENV=test` still prefers the fixture seed over a developer `FABRIC_XPRV`.
 - `contract:message` `messageHex` is lazy (getter). `Reader` is `@deprecated` (fold into Peer/Message ingest).
 - Blinded-execution `at` bind; Beacon `ready` finalize; peering self-suppress via verified AMP signer; empty `signers: []` spend-key widen; Beacon ARC authority walk.
 - Gossip-network `P2P_PEERING_OFFER` candidate expect includes AMP `verifiedPubkey` (`tests/fabric.peer.gossip-network.js`).
@@ -31,4 +33,4 @@ Living queue for this repo. Detail and closed items live in [SECURITY.md](../SEC
 - `printGeneratedWallet` never prints the master xprv (`FABRIC_DEBUG` included). Plaintext restore validates encryption password before `setWallet`.
 
 ## PRs
-[#185](https://github.com/FabricLabs/fabric/pull/185) — WIP ARC polish on `feature/rsi` after [#183](https://github.com/FabricLabs/fabric/pull/183) merge. CI green on `488a87da1`. Bugbot Highs (wrong cross-sign pubkey; duplicate outbound dials) addressed; `pubkey@host:port` now canonicalizes onto the same dial slot. Still deferred: RFC6902 multi-op JSON bridge (http); `.codacy.yml` Semgrep excludes stay until a replacement SAST job exists; docstring-coverage gate; PR title.
+[#185](https://github.com/FabricLabs/fabric/pull/185) — WIP ARC polish on `feature/rsi` after [#183](https://github.com/FabricLabs/fabric/pull/183) merge. CI green on `9f2eb9453`. Bugbot Highs (wrong cross-sign pubkey; duplicate outbound dials) addressed; `pubkey@host:port` now canonicalizes onto the same dial slot. `_disconnect` already calls `_teardownNoiseClient`. RC1 author-flip hashes the mutated buffer. Still deferred: RFC6902 multi-op JSON bridge (http); Blessed TUI chat markup (terminal, not HTML); `.codacy.yml` Semgrep excludes stay until a replacement SAST job exists; docstring-coverage gate; PR title.

@@ -172,3 +172,127 @@ describe('fuzz: live peer chaos (TCP + NOISE)', function () {
     await client.stop();
   });
 });
+
+/**
+ * Opt-in public playnet neighbor storm (signed Ping / BASE / chat / unknown).
+ * Does not send P2P_FLUSH_CHAIN, P2P_FILE_SEND, or GHSA advisory documents.
+ *
+ *   FABRIC_PLAYNET_CHAOS=1 FABRIC_PLAYNET_PEERS=hub.fabric.pub:7777,relay.goon.vc:7777 \
+ *     npm test -- tests/fuzz/p2p.chaosPeers.fuzz.js
+ */
+describe('fuzz: playnet neighbor chaos', function () {
+  const runLive = process.env.FABRIC_PLAYNET_CHAOS === '1' ||
+    process.env.FABRIC_PLAYNET_CHAOS === 'true';
+  const fs = require('fs');
+  const path = require('path');
+
+  (runLive ? it : it.skip)('dials playnet peers and sends a signed neighbor storm', async function () {
+    this.timeout(120000);
+    try {
+      require('../../functions/fabricHomeEnv').loadFabricHomeEnv();
+    } catch (_) { /* older pin */ }
+
+    const xprv = String(process.env.FABRIC_XPRV || '').trim();
+    const mnemonic = String(process.env.FABRIC_MNEMONIC || '').trim();
+    const seed = String(process.env.FABRIC_SEED || '').trim();
+    const key = xprv.startsWith('xprv') || xprv.startsWith('tprv')
+      ? { xprv }
+      : (seed.startsWith('xprv') || seed.startsWith('tprv')
+        ? { xprv: seed }
+        : (mnemonic ? { mnemonic } : (seed ? { seed } : null)));
+    if (!key) {
+      this.skip();
+      return;
+    }
+
+    const targets = String(process.env.FABRIC_PLAYNET_PEERS ||
+      'hub.fabric.pub:7777,relay.goon.vc:7777')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+    const client = new Peer({
+      listen: false,
+      networking: true,
+      peers: targets,
+      key,
+      peersDb: null,
+      reconnectToKnownPeers: false
+    });
+    const stopClient = async () => {
+      try { await client.stop(); } catch (_) { /* ignore */ }
+    };
+
+    const hardErrors = [];
+    const writes = { ok: 0, fail: 0, types: {} };
+    client.on('error', (err) => {
+      const msg = err && (err.message || String(err));
+      if (msg && /Attempted to write to a closed|ECONNRESET|EPIPE/i.test(msg)) return;
+      hardErrors.push(msg);
+    });
+
+    try {
+    await client.start();
+    await waitUntil(() => connectionKeys(client).length >= 1, 25000);
+    const conns = connectionKeys(client);
+    assert.ok(conns.length >= 1, `expected a connection to ${targets.join(',')}`);
+
+    const n = Math.max(16, Math.min(fuzzPeerChaosIterations(48), 80));
+    const stormTypes = [
+      'P2P_PING',
+      'P2P_CHAT_MESSAGE',
+      'P2P_PEER_GOSSIP',
+      'P2P_PEERING_OFFER',
+      'P2P_PEER_ALIAS',
+      'P2P_BASE_MESSAGE'
+    ];
+    for (let i = 0; i < n; i++) {
+      const keys = connectionKeys(client);
+      if (!keys.length) break;
+      const t = stormTypes[i % stormTypes.length];
+      let body;
+      if (t === 'P2P_CHAT_MESSAGE') {
+        body = `playnet-chaos-${i}-${Date.now()}`;
+      } else if (t === 'P2P_PEER_ALIAS') {
+        body = `chaos-${i}`.slice(0, 24);
+      } else {
+        body = JSON.stringify({
+          type: t,
+          nonce: `playnet-chaos-${i}`,
+          created: new Date().toISOString()
+        });
+      }
+      const msg = Message.fromVector([t, body]);
+      msg.signWithKey(client.key);
+      try {
+        writeFabric(client, 'playnet', msg.toBuffer());
+        writes.ok += 1;
+        writes.types[t] = (writes.types[t] || 0) + 1;
+      } catch (_) {
+        writes.fail += 1;
+      }
+      if ((i & 3) === 3) await new Promise((r) => setImmediate(r));
+    }
+
+    await new Promise((r) => setTimeout(r, 2000));
+
+    const report = {
+      at: new Date().toISOString(),
+      targets,
+      connections: connectionKeys(client),
+      writes,
+      hardErrors,
+      pubkey: client.key && client.key.pubkey
+        ? String(client.key.pubkey).slice(0, 16) + '…'
+        : null
+    };
+    const outDir = path.join(__dirname, '..', '..', 'reports');
+    try { fs.mkdirSync(outDir, { recursive: true }); } catch (_) { /* ignore */ }
+    fs.writeFileSync(path.join(outDir, 'playnet-chaos-neighbors.json'), JSON.stringify(report, null, 2));
+
+    assert.ok(writes.ok >= 8, `expected signed writes, got ${writes.ok}`);
+    } finally {
+      await stopClient();
+    }
+  });
+});

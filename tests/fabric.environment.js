@@ -35,6 +35,7 @@ describe('@fabric/core/types/environment', function () {
       const prev = {
         NODE_ENV: process.env.NODE_ENV,
         FABRIC_SEED: process.env.FABRIC_SEED,
+        FABRIC_MNEMONIC: process.env.FABRIC_MNEMONIC,
         FABRIC_XPRV: process.env.FABRIC_XPRV,
         FABRIC_XPUB: process.env.FABRIC_XPUB,
         FABRIC_PASSWORD: process.env.FABRIC_PASSWORD
@@ -44,6 +45,7 @@ describe('@fabric/core/types/environment', function () {
       const walletPath = path.join(store, 'wallet.json');
       try {
         delete process.env.FABRIC_SEED;
+        delete process.env.FABRIC_MNEMONIC;
         delete process.env.FABRIC_XPRV;
         delete process.env.FABRIC_XPUB;
         delete process.env.FABRIC_PASSWORD;
@@ -72,6 +74,7 @@ describe('@fabric/core/types/environment', function () {
       const prev = {
         NODE_ENV: process.env.NODE_ENV,
         FABRIC_SEED: process.env.FABRIC_SEED,
+        FABRIC_MNEMONIC: process.env.FABRIC_MNEMONIC,
         FABRIC_XPRV: process.env.FABRIC_XPRV,
         FABRIC_XPUB: process.env.FABRIC_XPUB,
         cwd: process.cwd()
@@ -79,6 +82,7 @@ describe('@fabric/core/types/environment', function () {
       const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'fabric-cwd-seed-'));
       try {
         delete process.env.FABRIC_SEED;
+        delete process.env.FABRIC_MNEMONIC;
         delete process.env.FABRIC_XPRV;
         delete process.env.FABRIC_XPUB;
         process.env.NODE_ENV = 'production';
@@ -115,6 +119,7 @@ describe('@fabric/core/types/environment', function () {
       const prev = {
         NODE_ENV: process.env.NODE_ENV,
         FABRIC_SEED: process.env.FABRIC_SEED,
+        FABRIC_MNEMONIC: process.env.FABRIC_MNEMONIC,
         FABRIC_XPRV: process.env.FABRIC_XPRV,
         FABRIC_XPUB: process.env.FABRIC_XPUB
       };
@@ -123,6 +128,7 @@ describe('@fabric/core/types/environment', function () {
       const walletPath = path.join(store, 'wallet.json');
       try {
         delete process.env.FABRIC_SEED;
+        delete process.env.FABRIC_MNEMONIC;
         delete process.env.FABRIC_XPRV;
         delete process.env.FABRIC_XPUB;
         process.env.NODE_ENV = 'production';
@@ -142,12 +148,14 @@ describe('@fabric/core/types/environment', function () {
       const prev = {
         NODE_ENV: process.env.NODE_ENV,
         FABRIC_SEED: process.env.FABRIC_SEED,
+        FABRIC_MNEMONIC: process.env.FABRIC_MNEMONIC,
         FABRIC_XPRV: process.env.FABRIC_XPRV,
         FABRIC_XPUB: process.env.FABRIC_XPUB
       };
 
       try {
         delete process.env.FABRIC_SEED;
+        delete process.env.FABRIC_MNEMONIC;
         delete process.env.FABRIC_XPRV;
         delete process.env.FABRIC_XPUB;
         process.env.NODE_ENV = 'production';
@@ -290,6 +298,7 @@ describe('@fabric/core/types/environment', function () {
       const prev = {
         NODE_ENV: process.env.NODE_ENV,
         FABRIC_SEED: process.env.FABRIC_SEED,
+        FABRIC_MNEMONIC: process.env.FABRIC_MNEMONIC,
         FABRIC_XPRV: process.env.FABRIC_XPRV,
         FABRIC_XPUB: process.env.FABRIC_XPUB,
         FABRIC_PASSWORD: process.env.FABRIC_PASSWORD
@@ -300,6 +309,7 @@ describe('@fabric/core/types/environment', function () {
       const password = 'test-pass-ok!';
       try {
         delete process.env.FABRIC_SEED;
+        delete process.env.FABRIC_MNEMONIC;
         delete process.env.FABRIC_XPRV;
         delete process.env.FABRIC_XPUB;
         delete process.env.FABRIC_PASSWORD;
@@ -346,6 +356,7 @@ describe('@fabric/core/types/environment', function () {
       const prev = {
         NODE_ENV: process.env.NODE_ENV,
         FABRIC_SEED: process.env.FABRIC_SEED,
+        FABRIC_MNEMONIC: process.env.FABRIC_MNEMONIC,
         FABRIC_XPRV: process.env.FABRIC_XPRV,
         FABRIC_XPUB: process.env.FABRIC_XPUB,
         FABRIC_PASSWORD: process.env.FABRIC_PASSWORD
@@ -355,6 +366,7 @@ describe('@fabric/core/types/environment', function () {
       const walletPath = path.join(store, 'wallet.json');
       try {
         delete process.env.FABRIC_SEED;
+        delete process.env.FABRIC_MNEMONIC;
         delete process.env.FABRIC_XPRV;
         delete process.env.FABRIC_XPUB;
         delete process.env.FABRIC_PASSWORD;
@@ -437,6 +449,7 @@ describe('@fabric/core/types/environment', function () {
       const prev = {
         NODE_ENV: process.env.NODE_ENV,
         FABRIC_SEED: process.env.FABRIC_SEED,
+        FABRIC_MNEMONIC: process.env.FABRIC_MNEMONIC,
         FABRIC_XPRV: process.env.FABRIC_XPRV,
         FABRIC_XPUB: process.env.FABRIC_XPUB,
         FABRIC_PASSWORD: process.env.FABRIC_PASSWORD
@@ -446,6 +459,7 @@ describe('@fabric/core/types/environment', function () {
       const walletPath = path.join(store, 'wallet.json');
       try {
         delete process.env.FABRIC_SEED;
+        delete process.env.FABRIC_MNEMONIC;
         delete process.env.FABRIC_XPRV;
         delete process.env.FABRIC_XPUB;
         delete process.env.FABRIC_PASSWORD;
@@ -478,6 +492,7 @@ describe('@fabric/core/types/environment', function () {
       const prev = {
         NODE_ENV: process.env.NODE_ENV,
         FABRIC_SEED: process.env.FABRIC_SEED,
+        FABRIC_MNEMONIC: process.env.FABRIC_MNEMONIC,
         FABRIC_XPRV: process.env.FABRIC_XPRV,
         FABRIC_XPUB: process.env.FABRIC_XPUB
       };
@@ -486,6 +501,7 @@ describe('@fabric/core/types/environment', function () {
       const walletPath = path.join(store, 'wallet.json');
       try {
         delete process.env.FABRIC_SEED;
+        delete process.env.FABRIC_MNEMONIC;
         delete process.env.FABRIC_XPRV;
         delete process.env.FABRIC_XPUB;
         process.env.NODE_ENV = 'production';
@@ -513,6 +529,7 @@ describe('@fabric/core/types/environment', function () {
       const prev = {
         NODE_ENV: process.env.NODE_ENV,
         FABRIC_SEED: process.env.FABRIC_SEED,
+        FABRIC_MNEMONIC: process.env.FABRIC_MNEMONIC,
         FABRIC_XPRV: process.env.FABRIC_XPRV,
         FABRIC_XPUB: process.env.FABRIC_XPUB
       };
@@ -521,6 +538,7 @@ describe('@fabric/core/types/environment', function () {
       const walletPath = path.join(store, 'wallet.json');
       try {
         delete process.env.FABRIC_SEED;
+        delete process.env.FABRIC_MNEMONIC;
         delete process.env.FABRIC_XPRV;
         delete process.env.FABRIC_XPUB;
         process.env.NODE_ENV = 'production';
@@ -554,6 +572,7 @@ describe('@fabric/core/types/environment', function () {
       const prev = {
         NODE_ENV: process.env.NODE_ENV,
         FABRIC_SEED: process.env.FABRIC_SEED,
+        FABRIC_MNEMONIC: process.env.FABRIC_MNEMONIC,
         FABRIC_XPRV: process.env.FABRIC_XPRV,
         FABRIC_XPUB: process.env.FABRIC_XPUB,
         FABRIC_PASSWORD: process.env.FABRIC_PASSWORD,
@@ -565,6 +584,7 @@ describe('@fabric/core/types/environment', function () {
       const password = 'test-pass-ok!';
       try {
         delete process.env.FABRIC_SEED;
+        delete process.env.FABRIC_MNEMONIC;
         delete process.env.FABRIC_XPRV;
         delete process.env.FABRIC_XPUB;
         delete process.env.FABRIC_PASSWORD;

@@ -1369,10 +1369,45 @@ describe('@fabric/core/types/peer', function () {
       it('emits debug for unhandled generic type', function (done) {
         const peer = new Peer({ listen: false, peersDb: null });
         peer.once('debug', (m) => {
-          assert.ok(/Unhandled Generic Message/.test(m));
+          assert.ok(/Unhandled Generic Message: UNKNOWN_TYPE/.test(m));
+          assert.ok(!/"object"/.test(m), 'must not JSON.stringify the full generic body');
           done();
         });
-        peer._handleGenericMessage({ type: 'UNKNOWN_TYPE', object: {} }, { name: 'o' });
+        peer._handleGenericMessage({ type: 'UNKNOWN_TYPE', object: { pad: 'x'.repeat(2048) } }, { name: 'o' });
+      });
+      it('coerces numeric opcode 98 to P2P_PEERING_OFFER', function (done) {
+        const peer = new Peer({ listen: false, peersDb: null });
+        peer.once('peeringOffer', (ev) => {
+          assert.strictEqual(ev.message.type, 'P2P_PEERING_OFFER');
+          done();
+        });
+        peer._handleGenericMessage({
+          type: 98,
+          object: { host: '10.1.2.3', port: 7777, transport: 'fabric' }
+        }, { name: '9.9.9.9:1' });
+      });
+      it('reads flat JSON peering offers (type 98 + host/port on the outer object)', function () {
+        const peer = new Peer({
+          listen: false,
+          peersDb: null,
+          constraints: { peers: { max: 32 } }
+        });
+        peer._handleGenericMessage({
+          type: 98,
+          host: '10.4.5.6',
+          port: 7777,
+          transport: 'fabric'
+        }, { name: '9.9.9.9:2' });
+        assert.ok(peer.candidates.some((c) => c.host === '10.4.5.6' && Number(c.port) === 7777));
+      });
+      it('derived-key debug summary uses Key.pubkey not settings.public', function () {
+        const peer = new Peer({ listen: false, peersDb: null });
+        const derived = peer.identity.key.derive("m/44'/7778'/0'/0/0");
+        assert.ok(derived.pubkey && derived.pubkey.length >= 66);
+        assert.ok(derived.settings.public == null || derived.settings.public === '');
+        const summary = Peer.debugDerivedPublicSummary(derived);
+        assert.notStrictEqual(summary, '(no public key)');
+        assert.ok(summary.includes('…') || summary.length <= 28);
       });
       it('emits warning on broken JSON body in Fabric message path', function (done) {
         const peer = new Peer({ listen: false, peersDb: null });

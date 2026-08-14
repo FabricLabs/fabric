@@ -126,6 +126,7 @@ function secpPointToRawBytes (point, compressed = true) {
 
 const { encodeCheck, decodeCheck } = require('../functions/base58');
 const bip39 = require('../functions/bip39');
+const { parseRawSeedHex } = require('../functions/fabricKeyMaterial');
 const bip32Module = require('../functions/bip32');
 const BIP32 = bip32Module.default;
 const BIP32_DEFAULT_NETWORK = bip32Module.DEFAULT_NETWORK;
@@ -162,7 +163,8 @@ class Key extends EventEmitter {
    * create it from a known public key.
    * @param {Object} [settings] Initialization for the key.
    * @param {String} [settings.network] Network string.
-   * @param {String} [settings.seed] Mnemonic seed for initializing the key.
+   * @param {String} [settings.seed] Raw BIP32 seed hex (16–64 bytes) or a legacy BIP39 mnemonic.
+   * @param {String} [settings.mnemonic] BIP39 mnemonic (preferred over putting words in `seed`).
    * @param {String} [settings.public] Public key in hex.
    * @param {String} [settings.private] Private key in hex.
    * @param {String} [settings.wif] WIF-encoded private key.
@@ -187,6 +189,7 @@ class Key extends EventEmitter {
       bits: 256,
       hd: true,
       seed: null,
+      mnemonic: null,
       passphrase: '',
       password: null,
       index: 0,
@@ -279,16 +282,22 @@ class Key extends EventEmitter {
         this._point = secpPointFromPrivateKey(root.privateKey);
         this.status = 'seeded';
         break;
-      case 'FROM_SEED':
-        // TODO: allow setting of raw seed (deprecates passing a mnemonic in the `seed` property)
-        seed = bip39.mnemonicToSeedSync(this.settings.seed, this.settings.passphrase);
+      case 'FROM_SEED': {
+        const rawSeed = parseRawSeedHex(this.settings.seed);
+        if (rawSeed) {
+          seed = rawSeed;
+          this.seed = rawSeed.toString('hex');
+        } else {
+          seed = bip39.mnemonicToSeedSync(this.settings.seed, this.settings.passphrase);
+          this.seed = this.settings.seed;
+        }
         root = this.bip32.fromSeed(seed, bip32NetworkFromKeySettings(this.settings));
-        this.seed = this.settings.seed;
         this.xprv = root.toBase58();
         this.xpub = root.neutered().toBase58();
         this.master = root;
         this._point = secpPointFromPrivateKey(root.privateKey);
         break;
+      }
       case 'FROM_WIF':
         const decoded = decodeCheck(this.settings.wif);
         const privateKey = decoded.slice(1, 33);

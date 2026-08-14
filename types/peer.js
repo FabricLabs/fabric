@@ -189,16 +189,40 @@ const PROLOGUE = 'FABRIC';
 
 /**
  * Safe debug label for a derived Key — never log private material.
+ * `Key.derive()` returns `new Key({ xprv })`; compressed pubkey lives on
+ * `.pubkey`, not `settings.public` (that field is only set for FROM_PUBLIC_KEY).
  * @private
  */
 function peerDebugDerivedPublicSummary (keyInstance) {
-  if (!keyInstance || !keyInstance.settings) return '(unavailable)';
-  const pubHex = typeof keyInstance.settings.public === 'string'
-    ? keyInstance.settings.public.trim()
-    : '';
+  if (!keyInstance) return '(unavailable)';
+  let pubHex = '';
+  try {
+    if (typeof keyInstance.pubkey === 'string') pubHex = keyInstance.pubkey.trim();
+  } catch (err) {
+    pubHex = '';
+  }
+  if (!pubHex && keyInstance.settings) {
+    const fromSettings = keyInstance.settings.pubkey || keyInstance.settings.public;
+    if (typeof fromSettings === 'string') pubHex = fromSettings.trim();
+  }
   if (!pubHex) return '(no public key)';
   if (pubHex.length > 28) return `${pubHex.slice(0, 12)}…${pubHex.slice(-10)}`;
   return pubHex;
+}
+
+/**
+ * Peering / gossip JSON may be nested `{ object: { host, port } }` or flat
+ * `{ type, host, port }` (numeric AMP opcode as `type`). Prefer nested fields.
+ * @private
+ */
+function genericOfferObject (message) {
+  const nested = message && message.object;
+  if (nested && typeof nested === 'object' && !Array.isArray(nested) &&
+      (nested.host || nested.port || nested.transport ||
+        nested.peeringHop != null || nested.gossipHop != null)) {
+    return nested;
+  }
+  return message || {};
 }
 
 /**
@@ -674,7 +698,8 @@ class Peer extends Service {
 
     // Internal properties
     this.actors = {};
-    /** @type {Object<string, string>} connection name (`host:port`) → Actor id */
+    /** Connection name (`host:port`) → Actor id. */
+    /** @type {Object<string, string>} */
     this._actorsByName = Object.create(null);
     this.contracts = {};
     this.chains = {};
@@ -2867,9 +2892,14 @@ class Peer extends Service {
           // intact under `object` so handlers see the full body.
           genericBody = { type: message.type, object: parsed };
         } else {
-          genericBody = (parsed && typeof parsed === 'object' && (parsed.actor || parsed.object || parsed.type))
-            ? Object.assign({}, parsed, { type: parsed.type || innerType })
-            : { type: innerType, object: parsed };
+          // Numeric JSON `type: 98` is P2P_PEERING_OFFER — do not let it win over
+          // the AMP wire name, and do not treat a bare `type` field as an envelope
+          // (that dropped host/port onto the outer object and hit the unhandled
+          // default, which JSON.stringified the full body on every offer).
+          const named = Message.canonicalTypeName(parsed && parsed.type) || innerType;
+          genericBody = (parsed && typeof parsed === 'object' && (parsed.actor || parsed.object))
+            ? Object.assign({}, parsed, { type: named })
+            : { type: named, object: parsed };
         }
         this._handleGenericMessage(genericBody, origin, socket, message, opts);
         break;
@@ -3234,6 +3264,8 @@ class Peer extends Service {
     // Peel / relay-as-is: never attribute logical-register soft/hijack penalties to the TCP hop.
     const punishOrigin = delivery.scoreOrigin;
     const msg = normalizeFabricDocumentOfferEnvelopeForHandlers(message);
+    const namedType = Message.canonicalTypeName(msg && msg.type);
+    if (namedType) msg.type = namedType;
     if (this.settings.debug) this.emit('debug', `Generic message:\n\tFrom: ${JSON.stringify(origin)}\n\tType: ${msg.type}\n\tBody:\n\`\`\`\n${JSON.stringify(msg.object, null, '  ')}\n\`\`\``);
 
     // Strict Protocol V1: first-class mesh / session opcodes must not escalate from
@@ -3253,7 +3285,7 @@ class Peer extends Service {
 
     switch (msg.type) {
       default:
-        this.emit('debug', `Unhandled Generic Message: ${msg.type} ${JSON.stringify(msg, null, '  ')}`);
+        this.emit('debug', `Unhandled Generic Message: ${msg.type}`);
         break;
       case 'INVENTORY_REQUEST':
         // Upstream Inventory request (typically for documents). Emit an 'inventory'
@@ -3366,7 +3398,7 @@ class Peer extends Service {
         const maxHops = g.maxHops != null ? g.maxHops : GOSSIP_MAX_HOPS;
         const payloadKey = this._gossipPayloadDedupKey(message);
         if (this._gossipPayloadSeen.has(payloadKey)) break;
-        const obj = message.object || {};
+        const obj = genericOfferObject(message);
         let hop = obj.gossipHop != null ? Number(obj.gossipHop) : maxHops;
         if (!Number.isFinite(hop) || hop < 0) hop = maxHops;
         hop = Math.min(hop, maxHops);
@@ -3391,7 +3423,7 @@ class Peer extends Service {
         const maxHops = p.maxHops != null ? p.maxHops : PEERING_OFFER_MAX_HOPS;
         const payloadKey = this._peeringOfferPayloadDedupKey(message);
         if (this._peeringPayloadSeen.has(payloadKey)) break;
-        const obj = message.object || {};
+        const obj = genericOfferObject(message);
         let hop = obj.peeringHop != null ? Number(obj.peeringHop) : maxHops;
         if (!Number.isFinite(hop) || hop < 0) hop = maxHops;
         hop = Math.min(hop, maxHops);
@@ -4938,7 +4970,10 @@ class Peer extends Service {
   }
 
   _registerActor (object) {
-    this.emit('debug', `Registering actor: ${JSON.stringify(object, null, '  ')}`);
+    if (this.settings.debug) {
+      const name = object && object.name != null ? String(object.name) : '(unnamed)';
+      this.emit('debug', `Registering actor: ${name}`);
+    }
     const actor = new Actor(object);
 
     /* actor.adopt([
@@ -4996,7 +5031,10 @@ class Peer extends Service {
    * @returns {boolean} true when newly registered (or already present no-op)
    */
   _registerContract (object, publisherPubkeyHex = null) {
-    this.emit('debug', `Registering contract: ${JSON.stringify(object, null, '  ')}`);
+    if (this.settings.debug) {
+      const idHint = object && (object.id || object.contractId || object.name) || 'contract';
+      this.emit('debug', `Registering contract: ${idHint}`);
+    }
     const actor = new Actor(object);
 
     // Duplicate CONTRACT_PUBLISH must not expand the patch allow-list. Otherwise an
@@ -5743,3 +5781,5 @@ class Swarm extends Actor {
 
 module.exports = Peer;
 module.exports.Swarm = Swarm;
+/** @private Test/debug helper — never log private material. */
+Peer.debugDerivedPublicSummary = peerDebugDerivedPublicSummary;
