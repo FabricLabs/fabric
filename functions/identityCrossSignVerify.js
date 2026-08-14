@@ -46,12 +46,20 @@ function _messageFor (kind, rec) {
  *   signing key (`fabricKey.pubkey`), never Bech32 `identity.id` or the
  *   HD master pubkey.
  * @param {object} fields { peerPubkey, nonce, createdAt? }
+ *   `createdAt` is display metadata only — it is not in the canonical BIP340
+ *   string and must not be treated as authenticated.
  * @param {string} [kind]
  * @returns {object}
  */
 function signCrossSign (identity, fields, kind = SIGN_TYPE) {
-  const { fabricKey } = resolveFabricSigningIdentity(identity);
-  const localPubkey = String(fabricKey.pubkey || '');
+  if (!fields || typeof fields !== 'object') {
+    throw new Error('cross-sign fields required');
+  }
+  if (kind !== SIGN_TYPE && kind !== REVOKE_TYPE) {
+    throw new Error('unknown cross-sign type');
+  }
+  const resolved = resolveFabricSigningIdentity(identity);
+  const localPubkey = String(resolved.fabricKey.pubkey || '');
   const rec = {
     localPubkey,
     peerPubkey: fields.peerPubkey,
@@ -60,7 +68,7 @@ function signCrossSign (identity, fields, kind = SIGN_TYPE) {
   };
   const message = _messageFor(kind, rec);
   if (!message) throw new Error('invalid cross-sign fields');
-  const signed = buildFabricIdentitySignedPayload(identity, message);
+  const signed = buildFabricIdentitySignedPayload(resolved, message);
   const base = kind === REVOKE_TYPE
     ? buildRevokeObject(Object.assign({}, rec, signed))
     : buildCrossSignObject(Object.assign({}, rec, signed));
@@ -71,6 +79,8 @@ function signCrossSign (identity, fields, kind = SIGN_TYPE) {
  * @param {object} object gossip / HTTP body
  * @param {string} [_signerPubkey] AMP / envelope author when present (ignored)
  * @returns {{ ok: true, kind: string, record: object }|{ ok: false, error: string }}
+ *   `record.createdAt` is copied from the body when present; it is not covered
+ *   by the Schnorr signature.
  */
 function verifyCrossSignObject (object, _signerPubkey) {
   if (!object || typeof object !== 'object') {

@@ -397,7 +397,7 @@ describe('@fabric/core/types/environment', function () {
         fs.utimesSync = () => { throw new Error('EPERM'); };
         environment.touchWallet();
         assert.strictEqual(fs.readFileSync(isolated.walletPath, 'utf8'), before);
-        assert.deepStrictEqual(isolated.leftoverWalletTmp(), []);
+        assert.deepStrictEqual(isolated.leftoverWalletTemporaryFiles(), []);
       } finally {
         fs.utimesSync = origUtimes;
         isolated.restore();
@@ -424,7 +424,7 @@ describe('@fabric/core/types/environment', function () {
           () => environment.setWallet(new Wallet({ key: { seed: FIXTURE_SEED } }), true, { password: 'test-pass-ok!' }),
           /EXDEV/
         );
-        assert.deepStrictEqual(isolated.leftoverWalletTmp(), []);
+        assert.deepStrictEqual(isolated.leftoverWalletTemporaryFiles(), []);
         assert.strictEqual(fs.readFileSync(isolated.walletPath, 'utf8'), before);
       } finally {
         fs.renameSync = origRename;

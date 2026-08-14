@@ -35,7 +35,7 @@ describe('@fabric/core/functions/identityCrossSign', function () {
     const a = '02' + 'aa'.repeat(32);
     const b = '03' + 'bb'.repeat(32);
     const msg = buildCrossSignMessage(n, a, b);
-    assert.match(msg, new RegExp('^' + CROSS_SIGN_PREFIX));
+    assert.ok(msg.startsWith(CROSS_SIGN_PREFIX));
     const parsed = parseCrossSignMessage(msg);
     assert.strictEqual(parsed.nonce, n);
     assert.strictEqual(parsed.localPubkey, a.toLowerCase());
@@ -44,15 +44,19 @@ describe('@fabric/core/functions/identityCrossSign', function () {
 
   it('round-trips revoke messages and rejects a short nonce', function () {
     const n = 'cd'.repeat(32);
-    const msg = buildRevokeMessage(n, 'aa', 'bb');
-    assert.match(msg, new RegExp('^' + REVOKE_PREFIX));
+    const a = 'aa'.repeat(32);
+    const b = 'bb'.repeat(32);
+    const msg = buildRevokeMessage(n, a, b);
+    assert.ok(msg.startsWith(REVOKE_PREFIX));
     const parsed = parseRevokeMessage(msg);
     assert.strictEqual(parsed.nonce, n);
-    assert.strictEqual(parsed.localPubkey, 'aa');
-    assert.strictEqual(parsed.peerPubkey, 'bb');
-    assert.strictEqual(buildCrossSignMessage('short', 'aa', 'bb'), null);
-    assert.strictEqual(buildRevokeMessage(n, '', 'bb'), null);
-    const with0x = buildRevokeMessage('0x' + n, '0xAA', 'BB');
+    assert.strictEqual(parsed.localPubkey, a);
+    assert.strictEqual(parsed.peerPubkey, b);
+    assert.strictEqual(buildCrossSignMessage('short', a, b), null);
+    assert.strictEqual(buildRevokeMessage(n, '', b), null);
+    assert.strictEqual(buildCrossSignMessage(n, 'aa', b), null);
+    assert.strictEqual(buildCrossSignMessage(n, a + ':' + b, b), null);
+    const with0x = buildRevokeMessage('0x' + n, '0x' + a, b);
     assert.strictEqual(with0x, msg);
     assert.strictEqual(isCrossSignType(SIGN_TYPE), true);
     assert.strictEqual(isCrossSignType(REVOKE_TYPE), true);
@@ -112,6 +116,13 @@ describe('@fabric/core/functions/fabricIdentitySchnorr', function () {
     );
     assert.strictEqual(verified.ok, false);
   });
+
+  it('rejects truncated or non-hex pubkey bytes', function () {
+    assert.throws(() => fabricIdentityIdFromPubkeyHex('02aa' + 'zz'), /invalid pubkey|66 hex/i);
+    assert.throws(() => fabricIdentityIdFromPubkeyHex('02aa'), /66 hex/i);
+    assert.throws(() => fabricIdentityIdFromPubkeyHex('0'), /invalid pubkey|66 hex/i);
+    assert.throws(() => fabricIdentityIdFromPubkeyHex(''), /Missing pubkey/i);
+  });
 });
 
 describe('@fabric/core/functions/identityCrossSignVerify', function () {
@@ -169,5 +180,12 @@ describe('@fabric/core/functions/identityCrossSignVerify', function () {
     assert.strictEqual(obj.localPubkey.toLowerCase(), fabric.pubkey.toLowerCase());
     const v = verifyCrossSignObject(obj);
     assert.strictEqual(v.ok, true);
+  });
+
+  it('rejects an unknown kind and missing fields', function () {
+    const ident = new Identity(new Key());
+    const peer = new Identity(new Key());
+    assert.throws(() => signCrossSign(ident, { peerPubkey: peer.pubkey, nonce: nonce() }, 'ChatMessage'), /unknown cross-sign type/i);
+    assert.throws(() => signCrossSign(ident, null, SIGN_TYPE), /fields required/i);
   });
 });

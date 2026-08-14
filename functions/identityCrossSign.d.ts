@@ -3,14 +3,21 @@ declare const identityCrossSign: {
   REVOKE_PREFIX: string;
   SIGN_TYPE: string;
   REVOKE_TYPE: string;
-  buildCrossSignMessage: (...args: unknown[]) => string | null;
-  buildRevokeMessage: (...args: unknown[]) => string | null;
-  parseCrossSignMessage: (...args: unknown[]) => object | null;
-  parseRevokeMessage: (...args: unknown[]) => object | null;
-  buildCrossSignObject: (...args: unknown[]) => object;
-  buildRevokeObject: (...args: unknown[]) => object;
+  buildCrossSignMessage: (nonce: string, localPubkey: string, peerPubkey: string) => string | null;
+  buildRevokeMessage: (nonce: string, localPubkey: string, peerPubkey: string) => string | null;
+  parseCrossSignMessage: (msg: string) => {
+    nonce: string;
+    localPubkey: string;
+    peerPubkey: string;
+  } | null;
+  parseRevokeMessage: (msg: string) => {
+    nonce: string;
+    localPubkey: string;
+    peerPubkey: string;
+  } | null;
+  buildCrossSignObject: (fields?: object) => object;
+  buildRevokeObject: (fields?: object) => object;
   isCrossSignType: (type: unknown) => boolean;
-  [key: string]: unknown;
 };
 
 export = identityCrossSign;

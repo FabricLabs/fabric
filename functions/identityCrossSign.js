@@ -21,6 +21,14 @@ function _normNonce (nonce) {
   return n;
 }
 
+/** Compressed 33-byte (02/03 + 32) or x-only 32-byte hex. Rejects `:` so fields cannot collide. */
+function _normPubkey (value) {
+  const s = _normHex(value);
+  if (/^0[23][a-f0-9]{64}$/.test(s)) return s;
+  if (/^[a-f0-9]{64}$/.test(s)) return s;
+  return null;
+}
+
 /**
  * Canonical BIP340 message: A attests that B is the same actor.
  * @param {string} nonce 64-hex from the device-link session
@@ -30,8 +38,8 @@ function _normNonce (nonce) {
  */
 function buildCrossSignMessage (nonce, localPubkey, peerPubkey) {
   const n = _normNonce(nonce);
-  const local = _normHex(localPubkey);
-  const peer = _normHex(peerPubkey);
+  const local = _normPubkey(localPubkey);
+  const peer = _normPubkey(peerPubkey);
   if (!n || !local || !peer) return null;
   return `${CROSS_SIGN_PREFIX}:${n}:${local}:${peer}`;
 }
@@ -45,8 +53,8 @@ function buildCrossSignMessage (nonce, localPubkey, peerPubkey) {
  */
 function buildRevokeMessage (nonce, localPubkey, peerPubkey) {
   const n = _normNonce(nonce);
-  const local = _normHex(localPubkey);
-  const peer = _normHex(peerPubkey);
+  const local = _normPubkey(localPubkey);
+  const peer = _normPubkey(peerPubkey);
   if (!n || !local || !peer) return null;
   return `${REVOKE_PREFIX}:${n}:${local}:${peer}`;
 }
@@ -61,8 +69,8 @@ function parsePrefixed (msg, prefix) {
   const after = rest.slice(65);
   const i = after.indexOf(':');
   if (i <= 0) return null;
-  const localPubkey = after.slice(0, i);
-  const peerPubkey = after.slice(i + 1);
+  const localPubkey = _normPubkey(after.slice(0, i));
+  const peerPubkey = _normPubkey(after.slice(i + 1));
   if (!localPubkey || !peerPubkey) return null;
   return { nonce: nonce.toLowerCase(), localPubkey, peerPubkey };
 }
@@ -76,16 +84,17 @@ function parseRevokeMessage (msg) {
 }
 
 /**
+ * @param {string} type
  * @param {object} [fields]
  * @returns {object}
  */
-function buildCrossSignObject (fields = {}) {
+function _typedObject (type, fields = {}) {
   return {
-    type: SIGN_TYPE,
-    '@type': SIGN_TYPE,
-    localPubkey: String(fields.localPubkey || ''),
-    peerPubkey: String(fields.peerPubkey || ''),
-    nonce: _normNonce(fields.nonce) || String(fields.nonce || ''),
+    type,
+    '@type': type,
+    localPubkey: _normPubkey(fields.localPubkey) || '',
+    peerPubkey: _normPubkey(fields.peerPubkey) || '',
+    nonce: _normNonce(fields.nonce) || '',
     createdAt: fields.createdAt || new Date().toISOString(),
     signature: fields.signature || null,
     pubkeyHex: fields.pubkeyHex || null,
@@ -97,18 +106,16 @@ function buildCrossSignObject (fields = {}) {
  * @param {object} [fields]
  * @returns {object}
  */
+function buildCrossSignObject (fields = {}) {
+  return _typedObject(SIGN_TYPE, fields);
+}
+
+/**
+ * @param {object} [fields]
+ * @returns {object}
+ */
 function buildRevokeObject (fields = {}) {
-  return {
-    type: REVOKE_TYPE,
-    '@type': REVOKE_TYPE,
-    localPubkey: String(fields.localPubkey || ''),
-    peerPubkey: String(fields.peerPubkey || ''),
-    nonce: _normNonce(fields.nonce) || String(fields.nonce || ''),
-    createdAt: fields.createdAt || new Date().toISOString(),
-    signature: fields.signature || null,
-    pubkeyHex: fields.pubkeyHex || null,
-    identity: fields.identity || null
-  };
+  return _typedObject(REVOKE_TYPE, fields);
 }
 
 function isCrossSignType (type) {

@@ -1245,7 +1245,9 @@ class Peer extends Service {
       const old = this.candidates.shift();
       const o = old && (old.object || old);
       if (o && o.host != null && o.port != null) {
-        this._candidateKeys.delete(`${String(o.host)}:${Number(o.port)}`);
+        const evicted = `${String(o.host)}:${Number(o.port)}`;
+        this._candidateKeys.delete(evicted);
+        if (this._candidateRetryAt) this._candidateRetryAt.delete(evicted);
       }
     }
     this._candidateKeys.add(key);
@@ -2023,26 +2025,32 @@ class Peer extends Service {
     // Do not construct NOISE until TCP is up. noise-protocol-stream shares one
     // EventEmitter for handshake callbacks; refused dials were leaking listeners.
     socket.once('connect', () => {
-      socket.setTimeout(0);
-      if (socket.destroyed) return;
-      const client = noise({
-        initiator: true,
-        prologue: Buffer.from(PROLOGUE),
-        // privateKey: _derived.privkey — enable when NOISE static === Fabric derived key.
-        verify: this._verifyNOISE.bind(this)
-      });
-      this._attachNoiseStreamErrorHandlers(client, 'NOISE');
-      client.decrypt.on('data', (data) => {
-        this._handleFabricMessage(data, { name: target }, client);
-      });
-      client.encrypt.pipe(socket).pipe(client.decrypt);
-      this._registerNOISEClient(target, socket, client);
-      this._beginFabricHandshake(client);
-      this.emit('connections:open', {
-        address: target,
-        id: target,
-        url: url
-      });
+      try {
+        socket.setTimeout(0);
+        if (socket.destroyed) return;
+        const client = noise({
+          initiator: true,
+          prologue: Buffer.from(PROLOGUE),
+          // privateKey: _derived.privkey — enable when NOISE static === Fabric derived key.
+          verify: this._verifyNOISE.bind(this)
+        });
+        this._attachNoiseStreamErrorHandlers(client, 'NOISE');
+        client.decrypt.on('data', (data) => {
+          this._handleFabricMessage(data, { name: target }, client);
+        });
+        client.encrypt.pipe(socket).pipe(client.decrypt);
+        this._registerNOISEClient(target, socket, client);
+        this._beginFabricHandshake(client);
+        this.emit('connections:open', {
+          address: target,
+          id: target,
+          url: url
+        });
+      } catch (err) {
+        this.emit('warning',
+          `[FABRIC:PEER:_connect] outbound setup failed (${target}): ${err && err.message ? err.message : err}`);
+        if (typeof socket.destroy === 'function') socket.destroy();
+      }
     });
   }
 
@@ -2308,9 +2316,14 @@ class Peer extends Service {
     if (this.connections.length >= this.settings.constraints.peers.max) return;
     const openCount = this.settings.constraints.peers.max - Object.keys(this.connections).length;
     if (!this._candidateRetryAt) this._candidateRetryAt = new Map();
-    const retryAfter = Number(this.settings.peering && this.settings.peering.candidateRetryMs) ||
-      PEER_CANDIDATE_RETRY_MS;
+    const configuredRetry = Number(this.settings.peering && this.settings.peering.candidateRetryMs);
+    const retryAfter = (Number.isFinite(configuredRetry) && configuredRetry > 0)
+      ? configuredRetry
+      : PEER_CANDIDATE_RETRY_MS;
     const now = Date.now();
+    for (const [addr, until] of this._candidateRetryAt) {
+      if (until <= now) this._candidateRetryAt.delete(addr);
+    }
     const deferred = [];
     for (let i = 0; i < openCount; i++) {
       if (!this.candidates.length) break;
@@ -2332,6 +2345,7 @@ class Peer extends Service {
             this._suppressSelfDialAddress(addr);
           }
           if (this._candidateKeys) this._candidateKeys.delete(addr);
+          if (this._candidateRetryAt) this._candidateRetryAt.delete(addr);
           continue;
         }
         const nextOk = this._candidateRetryAt.get(addr) || 0;
@@ -3736,6 +3750,7 @@ class Peer extends Service {
           this._inboundNoiseStaticPubkeyByAddress[target] = pkHex;
           if (this._isPeerBanned(target, pkHex)) {
             this.emit('warning', `[FABRIC:PEER] Closing inbound: banned Noise static ${pkHex.slice(0, 16)}…`);
+            this._destroyFabric(socket, target);
             if (typeof socket.destroy === 'function') socket.destroy();
           }
         }
@@ -3743,11 +3758,7 @@ class Peer extends Service {
     });
     handler.encrypt.on('end', (data) => {
       if (this.settings.debug) this.emit('debug', `Peer encrypt end: ${data}`);
-      // socket.destroy();
-      delete this.connections[target];
-      if (this.peers[target] && typeof this.peers[target] === 'object') {
-        this.peers[target].status = 'disconnected';
-      }
+      this._destroyFabric(socket, target);
     });
 
     this._attachNoiseStreamErrorHandlers(handler, 'NOISE');
@@ -5352,6 +5363,8 @@ class Peer extends Service {
 
     if (socket._keepalive) clearInterval(socket._keepalive);
     if (socket.heartbeat) clearInterval(socket.heartbeat);
+    this._teardownNoiseClient(socket);
+    if (this._outboundDialTargets) this._outboundDialTargets.delete(address);
     delete this.connections[address];
     delete this.peers[address];
     if (typeof socket.destroy === 'function') socket.destroy();

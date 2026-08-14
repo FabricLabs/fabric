@@ -20,8 +20,12 @@ const { FABRIC_KEY_DERIVATION_PATH } = require('../constants');
  * @returns {string}
  */
 function fabricIdentityIdFromPubkeyHex (pubkeyHex) {
-  const input = Buffer.from(String(pubkeyHex || '').trim(), 'hex');
-  if (!input.length) throw new Error('Missing pubkey bytes.');
+  const raw = String(pubkeyHex || '').trim().replace(/^0x/i, '');
+  if (!raw) throw new Error('Missing pubkey bytes.');
+  if (!/^[0-9a-f]{66}$/i.test(raw)) {
+    throw new Error('Invalid compressed pubkey hex (expected 66 hex characters).');
+  }
+  const input = Buffer.from(raw, 'hex');
   const pubkeyhash = Hash256.digest(input);
   return new Bech32({ hrp: 'id', content: pubkeyhash }).toString();
 }
@@ -131,8 +135,20 @@ function resolveFabricSigningIdentity (input) {
 }
 
 /**
+ * @private
+ * @param {*} value
+ * @returns {boolean}
+ */
+function isResolvedSigningIdentity (value) {
+  return !!(value && typeof value === 'object' &&
+    value.fabricKey && typeof value.fabricKey.signSchnorr === 'function' &&
+    typeof value.identityId === 'string');
+}
+
+/**
  * Build the JSON body Hub / LiveRelay expect for client-signed challenges.
- * @param {object} input
+ * @param {object} input Identity, Key, Passport leaf, or already-resolved
+ *   `{ fabricKey, identityId }` from {@link resolveFabricSigningIdentity}
  * @param {string} message UTF-8 challenge string
  * @returns {{ signature: string, pubkeyHex: string, identity: { id: string, xpub: string } }}
  */
@@ -140,7 +156,10 @@ function buildFabricIdentitySignedPayload (input, message) {
   if (typeof message !== 'string' || !message) {
     throw new Error('message required');
   }
-  const { fabricKey, identityId } = resolveFabricSigningIdentity(input);
+  const resolved = isResolvedSigningIdentity(input)
+    ? input
+    : resolveFabricSigningIdentity(input);
+  const { fabricKey, identityId } = resolved;
   const signature = Buffer.from(fabricKey.signSchnorr(Buffer.from(message, 'utf8'))).toString('hex');
   const pubkeyHex = String(fabricKey.pubkey || '');
   if (!/^[a-f0-9]{66}$/i.test(pubkeyHex)) {

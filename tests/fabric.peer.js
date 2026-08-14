@@ -8,6 +8,7 @@ const Key = require('../types/key');
 const Actor = require('../types/actor');
 const assert = require('assert');
 const net = require('net');
+const { EventEmitter } = require('events');
 
 // Node configs may be JSON (node-a.json) or JS; resolve accordingly
 let NODEA, NODEB;
@@ -236,10 +237,18 @@ describe('@fabric/core/types/peer', function () {
         const originalCreateConnection = net.createConnection;
         const peer = new Peer({ listen: false, peersDb: null });
         let created = 0;
+        let createdSocket = null;
         net.createConnection = function () {
           created += 1;
-          const sock = originalCreateConnection.apply(this, arguments);
-          if (typeof sock.unref === 'function') sock.unref();
+          const sock = new EventEmitter();
+          sock.destroyed = false;
+          sock.setTimeout = function () {};
+          sock.unref = function () {};
+          sock.destroy = function () {
+            sock.destroyed = true;
+            sock.emit('close');
+          };
+          createdSocket = sock;
           return sock;
         };
         try {
@@ -249,10 +258,9 @@ describe('@fabric/core/types/peer', function () {
           assert.strictEqual(peer._outboundDialTargets.has('127.0.0.1:9'), true);
         } finally {
           net.createConnection = originalCreateConnection;
-          const sock = peer.connections['127.0.0.1:9'];
-          if (sock && typeof sock.destroy === 'function') sock.destroy();
+          if (createdSocket && typeof createdSocket.destroy === 'function') createdSocket.destroy();
           if (typeof peer._destroyFabric === 'function') {
-            try { peer._destroyFabric(sock || {}, '127.0.0.1:9'); } catch (_) { /* ignore */ }
+            try { peer._destroyFabric(createdSocket || {}, '127.0.0.1:9'); } catch (_) { /* ignore */ }
           }
         }
       });

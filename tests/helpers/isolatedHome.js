@@ -15,7 +15,7 @@ const IDENTITY_ENV = [
 /**
  * Isolated `$HOME` + wallet path for Environment tests. Restores identity env.
  * @param {string} [prefix='fabric-env-']
- * @returns {{ home: string, store: string, walletPath: string, restore: function, clearIdentityEnv: function, leftoverWalletTmp: function }}
+ * @returns {{ home: string, store: string, walletPath: string, restore: function, clearIdentityEnv: function, leftoverWalletTemporaryFiles: function }}
  */
 function withIsolatedHome (prefix = 'fabric-env-') {
   const prev = {};
@@ -33,7 +33,7 @@ function withIsolatedHome (prefix = 'fabric-env-') {
       delete process.env.FABRIC_XPUB;
       delete process.env.FABRIC_PASSWORD;
     },
-    leftoverWalletTmp () {
+    leftoverWalletTemporaryFiles () {
       try {
         const base = path.basename(walletPath);
         return fs.readdirSync(store).filter((name) => {

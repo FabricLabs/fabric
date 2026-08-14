@@ -1,7 +1,7 @@
 # Outstanding (security-first)
 Living queue for this repo. Detail and closed items live in [SECURITY.md](../SECURITY.md) and [AUDIT.md](../AUDIT.md). Suite production march: [PRODUCTION_MARCH.md](PRODUCTION_MARCH.md).
 
-**Last reviewed:** 2026-08-14. [#185](https://github.com/FabricLabs/fabric/pull/185) follow-up: lazy `messageHex`, wallet tmp suffix, `Reader` deprecation.
+**Last reviewed:** 2026-08-14. [#185](https://github.com/FabricLabs/fabric/pull/185) follow-up: IdentityCrossSign + peer dial safeguards (local unpushed).
 
 ## Blockers before shared-host / non-experimental tag
 1. **Third-party review** of `types/peer.js`, inventory HTLC, sealed exchange, `publishedDocumentEnvelope` ([AUDIT.md](../AUDIT.md) recommendations).
@@ -17,8 +17,8 @@ Living queue for this repo. Detail and closed items live in [SECURITY.md](../SEC
 
 ## Closed this pass (do not re-open)
 - IdentityCrossSign / identity Schnorr / verify lifted into `functions/` after [#183](https://github.com/FabricLabs/fabric/pull/183) merge (was held for the CodeRabbit file cap).
-- `_fillPeerSlots` candidate retry cooldown + NOISE-after-TCP-connect (playnet `:7778` ECONNREFUSED / MaxListeners storm). `_connect` also skips in-flight `_outboundDialTargets`.
-- `signCrossSign` localPubkey is the Fabric signing pubkey (not Bech32 `id` / HD master).
+- `signCrossSign` localPubkey is the Fabric signing pubkey (not Bech32 `id` / HD master). Canonical cross-sign pubkeys are compressed or x-only hex; unknown `kind` is rejected. `fabricIdentityIdFromPubkeyHex` requires compressed 66-hex (no truncated `Buffer.from(..., 'hex')`). `createdAt` is unsigned display metadata. `.d.ts` files declare real arities / `ok` unions.
+- `_fillPeerSlots` candidate retry cooldown + NOISE-after-TCP-connect (playnet `:7778` ECONNREFUSED / MaxListeners storm). `_connect` also skips in-flight `_outboundDialTargets`. `_candidateRetryAt` is pruned; `_disconnect` and inbound encrypt-end / banned-static paths tear down NOISE; outbound connect setup is try/caught.
 - Wallet tmp files use `pid` + random suffix; Environment tests share `tests/helpers/isolatedHome.js`.
 - `contract:message` `messageHex` is lazy (getter). `Reader` is `@deprecated` (fold into Peer/Message ingest).
 - Blinded-execution `at` bind; Beacon `ready` finalize; peering self-suppress via verified AMP signer; empty `signers: []` spend-key widen; Beacon ARC authority walk.
@@ -29,4 +29,4 @@ Living queue for this repo. Detail and closed items live in [SECURITY.md](../SEC
 - `printGeneratedWallet` never prints the master xprv (`FABRIC_DEBUG` included). Plaintext restore validates encryption password before `setWallet`.
 
 ## PRs
-[#185](https://github.com/FabricLabs/fabric/pull/185) — WIP ARC polish on `feature/rsi` after [#183](https://github.com/FabricLabs/fabric/pull/183) merge. Bugbot Highs (wrong cross-sign pubkey; duplicate outbound dials) addressed. This slice also: wallet tmp suffix, lazy `messageHex`, `withIsolatedHome`. Still deferred: RFC6902 multi-op JSON bridge (http); `.codacy.yml` Semgrep excludes stay until a replacement SAST job exists.
+[#185](https://github.com/FabricLabs/fabric/pull/185) — WIP ARC polish on `feature/rsi` after [#183](https://github.com/FabricLabs/fabric/pull/183) merge. Bugbot Highs (wrong cross-sign pubkey; duplicate outbound dials) addressed. CodeRabbit follow-up on `ab0acf77` (local, unpushed): pubkey/nonce field validation, compressed identity-id hex, `signCrossSign` kind guard, candidate-retry bound, NOISE teardown on `_disconnect` + inbound end, outbound connect try/catch, typed `.d.ts`, `lint:pkg` covers the new identity modules. Still deferred: RFC6902 multi-op JSON bridge (http); `.codacy.yml` Semgrep excludes stay until a replacement SAST job exists.
