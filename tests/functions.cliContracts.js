@@ -17,11 +17,16 @@ describe('functions/cliContracts', function () {
     assert.ok(CLI_CONTRACTS.length >= 5);
     const core = findCliContract('core');
     assert.ok(core.required);
+    assert.ok(core.commands.unlock);
+    assert.ok(core.commands.lock);
     assert.ok(core.commands.contracts);
     assert.ok(!core.commands.apps);
     const market = findCliContract('documents-market');
     assert.ok(market.commands.refund);
     assert.ok(market.commands.refunds);
+    const wallet = findCliContract('wallet');
+    assert.ok(wallet.commands.wallet);
+    assert.ok(!/identity lock/i.test(wallet.description));
     const execution = findCliContract('execution');
     assert.ok(execution.commands.create);
     assert.ok(execution.commands.deploy);

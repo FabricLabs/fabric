@@ -1,10 +1,8 @@
 # P2P_FORWARD — directed onion hops
-
 Protect peer IPs by nesting application Messages inside signed
 `P2P_FORWARD` layers and sending only to the next hop.
 
 ## Why not `P2P_RELAY`?
-
 | Type | Opcode | Behavior |
 |------|--------|----------|
 | `P2P_RELAY` | `0x43` | Mesh **flood**: unwrap inner; forward **bit-identical** outer (no hop re-wrap); nest depth capped |
@@ -15,7 +13,6 @@ forwarding means the destination’s TCP peer is the last relay, not the
 originator.
 
 ## Body schema (V1)
-
 | Field | Type | Meaning |
 |-------|------|---------|
 | `nextPeer` | `bytes32` | X-only secp256k1 pubkey (same encoding as AMP `author`) |
@@ -25,7 +22,6 @@ originator.
 Max path length: `P2P_FORWARD_MAX_HOPS` (8) in `constants.js`.
 
 ## App pathway
-
 ```js
 const Peer = require('@fabric/core/types/peer');
 const Message = require('@fabric/core/types/message');
@@ -42,7 +38,6 @@ peer.sendOnion(
 ```
 
 Or build offline and send yourself:
-
 ```js
 const outer = wrapOnionPath({
   path: [relayXOnly, destXOnly],
@@ -55,13 +50,16 @@ const outer = wrapOnionPath({
 Events: `onion:sent`, `onion:peel`, `onion:forward`, `onion:undeliverable`.
 
 ## Threat model (this release)
-
 - **Provides:** destination does not learn the originator’s IP; intermediate
   peers do not mesh-flood the payload.
-- **Does not provide:** Sphinx/BOLT4 encryption. Each hop can read
-  `nextPeer` for its layer and the cleartext `inner` unless the app seals
-  the payload. Confidentiality is an application concern (e.g. sealed
-  documents).
+- **Does not provide:** Sphinx/BOLT4 hop encryption of routing metadata. Each
+  hop can read `nextPeer` for its layer and may recurse nested `inner`
+  frames.
+- **Chat confidentiality:** Hub `SendOnion` text (and Peer delivery) uses
+  `functions/onionChatSeal` — AES-GCM participant wrap to the path tip — so
+  relays that sniff nested inners see ciphertext, not UTF-8 chat. Opt out
+  with `encrypt: false`. Other payload types remain an application seal
+  concern (e.g. sealed documents).
 - **Peel / misbehavior:** when a peer peels and delivers `inner`, integrity
   failures (body-hash / signature), forbidden contract ops, bad session key
   claims, and nested-`P2P_RELAY` depth exceed **do not** hard-disconnect or
@@ -79,17 +77,20 @@ Events: `onion:sent`, `onion:peel`, `onion:forward`, `onion:undeliverable`.
   Peer implements this via one `meshDeliveryContext` shared by flood and onion.
 
 ## Example
-
 ```bash
 node examples/onion-forward.js
 ```
 
 ## Tests
-
 - `tests/functions.fabricOnion.js`
 - `tests/peer.onion.forward.js`
+- `tests/onionChatSeal.test.js` (seal/open, multi-hop relay ciphertext, mesh cleartext)
 
 ## Downstream
-
 - Hub JSON-RPC **`SendOnion`** — TCP Peer on the hub agent; Bridge drops WS `P2P_FORWARD`.
 - `@fabric/http` does not terminate onions (see `docs/MESSAGE_SPEC.md`).
+
+## Work remaining
+- ~~**Seal AAD:**~~ tip + participant AES-GCM AAD bound in `groupChatSeal` / `onionChatSeal` (see [ARC.md](ARC.md) §8).
+- **Hop encryption:** Sphinx/BOLT4-class routing metadata protection remains out of scope for 0.1 (accepted risk above).
+- **Journal / re-fold growth** and **API renaming** remain tracked in [ARC.md](ARC.md) §8 / [AUDIT.md](../AUDIT.md).

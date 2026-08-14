@@ -10,7 +10,9 @@
  *     native `fabric.node` is not inside the pkg blob; load optional acceleration from disk
  *     (`FABRIC_ADDON_PATH`) or ship without it (pure JS fallbacks).
  *
- * Terminal UI: default command is `shell`/`chat` → {@link ../contracts/shell} → {@link ../types/cli} (Blessed TUI).
+ * Terminal UI: `setup` → {@link ../contracts/setup} → {@link ../types/setup} (lightweight Blessed
+ * environment/key manager). Default command is `shell`/`chat` → {@link ../contracts/shell} →
+ * {@link ../types/cli} (full Blessed TUI).
  *
  * Optional C acceleration (narrow API): {@link ../functions/fabricNativeAccel}
  */
@@ -41,6 +43,7 @@ const { Command } = require('commander');
 
 // Fabric Types
 const Environment = require('../types/environment');
+const { readCliPasswordFromArgv } = require('../functions/cliPasswordArgv');
 
 // Contracts
 const OP_START = require('../contracts/node');
@@ -76,7 +79,14 @@ async function main () {
     .action(COMMANDS.MOUNT.bind({ environment, program }));
 
   program.command('setup')
-    .description('Ensures your environment configuration.')
+    .description('View and manage local environment keys (lightweight TUI).')
+    .option('--no-tui', 'Skip the TUI (one-shot inspect / generate).')
+    .option('--json', 'Print a public environment snapshot as JSON and exit.')
+    .option('--backup [FILE]', 'Write a wallet backup and exit (default: ~/.fabric/backups/).')
+    .option('--restore <FILE>', 'Restore wallet from a backup file and exit.')
+    .option('--unlock', 'Unlock a password-protected wallet and exit.')
+    .option('--lock', 'Lock the in-memory wallet and exit.')
+    .option('--timeout <MINUTES>', 'Set idle auto-lock timeout (0 disables) and exit.')
     .action(COMMANDS.SETUP.bind({ environment, program }));
 
   program.command('verify')
@@ -129,20 +139,37 @@ async function main () {
     return;
   }
 
+  const passwordFromArgv = readCliPasswordFromArgv(argv);
+
+  if (environment.walletLocked && passwordFromArgv) {
+    try {
+      environment.unlockWallet(passwordFromArgv);
+    } catch (exception) {
+      console.error('[FABRIC:CLI]', 'Unlock failed:', exception.message || exception);
+      process.exit(1);
+      return;
+    }
+  }
+
   if (!environment.wallet) {
     if (requestedCommand === 'setup') {
       await program.parseAsync(argv);
       return;
     }
 
-    if (environment.walletExists()) {
+    if (environment.walletLocked) {
+      // Sealed wallet stays locked; shell /unlock or `fabric setup` can open it.
+    } else if (environment.walletExists()) {
       console.error('[FABRIC:CLI]', `Wallet file exists but could not be loaded: ${environment.WALLET_FILE}`);
       console.error('[FABRIC:CLI]', 'Fix or remove the file, or run: fabric setup --force');
       console.error('[FABRIC:CLI]', '[WARNING]', '--force DESTROYS ALL DATA: DOUBLE-CHECK YOUR BACKUPS!');
+      process.exit(1);
+      return;
     } else {
       console.error('[FABRIC:CLI]', 'No wallet configured. Run: fabric setup');
+      process.exit(1);
+      return;
     }
-    process.exit(1);
   }
 
   const shouldDefaultShell = !requestedCommand && !wantsReceive;

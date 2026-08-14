@@ -215,7 +215,7 @@ const LEGACY_MESSAGE_TYPE_ALIASES = Object.freeze({
   GenericLogMessage: LOG_MESSAGE_TYPE,
   GenericList: GENERIC_LIST_TYPE,
   GenericQueue: GENERIC_LIST_TYPE,
-  /** Transitional Hub/browser catch-all (opcode GENERIC_MESSAGE_TYPE / 15103). */
+  // Transitional Hub/browser catch-all (opcode GENERIC_MESSAGE_TYPE / 15103).
   GenericMessage: GENERIC_MESSAGE_TYPE,
   FabricLogMessage: LOG_MESSAGE_TYPE,
   FabricServiceLogMessage: LOG_MESSAGE_TYPE,
@@ -336,6 +336,7 @@ function wireTypeFromFriendly (friendly) {
 
 /**
  * Resolve any opcode / wire name / friendly alias to the numeric AMP type code.
+ * @private
  * @param {number|string|null|undefined} value
  * @returns {number|null}
  */
@@ -363,6 +364,7 @@ function canonicalTypeCode (value) {
 
 /**
  * Resolve any opcode / wire name / friendly alias to the SCREAMING_SNAKE wire label.
+ * @private
  * @param {number|string|null|undefined} value
  * @returns {string|null}
  */
@@ -379,6 +381,7 @@ function canonicalTypeName (value) {
 /**
  * True when two type references name the same AMP opcode (number, wire name, or friendly alias).
  * Unregistered string labels only match via exact trim equality.
+ * @private
  * @param {number|string|null|undefined} a
  * @param {number|string|null|undefined} b
  * @returns {boolean}
@@ -1015,7 +1018,9 @@ class Message extends Actor {
    */
   get wireType () {
     const code = parseInt(this.raw.type.toString('hex'), 16);
-    return CANONICAL_WIRE_TYPE_BY_OPCODE[code] || 'P2P_BASE_MESSAGE';
+    // Strict Protocol V1: unregistered opcodes must NOT alias to P2P_BASE_MESSAGE
+    // (that would run generic JSON dispatch / relay paths on hostile type bytes).
+    return CANONICAL_WIRE_TYPE_BY_OPCODE[code] || 'UNKNOWN_MESSAGE';
   }
 
   /**
@@ -1106,7 +1111,7 @@ Message.FRIENDLY_TO_WIRE_TYPE = FRIENDLY_TO_WIRE_TYPE;
 const BODY_FIELD_TYPES = Object.freeze([
   'u8', 'u16', 'u32', 'u64', 'bytes32', 'bytes', 'string', 'message'
 ]);
-/** @type {Map<number|string, Array<{ name: string, type: string }>>} */
+/** @private @type {Map<number|string, Array<{ name: string, type: string }>>} */
 const BODY_SCHEMA_BY_KEY = new Map();
 
 function registerBodySchema (opcodeOrName, schema) {
@@ -1204,12 +1209,41 @@ function encodeBody (schema, fields = {}) {
   return Buffer.concat(chunks, total);
 }
 
+/**
+ * Default for an optional field when the wire body ends before that field.
+ * @private
+ * @param {{ type: string }} def
+ */
+function _optionalFieldDefault (def) {
+  switch (def.type) {
+    case 'string':
+      return '';
+    case 'bytes':
+    case 'message':
+      return Buffer.alloc(0);
+    case 'bytes32':
+      return Buffer.alloc(32);
+    case 'u8':
+    case 'u16':
+    case 'u32':
+      return 0;
+    case 'u64':
+      return 0n;
+    default:
+      throw new TypeError(`unsupported field type: ${def.type}`);
+  }
+}
+
 function decodeBody (schema, buffer) {
   if (!Array.isArray(schema)) throw new TypeError('schema required');
   const buf = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer || []);
   const out = {};
   let offset = 0;
   for (const def of schema) {
+    if (def.optional && offset >= buf.length) {
+      out[def.name] = _optionalFieldDefault(def);
+      continue;
+    }
     if (offset > buf.length) {
       throw new RangeError(`truncated body while reading field ${def.name}`);
     }
@@ -1277,12 +1311,67 @@ const SCHEMA_PROGRAM_RUN = Object.freeze([
   { name: 'runCommitment', type: 'bytes32' },
   { name: 'resultHint', type: 'string' }
 ]);
-/** Directed onion hop — see {@link module:@fabric/core/functions/fabricOnion}. */
+/** @private Directed onion hop — see {@link module:@fabric/core/functions/fabricOnion}. */
 const SCHEMA_P2P_FORWARD = Object.freeze([
   { name: 'nextPeer', type: 'bytes32' },
   { name: 'ttl', type: 'u8' },
   { name: 'inner', type: 'message' }
 ]);
+/** @private Discovery / peering field layouts (Phase B); JSON bodies remain accepted. */
+const SCHEMA_P2P_PEER_GOSSIP = Object.freeze([
+  { name: 'host', type: 'string' },
+  { name: 'port', type: 'u32' },
+  { name: 'gossipHop', type: 'u8' },
+  { name: 'nonce', type: 'string' }
+]);
+const SCHEMA_P2P_PEERING_OFFER = Object.freeze([
+  { name: 'transport', type: 'string' },
+  { name: 'host', type: 'string' },
+  { name: 'port', type: 'u32' },
+  { name: 'peeringHop', type: 'u8' }
+]);
+const SCHEMA_P2P_PEER_ANNOUNCE = Object.freeze([
+  { name: 'host', type: 'string' },
+  { name: 'port', type: 'u32' }
+]);
+
+/**
+ * Parse an inbound AMP body: prefer JSON (legacy), else registered field schema.
+ * @private
+ * @param {Message} message
+ * @returns {{ ok: true, value: object, encoding: 'json'|'fields' } | { ok: false, error: Error }}
+ */
+function tryParseMessageBody (message) {
+  if (!message) {
+    return { ok: false, error: new TypeError('tryParseMessageBody: message required') };
+  }
+  const rawStr = typeof message.data === 'string'
+    ? message.data
+    : (message.data != null ? String(message.data) : '');
+  const pr = tryParseWireJson(rawStr);
+  if (pr.ok && pr.value !== null && typeof pr.value === 'object' && !Array.isArray(pr.value)) {
+    return { ok: true, value: pr.value, encoding: 'json' };
+  }
+  const schema = getBodySchema(message.type) || getBodySchema(message.wireType);
+  const bodyBuf = message.raw && Buffer.isBuffer(message.raw.data)
+    ? message.raw.data
+    : null;
+  if (schema && bodyBuf && bodyBuf.length > 0) {
+    try {
+      const fields = decodeBody(schema, bodyBuf);
+      if (fields && typeof fields === 'object' && !Array.isArray(fields)) {
+        return { ok: true, value: fields, encoding: 'fields' };
+      }
+    } catch (err) {
+      const e = err instanceof Error ? err : new Error(String(err));
+      return { ok: false, error: e };
+    }
+  }
+  if (pr.ok) {
+    return { ok: false, error: new TypeError('message body must be a JSON object or field layout') };
+  }
+  return { ok: false, error: pr.error || new Error('unparsed message body') };
+}
 
 (function _installBodySchemaDefaults () {
   registerBodySchema(P2P_PING, SCHEMA_P2P_PING);
@@ -1294,6 +1383,15 @@ const SCHEMA_P2P_FORWARD = Object.freeze([
   registerBodySchema('FabricProgramRun', SCHEMA_PROGRAM_RUN);
   registerBodySchema(P2P_FORWARD, SCHEMA_P2P_FORWARD);
   registerBodySchema('P2P_FORWARD', SCHEMA_P2P_FORWARD);
+  registerBodySchema(P2P_PEER_GOSSIP, SCHEMA_P2P_PEER_GOSSIP);
+  registerBodySchema('P2P_PEER_GOSSIP', SCHEMA_P2P_PEER_GOSSIP);
+  registerBodySchema('PeerGossip', SCHEMA_P2P_PEER_GOSSIP);
+  registerBodySchema(P2P_PEERING_OFFER, SCHEMA_P2P_PEERING_OFFER);
+  registerBodySchema('P2P_PEERING_OFFER', SCHEMA_P2P_PEERING_OFFER);
+  registerBodySchema('PeeringOffer', SCHEMA_P2P_PEERING_OFFER);
+  registerBodySchema(P2P_PEER_ANNOUNCE, SCHEMA_P2P_PEER_ANNOUNCE);
+  registerBodySchema('P2P_PEER_ANNOUNCE', SCHEMA_P2P_PEER_ANNOUNCE);
+  registerBodySchema('PeerAnnounce', SCHEMA_P2P_PEER_ANNOUNCE);
 })();
 
 Message.FIELD_TYPES = BODY_FIELD_TYPES;
@@ -1302,9 +1400,13 @@ Message.registerBodySchema = registerBodySchema;
 Message.getBodySchema = getBodySchema;
 Message.encodeBody = encodeBody;
 Message.decodeBody = decodeBody;
+Message.tryParseMessageBody = tryParseMessageBody;
 Message.SCHEMA_P2P_PING = SCHEMA_P2P_PING;
 Message.SCHEMA_P2P_CHAT = SCHEMA_P2P_CHAT;
 Message.SCHEMA_PROGRAM_RUN = SCHEMA_PROGRAM_RUN;
 Message.SCHEMA_P2P_FORWARD = SCHEMA_P2P_FORWARD;
+Message.SCHEMA_P2P_PEER_GOSSIP = SCHEMA_P2P_PEER_GOSSIP;
+Message.SCHEMA_P2P_PEERING_OFFER = SCHEMA_P2P_PEERING_OFFER;
+Message.SCHEMA_P2P_PEER_ANNOUNCE = SCHEMA_P2P_PEER_ANNOUNCE;
 
 module.exports = Message;

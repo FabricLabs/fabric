@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * Chain — ledger of Bitcoin-shaped Blocks with consensus policy:
+ * @fileoverview Chain — ledger of Bitcoin-shaped Blocks with consensus policy:
  *
  * - `pow` (default) — parent-linked playnet / Bitcoin-style Block + mempool
  * - `federation` — linear tip; Elements-style k-of-n block signatures (Beacon)
@@ -36,9 +36,11 @@ const CONSENSUS_POW = Block.CONSENSUS_POW;
 const CONSENSUS_FEDERATION = Block.CONSENSUS_FEDERATION;
 const CONSENSUS_GOSSIP = Block.CONSENSUS_GOSSIP;
 
-/** @deprecated Use CONSENSUS_*; aliases for one release. */
+/** @private @deprecated Use CONSENSUS_*; aliases for one release. */
 const SEAL_BLOCK = 'block';
+/** @private */
 const SEAL_FEDERATION = CONSENSUS_FEDERATION;
+/** @private */
 const SEAL_GOSSIP = CONSENSUS_GOSSIP;
 
 function eventId (args = {}) {

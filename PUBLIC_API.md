@@ -34,6 +34,10 @@ execution. Distributed Beacon / federation orchestration is Hub-composed and
 `beacon` — used heavily by Hub and `@fabric/http`. Still prefer explicit leaf
 requires; do not rely on `Fabric.*` statics in production.
 
+Password-sealed JSON and in-memory lock sessions (CLI / setup wallets):
+`@fabric/core/functions/sealedBlob`, `@fabric/core/functions/identityLock`
+(ambient stubs `functions/sealedBlob.d.ts` / `functions/identityLock.d.ts`).
+
 ### Services
 
 `@fabric/core/services/bitcoin`, `@fabric/core/services/lightning` — optional RPC

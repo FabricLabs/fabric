@@ -24,15 +24,54 @@ const {
 const REGISTRY_PATH = '/registry';
 const SIDECHAIN_STATE_PATCH_TYPE = sidechainState.SIDECHAIN_STATE_PATCH_TYPE;
 
-/** V1 field layout for SIDECHAIN_STATE_PATCH (catalog-oriented). */
+/** Patches through this helper may only touch the registry catalog subtree. */
+const REGISTRY_ONLY_PATH_POLICY = Object.freeze({
+  allowedPathPrefixes: Object.freeze([REGISTRY_PATH])
+});
+
+/**
+ * Never widen beyond `/registry`; optionally merge caller maxOps / denied / depth.
+ * @param {object|null|undefined} policy
+ * @returns {object}
+ */
+function registryUpdatePathPolicy (policy) {
+  const out = {
+    allowedPathPrefixes: [REGISTRY_PATH]
+  };
+  if (!policy || typeof policy !== 'object') return out;
+  if (policy.maxOps != null) out.maxOps = policy.maxOps;
+  if (policy.maxPathDepth != null) out.maxPathDepth = policy.maxPathDepth;
+  if (Array.isArray(policy.deniedPathPrefixes) && policy.deniedPathPrefixes.length) {
+    out.deniedPathPrefixes = policy.deniedPathPrefixes.slice();
+  }
+  if (Array.isArray(policy.allowedPathPrefixes) && policy.allowedPathPrefixes.length) {
+    const narrowed = policy.allowedPathPrefixes
+      .map((p) => String(p || ''))
+      .filter((p) => p === REGISTRY_PATH || p.startsWith(`${REGISTRY_PATH}/`));
+    // Never widen a caller allowlist that has no /registry overlap into
+    // permission to touch the registry.
+    if (!narrowed.length) {
+      out.allowedPathPrefixes = [];
+      out.error = 'policy allowlist has no /registry overlap';
+      return out;
+    }
+    out.allowedPathPrefixes = narrowed;
+  }
+  return out;
+}
+
+/** V1 field layout for SIDECHAIN_STATE_PATCH (catalog + optional RFC6902 fidelity). */
 const SCHEMA_SIDECHAIN_STATE_PATCH = Object.freeze([
   { name: 'basisClock', type: 'u32' },
   { name: 'basisDigest', type: 'bytes32' },
-  { name: 'catalogCanonical', type: 'string' }
+  { name: 'catalogCanonical', type: 'string' },
+  /** Empty string when absent; UTF-8 JSON array of RFC6902 ops (HTTP edge / multi-op). */
+  { name: 'patchesCanonical', type: 'string', optional: true }
 ]);
 
 function _installSchema () {
-  if (getBodySchema(SIDECHAIN_STATE_PATCH_TYPE)) return;
+  const existing = getBodySchema(SIDECHAIN_STATE_PATCH_TYPE);
+  if (existing && existing.length === SCHEMA_SIDECHAIN_STATE_PATCH.length) return;
   registerBodySchema(SIDECHAIN_STATE_PATCH_TYPE, SCHEMA_SIDECHAIN_STATE_PATCH);
   registerBodySchema('SidechainStatePatch', SCHEMA_SIDECHAIN_STATE_PATCH);
   if (SIDECHAIN_STATE_PATCH_OPCODE != null) {
@@ -87,7 +126,8 @@ function encodeRegistryUpdateFields (state, catalog) {
   return {
     basisClock,
     basisDigest: Buffer.from(digestHex, 'hex'),
-    catalogCanonical: fabricCanonicalJson(catalog)
+    catalogCanonical: fabricCanonicalJson(catalog),
+    patchesCanonical: ''
   };
 }
 
@@ -117,17 +157,8 @@ function decodeRegistryUpdateBody (body) {
  * @returns {{ ok: boolean, state?: object, stateDigest?: string, error?: string, basisDigest?: string }}
  */
 function applyRegistryUpdateFields (state, fields, policy = null) {
-  if (!fields || typeof fields.catalogCanonical !== 'string' || !fields.catalogCanonical) {
-    return { ok: false, error: 'catalogCanonical required' };
-  }
-  let catalog;
-  try {
-    catalog = JSON.parse(fields.catalogCanonical);
-  } catch (err) {
-    return { ok: false, error: 'catalogCanonical must be JSON' };
-  }
-  if (!catalog || typeof catalog !== 'object') {
-    return { ok: false, error: 'invalid catalog' };
+  if (!fields || typeof fields !== 'object') {
+    return { ok: false, error: 'fields required' };
   }
 
   const current = state || sidechainState.createInitialState();
@@ -145,9 +176,50 @@ function applyRegistryUpdateFields (state, fields, policy = null) {
     }
   }
 
+  // Prefer explicit RFC6902 sequence when present (HTTP multi-op fidelity).
+  // Always constrain to /registry — policy=null must not fail open for this helper.
+  const pathPolicy = registryUpdatePathPolicy(policy);
+  if (pathPolicy.error) {
+    return { ok: false, error: pathPolicy.error };
+  }
+  const patchesRaw = fields.patchesCanonical != null ? String(fields.patchesCanonical).trim() : '';
+  if (patchesRaw) {
+    let patches;
+    try {
+      patches = JSON.parse(patchesRaw);
+    } catch (err) {
+      return { ok: false, error: 'patchesCanonical must be JSON' };
+    }
+    if (!Array.isArray(patches) || !patches.length) {
+      return { ok: false, error: 'patchesCanonical must be a non-empty RFC6902 array' };
+    }
+    const applied = sidechainState.applyPatchesToState(current, patches, pathPolicy);
+    if (!applied.ok) return applied;
+    return {
+      ok: true,
+      state: applied.state,
+      stateDigest: applied.newDigest,
+      basisDigest: applied.basisDigest
+    };
+  }
+
+  if (typeof fields.catalogCanonical !== 'string' || !fields.catalogCanonical) {
+    return { ok: false, error: 'catalogCanonical required' };
+  }
+
+  let catalog;
+  try {
+    catalog = JSON.parse(fields.catalogCanonical);
+  } catch (err) {
+    return { ok: false, error: 'catalogCanonical must be JSON' };
+  }
+  if (!catalog || typeof catalog !== 'object') {
+    return { ok: false, error: 'invalid catalog' };
+  }
+
   // Internal reducer: content replace at /registry (HTTP may present this as RFC6902).
   const patches = [{ op: current.content && current.content.registry ? 'replace' : 'add', path: REGISTRY_PATH, value: catalog }];
-  const applied = sidechainState.applyPatchesToState(current, patches, policy);
+  const applied = sidechainState.applyPatchesToState(current, patches, pathPolicy);
   if (!applied.ok) return applied;
   return {
     ok: true,
@@ -200,6 +272,7 @@ function digestToHex (digest) {
 
 module.exports = {
   REGISTRY_PATH,
+  REGISTRY_ONLY_PATH_POLICY,
   SIDECHAIN_STATE_PATCH_TYPE,
   SCHEMA_SIDECHAIN_STATE_PATCH,
   buildRegistryCatalog,
@@ -208,6 +281,7 @@ module.exports = {
   decodeRegistryUpdateBody,
   applyRegistryUpdateFields,
   applyInventoryToRegistry,
+  registryUpdatePathPolicy,
   digestToHex,
   /** @deprecated alias — prefer applyRegistryUpdateFields */
   sha256Hex (buf) {

@@ -174,6 +174,15 @@ describe('@fabric/core/types/peer', function () {
         assert.strictEqual(writtenA, false);
         assert.strictEqual(writtenB, true);
       });
+
+      it('returns the number of edges written', function () {
+        const peer = new Peer({ listen: false, peersDb: null });
+        const buf = Buffer.from('count');
+        peer.connections['a'] = { _writeFabric: () => {} };
+        peer.connections['b'] = { _writeFabric: () => {} };
+        assert.strictEqual(peer.broadcast(buf, 'a'), 1);
+        assert.strictEqual(peer.broadcast(buf), 2);
+      });
     });
 
     describe('connectTo', function () {
@@ -729,20 +738,36 @@ describe('@fabric/core/types/peer', function () {
         });
         peer._handleFabricMessage(buf, { name: 'o' });
       });
-      it('dispatches GenericMessage to _handleGenericMessage', function (done) {
+      it('does not escalate INVENTORY_REQUEST from P2P_BASE_MESSAGE (generic carrier)', function (done) {
         const peer = new Peer({ listen: false, peersDb: null });
-        peer.once('inventory', () => done());
+        peer.on('inventory', () => done(new Error('generic carrier must not emit inventory')));
+        peer.on('warning', (w) => {
+          if (/Ignoring INVENTORY_REQUEST via generic carrier/.test(String(w))) done();
+        });
         const content = { type: 'INVENTORY_REQUEST', object: {}, message: {}, origin: {} };
         const msg = Message.fromVector(['P2P_BASE_MESSAGE', JSON.stringify(content)]);
         msg.signWithKey(peer.key);
         peer._handleFabricMessage(msg.toBuffer(), { name: 'o' });
       });
-      it('dispatches outer GENERIC_MESSAGE (15103) to _handleGenericMessage', function (done) {
+      it('does not escalate INVENTORY_REQUEST from outer GENERIC_MESSAGE (15103)', function (done) {
         const peer = new Peer({ listen: false, peersDb: null });
-        peer.once('inventory', () => done());
+        peer.on('inventory', () => done(new Error('generic carrier must not emit inventory')));
+        peer.on('warning', (w) => {
+          if (/Ignoring INVENTORY_REQUEST via generic carrier/.test(String(w))) done();
+        });
         const content = { type: 'INVENTORY_REQUEST', object: {}, message: {}, origin: {} };
         const msg = Message.fromVector(['GenericMessage', JSON.stringify(content)]);
         assert.strictEqual(msg.type, 'GENERIC_MESSAGE');
+        msg.signWithKey(peer.key);
+        peer._handleFabricMessage(msg.toBuffer(), { name: 'o' });
+      });
+      it('dispatches first-class P2P_INVENTORY_REQUEST to inventory', function (done) {
+        const peer = new Peer({ listen: false, peersDb: null });
+        peer.once('inventory', (ev) => {
+          assert.strictEqual(ev.message.type, 'INVENTORY_REQUEST');
+          done();
+        });
+        const msg = Message.fromVector(['P2P_INVENTORY_REQUEST', JSON.stringify({ offerBtc: true })]);
         msg.signWithKey(peer.key);
         peer._handleFabricMessage(msg.toBuffer(), { name: 'o' });
       });
@@ -1597,6 +1622,28 @@ describe('@fabric/core/types/peer', function () {
         assert.ok(warned);
         assert.strictEqual(peer._state.content.contracts[contractId].value, 1);
       });
+      it('CONTRACT_PUBLISH Beacon/ARC members.signers rejects non-validator front-run', function () {
+        const peer = new Peer({ listen: false, peersDb: null });
+        const Key = require('../types/key');
+        const { beaconContractDefinition } = require('../functions/beaconContractDefinition');
+        const owner = new Key();
+        const attacker = new Key();
+        const ownerPub = String(owner.pubkey).toLowerCase();
+        const attackerPub = String(attacker.pubkey).toLowerCase();
+        const definition = beaconContractDefinition({
+          validators: [ownerPub],
+          threshold: 1,
+          publisher: ownerPub
+        });
+
+        assert.strictEqual(peer._registerContract(definition, attackerPub), false);
+        assert.strictEqual(Object.keys(peer.contracts).length, 0);
+        assert.strictEqual(peer._registerContract(definition, ownerPub), true);
+        const contractId = Object.keys(peer.contracts)[0];
+        assert.ok(peer._signerMayPatchContract(contractId, ownerPub));
+        assert.strictEqual(peer._signerMayPatchContract(contractId, attackerPub), false);
+      });
+
       it('CONTRACT_PUBLISH front-run by non-party does not register or burn logical slot', function () {
         const peer = new Peer({ listen: false, peersDb: null });
         const Key = require('../types/key');
@@ -1677,6 +1724,131 @@ describe('@fabric/core/types/peer', function () {
     });
 
     describe('P2P handshake (SESSION_OFFER / SESSION_OPEN)', function () {
+      it('on P2P_SESSION_OFFER from own Fabric key aborts without SESSION_OPEN', function () {
+        const server = new Peer({ listen: false, peersDb: null });
+        const connAddress = '127.0.0.1:9999';
+        let replyBuffer = null;
+        let selfEv = null;
+        server.connections[connAddress] = {
+          _writeFabric: (buf) => { replyBuffer = buf; },
+          destroy: () => {}
+        };
+        server.on('peer:self', (ev) => { selfEv = ev; });
+
+        const peerId = server.identity.id;
+        const proof = server._sessionKeyProofMessage(peerId, server.key.pubkey, server.key.pubkey);
+        const content = {
+          type: 'P2P_SESSION_OFFER',
+          actor: {
+            id: peerId,
+            pubkey: server.key.pubkey,
+            parentPubkey: server.key.pubkey,
+            parentSignature: server.key.signSchnorr(proof).toString('hex')
+          },
+          object: { challenge: 'selfloop' }
+        };
+        const msg = Message.fromVector(['P2P_SESSION_OFFER', JSON.stringify(content)]);
+        msg.signWithKey(server.key);
+        server._handleFabricMessage(msg.toBuffer(), { name: connAddress }, null);
+
+        assert.strictEqual(replyBuffer, null, 'must not reply SESSION_OPEN to self');
+        assert.ok(selfEv, 'emits peer:self');
+        assert.strictEqual(selfEv.address, connAddress);
+        assert.ok(!server.connections[connAddress], 'connection torn down');
+        assert.ok(server._isSelfDialSuppressed(connAddress));
+      });
+
+      it('rejects malformed peering candidates and normalizes self-suppress to host:port', function () {
+        const server = new Peer({ listen: false, peersDb: null });
+        server._enqueuePeeringCandidate('', 7777);
+        server._enqueuePeeringCandidate('127.0.0.1', NaN);
+        server._enqueuePeeringCandidate('127.0.0.1', 0);
+        server._enqueuePeeringCandidate('127.0.0.1', 70000);
+        assert.strictEqual(server.candidates.length, 0);
+
+        server._enqueuePeeringCandidate(' 127.0.0.1 ', 7777);
+        assert.strictEqual(server.candidates.length, 1);
+        assert.deepStrictEqual(server.candidates[0], { host: '127.0.0.1', port: 7777 });
+
+        const ownHex = server._localFabricPubkeyHex();
+        server._connect(`${ownHex}@192.0.2.10`);
+        assert.ok(server._isSelfDialSuppressed('192.0.2.10:7777'));
+        assert.ok(!server._isSelfDialSuppressed('192.0.2.10'));
+      });
+
+      it('does not self-suppress from an unverified advertised pubkey', function () {
+        const server = new Peer({ listen: false, peersDb: null });
+        const own = server._localFabricPubkeyHex();
+        const attacker = new Key();
+        server._enqueuePeeringCandidate('192.0.2.55', 7777, {
+          pubkey: own,
+          verifiedPubkey: attacker.pubkey
+        });
+        assert.strictEqual(server.candidates.length, 1);
+        assert.ok(!server._isSelfDialSuppressed('192.0.2.55:7777'));
+
+        server._enqueuePeeringCandidate('192.0.2.57', 7777, { pubkey: own });
+        assert.ok(server.candidates.some((c) => c && c.host === '192.0.2.57'));
+        assert.ok(!server._isSelfDialSuppressed('192.0.2.57:7777'));
+
+        server._enqueuePeeringCandidate('192.0.2.56', 7777, {
+          pubkey: own,
+          verifiedPubkey: own
+        });
+        assert.ok(server._isSelfDialSuppressed('192.0.2.56:7777'));
+        assert.ok(!server.candidates.some((c) => c && c.host === '192.0.2.56'));
+      });
+
+      it('_fillPeerSlots does not suppress from an advertised own pubkey', function () {
+        const server = new Peer({ listen: false, peersDb: null, networking: false });
+        const own = server._localFabricPubkeyHex();
+        server.settings.constraints.peers.max = 8;
+        server._enqueuePeeringCandidate('192.0.2.88', 7777, { pubkey: own });
+        assert.strictEqual(server.candidates.length, 1);
+        server._connect = () => {};
+        server._fillPeerSlots();
+        assert.ok(!server._isSelfDialSuppressed('192.0.2.88:7777'));
+      });
+
+      it('_fillPeerSlots suppresses when candidate.verifiedPubkey is our own', function () {
+        const server = new Peer({ listen: false, peersDb: null, networking: false });
+        const own = server._localFabricPubkeyHex();
+        server.settings.constraints.peers.max = 8;
+        server.candidates.push({
+          host: '192.0.2.91',
+          port: 7777,
+          pubkey: own,
+          verifiedPubkey: own
+        });
+        server._connect = () => {};
+        server._fillPeerSlots();
+        assert.ok(server._isSelfDialSuppressed('192.0.2.91:7777'));
+      });
+
+      it('records verifiedPubkey on queued third-party candidates', function () {
+        const server = new Peer({ listen: false, peersDb: null });
+        const attacker = new Key();
+        server._enqueuePeeringCandidate('192.0.2.92', 7777, {
+          pubkey: attacker.pubkey,
+          verifiedPubkey: attacker.pubkey
+        });
+        assert.strictEqual(server.candidates.length, 1);
+        assert.ok(/^[0-9a-f]{64}$/.test(server.candidates[0].verifiedPubkey));
+        assert.ok(!server._isSelfDialSuppressed('192.0.2.92:7777'));
+      });
+
+      it('_verifyNOISE rejects when self-key normalization throws', function (done) {
+        const server = new Peer({ listen: false, peersDb: null });
+        const orig = server._isOwnFabricPubkey.bind(server);
+        server._isOwnFabricPubkey = () => { throw new Error('boom'); };
+        server._verifyNOISE(Buffer.alloc(32), Buffer.alloc(33, 1), Buffer.alloc(33, 2), (err, ok) => {
+          server._isOwnFabricPubkey = orig;
+          assert.ifError(err);
+          assert.strictEqual(ok, false);
+          done();
+        });
+      });
+
       it('on P2P_SESSION_OFFER registers peer, sets _addressToId, emits peer, and sends P2P_SESSION_OPEN via _writeFabric', function (done) {
         const server = new Peer({ listen: false, peersDb: null });
         const connAddress = '127.0.0.1:9999';
@@ -1698,7 +1870,7 @@ describe('@fabric/core/types/peer', function () {
           },
           object: { challenge: 'cafebabe' }
         };
-        const msg = Message.fromVector(['P2P_BASE_MESSAGE', JSON.stringify(content)]);
+        const msg = Message.fromVector(['P2P_SESSION_OFFER', JSON.stringify(content)]);
         msg.signWithKey(remoteKey);
         const buf = msg.toBuffer();
 
@@ -1753,7 +1925,7 @@ describe('@fabric/core/types/peer', function () {
           },
           object: { challenge: 'challenge' }
         };
-        const msg = Message.fromVector(['P2P_BASE_MESSAGE', JSON.stringify(content)]);
+        const msg = Message.fromVector(['P2P_SESSION_OFFER', JSON.stringify(content)]);
         msg.signWithKey(remoteKey);
 
         server.once('peer', () => {
@@ -1791,7 +1963,7 @@ describe('@fabric/core/types/peer', function () {
             solution: 'challenge'
           }
         };
-        const msg = Message.fromVector(['P2P_BASE_MESSAGE', JSON.stringify(content)]);
+        const msg = Message.fromVector(['P2P_SESSION_OPEN', JSON.stringify(content)]);
         msg.signWithKey(peer.key);
 
         peer._handleGenericMessage(content, { name: connAddress }, null);
@@ -1823,7 +1995,7 @@ describe('@fabric/core/types/peer', function () {
             solution: 'challenge'
           }
         };
-        const msg = Message.fromVector(['P2P_BASE_MESSAGE', JSON.stringify(content)]);
+        const msg = Message.fromVector(['P2P_SESSION_OPEN', JSON.stringify(content)]);
         msg.signWithKey(serverKey);
 
         peer._handleFabricMessage(msg.toBuffer(), { name: connAddress }, null);
@@ -1854,7 +2026,7 @@ describe('@fabric/core/types/peer', function () {
           },
           object: { challenge: 'cafef00d' }
         };
-        const msg = Message.fromVector(['P2P_BASE_MESSAGE', JSON.stringify(content)]);
+        const msg = Message.fromVector(['P2P_SESSION_OFFER', JSON.stringify(content)]);
         msg.signWithKey(remoteKey);
         server._handleFabricMessage(msg.toBuffer(), { name: connAddress }, null);
 

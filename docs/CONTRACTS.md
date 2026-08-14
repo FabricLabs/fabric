@@ -4,6 +4,9 @@ peer protocol (identity, NOISE sessions, AMP message relay). Anything that
 binds parties, funds, state, or programs is a contract — not a separate “app”
 layer.
 
+**Application Resource Contracts (ARC)** — genesis primitives, Token members,
+tip→UTXO, and Bitcoin block-hash anchors — are specified in [`ARC.md`](ARC.md).
+
 A contract is **not** classified by a single `kind` field. Instead, a contract
 **implements one or more interfaces** (capabilities peers and hubs can discover
 and call). The same published object may expose payment/escrow, document

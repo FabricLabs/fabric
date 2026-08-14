@@ -17,16 +17,15 @@ We've designed Fabric to extend the existing Bitcoin ecosystem, deriving all spe
 
 ### Identity
 #### BIP32 Extensions
+```text
+mainnet Master: m
+mainnet Identity #0: m/44'/7777'/0'/0/0
+mainnet Identity #0, address 1: m/44'/7777'/0'/0/1
+regtest / testnet / signet Identity #0: m/44'/7778'/0'/0/0
+Bitcoin funds (any network): m/44'/0'/account'/change/index
 ```
-mainnet Master: m'/
-mainnet Identity #0: m'/7777/
-mainnet Identity #0: m'/7777/
-mainnet Identity #0, Receive 0: m'/7777/
-mainnet Identity #0, Change 0: m'/7777/
-mainnet Identity #0, Receive 1: m'/7777/
-regtest Master:
-regtest Identity #0:
-```
+
+Fabric protocol coin types: **7777** (Bitcoin mainnet), **7778** (all others). See [IDENTITY.md](IDENTITY.md).
 
 **Status:** `0.1.0-RC1` (experimental reference) — run **`npm run ci`** before release tags.
 
@@ -53,7 +52,7 @@ fabric
 
 | 🚨 Stop here! |
 |--------------|
-| The output of `fabric setup` includes your **SEED**. Never share it or store it in plain text in cloud-synced folders. Write it down offline or use a password manager. |
+| The TUI (and `--no-tui` generate) for **`fabric setup`** can show your **SEED**. Never share it or store it in plain text in cloud-synced folders. Write it down offline or use a password manager. New wallets are encrypted at rest (`--password` / `FABRIC_PASSWORD`; min 8). `--passphrase` is BIP39 only. |
 
 For help, try entering "insert mode" by pressing the "i" key then typing `/help` and pressing enter — you'll get a short help prompt followed by a list of available commands.  Feel free to explore!
 
@@ -175,7 +174,7 @@ Either Fabric libraries or projects running Fabric, this list encompasses the mo
 | [`@fabric/http`][http-plugin] | HTTP bridge | Active | In RC |
 | [`hub.fabric.pub`](https://hub.fabric.pub) | Public hub | See Edge Nodes | — |
 | [`labs.fabric.pub`](https://labs.fabric.pub) | Labs hub | OFFLINE | — |
-| `sensemaker.io` | — | — | No |
+| Downstream apps | Application Resource Contracts on `@fabric/core` | — | — |
 | `verse.pub` | — | — | — |
 
 ## Learning More

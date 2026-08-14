@@ -2,7 +2,7 @@
 
 /**
  * Fabric application namespaces — the common outer + contract-body type set
- * shared by Hub, GoonCitizen, Sensemaker, and other downstream apps.
+ * shared by Hub and other downstream Application Resource Contracts.
  *
  * Model (see docs/APPLICATION_NAMESPACES.md):
  *   1. Global shoutbox — P2P_CHAT_MESSAGE (not contract-namespaced)
@@ -12,6 +12,8 @@
  *
  * Outer opcodes live in constants.js / types/message.js. This module only
  * catalogs **names** and **contract body `type` strings** so apps converge.
+ * Product-specific body types (missions, gameplay batches, share envelopes)
+ * live in each app’s own catalog — not here.
  */
 
 const {
@@ -45,36 +47,45 @@ const OUTER_ALIASES = Object.freeze({
 });
 
 /**
- * Shared CONTRACT_MESSAGE body `type` values (app domain, not outer opcodes).
- * Apps MAY define additional types under their own contract namespace; these
- * are the ones multiple products already agree on.
+ * Shared CONTRACT_MESSAGE body `type` values (generic ARC domain).
+ * Apps MAY define additional types under their own contract namespace.
  */
 const CONTRACT_BODY_TYPES = Object.freeze({
-  // Hub / Federation (invite JSON also rides chat in some Hub UI paths)
   FederationContractInvite: 'FederationContractInvite',
   FederationContractInviteResponse: 'FederationContractInviteResponse',
-  // GoonCitizen — network-wide (GoonCitizen genesis contract)
-  MissionCreated: 'MissionCreated',
-  MissionBroadcast: 'MissionBroadcast',
-  SCEventBatch: 'SCEventBatch',
-  /** Cumulative analytics snapshot for Hub / Beacon seal (not frozen into Actor id). */
-  GameStateSnapshot: 'GameStateSnapshot',
-  // GoonCitizen — per-Group Federation contract
+  /** Chat under a group / pair Application Resource Contract. */
   GroupChat: 'GroupChat',
+  /** Membership / meta mutation on a group Federation contract. */
   GroupChange: 'GroupChange',
-  GroupShare: 'GroupShare',
-  /** Merkle root + digests of cumulative local history leaves under a Group namespace. */
-  GroupActivityTree: 'GroupActivityTree'
+  /** Proposed membership/meta change pending validator votes (k-of-n). */
+  GroupChangeProposal: 'GroupChangeProposal',
+  /** Validator vote (BIP340) on a GroupChangeProposal. */
+  GroupChangeVote: 'GroupChangeVote',
+  /** Request missing Statechain journal entries (fromClock → tip). */
+  GroupJournalRequest: 'GroupJournalRequest',
+  /** Catch-up batch of accepted journal rows + tip Schnorr (k-of-n members). */
+  GroupJournalBatch: 'GroupJournalBatch',
+  /** Optional tip attestation: folded stateDigest signed by member threshold. */
+  GroupStateJournal: 'GroupStateJournal',
+  /** Token-backed contract role grant (reader / signer). */
+  ContractCapabilityGrant: 'ContractCapabilityGrant',
+  /** Propose spend or decay-migrate from contract Taproot UTXO. */
+  ContractWithdrawalRequest: 'ContractWithdrawalRequest',
+  /** Co-signer witness for a withdrawal / migration. */
+  ContractWithdrawalWitness: 'ContractWithdrawalWitness',
+  /** Phase-1 delivery ACK: reader received the wire frame. */
+  MessageReceived: 'MessageReceived',
+  /** Phase-2 BIP340 receipt over message / content hash. */
+  MessageReceipt: 'MessageReceipt'
 });
 
 /**
  * GenericMessage / activity `type` strings shared across Hub Beacon Federation
- * and app operators (not outer opcodes; not necessarily CONTRACT_MESSAGE bodies).
+ * (not outer opcodes; not necessarily CONTRACT_MESSAGE bodies).
  */
 const ACTIVITY_TYPES = Object.freeze({
   FederationSignRequest: 'FederationSignRequest',
-  FederationSignResponse: 'FederationSignResponse',
-  GameStateSnapshot: 'GameStateSnapshot'
+  FederationSignResponse: 'FederationSignResponse'
 });
 
 /** Fabric log / activity type names for contract namespace events. */

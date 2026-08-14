@@ -20,6 +20,10 @@ Hub’s longer narrative (Beacon, delegation, signing rounds): hub.fabric.pub
 |--------|------|
 | `fabricCanonicalJson` | Deterministic digests (Actor / sidechain / Program) |
 | `beaconFederationSigning` | Epoch commitment strings + federation witness verify |
+| `contractStateSigning` | Contract-namespace tip Schnorr (`ContractStateTip`); same witness shape as Beacon |
+| `contractTaproot` | Failover ladder → P2TR (`toAddress` / `toTaprootContract`); `after`/`until` decay + migrate |
+| `contractTierWhen` | Off-chain `when` predicates for tier activation |
+| `contractCapability` | Token issue/verify for `OP_CONTRACT_READ` / `OP_CONTRACT_SIGN` |
 | `fabricProgramManifest` | Manifest v1 (`programId` / `programHash` / allowed types / optional `sidechainPolicy`) |
 | **`sidechainState`** | Sealed JSON document: digests, RFC6902 patches, path policy, journal, snapshots, Beacon tip restore, contract namespace seals |
 
@@ -50,7 +54,7 @@ Store paths: `sidechain/STATE`, `sidechain/SNAPSHOTS`, `sidechain/JOURNAL`.
 **Opcode catalog + common-state Program:** [NETWORK_STATE_PROGRAM.md](./NETWORK_STATE_PROGRAM.md),
 diagram [`contracts/protocol.dot`](../contracts/protocol.dot).
 
-**Chain digests may feed** the document / `GameStateSnapshot`; raw gossip is never
+**Chain digests may feed** the document / app state snapshots; raw gossip is never
 Beacon authority.
 
 ### Contract namespaces
@@ -85,11 +89,12 @@ Accepted `CONTRACT_PUBLISH` ids reuse the **same** document helpers under
 
 `SIDECHAIN_STATE_PATCH` uses the **same opcode / type name** across Peer, Beacon,
 and HTTP. Core prefers **typed fields** (`basisClock`, `basisDigest`,
-`catalogCanonical`) via `messageBodyCodec` /
+`catalogCanonical`, optional `patchesCanonical`) via `messageBodyCodec` /
 `functions/documentRegistrySidechain`. **RFC6902 JSON patch arrays are an
 `@fabric/http` edge transform** (`messageBodyJsonBridge`) of those fields — not
-the core/simulator primary API. Digests of `sidechain/STATE` still use
-`fabricCanonicalJson` (digest ≠ wire body).
+the core/simulator primary API. Multi-op sequences round-trip through
+`patchesCanonical` (UTF-8 JSON array); `/registry` still seeds `catalogCanonical`.
+Digests of `sidechain/STATE` still use `fabricCanonicalJson` (digest ≠ wire body).
 
 A dedicated numeric outer opcode may be allocated later.
 

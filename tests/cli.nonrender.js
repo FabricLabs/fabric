@@ -72,5 +72,18 @@ describe('@fabric/core/types/cli (non-render guards)', function () {
     const result = await cli._syncLightningChannels();
     assert.strictEqual(result, cli);
   });
+
+  it('redacts /unlock passwords from command history', function () {
+    const cli = Object.create(CLI.prototype);
+    cli.history = [];
+    cli._appendMessage = () => {};
+    cli._processInput = () => true;
+    cli.elements = { form: { reset () {} } };
+    cli.screen = { render () {} };
+    cli._handleFormSubmit({ input: '/unlock secret-pass' });
+    cli._handleFormSubmit({ input: '/wallet unlock also-secret' });
+    cli._handleFormSubmit({ input: '/help' });
+    assert.deepStrictEqual(cli.history, ['/unlock ***', '/wallet unlock ***', '/help']);
+  });
 });
 

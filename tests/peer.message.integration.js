@@ -369,13 +369,20 @@ describe('peer/message integration (mesh & secure delivery)', function () {
       object: { mission: { id: 'm1' } }
     })]);
     msg.signWithKey(k);
+    const wire = msg.toBuffer();
 
     // Must not throw despite the contract not being registered locally.
-    hub._handleFabricMessage(msg.toBuffer(), { name: origin }, null);
+    hub._handleFabricMessage(wire, { name: origin }, null);
 
     assert.strictEqual(events.length, 1);
     assert.strictEqual(events[0].contract, 'unregistered-contract-id');
     assert.strictEqual(events[0].registered, false);
+    assert.strictEqual(events[0].genesis, null);
+    assert.ok(events[0].wireMessage, 'journal attach carries wireMessage');
+    assert.strictEqual(typeof events[0].wireMessage.toBuffer, 'function');
+    assert.ok(events[0].wireMessage.toBuffer().equals(wire));
+    assert.strictEqual(events[0].messageHex, wire.toString('hex'));
+    assert.strictEqual(events[0].messageId, msg.id);
   });
 
   it('CONTRACT_MESSAGE without a contract namespace is dropped with a warning', function () {
@@ -408,13 +415,48 @@ describe('peer/message integration (mesh & secure delivery)', function () {
     let event = null;
     hub.once('contract:publish', (e) => { event = e; });
 
-    const definition = { name: 'GoonCitizen', version: 1, state: {} };
+    const definition = { name: 'AppPeer', version: 1, state: {} };
     const msg = Message.fromVector(['CONTRACT_PUBLISH', JSON.stringify(definition)]);
     msg.signWithKey(k);
     hub._handleFabricMessage(msg.toBuffer(), { name: origin }, null);
 
     assert.ok(event, 'expected contract:publish');
     assert.ok(event.contract && /^[0-9a-f]{64}$/.test(event.contract), 'deterministic Actor id');
+  });
+
+  it('CONTRACT_MESSAGE includes genesis after CONTRACT_PUBLISH', function () {
+    const hub = mockHub();
+    const k = new Key();
+    const origin = '127.0.0.1:7910';
+    hub.connections[origin] = { _writeFabric: () => {}, destroy: () => {} };
+    hub.peers[origin] = { id: 'p', publicKey: k.pubkey };
+
+    const definition = {
+      name: 'ArcPeerGenesis',
+      members: { signers: [k.pubkey], threshold: 1 },
+      state: {}
+    };
+    const publish = Message.fromVector(['CONTRACT_PUBLISH', JSON.stringify(definition)]);
+    publish.signWithKey(k);
+    hub._handleFabricMessage(publish.toBuffer(), { name: origin }, null);
+
+    const Actor = require('../types/actor');
+    const contractId = new Actor(definition).id;
+    const events = [];
+    hub.on('contract:message', (e) => events.push(e));
+    const msg = Message.fromVector(['CONTRACT_MESSAGE', JSON.stringify({
+      contract: contractId,
+      type: 'GroupChat',
+      object: { body: 'hi' }
+    })]);
+    msg.signWithKey(k);
+    hub._handleFabricMessage(msg.toBuffer(), { name: origin }, null);
+
+    assert.strictEqual(events.length, 1);
+    assert.strictEqual(events[0].registered, true);
+    assert.ok(events[0].genesis);
+    assert.strictEqual(events[0].genesis.name, 'ArcPeerGenesis');
+    assert.match(String(events[0].messageHex || ''), /^[0-9a-f]+$/i);
   });
 
   it('CONTRACT_PROPOSAL verifies payload and emits contract:proposal', function () {

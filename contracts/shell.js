@@ -8,7 +8,7 @@ const CLI = require('../types/cli');
 
 // Program Definition
 async function OP_SHELL () {
-  if (!this.environment.wallet) {
+  if (!this.environment.wallet && !this.environment.walletLocked) {
     throw new Error('[FABRIC:SHELL] No wallet found. Run `fabric setup` first.');
   }
 
@@ -20,14 +20,38 @@ async function OP_SHELL () {
     console.error('[FABRIC:SHELL]', '[ERROR]', error);
   });
 
-  shell.attachWallet(this.environment.wallet);
-  shell.assumeIdentity(this.environment.wallet.settings.key);
+  shell.operatorEnvironment = this.environment;
+  if (this.environment.wallet) {
+    shell.attachWallet(this.environment.wallet);
+    shell.assumeIdentity(this.environment.wallet.settings.key);
+  } else if (this.environment.walletPublic && this.environment.walletPublic.xpub) {
+    const Key = require('../types/key');
+    shell.assumeIdentity(new Key({ xpub: this.environment.walletPublic.xpub }));
+  }
 
-  await shell.start();
+  const onLock = () => {
+    shell._appendWarning('Identity locked after idle timeout. Use /unlock to continue.');
+  };
+  const onUnlock = () => {
+    if (this.environment.wallet) {
+      shell.attachWallet(this.environment.wallet);
+      shell.assumeIdentity(this.environment.wallet.settings.key);
+    }
+  };
+  this.environment.lockSession.on('lock', onLock);
+  this.environment.lockSession.on('unlock', onUnlock);
+
+  try {
+    await shell.start();
+  } finally {
+    this.environment.lockSession.removeListener('lock', onLock);
+    this.environment.lockSession.removeListener('unlock', onUnlock);
+  }
 
   return JSON.stringify({
     id: shell.id,
-    wallet: this.environment.wallet.id
+    wallet: this.environment.wallet && this.environment.wallet.id,
+    locked: !!this.environment.walletLocked
   });
 }
 

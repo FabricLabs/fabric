@@ -12,7 +12,16 @@ module.exports = {
   seed: process.env.FABRIC_SEED,
   xprv: process.env.FABRIC_XPRV,
   xpub: process.env.FABRIC_XPUB,
+  /** Fabric Peer TCP/NOISE listen port. */
   port: process.env.FABRIC_PORT || 7777,
+  /**
+   * Fabric Peer bind address. Default all interfaces.
+   * For a dedicated public NIC (e.g. relay.goon.vc → 65.21.231.149):
+   *   FABRIC_INTERFACE=65.21.231.149
+   * Alias: FABRIC_PEER_INTERFACE (same meaning).
+   * Resolved in Peer via `@fabric/core/functions/fabricListenInterface`.
+   */
+  interface: process.env.FABRIC_INTERFACE || process.env.FABRIC_PEER_INTERFACE || '0.0.0.0',
   network: process.env.FABRIC_NETWORK || 'regtest',
   debug: process.env.FABRIC_DEBUG === '1' || process.env.FABRIC_DEBUG === 'true',
   fullnode: true,

@@ -23,8 +23,9 @@ Read **[VISION.md](VISION.md)** first for what Fabric is building, how **`@fabri
 See also [`QUICKSTART.md`][quickstart-guide] for up-to-date instructions.
 
 0. `nvm use 24.15.0` (install [`nvm`][nvm-official] if needed; matches `.nvmrc` / `package.json` engines)
-1. From a clone of this repo: `npm install` (or `npm install -g @fabric/core` to put `fabric` on your `PATH`)
-2. (optional) `fabric setup` to generate a master key and local config
+0b. Ensure **npm 12+** (`npm -v`). Node 24.15.0 may ship npm 11.x — upgrade with `npm install -g npm@12` (or newer) before installing. **`@fabric/core` keeps npm’s default `allow-git=none`** (no git deps). Only downstream packages that install Fabric from GitHub (Hub / `@fabric/http` / app peers) should set **`.npmrc` `allow-git=all`** for nested commit-SHA fetches — do not add that opt-in here.
+1. From a clone of this repo: `npm install` (or `npm install -g @fabric/core` to put `fabric` on your `PATH`).
+2. (optional) `fabric setup` to view / generate / backup / restore the local master key (`~/.fabric/wallet.json` is password-sealed JSON by default; TTY opens a lightweight TUI with unlock / lock / idle timeout)
 3. (optional) `fabric keygen` to generate a new master key without saving to disk (ephemeral)
 4. Run `fabric` — the CLI entry is wired through `types/cli.js` and extends **`Service.FabricShell`**. **Contracts** (HTLCs, document sessions, programs, shell packs, …) are documented in **[docs/CONTRACTS.md](docs/CONTRACTS.md)**; terminal UX in **[docs/CLI.md](docs/CLI.md)**.
 
@@ -46,6 +47,8 @@ Working from a **git checkout** (not the global package) is best when you are ch
 - **Unit tests:** `npm test` — runs Mocha recursively under `tests/`.
 - **Lint:** `npm run lint` / `npm run lint:fix` (Semistandard).
 - **API reference:** `npm run make:api` writes `API.md` from JSDoc (see `scripts/list-jsdoc-type-files.js` for which `types/*.js` files are included).
+  - **JSDoc for Closure / jsdoc2md:** do **not** use TypeScript-only optional object syntax in tags (`{ genesis?: object }` fails with `Invalid type expression`). Prefer `@param {Object} [opts]` plus `@param {Object} [opts.genesis] …`. Put prose **above** `@type {…}` (or in a separate line) — `@type` does not allow a trailing description. Keep tags Closure-compatible so `make:api` / `make:docs` stay green.
+  - **Avoid Global pollution:** use `@fileoverview` / `@module` for file prose (bare blocks attach to the next `const`/`require` and become Global docs). Prefer `//` over `/** @type */` inside settings object literals. Mark private helpers/constants `@private` so they stay off `docs/global.html`.
 - **HTML docs:** `npm run make:docs` (runs `make:api` first, then **`scripts/clean-jsdoc-html.js`** — removes all **`docs/**/*.html`** and JSDoc template dirs **`docs/fonts`**, **`docs/scripts`**, **`docs/styles`**, **`docs/public`** so stale pages and duplicate assets do not accumulate, then JSDoc writes under `docs/`).
 - **Historical / one-off Markdown:** see **`docs/NON_CANONICAL.md`** — root-level “completion” and analysis files are not the same tier as **VISION.md** or **`docs/README.md`**.
 - **Native addon (`fabric.node`):** it is **not** `require()`’d unless **`FABRIC_NATIVE_DOUBLE_SHA256=1`**; message body double-SHA256 uses **@noble/hashes** by default. Enable that env var when exercising the C **`doubleSha256`** export.
@@ -181,7 +184,7 @@ The Fabric CLI (`npm i -g @fabric/core`) is the reference shell. Discussion happ
 #### 3. Resources
 Fabric’s decentralized “web” is built around the **Resource** type: a committed agreement to deliver data (often with payment), frequently using HTLC-style flows on the chosen L2.
 
-These are sometimes called **Application Resource Contracts (ARCs)** — the allowed storylines for a contract.
+These are sometimes called **Application Resource Contracts (ARCs)** — the allowed storylines for a contract. Wire + tip + spend: [`docs/ARC.md`](docs/ARC.md).
 
 ##### Example resource
 `resources/document.json`:

@@ -1,6 +1,43 @@
 # `@fabric/core` Changelog
 Recent changes to Fabric Core.
 
+## 2026-08-14
+- **Tests:** coverage for `--password=VALUE` (`functions/cliPasswordArgv`), GroupChange `signers.set` vote bind, wallet atomic write / touchWallet truncate, advertised vs verified peering suppress, Beacon persist-fail retain, `Environment.stop()` key wipe, and related lock/setup fail-closed paths.
+- **Codacy (PR #183):** timing-safe setup password confirm; setup TUI treats cancel as a non-string password (no `== null`); hallmark hex length uses a literal class (no `new RegExp`); tier `when` paths skip `__proto__`/`constructor`/`prototype`; BIP65 lock constants avoid 32-bit hex literals; Semgrep/Opengrep exclude path-hardened `fabricSetup` / `environment` (containment already tested).
+- **Shutdown / create:** `Environment.stop()` calls `lockWallet()` so seed/xprv/plaintext keys wipe even when the idle-lock handler was never installed; `touchWallet` creates a missing file with exclusive `wx` and does not truncate on `EEXIST`.
+- **Review follow-ups (PR #183):** sealed restore reports `ok: false` on a rejected password; `--password=VALUE` is honoured; idle `--timeout` rejects non-integers; wallet writes are rename-atomic and `touchWallet` no longer truncates an existing file; idle-lock handlers no longer `removeAllListeners`; sealed documents keep `walletVersion`; `CONTRACT_PUBLISH` meta cannot replace the signed genesis; `_fillPeerSlots` does not suppress dials from an advertised own pubkey; Beacon `createRound` is `ready` when the threshold is already met; recovered ready rounds must still meet the federation threshold; pending rounds are kept if epoch-chain persist fails.
+
+## 2026-08-13
+- **GroupChangeProposal vote string v2** — BIP340 votes bind canonical `members` / `signers` so a colliding proposal `id` cannot reuse honest signatures on a swapped roster. Quorum remains genesis/tip k-of-n.
+- **Wallet lock follow-ups** — `setWallet` throws instead of `process.exit`; `fabric setup` fails closed on an invalid `--wallet` path; auto-unlock reads only `FABRIC_PASSWORD` (not generic `PASSWORD`); `/unlock` passwords are redacted from CLI history; idle-lock timers `unref()`.
+- **`fabric setup` TUI** — lightweight Blessed screen (`types/setup.js`) over headless `functions/fabricSetup.js`: public environment snapshot (paths, identity, XPUB), backup, restore from file or seed, generate / regenerate, unlock / lock / idle timeout, encrypt plaintext. One-shot flags `--json`, `--backup [FILE]`, `--restore <FILE>`, `--unlock`, `--lock`, `--timeout <MINUTES>`, `--no-tui`, `--force` skip the TUI. Snapshot never includes seed/xprv.
+- **Encrypted wallets by default** — new `~/.fabric/wallet.json` files are password-sealed JSON (`seal` blob: AES-256-GCM + PBKDF2-SHA256, same scheme as Hub identity backup v2). Public fields stay outside the blob. `--password` / `FABRIC_PASSWORD` is the encryption password (min 8); `--passphrase` remains BIP39. Generic APIs: `functions/sealedBlob.js`, `functions/identityLock.js` (default 30-minute idle auto-lock; `0` disables). Shell: `/unlock`, `/lock`, `/lock timeout`, `/wallet status|unlock|lock|timeout`. Legacy plaintext wallets still load.
+
+## 2026-08-11
+- **Full Machine runner for Hub execution contracts:** `language: 'fabric-execution'` + `functions/executionProgramRunner.js`; Hub `fabricExecutionMachine` is a thin registry-aware wrapper. `programDigest` = `Program.programHash`; run digests via `Program.runCommitmentHex` / `executionRunBridge`.
+- **Contract L1 payment observation:** `functions/contractPaymentObserve.js` + `Contract#_handleBitcoinTransaction` — match outputs to spend address, UNDERPAID / NO_MATCH failure codes, fold balances into tip on success.
+- **ExecutionRun → FabricProgramRun digests:** `functions/executionRunBridge.js` — Hub `RunExecutionContract` returns `programHash`, forward `runCommitmentHex` (FabricProgramRun), and legacy `executionRunCommitmentHex`.
+- **Composable Taproot trees + optional hashlock:** `composeTaprootTree`, `buildSpendLeaf` / `buildHashlockLeaf` / `buildScriptLeaf`, `scriptTreeFromLeaves` (exported), `prepareHashlockWithdrawalPsbt` + `finalizeHashlockPsbt`. Policy may carry `hashlock` / `extraLeaves` (changes address when present). Pure hashlock = `OP_SHA256 <commitment> EQUAL`; optional pubkey = inventory-style preimage+sig. Authority ladder remains default without hashlock.
+- **ARC governance bodies:** `GroupChangeProposal` / `GroupChangeVote` are first-class shared `CONTRACT_MESSAGE` types (k-of-n adopt before `GroupChange`). Catalog + APPLICATION_NAMESPACES. `canonicalSpendPolicy` / `tipSpendKeys` / `nestBitcoinAnchor` unify Beacon ARC, vault, and `resolveSpend` overlays (`spendPolicy.{publisher,validators,threshold,csvBlocks,softMode}`, nested `bitcoinAnchor`, `spendAddress` alias). `depositMaturityBlocks` is UX-only for CSV. Hub vault publisher matches Beacon (hub root key). Manifest/vault summaries expose the same `spendPolicy` bag. Accumulate / Group folds emit tip `content.signers` (authority) separate from `content.members` (participants); Hub asserts vault ≡ Beacon ARC `spendAddress` (`authorityUnity`).
+- **Machine ↔ redeemable outputs:** `functions/contractProgramBind.js` seals `FabricProgramRun` digests onto `tip.content.program`; withdrawals must match when tip/genesis requires a Program (`fabric.program` / opcodes / `requireProgramRun`). Authority P2TR address unchanged — Machine is compute+commitment, ARC Taproot is spend.
+- **Opcode allow-list:** `functions/opcodeAllowList.js` + `Machine.setAllowedOpcodes` / `applyGenesisOpcodes` / `loadProgram({ genesis })` enforce ARC `primitives.opcodes` on `define`, load steps, and `compute` (fail closed when set; unrestricted machines keep legacy soft-coerce of unknown ops).
+- **Beacon as native ARC:** `functions/beaconContractDefinition.js` builds network-agnostic `fabric-beacon` CONTRACT_PUBLISH genesis (validators / threshold / CSV soft tier; no `network` or tip `bitcoinAnchor`). Actor id is stable across regtest → signet → mainnet; Hub overlays spend at Accept / re-enrich. Redeploy checklist via `beaconRedeploySteps()`.
+- **Authority Taproot ladder (dual P2TR fix):** default Hub vault + ARC `resolveSpend` share `taproot-authority-ladder-v1` — k-of-n validators/signers immediately; softer tier after ~144 CSV (`t1-soft`, default 1-of-publisher; optional `softMode: 'reduced'`). Legacy single-leaf vault is opt-in (`legacySingleLeaf: true`).
+- **Beacon network guard:** `functions/beaconNetworkGuard.js` binds `beacon/NETWORK` to the live Bitcoin network; Hub `startBeacon` fails closed on mismatch / unbound legacy stores unless `FABRIC_BEACON_RESET_NETWORK=1` (or `beacon.resetNetworkStores`) clears L1-tied Beacon/sidechain artifacts and rebinds.
+- **ARC resolveSpend network:** no silent `regtest` default — `resolveSpend` requires `overrides.network` or genesis `spendPolicy.network` (fail closed).
+- **ARC delivery sync filter:** `isSyncTrackedType` / `primitives.deliverySync` — MessageReceived/MessageReceipt 2PC applies to any sync-tracked CONTRACT_MESSAGE body type (not GroupChat-only). ACKs never open a new pending row; default excludes `GroupJournalRequest`.
+- **ARC delivery ACKs:** `MessageReceived` / `MessageReceipt` are first-class `CONTRACT_MESSAGE` entries (stored + relayable AMP bytes) but excluded from tip clock / `stateDigest`. Ingest folds them into the `contractmessagecommits` 2PC sidecar (`applyDeliveryAckEntry`).
+- **ARC resolveSpend + withdrawals:** add `functions/contractSpend.js` (`normalizeArcGenesis`, `resolveSpend`, tip-bound `ContractWithdrawalRequest` / `Witness`, `prepareWithdrawalFromRequest`). Accumulate folds withdrawals and rejects stale tip bindings. See [`docs/ARC.md`](docs/ARC.md).
+- **ARC accumulate authz (F1):** `contractMessageAccumulate.ingestMessageBuffer` rejects `GroupChange` and other signer mutations unless the AMP author is in genesis/tip signers or presents a verified `OP_CONTRACT_SIGN` Token. Unknown body types fail closed; genesis `primitives.messageTypes` is enforced; tip carries optional `bitcoinBlockHash` / height.
+- **Wire version:** keep **`VERSION_NUMBER = 0x01`** for the 0.1.x pre-release (aligned with C `FABRIC_MESSAGE_VERSION`). The 208-byte header + Lightning-style `preimage` is the V1 frame under `0x01` — not a protocol bump to `0x02`. Legacy paths (176-byte sketches, `preimage = SHA256(body)`, first-class types via `P2P_BASE_MESSAGE`) remain handled where needed and are **deprecated**.
+- **Supply-chain:** remove **`allow-git=all`** from core **`.npmrc`** and **`report:install`**. `@fabric/core` has no git deps; keep npm 12+ default `allow-git=none`. Hub / `@fabric/http` / apps that install Fabric from GitHub keep `allow-git=all` in *their* `.npmrc`.
+- **CLTV locks:** `normalizeLock` rejects height/unix values that cross BIP65’s `500000000` type threshold (height must be `<`, unix must be `≥`).
+- **Registry sidechain:** `applyRegistryUpdateFields` accepts patch-only updates (`patchesCanonical` without `catalogCanonical`) and always constrains patches to the `/registry` subtree (no fail-open when `policy` is null).
+- **Token capability:** `verifyContractCapability` requires `issuerKey` or explicit `allowUnverified` (parse-only, `verified: false`).
+
+## 2026-08-06
+- **npm git deps:** (superseded 2026-08-11) briefly added **`allow-git=all`** for monorepo parity; reverted for core — scope the opt-in to Hub/http/app consumers only.
+
 ## 2026-07-29
 JS-canonical protocol for 0.1.0; Lightning-style wire preimage; unsigned document binding; public-readiness cuts; Peer scoring; directed onion forward.
 
@@ -53,7 +90,7 @@ JS-canonical protocol for 0.1.0; Lightning-style wire preimage; unsigned documen
 CLI first-run setup, L1 document settle in core, ranked offers, multi-blob exchange, private paid relay.
 
 **CLI**
-- **Setup gate** — `fabric --help` / `--version` without a wallet; no auto-setup; bare `fabric` hints `fabric setup`. Quieter `contracts/setup.js` (seed + xpub/path; `FABRIC_DEBUG=1` for xprv).
+- **Setup gate** — `fabric --help` / `--version` without a wallet; no auto-setup; bare `fabric` hints `fabric setup`. Quieter `contracts/setup.js` (seed + xpub/path; master xprv is not printed).
 - **Document exchange** — `/publish` + rate; `/inventory [peer] [btc]`; `/offers`; `/buy` / `/confirm`; `/request` with `maxSats`; `/pending` / `/approve` / `/deny`; `/relayfees`; `/send <doc> <peer>`.
 
 **Peer / functions**
@@ -83,7 +120,7 @@ CLI first-run setup, L1 document settle in core, ranked offers, multi-blob excha
 Pre-release focusing on wire parity, tooling, and release hygiene.
 
 **Protocol / core**
-- **Message wire v2** — 208-byte header: `preimage` (32 bytes) after `hash`, before `signature`; public messages use all-zero preimage (exposed as `null` in JS). `FABRIC_MESSAGE_VERSION` / `VERSION_NUMBER` bumped accordingly; max body size reduced to stay within 4096-byte frames.
+- **Message wire (V1 / `0x01`)** — 208-byte header: `preimage` (32 bytes) after `hash`, before `signature`; public messages use all-zero preimage (exposed as `null` in JS). `VERSION_NUMBER` / `FABRIC_MESSAGE_VERSION` remain **`0x01`** for the 0.1.x pre-release (header layout is not a version bump to `0x02`). Max body size reduced to stay within 4096-byte frames.
 - **Body hash** — `hash` field remains double-SHA256 of body only; signing covers full header (signature zeroed) + body with BIP-340 tag `Fabric/Message` (see [`docs/C-JS-PARITY.md`](docs/C-JS-PARITY.md)).
 
 **Security / privacy**

@@ -97,6 +97,11 @@ class Token {
       iat,
       exp
     };
+    // Optional context (e.g. { contractId }). Explicit `ctx: null` suppresses settings.ctx.
+    const ctx = Object.prototype.hasOwnProperty.call(options, 'ctx')
+      ? options.ctx
+      : this.settings.ctx;
+    if (ctx != null && typeof ctx === 'object') payload.ctx = ctx;
     const payloadStr = JSON.stringify(payload);
     const payloadB64 = Token.base64UrlEncode(payloadStr);
     const signature = this.issuer.sign(payloadStr);

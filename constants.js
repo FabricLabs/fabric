@@ -16,14 +16,106 @@ const FABRIC_USER_AGENT = 'Fabric Core 0.1.0 (@fabric/core#v0.1.0-RC1)';
 const BITCOIN_NETWORK = 'mainnet';
 const BITCOIN_GENESIS = '000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f';
 const BITCOIN_GENESIS_ROOT = '4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b';
-const FABRIC_KEY_DERIVATION_PATH = "m/44'/7777'/0'/0/0";
+/**
+ * Fabric protocol identity coin types (BIP44 `coin_type'`, not Bitcoin funds).
+ * - **7777** — Bitcoin **mainnet** identities
+ * - **7778** — all other networks (testnet, signet, regtest, and unspecified)
+ */
+const FABRIC_COIN_TYPE_MAINNET = 7777;
+const FABRIC_COIN_TYPE_TESTNET = 7778;
+/** Default Fabric coin type (non-mainnet / development). Alias of {@link FABRIC_COIN_TYPE_TESTNET}. */
+const FABRIC_COIN_TYPE = FABRIC_COIN_TYPE_TESTNET;
+/** Default Fabric identity path (non-mainnet): m/44'/7778'/0'/0/0 */
+const FABRIC_KEY_DERIVATION_PATH = `m/44'/${FABRIC_COIN_TYPE_TESTNET}'/0'/0/0`;
+/** Mainnet Fabric identity path: m/44'/7777'/0'/0/0 */
+const FABRIC_KEY_DERIVATION_PATH_MAINNET = `m/44'/${FABRIC_COIN_TYPE_MAINNET}'/0'/0/0`;
+/** BIP44 coin type for Bitcoin funds (receive / change). */
+const BITCOIN_COIN_TYPE = 0;
+/** Default Bitcoin receive path account 0 / index 0 (funds — never Fabric identity). */
+const BITCOIN_KEY_DERIVATION_PATH = "m/44'/0'/0'/0/0";
+
+/**
+ * Resolve Fabric identity coin type for a Bitcoin / Fabric network name.
+ * Mainnet → 7777; everything else (incl. empty / unknown) → 7778.
+ * @param {string|null|undefined} network
+ * @returns {number}
+ */
+function fabricCoinTypeForNetwork (network) {
+  const n = String(network == null ? '' : network).trim().toLowerCase();
+  if (n === 'main' || n === 'mainnet' || n === 'bitcoin' || n === 'livenet') {
+    return FABRIC_COIN_TYPE_MAINNET;
+  }
+  return FABRIC_COIN_TYPE_TESTNET;
+}
+
+/**
+ * Fabric identity path: m/44'/{7777|7778}'/account'/0/index
+ * @param {number} [account=0]
+ * @param {number} [index=0]
+ * @param {string|number} [networkOrCoinType] Network name (`mainnet` / `regtest` / …)
+ *   or an explicit coin type integer. Omit for default non-mainnet (7778).
+ * @returns {string}
+ */
+function fabricIdentityDerivationPath (account = 0, index = 0, networkOrCoinType) {
+  const a = assertBip32ChildIndex(account, 'account');
+  const i = assertBip32ChildIndex(index, 'index');
+  let coin = FABRIC_COIN_TYPE_TESTNET;
+  if (typeof networkOrCoinType === 'number') {
+    coin = assertBip32ChildIndex(networkOrCoinType, 'coinType');
+  } else if (networkOrCoinType != null && String(networkOrCoinType).trim() !== '') {
+    coin = fabricCoinTypeForNetwork(networkOrCoinType);
+  }
+  return `m/44'/${coin}'/${a}'/0/${i}`;
+}
+
+/**
+ * Bitcoin BIP44 receive path (external chain): m/44'/0'/account'/0/index
+ * @param {number} [account=0]
+ * @param {number} [index=0]
+ * @returns {string}
+ */
+function bitcoinReceiveDerivationPath (account = 0, index = 0) {
+  const a = assertBip32ChildIndex(account, 'account');
+  const i = assertBip32ChildIndex(index, 'index');
+  return `m/44'/${BITCOIN_COIN_TYPE}'/${a}'/0/${i}`;
+}
+
+/**
+ * Bitcoin BIP44 change path (internal chain): m/44'/0'/account'/1/index
+ * @param {number} [account=0]
+ * @param {number} [index=0]
+ * @returns {string}
+ */
+function bitcoinChangeDerivationPath (account = 0, index = 0) {
+  const a = assertBip32ChildIndex(account, 'account');
+  const i = assertBip32ChildIndex(index, 'index');
+  return `m/44'/${BITCOIN_COIN_TYPE}'/${a}'/1/${i}`;
+}
+
+/**
+ * BIP32 child index domain: finite integer in [0, 0x7fffffff].
+ * @param {*} value
+ * @param {string} label
+ * @returns {number}
+ */
+function assertBip32ChildIndex (value, label = 'index') {
+  const n = Number(value);
+  if (!Number.isFinite(n) || !Number.isInteger(n) || n < 0 || n > 0x7fffffff) {
+    throw new RangeError(`BIP32 ${label} must be an integer in [0, 0x7fffffff]`);
+  }
+  return n;
+}
+
 const FIXTURE_SEED = 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about';
 const FIXTURE_XPUB = 'xpub661MyMwAqRbcF6GygV6Q6XAg8dqhPvDuhYHGniequi6HMbYhNNH5XC13Np3qRANHVD2mmnNGtMGBfDT69s2ovpHLr7q8syoAuyWqtRGEsYQ';
 const FIXTURE_XPRV = 'xprv9s21ZrQH143K2cCWaTZPjPDwac1CzTW4LKMfzLFEMNZJUoDYppxpyPgZXY7CZkjefGJTrTyqKnMrM4RG6nGn7Q9cwjHggCtn3CdFGJahaWY';
 
 // Message Constants
 const MAGIC_BYTES = 0xC0D3F33D;
-const VERSION_NUMBER = 0x02; // bumped for 208-byte header (optional preimage field)
+/** Wire protocol version for `@fabric/core` 0.1.x pre-release (`0x01`).
+ * 208-byte header (incl. Lightning-style `preimage`) is the V1 frame under this version —
+ * not a bump to `0x02`. Keep in sync with `FABRIC_MESSAGE_VERSION` in `src/constants.h`. */
+const VERSION_NUMBER = 0x01;
 /* magic, version, parent, author, type, size, hash, preimage, signature — then body */
 const HEADER_SIZE = 208;
 const LARGE_COLLECTION_SIZE = 10; // TODO: test with 1,000,000
@@ -43,8 +135,8 @@ const MACHINE_MAX_MEMORY = MAX_MEMORY_ALLOC * MAX_MESSAGE_SIZE;
 const MAX_CHAT_MESSAGE_LENGTH = 2048;
 
 // Playnet
-const FABRIC_PLAYNET_ADDRESS = ''; // deposit address (P2TR)
-const FABRIC_PLAYNET_ORIGIN = ''; // block hash of first deploy
+const FABRIC_PLAYNET_ADDRESS = ''; // unset until a published playnet P2TR deposit address is chosen
+const FABRIC_PLAYNET_ORIGIN = ''; // unset until first playnet deploy block hash is sealed
 
 // FABRIC ONLY
 const BITCOIN_BLOCK_TYPE = 21000;
@@ -245,6 +337,17 @@ module.exports = {
   BITCOIN_GENESIS_HASH: BITCOIN_GENESIS,
   BITCOIN_GENESIS_ROOT,
   FABRIC_KEY_DERIVATION_PATH,
+  FABRIC_KEY_DERIVATION_PATH_MAINNET,
+  FABRIC_COIN_TYPE,
+  FABRIC_COIN_TYPE_MAINNET,
+  FABRIC_COIN_TYPE_TESTNET,
+  BITCOIN_COIN_TYPE,
+  BITCOIN_KEY_DERIVATION_PATH,
+  fabricCoinTypeForNetwork,
+  fabricIdentityDerivationPath,
+  bitcoinReceiveDerivationPath,
+  bitcoinChangeDerivationPath,
+  assertBip32ChildIndex,
   FABRIC_USER_AGENT,
   FIXTURE_SEED,
   FIXTURE_XPUB,

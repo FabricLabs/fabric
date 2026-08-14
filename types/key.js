@@ -820,12 +820,18 @@ class Key extends EventEmitter {
     if (!this.master) throw new Error('You cannot derive without a master key.  Provide a seed phrase or an xprv.');
 
     const derived = this.master.derivePath(path);
-    const options = {
+    // Prefer extended keys so Key initializes as FROM_XPRV/FROM_XPUB (keeps .xpub for
+    // Fabric protocol identity login / watch-only). Raw private+public alone loses xpub.
+    if (derived.privateKey && typeof derived.toBase58 === 'function') {
+      return new Key({ xprv: derived.toBase58() });
+    }
+    if (typeof derived.neutered === 'function') {
+      return new Key({ xpub: derived.neutered().toBase58() });
+    }
+    return new Key({
       private: derived.privateKey.toString('hex'),
       public: derived.publicKey.toString('hex')
-    };
-
-    return new Key(options);
+    });
   }
 
   /**

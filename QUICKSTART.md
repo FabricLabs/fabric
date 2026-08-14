@@ -3,12 +3,13 @@ For production deploys and native dependencies, see [`docs/PRODUCTION.md`](docs/
 
 ## Prerequisites
 0. (optional) Install NVM: `https://nvm.sh`
-1. Install Node 24.15.0 (use `nvm install 24.15.0` if using `nvm`)
+1. Install Node **24.15.0** (use `nvm install 24.15.0` if using `nvm`)
+2. Ensure **npm 12+** (`npm -v`). Node 24.15.0 may ship npm 11.x — upgrade with `npm install -g npm@12` before installing. `@fabric/core` keeps npm’s default `allow-git=none` (no git deps).
 
 ## Instructions
 0. Meet the prerequisites (above)
 1. Install Fabric Core: `npm i -g @fabric/core`
-2. Run `fabric setup`
+2. Run `fabric setup` (TTY: key TUI; new wallets are password-sealed — `--password` / `FABRIC_PASSWORD`. `--no-tui` / `--force` for scripts)
 3. Run `fabric` (or `fabric chat`)
 
 _**Note:** for development from git, use e.g. `npm i -g FabricLabs/fabric#master` instead of the npm package._

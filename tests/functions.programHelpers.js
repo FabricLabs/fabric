@@ -60,6 +60,10 @@ describe('@fabric/core federation / program helpers (ex-distributedExecution)', 
     assert.strictEqual(verifyFederationWitnessOnMessage(msg, {}, [key.pubkey]), false);
     assert.strictEqual(verifyFederationWitnessOnMessage('not-buffer', { signatures: {} }, [key.pubkey]), false);
     assert.strictEqual(verifyFederationWitnessOnMessage(msg, { signatures: { x: 'bad' } }, [key.pubkey]), false);
+    const good = { signatures: { [key.pubkey]: key.signSchnorr(msg).toString('hex') } };
+    assert.strictEqual(verifyFederationWitnessOnMessage(msg, good, [key.pubkey], 1), true);
+    assert.strictEqual(verifyFederationWitnessOnMessage(msg, good, [key.pubkey], 0), false);
+    assert.strictEqual(verifyFederationWitnessOnMessage(msg, good, [key.pubkey], NaN), false);
   });
 
   it('verifyFederationWitnessOnMessage respects threshold across pubkeys', function () {

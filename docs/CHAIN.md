@@ -8,14 +8,14 @@ entry type:
 |-----------|-----|-----------|
 | `pow` (default) | Bitcoin / playnet Block + mempool | Parent link; optional `bits`/`nonce` PoW |
 | `federation` | Hub Beacon `BEACON_EPOCH` (`beacon/CHAIN`) | Linear tip; Elements-style k-of-n Schnorr on the block |
-| `gossip` | Combined player-log / `SCEventBatch` firehose | Content-addressed union by block id; optional author Schnorr |
+| `gossip` | Combined authored observation / event-batch firehose | Content-addressed union by block id; optional author Schnorr |
 
 **Prior art:** Bitcoin (PoW + parent); Blockstream Elements / Strong Federations
-(`signblockscript`, threshold block signers); GoonCitizen arbitrary **data**
-blocks for authored observations.
+(`signblockscript`, threshold block signers); application **data** blocks for
+authored observations.
 
 **Sidechain document helpers** (`functions/sidechainState`) hold the sealed JSON
-document. Tip digests feed that document / `GameStateSnapshot` — raw gossip never
+document. Tip digests feed that document / app snapshots — raw gossip never
 becomes Beacon consensus.
 
 Related: [DISTRIBUTED_EXECUTION.md](./DISTRIBUTED_EXECUTION.md), [PROGRAM.md](./PROGRAM.md).

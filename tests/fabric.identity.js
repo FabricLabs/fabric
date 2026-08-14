@@ -5,6 +5,7 @@ const assert = require('assert');
 const bip39 = require('../functions/bip39');
 const BIP32 = require('../functions/bip32').default;
 const ecc = require('../types/ecc');
+const { FABRIC_KEY_DERIVATION_PATH, bitcoinReceiveDerivationPath, fabricIdentityDerivationPath, fabricCoinTypeForNetwork, FABRIC_COIN_TYPE_MAINNET, FABRIC_COIN_TYPE_TESTNET } = require('../constants');
 let nobleSecp256k1 = null;
 try {
   nobleSecp256k1 = require('@noble/curves/secp256k1.js');
@@ -30,33 +31,60 @@ describe('@fabric/core/types/identity', function () {
       assert.ok(identity);
     });
 
-    it('provides the correct public key for a known seed phrase', function () {
-      // Create identity and compute actual pubkey
+    it('provides the Fabric-path public key for a known seed phrase', function () {
       const identity = new Identity({
         seed: SAMPLE.seed
       });
       const actualPubkey = identity.pubkey;
 
-      // Compute expected pubkey using bip32 + noble curves
       const seed = bip39.mnemonicToSeedSync(SAMPLE.seed);
       const root = new BIP32(ecc).fromSeed(seed);
+      const child = root.derivePath(FABRIC_KEY_DERIVATION_PATH);
       const expectedPubkey = Buffer.from(
-        secp256k1.getPublicKey(root.privateKey, true)
+        secp256k1.getPublicKey(child.privateKey, true)
       ).toString('hex');
 
       assert.ok(identity);
+      assert.equal(identity.derivation, FABRIC_KEY_DERIVATION_PATH);
       assert.equal(actualPubkey, expectedPubkey);
+      // Master pubkey must differ from Fabric identity pubkey.
+      const masterPubkey = Buffer.from(
+        secp256k1.getPublicKey(root.privateKey, true)
+      ).toString('hex');
+      assert.notEqual(actualPubkey, masterPubkey);
     });
 
-    it('can derive child keys', function () {
-      // Create identity and compute actual child key
+    it('keeps Bitcoin fund paths on coin type 0 from the master', function () {
+      const identity = new Identity({ seed: SAMPLE.seed });
+      const fundPath = bitcoinReceiveDerivationPath(0, 0);
+      const fund = identity.master.derive(fundPath);
+      assert.ok(fund.pubkey);
+      assert.notEqual(fund.pubkey, identity.pubkey);
+      assert.match(fundPath, /^m\/44'\/0'\//);
+    });
+
+    it('uses coin type 7778 by default and 7777 on mainnet', function () {
+      assert.strictEqual(fabricCoinTypeForNetwork('regtest'), FABRIC_COIN_TYPE_TESTNET);
+      assert.strictEqual(fabricCoinTypeForNetwork('testnet'), FABRIC_COIN_TYPE_TESTNET);
+      assert.strictEqual(fabricCoinTypeForNetwork('signet'), FABRIC_COIN_TYPE_TESTNET);
+      assert.strictEqual(fabricCoinTypeForNetwork('mainnet'), FABRIC_COIN_TYPE_MAINNET);
+      assert.strictEqual(fabricIdentityDerivationPath(0, 0), FABRIC_KEY_DERIVATION_PATH);
+      assert.strictEqual(fabricIdentityDerivationPath(0, 0, 'mainnet'), "m/44'/7777'/0'/0/0");
+
+      const reg = new Identity({ seed: SAMPLE.seed, network: 'regtest' });
+      const main = new Identity({ seed: SAMPLE.seed, network: 'mainnet' });
+      assert.strictEqual(reg.derivation, "m/44'/7778'/0'/0/0");
+      assert.strictEqual(main.derivation, "m/44'/7777'/0'/0/0");
+      assert.notEqual(reg.pubkey, main.pubkey);
+    });
+
+    it('can derive child keys from the master', function () {
       const identity = new Identity({
         seed: SAMPLE.seed
       });
       const actualChild = identity.key.derive('m/0');
       const actualChildPubkey = actualChild.pubkey;
 
-      // Compute expected child key using bip32 (shim expects 'bytes' for Buffer/Uint8Array)
       const seed = bip39.mnemonicToSeedSync(SAMPLE.seed);
       const root = new BIP32(ecc).fromSeed(seed);
       const child = root.derivePath('m/0');
@@ -69,22 +97,21 @@ describe('@fabric/core/types/identity', function () {
       assert.notEqual(actualChildPubkey, identity.pubkey);
     });
 
-    it('can sign and verify messages', function () {
-      // Create identity and compute actual signature
+    it('can sign and verify messages with the Fabric key', function () {
       const identity = new Identity({
         seed: SAMPLE.seed
       });
       const message = 'Hello, Fabric!';
       const actualSignature = identity.sign(message);
-      const actualVerified = identity.key.verify(message, actualSignature);
+      const actualVerified = identity.fabricKey.verify(message, actualSignature);
 
-      // Basic sanity checks on signature format and verification
       const seed = bip39.mnemonicToSeedSync(SAMPLE.seed);
       const root = new BIP32(ecc).fromSeed(seed);
+      const fabricNode = root.derivePath(FABRIC_KEY_DERIVATION_PATH);
       const msgHash = crypto.createHash('sha256').update(Buffer.from(message)).digest();
-      const expectedSig = nobleSchnorr.sign(msgHash, root.privateKey);
+      const expectedSig = nobleSchnorr.sign(msgHash, fabricNode.privateKey);
       const xOnlyPubkey = Buffer.from(
-        secp256k1.getPublicKey(root.privateKey, true)
+        secp256k1.getPublicKey(fabricNode.privateKey, true)
       ).slice(1); // drop prefix for x-only
       const expectedVerified = nobleSchnorr.verify(expectedSig, msgHash, xOnlyPubkey);
 

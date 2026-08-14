@@ -9,10 +9,15 @@ This is the single living document for driving `@fabric/core` to production read
 Related docs:
 - `docs/PRODUCTION.md`
 - `docs/RELEASE_CHECKLIST.md`
+- `docs/OUTSTANDING.md` — **security-first queue** (this repo)
+- `SECURITY.md` / `AUDIT.md`
 - `AGENTS.md`
+
+**Suite security blocker (not a core patch):** Hub / `@fabric/http` login and device-link **redeem** still treat QR `sessionId` as the capability. Advance that in http, then Hub, Passport, GoonCitizen — see those repos’ `docs/OUTSTANDING.md`.
 
 ## Working Area
 ### Bad Classes (work to reduce)
+- `DistributedExecution` (reduce to `Execution`)
 - `Scribe`
 
 ### Dubious Classes (consider integrating/consolidating into existing classes)
@@ -29,7 +34,6 @@ This matrix is a production-first baseline to refine over the next PRs.
 - `Chain`
 - `Circuit`
 - `Collection`
-- `DistributedExecution`
 - `Entity`
 - `Federation`
 - `Hash256`
@@ -58,6 +62,7 @@ Rationale:
 - `Stack` + `Script` -> evaluate unification behind `Program`/`Machine` if no distinct production role.
 
 #### Deprecate/Compatibility-only (for this release cycle)
+- `DistributedExecution` (`types/distributedExecution.js`) — thin re-export of canonical JSON / beacon signing / manifest helpers; prefer those modules + `Machine`/`Program` directly. Keep `Fabric.DistributedExecution` alias one release.
 - `settings/deprecations.js` aliases that only preserve legacy names.
 - Any class only referenced by deprecation mapping + legacy docs, with no product-path usage.
 
@@ -91,7 +96,8 @@ Rationale:
 
 ## Documentation Clutter Plan ("Global" cleanup)
 
-- [ ] Configure docs generation to avoid exposing broad "Global" buckets as first-class API.
+- [x] Configure docs generation to avoid exposing broad "Global" buckets as first-class API.
+- [x] Prefer `@fileoverview` / `@private` / `//` settings comments so helpers (`crypto`, `merge`, body schemas, Block digests, etc.) stay off `docs/global.html`.
 - [ ] Prefer module/class entry pages over generated global index noise.
 - [ ] Keep only operator/developer-relevant pages linked from `docs/README.md` and this tracker.
 
@@ -167,16 +173,19 @@ Definition of done:
 - Coverage reflects shipped behavior, and failures clearly indicate product risk.
 
 ## Immediate Priority Queue
-1. **Finalize keep/remove matrix for classes** and lock the target type tree.
-2. **Trim docs generation target set** to production-relevant modules.
-3. **Trim example set** to Hub-facing workflows (documents, contracts, signing/delegation, network).
-4. **Resolve unfinished behavior in active APIs** before adding more coverage-only tests.
+1. **Security leftovers** in [OUTSTANDING.md](OUTSTANDING.md) — do not paper over AUDIT known gaps; coordinate http possession-proof for site-login / device-link redeem on shared hosts.
+2. **Finalize keep/remove matrix for classes** and lock the target type tree (`Scribe` / `Reader` / Global clutter).
+3. **Trim docs generation target set** to production-relevant modules.
+4. **Trim example set** to Hub-facing workflows (documents, contracts, signing/delegation, network).
+5. **Resolve unfinished behavior in active APIs** before adding more coverage-only tests.
 
 ## Pending Test Triage (First Logical Pass)
-Observed baseline after hardening:
+Observed baseline after hardening (historical March pass):
 - `784 passing`
 - `50 pending`
 - `0 failing`
+
+Current `@fabric/core` baseline (see Progress Log **2026-08-12**): `1831 passing`, `1 pending`, `0 failing`. Suite-wide packages (http / hub / application / browser extension) also green on that run.
 
 Working buckets for pending tests:
 
@@ -221,6 +230,25 @@ Execution order:
 
 ## Progress Log
 Use this section as an append-only log (newest first).
+
+### 2026-08-13
+- Core `3745041e` (wallet lock / Environment) is on GitHub `feature/rsi`; http `e167d8e` and Hub `5441f838` follow.
+- Added [OUTSTANDING.md](OUTSTANDING.md) as the security-first queue; Hub / http / Passport / GoonCitizen / Discord have matching files.
+- Immediate queue now leads with security leftovers. **Suite blocker** remains http possession proof for `/sessions` and `/device-links` redeem (not a core patch).
+- Class-surface work (`Scribe` / `Reader` / Global) stays the in-repo march after that coordination.
+
+### 2026-08-12
+- Re-ran the Fabric package suite end-to-end (unrestricted host; browser-extension Playwright needs Crashpad/xattr outside agent sandboxes). Log: `/tmp/fabric-suite-tests-1786512851.log`.
+- **`@fabric/core`** (`npm test`): `1831 passing`, `1 pending`, `0 failing`.
+- **`@fabric/http`** (`npm test`): `157 passing`, `21 pending`, `0 failing`.
+- **`@fabric/hub`** (`npm run test:unit`): `539 passing`, `4 pending`, `0 failing`.
+- **application** (`star-citizen-live` `npm test`): mocha fabric `43 passing`; fabric expectations `45 pass`; relay `322 pass` / `2 skipped` / `0 fail`.
+- **browser extension** (`fabric-browser-extension` `npm test`): unit `55 passing` + extension Playwright `5 passing`, `0 failing`.
+- Suite hardening carried in from recent failure triage (not all in this repo):
+  - identity Schnorr resolution / leaf-key site-login paths (`@fabric/http` + browser-extension verify coverage);
+  - application chat receipts when `fabric.enable` is off under `NODE_ENV=test`, mission Accept → apply, device-link verify via `Identity#fabricKey`;
+  - browser-extension webpack CSS includes for npm-linked `@fabric/http` assets; extension launcher defaults to bundled Chromium and ignores `--disable-extensions`.
+- Core baseline vs earlier march entries: JS suite grew well past the March `834` mark; still `0 failing`. Remaining core pending is a single skip (triage under Coverage + Test Reliability).
 
 ### 2026-03-24
 - Closed the pending-test loop for JS unit/integration slices in this repo branch:

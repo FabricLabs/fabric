@@ -3,7 +3,7 @@
 The **`fabric`** command is the **Node.js harness** for the Fabric reference client:
 
 1. **Runtime** — system `node` when installed via `npm i -g` / `npm link`, or an **embedded Node-compatible runtime** when built with **`npm run make:binary`** ([pkg](https://github.com/vercel/pkg)).
-2. **Harness** — `scripts/fabric.js` (Commander): subcommands (`setup`, `start`, `chat`, …). First run requires `fabric setup` before the shell (no wallet is created automatically).
+2. **Harness** — `scripts/fabric.js` (Commander): subcommands (`setup`, `start`, `chat`, …). First run requires `fabric setup` before the shell (no wallet is created automatically). In a TTY, `fabric setup` opens a **lightweight TUI** (public config, backup / restore / generate, unlock / lock / idle timeout) — not the full chat shell. New wallets are password-sealed JSON (`--password` / `FABRIC_PASSWORD`). One-shot flags: `--no-tui`, `--json`, `--backup [FILE]`, `--restore <FILE>`, `--unlock`, `--lock`, `--timeout <MINUTES>`, `--force`.
 3. **Default TUI** — with a wallet configured, bare `fabric` defaults to **`shell`** / **`chat`** (Blessed TUI via `contracts/shell.js` → `types/cli.js`). Document exchange: `/import`, `/publish`, `/inventory`, `/offers`, `/buy`, `/confirm`, `/request`, `/pending`, `/approve`, `/deny`, `/relayfees`, `/send` (see [`L1_DOCUMENT_EXCHANGE.md`](L1_DOCUMENT_EXCHANGE.md)).
 
 The separate **C ncurses CLI** in `src/cli.c` is **not** this binary; it is a native example / alternate frontend.

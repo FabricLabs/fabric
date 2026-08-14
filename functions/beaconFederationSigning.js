@@ -62,7 +62,8 @@ function verifyFederationWitnessOnMessage (messageBuffer, witness, validatorPubk
     (Array.isArray(validatorPubkeys) ? validatorPubkeys : [])
       .filter((p) => typeof p === 'string' && p)
   ));
-  const thr = Math.max(1, Number(threshold) || 1);
+  const thr = Number(threshold);
+  if (!Number.isInteger(thr) || thr < 1) return false;
   let valid = 0;
   for (const pubkey of pubkeys) {
     const sigHex = witness.signatures[pubkey];
@@ -107,15 +108,16 @@ async function persistPendingDoc (fs, doc) {
 
 /**
  * @param {object} epochPayload full epoch incl. sidechain / contracts heads
- * @param {{ validators: string[], threshold: number }} policy
+ * @param {{ validators?: string[], threshold?: number }} [policy]
  * @param {{ version?: number, signatures?: object }|null} [initialWitness]
  * @returns {object} pending round
  */
-function createRound (epochPayload, policy, initialWitness = null) {
+function createRound (epochPayload, policy = {}, initialWitness = null) {
+  const pol = policy && typeof policy === 'object' ? policy : {};
   const commitmentDigest = epochCommitmentDigestHex(epochPayload);
-  const validators = (policy.validators || []).map((v) => String(v).trim()).filter(Boolean);
-  const threshold = Math.max(1, Number(policy.threshold) || 1);
-  return {
+  const validators = (pol.validators || []).map((v) => String(v).trim()).filter(Boolean);
+  const threshold = Math.max(1, Number(pol.threshold) || 1);
+  const round = {
     commitmentDigest,
     payload: epochPayload,
     validators,
@@ -128,6 +130,8 @@ function createRound (epochPayload, policy, initialWitness = null) {
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
   };
+  if (roundMeetsThreshold(round)) round.status = 'ready';
+  return round;
 }
 
 function messageBufferForPayload (payload) {
@@ -150,10 +154,12 @@ function roundMeetsThreshold (round) {
 
 /**
  * Add / replace one validator signature; verify before accepting.
+ * `ready` stays closed to new signatures. Callers retry durable seal via
+ * `Beacon#submitFederationEpochSignature` (idempotent finalize), not here.
  * @returns {{ ok: boolean, round?: object, error?: string, sealed?: boolean }}
  */
 function addSignature (round, pubkey, signatureHex) {
-  if (!round || round.status === 'sealed') {
+  if (!round || round.status === 'sealed' || round.status === 'ready') {
     return { ok: false, error: 'round not open' };
   }
   const pk = String(pubkey || '').trim();

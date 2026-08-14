@@ -18,6 +18,57 @@ describe('@fabric/core Machine / Program edge cases', function () {
     assert.strictEqual(result.tip, 0);
   });
 
+  it('primitives.opcodes allow-list rejects define / load / compute outside the set', async function () {
+    const machine = new Machine({ deterministic: true, allowedOpcodes: ['OP_TRUE'] });
+    assert.throws(() => machine.define('OP_EVIL', () => 1), /allow-list/);
+    machine.define('OP_TRUE', () => true);
+
+    const blocked = await machine.runProgram({
+      language: 'fabric-opcodes',
+      steps: ['OP_EVIL']
+    });
+    assert.strictEqual(blocked.ok, false);
+    assert.match(blocked.error || '', /allow-list/);
+
+    const ok = await machine.runProgram({
+      language: 'fabric-opcodes',
+      steps: ['OP_TRUE']
+    });
+    assert.strictEqual(ok.ok, true, ok.error);
+    assert.strictEqual(ok.tip, true);
+  });
+
+  it('applyGenesisOpcodes + loadProgram opts.genesis enforce ARC primitives.opcodes', async function () {
+    const machine = new Machine({ deterministic: true });
+    machine.applyGenesisOpcodes({
+      primitives: { opcodes: ['OP_TRUE'] }
+    });
+    machine.define('OP_TRUE', () => true);
+    const bad = await machine.runProgram({
+      language: 'fabric-opcodes',
+      steps: ['OP_FALSE']
+    });
+    assert.strictEqual(bad.ok, false);
+
+    const machine2 = new Machine({ deterministic: true });
+    machine2.define('OP_TRUE', () => true);
+    const viaOpts = await machine2.runProgram(
+      { language: 'fabric-opcodes', steps: ['OP_TRUE'] },
+      undefined,
+      { genesis: { primitives: { opcodes: ['OP_TRUE'] } } }
+    );
+    assert.strictEqual(viaOpts.ok, true, viaOpts.error);
+
+    const machine3 = new Machine({ deterministic: true });
+    const missingDef = await machine3.runProgram(
+      { language: 'fabric-opcodes', steps: ['OP_TRUE'] },
+      undefined,
+      { genesis: { primitives: { opcodes: ['OP_TRUE'] } } }
+    );
+    assert.strictEqual(missingDef.ok, false);
+    assert.match(missingDef.error || '', /not defined|allow-list/i);
+  });
+
   it('runProgram returns ok:false when Program.compile fails', async function () {
     const machine = new Machine({ deterministic: true });
     const result = await machine.runProgram({

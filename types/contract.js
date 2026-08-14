@@ -320,15 +320,181 @@ class Contract extends Service {
     });
   }
 
-  _handleBitcoinTransaction () {
-    // TODO: parse on-chain transaction for update to contract balance
-    // Does this transaction pay to this contract?
+  /**
+   * Observe an on-chain transaction for payments to this contract's spend address.
+   * On success (and when `apply` is not false), folds matched sats into tip balances.
+   *
+   * @param {string|object} txInput raw tx hex or bitcoin.Transaction
+   * @param {object} [opts]
+   * @param {string} [opts.network]
+   * @param {string} [opts.address] override spend address
+   * @param {number} [opts.amountSats] minimum matched sats
+   * @param {boolean} [opts.apply=true] fold into `_state.content` on success
+   * @returns {object} observation from {@link module:functions/contractPaymentObserve.observePaymentToAddress}
+   */
+  _handleBitcoinTransaction (txInput, opts = {}) {
+    const {
+      observePaymentToAddress,
+      applyPaymentObservationToTip
+    } = require('../functions/contractPaymentObserve');
+    const network = opts.network || this.settings.network;
+    if (!network) {
+      return {
+        ok: false,
+        code: 'NETWORK_REQUIRED',
+        error: 'Bitcoin network required (set settings.network or opts.network; do not default to regtest)'
+      };
+    }
+    let address = opts.address || null;
+    if (!address) {
+      try {
+        address = this.toAddress(network);
+      } catch (e) {
+        return {
+          ok: false,
+          code: 'NO_ADDRESS',
+          error: e && e.message ? e.message : 'contract spend address unavailable'
+        };
+      }
+    }
+    const observation = observePaymentToAddress({
+      tx: txInput,
+      address,
+      network,
+      amountSats: opts.amountSats
+    });
+    if (observation.ok && opts.apply !== false) {
+      const tip = {
+        content: (this._state && this._state.content) || this.settings.state || {}
+      };
+      const next = applyPaymentObservationToTip(tip, observation);
+      if (!this._state) this._state = { content: {} };
+      // Merge into the observed content object in place — replacing
+      // `this._state.content` would detach `this.observer` from monitor.
+      if (!this._state.content || typeof this._state.content !== 'object') {
+        this._state.content = {};
+      }
+      const target = this._state.content;
+      const incoming = next.content && typeof next.content === 'object' ? next.content : {};
+      for (const key of Object.keys(target)) {
+        if (!Object.prototype.hasOwnProperty.call(incoming, key)) delete target[key];
+      }
+      Object.assign(target, incoming);
+      if (this.settings) {
+        this.settings.state = target;
+      }
+      observation.applied = true;
+      observation.balances = target.balances;
+    } else if (observation.ok) {
+      observation.applied = false;
+    }
+    return observation;
   }
 
   _toUnsignedTransaction () {
     return {
       script: this.contract
     };
+  }
+
+  /**
+   * Shared spend-policy inputs for {@link Contract#toTaprootContract}.
+   * Subclasses (e.g. Federation) may override to supply validators from state.
+   * @private
+   * @param {object} [overrides]
+   * @returns {object}
+   */
+  _taprootPolicyInputs (overrides = {}) {
+    const tap = require('../functions/contractTaproot');
+    const validators = overrides.validators
+      || (this.settings.proposedPolicy && this.settings.proposedPolicy.validators)
+      || (this.settings.consensus && this.settings.consensus.validators)
+      || this.settings.validators
+      || [];
+    const threshold = overrides.threshold != null
+      ? overrides.threshold
+      : ((this.settings.proposedPolicy && this.settings.proposedPolicy.threshold)
+        || this.settings.threshold
+        || 1);
+    const publisher = overrides.publisher
+      || this.settings.publisher
+      || this.settings.creator
+      || (validators[0] || null);
+    const network = overrides.network
+      || this.settings.network
+      || null;
+    if (!network) {
+      throw new Error(
+        'Contract Bitcoin network required (set settings.network or pass overrides.network; do not default to regtest)'
+      );
+    }
+    const csvBlocks = overrides.csvBlocks != null
+      ? overrides.csvBlocks
+      : (this.settings.csvBlocks != null ? this.settings.csvBlocks : tap.DEFAULT_CSV_BLOCKS);
+    return { validators, threshold, publisher, network, csvBlocks };
+  }
+
+  /**
+   * Build deterministic P2TR spend tree from settings.spendLadder or synthesized
+   * validators / publisher policy.
+   * @param {object} [overrides]
+   * @returns {object} {@link module:functions/contractTaproot.buildContractTaproot}
+   */
+  toTaprootContract (overrides = {}) {
+    const tap = require('../functions/contractTaproot');
+    const ladder = overrides.spendLadder || this.settings.spendLadder || null;
+    if (ladder) {
+      const network = overrides.network || this.settings.network || ladder.network;
+      if (!network) {
+        throw new Error(
+          'Contract Bitcoin network required (set settings.network, ladder.network, or overrides.network)'
+        );
+      }
+      return tap.buildContractTaproot({ ...ladder, ...overrides, network });
+    }
+    const inputs = this._taprootPolicyInputs(overrides);
+    // Do not re-spread overrides after inputs — falsy override fields must not
+    // undo resolved validators / threshold / csvBlocks / network.
+    return tap.buildContractTaproot(tap.synthesizeDefaultLadder(inputs));
+  }
+
+  /**
+   * Bech32m P2TR address for this contract's spend policy.
+   * @param {string} [network]
+   * @returns {string}
+   */
+  toAddress (network) {
+    const built = this.toTaprootContract(network ? { network } : {});
+    return built.address;
+  }
+
+  /**
+   * Resolve tip + genesis spend policy to the public P2TR surface (ARC).
+   * @param {object} [opts]
+   * @param {object} [opts.tip]
+   * @param {object} [opts.genesis] defaults to this.settings
+   * @param {object} [opts.overrides]
+   * @returns {object} {@link module:functions/contractSpend.resolveSpend}
+   */
+  resolveSpend (opts = {}) {
+    const { resolveSpend } = require('../functions/contractSpend');
+    return resolveSpend({
+      genesis: opts.genesis || this.settings,
+      tip: opts.tip || {
+        contractId: this.id || null,
+        content: (this._state && this._state.content) || this.settings.state || {},
+        stateDigest: opts.stateDigest || null,
+        bitcoinBlockHash: opts.bitcoinBlockHash
+          || (this.settings.bitcoinAnchor && this.settings.bitcoinAnchor.blockHash)
+          || null,
+        bitcoinHeight: opts.bitcoinHeight != null
+          ? opts.bitcoinHeight
+          : ((this.settings.bitcoinAnchor && this.settings.bitcoinAnchor.height) || null),
+        clock: (this._state && this._state.content && this._state.content.clock) || 0
+      },
+      contractId: opts.contractId || this.id || null,
+      overrides: opts.overrides
+    });
   }
 }
 

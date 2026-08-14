@@ -1,6 +1,23 @@
 # Security
 Fabric aims to maximize the security of a sensible default configuration while keeping dependencies understandable and reviewable.
 
+**Outstanding queue:** [docs/OUTSTANDING.md](docs/OUTSTANDING.md). Production march: [docs/PRODUCTION_MARCH.md](docs/PRODUCTION_MARCH.md).
+
+## Adversarial environment
+Fabric networks are intended for deployment where **peers, relays, hubs, and operators may be hostile**. Design and review against:
+
+- Untrusted TCP / WebSocket / WebRTC neighbors (forgery, replay, amplification, pin hijack, logical front-running)
+- Phishing of identity flows (`fabric://login`, device-link) toward attacker-controlled hubs
+- Public observability of unsigned or plaintext application traffic unless an explicit seal is used
+- No reliance on an “honest majority” of random internet peers for key custody or contract acceptance
+
+Bitcoin L1 finality and operator key hygiene remain outside this document’s guarantees. Suite apps SHOULD document the same adversarial assumption and keep fail-closed defaults for auth, allowlists, and spend paths.
+
+**Basics coverage:** [`tests/adversarialEnvironment.basics.test.js`](tests/adversarialEnvironment.basics.test.js) (blinded-execution role minimum + phishing hub rejection via allowlist helpers when present). Broader Peer adversarial contracts live under [`tests/protocol-v1/`](tests/protocol-v1/README.md).
+
+## Blinded execution (composition scaffold)
+[`functions/blindedExecutionCircuit.js`](functions/blindedExecutionCircuit.js) commits garbler publish → ContractProposal accept/reject → content-addressed circuit digests → optional hashlock Taproot. It is **not** Yao gate garbling / OT. Do not treat `Circuit#scramble` as cryptographic evaluation. Real GC remains a future backend behind the same digests ([docs/PROGRAM.md](docs/PROGRAM.md)).
+
 ## Objectives
 - Secure defaults for the reference client (`@fabric/core`)
 - Minimal attack surface where practical
@@ -76,6 +93,33 @@ Exact wire duplicates remain a silent drop (no score change). Wire-hash dedup re
 
 ## Inbound frame size
 Wire frames larger than `HEADER_SIZE + MAX_MESSAGE_SIZE` (override body via `settings.maxMessageSize`) are dropped **before** parse / body-hash / signature work.
+
+## Strict Protocol V1 (test contract)
+Adversarial Peer coverage under the assumption that **NOISE payloads are raw, well-formed Fabric Messages** (not random bytes) lives in [`tests/protocol-v1/`](tests/protocol-v1/README.md): opcode × delivery matrix (`direct` / foreign `P2P_RELAY` / `P2P_FORWARD` peel), unknown-opcode policy (`UNKNOWN_MESSAGE` — must not alias to `P2P_BASE_MESSAGE`), multi-origin collusion budgets, and a typed live NOISE storm. Parser crash fuzz remains in `tests/fuzz/` and is **not** counted as semantic adversarial coverage.
+
+**Generic carrier:** `P2P_BASE_MESSAGE` / `GENERIC_MESSAGE` JSON bodies must not escalate first-class mesh/session opcodes (`P2P_PEERING_OFFER`, `P2P_PEER_GOSSIP`, `CONTRACT_MESSAGE`, …). Legacy inventory continues to use inner type `INVENTORY_REQUEST` (not the `P2P_` wire name).
+
+**Phase B bodies:** registered field schemas (`Message.fromFields` / `tryParseMessageBody`) cover
+`P2P_PING` / `P2P_PONG` / `P2P_FORWARD` / `P2P_PEER_GOSSIP` / `P2P_PEERING_OFFER` /
+`P2P_PEER_ANNOUNCE`. Peer typed handlers accept **JSON or field-layout forms**. Chat/alias remain
+raw UTF-8. Coverage: `tests/protocol-v1/phase-b.typed-bodies.js`.
+
+## Application Resource Contract accumulate
+`functions/contractMessageAccumulate.ingestMessageBuffer` folds signed `CONTRACT_MESSAGE` frames into a tip. **Signer mutations** (`GroupChange`, `GroupChangeProposal` / `GroupChangeVote`, federation invite (+ response), capability grants, withdrawal request/witness, journal request/batch/state) require the AMP author to be in **genesis.signers** (when tip members are empty) or the **current tip member set**, or to present a **verified** `OP_CONTRACT_SIGN` Token (`meta.capabilityToken`) issued by a current signer. **`GroupChat`** and other non-mutation body types (including custom genesis `primitives.messageTypes`) require author ∈ tip/genesis **reader ∪ signer** set (or verified `OP_CONTRACT_READ` / `OP_CONTRACT_SIGN`). **`ContractWithdrawalWitness`** must bind `signer` to the AMP author, carry BIP340 `signature` over `fabric:contract-withdrawal-witness:1:…`, and match the pending request’s tip fields. AMP signature alone is not sufficient. Body `type` must appear in genesis `primitives.messageTypes` when declared (**empty declared list = deny-all**); otherwise only known core `CONTRACT_BODY_TYPES` are accepted. **Withdrawals** must bind `stateDigest` + `bitcoinBlockHash` to the tip at request time (`functions/contractSpend`). See [`docs/ARC.md`](docs/ARC.md).
+
+**Outstanding (seals / accumulate):** tip-bound and participant AES-GCM seals bind scheme (+ tip / contract / ephemeral) as AAD. Journal / re-fold caps drop compactable rows by hex-hash order (`maxJournalEntries`, hard cap 20000). Genesis `bitcoinAnchor.blockHash` is only folded when it is 64-hex (same gate as `meta.bitcoinBlockHash`). Explicit tip `signers: []` no longer widens `tipSpendKeys` / `resolveSpend` to participant `members`.
+
+~~**Withdrawal `requestId` bind**~~ — `validateWithdrawalRequest` requires 64-hex `requestId` equal to `computeWithdrawalRequestId` over destination/fee/vault/… so co-signer witnesses cannot divert funds under a borrowed id.
+
+**Blinded-execution decisions:** `recordProposalDecision` verifies BIP340 over `decisionSigningMessage` v2 (`at` bound). Same actor/proposal/decision/`at` is idempotent; a different `at` conflicts. Still not Yao GC.
+
+**GroupChangeProposal votes:** BIP340 over `signingStringForGroupChangeProposal` v2 (`members` / `signers` bound as canonical x-only lists). Quorum is genesis/tip k-of-n; a proposer-chosen `threshold` cannot lower the bar. Colliding proposal `id` values cannot reuse honest votes on a swapped roster.
+
+**Identity coin types:** Fabric protocol derivation uses **7777** on Bitcoin mainnet and **7778** otherwise ([IDENTITY.md](IDENTITY.md)). Do not mix Fabric coin-type keys with BIP44 coin-type-0 Bitcoin funds. Downstream Hub/Passport hard-codes of `7778` should pass `network` into `fabricIdentityDerivationPath` when promoting to mainnet.
+
+**Still open (non-blocking for this PR pass):** eager `messageHex` on Peer hot paths; `contractId` → `contractIdentifier` rename; Hub/Passport callers still on hard-coded `7778` until they adopt `fabricIdentityDerivationPath`; `API.md` index sync via `make:api` for gossip / parse / `resolveSpend` option docs. Blinded-execution remains a scaffold (not Yao GC) even with signed decisions + hashlock+pubkey leaves — `decisionSigningMessage` v2 binds `at` (PR #183 Medium closed). GroupChangeProposal votes bind canonical `members` / `signers` (v2; PR #183 High closed). Beacon federation rounds stop collecting at `ready`; core `Beacon#submitFederationEpochSignature` idempotently finalizes already-`ready` rounds if epoch-chain persist fails ([docs/ARC.md](docs/ARC.md) §8 item 25). Peering self-dial suppress uses verified AMP signer (`verifiedPubkey`) only — advertised `obj.pubkey` is informational (FIFO-capped). OP_RETURN hallmarks ([docs/STATECHAIN.md](docs/STATECHAIN.md) / `functions/fabricHallmark`) are encode/verify in core; Hub opt-in publish+scan is separate — no P2P hallmark broadcast. Evaluator accepts for blinded-execution finalization exclude the garbler key.
+
+~~**Beacon/ARC publish authority fail-open**~~ — `Peer.collectContractAuthorityPubkeys` includes nested `members.signers` / `spendPolicy.validators` so Beacon genesis front-runs by non-validators are rejected.
 
 ## Inventory HTLC binding
 Buyers must rebuild the buyer-bound P2TR (`validateInventoryHtlcOffer`) and must not fund a seller-advertised `paymentAddress` that does not match. When an AMP signer is known (`inventoryResponse.signerPubkeyHex` / offer `ampSignerPubkey` / HTLC `sellerPublicKeyHex`), it must match the resolved seller x-only key before funding.

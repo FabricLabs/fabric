@@ -1,13 +1,13 @@
 'use strict';
 
 /**
- * Beacon — L1-tied epoch chain that seals sidechain / contracts digests.
+ * @fileoverview Beacon — L1-tied epoch chain that seals sidechain / contracts digests.
  *
  * Regtest: `createEpoch()` mines one block (`generatetoaddress`) then appends
  * a `BEACON_EPOCH` entry. Non-regtest: `recordEpochFromBlock` follows tips.
  *
- * Hub product wiring historically lived in hub.fabric.pub `contracts/beacon.js`;
- * that module re-exports this type.
+ * Hub product wiring lives in hub.fabric.pub `contracts/beacon.js` (extends this
+ * type). Ready-round retry finalize is implemented here so Hub and CLI share it.
  */
 
 const merge = require('lodash.merge');
@@ -29,7 +29,7 @@ class Beacon extends Actor {
       debug: false,
       interval: 60000,
       regtest: true,
-      /** When false, `start()` does not mine an initial epoch (regtest). */
+      // When false, start() does not mine an initial epoch (regtest).
       mineOnStart: true,
       federationValidators: [],
       federationThreshold: 1,
@@ -252,8 +252,27 @@ class Beacon extends Actor {
       return { status: 'error', message: 'unknown pending epoch round' };
     }
 
+    // addSignature marks the round `ready` before durable persist. A crash or
+    // persist failure then makes retries hit `round not open`. Finalize the
+    // existing ready round instead of reopening it for new signatures.
+    if (round.status === 'ready' || round.status === 'sealed') {
+      if (!this._recoveredRoundWitnessOk(digest, round)) {
+        return { status: 'error', message: 'recovered round failed federation threshold' };
+      }
+      return this._finalizeReadyFederationRound(digest, round);
+    }
+
     const added = beaconFederationSigning.addSignature(round, pubkey, signatureHex);
     if (!added.ok) {
+      if (added.error === 'round not open') {
+        const again = this._pendingEpochRounds.get(digest);
+        if (again && (again.status === 'ready' || again.status === 'sealed')) {
+          if (!this._recoveredRoundWitnessOk(digest, again)) {
+            return { status: 'error', message: 'recovered round failed federation threshold' };
+          }
+          return this._finalizeReadyFederationRound(digest, again);
+        }
+      }
       return { status: 'error', message: added.error || 'signature rejected' };
     }
 
@@ -274,6 +293,64 @@ class Beacon extends Actor {
       };
     }
 
+    return this._finalizeReadyFederationRound(digest, round);
+  }
+
+  /**
+   * Ready/sealed rounds loaded from disk must still satisfy the round witness
+   * and, when this Beacon has federation validators, those configured keys —
+   * not an attacker-emptied `round.validators` list.
+   * @param {string} digest
+   * @param {object} round
+   * @returns {boolean}
+   * @private
+   */
+  _recoveredRoundWitnessOk (digest, round) {
+    if (this._epochAlreadySealed(digest, round)) return true;
+    if (!beaconFederationSigning.roundMeetsThreshold(round)) return false;
+    if (!this._federationValidators.length) return true;
+    return beaconFederationSigning.verifyFederationWitnessOnMessage(
+      beaconFederationSigning.messageBufferForPayload(round.payload),
+      round.witness,
+      this._federationValidators,
+      this._federationThreshold
+    );
+  }
+
+  /**
+   * Persist a threshold-ready round onto the epoch chain. Idempotent if the
+   * digest is already sealed.
+   * @param {string} digest
+   * @param {object} round
+   * @returns {Promise<object>}
+   * @private
+   */
+  async _finalizeReadyFederationRound (digest, round) {
+    if (this._epochAlreadySealed(digest, round)) {
+      const persisted = await this._persistEpochChain();
+      if (!persisted) {
+        return {
+          status: 'error',
+          pending: true,
+          message: 'failed to persist epoch chain',
+          commitmentDigest: digest
+        };
+      }
+      this._pendingEpochRounds.delete(digest);
+      try {
+        const doc = beaconFederationSigning.loadPendingDoc(this.fs);
+        delete doc.rounds[digest];
+        await beaconFederationSigning.persistPendingDoc(this.fs, doc);
+      } catch (_) { /* ignore */ }
+      return {
+        status: 'success',
+        sealed: true,
+        commitmentDigest: digest,
+        payload: round.payload,
+        federationWitness: round.witness
+      };
+    }
+
     const message = Message.fromVector(['BEACON_EPOCH', JSON.stringify(round.payload)]);
     if (this.key && this.key.private) message.signWithKey(this.key);
     const entry = {
@@ -283,7 +360,17 @@ class Beacon extends Actor {
       federationWitness: round.witness
     };
     this._epochChain.append(entry);
-    await this._persistEpochChain();
+    const persisted = await this._persistEpochChain();
+    if (!persisted) {
+      return {
+        status: 'error',
+        pending: true,
+        message: 'failed to persist epoch chain',
+        commitmentDigest: digest,
+        payload: round.payload,
+        federationWitness: round.witness
+      };
+    }
 
     this._pendingEpochRounds.delete(digest);
     try {
@@ -300,6 +387,31 @@ class Beacon extends Actor {
       payload: entry.payload,
       federationWitness: entry.federationWitness
     };
+  }
+
+  /**
+   * @param {string} digest
+   * @param {object} round
+   * @returns {boolean}
+   * @private
+   */
+  _epochAlreadySealed (digest, round) {
+    try {
+      const msgs = typeof this._epochChain.toBeaconMessages === 'function'
+        ? this._epochChain.toBeaconMessages()
+        : [];
+      return msgs.some((e) => {
+        if (!e || !e.payload) return false;
+        try {
+          return beaconFederationSigning.epochCommitmentDigestHex(e.payload) === digest;
+        } catch (_) {
+          const clock = round && round.payload && round.payload.clock;
+          return clock != null && e.payload.clock === clock;
+        }
+      });
+    } catch (_) {
+      return false;
+    }
   }
 
   listPendingFederationEpochRounds () {
@@ -385,13 +497,15 @@ class Beacon extends Actor {
   }
 
   async _persistEpochChain () {
-    if (!this.fs || typeof this.fs.publish !== 'function') return;
+    if (!this.fs || typeof this.fs.publish !== 'function') return true;
     try {
       const messages = this._epochChain.toBeaconMessages();
       const merkle = { root: this._computeMerkleRoot(), leaves: this._epochChain.height };
       await this.fs.publish(BEACON_CHAIN_PATH, { messages, merkle });
+      return true;
     } catch (err) {
       this.emit('warning', '[BEACON] Failed to persist epoch chain:', err && err.message ? err.message : err);
+      return false;
     }
   }
 

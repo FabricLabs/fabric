@@ -3,7 +3,7 @@
 // External Dependencies
 const merge = require('lodash.merge');
 const { networks: bitcoinNetworks } = require('bitcoinjs-lib');
-/** Fabric settings use `mainnet`; bitcoinjs-lib 7 names that network `bitcoin`. */
+/** @private Fabric settings use `mainnet`; bitcoinjs-lib 7 names that network `bitcoin`. */
 const networks = Object.assign({ mainnet: bitcoinNetworks.bitcoin }, bitcoinNetworks);
 
 // Mnemonics
@@ -216,7 +216,7 @@ class Wallet extends Service {
     });
   }
 
-  derive (path = `m/7777'/7777'/0'/0/0`) {
+  derive (path = require('../constants').BITCOIN_KEY_DERIVATION_PATH) {
     const derived = this.key.derive(path);
     return {
       privateKey: derived.private,
@@ -1208,8 +1208,9 @@ class Wallet extends Service {
     const index = typeof this.index === 'number' ? this.index : 0;
     this.index = index + 1;
 
-    // Use a standard BIP44 path with the index
-    const path = `m/44'/0'/0'/0/${index}`;
+    // Use BIP44 Bitcoin receive path (coin type 0) — not Fabric identity (7777/7778).
+    const { bitcoinReceiveDerivationPath } = require('../constants');
+    const path = bitcoinReceiveDerivationPath(0, index);
     const pair = this.key.derive(path);
 
     const keypair = {

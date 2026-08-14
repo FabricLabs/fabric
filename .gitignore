@@ -77,6 +77,8 @@ reports/simulator-beacon-1000.log
 reports/AUDIT.json
 reports/class-inheritance.json
 reports/npm-audit.json
+reports/bip-compliance.json
+reports/bip-compliance.md
 
 ### node-waf configuration
 .lock-wscript

@@ -190,4 +190,43 @@ describe('documentOfferBook + blobs + relay', function () {
     );
     assert.strictEqual(sealed.get(0).sealed, true);
   });
+
+  it('updates the same origin when a seller reprices (inventory snapshot)', function () {
+    const book = new DocumentOfferBook();
+    const hash = 'aa'.repeat(32);
+    book.ingestInventoryResponse({
+      origin: 'relay:7',
+      peerScore: 500,
+      latencyMs: 10,
+      items: [{ id: 'doc1', rateSats: 100, contentHash: hash }]
+    });
+    book.ingestInventoryResponse({
+      origin: 'relay:7',
+      peerScore: 500,
+      latencyMs: 10,
+      items: [{ id: 'doc1', rateSats: 110, contentHash: hash }]
+    });
+    const best = book.pickBest('doc1');
+    assert.ok(best);
+    assert.strictEqual(best.sellerAddress, 'relay:7');
+    const rate = Number(best.rateSats != null ? best.rateSats : best.purchasePriceSats);
+    assert.strictEqual(rate, 110);
+  });
+
+  it('Hub-style 10% listing markup covers a 10% relay skim on origin cost', function () {
+    const origin = 100;
+    let hubList = 110;
+    try {
+      const path = require('path');
+      const market = require(path.join(__dirname, '..', '..', 'hub.fabric.pub', 'functions', 'documentInventoryMarket'));
+      hubList = market.markupListPrice(origin, { markupBps: 1000, markupSats: 0 });
+    } catch (_) {
+      hubList = Math.ceil((origin * 11000) / 10000);
+    }
+    assert.strictEqual(hubList, 110);
+    const fee = computeRelayFee({ documentRelayFeeBps: 1000 }, origin);
+    assert.strictEqual(fee.ok, true);
+    assert.strictEqual(fee.feeSats, 10);
+    assert.ok(hubList - origin >= fee.feeSats, 'republish spread should cover a same-bps hop fee');
+  });
 });

@@ -101,4 +101,16 @@ describe('@fabric/core/functions/bip39', function () {
     const mutated = words.join(' ');
     assert.throws(() => mnemonicToEntropy(mutated), /Invalid checksum/);
   });
+
+  it('generateMnemonic falls back to Web Crypto when randomBytes is missing', function () {
+    const orig = crypto.randomBytes;
+    crypto.randomBytes = undefined;
+    try {
+      const mnemonic = generateMnemonic(128);
+      assert.strictEqual(mnemonic.split(/\s+/).length, 12);
+      assert.ok(validateMnemonic(mnemonic));
+    } finally {
+      crypto.randomBytes = orig;
+    }
+  });
 });

@@ -72,10 +72,15 @@ types for experiments and apps. Prefer importing <strong>leaf</strong> types in 
 RFC 5869.  Defaults to 32 byte output, matching Bitcoin&#39;s implementaton.</p>
 </dd>
 <dt><a href="#Identity">Identity</a> ⇐ <code><a href="#Actor">Actor</a></code></dt>
-<dd><p><strong>BIP32/BIP39 identity</strong> wrapping <a href="#Key">Key</a>: mnemonic / xprv / passphrase, derivation
-<code>m/44'/7778'/account'/0/index</code> (see <code>derivation</code> getter). <strong>Important:</strong> this class
-overrides <a href="Actor#id">Actor#id</a> with <code>toString()</code> (human-facing / Bech32-style identity), <strong>not</strong> the
-content-addressed <code>Actor#id</code> / <code>preimage</code> chain from <a href="#Actor+toGenericMessage">toGenericMessage</a>. Use
+<dd><p><strong>BIP32/BIP39 identity</strong> wrapping <a href="#Key">Key</a>: mnemonic / xprv / passphrase.
+Protocol identity (pubkey / Schnorr sign / Bech32 id) uses the Fabric derivation path
+<code>m/44'/7778'/account'/0/index</code> (see <a href="Identity#derivation">Identity#derivation</a> and IDENTITY.md).
+The HD <strong>master</strong> remains available as <a href="#Identity+master">master</a> / <a href="Identity#key">Identity#key</a>
+so Bitcoin funds can derive under BIP44 coin type <code>0</code> (see <a href="BITCOIN_KEY_DERIVATION_PATH">BITCOIN_KEY_DERIVATION_PATH</a>
+/ Wallet) without mixing protocol identity keys with spend keys.
+<strong>Important:</strong> this class overrides <a href="Actor#id">Actor#id</a> with <code>toString()</code>
+(human-facing / Bech32-style identity), <strong>not</strong> the content-addressed
+<code>Actor#id</code> / <code>preimage</code> chain from <a href="#Actor+toGenericMessage">toGenericMessage</a>. Use
 <code>pubkey</code>, <code>pubkeyhash</code>, or explicit hashing when you need stable bytes.</p>
 </dd>
 <dt><a href="#Identity">Identity</a></dt>
@@ -220,94 +225,11 @@ contract&#39;s lifetime as &quot;fulfillment conditions&quot; for its closure.</
 </dd>
 </dl>
 
-## Members
-
-<dl>
-<dt><a href="#mineOnStart">mineOnStart</a></dt>
-<dd><p>When false, <code>start()</code> does not mine an initial epoch (regtest).</p>
-</dd>
-<dt><a href="#GenericMessage">GenericMessage</a></dt>
-<dd><p>Transitional Hub/browser catch-all (opcode GENERIC_MESSAGE_TYPE / 15103).</p>
-</dd>
-</dl>
-
 ## Constants
 
 <dl>
-<dt><a href="#merge">merge</a></dt>
-<dd><p>Beacon — L1-tied epoch chain that seals sidechain / contracts digests.</p>
-<p>Regtest: <code>createEpoch()</code> mines one block (<code>generatetoaddress</code>) then appends
-a <code>BEACON_EPOCH</code> entry. Non-regtest: <code>recordEpochFromBlock</code> follows tips.</p>
-<p>Hub product wiring historically lived in hub.fabric.pub <code>contracts/beacon.js</code>;
-that module re-exports this type.</p>
-</dd>
-<dt><a href="#merge">merge</a></dt>
-<dd><p>Bitcoin-shaped Block: parent-linked header + merkle of leaves, with optional
-PoW (<code>nonce</code>/<code>bits</code>), Elements-style federation signatures, and arbitrary <code>data</code>.</p>
-</dd>
-<dt><a href="#crypto">crypto</a></dt>
-<dd><p>Chain — ledger of Bitcoin-shaped Blocks with consensus policy:</p>
-<ul>
-<li><code>pow</code> (default) — parent-linked playnet / Bitcoin-style Block + mempool</li>
-<li><code>federation</code> — linear tip; Elements-style k-of-n block signatures (Beacon)</li>
-<li><code>gossip</code> — content-addressed data blocks; merge = union by block id</li>
-</ul>
-<p>Statechain document helpers (<code>functions/sidechainState</code>) hold the sealed JSON
-document. Digests feed that document / Beacon sidechain heads; raw gossip is
-never Beacon authority.</p>
-</dd>
-<dt><del><a href="#SEAL_BLOCK">SEAL_BLOCK</a></del></dt>
-<dd></dd>
-<dt><del><a href="#fabricCanonicalJson">fabricCanonicalJson</a></del></dt>
-<dd></dd>
-<dt><a href="#BODY_SCHEMA_BY_KEY">BODY_SCHEMA_BY_KEY</a> : <code>Map.&lt;(number|string), Array.&lt;{name: string, type: string}&gt;&gt;</code></dt>
-<dd></dd>
-<dt><a href="#SCHEMA_P2P_FORWARD">SCHEMA_P2P_FORWARD</a></dt>
-<dd><p>Directed onion hop — see <a href="module:@fabric/core/functions/fabricOnion">module:@fabric/core/functions/fabricOnion</a>.</p>
-</dd>
-<dt><a href="#P2P_CHAT_MAX_CHARS">P2P_CHAT_MAX_CHARS</a></dt>
-<dd><p>Max UTF-8 code units for first-class P2P_CHAT_MESSAGE body (text only).</p>
-</dd>
-<dt><a href="#P2P_PEER_ALIAS_MAX_CHARS">P2P_PEER_ALIAS_MAX_CHARS</a></dt>
-<dd><p>Max UTF-8 code units for first-class P2P_PEER_ALIAS body (nickname).</p>
-</dd>
-<dt><a href="#crypto">crypto</a></dt>
-<dd><p>Multi-language Program — executable artifact for <a href="#Machine">Machine</a>, with optional
-L1 Bitcoin redeem scaffolding for <code>bitcoin-script</code>.</p>
-<p>Languages: <code>fabric-opcodes</code> | <code>javascript</code> | <code>bitcoin-script</code> | <code>solidity</code> | <code>asm</code>
-(solidity/asm compile stubs until Compiler frontends land).</p>
-</dd>
-<dt><a href="#networks">networks</a></dt>
-<dd><p>Fabric settings use <code>mainnet</code>; bitcoinjs-lib 7 names that network <code>bitcoin</code>.</p>
-</dd>
 <dt><del><a href="#Text">Text</a></del></dt>
 <dd></dd>
-</dl>
-
-## Functions
-
-<dl>
-<dt><a href="#isStructuredBlockInput">isStructuredBlockInput(input)</a> ⇒ <code>boolean</code></dt>
-<dd></dd>
-<dt><a href="#signingStringForBlock">signingStringForBlock(header)</a> ⇒ <code>string</code></dt>
-<dd><p>Canonical signing / digest body (excludes witness material).</p>
-</dd>
-<dt><a href="#blockDigest">blockDigest(header)</a> ⇒ <code>string</code></dt>
-<dd><p>Content digest for merkle leaves / chain digest (includes optional federationWitness).</p>
-</dd>
-<dt><a href="#meetsProofOfWork">meetsProofOfWork(idHex, bits)</a> ⇒ <code>boolean</code></dt>
-<dd><p>Soft playnet PoW: leading zero hex nibbles from <code>bits</code> (integer 0–64).</p>
-</dd>
-<dt><a href="#canonicalTypeCode">canonicalTypeCode(value)</a> ⇒ <code>number</code> | <code>null</code></dt>
-<dd><p>Resolve any opcode / wire name / friendly alias to the numeric AMP type code.</p>
-</dd>
-<dt><a href="#canonicalTypeName">canonicalTypeName(value)</a> ⇒ <code>string</code> | <code>null</code></dt>
-<dd><p>Resolve any opcode / wire name / friendly alias to the SCREAMING_SNAKE wire label.</p>
-</dd>
-<dt><a href="#typeEquals">typeEquals(a, b)</a> ⇒ <code>boolean</code></dt>
-<dd><p>True when two type references name the same AMP opcode (number, wire name, or friendly alias).
-Unregistered string labels only match via exact trim equality.</p>
-</dd>
 </dl>
 
 ## Typedefs
@@ -868,6 +790,10 @@ Author Schnorr over signingString (gossip).
     * [new Bond()](#new_Bond_new)
     * [.deploy()](#Contract+deploy) ⇒ <code>String</code>
     * [.start()](#Contract+start) ⇒ [<code>Contract</code>](#Contract)
+    * [._handleBitcoinTransaction(txInput, [opts])](#Contract+_handleBitcoinTransaction) ⇒ <code>object</code>
+    * [._taprootPolicyInputs([overrides])](#Contract+_taprootPolicyInputs) ⇒ <code>object</code>
+    * [.toAddress([network])](#Contract+toAddress) ⇒ <code>string</code>
+    * [.resolveSpend([opts])](#Contract+resolveSpend) ⇒ <code>object</code>
     * [._appendWarning(msg)](#Service+_appendWarning) ⇒ [<code>Service</code>](#Service)
     * [.init()](#Service+init)
     * [.tick()](#Service+tick) ⇒ <code>Number</code>
@@ -910,6 +836,62 @@ Start the Contract.
 
 **Kind**: instance method of [<code>Bond</code>](#Bond)  
 **Returns**: [<code>Contract</code>](#Contract) - State "STARTED" iteration of the Contract.  
+<a name="Contract+_handleBitcoinTransaction"></a>
+
+### bond.\_handleBitcoinTransaction(txInput, [opts]) ⇒ <code>object</code>
+Observe an on-chain transaction for payments to this contract's spend address.
+On success (and when `apply` is not false), folds matched sats into tip balances.
+
+**Kind**: instance method of [<code>Bond</code>](#Bond)  
+**Returns**: <code>object</code> - observation from [module:functions/contractPaymentObserve.observePaymentToAddress](module:functions/contractPaymentObserve.observePaymentToAddress)  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| txInput | <code>string</code> \| <code>object</code> |  | raw tx hex or bitcoin.Transaction |
+| [opts] | <code>object</code> |  |  |
+| [opts.network] | <code>string</code> |  |  |
+| [opts.address] | <code>string</code> |  | override spend address |
+| [opts.amountSats] | <code>number</code> |  | minimum matched sats |
+| [opts.apply] | <code>boolean</code> | <code>true</code> | fold into `_state.content` on success |
+
+<a name="Contract+_taprootPolicyInputs"></a>
+
+### bond.\_taprootPolicyInputs([overrides]) ⇒ <code>object</code>
+Shared spend-policy inputs for [Contract#toTaprootContract](Contract#toTaprootContract).
+Subclasses (e.g. Federation) may override to supply validators from state.
+
+**Kind**: instance method of [<code>Bond</code>](#Bond)  
+
+| Param | Type |
+| --- | --- |
+| [overrides] | <code>object</code> | 
+
+<a name="Contract+toAddress"></a>
+
+### bond.toAddress([network]) ⇒ <code>string</code>
+Bech32m P2TR address for this contract's spend policy.
+
+**Kind**: instance method of [<code>Bond</code>](#Bond)  
+
+| Param | Type |
+| --- | --- |
+| [network] | <code>string</code> | 
+
+<a name="Contract+resolveSpend"></a>
+
+### bond.resolveSpend([opts]) ⇒ <code>object</code>
+Resolve tip + genesis spend policy to the public P2TR surface (ARC).
+
+**Kind**: instance method of [<code>Bond</code>](#Bond)  
+**Returns**: <code>object</code> - [module:functions/contractSpend.resolveSpend](module:functions/contractSpend.resolveSpend)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| [opts] | <code>object</code> |  |
+| [opts.tip] | <code>object</code> |  |
+| [opts.genesis] | <code>object</code> | defaults to this.settings |
+| [opts.overrides] | <code>object</code> |  |
+
 <a name="Service+_appendWarning"></a>
 
 ### bond.\_appendWarning(msg) ⇒ [<code>Service</code>](#Service)
@@ -2026,6 +2008,10 @@ Loads [State](#State) into memory.
     * [new Contract()](#new_Contract_new)
     * [.deploy()](#Contract+deploy) ⇒ <code>String</code>
     * [.start()](#Contract+start) ⇒ [<code>Contract</code>](#Contract)
+    * [._handleBitcoinTransaction(txInput, [opts])](#Contract+_handleBitcoinTransaction) ⇒ <code>object</code>
+    * [._taprootPolicyInputs([overrides])](#Contract+_taprootPolicyInputs) ⇒ <code>object</code>
+    * [.toAddress([network])](#Contract+toAddress) ⇒ <code>string</code>
+    * [.resolveSpend([opts])](#Contract+resolveSpend) ⇒ <code>object</code>
     * [._appendWarning(msg)](#Service+_appendWarning) ⇒ [<code>Service</code>](#Service)
     * [.init()](#Service+init)
     * [.tick()](#Service+tick) ⇒ <code>Number</code>
@@ -2070,6 +2056,62 @@ Start the Contract.
 **Kind**: instance method of [<code>Contract</code>](#Contract)  
 **Overrides**: [<code>start</code>](#Service+start)  
 **Returns**: [<code>Contract</code>](#Contract) - State "STARTED" iteration of the Contract.  
+<a name="Contract+_handleBitcoinTransaction"></a>
+
+### contract.\_handleBitcoinTransaction(txInput, [opts]) ⇒ <code>object</code>
+Observe an on-chain transaction for payments to this contract's spend address.
+On success (and when `apply` is not false), folds matched sats into tip balances.
+
+**Kind**: instance method of [<code>Contract</code>](#Contract)  
+**Returns**: <code>object</code> - observation from [module:functions/contractPaymentObserve.observePaymentToAddress](module:functions/contractPaymentObserve.observePaymentToAddress)  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| txInput | <code>string</code> \| <code>object</code> |  | raw tx hex or bitcoin.Transaction |
+| [opts] | <code>object</code> |  |  |
+| [opts.network] | <code>string</code> |  |  |
+| [opts.address] | <code>string</code> |  | override spend address |
+| [opts.amountSats] | <code>number</code> |  | minimum matched sats |
+| [opts.apply] | <code>boolean</code> | <code>true</code> | fold into `_state.content` on success |
+
+<a name="Contract+_taprootPolicyInputs"></a>
+
+### contract.\_taprootPolicyInputs([overrides]) ⇒ <code>object</code>
+Shared spend-policy inputs for [Contract#toTaprootContract](Contract#toTaprootContract).
+Subclasses (e.g. Federation) may override to supply validators from state.
+
+**Kind**: instance method of [<code>Contract</code>](#Contract)  
+
+| Param | Type |
+| --- | --- |
+| [overrides] | <code>object</code> | 
+
+<a name="Contract+toAddress"></a>
+
+### contract.toAddress([network]) ⇒ <code>string</code>
+Bech32m P2TR address for this contract's spend policy.
+
+**Kind**: instance method of [<code>Contract</code>](#Contract)  
+
+| Param | Type |
+| --- | --- |
+| [network] | <code>string</code> | 
+
+<a name="Contract+resolveSpend"></a>
+
+### contract.resolveSpend([opts]) ⇒ <code>object</code>
+Resolve tip + genesis spend policy to the public P2TR surface (ARC).
+
+**Kind**: instance method of [<code>Contract</code>](#Contract)  
+**Returns**: <code>object</code> - [module:functions/contractSpend.resolveSpend](module:functions/contractSpend.resolveSpend)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| [opts] | <code>object</code> |  |
+| [opts.tip] | <code>object</code> |  |
+| [opts.genesis] | <code>object</code> | defaults to this.settings |
+| [opts.overrides] | <code>object</code> |  |
+
 <a name="Service+_appendWarning"></a>
 
 ### contract.\_appendWarning(msg) ⇒ [<code>Service</code>](#Service)
@@ -3535,6 +3577,7 @@ Create and manage sets of {Signer} instances with the Federation class.
     * [.verify(msg, sig)](#Federation+verify) ⇒ <code>Boolean</code>
     * [.createMultiSignature(msg)](#Federation+createMultiSignature) ⇒ <code>Object</code>
     * [.verifyMultiSignature(multiSig, threshold)](#Federation+verifyMultiSignature) ⇒ <code>Boolean</code>
+    * [._taprootPolicyInputs([overrides])](#Federation+_taprootPolicyInputs) ⇒ <code>object</code>
 
 <a name="new_Federation_new"></a>
 
@@ -3604,6 +3647,17 @@ Verifies a multi-signature against a message.
 | --- | --- | --- | --- |
 | multiSig | <code>Object</code> |  | The multi-signature object |
 | threshold | <code>Number</code> | <code>1</code> | Number of valid signatures required |
+
+<a name="Federation+_taprootPolicyInputs"></a>
+
+### federation.\_taprootPolicyInputs([overrides]) ⇒ <code>object</code>
+Federation validators live on consensus state, not only constructor settings.
+
+**Kind**: instance method of [<code>Federation</code>](#Federation)  
+
+| Param | Type |
+| --- | --- |
+| [overrides] | <code>object</code> | 
 
 <a name="Filesystem"></a>
 
@@ -3784,10 +3838,15 @@ Derive a new output.
 <a name="Identity"></a>
 
 ## Identity ⇐ [<code>Actor</code>](#Actor)
-<strong>BIP32/BIP39 identity</strong> wrapping [Key](#Key): mnemonic / xprv / passphrase, derivation
-<code>m/44'/7778'/account'/0/index</code> (see <code>derivation</code> getter). <strong>Important:</strong> this class
-overrides [Actor#id](Actor#id) with <code>toString()</code> (human-facing / Bech32-style identity), <strong>not</strong> the
-content-addressed <code>Actor#id</code> / <code>preimage</code> chain from [toGenericMessage](#Actor+toGenericMessage). Use
+<strong>BIP32/BIP39 identity</strong> wrapping [Key](#Key): mnemonic / xprv / passphrase.
+Protocol identity (pubkey / Schnorr sign / Bech32 id) uses the Fabric derivation path
+<code>m/44'/7778'/account'/0/index</code> (see [Identity#derivation](Identity#derivation) and IDENTITY.md).
+The HD <strong>master</strong> remains available as [master](#Identity+master) / [Identity#key](Identity#key)
+so Bitcoin funds can derive under BIP44 coin type <code>0</code> (see [BITCOIN_KEY_DERIVATION_PATH](BITCOIN_KEY_DERIVATION_PATH)
+/ Wallet) without mixing protocol identity keys with spend keys.
+<strong>Important:</strong> this class overrides [Actor#id](Actor#id) with <code>toString()</code>
+(human-facing / Bech32-style identity), <strong>not</strong> the content-addressed
+<code>Actor#id</code> / <code>preimage</code> chain from [toGenericMessage](#Actor+toGenericMessage). Use
 <code>pubkey</code>, <code>pubkeyhash</code>, or explicit hashing when you need stable bytes.
 
 **Kind**: global class  
@@ -3795,6 +3854,8 @@ content-addressed <code>Actor#id</code> / <code>preimage</code> chain from [toGe
 
 * [Identity](#Identity) ⇐ [<code>Actor</code>](#Actor)
     * [new Identity([settings])](#new_Identity_new)
+    * [.master](#Identity+master)
+    * [.fabricKey](#Identity+fabricKey) ⇒ [<code>Key</code>](#Key)
     * [.toString()](#Identity+toString) ⇒ <code>String</code>
     * [.adopt(changes)](#Actor+adopt) ⇒ [<code>Actor</code>](#Actor)
     * [.commit()](#Actor+commit) ⇒ <code>String</code>
@@ -3825,10 +3886,24 @@ Create an instance of an Identity.
 | [settings.seed] | <code>String</code> |  | BIP 39 seed phrase. |
 | [settings.xprv] | <code>String</code> |  | Serialized BIP 32 master private key. |
 | [settings.xpub] | <code>String</code> |  | Serialized BIP 32 master public key. |
-| [settings.account] | <code>Number</code> | <code>0</code> | BIP 44 account index. |
-| [settings.index] | <code>Number</code> | <code>0</code> | BIP 44 key index. |
+| [settings.account] | <code>Number</code> | <code>0</code> | BIP 44 account index (Fabric coin type 7778). |
+| [settings.index] | <code>Number</code> | <code>0</code> | BIP 44 address index. |
 | [settings.passphrase] | <code>String</code> |  | Passphrase for the key. |
 
+<a name="Identity+master"></a>
+
+### identity.master
+HD master key — use for Bitcoin BIP44 coin-type-0 fund derivation only.
+
+**Kind**: instance property of [<code>Identity</code>](#Identity)  
+<a name="Identity+fabricKey"></a>
+
+### identity.fabricKey ⇒ [<code>Key</code>](#Key)
+Fabric-protocol signing key at [Identity#derivation](Identity#derivation).
+When this.key is already a protocol account/signing node (or public-only),
+derivation may be impossible — use the key as-is.
+
+**Kind**: instance property of [<code>Identity</code>](#Identity)  
 <a name="Identity+toString"></a>
 
 ### identity.toString() ⇒ <code>String</code>
@@ -3989,6 +4064,8 @@ Parse an Object into a corresponding Fabric state.
 
 * [Identity](#Identity)
     * [new Identity([settings])](#new_Identity_new)
+    * [.master](#Identity+master)
+    * [.fabricKey](#Identity+fabricKey) ⇒ [<code>Key</code>](#Key)
     * [.toString()](#Identity+toString) ⇒ <code>String</code>
     * [.adopt(changes)](#Actor+adopt) ⇒ [<code>Actor</code>](#Actor)
     * [.commit()](#Actor+commit) ⇒ <code>String</code>
@@ -4019,10 +4096,24 @@ Create an instance of an Identity.
 | [settings.seed] | <code>String</code> |  | BIP 39 seed phrase. |
 | [settings.xprv] | <code>String</code> |  | Serialized BIP 32 master private key. |
 | [settings.xpub] | <code>String</code> |  | Serialized BIP 32 master public key. |
-| [settings.account] | <code>Number</code> | <code>0</code> | BIP 44 account index. |
-| [settings.index] | <code>Number</code> | <code>0</code> | BIP 44 key index. |
+| [settings.account] | <code>Number</code> | <code>0</code> | BIP 44 account index (Fabric coin type 7778). |
+| [settings.index] | <code>Number</code> | <code>0</code> | BIP 44 address index. |
 | [settings.passphrase] | <code>String</code> |  | Passphrase for the key. |
 
+<a name="Identity+master"></a>
+
+### identity.master
+HD master key — use for Bitcoin BIP44 coin-type-0 fund derivation only.
+
+**Kind**: instance property of [<code>Identity</code>](#Identity)  
+<a name="Identity+fabricKey"></a>
+
+### identity.fabricKey ⇒ [<code>Key</code>](#Key)
+Fabric-protocol signing key at [Identity#derivation](Identity#derivation).
+When this.key is already a protocol account/signing node (or public-only),
+derivation may be impossible — use the key as-is.
+
+**Kind**: instance property of [<code>Identity</code>](#Identity)  
 <a name="Identity+toString"></a>
 
 ### identity.toString() ⇒ <code>String</code>
@@ -4924,12 +5015,15 @@ instruction entries from [push](#Fabric+push) — not the same as P2P [Message](
 * [Machine](#Machine) ⇐ [<code>Actor</code>](#Actor)
     * [new Machine(settings)](#new_Machine_new)
     * _instance_
+        * [.allowedOpcodes](#Machine+allowedOpcodes) ⇒ <code>Array.&lt;string&gt;</code>
+        * [.setAllowedOpcodes(list)](#Machine+setAllowedOpcodes) ⇒ [<code>Machine</code>](#Machine)
+        * [.applyGenesisOpcodes([genesis])](#Machine+applyGenesisOpcodes) ⇒ [<code>Machine</code>](#Machine)
         * [.sip([n])](#Machine+sip) ⇒ <code>Number</code>
         * [.slurp([n])](#Machine+slurp) ⇒ <code>Number</code>
         * [.compute(input)](#Machine+compute) ⇒ [<code>Machine</code>](#Machine)
         * [.parseManifest(raw, [program])](#Machine+parseManifest) ⇒ <code>Object</code>
-        * [.loadProgram(program)](#Machine+loadProgram) ⇒ [<code>Machine</code>](#Machine)
-        * [.runProgram(program, [input])](#Machine+runProgram) ⇒ <code>Promise.&lt;{ok: boolean, stack: Array, tip: \*, trace: Array, runCommitmentHex: (string\|null), error: (string\|undefined)}&gt;</code>
+        * [.loadProgram(program, [opts])](#Machine+loadProgram) ⇒ [<code>Machine</code>](#Machine)
+        * [.runProgram(program, [input], [opts])](#Machine+runProgram) ⇒ <code>Promise.&lt;{ok: boolean, stack: Array, tip: \*, trace: Array, runCommitmentHex: (string\|null), error: (string\|undefined)}&gt;</code>
         * [.adopt(changes)](#Actor+adopt) ⇒ [<code>Actor</code>](#Actor)
         * [.commit()](#Actor+commit) ⇒ <code>String</code>
         * [.export()](#Actor+export) ⇒ <code>Object</code>
@@ -4957,6 +5051,36 @@ Create a Machine.
 | Param | Type | Description |
 | --- | --- | --- |
 | settings | <code>Object</code> | Run-time configuration. |
+
+<a name="Machine+allowedOpcodes"></a>
+
+### machine.allowedOpcodes ⇒ <code>Array.&lt;string&gt;</code>
+Active opcode allow-list (empty = unrestricted).
+
+**Kind**: instance property of [<code>Machine</code>](#Machine)  
+<a name="Machine+setAllowedOpcodes"></a>
+
+### machine.setAllowedOpcodes(list) ⇒ [<code>Machine</code>](#Machine)
+Restrict `define` / `loadProgram` / `compute` to this opcode set.
+Empty / null clears the restriction (legacy soft unknown-op behavior).
+
+**Kind**: instance method of [<code>Machine</code>](#Machine)  
+
+| Param | Type |
+| --- | --- |
+| list | <code>Iterable.&lt;\*&gt;</code> \| <code>null</code> | 
+
+<a name="Machine+applyGenesisOpcodes"></a>
+
+### machine.applyGenesisOpcodes([genesis]) ⇒ [<code>Machine</code>](#Machine)
+Apply ARC / Program genesis `primitives.opcodes` as the Machine allow-list.
+No-op when genesis has no opcodes (keeps unrestricted).
+
+**Kind**: instance method of [<code>Machine</code>](#Machine)  
+
+| Param | Type |
+| --- | --- |
+| [genesis] | <code>object</code> | 
 
 <a name="Machine+sip"></a>
 
@@ -5010,26 +5134,34 @@ Parse program manifest v1 (former DistributedExecution.parseDistributedManifestV
 
 <a name="Machine+loadProgram"></a>
 
-### machine.loadProgram(program) ⇒ [<code>Machine</code>](#Machine)
+### machine.loadProgram(program, [opts]) ⇒ [<code>Machine</code>](#Machine)
 Load a [Program](#Program) onto this machine (sets script steps).
+When an opcode allow-list is active (ctor `allowedOpcodes`,
+[setAllowedOpcodes](#Machine+setAllowedOpcodes), [applyGenesisOpcodes](#Machine+applyGenesisOpcodes),
+or Program/genesis `primitives.opcodes`), steps and javascript `source`
+keys must be listed — fail closed.
 
 **Kind**: instance method of [<code>Machine</code>](#Machine)  
 
-| Param | Type |
-| --- | --- |
-| program | [<code>Program</code>](#Program) | 
+| Param | Type | Description |
+| --- | --- | --- |
+| program | [<code>Program</code>](#Program) \| <code>object</code> |  |
+| [opts] | <code>Object</code> |  |
+| [opts.genesis] | <code>Object</code> | ARC genesis; may supply `primitives.opcodes` allow-list |
 
 <a name="Machine+runProgram"></a>
 
-### machine.runProgram(program, [input]) ⇒ <code>Promise.&lt;{ok: boolean, stack: Array, tip: \*, trace: Array, runCommitmentHex: (string\|null), error: (string\|undefined)}&gt;</code>
+### machine.runProgram(program, [input], [opts]) ⇒ <code>Promise.&lt;{ok: boolean, stack: Array, tip: \*, trace: Array, runCommitmentHex: (string\|null), error: (string\|undefined)}&gt;</code>
 Load and compute a Program; return stack tip + run commitment for L1 binding.
 
 **Kind**: instance method of [<code>Machine</code>](#Machine)  
 
-| Param | Type |
-| --- | --- |
-| program | [<code>Program</code>](#Program) \| <code>Object</code> | 
-| [input] | <code>\*</code> | 
+| Param | Type | Description |
+| --- | --- | --- |
+| program | [<code>Program</code>](#Program) \| <code>Object</code> |  |
+| [input] | <code>\*</code> |  |
+| [opts] | <code>Object</code> |  |
+| [opts.genesis] | <code>Object</code> | ARC genesis for `primitives.opcodes` allow-list |
 
 <a name="Actor+adopt"></a>
 
@@ -5196,12 +5328,15 @@ Parse a JSON object of Buffer-like entries into an array of [Buffer](Buffer)s (l
 * [Machine](#Machine)
     * [new Machine(settings)](#new_Machine_new)
     * _instance_
+        * [.allowedOpcodes](#Machine+allowedOpcodes) ⇒ <code>Array.&lt;string&gt;</code>
+        * [.setAllowedOpcodes(list)](#Machine+setAllowedOpcodes) ⇒ [<code>Machine</code>](#Machine)
+        * [.applyGenesisOpcodes([genesis])](#Machine+applyGenesisOpcodes) ⇒ [<code>Machine</code>](#Machine)
         * [.sip([n])](#Machine+sip) ⇒ <code>Number</code>
         * [.slurp([n])](#Machine+slurp) ⇒ <code>Number</code>
         * [.compute(input)](#Machine+compute) ⇒ [<code>Machine</code>](#Machine)
         * [.parseManifest(raw, [program])](#Machine+parseManifest) ⇒ <code>Object</code>
-        * [.loadProgram(program)](#Machine+loadProgram) ⇒ [<code>Machine</code>](#Machine)
-        * [.runProgram(program, [input])](#Machine+runProgram) ⇒ <code>Promise.&lt;{ok: boolean, stack: Array, tip: \*, trace: Array, runCommitmentHex: (string\|null), error: (string\|undefined)}&gt;</code>
+        * [.loadProgram(program, [opts])](#Machine+loadProgram) ⇒ [<code>Machine</code>](#Machine)
+        * [.runProgram(program, [input], [opts])](#Machine+runProgram) ⇒ <code>Promise.&lt;{ok: boolean, stack: Array, tip: \*, trace: Array, runCommitmentHex: (string\|null), error: (string\|undefined)}&gt;</code>
         * [.adopt(changes)](#Actor+adopt) ⇒ [<code>Actor</code>](#Actor)
         * [.commit()](#Actor+commit) ⇒ <code>String</code>
         * [.export()](#Actor+export) ⇒ <code>Object</code>
@@ -5229,6 +5364,36 @@ Create a Machine.
 | Param | Type | Description |
 | --- | --- | --- |
 | settings | <code>Object</code> | Run-time configuration. |
+
+<a name="Machine+allowedOpcodes"></a>
+
+### machine.allowedOpcodes ⇒ <code>Array.&lt;string&gt;</code>
+Active opcode allow-list (empty = unrestricted).
+
+**Kind**: instance property of [<code>Machine</code>](#Machine)  
+<a name="Machine+setAllowedOpcodes"></a>
+
+### machine.setAllowedOpcodes(list) ⇒ [<code>Machine</code>](#Machine)
+Restrict `define` / `loadProgram` / `compute` to this opcode set.
+Empty / null clears the restriction (legacy soft unknown-op behavior).
+
+**Kind**: instance method of [<code>Machine</code>](#Machine)  
+
+| Param | Type |
+| --- | --- |
+| list | <code>Iterable.&lt;\*&gt;</code> \| <code>null</code> | 
+
+<a name="Machine+applyGenesisOpcodes"></a>
+
+### machine.applyGenesisOpcodes([genesis]) ⇒ [<code>Machine</code>](#Machine)
+Apply ARC / Program genesis `primitives.opcodes` as the Machine allow-list.
+No-op when genesis has no opcodes (keeps unrestricted).
+
+**Kind**: instance method of [<code>Machine</code>](#Machine)  
+
+| Param | Type |
+| --- | --- |
+| [genesis] | <code>object</code> | 
 
 <a name="Machine+sip"></a>
 
@@ -5282,26 +5447,34 @@ Parse program manifest v1 (former DistributedExecution.parseDistributedManifestV
 
 <a name="Machine+loadProgram"></a>
 
-### machine.loadProgram(program) ⇒ [<code>Machine</code>](#Machine)
+### machine.loadProgram(program, [opts]) ⇒ [<code>Machine</code>](#Machine)
 Load a [Program](#Program) onto this machine (sets script steps).
+When an opcode allow-list is active (ctor `allowedOpcodes`,
+[setAllowedOpcodes](#Machine+setAllowedOpcodes), [applyGenesisOpcodes](#Machine+applyGenesisOpcodes),
+or Program/genesis `primitives.opcodes`), steps and javascript `source`
+keys must be listed — fail closed.
 
 **Kind**: instance method of [<code>Machine</code>](#Machine)  
 
-| Param | Type |
-| --- | --- |
-| program | [<code>Program</code>](#Program) | 
+| Param | Type | Description |
+| --- | --- | --- |
+| program | [<code>Program</code>](#Program) \| <code>object</code> |  |
+| [opts] | <code>Object</code> |  |
+| [opts.genesis] | <code>Object</code> | ARC genesis; may supply `primitives.opcodes` allow-list |
 
 <a name="Machine+runProgram"></a>
 
-### machine.runProgram(program, [input]) ⇒ <code>Promise.&lt;{ok: boolean, stack: Array, tip: \*, trace: Array, runCommitmentHex: (string\|null), error: (string\|undefined)}&gt;</code>
+### machine.runProgram(program, [input], [opts]) ⇒ <code>Promise.&lt;{ok: boolean, stack: Array, tip: \*, trace: Array, runCommitmentHex: (string\|null), error: (string\|undefined)}&gt;</code>
 Load and compute a Program; return stack tip + run commitment for L1 binding.
 
 **Kind**: instance method of [<code>Machine</code>](#Machine)  
 
-| Param | Type |
-| --- | --- |
-| program | [<code>Program</code>](#Program) \| <code>Object</code> | 
-| [input] | <code>\*</code> | 
+| Param | Type | Description |
+| --- | --- | --- |
+| program | [<code>Program</code>](#Program) \| <code>Object</code> |  |
+| [input] | <code>\*</code> |  |
+| [opts] | <code>Object</code> |  |
+| [opts.genesis] | <code>Object</code> | ARC genesis for `primitives.opcodes` allow-list |
 
 <a name="Actor+adopt"></a>
 
@@ -6163,6 +6336,7 @@ see [Message](#Message) wire vs friendly names and <code>constants</code> opcode
     * [._peerBans](#Peer+_peerBans) : <code>Map.&lt;string, {until: number, reason: string}&gt;</code>
     * [._candidateKeys](#Peer+_candidateKeys)
     * [._outboundDialTargets](#Peer+_outboundDialTargets)
+    * [._selfDialSuppressUntil](#Peer+_selfDialSuppressUntil) : <code>Map.&lt;string, number&gt;</code>
     * ~~[.address](#Peer+address)~~
     * [._gossipPayloadDedupKey(msg)](#Peer+_gossipPayloadDedupKey) ⇒ <code>string</code>
     * [._logicalRegistrationKey(type, object)](#Peer+_logicalRegistrationKey) ⇒ <code>string</code> \| <code>null</code>
@@ -6179,7 +6353,13 @@ see [Message](#Message) wire vs friendly names and <code>constants</code> opcode
     * [._derankPeerForWireTraffic(originName, penalty, reason)](#Peer+_derankPeerForWireTraffic)
     * [._peeringOfferPayloadDedupKey(msg)](#Peer+_peeringOfferPayloadDedupKey) ⇒ <code>string</code>
     * [._peeringRateLimitAllow(originName)](#Peer+_peeringRateLimitAllow) ⇒ <code>boolean</code>
-    * [._enqueuePeeringCandidate(host, port)](#Peer+_enqueuePeeringCandidate)
+    * [._enqueuePeeringCandidate(host, port, [meta])](#Peer+_enqueuePeeringCandidate)
+    * [._localFabricPubkeyHex()](#Peer+_localFabricPubkeyHex) ⇒ <code>string</code>
+    * [._isOwnFabricPubkey(hex)](#Peer+_isOwnFabricPubkey) ⇒ <code>boolean</code>
+    * [._isOwnFabricActorId(id)](#Peer+_isOwnFabricActorId) ⇒ <code>boolean</code>
+    * [._suppressSelfDialAddress(address, [ttlMs])](#Peer+_suppressSelfDialAddress)
+    * [._isSelfDialSuppressed(address)](#Peer+_isSelfDialSuppressed) ⇒ <code>boolean</code>
+    * [._abortSelfFabricSession(connAddress, [reason])](#Peer+_abortSelfFabricSession) ⇒ [<code>Peer</code>](#Peer)
     * [.broadcast(message)](#Peer+broadcast)
     * [._localXOnlyPeerId()](#Peer+_localXOnlyPeerId) ⇒ <code>Buffer</code>
     * [._resolveAddressByXOnly(peerId)](#Peer+_resolveAddressByXOnly) ⇒ <code>string</code> \| <code>null</code>
@@ -6198,6 +6378,7 @@ see [Message](#Message) wire vs friendly names and <code>constants</code> opcode
     * [._handleFabricMessage(buffer, [origin], [socket], [options])](#Peer+_handleFabricMessage) ⇒ [<code>Peer</code>](#Peer)
     * [._relayWirePayload()](#Peer+_relayWirePayload)
     * [._relayGenericPayload()](#Peer+_relayGenericPayload)
+    * [._attachNoiseStreamErrorHandlers(noiseStream, [label])](#Peer+_attachNoiseStreamErrorHandlers)
     * [._buildDocumentParsedForPublish(documentId, content)](#Peer+_buildDocumentParsedForPublish) ⇒ <code>Object</code>
     * [._collectDocumentCatalogInventoryItems([req])](#Peer+_collectDocumentCatalogInventoryItems) ⇒ <code>Array.&lt;object&gt;</code>
     * [._sendLocalInventoryDocumentsWireResponse(originName, items, [opts])](#Peer+_sendLocalInventoryDocumentsWireResponse) ⇒ <code>boolean</code>
@@ -6220,10 +6401,13 @@ see [Message](#Message) wire vs friendly names and <code>constants</code> opcode
     * [._buildPublishDocumentWireBuffers(documentId, body, rateSats)](#Peer+_buildPublishDocumentWireBuffers) ⇒ <code>Array.&lt;Buffer&gt;</code>
     * [._announceLocalDocumentsToPeer(peerAddress)](#Peer+_announceLocalDocumentsToPeer)
     * [._publishDocument(documentId, [content], [rateSats])](#Peer+_publishDocument)
-    * [._handleDocumentRequestWire(message, origin, socket)](#Peer+_handleDocumentRequestWire)
+    * [._handleDocumentRequestWire(message, origin, socket, [options])](#Peer+_handleDocumentRequestWire)
     * [._privateRelayDocumentRequest(parsed, origin, [originalMessage])](#Peer+_privateRelayDocumentRequest)
+    * [._sendPrivateRelayedDocumentRequest(msg, origin, parsed)](#Peer+_sendPrivateRelayedDocumentRequest) ⇒ <code>boolean</code>
     * [._maybeReverseRelayFileSend(fileObj, origin)](#Peer+_maybeReverseRelayFileSend) ⇒ <code>boolean</code>
-    * [._mergeContractPatchAllowList(contractId, object, publisherPubkeyHex)](#Peer+_mergeContractPatchAllowList)
+    * [._contractPublishSignerAuthorized(object, signerPubkeyHex)](#Peer+_contractPublishSignerAuthorized) ⇒ <code>boolean</code>
+    * [._registerContract(object, [publisherPubkeyHex])](#Peer+_registerContract) ⇒ <code>boolean</code>
+    * [._mergeContractPatchAllowList(contractId, object, [_publisherPubkeyHex])](#Peer+_mergeContractPatchAllowList)
     * [._signerMayPatchContract(contractId, signerPubkeyHex)](#Peer+_signerMayPatchContract) ⇒ <code>boolean</code>
     * [._startFabricPingKeepalive(socket, encryptWrite)](#Peer+_startFabricPingKeepalive)
     * [.start()](#Peer+start)
@@ -6397,6 +6581,13 @@ Temporary bans after hard misbehavior: `addr:<host:port>` or `pk:<hex>` → { un
 [P2P_SESSION_OFFER](P2P_SESSION_OFFER) must not destroy these when the same peer also opens an inbound
 socket (mesh star): otherwise RPC paths that use the listen address (e.g. ChainSyncRequest)
 see `peer not connected` while an ephemeral inbound key remains.
+
+**Kind**: instance property of [<code>Peer</code>](#Peer)  
+<a name="Peer+_selfDialSuppressUntil"></a>
+
+### peer.\_selfDialSuppressUntil : <code>Map.&lt;string, number&gt;</code>
+Addresses suppressed after a self-session (own Fabric key on the wire).
+Map `host:port` → expiry ms (Date.now()).
 
 **Kind**: instance property of [<code>Peer</code>](#Peer)  
 <a name="Peer+address"></a>
@@ -6589,15 +6780,73 @@ Stable id for peering-offer *logical* content (ignores advisory `peeringHop`).
 
 <a name="Peer+_enqueuePeeringCandidate"></a>
 
-### peer.\_enqueuePeeringCandidate(host, port)
+### peer.\_enqueuePeeringCandidate(host, port, [meta])
 Enqueue a fabric candidate from [P2P_PEERING_OFFER](P2P_PEERING_OFFER); FIFO-capped and deduped by host:port.
 
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
 
+| Param | Type | Description |
+| --- | --- | --- |
+| host | <code>string</code> |  |
+| port | <code>number</code> |  |
+| [meta] | <code>Object</code> |  |
+| [meta.pubkey] | <code>string</code> | Optional advertised Fabric pubkey (skip if own). |
+
+<a name="Peer+_localFabricPubkeyHex"></a>
+
+### peer.\_localFabricPubkeyHex() ⇒ <code>string</code>
+Local Fabric session pubkey (x-only hex), same normalization as wire signers.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+<a name="Peer+_isOwnFabricPubkey"></a>
+
+### peer.\_isOwnFabricPubkey(hex) ⇒ <code>boolean</code>
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
 | Param | Type |
 | --- | --- |
-| host | <code>string</code> | 
-| port | <code>number</code> | 
+| hex | <code>\*</code> | 
+
+<a name="Peer+_isOwnFabricActorId"></a>
+
+### peer.\_isOwnFabricActorId(id) ⇒ <code>boolean</code>
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type |
+| --- | --- |
+| id | <code>\*</code> | 
+
+<a name="Peer+_suppressSelfDialAddress"></a>
+
+### peer.\_suppressSelfDialAddress(address, [ttlMs])
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Default |
+| --- | --- | --- |
+| address | <code>string</code> |  | 
+| [ttlMs] | <code>number</code> | <code>600000</code> | 
+
+<a name="Peer+_isSelfDialSuppressed"></a>
+
+### peer.\_isSelfDialSuppressed(address) ⇒ <code>boolean</code>
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type |
+| --- | --- |
+| address | <code>string</code> | 
+
+<a name="Peer+_abortSelfFabricSession"></a>
+
+### peer.\_abortSelfFabricSession(connAddress, [reason]) ⇒ [<code>Peer</code>](#Peer)
+Tear down a TCP/NOISE session that presented our own Fabric identity.
+Emits `peer:self` so apps can drop the address from dial lists.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Default |
+| --- | --- | --- |
+| connAddress | <code>string</code> \| <code>null</code> \| <code>undefined</code> |  | 
+| [reason] | <code>string</code> | <code>&quot;own Fabric identity&quot;</code> | 
 
 <a name="Peer+broadcast"></a>
 
@@ -6775,14 +7024,15 @@ Handle a Fabric [Message](#Message) buffer.
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
 **Returns**: [<code>Peer</code>](#Peer) - Instance of the Peer.  
 
-| Param | Type | Default |
-| --- | --- | --- |
-| buffer | <code>Buffer</code> |  | 
-| [origin] | <code>object</code> \| <code>null</code> | <code></code> | 
-| [socket] | <code>object</code> \| <code>null</code> | <code></code> | 
-| [options] | <code>Object</code> | <code></code> | 
-| [options.relayDepth] | <code>number</code> |  | 
-| [options.skipRelayFlood] | <code>boolean</code> |  | 
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| buffer | <code>Buffer</code> |  |  |
+| [origin] | <code>object</code> \| <code>null</code> | <code></code> |  |
+| [socket] | <code>object</code> \| <code>null</code> | <code></code> |  |
+| [options] | <code>Object</code> | <code></code> |  |
+| [options.relayDepth] | <code>number</code> |  |  |
+| [options.skipRelayFlood] | <code>boolean</code> |  |  |
+| [options.peeledForward] | <code>boolean</code> |  | true when delivered via [Peer#_handleP2PForward](Peer#_handleP2PForward) peel |
 
 <a name="Peer+_relayWirePayload"></a>
 
@@ -6800,6 +7050,22 @@ bit-identical (no hop re-sign). Otherwise the local agent originates a new signe
 and may wrap it in {@code P2P_RELAY} for mesh delivery.
 
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
+<a name="Peer+_attachNoiseStreamErrorHandlers"></a>
+
+### peer.\_attachNoiseStreamErrorHandlers(noiseStream, [label])
+Bind encrypt/decrypt 'error' before piping. noise-protocol-stream calls
+stream.destroy(err) on handshake failure; without listeners Node raises
+uncaught Exceptions (e.g. `noise_stream_new`, `malloc`).
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| noiseStream | <code>Object</code> |  | noise-protocol-stream duplex pair |
+| noiseStream.encrypt | <code>stream.Duplex</code> |  |  |
+| noiseStream.decrypt | <code>stream.Duplex</code> |  |  |
+| [label] | <code>string</code> | <code>&quot;&#x27;NOISE&#x27;&quot;</code> |  |
+
 <a name="Peer+_buildDocumentParsedForPublish"></a>
 
 ### peer.\_buildDocumentParsedForPublish(documentId, content) ⇒ <code>Object</code>
@@ -7091,18 +7357,22 @@ Store a document locally and gossip to peers.
 
 <a name="Peer+_handleDocumentRequestWire"></a>
 
-### peer.\_handleDocumentRequestWire(message, origin, socket)
+### peer.\_handleDocumentRequestWire(message, origin, socket, [options])
 Handle inbound `DOCUMENT_REQUEST`: emit `documentRequest` / `DocumentRequest`, then either
 send `P2P_FILE_SEND` (when [Peer#settings.autoFulfillDocumentRequests](Peer#settings.autoFulfillDocumentRequests)), queue for
 operator approve, or relay when the document is not held.
 
+Peel / foreign-signed `P2P_RELAY` deliveries are local-observe only: never fulfill or
+queue against the TCP last hop, and never second-flood the inner under that hop.
+
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
 
-| Param | Type |
-| --- | --- |
-| message | [<code>Message</code>](#Message) | 
-| origin | <code>Object</code> | 
-| socket | <code>\*</code> | 
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| message | [<code>Message</code>](#Message) |  |  |
+| origin | <code>Object</code> |  |  |
+| socket | <code>\*</code> |  |  |
+| [options] | <code>Object</code> | <code></code> | same delivery opts as [_handleFabricMessage](#Peer+_handleFabricMessage) |
 
 <a name="Peer+_privateRelayDocumentRequest"></a>
 
@@ -7117,6 +7387,21 @@ Rewrite a budgeted DocumentRequest (privacy) and forward with reduced maxSats.
 | origin | <code>Object</code> |  | 
 | [originalMessage] | [<code>Message</code>](#Message) | <code></code> | 
 
+<a name="Peer+_sendPrivateRelayedDocumentRequest"></a>
+
+### peer.\_sendPrivateRelayedDocumentRequest(msg, origin, parsed) ⇒ <code>boolean</code>
+Deliver a rewritten private DocumentRequest without mesh broadcast.
+Preference: onion `relayPath` → explicit `nextPeer` → fan-out to TCP peers
+other than the inbound origin.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| msg | [<code>Message</code>](#Message) | signed DocumentRequest |
+| origin | <code>Object</code> \| <code>null</code> |  |
+| parsed | <code>object</code> | inbound request body |
+
 <a name="Peer+_maybeReverseRelayFileSend"></a>
 
 ### peer.\_maybeReverseRelayFileSend(fileObj, origin) ⇒ <code>boolean</code>
@@ -7130,20 +7415,48 @@ Forward a relayed `P2P_FILE_SEND` / key reveal back toward the buyer using rever
 | fileObj | <code>object</code> | 
 | origin | <code>Object</code> | 
 
-<a name="Peer+_mergeContractPatchAllowList"></a>
+<a name="Peer+_contractPublishSignerAuthorized"></a>
 
-### peer.\_mergeContractPatchAllowList(contractId, object, publisherPubkeyHex)
-Build the set of pubkeys allowed to apply CONTRACT_MESSAGE ops for a newly
-registered contract. Called only on first registration of a contract id —
-republishes must not invoke this (see [Peer#_registerContract](Peer#_registerContract)).
+### peer.\_contractPublishSignerAuthorized(object, signerPubkeyHex) ⇒ <code>boolean</code>
+When a publish body declares authority arrays, the AMP wire signer must be
+one of them. Bodies with no authorities are allowed (observe-only; empty
+patch allow-list). Missing signer (local seed) is allowed.
 
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
 
-| Param | Type | Description |
+| Param | Type | Default |
 | --- | --- | --- |
-| contractId | <code>string</code> |  |
-| object | <code>object</code> | contract publish body |
-| publisherPubkeyHex | <code>string</code> \| <code>null</code> | wire signer of the first publish |
+| object | <code>object</code> |  | 
+| signerPubkeyHex | <code>string</code> \| <code>null</code> | <code>null</code> | 
+
+<a name="Peer+_registerContract"></a>
+
+### peer.\_registerContract(object, [publisherPubkeyHex]) ⇒ <code>boolean</code>
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+**Returns**: <code>boolean</code> - true when newly registered (or already present no-op)  
+
+| Param | Type | Default |
+| --- | --- | --- |
+| object | <code>object</code> |  | 
+| [publisherPubkeyHex] | <code>string</code> \| <code>null</code> | <code>null</code> | 
+
+<a name="Peer+_mergeContractPatchAllowList"></a>
+
+### peer.\_mergeContractPatchAllowList(contractId, object, [_publisherPubkeyHex])
+Build the set of pubkeys allowed to apply CONTRACT_MESSAGE ops for a newly
+registered contract. Called only on first registration of a contract id —
+republishes must not invoke this (see [_registerContract](#Peer+_registerContract)).
+Membership is taken **only** from body authority arrays (`parties`,
+`validators`, `owners`, `members`, `authorities`). The wire signer is never
+granted rights unless already listed there.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| contractId | <code>string</code> |  |  |
+| object | <code>object</code> |  | contract publish body |
+| [_publisherPubkeyHex] | <code>string</code> \| <code>null</code> | <code>null</code> | ignored (kept for call-site compat) |
 
 <a name="Peer+_signerMayPatchContract"></a>
 
@@ -7583,6 +7896,7 @@ Parse an Object into a corresponding Fabric state.
     * [._peerBans](#Peer+_peerBans) : <code>Map.&lt;string, {until: number, reason: string}&gt;</code>
     * [._candidateKeys](#Peer+_candidateKeys)
     * [._outboundDialTargets](#Peer+_outboundDialTargets)
+    * [._selfDialSuppressUntil](#Peer+_selfDialSuppressUntil) : <code>Map.&lt;string, number&gt;</code>
     * ~~[.address](#Peer+address)~~
     * [._gossipPayloadDedupKey(msg)](#Peer+_gossipPayloadDedupKey) ⇒ <code>string</code>
     * [._logicalRegistrationKey(type, object)](#Peer+_logicalRegistrationKey) ⇒ <code>string</code> \| <code>null</code>
@@ -7599,7 +7913,13 @@ Parse an Object into a corresponding Fabric state.
     * [._derankPeerForWireTraffic(originName, penalty, reason)](#Peer+_derankPeerForWireTraffic)
     * [._peeringOfferPayloadDedupKey(msg)](#Peer+_peeringOfferPayloadDedupKey) ⇒ <code>string</code>
     * [._peeringRateLimitAllow(originName)](#Peer+_peeringRateLimitAllow) ⇒ <code>boolean</code>
-    * [._enqueuePeeringCandidate(host, port)](#Peer+_enqueuePeeringCandidate)
+    * [._enqueuePeeringCandidate(host, port, [meta])](#Peer+_enqueuePeeringCandidate)
+    * [._localFabricPubkeyHex()](#Peer+_localFabricPubkeyHex) ⇒ <code>string</code>
+    * [._isOwnFabricPubkey(hex)](#Peer+_isOwnFabricPubkey) ⇒ <code>boolean</code>
+    * [._isOwnFabricActorId(id)](#Peer+_isOwnFabricActorId) ⇒ <code>boolean</code>
+    * [._suppressSelfDialAddress(address, [ttlMs])](#Peer+_suppressSelfDialAddress)
+    * [._isSelfDialSuppressed(address)](#Peer+_isSelfDialSuppressed) ⇒ <code>boolean</code>
+    * [._abortSelfFabricSession(connAddress, [reason])](#Peer+_abortSelfFabricSession) ⇒ [<code>Peer</code>](#Peer)
     * [.broadcast(message)](#Peer+broadcast)
     * [._localXOnlyPeerId()](#Peer+_localXOnlyPeerId) ⇒ <code>Buffer</code>
     * [._resolveAddressByXOnly(peerId)](#Peer+_resolveAddressByXOnly) ⇒ <code>string</code> \| <code>null</code>
@@ -7618,6 +7938,7 @@ Parse an Object into a corresponding Fabric state.
     * [._handleFabricMessage(buffer, [origin], [socket], [options])](#Peer+_handleFabricMessage) ⇒ [<code>Peer</code>](#Peer)
     * [._relayWirePayload()](#Peer+_relayWirePayload)
     * [._relayGenericPayload()](#Peer+_relayGenericPayload)
+    * [._attachNoiseStreamErrorHandlers(noiseStream, [label])](#Peer+_attachNoiseStreamErrorHandlers)
     * [._buildDocumentParsedForPublish(documentId, content)](#Peer+_buildDocumentParsedForPublish) ⇒ <code>Object</code>
     * [._collectDocumentCatalogInventoryItems([req])](#Peer+_collectDocumentCatalogInventoryItems) ⇒ <code>Array.&lt;object&gt;</code>
     * [._sendLocalInventoryDocumentsWireResponse(originName, items, [opts])](#Peer+_sendLocalInventoryDocumentsWireResponse) ⇒ <code>boolean</code>
@@ -7640,10 +7961,13 @@ Parse an Object into a corresponding Fabric state.
     * [._buildPublishDocumentWireBuffers(documentId, body, rateSats)](#Peer+_buildPublishDocumentWireBuffers) ⇒ <code>Array.&lt;Buffer&gt;</code>
     * [._announceLocalDocumentsToPeer(peerAddress)](#Peer+_announceLocalDocumentsToPeer)
     * [._publishDocument(documentId, [content], [rateSats])](#Peer+_publishDocument)
-    * [._handleDocumentRequestWire(message, origin, socket)](#Peer+_handleDocumentRequestWire)
+    * [._handleDocumentRequestWire(message, origin, socket, [options])](#Peer+_handleDocumentRequestWire)
     * [._privateRelayDocumentRequest(parsed, origin, [originalMessage])](#Peer+_privateRelayDocumentRequest)
+    * [._sendPrivateRelayedDocumentRequest(msg, origin, parsed)](#Peer+_sendPrivateRelayedDocumentRequest) ⇒ <code>boolean</code>
     * [._maybeReverseRelayFileSend(fileObj, origin)](#Peer+_maybeReverseRelayFileSend) ⇒ <code>boolean</code>
-    * [._mergeContractPatchAllowList(contractId, object, publisherPubkeyHex)](#Peer+_mergeContractPatchAllowList)
+    * [._contractPublishSignerAuthorized(object, signerPubkeyHex)](#Peer+_contractPublishSignerAuthorized) ⇒ <code>boolean</code>
+    * [._registerContract(object, [publisherPubkeyHex])](#Peer+_registerContract) ⇒ <code>boolean</code>
+    * [._mergeContractPatchAllowList(contractId, object, [_publisherPubkeyHex])](#Peer+_mergeContractPatchAllowList)
     * [._signerMayPatchContract(contractId, signerPubkeyHex)](#Peer+_signerMayPatchContract) ⇒ <code>boolean</code>
     * [._startFabricPingKeepalive(socket, encryptWrite)](#Peer+_startFabricPingKeepalive)
     * [.start()](#Peer+start)
@@ -7817,6 +8141,13 @@ Temporary bans after hard misbehavior: `addr:<host:port>` or `pk:<hex>` → { un
 [P2P_SESSION_OFFER](P2P_SESSION_OFFER) must not destroy these when the same peer also opens an inbound
 socket (mesh star): otherwise RPC paths that use the listen address (e.g. ChainSyncRequest)
 see `peer not connected` while an ephemeral inbound key remains.
+
+**Kind**: instance property of [<code>Peer</code>](#Peer)  
+<a name="Peer+_selfDialSuppressUntil"></a>
+
+### peer.\_selfDialSuppressUntil : <code>Map.&lt;string, number&gt;</code>
+Addresses suppressed after a self-session (own Fabric key on the wire).
+Map `host:port` → expiry ms (Date.now()).
 
 **Kind**: instance property of [<code>Peer</code>](#Peer)  
 <a name="Peer+address"></a>
@@ -8009,15 +8340,73 @@ Stable id for peering-offer *logical* content (ignores advisory `peeringHop`).
 
 <a name="Peer+_enqueuePeeringCandidate"></a>
 
-### peer.\_enqueuePeeringCandidate(host, port)
+### peer.\_enqueuePeeringCandidate(host, port, [meta])
 Enqueue a fabric candidate from [P2P_PEERING_OFFER](P2P_PEERING_OFFER); FIFO-capped and deduped by host:port.
 
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
 
+| Param | Type | Description |
+| --- | --- | --- |
+| host | <code>string</code> |  |
+| port | <code>number</code> |  |
+| [meta] | <code>Object</code> |  |
+| [meta.pubkey] | <code>string</code> | Optional advertised Fabric pubkey (skip if own). |
+
+<a name="Peer+_localFabricPubkeyHex"></a>
+
+### peer.\_localFabricPubkeyHex() ⇒ <code>string</code>
+Local Fabric session pubkey (x-only hex), same normalization as wire signers.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+<a name="Peer+_isOwnFabricPubkey"></a>
+
+### peer.\_isOwnFabricPubkey(hex) ⇒ <code>boolean</code>
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
 | Param | Type |
 | --- | --- |
-| host | <code>string</code> | 
-| port | <code>number</code> | 
+| hex | <code>\*</code> | 
+
+<a name="Peer+_isOwnFabricActorId"></a>
+
+### peer.\_isOwnFabricActorId(id) ⇒ <code>boolean</code>
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type |
+| --- | --- |
+| id | <code>\*</code> | 
+
+<a name="Peer+_suppressSelfDialAddress"></a>
+
+### peer.\_suppressSelfDialAddress(address, [ttlMs])
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Default |
+| --- | --- | --- |
+| address | <code>string</code> |  | 
+| [ttlMs] | <code>number</code> | <code>600000</code> | 
+
+<a name="Peer+_isSelfDialSuppressed"></a>
+
+### peer.\_isSelfDialSuppressed(address) ⇒ <code>boolean</code>
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type |
+| --- | --- |
+| address | <code>string</code> | 
+
+<a name="Peer+_abortSelfFabricSession"></a>
+
+### peer.\_abortSelfFabricSession(connAddress, [reason]) ⇒ [<code>Peer</code>](#Peer)
+Tear down a TCP/NOISE session that presented our own Fabric identity.
+Emits `peer:self` so apps can drop the address from dial lists.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Default |
+| --- | --- | --- |
+| connAddress | <code>string</code> \| <code>null</code> \| <code>undefined</code> |  | 
+| [reason] | <code>string</code> | <code>&quot;own Fabric identity&quot;</code> | 
 
 <a name="Peer+broadcast"></a>
 
@@ -8195,14 +8584,15 @@ Handle a Fabric [Message](#Message) buffer.
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
 **Returns**: [<code>Peer</code>](#Peer) - Instance of the Peer.  
 
-| Param | Type | Default |
-| --- | --- | --- |
-| buffer | <code>Buffer</code> |  | 
-| [origin] | <code>object</code> \| <code>null</code> | <code></code> | 
-| [socket] | <code>object</code> \| <code>null</code> | <code></code> | 
-| [options] | <code>Object</code> | <code></code> | 
-| [options.relayDepth] | <code>number</code> |  | 
-| [options.skipRelayFlood] | <code>boolean</code> |  | 
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| buffer | <code>Buffer</code> |  |  |
+| [origin] | <code>object</code> \| <code>null</code> | <code></code> |  |
+| [socket] | <code>object</code> \| <code>null</code> | <code></code> |  |
+| [options] | <code>Object</code> | <code></code> |  |
+| [options.relayDepth] | <code>number</code> |  |  |
+| [options.skipRelayFlood] | <code>boolean</code> |  |  |
+| [options.peeledForward] | <code>boolean</code> |  | true when delivered via [Peer#_handleP2PForward](Peer#_handleP2PForward) peel |
 
 <a name="Peer+_relayWirePayload"></a>
 
@@ -8220,6 +8610,22 @@ bit-identical (no hop re-sign). Otherwise the local agent originates a new signe
 and may wrap it in {@code P2P_RELAY} for mesh delivery.
 
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
+<a name="Peer+_attachNoiseStreamErrorHandlers"></a>
+
+### peer.\_attachNoiseStreamErrorHandlers(noiseStream, [label])
+Bind encrypt/decrypt 'error' before piping. noise-protocol-stream calls
+stream.destroy(err) on handshake failure; without listeners Node raises
+uncaught Exceptions (e.g. `noise_stream_new`, `malloc`).
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| noiseStream | <code>Object</code> |  | noise-protocol-stream duplex pair |
+| noiseStream.encrypt | <code>stream.Duplex</code> |  |  |
+| noiseStream.decrypt | <code>stream.Duplex</code> |  |  |
+| [label] | <code>string</code> | <code>&quot;&#x27;NOISE&#x27;&quot;</code> |  |
+
 <a name="Peer+_buildDocumentParsedForPublish"></a>
 
 ### peer.\_buildDocumentParsedForPublish(documentId, content) ⇒ <code>Object</code>
@@ -8511,18 +8917,22 @@ Store a document locally and gossip to peers.
 
 <a name="Peer+_handleDocumentRequestWire"></a>
 
-### peer.\_handleDocumentRequestWire(message, origin, socket)
+### peer.\_handleDocumentRequestWire(message, origin, socket, [options])
 Handle inbound `DOCUMENT_REQUEST`: emit `documentRequest` / `DocumentRequest`, then either
 send `P2P_FILE_SEND` (when [Peer#settings.autoFulfillDocumentRequests](Peer#settings.autoFulfillDocumentRequests)), queue for
 operator approve, or relay when the document is not held.
 
+Peel / foreign-signed `P2P_RELAY` deliveries are local-observe only: never fulfill or
+queue against the TCP last hop, and never second-flood the inner under that hop.
+
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
 
-| Param | Type |
-| --- | --- |
-| message | [<code>Message</code>](#Message) | 
-| origin | <code>Object</code> | 
-| socket | <code>\*</code> | 
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| message | [<code>Message</code>](#Message) |  |  |
+| origin | <code>Object</code> |  |  |
+| socket | <code>\*</code> |  |  |
+| [options] | <code>Object</code> | <code></code> | same delivery opts as [_handleFabricMessage](#Peer+_handleFabricMessage) |
 
 <a name="Peer+_privateRelayDocumentRequest"></a>
 
@@ -8537,6 +8947,21 @@ Rewrite a budgeted DocumentRequest (privacy) and forward with reduced maxSats.
 | origin | <code>Object</code> |  | 
 | [originalMessage] | [<code>Message</code>](#Message) | <code></code> | 
 
+<a name="Peer+_sendPrivateRelayedDocumentRequest"></a>
+
+### peer.\_sendPrivateRelayedDocumentRequest(msg, origin, parsed) ⇒ <code>boolean</code>
+Deliver a rewritten private DocumentRequest without mesh broadcast.
+Preference: onion `relayPath` → explicit `nextPeer` → fan-out to TCP peers
+other than the inbound origin.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| msg | [<code>Message</code>](#Message) | signed DocumentRequest |
+| origin | <code>Object</code> \| <code>null</code> |  |
+| parsed | <code>object</code> | inbound request body |
+
 <a name="Peer+_maybeReverseRelayFileSend"></a>
 
 ### peer.\_maybeReverseRelayFileSend(fileObj, origin) ⇒ <code>boolean</code>
@@ -8550,20 +8975,48 @@ Forward a relayed `P2P_FILE_SEND` / key reveal back toward the buyer using rever
 | fileObj | <code>object</code> | 
 | origin | <code>Object</code> | 
 
-<a name="Peer+_mergeContractPatchAllowList"></a>
+<a name="Peer+_contractPublishSignerAuthorized"></a>
 
-### peer.\_mergeContractPatchAllowList(contractId, object, publisherPubkeyHex)
-Build the set of pubkeys allowed to apply CONTRACT_MESSAGE ops for a newly
-registered contract. Called only on first registration of a contract id —
-republishes must not invoke this (see [Peer#_registerContract](Peer#_registerContract)).
+### peer.\_contractPublishSignerAuthorized(object, signerPubkeyHex) ⇒ <code>boolean</code>
+When a publish body declares authority arrays, the AMP wire signer must be
+one of them. Bodies with no authorities are allowed (observe-only; empty
+patch allow-list). Missing signer (local seed) is allowed.
 
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
 
-| Param | Type | Description |
+| Param | Type | Default |
 | --- | --- | --- |
-| contractId | <code>string</code> |  |
-| object | <code>object</code> | contract publish body |
-| publisherPubkeyHex | <code>string</code> \| <code>null</code> | wire signer of the first publish |
+| object | <code>object</code> |  | 
+| signerPubkeyHex | <code>string</code> \| <code>null</code> | <code>null</code> | 
+
+<a name="Peer+_registerContract"></a>
+
+### peer.\_registerContract(object, [publisherPubkeyHex]) ⇒ <code>boolean</code>
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+**Returns**: <code>boolean</code> - true when newly registered (or already present no-op)  
+
+| Param | Type | Default |
+| --- | --- | --- |
+| object | <code>object</code> |  | 
+| [publisherPubkeyHex] | <code>string</code> \| <code>null</code> | <code>null</code> | 
+
+<a name="Peer+_mergeContractPatchAllowList"></a>
+
+### peer.\_mergeContractPatchAllowList(contractId, object, [_publisherPubkeyHex])
+Build the set of pubkeys allowed to apply CONTRACT_MESSAGE ops for a newly
+registered contract. Called only on first registration of a contract id —
+republishes must not invoke this (see [_registerContract](#Peer+_registerContract)).
+Membership is taken **only** from body authority arrays (`parties`,
+`validators`, `owners`, `members`, `authorities`). The wire signer is never
+granted rights unless already listed there.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| contractId | <code>string</code> |  |  |
+| object | <code>object</code> |  | contract publish body |
+| [_publisherPubkeyHex] | <code>string</code> \| <code>null</code> | <code>null</code> | ignored (kept for call-site compat) |
 
 <a name="Peer+_signerMayPatchContract"></a>
 
@@ -14234,114 +14687,6 @@ Closes the connection to the ZMQ publisher.
 Deprecated 2021-11-06 — use [FabricState](FabricState) (<code>types/state</code>). <code>Scribe</code> was merged into <code>State</code>.
 
 **Kind**: global class  
-<a name="mineOnStart"></a>
-
-## mineOnStart
-When false, `start()` does not mine an initial epoch (regtest).
-
-**Kind**: global variable  
-<a name="GenericMessage"></a>
-
-## GenericMessage
-Transitional Hub/browser catch-all (opcode GENERIC_MESSAGE_TYPE / 15103).
-
-**Kind**: global variable  
-<a name="merge"></a>
-
-## merge
-Beacon — L1-tied epoch chain that seals sidechain / contracts digests.
-
-Regtest: `createEpoch()` mines one block (`generatetoaddress`) then appends
-a `BEACON_EPOCH` entry. Non-regtest: `recordEpochFromBlock` follows tips.
-
-Hub product wiring historically lived in hub.fabric.pub `contracts/beacon.js`;
-that module re-exports this type.
-
-**Kind**: global constant  
-<a name="merge"></a>
-
-## merge
-Bitcoin-shaped Block: parent-linked header + merkle of leaves, with optional
-PoW (`nonce`/`bits`), Elements-style federation signatures, and arbitrary `data`.
-
-**Kind**: global constant  
-**See**: docs/CHAIN.md  
-<a name="crypto"></a>
-
-## crypto
-Chain — ledger of Bitcoin-shaped Blocks with consensus policy:
-
-- `pow` (default) — parent-linked playnet / Bitcoin-style Block + mempool
-- `federation` — linear tip; Elements-style k-of-n block signatures (Beacon)
-- `gossip` — content-addressed data blocks; merge = union by block id
-
-Statechain document helpers (`functions/sidechainState`) hold the sealed JSON
-document. Digests feed that document / Beacon sidechain heads; raw gossip is
-never Beacon authority.
-
-**Kind**: global constant  
-**See**
-
-- docs/CHAIN.md
-- docs/DISTRIBUTED_EXECUTION.md
-
-<a name="SEAL_BLOCK"></a>
-
-## ~~SEAL\_BLOCK~~
-***Use CONSENSUS_*; aliases for one release.***
-
-**Kind**: global constant  
-<a name="fabricCanonicalJson"></a>
-
-## ~~fabricCanonicalJson~~
-***Not a Fabric type. Prefer:
-- `functions/fabricCanonicalJson` (jsonSafe / stableStringify)
-- `functions/beaconFederationSigning` (epoch signing / federation verify)
-- `functions/fabricProgramManifest` / `Machine.parseManifest` (manifest v1)
-- `types/program` + `types/machine` for execution
-
-Thin re-export kept for one release so Hub / older requires keep working.***
-
-**Kind**: global constant  
-<a name="BODY_SCHEMA_BY_KEY"></a>
-
-## BODY\_SCHEMA\_BY\_KEY : <code>Map.&lt;(number\|string), Array.&lt;{name: string, type: string}&gt;&gt;</code>
-**Kind**: global constant  
-<a name="SCHEMA_P2P_FORWARD"></a>
-
-## SCHEMA\_P2P\_FORWARD
-Directed onion hop — see [module:@fabric/core/functions/fabricOnion](module:@fabric/core/functions/fabricOnion).
-
-**Kind**: global constant  
-<a name="P2P_CHAT_MAX_CHARS"></a>
-
-## P2P\_CHAT\_MAX\_CHARS
-Max UTF-8 code units for first-class P2P_CHAT_MESSAGE body (text only).
-
-**Kind**: global constant  
-<a name="P2P_PEER_ALIAS_MAX_CHARS"></a>
-
-## P2P\_PEER\_ALIAS\_MAX\_CHARS
-Max UTF-8 code units for first-class P2P_PEER_ALIAS body (nickname).
-
-**Kind**: global constant  
-<a name="crypto"></a>
-
-## crypto
-Multi-language Program — executable artifact for [Machine](#Machine), with optional
-L1 Bitcoin redeem scaffolding for `bitcoin-script`.
-
-Languages: `fabric-opcodes` | `javascript` | `bitcoin-script` | `solidity` | `asm`
-(solidity/asm compile stubs until Compiler frontends land).
-
-**Kind**: global constant  
-**See**: docs/PROGRAM.md  
-<a name="networks"></a>
-
-## networks
-Fabric settings use `mainnet`; bitcoinjs-lib 7 names that network `bitcoin`.
-
-**Kind**: global constant  
 <a name="Text"></a>
 
 ## ~~Text~~
@@ -14819,84 +15164,6 @@ Join a list with an Oxford comma (delegates to [module:functions/oxfordJoin](mod
 | Param | Type |
 | --- | --- |
 | list | <code>Array.&lt;string&gt;</code> | 
-
-<a name="isStructuredBlockInput"></a>
-
-## isStructuredBlockInput(input) ⇒ <code>boolean</code>
-**Kind**: global function  
-
-| Param | Type |
-| --- | --- |
-| input | <code>object</code> | 
-
-<a name="signingStringForBlock"></a>
-
-## signingStringForBlock(header) ⇒ <code>string</code>
-Canonical signing / digest body (excludes witness material).
-
-**Kind**: global function  
-
-| Param | Type |
-| --- | --- |
-| header | <code>object</code> | 
-
-<a name="blockDigest"></a>
-
-## blockDigest(header) ⇒ <code>string</code>
-Content digest for merkle leaves / chain digest (includes optional federationWitness).
-
-**Kind**: global function  
-
-| Param | Type |
-| --- | --- |
-| header | <code>object</code> | 
-
-<a name="meetsProofOfWork"></a>
-
-## meetsProofOfWork(idHex, bits) ⇒ <code>boolean</code>
-Soft playnet PoW: leading zero hex nibbles from `bits` (integer 0–64).
-
-**Kind**: global function  
-
-| Param | Type |
-| --- | --- |
-| idHex | <code>string</code> | 
-| bits | <code>number</code> \| <code>null</code> | 
-
-<a name="canonicalTypeCode"></a>
-
-## canonicalTypeCode(value) ⇒ <code>number</code> \| <code>null</code>
-Resolve any opcode / wire name / friendly alias to the numeric AMP type code.
-
-**Kind**: global function  
-
-| Param | Type |
-| --- | --- |
-| value | <code>number</code> \| <code>string</code> \| <code>null</code> \| <code>undefined</code> | 
-
-<a name="canonicalTypeName"></a>
-
-## canonicalTypeName(value) ⇒ <code>string</code> \| <code>null</code>
-Resolve any opcode / wire name / friendly alias to the SCREAMING_SNAKE wire label.
-
-**Kind**: global function  
-
-| Param | Type |
-| --- | --- |
-| value | <code>number</code> \| <code>string</code> \| <code>null</code> \| <code>undefined</code> | 
-
-<a name="typeEquals"></a>
-
-## typeEquals(a, b) ⇒ <code>boolean</code>
-True when two type references name the same AMP opcode (number, wire name, or friendly alias).
-Unregistered string labels only match via exact trim equality.
-
-**Kind**: global function  
-
-| Param | Type |
-| --- | --- |
-| a | <code>number</code> \| <code>string</code> \| <code>null</code> \| <code>undefined</code> | 
-| b | <code>number</code> \| <code>string</code> \| <code>null</code> \| <code>undefined</code> | 
 
 <a name="BitcoinCookieProbeConstraints"></a>
 

@@ -291,64 +291,39 @@ class Federation extends Contract {
     return false;
   }
 
+  /**
+   * Federation validators live on consensus state, not only constructor settings.
+   * @param {object} [overrides]
+   * @returns {object}
+   */
+  _taprootPolicyInputs (overrides = {}) {
+    const tap = require('../functions/contractTaproot');
+    const validators = overrides.validators
+      || (this._state.content.validators || []).slice();
+    if (!validators.length) {
+      throw new Error('Federation address requires at least one validator');
+    }
+    const threshold = overrides.threshold != null
+      ? Number(overrides.threshold)
+      : (this.settings.threshold != null
+        ? Number(this.settings.threshold)
+        : Math.ceil(validators.length / 2));
+    const publisher = overrides.publisher || this.settings.publisher || validators[0];
+    // Do not treat settings.timeout as a block count (units differ).
+    const csvBlocks = overrides.csvBlocks != null
+      ? Number(overrides.csvBlocks)
+      : (this.settings.csvBlocks != null ? Number(this.settings.csvBlocks) : tap.DEFAULT_CSV_BLOCKS);
+    const network = overrides.network || this.settings.network || null;
+    if (!network) {
+      throw new Error(
+        'Federation Bitcoin network required (set settings.network or pass overrides.network; do not default to regtest)'
+      );
+    }
+    return { validators, threshold, publisher, network, csvBlocks };
+  }
+
   get address () {
-    // Get the public keys of all validators
-    const pubkeys = this._state.content.validators.map(pubkey => Buffer.from(pubkey, 'hex'));
-
-    // Create the threshold script for majority of signers
-    const threshold = Math.ceil(pubkeys.length / 2);
-    const thresholdScript = bitcoin.script.compile([
-      bitcoin.opcodes.OP_PUSHNUM_1 + threshold - 1,
-      ...pubkeys.map(pubkey => Buffer.concat([
-        Buffer.from([pubkey.length]),
-        pubkey
-      ])),
-      bitcoin.opcodes.OP_PUSHNUM_1 + pubkeys.length,
-      bitcoin.opcodes.OP_CHECKMULTISIG
-    ]);
-
-    // Create the taproot tree
-    const tree = [
-      {
-        script: thresholdScript,
-        weight: 1
-      }
-    ];
-
-    // Add timeout condition if specified in settings
-    if (this.settings.timeout) {
-      const timeoutScript = bitcoin.script.compile([
-        bitcoin.opcodes.OP_CHECKLOCKTIMEVERIFY,
-        bitcoin.opcodes.OP_DROP,
-        ...thresholdScript
-      ]);
-      tree.push({
-        script: timeoutScript,
-        weight: 1
-      });
-    }
-
-    // Add contract condition if specified in settings
-    if (this.settings.contract) {
-      // If contract is a string, assume it's a script hex
-      const contractScript = typeof this.settings.contract === 'string'
-        ? Buffer.from(this.settings.contract, 'hex')
-        : this.settings.contract;
-
-      tree.push({
-        script: contractScript,
-        weight: 1
-      });
-    }
-
-    // Create the taproot output
-    const output = bitcoin.payments.p2tr({
-      internalPubkey: pubkeys[0].slice(1), // Use first validator's x-only pubkey
-      scriptTree: tree,
-      network: bitcoin.networks.bitcoin
-    });
-
-    return output.address;
+    return this.toAddress();
   }
 }
 

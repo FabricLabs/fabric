@@ -51,10 +51,14 @@ const {
   xOnlyEquals,
   toXOnlyPeerId
 } = require('../functions/fabricOnion');
+const {
+  isOnionChatSeal,
+  tryOpenOnionChatText
+} = require('../functions/onionChatSeal');
 
-/** Max UTF-8 code units for first-class P2P_CHAT_MESSAGE body (text only). */
+/** @private Max UTF-8 code units for first-class P2P_CHAT_MESSAGE body (text only). */
 const P2P_CHAT_MAX_CHARS = 2000;
-/** Max UTF-8 code units for first-class P2P_PEER_ALIAS body (nickname). */
+/** @private Max UTF-8 code units for first-class P2P_PEER_ALIAS body (nickname). */
 const P2P_PEER_ALIAS_MAX_CHARS = 64;
 
 // Dependencies
@@ -86,6 +90,7 @@ const {
   normalizeFabricDocumentOfferEnvelopeForHandlers
 } = require('../functions/publishedDocumentEnvelope');
 const inventoryHtlc = require('../functions/inventoryHtlc');
+const { resolveFabricPeerInterface } = require('../functions/fabricListenInterface');
 const {
   buildForwardedDocumentRequest
 } = require('../functions/documentMarket');
@@ -224,16 +229,39 @@ function collectContractAuthorityPubkeys (object) {
     const h = normalizePeerPubkeyHex(hex);
     if (/^[0-9a-f]{64}$/.test(h) || /^[0-9a-f]{66}$/.test(h)) set.add(h);
   };
-  const def = object && typeof object === 'object' ? object : {};
-  const lists = [def.validators, def.parties, def.owners, def.members, def.authorities];
-  for (const list of lists) {
-    if (!Array.isArray(list)) continue;
+  const addList = (list) => {
+    if (!Array.isArray(list)) return;
     for (const entry of list) {
       if (typeof entry === 'string') add(entry);
       else if (entry && typeof entry === 'object') {
         add(entry.pubkey || entry.publicKey || entry.id);
       }
     }
+  };
+  const def = object && typeof object === 'object' ? object : {};
+  // Flat publish bodies + ARC/Beacon genesis (`members.signers`, `spendPolicy.validators`).
+  addList(def.validators);
+  addList(def.parties);
+  addList(def.owners);
+  addList(def.authorities);
+  if (Array.isArray(def.members)) {
+    addList(def.members);
+  } else if (def.members && typeof def.members === 'object') {
+    addList(def.members.signers);
+    addList(def.members.validators);
+    addList(def.members.parties);
+    addList(def.members.owners);
+    addList(def.members.authorities);
+  }
+  if (def.spendPolicy && typeof def.spendPolicy === 'object') {
+    addList(def.spendPolicy.validators);
+    addList(def.spendPolicy.parties);
+  }
+  // Hub / Federation application genesis: proposedPolicy.validators.
+  if (def.proposedPolicy && typeof def.proposedPolicy === 'object') {
+    addList(def.proposedPolicy.validators);
+    addList(def.proposedPolicy.parties);
+    addList(def.proposedPolicy.signers);
   }
   return set;
 }
@@ -345,6 +373,41 @@ function isRelayAsIsWireType (type) {
   }
   return RELAY_AS_IS_TYPES.has(String(type));
 }
+
+/**
+ * Types that must arrive as first-class AMP opcodes — not via P2P_BASE_MESSAGE JSON.
+ * @param {string|null|undefined} type
+ * @returns {boolean}
+ * @private
+ */
+function isFirstClassOpcodeOnlyType (type) {
+  if (type == null) return false;
+  return FIRST_CLASS_OPCODE_ONLY_TYPES.has(String(type));
+}
+
+/** @private */
+const FIRST_CLASS_OPCODE_ONLY_TYPES = new Set([
+  'P2P_PEER_GOSSIP',
+  'P2P_PEERING_OFFER',
+  'P2P_PEER_ANNOUNCE',
+  'P2P_PEER_ALIAS',
+  'P2P_SESSION_OFFER',
+  'P2P_SESSION_OPEN',
+  'P2P_CHAT_MESSAGE',
+  'CONTRACT_PUBLISH',
+  'CONTRACT_MESSAGE',
+  'CONTRACT_PROPOSAL',
+  'P2P_INVENTORY_REQUEST',
+  'P2P_INVENTORY_RESPONSE',
+  'INVENTORY_REQUEST',
+  'INVENTORY_RESPONSE',
+  'P2P_FILE_SEND',
+  'P2P_DOCUMENT_PUBLISH',
+  'P2P_FLUSH_CHAIN',
+  'FlushChain',
+  'BitcoinBlock',
+  'BITCOIN_BLOCK'
+]);
 
 /**
  * Generic / base carriers may wrap a relay-as-is body (Hub transitional path).
@@ -504,6 +567,12 @@ class Peer extends Service {
       flushChainAuthorizedPubkeys: []
     }, config);
 
+    // FABRIC_INTERFACE / FABRIC_PEER_INTERFACE override bind when set.
+    this.settings.interface = resolveFabricPeerInterface({
+      interface: this.settings.interface,
+      env: process.env
+    });
+
     // Network Internals
     this.upnp = null;
 
@@ -525,8 +594,23 @@ class Peer extends Service {
       }
     });
 
-    this.identity = new Identity(this.settings.key);
-    this.key = new Key(this.settings.key);
+    const keyCfg = this.settings.key;
+    const network = this.settings.network
+      || (this.settings.bitcoin && this.settings.bitcoin.network)
+      || 'regtest';
+    if (keyCfg instanceof Key) {
+      this.identity = new Identity(keyCfg);
+      this.identity.settings.network = String(network);
+      this.identity._state.content.network = String(network);
+    } else {
+      const base = (keyCfg && typeof keyCfg === 'object' && !Buffer.isBuffer(keyCfg))
+        ? Object.assign({}, keyCfg)
+        : (typeof keyCfg === 'string' ? { seed: keyCfg } : {});
+      this.identity = new Identity(Object.assign(base, { network }));
+    }
+    // Protocol AMP / Schnorr / actor id use Identity#fabricKey (7777 mainnet / 7778 otherwise).
+    // Master / fund root remains on identity.key for Bitcoin paths that need it.
+    this.key = this.identity.fabricKey || new Key(this.settings.key);
     // this.wallet = new Wallet(this.settings.key);
 
     // this.hex = this.key.public.encodeCompressed('hex');
@@ -555,6 +639,8 @@ class Peer extends Service {
     this._authorizedDocumentKeyReveals = new Map();
     /** contractId → Set of lowercase compressed pubkeys allowed to apply state ops. */
     this._contractPatchAllowList = Object.create(null);
+    /** contractId → original CONTRACT_PUBLISH body (ARC genesis for ingest). */
+    this._contractGenesis = Object.create(null);
     /** Buyer-side verified blob reassembly (DocumentBlobIndex). */
     this.blobTransfers = new DocumentBlobTransferBook();
     /** Ciphertext awaiting content-key reveal: documentId → meta. */
@@ -611,6 +697,12 @@ class Peer extends Service {
      * see `peer not connected` while an ephemeral inbound key remains.
      */
     this._outboundDialTargets = new Set();
+    /**
+     * Addresses suppressed after a self-session (own Fabric key on the wire).
+     * Map `host:port` → expiry ms (Date.now()).
+     * @type {Map<string, number>}
+     */
+    this._selfDialSuppressUntil = new Map();
     this.sessions = {};
 
     // Internal Stack Machine
@@ -1121,10 +1213,30 @@ class Peer extends Service {
    * Enqueue a fabric candidate from {@link P2P_PEERING_OFFER}; FIFO-capped and deduped by host:port.
    * @param {string} host
    * @param {number} port
+   * @param {Object} [meta]
+   * @param {string} [meta.pubkey] Optional advertised Fabric pubkey (informational).
+   * @param {string} [meta.verifiedPubkey] AMP/session-verified pubkey; self-dial suppress uses this only.
    */
-  _enqueuePeeringCandidate (host, port) {
+  _enqueuePeeringCandidate (host, port, meta = {}) {
+    const normalizedHost = typeof host === 'string' ? host.trim() : '';
+    const normalizedPort = Number(port);
+    if (!normalizedHost ||
+        !Number.isInteger(normalizedPort) ||
+        normalizedPort < 1 ||
+        normalizedPort > 65535) {
+      return;
+    }
+    const key = `${normalizedHost}:${normalizedPort}`;
+    if (this._isSelfDialSuppressed(key)) return;
+    // Only suppress from a verified AMP/session pubkey — remote `obj.pubkey` is
+    // attacker-controlled and must not poison dial targets for ~10 minutes.
+    if (meta.verifiedPubkey && this._isOwnFabricPubkey(meta.verifiedPubkey)) {
+      this.emit('warning',
+        `[FABRIC:PEER] Skipping peering candidate ${key}: verified pubkey is our own`);
+      this._suppressSelfDialAddress(key);
+      return;
+    }
     const max = (this.settings.peering && this.settings.peering.maxCandidates) || PEER_MAX_CANDIDATES_QUEUE;
-    const key = `${String(host)}:${Number(port)}`;
     if (this._candidateKeys.has(key)) return;
     while (this.candidates.length >= max) {
       const old = this.candidates.shift();
@@ -1134,7 +1246,124 @@ class Peer extends Service {
       }
     }
     this._candidateKeys.add(key);
-    this.candidates.push({ host, port: Number(port) });
+    const pubkey = meta.pubkey ? normalizePeerPubkeyHex(meta.pubkey) : '';
+    const verifiedPubkey = meta.verifiedPubkey
+      ? normalizePeerPubkeyHex(meta.verifiedPubkey)
+      : '';
+    // Omit empty pubkey — callers historically expect `{ host, port }` when unknown.
+    const candidate = { host: normalizedHost, port: normalizedPort };
+    if (pubkey) candidate.pubkey = pubkey;
+    if (verifiedPubkey) candidate.verifiedPubkey = verifiedPubkey;
+    this.candidates.push(candidate);
+  }
+
+  /**
+   * Local Fabric session pubkey (x-only hex), same normalization as wire signers.
+   * @returns {string}
+   */
+  _localFabricPubkeyHex () {
+    try {
+      if (this.key && this.key.public && typeof this.key.public.encodeCompressed === 'function') {
+        return normalizePeerPubkeyHex(this.key.public.encodeCompressed('hex'));
+      }
+    } catch (_) { /* fall through */ }
+    return normalizePeerPubkeyHex(this.key && (this.key.pubkey || this.id));
+  }
+
+  /**
+   * @param {*} hex
+   * @returns {boolean}
+   */
+  _isOwnFabricPubkey (hex) {
+    const remote = normalizePeerPubkeyHex(hex);
+    const local = this._localFabricPubkeyHex();
+    return !!(remote && local && remote === local);
+  }
+
+  /**
+   * @param {*} id
+   * @returns {boolean}
+   */
+  _isOwnFabricActorId (id) {
+    const mine = this.identity && this.identity.id != null ? String(this.identity.id) : '';
+    return !!(mine && id != null && String(id) === mine);
+  }
+
+  /**
+   * @param {string} address
+   * @param {number} [ttlMs=600000]
+   */
+  _suppressSelfDialAddress (address, ttlMs = 600000) {
+    const addr = String(address || '').trim();
+    if (!addr) return;
+    const ttl = Number(ttlMs);
+    const until = Date.now() + (Number.isFinite(ttl) && ttl > 0 ? ttl : 600000);
+    if (!this._selfDialSuppressUntil) this._selfDialSuppressUntil = new Map();
+    // Sweep expired entries, then FIFO-cap (remote peers drive insertion).
+    const now = Date.now();
+    for (const [k, v] of this._selfDialSuppressUntil) {
+      if (!(v > now)) this._selfDialSuppressUntil.delete(k);
+    }
+    this._selfDialSuppressUntil.set(addr, until);
+    const max = Number(this.settings && this.settings.selfDialSuppressMax) > 0
+      ? Number(this.settings.selfDialSuppressMax)
+      : 256;
+    while (this._selfDialSuppressUntil.size > max) {
+      const oldest = this._selfDialSuppressUntil.keys().next().value;
+      this._selfDialSuppressUntil.delete(oldest);
+    }
+  }
+
+  /**
+   * @param {string} address
+   * @returns {boolean}
+   */
+  _isSelfDialSuppressed (address) {
+    const addr = String(address || '').trim();
+    if (!addr || !this._selfDialSuppressUntil) return false;
+    const until = this._selfDialSuppressUntil.get(addr);
+    if (until == null) return false;
+    if (Date.now() >= until) {
+      this._selfDialSuppressUntil.delete(addr);
+      return false;
+    }
+    return true;
+  }
+
+  /**
+   * Tear down a TCP/NOISE session that presented our own Fabric identity.
+   * Emits `peer:self` so apps can drop the address from dial lists.
+   * @param {string|null|undefined} connAddress
+   * @param {string} [reason]
+   * @returns {Peer}
+   */
+  _abortSelfFabricSession (connAddress, reason = 'own Fabric identity') {
+    const addr = connAddress ? String(connAddress) : '';
+    this.emit('warning', `[FABRIC:PEER] Closing self-session ${addr || '(unknown)'}: ${reason}`);
+    this.emit('peer:self', { address: addr || null, reason: String(reason) });
+    if (addr) {
+      this._suppressSelfDialAddress(addr);
+      if (this._outboundDialTargets) this._outboundDialTargets.delete(addr);
+      if (this._candidateKeys) this._candidateKeys.delete(addr);
+      if (Array.isArray(this.candidates)) {
+        this.candidates = this.candidates.filter((c) => {
+          const h = c && (c.address || `${c.host}:${c.port}`);
+          return h !== addr;
+        });
+      }
+      const sock = this.connections && this.connections[addr];
+      if (sock) {
+        if (sock._keepalive) clearInterval(sock._keepalive);
+        delete this.connections[addr];
+        delete this.peers[addr];
+        if (this._addressToId) delete this._addressToId[addr];
+        try {
+          if (typeof sock.destroy === 'function') sock.destroy();
+          else if (typeof sock._destroyFabric === 'function') sock._destroyFabric();
+        } catch (_) { /* ignore */ }
+      }
+    }
+    return this;
   }
 
   get id () {
@@ -1335,14 +1564,19 @@ class Peer extends Service {
   /**
    * Write a {@link Buffer} to all connected peers.
    * @param {Buffer} message Message buffer to send.
+   * @param {string|null} [origin] Skip this connection id (usually the inbound origin).
+   * @returns {number} Count of peers the frame was written to.
    */
   broadcast (message, origin = null) {
     if (this.settings.debug) this.emit('debug', `Broadcasting message (${message && message.length ? message.length : 0} bytes)`);
+    let sent = 0;
     for (const id in this.connections) {
       this.emit('debug', `Broadcast [!!!] — evaluating connection: ${id}`);
       if (id === origin) continue;
       this.connections[id]._writeFabric(message);
+      sent += 1;
     }
+    return sent;
   }
 
   connectTo (address) {
@@ -1676,11 +1910,33 @@ class Peer extends Service {
       return;
     }
 
+    if (this._isSelfDialSuppressed(target)) {
+      this.emit('warning', `[FABRIC:PEER:_connect] Refusing dial to self-suppressed ${target}`);
+      return;
+    }
+
     this.emit('debug', `[FABRIC:PEER:_connect] Attempting to connect to: ${target}`);
     const url = new URL(`tcp://${target}`);
     const id = url.username;
 
+    // pubkey@host:port — refuse when the pin is our own Fabric key (pre-TCP).
+    if (id && this._isOwnFabricPubkey(id)) {
+      this.emit('warning',
+        `[FABRIC:PEER:_connect] Refusing dial to ${target}: pinned pubkey is our own`);
+      // Match later dial checks (`host:7777`) when the pin omits an explicit port.
+      const normalizedAddress = `${url.hostname}:${url.port || P2P_PORT}`;
+      this._suppressSelfDialAddress(normalizedAddress);
+      this.emit('peer:self', { address: target, reason: 'pinned pubkey is own Fabric key' });
+      return;
+    }
+
     if (!url.port) target += `:${P2P_PORT}`;
+
+    // After normalizing port, check suppress on host:port form.
+    if (this._isSelfDialSuppressed(target)) {
+      this.emit('warning', `[FABRIC:PEER:_connect] Refusing dial to self-suppressed ${target}`);
+      return;
+    }
 
     this._outboundDialTargets.add(target);
 
@@ -1725,7 +1981,9 @@ class Peer extends Service {
 
     socket.on('error', (error) => {
       this.emit('debug', `--- debug error from _connect() ---`);
-      if (error && (error.code === 'EPIPE' || error.code === 'ECONNRESET')) {
+      if (error && (error.code === 'EPIPE' || error.code === 'ECONNRESET' ||
+          error.code === 'ECONNREFUSED' || error.code === 'EHOSTUNREACH' ||
+          error.code === 'ENETUNREACH' || error.code === 'ETIMEDOUT')) {
         this.emit('warning', `Suppressing transient outbound socket error (${error.code}) from _connect().`);
       } else {
         const msg = `Socket error: ${error}`;
@@ -1749,6 +2007,10 @@ class Peer extends Service {
       this.emit('debug', `Socket end: (${target}) ${info}`);
       // delete this.connections[target];
     });
+
+    // Attach before pipe — noise-protocol-stream destroy(err) emits on encrypt/decrypt;
+    // missing listeners become uncaught Exceptions (noise_stream_new / malloc).
+    this._attachNoiseStreamErrorHandlers(client, 'NOISE');
 
     // Handle trusted Fabric messages
     client.decrypt.on('data', (data) => {
@@ -2039,7 +2301,21 @@ class Peer extends Service {
       try {
         const host = candidate.object ? candidate.object.host : candidate.host;
         const port = candidate.object ? candidate.object.port : candidate.port;
-        this._connect(`${host}:${port}`);
+        const pubkey = candidate.pubkey ||
+          (candidate.object && (candidate.object.pubkey || candidate.object.publicKey));
+        const addr = `${host}:${port}`;
+        if (pubkey && this._isOwnFabricPubkey(pubkey)) {
+          this.emit('warning',
+            `[FABRIC:PEER] Dropping candidate ${addr}: pubkey is our own`);
+          // Advertised pubkeys are attacker-controlled; only verified AMP
+          // signers may suppress the address (see _enqueuePeeringCandidate).
+          if (candidate.verifiedPubkey && this._isOwnFabricPubkey(candidate.verifiedPubkey)) {
+            this._suppressSelfDialAddress(addr);
+          }
+          if (this._candidateKeys) this._candidateKeys.delete(addr);
+          continue;
+        }
+        this._connect(addr);
       } catch (exception) {
         this.emit('error', `Unable to fill open peer slot ${i}: ${exception}`);
       }
@@ -2323,7 +2599,9 @@ class Peer extends Service {
         break;
       }
       case 'P2P_CHAT_MESSAGE': {
-        // Body = raw UTF-8 chat text only (no JSON). Author is AMP header / signature.
+        // Body = raw UTF-8 chat text only (no JSON chat envelope). Author is AMP header /
+        // signature. Optional FabricOnionChatSeal JSON keeps onion tips confidential to
+        // the path recipient (see functions/onionChatSeal).
         const text = messageDataToString(message.data);
         if (!text || !String(text).trim()) {
           this.emit('warning', '[FABRIC:PEER] P2P_CHAT_MESSAGE empty body');
@@ -2346,12 +2624,33 @@ class Peer extends Service {
             }
           } catch (_) { /* not JSON — treat as text */ }
         }
-        const chatSigner = this._verifiedFabricSignerPubkeyHex(message);
-        this.emit('chat', { text: String(text), type: 'P2P_CHAT_MESSAGE' }, {
+        let deliverText = String(text);
+        let onionSealed = false;
+        try {
+          if (isOnionChatSeal(deliverText)) {
+            onionSealed = true;
+            const opened = tryOpenOnionChatText(deliverText, { keyOrPrivate: this.key });
+            if (!opened.opened || opened.text == null) {
+              this.emit('warning', '[FABRIC:PEER] P2P_CHAT_MESSAGE onion seal present but not openable locally');
+              break;
+            }
+            deliverText = opened.text;
+          }
+        } catch (err) {
+          this.emit('warning',
+            `[FABRIC:PEER] onion chat seal handling failed: ${err && err.message ? err.message : err}`);
+          break;
+        }
+        this.emit('chat', {
+          text: deliverText,
+          type: 'P2P_CHAT_MESSAGE',
+          ...(onionSealed ? { onionSealed: true } : {})
+        }, {
           origin,
-          signer: chatSigner || null,
+          signer: signerPubkeyHex || null,
           wireMessage: message,
-          peeledForward: opts.peeledForward === true
+          peeledForward: opts.peeledForward === true,
+          onionSealed
         });
         // Onion peel / RELAY unwrap: deliver locally only. Mesh relay under the TCP
         // last hop would burn that neighbor's chat budget for an originator's frame.
@@ -2433,8 +2732,7 @@ class Peer extends Service {
       case 'CONTRACT_PUBLISH':
       case 'CONTRACT_MESSAGE':
       {
-        const rawTyped = messageDataToString(message.data);
-        const prTyped = tryParseWireJsonBody(rawTyped);
+        const prTyped = Message.tryParseMessageBody(message);
         if (!prTyped.ok || prTyped.value === null || typeof prTyped.value !== 'object' || Array.isArray(prTyped.value)) {
           this.emit('warning', `[FABRIC:PEER] ${message.type} parse failed: ${prTyped.ok ? 'invalid body' : prTyped.error.message}`);
           break;
@@ -2566,7 +2864,9 @@ class Peer extends Service {
             this.emit('warning', '[FABRIC:PEER] Generic message body must be a JSON object');
             break;
           }
-          this._handleGenericMessage(bodyGm, origin, socket, message, opts);
+          this._handleGenericMessage(bodyGm, origin, socket, message, Object.assign({}, opts, {
+            genericCarrier: true
+          }));
         }
 
         break;
@@ -2689,6 +2989,12 @@ class Peer extends Service {
       if (!sessionClaim) return this;
     }
 
+    // Self-dial / hairpin: remote presented a session signed with our own Fabric key.
+    // (Actor-id alone is not enough — an attacker can claim our id with another key.)
+    if (this._isOwnFabricPubkey(signerPubkeyHex)) {
+      return this._abortSelfFabricSession(connAddress, 'P2P_SESSION_OFFER from own Fabric identity');
+    }
+
     // If we've already bound this Fabric id to a key, reject key-mismatched offers.
     const existingPeer = (this._state.peers && this._state.peers[peerId]) || null;
     if (existingPeer && existingPeer.publicKey) {
@@ -2778,6 +3084,14 @@ class Peer extends Service {
         message, signerPubkeyHex, origin && origin.name, { peeledForward: opts.peeledForward === true });
       if (!sessionClaim) return this;
     }
+    // Hairpin: OPEN signed with our own key (SESSION_OFFER path should catch first).
+    // Note: object.initiator === our id is normal when we dialed and they accepted.
+    if (this._isOwnFabricPubkey(signerPubkeyHex)) {
+      return this._abortSelfFabricSession(
+        origin && origin.name,
+        'P2P_SESSION_OPEN from own Fabric identity'
+      );
+    }
     const existingOpenPeer = (this._state.peers && this._state.peers[openPeerId]) || null;
     if (existingOpenPeer && existingOpenPeer.publicKey) {
       const knownOpen = normalizePeerPubkeyHex(existingOpenPeer.publicKey);
@@ -2806,6 +3120,14 @@ class Peer extends Service {
     const punishOrigin = delivery.scoreOrigin;
     const msg = normalizeFabricDocumentOfferEnvelopeForHandlers(message);
     if (this.settings.debug) this.emit('debug', `Generic message:\n\tFrom: ${JSON.stringify(origin)}\n\tType: ${msg.type}\n\tBody:\n\`\`\`\n${JSON.stringify(msg.object, null, '  ')}\n\`\`\``);
+
+    // Strict Protocol V1: first-class mesh / session opcodes must not escalate from
+    // P2P_BASE_MESSAGE / GenericMessage JSON carriers (attackers renaming body.type).
+    if (handleOpts.genericCarrier === true && isFirstClassOpcodeOnlyType(msg && msg.type)) {
+      this.emit('warning',
+        `[FABRIC:PEER] Ignoring ${msg.type} via generic carrier; use first-class AMP opcode`);
+      return this;
+    }
 
     const signerPubkeyHex = wireMessage
       ? this._verifiedFabricSignerPubkeyHex(wireMessage)
@@ -2974,7 +3296,18 @@ class Peer extends Service {
           const connCount = Object.keys(this.connections || {}).length;
           const maxPeers = (this.settings.constraints && this.settings.constraints.peers && this.settings.constraints.peers.max) || MAX_PEERS;
           if (connCount < maxPeers) {
-            this._enqueuePeeringCandidate(obj.host, obj.port);
+            // Prefer explicit offer pubkey, else verified AMP signer, else actor id.
+            // Actor id is not a pubkey — keep it after signerPubkeyHex so a Fabric
+            // actor identifier cannot eclipse the verified AMP signer.
+            const advertised = obj.pubkey
+              || (message.actor && (message.actor.pubkey || message.actor.publicKey))
+              || signerPubkeyHex
+              || (message.actor && message.actor.id)
+              || '';
+            this._enqueuePeeringCandidate(obj.host, obj.port, {
+              pubkey: advertised,
+              verifiedPubkey: signerPubkeyHex
+            });
           }
         }
         if (wireMessage) this.relayFrom(origin.name, wireMessage);
@@ -3049,7 +3382,10 @@ class Peer extends Service {
         const host = announceObj && announceObj.host;
         const port = announceObj && announceObj.port;
         if (host != null && port != null) {
-          this._enqueuePeeringCandidate(host, port);
+          this._enqueuePeeringCandidate(host, port, {
+            pubkey: announceObj.pubkey || signerPubkeyHex,
+            verifiedPubkey: signerPubkeyHex
+          });
         }
         break;
       }
@@ -3193,7 +3529,14 @@ class Peer extends Service {
           registered,
           object: msg.object,
           origin,
-          signer: signerPubkeyHex || null
+          signer: signerPubkeyHex || null,
+          // Bit-identical AMP frame for journal / audit attach (apps ignore if unused).
+          wireMessage: wireMessage || null,
+          messageId: wireMessage && wireMessage.id ? wireMessage.id : null,
+          messageHex: wireMessage && typeof wireMessage.toBuffer === 'function'
+            ? wireMessage.toBuffer().toString('hex')
+            : null,
+          genesis: this._contractGenesis[contractId] || null
         });
         // Same outermost-only flood rule as CONTRACT_PUBLISH / chat / gossip.
         if (delivery.allowMeshRelay && origin && origin.name && wireMessage) {
@@ -3202,6 +3545,36 @@ class Peer extends Service {
         break;
       }
     }
+  }
+
+  /**
+   * Bind encrypt/decrypt 'error' before piping. noise-protocol-stream calls
+   * stream.destroy(err) on handshake failure; without listeners Node raises
+   * uncaught Exceptions (e.g. `noise_stream_new`, `malloc`).
+   * @param {Object} noiseStream noise-protocol-stream duplex pair
+   * @param {stream.Duplex} noiseStream.encrypt
+   * @param {stream.Duplex} noiseStream.decrypt
+   * @param {string} [label='NOISE']
+   */
+  _attachNoiseStreamErrorHandlers (noiseStream, label = 'NOISE') {
+    if (!noiseStream || !noiseStream.encrypt || !noiseStream.decrypt) return;
+    const onSide = (side) => (error) => {
+      if (error && (error.code === 'EPIPE' || error.code === 'ECONNRESET')) {
+        this.emit('warning', `Suppressing transient ${label} ${side} error (${error.code}).`);
+        return;
+      }
+      const text = String((error && error.message) || error || '');
+      const msg = `${label} ${side} error: ${error}`;
+      // Native teardown after a bad self-handshake / OOM — keep process alive.
+      if (/noise_stream_new|\bmalloc\b/i.test(text)) {
+        this.emit('warning', msg);
+        return;
+      }
+      if (this.listenerCount('error') > 0) this.emit('error', msg);
+      else this.emit('warning', msg);
+    };
+    noiseStream.encrypt.on('error', onSide('encrypt'));
+    noiseStream.decrypt.on('error', onSide('decrypt'));
   }
 
   _NOISESocketHandler (socket) {
@@ -3257,14 +3630,6 @@ class Peer extends Service {
         }
       }
     });
-    handler.encrypt.on('error', (error) => {
-      if (error && (error.code === 'EPIPE' || error.code === 'ECONNRESET')) {
-        this.emit('warning', `Suppressing transient NOISE encrypt error (${error.code}).`);
-      } else {
-        this.emit('error', `NOISE encrypt error: ${error}`);
-      }
-    });
-
     handler.encrypt.on('end', (data) => {
       if (this.settings.debug) this.emit('debug', `Peer encrypt end: ${data}`);
       // socket.destroy();
@@ -3274,13 +3639,7 @@ class Peer extends Service {
       }
     });
 
-    handler.decrypt.on('error', (error) => {
-      if (error && (error.code === 'EPIPE' || error.code === 'ECONNRESET')) {
-        this.emit('warning', `Suppressing transient NOISE decrypt error (${error.code}).`);
-      } else {
-        this.emit('error', `NOISE decrypt error: ${error}`);
-      }
-    });
+    this._attachNoiseStreamErrorHandlers(handler, 'NOISE');
 
     handler.decrypt.on('close', (data) => {
       if (this.settings.debug) this.emit('debug', `Peer decrypt close: ${data}`);
@@ -4314,7 +4673,7 @@ class Peer extends Service {
    * Preference: onion `relayPath` → explicit `nextPeer` → fan-out to TCP peers
    * other than the inbound origin.
    * @param {Message} msg signed DocumentRequest
-   * @param {{ name?: string }|null} origin
+   * @param {{name: (string|undefined)}|null} origin
    * @param {object} parsed inbound request body
    * @returns {boolean}
    */
@@ -4437,12 +4796,14 @@ class Peer extends Service {
     if (!this._contractPublishSignerAuthorized(object, publisherPubkeyHex)) {
       this.emit('warning',
         `[FABRIC:PEER] CONTRACT_PUBLISH rejected for ${actor.id}: ` +
-        'wire signer is not listed in parties/validators/owners/members/authorities');
+        'wire signer is not listed in parties/validators/owners/members(.signers)/' +
+        'authorities/spendPolicy.validators/proposedPolicy.validators');
       return false;
     }
 
     this.contracts[actor.id] = actor;
     this._state.content.contracts[actor.id] = object.state;
+    this._contractGenesis[actor.id] = object;
     // Patch rights come only from declared authority arrays — never from the AMP
     // wire signer alone (front-run with identical body must not elevate attacker).
     this._mergeContractPatchAllowList(actor.id, object, publisherPubkeyHex);
@@ -4458,8 +4819,9 @@ class Peer extends Service {
    * registered contract. Called only on first registration of a contract id —
    * republishes must not invoke this (see {@link Peer#_registerContract}).
    * Membership is taken **only** from body authority arrays (`parties`,
-   * `validators`, `owners`, `members`, `authorities`). The wire signer is never
-   * granted rights unless already listed there.
+   * `validators`, `owners`, `members` / `members.signers`, `authorities`,
+   * `spendPolicy.validators`). The wire signer is never granted rights unless
+   * already listed there.
    * @param {string} contractId
    * @param {object} object contract publish body
    * @param {string|null} [_publisherPubkeyHex] ignored (kept for call-site compat)
@@ -4591,12 +4953,26 @@ class Peer extends Service {
   }
 
   _verifyNOISE (localPrivateKey, localPublicKey, remotePublicKey, done) {
-    // Is the message valid?
-    if (1 === 1) {
-      done(null, true);
-    } else {
-      done(null, false);
+    // When static keys are present, refuse a NOISE peer that is ourselves.
+    try {
+      const local = normalizePeerPubkeyHex(localPublicKey);
+      const remote = normalizePeerPubkeyHex(remotePublicKey);
+      if (local && remote && local === remote) {
+        this.emit('warning', '[FABRIC:PEER] NOISE verify rejected: remote static key is local');
+        this.emit('peer:self', { address: null, reason: 'NOISE remote static key is local' });
+        return done(null, false);
+      }
+      if (remote && this._isOwnFabricPubkey(remote)) {
+        this.emit('warning', '[FABRIC:PEER] NOISE verify rejected: remote static matches Fabric identity');
+        this.emit('peer:self', { address: null, reason: 'NOISE remote static matches Fabric identity' });
+        return done(null, false);
+      }
+    } catch (exception) {
+      this.emit('warning',
+        `[FABRIC:PEER] NOISE verify rejected: self-key check failed: ${exception && exception.message ? exception.message : exception}`);
+      return done(null, false);
     }
+    done(null, true);
   }
 
   _writeFabric (msg, stream) {

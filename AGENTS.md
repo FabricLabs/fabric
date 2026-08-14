@@ -1,6 +1,13 @@
 # Fabric Agents
 See also [DEVELOPERS.md](DEVELOPERS.md) (repo layout, tests) and [docs/PRODUCTION.md](docs/PRODUCTION.md) (release gate).
 
+## Release posture
+- **Target:** `0.1.0-RC1` reference client — not a production-hardened VM claim
+  ([PUBLIC_API.md](PUBLIC_API.md), [AUDIT.md](AUDIT.md)).
+- **Gate:** `npm run ci` on Node **24.15.0**. Tag **core before** bumping Hub / http.
+- Do not paper over AUDIT “known gaps” or expand protocol surface for RC without
+  owner go-ahead.
+
 Fabric enables automated payments between node instances, which we can leverage for distributing load across multiple cores.
 
 Fabric Agents are long-running services that can:
@@ -180,3 +187,28 @@ Before merging a new Fabric agent:
 
 ## Author Style
 - do not abbreviate in APIs; `documentId` should be `documentIdentifier`
+
+## JSDoc (for `npm run make:api`)
+`jsdoc2md` / Closure parser reject TypeScript optional property syntax inside
+tags. When documenting optional option bags:
+
+```js
+// Bad — breaks make:api
+/** @param {{ genesis?: object }} [opts] */
+
+// Good
+/**
+ * @param {Object} [opts]
+ * @param {Object} [opts.genesis] ARC genesis (primitives.opcodes, …)
+ */
+```
+
+Also: `@type {T}` must not carry a trailing description; put the prose in the
+block above the `@type` line. See [DEVELOPERS.md](DEVELOPERS.md) (Development
+workflow → API reference).
+
+**Avoid Global clutter:** file-level prose must use `@fileoverview` (or
+`@module`) so it does not attach to the next `const`/`require`. Object-literal
+settings fields should use `//` comments, not `/** @type */` blocks (those
+become Global symbols). Mark module-private helpers/constants `@private` so
+they do not appear on `docs/global.html` / `API.md` Globals.

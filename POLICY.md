@@ -1,8 +1,10 @@
 # Fabric Messaging Protocol Policy
 
 **Version:** 1.0
-**Last Updated:** 2025-01-27
+**Last Updated:** 2026-08-11
 **Status:** Active
+
+Opcode and relay tables below still need a pass against [`SECURITY.md`](SECURITY.md) / Peer behavior — see [Remaining work](#remaining-work).
 
 ---
 
@@ -39,15 +41,18 @@ This document defines the messaging rules and relay policies for the Fabric Prot
 
 All Fabric messages consist of two components:
 
-#### Header (176 bytes)
-- `magic` — 4 bytes: `0xC0D3F33D` (constant)
-- `version` — 4 bytes: `0x00000001` (protocol version)
+#### Header (208 bytes)
+- `magic` — 4 bytes: `0xC0D3F33D` (`MAGIC_BYTES`)
+- `version` — 4 bytes: `0x00000001` (`VERSION_NUMBER`; 0.1.x pre-release)
 - `parent` — 32 bytes: Parent state identifier
 - `author` — 32 bytes: X-only public key (BIP-340) of message author
 - `type` — 4 bytes: Message type code
 - `size` — 4 bytes: Payload size in bytes
-- `hash` — 32 bytes: SHA256 hash of payload
+- `hash` — 32 bytes: double-SHA256(body) — body integrity only
+- `preimage` — 32 bytes: payment secret (Lightning-style); all zeros when unused
 - `signature` — 64 bytes: BIP-340 Schnorr signature
+
+Constants: `HEADER_SIZE = 208` in [`constants.js`](constants.js). See [`docs/MESSAGE_BODY.md`](docs/MESSAGE_BODY.md).
 
 #### Payload (variable length)
 - Optional payload data as specified by `size` field
@@ -55,11 +60,13 @@ All Fabric messages consist of two components:
 ### Message Signing
 
 1. **Author Field**: Set to x-only public key (32 bytes) BEFORE signing
-2. **Hash Computation**:
+2. **Body hash**: Set `hash` = double-SHA256(body)
+3. **Preimage**: Leave zeroed for ordinary public messages; set an explicit 32-byte secret only for HTLC / circuit payment commitments (`payment_hash = SHA256(preimage)`). Do not default `preimage` to SHA256(body)
+4. **Signature hash**:
    - Create buffer: `header (with zeroed signature) + body`
    - Compute tagged hash: `SHA256(SHA256("Fabric/Message") || SHA256("Fabric/Message") || data)`
-3. **Signature**: Sign the tagged hash using BIP-340 Schnorr
-4. **Verification**: Verify signature using author's x-only public key
+5. **Signature**: Sign the tagged hash using BIP-340 Schnorr
+6. **Verification**: Drop on body-hash mismatch, then verify signature using author's x-only public key
 
 ---
 
@@ -67,69 +74,83 @@ All Fabric messages consist of two components:
 
 ### Type Ranges
 
+Historical range buckets (approximate). Prefer exact opcodes in the tables below / [`MESSAGES.md`](MESSAGES.md).
+
 | Range | Category | Description |
 |-------|----------|-------------|
-| `0x00-0x7F` | Core Network Protocol | Network management and peer communication |
-| `0x80-0xFF` | Application Layer | Application-specific messages |
-| `0x1000-0x1FFF` | Bitcoin Integration | Bitcoin protocol messages |
-| `0x2000-0x2FFF` | Lightning Network | Lightning protocol messages |
+| `0x00-0x7F` | Core Network Protocol | Network management and peer communication (incl. mesh) |
+| `0x80-0xFF` | Application Layer | Some application types; others use higher codes |
+| `0x1000-0x1FFF` | (legacy sketch) | Not used for Fabric Bitcoin types in `constants.js` |
+| `0x2000-0x2FFF` | (legacy sketch) | Lightning codes in constants use BOLT-style values — see Remaining work |
 | `0x8000-0xFFFF` | Experimental | Development and testing |
 
 ### Core Network Protocol Types (0x00-0x7F)
 
+Codes from [`constants.js`](constants.js). Full catalog: [`MESSAGES.md`](MESSAGES.md).
+
 | Type | Code | Name | Description | Relay |
 |------|------|------|-------------|-------|
-| `0x00` | 0 | RESERVED | Reserved for future use | N/A |
-| `0x01` | 1 | PING | Network heartbeat | ✅ Yes |
-| `0x02` | 2 | PONG | Ping response | ✅ Yes |
-| `0x03` | 3 | IDENT_REQUEST | Identity request | ❌ No |
-| `0x04` | 4 | IDENT_RESPONSE | Identity response | ❌ No |
-| `0x05` | 5 | PEER_ANNOUNCE | Peer announcement | ✅ Yes |
-| `0x06` | 6 | STATE_REQUEST | State synchronization request | ⚠️ Conditional |
-| `0x07` | 7 | STATE_RESPONSE | State synchronization response | ⚠️ Conditional |
-| `0x08` | 8 | TRANSACTION | Transaction data | ✅ Yes |
-| `0x09` | 9 | INVENTORY_REQUEST | Inventory request | ⚠️ Conditional |
-| `0x0A` | 10 | INVENTORY_RESPONSE | Inventory response | ⚠️ Conditional |
-| `0x0B` | 11 | SESSION_START | Start session | ❌ No |
-| `0x0C` | 12 | SESSION_ACK | Session acknowledgment | ❌ No |
-| `0x0D` | 13 | ERROR | Error message | ✅ Yes |
-| `0x0E` | 14 | WARNING | Warning message | ✅ Yes |
-| `0x0F` | 15 | HEARTBEAT | Heartbeat (keepalive) | ❌ No |
-| `0x10-0x7F` | 16-127 | RESERVED | Reserved for core protocol extensions | N/A |
+| `0x00` | 0 | RESERVED / `P2P_ROOT` | Reserved / root | N/A |
+| `0x01` | 1 | `P2P_IDENT_REQUEST` | Identity request | ❌ No |
+| `0x02` | 2 | `SESSION_START` | Legacy session start constant | ❌ No |
+| `0x03` | 3 | `BLOCK_CANDIDATE` | Block candidate | ⚠️ Conditional |
+| `0x09` | 9 | `PEER_CANDIDATE` | Peer candidate advertisement | ⚠️ Conditional |
+| `0x11` | 17 | `P2P_IDENT_RESPONSE` | Identity response | ❌ No |
+| `0x12` | 18 | `P2P_PING` | Network heartbeat / keepalive | ❌ No |
+| `0x13` | 19 | `P2P_PONG` | Ping response | ❌ No |
+| `0x21` | 33 | `P2P_START_CHAIN` | Chain bootstrap announce | ⚠️ Conditional |
+| `0x29` | 41 | `P2P_STATE_REQUEST` | State synchronization request | ⚠️ Conditional |
+| `0x30` | 48 | `P2P_STATE_ROOT` | State root / snapshot anchor | ⚠️ Conditional |
+| `0x31` | 49 | `P2P_BASE_MESSAGE` | Generic/legacy JSON carrier (no first-class escalation) | ⚠️ Conditional |
+| `0x32` | 50 | `P2P_STATE_COMMITTMENT` | State commitment | ⚠️ Conditional |
+| `0x33` | 51 | `P2P_STATE_CHANGE` | State delta | ✅ Yes |
+| `0x39` | 57 | `P2P_TRANSACTION` | Transaction-style P2P frame | ✅ Yes |
+| `0x42` | 66 | `P2P_CALL` | Call / RPC-like request | ⚠️ Conditional |
+| `0x43` | 67 | `P2P_RELAY` | Mesh flood envelope (body = raw inner AMP bytes) | ✅ Yes |
+| `0x44` | 68 | `P2P_MESSAGE_RECEIPT` | Ack / receipt | ❌ No |
+| `0x45` | 69 | `P2P_FORWARD` | Directed onion hop (`nextPeer` + `ttl` + `inner`) | ⚠️ Conditional |
+| `0x55` | 85 | `P2P_CHAIN_SYNC_REQUEST` | Chain sync request | ⚠️ Conditional |
+| `0x56` | 86 | `P2P_FLUSH_CHAIN` | Trusted tip rewind / flush | ⚠️ Conditional |
+| `0x57` | 87 | `P2P_INVENTORY_REQUEST` | Inventory request | ⚠️ Conditional |
+| `0x58` | 88 | `P2P_INVENTORY_RESPONSE` | Inventory response | ⚠️ Conditional |
+| `0x59` | 89 | `P2P_FILE_SEND` | Document / blob transfer | ⚠️ Conditional |
+| `0x5a` | 90 | `P2P_DOCUMENT_PUBLISH` | Document pricing / publish path | ✅ Yes |
+| `0x5b` | 91 | `P2P_PEER_ALIAS` | Nickname (raw UTF-8 body) | ✅ Yes |
+| `0x5c` | 92 | `P2P_PEER_ANNOUNCE` | Peer announcement | ✅ Yes |
+| `0x5d` | 93 | `P2P_SESSION_OFFER` | Session handshake offer | ❌ No |
+| `0x5e` | 94 | `P2P_SESSION_OPEN` | Session handshake open | ❌ No |
+| `0x5f` | 95 | `P2P_CONTRACT_PUBLISH` | Publish contract namespace | ✅ Yes |
+| `0x60` | 96 | `P2P_CONTRACT_MESSAGE` | Namespaced contract event | ✅ Yes |
+| `0x61` | 97 | `P2P_PEER_GOSSIP` | Peer gossip | ✅ Yes |
+| `0x62` | 98 | `P2P_PEERING_OFFER` | Peering capacity offer | ✅ Yes |
+| `0x67` | 103 | `CHAT_MESSAGE` | Legacy chat / Hub transitional | ✅ Yes |
+| `0x68` | 104 | `P2P_CHAT_MESSAGE` | First-class chat (raw UTF-8 body) | ✅ Yes |
+| `0x80` | 128 | `P2P_GENERIC` | Generic application envelope | ✅ Yes |
 
 ### Application Layer Types (0x80-0xFF)
 
-| Type | Code | Name | Description | Relay |
-|------|------|------|-------------|-------|
-| `0x80` | 128 | GENERIC | Generic application message (UTF-8 JSON) | ✅ Yes |
-| `0x81` | 129 | CHAT_MESSAGE | Chat/messaging | ✅ Yes |
-| `0x82` | 130 | DOCUMENT_REQUEST | Document request | ⚠️ Conditional |
-| `0x83` | 131 | DOCUMENT_RESPONSE | Document response | ⚠️ Conditional |
-| `0x84` | 132 | DOCUMENT_PUBLISH | Document publish | ✅ Yes |
-| `0x85` | 133 | JSON_CALL | JSON function call | ✅ Yes |
-| `0x86` | 134 | JSON_PATCH | JSON patch operation | ✅ Yes |
-| `0x87` | 135 | LOG_MESSAGE | Log message (debugging) | ❌ No |
-| `0x88` | 136 | STATE_DELTA | State delta (JSON-PATCH) | ✅ Yes |
-| `0x89` | 137 | STATE_SNAPSHOT | State snapshot | ✅ Yes |
-| `0x8A` | 138 | CONTRACT_PROPOSAL | Contract proposal | ✅ Yes |
-| `0x8B` | 139 | CONTRACT_ACCEPT | Contract acceptance | ✅ Yes |
-| `0x8C` | 140 | CONTRACT_REJECT | Contract rejection | ✅ Yes |
-| `0x8D` | 141 | PAYMENT_REQUEST | Payment request (ASK) | ✅ Yes |
-| `0x8E` | 142 | PAYMENT_RESPONSE | Payment response (BID) | ✅ Yes |
-| `0x8F` | 143 | LOCK_MESSAGE | Lock message (halt forward movement) | ✅ Yes |
-| `0x90-0xFF` | 144-255 | RESERVED | Reserved for application extensions | N/A |
-
-### Bitcoin Integration Types (0x1000-0x1FFF)
+Several application types use codes **outside** this range (see [`constants.js`](constants.js) / [`MESSAGES.md`](MESSAGES.md)). Rows marked † match current constants.
 
 | Type | Code | Name | Description | Relay |
 |------|------|------|-------------|-------|
-| `0x1000` | 4096 | BITCOIN_BLOCK | Bitcoin block | ✅ Yes |
-| `0x1001` | 4097 | BITCOIN_BLOCK_HASH | Bitcoin block hash | ✅ Yes |
-| `0x1002` | 4098 | BITCOIN_TRANSACTION | Bitcoin transaction | ✅ Yes |
-| `0x1003` | 4099 | BITCOIN_TX_HASH | Bitcoin transaction hash | ✅ Yes |
-| `0x1004` | 4100 | BITCOIN_UTXO | Bitcoin UTXO | ✅ Yes |
-| `0x1005` | 4101 | BITCOIN_HEADER | Bitcoin block header | ✅ Yes |
-| `0x1006-0x1FFF` | 4102-8191 | RESERVED | Reserved for Bitcoin protocol extensions | N/A |
+| `0x80` | 128 | `P2P_GENERIC` | Generic application message | ✅ Yes |
+| `0x8A` | 138 | `CONTRACT_PROPOSAL` † | Contract proposal | ✅ Yes |
+| — | 997 | `SIDECHAIN_STATE_PATCH` † | Sidechain / registry update | ⚠️ Conditional |
+| — | 998 | `DOCUMENT_PUBLISH` † | Document publish | ✅ Yes |
+| — | 999 | `DOCUMENT_REQUEST` † | Document request | ⚠️ Conditional |
+| — | 1024 | `JSON_PATCH` † | JSON patch operation | ✅ Yes |
+| — | 16000 | `JSON_CALL` † | JSON function call | ✅ Yes |
+| — | 15103 | `GENERIC_MESSAGE` † | Hub/browser transitional carrier | ✅ Yes |
+| `0x81`-`0x8F` (legacy draft) | … | CHAT / ACCEPT / REJECT / PAYMENT_* | Not all registered in `constants.js` — see Remaining work | ⚠️ Varies |
+
+### Bitcoin Integration Types
+
+| Type | Code | Name | Description | Relay |
+|------|------|------|-------------|-------|
+| `0x5208` | 21000 | `BITCOIN_BLOCK` | Bitcoin block | ✅ Yes |
+| `0x526c` | 21100 | `BITCOIN_BLOCK_HASH` | Bitcoin block hash | ✅ Yes |
+| `0x55f0` | 22000 | `BITCOIN_TRANSACTION` | Bitcoin transaction | ✅ Yes |
+| `0x5654` | 22100 | `BITCOIN_TRANSACTION_HASH` | Bitcoin transaction hash | ✅ Yes |
 
 ### Lightning Network Types (0x2000-0x2FFF)
 
@@ -251,33 +272,37 @@ Messages are categorized into three relay behaviors:
 
 - **Algorithm**: BIP-340 Schnorr signatures
 - **Curve**: secp256k1
-- **Hash Function**: SHA256 (for tagged hash)
+- **Hash Function**: SHA256 (for tagged hash); body integrity uses double-SHA256
 - **Tag**: "Fabric/Message"
+- **Preimage**: 32-byte payment secret in header (zeros if unused)
 
 ### Signing Process
 
 1. Extract x-only public key (32 bytes) from signing key
 2. Set `author` field to x-only public key
-3. Create data buffer: `header (signature zeroed) + body`
-4. Compute tagged hash: `SHA256(SHA256("Fabric/Message") || SHA256("Fabric/Message") || data)`
-5. Sign tagged hash using BIP-340 Schnorr
-6. Set `signature` field (64 bytes)
+3. Set `hash` = double-SHA256(body); set `preimage` per payment rules
+4. Create data buffer: `header (signature zeroed) + body`
+5. Compute tagged hash: `SHA256(SHA256("Fabric/Message") || SHA256("Fabric/Message") || data)`
+6. Sign tagged hash using BIP-340 Schnorr
+7. Set `signature` field (64 bytes)
 
 ### Verification Process
 
-1. Extract x-only public key from `author` field (32 bytes)
-2. Create data buffer: `header (signature zeroed) + body`
-3. Compute tagged hash: `SHA256(SHA256("Fabric/Message") || SHA256("Fabric/Message") || data)`
-4. Verify signature using x-only public key and tagged hash
-5. Reject message if verification fails
+1. Reject if `hash` ≠ double-SHA256(body)
+2. Extract x-only public key from `author` field (32 bytes)
+3. Create data buffer: `header (signature zeroed) + body`
+4. Compute tagged hash: `SHA256(SHA256("Fabric/Message") || SHA256("Fabric/Message") || data)`
+5. Verify signature using x-only public key and tagged hash
+6. Reject message if verification fails
 
 ### Security Requirements
 
 1. **All messages MUST be signed**: Unsigned messages are rejected
 2. **Signature verification is mandatory**: No exceptions
 3. **Author field validation**: Must be valid 32-byte x-only public key
-4. **Hash integrity**: Payload hash must match computed hash
-5. **No signature replay**: Implement message deduplication
+4. **Hash integrity**: Header `hash` must equal double-SHA256(body)
+5. **Preimage**: Not a second integrity hash; zeros unless carrying a payment secret
+6. **No signature replay**: Implement message deduplication
 
 ---
 
@@ -290,13 +315,13 @@ All messages MUST pass the following validation checks:
 1. **Format Validation**:
    - Magic bytes: `0xC0D3F33D`
    - Version: `0x00000001`
-   - Header size: 176 bytes
+   - Header size: 208 bytes
    - Payload size matches `size` field
 
 2. **Cryptographic Validation**:
    - Signature is valid BIP-340 Schnorr signature
    - Author field contains valid x-only public key
-   - Payload hash matches computed hash
+   - Header `hash` matches double-SHA256(body)
 
 3. **Type Validation**:
    - Message type is in valid range
@@ -391,9 +416,10 @@ Implementations SHOULD:
 
 ### Version Compatibility
 
-- **Protocol Version**: `0x00000001`
+- **Protocol Version**: `0x00000001` (0.1.x pre-release; 208-byte header with `preimage`)
+- **Header size**: 208 bytes
 - **Backward Compatibility**: Not guaranteed for future versions
-- **Forward Compatibility**: Unknown message types should be rejected
+- **Forward Compatibility**: Unknown message types should be handled as observe-only (`UNKNOWN_MESSAGE`), not aliased to `P2P_BASE_MESSAGE`
 
 ---
 
@@ -410,9 +436,22 @@ Implementations SHOULD:
 ### Related Documents
 
 - `PROTOCOL.md` → `docs/MESSAGE_BODY.md`: Canonical wire specification
-- `MESSAGING_PROTOCOL_COMPLETION.md`: Implementation details
-- `FABRIC_MESSAGE_TYPE_CONSOLIDATION.md`: Type system design
-- `FABRIC_MESSAGE_RELAY_BEHAVIOR.md`: Relay behavior analysis
+- `MESSAGES.md`: Opcode catalog
+- `SECURITY.md`: Amplification, peel/`P2P_RELAY`, scoring (prefer over relay matrix below when they conflict)
+- `docs/P2P_FORWARD.md`: Directed onion
+
+Missing historical drafts (do not expect these files): `MESSAGING_PROTOCOL_COMPLETION.md`, `FABRIC_MESSAGE_TYPE_CONSOLIDATION.md`, `FABRIC_MESSAGE_RELAY_BEHAVIOR.md`.
+
+### Remaining work
+
+Paused after header/preimage, core opcode accuracy, and mesh type rows. Still open:
+
+1. **Relay Rules / Quick Reference** — Align Always/Local/Conditional lists with Peer (`SECURITY.md`); PING/PONG are not mesh flood; hop budgets exist
+2. **Lightning table** — Codes in this doc use a `0x2000+` sketch; `constants.js` uses BOLT-style values (`0x10`, `0x20`, …) with Fabric name collisions
+3. **Application legacy rows** — `CONTRACT_ACCEPT` / `REJECT` / `PAYMENT_*` / dense `0x81+` draft codes not fully registered
+4. **Type Ranges** preamble — Still describes old range buckets; Bitcoin types are not in `0x1000-0x1FFF`
+5. **Citation pass** — `VISION.md` / `docs/README.md` still treat POLICY as oracle
+6. **Legacy path inventory** — Keep handling, mark deprecated in code/docs: 176-byte header sketches; defaulting `preimage` to SHA256(body); smuggling first-class opcodes via `P2P_BASE_MESSAGE` / `GENERIC_MESSAGE`; `@type`/`@data` Message constructor aliases; JSON object bodies where field schemas exist
 
 ---
 

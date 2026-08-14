@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * Multi-language Program — executable artifact for {@link Machine}, with optional
+ * @fileoverview Multi-language Program — executable artifact for {@link Machine}, with optional
  * L1 Bitcoin redeem scaffolding for `bitcoin-script`.
  *
  * Languages: `fabric-opcodes` | `javascript` | `bitcoin-script` | `solidity` | `asm`
@@ -22,7 +22,8 @@ const LANGUAGES = Object.freeze([
   'javascript',
   'bitcoin-script',
   'solidity',
-  'asm'
+  'asm',
+  'fabric-execution'
 ]);
 
 class Program extends Circuit {
@@ -186,6 +187,27 @@ class Program extends Circuit {
           error: err && err.message ? err.message : 'bitcoin-script compile failed'
         };
       }
+    }
+
+    if (lang === 'fabric-execution') {
+      let src = this.settings.source;
+      if ((!src || typeof src !== 'object') && Array.isArray(this.settings.steps) &&
+          this.settings.steps.length && typeof this.settings.steps[0] === 'object') {
+        src = { version: 1, steps: this.settings.steps };
+      }
+      if (!src || typeof src !== 'object' || Array.isArray(src)) {
+        return { ok: false, error: 'fabric-execution requires source object with steps[]' };
+      }
+      if (!Array.isArray(src.steps)) {
+        return { ok: false, error: 'fabric-execution source.steps must be an array' };
+      }
+      const safe = jsonSafe(src);
+      this.settings.source = safe;
+      this.settings.bytecode = safe;
+      // Machine structured runner reads source.steps; script names stay empty.
+      this.settings.steps = [];
+      this.settings.instructions = [];
+      return { ok: true, program: this };
     }
 
     if (lang === 'solidity' || lang === 'asm') {
