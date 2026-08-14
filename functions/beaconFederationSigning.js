@@ -62,7 +62,8 @@ function verifyFederationWitnessOnMessage (messageBuffer, witness, validatorPubk
     (Array.isArray(validatorPubkeys) ? validatorPubkeys : [])
       .filter((p) => typeof p === 'string' && p)
   ));
-  const thr = Math.max(1, Number(threshold) || 1);
+  const thr = Number(threshold);
+  if (!Number.isInteger(thr) || thr < 1) return false;
   let valid = 0;
   for (const pubkey of pubkeys) {
     const sigHex = witness.signatures[pubkey];

@@ -135,6 +135,35 @@ describe('@fabric/core/types/beacon', function () {
     assert.strictEqual(beacon._epochChain.height, 0);
   });
 
+  it('rejects a recovered ready round that emptied validators against configured federation keys', async function () {
+    const beaconFederationSigning = require('../functions/beaconFederationSigning');
+    const k1 = new Key({ private: '5555555555555555555555555555555555555555555555555555555555555555' });
+    const beacon = new Beacon({
+      regtest: true,
+      mineOnStart: false,
+      interval: 0,
+      federationValidators: [k1.pubkey],
+      federationThreshold: 1
+    });
+    beacon.fs = memoryFs();
+    const payload = { clock: 7, height: 7, blockHash: '11'.repeat(32) };
+    const digest = beaconFederationSigning.epochCommitmentDigestHex(payload);
+    beacon._pendingEpochRounds.set(digest, {
+      commitmentDigest: digest,
+      payload,
+      validators: [],
+      threshold: 1,
+      witness: { version: 1, signatures: {} },
+      status: 'ready',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    });
+    const result = await beacon.submitFederationEpochSignature(digest, k1.pubkey, '00');
+    assert.strictEqual(result.status, 'error');
+    assert.match(String(result.message), /threshold/i);
+    assert.strictEqual(beacon._epochChain.height, 0);
+  });
+
   it('retains a ready round when epoch-chain persist fails', async function () {
     const beaconFederationSigning = require('../functions/beaconFederationSigning');
     const beacon = new Beacon({ regtest: true, mineOnStart: false, interval: 0 });

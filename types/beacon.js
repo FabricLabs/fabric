@@ -256,8 +256,7 @@ class Beacon extends Actor {
     // persist failure then makes retries hit `round not open`. Finalize the
     // existing ready round instead of reopening it for new signatures.
     if (round.status === 'ready' || round.status === 'sealed') {
-      if (!beaconFederationSigning.roundMeetsThreshold(round) &&
-          !this._epochAlreadySealed(digest, round)) {
+      if (!this._recoveredRoundWitnessOk(digest, round)) {
         return { status: 'error', message: 'recovered round failed federation threshold' };
       }
       return this._finalizeReadyFederationRound(digest, round);
@@ -268,6 +267,9 @@ class Beacon extends Actor {
       if (added.error === 'round not open') {
         const again = this._pendingEpochRounds.get(digest);
         if (again && (again.status === 'ready' || again.status === 'sealed')) {
+          if (!this._recoveredRoundWitnessOk(digest, again)) {
+            return { status: 'error', message: 'recovered round failed federation threshold' };
+          }
           return this._finalizeReadyFederationRound(digest, again);
         }
       }
@@ -292,6 +294,27 @@ class Beacon extends Actor {
     }
 
     return this._finalizeReadyFederationRound(digest, round);
+  }
+
+  /**
+   * Ready/sealed rounds loaded from disk must still satisfy the round witness
+   * and, when this Beacon has federation validators, those configured keys —
+   * not an attacker-emptied `round.validators` list.
+   * @param {string} digest
+   * @param {object} round
+   * @returns {boolean}
+   * @private
+   */
+  _recoveredRoundWitnessOk (digest, round) {
+    if (this._epochAlreadySealed(digest, round)) return true;
+    if (!beaconFederationSigning.roundMeetsThreshold(round)) return false;
+    if (!this._federationValidators.length) return true;
+    return beaconFederationSigning.verifyFederationWitnessOnMessage(
+      beaconFederationSigning.messageBufferForPayload(round.payload),
+      round.witness,
+      this._federationValidators,
+      this._federationThreshold
+    );
   }
 
   /**

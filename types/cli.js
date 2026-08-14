@@ -2813,7 +2813,12 @@ class CLI extends FabricShell {
         this._appendMessage(`Idle lock timeout: ${snap ? snap.timeoutMinutes : '?'} minutes (0 = off).`);
         return true;
       }
-      env.setLockTimeoutMinutes(params[2]);
+      const parsed = Number(params[2]);
+      if (!Number.isFinite(parsed)) {
+        this._appendError('Idle lock timeout must be a number of minutes (0 = off).');
+        return false;
+      }
+      env.setLockTimeoutMinutes(parsed);
       this._appendMessage(`Idle lock timeout set to ${env.lockSession.timeoutMinutes} minutes.`);
       return true;
     }

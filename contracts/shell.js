@@ -29,17 +29,24 @@ async function OP_SHELL () {
     shell.assumeIdentity(new Key({ xpub: this.environment.walletPublic.xpub }));
   }
 
-  this.environment.lockSession.on('lock', () => {
+  const onLock = () => {
     shell._appendWarning('Identity locked after idle timeout. Use /unlock to continue.');
-  });
-  this.environment.lockSession.on('unlock', () => {
+  };
+  const onUnlock = () => {
     if (this.environment.wallet) {
       shell.attachWallet(this.environment.wallet);
       shell.assumeIdentity(this.environment.wallet.settings.key);
     }
-  });
+  };
+  this.environment.lockSession.on('lock', onLock);
+  this.environment.lockSession.on('unlock', onUnlock);
 
-  await shell.start();
+  try {
+    await shell.start();
+  } finally {
+    this.environment.lockSession.removeListener('lock', onLock);
+    this.environment.lockSession.removeListener('unlock', onUnlock);
+  }
 
   return JSON.stringify({
     id: shell.id,
