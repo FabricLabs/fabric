@@ -164,7 +164,7 @@ class Filesystem extends Actor {
 
       return true;
     } catch (exception) {
-      this.emit('error', `Could not write file: ${content} ${exception}`);
+      this.emit('error', `Could not write file ${name}: ${exception}`);
       return false;
     }
   }
@@ -228,13 +228,27 @@ class Filesystem extends Actor {
     }
 
     const actor = new Actor(document);
-    const hash = Hash256.digest(document);
-
-    this._state.documents[hash] = document;
 
     return {
       id: actor.id
     };
+  }
+
+  /**
+   * Remember a published path in the top-level file list without re-reading the tree.
+   * Nested paths only add the first segment (same as `readdir` of `this.path`).
+   * @param {string} name
+   * @returns {void}
+   */
+  _notePublishedName (name) {
+    const top = String(name || '').split(/[/\\]/).filter(Boolean)[0];
+    if (!top || top === '.fabric') return;
+    if (!Array.isArray(this._state.content.files)) this._state.content.files = [];
+    const files = this._state.content.files;
+    if (!files.includes(top)) {
+      files.push(top);
+      files.sort();
+    }
   }
 
   async publish (name, document) {
@@ -242,15 +256,8 @@ class Filesystem extends Actor {
     const actor = new Actor(document);
     const hash = Hash256.digest(content);
 
-    // Update state
-    this._state.actors[actor.id] = actor;
-    this._state.documents[hash] = content;
-
-    // Write the file last, after state is set
     this.writeFile(name, content);
-
-    // Ensure changes are persisted
-    await this.synchronize();
+    this._notePublishedName(name);
 
     return {
       id: actor.id,
@@ -328,16 +335,16 @@ class Filesystem extends Actor {
   }
 
   commit () {
-    const state = new Actor(this.state);
+    const content = this._state.content || {};
+    const serialized = JSON.stringify(content);
 
     // Write state to STATE file using absolute path
     const statePath = path.resolve(this.path, '.fabric', 'STATE');
-    // console.debug('[FILESYSTEM]', 'Writing state:', this.state);
-    const stateHex = Buffer.from(JSON.stringify(this.state)).toString('hex');
+    const stateHex = Buffer.from(serialized).toString('hex');
     this.writeFile(statePath, stateHex);
-    this.writeFile(statePath + '.json', JSON.stringify(this.state, null, '  '));
+    this.writeFile(statePath + '.json', serialized);
 
-    const commit = Message.fromVector(['COMMIT', state]);
+    const commit = Message.fromVector(['COMMIT', serialized]);
     commit.signatures = commit.signatures || [];
 
     // Only sign if we have a key with private key component

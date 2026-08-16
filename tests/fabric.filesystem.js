@@ -119,6 +119,16 @@ describe('@fabric/core/types/filesystem', function () {
       assert.strictEqual(actorJson.object.name, 'Satoshi Nakamoto');
     });
 
+    it('publish does not retain document bodies in memory', async function () {
+      await filesystem.start();
+      for (let i = 0; i < 20; i++) {
+        await filesystem.publish('blob-' + i + '.txt', 'payload-' + i);
+      }
+      assert.deepStrictEqual(Object.keys(filesystem.documents), []);
+      assert.strictEqual(fs.existsSync(path.join(testDir, 'blob-19.txt')), true);
+      assert.ok(filesystem.files.includes('blob-19.txt'));
+    });
+
     it('can delete from a local filesystem', async function () {
       const actor = new Actor({ name: 'Satoshi Nakamoto' });
       const filesystem = new Filesystem({

@@ -406,6 +406,7 @@ When you're ready to continue, visit the following URL: https://dev.fabric.pub/W
    * @return {Buffer}       {@link Store}-able blob.
    */
   serialize (input = this.state, _encoding = 'json') {
+    if (input == null) input = {};
     const state = {};
     let result = null;
 

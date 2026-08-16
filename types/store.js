@@ -255,6 +255,9 @@ class Store extends Actor {
    * @return {Promise}       Resolves on success with a String pointer.
    */
   async _POST (key, value) {
+    if (value == null) {
+      throw new Error('Store._POST requires a JSON body');
+    }
     if (this.settings.verbosity >= 5) console.log('[STORE]', '_POST', key, typeof value, value);
 
     this['@method'] = '_POST';
