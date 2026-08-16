@@ -127,22 +127,28 @@ describe('@fabric/core Peer adversarial hardening', function () {
       150 - PEER_SCORE_BODY_HASH_MISMATCH_PENALTY
     );
 
-    // Dial refused
-    let connected = false;
+    // Dial refused before createConnection
+    const scoreAfterBan = peer._state.peers['ban-peer'].score;
     peer._outboundDialTargets = new Set();
-    const origCreate = require('net').createConnection;
-    // _connect returns early before createConnection when banned
+    const warnings = [];
+    peer.on('warning', (msg) => warnings.push(String(msg)));
     peer._connect(origin);
-    assert.strictEqual(peer.connections[origin] == null || peer.connections[origin].destroyed === true || destroyed, true);
+    assert.ok(warnings.some((m) => /Refusing dial to banned peer/.test(m)));
+    assert.strictEqual(peer._outboundDialTargets.size, 0);
 
-    // Inbound message from banned peer dropped
+    // Inbound valid frame from banned origin is dropped (no cache / no score change)
     const ping = Message.fromVector(['P2P_PING', JSON.stringify({ ok: 1 })]).signWithKey(peer.key);
-    let handled = false;
-    peer.on('debug', () => { handled = true; });
-    peer._handleFabricMessage(ping.toBuffer(), { name: origin }, null);
-    void origCreate;
-    void connected;
-    void handled;
+    const good = ping.toBuffer();
+    const hash = crypto.createHash('sha256').update(good).digest('hex');
+    let inboundDestroyed = 0;
+    peer.connections[origin] = {
+      destroy () { inboundDestroyed++; }
+    };
+    peer._handleFabricMessage(good, { name: origin }, null);
+    assert.ok(warnings.some((m) => /Dropping message from banned peer/.test(m)));
+    assert.strictEqual(inboundDestroyed, 1);
+    assert.strictEqual(peer._state.peers['ban-peer'].score, scoreAfterBan);
+    assert.strictEqual(peer.messages[hash], undefined);
     assert.ok(peer._isPeerBanned(origin));
   });
 

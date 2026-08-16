@@ -29,7 +29,7 @@ Welcome to Fabric!
 
 [api-md]: API.md
 [api-docs]: https://dev.fabric.pub/docs
-[api-examples]: https://dev.fabric.pub/examples
+[api-examples]: https://fabriclabs.github.io/fabric/examples/home.html
 
 [readme]: README.md
 [vision]: VISION.md

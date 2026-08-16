@@ -33,6 +33,12 @@ const {
   P2P_PEERING_OFFER,
   P2P_SESSION_OFFER,
   P2P_SESSION_OPEN,
+  P2P_MUSIG_START,
+  P2P_MUSIG_ACCEPT,
+  P2P_MUSIG_RECEIVE_COUNTER,
+  P2P_MUSIG_SEND_PROPOSAL,
+  P2P_MUSIG_REPLY_TO_PROPOSAL,
+  P2P_MUSIG_ACCEPT_PROPOSAL,
   P2P_CONTRACT_PUBLISH,
   P2P_CONTRACT_MESSAGE,
   P2P_STATE_ROOT,
@@ -144,6 +150,12 @@ const WIRE_TYPE_DECODE_ORDER = Object.freeze([
   [P2P_PEERING_OFFER, 'P2P_PEERING_OFFER'],
   [P2P_SESSION_OFFER, 'P2P_SESSION_OFFER'],
   [P2P_SESSION_OPEN, 'P2P_SESSION_OPEN'],
+  [P2P_MUSIG_START, 'P2P_MUSIG_START'],
+  [P2P_MUSIG_ACCEPT, 'P2P_MUSIG_ACCEPT'],
+  [P2P_MUSIG_RECEIVE_COUNTER, 'P2P_MUSIG_RECEIVE_COUNTER'],
+  [P2P_MUSIG_SEND_PROPOSAL, 'P2P_MUSIG_SEND_PROPOSAL'],
+  [P2P_MUSIG_REPLY_TO_PROPOSAL, 'P2P_MUSIG_REPLY_TO_PROPOSAL'],
+  [P2P_MUSIG_ACCEPT_PROPOSAL, 'P2P_MUSIG_ACCEPT_PROPOSAL'],
   [P2P_CONTRACT_PUBLISH, 'CONTRACT_PUBLISH'],
   [P2P_CONTRACT_MESSAGE, 'CONTRACT_MESSAGE'],
   [P2P_IDENT_REQUEST, 'P2P_IDENT_REQUEST'],
@@ -237,6 +249,12 @@ const LEGACY_MESSAGE_TYPE_ALIASES = Object.freeze({
   PeeringOffer: P2P_PEERING_OFFER,
   SessionOffer: P2P_SESSION_OFFER,
   SessionOpen: P2P_SESSION_OPEN,
+  MusigStart: P2P_MUSIG_START,
+  MusigAccept: P2P_MUSIG_ACCEPT,
+  MusigReceiveCounter: P2P_MUSIG_RECEIVE_COUNTER,
+  MusigSendProposal: P2P_MUSIG_SEND_PROPOSAL,
+  MusigReplyToProposal: P2P_MUSIG_REPLY_TO_PROPOSAL,
+  MusigAcceptProposal: P2P_MUSIG_ACCEPT_PROPOSAL,
   FileSend: P2P_FILE_SEND,
   DocumentPricingPublish: P2P_DOCUMENT_PUBLISH,
   Ping: P2P_PING,
@@ -1334,6 +1352,30 @@ const SCHEMA_P2P_PEER_ANNOUNCE = Object.freeze([
   { name: 'host', type: 'string' },
   { name: 'port', type: 'u32' }
 ]);
+/** @private BIP-327 directed MuSig2 session (JSON bodies still accepted). */
+const SCHEMA_P2P_MUSIG_START = Object.freeze([
+  { name: 'sessionId', type: 'bytes32' },
+  { name: 'msg', type: 'bytes' },
+  { name: 'pubkeys', type: 'bytes' },
+  { name: 'pubnonce', type: 'bytes' },
+  { name: 'purpose', type: 'string', optional: true }
+]);
+const SCHEMA_P2P_MUSIG_PUBNONCE = Object.freeze([
+  { name: 'sessionId', type: 'bytes32' },
+  { name: 'pubnonce', type: 'bytes' }
+]);
+const SCHEMA_P2P_MUSIG_AGGNONCE = Object.freeze([
+  { name: 'sessionId', type: 'bytes32' },
+  { name: 'aggnonce', type: 'bytes' }
+]);
+const SCHEMA_P2P_MUSIG_PSIG = Object.freeze([
+  { name: 'sessionId', type: 'bytes32' },
+  { name: 'psig', type: 'bytes' }
+]);
+const SCHEMA_P2P_MUSIG_SIGNATURE = Object.freeze([
+  { name: 'sessionId', type: 'bytes32' },
+  { name: 'signature', type: 'bytes' }
+]);
 
 /**
  * Parse an inbound AMP body: prefer JSON (legacy), else registered field schema.
@@ -1392,6 +1434,24 @@ function tryParseMessageBody (message) {
   registerBodySchema(P2P_PEER_ANNOUNCE, SCHEMA_P2P_PEER_ANNOUNCE);
   registerBodySchema('P2P_PEER_ANNOUNCE', SCHEMA_P2P_PEER_ANNOUNCE);
   registerBodySchema('PeerAnnounce', SCHEMA_P2P_PEER_ANNOUNCE);
+  registerBodySchema(P2P_MUSIG_START, SCHEMA_P2P_MUSIG_START);
+  registerBodySchema('P2P_MUSIG_START', SCHEMA_P2P_MUSIG_START);
+  registerBodySchema('MusigStart', SCHEMA_P2P_MUSIG_START);
+  registerBodySchema(P2P_MUSIG_ACCEPT, SCHEMA_P2P_MUSIG_PUBNONCE);
+  registerBodySchema('P2P_MUSIG_ACCEPT', SCHEMA_P2P_MUSIG_PUBNONCE);
+  registerBodySchema('MusigAccept', SCHEMA_P2P_MUSIG_PUBNONCE);
+  registerBodySchema(P2P_MUSIG_RECEIVE_COUNTER, SCHEMA_P2P_MUSIG_PUBNONCE);
+  registerBodySchema('P2P_MUSIG_RECEIVE_COUNTER', SCHEMA_P2P_MUSIG_PUBNONCE);
+  registerBodySchema('MusigReceiveCounter', SCHEMA_P2P_MUSIG_PUBNONCE);
+  registerBodySchema(P2P_MUSIG_SEND_PROPOSAL, SCHEMA_P2P_MUSIG_AGGNONCE);
+  registerBodySchema('P2P_MUSIG_SEND_PROPOSAL', SCHEMA_P2P_MUSIG_AGGNONCE);
+  registerBodySchema('MusigSendProposal', SCHEMA_P2P_MUSIG_AGGNONCE);
+  registerBodySchema(P2P_MUSIG_REPLY_TO_PROPOSAL, SCHEMA_P2P_MUSIG_PSIG);
+  registerBodySchema('P2P_MUSIG_REPLY_TO_PROPOSAL', SCHEMA_P2P_MUSIG_PSIG);
+  registerBodySchema('MusigReplyToProposal', SCHEMA_P2P_MUSIG_PSIG);
+  registerBodySchema(P2P_MUSIG_ACCEPT_PROPOSAL, SCHEMA_P2P_MUSIG_SIGNATURE);
+  registerBodySchema('P2P_MUSIG_ACCEPT_PROPOSAL', SCHEMA_P2P_MUSIG_SIGNATURE);
+  registerBodySchema('MusigAcceptProposal', SCHEMA_P2P_MUSIG_SIGNATURE);
 })();
 
 Message.FIELD_TYPES = BODY_FIELD_TYPES;
@@ -1408,5 +1468,6 @@ Message.SCHEMA_P2P_FORWARD = SCHEMA_P2P_FORWARD;
 Message.SCHEMA_P2P_PEER_GOSSIP = SCHEMA_P2P_PEER_GOSSIP;
 Message.SCHEMA_P2P_PEERING_OFFER = SCHEMA_P2P_PEERING_OFFER;
 Message.SCHEMA_P2P_PEER_ANNOUNCE = SCHEMA_P2P_PEER_ANNOUNCE;
+Message.SCHEMA_P2P_MUSIG_START = SCHEMA_P2P_MUSIG_START;
 
 module.exports = Message;

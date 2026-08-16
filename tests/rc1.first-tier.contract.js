@@ -27,6 +27,7 @@ const {
   PEER_BAN_TTL_MS,
   bitcoinReceiveDerivationPath,
   fabricCoinTypeForNetwork,
+  fabricIdentityAccountPath,
   fabricIdentityDerivationPath
 } = require('../constants');
 const { fabricIdentityIdFromPubkeyHex } = require('../functions/fabricIdentitySchnorr');
@@ -181,6 +182,35 @@ describe('@fabric/core RC1 first-tier contract', function () {
       assert.strictEqual(sinkWrites.length, 1, 'valid hop after hop=0 must still relay');
     });
 
+    it('hop=0 peering offer does not poison the payload cache for a later valid hop', function () {
+      const peer = offlinePeer({
+        constraints: { peers: { max: 32 } },
+        peering: { maxRelaysPerOriginPerMinute: 8, maxCandidates: 8 }
+      });
+      const origin = '127.0.0.1:rc1-p0';
+      const sink = '127.0.0.1:rc1-p1';
+      const sinkWrites = [];
+      const author = new Key();
+      peer.connections[origin] = wireConn([]);
+      peer.connections[sink] = wireConn(sinkWrites);
+      peer.peers[origin] = { publicKey: author.pubkey };
+
+      const body = { transport: 'fabric', host: '203.0.113.77', port: 7777, tag: 'phop0-then-5' };
+      const dead = Message.fromVector(
+        ['P2P_PEERING_OFFER', JSON.stringify(Object.assign({}, body, { peeringHop: 0 }))]
+      ).signWithKey(author);
+      peer._handleFabricMessage(dead.toBuffer(), { name: origin }, null);
+      assert.strictEqual(sinkWrites.length, 0);
+      assert.strictEqual(peer.candidates.length, 0);
+
+      const live = Message.fromVector(
+        ['P2P_PEERING_OFFER', JSON.stringify(Object.assign({}, body, { peeringHop: 5 }))]
+      ).signWithKey(author);
+      peer._handleFabricMessage(live.toBuffer(), { name: origin }, null);
+      assert.strictEqual(sinkWrites.length, 1, 'valid hop after peeringHop=0 must still relay');
+      assert.ok(peer.candidates.some((c) => c.host === '203.0.113.77' && Number(c.port) === 7777));
+    });
+
     it('P2P_BASE_MESSAGE cannot inject P2P_PEER_GOSSIP mesh relay', function () {
       const peer = offlinePeer({
         gossip: { maxRelaysPerOriginPerMinute: 8 }
@@ -204,6 +234,43 @@ describe('@fabric/core RC1 first-tier contract', function () {
       assert.strictEqual(seen, 0);
       assert.strictEqual(sinkWrites.length, 0);
       assert.strictEqual(peer._gossipRelayByOrigin.has(origin), false);
+    });
+
+    it('P2P_BASE_MESSAGE cannot inject chat, alias, or announce side effects', function () {
+      const peer = offlinePeer({
+        constraints: { peers: { max: 32 } },
+        peering: { maxCandidates: 8 },
+        chat: { maxRelaysPerOriginPerMinute: 8 }
+      });
+      const origin = '127.0.0.1:rc1-base-x';
+      const sink = '127.0.0.1:rc1-base-y';
+      const sinkWrites = [];
+      const author = new Key();
+      peer.connections[origin] = wireConn([]);
+      peer.connections[sink] = wireConn(sinkWrites);
+      peer.peers[origin] = { publicKey: author.pubkey };
+      peer.connections[origin]._alias = 'honest';
+      let chats = 0;
+      let announces = 0;
+      peer.on('chat', () => { chats++; });
+      peer.on('peerAnnounce', () => { announces++; });
+
+      const smuggles = [
+        { type: 'P2P_CHAT_MESSAGE', object: { content: 'injected' } },
+        { type: 'P2P_PEER_ALIAS', object: { alias: 'evil' } },
+        { type: 'P2P_PEER_ANNOUNCE', object: { host: '203.0.113.50', port: 7777 } }
+      ];
+      for (const body of smuggles) {
+        const wire = Message.fromVector(['P2P_BASE_MESSAGE', JSON.stringify(body)]).signWithKey(author);
+        peer._handleFabricMessage(wire.toBuffer(), { name: origin }, null);
+      }
+
+      assert.strictEqual(chats, 0);
+      assert.strictEqual(announces, 0);
+      assert.strictEqual(peer.connections[origin]._alias, 'honest');
+      assert.strictEqual(peer.candidates.length, 0);
+      assert.ok(!peer._candidateKeys || !peer._candidateKeys.has('203.0.113.50:7777'));
+      assert.strictEqual(sinkWrites.length, 0);
     });
 
     it('gossip relay budget is keyed by TCP origin, not advertised body pubkey', function () {
@@ -333,6 +400,8 @@ describe('@fabric/core RC1 first-tier contract', function () {
       assert.strictEqual(fabricCoinTypeForNetwork(''), FABRIC_COIN_TYPE_TESTNET);
       assert.strictEqual(fabricCoinTypeForNetwork(null), FABRIC_COIN_TYPE_TESTNET);
       assert.strictEqual(fabricIdentityDerivationPath(0, 0, 7777), "m/44'/7777'/0'/0/0");
+      assert.strictEqual(fabricIdentityAccountPath(0, 'not-a-network'), "m/44'/7778'/0'");
+      assert.strictEqual(fabricIdentityAccountPath(0, 'mainnet'), "m/44'/7777'/0'");
     });
 
     it('Bitcoin fund paths stay on coin type 0 and never equal the Fabric identity key', function () {

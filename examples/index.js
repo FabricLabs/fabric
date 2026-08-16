@@ -34,4 +34,5 @@ main().catch((exception) => {
 // Now that we've defined our program, let's run it to see the results.
 
 // ### Next Steps
-// That's all there is to it!  Now, [on to the API Explorer](https://dev.fabric.pub/docs)!
+// That's all there is to it!  Now browse the [examples home](home.html) or the
+// [API Explorer](https://dev.fabric.pub/docs).

@@ -68,6 +68,17 @@ describe('@fabric/core/types/wallet', function () {
       assert.ok(exported.object.master);
       assert.ok(exported.object.seed);
       assert.ok(exported.object.xprv);
+      assert.match(String(exported.object.xprv), /^xprv/);
+    });
+
+    it('export() is the plaintext payload Environment seals (secrets stay in object)', function () {
+      const wallet = new Wallet({ key: { seed: require('../constants').FIXTURE_SEED } });
+      const exported = wallet.export();
+      const json = JSON.stringify(exported.object);
+      assert.ok(json.includes('xprv'));
+      assert.ok(exported.object.seed);
+      assert.strictEqual(exported.passwordProtected, undefined);
+      assert.strictEqual(exported.seal, undefined);
     });
 
     it('can get an unused address', async () => {

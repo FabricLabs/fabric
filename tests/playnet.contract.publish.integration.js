@@ -62,7 +62,7 @@ describe('playnet contract publish + re-publish', function () {
       're-publish must not grant patch rights to a new wire signer'
     );
 
-    assert.ok(publishes >= 0);
+    assert.ok(publishes >= 1, 'CONTRACT_PUBLISH ingest must emit contract:publish');
   });
 
   it('broadcast writes CONTRACT_PUBLISH frames to connected peers', function () {

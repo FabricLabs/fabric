@@ -5,7 +5,7 @@ const assert = require('assert');
 const bip39 = require('../functions/bip39');
 const BIP32 = require('../functions/bip32').default;
 const ecc = require('../types/ecc');
-const { FABRIC_KEY_DERIVATION_PATH, bitcoinReceiveDerivationPath, fabricIdentityDerivationPath, fabricCoinTypeForNetwork, FABRIC_COIN_TYPE_MAINNET, FABRIC_COIN_TYPE_TESTNET } = require('../constants');
+const { FABRIC_KEY_DERIVATION_PATH, bitcoinReceiveDerivationPath, fabricIdentityDerivationPath, fabricIdentityAccountPath, fabricCoinTypeForNetwork, FABRIC_COIN_TYPE_MAINNET, FABRIC_COIN_TYPE_TESTNET } = require('../constants');
 let nobleSecp256k1 = null;
 try {
   nobleSecp256k1 = require('@noble/curves/secp256k1.js');
@@ -70,6 +70,12 @@ describe('@fabric/core/types/identity', function () {
       assert.strictEqual(fabricCoinTypeForNetwork('mainnet'), FABRIC_COIN_TYPE_MAINNET);
       assert.strictEqual(fabricIdentityDerivationPath(0, 0), FABRIC_KEY_DERIVATION_PATH);
       assert.strictEqual(fabricIdentityDerivationPath(0, 0, 'mainnet'), "m/44'/7777'/0'/0/0");
+      assert.strictEqual(fabricIdentityAccountPath(0), "m/44'/7778'/0'");
+      assert.strictEqual(fabricIdentityAccountPath(0, 'mainnet'), "m/44'/7777'/0'");
+      assert.strictEqual(
+        fabricIdentityDerivationPath(2, 3, 'regtest'),
+        fabricIdentityAccountPath(2, 'regtest') + '/0/3'
+      );
 
       const reg = new Identity({ seed: SAMPLE.seed, network: 'regtest' });
       const main = new Identity({ seed: SAMPLE.seed, network: 'mainnet' });
@@ -109,15 +115,20 @@ describe('@fabric/core/types/identity', function () {
       const root = new BIP32(ecc).fromSeed(seed);
       const fabricNode = root.derivePath(FABRIC_KEY_DERIVATION_PATH);
       const msgHash = crypto.createHash('sha256').update(Buffer.from(message)).digest();
-      const expectedSig = nobleSchnorr.sign(msgHash, fabricNode.privateKey);
+      const expectedSig = nobleSchnorr.sign(msgHash, fabricNode.privateKey, Buffer.alloc(32));
       const xOnlyPubkey = Buffer.from(
         secp256k1.getPublicKey(fabricNode.privateKey, true)
       ).slice(1); // drop prefix for x-only
       const expectedVerified = nobleSchnorr.verify(expectedSig, msgHash, xOnlyPubkey);
+      const actualBytes = Buffer.isBuffer(actualSignature)
+        ? actualSignature
+        : Buffer.from(actualSignature);
 
       assert.ok(actualSignature);
       assert.equal(actualVerified, true);
       assert.equal(actualVerified, expectedVerified);
+      assert.ok(actualBytes.equals(Buffer.from(expectedSig)),
+        'Identity.sign must match noble BIP340 with zero auxRand');
     });
   });
 });

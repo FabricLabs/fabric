@@ -16,16 +16,20 @@ const IDENTITY_ENV = [
 ];
 
 /**
- * Isolated `$HOME` + wallet path for Environment tests. Restores identity env.
+ * Isolated `$HOME` + wallet path for Environment tests. Restores identity env
+ * and `HOME` so wallet helpers that read `~/.fabric` cannot leak into the
+ * developer home directory.
  * @param {string} [prefix='fabric-env-']
  * @returns {{ home: string, store: string, walletPath: string, restore: function, clearIdentityEnv: function, leftoverWalletTemporaryFiles: function }}
  */
 function withIsolatedHome (prefix = 'fabric-env-') {
   const prev = {};
   for (const key of IDENTITY_ENV) prev[key] = process.env[key];
+  prev.HOME = process.env.HOME;
   const home = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
   const store = path.join(home, '.fabric');
   const walletPath = path.join(store, 'wallet.json');
+  process.env.HOME = home;
   return {
     home,
     store,
@@ -55,6 +59,8 @@ function withIsolatedHome (prefix = 'fabric-env-') {
         if (prev[key] === undefined) delete process.env[key];
         else process.env[key] = prev[key];
       }
+      if (prev.HOME === undefined) delete process.env.HOME;
+      else process.env.HOME = prev.HOME;
       fs.rmSync(home, { recursive: true, force: true });
     }
   };

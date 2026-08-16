@@ -36,6 +36,8 @@ const {
   CHAT_MAX_RELAYS_PER_ORIGIN_PER_MINUTE,
   PEER_MAX_PENDING_SEALED_DELIVERIES,
   PEER_MAX_DOCUMENT_RELAY_ROUTES,
+  PEER_MAX_MUSIG_SESSIONS,
+  PEER_MUSIG_SESSION_TTL_MS,
   HEADER_SIZE,
   MAX_MESSAGE_SIZE,
   P2P_PORT,
@@ -56,6 +58,8 @@ const {
   isOnionChatSeal,
   tryOpenOnionChatText
 } = require('../functions/onionChatSeal');
+const { individualPk } = require('../functions/musig2');
+const musig2Session = require('../functions/musig2Session');
 
 /** @private Max UTF-8 code units for first-class P2P_CHAT_MESSAGE body (text only). */
 const P2P_CHAT_MAX_CHARS = 2000;
@@ -108,6 +112,19 @@ function hostnameWithoutIpv6Brackets (hostname) {
     return h.slice(1, -1);
   }
   return h;
+}
+
+/**
+ * Dial / candidate key: `host:port`, or `[v6]:port` so URL parse and retry maps agree.
+ * @param {*} host
+ * @param {*} port
+ * @returns {string}
+ * @private
+ */
+function canonicalPeerAddress (host, port) {
+  const h = hostnameWithoutIpv6Brackets(String(host == null ? '' : host).trim());
+  if (!h) return '';
+  return h.includes(':') ? `[${h}]:${port}` : `${h}:${port}`;
 }
 
 // Dependencies
@@ -466,6 +483,18 @@ const FIRST_CLASS_OPCODE_ONLY_TYPES = new Set([
   'P2P_PEER_ALIAS',
   'P2P_SESSION_OFFER',
   'P2P_SESSION_OPEN',
+  'P2P_MUSIG_START',
+  'P2P_MUSIG_ACCEPT',
+  'P2P_MUSIG_RECEIVE_COUNTER',
+  'P2P_MUSIG_SEND_PROPOSAL',
+  'P2P_MUSIG_REPLY_TO_PROPOSAL',
+  'P2P_MUSIG_ACCEPT_PROPOSAL',
+  'MusigStart',
+  'MusigAccept',
+  'MusigReceiveCounter',
+  'MusigSendProposal',
+  'MusigReplyToProposal',
+  'MusigAcceptProposal',
   'P2P_CHAT_MESSAGE',
   'CONTRACT_PUBLISH',
   'CONTRACT_MESSAGE',
@@ -641,6 +670,12 @@ class Peer extends Service {
       flushChainAuthorizedPubkeys: []
     }, config);
 
+    this.settings.musig2 = Object.assign({
+      autoAccept: true,
+      maxSessions: PEER_MAX_MUSIG_SESSIONS,
+      sessionTtlMs: PEER_MUSIG_SESSION_TTL_MS
+    }, config.musig2);
+
     // FABRIC_INTERFACE / FABRIC_PEER_INTERFACE override bind when set.
     this.settings.interface = resolveFabricPeerInterface({
       interface: this.settings.interface,
@@ -783,6 +818,9 @@ class Peer extends Service {
      */
     this._selfDialSuppressUntil = new Map();
     this.sessions = {};
+    /** @type {Map<string, object>} BIP-327 directed sessions keyed by sessionId hex. */
+    this._musigSessions = new Map();
+    this._musigSessionOrder = [];
 
     // Internal Stack Machine
     this.machine = new Machine({ key: this.settings.key });
@@ -1306,7 +1344,7 @@ class Peer extends Service {
         normalizedPort > 65535) {
       return;
     }
-    const key = `${normalizedHost}:${normalizedPort}`;
+    const key = canonicalPeerAddress(normalizedHost, normalizedPort);
     if (this._isSelfDialSuppressed(key)) return;
     // Only suppress from a verified AMP/session pubkey — remote `obj.pubkey` is
     // attacker-controlled and must not poison dial targets for ~10 minutes.
@@ -1322,7 +1360,7 @@ class Peer extends Service {
       const old = this.candidates.shift();
       const o = old && (old.object || old);
       if (o && o.host != null && o.port != null) {
-        const evicted = `${String(o.host)}:${Number(o.port)}`;
+        const evicted = canonicalPeerAddress(o.host, o.port);
         this._candidateKeys.delete(evicted);
         if (this._candidateRetryAt) this._candidateRetryAt.delete(evicted);
       }
@@ -1429,7 +1467,7 @@ class Peer extends Service {
       if (this._candidateKeys) this._candidateKeys.delete(addr);
       if (Array.isArray(this.candidates)) {
         this.candidates = this.candidates.filter((c) => {
-          const h = c && (c.address || `${c.host}:${c.port}`);
+          const h = c && (c.address || canonicalPeerAddress(c.host, c.port));
           return h !== addr;
         });
       }
@@ -1762,6 +1800,339 @@ class Peer extends Service {
   }
 
   /**
+   * Begin a directed BIP-327 MuSig2 session (n-of-n) with connected peers.
+   *
+   * @param {object} [opts]
+   * @param {Buffer|string} opts.msg message to sign (hashed to 32 bytes unless already 32)
+   * @param {Array<Buffer|string>} [opts.pubkeys] compressed participants; default local + dest
+   * @param {Buffer|string} [opts.dest] peer pubkey or `host:port` for the first hop
+   * @param {string} [opts.purpose]
+   * @returns {object|null} public session view
+   */
+  startMusig2 (opts = {}) {
+    const sk = this._musigLocalSecret();
+    if (!sk) {
+      this.emit('warning', '[FABRIC:PEER] startMusig2: no local secret');
+      return null;
+    }
+    const localPk = individualPk(sk);
+    let pubkeys = opts.pubkeys;
+    if (!pubkeys || !pubkeys.length) {
+      const destPk = this._musigDestPubkey(opts.dest || opts.peerId || opts.address);
+      if (!destPk) {
+        this.emit('warning', '[FABRIC:PEER] startMusig2: dest pubkey required');
+        return null;
+      }
+      pubkeys = [localPk, destPk];
+    }
+    let session;
+    try {
+      session = musig2Session.createLocalSession({
+        msg: opts.msg,
+        pubkeys,
+        sk,
+        purpose: opts.purpose || '',
+        initiator: true
+      });
+    } catch (err) {
+      this.emit('warning', `[FABRIC:PEER] startMusig2: ${err && err.message ? err.message : err}`);
+      return null;
+    }
+    this._musigPut(session);
+    this._musigSend('P2P_MUSIG_START', musig2Session.startFields(session), session);
+    this.emit('musig2:start', musig2Session.sessionPublicView(session));
+    return musig2Session.sessionPublicView(session);
+  }
+
+  /**
+   * Public MuSig2 session snapshot (no secret nonce).
+   * @param {Buffer|string} sessionId
+   * @returns {object|null}
+   */
+  getMusig2Session (sessionId) {
+    return musig2Session.sessionPublicView(this._musigGet(sessionId));
+  }
+
+  /**
+   * @returns {Buffer|null}
+   * @private
+   */
+  _musigLocalSecret () {
+    const k = this.key && this.key.private;
+    if (Buffer.isBuffer(k) && k.length === 32) return k;
+    if (typeof k === 'string' && /^[0-9a-f]{64}$/i.test(k.trim())) {
+      return Buffer.from(k.trim(), 'hex');
+    }
+    return null;
+  }
+
+  /**
+   * @param {Buffer|string} dest
+   * @returns {Buffer|null}
+   * @private
+   */
+  _musigDestPubkey (dest) {
+    if (dest == null || dest === '') return null;
+    try {
+      const buf = Buffer.isBuffer(dest) ? dest : Buffer.from(String(dest).replace(/^0x/i, ''), 'hex');
+      if (buf.length === 33) return buf;
+    } catch {
+      // host:port or non-hex
+    }
+    const addr = this._resolveAddressByXOnly(dest) || this._resolveToAddress(String(dest));
+    if (!addr) return null;
+    const rec = (this.peers && this.peers[addr]) || null;
+    const pk = rec && (rec.publicKey || rec.pubkey);
+    if (!pk) return null;
+    try {
+      const buf = Buffer.isBuffer(pk) ? pk : Buffer.from(String(pk).replace(/^0x/i, ''), 'hex');
+      if (buf.length === 33) return buf;
+    } catch {
+      return null;
+    }
+    return null;
+  }
+
+  /**
+   * @param {Buffer|string} sessionId
+   * @returns {string}
+   * @private
+   */
+  _musigSessionKey (sessionId) {
+    if (Buffer.isBuffer(sessionId)) return sessionId.toString('hex');
+    return String(sessionId || '').toLowerCase().replace(/^0x/i, '');
+  }
+
+  /**
+   * @param {object} session
+   * @private
+   */
+  _musigPut (session) {
+    const id = this._musigSessionKey(session.sessionId);
+    if (this._musigSessions.has(id)) {
+      const idx = this._musigSessionOrder.indexOf(id);
+      if (idx >= 0) this._musigSessionOrder.splice(idx, 1);
+    }
+    this._musigSessions.set(id, session);
+    this._musigSessionOrder.push(id);
+    const cap = Number(this.settings.musig2 && this.settings.musig2.maxSessions) || PEER_MAX_MUSIG_SESSIONS;
+    while (this._musigSessionOrder.length > cap) {
+      const evict = this._musigSessionOrder.shift();
+      const old = this._musigSessions.get(evict);
+      musig2Session.wipeSession(old);
+      this._musigSessions.delete(evict);
+    }
+  }
+
+  /**
+   * @param {Buffer|string} sessionId
+   * @returns {object|null}
+   * @private
+   */
+  _musigGet (sessionId) {
+    const id = this._musigSessionKey(sessionId);
+    const session = this._musigSessions.get(id);
+    if (!session) return null;
+    const ttl = Number(this.settings.musig2 && this.settings.musig2.sessionTtlMs) || PEER_MUSIG_SESSION_TTL_MS;
+    if (ttl > 0 && Date.now() - (session.createdAt || 0) > ttl) {
+      musig2Session.wipeSession(session);
+      this._musigSessions.delete(id);
+      const idx = this._musigSessionOrder.indexOf(id);
+      if (idx >= 0) this._musigSessionOrder.splice(idx, 1);
+      return null;
+    }
+    return session;
+  }
+
+  /**
+   * @param {string} type
+   * @param {object} fields
+   * @param {object} session
+   * @private
+   */
+  _musigSend (type, fields, session) {
+    let frame;
+    try {
+      frame = Message.fromFields(type, fields).signWithKey(this.key);
+    } catch (err) {
+      this.emit('warning', `[FABRIC:PEER] MuSig2 encode ${type}: ${err && err.message ? err.message : err}`);
+      return;
+    }
+    const wire = frame.toBuffer();
+    const localX = musig2Session.xOnlyHex(session.pubkeys[session.localIndex]);
+    for (const pk of session.pubkeys) {
+      if (musig2Session.xOnlyHex(pk) === localX) continue;
+      const addr = this._resolveAddressByXOnly(pk);
+      if (!addr || !this.connections[addr] || !this.connections[addr]._writeFabric) {
+        this.emit('warning', `[FABRIC:PEER] MuSig2: no live connection for ${musig2Session.xOnlyHex(pk)}`);
+        continue;
+      }
+      this.connections[addr]._writeFabric(wire);
+    }
+  }
+
+  /**
+   * @param {object} session
+   * @private
+   */
+  _musigMaybeProgress (session) {
+    if (!session || session.signature) return;
+    const auto = this.settings.musig2 && this.settings.musig2.autoAccept !== false;
+    if (session.initiator && musig2Session.allPubnoncesPresent(session) && !session.aggnonce) {
+      const aggnonce = musig2Session.computeAggNonce(session);
+      if (aggnonce) {
+        session.aggnonce = aggnonce;
+        this._musigSend('P2P_MUSIG_SEND_PROPOSAL', {
+          sessionId: session.sessionId,
+          aggnonce
+        }, session);
+      }
+    }
+    if (auto && session.aggnonce && session.secnonce && !session.psigs[session.localIndex]) {
+      const sk = this._musigLocalSecret();
+      const signed = sk ? musig2Session.createPartial(session, sk) : { ok: false };
+      if (signed.ok) {
+        this._musigSend('P2P_MUSIG_REPLY_TO_PROPOSAL', {
+          sessionId: session.sessionId,
+          psig: signed.psig
+        }, session);
+      }
+    }
+    if (session.initiator && musig2Session.allPartialsPresent(session) && !session.signature) {
+      const agg = musig2Session.aggregatePartials(session);
+      if (agg.ok) {
+        this._musigSend('P2P_MUSIG_ACCEPT_PROPOSAL', {
+          sessionId: session.sessionId,
+          signature: agg.signature
+        }, session);
+        this.emit('musig2:complete', musig2Session.sessionPublicView(session));
+      } else {
+        this.emit('warning', `[FABRIC:PEER] MuSig2 aggregate failed: ${agg.reason}`);
+      }
+    }
+  }
+
+  /**
+   * Directed BIP-327 frames — never mesh-flooded; peel / foreign RELAY ignored.
+   * @private
+   */
+  _handleMusig2Message (message, origin, socket, opts = {}) {
+    const delivery = meshDeliveryContext(opts, origin && origin.name);
+    if (!delivery.allowTcpOriginSideEffects) {
+      this.emit('warning',
+        `[FABRIC:PEER] Ignoring ${message.type} delivered via peel/relay-as-is`);
+      return this;
+    }
+    const signerXOnly = opts.signerPubkeyHex || this._verifiedFabricSignerPubkeyHex(message);
+    if (!signerXOnly) {
+      this.emit('warning', `[FABRIC:PEER] ${message.type} missing verified signer`);
+      return this;
+    }
+    const parsedBody = Message.tryParseMessageBody(message);
+    if (!parsedBody.ok) {
+      this.emit('warning', `[FABRIC:PEER] ${message.type} parse failed: ${parsedBody.error.message}`);
+      return this;
+    }
+    const body = musig2Session.parseMusigBody(parsedBody.value);
+    if (!body) {
+      this.emit('warning', `[FABRIC:PEER] ${message.type} invalid MuSig2 body`);
+      return this;
+    }
+    const type = message.type;
+    if (type === 'P2P_MUSIG_START') {
+      this._handleMusig2Start(body, signerXOnly);
+      return this;
+    }
+    const session = this._musigGet(body.sessionId);
+    if (!session) {
+      this.emit('warning', `[FABRIC:PEER] ${type} for unknown session`);
+      return this;
+    }
+    if (type === 'P2P_MUSIG_ACCEPT' || type === 'P2P_MUSIG_RECEIVE_COUNTER') {
+      const rec = musig2Session.recordPubnonce(session, signerXOnly, body.pubnonce);
+      if (!rec.ok) {
+        this.emit('warning', `[FABRIC:PEER] ${type} rejected: ${rec.reason}`);
+        return this;
+      }
+      this._musigMaybeProgress(session);
+      return this;
+    }
+    if (type === 'P2P_MUSIG_SEND_PROPOSAL') {
+      const set = musig2Session.setAggNonce(session, body.aggnonce);
+      if (!set.ok) {
+        this.emit('warning', `[FABRIC:PEER] SEND_PROPOSAL rejected: ${set.reason}`);
+        return this;
+      }
+      this._musigMaybeProgress(session);
+      return this;
+    }
+    if (type === 'P2P_MUSIG_REPLY_TO_PROPOSAL') {
+      const rec = musig2Session.recordPartial(session, signerXOnly, body.psig);
+      if (!rec.ok) {
+        this.emit('warning', `[FABRIC:PEER] REPLY rejected: ${rec.reason}`);
+        return this;
+      }
+      this._musigMaybeProgress(session);
+      return this;
+    }
+    if (type === 'P2P_MUSIG_ACCEPT_PROPOSAL') {
+      const v = musig2Session.verifyFinalSignature(session, body.signature);
+      if (!v.ok) {
+        this.emit('warning', `[FABRIC:PEER] ACCEPT_PROPOSAL rejected: ${v.reason}`);
+        return this;
+      }
+      this.emit('musig2:complete', musig2Session.sessionPublicView(session));
+      return this;
+    }
+    return this;
+  }
+
+  /**
+   * @param {object} body
+   * @param {string} signerXOnly
+   * @private
+   */
+  _handleMusig2Start (body, signerXOnly) {
+    const existing = this._musigGet(body.sessionId);
+    if (existing) {
+      const rec = musig2Session.recordPubnonce(existing, signerXOnly, body.pubnonce);
+      if (!rec.ok) {
+        this.emit('warning', `[FABRIC:PEER] duplicate START rejected: ${rec.reason}`);
+      }
+      return this;
+    }
+    const sk = this._musigLocalSecret();
+    if (!sk) {
+      this.emit('warning', '[FABRIC:PEER] P2P_MUSIG_START: no local secret');
+      return this;
+    }
+    const made = musig2Session.createFromStart(body, { sk, signerXOnly });
+    if (!made.ok) {
+      this.emit('warning', `[FABRIC:PEER] P2P_MUSIG_START ignored: ${made.reason}`);
+      return this;
+    }
+    const session = made.session;
+    this._musigPut(session);
+    const auto = this.settings.musig2 && this.settings.musig2.autoAccept !== false;
+    if (auto) {
+      const others = [];
+      for (let i = 0; i < session.pubkeys.length; i++) {
+        if (i !== session.initiatorIndex) others.push(i);
+      }
+      const first = others.length ? Math.min.apply(null, others) : session.localIndex;
+      const replyType = session.localIndex === first
+        ? 'P2P_MUSIG_ACCEPT'
+        : 'P2P_MUSIG_RECEIVE_COUNTER';
+      this._musigSend(replyType, {
+        sessionId: session.sessionId,
+        pubnonce: session.ownPubnonce
+      }, session);
+    }
+    this.emit('musig2:start', musig2Session.sessionPublicView(session));
+    return this;
+  }
+
+  /**
    * Handle inbound {@code P2P_FORWARD}: peel when {@code nextPeer} is local, else
    * forward the bit-identical outer frame to that peer only (no mesh flood).
    * @private
@@ -1982,12 +2353,7 @@ class Peer extends Service {
       return;
     }
 
-    if (this.connections[target] ||
-        (this._outboundDialTargets && this._outboundDialTargets.has(target))) {
-      this.emit('debug', `[FABRIC:PEER:_connect] Already connected or dialing ${target}; skipping`);
-      return;
-    }
-
+    // Do not dedup on the raw string: pubkey@host:port must share the host:port slot.
     if (this._isPeerBanned(target)) {
       this.emit('warning', `[FABRIC:PEER:_connect] Refusing dial to banned peer ${target}`);
       return;
@@ -1998,13 +2364,12 @@ class Peer extends Service {
       return;
     }
 
-    this.emit('debug', `[FABRIC:PEER:_connect] Attempting to connect to: ${target}`);
     const url = new URL(`tcp://${target}`);
     const id = url.username;
     const host = hostnameWithoutIpv6Brackets(url.hostname);
     const port = url.port || P2P_PORT;
     // Dedup on host:port so pubkey@host:port and host:port share one in-flight slot.
-    const canonical = host.includes(':') ? `[${host}]:${port}` : `${host}:${port}`;
+    const canonical = canonicalPeerAddress(host, port);
 
     // pubkey@host:port — refuse when the pin is our own Fabric key (pre-TCP).
     if (id && this._isOwnFabricPubkey(id)) {
@@ -2030,6 +2395,7 @@ class Peer extends Service {
     }
 
     this._outboundDialTargets.add(target);
+    this.emit('debug', `[FABRIC:PEER:_connect] Attempting to connect to: ${target}`);
 
     let socket;
     let _derived;
@@ -2420,7 +2786,7 @@ class Peer extends Service {
         const port = candidate.object ? candidate.object.port : candidate.port;
         const pubkey = candidate.pubkey ||
           (candidate.object && (candidate.object.pubkey || candidate.object.publicKey));
-        const addr = `${host}:${port}`;
+        const addr = canonicalPeerAddress(host, port);
         if (pubkey && this._isOwnFabricPubkey(pubkey)) {
           this.emit('warning',
             `[FABRIC:PEER] Dropping candidate ${addr}: pubkey is our own`);
@@ -2599,6 +2965,16 @@ class Peer extends Service {
     switch (message.type) {
       default:
         this.emit('debug', `Unhandled message type: ${message.type}`);
+        break;
+      case 'P2P_MUSIG_START':
+      case 'P2P_MUSIG_ACCEPT':
+      case 'P2P_MUSIG_RECEIVE_COUNTER':
+      case 'P2P_MUSIG_SEND_PROPOSAL':
+      case 'P2P_MUSIG_REPLY_TO_PROPOSAL':
+      case 'P2P_MUSIG_ACCEPT_PROPOSAL':
+        this._handleMusig2Message(message, origin, socket, Object.assign({}, opts, {
+          signerPubkeyHex
+        }));
         break;
       case 'P2P_RELAY':
         if (!origin || origin.name == null) break;

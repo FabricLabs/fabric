@@ -54,6 +54,11 @@ describe('@fabric/core/types/collection', function () {
       assert.equal(set.render(), JSON.stringify(expectedIDs));
     });
 
+    it('getLatest is undefined on an empty collection', function () {
+      const set = new Fabric.Collection();
+      assert.strictEqual(set.getLatest(), undefined);
+    });
+
     it('can import with commit', async () => {
       let set = new Fabric.Collection();
       let res = await set.import(samples.list[0]);
@@ -206,8 +211,9 @@ describe('@fabric/core/types/collection', function () {
       ]);
 
       const latest = set.getLatest();
-      // Collection stores keyed objects, so getLatest currently returns undefined.
-      assert.strictEqual(latest, undefined);
+      assert.ok(latest);
+      assert.strictEqual(latest.id, 'x2');
+      assert.strictEqual(latest.name, 'y');
 
       const queryResult = await set.query(`${set.path}/x1/name`);
       assert.strictEqual(queryResult, null);

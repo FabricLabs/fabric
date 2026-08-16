@@ -141,6 +141,12 @@ Several application types use codes **outside** this range (see [`constants.js`]
 | — | 1024 | `JSON_PATCH` † | JSON patch operation | ✅ Yes |
 | — | 16000 | `JSON_CALL` † | JSON function call | ✅ Yes |
 | — | 15103 | `GENERIC_MESSAGE` † | Hub/browser transitional carrier | ✅ Yes |
+| `0x4220` | 16928 | `P2P_MUSIG_START` † | Directed BIP-327 session open | ❌ No |
+| `0x4221` | 16929 | `P2P_MUSIG_ACCEPT` † | Co-signer pubnonce | ❌ No |
+| `0x4222` | 16930 | `P2P_MUSIG_RECEIVE_COUNTER` † | Additional pubnonce (n>2) | ❌ No |
+| `0x4223` | 16931 | `P2P_MUSIG_SEND_PROPOSAL` † | Coordinator aggnonce | ❌ No |
+| `0x4224` | 16932 | `P2P_MUSIG_REPLY_TO_PROPOSAL` † | Partial signature | ❌ No |
+| `0x4225` | 16933 | `P2P_MUSIG_ACCEPT_PROPOSAL` † | Aggregated BIP-340 signature | ❌ No |
 | `0x81`-`0x8F` (legacy draft) | … | CHAT / ACCEPT / REJECT / PAYMENT_* | Not all registered in `constants.js` — see Remaining work | ⚠️ Varies |
 
 ### Bitcoin Integration Types

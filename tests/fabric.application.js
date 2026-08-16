@@ -26,16 +26,18 @@ describe('@fabric/core/types/service (FabricShell)', function () {
 
     it('allow a Resource to be defined', async function () {
       const app = new FabricShell();
-      app.define('Example', {
+      await app.define('Example', {
         components: {
           list: 'fabric-example-list',
           view: 'fabric-example-view'
         }
       });
 
+      assert.ok(app.resources.Example);
+      assert.strictEqual(app.resources.Example.components.list, 'fabric-example-list');
+
       await app.start();
       await app.stop();
-      assert.ok(app);
     });
 
     it('should create an application smoothly', async function () {
@@ -45,18 +47,20 @@ describe('@fabric/core/types/service (FabricShell)', function () {
       assert.ok(app);
     });
 
-    it('should defer to an oracle authority', async function () {
+    it('defer warns and consume()s an empty resource map onto the attached element', async function () {
       const app = new FabricShell();
-      const oracle = { id: 'test-oracle' };
-      app.attach({});
+      const element = {};
+      const warnings = [];
+      app.on('warning', (line) => warnings.push(String(line)));
+      app.attach(element);
 
       await app.start();
-      await app.defer(oracle);
-
+      const returned = await app.defer({ id: 'test-oracle' });
       await app.stop();
 
-      assert.ok(oracle);
-      assert.ok(app);
+      assert.strictEqual(returned, app);
+      assert.ok(warnings.some((line) => line.includes('deferring authority')));
+      assert.deepStrictEqual(element.resources, {});
     });
 
     it('render writes attached element markup', function () {

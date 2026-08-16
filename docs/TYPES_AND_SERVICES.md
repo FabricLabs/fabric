@@ -5,7 +5,7 @@ Canonical map of `types/` and `services/` across **`@fabric/core`**, **`@fabric/
 
 | Field | Value |
 |-------|--------|
-| Last reviewed | 2026-08-14 |
+| Last reviewed | 2026-08-15 |
 | Trees scanned | `types/` + `services/` (Passport: `src/types/`, `src/background/`, `src/crypto/`, `src/utils/`) |
 | Local checkouts | `~/fabric-clean`, `~/fabric-http`, `~/hub.fabric.pub`, `~/fabric-browser-extension`, `~/star-citizen-live` (`~/goon.vc` insight only) |
 | Crypto lift | IdentityCrossSign + identity Schnorr + verify live in `@fabric/core/functions/*` (follow-up after [#183](https://github.com/FabricLabs/fabric/pull/183) merge). HTTP / Hub re-export those leaves; GoonCitizen keeps a browser-safe local copy for the dashboard bundle. |
@@ -106,6 +106,8 @@ module.exports = require('@fabric/http/functions/httpSharedMode');
 **Keep as the public spine** (aligns with PRODUCTION_MARCH + `types/fabric.js` statics): `Actor`, `Service` (+ `FabricShell`), `Store`, `Peer` (+ `Peer.Swarm`), `Message`, `Key`, `Identity`, `Chain`, `Block`, `Contract`, `Federation`, `Collection`, `Resource`, `State`, `Machine`, `Program`, `Circuit`, `Wallet`, `Worker`, `Remote`, `Hash256`, `Entity` (+ `Transition`), `Tree`, `Beacon`, `Filesystem`.
 
 **Services (keep):** `services/bitcoin.js`, `services/lightning.js`. Others (`zmq`, `redis`, `mqtt`, `text`/`txt`, `exchange`, `local`, `turntable`) are integrations — do not reimplement in Hub or GoonCitizen.
+
+**Message collections:** `functions/fabricMessageCollection.js` is the share/replay helper for ordered AMP hex (journals, Discord packs, catch-up). GoonCitizen re-exports it; do not fork a second JSON-as-canonical log. Hub `messages/*.json` stays an activity log.
 
 **Core stubs / low-value leaves** (do not copy downstream): `types/component.js`, `types/network.js`, `types/observer.js`, `types/transaction.js`. Class-count work: PRODUCTION_MARCH (`Scribe` is already a deprecation alias).
 

@@ -18,7 +18,8 @@ const {
   networkForFabricName,
   buildFederationVaultFromPolicy,
   prepareTierWithdrawalPsbt,
-  parseCompressedPubkeysSorted
+  parseCompressedPubkeysSorted,
+  TAPROOT_INTERNAL_NUMS
 } = require('../functions/contractTaproot');
 
 describe('contractTaproot', function () {
@@ -48,6 +49,39 @@ describe('contractTaproot', function () {
     }));
     assert.strictEqual(a, b);
     assert.ok(a.startsWith('bcrt1'));
+  });
+
+  it('uses MuSig2 of the full validator set as the Taproot internal key when n>=2', function () {
+    const { aggregateXonly } = require('../functions/musig2');
+    const vals = [pk(0), pk(1), pk(2)];
+    const policy = synthesizeDefaultLadder({
+      validators: vals,
+      threshold: 2,
+      publisher: pk(0),
+      network: 'regtest',
+      csvBlocks: 144
+    });
+    assert.strictEqual(policy.internalKeyMode, 'musig2');
+    const built = buildContractTaproot(policy);
+    const expected = aggregateXonly(vals).toString('hex');
+    assert.strictEqual(built.internalPubkeyHex, expected);
+    const spend = built.leafScripts.find((l) => l.kind === 'spend');
+    const cb = require('../functions/contractTaproot').buildControlBlockForLeaf(
+      built.leafScripts,
+      spend.script,
+      Buffer.from(built.internalPubkeyHex, 'hex')
+    );
+    assert.strictEqual(cb.subarray(1, 33).toString('hex'), expected);
+    const nums = synthesizeDefaultLadder({
+      validators: vals,
+      threshold: 2,
+      publisher: pk(0),
+      network: 'regtest',
+      csvBlocks: 144,
+      internalKeyMode: 'nums'
+    });
+    assert.notStrictEqual(toAddress(nums), built.address);
+    assert.strictEqual(buildContractTaproot(nums).internalPubkeyHex, TAPROOT_INTERNAL_NUMS.toString('hex'));
   });
 
   it('builds multi-tier failover with until; expired tiers leave active set', function () {

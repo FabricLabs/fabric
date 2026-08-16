@@ -24,6 +24,8 @@ const ecc = require('../types/ecc');
 const bip341 = require('bitcoinjs-lib/src/payments/bip341');
 const psbtutils = require('bitcoinjs-lib/src/psbt/psbtutils');
 const { payments, networks, script, Psbt } = bitcoin;
+const { encodeBitcoinUri } = require('./bip21');
+const { BIP125_SEQUENCE_LOCKTIME_ONLY } = require('./bip125');
 
 bitcoin.initEccLib(ecc);
 
@@ -135,12 +137,12 @@ function hash256 (buf) {
 }
 
 /**
- * BIP21-style URI and display amounts so wallets can pre-fill send-to Taproot (bc1p / bcrt1 / tb1).
+ * BIP21 bitcoin: URI and display amounts so wallets can pre-fill send-to Taproot (bc1p / bcrt1 / tb1).
  * @param {Object} opts
  * @param {string} opts.paymentAddress - Bech32m P2TR address
  * @param {number} opts.amountSats - Invoice amount in satoshis
  * @param {string} [opts.label] - Optional label (shortened for URI)
- * @returns {{ amountBtc: string, bitcoinUri: string, label?: string }}
+ * @returns {{ amountBtc: string, bitcoinUri: string, label: (string|undefined) }}
  */
 function buildHtlcFundingHints ({ paymentAddress, amountSats, label = '' }) {
   const addr = String(paymentAddress || '').trim();
@@ -149,11 +151,12 @@ function buildHtlcFundingHints ({ paymentAddress, amountSats, label = '' }) {
     return { amountBtc: '', bitcoinUri: '', label: label || undefined };
   }
   const amountBtc = (sats / 100000000).toFixed(8);
-  const params = new URLSearchParams();
-  params.set('amount', amountBtc);
   const lab = String(label || '').trim().slice(0, 120);
-  if (lab) params.set('label', lab);
-  const bitcoinUri = `bitcoin:${addr}?${params.toString()}`;
+  const bitcoinUri = encodeBitcoinUri({
+    address: addr,
+    amount: amountBtc,
+    label: lab || undefined
+  });
   return { amountBtc, bitcoinUri, ...(lab ? { label: lab } : {}) };
 }
 
@@ -335,7 +338,7 @@ function prepareInventoryHtlcBuyerRefundPsbt (opts = {}) {
   psbt.addInput({
     hash: tx.getId(),
     index: vout,
-    sequence: 0xfffffffe,
+    sequence: BIP125_SEQUENCE_LOCKTIME_ONLY,
     witnessUtxo: {
       script: out.script,
       value: BigInt(inputSats)

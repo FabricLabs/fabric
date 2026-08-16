@@ -25,6 +25,7 @@ const ecc = require('../types/ecc');
 const bip65 = require('bip65');
 const bip68 = require('bip68');
 const bitcoin = require('bitcoinjs-lib');
+const { sortInputs, sortOutputs } = require('../functions/bip69');
 
 // Initialize bitcoinjs-lib with the ECC library
 bitcoin.initEccLib(ecc);
@@ -2366,6 +2367,7 @@ class Bitcoin extends Service {
 
   /**
    * Create a Partially-Signed Bitcoin Transaction (PSBT).
+   * Vin/vout are BIP-69 sorted before they are added (unsigned construction only).
    * @param {Object} options Parameters for the PSBT.
    * @returns {PSBT} Instance of the PSBT.
    */
@@ -2396,36 +2398,43 @@ class Bitcoin extends Service {
 
     // TODO: add change output
 
-    // Create the PSBT
-    const psbt = new bitcoin.Psbt({ network });
-
-    for (let i = 0; i < options.inputs.length; i++) {
-      const input = options.inputs[i];
-      const data = {
-        hash: input.txid,
-        index: input.vout,
-        sequence: -1 >>> 0
-      };
-
-      psbt.addInput(data);
-    }
-
+    const sortedInputs = sortInputs(options.inputs.map((input) => Object.assign({}, input)));
+    const preparedOutputs = [];
     for (let i = 0; i < options.outputs.length; i++) {
       const output = options.outputs[i];
       try {
         const script = bitcoin.address.toOutputScript(output.address, network);
-        const data = {
+        preparedOutputs.push({
+          address: output.address,
           script,
           value: typeof output.value === 'bigint' ? output.value : BigInt(Math.round(Number(output.value)))
-        };
-
-        psbt.addOutput(data);
+        });
       } catch (e) {
         if (this.settings.debug) {
-          if (this.settings.debug) this.emit('debug', `[FABRIC:BITCOIN] Failed to add output: ${e.message}`);
+          this.emit('debug', `[FABRIC:BITCOIN] Failed to add output: ${e.message}`);
         }
         throw new Error(`Invalid address ${output.address}: ${e.message}`);
       }
+    }
+    const sortedOutputs = sortOutputs(preparedOutputs);
+
+    const psbt = new bitcoin.Psbt({ network });
+
+    for (let i = 0; i < sortedInputs.length; i++) {
+      const input = sortedInputs[i];
+      psbt.addInput({
+        hash: input.txid,
+        index: input.vout,
+        sequence: -1 >>> 0
+      });
+    }
+
+    for (let i = 0; i < sortedOutputs.length; i++) {
+      const output = sortedOutputs[i];
+      psbt.addOutput({
+        script: output.script,
+        value: output.value
+      });
     }
 
     return psbt;

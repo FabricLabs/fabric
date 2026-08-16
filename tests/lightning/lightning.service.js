@@ -217,23 +217,24 @@ d('@fabric/core/services/lightning', function () {
       assert.equal(Lightning instanceof Function, true);
     });
 
+    it('constructs in unmanaged mode without lightningd', function () {
+      const local = new Lightning({
+        network: 'regtest',
+        managed: false,
+        bitcoin: {
+          rpcport: 18443,
+          rpcuser: 'bitcoinrpc',
+          rpcpassword: 'password',
+          host: '127.0.0.1',
+          datadir: './stores/bitcoin-regtest-test'
+        }
+      });
+      assert.ok(local);
+      assert.strictEqual(typeof local._makeRPCRequest, 'function');
+    });
+
     it('can complete a payment (happy path)', async function () {
-      if (!runLightning) {
-        const local = new Lightning({
-          network: 'regtest',
-          managed: false,
-          bitcoin: {
-            rpcport: 18443,
-            rpcuser: 'bitcoinrpc',
-            rpcpassword: 'password',
-            host: '127.0.0.1',
-            datadir: './stores/bitcoin-regtest-test'
-          }
-        });
-        assert.ok(local);
-        assert.strictEqual(typeof local._makeRPCRequest, 'function');
-        return;
-      }
+      if (!runLightning) this.skip();
 
       this.timeout(180000); // 3 minutes for the test
 

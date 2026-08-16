@@ -215,7 +215,7 @@ describe('@fabric/core/types/service', function () {
   });
 
   describe('_listActors()', function () {
-    it('can list channels successfully', async function () {
+    it('can list actors successfully', async function () {
       const service = new Service(FAST_SERVICE);
       await service.start();
       const registration = await service._registerActor({ name: 'Chad' });
@@ -304,8 +304,6 @@ describe('@fabric/core/types/service', function () {
       assert.strictEqual(result.length, 1);
       assert.ok(service);
       assert.ok(link);
-      assert.ok(result);
-      assert.ok(result.length, 1);
     });
 
     it('provides the posted document in the expected location', async function () {

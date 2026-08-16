@@ -13,46 +13,31 @@ describe('@fabric/core/types/circuit', function () {
 
     describe('Bristol Format', function () {
       it('can convert from Bristol Format', function () {
-        const circuit = new Circuit({
-          state: {
-            graph: {
-              nodes: [],
-              edges: []
-            }
-          },
-          gates: [],
-          wires: []
+        const circuit = new Circuit();
+        Object.defineProperty(circuit, 'dot', {
+          configurable: true,
+          get () {
+            return '2 2\n1 1 2 XOR\n';
+          }
         });
-
-        const bristolFormat = '2 2\n1 1 2 XOR\n';
-        circuit._state.content.graph = {
-          nodes: [],
-          edges: []
-        };
-        circuit.gates = [];
-        circuit.wires = [];
-
-        // Parse the Bristol Format and set up the circuit
-        const lines = bristolFormat.split('\n');
-        const [numGates, numWires] = lines[0].split(' ').map(Number);
-
-        for (let i = 1; i < lines.length; i++) {
-          const line = lines[i].trim();
-          if (!line) continue;
-
-          const parts = line.split(' ');
-          if (parts.length < 3) continue;
-
-          circuit.gates.push({
-            type: parts[parts.length - 1],
-            inputs: parts.slice(0, -1).map(Number)
-          });
-        }
-
-        assert.ok(circuit.gates);
+        circuit.fromBristolFormat();
         assert.strictEqual(circuit.gates.length, 1);
         assert.strictEqual(circuit.gates[0].type, 'XOR');
         assert.deepStrictEqual(circuit.gates[0].inputs, [1, 1, 2]);
+      });
+
+      it('fromBristolFormat skips blank and undersize lines', function () {
+        const circuit = new Circuit();
+        Object.defineProperty(circuit, 'dot', {
+          configurable: true,
+          get () {
+            return '2 4\n\n1 1\n1 1 2 XOR\n  \n3 3 4 AND\n';
+          }
+        });
+        circuit.fromBristolFormat();
+        assert.strictEqual(circuit.gates.length, 2);
+        assert.strictEqual(circuit.gates[0].type, 'XOR');
+        assert.strictEqual(circuit.gates[1].type, 'AND');
       });
 
       it('can convert to Bristol Format', function () {
@@ -70,50 +55,14 @@ describe('@fabric/core/types/circuit', function () {
 
     describe('Bristol Fashion', function () {
       it('can convert from Bristol Fashion', function () {
-        const circuit = new Circuit({
-          state: {
-            graph: {
-              nodes: [],
-              edges: []
-            }
-          },
-          gates: [],
-          wires: []
+        const circuit = new Circuit();
+        Object.defineProperty(circuit, 'dot', {
+          configurable: true,
+          get () {
+            return '2 2 1 1\n2 1 1 1 2 XOR\n';
+          }
         });
-        
-        const bristolFashion = '2 2 1 1\n2 1 1 1 2 XOR\n';
-        circuit._state.content.graph = {
-          nodes: [],
-          edges: []
-        };
-        circuit.gates = [];
-        circuit.wires = [];
-        
-        // Parse the Bristol Fashion and set up the circuit
-        const lines = bristolFashion.split('\n');
-        const [numGates, numWires, numInputWires, numOutputWires] = lines[0].split(' ').map(Number);
-        circuit.inputWires = numInputWires;
-        circuit.outputWires = numOutputWires;
-        
-        for (let i = 1; i < lines.length; i++) {
-          const line = lines[i].trim();
-          if (!line) continue;
-          
-          const parts = line.split(' ');
-          if (parts.length < 4) continue;
-          
-          const numInputs = parseInt(parts[0]);
-          const numOutputs = parseInt(parts[1]);
-          circuit.gates.push({
-            type: parts[parts.length - 1],
-            numInputs: numInputs,
-            numOutputs: numOutputs,
-            inputs: parts.slice(2, 2 + numInputs).map(Number),
-            outputs: parts.slice(2 + numInputs, 2 + numInputs + numOutputs).map(Number)
-          });
-        }
-
-        assert.ok(circuit.gates);
+        circuit.fromBristolFashion();
         assert.strictEqual(circuit.gates.length, 1);
         assert.strictEqual(circuit.gates[0].type, 'XOR');
         assert.strictEqual(circuit.gates[0].numInputs, 2);

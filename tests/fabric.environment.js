@@ -16,6 +16,7 @@ const path = require('path');
 // Fabric Types
 const Environment = require('../types/environment');
 const Wallet = require('../types/wallet');
+const Key = require('../types/key');
 const { withIsolatedHome } = require('./helpers/isolatedHome');
 
 describe('@fabric/core/types/environment', function () {
@@ -25,10 +26,23 @@ describe('@fabric/core/types/environment', function () {
     });
 
     it('can start and stop smoothly', async function () {
-      const environment = new Environment();
-      await environment.start();
-      await environment.stop();
-      assert.ok(environment);
+      const iso = withIsolatedHome('fabric-env-start-');
+      try {
+        iso.clearIdentityEnv();
+        process.env.NODE_ENV = 'production';
+        const environment = new Environment({
+          home: iso.home,
+          path: iso.walletPath,
+          store: iso.store,
+          lockTimeoutMinutes: 0
+        });
+        await environment.start();
+        await environment.stop();
+        assert.ok(environment);
+        assert.strictEqual(environment.wallet, false);
+      } finally {
+        iso.restore();
+      }
     });
 
     it('wipes in-memory wallet keys on stop', function () {
@@ -107,7 +121,7 @@ describe('@fabric/core/types/environment', function () {
         assert.strictEqual(String(allowed.seed).trim(), FIXTURE_SEED);
       } finally {
         process.chdir(prev.cwd);
-        for (const k of ['NODE_ENV', 'FABRIC_SEED', 'FABRIC_XPRV', 'FABRIC_XPUB']) {
+        for (const k of ['NODE_ENV', 'FABRIC_SEED', 'FABRIC_MNEMONIC', 'FABRIC_XPRV', 'FABRIC_XPUB']) {
           if (prev[k] === undefined) delete process.env[k];
           else process.env[k] = prev[k];
         }
@@ -141,6 +155,28 @@ describe('@fabric/core/types/environment', function () {
           else process.env[k] = prev[k];
         }
         fs.rmSync(home, { recursive: true, force: true });
+      }
+    });
+
+    it('NODE_ENV=test fixture seed wins over a developer FABRIC_XPRV', function () {
+      const { home, store, walletPath, restore, clearIdentityEnv } = withIsolatedHome('fabric-env-fixture-xprv-');
+      try {
+        clearIdentityEnv();
+        process.env.NODE_ENV = 'test';
+        const foreign = new Key();
+        process.env.FABRIC_XPRV = foreign.xprv;
+        const environment = new Environment({ home, path: walletPath, store });
+        environment.start();
+        assert.ok(environment.wallet, 'fixture seed should still load in test');
+        const fixtureWallet = new Wallet({ key: { seed: FIXTURE_SEED } });
+        assert.strictEqual(
+          environment.wallet.key && environment.wallet.key.pubkey,
+          fixtureWallet.key.pubkey,
+          'mocha fixture identity must not be replaced by FABRIC_XPRV'
+        );
+        environment.stop();
+      } finally {
+        restore();
       }
     });
 
@@ -187,19 +223,17 @@ describe('@fabric/core/types/environment', function () {
     it('can instantiate from a seed', async function () {
       const environment = new Environment({ seed: FIXTURE_SEED });
       await environment.start();
+      assert.ok(environment.wallet);
+      assert.ok(environment.xprv);
+      assert.match(String(environment.xprv), /^xprv/);
       await environment.stop();
-      assert.ok(environment);
-      // assert.strictEqual(environment.xprv, FIXTURE_XPRV);
-      // assert.strictEqual(environment.xpub, FIXTURE_XPUB);
     });
 
     it('can instantiate from an xpub', async function () {
       const environment = new Environment({ xpub: FIXTURE_XPUB });
       await environment.start();
+      assert.ok(environment.xpub);
       await environment.stop();
-      assert.ok(environment);
-      // assert.strictEqual(environment.xprv, undefined);
-      // assert.strictEqual(environment.xpub, FIXTURE_XPUB);
     });
 
     it('can instantiate from an xprv', async function () {
@@ -231,61 +265,163 @@ describe('@fabric/core/types/environment', function () {
     });
 
     it('can save a valid wallet', async function () {
-      const environment = new Environment({
-        path: `./stores/test-wallet.json`
-      });
-
-      const wallet = new Wallet({
-        type: 'FabricWallet',
-        format: 'aes-256-cbc',
-        version: 1
-      });
-
-      environment.setWallet(wallet, false, { encrypt: false });
-      assert.ok(environment);
-      environment.destroyWallet();
+      const iso = withIsolatedHome('fabric-env-save-');
+      try {
+        iso.clearIdentityEnv();
+        process.env.NODE_ENV = 'production';
+        const environment = new Environment({
+          home: iso.home,
+          path: iso.walletPath,
+          store: iso.store,
+          lockTimeoutMinutes: 0
+        });
+        environment.start();
+        const wallet = new Wallet({ key: { seed: FIXTURE_SEED } });
+        environment.setWallet(wallet, false, { password: 'test-pass-ok!' });
+        assert.ok(fs.existsSync(iso.walletPath));
+        const doc = JSON.parse(fs.readFileSync(iso.walletPath, 'utf8'));
+        assert.strictEqual(doc.passwordProtected, true);
+        environment.destroyWallet();
+        assert.strictEqual(fs.existsSync(iso.walletPath), false);
+      } finally {
+        iso.restore();
+      }
     });
 
     it('can check for store', async function () {
-      const environment = new Environment();
-      const exists = environment.storeExists();
-      assert.ok(environment);
-      assert.equal(typeof exists, 'boolean');
+      const iso = withIsolatedHome('fabric-env-store-');
+      try {
+        iso.clearIdentityEnv();
+        process.env.NODE_ENV = 'production';
+        const environment = new Environment({
+          home: iso.home,
+          path: iso.walletPath,
+          store: iso.store
+        });
+        assert.strictEqual(environment.storeExists(), false);
+        environment.makeStore();
+        assert.strictEqual(environment.storeExists(), true);
+      } finally {
+        iso.restore();
+      }
     });
 
     it('can check for wallet', async function () {
-      const environment = new Environment();
-      const exists = environment.walletExists();
-
-      assert.ok(environment);
-      assert.equal(typeof exists, 'boolean');
+      const iso = withIsolatedHome('fabric-env-exists-');
+      try {
+        iso.clearIdentityEnv();
+        process.env.NODE_ENV = 'production';
+        const environment = new Environment({
+          home: iso.home,
+          path: iso.walletPath,
+          store: iso.store,
+          lockTimeoutMinutes: 0
+        });
+        assert.strictEqual(environment.walletExists(), false);
+        environment.start();
+        environment.setWallet(new Wallet({ key: { seed: FIXTURE_SEED } }), false, { password: 'test-pass-ok!' });
+        assert.strictEqual(environment.walletExists(), true);
+      } finally {
+        iso.restore();
+      }
     });
 
     it('can touch the wallet', async function () {
-      if (process.env.FABRIC_ALLOW_WALLET_TOUCH !== '1') {
-        // Avoid failures in environments without permission to write to $HOME
-        return;
+      const iso = withIsolatedHome('fabric-env-touch-ok-');
+      try {
+        iso.clearIdentityEnv();
+        process.env.NODE_ENV = 'production';
+        const environment = new Environment({
+          home: iso.home,
+          path: iso.walletPath,
+          store: iso.store
+        });
+        assert.strictEqual(environment.touchWallet(), true);
+        assert.ok(fs.existsSync(iso.walletPath));
+        assert.strictEqual(fs.statSync(iso.walletPath).size, 0);
+      } finally {
+        iso.restore();
       }
-
-      const environment = new Environment();
-      environment.touchWallet();
-      assert.ok(environment);
     });
 
     it('can load the wallet', async function () {
-      const environment = new Environment();
-      environment.loadWallet();
-      assert.ok(environment);
+      const iso = withIsolatedHome('fabric-env-load-');
+      try {
+        iso.clearIdentityEnv();
+        process.env.NODE_ENV = 'production';
+        const environment = new Environment({
+          home: iso.home,
+          path: iso.walletPath,
+          store: iso.store,
+          lockTimeoutMinutes: 0
+        });
+        environment.start();
+        environment.setWallet(new Wallet({ key: { seed: FIXTURE_SEED } }), false, { password: 'test-pass-ok!' });
+        environment.lockWallet();
+        environment.loadWallet({ fromFile: true, password: 'test-pass-ok!' });
+        assert.ok(environment.wallet && environment.wallet.key);
+      } finally {
+        iso.restore();
+      }
+    });
+
+    it('loadWallet({ fromFile: true }) ignores leftover FABRIC_SEED and FABRIC_XPRV (PR #185)', function () {
+      const iso = withIsolatedHome('fabric-env-fromfile-');
+      try {
+        iso.clearIdentityEnv();
+        process.env.NODE_ENV = 'production';
+        fs.mkdirSync(iso.store, { recursive: true });
+        const writer = new Environment({
+          home: iso.home,
+          path: iso.walletPath,
+          store: iso.store,
+          lockTimeoutMinutes: 0
+        });
+        writer.start();
+        const wallet = new Wallet({ key: { seed: FIXTURE_SEED } });
+        writer.setWallet(wallet, false, { encrypt: false });
+        const fileXprv = writer.wallet.key.xprv;
+        writer.stop();
+
+        const leftover = new Key({ mnemonic: 'legal winner thank year wave sausage worth useful legal winner thank yellow' });
+        process.env.FABRIC_SEED = leftover.seed;
+        process.env.FABRIC_XPRV = leftover.xprv;
+        const reader = new Environment({
+          home: iso.home,
+          path: iso.walletPath,
+          store: iso.store,
+          lockTimeoutMinutes: 0
+        });
+        reader.start();
+        reader.loadWallet({ fromFile: true });
+        assert.ok(reader.wallet && reader.wallet.key);
+        assert.strictEqual(reader.wallet.key.xprv, fileXprv);
+        assert.notStrictEqual(reader.wallet.key.xprv, leftover.xprv);
+        reader.stop();
+      } finally {
+        iso.restore();
+      }
     });
 
     it('can read the wallet', async function () {
-      const environment = new Environment();
-      if (!environment.walletExists()) {
-        // Wallet file only exists after `fabric setup`; skip in CI and fresh envs
-        return;
+      const iso = withIsolatedHome('fabric-env-read-');
+      try {
+        iso.clearIdentityEnv();
+        process.env.NODE_ENV = 'production';
+        const environment = new Environment({
+          home: iso.home,
+          path: iso.walletPath,
+          store: iso.store,
+          lockTimeoutMinutes: 0
+        });
+        environment.start();
+        environment.setWallet(new Wallet({ key: { seed: FIXTURE_SEED } }), false, { password: 'test-pass-ok!' });
+        const raw = environment.readWallet();
+        assert.ok(typeof raw === 'string' && raw.includes('seal'));
+        assert.ok(!raw.includes(FIXTURE_SEED));
+      } finally {
+        iso.restore();
       }
-      environment.readWallet();
-      assert.ok(environment);
     });
 
     it('can read contracts', async function () {
@@ -568,6 +704,46 @@ describe('@fabric/core/types/environment', function () {
       }
     });
 
+    it('wallet writes survive chmodSync failures on the temporary file', function () {
+      const prev = {
+        NODE_ENV: process.env.NODE_ENV,
+        FABRIC_SEED: process.env.FABRIC_SEED,
+        FABRIC_MNEMONIC: process.env.FABRIC_MNEMONIC,
+        FABRIC_XPRV: process.env.FABRIC_XPRV,
+        FABRIC_XPUB: process.env.FABRIC_XPUB
+      };
+      const home = fs.mkdtempSync(path.join(os.tmpdir(), 'fabric-env-chmod-'));
+      const store = path.join(home, '.fabric');
+      const walletPath = path.join(store, 'wallet.json');
+      const originalChmod = fs.chmodSync;
+      try {
+        delete process.env.FABRIC_SEED;
+        delete process.env.FABRIC_MNEMONIC;
+        delete process.env.FABRIC_XPRV;
+        delete process.env.FABRIC_XPUB;
+        process.env.NODE_ENV = 'production';
+        const environment = new Environment({ home, path: walletPath, store, lockTimeoutMinutes: 0 });
+        environment.start();
+        fs.chmodSync = function (target) {
+          if (String(target).includes('.tmp')) {
+            const err = new Error('EPERM');
+            err.code = 'EPERM';
+            throw err;
+          }
+          return originalChmod.apply(fs, arguments);
+        };
+        environment.setWallet(new Wallet({ key: { seed: FIXTURE_SEED } }), false, { password: 'test-pass-ok!' });
+        assert.strictEqual(fs.existsSync(walletPath), true);
+      } finally {
+        fs.chmodSync = originalChmod;
+        for (const k of Object.keys(prev)) {
+          if (prev[k] === undefined) delete process.env[k];
+          else process.env[k] = prev[k];
+        }
+        fs.rmSync(home, { recursive: true, force: true });
+      }
+    });
+
     it('does not auto-unlock from a generic PASSWORD environment variable', function () {
       const prev = {
         NODE_ENV: process.env.NODE_ENV,
@@ -604,6 +780,125 @@ describe('@fabric/core/types/environment', function () {
           else process.env[k] = prev[k];
         }
         fs.rmSync(home, { recursive: true, force: true });
+      }
+    });
+
+    it('auto-unlocks a sealed wallet from FABRIC_PASSWORD', function () {
+      const iso = withIsolatedHome('fabric-env-fabpass-');
+      const password = 'test-pass-ok!';
+      try {
+        iso.clearIdentityEnv();
+        process.env.NODE_ENV = 'production';
+        const environment = new Environment({
+          home: iso.home,
+          path: iso.walletPath,
+          store: iso.store,
+          lockTimeoutMinutes: 0
+        });
+        environment.start();
+        environment.setWallet(new Wallet({ key: { seed: FIXTURE_SEED } }), true, { password });
+        environment.lockWallet();
+        process.env.FABRIC_PASSWORD = password;
+        const reloaded = new Environment({
+          home: iso.home,
+          path: iso.walletPath,
+          store: iso.store,
+          lockTimeoutMinutes: 0
+        });
+        reloaded.start();
+        assert.ok(reloaded.wallet && reloaded.wallet.key);
+        assert.strictEqual(reloaded.walletLocked, false);
+        reloaded.lockWallet();
+      } finally {
+        iso.restore();
+      }
+    });
+
+    it('encryptWallet seals a loaded plaintext file', function () {
+      const iso = withIsolatedHome('fabric-env-encrypt-');
+      try {
+        iso.clearIdentityEnv();
+        process.env.NODE_ENV = 'production';
+        const environment = new Environment({
+          home: iso.home,
+          path: iso.walletPath,
+          store: iso.store,
+          lockTimeoutMinutes: 0
+        });
+        environment.start();
+        environment.setWallet(new Wallet({ key: { seed: FIXTURE_SEED } }), true, { encrypt: false });
+        assert.strictEqual(JSON.parse(fs.readFileSync(iso.walletPath, 'utf8')).passwordProtected, false);
+        environment.encryptWallet('test-pass-ok!');
+        const doc = JSON.parse(fs.readFileSync(iso.walletPath, 'utf8'));
+        assert.strictEqual(doc.passwordProtected, true);
+        assert.ok(doc.seal && doc.seal.ciphertext);
+        assert.ok(!JSON.stringify(doc.object).includes('xprv'));
+        environment.lockWallet();
+        environment.unlockWallet('test-pass-ok!');
+        assert.ok(environment.wallet && environment.wallet.key);
+      } finally {
+        iso.restore();
+      }
+    });
+
+    it('rejects plaintext unlock and a wrong sealed password', function () {
+      const iso = withIsolatedHome('fabric-env-badunlock-');
+      try {
+        iso.clearIdentityEnv();
+        process.env.NODE_ENV = 'production';
+        const environment = new Environment({
+          home: iso.home,
+          path: iso.walletPath,
+          store: iso.store,
+          lockTimeoutMinutes: 0
+        });
+        environment.start();
+        environment.setWallet(new Wallet({ key: { seed: FIXTURE_SEED } }), true, { encrypt: false });
+        assert.throws(() => environment.unlockWallet('test-pass-ok!'), /not password-protected/);
+        environment.encryptWallet('test-pass-ok!');
+        environment.lockWallet();
+        assert.throws(
+          () => environment.unlockWallet('wrong-pass-ok!'),
+          (err) => err && err.code === 'FABRIC_SEAL_DECRYPT'
+        );
+        assert.strictEqual(environment.wallet, false);
+        assert.strictEqual(environment.walletLocked, true);
+      } finally {
+        iso.restore();
+      }
+    });
+
+    it('idle-locks an unlocked sealed wallet', function (done) {
+      const iso = withIsolatedHome('fabric-env-idle-');
+      let restored = false;
+      const finish = (err) => {
+        if (restored) return;
+        restored = true;
+        iso.restore();
+        done(err);
+      };
+      try {
+        iso.clearIdentityEnv();
+        process.env.NODE_ENV = 'production';
+        const environment = new Environment({
+          home: iso.home,
+          path: iso.walletPath,
+          store: iso.store,
+          lockTimeoutMs: 25
+        });
+        environment.start();
+        environment.setWallet(new Wallet({ key: { seed: FIXTURE_SEED } }), true, { password: 'test-pass-ok!' });
+        environment.lockSession.once('lock', () => {
+          try {
+            assert.strictEqual(environment.wallet, false);
+            assert.strictEqual(environment.walletLocked, true);
+            finish();
+          } catch (exception) {
+            finish(exception);
+          }
+        });
+      } catch (exception) {
+        finish(exception);
       }
     });
 

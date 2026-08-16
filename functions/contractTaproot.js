@@ -18,6 +18,8 @@ const bip341 = require('bitcoinjs-lib/src/payments/bip341');
 const { payments, networks, script, Psbt } = bitcoin;
 const psbtutils = require('bitcoinjs-lib/src/psbt/psbtutils');
 const { evaluateTierWhen } = require('./contractTierWhen');
+const { sortPubkeysBip67 } = require('./bip67');
+const { aggregateXonly } = require('./musig2');
 
 bitcoin.initEccLib(ecc);
 
@@ -52,9 +54,9 @@ function parseCompressedPubkeysSorted (hexList) {
     }
     out.push(Buffer.from(s, 'hex'));
   }
-  out.sort((a, b) => a.compare(b));
+  const sorted = sortPubkeysBip67(out);
   const uniq = [];
-  for (const b of out) {
+  for (const b of sorted) {
     if (!uniq.length || uniq[uniq.length - 1].compare(b) !== 0) uniq.push(b);
   }
   return uniq;
@@ -186,6 +188,7 @@ function resolveKeyList (keysRef, keySets, publisher) {
  * @param {number} [opts.softThreshold] when softMode=reduced (default ceil(k/2))
  * @param {object} [opts.hashlock] optional L1 hashlock leaf (`commitmentHex` / `runCommitmentHex`)
  * @param {object[]} [opts.extraLeaves] additional composable leaves (script / spend / hashlock)
+ * @param {string} [opts.internalKeyMode] `musig2` (default when n≥2) | `nums` (legacy script-path-only)
  * @returns {object} normalized spend policy
  */
 function synthesizeDefaultLadder (opts = {}) {
@@ -254,7 +257,11 @@ function synthesizeDefaultLadder (opts = {}) {
       softTier
     ],
     hashlock: opts.hashlock || null,
-    extraLeaves: Array.isArray(opts.extraLeaves) ? opts.extraLeaves : null
+    extraLeaves: Array.isArray(opts.extraLeaves) ? opts.extraLeaves : null,
+    // n>=2: MuSig2 of the full validator set as the Taproot internal key
+    // (cooperative n-of-n key-path). t-of-n and CSV soft-tier stay script-path.
+    // Pass internalKeyMode: 'nums' to keep the historical NUMS-only address.
+    internalKeyMode: opts.internalKeyMode || (sorted.length >= 2 ? 'musig2' : 'nums')
   };
   return normalizeContractSpendPolicy(policyIn);
 }
@@ -373,8 +380,64 @@ function normalizeContractSpendPolicy (raw = {}) {
     },
     tiers,
     hashlock: raw.hashlock ? normalizeHashlockSpec(raw.hashlock) : null,
-    extraLeaves: normalizeExtraLeafSpecs(raw.extraLeaves)
+    extraLeaves: normalizeExtraLeafSpecs(raw.extraLeaves),
+    internalKeyMode: normalizeInternalKeyMode(raw.internalKeyMode)
   };
+}
+
+/**
+ * @param {string} [mode]
+ * @returns {string} `nums` | `musig2`
+ * @private
+ */
+function normalizeInternalKeyMode (mode) {
+  const m = String(mode || 'nums').toLowerCase();
+  if (m === 'musig2' || m === 'auto') return 'musig2';
+  return 'nums';
+}
+
+/**
+ * Keys used for a MuSig2 Taproot internal key (full authority set).
+ *
+ * @param {object} policy
+ * @returns {string[]|null}
+ * @private
+ */
+function musig2InternalKeySources (policy) {
+  if (!policy) return null;
+  if (policy.keySets && Array.isArray(policy.keySets.full) && policy.keySets.full.length) {
+    return policy.keySets.full;
+  }
+  if (policy.tiers && policy.tiers[0] && Array.isArray(policy.tiers[0].keys)) {
+    return policy.tiers[0].keys;
+  }
+  return null;
+}
+
+/**
+ * @param {object} [opts]
+ * @param {object} [policy]
+ * @returns {Buffer} 32-byte x-only
+ * @private
+ */
+function resolveTaprootInternalPubkey (opts, policy) {
+  if (opts && opts.internalPubkeyHex) {
+    const hex = String(opts.internalPubkeyHex).trim().toLowerCase().replace(/^0x/i, '');
+    if (!/^[0-9a-f]{64}$/.test(hex)) {
+      throw new Error('composeTaprootTree: internalPubkeyHex must be 32-byte x-only hex');
+    }
+    return Buffer.from(hex, 'hex');
+  }
+  const mode = normalizeInternalKeyMode(
+    (opts && opts.internalKeyMode) || (policy && policy.internalKeyMode)
+  );
+  if (mode === 'musig2') {
+    const keys = musig2InternalKeySources(policy);
+    if (keys && keys.length >= 2) {
+      return aggregateXonly(keys);
+    }
+  }
+  return TAPROOT_INTERNAL_NUMS;
 }
 
 /**
@@ -425,7 +488,8 @@ function policyAfterDecay (policy, atLock) {
       when: t.when
     })),
     hashlock: p.hashlock || null,
-    extraLeaves: p.extraLeaves || null
+    extraLeaves: p.extraLeaves || null,
+    internalKeyMode: p.internalKeyMode || 'nums'
   });
 }
 
@@ -834,7 +898,8 @@ function scriptTreeFromLeaves (leaves) {
  * @param {object[]} [opts.leaves] full leaf list (skips policy compile when set alone)
  * @param {object} [opts.hashlock] optional hashlock sugar
  * @param {object[]} [opts.extraLeaves] additional leaves
- * @param {string} [opts.internalPubkeyHex] x-only; default NUMS
+ * @param {string} [opts.internalPubkeyHex] x-only; default NUMS or MuSig2 from policy
+ * @param {string} [opts.internalKeyMode] `nums` | `musig2`
  * @returns {object}
  */
 function composeTaprootTree (opts = {}) {
@@ -876,19 +941,7 @@ function composeTaprootTree (opts = {}) {
     seen.add(l.id);
   }
 
-  let internalPubkey = TAPROOT_INTERNAL_NUMS;
-  if (opts.internalPubkeyHex) {
-    const hex = String(opts.internalPubkeyHex).trim().toLowerCase().replace(/^0x/i, '');
-    if (!/^[0-9a-f]{64}$/.test(hex)) {
-      throw new Error('composeTaprootTree: internalPubkeyHex must be 32-byte x-only hex');
-    }
-    if (hex !== TAPROOT_INTERNAL_NUMS.toString('hex')) {
-      throw new Error(
-        'composeTaprootTree: custom internal keys are not yet supported (NUMS script-path only)'
-      );
-    }
-    internalPubkey = Buffer.from(hex, 'hex');
-  }
+  const internalPubkey = resolveTaprootInternalPubkey(opts, policy);
 
   const scriptTree = scriptTreeFromLeaves(leaves);
   const btcNet = networkForFabricName(network);
@@ -917,18 +970,21 @@ function composeTaprootTree (opts = {}) {
   };
 }
 
-function buildControlBlockForLeaf (leaves, leafScript) {
+function buildControlBlockForLeaf (leaves, leafScript, internalPubkey) {
+  const internal = Buffer.isBuffer(internalPubkey) && internalPubkey.length === 32
+    ? internalPubkey
+    : TAPROOT_INTERNAL_NUMS;
   const scriptTree = scriptTreeFromLeaves(leaves);
   const hashTree = bip341.toHashTree(scriptTree);
   const leafVersion = bip341.LEAF_VERSION_TAPSCRIPT;
   const leafHash = bip341.tapleafHash({ output: leafScript, version: leafVersion });
   const path = bip341.findScriptPath(hashTree, leafHash);
   if (path === undefined) throw new Error('Leaf script not in tap tree.');
-  const outputKey = bip341.tweakKey(TAPROOT_INTERNAL_NUMS, hashTree.hash);
+  const outputKey = bip341.tweakKey(internal, hashTree.hash);
   if (!outputKey) throw new Error('Taproot tweak failed.');
   return Buffer.concat([
     Buffer.from([leafVersion | outputKey.parity]),
-    TAPROOT_INTERNAL_NUMS,
+    internal,
     ...path
   ]);
 }
@@ -1051,7 +1107,8 @@ function prepareLeafPsbt (opts = {}) {
     if (sequence == null || sequence === MAX_LOCKTIME) sequence = SEQUENCE_NONFINAL;
   }
 
-  const controlBlock = buildControlBlockForLeaf(leaves, ms);
+  const internalPubkey = resolveTaprootInternalPubkey(opts, opts.policy || null);
+  const controlBlock = buildControlBlockForLeaf(leaves, ms, internalPubkey);
   const outScript = Buffer.isBuffer(out.script) ? out.script : Buffer.from(out.script);
   const input = {
     hash: tx.getId(),
@@ -1060,7 +1117,7 @@ function prepareLeafPsbt (opts = {}) {
       script: Uint8Array.from(outScript),
       value: BigInt(inputSats)
     },
-    tapInternalKey: Uint8Array.from(TAPROOT_INTERNAL_NUMS),
+    tapInternalKey: Uint8Array.from(internalPubkey),
     tapLeafScript: [{
       leafVersion: bip341.LEAF_VERSION_TAPSCRIPT,
       script: Uint8Array.from(ms),
@@ -1134,7 +1191,9 @@ function prepareTierWithdrawalPsbt (opts = {}) {
     leaves,
     destinationAddress: opts.destinationAddress,
     feeSats: opts.feeSats,
-    after: tier.after
+    after: tier.after,
+    internalPubkeyHex: built.internalPubkeyHex,
+    policy: built.policy
   });
   return {
     ...result,
@@ -1173,7 +1232,9 @@ function prepareDecayMigrationPsbt (opts = {}) {
     leaves,
     destinationAddress: childAddr,
     feeSats: opts.feeSats,
-    after: target.decayAt
+    after: target.decayAt,
+    internalPubkeyHex: built.internalPubkeyHex,
+    policy: built.policy
   });
   return {
     ...result,
@@ -1203,6 +1264,7 @@ function prepareHashlockWithdrawalPsbt (opts = {}) {
   let vaultAddress = opts.vaultAddress || opts.address;
   let leaves;
   let publicLeaves = null;
+  let internalPubkeyHex = opts.internalPubkeyHex || null;
 
   if (opts.policy) {
     const built = buildContractTaproot(opts.policy);
@@ -1210,6 +1272,7 @@ function prepareHashlockWithdrawalPsbt (opts = {}) {
     vaultAddress = vaultAddress || built.address;
     leaves = compileLeaves(built.policy);
     publicLeaves = built.leaves;
+    internalPubkeyHex = internalPubkeyHex || built.internalPubkeyHex;
   } else if (Array.isArray(opts.leaves) && opts.leaves.length) {
     leaves = opts.leaves.map((l) => {
       if (l && Buffer.isBuffer(l.script)) return normalizeLeaf(l);
@@ -1255,7 +1318,9 @@ function prepareHashlockWithdrawalPsbt (opts = {}) {
     destinationAddress: opts.destinationAddress,
     feeSats: opts.feeSats,
     after: leaf.after,
-    preimage32: preimage32 || undefined
+    preimage32: preimage32 || undefined,
+    internalPubkeyHex: internalPubkeyHex || undefined,
+    policy: opts.policy || undefined
   });
 
   const witnessShape = leaf.witnessShape
@@ -1393,7 +1458,7 @@ function buildFederationVaultFromPolicy (opts = {}) {
       softMode: softMode
         ? (String(softMode).toLowerCase() === 'reduced' ? 'reduced' : 'publisher')
         : 'publisher',
-      internalPubkeyHex: TAPROOT_INTERNAL_NUMS.toString('hex'),
+      internalPubkeyHex: built.internalPubkeyHex,
       depositMaturityBlocks: csvBlocks != null ? Number(csvBlocks) : DEFAULT_CSV_BLOCKS,
       csvBlocks: soft && soft.after && soft.after.blocks != null
         ? Number(soft.after.blocks)

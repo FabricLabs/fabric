@@ -147,5 +147,10 @@ Paid CLI `/confirm` fails closed without Hub confirmation or successful local L1
 3. Review **`npm audit`** results before release tags; record exceptions in the release notes if needed.
 4. **Never** commit seeds, `stores/` production data, or RPC passwords (see [docs/PRODUCTION.md](docs/PRODUCTION.md)).
 
+## MuSig2 (BIP-327)
+`functions/musig2` is **n-of-n** Schnorr aggregation. It does not replace t-of-n Beacon / GroupChange quorums (those stay independent BIP-340 counts) and it is not FROST. New Taproot authority ladders with two or more keys use the MuSig2 aggregate as the internal key so all-n can spend the key-path; threshold and CSV failover remain script-path. Session secret nonces are zeroed after `sign` — reuse leaks keys. Do not trust a caller-supplied aggregate; recompute `keyAgg` from the participant list.
+
+Interactive mesh signing uses the existing `P2P_MUSIG_*` opcodes (`0x4220`–`0x4225`) as **directed TCP** frames only — they are not mesh-flooded (`RELAY_AS_IS`) and must not arrive via peel, foreign `P2P_RELAY`, or a generic JSON carrier. The AMP author must be the contributing pubkey. Peers recompute `aggnonce` locally and reject a mismatched `SEND_PROPOSAL`. Cap: 32 sessions, 16 signers, 4KiB message, 10-minute TTL.
+
 ## Disclosure
 Report security issues through the contact in [TODO.md](TODO.md) / project README as applicable.

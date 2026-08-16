@@ -111,7 +111,7 @@ function pickDeepSampleIndexes (n, maxDeep = 24) {
  * Enrich sealed epoch payloads with L1 inspection + local beacon chain entry ids.
  * @param {object} harness from startRegtestBeaconHarness
  * @param {object[]} epochs sealed BEACON_EPOCH payloads
- * @param {{ deepIndexes?: Set<number> }} [opts]
+ * @param {{ deepIndexes: (Set<number>|undefined)}} [opts]
  */
 async function buildEpochAuditRows (harness, epochs = [], opts = {}) {
   const rows = [];
@@ -376,7 +376,7 @@ function formatBeaconAuditMarkdown (report) {
 
 /**
  * @param {object} report
- * @param {{ jsonPath?: string, mdPath?: string }} [paths]
+ * @param {{ jsonPath: (string|undefined), mdPath: (string|undefined)}} [paths]
  */
 function writeBeaconAuditReport (report, paths = {}) {
   const jsonPath = paths.jsonPath || DEFAULT_AUDIT_JSON;

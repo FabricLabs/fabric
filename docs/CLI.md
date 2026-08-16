@@ -124,6 +124,19 @@ Legacy `applications` / `applicationsDisabled` keys are still honored.
 
 See [L1_DOCUMENT_EXCHANGE.md](L1_DOCUMENT_EXCHANGE.md).
 
+## Message collections (offline replay)
+
+AMP frames (`Message.toBuffer()` hex) are the portable log for contract journals
+and Discord / `GroupDataShare` packs. Not Game.log replay.
+
+```text
+npm run messages -- collect stream.jsonl > collection.json
+npm run messages -- verify collection.json
+npm run messages -- replay collection.json
+```
+
+See [MESSAGE_COLLECTION.md](MESSAGE_COLLECTION.md).
+
 ## Verbosity (release defaults)
 | Setting | Default | Effect |
 |---------|---------|--------|

@@ -67,6 +67,18 @@ function chatActorIdOf (chat, opts = {}) {
 }
 
 /**
+ * Strip C0 controls and Blessed markup braces from peer-supplied display fields.
+ * Blessed enables tags in log widgets; `{…}` and control chars can spoof TUI output.
+ * @param {*} value
+ * @returns {string}
+ */
+function sanitizeChatDisplayField (value) {
+  return String(value == null ? '' : value)
+    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '')
+    .replace(/[{}]/g, '');
+}
+
+/**
  * Format a shoutbox line: nickname when known, else truncated pubkey.
  * @param {string|null|undefined} actorId
  * @param {string|null|undefined} alias
@@ -75,21 +87,25 @@ function chatActorIdOf (chat, opts = {}) {
  * @returns {string}
  */
 function formatChatLogLine (actorId, alias, text, truncate) {
-  const nick = alias && String(alias).trim() ? String(alias).trim() : '';
+  const nickRaw = alias && String(alias).trim() ? String(alias).trim() : '';
+  const nick = sanitizeChatDisplayField(nickRaw);
   let label = nick;
   if (!label) {
-    const id = actorId != null ? String(actorId) : '';
+    const id = sanitizeChatDisplayField(actorId != null ? String(actorId) : '');
     const short = typeof truncate === 'function'
       ? truncate(id, 10, '…', 5)
       : (id.length > 10 ? id.slice(0, 5) + '…' + id.slice(-5) : id);
     label = '@' + short;
   }
-  return `[${label}]: ${text}`;
+  return `[${label}]: ${sanitizeChatDisplayField(text)}`;
 }
 
 module.exports = {
   pubkeyXOnly,
   chatTextOf,
   chatActorIdOf,
-  formatChatLogLine
+  sanitizeChatDisplayField,
+  formatChatLogLine,
+  // Re-export surface classifiers (gossip-first / encrypted-chat wave).
+  ...require('./fabricChatKind')
 };

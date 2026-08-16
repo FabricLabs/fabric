@@ -79,6 +79,12 @@ Primary sources:
 | `P2P_PEERING_OFFER` | 98 | `0x0062` | First-class peering-capacity offer. Relayed bit-identical; candidate queue + hop/rate limits. |
 | `P2P_SESSION_OFFER` | 93 | `0x005d` | Initiates peer session handshake. |
 | `P2P_SESSION_OPEN` | 94 | `0x005e` | Accepts/completes peer session handshake. |
+| `P2P_MUSIG_START` | 16928 | `0x4220` | Directed BIP-327 session open: `sessionId` + `msg` + packed pubkeys + initiator `pubnonce`. |
+| `P2P_MUSIG_ACCEPT` | 16929 | `0x4221` | First co-signer `pubnonce` (n=2 complete after this). |
+| `P2P_MUSIG_RECEIVE_COUNTER` | 16930 | `0x4222` | Remaining signers’ `pubnonce` (n>2). |
+| `P2P_MUSIG_SEND_PROPOSAL` | 16931 | `0x4223` | Coordinator publishes recomputed `aggnonce` (must match local `nonceAgg`). |
+| `P2P_MUSIG_REPLY_TO_PROPOSAL` | 16932 | `0x4224` | 32-byte partial signature. |
+| `P2P_MUSIG_ACCEPT_PROPOSAL` | 16933 | `0x4225` | 64-byte aggregated BIP-340 signature. |
 | `CONTRACT_PUBLISH` | 95 | `0x005f` | Publishes a contract definition; registers it under a deterministic `Actor` id (the contract **namespace**). Emits `contract:publish` and relays. |
 | `CONTRACT_MESSAGE` | 96 | `0x0060` | Namespaced contract event. Body MUST carry `contract: <id>`; dispatch routes by that namespace (emits `contract:message`). State-patch `ops` apply only to locally registered contracts; unknown ids are app-consumed, not fatal. |
 | `P2P_IDENT_REQUEST` | 1 | `0x0001` | Requests identity material from counterparty. |

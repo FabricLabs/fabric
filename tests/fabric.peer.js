@@ -355,6 +355,42 @@ describe('@fabric/core/types/peer', function () {
         }
       });
 
+      it('formats IPv6 peering candidates as [host]:port before retry and dial', function () {
+        const originalCreateConnection = net.createConnection;
+        const peer = new Peer({ listen: false, peersDb: null, networking: false });
+        peer.settings.constraints.peers.max = 8;
+        let createdHost = null;
+        let createdSocket = null;
+        net.createConnection = function (port, hostname) {
+          createdHost = hostname;
+          const sock = new EventEmitter();
+          sock.destroyed = false;
+          sock.setTimeout = function () {};
+          sock.unref = function () {};
+          sock.destroy = function () {
+            sock.destroyed = true;
+            sock.emit('close');
+          };
+          createdSocket = sock;
+          return sock;
+        };
+        try {
+          peer._enqueuePeeringCandidate('::1', 9);
+          assert.ok(peer._candidateKeys.has('[::1]:9'));
+          assert.ok(!peer._candidateKeys.has('::1:9'));
+          peer._fillPeerSlots();
+          assert.strictEqual(createdHost, '::1');
+          assert.strictEqual(peer._outboundDialTargets.has('[::1]:9'), true);
+          assert.ok(peer._candidateRetryAt.has('[::1]:9'));
+        } finally {
+          net.createConnection = originalCreateConnection;
+          if (createdSocket && typeof createdSocket.destroy === 'function') createdSocket.destroy();
+          if (typeof peer._destroyFabric === 'function') {
+            try { peer._destroyFabric(createdSocket || {}, '[::1]:9'); } catch (_) { /* ignore */ }
+          }
+        }
+      });
+
       it('canonicalizes pubkey@host:port onto the same outbound dial slot', function () {
         const originalCreateConnection = net.createConnection;
         const peer = new Peer({ listen: false, peersDb: null });
@@ -383,6 +419,36 @@ describe('@fabric/core/types/peer', function () {
           if (createdSocket && typeof createdSocket.destroy === 'function') createdSocket.destroy();
           if (typeof peer._destroyFabric === 'function') {
             try { peer._destroyFabric(createdSocket || {}, '127.0.0.1:9'); } catch (_) { /* ignore */ }
+          }
+        }
+      });
+
+      it('connect timeout destroys the outbound socket', function () {
+        const originalCreateConnection = net.createConnection;
+        const peer = new Peer({ listen: false, peersDb: null, connectTimeout: 50 });
+        let createdSocket = null;
+        net.createConnection = function () {
+          const sock = new EventEmitter();
+          sock.destroyed = false;
+          sock.setTimeout = function () {};
+          sock.unref = function () {};
+          sock.destroy = function () {
+            sock.destroyed = true;
+            sock.emit('close');
+          };
+          createdSocket = sock;
+          return sock;
+        };
+        try {
+          peer._connect('192.0.2.8:9');
+          assert.ok(createdSocket);
+          assert.strictEqual(typeof createdSocket._destroyFabric, 'function');
+          createdSocket.emit('timeout');
+          assert.strictEqual(createdSocket.destroyed, true);
+        } finally {
+          net.createConnection = originalCreateConnection;
+          if (createdSocket && typeof createdSocket.destroy === 'function' && !createdSocket.destroyed) {
+            createdSocket.destroy();
           }
         }
       });
@@ -593,6 +659,39 @@ describe('@fabric/core/types/peer', function () {
         peer._fillPeerSlots();
         assert.strictEqual(dials, 1);
         assert.strictEqual(peer.candidates.length, 1);
+      });
+
+      it('ignores non-positive candidateRetryMs and prunes expired retry timestamps', function () {
+        const peer = new Peer({ listen: false, peersDb: null, networking: false });
+        peer.settings.constraints.peers.max = 8;
+        peer.settings.peering = { candidateRetryMs: -1, maxCandidates: 2 };
+        let dials = 0;
+        peer._connect = () => { dials += 1; };
+        peer._candidateRetryAt = new Map();
+        peer._candidateRetryAt.set('198.51.100.1:1', Date.now() - 10);
+        peer._candidateRetryAt.set('keep-a:1', Date.now() + 60000);
+        peer._candidateRetryAt.set('keep-b:1', Date.now() + 60000);
+        peer._candidateRetryAt.set('keep-c:1', Date.now() + 60000);
+        peer._enqueuePeeringCandidate('192.0.2.88', 7778);
+        peer._fillPeerSlots();
+        assert.strictEqual(dials, 1);
+        assert.strictEqual(peer._candidateRetryAt.has('198.51.100.1:1'), false);
+        assert.strictEqual(peer._candidateRetryAt.has('keep-a:1'), false);
+        assert.ok(peer._candidateRetryAt.has('192.0.2.88:7778'));
+        const until = peer._candidateRetryAt.get('192.0.2.88:7778');
+        assert.ok(until > Date.now() + 1000, 'negative retry ms must not redial immediately');
+      });
+
+      it('Infinity candidateRetryMs falls back to the default cooldown', function () {
+        const peer = new Peer({ listen: false, peersDb: null, networking: false });
+        peer.settings.constraints.peers.max = 8;
+        peer.settings.peering = { candidateRetryMs: Infinity };
+        let dials = 0;
+        peer._connect = () => { dials += 1; };
+        peer._enqueuePeeringCandidate('192.0.2.89', 7778);
+        peer._fillPeerSlots();
+        peer._fillPeerSlots();
+        assert.strictEqual(dials, 1);
       });
     });
 
@@ -1369,8 +1468,8 @@ describe('@fabric/core/types/peer', function () {
       it('emits debug for unhandled generic type', function (done) {
         const peer = new Peer({ listen: false, peersDb: null });
         peer.once('debug', (m) => {
-          assert.ok(/Unhandled Generic Message: UNKNOWN_TYPE/.test(m));
-          assert.ok(!/"object"/.test(m), 'must not JSON.stringify the full generic body');
+          assert.strictEqual(m, 'Unhandled Generic Message: UNKNOWN_TYPE');
+          assert.ok(!String(m).includes('pad'), 'must not include generic body fields');
           done();
         });
         peer._handleGenericMessage({ type: 'UNKNOWN_TYPE', object: { pad: 'x'.repeat(2048) } }, { name: 'o' });

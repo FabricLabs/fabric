@@ -10,12 +10,10 @@ describe('@fabric/core/types/stack', function () {
       assert.equal(Fabric.Stack instanceof Function, true);
     });
 
-    it('can restore state from an Array-like object', function () {
-      let stack = new Fabric.Stack(['test']);
-      // console.log('stack:', stack);
-      // console.log('stack.render():', stack.render());
-
-      // TODO: move to constants, verify
+    it('constructs from an Array-like object without hashing the list into id', function () {
+      const stack = new Fabric.Stack(['test']);
+      assert.ok(stack.size >= 1);
+      // Actor/State id is the empty-content identity, not a hash of ['test'].
       assert.equal(stack.id, 'a5b08f19adfd2918e354af8c11e1b4efd963b5f5a525900d63a01cd2fd28176f');
     });
 

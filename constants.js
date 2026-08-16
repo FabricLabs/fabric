@@ -93,6 +93,105 @@ function bitcoinChangeDerivationPath (account = 0, index = 0) {
 }
 
 /**
+ * BIP-43 purpose path for Bitcoin funds: m/{purpose}'/0'/account'/{0|1}/index
+ * Default receive remains BIP-44 (`bitcoinReceiveDerivationPath`); these helpers
+ * name BIP-49 / BIP-84 / BIP-86 trees without changing that default.
+ *
+ * @param {number} purpose 49 (p2sh-p2wpkh), 84 (p2wpkh), or 86 (p2tr)
+ * @param {number} [account=0]
+ * @param {number} [change=0] 0 = receive, 1 = change
+ * @param {number} [index=0]
+ * @returns {string}
+ * @private
+ */
+function bitcoinPurposeDerivationPath (purpose, account = 0, change = 0, index = 0) {
+  const p = assertBip32ChildIndex(purpose, 'purpose');
+  const a = assertBip32ChildIndex(account, 'account');
+  const c = assertBip32ChildIndex(change, 'change');
+  const i = assertBip32ChildIndex(index, 'index');
+  if (c !== 0 && c !== 1) {
+    throw new RangeError('BIP32 change chain must be 0 (receive) or 1 (change)');
+  }
+  return `m/${p}'/${BITCOIN_COIN_TYPE}'/${a}'/${c}/${i}`;
+}
+
+/** BIP-49 wrapped SegWit receive: m/49'/0'/account'/0/index */
+function bitcoinBip49ReceiveDerivationPath (account = 0, index = 0) {
+  return bitcoinPurposeDerivationPath(49, account, 0, index);
+}
+
+/** BIP-49 wrapped SegWit change: m/49'/0'/account'/1/index */
+function bitcoinBip49ChangeDerivationPath (account = 0, index = 0) {
+  return bitcoinPurposeDerivationPath(49, account, 1, index);
+}
+
+/** BIP-84 native SegWit receive: m/84'/0'/account'/0/index */
+function bitcoinBip84ReceiveDerivationPath (account = 0, index = 0) {
+  return bitcoinPurposeDerivationPath(84, account, 0, index);
+}
+
+/** BIP-84 native SegWit change: m/84'/0'/account'/1/index */
+function bitcoinBip84ChangeDerivationPath (account = 0, index = 0) {
+  return bitcoinPurposeDerivationPath(84, account, 1, index);
+}
+
+/** BIP-86 Taproot receive: m/86'/0'/account'/0/index */
+function bitcoinBip86ReceiveDerivationPath (account = 0, index = 0) {
+  return bitcoinPurposeDerivationPath(86, account, 0, index);
+}
+
+/** BIP-86 Taproot change: m/86'/0'/account'/1/index */
+function bitcoinBip86ChangeDerivationPath (account = 0, index = 0) {
+  return bitcoinPurposeDerivationPath(86, account, 1, index);
+}
+
+/**
+ * BIP-48 multisig path: m/48'/0'/account'/script_type'/{0|1}/index
+ * script_type 1 = p2sh-p2wsh, 2 = p2wsh (recommended default). Path templates
+ * only — group/federation vaults do not switch to these by default.
+ *
+ * @param {number} scriptType
+ * @param {number} [account=0]
+ * @param {number} [change=0]
+ * @param {number} [index=0]
+ * @returns {string}
+ * @private
+ */
+function bitcoinBip48DerivationPath (scriptType, account = 0, change = 0, index = 0) {
+  const st = assertBip32ChildIndex(scriptType, 'scriptType');
+  if (st !== 1 && st !== 2) {
+    throw new RangeError('BIP48 script_type must be 1 (p2sh-p2wsh) or 2 (p2wsh)');
+  }
+  const a = assertBip32ChildIndex(account, 'account');
+  const c = assertBip32ChildIndex(change, 'change');
+  const i = assertBip32ChildIndex(index, 'index');
+  if (c !== 0 && c !== 1) {
+    throw new RangeError('BIP32 change chain must be 0 (receive) or 1 (change)');
+  }
+  return `m/48'/${BITCOIN_COIN_TYPE}'/${a}'/${st}'/${c}/${i}`;
+}
+
+/** BIP-48 nested SegWit multisig receive: m/48'/0'/account'/1'/0/index */
+function bitcoinBip48P2shP2wshReceiveDerivationPath (account = 0, index = 0) {
+  return bitcoinBip48DerivationPath(1, account, 0, index);
+}
+
+/** BIP-48 nested SegWit multisig change: m/48'/0'/account'/1'/1/index */
+function bitcoinBip48P2shP2wshChangeDerivationPath (account = 0, index = 0) {
+  return bitcoinBip48DerivationPath(1, account, 1, index);
+}
+
+/** BIP-48 native SegWit multisig receive: m/48'/0'/account'/2'/0/index */
+function bitcoinBip48P2wshReceiveDerivationPath (account = 0, index = 0) {
+  return bitcoinBip48DerivationPath(2, account, 0, index);
+}
+
+/** BIP-48 native SegWit multisig change: m/48'/0'/account'/2'/1/index */
+function bitcoinBip48P2wshChangeDerivationPath (account = 0, index = 0) {
+  return bitcoinBip48DerivationPath(2, account, 1, index);
+}
+
+/**
  * BIP32 child index domain: finite integer in [0, 0x7fffffff].
  * @param {*} value
  * @param {string} label
@@ -232,6 +331,10 @@ const CHAT_MAX_RELAYS_PER_ORIGIN_PER_MINUTE = 30;
 const PEER_MAX_PENDING_SEALED_DELIVERIES = 32;
 /** Max private DocumentRequest reverse-route entries. */
 const PEER_MAX_DOCUMENT_RELAY_ROUTES = 256;
+/** Max concurrent BIP-327 `P2P_MUSIG_*` sessions on a Peer (FIFO eviction). */
+const PEER_MAX_MUSIG_SESSIONS = 32;
+/** Idle TTL for a MuSig2 session before secret nonces are wiped. */
+const PEER_MUSIG_SESSION_TTL_MS = 10 * 60 * 1000;
 /**
  * Max RFC6902 patch batches retained on {@link Service#history} (FIFO).
  * Unbounded history plus full-state commit snapshots OOMed Hub under reconnects.
@@ -358,6 +461,16 @@ module.exports = {
   fabricIdentityDerivationPath,
   bitcoinReceiveDerivationPath,
   bitcoinChangeDerivationPath,
+  bitcoinBip49ReceiveDerivationPath,
+  bitcoinBip49ChangeDerivationPath,
+  bitcoinBip84ReceiveDerivationPath,
+  bitcoinBip84ChangeDerivationPath,
+  bitcoinBip86ReceiveDerivationPath,
+  bitcoinBip86ChangeDerivationPath,
+  bitcoinBip48P2shP2wshReceiveDerivationPath,
+  bitcoinBip48P2shP2wshChangeDerivationPath,
+  bitcoinBip48P2wshReceiveDerivationPath,
+  bitcoinBip48P2wshChangeDerivationPath,
   assertBip32ChildIndex,
   FABRIC_USER_AGENT,
   FIXTURE_SEED,
@@ -459,6 +572,8 @@ module.exports = {
   CHAT_MAX_RELAYS_PER_ORIGIN_PER_MINUTE,
   PEER_MAX_PENDING_SEALED_DELIVERIES,
   PEER_MAX_DOCUMENT_RELAY_ROUTES,
+  PEER_MAX_MUSIG_SESSIONS,
+  PEER_MUSIG_SESSION_TTL_MS,
   SERVICE_COMMIT_HISTORY_MAX,
   P2P_IDENT_REQUEST,
   P2P_IDENT_RESPONSE,

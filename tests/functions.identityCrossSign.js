@@ -13,6 +13,8 @@ const {
   buildRevokeMessage,
   parseCrossSignMessage,
   parseRevokeMessage,
+  buildCrossSignObject,
+  buildRevokeObject,
   isCrossSignType
 } = require('../functions/identityCrossSign');
 const {
@@ -61,6 +63,18 @@ describe('@fabric/core/functions/identityCrossSign', function () {
     assert.strictEqual(isCrossSignType(SIGN_TYPE), true);
     assert.strictEqual(isCrossSignType(REVOKE_TYPE), true);
     assert.strictEqual(isCrossSignType('ChatMessage'), false);
+  });
+
+  it('object builders drop an invalid nonce instead of keeping the raw string', function () {
+    const a = '02' + 'aa'.repeat(32);
+    const b = '03' + 'bb'.repeat(32);
+    const sign = buildCrossSignObject({ localPubkey: a, peerPubkey: b, nonce: 'not-64-hex' });
+    const revoke = buildRevokeObject({ localPubkey: a, peerPubkey: b, nonce: 'bad:colon' });
+    assert.strictEqual(sign.nonce, '');
+    assert.strictEqual(revoke.nonce, '');
+    assert.strictEqual(sign.type, SIGN_TYPE);
+    assert.strictEqual(revoke.type, REVOKE_TYPE);
+    assert.strictEqual(buildCrossSignMessage(sign.nonce, a, b), null);
   });
 });
 

@@ -30,6 +30,19 @@ Canonical decode names after **first-match** collapse when numeric codes collide
 | `0x005d` | 93 | `P2P_SESSION_OFFER` |
 | `0x005e` | 94 | `P2P_SESSION_OPEN` |
 
+### MuSig2 (directed n-of-n)
+
+Directed TCP only — not mesh-flooded. See `functions/musig2Session.js`.
+
+| Hex | Dec | Wire name |
+|-----|-----|-----------|
+| `0x4220` | 16928 | `P2P_MUSIG_START` |
+| `0x4221` | 16929 | `P2P_MUSIG_ACCEPT` |
+| `0x4222` | 16930 | `P2P_MUSIG_RECEIVE_COUNTER` |
+| `0x4223` | 16931 | `P2P_MUSIG_SEND_PROPOSAL` |
+| `0x4224` | 16932 | `P2P_MUSIG_REPLY_TO_PROPOSAL` |
+| `0x4225` | 16933 | `P2P_MUSIG_ACCEPT_PROPOSAL` |
+
 ### Liveness & transport
 
 | Hex | Dec | Wire name |

@@ -16,6 +16,7 @@ const {
   prepareDecayMigrationPsbt
 } = require('./contractTaproot');
 const { pubkeyXOnly, pubkeyCompressed } = require('./groupChatSeal');
+const { sortPubkeysBip67 } = require('./bip67');
 const { CONTRACT_BODY_TYPES } = require('./applicationNamespaces');
 const {
   programMetaFromTip,
@@ -61,9 +62,9 @@ function toCompressedPubkeys (list, genesisList = null) {
     seen.add(c);
     tip.push(c);
   }
-  tip.sort((a, b) => Buffer.from(a, 'hex').compare(Buffer.from(b, 'hex')));
+  const sortedTip = sortPubkeysBip67(tip).map((b) => b.toString('hex'));
 
-  if (!genesisList) return tip;
+  if (!genesisList) return sortedTip;
   const genesis = [];
   const gSeen = new Set();
   for (const raw of genesisList || []) {
@@ -78,14 +79,14 @@ function toCompressedPubkeys (list, genesisList = null) {
     gSeen.add(c);
     genesis.push(c);
   }
-  genesis.sort((a, b) => Buffer.from(a, 'hex').compare(Buffer.from(b, 'hex')));
+  const sortedGenesis = sortPubkeysBip67(genesis).map((b) => b.toString('hex'));
 
-  const tipX = tip.map((c) => pubkeyXOnly(c)).filter(Boolean).sort();
-  const genX = genesis.map((c) => pubkeyXOnly(c)).filter(Boolean).sort();
+  const tipX = sortedTip.map((c) => pubkeyXOnly(c)).filter(Boolean).sort();
+  const genX = sortedGenesis.map((c) => pubkeyXOnly(c)).filter(Boolean).sort();
   if (tipX.length && tipX.length === genX.length && tipX.every((x, i) => x === genX[i])) {
-    return genesis;
+    return sortedGenesis;
   }
-  return tip;
+  return sortedTip;
 }
 
 /**

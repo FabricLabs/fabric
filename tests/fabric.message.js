@@ -178,6 +178,30 @@ describe('@fabric/core/types/message', function () {
       assert.strictEqual(body['@actor'], 'deadbeef');
     });
 
+    it('fromRaw copies a Uint8Array view without sibling ArrayBuffer bytes', function () {
+      const message = Message.fromVector(['Call', JSON.stringify(example.data)]);
+      message.signWithKey(key);
+      const raw = message.toBuffer();
+      const pad = 24;
+      const padded = Buffer.concat([Buffer.alloc(pad, 0xaa), raw, Buffer.alloc(pad, 0xbb)]);
+      const view = new Uint8Array(padded.buffer, padded.byteOffset + pad, raw.length);
+      const restored = Message.fromRaw(view);
+      assert.ok(restored);
+      assert.strictEqual(restored.type, message.type);
+      assert.ok(restored.verifyWithKey(key));
+      const hashOnWire = raw.subarray(80, 112).toString('hex');
+      const hashAfter = Buffer.isBuffer(restored.raw.hash)
+        ? restored.raw.hash.toString('hex')
+        : restored.raw.hash;
+      assert.strictEqual(hashAfter, hashOnWire);
+      assert.ok(Buffer.from(restored.toBuffer()).equals(raw));
+
+      const dv = new DataView(padded.buffer, padded.byteOffset + pad, raw.length);
+      const fromView = Message.fromRaw(dv);
+      assert.strictEqual(fromView.type, message.type);
+      assert.ok(fromView.verifyWithKey(key));
+    });
+
     it('fromBuffer keeps header hash bytes from wire (body integrity field)', function () {
       const message = Message.fromVector(['Call', JSON.stringify(example.data)]);
       message.signWithKey(key);

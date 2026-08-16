@@ -58,9 +58,9 @@ const EVALUATION_SUITE = [
     layer: 'Applications',
     adoption: 'universal',
     why: 'Default payment deep-link / QR format across wallets.',
-    patterns: ['bitcoin:', 'BIP21', 'bip21', 'bitcoinUri'],
-    expected: { core: 'strong', hub: 'strong', passport: 'absent', application: 'partial' },
-    notes: 'Core inventory HTLC funding hints emit bitcoin: URIs with amount=. Passport uses fabric: deep links, not bitcoin:.'
+    patterns: ['functions/bip21', 'encodeBitcoinUri', 'parseBitcoinUri', 'bitcoin:', 'BIP21', 'bip21', 'bitcoinUri'],
+    expected: { core: 'full', hub: 'strong', passport: 'absent', application: 'partial' },
+    notes: 'Core functions/bip21.js encode/parse; inventory HTLC funding hints emit bitcoin: URIs with amount=. Passport uses fabric: deep links, not bitcoin:.'
   },
   {
     bip: 32,
@@ -93,7 +93,7 @@ const EVALUATION_SUITE = [
     why: 'Purpose level (44/49/84/86) disambiguates account trees.',
     patterns: ['BIP43', "m/44'", "m/84'", "m/86'"],
     expected: { core: 'strong', hub: 'strong', passport: 'strong', application: 'partial' },
-    notes: 'Fabric uses purpose 44 for identity (coin 7777 mainnet / 7778 other) and Bitcoin funds; Passport also uses 84.'
+    notes: 'Fabric uses purpose 44 for identity (coin 7777 mainnet / 7778 other) and Bitcoin funds; Core also names BIP-49/84/86 fund path templates. Passport receive UI is BIP84.'
   },
   {
     bip: 44,
@@ -102,7 +102,7 @@ const EVALUATION_SUITE = [
     layer: 'Applications',
     adoption: 'universal',
     why: 'Default multi-account path template; still dominant for legacy P2PKH + many apps.',
-    patterns: ['BIP44', 'BITCOIN_KEY_DERIVATION_PATH', "m/44'/0'", "m/44'/7777'", "m/44'/7778'", 'bitcoinReceiveDerivationPath', 'fabricCoinTypeForNetwork'],
+    patterns: ['BIP44', 'BITCOIN_KEY_DERIVATION_PATH', "m/44'/0'", "m/44'/7777'", "m/44'/7778'", 'bitcoinReceiveDerivationPath', 'fabricCoinTypeForNetwork', 'fabricIdentityDerivationPath', 'fabricIdentityAccountPath'],
     expected: { core: 'full', hub: 'strong', passport: 'absent', application: 'strong' },
     notes: 'Core constants encode BIP44 Bitcoin funds + Fabric coin-type 7777 (mainnet) / 7778 (other) identity. Passport receive UI is BIP84, not BIP44 path templates.'
   },
@@ -113,8 +113,9 @@ const EVALUATION_SUITE = [
     layer: 'Applications',
     adoption: 'common',
     why: 'Wrapped SegWit path — still seen in older wallets / migrations.',
-    patterns: ["m/49'", 'BIP49', 'p2sh-p2wpkh'],
-    expected: { core: 'absent', hub: 'absent', passport: 'absent', application: 'absent' }
+    patterns: ["m/49'", 'BIP49', 'p2sh-p2wpkh', 'bitcoinBip49ReceiveDerivationPath'],
+    expected: { core: 'partial', hub: 'absent', passport: 'absent', application: 'absent' },
+    notes: 'Named m/49\' path templates only. Default funds path remains BIP-44; no p2sh-p2wpkh payment helper.'
   },
   {
     bip: 65,
@@ -134,9 +135,9 @@ const EVALUATION_SUITE = [
     layer: 'Applications',
     adoption: 'common',
     why: 'Lexicographic pubkey sort for deterministic multisig scripts.',
-    patterns: ['BIP67', 'lexicographically sorted', 'sorted validator', 'sorted keys', 'sortPub'],
-    expected: { core: 'partial', hub: 'partial', passport: 'n/a', application: 'strong' },
-    notes: 'application group wallets sort keys; Hub federation vaults sort validators. Not a named BIP67 module.'
+    patterns: ['BIP67', 'functions/bip67', 'sortPubkeysBip67', 'lexicographically sorted', 'sorted validator', 'sorted keys', 'sortPub'],
+    expected: { core: 'strong', hub: 'partial', passport: 'n/a', application: 'strong' },
+    notes: 'Named sortPubkeysBip67; contractTaproot k-of-n leaves, ARC spend keys, and Beacon validators use it.'
   },
   {
     bip: 68,
@@ -177,9 +178,9 @@ const EVALUATION_SUITE = [
     layer: 'Applications',
     adoption: 'universal',
     why: 'Default receive path for modern bc1q wallets.',
-    patterns: ['BIP84', "m/84'", 'p2wpkh', 'native SegWit'],
-    expected: { core: 'partial', hub: 'partial', passport: 'strong', application: 'partial' },
-    notes: 'Passport derives BIP84 receive from xpub; Core still defaults Bitcoin funds to BIP44 paths while emitting p2wpkh addresses.'
+    patterns: ['BIP84', "m/84'", 'p2wpkh', 'native SegWit', 'bitcoinBip84ReceiveDerivationPath'],
+    expected: { core: 'strong', hub: 'partial', passport: 'strong', application: 'partial' },
+    notes: 'Core names BIP-84 path templates; default Bitcoin funds path remains BIP-44. Passport derives BIP84 receive from xpub.'
   },
   {
     bip: 86,
@@ -188,9 +189,9 @@ const EVALUATION_SUITE = [
     layer: 'Applications',
     adoption: 'common',
     why: 'Standard Taproot single-key receive path (bc1p).',
-    patterns: ['BIP86', "m/86'", 'p2tr', 'Key Derivation for Single'],
-    expected: { core: 'partial', hub: 'partial', passport: 'absent', application: 'absent' },
-    notes: 'P2TR address generation exists in core/hub; dedicated BIP86 path template is not the default funds path. GoonCitizen has no BIP86 surface.'
+    patterns: ['BIP86', "m/86'", 'p2tr', 'bitcoinBip86ReceiveDerivationPath', 'Key Derivation for Single'],
+    expected: { core: 'strong', hub: 'partial', passport: 'absent', application: 'absent' },
+    notes: 'Named m/86\' receive/change templates; default funds path is still BIP-44. P2TR address generation exists separately. GoonCitizen has no BIP86 surface.'
   },
   {
     bip: 112,
@@ -209,8 +210,9 @@ const EVALUATION_SUITE = [
     layer: 'Applications',
     adoption: 'common',
     why: 'Wallet fee-bumping interoperability via sequence signaling.',
-    patterns: ['BIP125', 'RBF', 'replace-by-fee', 'replaceByFee'],
-    expected: { core: 'absent', hub: 'dependent', passport: 'absent', application: 'absent' }
+    patterns: ['BIP125', 'functions/bip125', 'sequenceSignalsOptInRbf', 'BIP125_SEQUENCE_RBF', 'RBF', 'replace-by-fee', 'replaceByFee'],
+    expected: { core: 'partial', hub: 'dependent', passport: 'absent', application: 'absent' },
+    notes: 'Named nSequence helpers. Inventory HTLC refunds use locktime-only (MAX-1), which does not signal RBF. Spends are not RBF by default.'
   },
   {
     bip: 141,
@@ -262,8 +264,8 @@ const EVALUATION_SUITE = [
     adoption: 'specialized',
     why: 'Interactive Schnorr multi-sig; relevant to Fabric federation / group signing narrative.',
     patterns: ['MuSig2', 'musig2', 'BIP327', 'MuSig'],
-    expected: { core: 'absent', hub: 'partial', passport: 'absent', application: 'partial' },
-    notes: 'No first-party MuSig2 module; federation vaults use tapscript k-of-n. Revisit if MuSig2 aggregates become product-critical.'
+    expected: { core: 'full', hub: 'partial', passport: 'absent', application: 'partial' },
+    notes: 'First-party BIP-327 in functions/musig2 (official vectors). Taproot n≥2 vaults use the MuSig2 aggregate as the internal key (cooperative n-of-n key-path); t-of-n stays CHECKSIGADD script-path. Beacon/GroupChange remain count-k BIP-340. P2P_MUSIG_* is dispatched on directed TCP (musig2Session + Peer).'
   },
   {
     bip: 340,
@@ -378,9 +380,9 @@ const EVALUATION_SUITE = [
     layer: 'Applications',
     adoption: 'common',
     why: 'Deterministic vin/vout ordering used by privacy-preserving and collaborative tx builders.',
-    patterns: ['BIP69', 'BIP-69', 'lexicographical indexing', 'bip69'],
-    expected: { core: 'absent', hub: 'absent', passport: 'absent', application: 'absent' },
-    notes: 'Fabric sorts keys / JSON canonically elsewhere; not BIP69 tx input/output ordering.'
+    patterns: ['BIP69', 'BIP-69', 'functions/bip69', 'lexicographical indexing', 'bip69', 'sortInputs'],
+    expected: { core: 'full', hub: 'strong', passport: 'absent', application: 'absent' },
+    notes: 'Core sortInputs/sortOutputs with official BIP-69 examples. Hub unsigned PSBTs (Bitcoin _buildPSBT, crowdfund payout, original Payjoin) sort before the first signature. Payjoin ACP does not reorder signed slots.'
   },
   {
     bip: 85,
@@ -389,8 +391,9 @@ const EVALUATION_SUITE = [
     layer: 'Applications',
     adoption: 'common',
     why: 'Derive app-specific entropy (extra mnemonics, Lightning seeds) from one BIP32 root.',
-    patterns: ['BIP85', 'BIP-85', 'deterministic entropy', "m/83696968'"],
-    expected: { core: 'absent', hub: 'absent', passport: 'absent', application: 'absent' }
+    patterns: ['BIP85', 'BIP-85', 'functions/bip85', 'deterministic entropy', "m/83696968'", 'deriveBip85Mnemonic'],
+    expected: { core: 'full', hub: 'absent', passport: 'absent', application: 'absent' },
+    notes: 'First-party HMAC entropy + BIP-39/WIF/XPRV/HEX applications against published BIP-85 vectors.'
   },
   {
     bip: 321,
@@ -421,9 +424,9 @@ const EVALUATION_SUITE = [
     layer: 'Applications',
     adoption: 'specialized',
     why: 'Standard purpose-48 paths for multisig script types; relevant to group / federation wallets.',
-    patterns: ['BIP48', 'BIP-48', "m/48'", 'multi-script hierarchy'],
-    expected: { core: 'absent', hub: 'absent', passport: 'absent', application: 'absent' },
-    notes: 'Group/federation vaults sort keys and build scripts, but do not advertise BIP48 path trees.'
+    patterns: ['BIP48', 'BIP-48', "m/48'", 'bitcoinBip48P2wshReceiveDerivationPath', 'multi-script hierarchy'],
+    expected: { core: 'partial', hub: 'absent', passport: 'absent', application: 'absent' },
+    notes: 'Named m/48\' p2sh-p2wsh / p2wsh path templates only. Group/federation vaults still sort keys without advertising BIP48 trees.'
   },
   {
     bip: 382,

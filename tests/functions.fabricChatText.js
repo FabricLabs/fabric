@@ -4,7 +4,8 @@ const assert = require('assert');
 const {
   chatTextOf,
   chatActorIdOf,
-  formatChatLogLine
+  formatChatLogLine,
+  sanitizeChatDisplayField
 } = require('../functions/fabricChatText');
 
 describe('fabricChatText', function () {
@@ -31,6 +32,19 @@ describe('fabricChatText', function () {
     assert.strictEqual(
       formatChatLogLine('abcdefghij', null, 'yo'),
       '[@abcdefghij]: yo'
+    );
+    assert.strictEqual(
+      formatChatLogLine('abcdefghijklmnop', null, 'z', (id) => id.slice(0, 4)),
+      '[@abcd]: z'
+    );
+    assert.strictEqual(formatChatLogLine(null, '  ', 'plain'), '[@]: plain');
+  });
+
+  it('strips Blessed tags and control characters from alias/text', function () {
+    assert.strictEqual(sanitizeChatDisplayField('hi{bold}x{/bold}'), 'hiboldx/bold');
+    assert.strictEqual(
+      formatChatLogLine('aa'.repeat(32), '{red-fg}evil{/red-fg}', 'ok\u0007{tag}'),
+      '[red-fgevil/red-fg]: oktag'
     );
   });
 });

@@ -54,7 +54,15 @@ trees) belong in **app catalogs**, not this core list.
 **Multi-origin accumulate:** publisher and participants ingest the same signed
 AMP bytes from mesh, opaque hub queues, or copy-paste (`fabric:<hex>`) via
 [`functions/contractMessageAccumulate.js`](../functions/contractMessageAccumulate.js).
-Fold is idempotent by message hash and arrival-order independent. **Delivery
+Fold is idempotent by message hash and arrival-order independent.
+
+**Portable collections:** persist and replay those AMP hex frames as
+[`FabricMessageCollection`](MESSAGE_COLLECTION.md)
+(`functions/fabricMessageCollection.js`) — JSONL or a JSON document whose
+`messages[].hex` is `Message.toBuffer()`. Journal rows that already carry
+`fabricMessage.hex` ingest directly.
+
+**Delivery
 synchronization filter:** sync-tracked body types (default: all except delivery
 ACKs and `GroupJournalRequest`) open a per-reader 2PC row in
 [`functions/contractMessageCommit.js`](../functions/contractMessageCommit.js)

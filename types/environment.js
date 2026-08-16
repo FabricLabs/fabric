@@ -941,6 +941,7 @@ class Environment extends Entity {
       if (this.emit) this.emit('warning', `[FABRIC:KEYGEN] Could not load wallet data: ${exception.message || exception}`);
       this.wallet = false;
       this.walletLocked = false;
+      this.walletPublic = null;
     }
 
     return this;

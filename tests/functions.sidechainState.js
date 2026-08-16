@@ -57,6 +57,12 @@ describe('@fabric/core/functions/sidechainState', function () {
       sc.validatePatchesAgainstPolicy([{ op: 'add', path: '/app/ok', value: 1 }], policy).ok,
       true
     );
+    const rootPolicy = sc.parseStatechainPathPolicy({ allowedPathPrefixes: ['/'] });
+    assert.strictEqual(
+      sc.validatePatchesAgainstPolicy([{ op: 'add', path: '/anywhere', value: 1 }], rootPolicy).ok,
+      true,
+      "'/' is a wildcard prefix — operators must not allow it"
+    );
     assert.strictEqual(
       sc.validatePatchesAgainstPolicy([{
         op: 'copy',

@@ -37,7 +37,7 @@ Working from a **git checkout** (not the global package) is best when you are ch
 | `types/` | ES6 **classes** — `Actor`, `Peer`, `Service`, `Store`, `Message`, etc. CommonJS (`require`) throughout. Cross-package homes: **[docs/TYPES_AND_SERVICES.md](docs/TYPES_AND_SERVICES.md)**. |
 | `services/` | Long-running **integrations** (Bitcoin RPC, Lightning stubs, ZMQ, …) built on `Service`. |
 | `contracts/` | Language snippets, traces, and tooling (e.g. type dependency graph). |
-| `scripts/` | CLI entrypoints, doc helpers (`list-jsdoc-type-files.js`, `remove-legacy-types.sh`). |
+| `scripts/` | CLI entrypoints, doc helpers (`list-jsdoc-type-files.js`, `remove-legacy-types.sh`). **`scripts/replay-messages.js`** collects / replays AMP `FabricMessageCollection` documents (`functions/fabricMessageCollection.js`). |
 | `tests/` | Mocha suites; run with `npm test`. |
 | `settings/` | Default and environment-specific config; `settings/deprecations.js` holds legacy aliases. |
 | `assets/` | **Generated** browser bundles; rebuild with `npm run build` after type changes. |

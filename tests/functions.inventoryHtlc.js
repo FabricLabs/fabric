@@ -6,6 +6,10 @@ const bitcoin = require('bitcoinjs-lib');
 const ecc = require('../types/ecc');
 const inventoryHtlc = require('../functions/inventoryHtlc');
 const publishedDocumentEnvelope = require('../functions/publishedDocumentEnvelope');
+const {
+  BIP125_SEQUENCE_LOCKTIME_ONLY,
+  sequenceSignalsOptInRbf
+} = require('../functions/bip125');
 
 bitcoin.initEccLib(ecc);
 
@@ -173,5 +177,7 @@ describe('functions/inventoryHtlc', function () {
     assert.ok(txHex.length > 100);
     const tx = bitcoin.Transaction.fromHex(txHex);
     assert.strictEqual(tx.locktime, lock);
+    assert.strictEqual(tx.ins[0].sequence, BIP125_SEQUENCE_LOCKTIME_ONLY);
+    assert.strictEqual(sequenceSignalsOptInRbf(tx.ins[0].sequence), false);
   });
 });

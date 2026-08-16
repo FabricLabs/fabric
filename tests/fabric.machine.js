@@ -58,24 +58,36 @@ describe('@fabric/core/types/machine', function () {
 
     it('can correctly sum two values', async function prove () {
       const machine = new Machine(false);
-      machine.define('SUM_TWO', function () { return 2; });
-      machine.script.push('SUM_TWO');
+      machine.define('PUSH_2', function () { return 2; });
+      machine.define('PUSH_3', function () { return 3; });
+      machine.define('SUM_TWO', function () {
+        const b = machine.stack.pop();
+        const a = machine.stack.pop();
+        return a + b;
+      });
+      machine.script.push('PUSH_2', 'PUSH_3', 'SUM_TWO');
       await machine.start();
       await machine.compute();
       await machine.stop();
-      assert.ok(machine.stack.length >= 1);
-      assert.strictEqual(machine.stack[machine.stack.length - 1], 2);
+      assert.strictEqual(machine.stack[machine.stack.length - 1], 5);
     });
 
     it('can correctly sum three values', async function prove () {
       const machine = new Machine(false);
-      machine.define('SUM_THREE', function () { return 4; });
-      machine.script.push('SUM_THREE');
+      machine.define('PUSH_1', function () { return 1; });
+      machine.define('PUSH_2', function () { return 2; });
+      machine.define('PUSH_3', function () { return 3; });
+      machine.define('SUM_THREE', function () {
+        const c = machine.stack.pop();
+        const b = machine.stack.pop();
+        const a = machine.stack.pop();
+        return a + b + c;
+      });
+      machine.script.push('PUSH_1', 'PUSH_2', 'PUSH_3', 'SUM_THREE');
       await machine.start();
       await machine.compute();
       await machine.stop();
-      assert.ok(machine.stack.length >= 1);
-      assert.strictEqual(machine.stack[machine.stack.length - 1], 4);
+      assert.strictEqual(machine.stack[machine.stack.length - 1], 6);
     });
 
     it('compileOpcodeContract accepts newline-delimited opcode bodies', function () {

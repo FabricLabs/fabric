@@ -383,6 +383,11 @@ describe('peer/message integration (mesh & secure delivery)', function () {
     assert.ok(events[0].wireMessage.toBuffer().equals(wire));
     assert.strictEqual(events[0].messageHex, wire.toString('hex'));
     assert.strictEqual(events[0].messageId, msg.id);
+    const firstHex = events[0].messageHex;
+    events[0].wireMessage.toBuffer = function () {
+      throw new Error('messageHex must not recompute toBuffer after the first read');
+    };
+    assert.strictEqual(events[0].messageHex, firstHex);
   });
 
   it('CONTRACT_MESSAGE without a contract namespace is dropped with a warning', function () {
@@ -480,7 +485,33 @@ describe('peer/message integration (mesh & secure delivery)', function () {
     assert.strictEqual(event.contract, 'goon-contract');
   });
 
-  it('drops body hash mismatch before signature (wire integrity warning)', function () {
+    it('drops body hash mismatch before signature (on-wire XOR)', function () {
+      const hub = mockHub();
+      const k = new Key();
+      const addr = '127.0.0.1:7601';
+      hub.connections[addr] = { _writeFabric: () => {}, destroy: () => {} };
+      hub.peers[addr] = { id: 'p', publicKey: k.pubkey };
+      hub._addressToId[addr] = 'xor-peer';
+      hub._state.peers = {
+        'xor-peer': { id: 'xor-peer', address: addr, score: 180, publicKey: k.pubkey }
+      };
+
+      const msg = Message.fromVector(['P2P_CHAT_MESSAGE', 'x']).signWithKey(k);
+      const buf = Buffer.from(msg.toBuffer());
+      if (buf.length > 208) buf[208] ^= 0xff;
+
+      let warned = false;
+      let chat = null;
+      hub.on('warning', (w) => {
+        if (/body hash mismatch/i.test(String(w))) warned = true;
+      });
+      hub.once('chat', (m) => { chat = m; });
+      hub._handleFabricMessage(buf, { name: addr }, null);
+      assert.ok(warned);
+      assert.strictEqual(chat, null);
+    });
+
+    it('drops body hash mismatch when parsed header hash is zeroed', function () {
     const hub = mockHub();
     const k = new Key();
     const addr = '127.0.0.1:7600';
