@@ -1651,7 +1651,9 @@ class FabricShell extends Service {
           const { chatTextOf } = require('../functions/fabricChatText');
           const text = chatTextOf(msg) || chatTextOf(msg.object) || '';
           if (text.trim()) {
-            self.node.relayFrom(self.node.id, Message.fromVector(['P2P_CHAT_MESSAGE', String(text)]));
+            const packet = Message.fromVector(['P2P_CHAT_MESSAGE', String(text)]);
+            if (self.node.key) packet.signWithKey(self.node.key);
+            self.node.relayFrom(self.node.id, packet);
           }
           break;
         }

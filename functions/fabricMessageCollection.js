@@ -535,10 +535,13 @@ function runCli (argv = [], io = {}) {
   const inputs = files.length ? files : ['-'];
   for (const file of inputs) {
     let text;
-    if (file === '-') {
-      text = fs.readFileSync(0, 'utf8');
-    } else {
-      text = fs.readFileSync(path.resolve(file), 'utf8');
+    try {
+      text = (file === '-')
+        ? fs.readFileSync(0, 'utf8')
+        : fs.readFileSync(path.resolve(file), 'utf8');
+    } catch (exception) {
+      err.write('read failed: ' + file + ': ' + ((exception && exception.message) || 'unknown error') + '\n');
+      return 2;
     }
     ingestText(collection, text, { origin: file });
   }

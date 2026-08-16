@@ -274,6 +274,14 @@ describe('@fabric/core/functions/fabricMessageCollection', function () {
     assert.strictEqual(helpCode, 0);
     assert.ok(help.join('').includes('collect'));
 
+    const missingErr = [];
+    const missingCode = runCli(['collect', path.join(dir, 'no-such.json')], {
+      stdout: { write () { return true; } },
+      stderr: { write (s) { missingErr.push(s); return true; } }
+    });
+    assert.strictEqual(missingCode, 2);
+    assert.ok(missingErr.join('').includes('read failed'));
+
     const parsed = parseFrame(msg.toBuffer());
     assert.strictEqual(parsed.ok, true);
     assert.strictEqual(verifyBodyHash(parsed.message), true);

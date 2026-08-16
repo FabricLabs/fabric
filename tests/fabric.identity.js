@@ -5,7 +5,7 @@ const assert = require('assert');
 const bip39 = require('../functions/bip39');
 const BIP32 = require('../functions/bip32').default;
 const ecc = require('../types/ecc');
-const { FABRIC_KEY_DERIVATION_PATH, bitcoinReceiveDerivationPath, fabricIdentityDerivationPath, fabricIdentityAccountPath, fabricCoinTypeForNetwork, FABRIC_COIN_TYPE_MAINNET, FABRIC_COIN_TYPE_TESTNET } = require('../constants');
+const { FABRIC_KEY_DERIVATION_PATH, bitcoinReceiveDerivationPath, fabricIdentityDerivationPath, fabricIdentityAccountPath, fabricCoinTypeForNetwork, resolveFabricIdentityCoinType, FABRIC_COIN_TYPE_MAINNET, FABRIC_COIN_TYPE_TESTNET } = require('../constants');
 let nobleSecp256k1 = null;
 try {
   nobleSecp256k1 = require('@noble/curves/secp256k1.js');
@@ -68,6 +68,10 @@ describe('@fabric/core/types/identity', function () {
       assert.strictEqual(fabricCoinTypeForNetwork('testnet'), FABRIC_COIN_TYPE_TESTNET);
       assert.strictEqual(fabricCoinTypeForNetwork('signet'), FABRIC_COIN_TYPE_TESTNET);
       assert.strictEqual(fabricCoinTypeForNetwork('mainnet'), FABRIC_COIN_TYPE_MAINNET);
+      assert.strictEqual(resolveFabricIdentityCoinType('regtest'), FABRIC_COIN_TYPE_TESTNET);
+      assert.strictEqual(resolveFabricIdentityCoinType('mainnet'), FABRIC_COIN_TYPE_MAINNET);
+      assert.strictEqual(resolveFabricIdentityCoinType(7777), FABRIC_COIN_TYPE_MAINNET);
+      assert.strictEqual(resolveFabricIdentityCoinType(), FABRIC_COIN_TYPE_TESTNET);
       assert.strictEqual(fabricIdentityDerivationPath(0, 0), FABRIC_KEY_DERIVATION_PATH);
       assert.strictEqual(fabricIdentityDerivationPath(0, 0, 'mainnet'), "m/44'/7777'/0'/0/0");
       assert.strictEqual(fabricIdentityAccountPath(0), "m/44'/7778'/0'");

@@ -885,14 +885,12 @@ class Message extends Actor {
     if (!input) return null;
     // Convert various buffer-like inputs to Buffer
     let buffer;
-    if (input instanceof Buffer) {
+    if (Buffer.isBuffer(input)) {
       buffer = input;
-    } else if (input instanceof Uint8Array) {
-      buffer = Buffer.from(input.buffer);
+    } else if (ArrayBuffer.isView(input)) {
+      buffer = Buffer.from(input.buffer, input.byteOffset, input.byteLength);
     } else if (input instanceof ArrayBuffer) {
       buffer = Buffer.from(input);
-    } else if (input.buffer instanceof ArrayBuffer) {
-      buffer = Buffer.from(input.buffer);
     } else {
       throw new Error('Input must be a buffer or buffer-like object.');
     }

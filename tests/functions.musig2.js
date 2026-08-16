@@ -277,4 +277,11 @@ describe('@fabric/core/functions/musig2 BIP-327', function () {
     ));
     assert.ok(xonly.length === 32);
   });
+
+  it('rejects non-hex session message strings instead of truncating', function () {
+    assert.throws(
+      () => sessionContext(Buffer.alloc(66), [Buffer.alloc(33)], [], [], 'zzzzzz'),
+      /expected hex/
+    );
+  });
 });

@@ -119,6 +119,7 @@ function asBuf (input) {
   if (typeof input === 'string') {
     const hex = String(input).trim().replace(/^0x/i, '');
     if (hex.length % 2) throw new TypeError('odd hex length');
+    if (!/^[0-9a-f]*$/i.test(hex)) throw new TypeError('expected hex');
     return Buffer.from(hex, 'hex');
   }
   throw new TypeError('expected Buffer, Uint8Array, or hex');

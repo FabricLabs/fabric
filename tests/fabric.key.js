@@ -51,6 +51,14 @@ describe('@fabric/core/types/key', function () {
       assert.equal(fromHex.public.encodeCompressed('hex'), fromMnemonic.public.encodeCompressed('hex'));
     });
 
+    it('classifies an xprv passed as seed (legacy FABRIC_SEED)', function () {
+      const { FIXTURE_XPRV } = require('../constants');
+      const fromXprv = new Key({ xprv: FIXTURE_XPRV });
+      const fromSeed = new Key({ seed: FIXTURE_XPRV });
+      assert.equal(fromSeed.xprv, fromXprv.xprv);
+      assert.equal(fromSeed.xprv, FIXTURE_XPRV);
+    });
+
     it('can load from a WIF', function () {
       const origin = new Key();
       const wif = origin.toWIF();

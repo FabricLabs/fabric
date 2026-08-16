@@ -42,7 +42,7 @@ async function smoke (key) {
   const samples = [
     'Hello, Fabric!',
     'Chat bodies are raw UTF-8 on the wire.',
-    'Authors are BIP-340 Schnorr signatures.'
+    'Authors are x-only public keys; messages use BIP-340 Schnorr signatures.'
   ];
   const history = [];
 

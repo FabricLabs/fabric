@@ -126,7 +126,7 @@ function secpPointToRawBytes (point, compressed = true) {
 
 const { encodeCheck, decodeCheck } = require('../functions/base58');
 const bip39 = require('../functions/bip39');
-const { parseRawSeedHex } = require('../functions/fabricKeyMaterial');
+const { parseRawSeedHex, classifyFabricKeyMaterial } = require('../functions/fabricKeyMaterial');
 const bip32Module = require('../functions/bip32');
 const BIP32 = bip32Module.default;
 const BIP32_DEFAULT_NETWORK = bip32Module.DEFAULT_NETWORK;
@@ -253,7 +253,21 @@ class Key extends EventEmitter {
     if (this.settings.mnemonic) {
       this._mode = 'FROM_MNEMONIC';
     } else if (this.settings.seed) {
-      this._mode = 'FROM_SEED';
+      const raw = this.settings.seed;
+      if (Buffer.isBuffer(raw) || raw instanceof Uint8Array) {
+        this._mode = 'FROM_SEED';
+      } else {
+        const classified = classifyFabricKeyMaterial(raw);
+        if (classified.kind === 'xprv') {
+          this._mode = 'FROM_XPRV';
+          this.settings.xprv = classified.xprv;
+        } else if (classified.kind === 'mnemonic') {
+          this._mode = 'FROM_MNEMONIC';
+          this.settings.mnemonic = classified.mnemonic;
+        } else {
+          this._mode = 'FROM_SEED';
+        }
+      }
     } else if (this.settings.wif) {
       this._mode = 'FROM_WIF';
     } else if (this.settings.private) {

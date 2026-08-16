@@ -102,7 +102,7 @@ const EVALUATION_SUITE = [
     layer: 'Applications',
     adoption: 'universal',
     why: 'Default multi-account path template; still dominant for legacy P2PKH + many apps.',
-    patterns: ['BIP44', 'BITCOIN_KEY_DERIVATION_PATH', "m/44'/0'", "m/44'/7777'", "m/44'/7778'", 'bitcoinReceiveDerivationPath', 'fabricCoinTypeForNetwork', 'fabricIdentityDerivationPath', 'fabricIdentityAccountPath'],
+    patterns: ['BIP44', 'BITCOIN_KEY_DERIVATION_PATH', "m/44'/0'", "m/44'/7777'", "m/44'/7778'", 'bitcoinReceiveDerivationPath', 'fabricCoinTypeForNetwork', 'resolveFabricIdentityCoinType', 'fabricIdentityDerivationPath', 'fabricIdentityAccountPath'],
     expected: { core: 'full', hub: 'strong', passport: 'absent', application: 'strong' },
     notes: 'Core constants encode BIP44 Bitcoin funds + Fabric coin-type 7777 (mainnet) / 7778 (other) identity. Passport receive UI is BIP84, not BIP44 path templates.'
   },

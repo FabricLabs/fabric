@@ -2,7 +2,7 @@
 'use strict';
 
 /**
- * Ensure `~/.fabric/env` and `~/.fabric/hub-admin-token` for RC1 publish.
+ * @fileoverview Ensure `~/.fabric/env` and `~/.fabric/hub-admin-token` for RC1 publish.
  *
  * Identity precedence (same as Environment / suite loaders):
  *   FABRIC_XPRV → FABRIC_SEED (raw hex, or legacy mnemonic/xprv) → FABRIC_MNEMONIC

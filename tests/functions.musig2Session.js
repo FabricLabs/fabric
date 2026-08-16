@@ -164,4 +164,11 @@ describe('@fabric/core/functions/musig2Session', function () {
     assert.ok(Buffer.isBuffer(fields.sessionId));
     assert.strictEqual(fields.sessionId.equals(session.sessionId), true);
   });
+
+  it('verifyFinalSignature returns ok:false without a session', function () {
+    assert.deepStrictEqual(
+      verifyFinalSignature(null, Buffer.alloc(64)),
+      { ok: false, reason: 'no-session' }
+    );
+  });
 });

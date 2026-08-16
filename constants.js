@@ -49,6 +49,23 @@ function fabricCoinTypeForNetwork (network) {
 }
 
 /**
+ * Resolve Fabric identity coin type from a network name or explicit integer.
+ * Omit / empty → 7778. Mainnet names → 7777. Explicit integers are BIP32 child
+ * indices (not restricted to 7777/7778).
+ * @param {string|number} [networkOrCoinType]
+ * @returns {number}
+ */
+function resolveFabricIdentityCoinType (networkOrCoinType) {
+  if (typeof networkOrCoinType === 'number') {
+    return assertBip32ChildIndex(networkOrCoinType, 'coinType');
+  }
+  if (networkOrCoinType != null && String(networkOrCoinType).trim() !== '') {
+    return fabricCoinTypeForNetwork(networkOrCoinType);
+  }
+  return FABRIC_COIN_TYPE_TESTNET;
+}
+
+/**
  * Fabric identity path: m/44'/{7777|7778}'/account'/0/index
  * @param {number} [account=0]
  * @param {number} [index=0]
@@ -57,15 +74,20 @@ function fabricCoinTypeForNetwork (network) {
  * @returns {string}
  */
 function fabricIdentityDerivationPath (account = 0, index = 0, networkOrCoinType) {
-  const a = assertBip32ChildIndex(account, 'account');
   const i = assertBip32ChildIndex(index, 'index');
-  let coin = FABRIC_COIN_TYPE_TESTNET;
-  if (typeof networkOrCoinType === 'number') {
-    coin = assertBip32ChildIndex(networkOrCoinType, 'coinType');
-  } else if (networkOrCoinType != null && String(networkOrCoinType).trim() !== '') {
-    coin = fabricCoinTypeForNetwork(networkOrCoinType);
-  }
-  return `m/44'/${coin}'/${a}'/0/${i}`;
+  return `${fabricIdentityAccountPath(account, networkOrCoinType)}/0/${i}`;
+}
+
+/**
+ * Fabric identity account node: m/44'/{7777|7778}'/account'
+ * @param {number} [account=0]
+ * @param {string|number} [networkOrCoinType] Network name or explicit coin type.
+ * @returns {string}
+ */
+function fabricIdentityAccountPath (account = 0, networkOrCoinType) {
+  const a = assertBip32ChildIndex(account, 'account');
+  const coin = resolveFabricIdentityCoinType(networkOrCoinType);
+  return `m/44'/${coin}'/${a}'`;
 }
 
 /**
@@ -75,9 +97,7 @@ function fabricIdentityDerivationPath (account = 0, index = 0, networkOrCoinType
  * @returns {string}
  */
 function bitcoinReceiveDerivationPath (account = 0, index = 0) {
-  const a = assertBip32ChildIndex(account, 'account');
-  const i = assertBip32ChildIndex(index, 'index');
-  return `m/44'/${BITCOIN_COIN_TYPE}'/${a}'/0/${i}`;
+  return bitcoinPurposeDerivationPath(44, account, 0, index);
 }
 
 /**
@@ -87,9 +107,7 @@ function bitcoinReceiveDerivationPath (account = 0, index = 0) {
  * @returns {string}
  */
 function bitcoinChangeDerivationPath (account = 0, index = 0) {
-  const a = assertBip32ChildIndex(account, 'account');
-  const i = assertBip32ChildIndex(index, 'index');
-  return `m/44'/${BITCOIN_COIN_TYPE}'/${a}'/1/${i}`;
+  return bitcoinPurposeDerivationPath(44, account, 1, index);
 }
 
 /**
@@ -97,7 +115,7 @@ function bitcoinChangeDerivationPath (account = 0, index = 0) {
  * Default receive remains BIP-44 (`bitcoinReceiveDerivationPath`); these helpers
  * name BIP-49 / BIP-84 / BIP-86 trees without changing that default.
  *
- * @param {number} purpose 49 (p2sh-p2wpkh), 84 (p2wpkh), or 86 (p2tr)
+ * @param {number} purpose 44 (p2pkh), 49 (p2sh-p2wpkh), 84 (p2wpkh), or 86 (p2tr)
  * @param {number} [account=0]
  * @param {number} [change=0] 0 = receive, 1 = change
  * @param {number} [index=0]
@@ -458,7 +476,9 @@ module.exports = {
   BITCOIN_COIN_TYPE,
   BITCOIN_KEY_DERIVATION_PATH,
   fabricCoinTypeForNetwork,
+  resolveFabricIdentityCoinType,
   fabricIdentityDerivationPath,
+  fabricIdentityAccountPath,
   bitcoinReceiveDerivationPath,
   bitcoinChangeDerivationPath,
   bitcoinBip49ReceiveDerivationPath,

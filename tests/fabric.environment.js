@@ -221,19 +221,61 @@ describe('@fabric/core/types/environment', function () {
     });
 
     it('can instantiate from a seed', async function () {
-      const environment = new Environment({ seed: FIXTURE_SEED });
-      await environment.start();
-      assert.ok(environment.wallet);
-      assert.ok(environment.xprv);
-      assert.match(String(environment.xprv), /^xprv/);
-      await environment.stop();
+      const iso = withIsolatedHome('fabric-env-seed-');
+      try {
+        iso.clearIdentityEnv();
+        process.env.NODE_ENV = 'production';
+        const environment = new Environment({
+          seed: FIXTURE_SEED,
+          home: iso.home,
+          path: iso.walletPath,
+          store: iso.store
+        });
+        await environment.start();
+        assert.ok(environment.wallet);
+        assert.ok(environment.xprv);
+        assert.match(String(environment.xprv), /^xprv/);
+        await environment.stop();
+      } finally {
+        iso.restore();
+      }
     });
 
     it('can instantiate from an xpub', async function () {
-      const environment = new Environment({ xpub: FIXTURE_XPUB });
-      await environment.start();
-      assert.ok(environment.xpub);
-      await environment.stop();
+      const iso = withIsolatedHome('fabric-env-xpub-');
+      try {
+        iso.clearIdentityEnv();
+        process.env.NODE_ENV = 'production';
+        const environment = new Environment({
+          xpub: FIXTURE_XPUB,
+          home: iso.home,
+          path: iso.walletPath,
+          store: iso.store
+        });
+        await environment.start();
+        assert.ok(environment.xpub);
+        await environment.stop();
+      } finally {
+        iso.restore();
+      }
+    });
+
+    it('classifies an xprv in settings.seed as the wallet xprv', async function () {
+      const iso = withIsolatedHome('fabric-env-seed-xprv-');
+      try {
+        iso.clearIdentityEnv();
+        process.env.NODE_ENV = 'production';
+        const environment = new Environment({
+          seed: FIXTURE_XPRV,
+          home: iso.home,
+          path: iso.walletPath,
+          store: iso.store
+        });
+        environment.loadWallet();
+        assert.strictEqual(environment.wallet.key.xprv, FIXTURE_XPRV);
+      } finally {
+        iso.restore();
+      }
     });
 
     it('can instantiate from an xprv', async function () {

@@ -126,6 +126,26 @@ describe('@fabric/core/types/service (FabricShell)', function () {
       assert.strictEqual(relayed[0].id, 'node-1');
     });
 
+    it('registerService signs ChatMessage relays when node.key is present', async function () {
+      const Key = require('../types/key');
+      const app = new FabricShell();
+      app.settings.services = ['relay'];
+      const relayed = [];
+      const key = new Key();
+      app.node = {
+        id: 'node-1',
+        key,
+        relayFrom: function (id, msg) {
+          relayed.push({ id, msg });
+        }
+      };
+      class RelayService extends require('../types/service') {}
+      const service = app._registerService('relay', RelayService);
+      service.emit('message', { '@type': 'ChatMessage', body: 'signed-hello' });
+      assert.strictEqual(relayed.length, 1);
+      assert.ok(relayed[0].msg.verifyWithKey(key));
+    });
+
     it('registerService forwards warning/error and exercises default message branch', function () {
       const app = new FabricShell();
       app.settings.services = ['relay'];

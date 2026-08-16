@@ -18,16 +18,20 @@ const scripts = [
 ];
 
 let failed = 0;
+const TIMEOUT_MS = Number(process.env.FABRIC_EXAMPLE_TIMEOUT_MS || 60000);
 for (const rel of scripts) {
   console.log('\n===', rel, '===');
   const result = spawnSync(process.execPath, [path.join(root, rel)], {
     cwd: root,
     stdio: 'inherit',
-    env: process.env
+    env: process.env,
+    timeout: TIMEOUT_MS,
+    killSignal: 'SIGKILL'
   });
   if (result.status !== 0) {
     failed += 1;
-    console.error('[example-smoke] FAILED', rel, 'exit', result.status);
+    const reason = result.error ? result.error.message : `signal ${result.signal}`;
+    console.error('[example-smoke] FAILED', rel, 'exit', result.status, '-', reason);
   }
 }
 

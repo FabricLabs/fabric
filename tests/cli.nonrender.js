@@ -106,12 +106,12 @@ describe('@fabric/core/types/cli (non-render guards)', function () {
     cli.elements = { form: { reset () {} } };
     cli.screen = { render () {} };
 
-    cli._handleFormSubmit({ input: 'hello mesh' });
+    cli._handleFormSubmit({ input: 'héllo 🌍' });
     assert.strictEqual(sent.length, 1);
     assert.strictEqual(sent[0].type, 'P2P_CHAT_MESSAGE');
     const body = messageDataToString(sent[0].raw ? sent[0].raw.data : sent[0].data);
-    assert.strictEqual(body, 'hello mesh');
-    assert.ok(lines.some((l) => /hello mesh/.test(l)));
+    assert.strictEqual(body, 'héllo 🌍');
+    assert.ok(lines.some((l) => /héllo/.test(l)));
     assert.ok(!body.startsWith('{'));
   });
 
@@ -122,10 +122,11 @@ describe('@fabric/core/types/cli (non-render guards)', function () {
     cli._peerAliasByPubkey = {};
     cli._appendMessage = (line) => { lines.push(line); };
 
-    await cli._handlePeerAlias({ alias: 'neorion', signer: 'aa'.repeat(32) });
+    const compressed = '02' + 'aa'.repeat(32);
+    await cli._handlePeerAlias({ alias: 'neorion', signer: compressed });
     await cli._handlePeerChat(
       { text: 'from hub', type: 'P2P_CHAT_MESSAGE' },
-      { signer: 'aa'.repeat(32) }
+      { signer: compressed }
     );
     assert.deepStrictEqual(lines, ['[neorion]: from hub']);
   });

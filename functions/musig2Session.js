@@ -479,6 +479,9 @@ function aggregatePartials (session) {
  * @returns {{ ok: boolean, reason?: string }}
  */
 function verifyFinalSignature (session, signature) {
+  if (!session || !session.pubkeys || !session.challenge) {
+    return { ok: false, reason: 'no-session' };
+  }
   const sig = exactBuf(signature, MUSIG_SIG_BYTES);
   if (!sig) return { ok: false, reason: 'bad-signature' };
   if (!verifyAggregatedSchnorr(session.challenge, sig, session.pubkeys)) {

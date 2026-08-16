@@ -1,5 +1,5 @@
 /**
- * Example local settings for a Fabric node.
+ * @fileoverview Example local settings for a Fabric node.
  * Copy to `settings/local.js` (gitignored) for operator overrides, or rely on
  * environment variables alone — the example is the packaged fallback when
  * `settings/local.js` is absent.

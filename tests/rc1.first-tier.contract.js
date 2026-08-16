@@ -28,7 +28,8 @@ const {
   bitcoinReceiveDerivationPath,
   fabricCoinTypeForNetwork,
   fabricIdentityAccountPath,
-  fabricIdentityDerivationPath
+  fabricIdentityDerivationPath,
+  resolveFabricIdentityCoinType
 } = require('../constants');
 const { fabricIdentityIdFromPubkeyHex } = require('../functions/fabricIdentitySchnorr');
 const { snapshotEnvironment } = require('../functions/fabricSetup');
@@ -402,6 +403,8 @@ describe('@fabric/core RC1 first-tier contract', function () {
       assert.strictEqual(fabricIdentityDerivationPath(0, 0, 7777), "m/44'/7777'/0'/0/0");
       assert.strictEqual(fabricIdentityAccountPath(0, 'not-a-network'), "m/44'/7778'/0'");
       assert.strictEqual(fabricIdentityAccountPath(0, 'mainnet'), "m/44'/7777'/0'");
+      assert.strictEqual(resolveFabricIdentityCoinType('not-a-network'), FABRIC_COIN_TYPE_TESTNET);
+      assert.strictEqual(resolveFabricIdentityCoinType(7777), FABRIC_COIN_TYPE_MAINNET);
     });
 
     it('Bitcoin fund paths stay on coin type 0 and never equal the Fabric identity key', function () {

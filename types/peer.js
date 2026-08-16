@@ -818,7 +818,10 @@ class Peer extends Service {
      */
     this._selfDialSuppressUntil = new Map();
     this.sessions = {};
-    /** @type {Map<string, object>} BIP-327 directed sessions keyed by sessionId hex. */
+    /**
+     * BIP-327 directed sessions keyed by sessionId hex.
+     * @type {Map<string, object>}
+     */
     this._musigSessions = new Map();
     this._musigSessionOrder = [];
 
@@ -3268,14 +3271,13 @@ class Peer extends Service {
           // intact under `object` so handlers see the full body.
           genericBody = { type: message.type, object: parsed };
         } else {
-          // Numeric JSON `type: 98` is P2P_PEERING_OFFER — do not let it win over
-          // the AMP wire name, and do not treat a bare `type` field as an envelope
-          // (that dropped host/port onto the outer object and hit the unhandled
-          // default, which JSON.stringified the full body on every offer).
-          const named = Message.canonicalTypeName(parsed && parsed.type) || innerType;
+          // AMP wire name wins. Numeric JSON `type: 98` is P2P_PEERING_OFFER only
+          // on a peering-offer (or generic) carrier — never on inventory/gossip.
+          // Bare `type` is not an envelope (that dropped host/port onto the outer
+          // object and JSON.stringified the full body on every offer).
           genericBody = (parsed && typeof parsed === 'object' && (parsed.actor || parsed.object))
-            ? Object.assign({}, parsed, { type: named })
-            : { type: named, object: parsed };
+            ? Object.assign({}, parsed, { type: innerType })
+            : { type: innerType, object: parsed };
         }
         this._handleGenericMessage(genericBody, origin, socket, message, opts);
         break;
