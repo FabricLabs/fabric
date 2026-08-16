@@ -87,5 +87,13 @@ describe('@fabric/core/functions/bip21', function () {
     assert.throws(() => encodeBitcoinUri({ address: 'bc1qxx', amount: '1btc' }), /decimal BTC/);
     assert.throws(() => parseBitcoinUri('https://example.test'), /bitcoin:/);
     assert.throws(() => parseBitcoinUri('bitcoin:addr?amount=-1'), /amount is invalid/);
+    assert.throws(
+      () => parseBitcoinUri('bitcoin:addr?req-something=1'),
+      /unsupported required BIP21 parameter/
+    );
+    assert.throws(
+      () => parseBitcoinUri('bitcoin:addr?REQ-exp=1'),
+      /unsupported required BIP21 parameter/
+    );
   });
 });

@@ -289,7 +289,7 @@ function createLocalSession (opts = {}) {
  * @returns {{ ok: true, session: object }|{ ok: false, reason: string }}
  */
 function createFromStart (body, opts = {}) {
-  const parsed = parseMusigBody(body) || body;
+  const parsed = parseMusigBody(body);
   if (!parsed || !parsed.sessionId || !parsed.msg || !parsed.pubkeys || !parsed.pubnonce) {
     return { ok: false, reason: 'invalid-start' };
   }

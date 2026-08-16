@@ -7,11 +7,12 @@ const Peer = require('../types/peer');
 const { individualPk, verifyAggregatedSchnorr } = require('../functions/musig2');
 const { offlinePeerSettings } = require('./helpers/peer');
 
-function makePeer (label) {
+function makePeer (label, extra = {}) {
   const seed = new Key();
   const peer = new Peer(offlinePeerSettings({
     key: { mnemonic: seed.mnemonic },
-    debug: false
+    debug: false,
+    musig2: Object.assign({ autoAccept: true }, extra.musig2 || {})
   }));
   return { peer, label, seed };
 }
@@ -46,6 +47,15 @@ function exchange (aliceWrites, bob, aliceAddr, bobWrites, alice, bobAddr, max =
 }
 
 describe('@fabric/core Peer P2P_MUSIG_*', function () {
+  it('defaults musig2.autoAccept to false', function () {
+    const seed = new Key();
+    const peer = new Peer(offlinePeerSettings({
+      key: { mnemonic: seed.mnemonic },
+      debug: false
+    }));
+    assert.strictEqual(peer.settings.musig2.autoAccept, false);
+  });
+
   it('completes a directed 2-of-2 session', function () {
     const { peer: alice } = makePeer('alice');
     const { peer: bob } = makePeer('bob');
@@ -96,7 +106,11 @@ describe('@fabric/core Peer P2P_MUSIG_*', function () {
       peeledForward: true
     });
     assert.strictEqual(bob._musigSessions.size, 0);
-    bob._handleFabricMessage(inner.toBuffer(), { name: '127.0.0.1:1' }, null, {
+    const relayBody = Object.assign({}, body, {
+      sessionId: Buffer.alloc(32, 8).toString('hex')
+    });
+    const relayInner = Message.fromVector(['P2P_MUSIG_START', JSON.stringify(relayBody)]).signWithKey(author);
+    bob._handleFabricMessage(relayInner.toBuffer(), { name: '127.0.0.1:1' }, null, {
       relayedAsIs: true
     });
     assert.strictEqual(bob._musigSessions.size, 0);
@@ -148,5 +162,57 @@ describe('@fabric/core Peer P2P_MUSIG_*', function () {
     const frame = Message.fromVector(['P2P_BASE_MESSAGE', JSON.stringify(inner)]).signWithKey(alice);
     bob._handleFabricMessage(frame.toBuffer(), { name: origin }, null);
     assert.strictEqual(bob._musigSessions.size, 0);
+  });
+
+  it('does not auto-sign inbound START when musig2.autoAccept is off', function () {
+    const { peer: bob } = makePeer('bob', { musig2: { autoAccept: false } });
+    const alice = new Key();
+    const origin = '127.0.0.1:19105';
+    const writes = [];
+    bob.connections[origin] = { _writeFabric (buf) { writes.push(buf); }, destroy () {} };
+    bob.peers[origin] = { id: alice.pubkey, publicKey: alice.pubkey };
+    const body = {
+      sessionId: Buffer.alloc(32, 4).toString('hex'),
+      msg: Buffer.from('oracle').toString('hex'),
+      pubkeys: Buffer.concat([
+        Buffer.from(alice.pubkey, 'hex'),
+        Buffer.from(bob.key.pubkey, 'hex')
+      ]).toString('hex'),
+      pubnonce: Buffer.concat([
+        Buffer.from(alice.pubkey, 'hex'),
+        Buffer.from(alice.pubkey, 'hex')
+      ]).toString('hex')
+    };
+    const frame = Message.fromVector(['P2P_MUSIG_START', JSON.stringify(body)]).signWithKey(alice);
+    bob._handleFabricMessage(frame.toBuffer(), { name: origin }, null);
+    assert.strictEqual(bob._musigSessions.size, 0);
+    assert.strictEqual(writes.length, 0);
+  });
+
+  it('clamps invalid musig2.maxSessions instead of looping', function () {
+    this.timeout(2000);
+    const { peer: alice } = makePeer('alice', { musig2: { maxSessions: -1 } });
+    const dest = new Key();
+    const origin = '127.0.0.1:19106';
+    alice.connections[origin] = { _writeFabric () {}, destroy () {} };
+    alice.peers[origin] = { id: dest.pubkey, publicKey: dest.pubkey };
+    alice.startMusig2({ dest: dest.pubkey, msg: Buffer.from('one') });
+    alice.startMusig2({ dest: dest.pubkey, msg: Buffer.from('two') });
+    assert.ok(alice._musigSessions.size >= 1);
+    assert.ok(alice._musigSessions.size <= 32);
+  });
+
+  it('evicts the oldest MuSig2 session at maxSessions', function () {
+    const { peer: alice } = makePeer('alice', { musig2: { maxSessions: 1 } });
+    const dest = new Key();
+    const origin = '127.0.0.1:19107';
+    alice.connections[origin] = { _writeFabric () {}, destroy () {} };
+    alice.peers[origin] = { id: dest.pubkey, publicKey: dest.pubkey };
+    const first = alice.startMusig2({ dest: dest.pubkey, msg: Buffer.from('keep-first') });
+    const second = alice.startMusig2({ dest: dest.pubkey, msg: Buffer.from('keep-second') });
+    assert.ok(first && second);
+    assert.strictEqual(alice._musigSessions.size, 1);
+    assert.strictEqual(alice.getMusig2Session(first.sessionId), null);
+    assert.ok(alice.getMusig2Session(second.sessionId));
   });
 });

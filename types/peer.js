@@ -671,7 +671,7 @@ class Peer extends Service {
     }, config);
 
     this.settings.musig2 = Object.assign({
-      autoAccept: true,
+      autoAccept: false,
       maxSessions: PEER_MAX_MUSIG_SESSIONS,
       sessionTtlMs: PEER_MUSIG_SESSION_TTL_MS
     }, config.musig2);
@@ -1804,6 +1804,7 @@ class Peer extends Service {
 
   /**
    * Begin a directed BIP-327 MuSig2 session (n-of-n) with connected peers.
+   * Co-signers ignore inbound START unless `settings.musig2.autoAccept === true`.
    *
    * @param {object} [opts]
    * @param {Buffer|string} opts.msg message to sign (hashed to 32 bytes unless already 32)
@@ -1907,6 +1908,36 @@ class Peer extends Service {
   }
 
   /**
+   * Opt-in only. Default `musig2.autoAccept` is false so inbound START cannot
+   * turn the identity key into a remote signing oracle.
+   * @returns {boolean}
+   * @private
+   */
+  _musigAutoAccept () {
+    return !!(this.settings.musig2 && this.settings.musig2.autoAccept === true);
+  }
+
+  /**
+   * @returns {number}
+   * @private
+   */
+  _musigSessionCap () {
+    const raw = Number(this.settings.musig2 && this.settings.musig2.maxSessions);
+    if (!Number.isFinite(raw) || raw < 1) return PEER_MAX_MUSIG_SESSIONS;
+    return Math.min(Math.floor(raw), PEER_MAX_MUSIG_SESSIONS);
+  }
+
+  /**
+   * @returns {number}
+   * @private
+   */
+  _musigSessionTtlMs () {
+    const raw = Number(this.settings.musig2 && this.settings.musig2.sessionTtlMs);
+    if (!Number.isFinite(raw) || raw < 1) return PEER_MUSIG_SESSION_TTL_MS;
+    return Math.floor(raw);
+  }
+
+  /**
    * @param {object} session
    * @private
    */
@@ -1918,7 +1949,7 @@ class Peer extends Service {
     }
     this._musigSessions.set(id, session);
     this._musigSessionOrder.push(id);
-    const cap = Number(this.settings.musig2 && this.settings.musig2.maxSessions) || PEER_MAX_MUSIG_SESSIONS;
+    const cap = this._musigSessionCap();
     while (this._musigSessionOrder.length > cap) {
       const evict = this._musigSessionOrder.shift();
       const old = this._musigSessions.get(evict);
@@ -1936,7 +1967,7 @@ class Peer extends Service {
     const id = this._musigSessionKey(sessionId);
     const session = this._musigSessions.get(id);
     if (!session) return null;
-    const ttl = Number(this.settings.musig2 && this.settings.musig2.sessionTtlMs) || PEER_MUSIG_SESSION_TTL_MS;
+    const ttl = this._musigSessionTtlMs();
     if (ttl > 0 && Date.now() - (session.createdAt || 0) > ttl) {
       musig2Session.wipeSession(session);
       this._musigSessions.delete(id);
@@ -1980,7 +2011,7 @@ class Peer extends Service {
    */
   _musigMaybeProgress (session) {
     if (!session || session.signature) return;
-    const auto = this.settings.musig2 && this.settings.musig2.autoAccept !== false;
+    const auto = this._musigAutoAccept();
     if (session.initiator && musig2Session.allPubnoncesPresent(session) && !session.aggnonce) {
       const aggnonce = musig2Session.computeAggNonce(session);
       if (aggnonce) {
@@ -2104,6 +2135,10 @@ class Peer extends Service {
       }
       return this;
     }
+    if (!this._musigAutoAccept()) {
+      this.emit('warning', '[FABRIC:PEER] P2P_MUSIG_START ignored: musig2.autoAccept is off');
+      return this;
+    }
     const sk = this._musigLocalSecret();
     if (!sk) {
       this.emit('warning', '[FABRIC:PEER] P2P_MUSIG_START: no local secret');
@@ -2116,8 +2151,7 @@ class Peer extends Service {
     }
     const session = made.session;
     this._musigPut(session);
-    const auto = this.settings.musig2 && this.settings.musig2.autoAccept !== false;
-    if (auto) {
+    if (this._musigAutoAccept()) {
       const others = [];
       for (let i = 0; i < session.pubkeys.length; i++) {
         if (i !== session.initiatorIndex) others.push(i);

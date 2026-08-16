@@ -58,10 +58,13 @@ function prevoutHashDisplay (input) {
  * @param {Object} input
  * @returns {number}
  */
+/** Bitcoin prevout index is a 32-bit unsigned integer (Codacy no-loss-of-precision). */
+const UINT32_MAX = Number('4294967295');
+
 function prevoutIndex (input) {
   const v = input.vout != null ? input.vout : input.index;
   const n = Number(v);
-  if (!Number.isInteger(n) || n < 0 || n > 0xffffffff) {
+  if (!Number.isInteger(n) || n < 0 || n > UINT32_MAX) {
     throw new RangeError('prevout index must be a uint32');
   }
   return n;

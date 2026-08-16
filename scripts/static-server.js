@@ -54,10 +54,17 @@ function parseArgs (argv) {
 }
 
 function safeJoin (root, reqPath) {
-  const decoded = decodeURIComponent(reqPath.split('?')[0]);
+  let decoded;
+  try {
+    decoded = decodeURIComponent(String(reqPath || '/').split('?')[0]);
+  } catch {
+    return null;
+  }
   const rel = decoded.replace(/^\/+/, '') || 'index.html';
   const resolved = path.normalize(path.join(root, rel));
-  if (!resolved.startsWith(root)) return null;
+  const rootResolved = path.resolve(root);
+  const rootPrefix = rootResolved.endsWith(path.sep) ? rootResolved : rootResolved + path.sep;
+  if (resolved !== rootResolved && !resolved.startsWith(rootPrefix)) return null;
   return resolved;
 }
 
@@ -70,6 +77,10 @@ function serveFile (res, filePath) {
   res.writeHead(200, { 'Content-Type': contentType(filePath), 'Cache-Control': 'no-cache' });
   stream.pipe(res);
   stream.on('error', () => {
+    if (res.headersSent) {
+      res.destroy();
+      return;
+    }
     res.writeHead(500);
     res.end('Internal Server Error');
   });
@@ -120,24 +131,36 @@ function listen (port, root) {
   return server;
 }
 
-const { root, port } = parseArgs(process.argv);
-if (!fs.existsSync(root) || !fs.statSync(root).isDirectory()) {
-  console.error('Not a directory:', root);
-  process.exit(1);
-}
+module.exports = {
+  parseArgs,
+  safeJoin,
+  contentType,
+  serveFile,
+  handler,
+  listenHost,
+  listen
+};
 
-if (port === 0) {
-  const host = listenHost();
-  const server = http.createServer(handler(root));
-  server.listen(0, host, () => {
-    const addr = server.address();
-    const actual = typeof addr === 'object' && addr ? addr.port : 0;
-    const base = host === '0.0.0.0' || host === '::'
-      ? `http://127.0.0.1:${actual}`
-      : `http://${host}:${actual}`;
-    console.log('Serving', root);
-    console.log('Available on:', base, `(bind ${host})`);
-  });
-} else {
-  listen(port, root);
+if (require.main === module) {
+  const { root, port } = parseArgs(process.argv);
+  if (!fs.existsSync(root) || !fs.statSync(root).isDirectory()) {
+    console.error('Not a directory:', root);
+    process.exit(1);
+  }
+
+  if (port === 0) {
+    const host = listenHost();
+    const server = http.createServer(handler(root));
+    server.listen(0, host, () => {
+      const addr = server.address();
+      const actual = typeof addr === 'object' && addr ? addr.port : 0;
+      const base = host === '0.0.0.0' || host === '::'
+        ? `http://127.0.0.1:${actual}`
+        : `http://${host}:${actual}`;
+      console.log('Serving', root);
+      console.log('Available on:', base, `(bind ${host})`);
+    });
+  } else {
+    listen(port, root);
+  }
 }

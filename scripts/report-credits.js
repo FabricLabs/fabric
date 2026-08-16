@@ -44,6 +44,33 @@ function findLicenseFile (dir) {
   return undefined;
 }
 
+/**
+ * Lockfile `packages` keys must stay under this repo's `node_modules`.
+ * @param {string} pkgPath
+ * @returns {boolean}
+ */
+function isLockNodeModulesPath (pkgPath) {
+  const n = String(pkgPath || '').replace(/\\/g, '/');
+  if (n === 'node_modules' || n.startsWith('node_modules/')) {
+    return n.split('/').indexOf('..') < 0;
+  }
+  return false;
+}
+
+/**
+ * @param {string} repoRoot
+ * @param {string} pkgPath lockfile package key
+ * @returns {string|null} resolved directory, or null when outside `node_modules`
+ */
+function resolveLockPackageDir (repoRoot, pkgPath) {
+  if (!isLockNodeModulesPath(pkgPath)) return null;
+  const nmRoot = path.resolve(repoRoot, 'node_modules');
+  const nmPath = path.resolve(repoRoot, pkgPath);
+  const rel = path.relative(nmRoot, nmPath);
+  if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) return null;
+  return nmPath;
+}
+
 function main () {
   const lock = JSON.parse(fs.readFileSync(lockPath, 'utf8'));
   const packages = lock.packages || {};
@@ -51,8 +78,8 @@ function main () {
 
   for (const [pkgPath, meta] of Object.entries(packages)) {
     if (!pkgPath || pkgPath === '' || !meta.version) continue;
-    const nmPath = path.join(root, pkgPath);
-    if (!fs.existsSync(nmPath)) continue;
+    const nmPath = resolveLockPackageDir(root, pkgPath);
+    if (!nmPath || !fs.existsSync(nmPath)) continue;
 
     const pkgJsonPath = path.join(nmPath, 'package.json');
     let pkg = {};
@@ -88,4 +115,12 @@ function main () {
   process.stdout.write(JSON.stringify(out, null, 2) + '\n');
 }
 
-main();
+module.exports = {
+  isLockNodeModulesPath,
+  resolveLockPackageDir,
+  main
+};
+
+if (require.main === module) {
+  main();
+}

@@ -78,6 +78,9 @@ function parseBitcoinUri (uri) {
     const params = new URLSearchParams(m[3]);
     for (const [key, value] of params.entries()) {
       const k = String(key);
+      if (k.toLowerCase().startsWith('req-')) {
+        throw new Error(`unsupported required BIP21 parameter: ${k}`);
+      }
       if (k === 'amount') amount = value;
       else if (k === 'label') label = value;
       else if (k === 'message') message = value;

@@ -171,4 +171,20 @@ describe('@fabric/core/functions/musig2Session', function () {
       { ok: false, reason: 'no-session' }
     );
   });
+
+  it('rejects an unparsed START body instead of falling back', function () {
+    const a = new Key();
+    const b = new Key();
+    const made = createFromStart({
+      sessionId: 'not-32-bytes',
+      msg: 'x',
+      pubkeys: 'zzzz',
+      pubnonce: '00'
+    }, {
+      sk: skOf(b),
+      signerXOnly: xOnlyHex(individualPk(skOf(a)))
+    });
+    assert.strictEqual(made.ok, false);
+    assert.strictEqual(made.reason, 'invalid-start');
+  });
 });

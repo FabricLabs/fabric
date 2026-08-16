@@ -19,7 +19,9 @@ const { encodeCheck } = require('./base58');
 const { toUint8Strict } = require('./bytes');
 
 /** BIP-85 purpose index (`"BIPS"`-era constant from the specification). */
-const BIP85_PURPOSE = 83696968;
+const BIP85_PURPOSE = Number('83696968');
+/** Maximum unhardened BIP-32 child index (2^31 − 1). */
+const HARDENED_INDEX_MAX = Number('2147483647');
 /** HMAC key required by BIP-85. */
 const BIP85_HMAC_KEY = Buffer.from('bip-entropy-from-k', 'utf8');
 
@@ -49,7 +51,7 @@ function asRoot (root) {
  */
 function assertHardenedIndex (n, label) {
   const v = Number(n);
-  if (!Number.isInteger(v) || v < 0 || v > 0x7fffffff) {
+  if (!Number.isInteger(v) || v < 0 || v > HARDENED_INDEX_MAX) {
     throw new RangeError(`BIP85 ${label} must be an integer in [0, 0x7fffffff]`);
   }
   return v;

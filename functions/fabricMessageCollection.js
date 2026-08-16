@@ -22,6 +22,33 @@
 const fs = require('fs');
 const path = require('path');
 
+const COLLECTION_PATH_MAX_LEN = 4096;
+
+/**
+ * Resolve an operator-supplied collection path. Absolute paths are normalized
+ * as-is; relative paths must stay under `process.cwd()`.
+ * @param {string} filePath
+ * @returns {string|null}
+ */
+function resolveCollectionFilePath (filePath) {
+  if (filePath == null || typeof filePath !== 'string') return null;
+  const trimmed = filePath.trim();
+  if (!trimmed || trimmed.includes('\0') || trimmed.length > COLLECTION_PATH_MAX_LEN) return null;
+  let abs;
+  if (path.isAbsolute(trimmed)) {
+    abs = path.normalize(trimmed);
+  } else {
+    abs = path.resolve(process.cwd(), trimmed);
+    const root = path.resolve(process.cwd());
+    const rel = path.relative(root, abs);
+    if (rel === '' || rel.startsWith('..' + path.sep) || rel === '..' || path.isAbsolute(rel)) {
+      return null;
+    }
+  }
+  if (!abs || abs.includes('\0') || !path.isAbsolute(abs)) return null;
+  return abs;
+}
+
 const Message = require('../types/message');
 const Hash256 = require('../types/hash256');
 const { HEADER_SIZE, MAX_MESSAGE_SIZE } = require('../constants');
@@ -486,7 +513,8 @@ function replayFold (collection, folder, initialState) {
  * @param {object} collection
  */
 function writeFile (filePath, collection) {
-  const dest = path.resolve(String(filePath || ''));
+  const dest = resolveCollectionFilePath(filePath);
+  if (!dest) throw new Error('invalid collection path');
   const ext = path.extname(dest).toLowerCase();
   const body = ext === '.jsonl' ? toJSONL(collection) : JSON.stringify(toJSON(collection), null, 2) + '\n';
   fs.writeFileSync(dest, body, 'utf8');
@@ -498,7 +526,8 @@ function writeFile (filePath, collection) {
  * @returns {object}
  */
 function readFile (filePath) {
-  const src = path.resolve(String(filePath || ''));
+  const src = resolveCollectionFilePath(filePath);
+  if (!src) throw new Error('invalid collection path');
   const text = fs.readFileSync(src, 'utf8');
   const collection = createCollection();
   ingestText(collection, text, { origin: src });
@@ -536,9 +565,16 @@ function runCli (argv = [], io = {}) {
   for (const file of inputs) {
     let text;
     try {
-      text = (file === '-')
-        ? fs.readFileSync(0, 'utf8')
-        : fs.readFileSync(path.resolve(file), 'utf8');
+      if (file === '-') {
+        text = fs.readFileSync(0, 'utf8');
+      } else {
+        const src = resolveCollectionFilePath(file);
+        if (!src) {
+          err.write('read failed: ' + file + ': invalid collection path\n');
+          return 2;
+        }
+        text = fs.readFileSync(src, 'utf8');
+      }
     } catch (exception) {
       err.write('read failed: ' + file + ': ' + ((exception && exception.message) || 'unknown error') + '\n');
       return 2;
@@ -603,5 +639,6 @@ module.exports = {
   replayFold,
   writeFile,
   readFile,
-  runCli
+  runCli,
+  resolveCollectionFilePath
 };

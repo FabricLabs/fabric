@@ -25,7 +25,8 @@ const {
   readFile,
   runCli,
   parseFrame,
-  verifyBodyHash
+  verifyBodyHash,
+  resolveCollectionFilePath
 } = require('../functions/fabricMessageCollection');
 const {
   createMemoryStore,
@@ -286,5 +287,15 @@ describe('@fabric/core/functions/fabricMessageCollection', function () {
     assert.strictEqual(parsed.ok, true);
     assert.strictEqual(verifyBodyHash(parsed.message), true);
     fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('rejects relative collection paths that escape cwd', function () {
+    assert.strictEqual(resolveCollectionFilePath(''), null);
+    assert.strictEqual(resolveCollectionFilePath('..\0secret.json'), null);
+    assert.strictEqual(resolveCollectionFilePath('../etc/passwd'), null);
+    const abs = path.join(os.tmpdir(), 'fabric-msgcol-ok.json');
+    assert.strictEqual(resolveCollectionFilePath(abs), path.normalize(abs));
+    const collection = createCollection();
+    assert.throws(() => writeFile('../etc/passwd', collection), /invalid collection path/);
   });
 });
