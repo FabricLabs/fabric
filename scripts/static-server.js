@@ -53,6 +53,11 @@ function parseArgs (argv) {
   return { root: path.resolve(root), port };
 }
 
+function pathContained (rootPath, candidatePath) {
+  const rootPrefix = rootPath.endsWith(path.sep) ? rootPath : rootPath + path.sep;
+  return candidatePath === rootPath || candidatePath.startsWith(rootPrefix);
+}
+
 function safeJoin (root, reqPath) {
   let decoded;
   try {
@@ -63,9 +68,27 @@ function safeJoin (root, reqPath) {
   const rel = decoded.replace(/^\/+/, '') || 'index.html';
   const resolved = path.normalize(path.join(root, rel));
   const rootResolved = path.resolve(root);
-  const rootPrefix = rootResolved.endsWith(path.sep) ? rootResolved : rootResolved + path.sep;
-  if (resolved !== rootResolved && !resolved.startsWith(rootPrefix)) return null;
+  if (!pathContained(rootResolved, resolved)) return null;
   return resolved;
+}
+
+/**
+ * Lexical `safeJoin` cannot see a symlink whose target is outside the
+ * document root. After `stat` confirms a file, compare real paths.
+ * @param {string} root
+ * @param {string} candidate
+ * @returns {boolean}
+ */
+function isRealpathInsideRoot (root, candidate) {
+  let rootReal;
+  let fileReal;
+  try {
+    rootReal = fs.realpathSync(root);
+    fileReal = fs.realpathSync(candidate);
+  } catch {
+    return false;
+  }
+  return pathContained(rootReal, fileReal);
 }
 
 function contentType (filePath) {
@@ -104,6 +127,11 @@ function handler (root) {
           res.end('Not Found');
           return;
         }
+        if (!isRealpathInsideRoot(root, filePath)) {
+          res.writeHead(403);
+          res.end('Forbidden');
+          return;
+        }
         serveFile(res, filePath);
       });
     });
@@ -134,6 +162,7 @@ function listen (port, root) {
 module.exports = {
   parseArgs,
   safeJoin,
+  isRealpathInsideRoot,
   contentType,
   serveFile,
   handler,

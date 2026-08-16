@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * Offline smoke for directed onion nesting (P2P_FORWARD).
+ * @fileoverview Offline smoke for directed onion nesting (P2P_FORWARD).
  *
  * Run: `npm run example:onion`
  * Network path: Peer#sendOnion / Hub SendOnion — see docs/P2P_FORWARD.md
@@ -41,6 +41,9 @@ async function main () {
   console.log('[EXAMPLES:ONION] hop2 nextPeer', layer.nextPeer.toString('hex').slice(0, 16) + '…', 'ttl=', layer.ttl);
 
   const inner = Message.fromBuffer(layer.inner);
+  if (!inner.verifyWithKey(origin)) {
+    throw new Error('decoded payload signature invalid');
+  }
   console.log('[EXAMPLES:ONION] payload', inner.type, inner.data.toString('utf8'));
   console.log('[EXAMPLES:ONION] ok — nested P2P_FORWARD layers round-trip');
 }

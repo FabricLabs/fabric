@@ -2,7 +2,7 @@
 'use strict';
 
 /**
- * Message wire demo — create, sign, verify, dump size.
+ * @fileoverview Message wire demo — create, sign, verify, dump size.
  *
  * Run: `node examples/message.js`
  */

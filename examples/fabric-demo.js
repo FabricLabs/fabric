@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * Library integration demo — collection + signed chat message round-trip.
+ * @fileoverview Library integration demo — collection + signed chat message round-trip.
  *
  * Run: `npm run example:demo`
  * Live literate page: https://fabriclabs.github.io/fabric/examples/fabric-demo.html

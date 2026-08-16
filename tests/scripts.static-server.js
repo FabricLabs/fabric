@@ -5,7 +5,8 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { Writable } = require('stream');
-const { safeJoin, serveFile, handler } = require('../scripts/static-server');
+const http = require('http');
+const { safeJoin, isRealpathInsideRoot, serveFile, handler } = require('../scripts/static-server');
 
 class FakeResponse extends Writable {
   constructor () {
@@ -55,5 +56,66 @@ describe('scripts/static-server', function () {
     handler(dir)(req, res);
     fs.rmSync(dir, { recursive: true, force: true });
     assert.strictEqual(res.statusCode, 403);
+  });
+
+  it('rejects a symlink whose real path is outside the document root', function (done) {
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'fabric-static-out-'));
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fabric-static-in-'));
+    const secret = path.join(outside, 'secret.txt');
+    const leak = path.join(root, 'leak.txt');
+    fs.writeFileSync(secret, 'nope');
+    fs.symlinkSync(secret, leak);
+    assert.strictEqual(isRealpathInsideRoot(root, leak), false);
+    const server = http.createServer(handler(root));
+    server.listen(0, '127.0.0.1', () => {
+      const port = server.address().port;
+      http.get(`http://127.0.0.1:${port}/leak.txt`, (res) => {
+        const code = res.statusCode;
+        res.resume();
+        server.close(() => {
+          fs.rmSync(root, { recursive: true, force: true });
+          fs.rmSync(outside, { recursive: true, force: true });
+          try {
+            assert.strictEqual(code, 403);
+            done();
+          } catch (err) {
+            done(err);
+          }
+        });
+      }).on('error', (err) => {
+        server.close();
+        fs.rmSync(root, { recursive: true, force: true });
+        fs.rmSync(outside, { recursive: true, force: true });
+        done(err);
+      });
+    });
+  });
+
+  it('serves a symlink that stays inside the document root', function (done) {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fabric-static-ok-'));
+    fs.writeFileSync(path.join(root, 'index.html'), '<p>ok</p>');
+    fs.symlinkSync(path.join(root, 'index.html'), path.join(root, 'alias.html'));
+    assert.strictEqual(isRealpathInsideRoot(root, path.join(root, 'alias.html')), true);
+    const server = http.createServer(handler(root));
+    server.listen(0, '127.0.0.1', () => {
+      const port = server.address().port;
+      http.get(`http://127.0.0.1:${port}/alias.html`, (res) => {
+        const code = res.statusCode;
+        res.resume();
+        server.close(() => {
+          fs.rmSync(root, { recursive: true, force: true });
+          try {
+            assert.strictEqual(code, 200);
+            done();
+          } catch (err) {
+            done(err);
+          }
+        });
+      }).on('error', (err) => {
+        server.close();
+        fs.rmSync(root, { recursive: true, force: true });
+        done(err);
+      });
+    });
   });
 });

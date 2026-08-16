@@ -2,7 +2,7 @@
 'use strict';
 
 /**
- * Emit license-checker-compatible JSON from package-lock.json + node_modules.
+ * @fileoverview Emit license-checker-compatible JSON from package-lock.json + node_modules.
  * Replaces the deprecated license-checker devDependency.
  */
 

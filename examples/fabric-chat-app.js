@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * Chat-shaped demo — UTF-8 P2P_CHAT_MESSAGE create / sign / verify / format.
+ * @fileoverview Chat-shaped demo — UTF-8 P2P_CHAT_MESSAGE create / sign / verify / format.
  *
  * Default is a short smoke run (CI-safe). Interactive REPL:
  *   node examples/fabric-chat-app.js --interactive

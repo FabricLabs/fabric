@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * Flagship basic demo — identity, message, Schnorr sign/verify.
+ * @fileoverview Flagship basic demo — identity, message, Schnorr sign/verify.
  *
  * Run: `npm run example:basic`
  * Live literate page: https://fabriclabs.github.io/fabric/examples/fabric-basic-usage.html
