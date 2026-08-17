@@ -92,24 +92,90 @@ class Filesystem extends Actor {
   }
 
   /**
-   * Resolve `name` under this store root. `null` when it would escape.
-   * Does not follow a final symlink (`O_NOFOLLOW` remains deferred).
+   * Lexical containment: `name` resolves under this store root.
    * @param {string} name
    * @returns {string|null}
    * @private
    */
   _resolveContained (name) {
-    const base = this.path;
+    const base = path.resolve(this.path);
     const file = path.resolve(base, String(name || ''));
     const prefix = base.endsWith(path.sep) ? base : base + path.sep;
     if (file === base || file.startsWith(prefix)) return file;
     return null;
   }
 
+  /**
+   * @param {string} candidate
+   * @returns {boolean}
+   * @private
+   */
+  _isInsideRoot (candidate) {
+    const base = path.resolve(this.path);
+    const resolved = path.resolve(candidate);
+    const prefix = base.endsWith(path.sep) ? base : base + path.sep;
+    return resolved === base || resolved.startsWith(prefix);
+  }
+
+  /**
+   * Realpath of the nearest existing ancestor must stay under the store root
+   * (intermediate directory symlinks that escape are refused).
+   * @param {string} file
+   * @returns {boolean}
+   * @private
+   */
+  _parentTreeContained (file) {
+    let cur = path.dirname(file);
+    const root = path.resolve(this.path);
+    for (;;) {
+      if (!this._isInsideRoot(cur) && cur !== root) return false;
+      try {
+        if (fs.existsSync(cur)) {
+          return this._isInsideRoot(fs.realpathSync(cur));
+        }
+      } catch {
+        return false;
+      }
+      const next = path.dirname(cur);
+      if (next === cur) return this._isInsideRoot(root);
+      cur = next;
+    }
+  }
+
+  /**
+   * Refuse a final-component symlink (`O_NOFOLLOW`). Missing path is allowed
+   * unless `mustExist`.
+   * @param {string} file
+   * @param {object} [opts]
+   * @param {boolean} [opts.mustExist]
+   * @returns {string|null}
+   * @private
+   */
+  _nofollowContained (file, opts = {}) {
+    if (!this._parentTreeContained(file)) return null;
+    try {
+      const st = fs.lstatSync(file);
+      if (st.isSymbolicLink()) return null;
+    } catch (e) {
+      if (e && e.code === 'ENOENT') {
+        if (opts.mustExist) return null;
+        return file;
+      }
+      return null;
+    }
+    return file;
+  }
+
   delete (name) {
     const file = this._resolveContained(name);
-    if (!file) return false;
-    if (fs.existsSync(file)) fs.rmSync(file);
+    if (!file || !this._parentTreeContained(file)) return false;
+    try {
+      const st = fs.lstatSync(file);
+      if (st.isSymbolicLink() || st.isFile()) fs.unlinkSync(file);
+      else if (st.isDirectory()) return false;
+    } catch (e) {
+      if (!e || e.code !== 'ENOENT') return false;
+    }
     return true;
   }
 
@@ -147,12 +213,17 @@ class Filesystem extends Actor {
    */
   readFile (name) {
     const file = this._resolveContained(name);
-    if (!file || !fs.existsSync(file)) return null;
+    if (!file) return null;
+    const safe = this._nofollowContained(file, { mustExist: true });
+    if (!safe) return null;
 
-    // Skip directories
-    if (fs.statSync(file).isDirectory()) return null;
-
-    return fs.readFileSync(file);
+    try {
+      const st = fs.lstatSync(safe);
+      if (!st.isFile()) return null;
+      return fs.readFileSync(safe);
+    } catch {
+      return null;
+    }
   }
 
   /**
@@ -170,17 +241,29 @@ class Filesystem extends Actor {
       return false;
     }
 
+    const safe = this._nofollowContained(file);
+    if (!safe) {
+      const msg = `Could not write file ${name}: path escapes filesystem root or is a symlink`;
+      if (this.listenerCount('error') > 0) this.emit('error', msg);
+      else this.emit('warning', msg);
+      return false;
+    }
+
     try {
-      // Ensure parent directory exists
-      const parentDir = path.dirname(file);
+      const parentDir = path.dirname(safe);
       if (!fs.existsSync(parentDir)) {
         mkdirp.sync(parentDir);
       }
 
-      this.touch(file);
-      fs.writeFileSync(file, content);
+      const follow = fs.constants.O_NOFOLLOW || 0;
+      const flags = fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_TRUNC | follow;
+      const fd = fs.openSync(safe, flags);
+      try {
+        fs.writeFileSync(fd, content);
+      } finally {
+        fs.closeSync(fd);
+      }
 
-      // Emit file update event
       this._handleDiskChange('change', name);
 
       return true;

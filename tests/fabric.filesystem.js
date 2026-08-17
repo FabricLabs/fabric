@@ -129,6 +129,26 @@ describe('@fabric/core/types/filesystem', function () {
       assert.ok(filesystem.files.includes('blob-19.txt'));
     });
 
+    it('writeFile/readFile refuse a final-component symlink (O_NOFOLLOW)', async function () {
+      await filesystem.start();
+      const outside = path.join(os.tmpdir(), 'fabric-fs-nofollow-' + process.pid + '.txt');
+      const linkName = 'symlink-escape.txt';
+      const linkPath = path.join(testDir, linkName);
+      fs.writeFileSync(outside, 'outside-target');
+      try {
+        fs.symlinkSync(outside, linkPath);
+        assert.strictEqual(filesystem.readFile(linkName), null);
+        assert.strictEqual(filesystem.writeFile(linkName, 'overwrite'), false);
+        assert.strictEqual(fs.readFileSync(outside, 'utf8'), 'outside-target');
+        assert.strictEqual(filesystem.delete(linkName), true);
+        assert.strictEqual(fs.existsSync(linkPath), false);
+        assert.strictEqual(fs.readFileSync(outside, 'utf8'), 'outside-target');
+      } finally {
+        if (fs.existsSync(linkPath)) fs.unlinkSync(linkPath);
+        if (fs.existsSync(outside)) fs.unlinkSync(outside);
+      }
+    });
+
     it('writeFile/readFile/delete refuse paths that escape the store root', async function () {
       await filesystem.start();
       const probe = path.resolve(testDir, '..', 'filesystem-escape-probe.txt');

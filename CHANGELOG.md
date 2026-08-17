@@ -2,6 +2,7 @@
 Recent changes to Fabric Core.
 
 ## 2026-08-16
+- **PR #185 Filesystem O_NOFOLLOW:** `readFile` / `writeFile` refuse a final-component symlink and a parent whose `realpath` left the store root. `delete` unlinks a planted symlink without following it. `writeFile` opens with `O_NOFOLLOW` when the platform defines it (no `touch()`-then-follow). Tests in `tests/fabric.filesystem.js`.
 - **PR #185 wallet BIP slice (no new files):** BIP-49 nested-SegWit payment helpers live in [`functions/bip69.js`](functions/bip69.js) (`p2shP2wpkhPayment` / `p2shP2wpkhAddress`); `Key.deriveAddress(..., 'p2sh-p2wpkh')` uses them. Default funds path remains BIP-44. BIP-371 Taproot PSBT input bags (`tapInternalKey` / `tapLeafScript`) live in [`functions/inventoryHtlc.js`](functions/inventoryHtlc.js); contract-vault leaf spends reuse that export.
 - **PR #185 home-env:** `npm run home-env` no longer stamps `FABRIC_SEED` / `FABRIC_MNEMONIC` next to `FABRIC_XPRV` in `~/.fabric/env`.
 - **PR #185 Filesystem path escape:** `writeFile` / `readFile` / `delete` reject names that resolve outside the store root (`../`, absolute paths). Nested writes under the root still work. Symlink `O_NOFOLLOW` remains deferred. Tests in `tests/fabric.filesystem.js`.

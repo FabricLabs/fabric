@@ -11,7 +11,6 @@ const path = require('path');
 
 const root = path.resolve(__dirname, '..');
 const lockPath = path.join(root, 'package-lock.json');
-const nodeModules = path.join(root, 'node_modules');
 
 const LICENSE_FILES = ['LICENSE', 'LICENSE.md', 'LICENSE.txt', 'LICENCE', 'LICENCE.md', 'LICENCE.txt', 'COPYING'];
 
