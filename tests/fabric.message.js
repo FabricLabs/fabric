@@ -43,7 +43,7 @@ const {
   CATALOG_END,
   collectCatalog,
   catalogBlock
-} = require('../scripts/gen-message-type-consolidation');
+} = Message.wireCatalog;
 
 // Create a key with a private key for signing
 const key = new Key({

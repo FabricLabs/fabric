@@ -7,7 +7,6 @@ if (process.argv.includes('--smoke')) {
   const scripts = [
     'examples/fabric-basic-usage.js',
     'examples/fabric-demo.js',
-    'examples/fabric-chat-app.js',
     'examples/onion-forward.js',
     'examples/message.js'
   ];
@@ -71,5 +70,5 @@ main().catch((exception) => {
 // Now that we've defined our program, let's run it to see the results.
 
 // ### Next Steps
-// That's all there is to it!  Now browse the [examples home](home.html) or the
+// That's all there is to it!  Now browse the [examples home](index.html) or the
 // [API Explorer](https://dev.fabric.pub/docs).

@@ -19,7 +19,7 @@ After merging to `master`, confirm the Pages deployment URL in the Actions **pag
 npm install
 npm run example:basic    # Key + Schnorr chat sign/verify
 npm run example:demo     # Collection + shoutbox line
-npm run example:chat     # UTF-8 chat smoke (add --interactive for REPL)
+npm run example:chat     # UTF-8 chat smoke via examples/message.js (add --interactive for REPL)
 npm run example:onion    # Offline P2P_FORWARD peel
 npm run example:smoke    # All of the above + message.js
 ```

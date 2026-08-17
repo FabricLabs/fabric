@@ -20,9 +20,10 @@ Operator identity in the process environment (process env wins over the wallet f
 - **`FABRIC_SEED`** — raw BIP32 seed **hex** (BIP39 PBKDF2 output is 64 bytes / 128 hex)
 - **`FABRIC_MNEMONIC`** — BIP39 word phrase
 
-`~/.fabric/env` fills missing `FABRIC_*` keys. `node scripts/ensure-home-env.js`
-writes a Schnorr Hub admin token to `~/.fabric/hub-admin-token` and
-`FABRIC_HUB_ADMIN_TOKEN` for later RC1 `AcceptTrackedApplicationContract`.
+`~/.fabric/env` fills missing `FABRIC_*` keys. `npm run home-env`
+(`node functions/fabricHomeEnv.js`) writes a Schnorr Hub admin token to
+`~/.fabric/hub-admin-token` and `FABRIC_HUB_ADMIN_TOKEN` for later RC1
+`AcceptTrackedApplicationContract`.
 Generic helpers: [`functions/sealedBlob.js`](../functions/sealedBlob.js) and
 [`functions/identityLock.js`](../functions/identityLock.js) (idle auto-lock, default
 30 minutes; `0` disables). Legacy plaintext wallets still load; the TUI can encrypt

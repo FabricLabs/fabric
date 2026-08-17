@@ -15,7 +15,7 @@ _Last pass: 2026-03-20 · `npm run make:dev` + `npm run check:book-links` **OK**
 - **`docs/`** — Removed unreferenced stub/sample Markdown (`api.md`, `overview.md`, `hello-world.md`, `your-first-blockchain.md`, `company.md`); canonical API remains root **`API.md`** and regenerated JSDoc HTML.
 
 ## Outstanding / verify manually
-- **Live examples** — GitHub Pages (`https://fabriclabs.github.io/fabric/`, `examples/home.html`) is the current demos deploy from `master` Pages actions. **`dev.fabric.pub/examples`** may lag; confirm after operator sync. Run `CHECK_BOOK_EXTERNAL=1 npm run check:book-links` after `npm run make:dev`.
+- **Live examples** — GitHub Pages (`https://fabriclabs.github.io/fabric/`, `examples/index.html`) is the current demos deploy from `master` Pages actions. **`dev.fabric.pub/examples`** may lag; confirm after operator sync. Run `CHECK_BOOK_EXTERNAL=1 npm run check:book-links` after `npm run make:dev`.
 - **`book.json` `edit-link`** — `base` still references `master`; branch may be `main` or feature branches.
 - **Typos** — `package.json` `review:todo` / disclosures string uses `securiy@` (known typo); align with security contacts doc when you touch it.
 - **Node version** — `.nvmrc` is **24.15.0**; scrub docs that still mention Node 16 for *this* repo.

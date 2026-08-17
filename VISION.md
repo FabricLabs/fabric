@@ -34,7 +34,7 @@ See **[GOALS.md](GOALS.md)** for the explicit list. In short:
 ## Experimental / secondary tracks
 These are **not** the default path for new contributors:
 
-- **C bindings** and **native** examples — see **examples/README-C-EXAMPLES.md**, **README_C_BINDINGS.md**.
+- **C bindings** and **native** examples — optional; see **[examples/README.md](examples/README.md)** (not on the JS release gate).
 - **WebGPU / garbled circuits** — see **examples/README-WEBGPU.md**; research-grade.
 - **Historical** whitepapers and **snippets/** — ideas and drafts, not schedule commitments.
 

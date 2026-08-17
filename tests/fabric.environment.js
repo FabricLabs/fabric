@@ -17,7 +17,61 @@ const path = require('path');
 const Environment = require('../types/environment');
 const Wallet = require('../types/wallet');
 const Key = require('../types/key');
-const { withIsolatedHome } = require('./helpers/isolatedHome');
+
+const IDENTITY_ENV_KEYS = [
+  'NODE_ENV',
+  'FABRIC_SEED',
+  'FABRIC_MNEMONIC',
+  'FABRIC_XPRV',
+  'FABRIC_XPUB',
+  'FABRIC_PASSWORD',
+  'FABRIC_HUB_ADMIN_TOKEN',
+  'FABRIC_HUB_ADMIN_TOKEN_FILE'
+];
+
+function withIsolatedHome (prefix = 'fabric-env-') {
+  const prev = {};
+  for (const key of IDENTITY_ENV_KEYS) prev[key] = process.env[key];
+  prev.HOME = process.env.HOME;
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  const store = path.join(home, '.fabric');
+  const walletPath = path.join(store, 'wallet.json');
+  process.env.HOME = home;
+  return {
+    home,
+    store,
+    walletPath,
+    clearIdentityEnv () {
+      delete process.env.FABRIC_SEED;
+      delete process.env.FABRIC_MNEMONIC;
+      delete process.env.FABRIC_XPRV;
+      delete process.env.FABRIC_XPUB;
+      delete process.env.FABRIC_PASSWORD;
+      delete process.env.FABRIC_HUB_ADMIN_TOKEN;
+      delete process.env.FABRIC_HUB_ADMIN_TOKEN_FILE;
+    },
+    leftoverWalletTemporaryFiles () {
+      try {
+        const base = path.basename(walletPath);
+        return fs.readdirSync(store).filter((name) => {
+          return name.startsWith(base + '.') && name.endsWith('.tmp');
+        });
+      } catch (error) {
+        if (error && error.code === 'ENOENT') return [];
+        throw error;
+      }
+    },
+    restore () {
+      for (const key of IDENTITY_ENV_KEYS) {
+        if (prev[key] === undefined) delete process.env[key];
+        else process.env[key] = prev[key];
+      }
+      if (prev.HOME === undefined) delete process.env.HOME;
+      else process.env.HOME = prev.HOME;
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+  };
+}
 
 describe('@fabric/core/types/environment', function () {
   describe('Environment', function () {
