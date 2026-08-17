@@ -424,3 +424,47 @@ describe('@fabric/core/functions/bip67', function () {
     assert.strictEqual(sorted[1].toString('hex'), KEY_HIGH);
   });
 });
+
+const bitcoin = require('bitcoinjs-lib');
+const { networks } = bitcoin;
+const bip32Module = require('../functions/bip32');
+const BIP32 = bip32Module.default;
+const ecc = require('../types/ecc');
+const {
+  BITCOIN_KEY_DERIVATION_PATH,
+  bitcoinBip49ReceiveDerivationPath
+} = require('../constants');
+const { p2shP2wpkhAddress, p2shP2wpkhPayment } = require('../functions/bip69');
+
+describe('@fabric/core/functions/bip49', function () {
+  it('keeps default funds path on BIP-44', function () {
+    assert.strictEqual(BITCOIN_KEY_DERIVATION_PATH, "m/44'/0'/0'/0/0");
+    assert.notStrictEqual(bitcoinBip49ReceiveDerivationPath(), BITCOIN_KEY_DERIVATION_PATH);
+  });
+
+  it('matches the published BIP-49 testnet vector (m/49\'/1\'/0\'/0/0)', function () {
+    const mnemonic = 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about';
+    const seed = mnemonicToSeedSync(mnemonic);
+    const root = new BIP32(ecc).fromSeed(seed);
+    const child = root.derivePath("m/49'/1'/0'/0/0");
+    const pubkey = Buffer.from(child.publicKey);
+    assert.strictEqual(
+      pubkey.toString('hex'),
+      '03a1af804ac108a8a51782198c2d034b28bf90c8803f5a53f76276fa69a4eae77f'
+    );
+    const addr = p2shP2wpkhAddress({
+      pubkey,
+      network: networks.testnet
+    });
+    assert.strictEqual(addr, '2Mww8dCYPUpKHofjgcXcBCEGmniw9CoaiD2');
+    const pay = p2shP2wpkhPayment({ pubkey, network: networks.bitcoin });
+    assert.ok(pay.output && pay.output.length === 23);
+  });
+
+  it('rejects uncompressed pubkeys', function () {
+    assert.throws(
+      () => p2shP2wpkhAddress({ pubkey: Buffer.alloc(65, 4) }),
+      /compressed/
+    );
+  });
+});

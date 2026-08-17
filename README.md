@@ -93,8 +93,7 @@ Before tagging or publishing, use [`docs/PRODUCTION.md`](docs/PRODUCTION.md) (pr
 ## Available Commands
 - The **`fabric`** binary is the Node harness for the default Blessed TUI (`chat`); optional `fabric.node` accelerates a tiny crypto surface — see [docs/CLI-BINARY.md](docs/CLI-BINARY.md).
 - `npm run cli` runs `scripts/fabric.js` (same entry as `npm run chat`).
-- `npm run dev` serves a developer handbook over localhost HTTP (`_book`).
-- `npm run example:smoke` runs the curated Key / chat / onion demos; Pages landing is https://fabriclabs.github.io/fabric/
+- `npm run dev` serves a developer interface over localhost HTTP.
 - `npm run docs` creates a local HTTP server for browsing documentation.
 - `npm run examples` creates a local HTTP server for interacting with examples.
 - `npm start` launches the Fabric shell locally (same as `npm run chat`).

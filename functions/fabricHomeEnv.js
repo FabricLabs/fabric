@@ -295,8 +295,7 @@ function publicKeyPrefix (key) {
  */
 function runEnsureHomeEnvCli (argv = process.argv) {
   const Key = require('../types/key');
-  const bip39 = require('./bip39');
-  const { keySettingsFromEnv, classifyFabricKeyMaterial } = require('./fabricKeyMaterial');
+  const { keySettingsFromEnv } = require('./fabricKeyMaterial');
   const { loadIdentityFromWalletFile } = require('./fabricWalletIdentity');
 
   function keyFromSettings (settings) {
@@ -307,27 +306,6 @@ function runEnsureHomeEnvCli (argv = process.argv) {
   function identitySettingsFromWallet (row) {
     if (!row || !row.xprv) return null;
     return { xprv: row.xprv };
-  }
-
-  function seedHexFromKey (key) {
-    if (!key) return null;
-    const classified = classifyFabricKeyMaterial(key.seed);
-    if (classified.kind === 'seedHex') return classified.seed;
-    const phrase = classified.kind === 'mnemonic'
-      ? classified.mnemonic
-      : (key.mnemonic ? String(key.mnemonic) : '');
-    if (phrase && bip39.validateMnemonic(phrase)) {
-      return bip39.mnemonicToSeedSync(phrase).toString('hex');
-    }
-    return null;
-  }
-
-  function mnemonicFromKey (key) {
-    if (!key) return null;
-    const classified = classifyFabricKeyMaterial(key.seed);
-    if (classified.kind === 'mnemonic') return classified.mnemonic;
-    if (key.mnemonic && bip39.validateMnemonic(String(key.mnemonic))) return String(key.mnemonic);
-    return null;
   }
 
   const walletOnly = argv.includes('--wallet-only');
@@ -376,17 +354,15 @@ function runEnsureHomeEnvCli (argv = process.argv) {
 
   const token = mintHubAdminToken(key);
   const tokenPath = writeHubAdminToken(token, { home, store });
-  const hex = seedHexFromKey(key);
-  const mnemonic = mnemonicFromKey(key);
 
   const stamped = {
     FABRIC_HUB_ADMIN_TOKEN: token,
     FABRIC_HUB_ADMIN_TOKEN_FILE: tokenPath
   };
   if (source === 'wallet.json') {
+    // Prefer the extended key only. Stamping seed/mnemonic beside xprv leaves
+    // unused secret material on disk (`keySettingsFromEnv` returns on XPRV first).
     stamped.FABRIC_XPRV = key.xprv;
-    if (hex) stamped.FABRIC_SEED = hex;
-    if (mnemonic) stamped.FABRIC_MNEMONIC = mnemonic;
     if (key.xpub) stamped.FABRIC_XPUB = key.xpub;
   }
 

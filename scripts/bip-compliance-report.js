@@ -60,7 +60,7 @@ const EVALUATION_SUITE = [
     why: 'Default payment deep-link / QR format across wallets.',
     patterns: ['functions/bip21', 'encodeBitcoinUri', 'parseBitcoinUri', 'bitcoin:', 'BIP21', 'bip21', 'bitcoinUri'],
     expected: { core: 'full', hub: 'strong', passport: 'absent', application: 'partial' },
-    notes: 'Core functions/bip21.js encode/parse; inventory HTLC funding hints emit bitcoin: URIs with amount=. Passport uses fabric: deep links, not bitcoin:.'
+    notes: 'Core functions/bip21.js encode/parse; Hub Payjoin, invoices, crowdfund, and desktop bitcoin: links use the same helper. Inventory HTLC funding hints emit bitcoin: URIs with amount=. Passport uses fabric: deep links, not bitcoin:.'
   },
   {
     bip: 32,
@@ -113,9 +113,9 @@ const EVALUATION_SUITE = [
     layer: 'Applications',
     adoption: 'common',
     why: 'Wrapped SegWit path — still seen in older wallets / migrations.',
-    patterns: ["m/49'", 'BIP49', 'p2sh-p2wpkh', 'bitcoinBip49ReceiveDerivationPath'],
-    expected: { core: 'partial', hub: 'absent', passport: 'absent', application: 'absent' },
-    notes: 'Named m/49\' path templates only. Default funds path remains BIP-44; no p2sh-p2wpkh payment helper.'
+    patterns: ["m/49'", 'BIP49', 'p2sh-p2wpkh', 'p2shP2wpkh', 'bitcoinBip49ReceiveDerivationPath', 'functions/bip69'],
+    expected: { core: 'strong', hub: 'absent', passport: 'absent', application: 'absent' },
+    notes: 'Named m/49\' path templates plus p2sh-p2wpkh payment helper (BIP-49 testnet vector). Default funds path remains BIP-44.'
   },
   {
     bip: 65,
@@ -327,8 +327,9 @@ const EVALUATION_SUITE = [
     layer: 'Applications',
     adoption: 'common',
     why: 'PSBT taproot leaf/control-block fields for hardware + collaborative signing.',
-    patterns: ['BIP371', 'taproot.*PSBT', 'tapLeafScript', 'tapMerkleRoot'],
-    expected: { core: 'partial', hub: 'partial', passport: 'absent', application: 'absent' }
+    patterns: ['BIP371', 'taprootPsbtInputFields', 'taproot.*PSBT', 'tapLeafScript', 'tapMerkleRoot', 'LEAF_VERSION_TAPSCRIPT'],
+    expected: { core: 'strong', hub: 'partial', passport: 'absent', application: 'absent' },
+    notes: 'Named taproot PSBT input bags (internal key + tapLeafScript); inventory HTLC and contract vault leaf spends use them.'
   },
   {
     bip: 380,
@@ -403,8 +404,8 @@ const EVALUATION_SUITE = [
     adoption: 'common',
     why: 'BIP21 successor with richer query grammar; wallets increasingly advertise BIP321.',
     patterns: ['BIP321', 'BIP-321', 'bitcoin:', 'lightning=', 'pj='],
-    expected: { core: 'partial', hub: 'partial', passport: 'absent', application: 'partial' },
-    notes: 'Stack emits classic bitcoin: URIs (BIP21). Full BIP321 query grammar is not claimed.'
+    expected: { core: 'partial', hub: 'strong', passport: 'absent', application: 'partial' },
+    notes: 'Stack emits classic bitcoin: URIs (BIP21) with opaque extras (`pj=`, `lightning=`). Full BIP321 query grammar is not claimed. Hub Payjoin / invoices / crowdfund / desktop bitcoin: links go through core encode/parse.'
   },
   {
     bip: 322,

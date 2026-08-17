@@ -12,19 +12,8 @@ Fabric identity, XPUB) and to **view / backup / restore / generate** keys.
 New wallets default to a **password-sealed JSON** file (`~/.fabric/wallet.json`):
 public fields (`id`, `xpub`, identity) sit beside a `seal` blob
 (AES-256-GCM + PBKDF2-SHA256). `--password` / `FABRIC_PASSWORD` is the encryption
-password (min 8). `--passphrase` remains BIP39 only.
-
-Operator identity in the process environment (process env wins over the wallet file):
-
-- **`FABRIC_XPRV`** — preferred extended private key
-- **`FABRIC_SEED`** — raw BIP32 seed **hex** (BIP39 PBKDF2 output is 64 bytes / 128 hex)
-- **`FABRIC_MNEMONIC`** — BIP39 word phrase
-
-`~/.fabric/env` fills missing `FABRIC_*` keys. `npm run home-env`
-(`node functions/fabricHomeEnv.js`) writes a Schnorr Hub admin token to
-`~/.fabric/hub-admin-token` and `FABRIC_HUB_ADMIN_TOKEN` for later RC1
-`AcceptTrackedApplicationContract`.
-Generic helpers: [`functions/sealedBlob.js`](../functions/sealedBlob.js) and
+password (min 8). `--passphrase` remains BIP39 only. Generic helpers:
+[`functions/sealedBlob.js`](../functions/sealedBlob.js) and
 [`functions/identityLock.js`](../functions/identityLock.js) (idle auto-lock, default
 30 minutes; `0` disables). Legacy plaintext wallets still load; the TUI can encrypt
 them in place.
@@ -124,19 +113,6 @@ Legacy `applications` / `applicationsDisabled` keys are still honored.
 ```
 
 See [L1_DOCUMENT_EXCHANGE.md](L1_DOCUMENT_EXCHANGE.md).
-
-## Message collections (offline replay)
-
-AMP frames (`Message.toBuffer()` hex) are the portable log for contract journals
-and Discord / `GroupDataShare` packs. Not Game.log replay.
-
-```text
-npm run messages -- collect stream.jsonl > collection.json
-npm run messages -- verify collection.json
-npm run messages -- replay collection.json
-```
-
-See [MESSAGES.md](../MESSAGES.md#fabric-message-collections).
 
 ## Verbosity (release defaults)
 | Setting | Default | Effect |

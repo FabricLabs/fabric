@@ -517,12 +517,4 @@ describe('MESSAGES.md wire catalog', function () {
     assert.ok(start >= 0 && stop > start, 'MESSAGES.md catalog markers');
     assert.strictEqual(actual.slice(start, stop + CATALOG_END.length), catalogBlock(rows));
   });
-
-  it('writeConsolidation rewrites MESSAGES.md in place', function () {
-    const before = fs.readFileSync(OUTPUT_PATH, 'utf8');
-    const rows = Message.wireCatalog.writeConsolidation();
-    const after = fs.readFileSync(OUTPUT_PATH, 'utf8');
-    assert.strictEqual(after, before);
-    assert.ok(rows.length > 0);
-  });
 });

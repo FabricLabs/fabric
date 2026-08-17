@@ -437,9 +437,9 @@ Implementations SHOULD:
 
 ### Message Type Quick Reference
 
-**Always Relay**: PING, PONG, PEER_ANNOUNCE, TRANSACTION, GENERIC, CHAT_MESSAGE, DOCUMENT_PUBLISH, JSON_CALL, JSON_PATCH, STATE_DELTA, STATE_SNAPSHOT, CONTRACT_*, PAYMENT_*, LOCK_MESSAGE, BITCOIN_*, LIGHTNING_*_ANNOUNCEMENT
+**Always Relay**: PEER_ANNOUNCE, TRANSACTION, GENERIC, CHAT_MESSAGE, DOCUMENT_PUBLISH, JSON_CALL, JSON_PATCH, STATE_DELTA, STATE_SNAPSHOT, CONTRACT_*, PAYMENT_*, LOCK_MESSAGE, BITCOIN_*, LIGHTNING_*_ANNOUNCEMENT
 
-**Never Relay**: IDENT_REQUEST, IDENT_RESPONSE, SESSION_START, SESSION_ACK, HEARTBEAT, LOG_MESSAGE, LIGHTNING_INIT, LIGHTNING_ERROR, LIGHTNING_*_CHANNEL, LIGHTNING_*_HTLC, LIGHTNING_COMMITMENT_SIGNED, LIGHTNING_REVOKE_AND_ACK
+**Never Relay**: IDENT_REQUEST, IDENT_RESPONSE, SESSION_START, SESSION_ACK, HEARTBEAT, PING, PONG, LOG_MESSAGE, LIGHTNING_INIT, LIGHTNING_ERROR, LIGHTNING_*_CHANNEL, LIGHTNING_*_HTLC, LIGHTNING_COMMITMENT_SIGNED, LIGHTNING_REVOKE_AND_ACK
 
 **Conditional Relay**: STATE_REQUEST, STATE_RESPONSE, INVENTORY_REQUEST, INVENTORY_RESPONSE, DOCUMENT_REQUEST, DOCUMENT_RESPONSE
 
@@ -456,7 +456,7 @@ Missing historical drafts (do not expect these files): `MESSAGING_PROTOCOL_COMPL
 
 Paused after header/preimage, core opcode accuracy, and mesh type rows. Still open:
 
-1. **Relay Rules / Quick Reference** — Align Always/Local/Conditional lists with Peer (`SECURITY.md`); PING/PONG are not mesh flood; hop budgets exist
+1. ~~**Relay Rules / Quick Reference**~~ — PING/PONG are never mesh-flooded (table + Quick Reference). Hop budgets remain in `SECURITY.md`.
 2. ~~**Lightning table**~~ — `constants.js` AMP types use `0x2000+` (`LIGHTNING_INIT` `0x2000` … `LIGHTNING_PONG` `0x2013`). Fabric keeps the low numbers. Duplicate opcodes fail at `Message` module load.
 3. **Application legacy rows** — `CONTRACT_ACCEPT` / `REJECT` / `PAYMENT_*` / dense `0x81+` draft codes not fully registered
 4. **Type Ranges** preamble — Still describes old range buckets; Bitcoin types are not in `0x1000-0x1FFF`

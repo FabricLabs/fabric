@@ -67,6 +67,66 @@ function asBuffer (value, encoding = 'hex') {
   return null;
 }
 
+/** BIP-341 leaf version for tapscript (0xc0). */
+const LEAF_VERSION_TAPSCRIPT = 0xc0;
+
+/**
+ * One BIP-371 `PSBT_IN_TAP_LEAF_SCRIPT` entry (script + control block + leaf version).
+ *
+ * @param {Object} opts
+ * @param {Buffer|Uint8Array|string} opts.script
+ * @param {Buffer|Uint8Array|string} opts.controlBlock
+ * @param {number} [opts.leafVersion]
+ * @returns {{ leafVersion: number, script: Buffer, controlBlock: Buffer }}
+ */
+function tapLeafScriptEntry (opts = {}) {
+  const script = asBuffer(opts.script);
+  const controlBlock = asBuffer(opts.controlBlock);
+  if (!script || !script.length) {
+    throw new Error('BIP371 tapLeafScript requires script bytes');
+  }
+  if (!controlBlock || controlBlock.length < 33) {
+    throw new Error('BIP371 controlBlock must be at least 33 bytes');
+  }
+  const leafVersion = opts.leafVersion != null
+    ? Number(opts.leafVersion)
+    : LEAF_VERSION_TAPSCRIPT;
+  if (!Number.isInteger(leafVersion) || leafVersion < 0 || leafVersion > 255) {
+    throw new Error('BIP371 leafVersion must be an 8-bit integer');
+  }
+  return { leafVersion, script, controlBlock };
+}
+
+/**
+ * Taproot PSBT input fields for a script-path spend (BIP-371 bags).
+ *
+ * @param {Object} opts
+ * @param {Buffer|Uint8Array|string} opts.tapInternalKey 32-byte x-only internal key
+ * @param {Buffer|Uint8Array|string} opts.script
+ * @param {Buffer|Uint8Array|string} opts.controlBlock
+ * @param {number} [opts.leafVersion]
+ * @param {Buffer|Uint8Array|string} [opts.tapMerkleRoot]
+ * @returns {Object}
+ */
+function taprootPsbtInputFields (opts = {}) {
+  const tapInternalKey = asBuffer(opts.tapInternalKey);
+  if (!tapInternalKey || tapInternalKey.length !== 32) {
+    throw new Error('BIP371 tapInternalKey must be 32 bytes (x-only)');
+  }
+  const fields = {
+    tapInternalKey,
+    tapLeafScript: [tapLeafScriptEntry(opts)]
+  };
+  if (opts.tapMerkleRoot != null && opts.tapMerkleRoot !== '') {
+    const tapMerkleRoot = asBuffer(opts.tapMerkleRoot);
+    if (!tapMerkleRoot || tapMerkleRoot.length !== 32) {
+      throw new Error('BIP371 tapMerkleRoot must be 32 bytes');
+    }
+    fields.tapMerkleRoot = tapMerkleRoot;
+  }
+  return fields;
+}
+
 function toXOnly (pubkey33) {
   const key = asBuffer(pubkey33);
   if (!key || key.length !== 33) return null;
@@ -247,12 +307,12 @@ function prepareInventoryHtlcSellerClaimPsbt (opts = {}) {
       script: out.script,
       value: BigInt(inputSats)
     },
-    tapInternalKey: TAPROOT_INTERNAL_NUMS,
-    tapLeafScript: [{
-      leafVersion: bip341.LEAF_VERSION_TAPSCRIPT,
+    ...taprootPsbtInputFields({
+      tapInternalKey: TAPROOT_INTERNAL_NUMS,
       script: claimBuf,
-      controlBlock
-    }]
+      controlBlock,
+      leafVersion: bip341.LEAF_VERSION_TAPSCRIPT
+    })
   });
   psbt.addOutput({
     address: String(destinationAddress || '').trim(),
@@ -343,12 +403,12 @@ function prepareInventoryHtlcBuyerRefundPsbt (opts = {}) {
       script: out.script,
       value: BigInt(inputSats)
     },
-    tapInternalKey: TAPROOT_INTERNAL_NUMS,
-    tapLeafScript: [{
-      leafVersion: bip341.LEAF_VERSION_TAPSCRIPT,
+    ...taprootPsbtInputFields({
+      tapInternalKey: TAPROOT_INTERNAL_NUMS,
       script: refundBuf,
-      controlBlock
-    }]
+      controlBlock,
+      leafVersion: bip341.LEAF_VERSION_TAPSCRIPT
+    })
   });
   psbt.addOutput({
     address: String(destinationAddress || '').trim(),
@@ -597,6 +657,9 @@ function validateInventoryHtlcOffer (opts = {}) {
 }
 
 module.exports = {
+  LEAF_VERSION_TAPSCRIPT,
+  tapLeafScriptEntry,
+  taprootPsbtInputFields,
   buildInventoryHtlcP2tr,
   buildHtlcFundingHints,
   buildDocumentOfferEscrow,

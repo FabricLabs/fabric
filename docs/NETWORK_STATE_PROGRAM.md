@@ -6,7 +6,7 @@ manifest** shape that lets Fabric-speaking peers derive a **common state** —
 a list of fields and their values — across the network.
 
 Companion diagram: [`contracts/protocol.dot`](../contracts/protocol.dot).  
-Opcode uniqueness and V1 freeze: [`MESSAGES.md`](../MESSAGES.md).  
+Opcode catalog: [`MESSAGES.md`](../MESSAGES.md).  
 Execution model: [`DISTRIBUTED_EXECUTION.md`](./DISTRIBUTED_EXECUTION.md), [`PROGRAM.md`](./PROGRAM.md).
 
 There is **no** `DistributedExecution` or `Statechain` Fabric type. Shared
@@ -17,8 +17,8 @@ mutual state is the **sidechain document** helpers in
 
 ## 1. First-class wire opcodes
 
-Canonical decode names: each opcode appears once in `Message.WIRE_TYPE_DECODE_ORDER`.
-Fabric owns the low numbers; Lightning AMP types are `0x2000–0x2FFF`.
+Canonical decode names after **first-match** collapse when numeric codes collide
+(e.g. `P2P_PING` wins over `LIGHTNING_PING` for `0x12`).
 
 ### Identity & session
 
@@ -29,19 +29,6 @@ Fabric owns the low numbers; Lightning AMP types are `0x2000–0x2FFF`.
 | `0x0002` | 2 | `SESSION_START` |
 | `0x005d` | 93 | `P2P_SESSION_OFFER` |
 | `0x005e` | 94 | `P2P_SESSION_OPEN` |
-
-### MuSig2 (directed n-of-n)
-
-Directed TCP only — not mesh-flooded. See `functions/musig2Session.js`.
-
-| Hex | Dec | Wire name |
-|-----|-----|-----------|
-| `0x4220` | 16928 | `P2P_MUSIG_START` |
-| `0x4221` | 16929 | `P2P_MUSIG_ACCEPT` |
-| `0x4222` | 16930 | `P2P_MUSIG_RECEIVE_COUNTER` |
-| `0x4223` | 16931 | `P2P_MUSIG_SEND_PROPOSAL` |
-| `0x4224` | 16932 | `P2P_MUSIG_REPLY_TO_PROPOSAL` |
-| `0x4225` | 16933 | `P2P_MUSIG_ACCEPT_PROPOSAL` |
 
 ### Liveness & transport
 
@@ -114,16 +101,16 @@ Body/activity type (not yet a dedicated outer opcode): `SIDECHAIN_STATE_PATCH`.
 | `0x55f0` | 22000 | `BITCOIN_TRANSACTION` |
 | `0x5654` | 22100 | `BITCOIN_TRANSACTION_HASH` |
 
-### Lightning (AMP `0x2000–0x2FFF`)
+### Lightning (BOLT subset; shared opcodes noted)
 
-| Hex | Dec | Wire name |
-|-----|-----|-----------|
-| `0x2000` | 8192 | `LIGHTNING_INIT` |
-| `0x2001` | 8193 | `LIGHTNING_ERROR` |
-| `0x2002`–`0x2008` | 8194–8200 | open / accept / funding / ready / shutdown / closing |
-| `0x2009`–`0x200d` | 8201–8205 | HTLC add/fulfill/fail, commitment, revoke |
-| `0x200e`–`0x2010` | 8206–8208 | channel/node announcement, channel update |
-| `0x2011`–`0x2013` | 8209–8211 | warning / ping / pong |
+| Hex | Dec | Wire name (canonical first-match) |
+|-----|-----|-------------------------------------|
+| `0x0010` | 16 | `LIGHTNING_INIT` |
+| `0x0020` | 32 | `LIGHTNING_OPEN_CHANNEL` |
+| `0x0022`–`0x0024` | 34–36 | funding / channel ready |
+| `0x0026`–`0x0027` | 38–39 | shutdown / closing signed |
+| `0x0082`–`0x0085` | 130–133 | HTLC fulfill/fail, commitment, revoke |
+| `0x0100`–`0x0102` | 256–258 | channel/node announcement, channel update |
 
 ### Misc catalog
 
@@ -132,7 +119,7 @@ Body/activity type (not yet a dedicated outer opcode): `SIDECHAIN_STATE_PATCH`.
 | `0xc0d49070` | … | `LOG_MESSAGE` |
 | `0xc0d4c76e` | … | `GENERIC_LIST` |
 
-**76** distinct opcodes (`Message.WIRE_TYPE_DECODE_ORDER`; unique by construction).
+**59** distinct opcodes after first-match collapse.
 
 Relay-as-is mesh types (author + signature preserved; hops never re-sign):
 `P2P_CHAT_MESSAGE`, `CONTRACT_PUBLISH`, `CONTRACT_MESSAGE`, `CONTRACT_PROPOSAL`,

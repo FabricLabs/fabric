@@ -14,16 +14,6 @@ For production deploys and native dependencies, see [`docs/PRODUCTION.md`](docs/
 
 _**Note:** for development from git, use e.g. `npm i -g FabricLabs/fabric#master` instead of the npm package._
 
-## From a git checkout
-After `npm install` in this repo:
-
-```bash
-npm run example:smoke   # Key / chat / onion demos (CI-safe)
-npm run dev             # handbook + API docs at http://127.0.0.1:8000
-```
-
-Curated scripts: `example:basic`, `example:demo`, `example:chat`, `example:onion`. Pages landing (after merge to `master`): https://fabriclabs.github.io/fabric/ · examples home: https://fabriclabs.github.io/fabric/examples/home.html
-
 ## Sample Program
 Create the file `scripts/quickstart.js` using the following code:
 

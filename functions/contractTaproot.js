@@ -19,6 +19,7 @@ const { payments, networks, script, Psbt } = bitcoin;
 const psbtutils = require('bitcoinjs-lib/src/psbt/psbtutils');
 const { evaluateTierWhen } = require('./contractTierWhen');
 const { sortPubkeysBip67 } = require('./bip67');
+const { taprootPsbtInputFields } = require('./inventoryHtlc');
 const { aggregateXonly } = require('./musig2');
 
 bitcoin.initEccLib(ecc);
@@ -1117,12 +1118,12 @@ function prepareLeafPsbt (opts = {}) {
       script: Uint8Array.from(outScript),
       value: BigInt(inputSats)
     },
-    tapInternalKey: Uint8Array.from(internalPubkey),
-    tapLeafScript: [{
-      leafVersion: bip341.LEAF_VERSION_TAPSCRIPT,
-      script: Uint8Array.from(ms),
-      controlBlock: Uint8Array.from(controlBlock)
-    }]
+    ...taprootPsbtInputFields({
+      tapInternalKey: internalPubkey,
+      script: ms,
+      controlBlock,
+      leafVersion: bip341.LEAF_VERSION_TAPSCRIPT
+    })
   };
   if (sequence != null) input.sequence = Number(sequence);
 

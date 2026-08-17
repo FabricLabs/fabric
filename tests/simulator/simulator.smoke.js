@@ -72,7 +72,7 @@ describe('fabric network simulator', function () {
     const scenario = getScenario('mixed-fuzz');
     const { report } = await runWithAssert('mixed-fuzz', {
       seed: scenario.seed,
-      steps: 80,
+      steps: 160,
       peers: scenario.peerCount,
       topology: scenario.topology
     });

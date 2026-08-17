@@ -151,13 +151,18 @@ describe('@fabric/core/types/filesystem', function () {
 
     it('publish fails closed when writeFile returns false', async function () {
       await filesystem.start();
+      const originalWrite = filesystem.writeFile;
       filesystem.writeFile = function () { return false; };
-      await assert.rejects(
-        () => filesystem.publish('missing.txt', 'payload'),
-        /Could not publish missing\.txt/
-      );
-      assert.ok(!filesystem.files.includes('missing.txt'));
-      assert.strictEqual(fs.existsSync(path.join(testDir, 'missing.txt')), false);
+      try {
+        await assert.rejects(
+          () => filesystem.publish('missing.txt', 'payload'),
+          /Could not publish missing\.txt/
+        );
+        assert.ok(!filesystem.files.includes('missing.txt'));
+        assert.strictEqual(fs.existsSync(path.join(testDir, 'missing.txt')), false);
+      } finally {
+        filesystem.writeFile = originalWrite;
+      }
     });
 
     it('can delete from a local filesystem', async function () {

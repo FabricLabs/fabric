@@ -170,6 +170,14 @@ describe('@fabric/core/types/key', function () {
       assert.equal(target.address, 'bc1q6t2wjeuavrd08fd8pu5ktf2sced5wf5chnd5qc');
     });
 
+    it('can generate BIP-49 p2sh-p2wpkh addresses without changing the default path', function () {
+      const key = new Key({ seed: playnet.key.seed });
+      const target = key.deriveAddress(0, 0, 'p2sh-p2wpkh');
+      assert.match(target.address, /^3[1-9A-HJ-NP-Za-km-z]{25,34}$/);
+      const alias = key.deriveAddress(0, 0, 'p2shp2wpkh');
+      assert.strictEqual(alias.address, target.address);
+    });
+
     it('can derive valid child keys', function () {
       const key = new Key({ seed: playnet.key.seed });
       const derivedKey = key.derive();
@@ -707,6 +715,10 @@ describe('@fabric/core/functions/musig2Session', function () {
     const unpacked = unpackPubkeys(packed);
     assert.strictEqual(unpacked.length, 2);
     assert.strictEqual(packed.length, 66);
+    const hex = (pk) => Buffer.from(pk).toString('hex');
+    const got = unpacked.map(hex).sort();
+    const want = [hex(a), hex(b)].sort();
+    assert.deepStrictEqual(got, want);
   });
 
   it('completes a 2-of-2 session', function () {

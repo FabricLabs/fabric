@@ -22,7 +22,7 @@
 |-----|---------|
 | [../PROTOCOL.md](../PROTOCOL.md) | Wire entry (→ MESSAGE_BODY.md) |
 | [MESSAGE_BODY.md](MESSAGE_BODY.md) | Canonical 208-byte header + body fields |
-| [../MESSAGES.md](../MESSAGES.md) | Message semantics and generated opcode freeze |
+| [../MESSAGES.md](../MESSAGES.md) | Message semantics |
 | [../POLICY.md](../POLICY.md) | Relay and policy constants |
 | [../API.md](../API.md) | Full JSDoc Markdown (run `npm run make:api`) |
 
@@ -37,4 +37,4 @@ One-off reports and analysis files in the repo root are listed in **[NON_CANONIC
 
 ## Downstream
 
-**hub.fabric.pub** (rendezvous hub, HTTP bridge) and **@fabric/http** are separate repos; align versions per **[docs/PRODUCTION.md](PRODUCTION.md)** and **[../DEVELOPERS.md](../DEVELOPERS.md)**. Cross-package `types/` + `services/` ownership (including Passport and GoonCitizen): **[DEVELOPERS.md](../DEVELOPERS.md#types--services-layering-suite)**.
+**hub.fabric.pub** (rendezvous hub, HTTP bridge) and **@fabric/http** are separate repos; align versions per **[docs/PRODUCTION.md](PRODUCTION.md)** and **[../DEVELOPERS.md](../DEVELOPERS.md)**.

@@ -37,23 +37,8 @@ against a global observer.
   participation in that mesh to the hub operator and often to other peers.
 - **Document catalog entries** — Inventory responses expose ids, hashes, and prices
   you choose to advertise.
-- **`sensitive: true` on AMP Message** — zeros the wire **payment** `preimage` field
-  only. It does **not** encrypt the body or suppress mesh flood. See
-  [`docs/MESSAGE_BODY.md`](docs/MESSAGE_BODY.md).
 - **Logs** — With `settings.debug`, Peer may emit public-key diagnostics. Private
   key material must never be logged (see `types/peer.js` NOISE path).
-
-## Remaining privacy work (for future agents)
-Track suite-wide residuals in downstream OUTSTANDING docs. Core-owned leftovers:
-
-1. Default mesh chat remains cleartext flood (`P2P_CHAT_MESSAGE` / `P2P_RELAY`) —
-   confidentiality requires app seals or `SendOnion` + onion chat seal.
-2. `P2P_PEERING_OFFER` still advertises dialable `host:port` when operators publish
-   offers — intentional discovery, not a bug; do not “fix” by hiding offers without
-   an alternate discovery story.
-3. Keep documenting that `sensitive` ≠ encrypted so callers do not over-claim.
-
-See also: [docs/OUTSTANDING.md](docs/OUTSTANDING.md), Hub/GoonCitizen privacy queues.
 
 ## Sealed documents
 

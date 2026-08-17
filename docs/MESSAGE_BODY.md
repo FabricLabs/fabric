@@ -107,16 +107,8 @@ Canonical JSON used for **Actor / sidechain document / Program digests**
 (`fabricCanonicalJson`) is a separate concern from Message **wire bodies**.
 Do not conflate the two.
 
-## Collections of Messages (share / replay)
-
-Ordered lists of **bit-identical AMP frames** (`Message.toBuffer()` hex) are
-the portable format for contract journals, Discord / `GroupDataShare` packs,
-and peer catch-up. See [`MESSAGES.md`](../MESSAGES.md#fabric-message-collections)
-(`functions/fabricMessageCollection.js`). Hub `messages/*.json` remains an
-activity log, not this collection.
-
 ## Related
 
-- [`MESSAGES.md`](../MESSAGES.md) — purpose notes and generated opcode freeze
+- [`MESSAGES.md`](../MESSAGES.md) — opcode catalog
 - [`C-JS-PARITY.md`](./C-JS-PARITY.md) — header / hash / sign parity
 - Hub `MESSAGE_TRANSPORT.md` — browser bridge (JSON at HTTP edge)

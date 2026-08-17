@@ -1,5 +1,5 @@
 # Fabric Agents
-See also [DEVELOPERS.md](DEVELOPERS.md) (repo layout, tests), [docs/PRODUCTION.md](docs/PRODUCTION.md) (release gate), and [DEVELOPERS.md](DEVELOPERS.md#types--services-layering-suite) (suite `types/` + `services/` layering vs http / Hub / Passport / GoonCitizen).
+See also [DEVELOPERS.md](DEVELOPERS.md) (repo layout, tests) and [docs/PRODUCTION.md](docs/PRODUCTION.md) (release gate).
 
 ## Release posture
 - **Target:** `0.1.0-RC1` reference client — not a production-hardened VM claim

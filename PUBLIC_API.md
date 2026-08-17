@@ -36,13 +36,7 @@ requires; do not rely on `Fabric.*` statics in production.
 
 Password-sealed JSON and in-memory lock sessions (CLI / setup wallets):
 `@fabric/core/functions/sealedBlob`, `@fabric/core/functions/identityLock`
-(JSDoc on the `.js` files; runtime remains authoritative).
-
-Protocol identity Schnorr + IdentityCrossSign (device-link gossip strings):
-`@fabric/core/functions/fabricIdentitySchnorr`,
-`@fabric/core/functions/identityCrossSign`,
-`@fabric/core/functions/identityCrossSignVerify`. HTTP site-login / device-link
-handlers stay in `@fabric/http` and re-export these leaves.
+(ambient stubs `functions/sealedBlob.d.ts` / `functions/identityLock.d.ts`).
 
 ### Services
 

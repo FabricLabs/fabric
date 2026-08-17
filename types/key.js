@@ -131,6 +131,7 @@ const bip32Module = require('../functions/bip32');
 const BIP32 = bip32Module.default;
 const BIP32_DEFAULT_NETWORK = bip32Module.DEFAULT_NETWORK;
 const { payments } = require('bitcoinjs-lib');
+const { p2shP2wpkhPayment } = require('../functions/bip69');
 
 // Fabric Dependencies
 const Actor = require('./actor');
@@ -505,6 +506,18 @@ class Key extends EventEmitter {
           publicKey: key.publicKey,
           privateKey: key.privateKey
         };
+      case 'p2sh-p2wpkh':
+      case 'p2shp2wpkh': {
+        const nested = p2shP2wpkhPayment({
+          pubkey: Buffer.from(key.publicKey, 'hex'),
+          network: network
+        });
+        return {
+          address: nested.address,
+          publicKey: key.publicKey,
+          privateKey: key.privateKey
+        };
+      }
       case 'p2tr':
         // For p2tr, we need to use the x-only pubkey (first 32 bytes after the prefix)
         const pubkeyBuffer = Buffer.from(key.publicKey, 'hex');

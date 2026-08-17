@@ -10,7 +10,6 @@ Related docs:
 - `docs/PRODUCTION.md`
 - `docs/RELEASE_CHECKLIST.md`
 - `docs/OUTSTANDING.md` — **security-first queue** (this repo)
-- `DEVELOPERS.md` — cross-package `types/` + `services/` homes (http / Hub / Passport / GoonCitizen)
 - `SECURITY.md` / `AUDIT.md`
 - `AGENTS.md`
 
@@ -85,7 +84,7 @@ Rationale:
 
 ### Step B: Fast reductions
 
-- [x] Mark `Scribe` and `Reader` with explicit deprecation notes in code comments/docs.
+- [ ] Mark `Scribe` and `Reader` with explicit deprecation notes in code comments/docs.
 - [ ] Stop advertising non-core classes in onboarding docs/examples.
 - [ ] Keep runtime compatibility for one release cycle through aliasing only where needed.
 
