@@ -7,7 +7,7 @@ Simple, robust demonstrations of `@fabric/core`. Prefer the **JavaScript** scrip
 | Surface | URL | Source |
 | --- | --- | --- |
 | GitHub Pages (demos landing) | https://fabriclabs.github.io/fabric/ | `master` → Pages (`pages-build-deployment`) |
-| Examples home | https://fabriclabs.github.io/fabric/examples/ | `examples/index.html` |
+| Examples home | https://fabriclabs.github.io/fabric/examples/home.html | `examples/home.html` |
 | Handbook host (may lag) | https://dev.fabric.pub/examples/ | Operator nginx copy of literate examples |
 | Hub (product) | https://hub.fabric.pub | Hub repo / Vercel production |
 

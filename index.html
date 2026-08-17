@@ -1,27 +1,92 @@
 <!DOCTYPE html>
-<html>
-  <head>
-    <style type="text/css">
-      #log {
-        height: 300px;
-        overflow: scroll;
-      }
-    </style>
-  </head>
-  <body>
-    <h1>Fabric Browser Demo</h1>
-    <p>Welcome to the <a href="https://fabric.fm">Fabric</a> browser demo.</p>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>@fabric/core — demos</title>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --fg: #e7ecf1;
+      --muted: #8b98a5;
+      --accent: #3d9cf0;
+      --line: #243040;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--fg);
+      line-height: 1.5;
+    }
+    main {
+      max-width: 42rem;
+      margin: 0 auto;
+      padding: 3rem 1.25rem 4rem;
+    }
+    h1 {
+      font-family: "IBM Plex Mono", ui-monospace, monospace;
+      font-size: 1.5rem;
+      font-weight: 600;
+      margin: 0 0 0.5rem;
+    }
+    p { color: var(--muted); margin: 0 0 1.25rem; }
+    a { color: var(--accent); }
+    ol, ul { padding-left: 1.2rem; margin: 0 0 1.5rem; }
+    li { margin: 0.4rem 0; }
+    code {
+      font-family: "IBM Plex Mono", ui-monospace, monospace;
+      font-size: 0.9em;
+      background: #1a222c;
+      padding: 0.1em 0.35em;
+      border-radius: 3px;
+    }
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 1rem 1.1rem;
+      margin: 0 0 1rem;
+      background: #151b22;
+    }
+    .card h2 {
+      font-size: 1rem;
+      margin: 0 0 0.5rem;
+      font-weight: 600;
+    }
+    .meta { font-size: 0.85rem; color: var(--muted); }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>@fabric/core</h1>
+    <p>Simple, robust demonstrations of identity, signed chat, and onion forward. Run locally with Node&nbsp;24.15, or browse the literate sources on this Pages site.</p>
 
-    <p>To get started, select an application to boot.</p>
+    <div class="card">
+      <h2>Curated Node demos</h2>
+      <ol>
+        <li><code>npm run example:basic</code> — Key + Schnorr sign/verify chat message</li>
+        <li><code>npm run example:demo</code> — Collection + signed shoutbox line</li>
+        <li><code>npm run example:chat</code> — UTF-8 chat smoke (<code>--interactive</code> for REPL)</li>
+        <li><code>npm run example:onion</code> — Offline <code>P2P_FORWARD</code> peel round-trip</li>
+        <li><code>npm run example:smoke</code> — Run the curated set</li>
+      </ol>
+      <p class="meta">Clone: <a href="https://github.com/FabricLabs/fabric">FabricLabs/fabric</a> · Shell: <code>npm start</code></p>
+    </div>
 
-    <ul>
-      <li><a href="https://soundtrack.io">soundtrack</a>, the collaborative music jukebox</li>
-    </ul>
+    <div class="card">
+      <h2>Browse on this host</h2>
+      <ul>
+        <li><a href="examples/home.html">Examples home</a> — curated links</li>
+        <li><a href="examples/fabric-basic-usage.html">fabric-basic-usage.js</a></li>
+        <li><a href="examples/fabric-demo.html">fabric-demo.js</a></li>
+        <li><a href="examples/message.html">message.js</a> (chat smoke)</li>
+        <li><a href="examples/onion-forward.html">onion-forward.js</a></li>
+      </ul>
+      <p class="meta">Local handbook: <code>npm run dev</code> → <code>http://127.0.0.1:8000</code></p>
+    </div>
 
-    <h2>Fabric's <code>playnet</code> Sidechain</h2>
-
-    <div id="log"></div>
-
-    <script src="/assets/app.min.js"></script>
-  </body>
+    <p class="meta">Published via GitHub Pages from <code>master</code>. Operator hub: <a href="https://hub.fabric.pub">hub.fabric.pub</a>.</p>
+  </main>
+</body>
 </html>
