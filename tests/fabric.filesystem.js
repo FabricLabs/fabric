@@ -129,6 +129,26 @@ describe('@fabric/core/types/filesystem', function () {
       assert.ok(filesystem.files.includes('blob-19.txt'));
     });
 
+    it('writeFile/readFile/delete refuse paths that escape the store root', async function () {
+      await filesystem.start();
+      const probe = path.resolve(testDir, '..', 'filesystem-escape-probe.txt');
+      try {
+        if (fs.existsSync(probe)) fs.unlinkSync(probe);
+        assert.strictEqual(filesystem.writeFile('../filesystem-escape-probe.txt', 'escaped'), false);
+        assert.strictEqual(fs.existsSync(probe), false);
+        assert.strictEqual(filesystem.readFile('../filesystem-escape-probe.txt'), null);
+        fs.writeFileSync(probe, 'outside');
+        assert.strictEqual(filesystem.delete('../filesystem-escape-probe.txt'), false);
+        assert.strictEqual(fs.readFileSync(probe, 'utf8'), 'outside');
+        await assert.rejects(
+          () => filesystem.publish('../filesystem-escape-probe.txt', 'escaped'),
+          /Could not publish/
+        );
+      } finally {
+        if (fs.existsSync(probe)) fs.unlinkSync(probe);
+      }
+    });
+
     it('publish fails closed when writeFile returns false', async function () {
       await filesystem.start();
       filesystem.writeFile = function () { return false; };

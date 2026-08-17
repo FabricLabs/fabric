@@ -91,8 +91,24 @@ class Filesystem extends Actor {
     return this._state.documents;
   }
 
+  /**
+   * Resolve `name` under this store root. `null` when it would escape.
+   * Does not follow a final symlink (`O_NOFOLLOW` remains deferred).
+   * @param {string} name
+   * @returns {string|null}
+   * @private
+   */
+  _resolveContained (name) {
+    const base = this.path;
+    const file = path.resolve(base, String(name || ''));
+    const prefix = base.endsWith(path.sep) ? base : base + path.sep;
+    if (file === base || file.startsWith(prefix)) return file;
+    return null;
+  }
+
   delete (name) {
-    const file = path.join(this.path, name);
+    const file = this._resolveContained(name);
+    if (!file) return false;
     if (fs.existsSync(file)) fs.rmSync(file);
     return true;
   }
@@ -130,8 +146,8 @@ class Filesystem extends Actor {
    * @returns {Buffer} Contents of the file.
    */
   readFile (name) {
-    const file = path.join(this.path, name);
-    if (!fs.existsSync(file)) return null;
+    const file = this._resolveContained(name);
+    if (!file || !fs.existsSync(file)) return null;
 
     // Skip directories
     if (fs.statSync(file).isDirectory()) return null;
@@ -146,8 +162,13 @@ class Filesystem extends Actor {
    * @returns {Boolean} `true` if the write succeeded, `false` if it did not.
    */
   writeFile (name, content) {
-    // Ensure the file path is absolute and properly resolved
-    const file = path.resolve(this.path, name);
+    const file = this._resolveContained(name);
+    if (!file) {
+      const msg = `Could not write file ${name}: path escapes filesystem root`;
+      if (this.listenerCount('error') > 0) this.emit('error', msg);
+      else this.emit('warning', msg);
+      return false;
+    }
 
     try {
       // Ensure parent directory exists

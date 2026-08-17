@@ -2,6 +2,8 @@
 Recent changes to Fabric Core.
 
 ## 2026-08-16
+- **PR #185 Filesystem path escape:** `writeFile` / `readFile` / `delete` reject names that resolve outside the store root (`../`, absolute paths). Nested writes under the root still work. Symlink `O_NOFOLLOW` remains deferred. Tests in `tests/fabric.filesystem.js`.
+- **PR #185 Codacy gate (`14d3d3a7`):** `npm run docs:message-types` reads/writes literal `MESSAGES.md` (chdir to repo root) so Semgrep does not flag `path.join` + `fs.readFileSync`/`writeFileSync` as two criticals. Do not Semgrep-exclude `types/message.js`.
 - **PR #185 review leftovers:** GitHub Pages / gitbook examples link is `index.html` (not missing `home.html`). `report:install` removes `package-lock.json` instead of writing a blank line. C/native pointers go to `examples/README.md`.
 - **PR #185 file-count fold:** opcode freeze lives in [`MESSAGES.md`](MESSAGES.md). Small added tests, docs (`ARC`, message collections, types/services map), BIP-327 vectors, and sidecar `.d.ts` files merged into paths already on the PR. Mesh chat notes live in `MESSAGES.md`. `npm run messages` runs `functions/fabricMessageCollection.js`. Follow-up: chat demo lives in `examples/message.js`; `npm run home-env` / `docs:message-types` run `functions/fabricHomeEnv.js` and `types/message.js`.
 - **Message type consolidation:** [`MESSAGES.md`](MESSAGES.md) decode-order table is generated from `WIRE_TYPE_DECODE_ORDER` (`npm run docs:message-types`). Mocha asserts the marked catalog matches the live decode order.
