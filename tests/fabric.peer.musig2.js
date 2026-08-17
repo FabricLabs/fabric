@@ -189,6 +189,24 @@ describe('@fabric/core Peer P2P_MUSIG_*', function () {
     assert.strictEqual(writes.length, 0);
   });
 
+  it('initiator still completes when autoAccept is off and the co-signer has it on', function () {
+    const { peer: alice } = makePeer('alice', { musig2: { autoAccept: false } });
+    const { peer: bob } = makePeer('bob', { musig2: { autoAccept: true } });
+    const { aliceAddr, bobAddr, aliceWrites, bobWrites } = wirePair(alice, bob);
+    const started = alice.startMusig2({
+      dest: bob.key.pubkey,
+      msg: Buffer.from('initiator-no-auto'),
+      purpose: 'test'
+    });
+    assert.ok(started);
+    exchange(aliceWrites, bob, aliceAddr, bobWrites, alice, bobAddr);
+    const aDone = alice.getMusig2Session(started.sessionId);
+    const bDone = bob.getMusig2Session(started.sessionId);
+    assert.ok(aDone && aDone.signature, 'initiator missing aggregate signature');
+    assert.ok(bDone && bDone.signature, 'co-signer missing aggregate signature');
+    assert.strictEqual(aDone.signature, bDone.signature);
+  });
+
   it('clamps invalid musig2.maxSessions instead of looping', function () {
     this.timeout(2000);
     const { peer: alice } = makePeer('alice', { musig2: { maxSessions: -1 } });

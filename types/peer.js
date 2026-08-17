@@ -2022,7 +2022,10 @@ class Peer extends Service {
         }, session);
       }
     }
-    if (auto && session.aggnonce && session.secnonce && !session.psigs[session.localIndex]) {
+    if ((session.initiator || auto) &&
+        session.aggnonce &&
+        session.secnonce &&
+        !session.psigs[session.localIndex]) {
       const sk = this._musigLocalSecret();
       const signed = sk ? musig2Session.createPartial(session, sk) : { ok: false };
       if (signed.ok) {
@@ -3429,7 +3432,7 @@ class Peer extends Service {
         }
 
         break;
-      // Lightning BOLT JSON payload fall-through (if any are sent with JSON bodies)
+      // Lightning AMP types (0x2000+). Channel ops stay local; announcements may relay.
       case 'LIGHTNING_WARNING':
       case 'LightningWarning':
       case 'LIGHTNING_INIT':
@@ -4251,7 +4254,9 @@ class Peer extends Service {
         const code = (error && error.code) || 'ECONNRESET';
         this.emit('warning', `Suppressing transient inbound socket error (${code}) from _NOISESocketHandler().`);
       } else {
-        this.emit('error', `Inbound socket error: ${error}`);
+        const msg = `Inbound socket error (${target}): ${error}`;
+        if (this.listenerCount('error') > 0) this.emit('error', msg);
+        else this.emit('warning', msg);
       }
     });
 

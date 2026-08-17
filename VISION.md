@@ -42,7 +42,7 @@ These are **not** the default path for new contributors:
 | Tier | Files |
 |------|--------|
 | **Must read** | **README.md**, **QUICKSTART.md**, **PUBLIC_API.md**, **DEVELOPERS.md**, **VISION.md** (this file) |
-| **Protocol & security** | **PROTOCOL.md** → **docs/MESSAGE_BODY.md**, **MESSAGES.md**, **POLICY.md**, **SECURITY.md**, **PRIVACY.md**, **AUDIT.md** |
+| **Protocol & security** | **PROTOCOL.md** → **docs/MESSAGE_BODY.md**, **MESSAGES.md**, **FABRIC_MESSAGE_TYPE_CONSOLIDATION.md**, **POLICY.md**, **SECURITY.md**, **PRIVACY.md**, **AUDIT.md** |
 | **Operators** | **docs/PRODUCTION.md** (includes release checklist) |
 | **Contracts & CLI** | **docs/CONTRACTS.md**, **docs/CLI.md**, **docs/L1_DOCUMENT_EXCHANGE.md** |
 | **Guides** | **guides/SERVICES.md**, **guides/ACTORS.md**, **guides/BUILD.md**, **guides/BEST_PRACTICES.md** |

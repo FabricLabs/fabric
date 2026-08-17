@@ -61,6 +61,13 @@ col.replay(restored, ({ message, inner }) => {
 CLI: `npm run messages -- collect stream.jsonl` · `replay` · `verify`
 (`node scripts/replay-messages.js`).
 
+Fixture-backed application story (publish + every `GroupChange` action +
+GroupChat / proposal+vote / journal request, gossiped on a 3-node loopback mesh):
+`tests/application.contract.chain.replay.js` locks
+`tests/fixtures/application-contract-chain.json`. Replay must match the
+bound `collection.root` and folded `tip.stateDigest`. Regenerate with
+`UPDATE_FIXTURE=1`.
+
 ## Related
 
 - [`MESSAGE_BODY.md`](MESSAGE_BODY.md) — AMP header / typed bodies

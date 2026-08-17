@@ -113,4 +113,20 @@ describe('@fabric/core RC1 PR-review coverage', function () {
     assert.strictEqual(noise.encrypt.listenerCount('error'), 1);
     assert.strictEqual(noise.decrypt.listenerCount('error'), 1);
   });
+
+  it('inbound socket errors warn instead of throwing without an error listener', function () {
+    const { PassThrough } = require('stream');
+    const peer = offlinePeer();
+    const warnings = [];
+    peer.on('warning', (msg) => warnings.push(String(msg)));
+    const socket = new PassThrough();
+    socket.remoteAddress = '192.0.2.8';
+    socket.remotePort = 19108;
+    socket.destroy = function () { this.destroyed = true; };
+    peer._NOISESocketHandler(socket);
+    assert.doesNotThrow(() => socket.emit('error', new Error('EPROTO inbound')));
+    assert.ok(warnings.some((msg) => /Inbound socket error/.test(msg)));
+    if (typeof socket._destroyFabric === 'function') socket._destroyFabric();
+    socket.destroy();
+  });
 });

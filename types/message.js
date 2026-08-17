@@ -33,6 +33,7 @@ const {
   P2P_PEERING_OFFER,
   P2P_SESSION_OFFER,
   P2P_SESSION_OPEN,
+  P2P_SESSION_ACK,
   P2P_MUSIG_START,
   P2P_MUSIG_ACCEPT,
   P2P_MUSIG_RECEIVE_COUNTER,
@@ -117,8 +118,8 @@ const taggedHash = require('../functions/taggedHash');
  * Encode accepts **either** name via merged {@link Message#types} (canonical wire + legacy friendly).
  * {@link Message.wireTypeFromFriendly} / {@link Message.friendlyTypeFromWire} convert between them.
  *
- * Opcode → wire string order matches the historical `type` switch: when multiple labels share one
- * opcode (e.g. P2P vs Lightning), **first listed** in {@link Message.WIRE_TYPE_DECODE_ORDER} wins.
+ * Each opcode appears once in {@link Message.WIRE_TYPE_DECODE_ORDER} (Fabric low numbers,
+ * Lightning in <code>0x2000–0x2FFF</code>). Duplicate opcodes fail at module load.
  * Those maps are **not** global exports: use {@link Message} statics `WIRE_TYPE_DECODE_ORDER` and
  * `FRIENDLY_TYPE_BY_WIRE`.
  */
@@ -150,6 +151,7 @@ const WIRE_TYPE_DECODE_ORDER = Object.freeze([
   [P2P_PEERING_OFFER, 'P2P_PEERING_OFFER'],
   [P2P_SESSION_OFFER, 'P2P_SESSION_OFFER'],
   [P2P_SESSION_OPEN, 'P2P_SESSION_OPEN'],
+  [P2P_SESSION_ACK, 'P2P_SESSION_ACK'],
   [P2P_MUSIG_START, 'P2P_MUSIG_START'],
   [P2P_MUSIG_ACCEPT, 'P2P_MUSIG_ACCEPT'],
   [P2P_MUSIG_RECEIVE_COUNTER, 'P2P_MUSIG_RECEIVE_COUNTER'],
@@ -162,6 +164,7 @@ const WIRE_TYPE_DECODE_ORDER = Object.freeze([
   [P2P_IDENT_RESPONSE, 'P2P_IDENT_RESPONSE'],
   [P2P_BASE_MESSAGE, 'P2P_BASE_MESSAGE'],
   [P2P_STATE_ROOT, 'P2P_STATE_ROOT'],
+  [P2P_STATE_COMMITTMENT, 'P2P_STATE_COMMITTMENT'],
   [P2P_STATE_CHANGE, 'P2P_STATE_CHANGE'],
   [P2P_STATE_REQUEST, 'P2P_STATE_REQUEST'],
   [P2P_TRANSACTION, 'P2P_TRANSACTION'],
@@ -177,11 +180,9 @@ const WIRE_TYPE_DECODE_ORDER = Object.freeze([
   [PATCH_MESSAGE_TYPE, 'JSON_PATCH'],
   [CONTRACT_PROPOSAL_TYPE, 'CONTRACT_PROPOSAL'],
   [P2P_START_CHAIN, 'P2P_START_CHAIN'],
-  [LIGHTNING_WARNING, 'LIGHTNING_WARNING'],
+  [P2P_INSTRUCTION, 'P2P_INSTRUCTION'],
   [LIGHTNING_INIT, 'LIGHTNING_INIT'],
   [LIGHTNING_ERROR, 'LIGHTNING_ERROR'],
-  [LIGHTNING_PING, 'LIGHTNING_PING'],
-  [LIGHTNING_PONG, 'LIGHTNING_PONG'],
   [LIGHTNING_OPEN_CHANNEL, 'LIGHTNING_OPEN_CHANNEL'],
   [LIGHTNING_ACCEPT_CHANNEL, 'LIGHTNING_ACCEPT_CHANNEL'],
   [LIGHTNING_FUNDING_CREATED, 'LIGHTNING_FUNDING_CREATED'],
@@ -196,7 +197,10 @@ const WIRE_TYPE_DECODE_ORDER = Object.freeze([
   [LIGHTNING_REVOKE_AND_ACK, 'LIGHTNING_REVOKE_AND_ACK'],
   [LIGHTNING_CHANNEL_ANNOUNCEMENT, 'LIGHTNING_CHANNEL_ANNOUNCEMENT'],
   [LIGHTNING_NODE_ANNOUNCEMENT, 'LIGHTNING_NODE_ANNOUNCEMENT'],
-  [LIGHTNING_CHANNEL_UPDATE, 'LIGHTNING_CHANNEL_UPDATE']
+  [LIGHTNING_CHANNEL_UPDATE, 'LIGHTNING_CHANNEL_UPDATE'],
+  [LIGHTNING_WARNING, 'LIGHTNING_WARNING'],
+  [LIGHTNING_PING, 'LIGHTNING_PING'],
+  [LIGHTNING_PONG, 'LIGHTNING_PONG']
 ]);
 
 const CANONICAL_WIRE_TYPE_BY_OPCODE = Object.freeze(
@@ -204,7 +208,9 @@ const CANONICAL_WIRE_TYPE_BY_OPCODE = Object.freeze(
     const code = pair[0];
     const name = pair[1];
     if (typeof code !== 'number' || !Number.isFinite(code)) return acc;
-    if (acc[code] !== undefined) return acc;
+    if (acc[code] !== undefined) {
+      throw new Error(`duplicate AMP opcode ${code}: ${acc[code]} and ${name}`);
+    }
     acc[code] = name;
     return acc;
   }, {})
@@ -488,9 +494,6 @@ class Message extends Actor {
 
     if (messageData && messageType) {
       this.type = messageType;
-      // Set the type field to the numeric constant
-      const typeCode = this.types[messageType] || this.types.P2P_BASE_MESSAGE;
-      this.raw.type.writeUInt32BE(typeCode, 0);
 
       if (Buffer.isBuffer(messageData) || messageData instanceof Uint8Array) {
         this.data = Buffer.from(messageData);
@@ -919,18 +922,10 @@ class Message extends Actor {
   }
 
   static fromVector (vector = ['LogMessage', 'No vector provided.']) {
-    let message = null;
-
-    try {
-      message = new Message({
-        type: vector[0],
-        data: vector[1]
-      });
-    } catch (exception) {
-      console.error('[FABRIC:MESSAGE]', 'Could not construct Message:', exception);
-    }
-
-    return message;
+    return new Message({
+      type: vector[0],
+      data: vector[1]
+    });
   }
 
   /**
@@ -1052,7 +1047,6 @@ Object.defineProperty(Message.prototype, 'type', {
     return this.wireType;
   },
   set (value) {
-    // console.trace('setting type:', value);
     let code = this.types[value];
     // Default to P2P_BASE_MESSAGE for unknown/unregistered names.
     if (!code) {

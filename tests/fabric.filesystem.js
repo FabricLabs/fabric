@@ -129,6 +129,17 @@ describe('@fabric/core/types/filesystem', function () {
       assert.ok(filesystem.files.includes('blob-19.txt'));
     });
 
+    it('publish fails closed when writeFile returns false', async function () {
+      await filesystem.start();
+      filesystem.writeFile = function () { return false; };
+      await assert.rejects(
+        () => filesystem.publish('missing.txt', 'payload'),
+        /Could not publish missing\.txt/
+      );
+      assert.ok(!filesystem.files.includes('missing.txt'));
+      assert.strictEqual(fs.existsSync(path.join(testDir, 'missing.txt')), false);
+    });
+
     it('can delete from a local filesystem', async function () {
       const actor = new Actor({ name: 'Satoshi Nakamoto' });
       const filesystem = new Filesystem({

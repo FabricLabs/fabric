@@ -19,6 +19,13 @@ describe('fabricChatKind', function () {
     assert.match(chatSurfaceLabel(CHAT_SURFACE.SHOUTBOX), /Public/i);
   });
 
+  it('classifies a missing body as unknown, not shoutbox', function () {
+    assert.strictEqual(classifyChatSurface(null), CHAT_SURFACE.UNKNOWN);
+    assert.strictEqual(classifyChatSurface(undefined), CHAT_SURFACE.UNKNOWN);
+    assert.ok(!isPublicMeshShoutbox(null));
+    assert.ok(!isPublicMeshShoutbox(undefined));
+  });
+
   it('classifies onion-sealed bodies as confidential', function () {
     const tip = new Key();
     const sealed = sealOnionChatText('secret', tip.pubkey);

@@ -51,6 +51,11 @@ describe('@fabric/core/types/key', function () {
       assert.equal(fromHex.public.encodeCompressed('hex'), fromMnemonic.public.encodeCompressed('hex'));
     });
 
+    it('rejects a short byte seed instead of treating it as a mnemonic', function () {
+      assert.throws(() => new Key({ seed: Buffer.alloc(8) }), /Seed must be 16–64 bytes/);
+      assert.throws(() => new Key({ seed: new Uint8Array(8) }), /Seed must be 16–64 bytes/);
+    });
+
     it('classifies an xprv passed as seed (legacy FABRIC_SEED)', function () {
       const { FIXTURE_XPRV } = require('../constants');
       const fromXprv = new Key({ xprv: FIXTURE_XPRV });

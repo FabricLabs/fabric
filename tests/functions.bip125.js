@@ -32,5 +32,7 @@ describe('@fabric/core/functions/bip125', function () {
     assert.strictEqual(transactionSignalsOptInRbf(null), false);
     assert.strictEqual(sequenceSignalsOptInRbf(undefined), false);
     assert.strictEqual(sequenceSignalsOptInRbf(Number.NaN), false);
+    assert.strictEqual(sequenceSignalsOptInRbf(0.5), false);
+    assert.strictEqual(sequenceSignalsOptInRbf(4294967296), false);
   });
 });

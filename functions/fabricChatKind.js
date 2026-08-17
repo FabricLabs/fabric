@@ -52,7 +52,9 @@ function looksLikeGroupSeal (value) {
 function classifyChatSurface (body, opts = {}) {
   const appType = opts.appType != null ? String(opts.appType) : null;
 
-  if (typeof body === 'string' || body == null) {
+  if (body == null) return CHAT_SURFACE.UNKNOWN;
+
+  if (typeof body === 'string') {
     if (isOnionChatSeal(body)) return CHAT_SURFACE.ONION_SEAL;
     if (appType === 'GroupChat') return CHAT_SURFACE.CONTRACT_CLEARTEXT;
     return CHAT_SURFACE.SHOUTBOX;

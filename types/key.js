@@ -301,6 +301,8 @@ class Key extends EventEmitter {
         if (rawSeed) {
           seed = rawSeed;
           this.seed = rawSeed.toString('hex');
+        } else if (Buffer.isBuffer(this.settings.seed) || this.settings.seed instanceof Uint8Array) {
+          throw new Error('Seed must be 16–64 bytes');
         } else {
           seed = bip39.mnemonicToSeedSync(this.settings.seed, this.settings.passphrase);
           this.seed = this.settings.seed;

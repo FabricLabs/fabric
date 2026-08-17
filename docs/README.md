@@ -23,6 +23,7 @@
 | [../PROTOCOL.md](../PROTOCOL.md) | Wire entry (→ MESSAGE_BODY.md) |
 | [MESSAGE_BODY.md](MESSAGE_BODY.md) | Canonical 208-byte header + body fields |
 | [../MESSAGES.md](../MESSAGES.md) | Message semantics |
+| [../FABRIC_MESSAGE_TYPE_CONSOLIDATION.md](../FABRIC_MESSAGE_TYPE_CONSOLIDATION.md) | Generated opcode freeze (`WIRE_TYPE_DECODE_ORDER`) |
 | [../POLICY.md](../POLICY.md) | Relay and policy constants |
 | [../API.md](../API.md) | Full JSDoc Markdown (run `npm run make:api`) |
 

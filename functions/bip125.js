@@ -30,8 +30,8 @@ const BIP125_SEQUENCE_RBF = SEQUENCE_MAX - 2;
  */
 function sequenceSignalsOptInRbf (nSequence) {
   const n = Number(nSequence);
-  if (!Number.isFinite(n)) return false;
-  return (n >>> 0) < BIP125_SEQUENCE_LOCKTIME_ONLY;
+  if (!Number.isInteger(n) || n < 0 || n > SEQUENCE_MAX) return false;
+  return n < BIP125_SEQUENCE_LOCKTIME_ONLY;
 }
 
 /**

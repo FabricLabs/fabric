@@ -164,7 +164,9 @@ class Filesystem extends Actor {
 
       return true;
     } catch (exception) {
-      this.emit('error', `Could not write file ${name}: ${exception}`);
+      const msg = `Could not write file ${name}: ${exception}`;
+      if (this.listenerCount('error') > 0) this.emit('error', msg);
+      else this.emit('warning', msg);
       return false;
     }
   }
@@ -256,7 +258,9 @@ class Filesystem extends Actor {
     const actor = new Actor(document);
     const hash = Hash256.digest(content);
 
-    this.writeFile(name, content);
+    if (!this.writeFile(name, content)) {
+      throw new Error(`Could not publish ${name}`);
+    }
     this._notePublishedName(name);
 
     return {
