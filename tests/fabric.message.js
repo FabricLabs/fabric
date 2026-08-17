@@ -18,13 +18,32 @@ const {
   P2P_STATE_CHANGE,
   P2P_TRANSACTION,
   P2P_CALL,
-  P2P_MESSAGE_RECEIPT
+  P2P_MESSAGE_RECEIPT,
+  P2P_GENERIC,
+  P2P_START_CHAIN,
+  P2P_SESSION_ACK,
+  LIGHTNING_WARNING,
+  LIGHTNING_INIT,
+  LIGHTNING_ERROR,
+  LIGHTNING_PING,
+  LIGHTNING_PONG,
+  LIGHTNING_OPEN_CHANNEL,
+  LIGHTNING_ACCEPT_CHANNEL,
+  LIGHTNING_UPDATE_ADD_HTLC
 } = require('../constants');
 
 const Message = require('../types/message');
 const Key = require('../types/key');
 const Hash256 = require('../types/hash256');
 const assert = require('assert');
+const fs = require('fs');
+const {
+  OUTPUT_PATH,
+  CATALOG_BEGIN,
+  CATALOG_END,
+  collectCatalog,
+  catalogBlock
+} = require('../scripts/gen-message-type-consolidation');
 
 // Create a key with a private key for signing
 const key = new Key({
@@ -407,5 +426,95 @@ describe('@fabric/core/types/message', function () {
       assert.strictEqual(literal.headers.hash, 'd3595887441da0b0ac8bdb05c8b85b2e4fbad11c43dbbf4ce8b6ec27d7cd0646');
       assert.strictEqual(message.type, 'P2P_GENERIC');
     });
+  });
+});
+
+describe('@fabric/core AMP opcode catalog', function () {
+  it('every WIRE_TYPE_DECODE_ORDER opcode is unique', function () {
+    const seen = Object.create(null);
+    for (const pair of Message.WIRE_TYPE_DECODE_ORDER) {
+      const code = pair[0];
+      const name = pair[1];
+      if (typeof code !== 'number' || !Number.isFinite(code)) continue;
+      assert.strictEqual(seen[code], undefined, `duplicate opcode ${code}: ${seen[code]} and ${name}`);
+      seen[code] = name;
+      assert.strictEqual(Message.canonicalTypeName(code), name);
+    }
+  });
+
+  it('Fabric low numbers are not Lightning AMP opcodes', function () {
+    const fabric = [
+      [P2P_IDENT_REQUEST, 'P2P_IDENT_REQUEST'],
+      [P2P_IDENT_RESPONSE, 'P2P_IDENT_RESPONSE'],
+      [P2P_PING, 'P2P_PING'],
+      [P2P_PONG, 'P2P_PONG'],
+      [P2P_INSTRUCTION, 'P2P_INSTRUCTION'],
+      [P2P_START_CHAIN, 'P2P_START_CHAIN'],
+      [P2P_GENERIC, 'P2P_GENERIC'],
+      [P2P_STATE_COMMITTMENT, 'P2P_STATE_COMMITTMENT'],
+      [P2P_SESSION_ACK, 'P2P_SESSION_ACK']
+    ];
+    for (const row of fabric) {
+      assert.strictEqual(Message.canonicalTypeName(row[0]), row[1]);
+      assert.ok(row[0] < 0x2000 || row[0] === P2P_SESSION_ACK);
+    }
+    assert.strictEqual(P2P_SESSION_ACK, 0x4200);
+  });
+
+  it('Lightning AMP types occupy 0x2000–0x2013 and round-trip by name', function () {
+    const rows = [
+      ['LightningInit', LIGHTNING_INIT, 'LIGHTNING_INIT'],
+      ['LightningError', LIGHTNING_ERROR, 'LIGHTNING_ERROR'],
+      ['OpenChannel', LIGHTNING_OPEN_CHANNEL, 'LIGHTNING_OPEN_CHANNEL'],
+      ['AcceptChannel', LIGHTNING_ACCEPT_CHANNEL, 'LIGHTNING_ACCEPT_CHANNEL'],
+      ['UpdateAddHTLC', LIGHTNING_UPDATE_ADD_HTLC, 'LIGHTNING_UPDATE_ADD_HTLC'],
+      ['LightningWarning', LIGHTNING_WARNING, 'LIGHTNING_WARNING'],
+      ['LightningPing', LIGHTNING_PING, 'LIGHTNING_PING'],
+      ['LightningPong', LIGHTNING_PONG, 'LIGHTNING_PONG']
+    ];
+    for (const row of rows) {
+      assert.ok(row[1] >= 0x2000 && row[1] <= 0x2013, row[0]);
+      const msg = Message.fromVector([row[0], 'x']);
+      assert.strictEqual(msg.type, row[2]);
+      assert.strictEqual(Message.fromBuffer(msg.toBuffer()).type, row[2]);
+      assert.strictEqual(Message.canonicalTypeName(row[1]), row[2]);
+    }
+  });
+
+  it('PeerInstruction round-trips as P2P_INSTRUCTION, not OpenChannel', function () {
+    const msg = Message.fromVector(['PeerInstruction', 'x']);
+    assert.strictEqual(msg.type, 'P2P_INSTRUCTION');
+    assert.strictEqual(Message.fromBuffer(msg.toBuffer()).type, 'P2P_INSTRUCTION');
+    assert.notStrictEqual(P2P_INSTRUCTION, LIGHTNING_OPEN_CHANNEL);
+    const open = Message.fromVector(['OpenChannel', 'x']);
+    assert.strictEqual(open.type, 'LIGHTNING_OPEN_CHANNEL');
+  });
+});
+
+describe('MESSAGES.md wire catalog', function () {
+  it('matches live WIRE_TYPE_DECODE_ORDER', function () {
+    const rows = collectCatalog();
+    assert.strictEqual(rows.length, Message.WIRE_TYPE_DECODE_ORDER.length);
+    for (let i = 0; i < rows.length; i++) {
+      const pair = Message.WIRE_TYPE_DECODE_ORDER[i];
+      assert.strictEqual(rows[i].opcode, pair[0], rows[i].name);
+      assert.strictEqual(rows[i].name, pair[1]);
+    }
+    const seen = Object.create(null);
+    for (const row of rows) {
+      assert.strictEqual(seen[row.opcode], undefined, `duplicate opcode ${row.opcode}`);
+      seen[row.opcode] = row.name;
+    }
+    const ping = rows.find((row) => row.name === 'P2P_PING');
+    assert.ok(ping && ping.aliases.indexOf('Ping') !== -1);
+    const instruction = rows.find((row) => row.name === 'P2P_INSTRUCTION');
+    assert.ok(instruction && instruction.aliases.indexOf('PeerInstruction') !== -1);
+    const publish = rows.find((row) => row.name === 'CONTRACT_PUBLISH');
+    assert.ok(publish && publish.aliases.indexOf('P2P_CONTRACT_PUBLISH') !== -1);
+    const actual = fs.readFileSync(OUTPUT_PATH, 'utf8');
+    const start = actual.indexOf(CATALOG_BEGIN);
+    const stop = actual.indexOf(CATALOG_END);
+    assert.ok(start >= 0 && stop > start, 'MESSAGES.md catalog markers');
+    assert.strictEqual(actual.slice(start, stop + CATALOG_END.length), catalogBlock(rows));
   });
 });

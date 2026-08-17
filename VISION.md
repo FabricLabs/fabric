@@ -42,7 +42,7 @@ These are **not** the default path for new contributors:
 | Tier | Files |
 |------|--------|
 | **Must read** | **README.md**, **QUICKSTART.md**, **PUBLIC_API.md**, **DEVELOPERS.md**, **VISION.md** (this file) |
-| **Protocol & security** | **PROTOCOL.md** → **docs/MESSAGE_BODY.md**, **MESSAGES.md**, **FABRIC_MESSAGE_TYPE_CONSOLIDATION.md**, **POLICY.md**, **SECURITY.md**, **PRIVACY.md**, **AUDIT.md** |
+| **Protocol & security** | **PROTOCOL.md** → **docs/MESSAGE_BODY.md**, **MESSAGES.md**, **POLICY.md**, **SECURITY.md**, **PRIVACY.md**, **AUDIT.md** |
 | **Operators** | **docs/PRODUCTION.md** (includes release checklist) |
 | **Contracts & CLI** | **docs/CONTRACTS.md**, **docs/CLI.md**, **docs/L1_DOCUMENT_EXCHANGE.md** |
 | **Guides** | **guides/SERVICES.md**, **guides/ACTORS.md**, **guides/BUILD.md**, **guides/BEST_PRACTICES.md** |
@@ -51,7 +51,7 @@ These are **not** the default path for new contributors:
 
 ## Implementation priorities (forward motion)
 1. **Keep the JS path honest** — examples and README commands match **package.json** scripts and **Node 24.x**.
-2. **Tighten protocol ↔ code** — **FABRIC_MESSAGE_TYPE_CONSOLIDATION.md** and **constants** stay in sync; fewer one-off message types over time.
+2. **Tighten protocol ↔ code** — **MESSAGES.md** and **constants** stay in sync; fewer one-off message types over time.
 3. **Shrink doc surface** — label one-off reports via **[docs/NON_CANONICAL.md](docs/NON_CANONICAL.md)**; point readers here + **docs/README.md** instead of adding new root-level “completion” files.
 4. **Hub + HTTP** — coordinate releases with **hub.fabric.pub** / **@fabric/http** (see **DEVELOPERS.md**).
 

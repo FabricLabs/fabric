@@ -271,7 +271,7 @@ const DOCUMENT_REQUEST_TYPE = 999;
 const JSON_CALL_TYPE = 16000;
 const PATCH_MESSAGE_TYPE = 1024;
 /** Contract negotiation: batched Fabric messages + chain Merkle root + JSON Patch (RFC 6902) — see docs/CONTRACT_PROPOSAL.md */
-const CONTRACT_PROPOSAL_TYPE = 138; // 0x8A (POLICY.md / FABRIC_MESSAGE_TYPE_CONSOLIDATION)
+const CONTRACT_PROPOSAL_TYPE = 138; // 0x8A (POLICY.md / MESSAGES.md)
 
 // Opcodes
 const OP_CYCLE = '00';

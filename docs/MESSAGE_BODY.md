@@ -117,7 +117,6 @@ activity log, not this collection.
 
 ## Related
 
-- [`MESSAGES.md`](../MESSAGES.md) — purpose notes
-- [`FABRIC_MESSAGE_TYPE_CONSOLIDATION.md`](../FABRIC_MESSAGE_TYPE_CONSOLIDATION.md) — generated opcode freeze
+- [`MESSAGES.md`](../MESSAGES.md) — purpose notes and generated opcode freeze
 - [`C-JS-PARITY.md`](./C-JS-PARITY.md) — header / hash / sign parity
 - Hub `MESSAGE_TRANSPORT.md` — browser bridge (JSON at HTTP edge)

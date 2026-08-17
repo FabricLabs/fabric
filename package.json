@@ -49,7 +49,6 @@
     "QUICKSTART.md",
     "BUILD.md",
     "MESSAGES.md",
-    "FABRIC_MESSAGE_TYPE_CONSOLIDATION.md",
     "POLICY.md",
     "IDENTITY.md",
     "docs/**/*.md"

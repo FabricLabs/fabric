@@ -12,7 +12,7 @@ Living queue for this repo. Detail and closed items live in [SECURITY.md](../SEC
 - [ ] Production Hub OOM **critical** ([crash scan 2026-08-16T22:06Z](https://relay.goon.vc/downstream.agents.md): **306** restarts, ~3.6 min mean, ~2.9 GiB @ 96%). Live core pin is still `f1b5e147` (Filesystem retain). This tree (`9938917` + staged `publish` fail-closed) stops `publish` retain/sync. **Needs a core + Hub deploy together.** Do not raise `--max-old-space-size`. `addnode` [-23] and null `State.serialize` are on `9938917` (noise, not the leak).
 - [ ] Keep documenting that `sensitive` ≠ encrypted ([PRIVACY.md](../PRIVACY.md),
   [MESSAGE_BODY.md](MESSAGE_BODY.md)). Mesh chat model:
-  [MESH_CHAT.md](MESH_CHAT.md) + `functions/fabricChatKind.js`. Downstream privacy
+  [MESSAGES.md](../MESSAGES.md#mesh-chat-model-gossip-first) + `functions/fabricChatKind.js`. Downstream privacy
   queues: Hub/GoonCitizen `docs/OUTSTANDING.md` / GoonCitizen
   `docs/PRIVACY_REMAINING.md`.
 - [ ] Type-tree keep/remove lock in [PRODUCTION_MARCH.md](PRODUCTION_MARCH.md) (inventory remaining classes; `Scribe`/`Reader` deprecation notes are in).

@@ -6,7 +6,7 @@ manifest** shape that lets Fabric-speaking peers derive a **common state** —
 a list of fields and their values — across the network.
 
 Companion diagram: [`contracts/protocol.dot`](../contracts/protocol.dot).  
-Opcode uniqueness and V1 freeze: [`FABRIC_MESSAGE_TYPE_CONSOLIDATION.md`](../FABRIC_MESSAGE_TYPE_CONSOLIDATION.md). Purpose notes: [`MESSAGES.md`](../MESSAGES.md).  
+Opcode uniqueness and V1 freeze: [`MESSAGES.md`](../MESSAGES.md).  
 Execution model: [`DISTRIBUTED_EXECUTION.md`](./DISTRIBUTED_EXECUTION.md), [`PROGRAM.md`](./PROGRAM.md).
 
 There is **no** `DistributedExecution` or `Statechain` Fabric type. Shared

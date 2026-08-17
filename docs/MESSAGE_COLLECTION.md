@@ -72,5 +72,5 @@ bound `collection.root` and folded `tip.stateDigest`. Regenerate with
 
 - [`MESSAGE_BODY.md`](MESSAGE_BODY.md) — AMP header / typed bodies
 - [`APPLICATION_NAMESPACES.md`](APPLICATION_NAMESPACES.md) — `CONTRACT_MESSAGE` inner types
-- [`MESH_CHAT.md`](MESH_CHAT.md) — shoutbox vs GroupChat
+- [`MESSAGES.md`](../MESSAGES.md#mesh-chat-model-gossip-first) — shoutbox vs GroupChat
 - `functions/contractMessageAccumulate.js` — ARC journal fold from the same bytes

@@ -446,8 +446,7 @@ Implementations SHOULD:
 ### Related Documents
 
 - `PROTOCOL.md` → `docs/MESSAGE_BODY.md`: Canonical wire specification
-- `MESSAGES.md`: Opcode purpose notes
-- `FABRIC_MESSAGE_TYPE_CONSOLIDATION.md`: Generated decode-order freeze (one name per opcode)
+- `MESSAGES.md`: Opcode catalog and generated decode-order freeze
 - `SECURITY.md`: Amplification, peel/`P2P_RELAY`, scoring (prefer over relay matrix below when they conflict)
 - `docs/P2P_FORWARD.md`: Directed onion
 

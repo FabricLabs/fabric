@@ -13,7 +13,7 @@ Fabric networks are intended for deployment where **peers, relays, hubs, and ope
 
 Bitcoin L1 finality and operator key hygiene remain outside this document’s guarantees. Suite apps SHOULD document the same adversarial assumption and keep fail-closed defaults for auth, allowlists, and spend paths.
 
-**Basics coverage:** [`tests/adversarialEnvironment.basics.test.js`](tests/adversarialEnvironment.basics.test.js) (blinded-execution role minimum + phishing hub rejection via allowlist helpers when present). Broader Peer adversarial contracts live under [`tests/protocol-v1/`](tests/protocol-v1/README.md).
+**Basics coverage:** [`tests/blindedExecutionCircuit.test.js`](tests/blindedExecutionCircuit.test.js) (blinded-execution role minimum + phishing hub rejection via allowlist helpers when present). Broader Peer adversarial contracts live under [`tests/protocol-v1/`](tests/protocol-v1/README.md).
 
 ## Blinded execution (composition scaffold)
 [`functions/blindedExecutionCircuit.js`](functions/blindedExecutionCircuit.js) commits garbler publish → ContractProposal accept/reject → content-addressed circuit digests → optional hashlock Taproot. It is **not** Yao gate garbling / OT. Do not treat `Circuit#scramble` as cryptographic evaluation. Real GC remains a future backend behind the same digests ([docs/PROGRAM.md](docs/PROGRAM.md)).
