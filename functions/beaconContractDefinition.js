@@ -10,7 +10,7 @@
  * redeploys across regtest → signet → mainnet with Accept overlays.
  *
  * @module functions/beaconContractDefinition
- * @see docs/ARC.md
+ * @see docs/CONTRACTS.md
  */
 
 const Actor = require('../types/actor');

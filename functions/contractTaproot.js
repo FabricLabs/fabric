@@ -8,7 +8,7 @@
  * Optional hashlock / arbitrary script leaves compose via {@link composeTaprootTree}.
  *
  * @see docs/DISTRIBUTED_EXECUTION.md
- * @see docs/ARC.md
+ * @see docs/CONTRACTS.md
  * @see functions/contractTierWhen.js
  */
 

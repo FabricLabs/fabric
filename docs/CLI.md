@@ -135,7 +135,7 @@ npm run messages -- verify collection.json
 npm run messages -- replay collection.json
 ```
 
-See [MESSAGE_COLLECTION.md](MESSAGE_COLLECTION.md).
+See [MESSAGES.md](../MESSAGES.md#fabric-message-collections).
 
 ## Verbosity (release defaults)
 | Setting | Default | Effect |

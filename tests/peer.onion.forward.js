@@ -1040,3 +1040,509 @@ describe('Peer P2P_FORWARD onion', function () {
     }
   });
 });
+
+const {
+  chatTextOf,
+  chatActorIdOf,
+  formatChatLogLine,
+  sanitizeChatDisplayField
+} = require('../functions/fabricChatText');
+
+describe('fabricChatText', function () {
+  it('reads Peer { text } first, then Hub object.content / application body', function () {
+    assert.strictEqual(chatTextOf({ text: 'mesh' }), 'mesh');
+    assert.strictEqual(chatTextOf({ object: { content: 'hub' } }), 'hub');
+    assert.strictEqual(chatTextOf({ object: { body: 'app' } }), 'app');
+    assert.strictEqual(chatTextOf('plain'), 'plain');
+    assert.strictEqual(chatTextOf({ text: '  ' }), '');
+  });
+
+  it('prefers AMP signer over actor.id and x-only-normalizes compressed keys', function () {
+    const compressed = '02' + 'aa'.repeat(32);
+    const xonly = 'aa'.repeat(32);
+    assert.strictEqual(
+      chatActorIdOf({ actor: { id: 'other' } }, { signer: compressed }),
+      xonly
+    );
+    assert.strictEqual(chatActorIdOf({ actor: { id: xonly } }), xonly);
+  });
+
+  it('formats TUI/Hub-style log lines with alias or truncated id', function () {
+    assert.strictEqual(formatChatLogLine('aa'.repeat(32), 'neorion', 'hi'), '[neorion]: hi');
+    assert.strictEqual(
+      formatChatLogLine('abcdefghij', null, 'yo'),
+      '[@abcdefghij]: yo'
+    );
+    assert.strictEqual(
+      formatChatLogLine('abcdefghijklmnop', null, 'z', (id) => id.slice(0, 4)),
+      '[@abcd]: z'
+    );
+    assert.strictEqual(formatChatLogLine(null, '  ', 'plain'), '[@]: plain');
+  });
+
+  it('strips Blessed tags and control characters from alias/text', function () {
+    assert.strictEqual(sanitizeChatDisplayField('hi{bold}x{/bold}'), 'hiboldx/bold');
+    assert.strictEqual(
+      formatChatLogLine('aa'.repeat(32), '{red-fg}evil{/red-fg}', 'ok\u0007{tag}'),
+      '[red-fgevil/red-fg]: oktag'
+    );
+  });
+});
+
+const {
+  CHAT_SURFACE,
+  classifyChatSurface,
+  isPublicMeshShoutbox,
+  isConfidentialChatSurface,
+  chatSurfaceLabel
+} = require('../functions/fabricChatKind');
+const {
+  ONION_CHAT_SEAL_TYPE,
+  isOnionChatSeal,
+  sealOnionChatText,
+  tryOpenOnionChatText,
+  onionPathRecipientXOnly
+} = require('../functions/onionChatSeal');
+
+describe('fabricChatKind', function () {
+  it('classifies cleartext UTF-8 as public shoutbox', function () {
+    assert.strictEqual(classifyChatSurface('hello mesh'), CHAT_SURFACE.SHOUTBOX);
+    assert.ok(isPublicMeshShoutbox('hello mesh'));
+    assert.ok(!isConfidentialChatSurface('hello mesh'));
+    assert.match(chatSurfaceLabel(CHAT_SURFACE.SHOUTBOX), /Public/i);
+  });
+
+  it('classifies a missing body as unknown, not shoutbox', function () {
+    assert.strictEqual(classifyChatSurface(null), CHAT_SURFACE.UNKNOWN);
+    assert.strictEqual(classifyChatSurface(undefined), CHAT_SURFACE.UNKNOWN);
+    assert.ok(!isPublicMeshShoutbox(null));
+    assert.ok(!isPublicMeshShoutbox(undefined));
+  });
+
+  it('classifies onion-sealed bodies as confidential', function () {
+    const tip = new Key();
+    const sealed = sealOnionChatText('secret', tip.pubkey);
+    assert.strictEqual(classifyChatSurface(sealed), CHAT_SURFACE.ONION_SEAL);
+    assert.ok(isConfidentialChatSurface(sealed));
+    assert.ok(!isPublicMeshShoutbox(sealed));
+  });
+
+  it('classifies GroupChat objects with and without seals', function () {
+    assert.strictEqual(
+      classifyChatSurface({ body: 'hi' }, { appType: 'GroupChat' }),
+      CHAT_SURFACE.CONTRACT_CLEARTEXT
+    );
+    assert.strictEqual(
+      classifyChatSurface({
+        type: 'GroupChat',
+        seal: {
+          scheme: 'aes-256-gcm-participant-v1',
+          ephemeralPub: 'aa',
+          wraps: [],
+          nonce: 'bb',
+          ciphertext: 'cc'
+        },
+        body: ''
+      }),
+      CHAT_SURFACE.GROUP_SEAL
+    );
+  });
+});
+
+describe('@fabric/core onionChatSeal', function () {
+  it('seals to recipient and opens only with matching key', function () {
+    const dest = new Key();
+    const other = new Key();
+    const wire = sealOnionChatText('secret-hop', dest.pubkey);
+    assert.ok(isOnionChatSeal(wire));
+    assert.ok(wire.includes(ONION_CHAT_SEAL_TYPE));
+    assert.ok(!wire.includes('secret-hop'));
+
+    const ok = tryOpenOnionChatText(wire, { keyOrPrivate: dest });
+    assert.strictEqual(ok.sealed, true);
+    assert.strictEqual(ok.opened, true);
+    assert.strictEqual(ok.text, 'secret-hop');
+
+    const bad = tryOpenOnionChatText(wire, { keyOrPrivate: other });
+    assert.strictEqual(bad.sealed, true);
+    assert.strictEqual(bad.opened, false);
+    assert.strictEqual(bad.text, null);
+  });
+
+  it('onionPathRecipientXOnly uses path tip', function () {
+    const a = new Key();
+    const b = new Key();
+    const tip = onionPathRecipientXOnly([
+      xOnlyFromKey(a).toString('hex'),
+      xOnlyFromKey(b).toString('hex')
+    ]);
+    assert.strictEqual(tip, xOnlyFromKey(b).toString('hex'));
+
+    const compressed = Buffer.from(b.public.encodeCompressed('hex'), 'hex');
+    assert.strictEqual(onionPathRecipientXOnly([compressed]), xOnlyFromKey(b).toString('hex'));
+    assert.strictEqual(onionPathRecipientXOnly([xOnlyFromKey(b)]), xOnlyFromKey(b).toString('hex'));
+  });
+
+  it('Peer peels sealed onion chat and emits plaintext', function () {
+    const destKey = new Key();
+    const originKey = new Key();
+    const peer = new Peer(offlinePeerSettings({
+      key: { mnemonic: destKey.mnemonic }
+    }));
+    const addr = '127.0.0.1:9300';
+    peer.connections[addr] = { _writeFabric () {}, destroy () {} };
+    peer.peers[addr] = { id: 'relay', publicKey: originKey.public.encodeCompressed('hex') };
+
+    // Seal to the Peer's Fabric protocol pubkey (Identity#fabricKey), not BIP44 master.
+    const sealed = sealOnionChatText('sealed-via-onion', peer.key.pubkey);
+    const payload = Message.fromVector(['P2P_CHAT_MESSAGE', sealed]);
+    payload.signWithKey(originKey);
+    const outer = wrapOnionPath({
+      path: [xOnlyFromKey(peer.key)],
+      payload,
+      key: originKey
+    });
+
+    const chats = [];
+    peer.on('chat', (body, meta) => chats.push({ body, meta }));
+    peer._handleFabricMessage(outer.toBuffer(), { name: addr }, null);
+
+    assert.strictEqual(chats.length, 1);
+    assert.strictEqual(chats[0].body.text, 'sealed-via-onion');
+    assert.strictEqual(chats[0].body.onionSealed, true);
+    assert.strictEqual(chats[0].meta.onionSealed, true);
+  });
+
+  it('Peer drops sealed chat it cannot open', function () {
+    const destKey = new Key();
+    const wrongPeer = new Peer(offlinePeerSettings());
+    const originKey = new Key();
+    const addr = '127.0.0.1:9301';
+    wrongPeer.connections[addr] = { _writeFabric () {}, destroy () {} };
+    wrongPeer.peers[addr] = { id: 'relay', publicKey: originKey.public.encodeCompressed('hex') };
+
+    const sealed = sealOnionChatText('not-for-you', destKey.pubkey);
+    const payload = Message.fromVector(['P2P_CHAT_MESSAGE', sealed]);
+    payload.signWithKey(originKey);
+    const outer = wrapOnionPath({
+      path: [xOnlyFromKey(wrongPeer.key)],
+      payload,
+      key: originKey
+    });
+
+    const chats = [];
+    wrongPeer.on('chat', (body) => chats.push(body));
+    wrongPeer._handleFabricMessage(outer.toBuffer(), { name: addr }, null);
+    assert.strictEqual(chats.length, 0);
+  });
+
+  it('multi-hop: curious relay can recurse to chat body but sees ciphertext only', function () {
+    const originKey = new Key();
+    const relay = new Peer(offlinePeerSettings());
+    const destKey = new Key();
+    const dest = new Peer(offlinePeerSettings({ key: { mnemonic: destKey.mnemonic } }));
+    const fromAddr = '127.0.0.1:9310';
+    const destAddr = '127.0.0.1:9311';
+    const destWrites = [];
+
+    relay.connections[fromAddr] = { _writeFabric () {}, destroy () {} };
+    relay.connections[destAddr] = {
+      _writeFabric (buf) { destWrites.push(buf); },
+      destroy () {}
+    };
+    relay.peers[fromAddr] = { id: 'src', publicKey: originKey.public.encodeCompressed('hex') };
+    relay.peers[destAddr] = { id: 'dest', publicKey: dest.key.public.encodeCompressed('hex') };
+
+    const plaintext = 'multi-hop-secret';
+    const sealed = sealOnionChatText(plaintext, dest.key.pubkey);
+    const payload = Message.fromVector(['P2P_CHAT_MESSAGE', sealed]).signWithKey(originKey);
+    const outer = wrapOnionPath({
+      path: [xOnlyFromKey(relay.key), xOnlyFromKey(dest.key)],
+      payload,
+      key: originKey
+    });
+
+    const relayChats = [];
+    relay.on('chat', (body) => relayChats.push(body));
+    relay._handleFabricMessage(outer.toBuffer(), { name: fromAddr }, null);
+
+    assert.strictEqual(relayChats.length, 0, 'relay must not emit chat on mid-hop peel');
+    assert.strictEqual(destWrites.length, 1);
+
+    // Snooping relay: recurse nested P2P_FORWARD inners until the application Message.
+    let cursor = Message.fromBuffer(destWrites[0]);
+    for (let i = 0; i < 8; i++) {
+      const fields = tryDecodeForward(cursor);
+      if (!fields) break;
+      cursor = Message.fromBuffer(fields.inner);
+    }
+    assert.strictEqual(cursor.type, 'P2P_CHAT_MESSAGE');
+    const snooped = cursor.data.toString('utf8');
+    assert.ok(isOnionChatSeal(snooped));
+    assert.ok(!snooped.includes(plaintext));
+    assert.strictEqual(tryOpenOnionChatText(snooped, { keyOrPrivate: relay.key }).opened, false);
+
+    const tipChats = [];
+    dest.connections[destAddr] = { _writeFabric () {}, destroy () {} };
+    dest.peers[destAddr] = { id: 'relay', publicKey: relay.key.public.encodeCompressed('hex') };
+    dest.on('chat', (body) => tipChats.push(body));
+    dest._handleFabricMessage(destWrites[0], { name: destAddr }, null);
+    assert.strictEqual(tipChats.length, 1);
+    assert.strictEqual(tipChats[0].text, plaintext);
+    assert.strictEqual(tipChats[0].onionSealed, true);
+  });
+
+  it('mesh flood P2P_CHAT_MESSAGE stays cleartext (no onion seal path)', function () {
+    const peer = new Peer(offlinePeerSettings());
+    const author = new Key();
+    const addr = '127.0.0.1:9320';
+    const peersWrites = [];
+    peer.connections[addr] = {
+      _writeFabric (buf) { peersWrites.push(buf); },
+      destroy () {}
+    };
+    peer.peers[addr] = { id: 'neighbor', publicKey: author.public.encodeCompressed('hex') };
+    peer._addressToId[addr] = 'neighbor';
+    peer._state.peers = {
+      neighbor: {
+        id: 'neighbor',
+        address: addr,
+        score: 100,
+        publicKey: author.public.encodeCompressed('hex')
+      }
+    };
+
+    const clear = 'mesh-cleartext-hello';
+    const msg = Message.fromVector(['P2P_CHAT_MESSAGE', clear]).signWithKey(author);
+    const chats = [];
+    peer.on('chat', (body, meta) => chats.push({ body, meta }));
+    peer._handleFabricMessage(msg.toBuffer(), { name: addr }, null);
+
+    assert.strictEqual(chats.length, 1);
+    assert.strictEqual(chats[0].body.text, clear);
+    assert.ok(!chats[0].body.onionSealed);
+    assert.strictEqual(isOnionChatSeal(clear), false);
+  });
+});
+
+const {
+  SEAL_SCHEME,
+  SEAL_SCHEME_PARTICIPANT,
+  sortedMemberXOnlys,
+  deriveTimelineCipherKey,
+  sealGroupChatBody,
+  sealParticipantGroupChatBody,
+  openGroupChatBody,
+  isSealedGroupChat,
+  isParticipantSealedGroupChat,
+  pubkeyXOnly
+} = require('../functions/groupChatSeal');
+
+describe('@fabric/core groupChatSeal', function () {
+  const a = new Key();
+  const b = new Key();
+  const contractId = 'a'.repeat(64);
+  const digest = require('crypto').createHash('sha256').update('tip-content').digest('hex');
+
+  it('sortedMemberXOnlys normalizes compressed and x-only', function () {
+    const xa = pubkeyXOnly(a.pubkey);
+    assert.ok(xa && xa.length === 64);
+    assert.strictEqual(pubkeyXOnly(`02${xa}`), xa);
+    assert.strictEqual(pubkeyXOnly(`03${xa}`), xa);
+    const list = sortedMemberXOnlys([b.pubkey, a.pubkey, xa, 'nope']);
+    assert.strictEqual(list.length, 2);
+    assert.ok(list.includes(xa));
+    assert.ok(list.includes(pubkeyXOnly(b.pubkey)));
+    assert.deepStrictEqual(list, list.slice().sort());
+  });
+
+  it('deriveTimelineCipherKey is deterministic for same tip+members', function () {
+    const opts = {
+      contractId,
+      clock: 7,
+      stateDigest: digest,
+      memberPubkeys: [a.pubkey, b.pubkey]
+    };
+    const k1 = deriveTimelineCipherKey(opts);
+    const k2 = deriveTimelineCipherKey({
+      ...opts,
+      memberPubkeys: [b.pubkey, a.pubkey]
+    });
+    assert.ok(Buffer.isBuffer(k1) && k1.length === 32);
+    assert.strictEqual(k1.toString('hex'), k2.toString('hex'));
+  });
+
+  it('deriveTimelineCipherKey changes when tip or roster changes', function () {
+    const base = {
+      contractId,
+      clock: 7,
+      stateDigest: digest,
+      memberPubkeys: [a.pubkey, b.pubkey]
+    };
+    const k0 = deriveTimelineCipherKey(base);
+    const kClock = deriveTimelineCipherKey({ ...base, clock: 8 });
+    const c = new Key();
+    const kMembers = deriveTimelineCipherKey({
+      ...base,
+      memberPubkeys: [a.pubkey, b.pubkey, c.pubkey]
+    });
+    assert.notStrictEqual(k0.toString('hex'), kClock.toString('hex'));
+    assert.notStrictEqual(k0.toString('hex'), kMembers.toString('hex'));
+  });
+
+  it('deriveTimelineCipherKey rejects missing or non-integer clocks', function () {
+    const base = {
+      contractId,
+      stateDigest: digest,
+      memberPubkeys: [a.pubkey]
+    };
+    assert.throws(() => deriveTimelineCipherKey({ ...base }), /non-negative integer/);
+    assert.throws(() => deriveTimelineCipherKey({ ...base, clock: null }), /non-negative integer/);
+    assert.throws(() => deriveTimelineCipherKey({ ...base, clock: 'nope' }), /non-negative integer/);
+    assert.throws(() => deriveTimelineCipherKey({ ...base, clock: 1.5 }), /non-negative integer/);
+    assert.throws(() => deriveTimelineCipherKey({ ...base, clock: -1 }), /non-negative integer/);
+    const ok = deriveTimelineCipherKey({ ...base, clock: 0 });
+    assert.ok(Buffer.isBuffer(ok) && ok.length === 32);
+  });
+
+  it('seal/open round-trip (v1 tip)', function () {
+    const tip = {
+      contractId,
+      clock: 2,
+      stateDigest: digest,
+      memberPubkeys: [a.pubkey, b.pubkey]
+    };
+    const seal = sealGroupChatBody({ body: 'hello sealed group', ...tip });
+    assert.strictEqual(seal.scheme, SEAL_SCHEME);
+    assert.strictEqual(seal.basisClock, 2);
+    assert.ok(isSealedGroupChat({ seal }));
+    const plain = openGroupChatBody(seal, tip);
+    assert.strictEqual(plain, 'hello sealed group');
+  });
+
+  it('open fails on wrong tip clock', function () {
+    const tip = {
+      contractId,
+      clock: 2,
+      stateDigest: digest,
+      memberPubkeys: [a.pubkey, b.pubkey]
+    };
+    const seal = sealGroupChatBody({ body: 'secret', ...tip });
+    assert.throws(() => openGroupChatBody(seal, { ...tip, clock: 3 }), /clock/);
+  });
+
+  it('open fails on wrong stateDigest, roster, or tampered ciphertext', function () {
+    const tip = {
+      contractId,
+      clock: 2,
+      stateDigest: digest,
+      memberPubkeys: [a.pubkey, b.pubkey]
+    };
+    const seal = sealGroupChatBody({ body: 'secret', ...tip });
+
+    const otherDigest = require('crypto').createHash('sha256').update('other-tip').digest('hex');
+    assert.throws(
+      () => openGroupChatBody(seal, { ...tip, stateDigest: otherDigest }),
+      /stateDigest/
+    );
+
+    // Same clock/digest but different roster → different HKDF salt → AES-GCM auth fail.
+    const c = new Key();
+    assert.throws(
+      () => openGroupChatBody(seal, {
+        ...tip,
+        memberPubkeys: [a.pubkey, b.pubkey, c.pubkey]
+      }),
+      /auth|Unsupported state|bad decrypt|unable to authenticate/i
+    );
+
+    const ct = Buffer.from(seal.ciphertext, 'base64');
+    ct[0] ^= 0xff;
+    const tamperedSeal = { ...seal, ciphertext: ct.toString('base64') };
+    assert.throws(
+      () => openGroupChatBody(tamperedSeal, tip),
+      /auth|Unsupported state|bad decrypt|unable to authenticate/i
+    );
+  });
+
+  it('participant seal opens for each member and not for outsiders', function () {
+    const seal = sealParticipantGroupChatBody({
+      body: 'hub-blind ops',
+      memberPubkeys: [a.pubkey, b.pubkey],
+      contractId,
+      clock: 9,
+      stateDigest: digest
+    });
+    assert.strictEqual(seal.scheme, SEAL_SCHEME_PARTICIPANT);
+    assert.ok(isParticipantSealedGroupChat(seal));
+    assert.ok(isSealedGroupChat({ seal }));
+    assert.ok(Array.isArray(seal.wraps) && seal.wraps.length === 2);
+    assert.ok(seal.ephemeralPub);
+    // Tip fields on the seal are bound as AES-GCM AAD (not key material).
+    assert.strictEqual(seal.basisClock, 9);
+    assert.strictEqual(seal.contractId, contractId);
+    assert.strictEqual(seal.stateDigest, digest);
+
+    assert.throws(
+      () => sealParticipantGroupChatBody({
+        body: 'x',
+        memberPubkeys: [a.pubkey],
+        clock: -1
+      }),
+      /non-negative integer/
+    );
+    assert.throws(
+      () => sealParticipantGroupChatBody({
+        body: 'x',
+        memberPubkeys: [a.pubkey],
+        clock: 1.5
+      }),
+      /non-negative integer/
+    );
+    assert.throws(
+      () => sealParticipantGroupChatBody({
+        body: 'x',
+        memberPubkeys: [a.pubkey],
+        clock: 'nope'
+      }),
+      /non-negative integer/
+    );
+
+    assert.strictEqual(
+      openGroupChatBody(seal, { keyOrPrivate: a }),
+      'hub-blind ops'
+    );
+    assert.strictEqual(
+      openGroupChatBody(seal, { keyOrPrivate: b }),
+      'hub-blind ops'
+    );
+
+    const outsider = new Key();
+    assert.throws(
+      () => openGroupChatBody(seal, { keyOrPrivate: outsider }),
+      /no wrap/
+    );
+
+    // Cut-and-paste across contract id fails AAD auth even with a valid wrap key.
+    assert.throws(
+      () => openGroupChatBody({ ...seal, contractId: 'b'.repeat(64) }, { keyOrPrivate: a }),
+      /auth|Unsupported state|bad decrypt|unable to authenticate/i
+    );
+  });
+
+  it('participant seal does not use tip HKDF (hub tip holders stay blind)', function () {
+    const seal = sealGroupChatBody({
+      mode: 'participant',
+      body: 'still secret',
+      memberPubkeys: [a.pubkey, b.pubkey],
+      contractId,
+      clock: 1,
+      stateDigest: digest
+    });
+    // ECDH wrap opens without supplying tip opts; tip holders without privkeys stay blind.
+    assert.strictEqual(
+      openGroupChatBody(seal, { keyOrPrivate: a.xprv ? { xprv: a.xprv } : a }),
+      'still secret'
+    );
+  });
+});

@@ -111,7 +111,7 @@ Do not conflate the two.
 
 Ordered lists of **bit-identical AMP frames** (`Message.toBuffer()` hex) are
 the portable format for contract journals, Discord / `GroupDataShare` packs,
-and peer catch-up. See [`MESSAGE_COLLECTION.md`](./MESSAGE_COLLECTION.md)
+and peer catch-up. See [`MESSAGES.md`](../MESSAGES.md#fabric-message-collections)
 (`functions/fabricMessageCollection.js`). Hub `messages/*.json` remains an
 activity log, not this collection.
 

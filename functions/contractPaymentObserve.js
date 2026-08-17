@@ -7,7 +7,7 @@
  * so callers can fold balances into tip content under signer policy.
  *
  * @module functions/contractPaymentObserve
- * @see docs/ARC.md
+ * @see docs/CONTRACTS.md
  */
 
 const bitcoin = require('bitcoinjs-lib');

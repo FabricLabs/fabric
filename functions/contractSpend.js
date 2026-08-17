@@ -4,7 +4,7 @@
  * ARC tip → P2TR spend resolution and tip-bound withdrawal bodies.
  *
  * @module functions/contractSpend
- * @see docs/ARC.md
+ * @see docs/CONTRACTS.md
  */
 
 const crypto = require('crypto');

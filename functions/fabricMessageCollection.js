@@ -15,7 +15,7 @@
  * answer different questions.
  *
  * @module functions/fabricMessageCollection
- * @see docs/MESSAGE_COLLECTION.md
+ * @see MESSAGES.md
  * @see functions/contractMessageAccumulate.js
  */
 
@@ -548,7 +548,7 @@ function runCli (argv = [], io = {}) {
 
   if (action === 'help' || action === '-h' || action === '--help') {
     out.write([
-      'Usage: node scripts/replay-messages.js <collect|replay|verify> [file ...]',
+      'Usage: node functions/fabricMessageCollection.js <collect|replay|verify> [file ...]',
       '',
       '  collect  Ingest AMP hex / JSON / JSONL into a FabricMessageCollection.',
       '  replay   Parse each stored frame and print hash, type, appType.',
@@ -642,3 +642,8 @@ module.exports = {
   runCli,
   resolveCollectionFilePath
 };
+
+if (require.main === module) {
+  const code = runCli(process.argv.slice(2));
+  if (code) process.exit(code);
+}
