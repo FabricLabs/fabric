@@ -7,7 +7,8 @@ const {
   isSealedEnvelope,
   isPasswordProtectedDocument,
   SEAL_SCHEME,
-  PASSWORD_MIN_LENGTH
+  PASSWORD_MIN_LENGTH,
+  DEFAULT_ITERATIONS
 } = require('../functions/sealedBlob');
 
 describe('@fabric/core/functions/sealedBlob', function () {
@@ -21,7 +22,7 @@ describe('@fabric/core/functions/sealedBlob', function () {
     assert.ok(envelope.ciphertext);
     assert.ok(envelope.iv);
     assert.ok(envelope.kdf && envelope.kdf.salt);
-    assert.strictEqual(envelope.kdf.iterations, 210000);
+    assert.strictEqual(envelope.kdf.iterations, DEFAULT_ITERATIONS);
     const opened = openSealedJson(envelope, password);
     assert.deepStrictEqual(opened, secret);
   });

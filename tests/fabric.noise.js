@@ -2,7 +2,7 @@
 
 const Key = require('../types/key');
 const assert = require('assert');
-const noise = require('noise-protocol-stream');
+const noise = require('../functions/noiseProtocolStream');
 const crypto = require('crypto');
 
 const SAMPLE = {

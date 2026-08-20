@@ -54,7 +54,7 @@ describe('executionProgramRunner / Machine fabric-execution', function () {
       steps: [{ op: 'FabricOpcode', fabricType: 'Ping' }]
     }, {
       resolveFabricEntry () {
-        throw new Error('Ping is a transport keepalive, not an Execution program opcode');
+        return { name: 'Ping', opcodeDec: 0x01 };
       }
     });
     assert.strictEqual(r.ok, false);

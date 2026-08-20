@@ -393,9 +393,11 @@ function normalizeContractSpendPolicy (raw = {}) {
  * @private
  */
 function normalizeInternalKeyMode (mode) {
-  const m = String(mode || 'nums').toLowerCase();
+  if (mode == null || String(mode).trim() === '') return 'nums';
+  const m = String(mode).trim().toLowerCase();
   if (m === 'musig2' || m === 'auto') return 'musig2';
-  return 'nums';
+  if (m === 'nums') return 'nums';
+  throw new Error('internalKeyMode must be "musig2", "auto", or "nums"');
 }
 
 /**
@@ -1486,8 +1488,9 @@ function buildFederationVaultFromPolicy (opts = {}) {
           ? (String(softMode).toLowerCase() === 'reduced' ? 'reduced' : 'publisher')
           : 'publisher',
         network,
-        internalKeyMode: (built.policy && built.policy.internalKeyMode)
-          || (pks.length >= 2 ? 'musig2' : 'nums')
+        internalKeyMode: built.internalPubkeyHex === TAPROOT_INTERNAL_NUMS.toString('hex')
+          ? 'nums'
+          : 'musig2'
       },
       policy: built.policy,
       leaves: built.leaves

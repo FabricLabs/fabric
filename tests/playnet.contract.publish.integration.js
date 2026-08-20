@@ -44,8 +44,8 @@ describe('playnet contract publish + re-publish', function () {
     const wire = Message.fromVector(['CONTRACT_PUBLISH', JSON.stringify(definition)]).signWithKey(owner);
     peer._handleFabricMessage(wire.toBuffer(), { name: '127.0.0.1:18444' });
 
-    assert.ok(peer.contracts[contractId] || Object.keys(peer.contracts || {}).length >= 1);
-    const id = peer.contracts[contractId] ? contractId : Object.keys(peer.contracts)[0];
+    assert.ok(peer.contracts[contractId], 'CONTRACT_PUBLISH must register the Actor id');
+    const id = contractId;
     assert.ok(peer._signerMayPatchContract(id, ownerPub));
     assert.strictEqual(peer._signerMayPatchContract(id, attackerPub), false);
 
@@ -62,7 +62,7 @@ describe('playnet contract publish + re-publish', function () {
       're-publish must not grant patch rights to a new wire signer'
     );
 
-    assert.ok(publishes >= 0);
+    assert.ok(publishes > 0, 'CONTRACT_PUBLISH ingest must emit contract:publish');
   });
 
   it('broadcast writes CONTRACT_PUBLISH frames to connected peers', function () {

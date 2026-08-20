@@ -26,6 +26,8 @@ function asBuffer (value, encoding = 'hex') {
   if (typeof value === 'string') {
     const hex = String(value).trim().replace(/^0x/i, '');
     if (!hex || hex.length % 2) return null;
+    // Buffer.from(hex, 'hex') silently truncates at the first non-hex nibble.
+    if (encoding === 'hex' && !/^[0-9a-f]+$/i.test(hex)) return null;
     return Buffer.from(hex, encoding);
   }
   return null;
@@ -46,14 +48,22 @@ function tapLeafScriptEntry (opts = {}) {
   if (!script || !script.length) {
     throw new Error('BIP371 tapLeafScript requires script bytes');
   }
-  if (!controlBlock || controlBlock.length < 33) {
-    throw new Error('BIP371 controlBlock must be at least 33 bytes');
+  if (!controlBlock || controlBlock.length < 33 ||
+      controlBlock.length > 33 + (32 * 128) ||
+      ((controlBlock.length - 33) % 32) !== 0) {
+    throw new Error('BIP371 controlBlock length must be 33 + 32*m bytes');
   }
   const leafVersion = opts.leafVersion != null
     ? Number(opts.leafVersion)
     : LEAF_VERSION_TAPSCRIPT;
   if (!Number.isInteger(leafVersion) || leafVersion < 0 || leafVersion > 255) {
     throw new Error('BIP371 leafVersion must be an 8-bit integer');
+  }
+  if ((leafVersion & 1) !== 0) {
+    throw new Error('BIP371 leafVersion must be even (BIP-341 leaf version + parity bit)');
+  }
+  if ((controlBlock[0] & 0xfe) !== leafVersion) {
+    throw new Error('BIP371 leafVersion must match the control block');
   }
   return { leafVersion, script, controlBlock };
 }

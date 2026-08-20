@@ -257,6 +257,23 @@ Fabric’s **primary mesh fabric** is the gossip / peering network
 Classifier: [`functions/fabricChatKind.js`](functions/fabricChatKind.js)
 (also re-exported from `fabricChatText`). Keep gossip/peering budgets first. Keep the global shoutbox intentionally public. Put confidential traffic on sealed GroupChat.
 
+## Public gossip vs directed relay
+
+Canonical policy list: [`functions/gossipNetwork.js`](functions/gossipNetwork.js).
+Validate-and-relay node: `node scripts/gossip-relay.js` (one Peer, no Hub/Bitcoin).
+
+| Policy | Types | Peer behaviour |
+|---|---|---|
+| **flood** | `P2P_PEER_GOSSIP`, `P2P_PEERING_OFFER`, `P2P_CHAT_MESSAGE`, `P2P_PEER_ALIAS`, `CONTRACT_PUBLISH`, `CONTRACT_MESSAGE`, `CONTRACT_PROPOSAL`, `BITCOIN_BLOCK`, `DOCUMENT_REQUEST` (when not held) | Bit-identical `relayFrom` after AMP validate |
+| **envelope** | `P2P_RELAY` | Flood the outer frame; inner is local-observe |
+| **opt-in** | `P2P_INVENTORY_REQUEST` / `RESPONSE` | Off by default (`relayInventoryRequest` / `relayInventoryResponse`) |
+| **trusted** | `P2P_FLUSH_CHAIN` | Allow-listed high-score peers only |
+| **directed** | `P2P_FORWARD`, `P2P_FILE_SEND`, `P2P_MUSIG_*` | Hop-by-hop; not public flood |
+| **session** | `P2P_PING` / `PONG`, `P2P_SESSION_*` | TCP/NOISE control |
+| **observe** | `DOCUMENT_PUBLISH`, `P2P_DOCUMENT_PUBLISH`, `P2P_PEER_ANNOUNCE`, Lightning announcements, `SIDECHAIN_STATE_PATCH`, … | Local emit or originator broadcast; Peer does not re-flood |
+
+Tests: `tests/gossip.network.js`.
+
 ## Remaining work
 
 Owner-gated. Protocol version stays `0x01`.

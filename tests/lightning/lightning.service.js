@@ -13,41 +13,22 @@ const Key = require('../../types/key');
 const Bitcoin = require('../../services/bitcoin');
 const Lightning = require('../../services/lightning');
 
+const { getFreePort } = require('../helpers/peer');
+
 const runLightning = !!process.env.FABRIC_E2E_REGTEST;
 const d = describe;
 
 d('@fabric/core/services/lightning', function () {
   this.timeout(180000);
 
-  const bitcoinDefaults = {
-    debug: false,
-    network: 'regtest',
-    mode: 'fabric',
-    host: '127.0.0.1',
-    port: 18444,
-    rpcport: 18443,
-    zmqport: 18445,
-    managed: true,
-    username: 'bitcoinrpc',
-    password: 'password',
-    datadir: './stores/bitcoin-regtest-test'
-  };
+  // Isolated from tests/bitcoin.regtest.js (shared 18443 + bitcoin-regtest-test).
+  const MINER_WALLET = 'lightning-e2e';
 
-  const lightningDefaults = {
-    debug: false,
-    bitcoin: {
-      rpcport: 18443,
-      rpcuser: 'bitcoinrpc',
-      rpcpassword: 'password',
-      host: '127.0.0.1',
-      datadir: './stores/bitcoin-regtest-test'
-    },
-    datadir: './stores/lightning-regtest-test',
-    managed: true,
-    socket: 'lightningd.sock',
-    mode: 'socket',
-    network: 'regtest'
-  };
+  let bitcoinDefaults;
+  let lightningDefaults;
+  let bitcoinDatadir;
+  let peerPort;
+  let carolPort;
 
   // Store node references for cleanup
   let key;
@@ -55,13 +36,21 @@ d('@fabric/core/services/lightning', function () {
   let lightning;
   let peer;
   let carol;
+  let minerAddress;
 
-  async function resetChain (chain) {
-    const height = await chain._makeRPCRequest('getblockcount', []);
-    if (height > 0) {
-      const secondblock = await chain._makeRPCRequest('getblockhash', [1]);
-      await chain._makeRPCRequest('invalidateblock', [secondblock]);
+  async function minerWallet (method, params = []) {
+    return bitcoin._makeWalletRequest(method, params, MINER_WALLET);
+  }
+
+  async function matureMinerCoinbase () {
+    await bitcoin._loadWallet(MINER_WALLET);
+    minerAddress = await minerWallet('getnewaddress', []);
+    await bitcoin._makeRPCRequest('generatetoaddress', [101, minerAddress]);
+    const balance = await minerWallet('getbalance', []);
+    if (!(Number(balance) >= 3)) {
+      throw new Error(`miner wallet balance ${balance} BTC is too low to fund three 1 BTC Lightning deposits`);
     }
+    return minerAddress;
   }
 
   before(async function () {
@@ -78,14 +67,58 @@ d('@fabric/core/services/lightning', function () {
       return;
     }
 
+    const stamp = `${process.pid}-${Date.now()}`;
+    bitcoinDatadir = `./stores/bitcoin-regtest-lightning-${stamp}`;
+    const p2pPort = await getFreePort();
+    const rpcPort = await getFreePort();
+    const zmqPort = await getFreePort();
+    const lightningPort = await getFreePort();
+    peerPort = await getFreePort();
+    carolPort = await getFreePort();
+
+    bitcoinDefaults = {
+      debug: false,
+      network: 'regtest',
+      mode: 'fabric',
+      host: '127.0.0.1',
+      port: p2pPort,
+      rpcport: rpcPort,
+      zmqport: zmqPort,
+      zmq: { host: '127.0.0.1', port: zmqPort },
+      managed: true,
+      listen: 0,
+      enforceIsolatedRegtest: true,
+      username: 'bitcoinrpc',
+      password: 'password',
+      datadir: bitcoinDatadir,
+      walletName: MINER_WALLET
+    };
+
+    lightningDefaults = {
+      debug: false,
+      bitcoin: {
+        rpcport: rpcPort,
+        rpcuser: 'bitcoinrpc',
+        rpcpassword: 'password',
+        host: '127.0.0.1',
+        datadir: bitcoinDatadir
+      },
+      datadir: `./stores/lightning-regtest-${stamp}`,
+      managed: true,
+      socket: 'lightningd.sock',
+      mode: 'socket',
+      network: 'regtest',
+      port: lightningPort
+    };
+
     // Clean up test directories
     try {
       const { execSync } = require('child_process');
       const dirs = [
-        path.resolve('./stores/bitcoin-regtest-test'),
-        path.resolve('./stores/lightning-regtest-test'),
-        path.resolve('./stores/lightning-regtest-test-peer'),
-        path.resolve('./stores/lightning-regtest-test-carol')
+        path.resolve(bitcoinDatadir),
+        path.resolve(lightningDefaults.datadir),
+        path.resolve(`${lightningDefaults.datadir}-peer`),
+        path.resolve(`${lightningDefaults.datadir}-carol`)
       ];
 
       dirs.forEach(dir => {
@@ -124,6 +157,9 @@ d('@fabric/core/services/lightning', function () {
 
     // Initialize Bitcoin service first
     bitcoin = new Bitcoin(bitcoinDefaults);
+    bitcoin.on('error', (msg) => {
+      console.error(msg);
+    });
 
     // Set the key on the Bitcoin service
     bitcoin.settings.key = { xpub: key.xpub };
@@ -139,17 +175,15 @@ d('@fabric/core/services/lightning', function () {
 
     peer = new Lightning({
       ...lightningDefaults,
-      datadir: './stores/lightning-regtest-test-peer',
-      // debug: true,
-      port: 9888,
+      datadir: `${lightningDefaults.datadir}-peer`,
+      port: peerPort,
       disablePlugins: ['cln-grpc']
     });
 
     carol = new Lightning({
       ...lightningDefaults,
-      datadir: './stores/lightning-regtest-test-carol',
-      // debug: true,
-      port: 9890,
+      datadir: `${lightningDefaults.datadir}-carol`,
+      port: carolPort,
       disablePlugins: ['cln-grpc']
     });
   });
@@ -243,15 +277,10 @@ d('@fabric/core/services/lightning', function () {
         throw new Error('Services not initialized properly in before() hook');
       }
 
-      // Reset chain to known state
-      await resetChain(bitcoin);
-
-      // Create a descriptor wallet
-      console.debug('\n[DEBUG] Creating test wallet...');
-      const wallet1 = await bitcoin._loadWallet('testwallet1');
-      const miner = await bitcoin._makeRPCRequest('getnewaddress', []);
-      const generated = await bitcoin._makeRPCRequest('generatetoaddress', [101, miner]);
-      // Some funds are now spendable
+      // Mine to a named wallet before Core Lightning loads extra bitcoind wallets.
+      // Node-level sendtoaddress after lightningd start hits an empty wallet (-6).
+      console.debug('\n[DEBUG] Creating miner wallet...');
+      const miner = await matureMinerCoinbase();
 
       // Start the Lightning nodes
       console.debug('Starting main lightning node...');
@@ -264,13 +293,13 @@ d('@fabric/core/services/lightning', function () {
       await carol.start();
       console.debug('Carol lightning node started');
 
-      // Fund nodes
+      // Fund nodes from the miner wallet (not the default loaded wallet)
       const fund1 = await lightning.newDepositAddress();
       const fund2 = await peer.newDepositAddress();
       const fund3 = await carol.newDepositAddress();
-      const deposit1 = await bitcoin._makeRPCRequest('sendtoaddress', [fund1, 1]);
-      const deposit2 = await bitcoin._makeRPCRequest('sendtoaddress', [fund2, 1]);
-      const deposit3 = await bitcoin._makeRPCRequest('sendtoaddress', [fund3, 1]);
+      const deposit1 = await minerWallet('sendtoaddress', [fund1, 1]);
+      const deposit2 = await minerWallet('sendtoaddress', [fund2, 1]);
+      const deposit3 = await minerWallet('sendtoaddress', [fund3, 1]);
       const confirmation = await bitcoin._makeRPCRequest('generatetoaddress', [1, miner]);
       await new Promise((resolve) => setTimeout(resolve, 15000)); // Wait for the transaction to be processed
 

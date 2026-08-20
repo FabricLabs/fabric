@@ -123,6 +123,17 @@ describe('contractTaproot', function () {
     assert.strictEqual(nums.address, viaLadder);
   });
 
+  it('rejects unknown internalKeyMode', function () {
+    assert.throws(() => synthesizeDefaultLadder({
+      validators: [pk(0), pk(1), pk(2)],
+      threshold: 2,
+      publisher: pk(0),
+      network: 'regtest',
+      csvBlocks: 144,
+      internalKeyMode: 'musig'
+    }), /internalKeyMode/);
+  });
+
   it('builds multi-tier failover with until; expired tiers leave active set', function () {
     const policy = normalizeContractSpendPolicy({
       network: 'regtest',

@@ -11,6 +11,35 @@ const fabricSetup = require('../functions/fabricSetup');
 
 const TEST_PASSWORD = 'test-pass-ok!';
 
+const IDENTITY_ENV_KEYS = [
+  'NODE_ENV',
+  'FABRIC_SEED',
+  'FABRIC_MNEMONIC',
+  'FABRIC_XPRV',
+  'FABRIC_XPUB'
+];
+
+function snapshotIdentityEnv () {
+  const prev = {};
+  for (const key of IDENTITY_ENV_KEYS) prev[key] = process.env[key];
+  return prev;
+}
+
+function restoreIdentityEnv (prev) {
+  for (const key of IDENTITY_ENV_KEYS) {
+    if (prev[key] === undefined) delete process.env[key];
+    else process.env[key] = prev[key];
+  }
+}
+
+function clearIdentityEnv () {
+  process.env.NODE_ENV = 'production';
+  delete process.env.FABRIC_SEED;
+  delete process.env.FABRIC_MNEMONIC;
+  delete process.env.FABRIC_XPRV;
+  delete process.env.FABRIC_XPUB;
+}
+
 function isolatedEnv () {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'fabric-setup-'));
   const store = path.join(home, '.fabric');
@@ -41,31 +70,15 @@ function withEnv (overrides, fn) {
 describe('@fabric/core/functions/fabricSetup', function () {
   this.timeout(20000);
 
-  let prevNodeEnv;
-  let prevSeed;
-  let prevXprv;
-  let prevXpub;
+  let prevIdentityEnv;
 
   beforeEach(function () {
-    prevNodeEnv = process.env.NODE_ENV;
-    prevSeed = process.env.FABRIC_SEED;
-    prevXprv = process.env.FABRIC_XPRV;
-    prevXpub = process.env.FABRIC_XPUB;
-    process.env.NODE_ENV = 'production';
-    delete process.env.FABRIC_SEED;
-    delete process.env.FABRIC_XPRV;
-    delete process.env.FABRIC_XPUB;
+    prevIdentityEnv = snapshotIdentityEnv();
+    clearIdentityEnv();
   });
 
   afterEach(function () {
-    if (prevNodeEnv === undefined) delete process.env.NODE_ENV;
-    else process.env.NODE_ENV = prevNodeEnv;
-    if (prevSeed === undefined) delete process.env.FABRIC_SEED;
-    else process.env.FABRIC_SEED = prevSeed;
-    if (prevXprv === undefined) delete process.env.FABRIC_XPRV;
-    else process.env.FABRIC_XPRV = prevXprv;
-    if (prevXpub === undefined) delete process.env.FABRIC_XPUB;
-    else process.env.FABRIC_XPUB = prevXpub;
+    restoreIdentityEnv(prevIdentityEnv);
   });
 
   describe('resolveSetupPath', function () {
@@ -279,8 +292,11 @@ describe('@fabric/core/functions/fabricSetup', function () {
     it('rejects an invalid seed phrase', function () {
       const { home, environment } = isolatedEnv();
       try {
-        const result = fabricSetup.restoreWalletFromSeed(environment, 'not a mnemonic at all');
+        const result = fabricSetup.restoreWalletFromSeed(environment, 'not a mnemonic at all', {
+          password: TEST_PASSWORD
+        });
         assert.strictEqual(result.ok, false);
+        assert.doesNotMatch(String(result.error), /at least/i);
       } finally {
         fs.rmSync(home, { recursive: true, force: true });
       }
@@ -408,6 +424,7 @@ describe('@fabric/core/functions/fabricSetup', function () {
         assert.strictEqual(fifteen.ok, true);
         assert.strictEqual(environment.lockSession.timeoutMinutes, 15);
       } finally {
+        environment.lockSession.setTimeoutMinutes(0);
         console.log = origLog;
         fs.rmSync(home, { recursive: true, force: true });
       }
@@ -431,17 +448,18 @@ describe('@fabric/core/functions/fabricSetup', function () {
 describe('@fabric/core/types/setup', function () {
   this.timeout(20000);
 
+  let prevIdentityEnv;
+
+  beforeEach(function () {
+    prevIdentityEnv = snapshotIdentityEnv();
+    clearIdentityEnv();
+  });
+
+  afterEach(function () {
+    restoreIdentityEnv(prevIdentityEnv);
+  });
+
   it('returns a public snapshot when render is false', async function () {
-    const prev = {
-      NODE_ENV: process.env.NODE_ENV,
-      FABRIC_SEED: process.env.FABRIC_SEED,
-      FABRIC_XPRV: process.env.FABRIC_XPRV,
-      FABRIC_XPUB: process.env.FABRIC_XPUB
-    };
-    process.env.NODE_ENV = 'production';
-    delete process.env.FABRIC_SEED;
-    delete process.env.FABRIC_XPRV;
-    delete process.env.FABRIC_XPUB;
     const { home, environment } = isolatedEnv();
     try {
       fabricSetup.generateWallet(environment, { password: TEST_PASSWORD });
@@ -451,10 +469,6 @@ describe('@fabric/core/types/setup', function () {
       assert.ok(snapshot.identity && snapshot.identity.startsWith('id'));
       assert.ok(!snapshot.seed);
     } finally {
-      for (const k of Object.keys(prev)) {
-        if (prev[k] === undefined) delete process.env[k];
-        else process.env[k] = prev[k];
-      }
       fs.rmSync(home, { recursive: true, force: true });
     }
   });

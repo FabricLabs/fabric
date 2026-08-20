@@ -1,7 +1,14 @@
 # `@fabric/core` Changelog
 Recent changes to Fabric Core.
 
+## 2026-08-20
+- **Lightning E2E payment:** `tests/lightning/lightning.service.js` uses an isolated regtest node (`enforceIsolatedRegtest`, unique ports/datadir) and funds Core Lightning from a named miner wallet via `_makeWalletRequest`. Node-level `sendtoaddress` after `lightningd` start was hitting an empty extra wallet (`[-6] Insufficient funds`).
+- **Self-session teardown:** `_abortSelfFabricSession` always runs `_destroyFabric` so the connection map is dropped even when the socket is a unit stub without `_destroyFabric` (own-key `P2P_SESSION_OFFER` must not leave the hairpin up).
+- **Public gossip catalog + relay node:** [`functions/gossipNetwork.js`](functions/gossipNetwork.js) classifies every AMP decode name (`flood` / `envelope` / `opt-in` / `trusted` / `directed` / `session` / `observe` / `hub`). Peer pin-exemption and first-class opcode isolation import that catalog. `Peer` `registerInboundContracts` (default true) lets a relay flood `CONTRACT_PUBLISH` without accumulating contract state. Script: `node scripts/gossip-relay.js` (single Peer, validate + bit-identical flood). Tests: `tests/gossip.network.js`.
+- **NOISE handshake listener leak:** `noise-protocol-stream` 1.1.3 keeps one WASM EventEmitter and left `noise_stream_handshake_{write,read,split}` listeners (and native `noise_stream` ptrs) after failed or half-closed sessions. Public Hub hit MaxListeners 65>64 within ~1h while named Hub retainers stayed flat. This working tree uses [`functions/noiseProtocolStream.js`](functions/noiseProtocolStream.js): drop handshake listeners on split, `noise_stream_free` on destroy, plus `Peer#countNoiseHandshakeListeners`. Inbound TCP `close` tears down the pair; idle inbound handshake times out (`handshakeTimeout`, default 10s). Tests: `tests/fabric.noiseProtocolStream.js`. **Not on live Hub pin `f63a33f`** ([scan 2026-08-20T10:39Z](https://relay.goon.vc/downstream.agents.md): `noiseHandshakeListeners` still **null**, MaxListeners on the current PID).
+
 ## 2026-08-19
+- **PR #186 review:** `functions/bip371` matches inventory HTLC BIP-371 checks (control-block length `33+32*m`, even leaf version, version match; hex decode rejects junk suffixes). Unknown `internalKeyMode` fails closed. `resolveSpend` / vault summaries echo the effective mode. `isolatePeerContent` deep-copies document rows.
 - **PR #185 H2 (NUMS vs MuSig2 vault address):** `buildFederationVaultFromPolicy` and `resolveSpend` now forward `internalKeyMode`. Default n≥2 ladder is still MuSig2 (new address). Pass `internalKeyMode: 'nums'` to keep historical NUMS UTXOs — rebuilds do not migrate coins. Beacon genesis still omits the field (Actor-id stable); Hub overlays at Accept.
 
 ## 2026-08-16

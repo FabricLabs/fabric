@@ -91,7 +91,7 @@ describe('@fabric/core/types/peer', function () {
 
     describe('commit and socket actor leaks', function () {
       it('does not alias caller Hub collections into observed peer content', function () {
-        const collections = { documents: { leak: { id: 'leak' } } };
+        const collections = { documents: { leak: { id: 'leak', nested: { n: 1 } } } };
         const shared = { collections: collections, documents: { keep: 'x' } };
         const peer = new Peer({ listen: false, peersDb: null, state: shared });
         collections.documents.more = { id: 'more' };
@@ -100,7 +100,9 @@ describe('@fabric/core/types/peer', function () {
         assert.strictEqual(peer._state.content.collections.documents.leak.id, 'leak');
         assert.ok(!peer._state.content.collections.documents.more);
         collections.documents.leak.id = 'mutated-leak';
+        collections.documents.leak.nested.n = 2;
         assert.strictEqual(peer._state.content.collections.documents.leak.id, 'leak');
+        assert.strictEqual(peer._state.content.collections.documents.leak.nested.n, 1);
         assert.notStrictEqual(peer._state.content, shared);
       });
 

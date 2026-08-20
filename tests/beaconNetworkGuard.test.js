@@ -37,6 +37,15 @@ describe('beaconNetworkGuard', function () {
     assert.strictEqual(normalizeBitcoinNetwork('signet'), 'signet');
   });
 
+  it('fails closed when the live network is unknown or unavailable', function () {
+    const fs = memoryFs();
+    for (const live of [null, undefined, '', 'not-a-network']) {
+      const check = assertBeaconNetworkCompatible(fs, live);
+      assert.strictEqual(check.ok, false);
+      assert.strictEqual(check.code, 'NETWORK_UNKNOWN');
+    }
+  });
+
   it('allows fresh stores and binds network', async function () {
     const fs = memoryFs();
     const ensured = await ensureBeaconNetworkBinding(fs, 'regtest');
@@ -97,6 +106,7 @@ describe('beaconNetworkGuard', function () {
     fs.writeFile(BEACON_CHAIN_PATH, JSON.stringify({ messages: [1] }));
     fs.writeFile(BEACON_NETWORK_PATH, '{"network":"regtest"}');
     const { cleared } = await resetBeaconNetworkStores(fs);
-    assert.ok(cleared.length >= 1);
+    assert.ok(cleared.includes(BEACON_CHAIN_PATH));
+    assert.deepStrictEqual(JSON.parse(fs.readFile(BEACON_CHAIN_PATH)).messages, []);
   });
 });

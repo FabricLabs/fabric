@@ -1003,7 +1003,7 @@ describe('@fabric/core RC1 PR-review coverage', function () {
       documents: { doc1: { id: 'doc1' } },
       collections: {
         documents: {
-          doc1: { id: 'doc1', published: true, purchasePriceSats: 25 }
+          doc1: { id: 'doc1', published: true, purchasePriceSats: 25, meta: { tags: ['a'] } }
         }
       }
     };
@@ -1013,7 +1013,9 @@ describe('@fabric/core RC1 PR-review coverage', function () {
     row.purchasePriceSats = 99;
     assert.strictEqual(original.collections.documents.doc1.purchasePriceSats, 25);
     original.collections.documents.doc1.published = false;
+    original.collections.documents.doc1.meta.tags.push('b');
     assert.strictEqual(peer._state.content.collections.documents.doc1.published, true);
+    assert.deepStrictEqual(peer._state.content.collections.documents.doc1.meta.tags, ['a']);
   });
 
   it('beat emits a clock-only snapshot (no full state tree)', function () {

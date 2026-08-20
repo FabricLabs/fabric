@@ -29,6 +29,27 @@ describe('executionRunBridge / FabricProgramRun forward digest', function () {
     assert.strictEqual(a.length, 64);
   });
 
+  it('prefers Program.runCommitmentHex over derived FabricProgramRun', function () {
+    const programHash = crypto.createHash('sha256').update('prog').digest('hex');
+    const owned = crypto.createHash('sha256').update('owned-run').digest('hex');
+    const result = { ok: true, stepsExecuted: 1, trace: [], stack: ['x'] };
+    const out = buildExecutionRunOutput({
+      contractId: 'cid-owned',
+      programHash,
+      result,
+      program: {
+        programHash,
+        runCommitmentHex () { return owned; }
+      }
+    });
+    assert.strictEqual(out.runCommitmentHex, owned);
+    assert.strictEqual(out.fabricProgramRunCommitmentHex, owned);
+    assert.notStrictEqual(
+      out.runCommitmentHex,
+      computeFabricProgramRunFromExecution({ programHash, contractId: 'cid-owned', result })
+    );
+  });
+
   it('buildExecutionRunOutput prefers FabricProgramRun when programHash set', function () {
     const programHash = crypto.createHash('sha256').update('prog').digest('hex');
     const result = { ok: true, stepsExecuted: 1, trace: [], stack: ['x'] };
@@ -161,6 +182,13 @@ describe('contractPaymentObserve / Contract L1 payment', function () {
     assert.strictEqual(obs.ok, true);
     assert.strictEqual(obs.applied, true);
     const addr = contract.toAddress('regtest');
+    assert.strictEqual(contract._state.content.balances[addr].sats, 25000);
+    assert.strictEqual(contract._state.content.payments.length, 1);
+    const again = contract._handleBitcoinTransaction(tx.toHex(), {
+      network: 'regtest',
+      amountSats: 10000
+    });
+    assert.strictEqual(again.ok, true);
     assert.strictEqual(contract._state.content.balances[addr].sats, 25000);
     assert.strictEqual(contract._state.content.payments.length, 1);
   });

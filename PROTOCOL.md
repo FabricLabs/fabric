@@ -52,6 +52,9 @@ INITIATOR                     COUNTERPARTY
 
 Gossip discovery uses first-class opcodes `P2P_PEER_GOSSIP` / `P2P_PEERING_OFFER`
 with hop TTL and per-origin relay budgets ([SECURITY.md](SECURITY.md)).
+Which AMP types are public flood vs directed/session is
+[`functions/gossipNetwork.js`](functions/gossipNetwork.js)
+(`node scripts/gossip-relay.js --list-types`).
 
 ## Compute & contracts
 

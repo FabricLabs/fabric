@@ -6,6 +6,7 @@ const Message = require('../types/message');
 const Contract = require('../types/contract');
 const {
   normalizeArcGenesis,
+  canonicalSpendPolicy,
   resolveSpend,
   buildWithdrawalRequest,
   buildWithdrawalWitness,
@@ -170,6 +171,7 @@ describe('contractSpend / ARC resolveSpend', function () {
       overrides: { network: 'regtest' }
     });
     assert.strictEqual(spend.address, vault.address);
+    assert.strictEqual(spend.spendPolicy.internalKeyMode, 'musig2');
     assert.strictEqual(spend.scheme, 'taproot-authority-ladder-v1');
     assert.strictEqual(spend.csvBlocks, 144);
     assert.ok(spend.softTier);
@@ -205,6 +207,7 @@ describe('contractSpend / ARC resolveSpend', function () {
       overrides: { network: 'regtest', spendPolicy: { internalKeyMode: 'nums' } }
     });
     assert.strictEqual(spend.address, vault.address);
+    assert.strictEqual(spend.spendPolicy.internalKeyMode, 'nums');
     const musig = buildFederationVaultFromPolicy({
       validatorPubkeysHex: vals,
       threshold: 2,
@@ -213,6 +216,21 @@ describe('contractSpend / ARC resolveSpend', function () {
       csvBlocks: 144
     });
     assert.notStrictEqual(musig.address, vault.address);
+  });
+
+  it('canonicalSpendPolicy rejects unknown internalKeyMode', function () {
+    const a = new Key();
+    assert.throws(() => canonicalSpendPolicy({
+      validators: [a.pubkey],
+      publisher: a.pubkey,
+      internalKeyMode: 'musig'
+    }), /internalKeyMode/);
+    const ok = canonicalSpendPolicy({
+      validators: [a.pubkey],
+      publisher: a.pubkey,
+      internalKeyMode: 'auto'
+    });
+    assert.strictEqual(ok.internalKeyMode, 'musig2');
   });
 
   it('resolveSpend fails closed without explicit network', function () {

@@ -290,7 +290,15 @@ function canonicalSpendPolicy (opts = {}) {
   }
   if (opts.internalKeyMode) {
     const mode = String(opts.internalKeyMode).trim().toLowerCase();
-    out.internalKeyMode = (mode === 'musig2' || mode === 'auto') ? 'musig2' : 'nums';
+    if (mode === 'musig2' || mode === 'auto') {
+      out.internalKeyMode = 'musig2';
+    } else if (mode === 'nums') {
+      out.internalKeyMode = 'nums';
+    } else {
+      throw new Error(
+        'canonicalSpendPolicy: internalKeyMode must be "musig2", "auto", or "nums"'
+      );
+    }
   }
   return out;
 }
@@ -439,6 +447,7 @@ function resolveSpend (opts = {}) {
       csvBlocks: resolvedCsv,
       softMode: String(policyInput.softMode || 'publisher'),
       network: built.network,
+      internalKeyMode: (built.policy && built.policy.internalKeyMode) || 'nums',
       hashlock: built.policy && built.policy.hashlock
         ? built.policy.hashlock
         : (policyInput.hashlock || null),

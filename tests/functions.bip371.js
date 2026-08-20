@@ -54,6 +54,34 @@ describe('@fabric/core/functions/bip371', function () {
     );
   });
 
+  it('rejects a 34-byte control block, odd leaf version, and version mismatch', function () {
+    assert.throws(
+      () => tapLeafScriptEntry({ script, controlBlock: Buffer.concat([controlBlock, Buffer.from([0])]) }),
+      /controlBlock/
+    );
+    assert.throws(
+      () => tapLeafScriptEntry({ script, controlBlock, leafVersion: 0xc1 }),
+      /even/
+    );
+    const mismatched = Buffer.concat([Buffer.from([0xc2]), internal]);
+    assert.throws(
+      () => tapLeafScriptEntry({ script, controlBlock: mismatched, leafVersion: 0xc0 }),
+      /match/
+    );
+  });
+
+  it('rejects hex with a junk suffix (no silent truncation)', function () {
+    const junk = internal.toString('hex') + 'zz';
+    assert.throws(
+      () => taprootPsbtInputFields({
+        tapInternalKey: junk,
+        script,
+        controlBlock
+      }),
+      /tapInternalKey/
+    );
+  });
+
   it('is the bag shape used by inventory HTLC NUMS internal key', function () {
     assert.ok(inventoryHtlc.TAPROOT_INTERNAL_NUMS.equals(internal));
   });
