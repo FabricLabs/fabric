@@ -67,6 +67,12 @@ function toIntegerSats (value) {
     if (value < 0n) throw new Error('Output value must be a non-negative integer satoshi count');
     return value;
   }
+  if (typeof value !== 'number' && typeof value !== 'string') {
+    throw new Error('Output value must be a non-negative integer satoshi count');
+  }
+  if (typeof value === 'string' && value.trim() === '') {
+    throw new Error('Output value must be a non-negative integer satoshi count');
+  }
   const n = typeof value === 'number' ? value : Number(value);
   if (!Number.isInteger(n) || !Number.isSafeInteger(n) || n < 0) {
     throw new Error('Output value must be a non-negative integer satoshi count');

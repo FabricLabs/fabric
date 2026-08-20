@@ -413,8 +413,10 @@ function createPartial (session, sk) {
   try {
     const psig = sign(session.secnonce, asBuf(sk), sessionCtxFor(session));
     session.psigs[session.localIndex] = Buffer.from(psig);
+    wipeSession(session);
     return { ok: true, psig };
   } catch (err) {
+    wipeSession(session);
     return { ok: false, reason: err.message || 'sign-failed' };
   }
 }
@@ -463,12 +465,14 @@ function aggregatePartials (session) {
   try {
     const signature = partialSigAgg(session.psigs, sessionCtxFor(session));
     if (!verifyAggregatedSchnorr(session.challenge, signature, session.pubkeys)) {
+      wipeSession(session);
       return { ok: false, reason: 'agg-verify-failed' };
     }
     session.signature = Buffer.from(signature);
     wipeSession(session);
     return { ok: true, signature: session.signature };
   } catch (err) {
+    wipeSession(session);
     return { ok: false, reason: err.message || 'agg-failed' };
   }
 }

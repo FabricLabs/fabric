@@ -357,6 +357,14 @@ describe('@fabric/core/functions/bip371', function () {
       /even/
     );
     assert.throws(
+      () => tapLeafScriptEntry({
+        script,
+        controlBlock,
+        leafVersion: 0xc2
+      }),
+      /match the control block/
+    );
+    assert.throws(
       () => taprootPsbtInputFields({
         tapInternalKey: Buffer.alloc(33, 2),
         script,

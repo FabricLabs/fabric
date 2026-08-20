@@ -237,6 +237,21 @@ describe('@fabric/core/services/bitcoin (deep coverage)', function () {
       );
     });
 
+    it('throws on null, false, or blank output values instead of coercing to zero', async function () {
+      const addr = 'bcrt1pr4wctwfz0uznz86ash62jret9gq8ysg82zlzl9kdmuvq066pjcmsa0plmz';
+      const btc = new Bitcoin({ network: 'regtest', mode: 'rpc' });
+      btc._makeRPCRequest = async () => null;
+      for (const value of [null, false, '']) {
+        await assert.rejects(
+          () => btc._buildPSBT({
+            inputs: [],
+            outputs: [{ address: addr, value }]
+          }),
+          /integer satoshi/
+        );
+      }
+    });
+
     it('throws on invalid output address', async function () {
       const btc = new Bitcoin({ network: 'regtest', mode: 'rpc', debug: true });
       btc._makeRPCRequest = async () => null;

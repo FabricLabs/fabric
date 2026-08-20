@@ -615,12 +615,14 @@ function getSessionKeyAggCoeff (sessionCtx, P) {
  * @returns {Buffer} 32-byte partial signature
  */
 function sign (secnonce, sk, sessionCtx) {
-  const { Q, gacc, b, R, e } = getSessionValues(sessionCtx);
   const sn = asBuf(secnonce);
   const k1_ = intFromBytes(sn.subarray(0, 32));
   const k2_ = intFromBytes(sn.subarray(32, 64));
-  if (Buffer.isBuffer(secnonce)) secnonce.fill(0, 0, 64);
-  else sn.fill(0, 0, 64);
+  const pkPart = Buffer.from(sn.subarray(64, 97));
+  // BIP-327: never reuse a secret nonce, including after a later session-ctx throw.
+  if (Buffer.isBuffer(secnonce)) secnonce.fill(0);
+  else sn.fill(0);
+  const { Q, gacc, b, R, e } = getSessionValues(sessionCtx);
   if (!(k1_ > 0n && k1_ < N)) {
     throw new ValueError('first secnonce value is out of range.');
   }
@@ -635,7 +637,7 @@ function sign (secnonce, sk, sessionCtx) {
   }
   const P = SecpPoint.BASE.multiply(d_);
   const pk = cbytes(P);
-  if (!pk.equals(sn.subarray(64, 97))) {
+  if (!pk.equals(pkPart)) {
     throw new ValueError('Public key does not match nonce_gen argument');
   }
   const a = getSessionKeyAggCoeff(sessionCtx, P);

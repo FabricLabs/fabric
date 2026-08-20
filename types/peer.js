@@ -5839,6 +5839,14 @@ class Peer extends Service {
     // Stop the heart
     if (this._heart) clearInterval(this._heart);
 
+    if (this._musigSessions) {
+      for (const session of this._musigSessions.values()) {
+        musig2Session.wipeSession(session);
+      }
+      this._musigSessions.clear();
+      this._musigSessionOrder = [];
+    }
+
     this.emit('debug', 'Closing all connections...');
     for (const id in this.connections) {
       const c = this.connections[id];

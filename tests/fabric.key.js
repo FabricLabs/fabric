@@ -618,6 +618,29 @@ describe('@fabric/core/functions/musig2 BIP-327', function () {
       /expected hex/
     );
   });
+
+  it('zeros secnonce before getSessionValues so a later throw cannot reuse it', function () {
+    const sk = skOf(new Key());
+    const pk = individualPk(sk);
+    const { secnonce } = nonceGenInternal(
+      Buffer.alloc(32, 7),
+      sk,
+      pk,
+      null,
+      Buffer.alloc(32),
+      null
+    );
+    assert.ok(secnonce.some((byte) => byte !== 0));
+    const ctx = {
+      aggnonce: Buffer.alloc(66, 2),
+      pubkeys: [],
+      tweaks: [],
+      isXonly: [],
+      msg: Buffer.alloc(32)
+    };
+    assert.throws(() => sign(secnonce, sk, ctx));
+    assert.ok(secnonce.every((byte) => byte === 0));
+  });
 });
 
 const Message = require('../types/message');
@@ -635,6 +658,7 @@ const {
   allPartialsPresent,
   aggregatePartials,
   verifyFinalSignature,
+  wipeSession,
   xOnlyHex,
   startFields
 } = require('../functions/musig2Session');
@@ -791,6 +815,39 @@ describe('@fabric/core/functions/musig2Session', function () {
       verifyFinalSignature(null, Buffer.alloc(64)),
       { ok: false, reason: 'no-session' }
     );
+  });
+
+  it('does not wipe secnonce while aggregatePartials waits for more partials', function () {
+    const a = new Key();
+    const b = new Key();
+    const session = createLocalSession({
+      msg: Buffer.from('incomplete'),
+      pubkeys: [individualPk(skOf(a)), individualPk(skOf(b))],
+      sk: skOf(a)
+    });
+    assert.ok(Buffer.isBuffer(session.secnonce));
+    const agg = aggregatePartials(session);
+    assert.strictEqual(agg.ok, false);
+    assert.strictEqual(agg.reason, 'incomplete-psigs');
+    assert.ok(Buffer.isBuffer(session.secnonce));
+    wipeSession(session);
+    assert.strictEqual(session.secnonce, null);
+  });
+
+  it('wipes session.secnonce when createPartial cannot complete sign', function () {
+    const a = new Key();
+    const b = new Key();
+    const session = createLocalSession({
+      msg: Buffer.from('partial-fail'),
+      pubkeys: [individualPk(skOf(a)), individualPk(skOf(b))],
+      sk: skOf(a)
+    });
+    const held = session.secnonce;
+    session.aggnonce = Buffer.alloc(5);
+    const signed = createPartial(session, skOf(a));
+    assert.strictEqual(signed.ok, false);
+    assert.strictEqual(session.secnonce, null);
+    assert.ok(held.every((byte) => byte === 0));
   });
 
   it('rejects an unparsed START body instead of falling back', function () {

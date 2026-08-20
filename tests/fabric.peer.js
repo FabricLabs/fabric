@@ -2825,4 +2825,19 @@ describe('@fabric/core Peer P2P_MUSIG_*', function () {
     assert.strictEqual(alice.getMusig2Session(first.sessionId), null);
     assert.ok(alice.getMusig2Session(second.sessionId));
   });
+
+  it('wipes stored MuSig2 sessions on stop', async function () {
+    const { peer: alice } = makePeer('alice', { musig2: { autoAccept: false } });
+    const dest = new Key();
+    const origin = '127.0.0.1:19199';
+    alice.connections[origin] = { _writeFabric () {} };
+    alice.peers[origin] = { id: dest.pubkey, publicKey: dest.pubkey };
+    alice.startMusig2({ dest: dest.pubkey, msg: Buffer.from('stop-wipe') });
+    assert.strictEqual(alice._musigSessions.size, 1);
+    const held = [...alice._musigSessions.values()][0].secnonce;
+    assert.ok(Buffer.isBuffer(held));
+    await alice.stop();
+    assert.strictEqual(alice._musigSessions.size, 0);
+    assert.ok(held.every((b) => b === 0));
+  });
 });
