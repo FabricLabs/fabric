@@ -439,6 +439,7 @@ module.exports = require('@fabric/http/functions/httpSharedMode');
 ---
 
 ### Name collisions
+
 | Name | Canonical | Other copy | Relation | Action |
 |------|-----------|------------|----------|--------|
 | **Identity** | core `types/identity.js` (Actor, BIP32) | http `types/identity.js` (12-line Key stub) | stub | delete/rename http stub; callers use core |
@@ -628,8 +629,8 @@ Keep the re-exports. Remaining ranked slices: site-login possession-proof (http/
 |-----|------|
 | [OUTSTANDING.md](docs/OUTSTANDING.md) | Core security queue + suite status |
 | [PRODUCTION_MARCH.md](docs/PRODUCTION_MARCH.md) | Core *class count* keep/fold/remove |
-| [DEVELOPERS.md](../DEVELOPERS.md) | Core `types/` vs `services/` layout, Store, Fabric facade |
-| [AGENTS.md](../AGENTS.md) | Agent lifecycle (`Service` start/stop) |
+| [DEVELOPERS.md](DEVELOPERS.md) | Core `types/` vs `services/` layout, Store, Fabric facade |
+| [AGENTS.md](AGENTS.md) | Agent lifecycle (`Service` start/stop) |
 | Hub `docs/PRODUCTION_MARCH.md` | Copy of core march + Hub RC scope |
 | Hub `tests/liftedApis.exports.test.js` | Re-export contract for shared functions |
 | GoonCitizen `AGENTS.md` §3–§4 | What LiveRelay actually runs |

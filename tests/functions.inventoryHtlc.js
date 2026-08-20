@@ -349,6 +349,14 @@ describe('@fabric/core/functions/bip371', function () {
       /controlBlock/
     );
     assert.throws(
+      () => tapLeafScriptEntry({ script, controlBlock: Buffer.alloc(34) }),
+      /33 \+ 32\*m/
+    );
+    assert.throws(
+      () => tapLeafScriptEntry({ script, controlBlock, leafVersion: 0xc1 }),
+      /even/
+    );
+    assert.throws(
       () => taprootPsbtInputFields({
         tapInternalKey: Buffer.alloc(33, 2),
         script,

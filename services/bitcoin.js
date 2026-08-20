@@ -56,6 +56,24 @@ const SATS_PER_BTC = 10 ** 8;
 // Internal: max |sats - round(sats)| allowed for BTC -> sats conversion
 // (reject fractional satoshis while tolerating float noise).
 const SAT_ADJ_EPS = 1 / (10 ** 6);
+
+/**
+ * PSBT output values are integer satoshis. Reject float BTC leftovers.
+ * @param {bigint|number|string} value
+ * @returns {bigint}
+ */
+function toIntegerSats (value) {
+  if (typeof value === 'bigint') {
+    if (value < 0n) throw new Error('Output value must be a non-negative integer satoshi count');
+    return value;
+  }
+  const n = typeof value === 'number' ? value : Number(value);
+  if (!Number.isInteger(n) || !Number.isSafeInteger(n) || n < 0) {
+    throw new Error('Output value must be a non-negative integer satoshi count');
+  }
+  return BigInt(n);
+}
+
 // Internal: reject absurd cookie path lengths before filesystem reads.
 const BITCOIN_COOKIE_PATH_MAX_LEN = 4096;
 
@@ -2402,12 +2420,18 @@ class Bitcoin extends Service {
     const preparedOutputs = [];
     for (let i = 0; i < options.outputs.length; i++) {
       const output = options.outputs[i];
+      let sats;
+      try {
+        sats = toIntegerSats(output.value);
+      } catch (e) {
+        throw new Error(`Invalid output value for ${output.address}: ${e.message}`);
+      }
       try {
         const script = bitcoin.address.toOutputScript(output.address, network);
         preparedOutputs.push({
           address: output.address,
           script,
-          value: typeof output.value === 'bigint' ? output.value : BigInt(Math.round(Number(output.value)))
+          value: sats
         });
       } catch (e) {
         if (this.settings.debug) {

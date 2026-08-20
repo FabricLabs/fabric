@@ -352,34 +352,40 @@ function runEnsureHomeEnvCli (argv = process.argv) {
     return 1;
   }
 
-  const token = mintHubAdminToken(key);
-  const tokenPath = writeHubAdminToken(token, { home, store });
+  try {
+    const token = mintHubAdminToken(key);
+    const tokenPath = writeHubAdminToken(token, { home, store });
 
-  const stamped = {
-    FABRIC_HUB_ADMIN_TOKEN: token,
-    FABRIC_HUB_ADMIN_TOKEN_FILE: tokenPath
-  };
-  if (source === 'wallet.json') {
-    // Prefer the extended key only. Stamping seed/mnemonic beside xprv leaves
-    // unused secret material on disk (`keySettingsFromEnv` returns on XPRV first).
-    stamped.FABRIC_XPRV = key.xprv;
-    if (key.xpub) stamped.FABRIC_XPUB = key.xpub;
+    const stamped = {
+      FABRIC_HUB_ADMIN_TOKEN: token,
+      FABRIC_HUB_ADMIN_TOKEN_FILE: tokenPath
+    };
+    if (source === 'wallet.json') {
+      // Prefer the extended key only. Stamping seed/mnemonic beside xprv leaves
+      // unused secret material on disk (`keySettingsFromEnv` returns on XPRV first).
+      stamped.FABRIC_XPRV = key.xprv;
+      if (key.xpub) stamped.FABRIC_XPUB = key.xpub;
+    }
+
+    const envPath = upsertFabricHomeEnv(stamped, { home, store });
+    const check = readHubAdminToken(process.env, { home, store });
+
+    console.log('[FABRIC:HOME-ENV] home        ', store);
+    console.log('[FABRIC:HOME-ENV] env         ', envPath);
+    console.log('[FABRIC:HOME-ENV] admin token ', tokenPath);
+    console.log('[FABRIC:HOME-ENV] identity    ', source, publicKeyPrefix(key) || '');
+    console.log('[FABRIC:HOME-ENV] wallet.json ', walletExists ? (walletLocked && source !== 'wallet.json' ? 'present (sealed; FABRIC_PASSWORD to import)' : 'present') : 'missing');
+    console.log('[FABRIC:HOME-ENV] token source', check.source || 'written');
+    if (walletExists && walletLocked && source !== 'wallet.json') {
+      console.log('[FABRIC:HOME-ENV] Note: sealed wallet was not unlocked; token is from', source + '.');
+      console.log('                  Re-run with FABRIC_PASSWORD to stamp identity from wallet.json.');
+    }
+    return 0;
+  } catch (err) {
+    const detail = err && err.message ? err.message : err;
+    console.error('[FABRIC:HOME-ENV] Could not write home env:', detail);
+    return 1;
   }
-
-  const envPath = upsertFabricHomeEnv(stamped, { home, store });
-  const check = readHubAdminToken(process.env, { home, store });
-
-  console.log('[FABRIC:HOME-ENV] home        ', store);
-  console.log('[FABRIC:HOME-ENV] env         ', envPath);
-  console.log('[FABRIC:HOME-ENV] admin token ', tokenPath);
-  console.log('[FABRIC:HOME-ENV] identity    ', source, publicKeyPrefix(key) || '');
-  console.log('[FABRIC:HOME-ENV] wallet.json ', walletExists ? (walletLocked && source !== 'wallet.json' ? 'present (sealed; FABRIC_PASSWORD to import)' : 'present') : 'missing');
-  console.log('[FABRIC:HOME-ENV] token source', check.source || 'written');
-  if (walletExists && walletLocked && source !== 'wallet.json') {
-    console.log('[FABRIC:HOME-ENV] Note: sealed wallet was not unlocked; token is from', source + '.');
-    console.log('                  Re-run with FABRIC_PASSWORD to stamp identity from wallet.json.');
-  }
-  return 0;
 }
 
 if (require.main === module) {

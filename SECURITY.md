@@ -13,7 +13,7 @@ Fabric networks are intended for deployment where **peers, relays, hubs, and ope
 
 Bitcoin L1 finality and operator key hygiene remain outside this document’s guarantees. Suite apps SHOULD document the same adversarial assumption and keep fail-closed defaults for auth, allowlists, and spend paths.
 
-**Basics coverage:** [`tests/fabric.circuit.js`](tests/fabric.circuit.js) (blinded-execution role minimum + phishing hub rejection via allowlist helpers when present). Broader Peer adversarial contracts live under [`tests/protocol-v1/`](tests/protocol-v1/README.md).
+**Basics coverage:** [`tests/fabric.circuit.js`](tests/fabric.circuit.js) (blinded-execution role minimum + phishing hub rejection via allowlist helpers when present). Broader Peer adversarial contracts live in [`tests/fabric.peer.adversarial.js`](tests/fabric.peer.adversarial.js).
 
 ## Blinded execution (composition scaffold)
 [`functions/blindedExecutionCircuit.js`](functions/blindedExecutionCircuit.js) commits garbler publish → ContractProposal accept/reject → content-addressed circuit digests → optional hashlock Taproot. It is **not** Yao gate garbling / OT. Do not treat `Circuit#scramble` as cryptographic evaluation. Real GC remains a future backend behind the same digests ([docs/PROGRAM.md](docs/PROGRAM.md)).
@@ -95,14 +95,14 @@ Exact wire duplicates remain a silent drop (no score change). Wire-hash dedup re
 Wire frames larger than `HEADER_SIZE + MAX_MESSAGE_SIZE` (override body via `settings.maxMessageSize`) **or shorter than `HEADER_SIZE`** are dropped **before** parse / body-hash / signature work. Unparseable buffers are dropped the same way (no score / ban). Truncated frames are not treated as body-hash mismatches — that would hard-ban a TCP peer for a partial NOISE chunk.
 
 ## Strict Protocol V1 (test contract)
-Adversarial Peer coverage under the assumption that **NOISE payloads are raw, well-formed Fabric Messages** (not random bytes) lives in [`tests/protocol-v1/`](tests/protocol-v1/README.md): opcode × delivery matrix (`direct` / foreign `P2P_RELAY` / `P2P_FORWARD` peel), unknown-opcode policy (`UNKNOWN_MESSAGE` — must not alias to `P2P_BASE_MESSAGE`), multi-origin collusion budgets, and a typed live NOISE storm. Parser crash fuzz remains in `tests/fuzz/` and is **not** counted as semantic adversarial coverage.
+Adversarial Peer coverage under the assumption that **NOISE payloads are raw, well-formed Fabric Messages** (not random bytes) lives in [`tests/fabric.peer.adversarial.js`](tests/fabric.peer.adversarial.js): unknown-opcode policy (`UNKNOWN_MESSAGE` — must not alias to `P2P_BASE_MESSAGE`), hop/budget bounds, and first-class opcode isolation from generic JSON carriers. Parser crash fuzz remains in `tests/fuzz/` and is **not** counted as semantic adversarial coverage.
 
 **Generic carrier:** `P2P_BASE_MESSAGE` / `GENERIC_MESSAGE` JSON bodies must not escalate first-class mesh/session opcodes (`P2P_PEERING_OFFER`, `P2P_PEER_GOSSIP`, `CONTRACT_MESSAGE`, …). Legacy inventory continues to use inner type `INVENTORY_REQUEST` (not the `P2P_` wire name).
 
-**Phase B bodies:** registered field schemas (`Message.fromFields` / `tryParseMessageBody`) cover
+**Typed bodies:** registered field schemas (`Message.fromFields` / `tryParseMessageBody`) cover
 `P2P_PING` / `P2P_PONG` / `P2P_FORWARD` / `P2P_PEER_GOSSIP` / `P2P_PEERING_OFFER` /
 `P2P_PEER_ANNOUNCE`. Peer typed handlers accept **JSON or field-layout forms**. Chat/alias remain
-raw UTF-8. Coverage: `tests/protocol-v1/phase-b.typed-bodies.js`.
+raw UTF-8. Coverage: `tests/fabric.peer.adversarial.js` plus `tests/fabric.message.js`.
 
 ## Application Resource Contract accumulate
 `functions/contractMessageAccumulate.ingestMessageBuffer` folds signed `CONTRACT_MESSAGE` frames into a tip. **Signer mutations** (`GroupChange`, `GroupChangeProposal` / `GroupChangeVote`, federation invite (+ response), capability grants, withdrawal request/witness, journal request/batch/state) require the AMP author to be in **genesis.signers** (when tip members are empty) or the **current tip member set**, or to present a **verified** `OP_CONTRACT_SIGN` Token (`meta.capabilityToken`) issued by a current signer. **`GroupChat`** and other non-mutation body types (including custom genesis `primitives.messageTypes`) require author ∈ tip/genesis **reader ∪ signer** set (or verified `OP_CONTRACT_READ` / `OP_CONTRACT_SIGN`). **`ContractWithdrawalWitness`** must bind `signer` to the AMP author, carry BIP340 `signature` over `fabric:contract-withdrawal-witness:1:…`, and match the pending request’s tip fields. AMP signature alone is not sufficient. Body `type` must appear in genesis `primitives.messageTypes` when declared (**empty declared list = deny-all**); otherwise only known core `CONTRACT_BODY_TYPES` are accepted. **Withdrawals** must bind `stateDigest` + `bitcoinBlockHash` to the tip at request time (`functions/contractSpend`). See [`docs/CONTRACTS.md`](docs/CONTRACTS.md).

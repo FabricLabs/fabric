@@ -85,14 +85,17 @@ function tapLeafScriptEntry (opts = {}) {
   if (!script || !script.length) {
     throw new Error('BIP371 tapLeafScript requires script bytes');
   }
-  if (!controlBlock || controlBlock.length < 33) {
-    throw new Error('BIP371 controlBlock must be at least 33 bytes');
+  if (!controlBlock || controlBlock.length < 33 || ((controlBlock.length - 33) % 32) !== 0) {
+    throw new Error('BIP371 controlBlock length must be 33 + 32*m bytes');
   }
   const leafVersion = opts.leafVersion != null
     ? Number(opts.leafVersion)
     : LEAF_VERSION_TAPSCRIPT;
   if (!Number.isInteger(leafVersion) || leafVersion < 0 || leafVersion > 255) {
     throw new Error('BIP371 leafVersion must be an 8-bit integer');
+  }
+  if ((leafVersion & 1) !== 0) {
+    throw new Error('BIP371 leafVersion must be even (BIP-341 leaf version + parity bit)');
   }
   return { leafVersion, script, controlBlock };
 }
