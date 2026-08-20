@@ -1,7 +1,12 @@
 # `@fabric/core` Changelog
 Recent changes to Fabric Core.
 
+## 2026-08-19
+- **PR #185 H2 (NUMS vs MuSig2 vault address):** `buildFederationVaultFromPolicy` and `resolveSpend` now forward `internalKeyMode`. Default n≥2 ladder is still MuSig2 (new address). Pass `internalKeyMode: 'nums'` to keep historical NUMS UTXOs — rebuilds do not migrate coins. Beacon genesis still omits the field (Actor-id stable); Hub overlays at Accept.
+
 ## 2026-08-16
+- **PR #185 Token honesty:** `Token.toString()` is documented as not auth (`ffff` MAC). `Capability#_generateToken` and `Session.encrypt`/`decrypt` are documented as scaffolds / no-ops. `Token.verifySigned` rejects the unsigned JWT-shaped string.
+- **PR #185 isolatePeerContent:** copies `collections.documents` rows (published / price / L1 metadata) without aliasing the caller Hub map. Other collection names stay dropped.
 - **PR #185 review (HEAD `0b8ce4b`):** PSBT `toIntegerSats` rejects `null` / `false` / blank strings (no zero-sat coerce). `musig2.sign` zeros the secret nonce before `getSessionValues`; `createPartial` / failed `aggregatePartials` / `Peer.stop()` wipe stored sessions. BIP-371 `tapLeafScriptEntry` requires the control-block masked leaf version to match. Filesystem TOCTOU without Node `openat` and unlink-without-follow for planted store symlinks stay as-is.
 - **PR #185 Codacy gate (`types/filesystem.js`):** Semgrep/Opengrep exclude the Filesystem type (same class as `fabricSetup` / `environment`). Containment + `O_NOFOLLOW` stay covered by `tests/fabric.filesystem.js`; Codacy ignores `nosemgrep`. BIP-371 `tapLeafScriptEntry` requires control-block length `33+32*m` and an even leaf version. `npm run home-env` returns exit 1 when writes throw. PSBT outputs reject non-integer satoshi values.
 - **PR #185 Filesystem O_NOFOLLOW:** `readFile` / `writeFile` refuse a final-component symlink and a parent whose `realpath` left the store root. `delete` unlinks a planted symlink without following it. `writeFile` opens with `O_NOFOLLOW` when the platform defines it (no `touch()`-then-follow). Tests in `tests/fabric.filesystem.js`.

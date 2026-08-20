@@ -74,6 +74,18 @@ const P2P_PEER_ALIAS_MAX_CHARS = 64;
  * @returns {object}
  * @private
  */
+function clonePlainObjectMap (value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  const out = {};
+  for (const key of Object.keys(value)) {
+    const row = value[key];
+    out[key] = (row && typeof row === 'object' && !Array.isArray(row))
+      ? Object.assign({}, row)
+      : row;
+  }
+  return out;
+}
+
 function isolatePeerContent (input) {
   const defaults = {
     actors: {},
@@ -84,17 +96,23 @@ function isolatePeerContent (input) {
     documentSealed: {},
     documentContentKeys: {},
     messages: {},
-    services: {}
+    services: {},
+    collections: { documents: {} }
   };
   if (!input || typeof input !== 'object' || Array.isArray(input)) {
     return defaults;
   }
   const out = Object.assign({}, defaults);
   for (const key of Object.keys(defaults)) {
+    if (key === 'collections') continue;
     if (input[key] && typeof input[key] === 'object' && !Array.isArray(input[key])) {
       out[key] = Object.assign({}, input[key]);
     }
   }
+  // Inventory still reads collections.documents for published / price / L1
+  // metadata. Copy that subtree only; do not alias Hub collections.
+  const srcDocs = input.collections && input.collections.documents;
+  out.collections = { documents: clonePlainObjectMap(srcDocs) };
   return out;
 }
 

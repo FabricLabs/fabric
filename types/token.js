@@ -152,6 +152,13 @@ class Token {
     });
   }
 
+  /**
+   * Legacy JWT-shaped string. The MAC is SHA-256 over `header.payload` plus a
+   * hardcoded secret (`ffff`). **Not authentication** — anyone can mint one.
+   * Use {@link Token#toSignedString} / {@link Token.verifySigned} for Hub admin
+   * and other signed tokens.
+   * @returns {string}
+   */
   toString () {
     // TODO: determine rounding preference (secwise)
     const utime = Math.floor(this.created / 1000);

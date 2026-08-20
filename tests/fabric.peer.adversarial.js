@@ -971,8 +971,8 @@ describe('@fabric/core RC1 first-tier contract', function () {
 
 // Coverage locks from FabricLabs/fabric PR review comments.
 // Sources: PR #185 (open) and closed PR #183. Heavy-lift product work
-// (isolatePeerContent collections, unique Service commit ids, Blessed TUI
-// markup) stays deferred in docs/OUTSTANDING.md.
+// (unique Service commit ids, Blessed TUI markup) stays deferred in
+// docs/OUTSTANDING.md.
 
 const { EventEmitter } = require('events');
 
@@ -995,7 +995,25 @@ describe('@fabric/core RC1 PR-review coverage', function () {
     const fromArray = new Peer(offlinePeerSettings({ state: [] }));
     assert.deepStrictEqual(fromNull._state.content.documents, {});
     assert.deepStrictEqual(fromArray._state.content.messages, {});
-    assert.ok(!fromNull._state.content.collections);
+    assert.deepStrictEqual(fromNull._state.content.collections, { documents: {} });
+  });
+
+  it('isolatePeerContent copies collections.documents without aliasing', function () {
+    const original = {
+      documents: { doc1: { id: 'doc1' } },
+      collections: {
+        documents: {
+          doc1: { id: 'doc1', published: true, purchasePriceSats: 25 }
+        }
+      }
+    };
+    const peer = new Peer(offlinePeerSettings({ state: original }));
+    const row = peer._state.content.collections.documents.doc1;
+    assert.strictEqual(row.purchasePriceSats, 25);
+    row.purchasePriceSats = 99;
+    assert.strictEqual(original.collections.documents.doc1.purchasePriceSats, 25);
+    original.collections.documents.doc1.published = false;
+    assert.strictEqual(peer._state.content.collections.documents.doc1.published, true);
   });
 
   it('beat emits a clock-only snapshot (no full state tree)', function () {

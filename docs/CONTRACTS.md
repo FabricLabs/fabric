@@ -301,9 +301,11 @@ Do **not** maintain a second unrelated vault script for the same authority set. 
 }
 ```
 
+Do **not** put `internalKeyMode` in Beacon genesis (Actor id stays network-stable). Overlay it at Accept / vault build. Default `synthesizeDefaultLadder` / `buildFederationVaultFromPolicy` for **n≥2** is **`musig2`** (new Taproot internal key / address vs historical NUMS). Operators with coins at a NUMS vault MUST pass `internalKeyMode: "nums"` on the vault builder **and** on `resolveSpend` overrides so Hub `authorityUnity` still holds. Existing UTXOs are not migrated by a policy rebuild. `musig2.autoAccept` stays off (signing oracle).
+
 `depositMaturityBlocks` is a deposit-UX alias of `csvBlocks` only. Tip overlays nest as `bitcoinAnchor: { blockHash, height }` (flat `bitcoinBlockHash` remains a summary alias). Spend tip keys prefer `content.signers` over a general `members` roster. Group folds keep **participants** in `members` and **authority** in `signers` / `proposedPolicy.validators` (application accept does not widen spend keys).
 
-Hub asserts vault `spendAddress` ≡ accepted `fabric-beacon` ARC after `startBeacon` (`authorityUnity` on vault / manifest).
+Hub asserts vault `spendAddress` ≡ accepted `fabric-beacon` ARC after `startBeacon` (`authorityUnity` on vault / manifest). Overlay `internalKeyMode` must match (Hub default `nums`).
 
 ---
 

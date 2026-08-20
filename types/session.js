@@ -111,12 +111,20 @@ class Session extends Entity {
     return crypto.createHash('sha256').update(buffer);
   }
 
-  // TODO: implement
+  /**
+   * No-op. Does not encrypt. Do not treat Session as providing confidentiality.
+   * @param {*} data
+   * @returns {*}
+   */
   encrypt (data) {
     return data;
   }
 
-  // TODO: implement
+  /**
+   * No-op. Does not decrypt.
+   * @param {*} data
+   * @returns {*}
+   */
   decrypt (data) {
     return data;
   }

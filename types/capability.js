@@ -32,6 +32,11 @@ class Capability extends Entity {
     return this._state.content.type;
   }
 
+  /**
+   * Scaffold macaroon. `rootKey` is the literal `'secret'`. Do not treat this
+   * as a production capability token.
+   * @returns {Promise<{ json: string, macaroon: object, signature: string }>}
+   */
   async _generateToken () {
     const now = new Date();
     const token = {

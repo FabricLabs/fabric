@@ -154,3 +154,6 @@ Interactive mesh signing uses the existing `P2P_MUSIG_*` opcodes (`0x4220`–`0x
 
 ## Disclosure
 Report vulnerabilities to **`security@fabric.pub`**. Do not file public GitHub issues for undisclosed flaws. See also [AUDIT.md](AUDIT.md).
+
+## Tokens and scaffolds (not auth)
+`Token.toString()` is a JWT-shaped MAC with a hardcoded secret (`ffff`). Do not use it for sessions or admin. Hub and Sensemaker issue Schnorr-signed strings (`toSignedString` / node-signed session). `Capability#_generateToken` uses macaroon `rootKey: 'secret'`. `Session.encrypt` / `decrypt` are no-ops.

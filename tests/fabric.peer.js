@@ -97,7 +97,10 @@ describe('@fabric/core/types/peer', function () {
         collections.documents.more = { id: 'more' };
         shared.documents.keep = 'mutated';
         assert.strictEqual(peer._state.content.documents.keep, 'x');
-        assert.ok(!peer._state.content.collections);
+        assert.strictEqual(peer._state.content.collections.documents.leak.id, 'leak');
+        assert.ok(!peer._state.content.collections.documents.more);
+        collections.documents.leak.id = 'mutated-leak';
+        assert.strictEqual(peer._state.content.collections.documents.leak.id, 'leak');
         assert.notStrictEqual(peer._state.content, shared);
       });
 

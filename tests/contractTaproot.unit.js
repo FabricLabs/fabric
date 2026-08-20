@@ -91,6 +91,38 @@ describe('contractTaproot', function () {
     assert.strictEqual(buildContractTaproot(nums).internalPubkeyHex, TAPROOT_INTERNAL_NUMS.toString('hex'));
   });
 
+  it('buildFederationVaultFromPolicy forwards internalKeyMode nums', function () {
+    const vals = [pk(0), pk(1), pk(2)];
+    const musig = buildFederationVaultFromPolicy({
+      validatorPubkeysHex: vals,
+      threshold: 2,
+      networkName: 'regtest',
+      publisher: pk(0),
+      csvBlocks: 144
+    });
+    const nums = buildFederationVaultFromPolicy({
+      validatorPubkeysHex: vals,
+      threshold: 2,
+      networkName: 'regtest',
+      publisher: pk(0),
+      csvBlocks: 144,
+      internalKeyMode: 'nums'
+    });
+    assert.notStrictEqual(musig.address, nums.address);
+    assert.strictEqual(musig.spendPolicy.internalKeyMode, 'musig2');
+    assert.strictEqual(nums.spendPolicy.internalKeyMode, 'nums');
+    assert.strictEqual(nums.internalPubkeyHex, TAPROOT_INTERNAL_NUMS.toString('hex'));
+    const viaLadder = toAddress(synthesizeDefaultLadder({
+      validators: vals,
+      threshold: 2,
+      publisher: pk(0),
+      network: 'regtest',
+      csvBlocks: 144,
+      internalKeyMode: 'nums'
+    }));
+    assert.strictEqual(nums.address, viaLadder);
+  });
+
   it('builds multi-tier failover with until; expired tiers leave active set', function () {
     const policy = normalizeContractSpendPolicy({
       network: 'regtest',

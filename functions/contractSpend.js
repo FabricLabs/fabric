@@ -288,6 +288,10 @@ function canonicalSpendPolicy (opts = {}) {
   if (opts.softThreshold != null && Number.isFinite(Number(opts.softThreshold))) {
     out.softThreshold = Number(opts.softThreshold);
   }
+  if (opts.internalKeyMode) {
+    const mode = String(opts.internalKeyMode).trim().toLowerCase();
+    out.internalKeyMode = (mode === 'musig2' || mode === 'auto') ? 'musig2' : 'nums';
+  }
   return out;
 }
 
@@ -383,7 +387,8 @@ function resolveSpend (opts = {}) {
       softMode: policyInput.softMode,
       softThreshold: policyInput.softThreshold,
       hashlock: policyInput.hashlock || null,
-      extraLeaves: policyInput.extraLeaves || null
+      extraLeaves: policyInput.extraLeaves || null,
+      internalKeyMode: policyInput.internalKeyMode
     }));
 
   const soft = built.policy && built.policy.tiers

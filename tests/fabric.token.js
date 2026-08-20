@@ -131,12 +131,10 @@ describe('@fabric/core/types/token', function () {
       assert.strictEqual(bare.verify(), false);
     });
 
-    it('toString yields three JWT-like segments', function () {
+    it('toString is not a signed token (verifySigned rejects it)', function () {
       const issuer = new Key();
       const token = new Token({ capability: 'OP_X', issuer, subject: 'subj' });
-      const s = token.toString();
-      const parts = s.split('.');
-      assert.strictEqual(parts.length, 3);
+      assert.strictEqual(Token.verifySigned(token.toString(), issuer), null);
     });
 
     it('fromString parses three-segment token from toString', function () {

@@ -189,7 +189,8 @@ function resolveKeyList (keysRef, keySets, publisher) {
  * @param {number} [opts.softThreshold] when softMode=reduced (default ceil(k/2))
  * @param {object} [opts.hashlock] optional L1 hashlock leaf (`commitmentHex` / `runCommitmentHex`)
  * @param {object[]} [opts.extraLeaves] additional composable leaves (script / spend / hashlock)
- * @param {string} [opts.internalKeyMode] `musig2` (default when n≥2) | `nums` (legacy script-path-only)
+ * @param {string} [opts.internalKeyMode] `musig2` (default when n≥2) | `nums` (legacy script-path-only).
+ *   Historical NUMS vaults MUST pass `nums` — a rebuild does not migrate UTXOs.
  * @returns {object} normalized spend policy
  */
 function synthesizeDefaultLadder (opts = {}) {
@@ -1396,7 +1397,13 @@ function finalizeHashlockPsbt (opts = {}) {
  * **Legacy:** pass `{ legacySingleLeaf: true }` for the pre-ladder single k-of-n
  * leaf address (opt-in only; not used by Hub vault summary).
  *
+ * **Internal key:** default n≥2 uses the MuSig2 aggregate (`internalKeyMode:
+ * 'musig2'`) — a **new address** vs historical NUMS. Pass `internalKeyMode:
+ * 'nums'` to keep coins at the old script-path-only vault. Rebuilds do not
+ * migrate UTXOs.
+ *
  * @param {object} opts
+ * @param {string} [opts.internalKeyMode] `musig2` | `nums`
  * @returns {object}
  */
 function buildFederationVaultFromPolicy (opts = {}) {
@@ -1408,7 +1415,8 @@ function buildFederationVaultFromPolicy (opts = {}) {
     failover,
     softMode,
     softThreshold,
-    legacySingleLeaf
+    legacySingleLeaf,
+    internalKeyMode
   } = opts;
   const validatorPubkeysHex = opts.validatorPubkeysHex || opts.validators || [];
   const pks = parseCompressedPubkeysSorted(validatorPubkeysHex);
@@ -1438,7 +1446,8 @@ function buildFederationVaultFromPolicy (opts = {}) {
       publisher: publisher || pks[0].toString('hex'),
       csvBlocks: csvBlocks != null ? csvBlocks : DEFAULT_CSV_BLOCKS,
       softMode,
-      softThreshold
+      softThreshold,
+      internalKeyMode
     }));
     const t0 = built.leaves.find((l) => l.kind === 'spend' && (l.id === 't0-authority' || l.id === 't0-federation'))
       || built.leaves.find((l) => l.kind === 'spend');
@@ -1476,7 +1485,9 @@ function buildFederationVaultFromPolicy (opts = {}) {
         softMode: softMode
           ? (String(softMode).toLowerCase() === 'reduced' ? 'reduced' : 'publisher')
           : 'publisher',
-        network
+        network,
+        internalKeyMode: (built.policy && built.policy.internalKeyMode)
+          || (pks.length >= 2 ? 'musig2' : 'nums')
       },
       policy: built.policy,
       leaves: built.leaves
