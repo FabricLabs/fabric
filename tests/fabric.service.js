@@ -215,7 +215,7 @@ describe('@fabric/core/types/service', function () {
   });
 
   describe('_listActors()', function () {
-    it('can list channels successfully', async function () {
+    it('can list actors successfully', async function () {
       const service = new Service(FAST_SERVICE);
       await service.start();
       const registration = await service._registerActor({ name: 'Chad' });
@@ -304,8 +304,6 @@ describe('@fabric/core/types/service', function () {
       assert.strictEqual(result.length, 1);
       assert.ok(service);
       assert.ok(link);
-      assert.ok(result);
-      assert.ok(result.length, 1);
     });
 
     it('provides the posted document in the expected location', async function () {
@@ -331,6 +329,30 @@ describe('@fabric/core/types/service', function () {
       assert.strictEqual(commits.length, 1);
       assert.ok(commits[0].id && typeof commits[0].id === 'string');
       assert.ok(commits[0].id.length > 0);
+      assert.strictEqual(commits[0].type, 'Commit');
+      assert.ok(commits[0].state === undefined);
+    });
+
+    it('does not embed service state in commit actors', async function () {
+      const service = new Service(FAST_SERVICE);
+      await service.start();
+      const commits = [];
+      service.on('commit', (c) => commits.push(c));
+      service.set('/visibilityBlob', { pad: 'z'.repeat(2048) });
+      await service.stop();
+      assert.ok(commits[0]);
+      assert.ok(commits[0].id);
+      assert.ok(!('state' in commits[0]));
+      assert.ok(typeof commits[0].clock === 'number');
+    });
+
+    it('caps patch history at commitHistoryMax', async function () {
+      const service = new Service({ ...FAST_SERVICE, commitHistoryMax: 3 });
+      await service.start();
+      for (let i = 0; i < 8; i++) service.set('/cap' + i, i);
+      await service.stop();
+      assert.ok(service.history.length <= 3);
+      assert.strictEqual(service.history.length, 3);
     });
 
     it('patches and history expose RFC6902 deltas for audits', async function () {
@@ -753,5 +775,39 @@ describe('@fabric/core/types/service', function () {
         });
       }, /policy pubkeys must be 1-of-1/);
     });
+  });
+});
+
+const Bitcoin = require('../services/bitcoin');
+const State = require('../types/state');
+const Store = require('../types/store');
+
+describe('Hub crash-report follow-ups (core)', function () {
+  it('State.serialize does not throw on null', function () {
+    const state = new State({ ok: true });
+    const serialized = state.serialize(null);
+    assert.ok(serialized);
+    assert.doesNotThrow(() => new State(null));
+  });
+
+  it('Store._POST rejects a null body', async function () {
+    const store = new Store({ persistent: false });
+    await assert.rejects(() => store._POST('/widgets', null), /JSON body/);
+  });
+
+  it('applyP2pAddNodes treats RPC -23 already-added as success', async function () {
+    const btc = Object.create(Bitcoin.prototype);
+    btc.settings = { debug: false, network: 'regtest' };
+    btc._normalizeP2pPeerAddress = Bitcoin.prototype._normalizeP2pPeerAddress;
+    btc._makeRPCRequest = async function () {
+      throw new Error('addnode failed hub.fabric.pub:18444: [-23] Node already added');
+    };
+    const warnings = [];
+    btc.emit = function (ev, msg) {
+      if (ev === 'warning') warnings.push(msg);
+    };
+    const done = await Bitcoin.prototype.applyP2pAddNodes.call(btc, ['hub.fabric.pub:18444']);
+    assert.deepStrictEqual(done, ['hub.fabric.pub:18444']);
+    assert.strictEqual(warnings.length, 0);
   });
 });

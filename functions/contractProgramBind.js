@@ -11,7 +11,7 @@
  *
  * @module functions/contractProgramBind
  * @see docs/PROGRAM.md
- * @see docs/ARC.md
+ * @see docs/CONTRACTS.md
  */
 
 const crypto = require('crypto');

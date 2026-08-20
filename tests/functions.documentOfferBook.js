@@ -40,6 +40,11 @@ describe('documentOfferBook + blobs + relay', function () {
     assert.ok(best);
     // High score + low latency should beat slightly cheaper sybil.
     assert.ok(best.sellerAddress === 'a:1' || best.sellerAddress === 'c:3');
+    assert.ok(book.pickBest('missing') == null);
+    const cheap = book.pickBest('doc1', { maxSats: 95 });
+    assert.ok(cheap && cheap.sellerAddress === 'b:2');
+    const excluded = book.pickBest('doc1', { excludeSellers: ['b:2', 'a:1'] });
+    assert.ok(excluded && excluded.sellerAddress === 'c:3');
   });
 
   it('prefers high peerScore over equal-price zero-score sybil', function () {
@@ -228,5 +233,49 @@ describe('documentOfferBook + blobs + relay', function () {
     assert.strictEqual(fee.ok, true);
     assert.strictEqual(fee.feeSats, 10);
     assert.ok(hubList - origin >= fee.feeSats, 'republish spread should cover a same-bps hop fee');
+  });
+
+  it('does not keep peer contentBase64 or costBasis on ranked offers', function () {
+    const book = new DocumentOfferBook();
+    book.ingestInventoryResponse({
+      origin: 'seller:1',
+      peerScore: 400,
+      latencyMs: 20,
+      items: [{
+        id: 'doc-leak',
+        rateSats: 25,
+        contentHash: '11'.repeat(32),
+        contentBase64: Buffer.from('secret').toString('base64'),
+        costBasisSats: 1
+      }]
+    });
+    const offers = book.listOffers({ documentId: 'doc-leak' });
+    assert.strictEqual(offers.length, 1);
+    assert.strictEqual(offers[0].rateSats, 25);
+    assert.strictEqual(offers[0].contentBase64, undefined);
+    assert.strictEqual(offers[0].costBasisSats, undefined);
+  });
+
+  it('skips inventory items without an id and filters listOffers by blobIndex', function () {
+    const book = new DocumentOfferBook();
+    book.ingestInventoryResponse({
+      origin: 'seller:1',
+      items: [
+        { rateSats: 1 },
+        {
+          id: 'blob-doc',
+          rateSats: 40,
+          contentHash: '22'.repeat(32),
+          blobs: [
+            { index: 0, total: 2, blobHashHex: 'b0'.repeat(32), rateSats: 10 },
+            { index: 1, total: 2, blobHashHex: 'b1'.repeat(32), rateSats: 30 }
+          ]
+        }
+      ]
+    });
+    assert.strictEqual(book.listOffers({ documentId: '' }).filter((o) => !o.documentId).length, 0);
+    assert.strictEqual(book.listOffers({ documentId: 'blob-doc' }).length, 2);
+    assert.strictEqual(book.listOffers({ documentId: 'blob-doc', blobIndex: 1 }).length, 1);
+    assert.strictEqual(book.listOffers({ documentId: 'blob-doc', blobIndex: 1 })[0].rateSats, 30);
   });
 });

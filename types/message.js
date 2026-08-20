@@ -33,6 +33,13 @@ const {
   P2P_PEERING_OFFER,
   P2P_SESSION_OFFER,
   P2P_SESSION_OPEN,
+  P2P_SESSION_ACK,
+  P2P_MUSIG_START,
+  P2P_MUSIG_ACCEPT,
+  P2P_MUSIG_RECEIVE_COUNTER,
+  P2P_MUSIG_SEND_PROPOSAL,
+  P2P_MUSIG_REPLY_TO_PROPOSAL,
+  P2P_MUSIG_ACCEPT_PROPOSAL,
   P2P_CONTRACT_PUBLISH,
   P2P_CONTRACT_MESSAGE,
   P2P_STATE_ROOT,
@@ -111,8 +118,8 @@ const taggedHash = require('../functions/taggedHash');
  * Encode accepts **either** name via merged {@link Message#types} (canonical wire + legacy friendly).
  * {@link Message.wireTypeFromFriendly} / {@link Message.friendlyTypeFromWire} convert between them.
  *
- * Opcode → wire string order matches the historical `type` switch: when multiple labels share one
- * opcode (e.g. P2P vs Lightning), **first listed** in {@link Message.WIRE_TYPE_DECODE_ORDER} wins.
+ * Each opcode appears once in {@link Message.WIRE_TYPE_DECODE_ORDER} (Fabric low numbers,
+ * Lightning in <code>0x2000–0x2FFF</code>). Duplicate opcodes fail at module load.
  * Those maps are **not** global exports: use {@link Message} statics `WIRE_TYPE_DECODE_ORDER` and
  * `FRIENDLY_TYPE_BY_WIRE`.
  */
@@ -144,12 +151,20 @@ const WIRE_TYPE_DECODE_ORDER = Object.freeze([
   [P2P_PEERING_OFFER, 'P2P_PEERING_OFFER'],
   [P2P_SESSION_OFFER, 'P2P_SESSION_OFFER'],
   [P2P_SESSION_OPEN, 'P2P_SESSION_OPEN'],
+  [P2P_SESSION_ACK, 'P2P_SESSION_ACK'],
+  [P2P_MUSIG_START, 'P2P_MUSIG_START'],
+  [P2P_MUSIG_ACCEPT, 'P2P_MUSIG_ACCEPT'],
+  [P2P_MUSIG_RECEIVE_COUNTER, 'P2P_MUSIG_RECEIVE_COUNTER'],
+  [P2P_MUSIG_SEND_PROPOSAL, 'P2P_MUSIG_SEND_PROPOSAL'],
+  [P2P_MUSIG_REPLY_TO_PROPOSAL, 'P2P_MUSIG_REPLY_TO_PROPOSAL'],
+  [P2P_MUSIG_ACCEPT_PROPOSAL, 'P2P_MUSIG_ACCEPT_PROPOSAL'],
   [P2P_CONTRACT_PUBLISH, 'CONTRACT_PUBLISH'],
   [P2P_CONTRACT_MESSAGE, 'CONTRACT_MESSAGE'],
   [P2P_IDENT_REQUEST, 'P2P_IDENT_REQUEST'],
   [P2P_IDENT_RESPONSE, 'P2P_IDENT_RESPONSE'],
   [P2P_BASE_MESSAGE, 'P2P_BASE_MESSAGE'],
   [P2P_STATE_ROOT, 'P2P_STATE_ROOT'],
+  [P2P_STATE_COMMITTMENT, 'P2P_STATE_COMMITTMENT'],
   [P2P_STATE_CHANGE, 'P2P_STATE_CHANGE'],
   [P2P_STATE_REQUEST, 'P2P_STATE_REQUEST'],
   [P2P_TRANSACTION, 'P2P_TRANSACTION'],
@@ -165,11 +180,9 @@ const WIRE_TYPE_DECODE_ORDER = Object.freeze([
   [PATCH_MESSAGE_TYPE, 'JSON_PATCH'],
   [CONTRACT_PROPOSAL_TYPE, 'CONTRACT_PROPOSAL'],
   [P2P_START_CHAIN, 'P2P_START_CHAIN'],
-  [LIGHTNING_WARNING, 'LIGHTNING_WARNING'],
+  [P2P_INSTRUCTION, 'P2P_INSTRUCTION'],
   [LIGHTNING_INIT, 'LIGHTNING_INIT'],
   [LIGHTNING_ERROR, 'LIGHTNING_ERROR'],
-  [LIGHTNING_PING, 'LIGHTNING_PING'],
-  [LIGHTNING_PONG, 'LIGHTNING_PONG'],
   [LIGHTNING_OPEN_CHANNEL, 'LIGHTNING_OPEN_CHANNEL'],
   [LIGHTNING_ACCEPT_CHANNEL, 'LIGHTNING_ACCEPT_CHANNEL'],
   [LIGHTNING_FUNDING_CREATED, 'LIGHTNING_FUNDING_CREATED'],
@@ -184,7 +197,10 @@ const WIRE_TYPE_DECODE_ORDER = Object.freeze([
   [LIGHTNING_REVOKE_AND_ACK, 'LIGHTNING_REVOKE_AND_ACK'],
   [LIGHTNING_CHANNEL_ANNOUNCEMENT, 'LIGHTNING_CHANNEL_ANNOUNCEMENT'],
   [LIGHTNING_NODE_ANNOUNCEMENT, 'LIGHTNING_NODE_ANNOUNCEMENT'],
-  [LIGHTNING_CHANNEL_UPDATE, 'LIGHTNING_CHANNEL_UPDATE']
+  [LIGHTNING_CHANNEL_UPDATE, 'LIGHTNING_CHANNEL_UPDATE'],
+  [LIGHTNING_WARNING, 'LIGHTNING_WARNING'],
+  [LIGHTNING_PING, 'LIGHTNING_PING'],
+  [LIGHTNING_PONG, 'LIGHTNING_PONG']
 ]);
 
 const CANONICAL_WIRE_TYPE_BY_OPCODE = Object.freeze(
@@ -192,7 +208,9 @@ const CANONICAL_WIRE_TYPE_BY_OPCODE = Object.freeze(
     const code = pair[0];
     const name = pair[1];
     if (typeof code !== 'number' || !Number.isFinite(code)) return acc;
-    if (acc[code] !== undefined) return acc;
+    if (acc[code] !== undefined) {
+      throw new Error(`duplicate AMP opcode ${code}: ${acc[code]} and ${name}`);
+    }
     acc[code] = name;
     return acc;
   }, {})
@@ -237,6 +255,12 @@ const LEGACY_MESSAGE_TYPE_ALIASES = Object.freeze({
   PeeringOffer: P2P_PEERING_OFFER,
   SessionOffer: P2P_SESSION_OFFER,
   SessionOpen: P2P_SESSION_OPEN,
+  MusigStart: P2P_MUSIG_START,
+  MusigAccept: P2P_MUSIG_ACCEPT,
+  MusigReceiveCounter: P2P_MUSIG_RECEIVE_COUNTER,
+  MusigSendProposal: P2P_MUSIG_SEND_PROPOSAL,
+  MusigReplyToProposal: P2P_MUSIG_REPLY_TO_PROPOSAL,
+  MusigAcceptProposal: P2P_MUSIG_ACCEPT_PROPOSAL,
   FileSend: P2P_FILE_SEND,
   DocumentPricingPublish: P2P_DOCUMENT_PUBLISH,
   Ping: P2P_PING,
@@ -470,9 +494,6 @@ class Message extends Actor {
 
     if (messageData && messageType) {
       this.type = messageType;
-      // Set the type field to the numeric constant
-      const typeCode = this.types[messageType] || this.types.P2P_BASE_MESSAGE;
-      this.raw.type.writeUInt32BE(typeCode, 0);
 
       if (Buffer.isBuffer(messageData) || messageData instanceof Uint8Array) {
         this.data = Buffer.from(messageData);
@@ -867,14 +888,12 @@ class Message extends Actor {
     if (!input) return null;
     // Convert various buffer-like inputs to Buffer
     let buffer;
-    if (input instanceof Buffer) {
+    if (Buffer.isBuffer(input)) {
       buffer = input;
-    } else if (input instanceof Uint8Array) {
-      buffer = Buffer.from(input.buffer);
+    } else if (ArrayBuffer.isView(input)) {
+      buffer = Buffer.from(input.buffer, input.byteOffset, input.byteLength);
     } else if (input instanceof ArrayBuffer) {
       buffer = Buffer.from(input);
-    } else if (input.buffer instanceof ArrayBuffer) {
-      buffer = Buffer.from(input.buffer);
     } else {
       throw new Error('Input must be a buffer or buffer-like object.');
     }
@@ -903,18 +922,10 @@ class Message extends Actor {
   }
 
   static fromVector (vector = ['LogMessage', 'No vector provided.']) {
-    let message = null;
-
-    try {
-      message = new Message({
-        type: vector[0],
-        data: vector[1]
-      });
-    } catch (exception) {
-      console.error('[FABRIC:MESSAGE]', 'Could not construct Message:', exception);
-    }
-
-    return message;
+    return new Message({
+      type: vector[0],
+      data: vector[1]
+    });
   }
 
   /**
@@ -1036,7 +1047,6 @@ Object.defineProperty(Message.prototype, 'type', {
     return this.wireType;
   },
   set (value) {
-    // console.trace('setting type:', value);
     let code = this.types[value];
     // Default to P2P_BASE_MESSAGE for unknown/unregistered names.
     if (!code) {
@@ -1334,6 +1344,30 @@ const SCHEMA_P2P_PEER_ANNOUNCE = Object.freeze([
   { name: 'host', type: 'string' },
   { name: 'port', type: 'u32' }
 ]);
+/** @private BIP-327 directed MuSig2 session (JSON bodies still accepted). */
+const SCHEMA_P2P_MUSIG_START = Object.freeze([
+  { name: 'sessionId', type: 'bytes32' },
+  { name: 'msg', type: 'bytes' },
+  { name: 'pubkeys', type: 'bytes' },
+  { name: 'pubnonce', type: 'bytes' },
+  { name: 'purpose', type: 'string', optional: true }
+]);
+const SCHEMA_P2P_MUSIG_PUBNONCE = Object.freeze([
+  { name: 'sessionId', type: 'bytes32' },
+  { name: 'pubnonce', type: 'bytes' }
+]);
+const SCHEMA_P2P_MUSIG_AGGNONCE = Object.freeze([
+  { name: 'sessionId', type: 'bytes32' },
+  { name: 'aggnonce', type: 'bytes' }
+]);
+const SCHEMA_P2P_MUSIG_PSIG = Object.freeze([
+  { name: 'sessionId', type: 'bytes32' },
+  { name: 'psig', type: 'bytes' }
+]);
+const SCHEMA_P2P_MUSIG_SIGNATURE = Object.freeze([
+  { name: 'sessionId', type: 'bytes32' },
+  { name: 'signature', type: 'bytes' }
+]);
 
 /**
  * Parse an inbound AMP body: prefer JSON (legacy), else registered field schema.
@@ -1392,6 +1426,24 @@ function tryParseMessageBody (message) {
   registerBodySchema(P2P_PEER_ANNOUNCE, SCHEMA_P2P_PEER_ANNOUNCE);
   registerBodySchema('P2P_PEER_ANNOUNCE', SCHEMA_P2P_PEER_ANNOUNCE);
   registerBodySchema('PeerAnnounce', SCHEMA_P2P_PEER_ANNOUNCE);
+  registerBodySchema(P2P_MUSIG_START, SCHEMA_P2P_MUSIG_START);
+  registerBodySchema('P2P_MUSIG_START', SCHEMA_P2P_MUSIG_START);
+  registerBodySchema('MusigStart', SCHEMA_P2P_MUSIG_START);
+  registerBodySchema(P2P_MUSIG_ACCEPT, SCHEMA_P2P_MUSIG_PUBNONCE);
+  registerBodySchema('P2P_MUSIG_ACCEPT', SCHEMA_P2P_MUSIG_PUBNONCE);
+  registerBodySchema('MusigAccept', SCHEMA_P2P_MUSIG_PUBNONCE);
+  registerBodySchema(P2P_MUSIG_RECEIVE_COUNTER, SCHEMA_P2P_MUSIG_PUBNONCE);
+  registerBodySchema('P2P_MUSIG_RECEIVE_COUNTER', SCHEMA_P2P_MUSIG_PUBNONCE);
+  registerBodySchema('MusigReceiveCounter', SCHEMA_P2P_MUSIG_PUBNONCE);
+  registerBodySchema(P2P_MUSIG_SEND_PROPOSAL, SCHEMA_P2P_MUSIG_AGGNONCE);
+  registerBodySchema('P2P_MUSIG_SEND_PROPOSAL', SCHEMA_P2P_MUSIG_AGGNONCE);
+  registerBodySchema('MusigSendProposal', SCHEMA_P2P_MUSIG_AGGNONCE);
+  registerBodySchema(P2P_MUSIG_REPLY_TO_PROPOSAL, SCHEMA_P2P_MUSIG_PSIG);
+  registerBodySchema('P2P_MUSIG_REPLY_TO_PROPOSAL', SCHEMA_P2P_MUSIG_PSIG);
+  registerBodySchema('MusigReplyToProposal', SCHEMA_P2P_MUSIG_PSIG);
+  registerBodySchema(P2P_MUSIG_ACCEPT_PROPOSAL, SCHEMA_P2P_MUSIG_SIGNATURE);
+  registerBodySchema('P2P_MUSIG_ACCEPT_PROPOSAL', SCHEMA_P2P_MUSIG_SIGNATURE);
+  registerBodySchema('MusigAcceptProposal', SCHEMA_P2P_MUSIG_SIGNATURE);
 })();
 
 Message.FIELD_TYPES = BODY_FIELD_TYPES;
@@ -1408,5 +1460,170 @@ Message.SCHEMA_P2P_FORWARD = SCHEMA_P2P_FORWARD;
 Message.SCHEMA_P2P_PEER_GOSSIP = SCHEMA_P2P_PEER_GOSSIP;
 Message.SCHEMA_P2P_PEERING_OFFER = SCHEMA_P2P_PEERING_OFFER;
 Message.SCHEMA_P2P_PEER_ANNOUNCE = SCHEMA_P2P_PEER_ANNOUNCE;
+Message.SCHEMA_P2P_MUSIG_START = SCHEMA_P2P_MUSIG_START;
+
+const fs = require('fs');
+const path = require('path');
+const WIRE_CATALOG_ROOT = path.resolve(__dirname, '..');
+const WIRE_CATALOG_PATH = path.join(WIRE_CATALOG_ROOT, 'MESSAGES.md');
+const WIRE_CATALOG_BEGIN = '<!-- BEGIN WIRE_CATALOG -->';
+const WIRE_CATALOG_END = '<!-- END WIRE_CATALOG -->';
+
+function wireCatalogHexOf (n) {
+  const h = n.toString(16);
+  if (n <= 0xffff) return '0x' + h.padStart(4, '0');
+  return '0x' + h;
+}
+
+function wireCatalogFamilyOf (name, code) {
+  if (name.indexOf('LIGHTNING_') === 0) return 'lightning';
+  if (name.indexOf('BITCOIN_') === 0) return 'bitcoin';
+  if (name === 'SIDECHAIN_STATE_PATCH' || name.indexOf('CONTRACT_') === 0) return 'contracts';
+  if (
+    name.indexOf('DOCUMENT_') === 0 ||
+    name === 'P2P_INVENTORY_REQUEST' ||
+    name === 'P2P_INVENTORY_RESPONSE' ||
+    name === 'P2P_FILE_SEND' ||
+    name === 'P2P_DOCUMENT_PUBLISH'
+  ) {
+    return 'documents';
+  }
+  if (
+    name === 'JSON_CALL' ||
+    name === 'JSON_PATCH' ||
+    name === 'GENERIC_MESSAGE' ||
+    name === 'P2P_MESSAGE_RECEIPT' ||
+    name === 'CHAT_MESSAGE'
+  ) {
+    return 'hub';
+  }
+  if (
+    name.indexOf('P2P_SESSION_') === 0 ||
+    name.indexOf('P2P_IDENT_') === 0 ||
+    name.indexOf('P2P_MUSIG_') === 0 ||
+    name === 'P2P_INSTRUCTION'
+  ) {
+    return 'session';
+  }
+  if (
+    name === 'LOG_MESSAGE' ||
+    name === 'GENERIC_LIST' ||
+    name === 'BLOCK_CANDIDATE' ||
+    name === 'PEER_CANDIDATE' ||
+    name === 'SESSION_START' ||
+    name === 'P2P_BASE_MESSAGE' ||
+    name === 'P2P_GENERIC' ||
+    name === 'P2P_START_CHAIN' ||
+    name === 'P2P_STATE_ROOT' ||
+    name === 'P2P_STATE_COMMITTMENT' ||
+    name === 'P2P_STATE_CHANGE' ||
+    name === 'P2P_STATE_REQUEST' ||
+    name === 'P2P_TRANSACTION' ||
+    name === 'P2P_CALL'
+  ) {
+    return 'legacy';
+  }
+  if (code >= 0x2000 && code <= 0x2fff) return 'lightning';
+  return 'mesh';
+}
+
+function collectWireCatalog () {
+  require('../functions/documentRegistrySidechain');
+  const aliasesByCode = Object.create(null);
+  const types = new Message().types;
+  for (const name of Object.keys(types)) {
+    const code = types[name];
+    if (typeof code !== 'number' || !Number.isFinite(code)) continue;
+    const decode = Message.canonicalTypeName(code);
+    if (!decode || name === decode) continue;
+    if (!aliasesByCode[code]) aliasesByCode[code] = [];
+    if (aliasesByCode[code].indexOf(name) === -1) aliasesByCode[code].push(name);
+  }
+  for (const code of Object.keys(aliasesByCode)) {
+    aliasesByCode[code].sort();
+  }
+  const rows = [];
+  for (const pair of Message.WIRE_TYPE_DECODE_ORDER) {
+    const code = pair[0];
+    const name = pair[1];
+    if (typeof code !== 'number' || !Number.isFinite(code)) continue;
+    const schema = Message.getBodySchema(code) || Message.getBodySchema(name);
+    rows.push({
+      name,
+      opcode: code,
+      hex: wireCatalogHexOf(code),
+      aliases: aliasesByCode[code] ? aliasesByCode[code].slice() : [],
+      schema: Array.isArray(schema) && schema.length > 0,
+      family: wireCatalogFamilyOf(name, code)
+    });
+  }
+  return rows;
+}
+
+function renderWireCatalogTable (rows) {
+  const lines = [
+    '| Decode name | Dec | Hex | Encode aliases | Field schema | Family |',
+    '|---|---:|---|---|---|---|'
+  ];
+  for (const row of rows) {
+    const aliases = row.aliases.length ? '`' + row.aliases.join('`, `') + '`' : '—';
+    lines.push(
+      `| \`${row.name}\` | ${row.opcode} | \`${row.hex}\` | ${aliases} | ${row.schema ? 'yes' : 'no'} | ${row.family} |`
+    );
+  }
+  return lines.join('\n');
+}
+
+function wireCatalogBlock (rows) {
+  const unique = new Set(rows.map((row) => row.opcode));
+  const withSchema = rows.filter((row) => row.schema).length;
+  const lightning = rows.filter((row) => row.family === 'lightning').length;
+  return `${WIRE_CATALOG_BEGIN}
+
+This catalog: **${rows.length}** decode names, **${unique.size}** unique opcodes, **${withSchema}** with a registered field schema, **${lightning}** Lightning AMP rows. Regenerated by \`npm run docs:message-types\`. Do not hand-edit the table.
+
+${renderWireCatalogTable(rows)}
+
+${WIRE_CATALOG_END}`;
+}
+
+function writeWireCatalog () {
+  const rows = collectWireCatalog();
+  const block = wireCatalogBlock(rows);
+  const here = process.cwd();
+  try {
+    if (here !== WIRE_CATALOG_ROOT) process.chdir(WIRE_CATALOG_ROOT);
+    // Literal filename: Codacy Semgrep flags fs.*(constructedPath) as critical.
+    let md = fs.readFileSync('MESSAGES.md', 'utf8');
+    const start = md.indexOf(WIRE_CATALOG_BEGIN);
+    const stop = md.indexOf(WIRE_CATALOG_END);
+    if (start < 0 || stop < 0 || stop < start) {
+      throw new Error('MESSAGES.md is missing ' + WIRE_CATALOG_BEGIN + ' / ' + WIRE_CATALOG_END);
+    }
+    md = md.slice(0, start) + block + md.slice(stop + WIRE_CATALOG_END.length);
+    fs.writeFileSync('MESSAGES.md', md);
+  } finally {
+    if (process.cwd() !== here) process.chdir(here);
+  }
+  return rows;
+}
+
+Message.wireCatalog = {
+  OUTPUT_PATH: WIRE_CATALOG_PATH,
+  CATALOG_BEGIN: WIRE_CATALOG_BEGIN,
+  CATALOG_END: WIRE_CATALOG_END,
+  collectCatalog: collectWireCatalog,
+  catalogBlock: wireCatalogBlock,
+  renderMarkdown: wireCatalogBlock,
+  renderTable: renderWireCatalogTable,
+  writeConsolidation: writeWireCatalog,
+  hexOf: wireCatalogHexOf,
+  familyOf: wireCatalogFamilyOf
+};
 
 module.exports = Message;
+
+if (require.main === module) {
+  const rows = writeWireCatalog();
+  process.stdout.write('Wrote MESSAGES.md (' + rows.length + ' decode names)\n');
+}

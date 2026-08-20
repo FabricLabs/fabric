@@ -8,6 +8,8 @@ const Reader = require('../types/reader');
 const Message = require('../types/message');
 
 describe('@fabric/core/types/reader', function () {
+  // Compatibility scanner only (@deprecated on types/reader.js).
+  // Production AMP ingest lives on Peer / Message.
   describe('Reader', function () {
     it('is a constructor', function () {
       assert.strictEqual(Reader instanceof Function, true);

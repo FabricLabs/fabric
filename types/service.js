@@ -26,6 +26,7 @@ const Key = require('./key');
 const Message = require('./message');
 const Resource = require('./resource');
 const Store = require('./store');
+const { SERVICE_COMMIT_HISTORY_MAX } = require('../constants');
 const {
   createDefaultOpcodeRegistry,
   defineOpcode: defineOpcodeEntry,
@@ -1075,11 +1076,19 @@ class Service extends Actor {
     return this;
   }
 
+  /**
+   * Record outstanding JSON Patch deltas and emit a compact commitment id.
+   * Does **not** wrap {@link Service#state} in a new {@link Actor} — that
+   * JSON-cloned the entire tree on every write/connect and OOMed Hub.
+   * @returns {String} 32-byte commitment id
+   */
   commit () {
     // this.emit('debug', `[FABRIC:SERVICE] Committing ${OP_TRACE()}`);
+    let patches = [];
     if (PATCHES_ENABLED && this.observer) {
       try {
-        const patches = manager.generate(this.observer);
+        const generated = manager.generate(this.observer);
+        patches = Array.isArray(generated) ? generated : [];
         if (patches.length) {
           this.history.push(patches);
           this.emit('patches', patches);
@@ -1089,15 +1098,24 @@ class Service extends Actor {
       }
     }
 
+    const maxRaw = this.settings && this.settings.commitHistoryMax;
+    const max = (typeof maxRaw === 'number' && Number.isFinite(maxRaw) && maxRaw >= 0)
+      ? Math.floor(maxRaw)
+      : SERVICE_COMMIT_HISTORY_MAX;
+    while (this.history.length > max) this.history.shift();
+
+    const clock = (this._clock | 0);
     const commit = new Actor({
       type: 'Commit',
-      state: this.state
+      clock: clock,
+      patchCount: patches.length
     });
+    const id = commit.id;
 
-    this.emit('commit', { ...commit.toObject(), id: commit.id });
+    this.emit('commit', { type: 'Commit', clock: clock, id: id, patchCount: patches.length });
     // this.emit('state', this.state);
 
-    return commit.id;
+    return id;
   }
 
   async _handleBitcoinCommit (commit) {
@@ -1629,9 +1647,16 @@ class FabricShell extends Service {
     this.services[name].on('message', function (msg) {
       self._appendMessage(`@services/${name} -- <FabricServiceMessage>(${typeof msg}) ${JSON.stringify(msg, null, '  ')}`);
       switch (msg['@type']) {
-        case 'ChatMessage':
-          self.node.relayFrom(self.node.id, Message.fromVector(['ChatMessage', JSON.stringify(msg)]));
+        case 'ChatMessage': {
+          const { chatTextOf } = require('../functions/fabricChatText');
+          const text = chatTextOf(msg) || chatTextOf(msg.object) || '';
+          if (text.trim()) {
+            const packet = Message.fromVector(['P2P_CHAT_MESSAGE', String(text)]);
+            if (self.node.key) packet.signWithKey(self.node.key);
+            self.node.relayFrom(self.node.id, packet);
+          }
           break;
+        }
         default:
           break;
       }

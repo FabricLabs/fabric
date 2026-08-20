@@ -12,25 +12,29 @@ describe('@fabric/core/types/oracle', function () {
     });
 
     it('can use _SET', async function () {
-      let oracle = new Oracle();
+      const oracle = new Oracle({ persistent: false });
 
       await oracle.start();
-      await oracle._SET('sample', message['@data']);
+      const written = await oracle._SET('sample', message['@data']);
       await oracle.stop();
 
       assert.ok(oracle);
+      assert.strictEqual(written, message['@data']);
     });
 
     it('can store a string value', async function () {
-      let oracle = new Oracle();
+      const oracle = new Oracle({ persistent: false });
+      const payload = message['@data'];
 
       await oracle.start();
-      let set = await oracle._SET('sample', message['@data']);
-      let get = await oracle._GET('sample');
+      const written = await oracle._SET('sample', payload);
+      const got = await oracle._GET('sample');
+      const missing = await oracle._GET('does-not-exist');
       await oracle.stop();
 
-      assert.ok(oracle);
-      assert.ok(get);
+      assert.strictEqual(written, payload);
+      assert.strictEqual(got, payload);
+      assert.strictEqual(missing, null);
     });
   });
 });

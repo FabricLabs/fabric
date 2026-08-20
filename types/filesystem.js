@@ -91,9 +91,91 @@ class Filesystem extends Actor {
     return this._state.documents;
   }
 
+  /**
+   * Lexical containment: `name` resolves under this store root.
+   * @param {string} name
+   * @returns {string|null}
+   * @private
+   */
+  _resolveContained (name) {
+    const base = path.resolve(this.path);
+    const file = path.resolve(base, String(name || ''));
+    const prefix = base.endsWith(path.sep) ? base : base + path.sep;
+    if (file === base || file.startsWith(prefix)) return file;
+    return null;
+  }
+
+  /**
+   * @param {string} candidate
+   * @returns {boolean}
+   * @private
+   */
+  _isInsideRoot (candidate) {
+    const base = path.resolve(this.path);
+    const resolved = path.resolve(candidate);
+    const prefix = base.endsWith(path.sep) ? base : base + path.sep;
+    return resolved === base || resolved.startsWith(prefix);
+  }
+
+  /**
+   * Realpath of the nearest existing ancestor must stay under the store root
+   * (intermediate directory symlinks that escape are refused).
+   * @param {string} file
+   * @returns {boolean}
+   * @private
+   */
+  _parentTreeContained (file) {
+    let cur = path.dirname(file);
+    const root = path.resolve(this.path);
+    for (;;) {
+      if (!this._isInsideRoot(cur) && cur !== root) return false;
+      try {
+        if (fs.existsSync(cur)) {
+          return this._isInsideRoot(fs.realpathSync(cur));
+        }
+      } catch {
+        return false;
+      }
+      const next = path.dirname(cur);
+      if (next === cur) return this._isInsideRoot(root);
+      cur = next;
+    }
+  }
+
+  /**
+   * Refuse a final-component symlink (`O_NOFOLLOW`). Missing path is allowed
+   * unless `mustExist`.
+   * @param {string} file
+   * @param {object} [opts]
+   * @param {boolean} [opts.mustExist]
+   * @returns {string|null}
+   * @private
+   */
+  _nofollowContained (file, opts = {}) {
+    if (!this._parentTreeContained(file)) return null;
+    try {
+      const st = fs.lstatSync(file);
+      if (st.isSymbolicLink()) return null;
+    } catch (e) {
+      if (e && e.code === 'ENOENT') {
+        if (opts.mustExist) return null;
+        return file;
+      }
+      return null;
+    }
+    return file;
+  }
+
   delete (name) {
-    const file = path.join(this.path, name);
-    if (fs.existsSync(file)) fs.rmSync(file);
+    const file = this._resolveContained(name);
+    if (!file || !this._parentTreeContained(file)) return false;
+    try {
+      const st = fs.lstatSync(file);
+      if (st.isSymbolicLink() || st.isFile()) fs.unlinkSync(file);
+      else if (st.isDirectory()) return false;
+    } catch (e) {
+      if (!e || e.code !== 'ENOENT') return false;
+    }
     return true;
   }
 
@@ -130,13 +212,18 @@ class Filesystem extends Actor {
    * @returns {Buffer} Contents of the file.
    */
   readFile (name) {
-    const file = path.join(this.path, name);
-    if (!fs.existsSync(file)) return null;
+    const file = this._resolveContained(name);
+    if (!file) return null;
+    const safe = this._nofollowContained(file, { mustExist: true });
+    if (!safe) return null;
 
-    // Skip directories
-    if (fs.statSync(file).isDirectory()) return null;
-
-    return fs.readFileSync(file);
+    try {
+      const st = fs.lstatSync(safe);
+      if (!st.isFile()) return null;
+      return fs.readFileSync(safe);
+    } catch {
+      return null;
+    }
   }
 
   /**
@@ -146,25 +233,44 @@ class Filesystem extends Actor {
    * @returns {Boolean} `true` if the write succeeded, `false` if it did not.
    */
   writeFile (name, content) {
-    // Ensure the file path is absolute and properly resolved
-    const file = path.resolve(this.path, name);
+    const file = this._resolveContained(name);
+    if (!file) {
+      const msg = `Could not write file ${name}: path escapes filesystem root`;
+      if (this.listenerCount('error') > 0) this.emit('error', msg);
+      else this.emit('warning', msg);
+      return false;
+    }
+
+    const safe = this._nofollowContained(file);
+    if (!safe) {
+      const msg = `Could not write file ${name}: path escapes filesystem root or is a symlink`;
+      if (this.listenerCount('error') > 0) this.emit('error', msg);
+      else this.emit('warning', msg);
+      return false;
+    }
 
     try {
-      // Ensure parent directory exists
-      const parentDir = path.dirname(file);
+      const parentDir = path.dirname(safe);
       if (!fs.existsSync(parentDir)) {
         mkdirp.sync(parentDir);
       }
 
-      this.touch(file);
-      fs.writeFileSync(file, content);
+      const follow = fs.constants.O_NOFOLLOW || 0;
+      const flags = fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_TRUNC | follow;
+      const fd = fs.openSync(safe, flags);
+      try {
+        fs.writeFileSync(fd, content);
+      } finally {
+        fs.closeSync(fd);
+      }
 
-      // Emit file update event
       this._handleDiskChange('change', name);
 
       return true;
     } catch (exception) {
-      this.emit('error', `Could not write file: ${content} ${exception}`);
+      const msg = `Could not write file ${name}: ${exception}`;
+      if (this.listenerCount('error') > 0) this.emit('error', msg);
+      else this.emit('warning', msg);
       return false;
     }
   }
@@ -228,13 +334,31 @@ class Filesystem extends Actor {
     }
 
     const actor = new Actor(document);
-    const hash = Hash256.digest(document);
-
-    this._state.documents[hash] = document;
 
     return {
       id: actor.id
     };
+  }
+
+  /**
+   * Remember a published path in the top-level file list without re-reading the tree.
+   * Nested paths only add the first segment (same as `readdir` of `this.path`).
+   * @param {string} name
+   * @returns {void}
+   */
+  _notePublishedName (name) {
+    const resolved = this._resolveContained(name);
+    if (!resolved) return;
+    const rel = path.relative(this.path, resolved);
+    if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) return;
+    const top = rel.split(path.sep).filter(Boolean)[0];
+    if (!top || top === '.fabric') return;
+    if (!Array.isArray(this._state.content.files)) this._state.content.files = [];
+    const files = this._state.content.files;
+    if (!files.includes(top)) {
+      files.push(top);
+      files.sort();
+    }
   }
 
   async publish (name, document) {
@@ -242,15 +366,10 @@ class Filesystem extends Actor {
     const actor = new Actor(document);
     const hash = Hash256.digest(content);
 
-    // Update state
-    this._state.actors[actor.id] = actor;
-    this._state.documents[hash] = content;
-
-    // Write the file last, after state is set
-    this.writeFile(name, content);
-
-    // Ensure changes are persisted
-    await this.synchronize();
+    if (!this.writeFile(name, content)) {
+      throw new Error(`Could not publish ${name}`);
+    }
+    this._notePublishedName(name);
 
     return {
       id: actor.id,
@@ -328,16 +447,16 @@ class Filesystem extends Actor {
   }
 
   commit () {
-    const state = new Actor(this.state);
+    const content = this._state.content || {};
+    const serialized = JSON.stringify(content);
 
     // Write state to STATE file using absolute path
     const statePath = path.resolve(this.path, '.fabric', 'STATE');
-    // console.debug('[FILESYSTEM]', 'Writing state:', this.state);
-    const stateHex = Buffer.from(JSON.stringify(this.state)).toString('hex');
+    const stateHex = Buffer.from(serialized).toString('hex');
     this.writeFile(statePath, stateHex);
-    this.writeFile(statePath + '.json', JSON.stringify(this.state, null, '  '));
+    this.writeFile(statePath + '.json', serialized);
 
-    const commit = Message.fromVector(['COMMIT', state]);
+    const commit = Message.fromVector(['COMMIT', serialized]);
     commit.signatures = commit.signatures || [];
 
     // Only sign if we have a key with private key component

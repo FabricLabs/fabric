@@ -193,6 +193,65 @@ describe('@fabric/core/services/bitcoin (deep coverage)', function () {
       assert.ok(psbt && typeof psbt.toBase64 === 'function');
     });
 
+    it('_buildPSBT orders vin/vout with BIP-69', async function () {
+      const addr = 'bcrt1pr4wctwfz0uznz86ash62jret9gq8ysg82zlzl9kdmuvq066pjcmsa0plmz';
+      const btc = new Bitcoin({ network: 'regtest', mode: 'rpc' });
+      btc._makeRPCRequest = async function (method) {
+        if (method === 'gettxout') return { value: 1.0, scriptPubKey: { hex: '00' } };
+        throw new Error(method);
+      };
+      const highTxid = 'ff'.repeat(32);
+      const lowTxid = 'aa'.repeat(32);
+      const psbt = await btc._buildPSBT({
+        inputs: [
+          { txid: highTxid, vout: 1 },
+          { txid: lowTxid, vout: 0 }
+        ],
+        outputs: [
+          { address: addr, value: 9000 },
+          { address: addr, value: 1000 }
+        ]
+      });
+      const id0 = Buffer.from(psbt.txInputs[0].hash).reverse().toString('hex');
+      const id1 = Buffer.from(psbt.txInputs[1].hash).reverse().toString('hex');
+      assert.strictEqual(id0, lowTxid);
+      assert.strictEqual(psbt.txInputs[0].index, 0);
+      assert.strictEqual(id1, highTxid);
+      assert.strictEqual(psbt.txInputs[1].index, 1);
+      const v0 = psbt.txOutputs[0].value;
+      const v1 = psbt.txOutputs[1].value;
+      assert.strictEqual(Number(v0), 1000);
+      assert.strictEqual(Number(v1), 9000);
+    });
+
+    it('throws on fractional satoshi output values', async function () {
+      const addr = 'bcrt1pr4wctwfz0uznz86ash62jret9gq8ysg82zlzl9kdmuvq066pjcmsa0plmz';
+      const btc = new Bitcoin({ network: 'regtest', mode: 'rpc' });
+      btc._makeRPCRequest = async () => null;
+      await assert.rejects(
+        () => btc._buildPSBT({
+          inputs: [],
+          outputs: [{ address: addr, value: 1.5 }]
+        }),
+        /integer satoshi/
+      );
+    });
+
+    it('throws on null, false, or blank output values instead of coercing to zero', async function () {
+      const addr = 'bcrt1pr4wctwfz0uznz86ash62jret9gq8ysg82zlzl9kdmuvq066pjcmsa0plmz';
+      const btc = new Bitcoin({ network: 'regtest', mode: 'rpc' });
+      btc._makeRPCRequest = async () => null;
+      for (const value of [null, false, '']) {
+        await assert.rejects(
+          () => btc._buildPSBT({
+            inputs: [],
+            outputs: [{ address: addr, value }]
+          }),
+          /integer satoshi/
+        );
+      }
+    });
+
     it('throws on invalid output address', async function () {
       const btc = new Bitcoin({ network: 'regtest', mode: 'rpc', debug: true });
       btc._makeRPCRequest = async () => null;
@@ -744,8 +803,17 @@ describe('@fabric/core/services/bitcoin (deep coverage)', function () {
       for (const [ev, h] of Object.entries(btc._errorHandlers)) {
         process.on(ev, h);
       }
+      const before = {};
+      for (const ev of Object.keys(btc._errorHandlers)) {
+        before[ev] = process.listenerCount(ev);
+      }
+      const handlers = { ...btc._errorHandlers };
       await btc.cleanup();
-      assert.ok(true);
+      for (const [ev, h] of Object.entries(handlers)) {
+        assert.ok(!process.listeners(ev).includes(h), `${ev} handler must be removed`);
+        assert.ok(process.listenerCount(ev) <= before[ev]);
+        assert.strictEqual(btc._errorHandlers[ev], null);
+      }
     });
   });
 

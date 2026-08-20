@@ -18,6 +18,7 @@ const {
 } = require('../functions/identityLock');
 
 // Dependencies
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
@@ -136,7 +137,7 @@ class Environment extends Entity {
   _writeWalletDocument (document) {
     const content = JSON.stringify(document, null, '  ') + '\n';
     const target = this.WALLET_FILE;
-    const temporary = `${target}.${process.pid}.tmp`;
+    const temporary = `${target}.${process.pid}.${crypto.randomBytes(8).toString('hex')}.tmp`;
     fs.writeFileSync(temporary, content, { encoding: 'utf8', mode: 0o600 });
     try {
       fs.chmodSync(temporary, 0o600);
@@ -278,9 +279,22 @@ class Environment extends Entity {
     return this.readVariable('PASSPHRASE');
   }
 
+  get mnemonic () {
+    const explicit = [
+      this.settings.mnemonic,
+      this['FABRIC_MNEMONIC'],
+      this.readVariable('FABRIC_MNEMONIC')
+    ];
+    const normalized = explicit.map((candidate) => (
+      typeof candidate === 'string' ? candidate.trim() : candidate
+    ));
+    return normalized.find(any);
+  }
+
   get seed () {
     // Precedence: settings / env only. CWD `.FABRIC_SEED` (`this.local`) is opt-in
     // via `settings.allowCwdSeed` so a planted file cannot outrank `~/.fabric/wallet.json`.
+    // FABRIC_SEED is raw BIP32 seed hex (or a legacy mnemonic / xprv string).
     const explicit = [
       this.settings.seed,
       this['FABRIC_SEED'],
@@ -787,7 +801,31 @@ class Environment extends Entity {
     return this;
   }
 
+  /**
+   * Load identity from env, fixture (`NODE_ENV=test`), or `wallet.json`.
+   * @param {Object} [opts]
+   * @param {string} [opts.password] unlocks a sealed wallet.json
+   * @param {boolean} [opts.fromFile] skip env/fixture identity; read wallet.json only
+   * @returns {Environment}
+   */
   loadWallet (opts = {}) {
+    // Wallet-file fallback (ensure-home-env / fabricWalletIdentity) must not
+    // inherit ambient FABRIC_SEED / NODE_ENV=test fixture identity.
+    if (opts.fromFile === true) return this._loadWalletFromPath(opts);
+
+    // NODE_ENV=test injects FIXTURE_SEED into `seed`; keep that ahead of a
+    // developer FABRIC_XPRV so mocha stays deterministic.
+    const preferFixtureSeed = process.env.NODE_ENV === 'test' && this.seed;
+    if (!preferFixtureSeed && this.xprv) {
+      this.wallet = new Wallet({
+        key: {
+          xprv: this.xprv
+        }
+      });
+      this.walletLocked = false;
+      this.walletPublic = this._publicRecordFromWallet(this.wallet);
+      return this;
+    }
     if (this.seed) {
       this.wallet = new Wallet({
         key: {
@@ -797,15 +835,20 @@ class Environment extends Entity {
       });
       this.walletLocked = false;
       this.walletPublic = this._publicRecordFromWallet(this.wallet);
-    } else if (this.xprv) {
+      return this;
+    }
+    if (this.mnemonic) {
       this.wallet = new Wallet({
         key: {
-          xprv: this.xprv
+          mnemonic: this.mnemonic,
+          passphrase: this.passphrase
         }
       });
       this.walletLocked = false;
       this.walletPublic = this._publicRecordFromWallet(this.wallet);
-    } else if (this.xpub) {
+      return this;
+    }
+    if (this.xpub) {
       this.wallet = new Wallet({
         key: {
           xpub: this.xpub
@@ -813,67 +856,89 @@ class Environment extends Entity {
       });
       this.walletLocked = false;
       this.walletPublic = this._publicRecordFromWallet(this.wallet);
-    } else if (this.walletExists()) {
-      try {
-        const data = this.readWallet();
-        const text = typeof data === 'string' ? data : String(data ?? '');
+      return this;
+    }
+    if (this.walletExists()) {
+      return this._loadWalletFromPath(opts);
+    }
 
-        if (text.trim() === '') {
-          if (this.emit) {
-            this.emit('warning', `[FABRIC:KEYGEN] Wallet file is empty (${this.settings.path}); remove it or regenerate with fabric setup`);
-          }
-          this.wallet = false;
-          this.walletLocked = false;
-          this.walletPublic = null;
-          return this;
+    this.wallet = false;
+    this.walletLocked = false;
+    this.walletPublic = null;
+    return this;
+  }
+
+  /**
+   * Read `wallet.json` only (no env / fixture identity).
+   * @private
+   * @param {Object} [opts]
+   * @param {string} [opts.password]
+   * @returns {Environment}
+   */
+  _loadWalletFromPath (opts = {}) {
+    if (!this.walletExists()) {
+      this.wallet = false;
+      this.walletLocked = false;
+      this.walletPublic = null;
+      return this;
+    }
+
+    try {
+      const data = this.readWallet();
+      const text = typeof data === 'string' ? data : String(data ?? '');
+
+      if (text.trim() === '') {
+        if (this.emit) {
+          this.emit('warning', `[FABRIC:KEYGEN] Wallet file is empty (${this.settings.path}); remove it or regenerate with fabric setup`);
         }
-
-        const pr = tryParsePersistedJson(text);
-        if (!pr.ok) throw pr.error;
-        const input = pr.value;
-
-        if (isPasswordProtectedDocument(input)) {
-          this.wallet = false;
-          this.walletLocked = true;
-          this.walletPublic = (input.object && typeof input.object === 'object')
-            ? Object.assign({}, input.object)
-            : {};
-          if (input.lockTimeoutMinutes != null) {
-            this.lockSession.setTimeoutMinutes(clampLockTimeoutMinutes(input.lockTimeoutMinutes));
-          }
-          const password = opts.password || this.readVariable('FABRIC_PASSWORD');
-          if (password) {
-            try {
-              this.unlockWallet(password);
-            } catch (exception) {
-              if (this.emit) {
-                this.emit('warning', `[FABRIC:KEYGEN] Wallet is locked (unlock failed): ${exception.message || exception}`);
-              }
-            }
-          }
-          return this;
-        }
-
-        if (!input.object || !input.object.xprv) {
-          throw new Error(`Corrupt or out-of-date wallet: ${this.settings.path}`);
-        }
-
-        this.wallet = new Wallet({
-          key: {
-            seed: input.object.seed,
-            xprv: input.object.xprv,
-            xpub: input.object.xpub
-          }
-        });
-        this.walletLocked = false;
-        this.walletPublic = this._publicRecordFromWallet(this.wallet);
-      } catch (exception) {
-        // Recoverable user-data issue; do not emit "error" (EventEmitter kills the process with no listeners).
-        if (this.emit) this.emit('warning', `[FABRIC:KEYGEN] Could not load wallet data: ${exception.message || exception}`);
         this.wallet = false;
         this.walletLocked = false;
+        this.walletPublic = null;
+        return this;
       }
-    } else {
+
+      const pr = tryParsePersistedJson(text);
+      if (!pr.ok) throw pr.error;
+      const input = pr.value;
+
+      if (isPasswordProtectedDocument(input)) {
+        this.wallet = false;
+        this.walletLocked = true;
+        this.walletPublic = (input.object && typeof input.object === 'object')
+          ? Object.assign({}, input.object)
+          : {};
+        if (input.lockTimeoutMinutes != null) {
+          this.lockSession.setTimeoutMinutes(clampLockTimeoutMinutes(input.lockTimeoutMinutes));
+        }
+        const password = opts.password || this.readVariable('FABRIC_PASSWORD');
+        if (password) {
+          try {
+            this.unlockWallet(password);
+          } catch (exception) {
+            if (this.emit) {
+              this.emit('warning', `[FABRIC:KEYGEN] Wallet is locked (unlock failed): ${exception.message || exception}`);
+            }
+          }
+        }
+        return this;
+      }
+
+      if (!input.object || !input.object.xprv) {
+        throw new Error(`Corrupt or out-of-date wallet: ${this.settings.path}`);
+      }
+
+      this.wallet = new Wallet({
+        key: {
+          seed: input.object.seed,
+          xprv: input.object.xprv,
+          xpub: input.object.xpub
+        }
+      });
+      this.walletLocked = false;
+      this.walletPublic = this._publicRecordFromWallet(this.wallet);
+    } catch (exception) {
+      // Recoverable user-data issue; do not emit "error" (EventEmitter kills the process with no listeners).
+      if (this.emit) this.emit('warning', `[FABRIC:KEYGEN] Could not load wallet data: ${exception.message || exception}`);
       this.wallet = false;
       this.walletLocked = false;
       this.walletPublic = null;

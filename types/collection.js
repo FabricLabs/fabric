@@ -112,8 +112,17 @@ class Collection extends Stack {
    * Retrieve the most recent element in the collection.
    */
   getLatest () {
-    let items = pointer.get(this.value, this.path);
-    return items[items.length - 1];
+    const items = pointer.get(this.value, this.path);
+    if (!items) return undefined;
+    if (Array.isArray(items)) return items[items.length - 1];
+    const ids = (this['@entity'] && this['@entity']['@data']) || this['@data'];
+    if (Array.isArray(ids) && ids.length) {
+      const lastId = ids[ids.length - 1];
+      const fromOrder = items[lastId] || items[String(lastId)];
+      if (fromOrder) return fromOrder;
+    }
+    const keys = Object.keys(items);
+    return keys.length ? items[keys[keys.length - 1]] : undefined;
   }
 
   /**

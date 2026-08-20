@@ -49,6 +49,23 @@ function fabricCoinTypeForNetwork (network) {
 }
 
 /**
+ * Resolve Fabric identity coin type from a network name or explicit integer.
+ * Omit / empty → 7778. Mainnet names → 7777. Explicit integers are BIP32 child
+ * indices (not restricted to 7777/7778).
+ * @param {string|number} [networkOrCoinType]
+ * @returns {number}
+ */
+function resolveFabricIdentityCoinType (networkOrCoinType) {
+  if (typeof networkOrCoinType === 'number') {
+    return assertBip32ChildIndex(networkOrCoinType, 'coinType');
+  }
+  if (networkOrCoinType != null && String(networkOrCoinType).trim() !== '') {
+    return fabricCoinTypeForNetwork(networkOrCoinType);
+  }
+  return FABRIC_COIN_TYPE_TESTNET;
+}
+
+/**
  * Fabric identity path: m/44'/{7777|7778}'/account'/0/index
  * @param {number} [account=0]
  * @param {number} [index=0]
@@ -57,15 +74,20 @@ function fabricCoinTypeForNetwork (network) {
  * @returns {string}
  */
 function fabricIdentityDerivationPath (account = 0, index = 0, networkOrCoinType) {
-  const a = assertBip32ChildIndex(account, 'account');
   const i = assertBip32ChildIndex(index, 'index');
-  let coin = FABRIC_COIN_TYPE_TESTNET;
-  if (typeof networkOrCoinType === 'number') {
-    coin = assertBip32ChildIndex(networkOrCoinType, 'coinType');
-  } else if (networkOrCoinType != null && String(networkOrCoinType).trim() !== '') {
-    coin = fabricCoinTypeForNetwork(networkOrCoinType);
-  }
-  return `m/44'/${coin}'/${a}'/0/${i}`;
+  return `${fabricIdentityAccountPath(account, networkOrCoinType)}/0/${i}`;
+}
+
+/**
+ * Fabric identity account node: m/44'/{7777|7778}'/account'
+ * @param {number} [account=0]
+ * @param {string|number} [networkOrCoinType] Network name or explicit coin type.
+ * @returns {string}
+ */
+function fabricIdentityAccountPath (account = 0, networkOrCoinType) {
+  const a = assertBip32ChildIndex(account, 'account');
+  const coin = resolveFabricIdentityCoinType(networkOrCoinType);
+  return `m/44'/${coin}'/${a}'`;
 }
 
 /**
@@ -75,9 +97,7 @@ function fabricIdentityDerivationPath (account = 0, index = 0, networkOrCoinType
  * @returns {string}
  */
 function bitcoinReceiveDerivationPath (account = 0, index = 0) {
-  const a = assertBip32ChildIndex(account, 'account');
-  const i = assertBip32ChildIndex(index, 'index');
-  return `m/44'/${BITCOIN_COIN_TYPE}'/${a}'/0/${i}`;
+  return bitcoinPurposeDerivationPath(44, account, 0, index);
 }
 
 /**
@@ -87,9 +107,106 @@ function bitcoinReceiveDerivationPath (account = 0, index = 0) {
  * @returns {string}
  */
 function bitcoinChangeDerivationPath (account = 0, index = 0) {
+  return bitcoinPurposeDerivationPath(44, account, 1, index);
+}
+
+/**
+ * BIP-43 purpose path for Bitcoin funds: m/{purpose}'/0'/account'/{0|1}/index
+ * Default receive remains BIP-44 (`bitcoinReceiveDerivationPath`); these helpers
+ * name BIP-49 / BIP-84 / BIP-86 trees without changing that default.
+ *
+ * @param {number} purpose 44 (p2pkh), 49 (p2sh-p2wpkh), 84 (p2wpkh), or 86 (p2tr)
+ * @param {number} [account=0]
+ * @param {number} [change=0] 0 = receive, 1 = change
+ * @param {number} [index=0]
+ * @returns {string}
+ * @private
+ */
+function bitcoinPurposeDerivationPath (purpose, account = 0, change = 0, index = 0) {
+  const p = assertBip32ChildIndex(purpose, 'purpose');
   const a = assertBip32ChildIndex(account, 'account');
+  const c = assertBip32ChildIndex(change, 'change');
   const i = assertBip32ChildIndex(index, 'index');
-  return `m/44'/${BITCOIN_COIN_TYPE}'/${a}'/1/${i}`;
+  if (c !== 0 && c !== 1) {
+    throw new RangeError('BIP32 change chain must be 0 (receive) or 1 (change)');
+  }
+  return `m/${p}'/${BITCOIN_COIN_TYPE}'/${a}'/${c}/${i}`;
+}
+
+/** BIP-49 wrapped SegWit receive: m/49'/0'/account'/0/index */
+function bitcoinBip49ReceiveDerivationPath (account = 0, index = 0) {
+  return bitcoinPurposeDerivationPath(49, account, 0, index);
+}
+
+/** BIP-49 wrapped SegWit change: m/49'/0'/account'/1/index */
+function bitcoinBip49ChangeDerivationPath (account = 0, index = 0) {
+  return bitcoinPurposeDerivationPath(49, account, 1, index);
+}
+
+/** BIP-84 native SegWit receive: m/84'/0'/account'/0/index */
+function bitcoinBip84ReceiveDerivationPath (account = 0, index = 0) {
+  return bitcoinPurposeDerivationPath(84, account, 0, index);
+}
+
+/** BIP-84 native SegWit change: m/84'/0'/account'/1/index */
+function bitcoinBip84ChangeDerivationPath (account = 0, index = 0) {
+  return bitcoinPurposeDerivationPath(84, account, 1, index);
+}
+
+/** BIP-86 Taproot receive: m/86'/0'/account'/0/index */
+function bitcoinBip86ReceiveDerivationPath (account = 0, index = 0) {
+  return bitcoinPurposeDerivationPath(86, account, 0, index);
+}
+
+/** BIP-86 Taproot change: m/86'/0'/account'/1/index */
+function bitcoinBip86ChangeDerivationPath (account = 0, index = 0) {
+  return bitcoinPurposeDerivationPath(86, account, 1, index);
+}
+
+/**
+ * BIP-48 multisig path: m/48'/0'/account'/script_type'/{0|1}/index
+ * script_type 1 = p2sh-p2wsh, 2 = p2wsh (recommended default). Path templates
+ * only — group/federation vaults do not switch to these by default.
+ *
+ * @param {number} scriptType
+ * @param {number} [account=0]
+ * @param {number} [change=0]
+ * @param {number} [index=0]
+ * @returns {string}
+ * @private
+ */
+function bitcoinBip48DerivationPath (scriptType, account = 0, change = 0, index = 0) {
+  const st = assertBip32ChildIndex(scriptType, 'scriptType');
+  if (st !== 1 && st !== 2) {
+    throw new RangeError('BIP48 script_type must be 1 (p2sh-p2wsh) or 2 (p2wsh)');
+  }
+  const a = assertBip32ChildIndex(account, 'account');
+  const c = assertBip32ChildIndex(change, 'change');
+  const i = assertBip32ChildIndex(index, 'index');
+  if (c !== 0 && c !== 1) {
+    throw new RangeError('BIP32 change chain must be 0 (receive) or 1 (change)');
+  }
+  return `m/48'/${BITCOIN_COIN_TYPE}'/${a}'/${st}'/${c}/${i}`;
+}
+
+/** BIP-48 nested SegWit multisig receive: m/48'/0'/account'/1'/0/index */
+function bitcoinBip48P2shP2wshReceiveDerivationPath (account = 0, index = 0) {
+  return bitcoinBip48DerivationPath(1, account, 0, index);
+}
+
+/** BIP-48 nested SegWit multisig change: m/48'/0'/account'/1'/1/index */
+function bitcoinBip48P2shP2wshChangeDerivationPath (account = 0, index = 0) {
+  return bitcoinBip48DerivationPath(1, account, 1, index);
+}
+
+/** BIP-48 native SegWit multisig receive: m/48'/0'/account'/2'/0/index */
+function bitcoinBip48P2wshReceiveDerivationPath (account = 0, index = 0) {
+  return bitcoinBip48DerivationPath(2, account, 0, index);
+}
+
+/** BIP-48 native SegWit multisig change: m/48'/0'/account'/2'/1/index */
+function bitcoinBip48P2wshChangeDerivationPath (account = 0, index = 0) {
+  return bitcoinBip48DerivationPath(2, account, 1, index);
 }
 
 /**
@@ -132,7 +249,8 @@ const MAX_CHANNEL_VALUE = 100000000;
 
 // Machine Constraints
 const MACHINE_MAX_MEMORY = MAX_MEMORY_ALLOC * MAX_MESSAGE_SIZE;
-const MAX_CHAT_MESSAGE_LENGTH = 2048;
+/** Matches Peer `P2P_CHAT_MAX_CHARS` so TUI send is not dropped on the mesh. */
+const MAX_CHAT_MESSAGE_LENGTH = 2000;
 
 // Playnet
 const FABRIC_PLAYNET_ADDRESS = ''; // unset until a published playnet P2TR deposit address is chosen
@@ -153,7 +271,7 @@ const DOCUMENT_REQUEST_TYPE = 999;
 const JSON_CALL_TYPE = 16000;
 const PATCH_MESSAGE_TYPE = 1024;
 /** Contract negotiation: batched Fabric messages + chain Merkle root + JSON Patch (RFC 6902) — see docs/CONTRACT_PROPOSAL.md */
-const CONTRACT_PROPOSAL_TYPE = 138; // 0x8A (POLICY.md / FABRIC_MESSAGE_TYPE_CONSOLIDATION)
+const CONTRACT_PROPOSAL_TYPE = 138; // 0x8A (POLICY.md / MESSAGES.md)
 
 // Opcodes
 const OP_CYCLE = '00';
@@ -194,6 +312,11 @@ const PEERING_OFFER_MAX_RELAYS_PER_ORIGIN_PER_MINUTE = 60;
 const PEERING_OFFER_MAX_PAYLOAD_CACHE = 50000;
 /** Max queued connection candidates from {@link P2P_PEERING_OFFER} (FIFO eviction). */
 const PEER_MAX_CANDIDATES_QUEUE = 128;
+/**
+ * Minimum delay before {@link Peer#_fillPeerSlots} redials the same candidate.
+ * Immediate requeue plus `connections:close` was a tight ECONNREFUSED loop.
+ */
+const PEER_CANDIDATE_RETRY_MS = 60000;
 /** Max wire-hash dedup entries in {@link Peer} (bounded memory). */
 const PEER_MAX_WIRE_HASH_CACHE = 10000;
 /**
@@ -226,13 +349,22 @@ const CHAT_MAX_RELAYS_PER_ORIGIN_PER_MINUTE = 30;
 const PEER_MAX_PENDING_SEALED_DELIVERIES = 32;
 /** Max private DocumentRequest reverse-route entries. */
 const PEER_MAX_DOCUMENT_RELAY_ROUTES = 256;
+/** Max concurrent BIP-327 `P2P_MUSIG_*` sessions on a Peer (FIFO eviction). */
+const PEER_MAX_MUSIG_SESSIONS = 32;
+/** Idle TTL for a MuSig2 session before secret nonces are wiped. */
+const PEER_MUSIG_SESSION_TTL_MS = 10 * 60 * 1000;
+/**
+ * Max RFC6902 patch batches retained on {@link Service#history} (FIFO).
+ * Unbounded history plus full-state commit snapshots OOMed Hub under reconnects.
+ */
+const SERVICE_COMMIT_HISTORY_MAX = 256;
 const P2P_GENERIC = 0x80; // 128 in decimal
 const P2P_IDENT_REQUEST = 0x01; // 1, or the identity
 const P2P_IDENT_RESPONSE = 0x11;
 const P2P_ROOT = 0x00000000;
-const P2P_PING = 0x00000012; // same ID as Lightning (18)
-const P2P_PONG = 0x00000013; // same ID as Lightning (19)
-const P2P_INSTRUCTION = 0x00000020; // TODO: select w/ no overlap
+const P2P_PING = 0x00000012;
+const P2P_PONG = 0x00000013;
+const P2P_INSTRUCTION = 0x00000020;
 const P2P_START_CHAIN = 0x00000021;
 const P2P_STATE_REQUEST = 0x00000029; // TODO: select w/ no overlap
 const P2P_STATE_ROOT = 0x00000030; // TODO: select w/ no overlap
@@ -283,34 +415,28 @@ const LIGHTNING_TEST_HEADER = 'D0520C6E';
 const LIGHTNING_PROTOCOL_H_INIT = 'Noise_XK_secp256k1_ChaChaPoly_SHA256';
 const LIGHTNING_PROTOCOL_PROLOGUE = 'lightning';
 
-// Lightning BOLT Message Types (subset)
-// Setup & Control
-const LIGHTNING_WARNING = 0x00000001; // 1
-const LIGHTNING_INIT = 0x00000010; // 16
-const LIGHTNING_ERROR = 0x00000011; // 17
-const LIGHTNING_PING = 0x00000012; // 18 (alias of P2P_PING)
-const LIGHTNING_PONG = 0x00000013; // 19 (alias of P2P_PONG)
-
-// Channel Management
-const LIGHTNING_OPEN_CHANNEL = 0x00000020; // 32
-const LIGHTNING_ACCEPT_CHANNEL = 0x00000021; // 33
-const LIGHTNING_FUNDING_CREATED = 0x00000022; // 34
-const LIGHTNING_FUNDING_SIGNED = 0x00000023; // 35
-const LIGHTNING_CHANNEL_READY = 0x00000024; // 36
-const LIGHTNING_SHUTDOWN = 0x00000026; // 38
-const LIGHTNING_CLOSING_SIGNED = 0x00000027; // 39
-
-// Payment Messages
-const LIGHTNING_UPDATE_ADD_HTLC = 0x00000080; // 128
-const LIGHTNING_UPDATE_FULFILL_HTLC = 0x00000082; // 130
-const LIGHTNING_UPDATE_FAIL_HTLC = 0x00000083; // 131
-const LIGHTNING_COMMITMENT_SIGNED = 0x00000084; // 132
-const LIGHTNING_REVOKE_AND_ACK = 0x00000085; // 133
-
-// Gossip Protocol
-const LIGHTNING_CHANNEL_ANNOUNCEMENT = 0x00000100; // 256
-const LIGHTNING_NODE_ANNOUNCEMENT = 0x00000101; // 257
-const LIGHTNING_CHANNEL_UPDATE = 0x00000102; // 258
+// Lightning AMP types (0x2000–0x2FFF). Not BOLT-on-the-wire numbers —
+// those live in lightningd. See POLICY.md Lightning Network Types.
+const LIGHTNING_INIT = 0x2000;
+const LIGHTNING_ERROR = 0x2001;
+const LIGHTNING_OPEN_CHANNEL = 0x2002;
+const LIGHTNING_ACCEPT_CHANNEL = 0x2003;
+const LIGHTNING_FUNDING_CREATED = 0x2004;
+const LIGHTNING_FUNDING_SIGNED = 0x2005;
+const LIGHTNING_CHANNEL_READY = 0x2006;
+const LIGHTNING_SHUTDOWN = 0x2007;
+const LIGHTNING_CLOSING_SIGNED = 0x2008;
+const LIGHTNING_UPDATE_ADD_HTLC = 0x2009;
+const LIGHTNING_UPDATE_FULFILL_HTLC = 0x200A;
+const LIGHTNING_UPDATE_FAIL_HTLC = 0x200B;
+const LIGHTNING_COMMITMENT_SIGNED = 0x200C;
+const LIGHTNING_REVOKE_AND_ACK = 0x200D;
+const LIGHTNING_CHANNEL_ANNOUNCEMENT = 0x200E;
+const LIGHTNING_NODE_ANNOUNCEMENT = 0x200F;
+const LIGHTNING_CHANNEL_UPDATE = 0x2010;
+const LIGHTNING_WARNING = 0x2011;
+const LIGHTNING_PING = 0x2012;
+const LIGHTNING_PONG = 0x2013;
 
 // Lightning BMM
 const LIGHTNING_BMM_HEADER = 'D0520C6E';
@@ -344,9 +470,21 @@ module.exports = {
   BITCOIN_COIN_TYPE,
   BITCOIN_KEY_DERIVATION_PATH,
   fabricCoinTypeForNetwork,
+  resolveFabricIdentityCoinType,
   fabricIdentityDerivationPath,
+  fabricIdentityAccountPath,
   bitcoinReceiveDerivationPath,
   bitcoinChangeDerivationPath,
+  bitcoinBip49ReceiveDerivationPath,
+  bitcoinBip49ChangeDerivationPath,
+  bitcoinBip84ReceiveDerivationPath,
+  bitcoinBip84ChangeDerivationPath,
+  bitcoinBip86ReceiveDerivationPath,
+  bitcoinBip86ChangeDerivationPath,
+  bitcoinBip48P2shP2wshReceiveDerivationPath,
+  bitcoinBip48P2shP2wshChangeDerivationPath,
+  bitcoinBip48P2wshReceiveDerivationPath,
+  bitcoinBip48P2wshChangeDerivationPath,
   assertBip32ChildIndex,
   FABRIC_USER_AGENT,
   FIXTURE_SEED,
@@ -430,6 +568,7 @@ module.exports = {
   PEERING_OFFER_MAX_RELAYS_PER_ORIGIN_PER_MINUTE,
   PEERING_OFFER_MAX_PAYLOAD_CACHE,
   PEER_MAX_CANDIDATES_QUEUE,
+  PEER_CANDIDATE_RETRY_MS,
   PEER_MAX_WIRE_HASH_CACHE,
   PEER_MAX_LOGICAL_REGISTER_CACHE,
   PEER_SCORE_BODY_HASH_MISMATCH_PENALTY,
@@ -447,6 +586,9 @@ module.exports = {
   CHAT_MAX_RELAYS_PER_ORIGIN_PER_MINUTE,
   PEER_MAX_PENDING_SEALED_DELIVERIES,
   PEER_MAX_DOCUMENT_RELAY_ROUTES,
+  PEER_MAX_MUSIG_SESSIONS,
+  PEER_MUSIG_SESSION_TTL_MS,
+  SERVICE_COMMIT_HISTORY_MAX,
   P2P_IDENT_REQUEST,
   P2P_IDENT_RESPONSE,
   P2P_CHAIN_SYNC_REQUEST,

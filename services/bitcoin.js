@@ -25,6 +25,7 @@ const ecc = require('../types/ecc');
 const bip65 = require('bip65');
 const bip68 = require('bip68');
 const bitcoin = require('bitcoinjs-lib');
+const { sortInputs, sortOutputs } = require('../functions/bip69');
 
 // Initialize bitcoinjs-lib with the ECC library
 bitcoin.initEccLib(ecc);
@@ -55,6 +56,30 @@ const SATS_PER_BTC = 10 ** 8;
 // Internal: max |sats - round(sats)| allowed for BTC -> sats conversion
 // (reject fractional satoshis while tolerating float noise).
 const SAT_ADJ_EPS = 1 / (10 ** 6);
+
+/**
+ * PSBT output values are integer satoshis. Reject float BTC leftovers.
+ * @param {bigint|number|string} value
+ * @returns {bigint}
+ */
+function toIntegerSats (value) {
+  if (typeof value === 'bigint') {
+    if (value < 0n) throw new Error('Output value must be a non-negative integer satoshi count');
+    return value;
+  }
+  if (typeof value !== 'number' && typeof value !== 'string') {
+    throw new Error('Output value must be a non-negative integer satoshi count');
+  }
+  if (typeof value === 'string' && value.trim() === '') {
+    throw new Error('Output value must be a non-negative integer satoshi count');
+  }
+  const n = typeof value === 'number' ? value : Number(value);
+  if (!Number.isInteger(n) || !Number.isSafeInteger(n) || n < 0) {
+    throw new Error('Output value must be a non-negative integer satoshi count');
+  }
+  return BigInt(n);
+}
+
 // Internal: reject absurd cookie path lengths before filesystem reads.
 const BITCOIN_COOKIE_PATH_MAX_LEN = 4096;
 
@@ -2366,6 +2391,7 @@ class Bitcoin extends Service {
 
   /**
    * Create a Partially-Signed Bitcoin Transaction (PSBT).
+   * Vin/vout are BIP-69 sorted before they are added (unsigned construction only).
    * @param {Object} options Parameters for the PSBT.
    * @returns {PSBT} Instance of the PSBT.
    */
@@ -2396,36 +2422,49 @@ class Bitcoin extends Service {
 
     // TODO: add change output
 
-    // Create the PSBT
-    const psbt = new bitcoin.Psbt({ network });
-
-    for (let i = 0; i < options.inputs.length; i++) {
-      const input = options.inputs[i];
-      const data = {
-        hash: input.txid,
-        index: input.vout,
-        sequence: -1 >>> 0
-      };
-
-      psbt.addInput(data);
-    }
-
+    const sortedInputs = sortInputs(options.inputs.map((input) => Object.assign({}, input)));
+    const preparedOutputs = [];
     for (let i = 0; i < options.outputs.length; i++) {
       const output = options.outputs[i];
+      let sats;
+      try {
+        sats = toIntegerSats(output.value);
+      } catch (e) {
+        throw new Error(`Invalid output value for ${output.address}: ${e.message}`);
+      }
       try {
         const script = bitcoin.address.toOutputScript(output.address, network);
-        const data = {
+        preparedOutputs.push({
+          address: output.address,
           script,
-          value: typeof output.value === 'bigint' ? output.value : BigInt(Math.round(Number(output.value)))
-        };
-
-        psbt.addOutput(data);
+          value: sats
+        });
       } catch (e) {
         if (this.settings.debug) {
-          if (this.settings.debug) this.emit('debug', `[FABRIC:BITCOIN] Failed to add output: ${e.message}`);
+          this.emit('debug', `[FABRIC:BITCOIN] Failed to add output: ${e.message}`);
         }
         throw new Error(`Invalid address ${output.address}: ${e.message}`);
       }
+    }
+    const sortedOutputs = sortOutputs(preparedOutputs);
+
+    const psbt = new bitcoin.Psbt({ network });
+
+    for (let i = 0; i < sortedInputs.length; i++) {
+      const input = sortedInputs[i];
+      psbt.addInput({
+        hash: input.txid,
+        index: input.vout,
+        sequence: -1 >>> 0
+      });
+    }
+
+    for (let i = 0; i < sortedOutputs.length; i++) {
+      const output = sortedOutputs[i];
+      psbt.addOutput({
+        script: output.script,
+        value: output.value
+      });
     }
 
     return psbt;
@@ -2743,6 +2782,13 @@ class Bitcoin extends Service {
         this.emit('log', `[FABRIC:BITCOIN] addnode ${cmd} ${addr}`);
       } catch (e) {
         const msg = e && e.message ? e.message : String(e);
+        if (cmd === 'add' && (/-23\b/.test(msg) || /already added/i.test(msg))) {
+          done.push(addr);
+          if (this.settings && this.settings.debug) {
+            this.emit('log', `[FABRIC:BITCOIN] addnode ${addr} already present`);
+          }
+          continue;
+        }
         this.emit('warning', `[FABRIC:BITCOIN] addnode failed ${addr}: ${msg}`);
       }
     }

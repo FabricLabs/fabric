@@ -15,7 +15,7 @@ describe('@fabric/core/types/bitcoin', function () {
       assert.strictEqual(block.data.network, 'regtest');
     });
 
-    it('builds a consensus block from transactions', function () {
+    it('toBitcoinBlock wraps state.transactions through the injected consensus.Block', function () {
       class FakeConsensusBlock {
         constructor (opts = {}) {
           this.opts = opts;

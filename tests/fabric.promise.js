@@ -22,6 +22,9 @@ describe('@fabric/core/types/promise', function () {
     it('encrypt updates internal state flag', function () {
       const p = new EncryptedPromise({ password: 'pw' });
       assert.strictEqual(p._state.state, 'ENCRYPTED');
+      p._state.state = 'UNSAFE';
+      p.encrypt('pw');
+      assert.strictEqual(p._state.state, 'ENCRYPTED');
     });
 
     it('_assignState updates serialized data and status', async function () {

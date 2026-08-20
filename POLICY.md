@@ -78,10 +78,10 @@ Historical range buckets (approximate). Prefer exact opcodes in the tables below
 
 | Range | Category | Description |
 |-------|----------|-------------|
-| `0x00-0x7F` | Core Network Protocol | Network management and peer communication (incl. mesh) |
+| `0x00-0x7F` | Core Network Protocol | Fabric network management and peer communication (incl. mesh) |
 | `0x80-0xFF` | Application Layer | Some application types; others use higher codes |
 | `0x1000-0x1FFF` | (legacy sketch) | Not used for Fabric Bitcoin types in `constants.js` |
-| `0x2000-0x2FFF` | (legacy sketch) | Lightning codes in constants use BOLT-style values — see Remaining work |
+| `0x2000-0x2FFF` | Lightning AMP | Lightning types on the Fabric Message wire (not BOLT-on-lightningd) |
 | `0x8000-0xFFFF` | Experimental | Development and testing |
 
 ### Core Network Protocol Types (0x00-0x7F)
@@ -98,6 +98,7 @@ Codes from [`constants.js`](constants.js). Full catalog: [`MESSAGES.md`](MESSAGE
 | `0x11` | 17 | `P2P_IDENT_RESPONSE` | Identity response | ❌ No |
 | `0x12` | 18 | `P2P_PING` | Network heartbeat / keepalive | ❌ No |
 | `0x13` | 19 | `P2P_PONG` | Ping response | ❌ No |
+| `0x20` | 32 | `P2P_INSTRUCTION` | Peer instruction | ⚠️ Conditional |
 | `0x21` | 33 | `P2P_START_CHAIN` | Chain bootstrap announce | ⚠️ Conditional |
 | `0x29` | 41 | `P2P_STATE_REQUEST` | State synchronization request | ⚠️ Conditional |
 | `0x30` | 48 | `P2P_STATE_ROOT` | State root / snapshot anchor | ⚠️ Conditional |
@@ -141,6 +142,12 @@ Several application types use codes **outside** this range (see [`constants.js`]
 | — | 1024 | `JSON_PATCH` † | JSON patch operation | ✅ Yes |
 | — | 16000 | `JSON_CALL` † | JSON function call | ✅ Yes |
 | — | 15103 | `GENERIC_MESSAGE` † | Hub/browser transitional carrier | ✅ Yes |
+| `0x4220` | 16928 | `P2P_MUSIG_START` † | Directed BIP-327 session open | ❌ No |
+| `0x4221` | 16929 | `P2P_MUSIG_ACCEPT` † | Co-signer pubnonce | ❌ No |
+| `0x4222` | 16930 | `P2P_MUSIG_RECEIVE_COUNTER` † | Additional pubnonce (n>2) | ❌ No |
+| `0x4223` | 16931 | `P2P_MUSIG_SEND_PROPOSAL` † | Coordinator aggnonce | ❌ No |
+| `0x4224` | 16932 | `P2P_MUSIG_REPLY_TO_PROPOSAL` † | Partial signature | ❌ No |
+| `0x4225` | 16933 | `P2P_MUSIG_ACCEPT_PROPOSAL` † | Aggregated BIP-340 signature | ❌ No |
 | `0x81`-`0x8F` (legacy draft) | … | CHAT / ACCEPT / REJECT / PAYMENT_* | Not all registered in `constants.js` — see Remaining work | ⚠️ Varies |
 
 ### Bitcoin Integration Types
@@ -173,7 +180,10 @@ Several application types use codes **outside** this range (see [`constants.js`]
 | `0x200E` | 8206 | LIGHTNING_CHANNEL_ANNOUNCEMENT | Channel announcement | ✅ Yes |
 | `0x200F` | 8207 | LIGHTNING_NODE_ANNOUNCEMENT | Node announcement | ✅ Yes |
 | `0x2010` | 8208 | LIGHTNING_CHANNEL_UPDATE | Channel update | ✅ Yes |
-| `0x2011-0x2FFF` | 8209-12287 | RESERVED | Reserved for Lightning protocol extensions | N/A |
+| `0x2011` | 8209 | LIGHTNING_WARNING | Lightning warning | ❌ No |
+| `0x2012` | 8210 | LIGHTNING_PING | Lightning keepalive | ❌ No |
+| `0x2013` | 8211 | LIGHTNING_PONG | Lightning ping response | ❌ No |
+| `0x2014-0x2FFF` | 8212-12287 | RESERVED | Reserved for Lightning protocol extensions | N/A |
 
 ### Experimental Types (0x8000-0xFFFF)
 
@@ -427,27 +437,27 @@ Implementations SHOULD:
 
 ### Message Type Quick Reference
 
-**Always Relay**: PING, PONG, PEER_ANNOUNCE, TRANSACTION, GENERIC, CHAT_MESSAGE, DOCUMENT_PUBLISH, JSON_CALL, JSON_PATCH, STATE_DELTA, STATE_SNAPSHOT, CONTRACT_*, PAYMENT_*, LOCK_MESSAGE, BITCOIN_*, LIGHTNING_*_ANNOUNCEMENT
+**Always Relay**: PEER_ANNOUNCE, TRANSACTION, GENERIC, CHAT_MESSAGE, DOCUMENT_PUBLISH, JSON_CALL, JSON_PATCH, STATE_DELTA, STATE_SNAPSHOT, CONTRACT_*, PAYMENT_*, LOCK_MESSAGE, BITCOIN_*, LIGHTNING_*_ANNOUNCEMENT
 
-**Never Relay**: IDENT_REQUEST, IDENT_RESPONSE, SESSION_START, SESSION_ACK, HEARTBEAT, LOG_MESSAGE, LIGHTNING_INIT, LIGHTNING_ERROR, LIGHTNING_*_CHANNEL, LIGHTNING_*_HTLC, LIGHTNING_COMMITMENT_SIGNED, LIGHTNING_REVOKE_AND_ACK
+**Never Relay**: IDENT_REQUEST, IDENT_RESPONSE, SESSION_START, SESSION_ACK, HEARTBEAT, PING, PONG, LOG_MESSAGE, LIGHTNING_INIT, LIGHTNING_ERROR, LIGHTNING_*_CHANNEL, LIGHTNING_*_HTLC, LIGHTNING_COMMITMENT_SIGNED, LIGHTNING_REVOKE_AND_ACK
 
 **Conditional Relay**: STATE_REQUEST, STATE_RESPONSE, INVENTORY_REQUEST, INVENTORY_RESPONSE, DOCUMENT_REQUEST, DOCUMENT_RESPONSE
 
 ### Related Documents
 
 - `PROTOCOL.md` → `docs/MESSAGE_BODY.md`: Canonical wire specification
-- `MESSAGES.md`: Opcode catalog
+- `MESSAGES.md`: Opcode catalog and generated decode-order freeze
 - `SECURITY.md`: Amplification, peel/`P2P_RELAY`, scoring (prefer over relay matrix below when they conflict)
 - `docs/P2P_FORWARD.md`: Directed onion
 
-Missing historical drafts (do not expect these files): `MESSAGING_PROTOCOL_COMPLETION.md`, `FABRIC_MESSAGE_TYPE_CONSOLIDATION.md`, `FABRIC_MESSAGE_RELAY_BEHAVIOR.md`.
+Missing historical drafts (do not expect these files): `MESSAGING_PROTOCOL_COMPLETION.md`, `FABRIC_MESSAGE_RELAY_BEHAVIOR.md`.
 
 ### Remaining work
 
 Paused after header/preimage, core opcode accuracy, and mesh type rows. Still open:
 
-1. **Relay Rules / Quick Reference** — Align Always/Local/Conditional lists with Peer (`SECURITY.md`); PING/PONG are not mesh flood; hop budgets exist
-2. **Lightning table** — Codes in this doc use a `0x2000+` sketch; `constants.js` uses BOLT-style values (`0x10`, `0x20`, …) with Fabric name collisions
+1. ~~**Relay Rules / Quick Reference**~~ — PING/PONG are never mesh-flooded (table + Quick Reference). Hop budgets remain in `SECURITY.md`.
+2. ~~**Lightning table**~~ — `constants.js` AMP types use `0x2000+` (`LIGHTNING_INIT` `0x2000` … `LIGHTNING_PONG` `0x2013`). Fabric keeps the low numbers. Duplicate opcodes fail at `Message` module load.
 3. **Application legacy rows** — `CONTRACT_ACCEPT` / `REJECT` / `PAYMENT_*` / dense `0x81+` draft codes not fully registered
 4. **Type Ranges** preamble — Still describes old range buckets; Bitcoin types are not in `0x1000-0x1FFF`
 5. **Citation pass** — `VISION.md` / `docs/README.md` still treat POLICY as oracle

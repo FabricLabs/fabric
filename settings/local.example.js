@@ -1,5 +1,5 @@
 /**
- * Example local settings for a Fabric node.
+ * @fileoverview Example local settings for a Fabric node.
  * Copy to `settings/local.js` (gitignored) for operator overrides, or rely on
  * environment variables alone — the example is the packaged fallback when
  * `settings/local.js` is absent.
@@ -10,6 +10,7 @@ module.exports = {
   name: process.env.NAME,
   namespace: process.env.NAMESPACE,
   seed: process.env.FABRIC_SEED,
+  mnemonic: process.env.FABRIC_MNEMONIC,
   xprv: process.env.FABRIC_XPRV,
   xpub: process.env.FABRIC_XPUB,
   /** Fabric Peer TCP/NOISE listen port. */

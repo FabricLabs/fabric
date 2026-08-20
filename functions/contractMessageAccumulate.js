@@ -317,7 +317,7 @@ function normalizePubkeyList (list) {
     seen.add(x);
     out.push(x);
   }
-  // Preserve ARC public-reader wildcard (docs/ARC.md, beacon / blinded genesis).
+  // Preserve ARC public-reader wildcard (docs/CONTRACTS.md, beacon / blinded genesis).
   if (publicRead) out.push('*');
   return out.sort();
 }

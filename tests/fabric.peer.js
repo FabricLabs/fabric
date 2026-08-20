@@ -8,6 +8,7 @@ const Key = require('../types/key');
 const Actor = require('../types/actor');
 const assert = require('assert');
 const net = require('net');
+const { EventEmitter } = require('events');
 
 // Node configs may be JSON (node-a.json) or JS; resolve accordingly
 let NODEA, NODEB;
@@ -88,6 +89,39 @@ describe('@fabric/core/types/peer', function () {
       assert.strictEqual(peer.documentation.name, 'Fabric');
     });
 
+    describe('commit and socket actor leaks', function () {
+      it('does not alias caller Hub collections into observed peer content', function () {
+        const collections = { documents: { leak: { id: 'leak' } } };
+        const shared = { collections: collections, documents: { keep: 'x' } };
+        const peer = new Peer({ listen: false, peersDb: null, state: shared });
+        collections.documents.more = { id: 'more' };
+        shared.documents.keep = 'mutated';
+        assert.strictEqual(peer._state.content.documents.keep, 'x');
+        assert.ok(!peer._state.content.collections);
+        assert.notStrictEqual(peer._state.content, shared);
+      });
+
+      it('unregisters ephemeral socket actors on disconnect', function () {
+        const peer = new Peer({ listen: false, peersDb: null });
+        const address = '127.0.0.1:59999';
+        peer._registerActor({ name: address });
+        const actorId = new Actor({ name: address }).id;
+        assert.ok(peer.actors[actorId]);
+        peer.connections[address] = { destroy () {} };
+        peer._disconnect(address);
+        assert.ok(!peer.actors[actorId]);
+        assert.ok(!peer._actorsByName[address]);
+      });
+
+      it('does not commit on _writeFabric', function () {
+        const peer = new Peer({ listen: false, peersDb: null });
+        const commits = [];
+        peer.on('commit', (c) => commits.push(c));
+        peer._writeFabric(Buffer.from('hi'), null);
+        assert.strictEqual(commits.length, 0);
+      });
+    });
+
     describe('getters', function () {
       it('exposes id from key.pubkey', function () {
         const peer = new Peer({ listen: false, peersDb: null });
@@ -155,6 +189,7 @@ describe('@fabric/core/types/peer', function () {
           assert.ok(ev.created);
           assert.ok(ev.initial);
           assert.ok(ev.state);
+          assert.ok(!ev.state.collections);
           done();
         });
         const out = peer.beat();
@@ -187,9 +222,31 @@ describe('@fabric/core/types/peer', function () {
 
     describe('connectTo', function () {
       it('calls _connect and returns this', function () {
+        const originalCreateConnection = net.createConnection;
         const peer = new Peer({ listen: false, peersDb: null });
-        const out = peer.connectTo('127.0.0.1:9'); // invalid port, will fail but we only assert chain
-        assert.strictEqual(out, peer);
+        let createdSocket = null;
+        net.createConnection = function () {
+          const sock = new EventEmitter();
+          sock.destroyed = false;
+          sock.setTimeout = function () {};
+          sock.unref = function () {};
+          sock.destroy = function () {
+            sock.destroyed = true;
+            sock.emit('close');
+          };
+          createdSocket = sock;
+          return sock;
+        };
+        try {
+          const out = peer.connectTo('127.0.0.1:9');
+          assert.strictEqual(out, peer);
+        } finally {
+          net.createConnection = originalCreateConnection;
+          if (createdSocket && typeof createdSocket.destroy === 'function') createdSocket.destroy();
+          if (typeof peer._destroyFabric === 'function') {
+            try { peer._destroyFabric(createdSocket || {}, '127.0.0.1:9'); } catch (_) { /* ignore */ }
+          }
+        }
       });
     });
 
@@ -230,6 +287,170 @@ describe('@fabric/core/types/peer', function () {
           done();
         });
         peer._connect('127.0.0.1:9999');
+      });
+
+      it('skips overlapping outbound dials before connections[target] is set', function () {
+        const originalCreateConnection = net.createConnection;
+        const peer = new Peer({ listen: false, peersDb: null });
+        let created = 0;
+        let createdSocket = null;
+        net.createConnection = function () {
+          created += 1;
+          const sock = new EventEmitter();
+          sock.destroyed = false;
+          sock.setTimeout = function () {};
+          sock.unref = function () {};
+          sock.destroy = function () {
+            sock.destroyed = true;
+            sock.emit('close');
+          };
+          createdSocket = sock;
+          return sock;
+        };
+        try {
+          peer._connect('127.0.0.1:9');
+          peer._connect('127.0.0.1:9');
+          assert.strictEqual(created, 1);
+          assert.strictEqual(peer._outboundDialTargets.has('127.0.0.1:9'), true);
+        } finally {
+          net.createConnection = originalCreateConnection;
+          if (createdSocket && typeof createdSocket.destroy === 'function') createdSocket.destroy();
+          if (typeof peer._destroyFabric === 'function') {
+            try { peer._destroyFabric(createdSocket || {}, '127.0.0.1:9'); } catch (_) { /* ignore */ }
+          }
+        }
+      });
+
+      it('strips URL IPv6 brackets before dialing [::1]', function () {
+        const originalCreateConnection = net.createConnection;
+        const peer = new Peer({ listen: false, peersDb: null });
+        let createdHost = null;
+        let createdPort = null;
+        let createdSocket = null;
+        net.createConnection = function (port, hostname) {
+          createdPort = port;
+          createdHost = hostname;
+          const sock = new EventEmitter();
+          sock.destroyed = false;
+          sock.setTimeout = function () {};
+          sock.unref = function () {};
+          sock.destroy = function () {
+            sock.destroyed = true;
+            sock.emit('close');
+          };
+          createdSocket = sock;
+          return sock;
+        };
+        try {
+          peer._connect('[::1]:9');
+          assert.strictEqual(createdHost, '::1');
+          assert.strictEqual(Number(createdPort), 9);
+          assert.strictEqual(peer._outboundDialTargets.has('[::1]:9'), true);
+        } finally {
+          net.createConnection = originalCreateConnection;
+          if (createdSocket && typeof createdSocket.destroy === 'function') createdSocket.destroy();
+          if (typeof peer._destroyFabric === 'function') {
+            try { peer._destroyFabric(createdSocket || {}, '[::1]:9'); } catch (_) { /* ignore */ }
+          }
+        }
+      });
+
+      it('formats IPv6 peering candidates as [host]:port before retry and dial', function () {
+        const originalCreateConnection = net.createConnection;
+        const peer = new Peer({ listen: false, peersDb: null, networking: false });
+        peer.settings.constraints.peers.max = 8;
+        let createdHost = null;
+        let createdSocket = null;
+        net.createConnection = function (port, hostname) {
+          createdHost = hostname;
+          const sock = new EventEmitter();
+          sock.destroyed = false;
+          sock.setTimeout = function () {};
+          sock.unref = function () {};
+          sock.destroy = function () {
+            sock.destroyed = true;
+            sock.emit('close');
+          };
+          createdSocket = sock;
+          return sock;
+        };
+        try {
+          peer._enqueuePeeringCandidate('::1', 9);
+          assert.ok(peer._candidateKeys.has('[::1]:9'));
+          assert.ok(!peer._candidateKeys.has('::1:9'));
+          peer._fillPeerSlots();
+          assert.strictEqual(createdHost, '::1');
+          assert.strictEqual(peer._outboundDialTargets.has('[::1]:9'), true);
+          assert.ok(peer._candidateRetryAt.has('[::1]:9'));
+        } finally {
+          net.createConnection = originalCreateConnection;
+          if (createdSocket && typeof createdSocket.destroy === 'function') createdSocket.destroy();
+          if (typeof peer._destroyFabric === 'function') {
+            try { peer._destroyFabric(createdSocket || {}, '[::1]:9'); } catch (_) { /* ignore */ }
+          }
+        }
+      });
+
+      it('canonicalizes pubkey@host:port onto the same outbound dial slot', function () {
+        const originalCreateConnection = net.createConnection;
+        const peer = new Peer({ listen: false, peersDb: null });
+        let created = 0;
+        let createdSocket = null;
+        net.createConnection = function () {
+          created += 1;
+          const sock = new EventEmitter();
+          sock.destroyed = false;
+          sock.setTimeout = function () {};
+          sock.unref = function () {};
+          sock.destroy = function () {
+            sock.destroyed = true;
+            sock.emit('close');
+          };
+          createdSocket = sock;
+          return sock;
+        };
+        try {
+          peer._connect('aa'.repeat(32) + '@127.0.0.1:9');
+          peer._connect('127.0.0.1:9');
+          assert.strictEqual(created, 1);
+          assert.strictEqual(peer._outboundDialTargets.has('127.0.0.1:9'), true);
+        } finally {
+          net.createConnection = originalCreateConnection;
+          if (createdSocket && typeof createdSocket.destroy === 'function') createdSocket.destroy();
+          if (typeof peer._destroyFabric === 'function') {
+            try { peer._destroyFabric(createdSocket || {}, '127.0.0.1:9'); } catch (_) { /* ignore */ }
+          }
+        }
+      });
+
+      it('connect timeout destroys the outbound socket', function () {
+        const originalCreateConnection = net.createConnection;
+        const peer = new Peer({ listen: false, peersDb: null, connectTimeout: 50 });
+        let createdSocket = null;
+        net.createConnection = function () {
+          const sock = new EventEmitter();
+          sock.destroyed = false;
+          sock.setTimeout = function () {};
+          sock.unref = function () {};
+          sock.destroy = function () {
+            sock.destroyed = true;
+            sock.emit('close');
+          };
+          createdSocket = sock;
+          return sock;
+        };
+        try {
+          peer._connect('192.0.2.8:9');
+          assert.ok(createdSocket);
+          assert.strictEqual(typeof createdSocket._destroyFabric, 'function');
+          createdSocket.emit('timeout');
+          assert.strictEqual(createdSocket.destroyed, true);
+        } finally {
+          net.createConnection = originalCreateConnection;
+          if (createdSocket && typeof createdSocket.destroy === 'function' && !createdSocket.destroyed) {
+            createdSocket.destroy();
+          }
+        }
       });
 
       it('emits derived key debug summaries for missing/short/long public keys', function () {
@@ -425,6 +646,52 @@ describe('@fabric/core/types/peer', function () {
         peer.candidates = [{ object: { host: '127.0.0.1', port: 9999 } }];
         peer._fillPeerSlots();
         assert.strictEqual(peer.candidates.length, 1);
+      });
+
+      it('does not immediately redial the same candidate', function () {
+        const peer = new Peer({ listen: false, peersDb: null, networking: false });
+        peer.settings.constraints.peers.max = 8;
+        peer.settings.peering = { candidateRetryMs: 60000 };
+        let dials = 0;
+        peer._connect = () => { dials += 1; };
+        peer._enqueuePeeringCandidate('192.0.2.77', 7778);
+        peer._fillPeerSlots();
+        peer._fillPeerSlots();
+        assert.strictEqual(dials, 1);
+        assert.strictEqual(peer.candidates.length, 1);
+      });
+
+      it('ignores non-positive candidateRetryMs and prunes expired retry timestamps', function () {
+        const peer = new Peer({ listen: false, peersDb: null, networking: false });
+        peer.settings.constraints.peers.max = 8;
+        peer.settings.peering = { candidateRetryMs: -1, maxCandidates: 2 };
+        let dials = 0;
+        peer._connect = () => { dials += 1; };
+        peer._candidateRetryAt = new Map();
+        peer._candidateRetryAt.set('198.51.100.1:1', Date.now() - 10);
+        peer._candidateRetryAt.set('keep-a:1', Date.now() + 60000);
+        peer._candidateRetryAt.set('keep-b:1', Date.now() + 60000);
+        peer._candidateRetryAt.set('keep-c:1', Date.now() + 60000);
+        peer._enqueuePeeringCandidate('192.0.2.88', 7778);
+        peer._fillPeerSlots();
+        assert.strictEqual(dials, 1);
+        assert.strictEqual(peer._candidateRetryAt.has('198.51.100.1:1'), false);
+        assert.strictEqual(peer._candidateRetryAt.has('keep-a:1'), false);
+        assert.ok(peer._candidateRetryAt.has('192.0.2.88:7778'));
+        const until = peer._candidateRetryAt.get('192.0.2.88:7778');
+        assert.ok(until > Date.now() + 1000, 'negative retry ms must not redial immediately');
+      });
+
+      it('Infinity candidateRetryMs falls back to the default cooldown', function () {
+        const peer = new Peer({ listen: false, peersDb: null, networking: false });
+        peer.settings.constraints.peers.max = 8;
+        peer.settings.peering = { candidateRetryMs: Infinity };
+        let dials = 0;
+        peer._connect = () => { dials += 1; };
+        peer._enqueuePeeringCandidate('192.0.2.89', 7778);
+        peer._fillPeerSlots();
+        peer._fillPeerSlots();
+        assert.strictEqual(dials, 1);
       });
     });
 
@@ -1201,10 +1468,45 @@ describe('@fabric/core/types/peer', function () {
       it('emits debug for unhandled generic type', function (done) {
         const peer = new Peer({ listen: false, peersDb: null });
         peer.once('debug', (m) => {
-          assert.ok(/Unhandled Generic Message/.test(m));
+          assert.strictEqual(m, 'Unhandled Generic Message: UNKNOWN_TYPE');
+          assert.ok(!String(m).includes('pad'), 'must not include generic body fields');
           done();
         });
-        peer._handleGenericMessage({ type: 'UNKNOWN_TYPE', object: {} }, { name: 'o' });
+        peer._handleGenericMessage({ type: 'UNKNOWN_TYPE', object: { pad: 'x'.repeat(2048) } }, { name: 'o' });
+      });
+      it('coerces numeric opcode 98 to P2P_PEERING_OFFER', function (done) {
+        const peer = new Peer({ listen: false, peersDb: null });
+        peer.once('peeringOffer', (ev) => {
+          assert.strictEqual(ev.message.type, 'P2P_PEERING_OFFER');
+          done();
+        });
+        peer._handleGenericMessage({
+          type: 98,
+          object: { host: '10.1.2.3', port: 7777, transport: 'fabric' }
+        }, { name: '9.9.9.9:1' });
+      });
+      it('reads flat JSON peering offers (type 98 + host/port on the outer object)', function () {
+        const peer = new Peer({
+          listen: false,
+          peersDb: null,
+          constraints: { peers: { max: 32 } }
+        });
+        peer._handleGenericMessage({
+          type: 98,
+          host: '10.4.5.6',
+          port: 7777,
+          transport: 'fabric'
+        }, { name: '9.9.9.9:2' });
+        assert.ok(peer.candidates.some((c) => c.host === '10.4.5.6' && Number(c.port) === 7777));
+      });
+      it('derived-key debug summary uses Key.pubkey not settings.public', function () {
+        const peer = new Peer({ listen: false, peersDb: null });
+        const derived = peer.identity.key.derive("m/44'/7778'/0'/0/0");
+        assert.ok(derived.pubkey && derived.pubkey.length >= 66);
+        assert.ok(derived.settings.public == null || derived.settings.public === '');
+        const summary = Peer.debugDerivedPublicSummary(derived);
+        assert.notStrictEqual(summary, '(no public key)');
+        assert.ok(summary.includes('…') || summary.length <= 28);
       });
       it('emits warning on broken JSON body in Fabric message path', function (done) {
         const peer = new Peer({ listen: false, peersDb: null });
@@ -1825,6 +2127,13 @@ describe('@fabric/core/types/peer', function () {
         assert.ok(server._isSelfDialSuppressed('192.0.2.91:7777'));
       });
 
+      it('_isTransientSocketError matches ECONNREFUSED without error.code', function () {
+        const peer = new Peer({ listen: false, peersDb: null, networking: false });
+        assert.strictEqual(peer._isTransientSocketError({ code: 'ECONNREFUSED' }), true);
+        assert.strictEqual(peer._isTransientSocketError(new Error('connect ECONNREFUSED 65.21.231.149:7778')), true);
+        assert.strictEqual(peer._isTransientSocketError(new Error('application protocol failure')), false);
+      });
+
       it('records verifiedPubkey on queued third-party candidates', function () {
         const server = new Peer({ listen: false, peersDb: null });
         const attacker = new Key();
@@ -2233,5 +2542,329 @@ describe('@fabric/core/types/peer', function () {
         assert.strictEqual(emittedErrors.length, 0);
       });
     });
+  });
+});
+
+const {
+  resolveFabricPeerInterface
+} = require('../functions/fabricListenInterface');
+
+describe('@fabric/core/functions/fabricListenInterface', function () {
+  it('defaults to 0.0.0.0', function () {
+    assert.strictEqual(resolveFabricPeerInterface({ env: {} }), '0.0.0.0');
+  });
+
+  it('prefers FABRIC_INTERFACE over FABRIC_PEER_INTERFACE and settings', function () {
+    assert.strictEqual(resolveFabricPeerInterface({
+      env: { FABRIC_INTERFACE: '65.21.231.149', FABRIC_PEER_INTERFACE: '1.2.3.4' },
+      interface: '9.9.9.9'
+    }), '65.21.231.149');
+  });
+
+  it('falls back to FABRIC_PEER_INTERFACE when FABRIC_INTERFACE is empty', function () {
+    assert.strictEqual(resolveFabricPeerInterface({
+      env: { FABRIC_INTERFACE: '  ', FABRIC_PEER_INTERFACE: '1.2.3.4' },
+      interface: '9.9.9.9'
+    }), '1.2.3.4');
+  });
+
+  it('falls back to settings.interface when env is unset', function () {
+    assert.strictEqual(resolveFabricPeerInterface({
+      env: {},
+      interface: '65.21.231.149'
+    }), '65.21.231.149');
+  });
+
+  it('accepts settings.host as an alias for interface', function () {
+    assert.strictEqual(resolveFabricPeerInterface({
+      env: {},
+      host: '192.0.2.8'
+    }), '192.0.2.8');
+  });
+
+  it('honours custom envKeys and explicit fallback', function () {
+    assert.strictEqual(resolveFabricPeerInterface({
+      env: { FABRIC_INTERFACE: '9.9.9.9', OTHER_BIND: '10.0.0.1' },
+      envKeys: ['OTHER_BIND'],
+      fallback: '127.0.0.1'
+    }), '10.0.0.1');
+    assert.strictEqual(resolveFabricPeerInterface({
+      env: {},
+      envKeys: ['OTHER_BIND'],
+      fallback: '127.0.0.1'
+    }), '127.0.0.1');
+  });
+});
+
+const { individualPk, verifyAggregatedSchnorr } = require('../functions/musig2');
+const { offlinePeerSettings } = require('./helpers/peer');
+
+function makePeer (label, extra = {}) {
+  const seed = new Key();
+  const peer = new Peer(offlinePeerSettings({
+    key: { mnemonic: seed.mnemonic },
+    debug: false,
+    musig2: Object.assign({ autoAccept: true }, extra.musig2 || {})
+  }));
+  return { peer, label, seed };
+}
+
+function wirePair (alice, bob) {
+  const aliceAddr = '127.0.0.1:19101';
+  const bobAddr = '127.0.0.1:19102';
+  const aliceWrites = [];
+  const bobWrites = [];
+  alice.connections[bobAddr] = {
+    _writeFabric (buf) { aliceWrites.push(Buffer.from(buf)); }
+  };
+  bob.connections[aliceAddr] = {
+    _writeFabric (buf) { bobWrites.push(Buffer.from(buf)); }
+  };
+  alice.peers[bobAddr] = { id: bob.key.pubkey, publicKey: bob.key.pubkey };
+  bob.peers[aliceAddr] = { id: alice.key.pubkey, publicKey: alice.key.pubkey };
+  return { aliceAddr, bobAddr, aliceWrites, bobWrites };
+}
+
+function exchange (aliceWrites, bob, aliceAddr, bobWrites, alice, bobAddr, max = 20) {
+  for (let i = 0; i < max; i++) {
+    if (!aliceWrites.length && !bobWrites.length) return i;
+    while (aliceWrites.length) {
+      bob._handleFabricMessage(aliceWrites.shift(), { name: aliceAddr }, null);
+    }
+    while (bobWrites.length) {
+      alice._handleFabricMessage(bobWrites.shift(), { name: bobAddr }, null);
+    }
+  }
+  return max;
+}
+
+describe('@fabric/core Peer P2P_MUSIG_*', function () {
+  it('defaults musig2.autoAccept to false', function () {
+    const seed = new Key();
+    const peer = new Peer(offlinePeerSettings({
+      key: { mnemonic: seed.mnemonic },
+      debug: false
+    }));
+    assert.strictEqual(peer.settings.musig2.autoAccept, false);
+  });
+
+  it('completes a directed 2-of-2 session', function () {
+    const { peer: alice } = makePeer('alice');
+    const { peer: bob } = makePeer('bob');
+    const { aliceAddr, bobAddr, aliceWrites, bobWrites } = wirePair(alice, bob);
+    const started = alice.startMusig2({
+      dest: bob.key.pubkey,
+      msg: Buffer.from('gooncitizen-musig2'),
+      purpose: 'test'
+    });
+    assert.ok(started);
+    assert.strictEqual(started.n, 2);
+    exchange(aliceWrites, bob, aliceAddr, bobWrites, alice, bobAddr);
+    const aDone = alice.getMusig2Session(started.sessionId);
+    const bDone = bob.getMusig2Session(started.sessionId);
+    assert.ok(aDone && aDone.signature, 'initiator missing aggregate signature');
+    assert.ok(bDone && bDone.signature, 'co-signer missing aggregate signature');
+    assert.strictEqual(aDone.signature, bDone.signature);
+    const pubkeys = [
+      individualPk(alice.key.private),
+      individualPk(bob.key.private)
+    ];
+    const session = alice._musigGet(started.sessionId);
+    assert.strictEqual(
+      verifyAggregatedSchnorr(session.challenge, Buffer.from(aDone.signature, 'hex'), pubkeys),
+      true
+    );
+  });
+
+  it('ignores peel/relay-as-is START (no session)', function () {
+    const { peer: bob } = makePeer('bob');
+    const author = new Key();
+    const sessionId = Buffer.alloc(32, 7);
+    const body = {
+      sessionId: sessionId.toString('hex'),
+      msg: Buffer.from('nope').toString('hex'),
+      pubkeys: Buffer.concat([
+        Buffer.from(author.pubkey, 'hex'),
+        Buffer.from(bob.key.pubkey, 'hex')
+      ]).toString('hex'),
+      pubnonce: Buffer.concat([
+        Buffer.from(author.pubkey, 'hex'),
+        Buffer.from(author.pubkey, 'hex')
+      ]).toString('hex'),
+      purpose: 'peel'
+    };
+    const inner = Message.fromVector(['P2P_MUSIG_START', JSON.stringify(body)]).signWithKey(author);
+    bob._handleFabricMessage(inner.toBuffer(), { name: '127.0.0.1:1' }, null, {
+      peeledForward: true
+    });
+    assert.strictEqual(bob._musigSessions.size, 0);
+    const relayBody = Object.assign({}, body, {
+      sessionId: Buffer.alloc(32, 8).toString('hex')
+    });
+    const relayInner = Message.fromVector(['P2P_MUSIG_START', JSON.stringify(relayBody)]).signWithKey(author);
+    bob._handleFabricMessage(relayInner.toBuffer(), { name: '127.0.0.1:1' }, null, {
+      relayedAsIs: true
+    });
+    assert.strictEqual(bob._musigSessions.size, 0);
+  });
+
+  it('rejects START whose AMP signer is not in the pubkey list', function () {
+    const { peer: bob } = makePeer('bob');
+    const alice = new Key();
+    const rogue = new Key();
+    const origin = '127.0.0.1:19103';
+    bob.connections[origin] = { _writeFabric () {}, destroy () {} };
+    bob.peers[origin] = { id: rogue.pubkey, publicKey: rogue.pubkey };
+    const body = {
+      sessionId: Buffer.alloc(32, 3).toString('hex'),
+      msg: Buffer.from('rogue').toString('hex'),
+      pubkeys: Buffer.concat([
+        Buffer.from(alice.pubkey, 'hex'),
+        Buffer.from(bob.key.pubkey, 'hex')
+      ]).toString('hex'),
+      pubnonce: Buffer.concat([
+        Buffer.from(alice.pubkey, 'hex'),
+        Buffer.from(alice.pubkey, 'hex')
+      ]).toString('hex')
+    };
+    const frame = Message.fromVector(['P2P_MUSIG_START', JSON.stringify(body)]).signWithKey(rogue);
+    bob._handleFabricMessage(frame.toBuffer(), { name: origin }, null);
+    assert.strictEqual(bob._musigSessions.size, 0);
+  });
+
+  it('ignores P2P_MUSIG_START smuggled in a generic carrier', function () {
+    const { peer: bob } = makePeer('bob');
+    const alice = new Key();
+    const origin = '127.0.0.1:19104';
+    bob.connections[origin] = { _writeFabric () {}, destroy () {} };
+    bob.peers[origin] = { id: alice.pubkey, publicKey: alice.pubkey };
+    const inner = {
+      type: 'P2P_MUSIG_START',
+      sessionId: Buffer.alloc(32, 9).toString('hex'),
+      msg: 'hi',
+      pubkeys: Buffer.concat([
+        Buffer.from(alice.pubkey, 'hex'),
+        Buffer.from(bob.key.pubkey, 'hex')
+      ]).toString('hex'),
+      pubnonce: Buffer.concat([
+        Buffer.from(alice.pubkey, 'hex'),
+        Buffer.from(alice.pubkey, 'hex')
+      ]).toString('hex')
+    };
+    const frame = Message.fromVector(['P2P_BASE_MESSAGE', JSON.stringify(inner)]).signWithKey(alice);
+    bob._handleFabricMessage(frame.toBuffer(), { name: origin }, null);
+    assert.strictEqual(bob._musigSessions.size, 0);
+  });
+
+  it('does not auto-sign inbound START when musig2.autoAccept is off', function () {
+    const { peer: bob } = makePeer('bob', { musig2: { autoAccept: false } });
+    const alice = new Key();
+    const origin = '127.0.0.1:19105';
+    const writes = [];
+    bob.connections[origin] = { _writeFabric (buf) { writes.push(buf); }, destroy () {} };
+    bob.peers[origin] = { id: alice.pubkey, publicKey: alice.pubkey };
+    const body = {
+      sessionId: Buffer.alloc(32, 4).toString('hex'),
+      msg: Buffer.from('oracle').toString('hex'),
+      pubkeys: Buffer.concat([
+        Buffer.from(alice.pubkey, 'hex'),
+        Buffer.from(bob.key.pubkey, 'hex')
+      ]).toString('hex'),
+      pubnonce: Buffer.concat([
+        Buffer.from(alice.pubkey, 'hex'),
+        Buffer.from(alice.pubkey, 'hex')
+      ]).toString('hex')
+    };
+    const frame = Message.fromVector(['P2P_MUSIG_START', JSON.stringify(body)]).signWithKey(alice);
+    bob._handleFabricMessage(frame.toBuffer(), { name: origin }, null);
+    assert.strictEqual(bob._musigSessions.size, 0);
+    assert.strictEqual(writes.length, 0);
+  });
+
+  it('initiator still completes when autoAccept is off and the co-signer has it on', function () {
+    const { peer: alice } = makePeer('alice', { musig2: { autoAccept: false } });
+    const { peer: bob } = makePeer('bob', { musig2: { autoAccept: true } });
+    const { aliceAddr, bobAddr, aliceWrites, bobWrites } = wirePair(alice, bob);
+    const started = alice.startMusig2({
+      dest: bob.key.pubkey,
+      msg: Buffer.from('initiator-no-auto'),
+      purpose: 'test'
+    });
+    assert.ok(started);
+    exchange(aliceWrites, bob, aliceAddr, bobWrites, alice, bobAddr);
+    const aDone = alice.getMusig2Session(started.sessionId);
+    const bDone = bob.getMusig2Session(started.sessionId);
+    assert.ok(aDone && aDone.signature, 'initiator missing aggregate signature');
+    assert.ok(bDone && bDone.signature, 'co-signer missing aggregate signature');
+    assert.strictEqual(aDone.signature, bDone.signature);
+  });
+
+  it('clamps invalid musig2.maxSessions instead of looping', function () {
+    this.timeout(2000);
+    const { peer: alice } = makePeer('alice', { musig2: { maxSessions: -1 } });
+    const dest = new Key();
+    const origin = '127.0.0.1:19106';
+    alice.connections[origin] = { _writeFabric () {}, destroy () {} };
+    alice.peers[origin] = { id: dest.pubkey, publicKey: dest.pubkey };
+    alice.startMusig2({ dest: dest.pubkey, msg: Buffer.from('one') });
+    alice.startMusig2({ dest: dest.pubkey, msg: Buffer.from('two') });
+    assert.ok(alice._musigSessions.size >= 1);
+    assert.ok(alice._musigSessions.size <= 32);
+  });
+
+  it('evicts the oldest MuSig2 session at maxSessions', function () {
+    const { peer: alice } = makePeer('alice', { musig2: { maxSessions: 1 } });
+    const dest = new Key();
+    const origin = '127.0.0.1:19107';
+    alice.connections[origin] = { _writeFabric () {}, destroy () {} };
+    alice.peers[origin] = { id: dest.pubkey, publicKey: dest.pubkey };
+    const first = alice.startMusig2({ dest: dest.pubkey, msg: Buffer.from('keep-first') });
+    const second = alice.startMusig2({ dest: dest.pubkey, msg: Buffer.from('keep-second') });
+    assert.ok(first && second);
+    assert.strictEqual(alice._musigSessions.size, 1);
+    assert.strictEqual(alice.getMusig2Session(first.sessionId), null);
+    assert.ok(alice.getMusig2Session(second.sessionId));
+  });
+
+  it('wipes stored MuSig2 sessions on stop', async function () {
+    const { peer: alice } = makePeer('alice', { musig2: { autoAccept: false } });
+    const dest = new Key();
+    const origin = '127.0.0.1:19199';
+    alice.connections[origin] = { _writeFabric () {} };
+    alice.peers[origin] = { id: dest.pubkey, publicKey: dest.pubkey };
+    alice.startMusig2({ dest: dest.pubkey, msg: Buffer.from('stop-wipe') });
+    assert.strictEqual(alice._musigSessions.size, 1);
+    const held = [...alice._musigSessions.values()][0].secnonce;
+    assert.ok(Buffer.isBuffer(held));
+    await alice.stop();
+    assert.strictEqual(alice._musigSessions.size, 0);
+    assert.ok(held.every((b) => b === 0));
+  });
+
+  it('rejects SEND_PROPOSAL unless AMP signer is the session initiator', function () {
+    const { peer: alice } = makePeer('alice');
+    const { peer: bob } = makePeer('bob');
+    const { aliceAddr, bobAddr, aliceWrites, bobWrites } = wirePair(alice, bob);
+    const started = alice.startMusig2({
+      dest: bob.key.pubkey,
+      msg: Buffer.from('proposal-role'),
+      purpose: 'test'
+    });
+    assert.ok(started);
+    exchange(aliceWrites, bob, aliceAddr, bobWrites, alice, bobAddr);
+    const session = alice._musigGet(started.sessionId);
+    assert.ok(session && session.aggnonce);
+    const warnings = [];
+    alice.on('warning', (m) => warnings.push(String(m)));
+    const body = {
+      sessionId: started.sessionId,
+      aggnonce: Buffer.from(session.aggnonce).toString('hex')
+    };
+    const msg = Message.fromVector(['P2P_MUSIG_SEND_PROPOSAL', JSON.stringify(body)]).signWithKey(bob.key);
+    alice._handleFabricMessage(msg.toBuffer(), { name: bobAddr }, null);
+    assert.ok(
+      warnings.some((w) => /SEND_PROPOSAL rejected: not-initiator/i.test(w)),
+      `expected not-initiator warning, got: ${warnings.join(' | ')}`
+    );
   });
 });

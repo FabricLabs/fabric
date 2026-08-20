@@ -160,7 +160,7 @@ function walletFromXprv (xprv) {
 /**
  * @param {Environment} environment
  * @param {string} [walletFile]
- * @returns {{ ok: boolean, error?: string }}
+ * @returns {{ok: boolean}|{ok: boolean, path: string}|{ok: boolean, error: string}}
  */
 function applyWalletFileOption (environment, walletFile) {
   if (!isSet(walletFile)) return { ok: true };
@@ -339,7 +339,7 @@ function formatSnapshot (snapshot) {
  * Seed / xprv for an explicit reveal. Callers must not log this by default.
  *
  * @param {Environment} environment
- * @returns {{ ok: boolean, seed?: string, xprv?: string, error?: string }}
+ * @returns {{ok: boolean, seed: *, xprv: *}|{ok: boolean, error: string}}
  */
 function revealSecrets (environment) {
   if (environment && environment.walletLocked) {
@@ -382,7 +382,7 @@ function writePrivateFile (filePath, content) {
  * @param {string} [opts.password] Encryption password (required unless `encrypt` is false).
  * @param {boolean} [opts.encrypt=true]
  * @param {boolean} [opts.force]
- * @returns {{ ok: boolean, seed?: string, walletId?: string, snapshot?: object, error?: string }}
+ * @returns {{ok: boolean, seed: string, walletId: *, snapshot: object}|{ok: boolean, error: string}|{ok: boolean, error: string, snapshot: object}}
  */
 function generateWallet (environment, opts = {}) {
   const force = !!opts.force;
@@ -427,7 +427,7 @@ function generateWallet (environment, opts = {}) {
 /**
  * @param {Environment} environment
  * @param {string} [destPath]
- * @returns {{ ok: boolean, path?: string, error?: string }}
+ * @returns {{ok: boolean, path: string}|{ok: boolean, error: string}}
  */
 function backupWallet (environment, destPath) {
   const dest = destPath
@@ -474,7 +474,7 @@ function walletFromBackupObject (parsed, passphrase = '') {
  * @param {string} [opts.passphrase] BIP39 passphrase for plaintext backups that store a seed.
  * @param {string} [opts.password] Unlock a sealed backup, or encrypt a plaintext restore.
  * @param {boolean} [opts.encrypt=true]
- * @returns {{ ok: boolean, walletId?: string, snapshot?: object, error?: string }}
+ * @returns {{ok: boolean, walletId: *, snapshot: object}|{ok: boolean, error: string}}
  */
 function restoreWalletFromFile (environment, sourcePath, opts = {}) {
   const force = !!opts.force;
@@ -550,7 +550,7 @@ function restoreWalletFromFile (environment, sourcePath, opts = {}) {
  * @param {string} [opts.passphrase] BIP39 passphrase.
  * @param {string} [opts.password] Encryption password (required unless `encrypt` is false).
  * @param {boolean} [opts.encrypt=true]
- * @returns {{ ok: boolean, walletId?: string, snapshot?: object, error?: string }}
+ * @returns {{ok: boolean, walletId: *, snapshot: object}|{ok: boolean, error: string}}
  */
 function restoreWalletFromSeed (environment, phrase, opts = {}) {
   const force = !!opts.force;

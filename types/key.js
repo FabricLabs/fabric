@@ -126,10 +126,12 @@ function secpPointToRawBytes (point, compressed = true) {
 
 const { encodeCheck, decodeCheck } = require('../functions/base58');
 const bip39 = require('../functions/bip39');
+const { parseRawSeedHex, classifyFabricKeyMaterial } = require('../functions/fabricKeyMaterial');
 const bip32Module = require('../functions/bip32');
 const BIP32 = bip32Module.default;
 const BIP32_DEFAULT_NETWORK = bip32Module.DEFAULT_NETWORK;
 const { payments } = require('bitcoinjs-lib');
+const { p2shP2wpkhPayment } = require('../functions/bip69');
 
 // Fabric Dependencies
 const Actor = require('./actor');
@@ -162,7 +164,8 @@ class Key extends EventEmitter {
    * create it from a known public key.
    * @param {Object} [settings] Initialization for the key.
    * @param {String} [settings.network] Network string.
-   * @param {String} [settings.seed] Mnemonic seed for initializing the key.
+   * @param {String} [settings.seed] Raw BIP32 seed hex (16–64 bytes) or a legacy BIP39 mnemonic.
+   * @param {String} [settings.mnemonic] BIP39 mnemonic (preferred over putting words in `seed`).
    * @param {String} [settings.public] Public key in hex.
    * @param {String} [settings.private] Private key in hex.
    * @param {String} [settings.wif] WIF-encoded private key.
@@ -187,6 +190,7 @@ class Key extends EventEmitter {
       bits: 256,
       hd: true,
       seed: null,
+      mnemonic: null,
       passphrase: '',
       password: null,
       index: 0,
@@ -250,7 +254,21 @@ class Key extends EventEmitter {
     if (this.settings.mnemonic) {
       this._mode = 'FROM_MNEMONIC';
     } else if (this.settings.seed) {
-      this._mode = 'FROM_SEED';
+      const raw = this.settings.seed;
+      if (Buffer.isBuffer(raw) || raw instanceof Uint8Array) {
+        this._mode = 'FROM_SEED';
+      } else {
+        const classified = classifyFabricKeyMaterial(raw);
+        if (classified.kind === 'xprv') {
+          this._mode = 'FROM_XPRV';
+          this.settings.xprv = classified.xprv;
+        } else if (classified.kind === 'mnemonic') {
+          this._mode = 'FROM_MNEMONIC';
+          this.settings.mnemonic = classified.mnemonic;
+        } else {
+          this._mode = 'FROM_SEED';
+        }
+      }
     } else if (this.settings.wif) {
       this._mode = 'FROM_WIF';
     } else if (this.settings.private) {
@@ -279,16 +297,25 @@ class Key extends EventEmitter {
         this._point = secpPointFromPrivateKey(root.privateKey);
         this.status = 'seeded';
         break;
-      case 'FROM_SEED':
-        // TODO: allow setting of raw seed (deprecates passing a mnemonic in the `seed` property)
-        seed = bip39.mnemonicToSeedSync(this.settings.seed, this.settings.passphrase);
+      case 'FROM_SEED': {
+        const rawSeed = parseRawSeedHex(this.settings.seed);
+        if (rawSeed) {
+          seed = rawSeed;
+          this.seed = rawSeed.toString('hex');
+        } else if (Buffer.isBuffer(this.settings.seed) || this.settings.seed instanceof Uint8Array) {
+          throw new Error('Seed must be 16–64 bytes');
+        } else {
+          seed = bip39.mnemonicToSeedSync(this.settings.seed, this.settings.passphrase);
+          this.seed = this.settings.seed;
+        }
         root = this.bip32.fromSeed(seed, bip32NetworkFromKeySettings(this.settings));
-        this.seed = this.settings.seed;
         this.xprv = root.toBase58();
         this.xpub = root.neutered().toBase58();
         this.master = root;
         this._point = secpPointFromPrivateKey(root.privateKey);
+        this.status = 'seeded';
         break;
+      }
       case 'FROM_WIF':
         const decoded = decodeCheck(this.settings.wif);
         const privateKey = decoded.slice(1, 33);
@@ -479,6 +506,18 @@ class Key extends EventEmitter {
           publicKey: key.publicKey,
           privateKey: key.privateKey
         };
+      case 'p2sh-p2wpkh':
+      case 'p2shp2wpkh': {
+        const nested = p2shP2wpkhPayment({
+          pubkey: Buffer.from(key.publicKey, 'hex'),
+          network: network
+        });
+        return {
+          address: nested.address,
+          publicKey: key.publicKey,
+          privateKey: key.privateKey
+        };
+      }
       case 'p2tr':
         // For p2tr, we need to use the x-only pubkey (first 32 bytes after the prefix)
         const pubkeyBuffer = Buffer.from(key.publicKey, 'hex');

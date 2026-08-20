@@ -83,14 +83,13 @@ node examples/onion-forward.js
 
 ## Tests
 - `tests/functions.fabricOnion.js`
-- `tests/peer.onion.forward.js`
-- `tests/onionChatSeal.test.js` (seal/open, multi-hop relay ciphertext, mesh cleartext)
+- `tests/peer.onion.forward.js` (onion hops, chat seal/open, multi-hop relay ciphertext, mesh cleartext)
 
 ## Downstream
 - Hub JSON-RPC **`SendOnion`** — TCP Peer on the hub agent; Bridge drops WS `P2P_FORWARD`.
 - `@fabric/http` does not terminate onions (see `docs/MESSAGE_SPEC.md`).
 
 ## Work remaining
-- ~~**Seal AAD:**~~ tip + participant AES-GCM AAD bound in `groupChatSeal` / `onionChatSeal` (see [ARC.md](ARC.md) §8).
+- ~~**Seal AAD:**~~ tip + participant AES-GCM AAD bound in `groupChatSeal` / `onionChatSeal` (see [CONTRACTS.md](CONTRACTS.md#application-resource-contracts-arc) §8).
 - **Hop encryption:** Sphinx/BOLT4-class routing metadata protection remains out of scope for 0.1 (accepted risk above).
-- **Journal / re-fold growth** and **API renaming** remain tracked in [ARC.md](ARC.md) §8 / [AUDIT.md](../AUDIT.md).
+- **Journal / re-fold growth** and **API renaming** remain tracked in [CONTRACTS.md](CONTRACTS.md#application-resource-contracts-arc) §8 / [AUDIT.md](../AUDIT.md).

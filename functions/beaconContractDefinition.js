@@ -10,11 +10,12 @@
  * redeploys across regtest → signet → mainnet with Accept overlays.
  *
  * @module functions/beaconContractDefinition
- * @see docs/ARC.md
+ * @see docs/CONTRACTS.md
  */
 
 const Actor = require('../types/actor');
 const { pubkeyCompressed } = require('./groupChatSeal');
+const { sortPubkeysBip67 } = require('./bip67');
 const { canonicalSpendPolicy } = require('./contractSpend');
 const { DEFAULT_CSV_BLOCKS } = require('./contractTaproot');
 
@@ -54,8 +55,7 @@ function normalizeValidatorPubkeys (list) {
     seen.add(key);
     out.push(c.toLowerCase());
   }
-  out.sort((a, b) => Buffer.from(a, 'hex').compare(Buffer.from(b, 'hex')));
-  return out;
+  return sortPubkeysBip67(out).map((b) => b.toString('hex'));
 }
 
 /**

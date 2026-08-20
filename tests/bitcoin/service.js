@@ -577,12 +577,19 @@ describe('@fabric/core/services/bitcoin', function () {
 
       it('tolerates malformed BitcoinBlockHash payload content', async function () {
         const btc = new Bitcoin({ network: 'regtest', mode: 'rpc' });
-        // Should be ignored by internal try/catch.
+        const errors = [];
+        let committed = 0;
+        let blocks = 0;
+        btc.on('error', (msg) => errors.push(String(msg)));
+        btc.on('block', () => { blocks++; });
+        btc.commit = () => { committed++; };
         await btc._handleZMQMessage({
           type: 'BitcoinBlockHash',
           data: Buffer.from('not-json', 'utf8')
         });
-        assert.ok(true);
+        assert.strictEqual(errors.length, 0, 'malformed block-hash JSON must not emit error');
+        assert.strictEqual(committed, 0, 'malformed payload must not commit tip state');
+        assert.strictEqual(blocks, 0, 'malformed payload must not emit block');
       });
 
       it('swallows internal RPC failures while processing known ZMQ topics', async function () {

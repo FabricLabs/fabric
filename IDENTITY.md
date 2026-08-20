@@ -11,10 +11,14 @@ The Fabric Identity Protocol is a decentralized identifier for Fabric-speaking n
 3. `m = sha256(derived_pubkey)`
 4. `id = bech32m("id", m) // "id" taken as ASCII bytes`
 
-**Coin types:** Fabric protocol identity uses SLIP-44–style coin types **`7777` (mainnet)** and
-**`7778` (everything else)**. Helpers: `fabricCoinTypeForNetwork`, `fabricIdentityDerivationPath`
-in `constants.js`. Default development / Peer identity (when `network` is omitted or non-mainnet)
-stays on **7778** so playnet fixtures remain stable.
+**Coin types:** Fabric protocol identity uses SLIP-44–style coin types **`7777` (Bitcoin mainnet
+network name)** and **`7778` (any other network name, or when `network` is omitted)**.
+`resolveFabricIdentityCoinType` still honours an **explicit integer** coin type when the
+caller passes one (validated); it does not rewrite that integer to 7778. Helpers:
+`fabricCoinTypeForNetwork`, `resolveFabricIdentityCoinType` (network name or explicit integer),
+`fabricIdentityAccountPath` (`m/44'/{coin}'/account'`), `fabricIdentityDerivationPath`
+(`account path` + `/0/index`) in `constants.js`. Default development / Peer identity
+(when `network` is omitted or a non-mainnet name) stays on **7778** so playnet fixtures remain stable.
 
 **Funds vs identity:** Bitcoin receive / change keys use BIP44 coin type **`0`** from the
 **same master** (`m/44'/0'/account'/change/index`). Never reuse the Fabric `7777`/`7778` identity

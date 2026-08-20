@@ -5,7 +5,7 @@
  *
  * @module functions/opcodeAllowList
  * @see docs/PROGRAM.md
- * @see docs/ARC.md
+ * @see docs/CONTRACTS.md
  */
 
 /**

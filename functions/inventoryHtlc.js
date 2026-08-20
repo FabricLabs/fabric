@@ -24,6 +24,8 @@ const ecc = require('../types/ecc');
 const bip341 = require('bitcoinjs-lib/src/payments/bip341');
 const psbtutils = require('bitcoinjs-lib/src/psbt/psbtutils');
 const { payments, networks, script, Psbt } = bitcoin;
+const { encodeBitcoinUri } = require('./bip21');
+const { BIP125_SEQUENCE_LOCKTIME_ONLY } = require('./bip125');
 
 bitcoin.initEccLib(ecc);
 
@@ -63,6 +65,74 @@ function asBuffer (value, encoding = 'hex') {
   if (value instanceof Uint8Array) return Buffer.from(value);
   if (typeof value === 'string') return Buffer.from(value, encoding);
   return null;
+}
+
+/** BIP-341 leaf version for tapscript (0xc0). */
+const LEAF_VERSION_TAPSCRIPT = 0xc0;
+
+/**
+ * One BIP-371 `PSBT_IN_TAP_LEAF_SCRIPT` entry (script + control block + leaf version).
+ *
+ * @param {Object} opts
+ * @param {Buffer|Uint8Array|string} opts.script
+ * @param {Buffer|Uint8Array|string} opts.controlBlock
+ * @param {number} [opts.leafVersion]
+ * @returns {{ leafVersion: number, script: Buffer, controlBlock: Buffer }}
+ */
+function tapLeafScriptEntry (opts = {}) {
+  const script = asBuffer(opts.script);
+  const controlBlock = asBuffer(opts.controlBlock);
+  if (!script || !script.length) {
+    throw new Error('BIP371 tapLeafScript requires script bytes');
+  }
+  if (!controlBlock || controlBlock.length < 33 ||
+      controlBlock.length > 33 + (32 * 128) ||
+      ((controlBlock.length - 33) % 32) !== 0) {
+    throw new Error('BIP371 controlBlock length must be 33 + 32*m bytes');
+  }
+  const leafVersion = opts.leafVersion != null
+    ? Number(opts.leafVersion)
+    : LEAF_VERSION_TAPSCRIPT;
+  if (!Number.isInteger(leafVersion) || leafVersion < 0 || leafVersion > 255) {
+    throw new Error('BIP371 leafVersion must be an 8-bit integer');
+  }
+  if ((leafVersion & 1) !== 0) {
+    throw new Error('BIP371 leafVersion must be even (BIP-341 leaf version + parity bit)');
+  }
+  if ((controlBlock[0] & 0xfe) !== leafVersion) {
+    throw new Error('BIP371 leafVersion must match the control block');
+  }
+  return { leafVersion, script, controlBlock };
+}
+
+/**
+ * Taproot PSBT input fields for a script-path spend (BIP-371 bags).
+ *
+ * @param {Object} opts
+ * @param {Buffer|Uint8Array|string} opts.tapInternalKey 32-byte x-only internal key
+ * @param {Buffer|Uint8Array|string} opts.script
+ * @param {Buffer|Uint8Array|string} opts.controlBlock
+ * @param {number} [opts.leafVersion]
+ * @param {Buffer|Uint8Array|string} [opts.tapMerkleRoot]
+ * @returns {Object}
+ */
+function taprootPsbtInputFields (opts = {}) {
+  const tapInternalKey = asBuffer(opts.tapInternalKey);
+  if (!tapInternalKey || tapInternalKey.length !== 32) {
+    throw new Error('BIP371 tapInternalKey must be 32 bytes (x-only)');
+  }
+  const fields = {
+    tapInternalKey,
+    tapLeafScript: [tapLeafScriptEntry(opts)]
+  };
+  if (opts.tapMerkleRoot != null && opts.tapMerkleRoot !== '') {
+    const tapMerkleRoot = asBuffer(opts.tapMerkleRoot);
+    if (!tapMerkleRoot || tapMerkleRoot.length !== 32) {
+      throw new Error('BIP371 tapMerkleRoot must be 32 bytes');
+    }
+    fields.tapMerkleRoot = tapMerkleRoot;
+  }
+  return fields;
 }
 
 function toXOnly (pubkey33) {
@@ -135,12 +205,12 @@ function hash256 (buf) {
 }
 
 /**
- * BIP21-style URI and display amounts so wallets can pre-fill send-to Taproot (bc1p / bcrt1 / tb1).
+ * BIP21 bitcoin: URI and display amounts so wallets can pre-fill send-to Taproot (bc1p / bcrt1 / tb1).
  * @param {Object} opts
  * @param {string} opts.paymentAddress - Bech32m P2TR address
  * @param {number} opts.amountSats - Invoice amount in satoshis
  * @param {string} [opts.label] - Optional label (shortened for URI)
- * @returns {{ amountBtc: string, bitcoinUri: string, label?: string }}
+ * @returns {{ amountBtc: string, bitcoinUri: string, label: (string|undefined) }}
  */
 function buildHtlcFundingHints ({ paymentAddress, amountSats, label = '' }) {
   const addr = String(paymentAddress || '').trim();
@@ -149,11 +219,12 @@ function buildHtlcFundingHints ({ paymentAddress, amountSats, label = '' }) {
     return { amountBtc: '', bitcoinUri: '', label: label || undefined };
   }
   const amountBtc = (sats / 100000000).toFixed(8);
-  const params = new URLSearchParams();
-  params.set('amount', amountBtc);
   const lab = String(label || '').trim().slice(0, 120);
-  if (lab) params.set('label', lab);
-  const bitcoinUri = `bitcoin:${addr}?${params.toString()}`;
+  const bitcoinUri = encodeBitcoinUri({
+    address: addr,
+    amount: amountBtc,
+    label: lab || undefined
+  });
   return { amountBtc, bitcoinUri, ...(lab ? { label: lab } : {}) };
 }
 
@@ -244,12 +315,12 @@ function prepareInventoryHtlcSellerClaimPsbt (opts = {}) {
       script: out.script,
       value: BigInt(inputSats)
     },
-    tapInternalKey: TAPROOT_INTERNAL_NUMS,
-    tapLeafScript: [{
-      leafVersion: bip341.LEAF_VERSION_TAPSCRIPT,
+    ...taprootPsbtInputFields({
+      tapInternalKey: TAPROOT_INTERNAL_NUMS,
       script: claimBuf,
-      controlBlock
-    }]
+      controlBlock,
+      leafVersion: bip341.LEAF_VERSION_TAPSCRIPT
+    })
   });
   psbt.addOutput({
     address: String(destinationAddress || '').trim(),
@@ -335,17 +406,17 @@ function prepareInventoryHtlcBuyerRefundPsbt (opts = {}) {
   psbt.addInput({
     hash: tx.getId(),
     index: vout,
-    sequence: 0xfffffffe,
+    sequence: BIP125_SEQUENCE_LOCKTIME_ONLY,
     witnessUtxo: {
       script: out.script,
       value: BigInt(inputSats)
     },
-    tapInternalKey: TAPROOT_INTERNAL_NUMS,
-    tapLeafScript: [{
-      leafVersion: bip341.LEAF_VERSION_TAPSCRIPT,
+    ...taprootPsbtInputFields({
+      tapInternalKey: TAPROOT_INTERNAL_NUMS,
       script: refundBuf,
-      controlBlock
-    }]
+      controlBlock,
+      leafVersion: bip341.LEAF_VERSION_TAPSCRIPT
+    })
   });
   psbt.addOutput({
     address: String(destinationAddress || '').trim(),
@@ -594,6 +665,9 @@ function validateInventoryHtlcOffer (opts = {}) {
 }
 
 module.exports = {
+  LEAF_VERSION_TAPSCRIPT,
+  tapLeafScriptEntry,
+  taprootPsbtInputFields,
   buildInventoryHtlcP2tr,
   buildHtlcFundingHints,
   buildDocumentOfferEscrow,
