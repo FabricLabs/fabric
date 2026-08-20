@@ -1399,7 +1399,8 @@ class Peer extends Service {
       }
       const sock = this.connections && this.connections[addr];
       if (sock) {
-        // Always drop the map entry (unit stubs have destroy() but no _destroyFabric).
+        // Centralized teardown (idempotent per socket); unit stubs have destroy()
+        // but no _destroyFabric, so call the Peer method directly.
         this._destroyFabric(sock, addr);
         try {
           if (typeof sock.destroy === 'function' && !sock.destroyed) sock.destroy();

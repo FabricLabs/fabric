@@ -14,6 +14,7 @@ describe('@fabric/core/functions/noiseProtocolStream', function () {
 
   it('drops shared handshake listeners when encrypt/decrypt are destroyed', async function () {
     const before = noise.countHandshakeListeners();
+    const beforeNative = noise.countNativeStreams();
     const sessions = [];
     for (let i = 0; i < 24; i++) {
       sessions.push(noise({
@@ -35,5 +36,6 @@ describe('@fabric/core/functions/noiseProtocolStream', function () {
     assert.strictEqual(after.write, before.write);
     assert.strictEqual(after.read, before.read);
     assert.strictEqual(after.split, before.split);
+    assert.strictEqual(noise.countNativeStreams(), beforeNative);
   });
 });

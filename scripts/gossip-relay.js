@@ -147,10 +147,16 @@ async function main (argv) {
 
   const stop = async (signal) => {
     console.log('[GOSSIP-RELAY] stopping', signal || '');
+    const seen = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+    if (seen.length) {
+      console.log('[GOSSIP-RELAY] frames', seen.map(([t, n]) => `${t}=${n}`).join(' '));
+    }
+    let code = 0;
     try { await peer.stop(); } catch (err) {
       console.error('[GOSSIP-RELAY] stop', err && err.message ? err.message : err);
+      code = 1;
     }
-    process.exit(0);
+    process.exit(code);
   };
   process.on('SIGINT', () => { stop('SIGINT'); });
   process.on('SIGTERM', () => { stop('SIGTERM'); });

@@ -10,6 +10,7 @@
 const crypto = require('crypto');
 const Key = require('../types/key');
 const {
+  TAPROOT_INTERNAL_NUMS,
   buildContractTaproot,
   synthesizeDefaultLadder,
   prepareVaultWithdrawalPsbt,
@@ -447,7 +448,10 @@ function resolveSpend (opts = {}) {
       csvBlocks: resolvedCsv,
       softMode: String(policyInput.softMode || 'publisher'),
       network: built.network,
-      internalKeyMode: (built.policy && built.policy.internalKeyMode) || 'nums',
+      // Effective mode (one-validator musig2 still builds NUMS).
+      internalKeyMode: built.internalPubkeyHex === TAPROOT_INTERNAL_NUMS.toString('hex')
+        ? 'nums'
+        : 'musig2',
       hashlock: built.policy && built.policy.hashlock
         ? built.policy.hashlock
         : (policyInput.hashlock || null),

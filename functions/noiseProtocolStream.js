@@ -36,6 +36,8 @@ const HANDSHAKE_WRITE = 'noise_stream_handshake_write';
 const HANDSHAKE_READ = 'noise_stream_handshake_read';
 const HANDSHAKE_SPLIT = 'noise_stream_handshake_split';
 
+let liveNativeStreams = 0;
+
 /**
  * @returns {{ write: number, read: number, split: number }}
  */
@@ -48,6 +50,14 @@ function countHandshakeListeners () {
     read: lib.listenerCount(HANDSHAKE_READ),
     split: lib.listenerCount(HANDSHAKE_SPLIT)
   };
+}
+
+/**
+ * In-process count of `noise_stream_new` pointers not yet `noise_stream_free`.
+ * @returns {number}
+ */
+function countNativeStreams () {
+  return liveNativeStreams;
 }
 
 function createError (s, code) {
@@ -150,6 +160,10 @@ DecryptStream.prototype._drainInput = function (cb) {
 };
 
 DecryptStream.prototype._writeOutput = function (data, cb) {
+  if (!this._streamPtr) {
+    cb(createError('noise_stream_decrypt', 'stream freed'));
+    return;
+  }
   let n;
   let dataPtr;
   let buffer;
@@ -204,6 +218,7 @@ function EncryptStream () {
 
   this.setWritable(pass);
   this.setReadable(encode);
+  this._streamPtr = null;
 }
 
 util.inherits(EncryptStream, Duplexify);
@@ -214,9 +229,10 @@ EncryptStream.prototype._writeHandshake = function (data) {
 
 EncryptStream.prototype._splitHandshake = function (ptr, macSize) {
   const self = this;
+  this._streamPtr = ptr;
 
   each(this._input, function (data, next) {
-    if (self.destroyed) {
+    if (self.destroyed || !self._streamPtr) {
       if (typeof next === 'function') next();
       return;
     }
@@ -227,6 +243,7 @@ EncryptStream.prototype._splitHandshake = function (ptr, macSize) {
     let dataOffset;
     let dataSize;
     let err;
+    const sessionPtr = self._streamPtr;
 
     n = Math.ceil(data.length / (MESSAGE_SIZE - macSize));
     totalSize = data.length + n * macSize;
@@ -242,7 +259,7 @@ EncryptStream.prototype._splitHandshake = function (ptr, macSize) {
 
           copymem(data, i * (MESSAGE_SIZE - macSize), dataOffset, dataSize);
 
-          err = lib.noise_stream_encrypt(ptr, dataOffset, dataSize, 0);
+          err = lib.noise_stream_encrypt(sessionPtr, dataOffset, dataSize, 0);
 
           if (err) {
             next(createError('noise_stream_encrypt', err));
@@ -286,15 +303,23 @@ function createNoiseStream (options) {
     dropHandshakeListeners();
     if (nativeFreed) return;
     nativeFreed = true;
+    decrypt._streamPtr = null;
+    encrypt._streamPtr = null;
     if (streamPtr) {
       try {
         lib.noise_stream_free(streamPtr);
       } catch (_) { /* ignore */ }
       streamPtr = null;
+      if (liveNativeStreams > 0) liveNativeStreams -= 1;
     }
   };
 
+  const sessionTornDown = function () {
+    return nativeFreed || (decrypt.destroyed && encrypt.destroyed);
+  };
+
   const onready = function () {
+    if (sessionTornDown()) return;
     let err;
     let streamPtrPtr;
     let prologuePtr;
@@ -317,8 +342,16 @@ function createNoiseStream (options) {
 
           if (!err) {
             streamPtr = dereference(streamPtrPtr);
-            err = lib.noise_stream_initialize(streamPtr);
-            if (err) destroy('noise_stream_initialize', err);
+            if (sessionTornDown()) {
+              try { lib.noise_stream_free(streamPtr); } catch (_) { /* ignore */ }
+              streamPtr = null;
+              decrypt._streamPtr = null;
+              encrypt._streamPtr = null;
+            } else {
+              liveNativeStreams += 1;
+              err = lib.noise_stream_initialize(streamPtr);
+              if (err) destroy('noise_stream_initialize', err);
+            }
           } else {
             destroy('noise_stream_new', err);
           }
@@ -414,7 +447,9 @@ function createNoiseStream (options) {
 
 createNoiseStream.supported = createNoiseLib.supported;
 createNoiseStream.countHandshakeListeners = countHandshakeListeners;
+createNoiseStream.countNativeStreams = countNativeStreams;
 
 module.exports = createNoiseStream;
 module.exports.countHandshakeListeners = countHandshakeListeners;
+module.exports.countNativeStreams = countNativeStreams;
 module.exports.supported = createNoiseLib.supported;

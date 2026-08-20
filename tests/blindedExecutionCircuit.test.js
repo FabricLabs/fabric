@@ -2,6 +2,7 @@
 
 const assert = require('assert');
 const bitcoin = require('bitcoinjs-lib');
+const ecc = require('../types/ecc');
 const Key = require('../types/key');
 const Message = require('../types/message');
 const Machine = require('../types/machine');
@@ -23,6 +24,7 @@ const { toAddress, synthesizeDefaultLadder } = require('../functions/contractTap
 describe('functions/blindedExecutionCircuit', function () {
   const keys = [];
   before(function () {
+    bitcoin.initEccLib(ecc);
     for (let i = 0; i < 3; i++) keys.push(new Key());
   });
   function pk (i) { return keys[i].pubkey; }
@@ -282,9 +284,6 @@ describe('functions/blindedExecutionCircuit', function () {
   });
 
   it('binds finalized session to hashlock+pubkey Taproot (public preimage alone insufficient)', async function () {
-    const bitcoin = require('bitcoinjs-lib');
-    const ecc = require('../types/ecc');
-    bitcoin.initEccLib(ecc);
     const { Psbt } = bitcoin;
 
     let session = composeGarblerPublish({

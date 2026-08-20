@@ -218,6 +218,42 @@ describe('contractSpend / ARC resolveSpend', function () {
     assert.notStrictEqual(musig.address, vault.address);
   });
 
+  it('resolveSpend reports nums when a one-validator musig2 request falls back', function () {
+    const a = new Key();
+    const vals = [a.pubkey];
+    const {
+      TAPROOT_INTERNAL_NUMS,
+      buildFederationVaultFromPolicy
+    } = require('../functions/contractTaproot');
+    const vault = buildFederationVaultFromPolicy({
+      validatorPubkeysHex: vals,
+      threshold: 1,
+      networkName: 'regtest',
+      publisher: a.pubkey,
+      csvBlocks: 144,
+      internalKeyMode: 'musig2'
+    });
+    const spend = resolveSpend({
+      genesis: {
+        members: { signers: vals, threshold: 1 },
+        spendPolicy: {
+          validators: vals,
+          threshold: 1,
+          publisher: a.pubkey,
+          csvBlocks: 144,
+          network: 'regtest',
+          internalKeyMode: 'musig2'
+        }
+      },
+      tip: { content: { members: vals.map((p) => p.slice(2)) } },
+      overrides: { network: 'regtest' }
+    });
+    assert.strictEqual(spend.internalPubkeyHex, TAPROOT_INTERNAL_NUMS.toString('hex'));
+    assert.strictEqual(spend.spendPolicy.internalKeyMode, 'nums');
+    assert.strictEqual(vault.spendPolicy.internalKeyMode, 'nums');
+    assert.strictEqual(spend.address, vault.address);
+  });
+
   it('canonicalSpendPolicy rejects unknown internalKeyMode', function () {
     const a = new Key();
     assert.throws(() => canonicalSpendPolicy({

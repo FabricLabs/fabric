@@ -15,6 +15,12 @@ const Key = require('../types/key');
 const Peer = require('../types/peer');
 const HEADER_SIZE = require('../constants').HEADER_SIZE;
 const {
+  BITCOIN_BLOCK_TYPE,
+  P2P_CONTRACT_PUBLISH,
+  P2P_CONTRACT_MESSAGE,
+  CONTRACT_PROPOSAL_TYPE
+} = require('../constants');
+const {
   GOSSIP_NETWORK_TYPES,
   classifyGossipWireType,
   isPublicGossipFloodType,
@@ -86,6 +92,10 @@ describe('@fabric/core gossip network catalog', function () {
     assert.strictEqual(isRelayAsIsWireType('P2P_RELAY'), true);
     assert.strictEqual(isRelayAsIsWireType('P2P_FORWARD'), true);
     assert.strictEqual(isRelayAsIsWireType('P2P_CHAT_MESSAGE'), true);
+    assert.strictEqual(isRelayAsIsWireType(BITCOIN_BLOCK_TYPE), true);
+    assert.strictEqual(isRelayAsIsWireType(P2P_CONTRACT_PUBLISH), true);
+    assert.strictEqual(isRelayAsIsWireType(P2P_CONTRACT_MESSAGE), true);
+    assert.strictEqual(isRelayAsIsWireType(CONTRACT_PROPOSAL_TYPE), true);
     assert.strictEqual(isRelayAsIsWireType('P2P_PING'), false);
     assert.strictEqual(isFirstClassOpcodeOnlyType('CONTRACT_MESSAGE'), true);
     assert.strictEqual(isFirstClassOpcodeOnlyType('P2P_BASE_MESSAGE'), false);
@@ -128,6 +138,14 @@ describe('@fabric/core gossip network catalog', function () {
     assert.strictEqual(settings.port, 17777);
     assert.deepStrictEqual(settings.peers, ['127.0.0.1:9']);
     assert.ok(settings.constraints.peers.max > 0);
+  });
+
+  it('gossipRelayPeerSettings keeps extra constraint groups', function () {
+    const settings = gossipRelayPeerSettings({
+      constraints: { peers: { max: 3 }, documents: { max: 2 } }
+    });
+    assert.strictEqual(settings.constraints.peers.max, 3);
+    assert.strictEqual(settings.constraints.documents.max, 2);
   });
 });
 
@@ -248,16 +266,10 @@ describe('@fabric/core gossip-relay Peer (mocked mesh)', function () {
       const { peer, edges } = meshRelayPeer(3);
       peer.peers[origin] = { publicKey: author.pubkey };
       peer._handleFabricMessage(signed.toBuffer(), { name: origin }, null);
-      for (const writes of Object.values(edges)) {
-        if (signed.type === 'P2P_PING') {
-          // PING may write a PONG to the origin socket only — not a mesh flood.
-          continue;
-        }
-        assert.strictEqual(writes.length, 0, `${signed.type} must not flood`);
-      }
-      if (signed.type !== 'P2P_PING') {
-        const other = edges['127.0.0.1:9101'];
-        assert.strictEqual(other.length, 0, `${signed.type} must not reach non-origin`);
+      for (const [addr, writes] of Object.entries(edges)) {
+        // PING may write a PONG to the origin socket only — never a mesh flood.
+        if (addr === origin && signed.type === 'P2P_PING') continue;
+        assert.strictEqual(writes.length, 0, `${signed.type} must not reach ${addr}`);
       }
     }
   });

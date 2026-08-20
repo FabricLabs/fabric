@@ -223,9 +223,7 @@ const RELAY_AS_IS_TYPES = new Set([
   'CONTRACT_MESSAGE',
   'CONTRACT_PROPOSAL',
   'ContractProposal',
-  P2P_PEER_GOSSIP,
   'P2P_PEER_GOSSIP',
-  P2P_PEERING_OFFER,
   'P2P_PEERING_OFFER',
   'DOCUMENT_REQUEST',
   'DocumentRequest',
@@ -238,6 +236,10 @@ const RELAY_AS_IS_TYPES = new Set([
 ]);
 
 const RELAY_AS_IS_NUMERIC = new Set([
+  BITCOIN_BLOCK_TYPE,
+  P2P_CONTRACT_PUBLISH,
+  P2P_CONTRACT_MESSAGE,
+  CONTRACT_PROPOSAL_TYPE,
   P2P_PEER_GOSSIP,
   P2P_PEERING_OFFER,
   P2P_PEER_ALIAS,
@@ -423,7 +425,9 @@ function validateGossipFrame (buffer, opts = {}) {
  */
 function gossipRelayPeerSettings (overrides = {}) {
   const extra = (overrides && typeof overrides === 'object') ? overrides : {};
-  const extraPeers = extra.constraints && extra.constraints.peers;
+  const extraConstraints = (extra.constraints && typeof extra.constraints === 'object')
+    ? extra.constraints
+    : {};
   const extraMusig = extra.musig2;
   const base = {
     listen: true,
@@ -444,9 +448,9 @@ function gossipRelayPeerSettings (overrides = {}) {
     musig2: { autoAccept: false }
   };
   const merged = Object.assign({}, base, extra);
-  merged.constraints = {
-    peers: Object.assign({}, base.constraints.peers, extraPeers || {})
-  };
+  merged.constraints = Object.assign({}, extraConstraints, {
+    peers: Object.assign({}, base.constraints.peers, extraConstraints.peers || {})
+  });
   merged.musig2 = Object.assign({}, base.musig2, extraMusig || {});
   return merged;
 }

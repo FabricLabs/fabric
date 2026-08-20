@@ -13,9 +13,24 @@ const EventEmitter = require('events');
 const cp = require('child_process');
 
 const Bitcoin = require('../../services/bitcoin');
+const {
+  rpcProbeLooksUnavailable
+} = require('../helpers/bitcoinRegtest');
 
 describe('@fabric/core/services/bitcoin (deep coverage)', function () {
   this.timeout(180000);
+
+  describe('rpcProbeLooksUnavailable', function () {
+    it('treats connection failures and HTTP auth errors as unavailable', function () {
+      const unauthorized = new Error('');
+      unauthorized.code = 401;
+      const refused = new Error('connect ECONNREFUSED 127.0.0.1:18443');
+      refused.code = 'ECONNREFUSED';
+      assert.strictEqual(rpcProbeLooksUnavailable(unauthorized), true);
+      assert.strictEqual(rpcProbeLooksUnavailable(refused), true);
+      assert.strictEqual(rpcProbeLooksUnavailable(new Error('[-8] Block height out of range')), false);
+    });
+  });
 
   describe('_buildRPCProbeCandidates with credentials and secure client', function () {
     it('pushes settings.credentials candidates when username/password set', async function () {
@@ -693,6 +708,76 @@ describe('@fabric/core/services/bitcoin (deep coverage)', function () {
         bitcoinExtraParams: ['-dnsseed=0']
       });
       await btc.createLocalNode();
+      try {
+        if (btc._errorHandlers && btc._errorHandlers.SIGINT) process.removeListener('SIGINT', btc._errorHandlers.SIGINT);
+        if (btc._errorHandlers && btc._errorHandlers.SIGTERM) process.removeListener('SIGTERM', btc._errorHandlers.SIGTERM);
+        if (btc._errorHandlers && btc._errorHandlers.exit) process.removeListener('exit', btc._errorHandlers.exit);
+        if (btc._errorHandlers && btc._errorHandlers.uncaughtException) {
+          process.removeListener('uncaughtException', btc._errorHandlers.uncaughtException);
+        }
+        if (btc._errorHandlers && btc._errorHandlers.unhandledRejection) {
+          process.removeListener('unhandledRejection', btc._errorHandlers.unhandledRejection);
+        }
+      } catch (e) { /* ignore */ }
+      btc._nodeProcess = null;
+    });
+
+    it('does not throw when bitcoind Error: stderr has no error listener', async function () {
+      const btc = new Bitcoin({
+        network: 'regtest',
+        mode: 'rpc',
+        managed: true,
+        listen: 0,
+        username: 'rpcuser',
+        password: 'rpcpass',
+        rpcport: 18511,
+        port: 18510,
+        datadir: `./stores/btc-deep-stderr-${process.pid}`
+      });
+      const warnings = [];
+      btc.on('warning', (msg) => warnings.push(String(msg)));
+      await btc.createLocalNode();
+      assert.doesNotThrow(() => {
+        btc._nodeProcess.stderr.emit(
+          'data',
+          Buffer.from('Error: Unable to start HTTP server. See debug log for details.\n')
+        );
+      });
+      assert.ok(warnings.some((w) => w.includes('Unable to start HTTP server')));
+      try {
+        if (btc._errorHandlers && btc._errorHandlers.SIGINT) process.removeListener('SIGINT', btc._errorHandlers.SIGINT);
+        if (btc._errorHandlers && btc._errorHandlers.SIGTERM) process.removeListener('SIGTERM', btc._errorHandlers.SIGTERM);
+        if (btc._errorHandlers && btc._errorHandlers.exit) process.removeListener('exit', btc._errorHandlers.exit);
+        if (btc._errorHandlers && btc._errorHandlers.uncaughtException) {
+          process.removeListener('uncaughtException', btc._errorHandlers.uncaughtException);
+        }
+        if (btc._errorHandlers && btc._errorHandlers.unhandledRejection) {
+          process.removeListener('unhandledRejection', btc._errorHandlers.unhandledRejection);
+        }
+      } catch (e) { /* ignore */ }
+      btc._nodeProcess = null;
+    });
+
+    it('emits error for bitcoind Error: stderr when a listener is present', async function () {
+      const btc = new Bitcoin({
+        network: 'regtest',
+        mode: 'rpc',
+        managed: true,
+        listen: 0,
+        username: 'rpcuser',
+        password: 'rpcpass',
+        rpcport: 18513,
+        port: 18512,
+        datadir: `./stores/btc-deep-stderr-listen-${process.pid}`
+      });
+      const errors = [];
+      btc.on('error', (msg) => errors.push(String(msg)));
+      await btc.createLocalNode();
+      btc._nodeProcess.stderr.emit(
+        'data',
+        Buffer.from('Error: Unable to start HTTP server. See debug log for details.\n')
+      );
+      assert.ok(errors.some((e) => e.includes('Unable to start HTTP server')));
       try {
         if (btc._errorHandlers && btc._errorHandlers.SIGINT) process.removeListener('SIGINT', btc._errorHandlers.SIGINT);
         if (btc._errorHandlers && btc._errorHandlers.SIGTERM) process.removeListener('SIGTERM', btc._errorHandlers.SIGTERM);
