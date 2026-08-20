@@ -1540,8 +1540,9 @@ describe('@fabric/core groupChatSeal', function () {
       stateDigest: digest
     });
     // ECDH wrap opens without supplying tip opts; tip holders without privkeys stay blind.
+    assert.ok(a.xprv, 'fixture Key must expose xprv for the wrap-only open path');
     assert.strictEqual(
-      openGroupChatBody(seal, { keyOrPrivate: a.xprv ? { xprv: a.xprv } : a }),
+      openGroupChatBody(seal, { keyOrPrivate: { xprv: a.xprv } }),
       'still secret'
     );
   });

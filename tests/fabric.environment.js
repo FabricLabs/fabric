@@ -1491,13 +1491,17 @@ const fabricSetup = require('../functions/fabricSetup');
 
 const TEST_PASSWORD = 'test-pass-ok!';
 
+const liveIsolatedEnvs = [];
+
 function isolatedEnv () {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'fabric-setup-'));
   const store = path.join(home, '.fabric');
   const walletPath = path.join(store, 'wallet.json');
   const environment = new Environment({ home, path: walletPath, store, lockTimeoutMinutes: 0 });
   environment.start();
-  return { home, store, walletPath, environment };
+  const handle = { home, store, walletPath, environment };
+  liveIsolatedEnvs.push(handle);
+  return handle;
 }
 
 function withEnv (overrides, fn) {
@@ -1551,6 +1555,11 @@ describe('@fabric/core/functions/fabricSetup', function () {
     else process.env.FABRIC_XPRV = prevXprv;
     if (prevXpub === undefined) delete process.env.FABRIC_XPUB;
     else process.env.FABRIC_XPUB = prevXpub;
+    while (liveIsolatedEnvs.length) {
+      const { home, environment } = liveIsolatedEnvs.pop();
+      try { environment.stop(); } catch (_) { /* already stopped */ }
+      try { fs.rmSync(home, { recursive: true, force: true }); } catch (_) { /* already removed */ }
+    }
   });
 
   describe('resolveSetupPath', function () {

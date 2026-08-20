@@ -347,7 +347,11 @@ class Filesystem extends Actor {
    * @returns {void}
    */
   _notePublishedName (name) {
-    const top = String(name || '').split(/[/\\]/).filter(Boolean)[0];
+    const resolved = this._resolveContained(name);
+    if (!resolved) return;
+    const rel = path.relative(this.path, resolved);
+    if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) return;
+    const top = rel.split(path.sep).filter(Boolean)[0];
     if (!top || top === '.fabric') return;
     if (!Array.isArray(this._state.content.files)) this._state.content.files = [];
     const files = this._state.content.files;

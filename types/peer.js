@@ -2095,6 +2095,12 @@ class Peer extends Service {
       return this;
     }
     if (type === 'P2P_MUSIG_SEND_PROPOSAL') {
+      const initiatorPk = session.pubkeys && session.pubkeys[session.initiatorIndex];
+      const initiatorXOnly = initiatorPk ? musig2Session.xOnlyHex(initiatorPk) : '';
+      if (!initiatorXOnly || String(signerXOnly).toLowerCase() !== initiatorXOnly) {
+        this.emit('warning', `[FABRIC:PEER] SEND_PROPOSAL rejected: not-initiator`);
+        return this;
+      }
       const set = musig2Session.setAggNonce(session, body.aggnonce);
       if (!set.ok) {
         this.emit('warning', `[FABRIC:PEER] SEND_PROPOSAL rejected: ${set.reason}`);

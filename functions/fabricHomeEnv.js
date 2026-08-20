@@ -197,7 +197,7 @@ function readTokenFile (filePath) {
  * @param {NodeJS.ProcessEnv} [env]
  * @param {Object} [opts]
  * @param {string} [opts.tokenPath]
- * @returns {Object} `token`, `source`, and optional `path` when read from a file
+ * @returns {{token: string, source: (string|null)}|{token: string, source: string, path: string}}
  */
 function readHubAdminToken (env = process.env, opts = {}) {
   const direct = String(

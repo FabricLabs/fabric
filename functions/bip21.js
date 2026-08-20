@@ -18,7 +18,11 @@ function formatAmount (amount) {
     if (!Number.isFinite(amount) || amount < 0) {
       throw new RangeError('BIP21 amount must be a non-negative BTC value');
     }
-    return amount.toFixed(8);
+    const formatted = amount.toFixed(8);
+    if (Number(formatted) !== amount) {
+      throw new RangeError('BIP21 amount must be a non-negative BTC value');
+    }
+    return formatted;
   }
   const s = String(amount).trim();
   if (!s || !/^\d+(\.\d+)?$/.test(s)) {

@@ -169,6 +169,15 @@ describe('@fabric/core/types/filesystem', function () {
       }
     });
 
+    it('tracks the store-relative name when publish is given an absolute path', async function () {
+      await filesystem.start();
+      const abs = path.join(path.resolve(testDir), 'abs-note.txt');
+      await filesystem.publish(abs, 'payload');
+      assert.ok(filesystem.files.includes('abs-note.txt'));
+      assert.ok(!filesystem.files.some((name) => name === 'Users' || name === 'home'));
+      assert.strictEqual(fs.readFileSync(path.join(testDir, 'abs-note.txt'), 'utf8'), 'payload');
+    });
+
     it('publish fails closed when writeFile returns false', async function () {
       await filesystem.start();
       const originalWrite = filesystem.writeFile;

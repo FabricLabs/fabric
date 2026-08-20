@@ -2840,4 +2840,31 @@ describe('@fabric/core Peer P2P_MUSIG_*', function () {
     assert.strictEqual(alice._musigSessions.size, 0);
     assert.ok(held.every((b) => b === 0));
   });
+
+  it('rejects SEND_PROPOSAL unless AMP signer is the session initiator', function () {
+    const { peer: alice } = makePeer('alice');
+    const { peer: bob } = makePeer('bob');
+    const { aliceAddr, bobAddr, aliceWrites, bobWrites } = wirePair(alice, bob);
+    const started = alice.startMusig2({
+      dest: bob.key.pubkey,
+      msg: Buffer.from('proposal-role'),
+      purpose: 'test'
+    });
+    assert.ok(started);
+    exchange(aliceWrites, bob, aliceAddr, bobWrites, alice, bobAddr);
+    const session = alice._musigGet(started.sessionId);
+    assert.ok(session && session.aggnonce);
+    const warnings = [];
+    alice.on('warning', (m) => warnings.push(String(m)));
+    const body = {
+      sessionId: started.sessionId,
+      aggnonce: Buffer.from(session.aggnonce).toString('hex')
+    };
+    const msg = Message.fromVector(['P2P_MUSIG_SEND_PROPOSAL', JSON.stringify(body)]).signWithKey(bob.key);
+    alice._handleFabricMessage(msg.toBuffer(), { name: bobAddr }, null);
+    assert.ok(
+      warnings.some((w) => /SEND_PROPOSAL rejected: not-initiator/i.test(w)),
+      `expected not-initiator warning, got: ${warnings.join(' | ')}`
+    );
+  });
 });

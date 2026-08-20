@@ -268,6 +268,14 @@ describe('@fabric/core/functions/bip21', function () {
     assert.throws(() => encodeBitcoinUri({ address: 'bc1qxx', amount: -1 }), /non-negative/);
     assert.throws(() => encodeBitcoinUri({ address: 'bc1q?bad' }), /\? or #/);
     assert.throws(() => encodeBitcoinUri({ address: 'bc1qxx', amount: '1btc' }), /decimal BTC/);
+    assert.throws(
+      () => encodeBitcoinUri({ address: 'bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4', amount: 0.000000009 }),
+      /non-negative BTC/
+    );
+    assert.throws(
+      () => encodeBitcoinUri({ address: 'bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4', amount: 0.000000004 }),
+      /non-negative BTC/
+    );
     assert.throws(() => parseBitcoinUri('https://example.test'), /bitcoin:/);
     assert.throws(() => parseBitcoinUri('bitcoin:addr?amount=-1'), /amount is invalid/);
     assert.throws(

@@ -798,6 +798,7 @@ describe('Hub crash-report follow-ups (core)', function () {
   it('applyP2pAddNodes treats RPC -23 already-added as success', async function () {
     const btc = Object.create(Bitcoin.prototype);
     btc.settings = { debug: false, network: 'regtest' };
+    btc._normalizeP2pPeerAddress = Bitcoin.prototype._normalizeP2pPeerAddress;
     btc._makeRPCRequest = async function () {
       throw new Error('addnode failed hub.fabric.pub:18444: [-23] Node already added');
     };

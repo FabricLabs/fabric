@@ -470,13 +470,10 @@ describe('@fabric/core Peer adversarial hardening', function () {
   });
 });
 
-/**
- * @fileoverview RC1 first-tier contract — the four production-readiness "green" domains.
- *
- * These invariants are what a score of 100 means for a shared hostile mesh:
- * wire integrity, gossip/peering bounds, peer scoring/bans, identity/wallets.
- * Existing suites cover most of this; this file locks the remaining edges.
- */
+// RC1 first-tier contract — the four production-readiness "green" domains.
+// These invariants are what a score of 100 means for a shared hostile mesh:
+// wire integrity, gossip/peering bounds, peer scoring/bans, identity/wallets.
+// Existing suites cover most of this; this file locks the remaining edges.
 
 const fs = require('fs');
 const os = require('os');
@@ -972,14 +969,10 @@ describe('@fabric/core RC1 first-tier contract', function () {
   });
 });
 
-/**
- * @fileoverview Coverage locks from FabricLabs/fabric PR review comments.
- *
- * Sources: [#185](https://github.com/FabricLabs/fabric/pull/185) (open — Codecov
- * 57 missing patch lines; unresolved Bugbot/CodeRabbit threads) and closed [#183](https://github.com/FabricLabs/fabric/pull/183).
- * Heavy-lift product work (isolatePeerContent collections, unique Service commit
- * ids, Blessed TUI markup) stays deferred in docs/OUTSTANDING.md.
- */
+// Coverage locks from FabricLabs/fabric PR review comments.
+// Sources: PR #185 (open) and closed PR #183. Heavy-lift product work
+// (isolatePeerContent collections, unique Service commit ids, Blessed TUI
+// markup) stays deferred in docs/OUTSTANDING.md.
 
 const { EventEmitter } = require('events');
 
