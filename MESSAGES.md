@@ -261,6 +261,8 @@ Classifier: [`functions/fabricChatKind.js`](functions/fabricChatKind.js)
 
 Canonical policy list: [`functions/gossipNetwork.js`](functions/gossipNetwork.js).
 Validate-and-relay node: `node scripts/gossip-relay.js` (one Peer, no Hub/Bitcoin).
+Walkthroughs (open in a browser): [`examples/gossip-network/index.html`](examples/gossip-network/index.html)
+— gossip mesh, then [Application Resource Contracts](examples/gossip-network/arc.html).
 
 | Policy | Types | Peer behaviour |
 |---|---|---|
@@ -315,18 +317,26 @@ paths were each inventing.
   "v": 1,
   "count": 2,
   "root": "<sha256 of concatenated ordered body hashes>",
+  "merkleRoot": "<Bitcoin-style Tree over sorted frame ids>",
   "messages": [
-    { "hash": "<64-hex body hash>", "hex": "<AMP frame>", "type": "P2P_CHAT_MESSAGE" },
-    { "hash": "…", "hex": "…", "type": "CONTRACT_MESSAGE", "appType": "GroupDataShare", "contract": "…" }
+    { "hash": "<64-hex body hash>", "id": "<64-hex frame id>", "parent": "<64-hex or zeros>", "genesis": true, "hex": "<AMP frame>", "type": "P2P_CHAT_MESSAGE" },
+    { "hash": "…", "id": "…", "parent": "<previous id>", "genesis": false, "hex": "…", "type": "CONTRACT_MESSAGE", "appType": "GroupDataShare", "contract": "…" }
   ]
 }
 ```
 
 - **`hash`** — header field = double-SHA256(body). Frames whose header does not
   match are dropped (`body-hash-mismatch`), same as Peer.
-- **`root`** — SHA-256 of the **ordered** hashes. Arrival order is committed.
+- **`id`** — SHA-256 of the complete AMP frame (`Message.id`). This is what the
+  next message stores in header `parent`.
+- **`parent`** — previous frame `id`, or 32 zero bytes at genesis. Walk with
+  `walkParentChain` / `sortByParent`.
+- **`root`** — SHA-256 of the **ordered** body hashes. Arrival order is committed.
   ARC fold may still sort by hash; a different `root` can still fold to the
   same tip digest.
+- **`merkleRoot`** — Bitcoin-style `Tree` over **sorted** frame ids. Inclusion /
+  non-inclusion: `inclusionProof` / `nonInclusionProof`. Non-inclusion checks
+  adjacency against the leaf set (`sortLeaves: true`).
 - **JSONL** — one `{ hash, hex, … }` (or raw hex) per line for append-only logs.
 
 ### API

@@ -16,15 +16,7 @@ const {
   clampMaxEntries
 } = require('../functions/contractMessageQueue');
 const { ingestMessageBuffer } = require('../functions/contractMessageAccumulate');
-
-function signContractMessage (key, contractId, type, object) {
-  const body = JSON.stringify({
-    contract: contractId,
-    type,
-    object
-  });
-  return Message.fromVector(['CONTRACT_MESSAGE', body]).signWithKey(key);
-}
+const { signContractMessage } = require('./fixtures/contractMessage');
 
 describe('@fabric/core contractMessageQueue', function () {
   const contractId = 'd'.repeat(64);
@@ -119,8 +111,11 @@ describe('@fabric/core contractMessageQueue', function () {
       if (i < 2) markDelivered(store, contractId, r.entry.hash, 'early-peer');
     }
     const rows = listQueuedMessages(store, contractId, { includeDelivered: true });
-    assert.ok(rows.length <= 3);
-    assert.ok(rows.length >= 1);
-    assert.ok(DEFAULT_MAX_ENTRIES >= 3);
+    assert.strictEqual(rows.length, 3);
+    // Delivered rows (the first two) are evicted first, so the last three remain.
+    assert.deepStrictEqual(
+      rows.map((r) => r.hash).sort(),
+      hashes.slice(2).sort()
+    );
   });
 });

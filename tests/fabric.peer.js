@@ -9,6 +9,7 @@ const Actor = require('../types/actor');
 const assert = require('assert');
 const net = require('net');
 const { EventEmitter } = require('events');
+const { PassThrough } = require('stream');
 
 // Node configs may be JSON (node-a.json) or JS; resolve accordingly
 let NODEA, NODEB;
@@ -2871,5 +2872,88 @@ describe('@fabric/core Peer P2P_MUSIG_*', function () {
       warnings.some((w) => /SEND_PROPOSAL rejected: not-initiator/i.test(w)),
       `expected not-initiator warning, got: ${warnings.join(' | ')}`
     );
+  });
+
+  describe('NOISE handshake timeouts and teardown', function () {
+    it('countNoiseHandshakeListeners reports shared bus counts and falls back cleanly', function () {
+      const peer = new Peer({ listen: false, peersDb: null });
+      const counts = peer.countNoiseHandshakeListeners();
+      assert.ok(counts && typeof counts === 'object');
+      for (const key of ['write', 'read', 'split']) {
+        assert.ok(Number.isInteger(counts[key]), `count ${key} must be an integer`);
+      }
+
+      const noiseModule = require('../functions/noiseProtocolStream');
+      const original = noiseModule.countHandshakeListeners;
+      noiseModule.countHandshakeListeners = undefined;
+      try {
+        assert.deepStrictEqual(peer.countNoiseHandshakeListeners(), { write: 0, read: 0, split: 0 });
+      } finally {
+        noiseModule.countHandshakeListeners = original;
+      }
+    });
+
+    it('_destroyFabric tears down a socket at most once', function () {
+      const peer = new Peer({ listen: false, peersDb: null });
+      const target = '127.0.0.1:48901';
+      const sock = new EventEmitter();
+      peer.connections[target] = sock;
+      let closes = 0;
+      peer.on('connections:close', () => closes++);
+      peer._destroyFabric(sock, target);
+      assert.strictEqual(sock._fabricDestroyed, true);
+      assert.ok(!peer.connections[target]);
+      peer._destroyFabric(sock, target);
+      assert.strictEqual(closes, 1);
+    });
+
+    it('destroys the outbound socket when the NOISE handshake stalls', async function () {
+      const originalCreateConnection = net.createConnection;
+      const peer = new Peer({ listen: false, peersDb: null, handshakeTimeout: 25 });
+      const warnings = [];
+      peer.on('warning', (m) => warnings.push(String(m)));
+
+      const sock = new PassThrough();
+      sock.setTimeout = function () {};
+      sock.unref = function () {};
+      net.createConnection = function () { return sock; };
+      try {
+        peer._connect('127.0.0.1:48902');
+        sock.emit('connect');
+        // Connect-stage timeout listener is removed; handshake-stage listener is armed.
+        sock.emit('timeout');
+        assert.ok(
+          warnings.some((w) => w.includes('NOISE handshake')),
+          `expected handshake timeout warning, got: ${warnings.join(' | ')}`
+        );
+        assert.strictEqual(sock.destroyed, true);
+        await new Promise((resolve) => setImmediate(resolve));
+        assert.ok(!peer.connections['127.0.0.1:48902']);
+      } finally {
+        net.createConnection = originalCreateConnection;
+        if (!sock.destroyed) sock.destroy();
+      }
+    });
+
+    it('destroys inbound sockets that never complete the NOISE handshake', async function () {
+      const peer = new Peer({ listen: false, peersDb: null, handshakeTimeout: 25 });
+      const warnings = [];
+      peer.on('warning', (m) => warnings.push(String(m)));
+
+      const sock = new PassThrough();
+      sock.remoteAddress = '127.0.0.1';
+      sock.remotePort = 48903;
+      sock.setTimeout = function () {};
+      peer._NOISESocketHandler(sock);
+      assert.ok(peer.connections['127.0.0.1:48903']);
+      sock.emit('timeout');
+      assert.ok(
+        warnings.some((w) => w.includes('Inbound NOISE handshake timeout')),
+        `expected inbound handshake timeout warning, got: ${warnings.join(' | ')}`
+      );
+      assert.strictEqual(sock.destroyed, true);
+      await new Promise((resolve) => setImmediate(resolve));
+      assert.ok(!peer.connections['127.0.0.1:48903']);
+    });
   });
 });

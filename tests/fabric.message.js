@@ -80,6 +80,25 @@ describe('@fabric/core/types/message', function () {
       assert.strictEqual(message.type, 'P2P_CALL');
     });
 
+    it('chains parent to the previous signed Message.id (genesis is zeros)', function () {
+      const genesis = Message.fromVector(['P2P_CHAT_MESSAGE', 'first']);
+      assert.strictEqual(genesis.parent, Message.ZERO_PARENT);
+      assert.ok(Message.isZeroParent(genesis.parent));
+      genesis.signWithKey(key);
+
+      const child = Message.fromVector(['P2P_CHAT_MESSAGE', 'second', genesis]);
+      assert.strictEqual(child.parent, genesis.id);
+      child.signWithKey(key);
+      assert.ok(child.verifyWithKey(key));
+
+      const restored = Message.fromBuffer(child.toBuffer());
+      assert.strictEqual(restored.parent, genesis.id);
+      assert.ok(restored.verifyWithKey(key));
+
+      restored.parent = Message.ZERO_PARENT;
+      assert.ok(!restored.verifyWithKey(key));
+    });
+
     it('exposes wireType, friendlyType, and JSON-oriented toObject().type', function () {
       const m = Message.fromVector(['Call', JSON.stringify(example.data)]);
       assert.strictEqual(m.wireType, 'P2P_CALL');

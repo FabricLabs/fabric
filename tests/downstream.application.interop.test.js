@@ -100,13 +100,7 @@ function hubPlaynetDefinition (ownerKey) {
   };
 }
 
-function signContractMessage (key, contractId, type, object) {
-  return Message.fromVector(['CONTRACT_MESSAGE', JSON.stringify({
-    contract: contractId,
-    type,
-    object
-  })]).signWithKey(key);
-}
+const { signContractMessage } = require('./fixtures/contractMessage');
 
 /**
  * Canonical proposal signing string used by application vote helpers.
@@ -146,6 +140,16 @@ function applicationProposalSigningString (proposal) {
 }
 
 describe('application ARC interop (Hub + Federation groups)', function () {
+  const peers = [];
+
+  afterEach(async function () {
+    while (peers.length) {
+      const instance = peers.pop();
+      instance.removeAllListeners();
+      if (typeof instance.stop === 'function') await instance.stop();
+    }
+  });
+
   it('proposal signing string is byte-identical to application vote helpers', function () {
     const a = new Key();
     const recruit = new Key();
@@ -330,7 +334,8 @@ describe('application ARC interop (Hub + Federation groups)', function () {
       contractId,
       overrides: { network: 'regtest' }
     });
-    assert.ok(spend.spendAddress || spend.address);
+    assert.strictEqual(typeof spend.spendAddress, 'string');
+    assert.ok(spend.spendAddress.length > 0);
     const genesis = normalizeGenesis(definition);
     assert.ok(genesis.signers.includes(pubkeyXOnly(owner.pubkey)));
     assert.ok(genesis.primitives.messageTypes.includes('GroupChangeProposal'));
@@ -360,6 +365,7 @@ describe('application ARC interop (Hub + Federation groups)', function () {
 
   it('Peer contract:message messageHex folds into accumulate (app relay path)', function () {
     const peer = new Peer({ listen: false, peersDb: null, networking: false });
+    peers.push(peer);
     const owner = new Key();
     const origin = '127.0.0.1:3041';
     peer.connections[origin] = { _writeFabric () {}, destroy () {} };
@@ -401,6 +407,7 @@ describe('application ARC interop (Hub + Federation groups)', function () {
 
   it('attacker cannot front-run a FederationGroup publish (proposedPolicy authorities)', function () {
     const peer = new Peer({ listen: false, peersDb: null, networking: false });
+    peers.push(peer);
     const owner = new Key();
     const attacker = new Key();
     const def = federationGroupDefinition(owner);

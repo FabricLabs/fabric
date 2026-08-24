@@ -454,6 +454,10 @@ const {
   fromJSONL,
   replay,
   replayFold,
+  walkParentChain,
+  merkleTreeOf,
+  inclusionProof,
+  nonInclusionProof,
   writeFile,
   readFile,
   runCli,
@@ -730,5 +734,32 @@ describe('@fabric/core/functions/fabricMessageCollection', function () {
     assert.strictEqual(resolveCollectionFilePath(abs), path.normalize(abs));
     const collection = createCollection();
     assert.throws(() => writeFile('../etc/passwd', collection), /invalid collection path/);
+  });
+
+  it('records parent/id, walks the chain, and proves merkle inclusion', function () {
+    const key = new Key();
+    const first = signChat(key, 'stack-one');
+    const second = Message.fromVector(['P2P_CHAT_MESSAGE', 'stack-two', first]).signWithKey(key);
+    const collection = createCollection();
+    ingest(collection, first);
+    ingest(collection, second);
+    assert.strictEqual(collection.messages[0].genesis, true);
+    assert.strictEqual(collection.messages[1].parent, first.id);
+    assert.strictEqual(collection.messages[1].id, second.id);
+
+    const walked = walkParentChain(collection.messages, second.id);
+    assert.strictEqual(walked.length, 2);
+    assert.strictEqual(walked[0].id, first.id);
+    assert.strictEqual(walked[1].id, second.id);
+
+    const doc = toJSON(collection);
+    assert.ok(doc.merkleRoot && doc.merkleRoot.length === 64);
+    const hit = inclusionProof(collection, second.id);
+    assert.strictEqual(hit.included, true);
+    const tree = merkleTreeOf(collection.messages);
+    assert.ok(tree.verifyInclusion(hit));
+    const gap = nonInclusionProof(collection, 'ab'.repeat(32));
+    assert.strictEqual(gap.included, false);
+    assert.ok(tree.verifyNonInclusion(gap));
   });
 });

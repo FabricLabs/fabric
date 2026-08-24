@@ -35,6 +35,7 @@ Fabric protocol coin types: **7777** (Bitcoin mainnet), **7778** (all others). S
 | [VISION.md](VISION.md) | Product vision, architecture snapshot, documentation map |
 | [DEVELOPERS.md](DEVELOPERS.md) | Repo layout, tests, core types, storage |
 | [PROTOCOL.md](PROTOCOL.md) | Wire entry → [docs/MESSAGE_BODY.md](docs/MESSAGE_BODY.md) |
+| [examples/gossip-network/index.html](examples/gossip-network/index.html) | Walkthroughs: public gossip mesh, then Application Resource Contracts |
 | [docs/BOLT_COMPATIBILITY.md](docs/BOLT_COMPATIBILITY.md) | Lightning BOLT #1–#12 vs `lightningd` / `Lightning` |
 | [docs/FABRIC_LIGHTNING_OFFERS.md](docs/FABRIC_LIGHTNING_OFFERS.md) | Fabric **markets** vs BOLT12; `Lightning.Bolt12` |
 | [docs/FABRIC_PAYMENT_BECH32.md](docs/FABRIC_PAYMENT_BECH32.md) | Fabric-routed payments `fa1…`; `Lightning.FabricPayment` |

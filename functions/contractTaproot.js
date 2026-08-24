@@ -1390,6 +1390,96 @@ function finalizeHashlockPsbt (opts = {}) {
 }
 
 /**
+ * Collect x-only pubkeys from a k-of-n spend tapscript (`CHECKSIG` /
+ * `CHECKSIGADD`), skipping a leading CSV/CLTV prefix when present.
+ * @param {Buffer|Uint8Array} scriptBuf
+ * @returns {Buffer[]}
+ */
+function parseXOnlyPubkeysFromSpendScript (scriptBuf) {
+  const raw = Buffer.isBuffer(scriptBuf) ? scriptBuf : Buffer.from(scriptBuf || []);
+  const chunks = script.decompile(raw) || [];
+  const keys = [];
+  for (let i = 0; i < chunks.length - 1; i++) {
+    const chunk = chunks[i];
+    const op = chunks[i + 1];
+    const asBuf = Buffer.isBuffer(chunk)
+      ? chunk
+      : (chunk instanceof Uint8Array ? Buffer.from(chunk) : null);
+    if (
+      asBuf &&
+      asBuf.length === 32 &&
+      (op === script.OPS.OP_CHECKSIG || op === script.OPS.OP_CHECKSIGADD)
+    ) {
+      keys.push(Buffer.from(asBuf));
+    }
+  }
+  return keys;
+}
+
+/**
+ * Finalize a k-of-n (CHECKSIG / CHECKSIGADD) script-path PSBT after co-signers
+ * have called `signInput`. Unused keys become empty witness elements (BIP342).
+ *
+ * Witness stack (before script + control block) is signatures in **reverse**
+ * script-pubkey order so the first `CHECKSIG` pops the last stack item.
+ *
+ * @param {object} opts
+ * @param {string} [opts.psbtBase64]
+ * @param {object} [opts.psbt] bitcoinjs-lib `Psbt`
+ * @returns {{ txHex: string, txid: string, witnessCount: number }}
+ */
+function finalizeSpendPsbt (opts = {}) {
+  const psbt = opts.psbt
+    ? opts.psbt
+    : Psbt.fromBase64(String(opts.psbtBase64 || '').trim());
+
+  psbt.finalizeInput(0, (_inputIndex, input) => {
+    const leaf = (input.tapLeafScript || [])[0];
+    if (!leaf || !leaf.script || !leaf.controlBlock) {
+      throw new Error('finalizeSpendPsbt: missing tapLeafScript on PSBT input');
+    }
+    const scriptBuf = Buffer.from(leaf.script);
+    const control = Buffer.from(leaf.controlBlock);
+    const pubkeys = parseXOnlyPubkeysFromSpendScript(scriptBuf);
+    if (!pubkeys.length) {
+      throw new Error('finalizeSpendPsbt: no CHECKSIG pubkeys in leaf script');
+    }
+    const lh = Buffer.from(bip341.tapleafHash({
+      output: leaf.script,
+      version: leaf.leafVersion
+    }));
+    const sigByX = new Map();
+    for (const tss of input.tapScriptSig || []) {
+      if (!tss || !tss.leafHash || !tss.pubkey || !tss.signature) continue;
+      if (!Buffer.from(tss.leafHash).equals(lh)) continue;
+      const pk = Buffer.from(tss.pubkey);
+      const x = pk.length === 33 ? pk.subarray(1, 33) : pk;
+      if (x.length !== 32) continue;
+      const sig = Buffer.from(tss.signature);
+      sigByX.set(x.toString('hex'), sig.length >= 64 ? sig.subarray(0, 64) : sig);
+    }
+    const stack = [];
+    for (let i = pubkeys.length - 1; i >= 0; i--) {
+      const sig = sigByX.get(pubkeys[i].toString('hex'));
+      stack.push(sig && sig.length ? sig : Buffer.alloc(0));
+    }
+    const signed = [...sigByX.keys()].length;
+    if (signed < 1) {
+      throw new Error('finalizeSpendPsbt: no tapscript signatures on input');
+    }
+    const witness = stack.concat([scriptBuf, control]);
+    return { finalScriptWitness: psbtutils.witnessStackToScriptWitness(witness) };
+  });
+
+  const extracted = psbt.extractTransaction();
+  return {
+    txHex: extracted.toHex(),
+    txid: extracted.getId(),
+    witnessCount: extracted.ins[0].witness.length
+  };
+}
+
+/**
  * Authority P2TR vault from validator/signer set.
  *
  * **Default (RC):** 2-tier ladder — k-of-n authority now; softer rule after
@@ -1606,6 +1696,8 @@ module.exports = {
   prepareDecayMigrationPsbt,
   prepareHashlockWithdrawalPsbt,
   finalizeHashlockPsbt,
+  finalizeSpendPsbt,
+  parseXOnlyPubkeysFromSpendScript,
   buildFederationVaultFromPolicy,
   prepareVaultWithdrawalPsbt,
   buildVaultControlBlock,

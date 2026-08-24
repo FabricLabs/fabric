@@ -107,6 +107,7 @@ const Hash256 = require('./hash256');
 // Function Definitions
 const padDigits = require('../functions/padDigits');
 const taggedHash = require('../functions/taggedHash');
+const fabricMessageParent = require('../functions/fabricMessageParent');
 
 /**
  * **Two parallel type names:**
@@ -451,7 +452,8 @@ class Message extends Actor {
    * Build a message from an object. Prefer <code>type</code>/<code>data</code>; <code>@type</code> / <code>@data</code>
    * are accepted for backward compatibility.
    * @param {Object} [input={}] Initial fields: <code>type</code> or <code>@type</code>, <code>data</code> or
-   * <code>@data</code>, optional <code>signer</code>, <code>sensitive</code>, <code>preimage</code>.
+   * <code>@data</code>, optional <code>parent</code> (previous {@link Message#id} or 32 zero bytes),
+   * <code>signer</code>, <code>sensitive</code>, <code>preimage</code>.
    * @return {Message} Instance ready for {@link Message#asRaw}, {@link Message#signWithKey}, etc.
    */
   constructor (input = {}) {
@@ -509,6 +511,7 @@ class Message extends Actor {
     }
 
     if (input.preimage != null) this.preimage = input.preimage;
+    if (input.parent != null) this.parent = input.parent;
 
     // Log HEARTBEAT message creation to track origin
     if (this.type === 'HEARTBEAT' || messageType === 'HEARTBEAT') {
@@ -547,6 +550,22 @@ class Message extends Actor {
 
   get author () {
     return this.raw.author.toString('hex');
+  }
+
+  /**
+   * Previous signed frame id (SHA-256 of that AMP buffer), or 32 zero bytes at genesis.
+   * Covered by {@link Message#signWithKey} — set before signing.
+   * @returns {string} 64-char hex
+   */
+  get parent () {
+    if (!this.raw || !Buffer.isBuffer(this.raw.parent) || this.raw.parent.length !== 32) {
+      return Message.ZERO_PARENT;
+    }
+    return this.raw.parent.toString('hex');
+  }
+
+  set parent (value) {
+    fabricMessageParent.setMessageParent(this, value);
   }
 
   get body () {
@@ -922,10 +941,12 @@ class Message extends Actor {
   }
 
   static fromVector (vector = ['LogMessage', 'No vector provided.']) {
-    return new Message({
+    const input = {
       type: vector[0],
       data: vector[1]
-    });
+    };
+    if (vector.length > 2 && vector[2] != null) input.parent = vector[2];
+    return new Message(input);
   }
 
   /**
@@ -977,6 +998,12 @@ class Message extends Actor {
     return `<Message | ${JSON.stringify(this.raw)}>`;
   } */
 
+  /**
+   * SHA-256 of the complete signed AMP frame. This is what the next message
+   * stores in {@link Message#parent} (not header <code>hash</code>, which is
+   * only double-SHA256 of the body).
+   * @returns {string} 64-char hex
+   */
   get id () {
     return Hash256.digest(this.asRaw());
   }
@@ -1448,6 +1475,9 @@ function tryParseMessageBody (message) {
 
 Message.FIELD_TYPES = BODY_FIELD_TYPES;
 Message.MAX_MESSAGE_SIZE = MAX_MESSAGE_SIZE;
+Message.ZERO_PARENT = fabricMessageParent.ZERO_PARENT;
+Message.isZeroParent = fabricMessageParent.isZeroParent;
+Message.normalizeParent = fabricMessageParent.normalizeParentHex;
 Message.registerBodySchema = registerBodySchema;
 Message.getBodySchema = getBodySchema;
 Message.encodeBody = encodeBody;

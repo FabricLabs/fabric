@@ -12,6 +12,7 @@ canonical protocol definition for `@fabric/core` 0.1.x.**
 | [MESSAGES.md](MESSAGES.md) | Message semantics and opcodes |
 | [SECURITY.md](SECURITY.md) | Gossip / peering-offer amplification bounds |
 | [PUBLIC_API.md](PUBLIC_API.md) | Frozen leaf imports for 0.1 consumers |
+| [examples/gossip-network/index.html](examples/gossip-network/index.html) | Walkthroughs: public gossip mesh, then Application Resource Contracts |
 
 Do **not** treat older header sketches in this file’s git history as normative.
 Historical drafts and analysis notes are listed in [docs/NON_CANONICAL.md](docs/NON_CANONICAL.md).
@@ -24,7 +25,7 @@ Historical drafts and analysis notes are listed in [docs/NON_CANONICAL.md](docs/
 |--------|------|--------|
 | 0 | 4 | magic |
 | 4 | 4 | version (`0x01`) |
-| 8 | 32 | parent |
+| 8 | 32 | parent | Previous `Message.id` or genesis zeros |
 | 40 | 32 | author |
 | 72 | 4 | type (opcode) |
 | 76 | 4 | size |
@@ -54,7 +55,9 @@ Gossip discovery uses first-class opcodes `P2P_PEER_GOSSIP` / `P2P_PEERING_OFFER
 with hop TTL and per-origin relay budgets ([SECURITY.md](SECURITY.md)).
 Which AMP types are public flood vs directed/session is
 [`functions/gossipNetwork.js`](functions/gossipNetwork.js)
-(`node scripts/gossip-relay.js --list-types`).
+(`node scripts/gossip-relay.js --list-types`). First-principles pictures:
+open [`examples/gossip-network/index.html`](examples/gossip-network/index.html)
+(gossip, then ARC).
 
 ## Compute & contracts
 

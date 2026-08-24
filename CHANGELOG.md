@@ -1,7 +1,11 @@
 # `@fabric/core` Changelog
 Recent changes to Fabric Core.
 
+## 2026-08-24
+- **PR #186 codecov/patch:** cover the remaining patch misses — bitcoind stderr line buffering (`fatal` / `exception` classification, split-chunk joins, trailing-fragment flush on `end`/`close`, empty-buffer no-op), child `error` / cleanup-failure / process-attribution handlers via `_emitErrorSafe`, and child stdout/close logging (`tests/bitcoin/service.deep.js`). Peer: `countNoiseHandshakeListeners` (incl. missing-helper fallback), idempotent `_destroyFabric`, stalled outbound + inbound NOISE handshake timeouts (`tests/fabric.peer.js`). Review quick wins: shared `tests/fixtures/contractMessage.js` `signContractMessage`, queue trim asserts exact surviving hashes, interop suite stops its Peers and asserts the concrete `resolveSpend` `spendAddress`, ambient `functions/gossipNetwork.d.ts`.
+
 ## 2026-08-20
+- **Store.flush:** skip when the Level handle is not `open`; swallow `LEVEL_DATABASE_NOT_OPEN` if a stale handle still reports `open` (HTTP `localStore.stop()` during Hub teardown).
 - **PR #186 review (post-`aab3c98`):** `resolveSpend` reports the effective Taproot internal-key mode (one-validator `musig2` is NUMS). Gossip `RELAY_AS_IS_NUMERIC` includes contract/Bitcoin opcodes; relay settings keep extra constraint groups; `scripts/gossip-relay.js` prints frame counts and exits 1 on a failed stop. NOISE `freeNative` clears encrypt/decrypt native pointers and `onready` does not allocate after teardown.
 - **Bitcoin E2E isolation:** managed regtest mocha (`tests/bitcoin.regtest.js`, RPC command parity, `tests/bitcoin/service.js`) uses unique ports/datadir and `enforceIsolatedRegtest` so it does not bind `18443`/`18444` next to Hub or Polar. Bitcoind stderr `Error:` lines no longer `emit('error')` without a listener (`ERR_UNHANDLED_ERROR` + mocha `done()` twice when Core exits 1). Default RPC parity spawns that isolated node; Polar/external RPC is opt-in via `BITCOIN_RPC_*`.
 - **Lightning E2E payment:** `tests/lightning/lightning.service.js` uses an isolated regtest node (`enforceIsolatedRegtest`, unique ports/datadir) and funds Core Lightning from a named miner wallet via `_makeWalletRequest`. Node-level `sendtoaddress` after `lightningd` start was hitting an empty extra wallet (`[-6] Insufficient funds`).

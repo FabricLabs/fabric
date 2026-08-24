@@ -33,15 +33,7 @@ const {
   aggregatePhaseFlags,
   pendingForRelay
 } = require('../functions/contractMessageCommit');
-
-function signContractMessage (key, contractId, type, object) {
-  const body = JSON.stringify({
-    contract: contractId,
-    type,
-    object
-  });
-  return Message.fromVector(['CONTRACT_MESSAGE', body]).signWithKey(key);
-}
+const { signContractMessage } = require('./fixtures/contractMessage');
 
 describe('@fabric/core contractMessageAccumulate', function () {
   const contractId = 'c'.repeat(64);

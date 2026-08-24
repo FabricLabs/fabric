@@ -14,8 +14,13 @@ const {
   compileLeaves,
   prepareHashlockWithdrawalPsbt,
   finalizeHashlockPsbt,
+  prepareTierWithdrawalPsbt,
+  finalizeSpendPsbt,
   toAddress
 } = require('../functions/contractTaproot');
+const {
+  schnorrSignerFromKey
+} = require('./helpers/arcFederationE2e');
 
 describe('contractTaproot composable trees + hashlock', function () {
   const keys = [];
@@ -113,6 +118,41 @@ describe('contractTaproot composable trees + hashlock', function () {
     assert.ok(fin.txid);
     const spent = bitcoin.Transaction.fromHex(fin.txHex);
     assert.strictEqual(spent.ins[0].witness.length, 3);
+  });
+
+  it('2-of-3 t0-authority PSBT signs and finalizes (script-path witness)', function () {
+    const policy = synthesizeDefaultLadder({
+      validators: [pk(0), pk(1), pk(2)],
+      threshold: 2,
+      publisher: pk(0),
+      network: 'regtest',
+      csvBlocks: 3
+    });
+    const built = buildContractTaproot(policy);
+    const fund = new bitcoin.Transaction();
+    fund.version = 2;
+    fund.addInput(Buffer.alloc(32), 0);
+    fund.addOutput(built.output, 100000n);
+    const dest = bitcoin.payments.p2wpkh({
+      pubkey: Buffer.from(pk(3), 'hex'),
+      network: bitcoin.networks.regtest
+    }).address;
+    const prepared = prepareTierWithdrawalPsbt({
+      policy,
+      fundedTxHex: fund.toHex(),
+      vaultAddress: built.address,
+      destinationAddress: dest,
+      feeSats: 1000,
+      tierId: 't0-authority',
+      ctx: { utxoAgeBlocks: 0 }
+    });
+    const psbt = bitcoin.Psbt.fromBase64(prepared.psbtBase64);
+    psbt.signInput(0, schnorrSignerFromKey(keys[0]));
+    psbt.signInput(0, schnorrSignerFromKey(keys[1]));
+    const fin = finalizeSpendPsbt({ psbt });
+    assert.strictEqual(fin.witnessCount, 5);
+    const spent = bitcoin.Transaction.fromHex(fin.txHex);
+    assert.strictEqual(spent.ins[0].witness.length, 5);
   });
 
   it('compileLeaves appends extraLeaves after authority tiers', function () {

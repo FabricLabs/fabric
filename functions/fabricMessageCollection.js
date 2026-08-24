@@ -10,8 +10,12 @@
  *
  * Identity of a frame is the AMP body hash (double-SHA256 of the body, the
  * header `hash` field). Collection `root` is SHA-256 of the concatenated
- * ordered hashes so replay order is committed. ARC fold
- * (`contractMessageAccumulate`) may still sort by hash; those two commitments
+ * ordered hashes so replay order is committed. Each record also stores
+ * `id` (SHA-256 of the AMP frame = {@link Message#id}) and `parent` (previous
+ * frame id, or 32 zero bytes at genesis) so large stacks can be walked without
+ * timestamps. `merkleRoot` is a Bitcoin-style {@link Tree} over sorted frame
+ * ids (inclusion + non-inclusion). ARC fold
+ * (`contractMessageAccumulate`) may still sort by hash; those commitments
  * answer different questions.
  *
  * @module functions/fabricMessageCollection
@@ -51,6 +55,7 @@ function resolveCollectionFilePath (filePath) {
 
 const Message = require('../types/message');
 const Hash256 = require('../types/hash256');
+const Tree = require('../types/tree');
 const { HEADER_SIZE, MAX_MESSAGE_SIZE } = require('../constants');
 const {
   bufferFromPaste,
@@ -58,6 +63,12 @@ const {
   messageHashHex,
   authorXOnlyHex
 } = require('./contractMessageAccumulate');
+const {
+  ZERO_PARENT,
+  isZeroParent,
+  parentHexOf,
+  frameIdOf
+} = require('./fabricMessageParent');
 /** @private */
 const COLLECTION_TYPE = 'FabricMessageCollection';
 /** @private */
@@ -130,11 +141,16 @@ function recordFromMessage (message, meta = {}) {
   const hash = messageHashHex(message);
   const type = message.type || message.wireType || null;
   const author = authorXOnlyHex(message);
+  const id = frameIdOf(buffer) || frameIdOf(message);
+  const parent = parentHexOf(message);
   const record = {
     hash,
     hex: buffer.toString('hex'),
     type
   };
+  if (id) record.id = id;
+  if (parent) record.parent = parent;
+  record.genesis = isZeroParent(parent);
   if (author) record.author = author;
   const inner = parseContractMessageBody(message);
   if (inner) {
@@ -309,6 +325,137 @@ function rootOf (messages) {
 }
 
 /**
+ * @param {object[]} messages
+ * @returns {string[]}
+ * @private
+ */
+function frameIdsOf (messages) {
+  const ids = [];
+  const rows = Array.isArray(messages) ? messages : [];
+  for (const row of rows) {
+    const id = row && row.id != null ? String(row.id).toLowerCase() : '';
+    if (/^[0-9a-f]{64}$/.test(id)) ids.push(id);
+  }
+  return ids;
+}
+
+/**
+ * Bitcoin-style {@link Tree} over collection frame ids (sorted for non-inclusion).
+ * @param {object[]} messages
+ * @param {Object} [opts]
+ * @param {boolean} [opts.sortLeaves]
+ * @returns {Tree}
+ */
+function merkleTreeOf (messages, opts = {}) {
+  const ids = frameIdsOf(messages);
+  return new Tree({
+    leaves: ids.map((id) => Buffer.from(id, 'hex')),
+    sortLeaves: opts.sortLeaves !== false
+  });
+}
+
+/**
+ * Index records by frame id and by parent (children lists).
+ * @param {object[]} messages
+ * @returns {{ byId: Map, children: Map, roots: object[] }}
+ */
+function indexByParent (messages) {
+  const rows = Array.isArray(messages) ? messages : [];
+  const byId = new Map();
+  const children = new Map();
+  for (const row of rows) {
+    if (!row || !row.id) continue;
+    const id = String(row.id).toLowerCase();
+    byId.set(id, row);
+  }
+  const roots = [];
+  for (const row of rows) {
+    if (!row || !row.id) continue;
+    const parent = row.parent != null ? String(row.parent).toLowerCase() : ZERO_PARENT;
+    if (isZeroParent(parent) || !byId.has(parent)) {
+      roots.push(row);
+      continue;
+    }
+    if (!children.has(parent)) children.set(parent, []);
+    children.get(parent).push(row);
+  }
+  roots.sort((a, b) => String(a.id).localeCompare(String(b.id)));
+  for (const list of children.values()) {
+    list.sort((a, b) => String(a.id).localeCompare(String(b.id)));
+  }
+  return { byId, children, roots };
+}
+
+/**
+ * Walk from a tip back to genesis / missing parent (newest last).
+ * @param {object[]} messages
+ * @param {string} tipId
+ * @returns {object[]}
+ */
+function walkParentChain (messages, tipId) {
+  const { byId } = indexByParent(messages);
+  const start = String(tipId || '').toLowerCase();
+  const out = [];
+  const seen = new Set();
+  let cur = byId.get(start);
+  while (cur && cur.id && !seen.has(String(cur.id).toLowerCase())) {
+    seen.add(String(cur.id).toLowerCase());
+    out.push(cur);
+    const parent = cur.parent != null ? String(cur.parent).toLowerCase() : ZERO_PARENT;
+    if (isZeroParent(parent) || !byId.has(parent)) break;
+    cur = byId.get(parent);
+  }
+  return out.reverse();
+}
+
+/**
+ * Deterministic forest order: missing/zero parents first, then children by id.
+ * @param {object[]} messages
+ * @returns {object[]}
+ */
+function sortByParent (messages) {
+  const rows = Array.isArray(messages) ? messages : [];
+  const { children, roots } = indexByParent(rows);
+  const out = [];
+  const seen = new Set();
+  function visit (row) {
+    const id = row && row.id ? String(row.id).toLowerCase() : '';
+    if (!id || seen.has(id)) return;
+    seen.add(id);
+    out.push(row);
+    const kids = children.get(id) || [];
+    for (const kid of kids) visit(kid);
+  }
+  for (const root of roots) visit(root);
+  for (const row of rows) {
+    if (row && row.id && !seen.has(String(row.id).toLowerCase())) visit(row);
+  }
+  return out;
+}
+
+/**
+ * @param {object} collection
+ * @param {string} frameId
+ * @returns {object}
+ */
+function inclusionProof (collection, frameId) {
+  const messages = collection && collection.messages ? collection.messages : collection;
+  const tree = merkleTreeOf(messages);
+  return tree.proveInclusion(Buffer.from(String(frameId).toLowerCase(), 'hex'));
+}
+
+/**
+ * @param {object} collection
+ * @param {string} frameId
+ * @returns {object}
+ */
+function nonInclusionProof (collection, frameId) {
+  const messages = collection && collection.messages ? collection.messages : collection;
+  const tree = merkleTreeOf(messages);
+  return tree.proveNonInclusion(Buffer.from(String(frameId).toLowerCase(), 'hex'));
+}
+
+/**
  * Public JSON document (no `seen` set).
  * @param {object} collection
  * @returns {object}
@@ -316,11 +463,13 @@ function rootOf (messages) {
 function toJSON (collection) {
   const messages = (collection && Array.isArray(collection.messages) ? collection.messages : [])
     .map((row) => publicRecord(row));
+  const tree = merkleTreeOf(messages);
   return {
     type: COLLECTION_TYPE,
     v: SCHEMA_VERSION,
     count: messages.length,
     root: rootOf(messages),
+    merkleRoot: tree.rootHex || '',
     messages
   };
 }
@@ -336,6 +485,9 @@ function publicRecord (row) {
     hash: row.hash != null ? String(row.hash) : null,
     hex: row.hex != null ? String(row.hex) : ''
   };
+  if (row.id) out.id = String(row.id);
+  if (row.parent) out.parent = String(row.parent);
+  if (row.genesis === true || row.genesis === false) out.genesis = !!row.genesis;
   if (row.type) out.type = String(row.type);
   if (row.author) out.author = String(row.author);
   if (row.appType) out.appType = String(row.appType);
@@ -631,6 +783,12 @@ module.exports = {
   ingestText,
   recordsFromJournalEntries,
   rootOf,
+  merkleTreeOf,
+  indexByParent,
+  walkParentChain,
+  sortByParent,
+  inclusionProof,
+  nonInclusionProof,
   toJSON,
   fromJSON,
   toJSONL,

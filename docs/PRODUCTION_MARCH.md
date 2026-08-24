@@ -231,6 +231,10 @@ Execution order:
 ## Progress Log
 Use this section as an append-only log (newest first).
 
+### 2026-08-20
+- [#186](https://github.com/FabricLabs/fabric/pull/186) is the open `feature/rsi` wave after [#185](https://github.com/FabricLabs/fabric/pull/185) merged (`4db3be3`). HEAD **`9c6ade0`** (review follow-ups after **`aab3c98`**): effective Taproot `internalKeyMode` on `resolveSpend`, gossip numeric relay-as-is + constraint merge, NOISE native-pointer teardown, gossip-relay shutdown counts. Handshake-bus is **not** on live Hub pin **`f63a33f`** — Hub pin/redeploy before claiming RSS/NOISE is fixed.
+- Production Hub scan **10:39Z**: RSS tracks `external`/`arrayBuffers`, not named retainers. Do not raise `--max-old-space-size`.
+
 ### 2026-08-13
 - Core `3745041e` (wallet lock / Environment) is on GitHub `feature/rsi`; http `e167d8e` and Hub `5441f838` follow.
 - Added [OUTSTANDING.md](OUTSTANDING.md) as the security-first queue; Hub / http / Passport / GoonCitizen / Discord have matching files.

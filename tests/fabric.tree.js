@@ -36,5 +36,35 @@ describe('@fabric/core/types/tree', function () {
       assert.strictEqual(tree.rootHex, rebuilt.rootHex);
       assert.ok(tree.rootHex.length === 64);
     });
+
+    it('proves inclusion and sorted non-inclusion over 32-byte leaves', function () {
+      const leaves = [
+        Buffer.from('11'.repeat(32), 'hex'),
+        Buffer.from('33'.repeat(32), 'hex'),
+        Buffer.from('55'.repeat(32), 'hex'),
+        Buffer.from('77'.repeat(32), 'hex')
+      ];
+      const tree = new Tree({ leaves, sortLeaves: true });
+      const hit = tree.proveInclusion(leaves[2]);
+      assert.strictEqual(hit.included, true);
+      assert.ok(tree.verifyInclusion(hit));
+
+      const missing = Buffer.from('44'.repeat(32), 'hex');
+      const gap = tree.proveNonInclusion(missing);
+      assert.strictEqual(gap.included, false);
+      assert.strictEqual(gap.side, 'between');
+      assert.ok(tree.verifyNonInclusion(gap));
+
+      const before = tree.proveNonInclusion(Buffer.from('00'.repeat(32), 'hex'));
+      assert.strictEqual(before.side, 'before');
+      assert.ok(tree.verifyNonInclusion(before));
+
+      const after = tree.proveNonInclusion(Buffer.from('ff'.repeat(32), 'hex'));
+      assert.strictEqual(after.side, 'after');
+      assert.ok(tree.verifyNonInclusion(after));
+
+      const spoof = Object.assign({}, gap, { side: 'before', left: null, right: gap.right });
+      assert.strictEqual(tree.verifyNonInclusion(spoof), false);
+    });
   });
 });
