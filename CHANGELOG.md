@@ -2,6 +2,8 @@
 Recent changes to Fabric Core.
 
 ## 2026-08-24
+- **PR #186 CI smoke:** package `functions/fabricMessageParent.js` (Hub / Message `parent` chain). `types/message.js` already required it, so `npm run smoke` failed with `MODULE_NOT_FOUND` until the leaf was in the tree. Tests: `tests/functions.fabricMessageParent.js`.
+- **PR #186 review nits:** `isolatePeerContent` deep-copies top-level maps (not only `collections.documents`); gossip-relay extra constraint groups are copied (not aliased) and keep base `peers.shuffle`; directed `P2P_PING` asserts a single origin `P2P_PONG` and zero writes on other edges.
 - **PR #186 codecov/patch:** cover the remaining patch misses — bitcoind stderr line buffering (`fatal` / `exception` classification, split-chunk joins, trailing-fragment flush on `end`/`close`, empty-buffer no-op), child `error` / cleanup-failure / process-attribution handlers via `_emitErrorSafe`, and child stdout/close logging (`tests/bitcoin/service.deep.js`). Peer: `countNoiseHandshakeListeners` (incl. missing-helper fallback), idempotent `_destroyFabric`, stalled outbound + inbound NOISE handshake timeouts (`tests/fabric.peer.js`). Review quick wins: shared `tests/fixtures/contractMessage.js` `signContractMessage`, queue trim asserts exact surviving hashes, interop suite stops its Peers and asserts the concrete `resolveSpend` `spendAddress`, ambient `functions/gossipNetwork.d.ts`.
 
 ## 2026-08-20

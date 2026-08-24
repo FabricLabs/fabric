@@ -1000,7 +1000,7 @@ describe('@fabric/core RC1 PR-review coverage', function () {
 
   it('isolatePeerContent copies collections.documents without aliasing', function () {
     const original = {
-      documents: { doc1: { id: 'doc1' } },
+      documents: { doc1: { id: 'doc1', meta: { tags: ['x'] } } },
       collections: {
         documents: {
           doc1: { id: 'doc1', published: true, purchasePriceSats: 25, meta: { tags: ['a'] } }
@@ -1014,8 +1014,10 @@ describe('@fabric/core RC1 PR-review coverage', function () {
     assert.strictEqual(original.collections.documents.doc1.purchasePriceSats, 25);
     original.collections.documents.doc1.published = false;
     original.collections.documents.doc1.meta.tags.push('b');
+    original.documents.doc1.meta.tags.push('y');
     assert.strictEqual(peer._state.content.collections.documents.doc1.published, true);
     assert.deepStrictEqual(peer._state.content.collections.documents.doc1.meta.tags, ['a']);
+    assert.deepStrictEqual(peer._state.content.documents.doc1.meta.tags, ['x']);
   });
 
   it('beat emits a clock-only snapshot (no full state tree)', function () {

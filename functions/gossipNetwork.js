@@ -448,9 +448,16 @@ function gossipRelayPeerSettings (overrides = {}) {
     musig2: { autoAccept: false }
   };
   const merged = Object.assign({}, base, extra);
-  merged.constraints = Object.assign({}, extraConstraints, {
-    peers: Object.assign({}, base.constraints.peers, extraConstraints.peers || {})
-  });
+  const constraintsOut = {};
+  for (const key of Object.keys(extraConstraints)) {
+    if (key === 'peers') continue;
+    const group = extraConstraints[key];
+    constraintsOut[key] = (group && typeof group === 'object' && !Array.isArray(group))
+      ? Object.assign({}, group)
+      : group;
+  }
+  constraintsOut.peers = Object.assign({}, base.constraints.peers, extraConstraints.peers || {});
+  merged.constraints = constraintsOut;
   merged.musig2 = Object.assign({}, base.musig2, extraMusig || {});
   return merged;
 }

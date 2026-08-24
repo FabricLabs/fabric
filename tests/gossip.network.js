@@ -141,11 +141,15 @@ describe('@fabric/core gossip network catalog', function () {
   });
 
   it('gossipRelayPeerSettings keeps extra constraint groups', function () {
-    const settings = gossipRelayPeerSettings({
-      constraints: { peers: { max: 3 }, documents: { max: 2 } }
-    });
+    const extra = { constraints: { peers: { max: 3 }, documents: { max: 2 } } };
+    const settings = gossipRelayPeerSettings(extra);
     assert.strictEqual(settings.constraints.peers.max, 3);
+    assert.strictEqual(settings.constraints.peers.shuffle, 8);
     assert.strictEqual(settings.constraints.documents.max, 2);
+    extra.constraints.documents.max = 99;
+    extra.constraints.peers.max = 1;
+    assert.strictEqual(settings.constraints.documents.max, 2);
+    assert.strictEqual(settings.constraints.peers.max, 3);
   });
 });
 
@@ -267,8 +271,12 @@ describe('@fabric/core gossip-relay Peer (mocked mesh)', function () {
       peer.peers[origin] = { publicKey: author.pubkey };
       peer._handleFabricMessage(signed.toBuffer(), { name: origin }, null);
       for (const [addr, writes] of Object.entries(edges)) {
-        // PING may write a PONG to the origin socket only — never a mesh flood.
-        if (addr === origin && signed.type === 'P2P_PING') continue;
+        // PING writes a PONG to the origin socket only — never a mesh flood.
+        if (addr === origin && signed.type === 'P2P_PING') {
+          assert.strictEqual(writes.length, 1, 'origin should receive one PONG');
+          assert.strictEqual(Message.fromBuffer(writes[0]).type, 'P2P_PONG');
+          continue;
+        }
         assert.strictEqual(writes.length, 0, `${signed.type} must not reach ${addr}`);
       }
     }

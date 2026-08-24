@@ -111,7 +111,7 @@ function isolatePeerContent (input) {
   for (const key of Object.keys(defaults)) {
     if (key === 'collections') continue;
     if (input[key] && typeof input[key] === 'object' && !Array.isArray(input[key])) {
-      out[key] = Object.assign({}, input[key]);
+      out[key] = clonePlainObjectMap(input[key]);
     }
   }
   // Inventory still reads collections.documents for published / price / L1

@@ -22,7 +22,8 @@ execution. Distributed Beacon / federation orchestration is Hub-composed and
 | Publish envelope | `@fabric/core/functions/publishedDocumentEnvelope` | DocumentPublish binding |
 | Payment hash | `@fabric/core/functions/documentPaymentHash` | `contentHashHex` |
 | Onion forward | `@fabric/core/functions/fabricOnion` | `P2P_FORWARD` wrap / decode; `Peer#sendOnion` |
-| Gossip catalog | `@fabric/core/functions/gossipNetwork` | Public flood vs directed/session; `gossipRelayPeerSettings` |
+| Gossip catalog | `@fabric/core/functions/gossipNetwork` | Public flood vs directed/session; `gossipRelayPeerSettings` (ambient stub `functions/gossipNetwork.d.ts`) |
+| AMP parent | `@fabric/core/functions/fabricMessageParent` | Header `parent` (previous `Message.id` or genesis zeros) |
 | Programs | `@fabric/core/types/program` | Multi-language artifact |
 | Local VM | `@fabric/core/types/machine` | Opcode runner (host-defined ops) |
 | Sidechain document | `@fabric/core/functions/sidechainState` | Patches, digests, journal |
