@@ -80,6 +80,18 @@ above; **runtime `.js` files remain authoritative**.
 by design: `tests/`, `reports/`, coverage trees, `_book/`, local `stores/`, and
 operator `settings/local.js` (use `settings/local.example.js`).
 
+## Wire and runtime limits (`constants.js`)
+
+| Constant | Value | Notes |
+|----------|-------|-------|
+| `HEADER_SIZE` | 208 bytes | AMP header |
+| `MAX_MESSAGE_SIZE` | 3888 bytes | `4096 − HEADER_SIZE` body cap |
+| `MACHINE_MAX_MEMORY` | ~3.8 MiB | `MAX_MEMORY_ALLOC × MAX_MESSAGE_SIZE` for `Machine` |
+
+Peers drop frames shorter than `HEADER_SIZE` or longer than `HEADER_SIZE +
+MAX_MESSAGE_SIZE` before parse/crypto. Per-origin relay budgets (chat, gossip,
+inventory) are peer settings — not global throughput caps.
+
 ## Out of scope for “stable API”
 
 - C / `fabric.node` (optional accel only)

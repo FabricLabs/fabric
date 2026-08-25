@@ -45,6 +45,7 @@ describe('@fabric/core/types/remote', function () {
       async function test () {
         const remote = new Remote(sample);
         assert.ok(remote);
+        assert.ok(remote.settings.entropy >= 0 && remote.settings.entropy < 1);
         done();
       }
 

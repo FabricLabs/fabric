@@ -1,7 +1,7 @@
 'use strict';
 
 const assert = require('assert');
-const { toUint8Strict, toUint8Flexible } = require('../functions/bytes');
+const { toUint8Strict, toUint8Flexible, randomUnit } = require('../functions/bytes');
 
 describe('functions/bytes', function () {
   it('toUint8Strict accepts Buffer and Uint8Array', function () {
@@ -63,5 +63,16 @@ describe('functions/bytes', function () {
     assert.strictEqual(u.buffer, b.buffer);
     assert.strictEqual(u.byteOffset, b.byteOffset);
     assert.strictEqual(u.byteLength, b.byteLength);
+  });
+
+  it('randomUnit returns a float in [0, 1)', function () {
+    const samples = new Set();
+    for (let i = 0; i < 8; i++) {
+      const r = randomUnit();
+      assert.strictEqual(typeof r, 'number');
+      assert.ok(r >= 0 && r < 1);
+      samples.add(r);
+    }
+    assert.ok(samples.size > 1);
   });
 });

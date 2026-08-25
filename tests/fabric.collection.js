@@ -415,6 +415,16 @@ describe('@fabric/core/types/collection', function () {
       assert.equal(set.findByName('dup').id, 'd1');
       assert.equal(set.findBySymbol('SYM').id, 'd1');
 
+      const empty = new Fabric.Collection({ name: 'empty-find' });
+      assert.strictEqual(empty.findByName('x'), null);
+      assert.strictEqual(empty.findBySymbol('x'), null);
+      assert.strictEqual(empty.findByField('name', 'x'), null);
+
+      const spoof = new Fabric.Collection({ name: 'proto-symbol' });
+      await spoof.importList([{ id: 'r1', name: 'only-name' }]);
+      Object.setPrototypeOf(spoof.getByID('r1'), { symbol: 'PHANTOM' });
+      assert.strictEqual(spoof.findBySymbol('PHANTOM'), null);
+
       // Exercise input.id || entity.id fallback branches in import().
       const importedNoId = await set.import({ title: 'no-id' }, false);
       assert.ok(importedNoId.id);

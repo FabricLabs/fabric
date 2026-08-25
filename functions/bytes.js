@@ -1,5 +1,7 @@
 'use strict';
 
+const crypto = require('crypto');
+
 /**
  * Normalized byte views for crypto pipelines.
  *
@@ -108,8 +110,17 @@ function toUint8Flexible (bytes, maxLength) {
   throw new TypeError('toUint8Flexible: expected Buffer, Uint8Array, array-like, or iterable of bytes');
 }
 
+/**
+ * Uniform random float in [0, 1). Prefer over `Math.random()` for entropy fields.
+ * @returns {number}
+ */
+function randomUnit () {
+  return crypto.randomBytes(4).readUInt32BE(0) / 0x100000000;
+}
+
 module.exports = {
   toUint8Strict,
   toUint8Flexible,
-  u32be
+  u32be,
+  randomUnit
 };

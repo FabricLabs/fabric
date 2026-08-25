@@ -2,6 +2,10 @@
 
 // external dependencies
 import crypto from 'crypto';
+import { createRequire } from 'module';
+
+const require = createRequire(import.meta.url);
+const { randomUnit } = require('../functions/bytes.js');
 
 // components
 import Actor from '../types/actor.js';
@@ -131,7 +135,7 @@ class Fabric extends Service {
   }
 
   static random () {
-    return Math.random();
+    return randomUnit();
   }
 
   async _GET (key) {

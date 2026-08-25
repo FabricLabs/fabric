@@ -1,7 +1,35 @@
 # Outstanding (security-first)
 Living queue for this repo. Detail and closed items live in [SECURITY.md](../SECURITY.md) and [AUDIT.md](../AUDIT.md). Suite production march: [PRODUCTION_MARCH.md](PRODUCTION_MARCH.md).
 
-**Last reviewed:** 2026-08-20 ([Hub downstream scan](https://relay.goon.vc/downstream.agents.md) **10:39Z**). [#186](https://github.com/FabricLabs/fabric/pull/186) on `feature/rsi` (HEAD **`9c6ade0`**, includes review follow-ups after **`aab3c98`**). Live Hub **`6bf825d`** / core pin **`f63a33f`**: named retainers flat; RSS **~1.7 GiB** driven by **`external`/`arrayBuffers` (~984 MiB in ~61 m)**; **NOISE MaxListeners 65>64** on **4** consecutive Hub PIDs. `Peer#countNoiseHandshakeListeners` is **not** on `f63a33f` (this working tree / #186 only).
+**Last reviewed:** 2026-08-24 — suite audit pass. `npm run ci` **green** on Node
+24.15.0: smoke + `lint:types` + `lint:pkg` + **2460 passing / 3 pending** +
+benchmark smoke. No core code changed by that pass. The P0 below is unchanged:
+the handshake-bus cleanup exists in this tree but **not** on the live Hub pin,
+so it is still a deploy problem, not a code problem.
+
+**[#186](https://github.com/FabricLabs/fabric/pull/186) review surface is
+clear** (`npm run ci` green at **2483 passing / 6 pending**; +21 tests, no
+production code changed). Both unresolved bot threads (`functions/bip371.js`
+BIP-341 control-block checks; `carol` missing `disablePlugins: ['cln-grpc']`)
+were already fixed in **`aab3c983d`**, which landed after the reviewed commit
+`f63a33f` — no patch needed, and each has a test. The real item was **Codecov
+patch coverage**
+(94.45%, 32 lines): `types/tree.js` is now **100%** lines/functions (was 91.85%,
+branch 41→78%) and the `types/message.js` `parent` genesis fallback is covered.
+Those uncovered lines were the adversarial half of the non-inclusion proof API,
+so `tests/fabric.tree.js` now pins every `verifyNonInclusion` rejection (tampered
+root, mismatched `leafCount`, wrong-size leaf set, neighbours widened to skip an
+in-range leaf, target outside the claimed gap, stray/missing neighbours) plus
+fail-closed behaviour when a verifier or proof builder throws. Detail:
+[PRODUCTION_MARCH.md](PRODUCTION_MARCH.md) progress log.
+
+`functions/fabricMessageParent.js` landed in **`8e756f2`**, exporting
+`ZERO_PARENT` / `isZeroParent` / `normalizeParentHex` / `parentHexOf` /
+`frameIdOf` / `setMessageParent`. Remaining work is the HTTP Bridge originate
+path and lockfile bumps in consuming packages — not another core helper.
+`npm run smoke` already requires this leaf so a broken export fails CI.
+
+**Prior review:** 2026-08-20 (production Hub host scan **10:39Z**). [#186](https://github.com/FabricLabs/fabric/pull/186) on `feature/rsi` (HEAD **`9c6ade0`**, includes review follow-ups after **`aab3c98`**). Live Hub **`6bf825d`** / core pin **`f63a33f`**: named retainers flat; RSS **~1.7 GiB** driven by **`external`/`arrayBuffers` (~984 MiB in ~61 m)**; **NOISE MaxListeners 65>64** on **4** consecutive Hub PIDs. `Peer#countNoiseHandshakeListeners` is **not** on `f63a33f` (this working tree / #186 only).
 
 ## Blockers before shared-host / non-experimental tag
 1. **Third-party review** of `types/peer.js`, inventory HTLC, sealed exchange, `publishedDocumentEnvelope` ([AUDIT.md](../AUDIT.md) recommendations).
@@ -9,22 +37,20 @@ Living queue for this repo. Detail and closed items live in [SECURITY.md](../SEC
 3. Downstream **site-login / device-link redeem** is not a core bug; Hub/`@fabric/http` still treat QR `sessionId` as the capability. Tracked in those repos.
 
 ## Next slices (this repo)
-- [ ] Production Hub **RSS / NOISE handshake bus (P0)** ([scan 2026-08-20T10:39Z](https://relay.goon.vc/downstream.agents.md): Hub **`6bf825d`**, restarts **542** / FATAL **317 +0**, PID **~61 m**). Named retainers stay flat. RSS tracks **`external`/`arrayBuffers` (38→984 MiB)** not V8 heap (~82 MiB). MaxListeners 65>64 on this life; `noiseHandshakeListeners: null` because live pin **`f63a33f`** still `require('noise-protocol-stream')`. [#186](https://github.com/FabricLabs/fabric/pull/186) HEAD **`9c6ade0`**: `functions/noiseProtocolStream.js` + `Peer#countNoiseHandshakeListeners` plus `freeNative` pointer clear / `onready` teardown — Hub pin/redeploy before claiming the leak is fixed. Do **not** raise `--max-old-space-size`. RSI RSS **~12.3 GiB** + oversized AMP frames remain P1.
+- [ ] Production Hub **RSS / NOISE handshake bus (P0)** (production Hub host scan **10:39Z**: Hub **`6bf825d`**, restarts **542** / FATAL **317 +0**, PID **~61 m**). Named retainers stay flat. RSS tracks **`external`/`arrayBuffers` (38→984 MiB)** not V8 heap (~82 MiB). MaxListeners 65>64 on this life; `noiseHandshakeListeners: null` because live pin **`f63a33f`** still `require('noise-protocol-stream')`. [#186](https://github.com/FabricLabs/fabric/pull/186) HEAD **`9c6ade0`**: `functions/noiseProtocolStream.js` + `Peer#countNoiseHandshakeListeners` plus `freeNative` pointer clear / `onready` teardown — Hub pin/redeploy before claiming the leak is fixed. Do **not** raise `--max-old-space-size`. Oversized AMP frames on shared hosts remain P1.
 - [ ] Keep documenting that `sensitive` ≠ encrypted ([PRIVACY.md](../PRIVACY.md),
   [MESSAGE_BODY.md](MESSAGE_BODY.md)). Mesh chat model:
-  [MESSAGES.md](../MESSAGES.md#mesh-chat-model-gossip-first) + `functions/fabricChatKind.js`. Downstream privacy
-  queues: Hub/GoonCitizen `docs/OUTSTANDING.md` / GoonCitizen
-  `docs/PRIVACY_REMAINING.md`.
+  [MESSAGES.md](../MESSAGES.md#mesh-chat-model-gossip-first) + `functions/fabricChatKind.js`. Privacy follow-ups live in HTTP Hub and application consumers' own `docs/OUTSTANDING.md`.
 - [ ] Type-tree keep/remove lock in [PRODUCTION_MARCH.md](PRODUCTION_MARCH.md) (inventory remaining classes; `Scribe`/`Reader` deprecation notes are in).
 - [ ] Coordinated `contractId` → `contractIdentifier` rename.
 - [ ] Blinded-execution remains a **scaffold** (not Yao GC) even with signed `at`.
 - [ ] Keep `.codacy.yml` Semgrep/Opengrep exclusions for `functions/fabricSetup.js`, `functions/fabricHomeEnv.js`, `functions/fabricWalletIdentity.js`, `functions/fabricMessageCollection.js`, `types/environment.js`, and `types/filesystem.js` unless a replacement SAST job covers those path-construction helpers (CodeRabbit asked to drop the excludes; Codacy still ignores `nosemgrep`). The nine PR #185 criticals were all Filesystem `path.resolve` / `fs.*` on a contained name.
 
 ## Closed this pass (do not re-open)
-- Identity coin-type dual path (7777 mainnet / 7778 otherwise) is closed at the helper layer: `resolveFabricIdentityCoinType`, `fabricIdentityAccountPath`, `fabricIdentityDerivationPath`. Hub and GoonCitizen no longer hard-code `m/44'/7778'/…`. See [IDENTITY.md](IDENTITY.md) (BIP44 / SLIP-44; 7777 remains Bitvote on SLIP-44 — integers unchanged). Do not silently re-derive existing Hub identities.
+- Identity coin-type dual path (7777 mainnet / 7778 otherwise) is closed at the helper layer: `resolveFabricIdentityCoinType`, `fabricIdentityAccountPath`, `fabricIdentityDerivationPath`. HTTP Hub and application callers no longer hard-code `m/44'/7778'/…`. See [IDENTITY.md](IDENTITY.md) (BIP44 / SLIP-44; 7777 remains Bitvote on SLIP-44 — integers unchanged). Do not silently re-derive existing Hub identities.
 - Undersize AMP frames (`< HEADER_SIZE`) and unparseable buffers drop before parse/crypto (no score / ban). Oversized already did. Locked in `tests/fabric.peer.adversarial.js` with the other first-tier RC1 invariants (hop=0 does not poison gossip **or peering** cache; BASE_MESSAGE cannot inject gossip, chat, alias, or announce; budget is TCP-origin keyed; score-0 still disconnects; sealed wallet public object omits seed/xprv).
 - JSON `type: 98` on a **P2P_PEERING_OFFER** AMP frame (or GenericMessage) still dispatches as a peering offer via `_handleGenericMessage` / `canonicalTypeName`. First-class **other** opcodes keep the AMP wire name (`INVENTORY_RESPONSE`, gossip, …) so JSON `type: 98` cannot smuggle a candidate. Locked in `tests/fabric.peer.adversarial.js` with beat/isolate/NOISE-handler and `_fillPeerSlots` retry-map coverage from [#185](https://github.com/FabricLabs/fabric/pull/185) Codecov + review threads. `resolveFabricIdentityCoinType` / `fabricIdentityAccountPath` are exported from `constants.js`. `Message.fromRaw` copies TypedArray/DataView bounds. Service ChatMessage relays are signed when `node.key` is present. `Key` classifies a legacy `xprv` or mnemonic in `seed` rather than PBKDF2-hashing the string.
-- Fabric TUI shoutbox uses UTF-8 `P2P_CHAT_MESSAGE` + `peerAlias` (same mesh as Hub UI / GoonCitizen). Helper `functions/fabricChatText`.
+- Fabric TUI shoutbox uses UTF-8 `P2P_CHAT_MESSAGE` + `peerAlias` (same mesh contract as HTTP Hub UI and application relays). Helper `functions/fabricChatText`.
 - IdentityCrossSign / identity Schnorr / verify lifted into `functions/` after [#183](https://github.com/FabricLabs/fabric/pull/183) merge (was held for the CodeRabbit file cap).
 - `isolatePeerContent` copies `collections.documents` without aliasing the caller Hub map (inventory published / price / L1 metadata). Other collection names stay dropped.
 - `Token.toString()` is documented as not auth (`ffff` MAC). `Capability#_generateToken` and `Session.encrypt`/`decrypt` are scaffolds / no-ops. `verifySigned` rejects the unsigned string.

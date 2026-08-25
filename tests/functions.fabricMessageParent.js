@@ -64,4 +64,41 @@ describe('@fabric/core/functions/fabricMessageParent', function () {
     assert.strictEqual(frameIdOf(msg), msg.id);
     assert.strictEqual(frameIdOf(null), null);
   });
+
+  describe('Message#parent', function () {
+    it('reads as genesis zeros when no parent is set', function () {
+      const fresh = Message.fromVector(['P2P_CHAT_MESSAGE', 'hello']);
+      assert.strictEqual(fresh.parent, Message.ZERO_PARENT);
+      assert.ok(isZeroParent(fresh.parent));
+    });
+
+    it('reads as genesis zeros when raw.parent is malformed', function () {
+      // A short or non-Buffer field must not leak out as a truncated pointer.
+      const message = Message.fromVector(['P2P_CHAT_MESSAGE', 'hello']);
+      message.raw.parent = Buffer.alloc(31);
+      assert.strictEqual(message.parent, Message.ZERO_PARENT);
+      message.raw.parent = 'not-a-buffer';
+      assert.strictEqual(message.parent, Message.ZERO_PARENT);
+      delete message.raw.parent;
+      assert.strictEqual(message.parent, Message.ZERO_PARENT);
+    });
+
+    it('accepts a parent from the constructor and from fromVector', function () {
+      const genesis = Message.fromVector(['P2P_CHAT_MESSAGE', 'first']).signWithKey(new Key());
+      assert.strictEqual(Message.fromVector(['P2P_CHAT_MESSAGE', 'second', genesis.id]).parent, genesis.id);
+      assert.strictEqual(Message.fromVector(['P2P_CHAT_MESSAGE', 'second', null]).parent, Message.ZERO_PARENT);
+      assert.strictEqual(Message.fromVector(['P2P_CHAT_MESSAGE', 'second']).parent, Message.ZERO_PARENT);
+      const built = new Message({ type: 'P2P_CHAT_MESSAGE', data: 'second', parent: genesis.id });
+      assert.strictEqual(built.parent, genesis.id);
+    });
+
+    it('re-exports the parent helpers as statics', function () {
+      assert.strictEqual(Message.ZERO_PARENT, ZERO_PARENT);
+      assert.strictEqual(Message.isZeroParent, isZeroParent);
+      assert.strictEqual(Message.normalizeParent, normalizeParentHex);
+      assert.strictEqual(Message.parentHexOf, parentHexOf);
+      assert.strictEqual(Message.frameIdOf, frameIdOf);
+      assert.strictEqual(Message.setMessageParent, setMessageParent);
+    });
+  });
 });

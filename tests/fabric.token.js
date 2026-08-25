@@ -107,6 +107,14 @@ describe('@fabric/core/types/token', function () {
       assert.deepStrictEqual(Token.base64UrlDecodeToBuffer(encB), buf);
     });
 
+    it('base64UrlEncode replaces every + and /', function () {
+      const raw = '++++////';
+      const enc = Token.base64UrlEncode(raw);
+      assert.ok(!enc.includes('+'));
+      assert.ok(!enc.includes('/'));
+      assert.strictEqual(Token.base64UrlDecode(enc), raw);
+    });
+
     it('verifySigned rejects expired, malformed, and empty tokens', function () {
       const issuer = new Key();
       const token = new Token({ capability: 'C', issuer, subject: 's' });
@@ -143,6 +151,14 @@ describe('@fabric/core/types/token', function () {
       const s = token.toString();
       const parsed = Token.fromString(s);
       assert.ok(parsed instanceof Token);
+      assert.strictEqual(parsed.capability, 'OP_Y');
+      assert.strictEqual(parsed.subject, 'z');
+    });
+
+    it('fromString rejects two-segment signed tokens', function () {
+      const issuer = new Key();
+      const signed = new Token({ capability: 'OP_Z', issuer, subject: 'q' }).toSignedString();
+      assert.throws(() => Token.fromString(signed), /three-segment/);
     });
   });
 });

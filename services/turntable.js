@@ -1,6 +1,7 @@
 'use strict';
 
 const { TtfmApi } = require('ttfm');
+const { randomUnit } = require('../functions/bytes');
 const Entity = require('../types/entity');
 const Service = require('../types/service');
 
@@ -82,7 +83,7 @@ class Turntable extends Service {
   }
 
   async _handleNewSong (data) {
-    if (this.settings.autobop) this._defer(this._upvoteCurrentTrack, [], 60000 * Math.random());
+    if (this.settings.autobop) this._defer(this._upvoteCurrentTrack, [], 60000 * randomUnit());
     const entity = new Entity(data);
     this.emit('message', {
       actor: null,
