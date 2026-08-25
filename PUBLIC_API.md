@@ -90,11 +90,26 @@ operator `settings/local.js` (use `settings/local.example.js`).
 
 Peers drop frames shorter than `HEADER_SIZE` or longer than `HEADER_SIZE +
 MAX_MESSAGE_SIZE` before parse/crypto. Per-origin relay budgets (chat, gossip,
-inventory) are peer settings — not global throughput caps.
+inventory) are peer settings — not global throughput caps. `Machine` enforces
+`MACHINE_MAX_MEMORY` as a heap budget only — it does **not** provide VM
+isolation or gas metering (see [PUBLIC_API](#out-of-scope-for-stable-api) /
+AUDIT known gap #1).
+
+## Deprecated facade aliases
+
+Prefer direct `require('@fabric/core/types/…')` imports. The `Fabric` static
+facade still exposes:
+
+| Alias | Prefer |
+|-------|--------|
+| `Fabric.Scribe` | `State` |
+| `Fabric.DistributedExecution` | `Machine` / `Program` / beacon + canonical-JSON helpers |
+| `Reader` (`types/reader.js`) | Peer / Message ingest (not on `Fabric.*`) |
 
 ## Out of scope for “stable API”
 
 - C / `fabric.node` (optional accel only)
 - WebGPU / garbled-circuit research examples
+- Hardened Program/Machine sandbox (host JS binds today)
 - One-off root analysis Markdown ([docs/NON_CANONICAL.md](docs/NON_CANONICAL.md))
 - Unlisted deep paths may move without a major bump during 0.1 RC — pin a git tag

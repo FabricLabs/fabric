@@ -1343,6 +1343,14 @@ function decodeBody (schema, buffer) {
 
 const SCHEMA_P2P_PING = Object.freeze([{ name: 'nonce', type: 'string' }]);
 const SCHEMA_P2P_CHAT = null;
+/** @private Transitional field layouts; JSON bodies remain accepted via tryParseMessageBody. */
+const SCHEMA_CONTRACT_PUBLISH = Object.freeze([
+  { name: 'definition', type: 'string' }
+]);
+const SCHEMA_CONTRACT_MESSAGE = Object.freeze([
+  { name: 'contract', type: 'string' },
+  { name: 'payload', type: 'string' }
+]);
 const SCHEMA_PROGRAM_RUN = Object.freeze([
   { name: 'programHash', type: 'bytes32' },
   { name: 'runCommitment', type: 'bytes32' },
@@ -1442,6 +1450,12 @@ function tryParseMessageBody (message) {
   registerBodySchema('P2P_PONG', SCHEMA_P2P_PING);
   registerBodySchema('Pong', SCHEMA_P2P_PING);
   registerBodySchema('FabricProgramRun', SCHEMA_PROGRAM_RUN);
+  registerBodySchema(P2P_CONTRACT_PUBLISH, SCHEMA_CONTRACT_PUBLISH);
+  registerBodySchema('P2P_CONTRACT_PUBLISH', SCHEMA_CONTRACT_PUBLISH);
+  registerBodySchema('CONTRACT_PUBLISH', SCHEMA_CONTRACT_PUBLISH);
+  registerBodySchema(P2P_CONTRACT_MESSAGE, SCHEMA_CONTRACT_MESSAGE);
+  registerBodySchema('P2P_CONTRACT_MESSAGE', SCHEMA_CONTRACT_MESSAGE);
+  registerBodySchema('CONTRACT_MESSAGE', SCHEMA_CONTRACT_MESSAGE);
   registerBodySchema(P2P_FORWARD, SCHEMA_P2P_FORWARD);
   registerBodySchema('P2P_FORWARD', SCHEMA_P2P_FORWARD);
   registerBodySchema(P2P_PEER_GOSSIP, SCHEMA_P2P_PEER_GOSSIP);
@@ -1489,6 +1503,8 @@ Message.tryParseMessageBody = tryParseMessageBody;
 Message.SCHEMA_P2P_PING = SCHEMA_P2P_PING;
 Message.SCHEMA_P2P_CHAT = SCHEMA_P2P_CHAT;
 Message.SCHEMA_PROGRAM_RUN = SCHEMA_PROGRAM_RUN;
+Message.SCHEMA_CONTRACT_PUBLISH = SCHEMA_CONTRACT_PUBLISH;
+Message.SCHEMA_CONTRACT_MESSAGE = SCHEMA_CONTRACT_MESSAGE;
 Message.SCHEMA_P2P_FORWARD = SCHEMA_P2P_FORWARD;
 Message.SCHEMA_P2P_PEER_GOSSIP = SCHEMA_P2P_PEER_GOSSIP;
 Message.SCHEMA_P2P_PEERING_OFFER = SCHEMA_P2P_PEERING_OFFER;

@@ -4,7 +4,6 @@ const { tryParsePersistedJson } = require('../functions/wireJson');
 
 // Dependencies
 const { Level } = require('level');
-const crypto = require('crypto');
 const merge = require('lodash.merge');
 const pointer = require('json-pointer');
 
@@ -664,8 +663,10 @@ class Store extends Actor {
    * Wipes the storage.
    */
   async flush () {
+    // `abstract-level` opens a tick after construction and queues operations while
+    // `opening`, so skipping that state would silently drop the wipe.
     const status = this.db && (this.db.status || this.db._status);
-    if (!this.db || status !== 'open') return this;
+    if (!this.db || (status !== 'open' && status !== 'opening')) return this;
 
     if (this.settings.verbosity >= 4) console.log('[FABRIC:STORE]', 'Flushing database...');
 

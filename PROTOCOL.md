@@ -25,7 +25,7 @@ Historical drafts and analysis notes are listed in [docs/NON_CANONICAL.md](docs/
 |--------|------|--------|
 | 0 | 4 | magic |
 | 4 | 4 | version (`0x01`) |
-| 8 | 32 | parent | Previous `Message.id` or genesis zeros |
+| 8 | 32 | parent (previous `Message.id`; zeros at genesis) |
 | 40 | 32 | author |
 | 72 | 4 | type (opcode) |
 | 76 | 4 | size |

@@ -1260,19 +1260,39 @@ class Service extends Actor {
   }
 
   async _applyChanges (changes) {
-    let result = null;
+    let result = { ok: false, error: 'not applied' };
+    const requireCap = this.settings && this.settings.requirePatchCapability === true;
+    const hasCap = !!(this.settings && this.settings.patchCapability);
+    if (requireCap && !hasCap) {
+      const msg = 'Service patch requires settings.patchCapability when requirePatchCapability is set';
+      if (this.listenerCount('error') > 0) this.emit('error', new Error(msg));
+      return { ok: false, error: msg };
+    }
+
+    const ops = Array.isArray(changes) ? changes : [];
+    const sensitive = /\/(mnemonic|seed|xprv|privateKey|private|passphrase)(\/|$)/i;
+    for (const operation of ops) {
+      const p = operation && operation.path != null ? String(operation.path) : '';
+      if (sensitive.test(p)) {
+        const msg = 'Service patch refused sensitive path: ' + p;
+        if (this.listenerCount('error') > 0) this.emit('error', new Error(msg));
+        return { ok: false, error: msg };
+      }
+    }
 
     try {
-      // TODO: allow configurable validators
-      // Mutate canonical state — do not applyPatch(this.state): the getter returns a
-      // shallow copy each time, so replacing _state.content with that copy breaks nested
-      // references after subscribe() / _applyChanges().
-      manager.applyPatch(this._state.content, changes, function isValid () {
-        // TODO: invalidate changes without appropriate capability token
+      manager.applyPatch(this._state.content, ops, function isValid () {
         return true;
       }, true /* mutate doc (1st param) */);
+      result = { ok: true };
     } catch (exception) {
-      console.error(`Could not apply changes: ${exception.message || exception}`);
+      const msg = exception.message || String(exception);
+      console.error(`Could not apply changes: ${msg}`);
+      result = { ok: false, error: msg };
+      if (this.listenerCount('error') > 0) {
+        this.emit('error', exception instanceof Error ? exception : new Error(msg));
+      }
+      return result;
     }
 
     this.commit();

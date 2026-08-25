@@ -238,7 +238,7 @@ function peerDebugDerivedPublicSummary (keyInstance) {
   let pubHex = '';
   try {
     if (typeof keyInstance.pubkey === 'string') pubHex = keyInstance.pubkey.trim();
-  } catch (err) {
+  } catch (_) {
     pubHex = '';
   }
   if (!pubHex && keyInstance.settings) {
@@ -453,7 +453,7 @@ function isRelayAsIsGenericCarrier (message) {
       return false;
     }
     return isRelayAsIsWireType(pr.value.type);
-  } catch (e) {
+  } catch (_) {
     return false;
   }
 }
@@ -1663,7 +1663,7 @@ class Peer extends Service {
     let want;
     try {
       want = toXOnlyPeerId(peerId);
-    } catch (err) {
+    } catch (_) {
       return null;
     }
     if (xOnlyEquals(want, this._localXOnlyPeerId())) return null;
@@ -1674,7 +1674,7 @@ class Peer extends Service {
       if (!rec || rec.publicKey == null) continue;
       try {
         if (xOnlyEquals(want, toXOnlyPeerId(rec.publicKey))) return addr;
-      } catch (err) {
+      } catch (_) {
         // ignore malformed registry keys
       }
     }
@@ -1687,7 +1687,7 @@ class Peer extends Service {
       if (pk == null) continue;
       try {
         if (!xOnlyEquals(want, toXOnlyPeerId(pk))) continue;
-      } catch (err) {
+      } catch (_) {
         continue;
       }
       const addr = entry.address || key;

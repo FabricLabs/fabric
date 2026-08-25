@@ -27,7 +27,6 @@ const {
 } = require('./contractCapability');
 const {
   validateWithdrawalRequest,
-  withdrawalWitnessSigningMessage,
   verifyWithdrawalWitnessSignature
 } = require('./contractSpend');
 const {
@@ -1257,7 +1256,7 @@ function ingestContractPublishBuffer (store, bufferOrPaste, meta = {}) {
   let definition;
   try {
     definition = typeof raw === 'string' ? JSON.parse(raw) : raw;
-  } catch (e) {
+  } catch (_) {
     return { accepted: false, duplicate: false, contractId: null, genesis: null, error: 'invalid publish body' };
   }
   if (!definition || typeof definition !== 'object') {

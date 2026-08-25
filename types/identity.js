@@ -185,8 +185,29 @@ class Identity extends Actor {
     return this;
   }
 
-  _verifyKeyIsChild (_key, _parent) {
-    throw new Error('_verifyKeyIsChild is not yet implemented.');
+  /**
+   * True when `key` matches the BIP32 child of `parent` at this identity's
+   * Fabric derivation path (or an explicit `path`).
+   * @param {Key|string|{ pubkey?: string }} key Candidate key or pubkey hex.
+   * @param {Key} [parent=this.master] Parent HD key.
+   * @param {string} [path] Override derivation path (default {@link Identity#derivation}).
+   * @returns {boolean}
+   */
+  _verifyKeyIsChild (key, parent = this.master, path = null) {
+    if (!parent || typeof parent.derive !== 'function') return false;
+    const derivePath = path != null ? String(path) : this.derivation;
+    let child;
+    try {
+      child = parent.derive(derivePath);
+    } catch (_) {
+      return false;
+    }
+    const expect = String(child.pubkey || '').toLowerCase();
+    if (!expect) return false;
+    let got = '';
+    if (typeof key === 'string') got = key;
+    else if (key && typeof key === 'object') got = key.pubkey || key.publicKey || '';
+    return String(got).toLowerCase() === expect;
   }
 }
 

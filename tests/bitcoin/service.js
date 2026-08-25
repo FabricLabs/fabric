@@ -1344,8 +1344,26 @@ describe('@fabric/core/services/bitcoin real-world RPC command parity', function
     btc.on('error', (msg) => {
       console.warn(String(msg));
     });
-    await btc.start();
+
+    // `start()` assigns the spawned child before the rest of startup runs, so claim
+    // cleanup ownership first: otherwise a later rejection leaves a live bitcoind
+    // behind while the `after` hook skips `stop()`.
     managed = true;
+
+    try {
+      await btc.start();
+    } catch (error) {
+      try {
+        await btc.stop();
+      } catch (_) { /* already down */ }
+      managed = false;
+      // No local bitcoind to manage is a skip, not a failure.
+      if (error && (error.code === 'ENOENT' || rpcProbeLooksUnavailable(error))) {
+        this.skip();
+        return;
+      }
+      throw error;
+    }
   });
 
   after(async function () {

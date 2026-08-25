@@ -112,21 +112,25 @@ class Session extends Entity {
   }
 
   /**
-   * No-op. Does not encrypt. Do not treat Session as providing confidentiality.
-   * @param {*} data
-   * @returns {*}
+   * Session does not provide confidentiality — use Peer NOISE or {@link Key#encrypt}.
+   * @param {*} _data
+   * @throws {Error} always
    */
-  encrypt (data) {
-    return data;
+  encrypt (_data) {
+    throw new Error(
+      'Session.encrypt is unsupported; use Peer NOISE transport or Key.encrypt for confidentiality'
+    );
   }
 
   /**
-   * No-op. Does not decrypt.
-   * @param {*} data
-   * @returns {*}
+   * Session does not provide confidentiality — use Peer NOISE or {@link Key#decrypt}.
+   * @param {*} _data
+   * @throws {Error} always
    */
-  decrypt (data) {
-    return data;
+  decrypt (_data) {
+    throw new Error(
+      'Session.decrypt is unsupported; use Peer NOISE transport or Key.decrypt for confidentiality'
+    );
   }
 
   _getEvenKey () {

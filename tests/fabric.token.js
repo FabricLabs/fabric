@@ -108,8 +108,12 @@ describe('@fabric/core/types/token', function () {
     });
 
     it('base64UrlEncode replaces every + and /', function () {
-      const raw = '++++////';
+      // UTF-8 is encoded first, so the fixture must be chosen for its base64
+      // output: '++++////' becomes 'KysrKy8vLy8=' and substitutes nothing.
+      const raw = '௿௿';
       const enc = Token.base64UrlEncode(raw);
+      assert.strictEqual(Buffer.from(raw, 'utf8').toString('base64'), '4K+/4K+/');
+      assert.strictEqual(enc, '4K-_4K-_');
       assert.ok(!enc.includes('+'));
       assert.ok(!enc.includes('/'));
       assert.strictEqual(Token.base64UrlDecode(enc), raw);

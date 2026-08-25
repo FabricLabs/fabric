@@ -772,4 +772,21 @@ describe('@fabric/core/functions/fabricMessageCollection', function () {
     assert.strictEqual(gap.included, false);
     assert.ok(tree.verifyNonInclusion(gap));
   });
+
+  it('rejects a frameId that is not 32-byte hex', function () {
+    const key = new Key();
+    const collection = createCollection();
+    ingest(collection, signChat(key, 'stack-one'));
+
+    // Buffer.from(str, 'hex') truncates at the first bad pair instead of throwing,
+    // so a malformed id would silently prove a different (or empty) leaf.
+    const bad = ['', 'zz'.repeat(32), 'ab'.repeat(31), `${'ab'.repeat(32)}cd`, null, undefined];
+    for (const frameId of bad) {
+      assert.throws(() => inclusionProof(collection, frameId), /frameId must be 32-byte hex/);
+      assert.throws(() => nonInclusionProof(collection, frameId), /frameId must be 32-byte hex/);
+    }
+
+    const id = collection.messages[0].id;
+    assert.strictEqual(inclusionProof(collection, id.toUpperCase()).included, true);
+  });
 });

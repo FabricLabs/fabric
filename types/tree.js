@@ -238,8 +238,11 @@ class Tree extends Actor {
   verifyInclusion (doc, rootHex) {
     if (!doc || typeof doc !== 'object') return false;
     const proof = deserializeProof(doc.proof);
-    const root = rootHex || doc.root || this.rootHex;
+    // The prover must not pick the commitment it is checked against: fall back to
+    // this tree's root, and refuse a document that names a different one.
+    const root = rootHex || this.rootHex || doc.root;
     if (!root) return false;
+    if (doc.root && String(doc.root) !== String(root)) return false;
     return this.verify(proof, doc.leaf, root);
   }
 
@@ -380,7 +383,9 @@ class Tree extends Actor {
       const leftKey = leafKey(restoreLeaf(doc.left.leaf));
       const rightKey = leafKey(restoreLeaf(doc.right.leaf));
       if (!(leftKey < target && target < rightKey)) return false;
-      const i = hexes.indexOf(leftKey);
+      // Duplicate leaves are accepted, so take the boundary occurrence next to
+      // the gap rather than the first one.
+      const i = hexes.lastIndexOf(leftKey);
       return i >= 0 && hexes[i + 1] === rightKey;
     }
     return false;

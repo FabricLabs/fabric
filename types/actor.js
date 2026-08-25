@@ -427,14 +427,19 @@ class Actor extends EventEmitter {
   }
 
   /**
-   * Signs the Actor.
+   * Signs the Actor when `this.key` is a {@link Key}; otherwise throws.
+   * Prefer {@link Message#signWithKey} / {@link Key#sign} for wire auth.
    * @returns {Actor}
    */
   sign () {
-    throw new Error('Unimplemented on this branch.  Use @fabric/core/types/signer instead.');
-    /* this.signature = this.key._sign(this.toBuffer());
+    if (!this.key || typeof this.key._sign !== 'function') {
+      throw new Error(
+        'Actor.sign requires this.key (a Key). Prefer Message.signWithKey or Key.sign for wire authentication.'
+      );
+    }
+    this.signature = this.key._sign(this.toBuffer());
     this.emit('signature', this.signature);
-    return this; */
+    return this;
   }
 
   /**

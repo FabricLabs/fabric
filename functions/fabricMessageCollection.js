@@ -434,6 +434,19 @@ function sortByParent (messages) {
 }
 
 /**
+ * `Buffer.from(str, 'hex')` truncates at the first invalid pair instead of
+ * throwing, which would silently prove a different (or empty) leaf.
+ * @param {string} frameId
+ * @returns {Buffer}
+ * @private
+ */
+function frameIdBuffer (frameId) {
+  const hex = String(frameId == null ? '' : frameId).toLowerCase();
+  if (!/^[0-9a-f]{64}$/.test(hex)) throw new Error('frameId must be 32-byte hex');
+  return Buffer.from(hex, 'hex');
+}
+
+/**
  * @param {object} collection
  * @param {string} frameId
  * @returns {object}
@@ -441,7 +454,7 @@ function sortByParent (messages) {
 function inclusionProof (collection, frameId) {
   const messages = collection && collection.messages ? collection.messages : collection;
   const tree = merkleTreeOf(messages);
-  return tree.proveInclusion(Buffer.from(String(frameId).toLowerCase(), 'hex'));
+  return tree.proveInclusion(frameIdBuffer(frameId));
 }
 
 /**
@@ -452,7 +465,7 @@ function inclusionProof (collection, frameId) {
 function nonInclusionProof (collection, frameId) {
   const messages = collection && collection.messages ? collection.messages : collection;
   const tree = merkleTreeOf(messages);
-  return tree.proveNonInclusion(Buffer.from(String(frameId).toLowerCase(), 'hex'));
+  return tree.proveNonInclusion(frameIdBuffer(frameId));
 }
 
 /**

@@ -15,8 +15,6 @@
  * duplex is destroyed.
  */
 
-/* eslint-disable no-labels */
-
 const util = require('util');
 const through = require('through2');
 const lpStream = require('length-prefixed-stream');
@@ -398,6 +396,10 @@ function createNoiseStream (options) {
   const onhandshakesplit = function (ptr, macSize, localPrivateKey, localPublicKey, remotePublicKey) {
     if (ptr === streamPtr) {
       const onverify = function (err, accept) {
+        // `options.verify` may be asynchronous, so both duplexes can be destroyed
+        // (and the native session freed) before this runs. Never restore a pointer
+        // that is no longer ours.
+        if (sessionTornDown() || ptr !== streamPtr) return;
         if (!err && accept === true) {
           decrypt._splitHandshake(ptr, macSize);
           encrypt._splitHandshake(ptr, macSize);

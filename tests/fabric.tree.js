@@ -237,5 +237,30 @@ describe('@fabric/core/types/tree', function () {
       assert.strictEqual(tree.verifyNonInclusion(null), false);
       assert.strictEqual(tree.verifyNonInclusion('nope'), false);
     });
+
+    it('rejects an inclusion document that names a foreign root', function () {
+      // A prover that picks its own commitment can always satisfy its own proof,
+      // so a self-consistent document is not membership in *this* tree.
+      const attacker = new Tree({ leaves: [B('aa'), B('bb')], sortLeaves: true });
+      const forged = clone(attacker.proveInclusion(B('aa')));
+      assert.strictEqual(attacker.verifyInclusion(forged), true);
+      assert.notStrictEqual(forged.root, tree.rootHex);
+      assert.strictEqual(tree.verifyInclusion(forged), false);
+      // An explicitly supplied root stays an intentional override.
+      assert.strictEqual(tree.verifyInclusion(forged, attacker.rootHex), true);
+      // A document that disagrees with the root it is checked against is fatal.
+      assert.strictEqual(tree.verifyInclusion(Object.assign(clone(gap.left), {
+        root: 'ab'.repeat(32)
+      })), false);
+    });
+
+    it('accepts a between document whose left neighbour is duplicated', function () {
+      // Duplicate leaves are allowed, so adjacency must use the boundary
+      // occurrence rather than the first one.
+      const dupes = new Tree({ leaves: [B('11'), B('33'), B('33'), B('77')], sortLeaves: true });
+      const doc = dupes.proveNonInclusion(B('44'));
+      assert.strictEqual(doc.side, 'between');
+      assert.strictEqual(dupes.verifyNonInclusion(doc), true);
+    });
   });
 });

@@ -990,6 +990,23 @@ describe('@fabric/core RC1 PR-review coverage', function () {
     };
   }
 
+  function seedScore (peer, originName, peerId, score, pubkeyHex) {
+    peer._addressToId[originName] = peerId;
+    peer._state.peers = peer._state.peers || {};
+    peer._state.peers[peerId] = {
+      id: peerId,
+      address: originName,
+      score,
+      publicKey: pubkeyHex || 'ab'.repeat(32)
+    };
+    let destroyed = false;
+    peer.connections[originName] = {
+      destroy () { destroyed = true; },
+      get destroyed () { return destroyed; }
+    };
+    return () => destroyed;
+  }
+
   it('isolatePeerContent treats null and array state as empty maps', function () {
     const fromNull = new Peer(offlinePeerSettings({ state: null }));
     const fromArray = new Peer(offlinePeerSettings({ state: [] }));
@@ -1109,5 +1126,36 @@ describe('@fabric/core RC1 PR-review coverage', function () {
     assert.ok(warnings.some((msg) => /Inbound socket error/.test(msg)));
     if (typeof socket._destroyFabric === 'function') socket._destroyFabric();
     socket.destroy();
+  });
+
+  it('unknown AMP opcode decodes as UNKNOWN_MESSAGE without score change', function () {
+    const peer = offlinePeer();
+    const origin = '127.0.0.1:wave1-unknown';
+    const author = new Key();
+    peer.connections[origin] = wireConn([]);
+    peer.peers[origin] = { publicKey: author.pubkey };
+    const wasDestroyed = seedScore(peer, origin, 'peer-wave1-u', 200);
+    const wire = Message.fromVector([0x7ffe, Buffer.from('wave1-unknown')]).signWithKey(author);
+    peer._handleFabricMessage(wire.toBuffer(), { name: origin }, null);
+    assert.strictEqual(peer._state.peers['peer-wave1-u'].score, 200);
+    assert.strictEqual(wasDestroyed(), false);
+  });
+
+  it('JSON GenericMessage claiming CONTRACT_MESSAGE does not escalate opcode', function () {
+    const peer = offlinePeer();
+    const origin = '127.0.0.1:wave1-generic';
+    const author = new Key();
+    peer.connections[origin] = wireConn([]);
+    peer.peers[origin] = { publicKey: author.pubkey };
+    let contractHits = 0;
+    peer.on('contractMessage', () => { contractHits++; });
+    peer.on('ContractMessage', () => { contractHits++; });
+    const wire = Message.fromVector(['P2P_BASE_MESSAGE', JSON.stringify({
+      type: 'CONTRACT_MESSAGE',
+      contract: 'aa'.repeat(32),
+      payload: { hello: true }
+    })]).signWithKey(author);
+    peer._handleFabricMessage(wire.toBuffer(), { name: origin }, null);
+    assert.strictEqual(contractHits, 0);
   });
 });
