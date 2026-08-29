@@ -29,18 +29,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Checkout branch
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7
       with:
         # Gitea uses refs/pull/<n>/head; GitHub uses .../merge for PRs — github.ref is correct on both.
         ref: ${{ github.ref }}
     - name: Install Node.js
-      uses: actions/setup-node@v4
+      uses: actions/setup-node@v7
       with:
         node-version-file: '.nvmrc'
         cache: 'npm'
         cache-dependency-path: package-lock.json
     - name: Set up Python
-      uses: actions/setup-python@v5
+      uses: actions/setup-python@v7
       with:
         # 3.12+ dropped stdlib distutils; CLN's bundled libwally (external/Makefile) still imports it.
         python-version: '3.11'
@@ -52,7 +52,7 @@ jobs:
       run: npm run report:install-ci
     - name: Upload install report
       if: always()
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: install-report-ubuntu-latest
         path: reports/install.log
@@ -130,7 +130,7 @@ jobs:
           find /usr/local -name lightningd 2>/dev/null || echo "No lightningd found in /usr/local"
         fi
     - name: Send coverage report
-      uses: codecov/codecov-action@v4
+      uses: codecov/codecov-action@v7
       with:
         directory: ./reports/
       continue-on-error: true

@@ -56,14 +56,83 @@ path and lockfile bumps in consuming packages — not another core helper.
 - [ ] Keep `.codacy.yml` Semgrep/Opengrep exclusions for `functions/fabricSetup.js`, `functions/fabricHomeEnv.js`, `functions/fabricWalletIdentity.js`, `functions/fabricMessageCollection.js`, `types/environment.js`, and `types/filesystem.js` unless a replacement SAST job covers those path-construction helpers (CodeRabbit asked to drop the excludes; Codacy still ignores `nosemgrep`). The nine PR #185 criticals were all Filesystem `path.resolve` / `fs.*` on a contained name.
 
 ## Closed this pass (do not re-open)
+- **Suite-wide packaging lesson from `@fabric/hub` red CI (2026-08-25).** Hub's
+  `build-test` died on `Cannot find module '../components/browser-content'`
+  because the http commit it pinned shipped `types/browser.js` without a
+  `components/**` glob in `files[]`. Nothing was missing from git and both
+  `npm test` and `npm pack` were green locally — the break existed **only for an
+  installed consumer**. `@fabric/http` now carries
+  `tests/packageFilesClosure.test.js` (relative requires of packed modules must
+  themselves be packed). `npm run report:install` is **not** a substitute for
+  either check, because it resolves from the repo rather than the tarball.
+- **Core ships seven modules that throw on `require` (2026-08-25).** Running the
+  same closure check here found core's `files[]` is closed for *relative*
+  requires — apart from two intentional optional paths
+  (`build/Release/fabric.node`, gitignored `settings/local.js`, both documented
+  and try/caught) — but **seven packed modules fail to load outright**, each
+  reaching for a package or path that is absent *and* undeclared:
+  `services/exchange.js` (`../currencies/btc`, no such directory),
+  `services/mqtt.js` (`tcp`, not a package), `services/turntable.js` (`ttfm`),
+  `types/authority.js` (`./http`, no such file), `types/component.js` and
+  `types/renderer.js` (`jade-lexer`), and `types/typetree.js`
+  (`dependency-tree` — already on the phantom-dependency list above). Nothing in
+  the tree references any of them, and all are reachable through the `./types/*`
+  and `./services/*` export wildcards, so an installed consumer gets
+  MODULE_NOT_FOUND. **Deleting published modules is a release decision, not a
+  test fixup**, so new `tests/functions.packaging.js` freezes the list instead:
+  any *new* unloadable module fails the suite, and cleaning one up also fails
+  (prompting the list update) so it cannot drift in either direction. Verified
+  both ways. Deciding whether to drop these or declare the deps is owner work.
+- **CI actions were on borrowed time (2026-08-25).** Both `test.yaml` and
+  `test-macos.yaml` pinned actions that GitHub now **force-runs on Node 24**
+  (`actions/checkout@v4`, `setup-node@v4`, `setup-python@v5`,
+  `upload-artifact@v4`, `codecov/codecov-action@v4` / the `b9fd7d16` v4.6.0 SHA)
+  — the Node-20 deprecation will eventually break them. All bumped to the
+  current majors (`@v7`), verified three ways: every input in use
+  (`node-version-file`, `cache`, `cache-dependency-path`, `python-version`,
+  `name`, `path`, `if-no-files-found`, `directory`) is still declared in the
+  target `action.yml`; each `v7` moving tag resolves; and every Node-based
+  action now reports `using: node24`, which is what actually clears the
+  warning. `test-macos.yaml` keeps its **SHA-pin** style — now
+  `fb8b3582c8e4def4969c97caa2f19720cb33a72f` (confirmed to be the
+  `chore(release): 7.0.0` commit tagged `v7.0.0`), not a floating tag.
+  `upload-artifact` v4's no-merge rule is already satisfied because each job
+  uses a distinct artifact name. `dtolnay/rust-toolchain@1.79.0` was **not** in
+  the deprecation list and is left alone. Both codecov steps already carry
+  `continue-on-error: true`, so a tokenless upload flake cannot gate CI.
+- **[#186](https://github.com/FabricLabs/fabric/pull/186) Codacy gate
+  (2026-08-25).** The "1 new high ErrorProne issue" that held the check at
+  `action_required` was a **false positive** on `functions/bytes.js` L118:
+  "the numeric literal `0x100000000` will have a different value at runtime."
+  That is only true in a **bitwise** context (`0x100000000 | 0 === 0`);
+  `randomUnit()` **divides**, and 2^32 is exact well inside
+  `Number.MAX_SAFE_INTEGER` — verified bit-identical at every boundary draw
+  (`0`, `0x80000000`, `0xffffffff`). Rather than exclude the file (a small
+  entropy helper — the `.codacy.yml` excludes are for native/generated and
+  path-construction code only), the divisor is now a named `2 ** 32` constant,
+  which is also clearer about the 4-byte draw. **Do not convert it back to
+  hex.** The existing range test sampled 8 draws, so it could never police the
+  upper bound — an off-by-one divisor (`2**32-1`, which returns exactly `1.0`)
+  or a bitwise truncation would have survived it, since the all-ones draw lands
+  about once in 4.3e9 calls. Added a deterministic endpoint test (stubbed
+  `crypto.randomBytes`), confirmed to fail against `2**32-1`.
 - **[#186](https://github.com/FabricLabs/fabric/pull/186) review threads
   (2026-08-25).** All ten still-open bot threads are resolved; `npm test` is
-  **2499 passing / 6 pending** (+4 tests). Thirteen others already carried
+  **2500 passing / 6 pending** (+5 tests). Thirteen others already carried
   "Addressed in commit" markers, and two of the ten were **stale**:
   `functions/bip371.js` already enforces the BIP-341 `33 + 32*m` control-block
   length, an even leaf version, and the `controlBlock[0] & 0xfe` match, and
   `carol` already sets `disablePlugins: ['cln-grpc']` — both fixed in
   **`aab3c983d`**, so the cursor[bot] thread is just unresolved, not open work.
+  Two more unresolved GitHub threads (still open on the PR UI as of 2026-08-29)
+  were **real** and are now patched locally (stage only): `Service._applyChanges`
+  rejected only `operation.path`, so RFC6902 `copy`/`move` could still read a
+  sensitive `from` (`/mnemonic` → `/public`); the guard now checks both pointers.
+  `ingestContractPublishBuffer` JSON-parsed the AMP body and rejected
+  `Message.fromFields('CONTRACT_PUBLISH', …)` length-prefixed bodies; it now
+  prefers `Message.tryParseMessageBody` (fields → parse `definition`, else JSON)
+  with the prior UTF-8 fallback. Tests:
+  `tests/fabric.wave1.audit.js`, `tests/contractMessageAccumulate.test.js`.
   Two were security-relevant. `Tree#verifyInclusion` fell back to `doc.root`,
   which let the **prover choose the commitment** it was checked against: any
   party could build its own tree, call `proveInclusion`, and pass
@@ -138,4 +207,4 @@ path and lockfile bumps in consuming packages — not another core helper.
 - `Filesystem.writeFile` / `readFile` / `delete` reject names that resolve outside the store root (`../`, absolute). Nested paths under the root still work. Final-component symlinks are refused on read/write (`O_NOFOLLOW`); `delete` unlinks the link without following. Intermediate directory symlinks that `realpath` outside the store are refused. Codacy Semgrep/Opengrep exclude `types/filesystem.js` for the same reason as other path-hardened helpers (nine PR-check criticals were `path.resolve` / `fs.*` on already-contained names).
 
 ## PRs
-[#186](https://github.com/FabricLabs/fabric/pull/186) — WIP on `feature/rsi` after [#185](https://github.com/FabricLabs/fabric/pull/185) merged (`4db3be3`). Tip **`88f766c28`** (review follow-ups after **`aab3c98`** / **`9c6ade0`** + entropy harden): `resolveSpend` reports effective NUMS vs MuSig2; gossip `RELAY_AS_IS_NUMERIC` includes contract/Bitcoin opcodes; relay settings keep extra constraint groups; gossip-relay prints frame counts and exits 1 on a failed stop; NOISE `freeNative` clears encrypt/decrypt pointers and `onready` does not allocate after teardown. Handshake-bus (`functions/noiseProtocolStream.js`) is **not** on live Hub pin **`f63a33f`**. File count vs **`master`** stays under 150. Do not add playnet-chaos, protocol-v1, MQTT, or sidecar `functions/*.d.ts` (CodeRabbit `gossipNetwork.d.ts` is **wontfix**). Still deferred: unique Service commit ids; Blessed TUI chat markup; collection JSON `v` → `schemaVersion`; collection CLI symlink follow; RFC6902 multi-op JSON bridge (http); docstring-coverage gate; Filesystem intermediate-symlink TOCTOU (no Node `openat`). Dropping Codacy Semgrep excludes for home-env / collection / Filesystem path helpers is **wontfix**. Keep `report:install` lockfile wipe (`rm -f`; core has no git deps). Do not exclude all of `types/message.js` from Codacy. Do **not** coerce first-class opcodes through `canonicalTypeName(parsed.type)` (inventory `type: 98` must not become a peering offer). `Token.toString()` is not auth.
+[#186](https://github.com/FabricLabs/fabric/pull/186) — WIP on `feature/rsi` after [#185](https://github.com/FabricLabs/fabric/pull/185) merged (`4db3be3`). Tip **`88f766c28`** (review follow-ups after **`aab3c98`** / **`9c6ade0`** + entropy harden): `resolveSpend` reports effective NUMS vs MuSig2; gossip `RELAY_AS_IS_NUMERIC` includes contract/Bitcoin opcodes; relay settings keep extra constraint groups; gossip-relay prints frame counts and exits 1 on a failed stop; NOISE `freeNative` clears encrypt/decrypt pointers and `onready` does not allocate after teardown. Handshake-bus (`functions/noiseProtocolStream.js`) is **not** on live Hub pin **`f63a33f`**. File count vs **`master`** stays under 150. Do not add playnet-chaos, protocol-v1, MQTT, or sidecar `functions/*.d.ts` (CodeRabbit `gossipNetwork.d.ts` is **wontfix**). Still deferred: unique Service commit ids; Blessed TUI chat markup; collection JSON `v` → `schemaVersion`; collection CLI symlink follow; RFC6902 multi-op JSON bridge (http); docstring-coverage gate; Filesystem intermediate-symlink TOCTOU (no Node `openat`). Dropping Codacy Semgrep excludes for home-env / collection / Filesystem path helpers is **wontfix**; conversely do **not** add `functions/bytes.js` to `.codacy.yml` — its one ErrorProne hit was a false positive fixed at the source (`2 ** 32` divisor, not hex). Keep `report:install` lockfile wipe (`rm -f`; core has no git deps). Do not exclude all of `types/message.js` from Codacy. Do **not** coerce first-class opcodes through `canonicalTypeName(parsed.type)` (inventory `type: 98` must not become a peering offer). `Token.toString()` is not auth.

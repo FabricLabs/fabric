@@ -1272,11 +1272,17 @@ class Service extends Actor {
     const ops = Array.isArray(changes) ? changes : [];
     const sensitive = /\/(mnemonic|seed|xprv|privateKey|private|passphrase)(\/|$)/i;
     for (const operation of ops) {
-      const p = operation && operation.path != null ? String(operation.path) : '';
-      if (sensitive.test(p)) {
-        const msg = 'Service patch refused sensitive path: ' + p;
-        if (this.listenerCount('error') > 0) this.emit('error', new Error(msg));
-        return { ok: false, error: msg };
+      const pointers = [];
+      if (operation && operation.path != null) pointers.push(['path', String(operation.path)]);
+      // RFC6902 copy/move read through `from`; guard both so a move from
+      // /mnemonic to /public cannot leak credentials into Service.state.
+      if (operation && operation.from != null) pointers.push(['from', String(operation.from)]);
+      for (const [kind, pointer] of pointers) {
+        if (sensitive.test(pointer)) {
+          const msg = 'Service patch refused sensitive ' + kind + ': ' + pointer;
+          if (this.listenerCount('error') > 0) this.emit('error', new Error(msg));
+          return { ok: false, error: msg };
+        }
       }
     }
 

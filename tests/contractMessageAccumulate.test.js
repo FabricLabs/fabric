@@ -659,6 +659,24 @@ describe('@fabric/core contractMessageAccumulate', function () {
     assert.ok(change.tip.content.members.includes(pubkeyXOnly(owner.pubkey)));
   });
 
+  it('persists genesis from field-encoded CONTRACT_PUBLISH (Message.fromFields)', function () {
+    const owner = new Key();
+    const store = createMemoryStore();
+    const definition = {
+      name: 'ArcGenesisFields',
+      members: { signers: [owner.pubkey], threshold: 1 },
+      primitives: { messageTypes: ['GroupChange'] }
+    };
+    const pub = Message.fromFields('CONTRACT_PUBLISH', {
+      definition: JSON.stringify(definition)
+    }).signWithKey(owner);
+    const seeded = ingestContractPublishBuffer(store, pub.toBuffer());
+    assert.strictEqual(seeded.accepted, true, seeded.error);
+    assert.ok(seeded.contractId);
+    const doc = loadDoc(store, seeded.contractId);
+    assert.ok(doc.genesis.signers.includes(pubkeyXOnly(owner.pubkey)));
+  });
+
   it('does not let meta.genesis replace the signed CONTRACT_PUBLISH body', function () {
     const owner = new Key();
     const attacker = new Key();

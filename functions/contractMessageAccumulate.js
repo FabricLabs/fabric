@@ -1251,15 +1251,30 @@ function ingestContractPublishBuffer (store, bufferOrPaste, meta = {}) {
   if (!verifyMessageSignature(msg)) {
     return { accepted: false, duplicate: false, contractId: null, genesis: null, error: 'invalid signature' };
   }
-  let raw = msg.body != null ? msg.body : (msg.raw && msg.raw.data);
-  if (Buffer.isBuffer(raw)) raw = raw.toString('utf8');
+  // Prefer tryParseMessageBody so Message.fromFields('CONTRACT_PUBLISH', …)
+  // (length-prefixed `definition` string) is accepted alongside transitional
+  // UTF-8 JSON bodies from Message.fromVector.
   let definition;
-  try {
-    definition = typeof raw === 'string' ? JSON.parse(raw) : raw;
-  } catch (_) {
-    return { accepted: false, duplicate: false, contractId: null, genesis: null, error: 'invalid publish body' };
+  const parsed = Message.tryParseMessageBody(msg);
+  if (parsed.ok && parsed.encoding === 'fields') {
+    const fieldDef = parsed.value && parsed.value.definition;
+    try {
+      definition = typeof fieldDef === 'string' ? JSON.parse(fieldDef) : fieldDef;
+    } catch (_) {
+      return { accepted: false, duplicate: false, contractId: null, genesis: null, error: 'invalid publish body' };
+    }
+  } else if (parsed.ok && parsed.encoding === 'json') {
+    definition = parsed.value;
+  } else {
+    let raw = msg.body != null ? msg.body : (msg.raw && msg.raw.data);
+    if (Buffer.isBuffer(raw)) raw = raw.toString('utf8');
+    try {
+      definition = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    } catch (_) {
+      return { accepted: false, duplicate: false, contractId: null, genesis: null, error: 'invalid publish body' };
+    }
   }
-  if (!definition || typeof definition !== 'object') {
+  if (!definition || typeof definition !== 'object' || Array.isArray(definition)) {
     return { accepted: false, duplicate: false, contractId: null, genesis: null, error: 'invalid publish body' };
   }
   const contractId = new Actor(definition).id;

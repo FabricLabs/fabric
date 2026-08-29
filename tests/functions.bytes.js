@@ -75,4 +75,29 @@ describe('functions/bytes', function () {
     }
     assert.ok(samples.size > 1);
   });
+
+  it('randomUnit maps the extreme 32-bit draws without reaching 1', function () {
+    // Random sampling cannot police the upper bound: the all-ones draw shows up
+    // about once in 4.3e9 calls, so an off-by-one divisor (2**32-1, which returns
+    // exactly 1.0) or a bitwise truncation would pass the loop above forever.
+    // Pin both endpoints deterministically instead.
+    const crypto = require('crypto');
+    const real = crypto.randomBytes;
+    try {
+      const draw = (hex) => {
+        crypto.randomBytes = () => Buffer.from(hex, 'hex');
+        return randomUnit();
+      };
+      assert.strictEqual(draw('00000000'), 0);
+      assert.strictEqual(draw('80000000'), 0.5);
+      const top = draw('ffffffff');
+      assert.ok(top < 1, `all-ones draw must stay below 1, got ${top}`);
+      assert.strictEqual(top, 4294967295 / 4294967296);
+    } finally {
+      crypto.randomBytes = real;
+    }
+    // Sanity: the stub is fully removed.
+    assert.strictEqual(crypto.randomBytes.length, real.length);
+    assert.ok(randomUnit() >= 0);
+  });
 });

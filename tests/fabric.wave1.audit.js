@@ -32,6 +32,19 @@ describe('Wave 1 core audit honesty', function () {
     await service.stop();
   });
 
+  it('Service._applyChanges rejects sensitive from pointers on copy/move', async function () {
+    const service = new Service({ networking: false });
+    await service.start();
+    service._state.content.mnemonic = 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about';
+    const denied = await service._applyChanges([
+      { op: 'copy', from: '/mnemonic', path: '/public' }
+    ]);
+    assert.strictEqual(denied.ok, false);
+    assert.match(denied.error, /sensitive from/);
+    assert.strictEqual(service._state.content.public, undefined);
+    await service.stop();
+  });
+
   it('Service.requirePatchCapability blocks without patchCapability', async function () {
     const service = new Service({
       networking: false,

@@ -110,12 +110,18 @@ function toUint8Flexible (bytes, maxLength) {
   throw new TypeError('toUint8Flexible: expected Buffer, Uint8Array, array-like, or iterable of bytes');
 }
 
+/** Divisor for a 32-bit draw. Spelled `2 ** 32` rather than `0x100000000` because
+ *  static analysis flags hex literals above `0x7FFFFFFF` (they truncate in a
+ *  *bitwise* context). This is a division, so the value is exact either way —
+ *  2^32 is far below `Number.MAX_SAFE_INTEGER`. Do not convert back to hex. */
+const U32_RANGE = 2 ** 32;
+
 /**
  * Uniform random float in [0, 1). Prefer over `Math.random()` for entropy fields.
  * @returns {number}
  */
 function randomUnit () {
-  return crypto.randomBytes(4).readUInt32BE(0) / 0x100000000;
+  return crypto.randomBytes(4).readUInt32BE(0) / U32_RANGE;
 }
 
 module.exports = {

@@ -113,7 +113,7 @@
     "test:playnet-chaos-live": "FABRIC_PLAYNET_CHAOS=1 NODE_ENV=test mocha --require ./tests/mocha-env.js tests/fuzz/p2p.chaosPeers.fuzz.js --grep 'playnet neighbor chaos' --exit --timeout 120000",
     "report:coverage": "npm run make:coverage && c8 report --reporter=text-lcov > reports/coverage.lcov",
     "report:credits": "node scripts/report-credits.js > reports/credits.json",
-    "report:install": "rm -rf node_modules && mkdir -p reports && echo \"$ npm i\" > reports/install.log && npm i >> reports/install.log 2>&1",
+    "report:install": "rm -rf node_modules && mkdir -p reports && rm -f package-lock.json && echo \"$ npm i\" > reports/install.log && npm i >> reports/install.log 2>&1",
     "report:install-ci": "bash scripts/report-install-ci.sh",
     "report:warnings": "node scripts/gen-quality-reports.js warnings",
     "report:deprecations": "node scripts/gen-quality-reports.js deprecations",
