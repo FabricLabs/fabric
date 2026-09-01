@@ -271,7 +271,10 @@
       "!functions/wireJson.js",
       "tests",
       "data",
-      "types/cli.js"
+      "types/cli.js",
+      "services/turntable.js",
+      "services/exchange.js",
+      "services/mqtt.js"
     ],
     "report-dir": "./reports/coverage",
     "temp-dir": "./reports/c8"

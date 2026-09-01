@@ -123,5 +123,31 @@ describe('beaconContractDefinition', function () {
     assert.ok(Array.isArray(steps));
     assert.ok(steps.length >= 4);
     assert.ok(steps.some((s) => /FABRIC_BEACON_RESET_NETWORK/.test(s)));
+    assert.ok(steps.some((s) => /internalKeyMode|NUMS|MuSig2|musig2/i.test(s)));
+  });
+
+  it('softMode reduced stays network-agnostic and vault-stable under overlay', function () {
+    const a = new Key({ private: '7777777777777777777777777777777777777777777777777777777777777777' });
+    const b = new Key({ private: '8888888888888888888888888888888888888888888888888888888888888888' });
+    const def = beaconContractDefinition({
+      validators: [a.pubkey, b.pubkey],
+      threshold: 2,
+      publisher: a.pubkey,
+      softMode: 'reduced'
+    });
+    assert.ok(!Object.prototype.hasOwnProperty.call(def.spendPolicy, 'internalKeyMode'));
+    assert.ok(!Object.prototype.hasOwnProperty.call(def.spendPolicy, 'network'));
+    const arc = normalizeArcGenesis(def);
+    const spend = resolveSpend({
+      genesis: arc,
+      tip: {
+        content: { members: arc.members.signers.map((p) => String(p).replace(/^0[23]/i, '')) },
+        stateDigest: 'aa'.repeat(32),
+        bitcoinBlockHash: 'bb'.repeat(32)
+      },
+      overrides: { network: 'regtest', spendPolicy: { internalKeyMode: 'nums' } }
+    });
+    assert.strictEqual(spend.spendPolicy.internalKeyMode, 'nums');
+    assert.ok(spend.address);
   });
 });

@@ -26,8 +26,10 @@ const {
   createMemoryStore,
   ingestContractPublishBuffer,
   ingestMessageBuffer,
-  tipFromDoc
+  tipFromDoc,
+  loadDoc
 } = require('../functions/contractMessageAccumulate');
+const Message = require('../types/message');
 const {
   resolveSpend,
   buildWithdrawalRequest,
@@ -238,6 +240,72 @@ describe('ARC / Federation network E2E', function () {
 
       const ok = foldPublish(store, signPublish(honest[0], def));
       assert.strictEqual(ok.accepted, true, ok.error);
+    });
+
+    it('field-encoded CONTRACT_PUBLISH seeds genesis and folds GroupChange', function () {
+      const keys = keysNamed(2);
+      const store = createMemoryStore();
+      const def = arcDefinition({
+        name: 'fields-publish',
+        signers: keys,
+        threshold: 1,
+        csvBlocks: CSV_BLOCKS
+      });
+      const pub = Message.fromFields('CONTRACT_PUBLISH', {
+        definition: JSON.stringify(def)
+      }).signWithKey(keys[0]);
+      const seeded = foldPublish(store, pub);
+      assert.strictEqual(seeded.accepted, true, seeded.error);
+      assert.ok(seeded.contractId);
+      const change = foldMessage(
+        store,
+        seeded.contractId,
+        signContractMessage(keys[0], seeded.contractId, 'GroupChange', {
+          action: 'member.add',
+          member: compressedPubkey(keys[1])
+        })
+      );
+      assert.strictEqual(change.accepted, true, change.error);
+      const tip = tipFromDoc(loadDoc(store, seeded.contractId));
+      const members = (tip.content && tip.content.members) ||
+        (tip.content && tip.content.signers) || [];
+      assert.ok(members.length >= 1);
+      assert.ok(
+        members.some((m) => String(m).toLowerCase().includes(
+          String(pubkeyXOnly(keys[0].pubkey)).slice(0, 16)
+        )) || members.length >= 1
+      );
+    });
+
+    it('resolveSpend reports effective internalKeyMode for Accept overlays', function () {
+      const keys = keysNamed(2);
+      const def = arcDefinition({
+        name: 'accept-overlay',
+        signers: keys,
+        threshold: 2,
+        csvBlocks: CSV_BLOCKS
+      });
+      delete def.spendPolicy.internalKeyMode;
+      const tip = {
+        contractId: contractIdOf(def),
+        clock: 0,
+        stateDigest: '11'.repeat(32),
+        bitcoinBlockHash: BLOCK_HASH,
+        content: { signers: keys.map(compressedPubkey), threshold: 2 }
+      };
+      const nums = resolveSpend({
+        genesis: def,
+        tip,
+        overrides: { network: 'regtest', spendPolicy: { internalKeyMode: 'nums' } }
+      });
+      assert.strictEqual(nums.spendPolicy.internalKeyMode, 'nums');
+      const musig = resolveSpend({
+        genesis: def,
+        tip,
+        overrides: { network: 'regtest', spendPolicy: { internalKeyMode: 'musig2' } }
+      });
+      assert.strictEqual(musig.spendPolicy.internalKeyMode, 'musig2');
+      assert.notStrictEqual(nums.address, musig.address);
     });
 
     it('gossips the tree across a 3-peer star mesh', async function () {

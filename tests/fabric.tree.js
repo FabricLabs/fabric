@@ -262,5 +262,38 @@ describe('@fabric/core/types/tree', function () {
       assert.strictEqual(doc.side, 'between');
       assert.strictEqual(dupes.verifyNonInclusion(doc), true);
     });
+
+    it('accepts Uint8Array leaves and restores them through inclusion proofs', function () {
+      const a = Uint8Array.from(Buffer.from('11'.repeat(32), 'hex'));
+      const b = Uint8Array.from(Buffer.from('22'.repeat(32), 'hex'));
+      const tree = new Tree({ leaves: [a, b], sortLeaves: true });
+      assert.strictEqual(tree.leafCount, 2);
+      const hit = tree.proveInclusion(a);
+      assert.strictEqual(hit.included, true);
+      assert.ok(tree.verifyInclusion(hit));
+      assert.ok(Array.isArray(tree.getProof(a)));
+    });
+
+    it('deserializes non-hex proof step data as utf8 and defaults missing position', function () {
+      const leaf = B('55');
+      const hit = tree.proveInclusion(leaf);
+      assert.ok(tree.verifyInclusion(hit));
+      const cloned = clone(hit);
+      assert.ok(tree.verifyInclusion(cloned));
+      // Force utf8 deserialize path (non-hex) and missing position → 'right'.
+      cloned.proof = [{ data: 'not-hex-bytes', position: undefined }];
+      assert.strictEqual(
+        Tree.deserializeProof(cloned.proof)[0].data.toString('utf8'),
+        'not-hex-bytes'
+      );
+      assert.strictEqual(Tree.deserializeProof(cloned.proof)[0].position, 'right');
+    });
+
+    it('empty tree getProof is empty and foreign leaves are not included', function () {
+      const empty = new Tree({ leaves: [], sortLeaves: true });
+      assert.deepStrictEqual(empty.getProof(B('11')), []);
+      const miss = tree.proveInclusion(B('99'));
+      assert.strictEqual(miss.included, false);
+    });
   });
 });

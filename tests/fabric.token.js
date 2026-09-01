@@ -164,5 +164,34 @@ describe('@fabric/core/types/token', function () {
       const signed = new Token({ capability: 'OP_Z', issuer, subject: 'q' }).toSignedString();
       assert.throws(() => Token.fromString(signed), /three-segment/);
     });
+
+    it('fromString rejects short and non-JSON payloads', function () {
+      assert.throws(() => Token.fromString('a.b'), /three-segment/);
+      assert.throws(() => Token.fromString(''), /three-segment/);
+      const badJson = [
+        Token.base64UrlEncode(JSON.stringify({ alg: 'none' })),
+        Token.base64UrlEncode('not-json'),
+        'sig'
+      ].join('.');
+      assert.throws(() => Token.fromString(badJson), /not JSON/);
+      const arrayPayload = [
+        Token.base64UrlEncode(JSON.stringify({ alg: 'none' })),
+        Token.base64UrlEncode(JSON.stringify([1, 2])),
+        'sig'
+      ].join('.');
+      assert.throws(() => Token.fromString(arrayPayload), /not JSON/);
+    });
+
+    it('base64UrlEncode maps plus/slash and strips padding', function () {
+      const encBuf = Token.base64UrlEncodeBuffer(Buffer.from([0xfb, 0xff, 0xfe]));
+      assert.ok(!/\+/.test(encBuf));
+      assert.ok(!/\//.test(encBuf));
+      assert.ok(!/=/.test(encBuf));
+      assert.deepStrictEqual(Token.base64UrlDecodeToBuffer(encBuf), Buffer.from([0xfb, 0xff, 0xfe]));
+      // utf8 path also strips padding (=)
+      const enc = Token.base64UrlEncode('a');
+      assert.ok(!/=/.test(enc));
+      assert.strictEqual(Token.base64UrlDecode(enc), 'a');
+    });
   });
 });

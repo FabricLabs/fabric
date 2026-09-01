@@ -397,6 +397,27 @@ describe('@fabric/core/types/message', function () {
       assert.deepStrictEqual(restored.toFields(), { nonce: '42' });
     });
 
+    it('fromFields / toFields round-trips CONTRACT_PUBLISH and CONTRACT_MESSAGE', function () {
+      const definition = JSON.stringify({ name: 'msg-fields', members: { signers: [], threshold: 1 } });
+      const pub = Message.fromFields('CONTRACT_PUBLISH', { definition });
+      assert.deepStrictEqual(pub.toFields(), { definition });
+      assert.deepStrictEqual(Message.fromBuffer(pub.toBuffer()).toFields(), { definition });
+
+      const payload = JSON.stringify({ type: 'GroupChange', object: { action: 'member.add' } });
+      const cm = Message.fromFields('CONTRACT_MESSAGE', {
+        contract: 'cc'.repeat(32),
+        payload
+      });
+      assert.deepStrictEqual(cm.toFields(), { contract: 'cc'.repeat(32), payload });
+    });
+
+    it('fromVector accepts an explicit parent hex as the third element', function () {
+      const parentHex = 'ab'.repeat(32);
+      const m = Message.fromVector(['P2P_CHAT_MESSAGE', 'hello', parentHex]);
+      assert.strictEqual(m.parent, parentHex);
+      assert.strictEqual(Message.fromBuffer(m.toBuffer()).parent, parentHex);
+    });
+
     it('fromFields throws when no schema is registered', function () {
       assert.throws(() => Message.fromFields('GENERIC_MESSAGE', { x: 1 }), /no body schema/);
     });

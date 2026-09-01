@@ -226,5 +226,16 @@ describe('@fabric/core/types/remote', function () {
 
       test();
     });
+
+    it('seeds entropy and applies randomUnit backoff on socket close', async function () {
+      const remote = new Remote({ ...sample, backoff: 2 });
+      assert.ok(typeof remote.settings.entropy === 'number');
+      assert.ok(remote.settings.entropy >= 0 && remote.settings.entropy < 1);
+      remote._nextReconnect = 50;
+      await remote._handleSocketClose('test-close');
+      assert.ok(remote._nextReconnect > 0);
+      assert.ok(Number.isFinite(remote._nextReconnect));
+      if (remote._reconnector) clearTimeout(remote._reconnector);
+    });
   });
 });

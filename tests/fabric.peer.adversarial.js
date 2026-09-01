@@ -1037,6 +1037,19 @@ describe('@fabric/core RC1 PR-review coverage', function () {
     assert.deepStrictEqual(peer._state.content.documents.doc1.meta.tags, ['x']);
   });
 
+  it('isolatePeerContent ignores non-object collections.documents and array maps', function () {
+    const peer = new Peer(offlinePeerSettings({
+      state: {
+        documents: ['not-a-map'],
+        messages: { m1: { body: 'x' } },
+        collections: { documents: 'not-an-object' }
+      }
+    }));
+    assert.deepStrictEqual(peer._state.content.documents, {});
+    assert.deepStrictEqual(peer._state.content.collections, { documents: {} });
+    assert.ok(peer._state.content.messages.m1);
+  });
+
   it('beat emits a clock-only snapshot (no full state tree)', function () {
     const peer = offlinePeer();
     let beat = null;

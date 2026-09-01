@@ -677,6 +677,52 @@ describe('@fabric/core contractMessageAccumulate', function () {
     assert.ok(doc.genesis.signers.includes(pubkeyXOnly(owner.pubkey)));
   });
 
+  it('rejects field-encoded CONTRACT_PUBLISH with invalid definition JSON', function () {
+    const owner = new Key();
+    const store = createMemoryStore();
+    const pub = Message.fromFields('CONTRACT_PUBLISH', {
+      definition: 'not-json{'
+    }).signWithKey(owner);
+    const seeded = ingestContractPublishBuffer(store, pub.toBuffer());
+    assert.strictEqual(seeded.accepted, false);
+    assert.match(String(seeded.error || ''), /invalid publish body/);
+  });
+
+  it('rejects a JSON publish body that is an array', function () {
+    const owner = new Key();
+    const store = createMemoryStore();
+    const pub = Message.fromVector(['CONTRACT_PUBLISH', JSON.stringify([1, 2, 3])]).signWithKey(owner);
+    const seeded = ingestContractPublishBuffer(store, pub.toBuffer());
+    assert.strictEqual(seeded.accepted, false);
+    assert.match(String(seeded.error || ''), /invalid publish body/);
+  });
+
+  it('field-encoded publish then GroupChange without meta.genesis', function () {
+    const owner = new Key();
+    const store = createMemoryStore();
+    const definition = {
+      name: 'FieldsThenChange',
+      members: { signers: [owner.pubkey], threshold: 1 },
+      primitives: { messageTypes: ['GroupChange', 'GroupChat'] }
+    };
+    const pub = Message.fromFields('CONTRACT_PUBLISH', {
+      definition: JSON.stringify(definition)
+    }).signWithKey(owner);
+    const seeded = ingestContractPublishBuffer(store, pub.toBuffer());
+    assert.strictEqual(seeded.accepted, true, seeded.error);
+    const change = ingestMessageBuffer(
+      store,
+      seeded.contractId,
+      signContractMessage(owner, seeded.contractId, 'GroupChange', {
+        action: 'member.add',
+        member: owner.pubkey
+      }).toBuffer(),
+      { origin: 'mesh' }
+    );
+    assert.strictEqual(change.accepted, true, change.error);
+    assert.ok(change.tip.content.members.includes(pubkeyXOnly(owner.pubkey)));
+  });
+
   it('does not let meta.genesis replace the signed CONTRACT_PUBLISH body', function () {
     const owner = new Key();
     const attacker = new Key();

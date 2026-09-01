@@ -169,4 +169,52 @@ describe('contractTaproot composable trees + hashlock', function () {
     assert.ok(leaves.some((l) => l.kind === 'spend' && l.id === 't0-authority'));
     assert.ok(leaves.some((l) => l.kind === 'script' && l.id === 'op-true'));
   });
+
+  it('finalizeSpendPsbt fails closed without tapLeafScript or signatures', function () {
+    const bare = new bitcoin.Psbt({ network: bitcoin.networks.regtest });
+    bare.addInput({
+      hash: Buffer.alloc(32),
+      index: 0,
+      witnessUtxo: {
+        script: Buffer.from('5120' + '11'.repeat(32), 'hex'),
+        value: 100000n
+      }
+    });
+    bare.addOutput({
+      address: bitcoin.payments.p2wpkh({
+        pubkey: Buffer.from(pk(0), 'hex'),
+        network: bitcoin.networks.regtest
+      }).address,
+      value: 99000n
+    });
+    assert.throws(() => finalizeSpendPsbt({ psbt: bare }), /missing tapLeafScript/);
+
+    const policy = synthesizeDefaultLadder({
+      validators: [pk(0), pk(1)],
+      threshold: 2,
+      publisher: pk(0),
+      network: 'regtest',
+      csvBlocks: 3
+    });
+    const built = buildContractTaproot(policy);
+    const fund = new bitcoin.Transaction();
+    fund.version = 2;
+    fund.addInput(Buffer.alloc(32), 0);
+    fund.addOutput(built.output, 100000n);
+    const dest = bitcoin.payments.p2wpkh({
+      pubkey: Buffer.from(pk(2), 'hex'),
+      network: bitcoin.networks.regtest
+    }).address;
+    const prepared = prepareTierWithdrawalPsbt({
+      policy,
+      fundedTxHex: fund.toHex(),
+      vaultAddress: built.address,
+      destinationAddress: dest,
+      feeSats: 1000,
+      tierId: 't0-authority',
+      ctx: { utxoAgeBlocks: 0 }
+    });
+    const unsigned = bitcoin.Psbt.fromBase64(prepared.psbtBase64);
+    assert.throws(() => finalizeSpendPsbt({ psbt: unsigned }), /no tapscript signatures/);
+  });
 });
