@@ -80,6 +80,25 @@ describe('@fabric/core/types/message', function () {
       assert.strictEqual(message.type, 'P2P_CALL');
     });
 
+    it('chains parent to the previous signed Message.id (genesis is zeros)', function () {
+      const genesis = Message.fromVector(['P2P_CHAT_MESSAGE', 'first']);
+      assert.strictEqual(genesis.parent, Message.ZERO_PARENT);
+      assert.ok(Message.isZeroParent(genesis.parent));
+      genesis.signWithKey(key);
+
+      const child = Message.fromVector(['P2P_CHAT_MESSAGE', 'second', genesis]);
+      assert.strictEqual(child.parent, genesis.id);
+      child.signWithKey(key);
+      assert.ok(child.verifyWithKey(key));
+
+      const restored = Message.fromBuffer(child.toBuffer());
+      assert.strictEqual(restored.parent, genesis.id);
+      assert.ok(restored.verifyWithKey(key));
+
+      restored.parent = Message.ZERO_PARENT;
+      assert.ok(!restored.verifyWithKey(key));
+    });
+
     it('exposes wireType, friendlyType, and JSON-oriented toObject().type', function () {
       const m = Message.fromVector(['Call', JSON.stringify(example.data)]);
       assert.strictEqual(m.wireType, 'P2P_CALL');
@@ -376,6 +395,45 @@ describe('@fabric/core/types/message', function () {
       assert.deepStrictEqual(m.toFields(), { nonce: '42' });
       const restored = Message.fromBuffer(m.toBuffer());
       assert.deepStrictEqual(restored.toFields(), { nonce: '42' });
+    });
+
+    it('fromFields / toFields round-trips CONTRACT_PUBLISH and CONTRACT_MESSAGE', function () {
+      const definition = JSON.stringify({ name: 'msg-fields', members: { signers: [], threshold: 1 } });
+      const pub = Message.fromFields('CONTRACT_PUBLISH', { definition });
+      assert.deepStrictEqual(pub.toFields(), { definition });
+      assert.deepStrictEqual(Message.fromBuffer(pub.toBuffer()).toFields(), { definition });
+
+      const payload = JSON.stringify({ type: 'GroupChange', object: { action: 'member.add' } });
+      const cm = Message.fromFields('CONTRACT_MESSAGE', {
+        contract: 'cc'.repeat(32),
+        payload
+      });
+      assert.deepStrictEqual(cm.toFields(), { contract: 'cc'.repeat(32), payload });
+    });
+
+    it('fromVector accepts an explicit parent hex as the third element', function () {
+      const parentHex = 'ab'.repeat(32);
+      const m = Message.fromVector(['P2P_CHAT_MESSAGE', 'hello', parentHex]);
+      assert.strictEqual(m.parent, parentHex);
+      assert.strictEqual(Message.fromBuffer(m.toBuffer()).parent, parentHex);
+    });
+
+    it('toVector round-trips non-zero parent through fromVector', function () {
+      const genesis = Message.fromVector(['P2P_CHAT_MESSAGE', 'first']).signWithKey(key);
+      const child = Message.fromVector(['P2P_CHAT_MESSAGE', 'second', genesis]).signWithKey(key);
+
+      const childVec = child.toVector();
+      assert.strictEqual(childVec.length, 3);
+      assert.strictEqual(childVec[2], genesis.id);
+
+      const restored = Message.fromVector(childVec);
+      assert.strictEqual(restored.parent, genesis.id);
+      assert.strictEqual(restored.type, child.type);
+      assert.strictEqual(String(restored.data), 'second');
+
+      const genesisVec = genesis.toVector();
+      assert.strictEqual(genesisVec.length, 2);
+      assert.strictEqual(Message.fromVector(genesisVec).parent, Message.ZERO_PARENT);
     });
 
     it('fromFields throws when no schema is registered', function () {

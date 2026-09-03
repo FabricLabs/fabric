@@ -2,6 +2,7 @@
 
 // external dependencies
 const crypto = require('crypto');
+const { randomUnit } = require('../functions/bytes');
 
 // components
 const Actor = require('../types/actor');
@@ -154,9 +155,7 @@ class Fabric extends Service {
   }
 
   static random () {
-    // TODO: select random function
-    // do not trust keys until this is determined!
-    return Math.random();
+    return randomUnit();
   }
 
   async _GET (key) {

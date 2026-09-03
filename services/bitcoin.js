@@ -86,6 +86,64 @@ const BITCOIN_COOKIE_PATH_MAX_LEN = 4096;
 // Internal allowlist: Bitcoin Core chain directory names under -datadir.
 const BITCOIND_CHAIN_FOLDER_NAMES = new Set(['regtest', 'testnet3', 'testnet4', 'signet']);
 
+/**
+ * Classify bitcoind stderr. Core writes fatal bind/lock failures as `Error: …`.
+ * @private
+ * @param {string} line
+ * @returns {boolean}
+ */
+function shouldTreatBitcoinStderrAsError (line) {
+  const text = String(line || '').trim().toLowerCase();
+  if (!text) return false;
+  return (
+    text.startsWith('error:') ||
+    text.includes(' error: ') ||
+    text.includes('fatal') ||
+    text.includes('exception')
+  );
+}
+
+/**
+ * Buffer bitcoind stderr and emit complete lines.
+ * @private
+ * @param {Bitcoin} service
+ * @param {Buffer|string} chunk
+ * @returns {void}
+ */
+function appendBitcoinStderrChunk (service, chunk) {
+  if (!service._bitcoindStderrBuf) service._bitcoindStderrBuf = '';
+  service._bitcoindStderrBuf += chunk.toString('utf8');
+  const parts = service._bitcoindStderrBuf.split(/\r?\n/);
+  service._bitcoindStderrBuf = parts.pop() || '';
+  for (const raw of parts) {
+    const line = raw.trim();
+    if (!line) continue;
+    if (shouldTreatBitcoinStderrAsError(line)) {
+      service._emitErrorSafe(`[FABRIC:BITCOIN] ${line}`);
+      continue;
+    }
+    if (service.settings.debug) service.emit('debug', `[FABRIC:BITCOIN] ${line}`);
+  }
+}
+
+/**
+ * Flush a trailing bitcoind stderr fragment (no final newline).
+ * @private
+ * @param {Bitcoin} service
+ * @returns {void}
+ */
+function flushBitcoinStderrBuffer (service) {
+  if (!service._bitcoindStderrBuf) return;
+  const line = service._bitcoindStderrBuf.trim();
+  service._bitcoindStderrBuf = '';
+  if (!line) return;
+  if (shouldTreatBitcoinStderrAsError(line)) {
+    service._emitErrorSafe(`[FABRIC:BITCOIN] ${line}`);
+    return;
+  }
+  if (service.settings.debug) service.emit('debug', `[FABRIC:BITCOIN] ${line}`);
+}
+
 // Internal helper: append fixed path components under baseAbs and reject traversal.
 function cookiePathUnderDatadirBase (baseAbs, parts) {
   // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal
@@ -2795,6 +2853,17 @@ class Bitcoin extends Service {
     return done;
   }
 
+  /**
+   * Emit `error` only when a listener is present. Node's EventEmitter throws
+   * `ERR_UNHANDLED_ERROR` otherwise, which mocha reports as a second `done()`.
+   * @param {*} msg
+   * @returns {void}
+   */
+  _emitErrorSafe (msg) {
+    if (this.listenerCount('error') > 0) this.emit('error', msg);
+    else this.emit('warning', msg);
+  }
+
   async createLocalNode () {
     if (this.settings.debug) this.emit('debug', '[FABRIC:BITCOIN] Creating local node...');
     let datadir = './stores/bitcoin';
@@ -2916,11 +2985,15 @@ class Bitcoin extends Service {
         if (this.settings.debug) this.emit('debug', `[FABRIC:BITCOIN] ${line}`);
       });
 
+      this._bitcoindStderrBuf = '';
       child.stderr.on('data', (data) => {
-        const line = data.toString('utf8').trim();
-        if (!line) return;
-        // Route bitcoind stderr into Fabric's error channel instead of terminal stderr
-        this.emit('error', `[FABRIC:BITCOIN] ${line}`);
+        appendBitcoinStderrChunk(this, data);
+      });
+      child.stderr.on('end', () => {
+        flushBitcoinStderrBuffer(this);
+      });
+      child.stderr.on('close', () => {
+        flushBitcoinStderrBuffer(this);
       });
 
       child.on('close', (code) => {
@@ -2930,10 +3003,7 @@ class Bitcoin extends Service {
       });
 
       child.on('error', (err) => {
-        // Route child process errors into Fabric's error channel; avoid writing to stderr.
-        this.emit('error', `[FABRIC:BITCOIN] Bitcoin Core process error: ${err.message || err}`);
-        // Attempt to restart the process
-        // this._restartBitcoind();
+        this._emitErrorSafe(`[FABRIC:BITCOIN] Bitcoin Core process error: ${err.message || err}`);
       });
 
       // Fail fast if the process exits/errors immediately after spawn.
@@ -2977,7 +3047,7 @@ class Bitcoin extends Service {
               this._nodeProcess.on('close', () => resolve());
             });
           } catch (e) {
-            this.emit('error', `[FABRIC:BITCOIN] Error during cleanup: ${e.message || e}`);
+            this._emitErrorSafe(`[FABRIC:BITCOIN] Error during cleanup: ${e.message || e}`);
           }
         }
       };
@@ -2990,14 +3060,14 @@ class Bitcoin extends Service {
         // Only handle errors from this service's child process
         if (err.source === 'bitcoin' || (this._nodeProcess && err.pid === this._nodeProcess.pid)) {
           // Avoid console.trace to keep TUI clean; surface via error channel instead.
-          this.emit('error', `[FABRIC:BITCOIN] Uncaught exception from Bitcoin service: ${err.message || err}`);
+          this._emitErrorSafe(`[FABRIC:BITCOIN] Uncaught exception from Bitcoin service: ${err.message || err}`);
           // await cleanup();
         }
       };
       this._errorHandlers.unhandledRejection = async (reason, _promise) => {
         // Only handle rejections from this service's operations
         if (reason.source === 'bitcoin' || (this._nodeProcess && reason.pid === this._nodeProcess.pid)) {
-          this.emit('error', '[FABRIC:BITCOIN] Unhandled rejection from Bitcoin service');
+          this._emitErrorSafe('[FABRIC:BITCOIN] Unhandled rejection from Bitcoin service');
           // await cleanup();
         }
       };

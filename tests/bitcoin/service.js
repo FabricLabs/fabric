@@ -8,6 +8,10 @@ const jayson = require('jayson/lib/client');
 // Fabric Types
 const Bitcoin = require('../../services/bitcoin');
 const Key = require('../../types/key');
+const {
+  isolatedManagedRegtestSettings,
+  rpcProbeLooksUnavailable
+} = require('../helpers/bitcoinRegtest');
 
 describe('@fabric/core/services/bitcoin', function () {
   describe('Bitcoin', function () {
@@ -1289,42 +1293,86 @@ describe('@fabric/core/services/bitcoin real-world RPC command parity', function
     'verifychain'
   ];
 
-  const rpcHost = process.env.BITCOIN_RPC_HOST || '127.0.0.1';
-  const rpcPort = Number(process.env.BITCOIN_RPC_PORT || 18443);
-  const rpcUser = process.env.BITCOIN_RPC_USER || 'polaruser';
-  const rpcPass = process.env.BITCOIN_RPC_PASS || 'polarpass';
+  const useExternalRpc = Boolean(
+    process.env.BITCOIN_RPC_HOST ||
+    process.env.BITCOIN_RPC_PORT ||
+    process.env.BITCOIN_RPC_USER ||
+    process.env.BITCOIN_RPC_PASS
+  );
   let btc;
+  let managed = false;
 
   before(async function () {
-    btc = new Bitcoin({
-      mode: 'rpc',
-      network: 'regtest',
-      host: rpcHost,
-      rpcport: rpcPort,
-      username: rpcUser,
-      password: rpcPass,
-      secure: false
+    if (useExternalRpc) {
+      const rpcHost = process.env.BITCOIN_RPC_HOST || '127.0.0.1';
+      const rpcPort = Number(process.env.BITCOIN_RPC_PORT || 18443);
+      const rpcUser = process.env.BITCOIN_RPC_USER || 'polaruser';
+      const rpcPass = process.env.BITCOIN_RPC_PASS || 'polarpass';
+      btc = new Bitcoin({
+        mode: 'rpc',
+        network: 'regtest',
+        host: rpcHost,
+        rpcport: rpcPort,
+        username: rpcUser,
+        password: rpcPass,
+        secure: false
+      });
+
+      const config = {
+        host: rpcHost,
+        port: rpcPort,
+        timeout: 15000
+      };
+      const auth = `${rpcUser}:${rpcPass}`;
+      config.headers = { Authorization: `Basic ${Buffer.from(auth, 'utf8').toString('base64')}` };
+      btc.rpc = jayson.http(config);
+
+      try {
+        await btc._makeRPCRequest('getblockchaininfo');
+      } catch (error) {
+        if (rpcProbeLooksUnavailable(error)) {
+          this.skip();
+          return;
+        }
+        throw error;
+      }
+      return;
+    }
+
+    const settings = await isolatedManagedRegtestSettings({ mode: 'rpc' });
+    btc = new Bitcoin(settings);
+    btc.on('error', (msg) => {
+      console.warn(String(msg));
     });
 
-    const config = {
-      host: rpcHost,
-      port: rpcPort,
-      timeout: 15000
-    };
-    const auth = `${rpcUser}:${rpcPass}`;
-    config.headers = { Authorization: `Basic ${Buffer.from(auth, 'utf8').toString('base64')}` };
-    btc.rpc = require('jayson/lib/client').http(config);
+    // `start()` assigns the spawned child before the rest of startup runs, so claim
+    // cleanup ownership first: otherwise a later rejection leaves a live bitcoind
+    // behind while the `after` hook skips `stop()`.
+    managed = true;
 
-    // Connectivity sanity check.
     try {
-      await btc._makeRPCRequest('getblockchaininfo');
+      await btc.start();
     } catch (error) {
-      const msg = String(error && error.message ? error.message : error);
-      if (msg.includes('ECONNREFUSED') || msg.includes('connect')) {
+      try {
+        await btc.stop();
+      } catch (_) { /* already down */ }
+      managed = false;
+      // No local bitcoind to manage is a skip, not a failure.
+      if (error && (error.code === 'ENOENT' || rpcProbeLooksUnavailable(error))) {
         this.skip();
         return;
       }
       throw error;
+    }
+  });
+
+  after(async function () {
+    if (managed && btc) {
+      try {
+        await btc.stop();
+      } catch (e) {
+        console.warn('Cleanup error:', e);
+      }
     }
   });
 
@@ -1344,24 +1392,7 @@ describe('@fabric/core/services/bitcoin', function () {
   }
   this.timeout(120000);
 
-  let defaults = {
-    network: 'regtest',
-    mode: 'fabric',
-    port: 18444,
-    rpcport: 18443,
-    zmqport: 18445,
-    zmq: {
-      host: '127.0.0.1',
-      port: 18445
-    },
-    managed: true,
-    listen: 0,
-    debug: false,
-    username: 'bitcoinrpc',
-    password: 'password',
-    datadir: './stores/bitcoin-regtest-test'
-  };
-
+  let defaults;
   let bitcoin;
   let key;
 
@@ -1377,25 +1408,13 @@ describe('@fabric/core/services/bitcoin', function () {
   before(async function () {
     this.timeout(180000); // 3 minutes for setup
 
-    const seed = process.pid % 10000;
-    const basePort = 30000 + ((seed * 3) % 20000);
-    const p2pPort = basePort;
-    const rpcPort = basePort + 1;
-    const zmqPort = basePort + 2;
-    defaults = {
-      ...defaults,
-      port: p2pPort,
-      rpcport: rpcPort,
-      zmqport: zmqPort,
-      zmq: {
-        host: '127.0.0.1',
-        port: zmqPort
-      },
-      datadir: `./stores/bitcoin-regtest-test-${process.pid}-${Date.now()}`
-    };
+    defaults = await isolatedManagedRegtestSettings();
 
     // Initialize Bitcoin service first
     bitcoin = new Bitcoin(defaults);
+    bitcoin.on('error', (msg) => {
+      console.warn(String(msg));
+    });
 
     // Now create the key with the correct network configuration
     key = new Key({

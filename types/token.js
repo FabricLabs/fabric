@@ -53,7 +53,7 @@ class Token {
 
   static base64UrlEncode (input) {
     const base64 = Buffer.from(input, 'utf8').toString('base64');
-    return base64.replace('+', '-').replace('/', '_').replace(/=+$/, '');
+    return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
   }
 
   static base64UrlDecode (input) {
@@ -137,21 +137,38 @@ class Token {
     }
   }
 
+  /**
+   * Parse a legacy three-segment string from {@link Token#toString}. Not for
+   * {@link Token#toSignedString} output — use {@link Token.verifySigned} instead.
+   * @param {string} input
+   * @returns {Token}
+   */
   static fromString (input) {
-    const parts = input.split('.');
-    const payload = parts[1];
-    const signature = parts[2];
-    const inner = Token.base64UrlDecode(payload);
-
+    const parts = String(input || '').split('.');
+    if (parts.length < 3) {
+      throw new Error('Token.fromString expects a three-segment legacy JWT-shaped string from toString()');
+    }
+    const payloadStr = Token.base64UrlDecode(parts[1]);
+    const pr = tryParseWireJson(payloadStr);
+    if (!pr.ok || !pr.value || typeof pr.value !== 'object' || Array.isArray(pr.value)) {
+      throw new Error('Token.fromString payload is not JSON');
+    }
+    const inner = pr.value;
     return new Token({
       capability: inner.cap,
-      issuer: inner.iss,
       subject: inner.sub,
       state: inner.state,
-      signature: signature
+      signature: parts[2]
     });
   }
 
+  /**
+   * Legacy JWT-shaped string. The MAC is SHA-256 over `header.payload` plus a
+   * hardcoded secret (`ffff`). **Not authentication** — anyone can mint one.
+   * Use {@link Token#toSignedString} / {@link Token.verifySigned} for Hub admin
+   * and other signed tokens.
+   * @returns {string}
+   */
   toString () {
     // TODO: determine rounding preference (secwise)
     const utime = Math.floor(this.created / 1000);

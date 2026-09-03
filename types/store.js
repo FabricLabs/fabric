@@ -4,7 +4,6 @@ const { tryParsePersistedJson } = require('../functions/wireJson');
 
 // Dependencies
 const { Level } = require('level');
-const crypto = require('crypto');
 const merge = require('lodash.merge');
 const pointer = require('json-pointer');
 
@@ -664,18 +663,25 @@ class Store extends Actor {
    * Wipes the storage.
    */
   async flush () {
+    // `abstract-level` opens a tick after construction and queues operations while
+    // `opening`, so skipping that state would silently drop the wipe.
+    const status = this.db && (this.db.status || this.db._status);
+    if (!this.db || (status !== 'open' && status !== 'opening')) return this;
+
     if (this.settings.verbosity >= 4) console.log('[FABRIC:STORE]', 'Flushing database...');
 
-    for (let name in this['@entity']['@data'].addresses) {
-      let address = this['@entity']['@data'].addresses[name];
-      if (this.settings.verbosity >= 3) console.log('found address:', address);
-      if (address) await this.del(address);
-    }
-
     try {
+      for (let name in this['@entity']['@data'].addresses) {
+        let address = this['@entity']['@data'].addresses[name];
+        if (this.settings.verbosity >= 3) console.log('found address:', address);
+        if (address) await this.del(address);
+      }
+
       await this.del(`/collections`);
       await this.commit();
     } catch (E) {
+      const code = E && E.code;
+      if (code === 'LEVEL_DATABASE_NOT_OPEN') return this;
       console.error('Could not wipe database:', E);
     }
 

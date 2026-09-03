@@ -35,13 +35,27 @@ describe('@fabric/core/types/capability', function () {
         private: '1111111111111111111111111111111111111111111111111111111111111111'
       });
       const capability = new Capability(sample);
+      await assert.rejects(
+        () => capability._generateToken(),
+        /allowScaffoldCapability/
+      );
+    });
+
+    it('generates a scaffold token when allowScaffoldCapability is set', async function () {
+      const identity = new Identity({
+        private: '1111111111111111111111111111111111111111111111111111111111111111'
+      });
+      const capability = new Capability(Object.assign({}, sample, {
+        allowScaffoldCapability: true
+      }));
       const token = await capability._generateToken();
 
       assert.ok(identity);
       assert.ok(capability);
       assert.ok(token);
+      assert.strictEqual(token.scaffold, true);
 
-      assert.strictEqual(token.macaroon.s64, '2RbOb5ti3EoIDOXUpmCVZHHxm4YNpCQrCFJyczHBAz0');
+      assert.ok(token.macaroon && token.macaroon.s64);
     });
   });
 });

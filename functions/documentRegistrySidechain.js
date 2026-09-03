@@ -187,7 +187,7 @@ function applyRegistryUpdateFields (state, fields, policy = null) {
     let patches;
     try {
       patches = JSON.parse(patchesRaw);
-    } catch (err) {
+    } catch (_) {
       return { ok: false, error: 'patchesCanonical must be JSON' };
     }
     if (!Array.isArray(patches) || !patches.length) {
@@ -210,7 +210,7 @@ function applyRegistryUpdateFields (state, fields, policy = null) {
   let catalog;
   try {
     catalog = JSON.parse(fields.catalogCanonical);
-  } catch (err) {
+  } catch (_) {
     return { ok: false, error: 'catalogCanonical must be JSON' };
   }
   if (!catalog || typeof catalog !== 'object') {

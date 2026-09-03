@@ -67,6 +67,7 @@ function normalizeValidatorPubkeys (list) {
  * @param {string} [opts.publisher] soft-tier key (defaults to first validator)
  * @param {number} [opts.csvBlocks=144] t1-soft CSV delay
  * @param {string} [opts.softMode='publisher'] `publisher` | `reduced`
+ * @param {string} [opts.internalKeyMode] omit from genesis (Actor-id stable). Overlay at Accept.
  * @param {number} [opts.version=1]
  * @returns {object} CONTRACT_PUBLISH body (no `network`, no `bitcoinAnchor`)
  */
@@ -77,6 +78,7 @@ function beaconContractDefinition (opts = {}) {
     publisher: opts.publisher,
     csvBlocks: opts.csvBlocks != null ? opts.csvBlocks : DEFAULT_CSV_BLOCKS,
     softMode: opts.softMode
+    // Do not bake internalKeyMode into genesis — Hub overlays nums|musig2 at Accept.
   });
   // Intentionally omit network from genesis (Actor-id stability across environments).
   delete spendPolicy.network;
@@ -126,7 +128,7 @@ function beaconRedeploySteps () {
     'Confirm FABRIC_BITCOIN_NETWORK (or settings.bitcoin.network) for the target environment.',
     'Set FABRIC_BEACON_RESET_NETWORK=1 once when flipping networks with existing beacon/CHAIN data.',
     'Restart Hub so startBeacon binds beacon/NETWORK and auto-registers the fabric-beacon ARC.',
-    'Verify federation vault address matches accepted Beacon ARC spendAddress on that network.',
+    'Verify federation vault address matches accepted Beacon ARC spendAddress on that network (same internalKeyMode: nums keeps historical NUMS UTXOs; musig2 is a new address).',
     'Clear FABRIC_BEACON_RESET_NETWORK after a successful bind (do not leave reset enabled).',
     'Do not embed spendPolicy.network or tip bitcoinAnchor into CONTRACT_PUBLISH genesis.'
   ];

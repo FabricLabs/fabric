@@ -3,6 +3,7 @@
 const assert = require('assert');
 const Bitcoin = require('../services/bitcoin');
 const Key = require('../types/key');
+const { isolatedManagedRegtestSettings } = require('./helpers/bitcoinRegtest');
 
 describe('@fabric/core/bitcoin/regtest', function () {
   if (!process.env.FABRIC_E2E_REGTEST) {
@@ -11,19 +12,7 @@ describe('@fabric/core/bitcoin/regtest', function () {
   }
   this.timeout(120000); // 2 minutes timeout for regtest operations
 
-  const defaults = {
-    network: 'regtest',
-    mode: 'fabric',
-    port: 18444,
-    rpcport: 18443,
-    zmqport: 18445,
-    managed: true,
-    debug: false,
-    username: 'bitcoinrpc',
-    password: 'password',
-    datadir: './stores/bitcoin-regtest-test'
-  };
-
+  let defaults;
   let bitcoin;
   let key;
 
@@ -38,8 +27,13 @@ describe('@fabric/core/bitcoin/regtest', function () {
   }
 
   before(async function () {
+    defaults = await isolatedManagedRegtestSettings();
+
     // Initialize Bitcoin service
     bitcoin = new Bitcoin(defaults);
+    bitcoin.on('error', (msg) => {
+      console.warn(String(msg));
+    });
 
     // Create a key for regtest network
     key = new Key({

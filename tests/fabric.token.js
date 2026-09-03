@@ -107,6 +107,18 @@ describe('@fabric/core/types/token', function () {
       assert.deepStrictEqual(Token.base64UrlDecodeToBuffer(encB), buf);
     });
 
+    it('base64UrlEncode replaces every + and /', function () {
+      // UTF-8 is encoded first, so the fixture must be chosen for its base64
+      // output: '++++////' becomes 'KysrKy8vLy8=' and substitutes nothing.
+      const raw = '௿௿';
+      const enc = Token.base64UrlEncode(raw);
+      assert.strictEqual(Buffer.from(raw, 'utf8').toString('base64'), '4K+/4K+/');
+      assert.strictEqual(enc, '4K-_4K-_');
+      assert.ok(!enc.includes('+'));
+      assert.ok(!enc.includes('/'));
+      assert.strictEqual(Token.base64UrlDecode(enc), raw);
+    });
+
     it('verifySigned rejects expired, malformed, and empty tokens', function () {
       const issuer = new Key();
       const token = new Token({ capability: 'C', issuer, subject: 's' });
@@ -131,12 +143,10 @@ describe('@fabric/core/types/token', function () {
       assert.strictEqual(bare.verify(), false);
     });
 
-    it('toString yields three JWT-like segments', function () {
+    it('toString is not a signed token (verifySigned rejects it)', function () {
       const issuer = new Key();
       const token = new Token({ capability: 'OP_X', issuer, subject: 'subj' });
-      const s = token.toString();
-      const parts = s.split('.');
-      assert.strictEqual(parts.length, 3);
+      assert.strictEqual(Token.verifySigned(token.toString(), issuer), null);
     });
 
     it('fromString parses three-segment token from toString', function () {
@@ -145,6 +155,43 @@ describe('@fabric/core/types/token', function () {
       const s = token.toString();
       const parsed = Token.fromString(s);
       assert.ok(parsed instanceof Token);
+      assert.strictEqual(parsed.capability, 'OP_Y');
+      assert.strictEqual(parsed.subject, 'z');
+    });
+
+    it('fromString rejects two-segment signed tokens', function () {
+      const issuer = new Key();
+      const signed = new Token({ capability: 'OP_Z', issuer, subject: 'q' }).toSignedString();
+      assert.throws(() => Token.fromString(signed), /three-segment/);
+    });
+
+    it('fromString rejects short and non-JSON payloads', function () {
+      assert.throws(() => Token.fromString('a.b'), /three-segment/);
+      assert.throws(() => Token.fromString(''), /three-segment/);
+      const badJson = [
+        Token.base64UrlEncode(JSON.stringify({ alg: 'none' })),
+        Token.base64UrlEncode('not-json'),
+        'sig'
+      ].join('.');
+      assert.throws(() => Token.fromString(badJson), /not JSON/);
+      const arrayPayload = [
+        Token.base64UrlEncode(JSON.stringify({ alg: 'none' })),
+        Token.base64UrlEncode(JSON.stringify([1, 2])),
+        'sig'
+      ].join('.');
+      assert.throws(() => Token.fromString(arrayPayload), /not JSON/);
+    });
+
+    it('base64UrlEncode maps plus/slash and strips padding', function () {
+      const encBuf = Token.base64UrlEncodeBuffer(Buffer.from([0xfb, 0xff, 0xfe]));
+      assert.ok(!/\+/.test(encBuf));
+      assert.ok(!/\//.test(encBuf));
+      assert.ok(!/=/.test(encBuf));
+      assert.deepStrictEqual(Token.base64UrlDecodeToBuffer(encBuf), Buffer.from([0xfb, 0xff, 0xfe]));
+      // utf8 path also strips padding (=)
+      const enc = Token.base64UrlEncode('a');
+      assert.ok(!/=/.test(enc));
+      assert.strictEqual(Token.base64UrlDecode(enc), 'a');
     });
   });
 });

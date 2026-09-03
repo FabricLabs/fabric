@@ -189,7 +189,8 @@ function resolveKeyList (keysRef, keySets, publisher) {
  * @param {number} [opts.softThreshold] when softMode=reduced (default ceil(k/2))
  * @param {object} [opts.hashlock] optional L1 hashlock leaf (`commitmentHex` / `runCommitmentHex`)
  * @param {object[]} [opts.extraLeaves] additional composable leaves (script / spend / hashlock)
- * @param {string} [opts.internalKeyMode] `musig2` (default when n≥2) | `nums` (legacy script-path-only)
+ * @param {string} [opts.internalKeyMode] `musig2` (default when n≥2) | `nums` (legacy script-path-only).
+ *   Historical NUMS vaults MUST pass `nums` — a rebuild does not migrate UTXOs.
  * @returns {object} normalized spend policy
  */
 function synthesizeDefaultLadder (opts = {}) {
@@ -392,9 +393,11 @@ function normalizeContractSpendPolicy (raw = {}) {
  * @private
  */
 function normalizeInternalKeyMode (mode) {
-  const m = String(mode || 'nums').toLowerCase();
+  if (mode == null || String(mode).trim() === '') return 'nums';
+  const m = String(mode).trim().toLowerCase();
   if (m === 'musig2' || m === 'auto') return 'musig2';
-  return 'nums';
+  if (m === 'nums') return 'nums';
+  throw new Error('internalKeyMode must be "musig2", "auto", or "nums"');
 }
 
 /**
@@ -1387,6 +1390,96 @@ function finalizeHashlockPsbt (opts = {}) {
 }
 
 /**
+ * Collect x-only pubkeys from a k-of-n spend tapscript (`CHECKSIG` /
+ * `CHECKSIGADD`), skipping a leading CSV/CLTV prefix when present.
+ * @param {Buffer|Uint8Array} scriptBuf
+ * @returns {Buffer[]}
+ */
+function parseXOnlyPubkeysFromSpendScript (scriptBuf) {
+  const raw = Buffer.isBuffer(scriptBuf) ? scriptBuf : Buffer.from(scriptBuf || []);
+  const chunks = script.decompile(raw) || [];
+  const keys = [];
+  for (let i = 0; i < chunks.length - 1; i++) {
+    const chunk = chunks[i];
+    const op = chunks[i + 1];
+    const asBuf = Buffer.isBuffer(chunk)
+      ? chunk
+      : (chunk instanceof Uint8Array ? Buffer.from(chunk) : null);
+    if (
+      asBuf &&
+      asBuf.length === 32 &&
+      (op === script.OPS.OP_CHECKSIG || op === script.OPS.OP_CHECKSIGADD)
+    ) {
+      keys.push(Buffer.from(asBuf));
+    }
+  }
+  return keys;
+}
+
+/**
+ * Finalize a k-of-n (CHECKSIG / CHECKSIGADD) script-path PSBT after co-signers
+ * have called `signInput`. Unused keys become empty witness elements (BIP342).
+ *
+ * Witness stack (before script + control block) is signatures in **reverse**
+ * script-pubkey order so the first `CHECKSIG` pops the last stack item.
+ *
+ * @param {object} opts
+ * @param {string} [opts.psbtBase64]
+ * @param {object} [opts.psbt] bitcoinjs-lib `Psbt`
+ * @returns {{ txHex: string, txid: string, witnessCount: number }}
+ */
+function finalizeSpendPsbt (opts = {}) {
+  const psbt = opts.psbt
+    ? opts.psbt
+    : Psbt.fromBase64(String(opts.psbtBase64 || '').trim());
+
+  psbt.finalizeInput(0, (_inputIndex, input) => {
+    const leaf = (input.tapLeafScript || [])[0];
+    if (!leaf || !leaf.script || !leaf.controlBlock) {
+      throw new Error('finalizeSpendPsbt: missing tapLeafScript on PSBT input');
+    }
+    const scriptBuf = Buffer.from(leaf.script);
+    const control = Buffer.from(leaf.controlBlock);
+    const pubkeys = parseXOnlyPubkeysFromSpendScript(scriptBuf);
+    if (!pubkeys.length) {
+      throw new Error('finalizeSpendPsbt: no CHECKSIG pubkeys in leaf script');
+    }
+    const lh = Buffer.from(bip341.tapleafHash({
+      output: leaf.script,
+      version: leaf.leafVersion
+    }));
+    const sigByX = new Map();
+    for (const tss of input.tapScriptSig || []) {
+      if (!tss || !tss.leafHash || !tss.pubkey || !tss.signature) continue;
+      if (!Buffer.from(tss.leafHash).equals(lh)) continue;
+      const pk = Buffer.from(tss.pubkey);
+      const x = pk.length === 33 ? pk.subarray(1, 33) : pk;
+      if (x.length !== 32) continue;
+      const sig = Buffer.from(tss.signature);
+      sigByX.set(x.toString('hex'), sig.length >= 64 ? sig.subarray(0, 64) : sig);
+    }
+    const stack = [];
+    for (let i = pubkeys.length - 1; i >= 0; i--) {
+      const sig = sigByX.get(pubkeys[i].toString('hex'));
+      stack.push(sig && sig.length ? sig : Buffer.alloc(0));
+    }
+    const signed = [...sigByX.keys()].length;
+    if (signed < 1) {
+      throw new Error('finalizeSpendPsbt: no tapscript signatures on input');
+    }
+    const witness = stack.concat([scriptBuf, control]);
+    return { finalScriptWitness: psbtutils.witnessStackToScriptWitness(witness) };
+  });
+
+  const extracted = psbt.extractTransaction();
+  return {
+    txHex: extracted.toHex(),
+    txid: extracted.getId(),
+    witnessCount: extracted.ins[0].witness.length
+  };
+}
+
+/**
  * Authority P2TR vault from validator/signer set.
  *
  * **Default (RC):** 2-tier ladder — k-of-n authority now; softer rule after
@@ -1396,7 +1489,13 @@ function finalizeHashlockPsbt (opts = {}) {
  * **Legacy:** pass `{ legacySingleLeaf: true }` for the pre-ladder single k-of-n
  * leaf address (opt-in only; not used by Hub vault summary).
  *
+ * **Internal key:** default n≥2 uses the MuSig2 aggregate (`internalKeyMode:
+ * 'musig2'`) — a **new address** vs historical NUMS. Pass `internalKeyMode:
+ * 'nums'` to keep coins at the old script-path-only vault. Rebuilds do not
+ * migrate UTXOs.
+ *
  * @param {object} opts
+ * @param {string} [opts.internalKeyMode] `musig2` | `nums`
  * @returns {object}
  */
 function buildFederationVaultFromPolicy (opts = {}) {
@@ -1408,7 +1507,8 @@ function buildFederationVaultFromPolicy (opts = {}) {
     failover,
     softMode,
     softThreshold,
-    legacySingleLeaf
+    legacySingleLeaf,
+    internalKeyMode
   } = opts;
   const validatorPubkeysHex = opts.validatorPubkeysHex || opts.validators || [];
   const pks = parseCompressedPubkeysSorted(validatorPubkeysHex);
@@ -1438,7 +1538,8 @@ function buildFederationVaultFromPolicy (opts = {}) {
       publisher: publisher || pks[0].toString('hex'),
       csvBlocks: csvBlocks != null ? csvBlocks : DEFAULT_CSV_BLOCKS,
       softMode,
-      softThreshold
+      softThreshold,
+      internalKeyMode
     }));
     const t0 = built.leaves.find((l) => l.kind === 'spend' && (l.id === 't0-authority' || l.id === 't0-federation'))
       || built.leaves.find((l) => l.kind === 'spend');
@@ -1476,7 +1577,10 @@ function buildFederationVaultFromPolicy (opts = {}) {
         softMode: softMode
           ? (String(softMode).toLowerCase() === 'reduced' ? 'reduced' : 'publisher')
           : 'publisher',
-        network
+        network,
+        internalKeyMode: built.internalPubkeyHex === TAPROOT_INTERNAL_NUMS.toString('hex')
+          ? 'nums'
+          : 'musig2'
       },
       policy: built.policy,
       leaves: built.leaves
@@ -1592,6 +1696,8 @@ module.exports = {
   prepareDecayMigrationPsbt,
   prepareHashlockWithdrawalPsbt,
   finalizeHashlockPsbt,
+  finalizeSpendPsbt,
+  parseXOnlyPubkeysFromSpendScript,
   buildFederationVaultFromPolicy,
   prepareVaultWithdrawalPsbt,
   buildVaultControlBlock,

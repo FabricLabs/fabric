@@ -12,13 +12,6 @@ const {
   PEERING_OFFER_MAX_RELAYS_PER_ORIGIN_PER_MINUTE,
   PEER_MAX_CANDIDATES_QUEUE,
   PEER_CANDIDATE_RETRY_MS,
-  P2P_PEER_GOSSIP,
-  P2P_PEERING_OFFER,
-  P2P_PEER_ALIAS,
-  P2P_CHAT_MESSAGE,
-  P2P_INVENTORY_REQUEST,
-  P2P_INVENTORY_RESPONSE,
-  DOCUMENT_REQUEST_TYPE,
   PEER_MAX_WIRE_HASH_CACHE,
   PEER_MAX_LOGICAL_REGISTER_CACHE,
   PEER_SCORE_BODY_HASH_MISMATCH_PENALTY,
@@ -55,6 +48,10 @@ const {
   toXOnlyPeerId
 } = require('../functions/fabricOnion');
 const {
+  isRelayAsIsWireType,
+  isFirstClassOpcodeOnlyType
+} = require('../functions/gossipNetwork');
+const {
   isOnionChatSeal,
   tryOpenOnionChatText
 } = require('../functions/onionChatSeal');
@@ -74,6 +71,26 @@ const P2P_PEER_ALIAS_MAX_CHARS = 64;
  * @returns {object}
  * @private
  */
+function cloneJsonValue (value) {
+  if (value == null || typeof value !== 'object') return value;
+  if (Buffer.isBuffer(value)) return Buffer.from(value);
+  if (Array.isArray(value)) return value.map(cloneJsonValue);
+  const out = {};
+  for (const key of Object.keys(value)) {
+    out[key] = cloneJsonValue(value[key]);
+  }
+  return out;
+}
+
+function clonePlainObjectMap (value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  const out = {};
+  for (const key of Object.keys(value)) {
+    out[key] = cloneJsonValue(value[key]);
+  }
+  return out;
+}
+
 function isolatePeerContent (input) {
   const defaults = {
     actors: {},
@@ -84,17 +101,23 @@ function isolatePeerContent (input) {
     documentSealed: {},
     documentContentKeys: {},
     messages: {},
-    services: {}
+    services: {},
+    collections: { documents: {} }
   };
   if (!input || typeof input !== 'object' || Array.isArray(input)) {
     return defaults;
   }
   const out = Object.assign({}, defaults);
   for (const key of Object.keys(defaults)) {
+    if (key === 'collections') continue;
     if (input[key] && typeof input[key] === 'object' && !Array.isArray(input[key])) {
-      out[key] = Object.assign({}, input[key]);
+      out[key] = clonePlainObjectMap(input[key]);
     }
   }
+  // Inventory still reads collections.documents for published / price / L1
+  // metadata. Copy that subtree only; do not alias Hub collections.
+  const srcDocs = input.collections && input.collections.documents;
+  out.collections = { documents: clonePlainObjectMap(srcDocs) };
   return out;
 }
 
@@ -133,11 +156,11 @@ const crypto = require('crypto');
 const { Level } = require('level');
 const stream = require('stream');
 const manager = require('fast-json-patch');
-const noise = require('noise-protocol-stream');
+const noise = require('../functions/noiseProtocolStream');
 const merge = require('lodash.merge');
 const { EventEmitter } = require('events');
-// noise-protocol-stream uses one shared EventEmitter for all handshake callbacks.
-// Concurrent mesh dials exceed the default MaxListeners=10 and spam warnings.
+// In-flight NOISE handshakes share one WASM EventEmitter (three listeners each)
+// until split/destroy. Concurrent mesh dials can exceed the default MaxListeners=10.
 if ((EventEmitter.defaultMaxListeners || 10) < 64) {
   EventEmitter.defaultMaxListeners = 64;
 }
@@ -215,7 +238,7 @@ function peerDebugDerivedPublicSummary (keyInstance) {
   let pubHex = '';
   try {
     if (typeof keyInstance.pubkey === 'string') pubHex = keyInstance.pubkey.trim();
-  } catch (err) {
+  } catch (_) {
     pubHex = '';
   }
   if (!pubHex && keyInstance.settings) {
@@ -379,52 +402,6 @@ function authoritySetHasPubkey (authorities, pubkeyHex) {
 }
 
 /**
- * Mesh types that MUST be forwarded bit-identical (author + signature preserved).
- * Relays never hop-re-sign these — wire-hash dedup and end-to-end / multisig verify depend on it.
- * Local agents may still *originate* new messages of these types signed with their own key.
- * @private
- */
-const RELAY_AS_IS_TYPES = new Set([
-  'BITCOIN_BLOCK',
-  'BitcoinBlock',
-  'P2P_CHAT_MESSAGE',
-  'P2P_PEER_ALIAS',
-  'CONTRACT_PUBLISH',
-  'CONTRACT_MESSAGE',
-  'CONTRACT_PROPOSAL',
-  'ContractProposal',
-  P2P_PEER_GOSSIP,
-  'P2P_PEER_GOSSIP',
-  P2P_PEERING_OFFER,
-  'P2P_PEERING_OFFER',
-  // Bit-identical mesh forward when local peer does not hold the document.
-  'DOCUMENT_REQUEST',
-  'DocumentRequest',
-  // Inventory request/response: prior-hop / buyer author must survive TCP peer pin checks.
-  'P2P_INVENTORY_REQUEST',
-  'P2P_INVENTORY_RESPONSE',
-  'INVENTORY_REQUEST',
-  'INVENTORY_RESPONSE',
-  // Source-signed onion layers: author is path builder, not the TCP peer.
-  'P2P_FORWARD',
-  // Mesh flood envelope: outer is attacker/path-builder signed; forward bit-identical.
-  // Without this, the next hop pin-checks AMP author against the honest forwarder and bans them.
-  'P2P_RELAY'
-]);
-
-const RELAY_AS_IS_NUMERIC = new Set([
-  P2P_PEER_GOSSIP,
-  P2P_PEERING_OFFER,
-  P2P_PEER_ALIAS,
-  P2P_CHAT_MESSAGE,
-  P2P_INVENTORY_REQUEST,
-  P2P_INVENTORY_RESPONSE,
-  DOCUMENT_REQUEST_TYPE,
-  P2P_FORWARD,
-  P2P_RELAY
-]);
-
-/**
  * Outer / generic types whose local registration side-effects are first-writer-wins.
  * Exact wire duplicates are already dropped via {@link Peer#messages} (buffer hash).
  * These types also no-op when the *logical* payload was already registered — including
@@ -452,66 +429,6 @@ const LOGICAL_REGISTER_ONCE_TYPES = new Set([
 ]);
 
 /**
- * @param {string|number|null|undefined} type
- * @returns {boolean}
- * @private
- */
-function isRelayAsIsWireType (type) {
-  if (type == null) return false;
-  if (typeof type === 'number') {
-    return RELAY_AS_IS_NUMERIC.has(type);
-  }
-  return RELAY_AS_IS_TYPES.has(String(type));
-}
-
-/**
- * Types that must arrive as first-class AMP opcodes — not via P2P_BASE_MESSAGE JSON.
- * @param {string|null|undefined} type
- * @returns {boolean}
- * @private
- */
-function isFirstClassOpcodeOnlyType (type) {
-  if (type == null) return false;
-  return FIRST_CLASS_OPCODE_ONLY_TYPES.has(String(type));
-}
-
-/** @private */
-const FIRST_CLASS_OPCODE_ONLY_TYPES = new Set([
-  'P2P_PEER_GOSSIP',
-  'P2P_PEERING_OFFER',
-  'P2P_PEER_ANNOUNCE',
-  'P2P_PEER_ALIAS',
-  'P2P_SESSION_OFFER',
-  'P2P_SESSION_OPEN',
-  'P2P_MUSIG_START',
-  'P2P_MUSIG_ACCEPT',
-  'P2P_MUSIG_RECEIVE_COUNTER',
-  'P2P_MUSIG_SEND_PROPOSAL',
-  'P2P_MUSIG_REPLY_TO_PROPOSAL',
-  'P2P_MUSIG_ACCEPT_PROPOSAL',
-  'MusigStart',
-  'MusigAccept',
-  'MusigReceiveCounter',
-  'MusigSendProposal',
-  'MusigReplyToProposal',
-  'MusigAcceptProposal',
-  'P2P_CHAT_MESSAGE',
-  'CONTRACT_PUBLISH',
-  'CONTRACT_MESSAGE',
-  'CONTRACT_PROPOSAL',
-  'P2P_INVENTORY_REQUEST',
-  'P2P_INVENTORY_RESPONSE',
-  'INVENTORY_REQUEST',
-  'INVENTORY_RESPONSE',
-  'P2P_FILE_SEND',
-  'P2P_DOCUMENT_PUBLISH',
-  'P2P_FLUSH_CHAIN',
-  'FlushChain',
-  'BitcoinBlock',
-  'BITCOIN_BLOCK'
-]);
-
-/**
  * Generic / base carriers may wrap a relay-as-is body (Hub transitional path).
  * Pin-check against the TCP peer would wrongly reject multisig / prior-hop authors.
  * @param {Message} message
@@ -536,7 +453,7 @@ function isRelayAsIsGenericCarrier (message) {
       return false;
     }
     return isRelayAsIsWireType(pr.value.type);
-  } catch (e) {
+  } catch (_) {
     return false;
   }
 }
@@ -609,7 +526,13 @@ class Peer extends Service {
       relayInventoryRequest: false,
       // Optionally relay INVENTORY_RESPONSE to peers other than the sender.
       relayInventoryResponse: false,
+      // When false, CONTRACT_PUBLISH is validated + flooded without storing
+      // local contract state / patch allow-lists (gossip-relay nodes).
+      registerInboundContracts: true,
       connectTimeout: 5000,
+      // Inbound NOISE must finish before this; scanners that hold :7777 without
+      // completing handshake would otherwise sit on the shared WASM bus.
+      handshakeTimeout: 10000,
       commitHistoryMax: 256,
       // Relay amplification controls for P2P_PEER_GOSSIP.
       gossip: {
@@ -1476,13 +1399,11 @@ class Peer extends Service {
       }
       const sock = this.connections && this.connections[addr];
       if (sock) {
-        if (sock._keepalive) clearInterval(sock._keepalive);
-        delete this.connections[addr];
-        delete this.peers[addr];
-        if (this._addressToId) delete this._addressToId[addr];
+        // Centralized teardown (idempotent per socket); unit stubs have destroy()
+        // but no _destroyFabric, so call the Peer method directly.
+        this._destroyFabric(sock, addr);
         try {
-          if (typeof sock.destroy === 'function') sock.destroy();
-          else if (typeof sock._destroyFabric === 'function') sock._destroyFabric();
+          if (typeof sock.destroy === 'function' && !sock.destroyed) sock.destroy();
         } catch (_) { /* ignore */ }
       }
     }
@@ -1491,6 +1412,17 @@ class Peer extends Service {
 
   get id () {
     return this.key.pubkey;
+  }
+
+  /**
+   * Shared WASM handshake-bus listener counts (three events per in-flight session).
+   * @returns {{ write: number, read: number, split: number }}
+   */
+  countNoiseHandshakeListeners () {
+    if (typeof noise.countHandshakeListeners === 'function') {
+      return noise.countHandshakeListeners();
+    }
+    return { write: 0, read: 0, split: 0 };
   }
 
   get pubkeyhash () {
@@ -1731,7 +1663,7 @@ class Peer extends Service {
     let want;
     try {
       want = toXOnlyPeerId(peerId);
-    } catch (err) {
+    } catch (_) {
       return null;
     }
     if (xOnlyEquals(want, this._localXOnlyPeerId())) return null;
@@ -1742,7 +1674,7 @@ class Peer extends Service {
       if (!rec || rec.publicKey == null) continue;
       try {
         if (xOnlyEquals(want, toXOnlyPeerId(rec.publicKey))) return addr;
-      } catch (err) {
+      } catch (_) {
         // ignore malformed registry keys
       }
     }
@@ -1755,7 +1687,7 @@ class Peer extends Service {
       if (pk == null) continue;
       try {
         if (!xOnlyEquals(want, toXOnlyPeerId(pk))) continue;
-      } catch (err) {
+      } catch (_) {
         continue;
       }
       const addr = entry.address || key;
@@ -2475,11 +2407,12 @@ class Peer extends Service {
       ? this.settings.connectTimeout
       : 5000;
     socket.setTimeout(connectTimeoutMs);
-    socket.once('timeout', () => {
+    const onConnectTimeout = () => {
       const msg = `Socket timeout: connect ${host}:${url.port || P2P_PORT} after ${connectTimeoutMs}ms`;
       this.emit('warning', msg);
       socket.destroy(new Error(msg));
-    });
+    };
+    socket.once('timeout', onConnectTimeout);
 
     socket._destroyFabric = () => {
       this._destroyFabric(socket, target);
@@ -2513,10 +2446,11 @@ class Peer extends Service {
       // delete this.connections[target];
     });
 
-    // Do not construct NOISE until TCP is up. noise-protocol-stream shares one
-    // EventEmitter for handshake callbacks; refused dials were leaking listeners.
+    // Do not construct NOISE until TCP is up. Shared WASM handshake bus
+    // listeners are per session until split/destroy (see functions/noiseProtocolStream).
     socket.once('connect', () => {
       try {
+        socket.removeListener('timeout', onConnectTimeout);
         socket.setTimeout(0);
         if (socket.destroyed) return;
         const client = noise({
@@ -2526,6 +2460,22 @@ class Peer extends Service {
           verify: this._verifyNOISE.bind(this)
         });
         this._attachNoiseStreamErrorHandlers(client, 'NOISE');
+        const handshakeTimeoutMs = (typeof this.settings.handshakeTimeout === 'number')
+          ? this.settings.handshakeTimeout
+          : 10000;
+        if (handshakeTimeoutMs > 0) {
+          socket.setTimeout(handshakeTimeoutMs);
+          socket.once('timeout', () => {
+            if (socket._fabricNoiseHandshakeOk) return;
+            const msg = `Socket timeout: NOISE handshake ${host}:${url.port || P2P_PORT} after ${handshakeTimeoutMs}ms`;
+            this.emit('warning', msg);
+            socket.destroy(new Error(msg));
+          });
+        }
+        client.encrypt.once('handshake', () => {
+          socket._fabricNoiseHandshakeOk = true;
+          socket.setTimeout(0);
+        });
         client.decrypt.on('data', (data) => {
           this._handleFabricMessage(data, { name: target }, client);
         });
@@ -2563,6 +2513,8 @@ class Peer extends Service {
   }
 
   _destroyFabric (socket, target) {
+    if (socket && socket._fabricDestroyed) return;
+    if (socket) socket._fabricDestroyed = true;
     if (socket && socket._keepalive) clearInterval(socket._keepalive);
     this._teardownNoiseClient(socket);
 
@@ -4047,7 +3999,9 @@ class Peer extends Service {
           }
           break;
         }
-        if (!this._registerContract(msg.object, signerPubkeyHex)) break;
+        if (this.settings.registerInboundContracts !== false) {
+          if (!this._registerContract(msg.object, signerPubkeyHex)) break;
+        }
         this.emit('contract:publish', {
           contract: publishedId,
           object: msg.object,
@@ -4238,6 +4192,26 @@ class Peer extends Service {
       return;
     }
 
+    socket._destroyFabric = () => {
+      this._destroyFabric(socket, target);
+    };
+    socket.once('close', () => {
+      if (typeof socket._destroyFabric === 'function') socket._destroyFabric();
+    });
+
+    const handshakeTimeoutMs = (typeof this.settings.handshakeTimeout === 'number')
+      ? this.settings.handshakeTimeout
+      : ((typeof this.settings.connectTimeout === 'number') ? this.settings.connectTimeout : 10000);
+    if (handshakeTimeoutMs > 0 && typeof socket.setTimeout === 'function') {
+      socket.setTimeout(handshakeTimeoutMs);
+      socket.once('timeout', () => {
+        if (socket._fabricNoiseHandshakeOk) return;
+        this.emit('warning',
+          `[FABRIC:PEER] Inbound NOISE handshake timeout (${target}) after ${handshakeTimeoutMs}ms`);
+        if (typeof socket.destroy === 'function') socket.destroy();
+      });
+    }
+
     // Store a unique actor for this inbound connection
     this._registerActor({ name: target });
 
@@ -4268,6 +4242,8 @@ class Peer extends Service {
 
     // Set up NOISE event handlers
     handler.encrypt.on('handshake', (_lk, localPk, remotePk) => {
+      socket._fabricNoiseHandshakeOk = true;
+      if (typeof socket.setTimeout === 'function') socket.setTimeout(0);
       if (this.settings.debug) {
         // Transport diagnostics only — never log private key material from the handshake.
         this.emit('debug', `Peer transport handshake using local public key: ${localPk.toString('hex')}`);
@@ -4308,10 +4284,6 @@ class Peer extends Service {
     handler.decrypt.on('data', (data) => {
       this._handleFabricMessage(data, { name: target });
     });
-
-    socket._destroyFabric = () => {
-      this._destroyFabric(socket, target);
-    };
 
     socket._writeFabric = (msg) => {
       this._writeFabric(msg, handler);

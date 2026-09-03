@@ -22,6 +22,8 @@ execution. Distributed Beacon / federation orchestration is Hub-composed and
 | Publish envelope | `@fabric/core/functions/publishedDocumentEnvelope` | DocumentPublish binding |
 | Payment hash | `@fabric/core/functions/documentPaymentHash` | `contentHashHex` |
 | Onion forward | `@fabric/core/functions/fabricOnion` | `P2P_FORWARD` wrap / decode; `Peer#sendOnion` |
+| Gossip catalog | `@fabric/core/functions/gossipNetwork` | Public flood vs directed/session; `gossipRelayPeerSettings` (ambient stub `functions/gossipNetwork.d.ts`) |
+| AMP parent | `@fabric/core/functions/fabricMessageParent` | Header `parent` (previous `Message.id` or genesis zeros) |
 | Programs | `@fabric/core/types/program` | Multi-language artifact |
 | Local VM | `@fabric/core/types/machine` | Opcode runner (host-defined ops) |
 | Sidechain document | `@fabric/core/functions/sidechainState` | Patches, digests, journal |
@@ -78,9 +80,36 @@ above; **runtime `.js` files remain authoritative**.
 by design: `tests/`, `reports/`, coverage trees, `_book/`, local `stores/`, and
 operator `settings/local.js` (use `settings/local.example.js`).
 
+## Wire and runtime limits (`constants.js`)
+
+| Constant | Value | Notes |
+|----------|-------|-------|
+| `HEADER_SIZE` | 208 bytes | AMP header |
+| `MAX_MESSAGE_SIZE` | 3888 bytes | `4096 − HEADER_SIZE` body cap |
+| `MACHINE_MAX_MEMORY` | ~3.8 MiB | `MAX_MEMORY_ALLOC × MAX_MESSAGE_SIZE` for `Machine` |
+
+Peers drop frames shorter than `HEADER_SIZE` or longer than `HEADER_SIZE +
+MAX_MESSAGE_SIZE` before parse/crypto. Per-origin relay budgets (chat, gossip,
+inventory) are peer settings — not global throughput caps. `Machine` enforces
+`MACHINE_MAX_MEMORY` as a heap budget only — it does **not** provide VM
+isolation or gas metering (see [PUBLIC_API](#out-of-scope-for-stable-api) /
+AUDIT known gap #1).
+
+## Deprecated facade aliases
+
+Prefer direct `require('@fabric/core/types/…')` imports. The `Fabric` static
+facade still exposes:
+
+| Alias | Prefer |
+|-------|--------|
+| `Fabric.Scribe` | `State` |
+| `Fabric.DistributedExecution` | `Machine` / `Program` / beacon + canonical-JSON helpers |
+| `Reader` (`types/reader.js`) | Peer / Message ingest (not on `Fabric.*`) |
+
 ## Out of scope for “stable API”
 
 - C / `fabric.node` (optional accel only)
 - WebGPU / garbled-circuit research examples
+- Hardened Program/Machine sandbox (host JS binds today)
 - One-off root analysis Markdown ([docs/NON_CANONICAL.md](docs/NON_CANONICAL.md))
 - Unlisted deep paths may move without a major bump during 0.1 RC — pin a git tag

@@ -57,6 +57,26 @@ describe('@fabric/core/types/store', function () {
       assert.ok(store.codec);
     });
 
+    it('flush is a no-op when Level is not open', async function () {
+      const store = new Store({ persistent: false });
+      const out = await store.flush();
+      assert.strictEqual(out, store);
+    });
+
+    it('flush swallows LEVEL_DATABASE_NOT_OPEN from a stale open handle', async function () {
+      const store = new Store({ persistent: false });
+      store.db = {
+        status: 'open',
+        del: async () => {
+          const err = new Error('Database is not open');
+          err.code = 'LEVEL_DATABASE_NOT_OPEN';
+          throw err;
+        }
+      };
+      const out = await store.flush();
+      assert.strictEqual(out, store);
+    });
+
     it('_setEncrypted/_getEncrypted round-trip plain values without codec', async function () {
       const store = new Store({ persistent: false });
       await store._setEncrypted('/wallet/secret', 'hello');

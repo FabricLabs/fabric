@@ -13,7 +13,7 @@ Related docs:
 - `SECURITY.md` / `AUDIT.md`
 - `AGENTS.md`
 
-**Suite security blocker (not a core patch):** Hub / `@fabric/http` login and device-link **redeem** still treat QR `sessionId` as the capability. Advance that in http, then Hub, Passport, GoonCitizen — see those repos’ `docs/OUTSTANDING.md`.
+**Suite security blocker (not a core patch):** Hub / `@fabric/http` login and device-link **redeem** still treat QR `sessionId` as the capability. Advance that in `@fabric/http`, then Hub and other session-capable deploys — see those packages' `docs/OUTSTANDING.md`.
 
 ## Working Area
 ### Bad Classes (work to reduce)
@@ -231,23 +231,140 @@ Execution order:
 ## Progress Log
 Use this section as an append-only log (newest first).
 
+### 2026-08-24 — PR #186 open review comments
+Cleared the open review surface on
+[#186](https://github.com/FabricLabs/fabric/pull/186). `npm run ci` **green** on
+Node 24.15.0 after the change: **2483 passing / 6 pending** (+21 tests, no
+production code touched). Both unresolved bot threads were **already fixed** in
+`aab3c983d`, which landed after the reviewed commit `f63a33f`; neither needed a
+patch:
+
+- **Bugbot, `functions/bip371.js` (Medium) — "BIP-371 helper skips required
+  checks."** At `f63a33f` `tapLeafScriptEntry` only asserted
+  `controlBlock.length >= 33`. It now enforces the BIP-341 `33 + 32*m` length,
+  an even leaf version, and that the control block's masked leaf version matches
+  — with a regression test per rule in `tests/functions.bip371.js`.
+- **CodeRabbit, `tests/lightning/lightning.service.js` (Minor) — "Disable
+  `cln-grpc` for Carol."** `disablePlugins: ['cln-grpc']` is on the `carol`
+  constructor.
+
+The one genuinely open item was **Codecov's patch report**, which is measured
+against current HEAD `8e756f2` rather than a stale commit: 94.45% patch coverage
+with **32 lines missing**, all in the two files this PR grew most. Closed by
+adding tests, not by adjusting thresholds:
+
+| File | Before | After |
+|------|--------|-------|
+| `types/tree.js` | 91.85% lines · 41.23% branch · 94.44% funcs | **100% lines · 78.16% branch · 100% funcs** |
+| `types/message.js` (patch lines) | 2 uncovered | **0 uncovered** |
+
+The `tree.js` gap mattered more than a coverage number suggests. The 30
+uncovered lines were concentrated in `proveNonInclusion` / `verifyNonInclusion`
+— the *adversarial* half of the new proof API — so the untested paths were
+precisely the ones a malicious prover would attack: the `sortLeaves` guard, the
+empty-tree case, a target that is actually present, and every rejection branch
+in the verifier. `tests/fabric.tree.js` now asserts each defence holds: tampered
+root, tampered or mismatched `leafCount`, a leaf set whose size disagrees with
+the commitment, neighbours widened to skip an in-range leaf, a target outside
+the claimed gap, stray/missing neighbours per side, and a document claiming
+inclusion. Two `catch` blocks are covered as **fail-closed** behaviour — a
+throwing verifier or proof builder yields an unproven leaf, not an exception.
+
+**Lesson worth keeping:** the coverage report was the only reviewer that flagged
+anything real here, and it pointed at security-relevant code. A patch-coverage
+miss on a *verifier* should be read as an untested trust boundary, not as
+housekeeping. Both bot findings, by contrast, were already stale — worth
+re-checking findings against HEAD before spending a change on them, since review
+bots pin to the commit they saw.
+
+### 2026-08-24 — suite release-readiness audit
+Ran sibling suite packages' release gates on Node 24.15.0. **Suite is green.**
+
+| Package | Gate | Result |
+|---------|------|--------|
+| `@fabric/core` | `npm run ci` | smoke + `lint:types` + `lint:pkg` + **2460 passing / 3 pending** + benchmark |
+| `@fabric/http` | `npm test` | **253 passing / 0 failing** (21 pending) |
+| `@fabric/hub` | `npm run test:unit` | **821 passing / 0 failing** (6 pending; see flake note) |
+| Browser wallet extension | `npm run test:unit` + `npm run build` | **93 passing**, webpack clean |
+| Application relay | `npm test` | **1244 passing / 0 failing** (was 1240/4) |
+
+The application relay gate is five separate summaries (mocha, unit+fabric, relay,
+integration, UI). Reading only one block can look green while another is red —
+worth knowing before trusting a headline number.
+
+Defects found and fixed in consuming packages; no core patch needed.
+
+1. **Federation invite re-export drift.** A consumer asserted reference equality
+   between a local `federationContractInvite` shim and `@fabric/http`, but the
+   shim only existed for pins predating `resolveFederationInviteExpiresAt`. That
+   API is now upstream in `@fabric/http`; the shim can return the http module
+   unchanged on the next lockfile bump. **Action for this repo: none.** Land the
+   http exports and refresh pins so shims collapse.
+2. **Browser extension manifest validation.** Invalid `host_permissions` /
+   `content_scripts` match patterns with explicit ports (`localhost:<port>/*`) —
+   Chrome match patterns cannot express a port. Latent Web Store submission
+   blocker; fixed with a regression guard in the extension test suite.
+3. **Session-gated relay tests.** Several relay tests read hosted endpoints
+   without a session after privacy hardening correctly returned **401**; fixed by
+   authenticating (signed login envelope → Bearer) and asserting both anon-401 and
+   authenticated reads.
+4. **P2P chat timestamp normalization.** A helper scan across suite `functions/`
+   trees found most pairs already `require` upstream. The gap was
+   `normalizeP2pChatMessage`: `Number(null)` / `Number('')` are finite `0`, so
+   an `isFinite` gate accepted epoch 0 and blocked the ISO `object.ts` fallback.
+   Fixed in `@fabric/http` with tests; Hub compatibility wrappers can collapse on
+   pin bump.
+
+Also traced, and needing **no patch anywhere**: Hub teardown noise
+`Could not wipe database: ModuleError: Database is not open`. `Store#flush`
+already has a `status !== 'open'` pre-check plus a `LEVEL_DATABASE_NOT_OPEN`
+guard here in `088dd9aff` (with tests in `tests/fabric.store.js`); Hub's vendored
+copy is the pre-guard version. RSS/NOISE P0 and this log spam both clear on the
+same core dep refresh.
+
+Documentation: the browser wallet extension was the only suite package without an
+`AUDIT.md`; one was added in the same shape as core / http / Hub. Two findings
+worth suite attention:
+
+- **`https://*/*` host breadth** — content script at `document_start` in
+  `all_frames` of every HTTPS origin while signing trusts only listed Fabric
+  origins. Normal for a wallet extension and load-bearing for site login, but it
+  drives a harsh install prompt. Owner decision, not silently narrowed.
+- **Extension background datastore key is not password-bound** — random AES-GCM
+  master key in extension storage beside ciphertext. Wallet seed is not in that
+  store; post-unlock binding plus migration is the fix. Same family as Hub
+  at-rest identity KDF — solve once in core/http, not per product.
+
+Unchanged suite blockers (still coordination, not code): device-link `sessionId`
+bind into attest messages, always-fresh device-link nonce, and the
+`X-Fabric-Poll-Secret` client rollout. Hub **RSS / NOISE P0** is still a
+pin-and-redeploy problem — handshake-bus cleanup is in this tree but not on live
+pin `f63a33f`.
+
+Hub `npm run test:unit` also emits repeated `Could not wipe database` teardown
+noise for the same `Store#flush` reason above — clears on core pin bump.
+
+### 2026-08-20
+- [#186](https://github.com/FabricLabs/fabric/pull/186) is the open `feature/rsi` wave after [#185](https://github.com/FabricLabs/fabric/pull/185) merged (`4db3be3`). HEAD **`9c6ade0`** (review follow-ups after **`aab3c98`**): effective Taproot `internalKeyMode` on `resolveSpend`, gossip numeric relay-as-is + constraint merge, NOISE native-pointer teardown, gossip-relay shutdown counts. Handshake-bus is **not** on live Hub pin **`f63a33f`** — Hub pin/redeploy before claiming RSS/NOISE is fixed.
+- Production Hub scan **10:39Z**: RSS tracks `external`/`arrayBuffers`, not named retainers. Do not raise `--max-old-space-size`.
+
 ### 2026-08-13
 - Core `3745041e` (wallet lock / Environment) is on GitHub `feature/rsi`; http `e167d8e` and Hub `5441f838` follow.
-- Added [OUTSTANDING.md](OUTSTANDING.md) as the security-first queue; Hub / http / Passport / GoonCitizen / Discord have matching files.
+- Added [OUTSTANDING.md](OUTSTANDING.md) as the security-first queue; sibling suite packages have matching files.
 - Immediate queue now leads with security leftovers. **Suite blocker** remains http possession proof for `/sessions` and `/device-links` redeem (not a core patch).
 - Class-surface work (`Scribe` / `Reader` / Global) stays the in-repo march after that coordination.
 
 ### 2026-08-12
-- Re-ran the Fabric package suite end-to-end (unrestricted host; browser-extension Playwright needs Crashpad/xattr outside agent sandboxes). Log: `/tmp/fabric-suite-tests-1786512851.log`.
+- Re-ran the Fabric package suite end-to-end (unrestricted host; extension Playwright needs Crashpad/xattr outside agent sandboxes). Log: `/tmp/fabric-suite-tests-1786512851.log`.
 - **`@fabric/core`** (`npm test`): `1831 passing`, `1 pending`, `0 failing`.
 - **`@fabric/http`** (`npm test`): `157 passing`, `21 pending`, `0 failing`.
 - **`@fabric/hub`** (`npm run test:unit`): `539 passing`, `4 pending`, `0 failing`.
-- **application** (`star-citizen-live` `npm test`): mocha fabric `43 passing`; fabric expectations `45 pass`; relay `322 pass` / `2 skipped` / `0 fail`.
-- **browser extension** (`fabric-browser-extension` `npm test`): unit `55 passing` + extension Playwright `5 passing`, `0 failing`.
+- **Application relay** (`npm test`): mocha fabric `43 passing`; fabric expectations `45 pass`; relay `322 pass` / `2 skipped` / `0 fail`.
+- **Browser wallet extension** (`npm test`): unit `55 passing` + extension Playwright `5 passing`, `0 failing`.
 - Suite hardening carried in from recent failure triage (not all in this repo):
-  - identity Schnorr resolution / leaf-key site-login paths (`@fabric/http` + browser-extension verify coverage);
-  - application chat receipts when `fabric.enable` is off under `NODE_ENV=test`, mission Accept → apply, device-link verify via `Identity#fabricKey`;
-  - browser-extension webpack CSS includes for npm-linked `@fabric/http` assets; extension launcher defaults to bundled Chromium and ignores `--disable-extensions`.
+  - identity Schnorr resolution / leaf-key site-login paths (`@fabric/http` + extension verify coverage);
+  - application relay chat receipts when Fabric peer is off under `NODE_ENV=test`, mission Accept → apply, device-link verify via `Identity#fabricKey`;
+  - extension webpack CSS includes for npm-linked `@fabric/http` assets; extension launcher defaults to bundled Chromium and ignores `--disable-extensions`.
 - Core baseline vs earlier march entries: JS suite grew well past the March `834` mark; still `0 failing`. Remaining core pending is a single skip (triage under Coverage + Test Reliability).
 
 ### 2026-03-24

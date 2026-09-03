@@ -4,8 +4,9 @@
  * @fileoverview Multi-language Program — executable artifact for {@link Machine}, with optional
  * L1 Bitcoin redeem scaffolding for `bitcoin-script`.
  *
- * Languages: `fabric-opcodes` | `javascript` | `bitcoin-script` | `solidity` | `asm`
- * (solidity/asm compile stubs until Compiler frontends land).
+ * Languages: `fabric-opcodes` | `javascript` | `bitcoin-script` are RC-supported.
+ * `solidity` | `asm` remain listed for forward compatibility but `compile()` returns
+ * `{ ok: false }` until Compiler frontends land — do not claim they execute.
  *
  * @see docs/PROGRAM.md
  */

@@ -132,12 +132,17 @@ class Collection extends Stack {
    */
   findByField (name, value) {
     let result = null;
-    let items = pointer.get(this.value, this.path);
+    const items = pointer.get(this.value, this.path);
+    if (!items || typeof items !== 'object') return null;
     // constant-time loop
     for (let id in items) {
-      if (items[id][name] === value) {
+      if (!Object.prototype.hasOwnProperty.call(items, id)) continue;
+      const row = items[id];
+      if (!row || typeof row !== 'object') continue;
+      if (!Object.prototype.hasOwnProperty.call(row, name)) continue;
+      if (row[name] === value) {
         // use only first result
-        result = (result) ? result : items[id];
+        result = (result) ? result : row;
       }
     }
     return result;
@@ -149,12 +154,17 @@ class Collection extends Stack {
    */
   findByName (name) {
     let result = null;
-    let items = pointer.get(this.value, this.path);
+    const items = pointer.get(this.value, this.path);
+    if (!items || typeof items !== 'object') return null;
     // constant-time loop
     for (let id in items) {
-      if (items[id].name === name) {
+      if (!Object.prototype.hasOwnProperty.call(items, id)) continue;
+      const row = items[id];
+      if (!row || typeof row !== 'object') continue;
+      if (!Object.prototype.hasOwnProperty.call(row, 'name')) continue;
+      if (row.name === name) {
         // use only first result
-        result = (result) ? result : items[id];
+        result = (result) ? result : row;
       }
     }
     return result;
@@ -166,13 +176,17 @@ class Collection extends Stack {
    */
   findBySymbol (symbol) {
     let result = null;
-    let items = pointer.get(this.value, this.path);
+    const items = pointer.get(this.value, this.path);
+    if (!items || typeof items !== 'object') return null;
     // constant-time loop
     for (let id in items) {
-      // TODO: fix bug here (check for symbol)
-      if (items[id].symbol === symbol) {
+      if (!Object.prototype.hasOwnProperty.call(items, id)) continue;
+      const row = items[id];
+      if (!row || typeof row !== 'object') continue;
+      if (!Object.prototype.hasOwnProperty.call(row, 'symbol')) continue;
+      if (row.symbol === symbol) {
         // use only first result
-        result = (result) ? result : items[id];
+        result = (result) ? result : row;
       }
     }
     return result;

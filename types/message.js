@@ -107,6 +107,7 @@ const Hash256 = require('./hash256');
 // Function Definitions
 const padDigits = require('../functions/padDigits');
 const taggedHash = require('../functions/taggedHash');
+const fabricMessageParent = require('../functions/fabricMessageParent');
 
 /**
  * **Two parallel type names:**
@@ -451,7 +452,8 @@ class Message extends Actor {
    * Build a message from an object. Prefer <code>type</code>/<code>data</code>; <code>@type</code> / <code>@data</code>
    * are accepted for backward compatibility.
    * @param {Object} [input={}] Initial fields: <code>type</code> or <code>@type</code>, <code>data</code> or
-   * <code>@data</code>, optional <code>signer</code>, <code>sensitive</code>, <code>preimage</code>.
+   * <code>@data</code>, optional <code>parent</code> (previous {@link Message#id} or 32 zero bytes),
+   * <code>signer</code>, <code>sensitive</code>, <code>preimage</code>.
    * @return {Message} Instance ready for {@link Message#asRaw}, {@link Message#signWithKey}, etc.
    */
   constructor (input = {}) {
@@ -509,6 +511,7 @@ class Message extends Actor {
     }
 
     if (input.preimage != null) this.preimage = input.preimage;
+    if (input.parent != null) this.parent = input.parent;
 
     // Log HEARTBEAT message creation to track origin
     if (this.type === 'HEARTBEAT' || messageType === 'HEARTBEAT') {
@@ -547,6 +550,22 @@ class Message extends Actor {
 
   get author () {
     return this.raw.author.toString('hex');
+  }
+
+  /**
+   * Previous signed frame id (SHA-256 of that AMP buffer), or 32 zero bytes at genesis.
+   * Covered by {@link Message#signWithKey} — set before signing.
+   * @returns {string} 64-char hex
+   */
+  get parent () {
+    if (!this.raw || !Buffer.isBuffer(this.raw.parent) || this.raw.parent.length !== 32) {
+      return Message.ZERO_PARENT;
+    }
+    return this.raw.parent.toString('hex');
+  }
+
+  set parent (value) {
+    fabricMessageParent.setMessageParent(this, value);
   }
 
   get body () {
@@ -656,7 +675,11 @@ class Message extends Actor {
   }
 
   toVector () {
-    return [this.type, this.data];
+    const vector = [this.type, this.data];
+    if (!Message.isZeroParent(this.parent)) {
+      vector.push(this.parent);
+    }
+    return vector;
   }
 
   fromObject (input) {
@@ -922,10 +945,12 @@ class Message extends Actor {
   }
 
   static fromVector (vector = ['LogMessage', 'No vector provided.']) {
-    return new Message({
+    const input = {
       type: vector[0],
       data: vector[1]
-    });
+    };
+    if (vector.length > 2 && vector[2] != null) input.parent = vector[2];
+    return new Message(input);
   }
 
   /**
@@ -977,6 +1002,12 @@ class Message extends Actor {
     return `<Message | ${JSON.stringify(this.raw)}>`;
   } */
 
+  /**
+   * SHA-256 of the complete signed AMP frame. This is what the next message
+   * stores in {@link Message#parent} (not header <code>hash</code>, which is
+   * only double-SHA256 of the body).
+   * @returns {string} 64-char hex
+   */
   get id () {
     return Hash256.digest(this.asRaw());
   }
@@ -1316,6 +1347,14 @@ function decodeBody (schema, buffer) {
 
 const SCHEMA_P2P_PING = Object.freeze([{ name: 'nonce', type: 'string' }]);
 const SCHEMA_P2P_CHAT = null;
+/** @private Transitional field layouts; JSON bodies remain accepted via tryParseMessageBody. */
+const SCHEMA_CONTRACT_PUBLISH = Object.freeze([
+  { name: 'definition', type: 'string' }
+]);
+const SCHEMA_CONTRACT_MESSAGE = Object.freeze([
+  { name: 'contract', type: 'string' },
+  { name: 'payload', type: 'string' }
+]);
 const SCHEMA_PROGRAM_RUN = Object.freeze([
   { name: 'programHash', type: 'bytes32' },
   { name: 'runCommitment', type: 'bytes32' },
@@ -1415,6 +1454,12 @@ function tryParseMessageBody (message) {
   registerBodySchema('P2P_PONG', SCHEMA_P2P_PING);
   registerBodySchema('Pong', SCHEMA_P2P_PING);
   registerBodySchema('FabricProgramRun', SCHEMA_PROGRAM_RUN);
+  registerBodySchema(P2P_CONTRACT_PUBLISH, SCHEMA_CONTRACT_PUBLISH);
+  registerBodySchema('P2P_CONTRACT_PUBLISH', SCHEMA_CONTRACT_PUBLISH);
+  registerBodySchema('CONTRACT_PUBLISH', SCHEMA_CONTRACT_PUBLISH);
+  registerBodySchema(P2P_CONTRACT_MESSAGE, SCHEMA_CONTRACT_MESSAGE);
+  registerBodySchema('P2P_CONTRACT_MESSAGE', SCHEMA_CONTRACT_MESSAGE);
+  registerBodySchema('CONTRACT_MESSAGE', SCHEMA_CONTRACT_MESSAGE);
   registerBodySchema(P2P_FORWARD, SCHEMA_P2P_FORWARD);
   registerBodySchema('P2P_FORWARD', SCHEMA_P2P_FORWARD);
   registerBodySchema(P2P_PEER_GOSSIP, SCHEMA_P2P_PEER_GOSSIP);
@@ -1448,6 +1493,12 @@ function tryParseMessageBody (message) {
 
 Message.FIELD_TYPES = BODY_FIELD_TYPES;
 Message.MAX_MESSAGE_SIZE = MAX_MESSAGE_SIZE;
+Message.ZERO_PARENT = fabricMessageParent.ZERO_PARENT;
+Message.isZeroParent = fabricMessageParent.isZeroParent;
+Message.normalizeParent = fabricMessageParent.normalizeParentHex;
+Message.parentHexOf = fabricMessageParent.parentHexOf;
+Message.frameIdOf = fabricMessageParent.frameIdOf;
+Message.setMessageParent = fabricMessageParent.setMessageParent;
 Message.registerBodySchema = registerBodySchema;
 Message.getBodySchema = getBodySchema;
 Message.encodeBody = encodeBody;
@@ -1456,6 +1507,8 @@ Message.tryParseMessageBody = tryParseMessageBody;
 Message.SCHEMA_P2P_PING = SCHEMA_P2P_PING;
 Message.SCHEMA_P2P_CHAT = SCHEMA_P2P_CHAT;
 Message.SCHEMA_PROGRAM_RUN = SCHEMA_PROGRAM_RUN;
+Message.SCHEMA_CONTRACT_PUBLISH = SCHEMA_CONTRACT_PUBLISH;
+Message.SCHEMA_CONTRACT_MESSAGE = SCHEMA_CONTRACT_MESSAGE;
 Message.SCHEMA_P2P_FORWARD = SCHEMA_P2P_FORWARD;
 Message.SCHEMA_P2P_PEER_GOSSIP = SCHEMA_P2P_PEER_GOSSIP;
 Message.SCHEMA_P2P_PEERING_OFFER = SCHEMA_P2P_PEERING_OFFER;

@@ -10,6 +10,7 @@
 const crypto = require('crypto');
 const Key = require('../types/key');
 const {
+  TAPROOT_INTERNAL_NUMS,
   buildContractTaproot,
   synthesizeDefaultLadder,
   prepareVaultWithdrawalPsbt,
@@ -288,6 +289,18 @@ function canonicalSpendPolicy (opts = {}) {
   if (opts.softThreshold != null && Number.isFinite(Number(opts.softThreshold))) {
     out.softThreshold = Number(opts.softThreshold);
   }
+  if (opts.internalKeyMode) {
+    const mode = String(opts.internalKeyMode).trim().toLowerCase();
+    if (mode === 'musig2' || mode === 'auto') {
+      out.internalKeyMode = 'musig2';
+    } else if (mode === 'nums') {
+      out.internalKeyMode = 'nums';
+    } else {
+      throw new Error(
+        'canonicalSpendPolicy: internalKeyMode must be "musig2", "auto", or "nums"'
+      );
+    }
+  }
   return out;
 }
 
@@ -383,7 +396,8 @@ function resolveSpend (opts = {}) {
       softMode: policyInput.softMode,
       softThreshold: policyInput.softThreshold,
       hashlock: policyInput.hashlock || null,
-      extraLeaves: policyInput.extraLeaves || null
+      extraLeaves: policyInput.extraLeaves || null,
+      internalKeyMode: policyInput.internalKeyMode
     }));
 
   const soft = built.policy && built.policy.tiers
@@ -434,6 +448,10 @@ function resolveSpend (opts = {}) {
       csvBlocks: resolvedCsv,
       softMode: String(policyInput.softMode || 'publisher'),
       network: built.network,
+      // Effective mode (one-validator musig2 still builds NUMS).
+      internalKeyMode: built.internalPubkeyHex === TAPROOT_INTERNAL_NUMS.toString('hex')
+        ? 'nums'
+        : 'musig2',
       hashlock: built.policy && built.policy.hashlock
         ? built.policy.hashlock
         : (policyInput.hashlock || null),

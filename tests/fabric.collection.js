@@ -415,6 +415,16 @@ describe('@fabric/core/types/collection', function () {
       assert.equal(set.findByName('dup').id, 'd1');
       assert.equal(set.findBySymbol('SYM').id, 'd1');
 
+      const empty = new Fabric.Collection({ name: 'empty-find' });
+      assert.strictEqual(empty.findByName('x'), null);
+      assert.strictEqual(empty.findBySymbol('x'), null);
+      assert.strictEqual(empty.findByField('name', 'x'), null);
+
+      const spoof = new Fabric.Collection({ name: 'proto-symbol' });
+      await spoof.importList([{ id: 'r1', name: 'only-name' }]);
+      Object.setPrototypeOf(spoof.getByID('r1'), { symbol: 'PHANTOM' });
+      assert.strictEqual(spoof.findBySymbol('PHANTOM'), null);
+
       // Exercise input.id || entity.id fallback branches in import().
       const importedNoId = await set.import({ title: 'no-id' }, false);
       assert.ok(importedNoId.id);
@@ -454,6 +464,10 @@ const {
   fromJSONL,
   replay,
   replayFold,
+  walkParentChain,
+  merkleTreeOf,
+  inclusionProof,
+  nonInclusionProof,
   writeFile,
   readFile,
   runCli,
@@ -730,5 +744,63 @@ describe('@fabric/core/functions/fabricMessageCollection', function () {
     assert.strictEqual(resolveCollectionFilePath(abs), path.normalize(abs));
     const collection = createCollection();
     assert.throws(() => writeFile('../etc/passwd', collection), /invalid collection path/);
+  });
+
+  it('records parent/id, walks the chain, and proves merkle inclusion', function () {
+    const key = new Key();
+    const first = signChat(key, 'stack-one');
+    const second = Message.fromVector(['P2P_CHAT_MESSAGE', 'stack-two', first]).signWithKey(key);
+    const collection = createCollection();
+    ingest(collection, first);
+    ingest(collection, second);
+    assert.strictEqual(collection.messages[0].genesis, true);
+    assert.strictEqual(collection.messages[1].parent, first.id);
+    assert.strictEqual(collection.messages[1].id, second.id);
+
+    const walked = walkParentChain(collection.messages, second.id);
+    assert.strictEqual(walked.length, 2);
+    assert.strictEqual(walked[0].id, first.id);
+    assert.strictEqual(walked[1].id, second.id);
+
+    const doc = toJSON(collection);
+    assert.ok(doc.merkleRoot && doc.merkleRoot.length === 64);
+    const hit = inclusionProof(collection, second.id);
+    assert.strictEqual(hit.included, true);
+    const tree = merkleTreeOf(collection.messages);
+    assert.ok(tree.verifyInclusion(hit));
+    const gap = nonInclusionProof(collection, 'ab'.repeat(32));
+    assert.strictEqual(gap.included, false);
+    assert.ok(tree.verifyNonInclusion(gap));
+  });
+
+  it('preserves parent chain when a frame is rehydrated via toVector/fromVector', function () {
+    const key = new Key();
+    const first = signChat(key, 'vec-one');
+    const second = Message.fromVector(['P2P_CHAT_MESSAGE', 'vec-two', first]).signWithKey(key);
+    const rehydrated = Message.fromVector(second.toVector());
+    assert.strictEqual(rehydrated.parent, first.id);
+
+    const collection = createCollection();
+    ingest(collection, first);
+    ingest(collection, rehydrated);
+    assert.strictEqual(collection.messages[1].parent, first.id);
+    assert.strictEqual(walkParentChain(collection.messages, rehydrated.id).length, 2);
+  });
+
+  it('rejects a frameId that is not 32-byte hex', function () {
+    const key = new Key();
+    const collection = createCollection();
+    ingest(collection, signChat(key, 'stack-one'));
+
+    // Buffer.from(str, 'hex') truncates at the first bad pair instead of throwing,
+    // so a malformed id would silently prove a different (or empty) leaf.
+    const bad = ['', 'zz'.repeat(32), 'ab'.repeat(31), `${'ab'.repeat(32)}cd`, null, undefined];
+    for (const frameId of bad) {
+      assert.throws(() => inclusionProof(collection, frameId), /frameId must be 32-byte hex/);
+      assert.throws(() => nonInclusionProof(collection, frameId), /frameId must be 32-byte hex/);
+    }
+
+    const id = collection.messages[0].id;
+    assert.strictEqual(inclusionProof(collection, id.toUpperCase()).included, true);
   });
 });

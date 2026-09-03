@@ -9,6 +9,8 @@
 const fs = require('fs');
 const monitor = require('fast-json-patch');
 
+const { randomUnit } = require('../functions/bytes');
+
 const Store = require('./store');
 const Ledger = require('./ledger');
 const Transaction = require('./transaction');
@@ -75,7 +77,7 @@ class Datastore extends Store {
   ping () {
     let datastore = this;
     let ping = new Transaction({
-      entropy: Math.random(),
+      entropy: randomUnit(),
       timestamp: Date.now(),
       identity: datastore.identity
     });

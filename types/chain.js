@@ -28,7 +28,6 @@ const Stack = require('./stack');
 const State = require('./state');
 const Transaction = require('./transaction');
 const Tree = require('./tree');
-const Key = require('./key');
 const fabricCanonicalJson = require('../functions/fabricCanonicalJson');
 const { stableStringify } = fabricCanonicalJson;
 

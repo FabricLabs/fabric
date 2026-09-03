@@ -971,8 +971,8 @@ describe('@fabric/core RC1 first-tier contract', function () {
 
 // Coverage locks from FabricLabs/fabric PR review comments.
 // Sources: PR #185 (open) and closed PR #183. Heavy-lift product work
-// (isolatePeerContent collections, unique Service commit ids, Blessed TUI
-// markup) stays deferred in docs/OUTSTANDING.md.
+// (unique Service commit ids, Blessed TUI markup) stays deferred in
+// docs/OUTSTANDING.md.
 
 const { EventEmitter } = require('events');
 
@@ -990,12 +990,64 @@ describe('@fabric/core RC1 PR-review coverage', function () {
     };
   }
 
+  function seedScore (peer, originName, peerId, score, pubkeyHex) {
+    peer._addressToId[originName] = peerId;
+    peer._state.peers = peer._state.peers || {};
+    peer._state.peers[peerId] = {
+      id: peerId,
+      address: originName,
+      score,
+      publicKey: pubkeyHex || 'ab'.repeat(32)
+    };
+    let destroyed = false;
+    peer.connections[originName] = {
+      destroy () { destroyed = true; },
+      get destroyed () { return destroyed; }
+    };
+    return () => destroyed;
+  }
+
   it('isolatePeerContent treats null and array state as empty maps', function () {
     const fromNull = new Peer(offlinePeerSettings({ state: null }));
     const fromArray = new Peer(offlinePeerSettings({ state: [] }));
     assert.deepStrictEqual(fromNull._state.content.documents, {});
     assert.deepStrictEqual(fromArray._state.content.messages, {});
-    assert.ok(!fromNull._state.content.collections);
+    assert.deepStrictEqual(fromNull._state.content.collections, { documents: {} });
+  });
+
+  it('isolatePeerContent copies collections.documents without aliasing', function () {
+    const original = {
+      documents: { doc1: { id: 'doc1', meta: { tags: ['x'] } } },
+      collections: {
+        documents: {
+          doc1: { id: 'doc1', published: true, purchasePriceSats: 25, meta: { tags: ['a'] } }
+        }
+      }
+    };
+    const peer = new Peer(offlinePeerSettings({ state: original }));
+    const row = peer._state.content.collections.documents.doc1;
+    assert.strictEqual(row.purchasePriceSats, 25);
+    row.purchasePriceSats = 99;
+    assert.strictEqual(original.collections.documents.doc1.purchasePriceSats, 25);
+    original.collections.documents.doc1.published = false;
+    original.collections.documents.doc1.meta.tags.push('b');
+    original.documents.doc1.meta.tags.push('y');
+    assert.strictEqual(peer._state.content.collections.documents.doc1.published, true);
+    assert.deepStrictEqual(peer._state.content.collections.documents.doc1.meta.tags, ['a']);
+    assert.deepStrictEqual(peer._state.content.documents.doc1.meta.tags, ['x']);
+  });
+
+  it('isolatePeerContent ignores non-object collections.documents and array maps', function () {
+    const peer = new Peer(offlinePeerSettings({
+      state: {
+        documents: ['not-a-map'],
+        messages: { m1: { body: 'x' } },
+        collections: { documents: 'not-an-object' }
+      }
+    }));
+    assert.deepStrictEqual(peer._state.content.documents, {});
+    assert.deepStrictEqual(peer._state.content.collections, { documents: {} });
+    assert.ok(peer._state.content.messages.m1);
   });
 
   it('beat emits a clock-only snapshot (no full state tree)', function () {
@@ -1087,5 +1139,36 @@ describe('@fabric/core RC1 PR-review coverage', function () {
     assert.ok(warnings.some((msg) => /Inbound socket error/.test(msg)));
     if (typeof socket._destroyFabric === 'function') socket._destroyFabric();
     socket.destroy();
+  });
+
+  it('unknown AMP opcode decodes as UNKNOWN_MESSAGE without score change', function () {
+    const peer = offlinePeer();
+    const origin = '127.0.0.1:wave1-unknown';
+    const author = new Key();
+    peer.connections[origin] = wireConn([]);
+    peer.peers[origin] = { publicKey: author.pubkey };
+    const wasDestroyed = seedScore(peer, origin, 'peer-wave1-u', 200);
+    const wire = Message.fromVector([0x7ffe, Buffer.from('wave1-unknown')]).signWithKey(author);
+    peer._handleFabricMessage(wire.toBuffer(), { name: origin }, null);
+    assert.strictEqual(peer._state.peers['peer-wave1-u'].score, 200);
+    assert.strictEqual(wasDestroyed(), false);
+  });
+
+  it('JSON GenericMessage claiming CONTRACT_MESSAGE does not escalate opcode', function () {
+    const peer = offlinePeer();
+    const origin = '127.0.0.1:wave1-generic';
+    const author = new Key();
+    peer.connections[origin] = wireConn([]);
+    peer.peers[origin] = { publicKey: author.pubkey };
+    let contractHits = 0;
+    peer.on('contractMessage', () => { contractHits++; });
+    peer.on('ContractMessage', () => { contractHits++; });
+    const wire = Message.fromVector(['P2P_BASE_MESSAGE', JSON.stringify({
+      type: 'CONTRACT_MESSAGE',
+      contract: 'aa'.repeat(32),
+      payload: { hello: true }
+    })]).signWithKey(author);
+    peer._handleFabricMessage(wire.toBuffer(), { name: origin }, null);
+    assert.strictEqual(contractHits, 0);
   });
 });

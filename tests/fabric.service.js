@@ -679,10 +679,13 @@ describe('@fabric/core/types/service', function () {
       const service = new Service(FAST_SERVICE);
       await service.start();
       const stderr = [];
+      const errors = [];
       const orig = console.error;
       console.error = (...args) => stderr.push(args.join(' '));
+      service.on('error', (err) => errors.push(err));
+      let result;
       try {
-        await service._applyChanges([{
+        result = await service._applyChanges([{
           op: 'add',
           path: '/constraints/memory/max/__invalid_child__',
           value: 1
@@ -692,6 +695,22 @@ describe('@fabric/core/types/service', function () {
       }
       await service.stop();
       assert.ok(stderr.some((s) => s.includes('Could not apply changes')));
+      assert.strictEqual(result.ok, false);
+      assert.ok(result.error);
+      assert.ok(errors.length >= 1);
+    });
+
+    it('_applyChanges applies a valid add and no-ops an empty list', async function () {
+      const service = new Service(FAST_SERVICE);
+      await service.start();
+      const empty = await service._applyChanges([]);
+      assert.strictEqual(empty.ok, true);
+      const ok = await service._applyChanges([
+        { op: 'add', path: '/serviceCoverageFlag', value: 42 }
+      ]);
+      assert.strictEqual(ok.ok, true);
+      assert.strictEqual(service._state.content.serviceCoverageFlag, 42);
+      await service.stop();
     });
 
     it('_send persists message entity and returns id', async function () {

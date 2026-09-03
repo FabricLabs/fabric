@@ -120,5 +120,11 @@ result*
 
 _book
 
+# Local coverage dumps (never pack / never commit)
+coverage-hot*/
+coverage-covfocus/
+coverage-hot
+reports/cov-*/
+
 # Pesky Mac Stuff
 .DS_Store
