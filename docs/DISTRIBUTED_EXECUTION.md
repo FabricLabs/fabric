@@ -14,6 +14,8 @@ Hub’s longer narrative (Beacon, delegation, signing rounds): hub.fabric.pub
 `docs/DISTRIBUTED_CONTRACT_EXECUTION.md`. HTTP binder:
 `@fabric/http` `types/distributedExecutionHttp` (manifest / epoch / sidechain routes).
 
+**Signature vs L1 proof:** [SIGNATURE_PROOF_MODEL.md](SIGNATURE_PROOF_MODEL.md). Operator deployment ladder: hub.fabric.pub `docs/FEDERATION_DEPLOYMENT.md`.
+
 ## Protocol helpers (`functions/`)
 
 | Module | Role |

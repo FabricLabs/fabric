@@ -236,6 +236,19 @@ describe('@fabric/core/functions/sidechainState', function () {
     assert.strictEqual(parsed.proposal.basisClock, 0);
   });
 
+  it('buildSignedSidechainPatchMessage round-trip', function () {
+    const key = new Key({ private: '1111111111111111111111111111111111111111111111111111111111111111' });
+    const proposal = {
+      basisClock: 0,
+      basisDigest: 'aa',
+      patches: [{ op: 'add', path: '/rsi', value: { digest: 'bb' } }]
+    };
+    const msg = sc.buildSignedSidechainPatchMessage({ proposal, signKey: key });
+    const parsed = sc.parseSidechainStatePatchMessage(JSON.parse(msg.data.toString('utf8')));
+    assert.strictEqual(parsed.ok, true);
+    assert.ok(parsed.proposal.federationWitness);
+  });
+
   it('verifyEpochChainFederationWitnesses fail-closed', function () {
     const key = new Key({ private: '1111111111111111111111111111111111111111111111111111111111111111' });
     const epoch = { clock: 1, height: 1 };

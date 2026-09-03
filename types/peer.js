@@ -57,6 +57,8 @@ const {
 } = require('../functions/onionChatSeal');
 const { individualPk } = require('../functions/musig2');
 const musig2Session = require('../functions/musig2Session');
+const sidechainState = require('../functions/sidechainState');
+const { verifyFederationWitnessOnMessage } = require('../functions/beaconFederationSigning');
 
 /** @private Max UTF-8 code units for first-class P2P_CHAT_MESSAGE body (text only). */
 const P2P_CHAT_MAX_CHARS = 2000;
@@ -330,76 +332,13 @@ function meshDeliveryContext (opts = {}, originName = null) {
   };
 }
 
-/**
- * Pubkeys declared as patch authorities on a CONTRACT_PUBLISH body.
- * @param {object} object
- * @returns {Set<string>}
- * @private
- */
-function collectContractAuthorityPubkeys (object) {
-  const set = new Set();
-  const add = (hex) => {
-    const h = normalizePeerPubkeyHex(hex);
-    if (/^[0-9a-f]{64}$/.test(h) || /^[0-9a-f]{66}$/.test(h)) set.add(h);
-  };
-  const addList = (list) => {
-    if (!Array.isArray(list)) return;
-    for (const entry of list) {
-      if (typeof entry === 'string') add(entry);
-      else if (entry && typeof entry === 'object') {
-        add(entry.pubkey || entry.publicKey || entry.id);
-      }
-    }
-  };
-  const def = object && typeof object === 'object' ? object : {};
-  // Flat publish bodies + ARC/Beacon genesis (`members.signers`, `spendPolicy.validators`).
-  addList(def.validators);
-  addList(def.parties);
-  addList(def.owners);
-  addList(def.authorities);
-  if (Array.isArray(def.members)) {
-    addList(def.members);
-  } else if (def.members && typeof def.members === 'object') {
-    addList(def.members.signers);
-    addList(def.members.validators);
-    addList(def.members.parties);
-    addList(def.members.owners);
-    addList(def.members.authorities);
-  }
-  if (def.spendPolicy && typeof def.spendPolicy === 'object') {
-    addList(def.spendPolicy.validators);
-    addList(def.spendPolicy.parties);
-  }
-  // Hub / Federation application genesis: proposedPolicy.validators.
-  if (def.proposedPolicy && typeof def.proposedPolicy === 'object') {
-    addList(def.proposedPolicy.validators);
-    addList(def.proposedPolicy.parties);
-    addList(def.proposedPolicy.signers);
-  }
-  return set;
-}
-
-/**
- * Whether {@code pubkeyHex} is present in an authority set (x-only ↔ compressed tolerant).
- * @param {Set<string>} authorities
- * @param {string} pubkeyHex
- * @returns {boolean}
- * @private
- */
-function authoritySetHasPubkey (authorities, pubkeyHex) {
-  const h = normalizePeerPubkeyHex(pubkeyHex);
-  if (!h || !authorities || !authorities.size) return false;
-  if (authorities.has(h)) return true;
-  if (h.length === 64) {
-    for (const entry of authorities) {
-      if (typeof entry === 'string' && entry.length === 66 && entry.slice(2) === h) return true;
-    }
-  } else if (h.length === 66) {
-    const xOnly = h.slice(2);
-    if (authorities.has(xOnly)) return true;
-  }
-  return false;
-}
+const contractPublishAuthority = require('../functions/contractPublishAuthority');
+const {
+  collectContractAuthorityPubkeys,
+  authoritySetHasPubkey,
+  contractPublishSignerAuthorized: contractPublishSignerAuthorizedFn,
+  normalizePeerPubkeyHex: normalizePeerPubkeyHexFromAuthority
+} = contractPublishAuthority;
 
 /**
  * Outer / generic types whose local registration side-effects are first-writer-wins.
@@ -3247,6 +3186,7 @@ class Peer extends Service {
       case 'P2P_FILE_SEND':
       case 'CONTRACT_PUBLISH':
       case 'CONTRACT_MESSAGE':
+      case 'SIDECHAIN_STATE_PATCH':
       {
         const prTyped = Message.tryParseMessageBody(message);
         if (!prTyped.ok || prTyped.value === null || typeof prTyped.value !== 'object' || Array.isArray(prTyped.value)) {
@@ -3660,6 +3600,38 @@ class Peer extends Service {
       default:
         this.emit('debug', `Unhandled Generic Message: ${msg.type}`);
         break;
+      case 'SIDECHAIN_STATE_PATCH': {
+        const body = msg.object || msg;
+        const parsed = sidechainState.parseSidechainStatePatchMessage(body);
+        if (!parsed.ok) {
+          this.emit('warning', `[FABRIC:PEER] SIDECHAIN_STATE_PATCH rejected: ${parsed.error}`);
+          break;
+        }
+        const proposal = parsed.proposal;
+        const validators = this._distributedFederationValidatorsFromSettings();
+        const threshold = this._distributedFederationThresholdFromSettings();
+        if (validators.length > 0) {
+          const msgBuf = Buffer.from(
+            sidechainState.signingStringForSidechainStatePatch(proposal),
+            'utf8'
+          );
+          const witness = proposal.federationWitness || null;
+          if (!witness || !verifyFederationWitnessOnMessage(msgBuf, witness, validators, threshold)) {
+            this.emit('warning', '[FABRIC:PEER] SIDECHAIN_STATE_PATCH federationWitness missing or invalid');
+            break;
+          }
+        }
+        this.emit('sidechain:patch', {
+          proposal,
+          federationWitness: proposal.federationWitness || null,
+          signer: signerPubkeyHex || null,
+          origin
+        });
+        if (delivery.allowMeshRelay && origin && origin.name && wireMessage) {
+          this.relayFrom(origin.name, wireMessage);
+        }
+        break;
+      }
       case 'INVENTORY_REQUEST':
         // Upstream Inventory request (typically for documents). Emit an 'inventory'
         // event so higher-level services (e.g. hub) can respond appropriately.
@@ -5413,11 +5385,34 @@ class Peer extends Service {
    * @returns {boolean}
    */
   _contractPublishSignerAuthorized (object, signerPubkeyHex = null) {
-    const authorities = collectContractAuthorityPubkeys(object);
-    if (!authorities.size) return true;
-    const pub = normalizePeerPubkeyHex(signerPubkeyHex);
-    if (!pub) return true;
-    return authoritySetHasPubkey(authorities, pub);
+    return contractPublishSignerAuthorizedFn(object, signerPubkeyHex);
+  }
+
+  /**
+   * Federation validator pubkeys for sidechain patch verification (settings or env).
+   * @returns {string[]}
+   */
+  _distributedFederationValidatorsFromSettings () {
+    const env = process.env.FABRIC_DISTRIBUTED_FEDERATION_VALIDATORS;
+    if (env && String(env).trim()) {
+      return String(env).split(',').map((s) => s.trim()).filter(Boolean);
+    }
+    const v = this.settings.distributed && this.settings.distributed.federation &&
+      this.settings.distributed.federation.validators;
+    return Array.isArray(v) ? v.slice() : [];
+  }
+
+  /**
+   * @returns {number}
+   */
+  _distributedFederationThresholdFromSettings () {
+    const env = process.env.FABRIC_DISTRIBUTED_FEDERATION_VALIDATORS;
+    if (env && String(env).trim()) {
+      return Math.max(1, Number(process.env.FABRIC_DISTRIBUTED_FEDERATION_THRESHOLD) || 1);
+    }
+    const t = this.settings.distributed && this.settings.distributed.federation &&
+      this.settings.distributed.federation.threshold;
+    return Math.max(1, Number(t) || 1);
   }
 
   /**
