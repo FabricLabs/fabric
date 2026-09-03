@@ -675,7 +675,11 @@ class Message extends Actor {
   }
 
   toVector () {
-    return [this.type, this.data];
+    const vector = [this.type, this.data];
+    if (!Message.isZeroParent(this.parent)) {
+      vector.push(this.parent);
+    }
+    return vector;
   }
 
   fromObject (input) {

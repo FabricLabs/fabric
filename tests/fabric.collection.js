@@ -773,6 +773,20 @@ describe('@fabric/core/functions/fabricMessageCollection', function () {
     assert.ok(tree.verifyNonInclusion(gap));
   });
 
+  it('preserves parent chain when a frame is rehydrated via toVector/fromVector', function () {
+    const key = new Key();
+    const first = signChat(key, 'vec-one');
+    const second = Message.fromVector(['P2P_CHAT_MESSAGE', 'vec-two', first]).signWithKey(key);
+    const rehydrated = Message.fromVector(second.toVector());
+    assert.strictEqual(rehydrated.parent, first.id);
+
+    const collection = createCollection();
+    ingest(collection, first);
+    ingest(collection, rehydrated);
+    assert.strictEqual(collection.messages[1].parent, first.id);
+    assert.strictEqual(walkParentChain(collection.messages, rehydrated.id).length, 2);
+  });
+
   it('rejects a frameId that is not 32-byte hex', function () {
     const key = new Key();
     const collection = createCollection();

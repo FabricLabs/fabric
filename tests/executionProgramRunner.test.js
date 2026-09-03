@@ -7,6 +7,7 @@ const {
   runExecutionProgram,
   executionProgramFromHub
 } = require('../functions/executionProgramRunner');
+const { buildExecutionRunOutput } = require('../functions/executionRunBridge');
 
 describe('executionProgramRunner / Machine fabric-execution', function () {
   it('runs Push/Dup/Pop/ADD on Machine stack', function () {
@@ -96,5 +97,24 @@ describe('executionProgramRunner / Machine fabric-execution', function () {
   it('Program.compile fabric-execution requires steps', function () {
     const bad = Program.from({ language: 'fabric-execution', source: {} }).compile();
     assert.strictEqual(bad.ok, false);
+  });
+
+  it('runExecutionProgram feeds buildExecutionRunOutput for distributed run sealing', function () {
+    const r = runExecutionProgram({
+      version: 1,
+      steps: [{ op: 'Push', value: 42 }, { op: 'Dup' }]
+    });
+    assert.strictEqual(r.ok, true, r.error);
+    const contractId = 'a'.repeat(64);
+    const out = buildExecutionRunOutput({
+      contractId,
+      programHash: r.programHash,
+      result: r
+    });
+    assert.strictEqual(out.programHash, r.programHash);
+    assert.ok(out.runCommitmentHex);
+    assert.ok(out.fabricProgramRunCommitmentHex);
+    assert.strictEqual(out.fabricProgramRun.programHash, r.programHash);
+    assert.strictEqual(out.fabricProgramRun.runCommitmentHex, out.fabricProgramRunCommitmentHex);
   });
 });

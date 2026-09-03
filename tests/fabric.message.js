@@ -418,6 +418,24 @@ describe('@fabric/core/types/message', function () {
       assert.strictEqual(Message.fromBuffer(m.toBuffer()).parent, parentHex);
     });
 
+    it('toVector round-trips non-zero parent through fromVector', function () {
+      const genesis = Message.fromVector(['P2P_CHAT_MESSAGE', 'first']).signWithKey(key);
+      const child = Message.fromVector(['P2P_CHAT_MESSAGE', 'second', genesis]).signWithKey(key);
+
+      const childVec = child.toVector();
+      assert.strictEqual(childVec.length, 3);
+      assert.strictEqual(childVec[2], genesis.id);
+
+      const restored = Message.fromVector(childVec);
+      assert.strictEqual(restored.parent, genesis.id);
+      assert.strictEqual(restored.type, child.type);
+      assert.strictEqual(String(restored.data), 'second');
+
+      const genesisVec = genesis.toVector();
+      assert.strictEqual(genesisVec.length, 2);
+      assert.strictEqual(Message.fromVector(genesisVec).parent, Message.ZERO_PARENT);
+    });
+
     it('fromFields throws when no schema is registered', function () {
       assert.throws(() => Message.fromFields('GENERIC_MESSAGE', { x: 1 }), /no body schema/);
     });
