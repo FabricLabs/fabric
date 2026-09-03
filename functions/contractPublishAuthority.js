@@ -93,7 +93,12 @@ function authoritySetHasPubkey (authorities, pubkeyHex) {
 
 /**
  * Whether a wire signer is listed in contract authority arrays.
- * Missing signer (local seed) is allowed. Empty authority set allows any signer.
+ *
+ * Empty authority set → any signer (open genesis / observe-only publish).
+ * Non-empty authority set → AMP wire signer **must** be present and listed
+ * (fail closed: missing signer used to return true and looked like authz was
+ * complete while unsigned frames could still register).
+ *
  * @param {object} object
  * @param {string|null} signerPubkeyHex
  * @returns {boolean}
@@ -102,7 +107,7 @@ function contractPublishSignerAuthorized (object, signerPubkeyHex = null) {
   const authorities = collectContractAuthorityPubkeys(object);
   if (!authorities.size) return true;
   const pub = normalizePeerPubkeyHex(signerPubkeyHex);
-  if (!pub) return true;
+  if (!pub) return false;
   return authoritySetHasPubkey(authorities, pub);
 }
 

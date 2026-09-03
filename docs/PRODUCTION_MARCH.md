@@ -75,22 +75,31 @@ Rationale:
 
 ### Step A: Inventory and tagging
 
-- [ ] Generate an authoritative list of all `types/*.js` with tags: `keep`, `consolidate`, `compat`, `remove-candidate`.
-- [ ] Record direct references from:
+- [x] Generate an authoritative list of all `types/*.js` with tags: `keep`, `consolidate`, `compat`, `remove-candidate`.
+- [x] Record direct references from:
   - `types/fabric.js`
   - `services/*.js`
   - `scripts/fabric.js` and `types/cli.js`
   - Hub-facing integration points (`publishedDocumentEnvelope`, security/delegation paths)
 
+**Locked inventory (2026-09-03):**
+
+| Tag | Types |
+|-----|--------|
+| **keep** | `Actor`, `Beacon`, `Chain`, `Circuit`, `Collection`, `Contract`, `Entity`, `Federation`, `Hash256`, `Key`, `Machine`, `Message`, `Peer`, `Program`, `Remote`, `Resource`, `Service`, `State`, `Store`, `Wallet`, `Worker`, `Block`, `Tree`, `Filesystem`, `Identity`, `Token`, `Environment` |
+| **consolidate** | `Scribe` (logging → Service helpers), `Reader` (→ Peer/Message ingest; `@deprecated`), `Interface` (→ Resource schema), `Stack`+`Script` (evaluate behind Program/Machine) |
+| **compat** | `DistributedExecution` (thin re-export; prefer leaf helpers + Machine/Program), `Vector`, `Observer`, `Oracle`, `RoundRobin`, `Session`, `Capability` (scaffold), `Channel` |
+| **remove-candidate / not shipped** | `authority`, `component`, `renderer`, `typetree` (excluded from `files[]`), plus dormant: `compiler`, `disk`, `datastore`, `transaction`, `history`, `promise`, `queue`, `router`, `setup`, `label`, `ledger`, `logger`, `network`, `node`, `path`, `secret`, `signature`, `validator`, `witness`, `instruction`, `challenge`, `bond`, `bech32` (prefer functions), `codec`, `document`, `ecc*`, `cli` (bin path), `hkdf` |
+
 ### Step B: Fast reductions
 
-- [ ] Mark `Scribe` and `Reader` with explicit deprecation notes in code comments/docs.
-- [ ] Stop advertising non-core classes in onboarding docs/examples.
-- [ ] Keep runtime compatibility for one release cycle through aliasing only where needed.
+- [x] Mark `Scribe` and `Reader` with explicit deprecation notes in code comments/docs.
+- [x] Stop advertising non-core classes in onboarding docs/examples.
+- [x] Keep runtime compatibility for one release cycle through aliasing only where needed.
 
 ### Step C: Facade hardening
 
-- [ ] Make `types/fabric.js` the curated public class surface for RC.
+- [x] Make `types/fabric.js` the curated public class surface for RC.
 - [ ] Remove stale commented exports once target decisions are finalized.
 - [ ] Ensure docs generation follows the curated surface and avoids promoting internal-only classes.
 
@@ -135,11 +144,11 @@ Everything else is either:
 ## Workstreams
 ### 1) Type Tree Consolidation
 
-- [ ] Build an authoritative inventory of currently exported/used classes.
-- [ ] Mark each class as `keep`, `consolidate`, `deprecate`, or `remove`.
+- [x] Build an authoritative inventory of currently exported/used classes.
+- [x] Mark each class as `keep`, `consolidate`, `deprecate`, or `remove`.
 - [ ] Collapse legacy/overlapping classes into canonical homes.
 - [ ] Ensure all removed/re-homed APIs have compatibility notes.
-- [ ] Keep `types/fabric.js` static exports aligned with final decisions.
+- [x] Keep `types/fabric.js` static exports aligned with final decisions.
 
 Definition of done:
 - Reduced public class surface with no unresolved runtime imports in tests.
@@ -173,8 +182,8 @@ Definition of done:
 - Coverage reflects shipped behavior, and failures clearly indicate product risk.
 
 ## Immediate Priority Queue
-1. **Security leftovers** in [OUTSTANDING.md](OUTSTANDING.md) — do not paper over AUDIT known gaps; coordinate http possession-proof for site-login / device-link redeem on shared hosts.
-2. **Finalize keep/remove matrix for classes** and lock the target type tree (`Scribe` / `Reader` / Global clutter).
+1. **Security leftovers** in [OUTSTANDING.md](OUTSTANDING.md) — Blockers remain (third-party review, login/link Origin-GET, `contractId` rename); Next slices cleared on 2026-09-03 cut series.
+2. ~~Finalize keep/remove matrix for classes~~ — locked above (Step A inventory).
 3. **Trim docs generation target set** to production-relevant modules.
 4. **Trim example set** to Hub-facing workflows (documents, contracts, signing/delegation, network).
 5. **Resolve unfinished behavior in active APIs** before adding more coverage-only tests.
@@ -230,6 +239,14 @@ Execution order:
 
 ## Progress Log
 Use this section as an append-only log (newest first).
+
+### 2026-09-03 — OUTSTANDING Next slices emptied (staged cut series)
+Staged (no agent commits): #187 tip tests + c8 whitelist for authority/operator/MuSig2-stub;
+NOISE stream deps declared; unloadable modules out of `files[]`; type-tree inventory
+locked; `sensitive` ≠ encrypted + scaffold/VM doc honesty; `contractIdentifier` dual-field
+helper; Codacy path excludes marked wontfix. Core Next slices empty; Blockers keep
+third-party review, VM non-claim, login/link Origin-GET, and the rename. Hub owns NOISE
+redeploy verify (`npm run verify:noise-handshake`).
 
 ### 2026-08-24 — PR #186 open review comments
 Cleared the open review surface on

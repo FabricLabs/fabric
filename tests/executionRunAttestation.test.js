@@ -23,4 +23,24 @@ describe('executionRunAttestation', function () {
     });
     assert.ok(era.verifyExecutionRunFederationWitness(run, witness, [key.pubkey], 1));
   });
+
+  it('verifyExecutionRunFederationWitness rejects attacker witness', function () {
+    const owner = new Key({ private: '1111111111111111111111111111111111111111111111111111111111111111' });
+    const attacker = new Key({ private: '2222222222222222222222222222222222222222222222222222222222222222' });
+    const run = { programHash: 'prog', runCommitmentHex: 'f'.repeat(64), contractId: 'c2' };
+    const witness = era.buildFederationWitnessForExecutionRun({
+      ...run,
+      signKey: attacker,
+      validators: [attacker.pubkey],
+      threshold: 1
+    });
+    assert.strictEqual(
+      era.verifyExecutionRunFederationWitness(run, witness, [owner.pubkey], 1),
+      false
+    );
+    assert.strictEqual(
+      era.verifyExecutionRunFederationWitness(run, null, [owner.pubkey], 1),
+      false
+    );
+  });
 });

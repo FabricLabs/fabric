@@ -50,4 +50,27 @@ describe('@fabric/core/functions/fabricOperatorIdentity', function () {
     assert.strictEqual(resolved.key.xprv, k.xprv);
     assert.strictEqual(resolved.key.mnemonic, undefined);
   });
+
+  it('resolveFabricOperatorKeySettings falls back to FABRIC_XPUB / FABRIC_PUBKEY (watch-only)', function () {
+    const k = new Key({ mnemonic: PHRASE_A });
+    const fromXpub = resolveFabricOperatorKeySettings({
+      FABRIC_XPUB: k.xpub
+    }, { allowWalletFallback: false });
+    assert.ok(fromXpub);
+    assert.strictEqual(fromXpub.source, 'FABRIC_XPUB');
+    assert.strictEqual(fromXpub.key.xpub, k.xpub);
+
+    const fromPub = resolveFabricOperatorKeySettings({
+      FABRIC_PUBKEY: k.pubkey
+    }, { allowWalletFallback: false });
+    assert.ok(fromPub);
+    assert.strictEqual(fromPub.source, 'FABRIC_PUBKEY');
+    assert.ok(fromPub.key.public);
+
+    const xpubInXprvSlot = resolveFabricOperatorKeySettings({
+      FABRIC_XPRV: k.xpub
+    }, { allowWalletFallback: false });
+    assert.strictEqual(xpubInXprvSlot.source, 'FABRIC_XPRV');
+    assert.strictEqual(xpubInXprvSlot.key.xpub, k.xpub);
+  });
 });

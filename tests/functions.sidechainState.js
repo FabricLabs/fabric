@@ -249,6 +249,37 @@ describe('@fabric/core/functions/sidechainState', function () {
     assert.ok(parsed.proposal.federationWitness);
   });
 
+  it('buildFederationWitnessForSidechainPatch returns null without a signing key', function () {
+    assert.strictEqual(sc.buildFederationWitnessForSidechainPatch({
+      proposal: { basisClock: 0, basisDigest: 'aa', patches: [] },
+      signKey: null
+    }), null);
+  });
+
+  it('buildFederationWitnessForSidechainPatch attaches validators metadata when provided', function () {
+    const key = new Key({ private: '1111111111111111111111111111111111111111111111111111111111111111' });
+    const proposal = {
+      basisClock: 1,
+      basisDigest: 'cc',
+      patches: [{ op: 'add', path: '/y', value: 2 }]
+    };
+    const witness = sc.buildFederationWitnessForSidechainPatch({
+      proposal,
+      signKey: key,
+      validators: [key.pubkey],
+      threshold: 1
+    });
+    assert.ok(witness);
+    assert.deepStrictEqual(witness.validators, [key.pubkey]);
+    assert.strictEqual(witness.threshold, 1);
+    assert.ok(witness.signatures[key.pubkey]);
+  });
+
+  it('parseSidechainStatePatchMessage rejects incomplete bodies', function () {
+    assert.strictEqual(sc.parseSidechainStatePatchMessage(null).ok, false);
+    assert.strictEqual(sc.parseSidechainStatePatchMessage({ type: 'Other' }).ok, false);
+  });
+
   it('verifyEpochChainFederationWitnesses fail-closed', function () {
     const key = new Key({ private: '1111111111111111111111111111111111111111111111111111111111111111' });
     const epoch = { clock: 1, height: 1 };

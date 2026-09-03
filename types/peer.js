@@ -5418,8 +5418,8 @@ class Peer extends Service {
 
   /**
    * When a publish body declares authority arrays, the AMP wire signer must be
-   * one of them. Bodies with no authorities are allowed (observe-only; empty
-   * patch allow-list). Missing signer (local seed) is allowed.
+   * present and listed. Bodies with no authorities are allowed (observe-only;
+   * empty patch allow-list). Missing signer fail-closes when authorities exist.
    * @param {object} object
    * @param {string|null} signerPubkeyHex
    * @returns {boolean}

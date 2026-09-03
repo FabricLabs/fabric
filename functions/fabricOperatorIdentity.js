@@ -124,8 +124,13 @@ function resolveFabricOperatorKeySettings (env = process.env, opts = {}) {
   }
 
   if (fromEnv && (fromEnv.xpub || fromEnv.public)) {
+    let source = 'FABRIC_PUBKEY';
+    if (fromEnv.xpub) {
+      const slot = classifyFabricIdentityEnvValue((env && env.FABRIC_XPRV) || '');
+      source = slot.kind === 'xpub' ? 'FABRIC_XPRV' : 'FABRIC_XPUB';
+    }
     return {
-      source: fromEnv.xpub ? 'FABRIC_XPRV' : 'FABRIC_PUBKEY',
+      source,
       key: exclusiveOperatorKeySettings(fromEnv) || fromEnv
     };
   }

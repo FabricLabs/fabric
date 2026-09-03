@@ -14,7 +14,7 @@ Fabric separates **who authorized a transition** from **what was committed** and
 | `federationWitness` | `signingStringForSidechainStatePatch` | k-of-n approved an RFC6902 patch proposal |
 | `federationWitness` (epoch) | `signingStringForBeaconEpoch` | k-of-n approved a Beacon epoch payload |
 | `ContractStateTip` | Contract-namespace tip string | k-of-n approved a namespace head digest |
-| `CONTRACT_PUBLISH` | AMP + authority list in genesis body | Publisher is listed in `validators` / `members.signers` / `spendPolicy.validators` |
+| `CONTRACT_PUBLISH` | AMP + authority list in genesis body | Publisher is listed in `validators` / `members.signers` / `spendPolicy.validators` (empty authority list → open publish; **non-empty list requires a wire signer**) |
 | Device-link / identity cluster | UTF-8 challenge strings | Mutual Schnorr attestation between devices |
 
 Helpers: `functions/sidechainState.js`, `functions/beaconFederationSigning.js`, `functions/contractStateSigning.js`, `functions/contractPublishAuthority.js`.
@@ -62,7 +62,7 @@ Each validator:
 1. Observes **local L1 tips** (`bitcoind` `block` events; Beacon `followBlocks` when validators are set, including regtest).
 2. Folds gossiped contract / sidechain digests into a **canonical epoch** (`canonicalEpochForFederation` — no wallet balance or wall-clock).
 3. Seals **`payload.contracts.merkleRoot`** (accepted tracked contracts Tree / digest) into the Beacon broadcast alongside `stateDigest`.
-4. Accumulates **k-of-n BIP340 Schnorr** signatures over `signingStringForBeaconEpoch` (`FederationSignRequest` / `FederationSignResponse` gossip). MuSig2 single-sig aggregation is stubbed (`musig2EpochAggregate`); production path is multi-sig accumulate until threshold.
+4. Accumulates **k-of-n BIP340 Schnorr** signatures over `signingStringForBeaconEpoch` (`FederationSignRequest` / `FederationSignResponse` gossip). **`functions/musig2EpochAggregate` is an explicit stub** (`supported: false` / `tryAggregateEpochWitness` → `null`) — not a finished MuSig2 path. Production seal is multi-sig accumulate until threshold via `beaconFederationSigning`.
 
 ## Related docs
 

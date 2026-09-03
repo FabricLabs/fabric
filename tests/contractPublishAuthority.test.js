@@ -29,8 +29,9 @@ describe('contractPublishAuthority', function () {
     assert.ok(authoritySetHasPubkey(set, v.pubkey));
   });
 
-  it('contractPublishSignerAuthorized allows empty authority set', function () {
+  it('contractPublishSignerAuthorized allows empty authority set (open genesis)', function () {
     assert.strictEqual(contractPublishSignerAuthorized({ name: 'X' }, 'aa'.repeat(32)), true);
+    assert.strictEqual(contractPublishSignerAuthorized({ name: 'X' }, null), true);
   });
 
   it('contractPublishSignerAuthorized rejects non-party signer', function () {
@@ -39,6 +40,13 @@ describe('contractPublishAuthority', function () {
     const def = { validators: [owner.pubkey] };
     assert.strictEqual(contractPublishSignerAuthorized(def, owner.pubkey), true);
     assert.strictEqual(contractPublishSignerAuthorized(def, attacker.pubkey), false);
+  });
+
+  it('contractPublishSignerAuthorized fail-closes when authorities exist but signer is missing', function () {
+    const owner = new Key();
+    const def = { validators: [owner.pubkey] };
+    assert.strictEqual(contractPublishSignerAuthorized(def, null), false);
+    assert.strictEqual(contractPublishSignerAuthorized(def, ''), false);
   });
 
   it('normalizePeerPubkeyHex strips compressed prefix', function () {
