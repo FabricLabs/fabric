@@ -3610,20 +3610,60 @@ class Peer extends Service {
         const proposal = parsed.proposal;
         const validators = this._distributedFederationValidatorsFromSettings();
         const threshold = this._distributedFederationThresholdFromSettings();
-        if (validators.length > 0) {
-          const msgBuf = Buffer.from(
-            sidechainState.signingStringForSidechainStatePatch(proposal),
-            'utf8'
-          );
-          const witness = proposal.federationWitness || null;
-          if (!witness || !verifyFederationWitnessOnMessage(msgBuf, witness, validators, threshold)) {
-            this.emit('warning', '[FABRIC:PEER] SIDECHAIN_STATE_PATCH federationWitness missing or invalid');
-            break;
-          }
+        // Fail closed on the network path (matches CONTRACT_MESSAGE patch allow-lists
+        // and gossipNetwork `observe` policy). Unconfigured peers must not emit or
+        // mesh-flood attacker-controlled RFC6902 patches from any session peer.
+        if (!validators.length) {
+          this.emit('warning',
+            '[FABRIC:PEER] SIDECHAIN_STATE_PATCH rejected: no federation validators configured');
+          break;
+        }
+        const msgBuf = Buffer.from(
+          sidechainState.signingStringForSidechainStatePatch(proposal),
+          'utf8'
+        );
+        const witness = proposal.federationWitness || null;
+        if (!witness || !verifyFederationWitnessOnMessage(msgBuf, witness, validators, threshold)) {
+          this.emit('warning', '[FABRIC:PEER] SIDECHAIN_STATE_PATCH federationWitness missing or invalid');
+          break;
         }
         this.emit('sidechain:patch', {
           proposal,
           federationWitness: proposal.federationWitness || null,
+          signer: signerPubkeyHex || null,
+          origin
+        });
+        // Observe-only: do not mesh-relay (gossipNetwork SIDECHAIN_STATE_PATCH = observe).
+        break;
+      }
+      case 'FederationSignRequest': {
+        const body = (msg.object && typeof msg.object === 'object') ? msg.object : msg;
+        const validators = this._distributedFederationValidatorsFromSettings();
+        if (!validators.length) {
+          this.emit('warning',
+            '[FABRIC:PEER] FederationSignRequest ignored: no federation validators configured');
+          break;
+        }
+        this.emit('federation:sign-request', {
+          request: body,
+          signer: signerPubkeyHex || null,
+          origin
+        });
+        if (delivery.allowMeshRelay && origin && origin.name && wireMessage) {
+          this.relayFrom(origin.name, wireMessage);
+        }
+        break;
+      }
+      case 'FederationSignResponse': {
+        const body = (msg.object && typeof msg.object === 'object') ? msg.object : msg;
+        const validators = this._distributedFederationValidatorsFromSettings();
+        if (!validators.length) {
+          this.emit('warning',
+            '[FABRIC:PEER] FederationSignResponse ignored: no federation validators configured');
+          break;
+        }
+        this.emit('federation:sign-response', {
+          response: body,
           signer: signerPubkeyHex || null,
           origin
         });

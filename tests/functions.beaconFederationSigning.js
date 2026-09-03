@@ -5,6 +5,49 @@ const Key = require('../types/key');
 const bfs = require('../functions/beaconFederationSigning');
 
 describe('@fabric/core/functions/beaconFederationSigning', function () {
+  it('canonicalEpochForFederation drops balance/timestamp and keeps contracts merkleRoot', function () {
+    const epoch = {
+      clock: 7,
+      blockHash: 'aa'.repeat(32),
+      height: 42,
+      balance: 12.5,
+      balanceSats: 1250000000,
+      timestamp: '2026-01-01T00:00:00.000Z',
+      sidechain: { clock: 3, stateDigest: 'bb'.repeat(32) },
+      contracts: {
+        clock: 2,
+        stateDigest: 'cc'.repeat(32),
+        merkleRoot: 'cc'.repeat(32),
+        kind: 'TrackedApplicationContracts',
+        acceptedCount: 1
+      }
+    };
+    const canonical = bfs.canonicalEpochForFederation(epoch);
+    assert.strictEqual(canonical.clock, 7);
+    assert.strictEqual(canonical.height, 42);
+    assert.strictEqual(canonical.balance, undefined);
+    assert.strictEqual(canonical.timestamp, undefined);
+    assert.strictEqual(canonical.contracts.merkleRoot, 'cc'.repeat(32));
+    assert.strictEqual(
+      bfs.epochCommitmentDigestHex(epoch),
+      bfs.epochCommitmentDigestHex(canonical)
+    );
+  });
+
+  it('two validators independently compute the same commitment digest', function () {
+    const epoch = {
+      clock: 1,
+      blockHash: '11'.repeat(32),
+      height: 10,
+      contracts: { clock: 0, stateDigest: '22'.repeat(32), merkleRoot: '22'.repeat(32) }
+    };
+    const k1 = new Key({ private: '1111111111111111111111111111111111111111111111111111111111111111' });
+    const k2 = new Key({ private: '2222222222222222222222222222222222222222222222222222222222222222' });
+    const r1 = bfs.createRound(epoch, { validators: [k1.pubkey, k2.pubkey], threshold: 2 });
+    const r2 = bfs.createRound(epoch, { validators: [k1.pubkey, k2.pubkey], threshold: 2 });
+    assert.strictEqual(r1.commitmentDigest, r2.commitmentDigest);
+  });
+
   it('collects threshold Schnorr signatures over an epoch commitment', function () {
     const k1 = new Key({ private: '1111111111111111111111111111111111111111111111111111111111111111' });
     const k2 = new Key({ seed: 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about' });

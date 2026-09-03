@@ -245,6 +245,81 @@ describe('@fabric/core/types/beacon', function () {
     assert.strictEqual(result.pending, true);
     assert.ok(beacon._pendingEpochRounds.has(digest));
   });
+
+  it('follows L1 blocks when federation validators are configured (regtest)', function () {
+    const k1 = new Key({ private: '1111111111111111111111111111111111111111111111111111111111111111' });
+    const beacon = new Beacon({
+      regtest: true,
+      mineOnStart: false,
+      interval: 0,
+      federationValidators: [k1.pubkey],
+      federationThreshold: 1
+    });
+    assert.strictEqual(beacon._shouldFollowBitcoinBlocks(), true);
+  });
+
+  it('two validators accumulate Schnorr sigs over the same contracts merkle tip', async function () {
+    const bfs = require('../functions/beaconFederationSigning');
+    const k1 = new Key({ private: '1111111111111111111111111111111111111111111111111111111111111111' });
+    const k2 = new Key({ private: '2222222222222222222222222222222222222222222222222222222222222222' });
+    const contractsSnap = {
+      clock: 1,
+      stateDigest: 'ab'.repeat(32),
+      merkleRoot: 'ab'.repeat(32),
+      kind: 'TrackedApplicationContracts',
+      acceptedCount: 1
+    };
+    const b1 = new Beacon({
+      regtest: true,
+      mineOnStart: false,
+      interval: 0,
+      federationValidators: [k1.pubkey, k2.pubkey],
+      federationThreshold: 2
+    });
+    const b2 = new Beacon({
+      regtest: true,
+      mineOnStart: false,
+      interval: 0,
+      federationValidators: [k1.pubkey, k2.pubkey],
+      federationThreshold: 2
+    });
+    b1.attach({
+      fs: memoryFs(),
+      key: k1,
+      getContractsSnapshotForEpoch: () => contractsSnap
+    });
+    b2.attach({
+      fs: memoryFs(),
+      key: k2,
+      getContractsSnapshotForEpoch: () => contractsSnap
+    });
+
+    const epochBase = { clock: 9, blockHash: 'cd'.repeat(32), height: 90 };
+    const pending = await b1._commitEpochWithFederation(epochBase);
+    assert.strictEqual(pending.pending, true);
+    assert.ok(pending.signRequest);
+    assert.ok(pending.payload.contracts);
+    assert.strictEqual(pending.payload.contracts.merkleRoot, contractsSnap.merkleRoot);
+
+    const adopted = await b2.adoptFederationSignRequest(pending.signRequest);
+    assert.strictEqual(adopted.ok, true);
+    const signed2 = await b2.signPendingFederationRoundAsLocalValidator(pending.commitmentDigest);
+    assert.strictEqual(signed2.ok, true);
+    assert.ok(signed2.response);
+
+    const sealed = await b1.submitFederationEpochSignature(
+      pending.commitmentDigest,
+      signed2.response.pubkey,
+      signed2.response.signature
+    );
+    assert.strictEqual(sealed.status, 'success');
+    assert.strictEqual(sealed.sealed, true);
+    assert.strictEqual(sealed.payload.contracts.merkleRoot, contractsSnap.merkleRoot);
+    assert.strictEqual(
+      Object.keys(sealed.federationWitness.signatures).length >= 2,
+      true
+    );
+  });
 });
 
 const {
