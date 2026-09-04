@@ -87,6 +87,18 @@ API: `types/message.js` body codec helpers (`Message.encodeBody` /
   body bytes as the UTF-8 text / nickname itself (no field schema, no JSON).
   Build with `Message.fromVector(['P2P_CHAT_MESSAGE', text])` (string body).
 
+## `sensitive` is not encryption
+
+`Message` constructor option / property `sensitive: true`:
+
+- Forces the wire header `preimage` to zeros (and will not invent
+  `SHA256(body)` as a payment secret).
+- Does **not** encrypt, seal, or redact the body bytes.
+
+Peers and relays that handle the frame still observe the body. For
+confidentiality use sealed document delivery, tip-bound chat seals, or
+application-layer crypto — see [PRIVACY.md](../PRIVACY.md).
+
 ## Deprecated / legacy paths (still handled)
 
 These remain accepted where needed for Hub / older peers, but are **deprecated**

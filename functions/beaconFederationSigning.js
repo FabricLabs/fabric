@@ -23,12 +23,51 @@ const FEDERATION_SIGN_RESPONSE = 'FederationSignResponse';
 const PENDING_STORE_PATH = 'beacon/PENDING_EPOCH_ROUNDS';
 
 /**
+ * Deterministic epoch fields every federation validator can recompute from
+ * local L1 tip + gossiped contract / sidechain digests.
+ * Omits node-local wallet balance and wall-clock timestamps so independent
+ * observers seal the same commitment.
+ *
+ * @param {object} epochPayload
+ * @returns {object}
+ */
+function canonicalEpochForFederation (epochPayload) {
+  const e = epochPayload && typeof epochPayload === 'object' ? epochPayload : {};
+  const out = {
+    clock: Number(e.clock) || 0,
+    blockHash: e.blockHash != null ? String(e.blockHash) : null,
+    height: Number(e.height) || 0
+  };
+  if (e.sidechain && typeof e.sidechain === 'object') {
+    out.sidechain = {
+      clock: Number(e.sidechain.clock) || 0,
+      stateDigest: e.sidechain.stateDigest != null ? String(e.sidechain.stateDigest) : null
+    };
+  }
+  if (e.contracts && typeof e.contracts === 'object') {
+    out.contracts = {
+      clock: Number(e.contracts.clock) || 0,
+      stateDigest: e.contracts.stateDigest != null ? String(e.contracts.stateDigest) : null,
+      kind: e.contracts.kind || 'TrackedApplicationContracts'
+    };
+    if (e.contracts.merkleRoot != null) {
+      out.contracts.merkleRoot = String(e.contracts.merkleRoot);
+    }
+    if (Number.isFinite(e.contracts.acceptedCount)) {
+      out.contracts.acceptedCount = Number(e.contracts.acceptedCount);
+    }
+  }
+  return out;
+}
+
+/**
  * UTF-8 string that federation members sign for a beacon epoch.
+ * Uses {@link canonicalEpochForFederation} so all validators share one digest.
  * @param {object} epochPayload
  * @returns {string}
  */
 function signingStringForBeaconEpoch (epochPayload) {
-  const safe = jsonSafe(epochPayload);
+  const safe = jsonSafe(canonicalEpochForFederation(epochPayload));
   return fabricCanonicalJson({
     version: 1,
     kind: BEACON_EPOCH_SIGNING_KIND,
@@ -114,12 +153,13 @@ async function persistPendingDoc (fs, doc) {
  */
 function createRound (epochPayload, policy = {}, initialWitness = null) {
   const pol = policy && typeof policy === 'object' ? policy : {};
-  const commitmentDigest = epochCommitmentDigestHex(epochPayload);
+  const canonical = canonicalEpochForFederation(epochPayload);
+  const commitmentDigest = epochCommitmentDigestHex(canonical);
   const validators = (pol.validators || []).map((v) => String(v).trim()).filter(Boolean);
   const threshold = Math.max(1, Number(pol.threshold) || 1);
   const round = {
     commitmentDigest,
-    payload: epochPayload,
+    payload: canonical,
     validators,
     threshold: Math.min(threshold, validators.length || threshold),
     witness: {
@@ -221,6 +261,7 @@ module.exports = {
   FEDERATION_SIGN_REQUEST,
   FEDERATION_SIGN_RESPONSE,
   PENDING_STORE_PATH,
+  canonicalEpochForFederation,
   signingStringForBeaconEpoch,
   epochCommitmentDigestHex,
   verifyFederationWitnessOnMessage,

@@ -245,6 +245,295 @@ describe('@fabric/core/types/beacon', function () {
     assert.strictEqual(result.pending, true);
     assert.ok(beacon._pendingEpochRounds.has(digest));
   });
+
+  it('follows L1 blocks when federation validators are configured (regtest)', function () {
+    const k1 = new Key({ private: '1111111111111111111111111111111111111111111111111111111111111111' });
+    const beacon = new Beacon({
+      regtest: true,
+      mineOnStart: false,
+      interval: 0,
+      federationValidators: [k1.pubkey],
+      federationThreshold: 1
+    });
+    assert.strictEqual(beacon._shouldFollowBitcoinBlocks(), true);
+  });
+
+  it('two validators accumulate Schnorr sigs over the same contracts merkle tip', async function () {
+    const bfs = require('../functions/beaconFederationSigning');
+    const k1 = new Key({ private: '1111111111111111111111111111111111111111111111111111111111111111' });
+    const k2 = new Key({ private: '2222222222222222222222222222222222222222222222222222222222222222' });
+    const contractsSnap = {
+      clock: 1,
+      stateDigest: 'ab'.repeat(32),
+      merkleRoot: 'ab'.repeat(32),
+      kind: 'TrackedApplicationContracts',
+      acceptedCount: 1
+    };
+    const b1 = new Beacon({
+      regtest: true,
+      mineOnStart: false,
+      interval: 0,
+      federationValidators: [k1.pubkey, k2.pubkey],
+      federationThreshold: 2
+    });
+    const b2 = new Beacon({
+      regtest: true,
+      mineOnStart: false,
+      interval: 0,
+      federationValidators: [k1.pubkey, k2.pubkey],
+      federationThreshold: 2
+    });
+    b1.attach({
+      fs: memoryFs(),
+      key: k1,
+      getContractsSnapshotForEpoch: () => contractsSnap
+    });
+    b2.attach({
+      fs: memoryFs(),
+      key: k2,
+      getContractsSnapshotForEpoch: () => contractsSnap
+    });
+
+    const epochBase = { clock: 9, blockHash: 'cd'.repeat(32), height: 90 };
+    const pending = await b1._commitEpochWithFederation(epochBase);
+    assert.strictEqual(pending.pending, true);
+    assert.ok(pending.signRequest);
+    assert.ok(pending.payload.contracts);
+    assert.strictEqual(pending.payload.contracts.merkleRoot, contractsSnap.merkleRoot);
+
+    const adopted = await b2.adoptFederationSignRequest(pending.signRequest);
+    assert.strictEqual(adopted.ok, true);
+    const signed2 = await b2.signPendingFederationRoundAsLocalValidator(pending.commitmentDigest);
+    assert.strictEqual(signed2.ok, true);
+    assert.ok(signed2.response);
+
+    const sealed = await b1.submitFederationEpochSignature(
+      pending.commitmentDigest,
+      signed2.response.pubkey,
+      signed2.response.signature
+    );
+    assert.strictEqual(sealed.status, 'success');
+    assert.strictEqual(sealed.sealed, true);
+    assert.strictEqual(sealed.payload.contracts.merkleRoot, contractsSnap.merkleRoot);
+    assert.strictEqual(
+      Object.keys(sealed.federationWitness.signatures).length >= 2,
+      true
+    );
+  });
+
+  it('federated createEpoch omits balance/timestamp from the sealed payload', async function () {
+    const k1 = new Key({ private: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' });
+    const beacon = new Beacon({
+      regtest: true,
+      mineOnStart: false,
+      interval: 0,
+      federationValidators: [k1.pubkey],
+      federationThreshold: 1
+    });
+    beacon.attach({
+      bitcoin: stubBitcoin({ height: 2, tip: '11'.repeat(32) }),
+      fs: memoryFs(),
+      key: k1,
+      getContractsSnapshotForEpoch: () => ({
+        clock: 0,
+        stateDigest: '22'.repeat(32),
+        merkleRoot: '22'.repeat(32)
+      })
+    });
+    const payload = await beacon.createEpoch();
+    assert.ok(payload);
+    assert.strictEqual(payload.balance, undefined);
+    assert.strictEqual(payload.timestamp, undefined);
+    assert.ok(payload.contracts);
+    assert.strictEqual(payload.contracts.merkleRoot, '22'.repeat(32));
+    assert.strictEqual(beacon.listPendingFederationEpochRounds().length, 0);
+  });
+
+  it('adoptFederationSignRequest rejects digest mismatch and missing fields', async function () {
+    const beacon = new Beacon({ regtest: true, mineOnStart: false, interval: 0 });
+    beacon.fs = memoryFs();
+    assert.strictEqual((await beacon.adoptFederationSignRequest(null)).ok, false);
+    assert.strictEqual((await beacon.adoptFederationSignRequest({})).ok, false);
+    assert.strictEqual((await beacon.adoptFederationSignRequest({
+      epoch: { clock: 1 },
+      commitmentDigest: ''
+    })).ok, false);
+    const bad = await beacon.adoptFederationSignRequest({
+      epoch: { clock: 1, height: 1, blockHash: 'aa'.repeat(32) },
+      commitmentDigest: '00'.repeat(32)
+    });
+    assert.strictEqual(bad.ok, false);
+    assert.match(String(bad.error), /mismatch/i);
+  });
+
+  it('signPendingFederationRoundAsLocalValidator rejects non-validators and unknown rounds', async function () {
+    const k1 = new Key({ private: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' });
+    const outsider = new Key({ private: 'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc' });
+    const beacon = new Beacon({
+      regtest: true,
+      mineOnStart: false,
+      interval: 0,
+      federationValidators: [k1.pubkey],
+      federationThreshold: 1
+    });
+    beacon.fs = memoryFs();
+    beacon.attach({ key: outsider, fs: beacon.fs });
+    assert.strictEqual((await beacon.signPendingFederationRoundAsLocalValidator('')).ok, false);
+    assert.strictEqual(
+      (await beacon.signPendingFederationRoundAsLocalValidator('deadbeef')).ok,
+      false
+    );
+    const bfs = require('../functions/beaconFederationSigning');
+    const payload = { clock: 8, height: 8, blockHash: '99'.repeat(32) };
+    const round = bfs.createRound(payload, { validators: [k1.pubkey], threshold: 1 });
+    beacon._pendingEpochRounds.set(round.commitmentDigest, round);
+    const denied = await beacon.signPendingFederationRoundAsLocalValidator(round.commitmentDigest);
+    assert.strictEqual(denied.ok, false);
+    assert.match(String(denied.error), /not a federation validator/i);
+  });
+
+  it('listPendingFederationEpochRounds reports collecting rounds', async function () {
+    const k1 = new Key({ private: '1111111111111111111111111111111111111111111111111111111111111111' });
+    const k2 = new Key({ private: '2222222222222222222222222222222222222222222222222222222222222222' });
+    const beacon = new Beacon({
+      regtest: true,
+      mineOnStart: false,
+      interval: 0,
+      federationValidators: [k1.pubkey, k2.pubkey],
+      federationThreshold: 2
+    });
+    beacon.attach({
+      fs: memoryFs(),
+      key: k1,
+      getContractsSnapshotForEpoch: () => ({
+        clock: 0,
+        stateDigest: '33'.repeat(32),
+        merkleRoot: '33'.repeat(32)
+      })
+    });
+    const pending = await beacon._commitEpochWithFederation({
+      clock: 11,
+      blockHash: '44'.repeat(32),
+      height: 11
+    });
+    assert.strictEqual(pending.pending, true);
+    const listed = beacon.listPendingFederationEpochRounds();
+    assert.strictEqual(listed.length, 1);
+    assert.strictEqual(listed[0].commitmentDigest, pending.commitmentDigest);
+    assert.strictEqual(listed[0].status, 'collecting');
+    assert.ok(listed[0].signatureCount >= 1);
+    assert.strictEqual(listed[0].threshold, 2);
+
+    const half = await beacon.submitFederationEpochSignature(
+      pending.commitmentDigest,
+      'not-a-validator',
+      '00'
+    );
+    assert.strictEqual(half.status, 'error');
+  });
+
+  it('submitFederationEpochSignature returns unknown pending epoch round', async function () {
+    const beacon = new Beacon({ regtest: true, mineOnStart: false, interval: 0 });
+    beacon.fs = memoryFs();
+    const result = await beacon.submitFederationEpochSignature('nope', 'aa', 'bb');
+    assert.strictEqual(result.status, 'error');
+    assert.match(String(result.message), /unknown/i);
+  });
+
+  it('recovers a collecting round from filesystem pending store', async function () {
+    const bfs = require('../functions/beaconFederationSigning');
+    const k1 = new Key({ private: 'dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd' });
+    const fs = memoryFs();
+    const beacon = new Beacon({
+      regtest: true,
+      mineOnStart: false,
+      interval: 0,
+      federationValidators: [k1.pubkey],
+      federationThreshold: 1
+    });
+    beacon.attach({ fs, key: k1 });
+    const payload = { clock: 12, height: 12, blockHash: '55'.repeat(32) };
+    const round = bfs.createRound(payload, { validators: [k1.pubkey], threshold: 1 });
+    await bfs.persistPendingDoc(fs, { version: 1, rounds: { [round.commitmentDigest]: round } });
+    assert.strictEqual(beacon._pendingEpochRounds.size, 0);
+    const signed = await beacon.signPendingFederationRoundAsLocalValidator(round.commitmentDigest);
+    assert.strictEqual(signed.ok, true);
+    assert.strictEqual(signed.submit.status, 'success');
+    assert.strictEqual(signed.submit.sealed, true);
+  });
+
+  it('adoptFederationSignRequest is idempotent and attach honors followBlocks', async function () {
+    const k1 = new Key({ private: 'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee' });
+    const beacon = new Beacon({
+      regtest: true,
+      mineOnStart: false,
+      interval: 0,
+      federationValidators: [k1.pubkey],
+      federationThreshold: 1
+    });
+    beacon.attach({
+      fs: memoryFs(),
+      key: k1,
+      followBlocks: true,
+      federationWitnessFailClosed: false
+    });
+    assert.strictEqual(beacon.settings.followBlocks, true);
+    assert.strictEqual(beacon.settings.federationWitnessFailClosed, false);
+    assert.strictEqual(beacon._shouldFollowBitcoinBlocks(), true);
+
+    const noValidators = new Beacon({ regtest: true, mineOnStart: false, interval: 0 });
+    assert.strictEqual(noValidators._shouldFollowBitcoinBlocks(), false);
+    noValidators.attach({ followBlocks: true });
+    assert.strictEqual(noValidators._shouldFollowBitcoinBlocks(), true);
+
+    const bfs = require('../functions/beaconFederationSigning');
+    const epoch = { clock: 13, height: 13, blockHash: '66'.repeat(32) };
+    const digest = bfs.epochCommitmentDigestHex(epoch);
+    const first = await beacon.adoptFederationSignRequest({
+      type: 'FederationSignRequest',
+      commitmentDigest: digest,
+      epoch,
+      validators: [k1.pubkey],
+      threshold: 1
+    });
+    assert.strictEqual(first.ok, true);
+    assert.strictEqual(first.created, true);
+    const second = await beacon.adoptFederationSignRequest({
+      commitmentDigest: digest,
+      epoch
+    });
+    assert.strictEqual(second.ok, true);
+    assert.strictEqual(second.created, false);
+
+    const bare = new Beacon({ regtest: true, mineOnStart: false, interval: 0 });
+    bare.fs = memoryFs();
+    assert.strictEqual(
+      (await bare.signPendingFederationRoundAsLocalValidator(digest)).ok,
+      false
+    );
+  });
+
+  it('start() with federation validators registers a bitcoind block follower on regtest', async function () {
+    const { EventEmitter } = require('events');
+    const k1 = new Key({ private: '1212121212121212121212121212121212121212121212121212121212121212' });
+    const bitcoin = stubBitcoin({ height: 1, tip: '77'.repeat(32) });
+    Object.setPrototypeOf(bitcoin, EventEmitter.prototype);
+    EventEmitter.call(bitcoin);
+    const beacon = new Beacon({
+      regtest: true,
+      mineOnStart: false,
+      interval: 0,
+      federationValidators: [k1.pubkey],
+      federationThreshold: 1
+    });
+    beacon.attach({ bitcoin, fs: memoryFs(), key: k1 });
+    await beacon.start();
+    assert.strictEqual(typeof beacon._blockHandler, 'function');
+    assert.strictEqual(bitcoin.listenerCount('block'), 1);
+    await beacon.stop();
+    assert.strictEqual(beacon._blockHandler, null);
+    assert.strictEqual(bitcoin.listenerCount('block'), 0);
+  });
 });
 
 const {

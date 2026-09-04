@@ -37,20 +37,32 @@ const SOURCE_PREFIXES = ['types/', 'functions/', 'services/', 'contracts/'];
 const INTENTIONALLY_UNPACKED = new Set(['build/Release/fabric.node', 'settings/local.js']);
 
 /**
- * Modules that ship but throw on `require`. Each is dead code reaching for a
- * package or path that is not present and not declared as a dependency. Left in
- * place because deleting published modules is a release decision, not a test
- * fixup — but the list is frozen so it cannot grow unnoticed.
+ * Modules that ship but throw on `require`. Empty after the RC ship-set cut:
+ * unloadable exchange/mqtt/turntable/authority/component/renderer/typetree are
+ * excluded from `package.json` `files[]` (repo copies may remain for history /
+ * local experiments). Any *new* packed unloadable fails this suite.
  */
-const KNOWN_UNLOADABLE = new Set([
-  'services/exchange.js', // ../currencies/btc — `currencies/` does not exist
-  'services/mqtt.js', //     `tcp` — not a package
-  'services/turntable.js', // `ttfm` — undeclared
-  'types/authority.js', //   ./http — `types/http.js` does not exist
-  'types/component.js', //   `jade-lexer` — undeclared
-  'types/renderer.js', //    `jade-lexer` — undeclared
-  'types/typetree.js' //     `dependency-tree` — undeclared
-]);
+const KNOWN_UNLOADABLE = new Set([]);
+
+/** Direct deps that must be declared so NOISE transport cannot silently break. */
+const NOISE_DIRECT_DEPS = [
+  'duplexify',
+  'end-of-stream',
+  'length-prefixed-stream',
+  'stream-each',
+  'through2'
+];
+
+/** Modules deliberately omitted from the published tarball. */
+const SHIP_EXCLUDED = [
+  'services/exchange.js',
+  'services/mqtt.js',
+  'services/turntable.js',
+  'types/authority.js',
+  'types/component.js',
+  'types/renderer.js',
+  'types/typetree.js'
+];
 
 function packedPaths () {
   const raw = execFileSync('npm', ['pack', '--dry-run', '--json'], {
@@ -146,6 +158,26 @@ describe('packaging closure', function () {
       fixed,
       [],
       `these now load — remove them from KNOWN_UNLOADABLE:\n  ${fixed.join('\n  ')}`
+    );
+  });
+
+  it('does not pack quarantined unloadable modules', function () {
+    const stillPacked = SHIP_EXCLUDED.filter((f) => packed.has(f));
+    assert.deepStrictEqual(
+      stillPacked,
+      [],
+      `these must stay out of files[]:\n  ${stillPacked.join('\n  ')}`
+    );
+  });
+
+  it('declares NOISE stream deps directly (no phantom hoist)', function () {
+    const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
+    const deps = pkg.dependencies || {};
+    const missing = NOISE_DIRECT_DEPS.filter((name) => !deps[name]);
+    assert.deepStrictEqual(
+      missing,
+      [],
+      `declare these for functions/noiseProtocolStream.js:\n  ${missing.join('\n  ')}`
     );
   });
 });
