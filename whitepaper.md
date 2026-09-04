@@ -37,7 +37,7 @@ distributed ledger by way of economic incentives. In this environment, fraud is 
 for the accumulation of trust over time without requiring a central coordinator.
 
 ### 1.1. Bitcoin
-Bitcoin was introduced by Satoshi Nakamoto in 2008 as an to alternative fiat currency, and has
+Bitcoin was introduced by Satoshi Nakamoto in 2008 as an alternative to fiat currency, and has
 since garnered international attention as a catalyst for significant economic change. By replacing
 the role of a central bank in the issuance of money, it sets the foundation for a new market
 structure, one backed by thermodynamic assurances and cryptographic guarantees. These newly
@@ -69,7 +69,7 @@ of funds previously sent to the recipient. This enables a form of "carry-forward
 where changes to global state are only accepted by the network upon the provision of a valid
 proof.
 
-As Script does not offer the ability to iterate over arbitrary collections, it lends itself easily to highvolume finite-state computations with predictable costs and behaviors. These properties are
+As Script does not offer the ability to iterate over arbitrary collections, it lends itself easily to high-volume finite-state computations with predictable costs and behaviors. These properties are
 convenient for efficiently validating monetary transactions, which allows for a separation of
 concerns when building more complex applications.
 
@@ -203,7 +203,7 @@ Suppose some set of participants _P_ each have a collection of private documents
 ### 1.4: Market Dynamics
 Participants in a Fabric-speaking network may compete for contracts, earning digital currency in
 exchange for processing "work orders" made available to them through the peer-to-peer network.
-Included is a simple programming language for the construction of deterministic, formallyverifiable smart contracts, which are then broadcast to network participants for execution.
+Included is a simple programming language for the construction of deterministic, formally verifiable smart contracts, which are then broadcast to network participants for execution.
 
 #### 1.4.1: Information Asymmetry
 
@@ -452,7 +452,7 @@ label = "Trust Anchor (Layer 1)"
 Fabric implements a peer-to-peer network over which participants may define arbitrary types,
 compose them into more complex programs, and provide meaningful services to users — all
 without requiring a trusted third party. Rather than relying on a server, applications deployed to
-Fabric are "offline first", allowing them to operate independent of network availability or
+Fabric are "offline first", allowing them to operate independently of network availability or
 consensus.
 
 ## Appendix A: Ephemera
@@ -602,13 +602,13 @@ Resources
 
 Fabric's
 Semantic Linkability
-Since Fabric exposes Resources in a descriptive fashion, programs deplo can discover and
+Since Fabric exposes Resources in a descriptive fashion, programs deploy can discover and
 interact with one another. By requesting a resource from a namespace other than one's own,
 information can cross the boundaries of individual applications and other interesting combinations
 of data can be constructed.
 
 Furthermore, since applications can be described in their entirety with a simple contract,
-applications can discover one anothers' behaviors and resource definitions. This can be used to
+applications can discover one another's behaviors and resource definitions. This can be used to
 build various forms of semantic interoperability, potentially including new forms of search engine
 behaviors.
 
