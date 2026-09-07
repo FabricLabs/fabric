@@ -35,6 +35,8 @@ Digests answer **what** changed. They do not prove **who** approved the change u
 
 **Peg / federation vault:** `stateDigest` is **not** peg-out authority. L1 withdrawals from the federation vault require a tip-bound `ContractWithdrawalRequest` (`amountSats` + destination bound into `requestId`), optional k-of-n `ContractWithdrawalWitness` when threshold ≥ 2, and conservation against `/federationReserve` (`functions/federationReserveLedger.js`). See Hub `PrepareFederationVaultWithdrawalPsbt` / `ProposeFederationPegOut`.
 
+**Validator pre-sign gate (production):** before auto-signing Beacon epochs or preparing vault PSBTs, Hub runs `functions/federationValidatorVerify` (`evaluateValidatorSignGate`): fail-closed digest match vs local snapshots **and** reserve conservation when `/federationReserve` is present. Optional Program recompute via `assertMachineRunMatches`. Digests alone are insufficient (Liquid lesson).
+
 ## L1 observability (secondary — not federation proof)
 
 | Magic / format | Module | Purpose | Validator-signed? |

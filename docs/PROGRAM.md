@@ -85,6 +85,17 @@ Leaf kinds: `spend` | `migrate` | `hashlock` | `script`. Authority ladders stay
 the default; wallets SHOULD render `leaves[]` and let operators pick `leafId`
 when preparing a PSBT.
 
+**Program → hashlock leaf:** `functions/programTaprootBind.js`
+(`hashlockFromProgramRun`, `composePolicyWithRunHashlock`) attaches a hashlock
+whose `commitmentHex` is the Machine `runCommitmentHex`. That **changes** the
+P2TR address and L1-enforces the commitment without co-signers on the hashlock
+path — intentional threat model only.
+
+**Validator recompute:** federation members SHOULD refuse to sign until
+`functions/federationValidatorVerify.evaluateValidatorSignGate` passes (epoch
+digests + reserve conservation + optional `assertMachineRunMatches`). Hub
+Beacon auto-sign and vault PSBT prep call this gate when validators are set.
+
 1. **1-round (today)** — run Program on Machine → `bindProgramRunToTip` → `buildWithdrawalRequest` copies digests → threshold witnesses + PSBT.
 2. **2–3 round** — federation / challenge–response before the witness is final (Beacon / Federation helpers).
 3. **Scaffold** — `bitcoin-script` `toRedeemScript()` / `OP_CHECKREDEEM` compile stub (not yet a Machine opcode).
