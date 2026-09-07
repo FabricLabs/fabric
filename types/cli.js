@@ -2156,10 +2156,10 @@ class CLI extends FabricShell {
   }
 
   _sendToAllServices (message) {
-    for (const [name, _service] of Object.entries(this.services)) {
-      if (this.settings.services.includes(name)) {
-        service._send(message);
-      }
+    for (const [name, service] of Object.entries(this.services)) {
+      if (!this.settings.services.includes(name)) continue;
+      if (!service || typeof service._send !== 'function') continue;
+      service._send(message);
     }
   }
 

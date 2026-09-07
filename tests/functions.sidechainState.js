@@ -249,10 +249,62 @@ describe('@fabric/core/functions/sidechainState', function () {
     assert.ok(parsed.proposal.federationWitness);
   });
 
+  it('buildSignedSidechainPatchMessage skips AMP sign when signKey cannot sign', function () {
+    const proposal = {
+      basisClock: 0,
+      basisDigest: 'aa',
+      patches: [{ op: 'add', path: '/z', value: 1 }]
+    };
+    const watchOnly = { pubkey: 'ab'.repeat(32) }; // no .sign
+    assert.doesNotThrow(function () {
+      sc.buildSignedSidechainPatchMessage({
+        proposal,
+        signKey: watchOnly,
+        federationWitness: { version: 1, signatures: {} }
+      });
+    });
+    const msg = sc.buildSignedSidechainPatchMessage({
+      proposal,
+      signKey: watchOnly,
+      federationWitness: { version: 1, signatures: {} }
+    });
+    const parsed = sc.parseSidechainStatePatchMessage(JSON.parse(msg.data.toString('utf8')));
+    assert.strictEqual(parsed.ok, true);
+  });
+
+  it('buildSignedSidechainPatchMessage skips AMP sign for watch-only Key', function () {
+    const full = new Key({ private: '1111111111111111111111111111111111111111111111111111111111111111' });
+    const watchOnly = new Key({ public: full.pubkey });
+    const proposal = {
+      basisClock: 0,
+      basisDigest: 'aa',
+      patches: [{ op: 'add', path: '/z', value: 1 }]
+    };
+    let msg;
+    assert.doesNotThrow(function () {
+      msg = sc.buildSignedSidechainPatchMessage({
+        proposal,
+        signKey: watchOnly,
+        federationWitness: { version: 1, signatures: {} }
+      });
+    });
+    const parsed = sc.parseSidechainStatePatchMessage(JSON.parse(msg.data.toString('utf8')));
+    assert.strictEqual(parsed.ok, true);
+  });
+
   it('buildFederationWitnessForSidechainPatch returns null without a signing key', function () {
     assert.strictEqual(sc.buildFederationWitnessForSidechainPatch({
       proposal: { basisClock: 0, basisDigest: 'aa', patches: [] },
       signKey: null
+    }), null);
+  });
+
+  it('buildFederationWitnessForSidechainPatch returns null for watch-only Key', function () {
+    const full = new Key({ private: '2222222222222222222222222222222222222222222222222222222222222222' });
+    const watchOnly = new Key({ public: full.pubkey });
+    assert.strictEqual(sc.buildFederationWitnessForSidechainPatch({
+      proposal: { basisClock: 0, basisDigest: 'aa', patches: [] },
+      signKey: watchOnly
     }), null);
   });
 

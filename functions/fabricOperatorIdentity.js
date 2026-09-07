@@ -104,6 +104,19 @@ function resolveFabricOperatorKeySettings (env = process.env, opts = {}) {
     return { source, key };
   }
 
+  // Watch-only FABRIC_XPRV (xpub/pubkey) beats wallet.json — same exclusive env rule.
+  if (fromEnv && (fromEnv.xpub || fromEnv.public)) {
+    let source = 'FABRIC_PUBKEY';
+    if (fromEnv.xpub) {
+      const slot = classifyFabricIdentityEnvValue((env && env.FABRIC_XPRV) || '');
+      source = slot.kind === 'xpub' ? 'FABRIC_XPRV' : 'FABRIC_XPUB';
+    }
+    return {
+      source,
+      key: exclusiveOperatorKeySettings(fromEnv) || fromEnv
+    };
+  }
+
   if (allowWallet) {
     try {
       const { loadIdentityFromWalletFile } = require('./fabricWalletIdentity');
@@ -121,18 +134,6 @@ function resolveFabricOperatorKeySettings (env = process.env, opts = {}) {
         return { source: 'wallet.json', key };
       }
     } catch (_) { /* older pin or locked wallet */ }
-  }
-
-  if (fromEnv && (fromEnv.xpub || fromEnv.public)) {
-    let source = 'FABRIC_PUBKEY';
-    if (fromEnv.xpub) {
-      const slot = classifyFabricIdentityEnvValue((env && env.FABRIC_XPRV) || '');
-      source = slot.kind === 'xpub' ? 'FABRIC_XPRV' : 'FABRIC_XPUB';
-    }
-    return {
-      source,
-      key: exclusiveOperatorKeySettings(fromEnv) || fromEnv
-    };
   }
 
   return null;

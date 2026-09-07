@@ -757,12 +757,28 @@ function summarizeSnapshots (fs, opts = {}) {
 }
 
 /**
+ * True when `signKey` has private material suitable for Schnorr / AMP signing.
+ * Watch-only Key instances still expose `sign` / `signSchnorr` but throw without `.private`.
+ * @param {object|null|undefined} signKey
+ * @returns {boolean}
+ * @private
+ */
+function keyHasPrivateSigningMaterial (signKey) {
+  if (!signKey || signKey.private == null) return false;
+  if (Buffer.isBuffer(signKey.private)) return signKey.private.length > 0;
+  if (typeof signKey.private === 'string') return String(signKey.private).trim().length > 0;
+  return Boolean(signKey.private);
+}
+
+/**
  * Build a federation witness map for a sidechain patch proposal (1-of-n per available key).
  * @param {{ proposal: object, signKey: object, validators?: string[], threshold?: number }} opts
  * @returns {object|null}
  */
 function buildFederationWitnessForSidechainPatch ({ proposal, signKey, validators = [], threshold = 1 }) {
   if (!signKey || typeof signKey.signSchnorr !== 'function') return null;
+  // Watch-only keys expose signSchnorr but throw "Cannot sign without private key".
+  if (!keyHasPrivateSigningMaterial(signKey)) return null;
   const msgBuf = Buffer.from(signingStringForSidechainStatePatch(proposal), 'utf8');
   const sigHex = signKey.signSchnorr(msgBuf).toString('hex');
   const pk = signKey.pubkey != null ? String(signKey.pubkey) : '';
@@ -789,9 +805,9 @@ function buildSignedSidechainPatchMessage ({ proposal, signKey, federationWitnes
     federationWitness: witness
   }));
   const msg = Message.fromVector(['SIDECHAIN_STATE_PATCH', JSON.stringify(body)]);
-  if (signKey && typeof signKey.sign === 'function') {
-    msg.signWithKey(signKey);
-  } else if (signKey && typeof msg.signWithKey === 'function') {
+  // Only AMP-sign when the key has private material. Message#signWithKey throws on
+  // public-only keys; do not probe Message#signWithKey (always present).
+  if (signKey && keyHasPrivateSigningMaterial(signKey) && typeof signKey.sign === 'function') {
     msg.signWithKey(signKey);
   }
   return msg;

@@ -240,6 +240,9 @@ Execution order:
 ## Progress Log
 Use this section as an append-only log (newest first).
 
+### 2026-09-06 — PR #187 vs production plan (staged follow-ups)
+[#187](https://github.com/FabricLabs/fabric/pull/187) (`feature/rsi` → `master`, WIP) supplies the **core** Beacon ARC / registry / federation-witness sidechain path Hub playnet needs: fail-closed `SIDECHAIN_STATE_PATCH`, `contractPublishAuthority`, watch-only operator identity slots, Beacon federation sign helpers. CI green on tip `047210f`. **Gaps vs production claim:** MuSig2 aggregate remains incomplete; Hub pin/redeploy + login Origin-GET + rename blockers unchanged. **Staged locally:** CodeRabbit follow-ups — watch-only `FABRIC_XPRV` before `wallet.json`; independent `FABRIC_DISTRIBUTED_FEDERATION_THRESHOLD`; typetree optional-dep catch; private-material guard on sidechain witness/AMP builders (+ tests).
+
 ### 2026-09-03 — OUTSTANDING Next slices emptied (staged cut series)
 Staged (no agent commits): #187 tip tests + c8 whitelist for authority/operator/MuSig2-stub;
 NOISE stream deps declared; unloadable modules out of `files[]`; type-tree inventory

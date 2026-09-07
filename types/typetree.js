@@ -13,8 +13,13 @@
 let DepTree = null;
 try {
   DepTree = require('dependency-tree');
-} catch (_) {
-  DepTree = null;
+} catch (err) {
+  // Only treat a missing optional package as absent; rethrow init / transitive errors.
+  if (err && err.code === 'MODULE_NOT_FOUND') {
+    DepTree = null;
+  } else {
+    throw err;
+  }
 }
 
 class TypeTree {

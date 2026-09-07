@@ -132,6 +132,30 @@ describe('Peer SIDECHAIN_STATE_PATCH authorization', function () {
       else process.env.FABRIC_DISTRIBUTED_FEDERATION_THRESHOLD = prevT;
     }
   });
+
+  it('reads FABRIC_DISTRIBUTED_FEDERATION_THRESHOLD when validators come from settings', function () {
+    const key = new Key({ private: '4444444444444444444444444444444444444444444444444444444444444444' });
+    const prevT = process.env.FABRIC_DISTRIBUTED_FEDERATION_THRESHOLD;
+    const prevV = process.env.FABRIC_DISTRIBUTED_FEDERATION_VALIDATORS;
+    delete process.env.FABRIC_DISTRIBUTED_FEDERATION_VALIDATORS;
+    process.env.FABRIC_DISTRIBUTED_FEDERATION_THRESHOLD = '2';
+    try {
+      const peer = new Peer(Object.assign(offlinePeerSettings(), {
+        distributed: {
+          federation: {
+            validators: [key.pubkey],
+            threshold: 1
+          }
+        }
+      }));
+      assert.strictEqual(peer._distributedFederationThresholdFromSettings(), 2);
+    } finally {
+      if (prevV == null) delete process.env.FABRIC_DISTRIBUTED_FEDERATION_VALIDATORS;
+      else process.env.FABRIC_DISTRIBUTED_FEDERATION_VALIDATORS = prevV;
+      if (prevT == null) delete process.env.FABRIC_DISTRIBUTED_FEDERATION_THRESHOLD;
+      else process.env.FABRIC_DISTRIBUTED_FEDERATION_THRESHOLD = prevT;
+    }
+  });
 });
 
 describe('Peer FederationSignRequest / FederationSignResponse', function () {

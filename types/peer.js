@@ -7,6 +7,8 @@ const {
   GOSSIP_MAX_PAYLOAD_CACHE,
   GOSSIP_MAX_RELAYS_PER_ORIGIN_PER_MINUTE,
   MAX_PEERS,
+  BITCOIN_L1_BLOCK_BYTES,
+  BITCOIN_L1_BLOCK_INTERVAL_MS,
   PEERING_OFFER_MAX_HOPS,
   PEERING_OFFER_MAX_PAYLOAD_CACHE,
   PEERING_OFFER_MAX_RELAYS_PER_ORIGIN_PER_MINUTE,
@@ -59,6 +61,12 @@ const { individualPk } = require('../functions/musig2');
 const musig2Session = require('../functions/musig2Session');
 const sidechainState = require('../functions/sidechainState');
 const { verifyFederationWitnessOnMessage } = require('../functions/beaconFederationSigning');
+const {
+  aggregatePeerBandwidth,
+  peerBandwidthSnapshot,
+  perPeerBandwidthBudgetBytes,
+  recordPeerBandwidth
+} = require('../functions/peerBandwidth');
 
 /** @private Max UTF-8 code units for first-class P2P_CHAT_MESSAGE body (text only). */
 const P2P_CHAT_MAX_CHARS = 2000;
@@ -499,6 +507,12 @@ class Peer extends Service {
       }, config.state),
       upnp: false,
       key: {},
+      // Fabric P2P byte budget: Bitcoin L1 (1 MiB / 10 min) split across MAX_PEERS.
+      bandwidth: {
+        windowMs: BITCOIN_L1_BLOCK_INTERVAL_MS,
+        windowBytes: BITCOIN_L1_BLOCK_BYTES,
+        maxPeers: MAX_PEERS
+      },
       // Inbound wire traffic budgeting (Bitcoin Core-style peer quality).
       wireTraffic: {
         windowMs: 60 * 1000,
@@ -655,6 +669,8 @@ class Peer extends Service {
     this._peeringRelayByOrigin = new Map();
     /** `host:port` → { credits, windowStart, penalized } — inbound wire flood / de-rank (per peer). */
     this._wireInboundByOrigin = new Map();
+    /** `host:port` → rolling L1-window byte counters (session + 10 min). */
+    this._peerBandwidthByOrigin = new Map();
     /** `host:port` → { windowStart, penalized } — soft logical-duplicate derank once per window. */
     this._logicalDupPenaltyByOrigin = new Map();
     /**
@@ -1154,6 +1170,100 @@ class Peer extends Service {
   }
 
   /**
+   * L1 window + per-peer budget used for {@link Peer#knownPeers} bandwidth fields.
+   * @returns {Object}
+   * @private
+   */
+  _peerBandwidthOptions () {
+    const bw = (this.settings && this.settings.bandwidth) || {};
+    const constraintsMax = this.settings && this.settings.constraints && this.settings.constraints.peers
+      ? Number(this.settings.constraints.peers.max)
+      : NaN;
+    const maxPeers = Number.isFinite(constraintsMax) && constraintsMax > 0
+      ? Math.floor(constraintsMax)
+      : (Number(bw.maxPeers) > 0 ? Math.floor(Number(bw.maxPeers)) : MAX_PEERS);
+    const windowMs = Number(bw.windowMs) > 0 ? Number(bw.windowMs) : BITCOIN_L1_BLOCK_INTERVAL_MS;
+    const windowBytes = Number(bw.windowBytes) > 0 ? Number(bw.windowBytes) : BITCOIN_L1_BLOCK_BYTES;
+    return {
+      windowMs,
+      windowBytes,
+      maxPeers,
+      budgetBytes: perPeerBandwidthBudgetBytes(windowBytes, maxPeers)
+    };
+  }
+
+  /**
+   * Count plaintext AMP bytes on a connection (NOISE payload, after decrypt / before encrypt).
+   * @param {string} originName `host:port`
+   * @param {string} direction `in` or `out`
+   * @param {*} n payload or length
+   * @returns {void}
+   * @private
+   */
+  _recordPeerBandwidth (originName, direction, n) {
+    if (!originName) return;
+    const opts = this._peerBandwidthOptions();
+    const prev = this._peerBandwidthByOrigin.get(originName);
+    const next = recordPeerBandwidth(prev, direction, n, Date.now(), opts.windowMs);
+    this._peerBandwidthByOrigin.set(originName, next);
+  }
+
+  /**
+   * Snapshot for one connection or registry address.
+   * @param {string} address
+   * @returns {Object}
+   * @private
+   */
+  _peerBandwidthSnapshotForAddress (address) {
+    const opts = this._peerBandwidthOptions();
+    const slot = address && this._peerBandwidthByOrigin ? this._peerBandwidthByOrigin.get(address) : null;
+    return peerBandwidthSnapshot(slot, Date.now(), opts);
+  }
+
+  /**
+   * Drop idle bandwidth slots when the map grows past live connections plus a small remainder.
+   * @returns {void}
+   * @private
+   */
+  _prunePeerBandwidthMaps () {
+    const map = this._peerBandwidthByOrigin;
+    if (!map || map.size <= 256) return;
+    const live = this.connections && typeof this.connections === 'object' ? this.connections : {};
+    for (const key of map.keys()) {
+      if (!Object.prototype.hasOwnProperty.call(live, key)) map.delete(key);
+      if (map.size <= 256) return;
+    }
+  }
+
+  /**
+   * Node-wide Fabric P2P bandwidth vs the L1 1 MiB / 10 min target.
+   * @returns {Object}
+   */
+  get bandwidthSummary () {
+    const opts = this._peerBandwidthOptions();
+    const seen = new Set();
+    const snaps = [];
+    const connections = this.connections && typeof this.connections === 'object' ? this.connections : {};
+    for (const address of Object.keys(connections)) {
+      seen.add(address);
+      snaps.push(this._peerBandwidthSnapshotForAddress(address));
+    }
+    if (this._peerBandwidthByOrigin) {
+      for (const address of this._peerBandwidthByOrigin.keys()) {
+        if (seen.has(address)) continue;
+        seen.add(address);
+        snaps.push(this._peerBandwidthSnapshotForAddress(address));
+      }
+    }
+    return aggregatePeerBandwidth(snaps, {
+      windowMs: opts.windowMs,
+      windowBytes: opts.windowBytes,
+      maxPeers: opts.maxPeers,
+      peerBudgetBytes: opts.budgetBytes
+    });
+  }
+
+  /**
    * Stable id for peering-offer *logical* content (ignores advisory `peeringHop`).
    * @param {object} msg Generic message (`type`, `object`, …)
    * @returns {string} hex sha256
@@ -1474,6 +1584,11 @@ class Peer extends Service {
     return peers;
   }
 
+  /**
+   * Registry plus live connections. Each row includes rolling Fabric P2P
+   * bandwidth (`bytesIn` / `bytesOut` / `windowBytes` vs L1 `budgetBytes`).
+   * @returns {object[]}
+   */
   get knownPeers () {
     const now = new Date().toISOString();
     const byId = {};
@@ -1496,6 +1611,7 @@ class Peer extends Service {
         alias: reg.alias,
         lastMessage: reg.lastMessage
       };
+      Object.assign(byId[id], this._peerBandwidthSnapshotForAddress(byId[id].address));
     }
 
     // Overlay current connections (map address -> id, then update byId)
@@ -1508,6 +1624,7 @@ class Peer extends Service {
       byId[id].address = address;
       byId[id].lastMessage = socket._lastMessage || byId[id].lastMessage;
       if (socket._alias) byId[id].alias = socket._alias;
+      Object.assign(byId[id], this._peerBandwidthSnapshotForAddress(address));
     }
 
     // Include any this.peers not yet in registry
@@ -1523,6 +1640,7 @@ class Peer extends Service {
         score: 0,
         lastSeen: now
       };
+      Object.assign(byId[id], this._peerBandwidthSnapshotForAddress(key));
     }
 
     return Object.values(byId);
@@ -2416,6 +2534,7 @@ class Peer extends Service {
           socket.setTimeout(0);
         });
         client.decrypt.on('data', (data) => {
+          this._recordPeerBandwidth(target, 'in', data);
           this._handleFabricMessage(data, { name: target }, client);
         });
         client.encrypt.pipe(socket).pipe(client.decrypt);
@@ -2464,6 +2583,7 @@ class Peer extends Service {
     if (this._inboundNoiseStaticPubkeyByAddress) delete this._inboundNoiseStaticPubkeyByAddress[target];
     if (this._addressToId) delete this._addressToId[target];
     this._unregisterSocketActor(target);
+    this._prunePeerBandwidthMaps();
 
     this.emit('connections:close', {
       address: target,
@@ -4294,10 +4414,13 @@ class Peer extends Service {
     });
 
     handler.decrypt.on('data', (data) => {
+      this._recordPeerBandwidth(target, 'in', data);
       this._handleFabricMessage(data, { name: target });
     });
 
+    socket._fabricPeerAddress = target;
     socket._writeFabric = (msg) => {
+      this._recordPeerBandwidth(target, 'out', msg);
       this._writeFabric(msg, handler);
     };
 
@@ -5446,9 +5569,10 @@ class Peer extends Service {
    * @returns {number}
    */
   _distributedFederationThresholdFromSettings () {
-    const env = process.env.FABRIC_DISTRIBUTED_FEDERATION_VALIDATORS;
-    if (env && String(env).trim()) {
-      return Math.max(1, Number(process.env.FABRIC_DISTRIBUTED_FEDERATION_THRESHOLD) || 1);
+    // Env threshold is independent of how validators were supplied (settings vs env).
+    const envThreshold = process.env.FABRIC_DISTRIBUTED_FEDERATION_THRESHOLD;
+    if (envThreshold != null && String(envThreshold).trim()) {
+      return Math.max(1, Number(envThreshold) || 1);
     }
     const t = this.settings.distributed && this.settings.distributed.federation &&
       this.settings.distributed.federation.threshold;
@@ -5564,7 +5688,9 @@ class Peer extends Service {
       if ((socket._fabricPingOutstanding | 0) >= 1) return;
       socket._fabricPingOutstanding = 1;
       try {
-        encryptWrite.write(P2P_PING.toBuffer());
+        const buf = P2P_PING.toBuffer();
+        encryptWrite.write(buf);
+        this._recordPeerBandwidth(socket._fabricPeerAddress, 'out', buf);
       } catch (exception) {
         socket._fabricPingOutstanding = 0;
         if (exception && (exception.code === 'EPIPE' || exception.code === 'ECONNRESET')) {
@@ -5583,6 +5709,7 @@ class Peer extends Service {
     socket._lastMessage = null;
     socket._messageLog = [];
     socket._noiseClient = client;
+    socket._fabricPeerAddress = name;
 
     this._startFabricPingKeepalive(socket, client.encrypt);
 
@@ -5594,6 +5721,7 @@ class Peer extends Service {
 
     // Map write function
     socket._writeFabric = (msg) => {
+      this._recordPeerBandwidth(name, 'out', msg);
       this._writeFabric(msg, client);
     };
 

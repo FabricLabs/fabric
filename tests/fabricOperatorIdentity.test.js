@@ -73,4 +73,26 @@ describe('@fabric/core/functions/fabricOperatorIdentity', function () {
     assert.strictEqual(xpubInXprvSlot.source, 'FABRIC_XPRV');
     assert.strictEqual(xpubInXprvSlot.key.xpub, k.xpub);
   });
+
+  it('watch-only FABRIC_XPRV beats wallet.json fallback', function () {
+    const watch = new Key({ mnemonic: PHRASE_A });
+    const walletKey = new Key({ mnemonic: PHRASE_B });
+    const orig = require('../functions/fabricWalletIdentity').loadIdentityFromWalletFile;
+    const walletMod = require('../functions/fabricWalletIdentity');
+    walletMod.loadIdentityFromWalletFile = function () {
+      return { xprv: walletKey.xprv, xpub: walletKey.xpub };
+    };
+    try {
+      const resolved = resolveFabricOperatorKeySettings({
+        FABRIC_XPRV: watch.xpub,
+        HOME: '/tmp/fabric-operator-identity-test-home'
+      }, { allowWalletFallback: true });
+      assert.ok(resolved);
+      assert.strictEqual(resolved.source, 'FABRIC_XPRV');
+      assert.strictEqual(resolved.key.xpub, watch.xpub);
+      assert.strictEqual(resolved.key.xprv, undefined);
+    } finally {
+      walletMod.loadIdentityFromWalletFile = orig;
+    }
+  });
 });

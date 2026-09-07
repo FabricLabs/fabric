@@ -102,7 +102,12 @@ describe('@fabric/core/types/cli (non-render guards)', function () {
     cli._processInput = () => false;
     cli._appendMessage = (line) => { lines.push(line); };
     cli.setPane = () => {};
-    cli._sendToAllServices = () => {};
+    const fanout = [];
+    cli.services = {
+      bitcoin: { _send (msg) { fanout.push(['bitcoin', msg]); } },
+      dead: { /* no _send */ }
+    };
+    cli.settings = { services: ['bitcoin', 'dead', 'missing'] };
     cli.elements = { form: { reset () {} } };
     cli.screen = { render () {} };
 
@@ -113,6 +118,7 @@ describe('@fabric/core/types/cli (non-render guards)', function () {
     assert.strictEqual(body, 'héllo 🌍');
     assert.ok(lines.some((l) => /héllo/.test(l)));
     assert.ok(!body.startsWith('{'));
+    assert.deepStrictEqual(fanout, [['bitcoin', { type: 'P2P_CHAT_MESSAGE', text: 'héllo 🌍' }]]);
   });
 
   it('renders Peer { text } + signer and P2P_PEER_ALIAS nicknames', async function () {
