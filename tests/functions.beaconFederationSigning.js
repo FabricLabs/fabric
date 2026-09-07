@@ -79,13 +79,13 @@ describe('@fabric/core/functions/beaconFederationSigning', function () {
     assert.strictEqual(parsed.commitmentDigest, 'abcd');
   });
 
-  it('createRound tolerates omitted policy (empty validators)', function () {
+  it('createRound with omitted policy stays collecting (empty validators fail closed)', function () {
     const epoch = { clock: 1, blockHash: 'bb'.repeat(32), height: 1 };
     const round = bfs.createRound(epoch);
     assert.ok(round);
     assert.deepStrictEqual(round.validators, []);
-    assert.strictEqual(round.status, 'ready');
-    assert.strictEqual(bfs.roundMeetsThreshold(round), true);
+    assert.strictEqual(round.status, 'collecting');
+    assert.strictEqual(bfs.roundMeetsThreshold(round), false);
   });
 
   it('createRound with a complete initial witness is ready', function () {
@@ -109,15 +109,15 @@ describe('@fabric/core/functions/beaconFederationSigning', function () {
     assert.strictEqual(bfs.roundMeetsThreshold(round), false);
   });
 
-  it('addSignature rejects an omitted-policy round that is already ready', function () {
+  it('addSignature rejects a collecting empty-validator round for unknown pubkeys', function () {
     const k1 = new Key({ private: '5555555555555555555555555555555555555555555555555555555555555555' });
     const epoch = { clock: 5, blockHash: '11'.repeat(32), height: 5 };
     const round = bfs.createRound(epoch);
-    assert.strictEqual(round.status, 'ready');
+    assert.strictEqual(round.status, 'collecting');
     const msg = bfs.messageBufferForPayload(epoch);
     const again = bfs.addSignature(round, k1.pubkey, k1.signSchnorr(msg).toString('hex'));
     assert.strictEqual(again.ok, false);
-    assert.match(again.error, /not open/i);
+    assert.match(again.error, /not in federation validators/i);
   });
 
   it('addSignature rejects further signatures once status is ready', function () {

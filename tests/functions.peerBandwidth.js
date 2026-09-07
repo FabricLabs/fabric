@@ -22,6 +22,8 @@ describe('@fabric/core/functions/peerBandwidth', function () {
     assert.strictEqual(MAX_PEERS, 32);
     assert.strictEqual(perPeerBandwidthBudgetBytes(), 32768);
     assert.strictEqual(perPeerBandwidthBudgetBytes(1024, 4), 256);
+    assert.strictEqual(perPeerBandwidthBudgetBytes(1024, 0.5), 1024);
+    assert.strictEqual(aggregatePeerBandwidth([], { maxPeers: 0.5 }).maxPeers, 1);
   });
 
   it('counts Buffer and numeric lengths', function () {

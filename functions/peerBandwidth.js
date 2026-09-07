@@ -17,7 +17,7 @@ function perPeerBandwidthBudgetBytes (windowBytes, maxPeers) {
   const total = Number(windowBytes);
   const n = Number(maxPeers);
   const bytes = Number.isFinite(total) && total > 0 ? total : BITCOIN_L1_BLOCK_BYTES;
-  const peers = Number.isFinite(n) && n > 0 ? Math.floor(n) : MAX_PEERS;
+  const peers = Number.isFinite(n) && n > 0 ? Math.max(1, Math.floor(n)) : MAX_PEERS;
   return Math.floor(bytes / peers);
 }
 
@@ -166,7 +166,7 @@ function aggregatePeerBandwidth (snapshots, meta) {
   const windowBytes = windowBytesIn + windowBytesOut;
   const windowMs = Number(m.windowMs) > 0 ? Number(m.windowMs) : BITCOIN_L1_BLOCK_INTERVAL_MS;
   const nodeWindowBytes = Number(m.windowBytes) > 0 ? Number(m.windowBytes) : BITCOIN_L1_BLOCK_BYTES;
-  const maxPeers = Number(m.maxPeers) > 0 ? Math.floor(Number(m.maxPeers)) : MAX_PEERS;
+  const maxPeers = Number(m.maxPeers) > 0 ? Math.max(1, Math.floor(Number(m.maxPeers))) : MAX_PEERS;
   const peerBudgetBytes = Number(m.peerBudgetBytes) > 0
     ? Math.floor(Number(m.peerBudgetBytes))
     : perPeerBandwidthBudgetBytes(nodeWindowBytes, maxPeers);

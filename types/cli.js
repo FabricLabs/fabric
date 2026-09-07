@@ -2159,7 +2159,16 @@ class CLI extends FabricShell {
     for (const [name, service] of Object.entries(this.services)) {
       if (!this.settings.services.includes(name)) continue;
       if (!service || typeof service._send !== 'function') continue;
-      service._send(message);
+      try {
+        const result = service._send(message);
+        if (result && typeof result.then === 'function') {
+          void result.catch((error) => {
+            this._appendError(`Service "${name}" could not send message: ${error.message || error}`);
+          });
+        }
+      } catch (error) {
+        this._appendError(`Service "${name}" could not send message: ${error.message || error}`);
+      }
     }
   }
 

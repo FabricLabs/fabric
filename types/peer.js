@@ -60,7 +60,7 @@ const {
 const { individualPk } = require('../functions/musig2');
 const musig2Session = require('../functions/musig2Session');
 const sidechainState = require('../functions/sidechainState');
-const { verifyFederationWitnessOnMessage } = require('../functions/beaconFederationSigning');
+const { verifyFederationWitnessOnMessage, epochCommitmentDigestHex } = require('../functions/beaconFederationSigning');
 const {
   aggregatePeerBandwidth,
   peerBandwidthSnapshot,
@@ -353,7 +353,9 @@ const LOGICAL_REGISTER_ONCE_TYPES = new Set([
   'P2P_FLUSH_CHAIN',
   'FlushChain',
   'P2P_PEER_ALIAS',
-  'DocumentContentKeyReveal'
+  'DocumentContentKeyReveal',
+  // Authorized sidechain patches: commitment-level replay (re-signed envelope ≠ new patch)
+  'SIDECHAIN_STATE_PATCH'
 ]);
 
 /**
@@ -806,6 +808,19 @@ class Peer extends Service {
       const pay = obj.paymentHashHex != null ? String(obj.paymentHashHex).trim().toLowerCase() : '';
       if (pay && pay !== derived) return null;
       return `keyreveal:${docId}:${derived}`;
+    }
+    if (t === 'SIDECHAIN_STATE_PATCH') {
+      try {
+        const digest = sidechainState.patchCommitmentDigestHex({
+          basisClock: obj.basisClock,
+          basisDigest: obj.basisDigest,
+          patches: obj.patches
+        });
+        if (!digest) return null;
+        return `sidechain-patch:${digest}`;
+      } catch (_) {
+        return null;
+      }
     }
     return null;
   }
@@ -3728,6 +3743,14 @@ class Peer extends Service {
           this.emit('warning', '[FABRIC:PEER] SIDECHAIN_STATE_PATCH federationWitness missing or invalid');
           break;
         }
+        // Commitment-level replay: a new AMP envelope can re-carry the same patch.
+        const claim = this._claimLogicalRegistrationOrPunish(
+          'SIDECHAIN_STATE_PATCH',
+          proposal,
+          signerPubkeyHex || null,
+          origin && origin.name
+        );
+        if (claim.duplicate) break;
         this.emit('sidechain:patch', {
           proposal,
           federationWitness: proposal.federationWitness || null,
@@ -3745,14 +3768,30 @@ class Peer extends Service {
             '[FABRIC:PEER] FederationSignRequest ignored: no federation validators configured');
           break;
         }
+        const validatorSet = new Set(validators.map((v) => normalizePeerPubkeyHex(v)).filter(Boolean));
+        if (!signerPubkeyHex || !authoritySetHasPubkey(validatorSet, signerPubkeyHex)) {
+          this.emit('warning',
+            '[FABRIC:PEER] FederationSignRequest rejected: AMP signer is not a federation validator');
+          break;
+        }
+        const epoch = body.epoch;
+        const digest = body.commitmentDigest != null ? String(body.commitmentDigest).trim() : '';
+        if (!epoch || typeof epoch !== 'object' || !digest) {
+          this.emit('warning',
+            '[FABRIC:PEER] FederationSignRequest rejected: epoch and commitmentDigest required');
+          break;
+        }
+        if (epochCommitmentDigestHex(epoch) !== digest) {
+          this.emit('warning',
+            '[FABRIC:PEER] FederationSignRequest rejected: commitmentDigest mismatch');
+          break;
+        }
         this.emit('federation:sign-request', {
           request: body,
           signer: signerPubkeyHex || null,
           origin
         });
-        if (delivery.allowMeshRelay && origin && origin.name && wireMessage) {
-          this.relayFrom(origin.name, wireMessage);
-        }
+        // Observe-only: do not mesh-flood unauthenticated federation protocol traffic.
         break;
       }
       case 'FederationSignResponse': {
@@ -3763,14 +3802,25 @@ class Peer extends Service {
             '[FABRIC:PEER] FederationSignResponse ignored: no federation validators configured');
           break;
         }
+        const validatorSet = new Set(validators.map((v) => normalizePeerPubkeyHex(v)).filter(Boolean));
+        if (!signerPubkeyHex || !authoritySetHasPubkey(validatorSet, signerPubkeyHex)) {
+          this.emit('warning',
+            '[FABRIC:PEER] FederationSignResponse rejected: AMP signer is not a federation validator');
+          break;
+        }
+        const responsePubkey = body.pubkey != null ? normalizePeerPubkeyHex(body.pubkey) : '';
+        if (responsePubkey && normalizePeerPubkeyHex(signerPubkeyHex) !== responsePubkey &&
+            !authoritySetHasPubkey(new Set([responsePubkey]), signerPubkeyHex)) {
+          this.emit('warning',
+            '[FABRIC:PEER] FederationSignResponse rejected: AMP signer does not match response.pubkey');
+          break;
+        }
         this.emit('federation:sign-response', {
           response: body,
           signer: signerPubkeyHex || null,
           origin
         });
-        if (delivery.allowMeshRelay && origin && origin.name && wireMessage) {
-          this.relayFrom(origin.name, wireMessage);
-        }
+        // Observe-only: do not mesh-flood (same policy as FederationSignRequest).
         break;
       }
       case 'INVENTORY_REQUEST':

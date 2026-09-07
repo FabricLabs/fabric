@@ -121,6 +121,36 @@ describe('@fabric/core/types/cli (non-render guards)', function () {
     assert.deepStrictEqual(fanout, [['bitcoin', { type: 'P2P_CHAT_MESSAGE', text: 'héllo 🌍' }]]);
   });
 
+  it('reports rejected service._send promises without unhandled rejection', async function () {
+    const errors = [];
+    const cli = Object.create(CLI.prototype);
+    cli.history = [];
+    cli.key = new (require('../types/key'))();
+    cli.node = {
+      id: 'aa'.repeat(32),
+      relayFrom () {}
+    };
+    cli._peerAliasByPubkey = {};
+    cli._processInput = () => false;
+    cli._appendMessage = () => {};
+    cli._appendError = (line) => { errors.push(String(line)); };
+    cli.setPane = () => {};
+    cli.services = {
+      bitcoin: {
+        _send () {
+          return Promise.reject(new Error('send failed'));
+        }
+      }
+    };
+    cli.settings = { services: ['bitcoin'] };
+    cli.elements = { form: { reset () {} } };
+    cli.screen = { render () {} };
+
+    cli._handleFormSubmit({ input: 'ping' });
+    await new Promise((r) => setImmediate(r));
+    assert.ok(errors.some((e) => /bitcoin/i.test(e) && /send failed/i.test(e)));
+  });
+
   it('renders Peer { text } + signer and P2P_PEER_ALIAS nicknames', async function () {
     const lines = [];
     const cli = Object.create(CLI.prototype);

@@ -322,8 +322,8 @@ class Beacon extends Actor {
    */
   _recoveredRoundWitnessOk (digest, round) {
     if (this._epochAlreadySealed(digest, round)) return true;
+    if (!this._federationValidators.length) return false;
     if (!beaconFederationSigning.roundMeetsThreshold(round)) return false;
-    if (!this._federationValidators.length) return true;
     return beaconFederationSigning.verifyFederationWitnessOnMessage(
       beaconFederationSigning.messageBufferForPayload(round.payload),
       round.witness,
@@ -458,6 +458,11 @@ class Beacon extends Actor {
     if (!signRequest || typeof signRequest !== 'object') {
       return { ok: false, error: 'signRequest required' };
     }
+    // Fail closed: never adopt attacker-chosen validators/threshold when local
+    // Federation policy is unset (empty request validators sealed immediately).
+    if (!this._federationValidators.length) {
+      return { ok: false, error: 'no federation validators configured' };
+    }
     const epoch = signRequest.epoch;
     if (!epoch || typeof epoch !== 'object') {
       return { ok: false, error: 'epoch required' };
@@ -479,12 +484,8 @@ class Beacon extends Actor {
       return { ok: true, round, created: false };
     }
 
-    const validators = this._federationValidators.length
-      ? this._federationValidators.slice()
-      : (Array.isArray(signRequest.validators) ? signRequest.validators.map(String) : []);
-    const threshold = this._federationValidators.length
-      ? this._federationThreshold
-      : Math.max(1, Number(signRequest.threshold) || 1);
+    const validators = this._federationValidators.slice();
+    const threshold = this._federationThreshold;
 
     round = beaconFederationSigning.createRound(epoch, { validators, threshold });
     this._pendingEpochRounds.set(digest, round);
@@ -513,7 +514,10 @@ class Beacon extends Actor {
     }
     const pk = this._compressedPubkeyHex();
     if (!pk) return { ok: false, error: 'unable to encode validator pubkey' };
-    if (this._federationValidators.length && !this._federationValidators.includes(pk)) {
+    if (!this._federationValidators.length) {
+      return { ok: false, error: 'no federation validators configured' };
+    }
+    if (!this._federationValidators.includes(pk)) {
       return { ok: false, error: 'local key is not a federation validator' };
     }
 

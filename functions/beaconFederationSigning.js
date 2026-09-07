@@ -183,7 +183,8 @@ function messageBufferForPayload (payload) {
  * @returns {boolean}
  */
 function roundMeetsThreshold (round) {
-  if (!round || !round.validators || !round.validators.length) return true;
+  // Empty validator sets never meet k-of-n (fail closed — do not treat as ready).
+  if (!round || !round.validators || !round.validators.length) return false;
   return verifyFederationWitnessOnMessage(
     messageBufferForPayload(round.payload),
     round.witness,

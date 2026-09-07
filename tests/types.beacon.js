@@ -91,9 +91,15 @@ describe('@fabric/core/types/beacon', function () {
 
   it('finalizes an already-ready federation round instead of rejecting round not open', async function () {
     const beaconFederationSigning = require('../functions/beaconFederationSigning');
-    const beacon = new Beacon({ regtest: true, mineOnStart: false, interval: 0 });
-    beacon.fs = memoryFs();
     const k1 = new Key({ private: '3333333333333333333333333333333333333333333333333333333333333333' });
+    const beacon = new Beacon({
+      regtest: true,
+      mineOnStart: false,
+      interval: 0,
+      federationValidators: [k1.pubkey],
+      federationThreshold: 1
+    });
+    beacon.fs = memoryFs();
     const payload = { clock: 3, height: 3, blockHash: 'cc'.repeat(32) };
     const round = beaconFederationSigning.createRound(payload, {
       validators: [k1.pubkey],
@@ -166,11 +172,17 @@ describe('@fabric/core/types/beacon', function () {
 
   it('retains a ready round when epoch-chain persist fails', async function () {
     const beaconFederationSigning = require('../functions/beaconFederationSigning');
-    const beacon = new Beacon({ regtest: true, mineOnStart: false, interval: 0 });
+    const k1 = new Key({ private: '4444444444444444444444444444444444444444444444444444444444444444' });
+    const beacon = new Beacon({
+      regtest: true,
+      mineOnStart: false,
+      interval: 0,
+      federationValidators: [k1.pubkey],
+      federationThreshold: 1
+    });
     const fs = memoryFs();
     fs.publish = async function () { throw new Error('disk full'); };
     beacon.fs = fs;
-    const k1 = new Key({ private: '4444444444444444444444444444444444444444444444444444444444444444' });
     const payload = { clock: 6, height: 6, blockHash: 'ff'.repeat(32) };
     const round = beaconFederationSigning.createRound(payload, {
       validators: [k1.pubkey],
@@ -191,16 +203,25 @@ describe('@fabric/core/types/beacon', function () {
   it('does not double-append when the ready round is already on the epoch chain', async function () {
     const beaconFederationSigning = require('../functions/beaconFederationSigning');
     const Chain = require('../types/chain');
-    const beacon = new Beacon({ regtest: true, mineOnStart: false, interval: 0 });
+    const k1 = new Key({ private: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' });
+    const beacon = new Beacon({
+      regtest: true,
+      mineOnStart: false,
+      interval: 0,
+      federationValidators: [k1.pubkey],
+      federationThreshold: 1
+    });
     beacon.fs = memoryFs();
     const payload = { clock: 4, height: 4, blockHash: 'dd'.repeat(32) };
     const digest = beaconFederationSigning.epochCommitmentDigestHex(payload);
+    const msg = beaconFederationSigning.messageBufferForPayload(payload);
+    const sig = k1.signSchnorr(msg).toString('hex');
     const round = {
       commitmentDigest: digest,
       payload,
-      validators: ['aa'],
+      validators: [k1.pubkey],
       threshold: 1,
-      witness: { version: 1, signatures: { aa: '00' } },
+      witness: { version: 1, signatures: { [k1.pubkey]: sig } },
       status: 'ready',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
@@ -209,7 +230,7 @@ describe('@fabric/core/types/beacon', function () {
       { type: 'BEACON_EPOCH', payload, federationWitness: round.witness }
     ]);
     beacon._pendingEpochRounds.set(digest, round);
-    const result = await beacon.submitFederationEpochSignature(digest, 'aa', '00');
+    const result = await beacon.submitFederationEpochSignature(digest, k1.pubkey, '00');
     assert.strictEqual(result.status, 'success');
     assert.strictEqual(result.sealed, true);
     assert.strictEqual(beacon._epochChain.height, 1);
@@ -350,10 +371,26 @@ describe('@fabric/core/types/beacon', function () {
   });
 
   it('adoptFederationSignRequest rejects digest mismatch and missing fields', async function () {
-    const beacon = new Beacon({ regtest: true, mineOnStart: false, interval: 0 });
+    const k1 = new Key({ private: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' });
+    const bare = new Beacon({ regtest: true, mineOnStart: false, interval: 0 });
+    bare.fs = memoryFs();
+    assert.strictEqual((await bare.adoptFederationSignRequest(null)).ok, false);
+    assert.strictEqual((await bare.adoptFederationSignRequest({})).ok, false);
+    const noValidators = await bare.adoptFederationSignRequest({
+      epoch: { clock: 1, height: 1, blockHash: 'aa'.repeat(32) },
+      commitmentDigest: '00'.repeat(32)
+    });
+    assert.strictEqual(noValidators.ok, false);
+    assert.match(String(noValidators.error), /no federation validators/i);
+
+    const beacon = new Beacon({
+      regtest: true,
+      mineOnStart: false,
+      interval: 0,
+      federationValidators: [k1.pubkey],
+      federationThreshold: 1
+    });
     beacon.fs = memoryFs();
-    assert.strictEqual((await beacon.adoptFederationSignRequest(null)).ok, false);
-    assert.strictEqual((await beacon.adoptFederationSignRequest({})).ok, false);
     assert.strictEqual((await beacon.adoptFederationSignRequest({
       epoch: { clock: 1 },
       commitmentDigest: ''
@@ -364,6 +401,31 @@ describe('@fabric/core/types/beacon', function () {
     });
     assert.strictEqual(bad.ok, false);
     assert.match(String(bad.error), /mismatch/i);
+  });
+
+  it('adoptFederationSignRequest ignores request-supplied validators', async function () {
+    const k1 = new Key({ private: 'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc' });
+    const outsider = new Key({ private: 'dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd' });
+    const beacon = new Beacon({
+      regtest: true,
+      mineOnStart: false,
+      interval: 0,
+      federationValidators: [k1.pubkey],
+      federationThreshold: 1
+    });
+    beacon.fs = memoryFs();
+    const bfs = require('../functions/beaconFederationSigning');
+    const epoch = { clock: 21, height: 21, blockHash: 'ab'.repeat(32) };
+    const digest = bfs.epochCommitmentDigestHex(epoch);
+    const adopted = await beacon.adoptFederationSignRequest({
+      type: 'FederationSignRequest',
+      commitmentDigest: digest,
+      epoch,
+      validators: [outsider.pubkey],
+      threshold: 1
+    });
+    assert.strictEqual(adopted.ok, true);
+    assert.deepStrictEqual(adopted.round.validators, [k1.pubkey]);
   });
 
   it('signPendingFederationRoundAsLocalValidator rejects non-validators and unknown rounds', async function () {

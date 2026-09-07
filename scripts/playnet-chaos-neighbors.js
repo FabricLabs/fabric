@@ -328,7 +328,8 @@ ${listPlaynetChaosConditions().map((c) => `  ${c.id} — ${c.description}`).join
 
   const outDir = path.join(__dirname, '..', 'reports');
   fs.mkdirSync(outDir, { recursive: true });
-  const outPath = path.join(outDir, plan.reportName);
+  const reportName = path.basename(String(plan.reportName || 'playnet-chaos-neighbors.json'));
+  const outPath = path.join(outDir, reportName);
   fs.writeFileSync(outPath, JSON.stringify(report, null, 2));
   console.log('[playnet:chaos] crash report', outPath);
   console.log('[playnet:chaos] summary', {
