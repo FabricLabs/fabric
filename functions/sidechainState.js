@@ -19,6 +19,7 @@ const crypto = require('crypto');
 const { applyPatch, validate } = require('fast-json-patch');
 const fabricCanonicalJson = require('./fabricCanonicalJson');
 const { jsonSafe, stableStringify } = fabricCanonicalJson;
+const keyHasPrivateSigningMaterial = require('./keyHasPrivateSigningMaterial');
 const {
   signingStringForBeaconEpoch,
   verifyFederationWitnessOnMessage
@@ -754,20 +755,6 @@ function summarizeSnapshots (fs, opts = {}) {
     snapshotCount: Object.keys(doc.byClock).length,
     snapshots
   };
-}
-
-/**
- * True when `signKey` has private material suitable for Schnorr / AMP signing.
- * Watch-only Key instances still expose `sign` / `signSchnorr` but throw without `.private`.
- * @param {object|null|undefined} signKey
- * @returns {boolean}
- * @private
- */
-function keyHasPrivateSigningMaterial (signKey) {
-  if (!signKey || signKey.private == null) return false;
-  if (Buffer.isBuffer(signKey.private)) return signKey.private.length > 0;
-  if (typeof signKey.private === 'string') return String(signKey.private).trim().length > 0;
-  return Boolean(signKey.private);
 }
 
 /**

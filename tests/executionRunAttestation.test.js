@@ -43,4 +43,16 @@ describe('executionRunAttestation', function () {
       false
     );
   });
+
+  it('buildFederationWitnessForExecutionRun returns null for watch-only Key', function () {
+    const full = new Key({ private: '3333333333333333333333333333333333333333333333333333333333333333' });
+    const watchOnly = new Key({ public: full.pubkey });
+    const run = { programHash: 'prog', runCommitmentHex: 'a'.repeat(64) };
+    assert.strictEqual(era.buildFederationWitnessForExecutionRun({
+      ...run,
+      signKey: watchOnly,
+      validators: [full.pubkey],
+      threshold: 1
+    }), null);
+  });
 });

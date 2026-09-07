@@ -276,25 +276,6 @@ function genericOfferObject (message) {
 }
 
 /**
- * Lowercase hex for comparing {@link P2P_FLUSH_CHAIN} authorized pubkeys.
- * @private
- */
-function normalizePeerPubkeyHex (pk) {
-  if (pk == null) return '';
-  if (Buffer.isBuffer(pk)) {
-    const h = pk.toString('hex').toLowerCase();
-    if (pk.length === 32) return h;
-    if (pk.length === 33 && (h.startsWith('02') || h.startsWith('03'))) return h.slice(2);
-    return h;
-  }
-  const s = String(pk).trim();
-  const h = (s.startsWith('0x') || s.startsWith('0X')) ? s.slice(2) : s;
-  const lo = h.toLowerCase();
-  if (lo.length === 66 && (lo.startsWith('02') || lo.startsWith('03'))) return lo.slice(2);
-  return lo;
-}
-
-/**
  * Unified delivery trust for frames that arrived under a transport envelope.
  *
  * Protocol rules (see SECURITY.md / docs/P2P_FORWARD.md):
@@ -345,7 +326,7 @@ const {
   collectContractAuthorityPubkeys,
   authoritySetHasPubkey,
   contractPublishSignerAuthorized: contractPublishSignerAuthorizedFn,
-  normalizePeerPubkeyHex: normalizePeerPubkeyHexFromAuthority
+  normalizePeerPubkeyHex
 } = contractPublishAuthority;
 
 /**
@@ -5656,16 +5637,7 @@ class Peer extends Service {
   _signerMayPatchContract (contractId, signerPubkeyHex) {
     const set = this._contractPatchAllowList[String(contractId || '')];
     if (!set || !set.size) return false; // fail closed: no parties recorded
-    const h = normalizePeerPubkeyHex(signerPubkeyHex);
-    if (!h) return false;
-    if (set.has(h)) return true;
-    // Tolerate allow-lists populated with compressed 66-char hex before normalize.
-    if (h.length === 64) {
-      for (const entry of set) {
-        if (typeof entry === 'string' && entry.length === 66 && entry.slice(2) === h) return true;
-      }
-    }
-    return false;
+    return authoritySetHasPubkey(set, signerPubkeyHex);
   }
 
   /**

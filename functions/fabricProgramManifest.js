@@ -7,6 +7,8 @@
  * @module functions/fabricProgramManifest
  */
 
+const sidechainState = require('./sidechainState');
+
 /**
  * Setup-phase manifest schema (v1).
  * @param {object} raw
@@ -32,12 +34,7 @@ function parseProgramManifestV1 (raw) {
     : null;
   let sidechainPolicy = null;
   if (raw.sidechainPolicy && typeof raw.sidechainPolicy === 'object') {
-    try {
-      const sidechainState = require('./sidechainState');
-      sidechainPolicy = sidechainState.parseStatechainPathPolicy(raw.sidechainPolicy);
-    } catch (_) {
-      sidechainPolicy = null;
-    }
+    sidechainPolicy = sidechainState.parseStatechainPathPolicy(raw.sidechainPolicy);
   }
   return {
     ok: true,

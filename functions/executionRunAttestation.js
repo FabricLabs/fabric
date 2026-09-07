@@ -7,6 +7,7 @@
 
 const crypto = require('crypto');
 const fabricCanonicalJson = require('./fabricCanonicalJson');
+const keyHasPrivateSigningMaterial = require('./keyHasPrivateSigningMaterial');
 const { verifyFederationWitnessOnMessage } = require('./beaconFederationSigning');
 
 const EXECUTION_RUN_SIGNING_KIND = 'FabricProgramRun';
@@ -44,6 +45,7 @@ function executionRunCommitmentDigestHex (run) {
 function buildFederationWitnessForExecutionRun (opts) {
   const signKey = opts.signKey;
   if (!signKey || typeof signKey.signSchnorr !== 'function') return null;
+  if (!keyHasPrivateSigningMaterial(signKey)) return null;
   const msgBuf = Buffer.from(signingStringForExecutionRun(opts), 'utf8');
   const sigHex = signKey.signSchnorr(msgBuf).toString('hex');
   const pk = signKey.pubkey != null ? String(signKey.pubkey) : '';
