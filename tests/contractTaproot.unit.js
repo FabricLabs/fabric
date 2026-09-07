@@ -970,6 +970,7 @@ describe('contractSpend / ARC resolveSpend', function () {
     const req = buildWithdrawalRequest({
       tip,
       destinationAddress: 'bcrt1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh',
+      amountSats: 10000,
       feeSats: 500
     });
     assert.strictEqual(req.type, 'ContractWithdrawalRequest');
@@ -1034,6 +1035,7 @@ describe('contractSpend / ARC resolveSpend', function () {
     const stale = buildWithdrawalRequest({
       tip: Object.assign({}, tip, { stateDigest: '00'.repeat(32) }),
       destinationAddress: 'bcrt1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh',
+      amountSats: 10000,
       feeSats: 250
     });
     // Force stale digest onto a signed message
@@ -1053,6 +1055,7 @@ describe('contractSpend / ARC resolveSpend', function () {
     const goodReq = buildWithdrawalRequest({
       tip,
       destinationAddress: 'bcrt1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh',
+      amountSats: 10000,
       feeSats: 250
     });
     const good = Message.fromVector(['CONTRACT_MESSAGE', JSON.stringify({
@@ -1084,6 +1087,7 @@ describe('contractSpend / ARC resolveSpend', function () {
     const req = buildWithdrawalRequest({
       tip,
       destinationAddress: 'bcrt1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh',
+      amountSats: 10000,
       feeSats: 100
     });
     assert.throws(() => prepareWithdrawalFromRequest({
@@ -1126,6 +1130,7 @@ describe('contractSpend / ARC resolveSpend', function () {
     const req = buildWithdrawalRequest({
       tip,
       destinationAddress: 'bcrt1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh',
+      amountSats: 10000,
       feeSats: 100
     });
     assert.strictEqual(ingestMessageBuffer(store, contractId, Message.fromVector(['CONTRACT_MESSAGE', JSON.stringify({

@@ -33,6 +33,8 @@ Operator identity for those signatures is the Fabric Environment (`fabric setup`
 
 Digests answer **what** changed. They do not prove **who** approved the change unless paired with a witness above.
 
+**Peg / federation vault:** `stateDigest` is **not** peg-out authority. L1 withdrawals from the federation vault require a tip-bound `ContractWithdrawalRequest` (`amountSats` + destination bound into `requestId`), optional k-of-n `ContractWithdrawalWitness` when threshold ≥ 2, and conservation against `/federationReserve` (`functions/federationReserveLedger.js`). See Hub `PrepareFederationVaultWithdrawalPsbt` / `ProposeFederationPegOut`.
+
 ## L1 observability (secondary — not federation proof)
 
 | Magic / format | Module | Purpose | Validator-signed? |

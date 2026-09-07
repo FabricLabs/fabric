@@ -414,7 +414,8 @@ describe('ARC / Federation network E2E', function () {
         tip: Object.assign({}, tip, { contractId }),
         genesis: def,
         destinationAddress: dest,
-        feeSats: 1000,
+        amountSats: 10000,
+      feeSats: 1000,
         vaultAddress: spend.address,
         tierId: 't0-authority'
       });
@@ -468,7 +469,8 @@ describe('ARC / Federation network E2E', function () {
         tip: Object.assign({}, first.tip, { contractId }),
         genesis: def,
         destinationAddress: dest,
-        feeSats: 500
+        amountSats: 10000,
+      feeSats: 500
       });
       foldMessage(store, contractId, signContractMessage(keys[0], contractId, 'GroupChat', {
         body: 'two',
@@ -485,7 +487,8 @@ describe('ARC / Federation network E2E', function () {
         tip: Object.assign({}, liveTip, { contractId }),
         genesis: def,
         destinationAddress: dest,
-        feeSats: 500
+        amountSats: 10000,
+      feeSats: 500
       });
       const diverted = Object.assign({}, good, {
         destinationAddress: p2wpkhAddress(compressedPubkey(keys[0])),
@@ -530,6 +533,7 @@ describe('ARC / Federation network E2E', function () {
         tip: tip1,
         genesis: def,
         destinationAddress: dest,
+        amountSats: 10000,
         feeSats: 800
       });
       assert.strictEqual(ok.runCommitmentHex, match.runCommitmentHex);
@@ -538,6 +542,7 @@ describe('ARC / Federation network E2E', function () {
         tip: tip1,
         genesis: def,
         destinationAddress: dest,
+        amountSats: 10000,
         feeSats: 800,
         runCommitmentHex: 'ff'.repeat(32)
       }), /runCommitment|program/i);
@@ -567,6 +572,7 @@ describe('ARC / Federation network E2E', function () {
         tip,
         genesis: def,
         destinationAddress: dest,
+        amountSats: 99000,
         feeSats: 1000,
         vaultAddress: spend.address,
         tierId: 't0-authority'
@@ -649,7 +655,8 @@ describe('ARC / Federation network E2E', function () {
         tip,
         genesis: def,
         destinationAddress: dest,
-        feeSats: 99999,
+        amountSats: 98455,
+        feeSats: 1000,
         vaultAddress: spend.address
       });
       assert.throws(() => prepareWithdrawalFromRequest({
@@ -703,6 +710,7 @@ describe('ARC / Federation network E2E', function () {
           tip,
           genesis: def,
           destinationAddress: dest,
+          amountSats: 10000,
           feeSats: 1000,
           vaultAddress: spend.address
         });
@@ -875,6 +883,7 @@ describe('ARC / Federation L1 regtest withdrawals', function () {
       tip,
       genesis: def,
       destinationAddress: dest,
+      amountSats: 10000,
       feeSats: 1000,
       vaultAddress: spend.address,
       tierId: 't0-authority'
@@ -929,6 +938,7 @@ describe('ARC / Federation L1 regtest withdrawals', function () {
       tip,
       genesis: def,
       destinationAddress: dest,
+      amountSats: 10000,
       feeSats: 1000,
       vaultAddress: spend.address
     });
@@ -1055,6 +1065,7 @@ describe('ARC / Federation L1 regtest withdrawals', function () {
         tip: tipBase,
         genesis: def,
         destinationAddress: dest,
+        amountSats: 10000,
         feeSats: 1000,
         vaultAddress: spend.address
       });
@@ -1112,6 +1123,7 @@ describe('ARC / Federation L1 regtest withdrawals', function () {
       tip,
       genesis: tree.defs.mission,
       destinationAddress: dest,
+      amountSats: 10000,
       feeSats: 1000,
       vaultAddress: childSpend.address
     });
