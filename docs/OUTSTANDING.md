@@ -1,9 +1,11 @@
 # Outstanding (security-first)
 Living queue for this repo. Detail and closed items live in [SECURITY.md](../SECURITY.md) and [AUDIT.md](../AUDIT.md). Suite production march: [PRODUCTION_MARCH.md](PRODUCTION_MARCH.md).
 
-**Last reviewed:** 2026-09-07 — Production computational-layer slice: `federationValidatorVerify` (fail-closed epoch digests + reserve conservation pre-sign) wired into Hub Beacon auto-sign and vault PSBT prep; `programTaprootBind` (Program run → hashlock leaf). Builds on Liquid peg foundation (track A). **Deferred (track B, with Silent Payments):** confidential amounts. **Still open:** Machine isolate/sandbox ([AUDIT.md](../AUDIT.md)); tag core before functionary vault funding.
+**Last reviewed:** 2026-09-07 — Federated settlement docs: [FEDERATED_SETTLEMENT.md](FEDERATED_SETTLEMENT.md) (F0 shipped; F1 destination lock / F2 peg loop / F3 recovery next). Amount blinding stays behind receive privacy ([AMOUNT_PRIVACY.md](AMOUNT_PRIVACY.md)). **Still open:** Machine isolate/sandbox ([AUDIT.md](../AUDIT.md)); tag core before functionary vault funding (X1).
 
-**Prior:** 2026-09-07 — Liquid Strong Federation incident lessons → **federation-safe peg foundation (track A)** landed: `amountSats` tip-bound withdrawals, `federationReserveLedger`, Hub vault PSBT via `prepareWithdrawalFromRequest`, fail-closed epoch digest match, mandatory path policy when validators set. **Deferred (track B, with Silent Payments):** Elements-style confidential amounts / rangeproofs — do not invent a CT cache without conservation proofs and a tagged release gate.
+**Prior:** 2026-09-07 — Production computational-layer slice: `federationValidatorVerify` (fail-closed epoch digests + reserve conservation pre-sign) wired into Hub Beacon auto-sign and vault PSBT prep; `programTaprootBind` (Program run → hashlock leaf). Builds on explicit-amount peg foundation (F0). **Deferred (P1/P2):** reusable receive then optional amount blinding — conservation proofs required; no verifier cache on a partial bind tuple.
+
+**Prior:** 2026-09-07 — Federation-safe peg foundation (F0) landed: `amountSats` tip-bound withdrawals, `federationReserveLedger`, Hub vault PSBT via `prepareWithdrawalFromRequest`, fail-closed epoch digest match, mandatory path policy when validators set.
 
 **Prior:** 2026-09-06 — [#187](https://github.com/FabricLabs/fabric/pull/187) tip feedback sweep (cursor High + CodeRabbit leftovers): fail-closed `FederationSignRequest`/`Response` (AMP signer must be a local federation validator; commitment digest check; observe-only — no mesh flood); `Beacon#adoptFederationSignRequest` requires local validators and ignores request-supplied policy; empty-validator rounds no longer meet threshold / recover as ready; `SIDECHAIN_STATE_PATCH` commitment replay via `_claimLogicalRegistration`; peerBandwidth fractional `maxPeers` clamp; CLI `_sendToAllServices` observes rejected `_send`; chaos report names confined with `path.basename`. Prior staged unifications still stand (`keyHasPrivateSigningMaterial`, etc.). **Not** a full production-plan close: WIP title, MuSig2 stub, Hub redeploy pin + Origin-GET redeem + coordinated `contractIdentifier` rename. Do not merge as “production complete.”
 
@@ -54,7 +56,17 @@ path and lockfile bumps in consuming packages — not another core helper.
 
 ## Next slices (this repo)
 
-_(empty — actionable Next checkboxes closed in the 2026-09-03 cut series; Blockers above remain.)_
+Federated settlement — [FEDERATED_SETTLEMENT.md](FEDERATED_SETTLEMENT.md) / [PEG_OPERATIONS.md](PEG_OPERATIONS.md):
+
+- [ ] **F1** Destination authorization (BIP32 / descriptor allowlist + delayed set updates)
+- [ ] **F2** Peg loop (maturity watcher, burn-then-broadcast, reorg freeze)
+- [ ] **F3** Vault emergency recovery (CLTV/CSV + offline recovery quorum)
+- [ ] **F4** Real MuSig2 epoch aggregate **or** drop the claim (`musig2EpochAggregate` stub)
+- [ ] **F5** Hardware / airgap PSBT for functionaries
+- [ ] **X1** Tag core before any shared vault funding
+- [ ] **P1 / P2** Receive privacy then amount blinding — [AMOUNT_PRIVACY.md](AMOUNT_PRIVACY.md) (deferred)
+
+Blockers above (Machine isolate, third-party review, `contractIdentifier` rename) still apply.
 
 ## Closed this pass (do not re-open)
 - **Production Hub RSS / NOISE handshake bus (P0) — core ship complete.** Tip carries `functions/noiseProtocolStream.js` + `Peer#countNoiseHandshakeListeners`. Live verify + pin bump is **Hub ops** ([hub OUTSTANDING](https://github.com/FabricLabs/hub.fabric.pub/blob/feature/rsi/docs/OUTSTANDING.md)): redeploy past handshake-bus core, confirm `noiseHandshakeListeners` non-null and MaxListeners quiet; watch `memory.external`/`arrayBuffers`. Do **not** raise `--max-old-space-size`. Oversized AMP frames on shared hosts remain Hub P1.

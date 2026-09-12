@@ -34,7 +34,14 @@ function parseProgramManifestV1 (raw) {
     : null;
   let sidechainPolicy = null;
   if (raw.sidechainPolicy && typeof raw.sidechainPolicy === 'object') {
-    sidechainPolicy = sidechainState.parseStatechainPathPolicy(raw.sidechainPolicy);
+    try {
+      sidechainPolicy = sidechainState.parseStatechainPathPolicy(raw.sidechainPolicy);
+    } catch (err) {
+      return {
+        ok: false,
+        error: `invalid sidechainPolicy: ${err && err.message ? err.message : err}`
+      };
+    }
   }
   return {
     ok: true,

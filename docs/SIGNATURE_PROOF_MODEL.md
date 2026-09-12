@@ -35,7 +35,7 @@ Digests answer **what** changed. They do not prove **who** approved the change u
 
 **Peg / federation vault:** `stateDigest` is **not** peg-out authority. L1 withdrawals from the federation vault require a tip-bound `ContractWithdrawalRequest` (`amountSats` + destination bound into `requestId`), optional k-of-n `ContractWithdrawalWitness` when threshold ≥ 2, and conservation against `/federationReserve` (`functions/federationReserveLedger.js`). See Hub `PrepareFederationVaultWithdrawalPsbt` / `ProposeFederationPegOut`.
 
-**Validator pre-sign gate (production):** before auto-signing Beacon epochs or preparing vault PSBTs, Hub runs `functions/federationValidatorVerify` (`evaluateValidatorSignGate`): fail-closed digest match vs local snapshots **and** reserve conservation when `/federationReserve` is present. Optional Program recompute via `assertMachineRunMatches`. Digests alone are insufficient (Liquid lesson).
+**Validator pre-sign gate (production):** before auto-signing Beacon epochs or preparing vault PSBTs, Hub runs `functions/federationValidatorVerify` (`evaluateValidatorSignGate`): fail-closed digest match vs local snapshots **and** reserve conservation when `/federationReserve` is present. Optional Program recompute via `assertMachineRunMatches`. Digests alone are insufficient.
 
 ## L1 observability (secondary — not federation proof)
 
@@ -70,5 +70,5 @@ Each validator:
 
 ## Related docs
 
-- Core: [DISTRIBUTED_EXECUTION.md](DISTRIBUTED_EXECUTION.md), [STATECHAIN.md](STATECHAIN.md)
-- Hub: [DISTRIBUTED_CONTRACT_EXECUTION.md](https://github.com/FabricLabs/hub.fabric.pub/blob/master/docs/DISTRIBUTED_CONTRACT_EXECUTION.md), [FEDERATION_DEPLOYMENT.md](https://github.com/FabricLabs/hub.fabric.pub/blob/master/docs/FEDERATION_DEPLOYMENT.md)
+- Core: [DISTRIBUTED_EXECUTION.md](DISTRIBUTED_EXECUTION.md), [STATECHAIN.md](STATECHAIN.md), [FEDERATED_SETTLEMENT.md](FEDERATED_SETTLEMENT.md)
+- Hub: [DISTRIBUTED_CONTRACT_EXECUTION.md](https://github.com/FabricLabs/hub.fabric.pub/blob/master/docs/DISTRIBUTED_CONTRACT_EXECUTION.md), [FEDERATION_DEPLOYMENT.md](https://github.com/FabricLabs/hub.fabric.pub/blob/master/docs/FEDERATION_DEPLOYMENT.md), [FEDERATED_SETTLEMENT.md](https://github.com/FabricLabs/hub.fabric.pub/blob/master/docs/FEDERATED_SETTLEMENT.md)

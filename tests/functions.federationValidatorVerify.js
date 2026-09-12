@@ -49,7 +49,7 @@ describe('federationValidatorVerify', function () {
       vout: 0,
       amountSats: 50000,
       confirmations: 200
-    });
+    }, { vaultConfirmedSats: 50000 });
     assert.ok(credited.ok);
 
     const gate = evaluateValidatorSignGate({

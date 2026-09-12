@@ -132,4 +132,4 @@ Do **not** confuse gossip Blocks or raw SC events with redeem authority. Hub
 `sidechainPolicy`. HTTP routes that expose this remain in `@fabric/http`
 (`distributedExecutionHttp` binder — service surface only).
 
-Related: [CHAIN.md](./CHAIN.md), [DISTRIBUTED_EXECUTION.md](./DISTRIBUTED_EXECUTION.md).
+Related: [CHAIN.md](./CHAIN.md), [DISTRIBUTED_EXECUTION.md](./DISTRIBUTED_EXECUTION.md), [FEDERATED_SETTLEMENT.md](./FEDERATED_SETTLEMENT.md).

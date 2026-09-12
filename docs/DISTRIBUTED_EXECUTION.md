@@ -14,7 +14,7 @@ Hub’s longer narrative (Beacon, delegation, signing rounds): hub.fabric.pub
 `docs/DISTRIBUTED_CONTRACT_EXECUTION.md`. HTTP binder:
 `@fabric/http` `types/distributedExecutionHttp` (manifest / epoch / sidechain routes).
 
-**Signature vs L1 proof:** [SIGNATURE_PROOF_MODEL.md](SIGNATURE_PROOF_MODEL.md). Operator deployment ladder: hub.fabric.pub `docs/FEDERATION_DEPLOYMENT.md`.
+**Signature vs L1 proof:** [SIGNATURE_PROOF_MODEL.md](SIGNATURE_PROOF_MODEL.md). Operator deployment ladder: hub.fabric.pub `docs/FEDERATION_DEPLOYMENT.md`. Settlement tracks: [FEDERATED_SETTLEMENT.md](FEDERATED_SETTLEMENT.md).
 
 ## Protocol helpers (`functions/`)
 
@@ -102,4 +102,5 @@ A dedicated numeric outer opcode may be allocated later.
 
 Related: [PROGRAM.md](./PROGRAM.md), [CHAIN.md](./CHAIN.md),
 [APPLICATION_NAMESPACES.md](./APPLICATION_NAMESPACES.md),
+[FEDERATED_SETTLEMENT.md](./FEDERATED_SETTLEMENT.md),
 [snippets/sidechains.md](../snippets/sidechains.md).

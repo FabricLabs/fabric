@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * Explicit-amount federation reserve ledger (Liquid peg foundation, no CT).
+ * Explicit-amount federation reserve ledger (F0 — no blinded amounts).
  *
  * Sidechain content lives under `/federationReserve`. Conservation:
  *   outstandingSats + pendingBurnsSats <= vaultConfirmedSats
@@ -112,7 +112,7 @@ function depositKey (txid, vout) {
  * @param {number} proof.confirmations
  * @param {Object} [opts]
  * @param {number} [opts.depositMaturityBlocks=144]
- * @param {number} [opts.vaultConfirmedSats] Refresh L1 vault total when known
+ * @param {number} opts.vaultConfirmedSats Verified L1 vault total (required — never invent from proof)
  * @returns {{ ok: true, content: object, reserve: FederationReserveState }|{ ok: false, error: string }}
  */
 function applyPegInCredit (content, proof = {}, opts = {}) {
@@ -152,8 +152,10 @@ function applyPegInCredit (content, proof = {}, opts = {}) {
     }
     reserve.vaultConfirmedSats = v;
   } else {
-    // Assume this deposit is now counted in vault reserves.
-    reserve.vaultConfirmedSats = Math.max(0, reserve.vaultConfirmedSats + amountSats);
+    return {
+      ok: false,
+      error: 'vaultConfirmedSats required (verified L1 vault total; do not invent from deposit proof)'
+    };
   }
 
   reserve.deposits.push({
@@ -218,14 +220,65 @@ function applyPegOutBurn (content, withdrawal = {}, opts = {}) {
   }
 
   reserve.outstandingSats -= amountSats;
+  reserve.pendingBurnsSats += amountSats;
   reserve.burnedSats += amountSats;
   reserve.withdrawals.push({
     requestId,
     amountSats,
     destinationAddress,
     burnedAt: opts.burnedAt || new Date().toISOString(),
-    status: 'burned'
+    status: 'pending'
   });
+
+  const cons = assertConservation(reserve);
+  if (!cons.ok) return cons;
+
+  nextContent[RESERVE_KEY] = reserve;
+  return { ok: true, content: nextContent, reserve };
+}
+
+/**
+ * After L1 vault payout confirms, settle a pending burn: drop pendingBurns and
+ * vaultConfirmed by the same amountSats (request-scoped).
+ * @param {object} content
+ * @param {string} requestId
+ * @param {Object} [opts]
+ * @param {number} [opts.vaultConfirmedSats] optional verified vault total after payout
+ * @returns {{ ok: true, content: object, reserve: FederationReserveState }|{ ok: false, error: string }}
+ */
+function settlePegOutPayout (content, requestId, opts = {}) {
+  const id = String(requestId || '').trim().toLowerCase();
+  if (!/^[0-9a-f]{64}$/.test(id)) {
+    return { ok: false, error: 'requestId required (64-hex)' };
+  }
+  const nextContent = Object.assign({}, content && typeof content === 'object' ? content : {});
+  const reserve = readReserve(nextContent);
+  const row = reserve.withdrawals.find((w) => String(w.requestId || '').toLowerCase() === id);
+  if (!row) return { ok: false, error: 'withdrawal not found' };
+  if (String(row.status || '') === 'settled') {
+    return { ok: false, error: 'withdrawal already settled' };
+  }
+  const amountSats = Math.round(Number(row.amountSats));
+  if (!Number.isInteger(amountSats) || amountSats < DUST_SATS) {
+    return { ok: false, error: 'withdrawal amountSats invalid' };
+  }
+  if (amountSats > reserve.pendingBurnsSats) {
+    return { ok: false, error: 'settle exceeds pendingBurnsSats' };
+  }
+
+  if (opts.vaultConfirmedSats != null) {
+    const v = Math.round(Number(opts.vaultConfirmedSats));
+    if (!Number.isFinite(v) || v < 0) {
+      return { ok: false, error: 'vaultConfirmedSats invalid' };
+    }
+    reserve.vaultConfirmedSats = v;
+  } else {
+    reserve.vaultConfirmedSats = Math.max(0, reserve.vaultConfirmedSats - amountSats);
+  }
+
+  reserve.pendingBurnsSats -= amountSats;
+  row.status = 'settled';
+  row.settledAt = opts.settledAt || new Date().toISOString();
 
   const cons = assertConservation(reserve);
   if (!cons.ok) return cons;
@@ -248,8 +301,55 @@ function patchesForReserve (reserve) {
 }
 
 /**
+ * Schema-check a full /federationReserve object (array elements included).
+ * @param {object} value
+ * @returns {{ ok: true }|{ ok: false, error: string }}
+ */
+function validateReserveObjectSchema (value) {
+  if (!value || typeof value !== 'object') {
+    return { ok: false, error: 'federationReserve value must be object' };
+  }
+  for (const key of ['outstandingSats', 'creditedSats', 'burnedSats', 'pendingBurnsSats', 'vaultConfirmedSats']) {
+    const n = Number(value[key]);
+    if (!Number.isFinite(n) || n < 0 || Math.round(n) !== n) {
+      return { ok: false, error: `${key} must be a non-negative integer` };
+    }
+  }
+  if (!Array.isArray(value.deposits) || !Array.isArray(value.withdrawals)) {
+    return { ok: false, error: 'deposits and withdrawals must be arrays' };
+  }
+  for (const d of value.deposits) {
+    if (!d || typeof d !== 'object') return { ok: false, error: 'invalid deposit row' };
+    if (!/^[0-9a-f]{64}$/i.test(String(d.txid || ''))) {
+      return { ok: false, error: 'deposit.txid must be 64-hex' };
+    }
+    if (!Number.isInteger(Number(d.vout)) || Number(d.vout) < 0) {
+      return { ok: false, error: 'deposit.vout invalid' };
+    }
+    if (!Number.isInteger(Number(d.amountSats)) || Number(d.amountSats) < DUST_SATS) {
+      return { ok: false, error: 'deposit.amountSats invalid' };
+    }
+  }
+  for (const w of value.withdrawals) {
+    if (!w || typeof w !== 'object') return { ok: false, error: 'invalid withdrawal row' };
+    if (!/^[0-9a-f]{64}$/i.test(String(w.requestId || ''))) {
+      return { ok: false, error: 'withdrawal.requestId must be 64-hex' };
+    }
+    if (!Number.isInteger(Number(w.amountSats)) || Number(w.amountSats) < DUST_SATS) {
+      return { ok: false, error: 'withdrawal.amountSats invalid' };
+    }
+    if (!String(w.destinationAddress || '').trim()) {
+      return { ok: false, error: 'withdrawal.destinationAddress required' };
+    }
+  }
+  return { ok: true };
+}
+
+/**
  * Reject raw RFC6902 that mutates reserve fields without going through ledger helpers.
  * Call before applyPatchesToState when patches touch /federationReserve*.
+ * Full-object replace/add must pass schema + conservation (provenance still requires
+ * helper-generated patches in production — see docs/PEG_OPERATIONS.md).
  * @param {object[]} patches
  * @returns {{ ok: true }|{ ok: false, error: string }}
  */
@@ -273,14 +373,12 @@ function validateLedgerPatch (patches) {
     if (p.op !== 'add' && p.op !== 'replace') {
       return { ok: false, error: `federationReserve op ${p.op} forbidden` };
     }
-    const value = p.value;
-    if (!value || typeof value !== 'object') {
-      return { ok: false, error: 'federationReserve value must be object' };
-    }
+    const schema = validateReserveObjectSchema(p.value);
+    if (!schema.ok) return schema;
     const cons = assertConservation({
-      outstandingSats: value.outstandingSats,
-      pendingBurnsSats: value.pendingBurnsSats,
-      vaultConfirmedSats: value.vaultConfirmedSats
+      outstandingSats: p.value.outstandingSats,
+      pendingBurnsSats: p.value.pendingBurnsSats,
+      vaultConfirmedSats: p.value.vaultConfirmedSats
     });
     if (!cons.ok) return cons;
   }
@@ -321,8 +419,10 @@ module.exports = {
   assertConservation,
   applyPegInCredit,
   applyPegOutBurn,
+  settlePegOutPayout,
   patchesForReserve,
   validateLedgerPatch,
+  validateReserveObjectSchema,
   defaultFederationSidechainPolicy,
   depositKey
 };

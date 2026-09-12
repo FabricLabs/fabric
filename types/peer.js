@@ -3748,7 +3748,7 @@ class Peer extends Service {
           'SIDECHAIN_STATE_PATCH',
           proposal,
           signerPubkeyHex || null,
-          origin && origin.name
+          punishOrigin
         );
         if (claim.duplicate) break;
         this.emit('sidechain:patch', {

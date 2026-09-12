@@ -21,6 +21,8 @@ Interfaces are named capability surfaces — not mutually exclusive types:
 | Payment / escrow | Hashlock / timelock / invoice settlement | HTLC builders, `/buy`, `/confirm`, `/claimwatch`, `/refund` |
 | Document exchange | Offers, sealed delivery, purchase sessions | `/offers`, `/inventory`, blob plans |
 | Crowdfund / federation | Threshold funding, validator rounds | Hub crowdfunds, Beacon federation |
+| Federated settlement | Explicit reserve, tip-bound vault spend | [FEDERATED_SETTLEMENT.md](FEDERATED_SETTLEMENT.md) |
+| Issued instruments | Named contract-layer balances (later) | [ISSUED_INSTRUMENTS.md](ISSUED_INSTRUMENTS.md) |
 | Program / machine | Deterministic opcode runs | `/create`, `/deploy`, `Machine` + `Program` |
 | Proposal / patch | Merkle-batched messages + JSON Patch (+ optional PSBT) | [CONTRACT_PROPOSAL.md](CONTRACT_PROPOSAL.md) |
 | CLI shell | Slash-command packs loaded into the TUI | [cliContracts.js](../functions/cliContracts.js) |

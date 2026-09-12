@@ -3,14 +3,14 @@
 /**
  * Federation validator pre-sign gates (production computational layer).
  *
- * Liquid lesson: agreeing on a digest is not the same as verifying that local
- * state and typed ledgers still conserve. Validators SHOULD refuse to Schnorr-
- * sign Beacon epochs, sidechain patches, or vault withdrawals until these
- * checks pass.
+ * Agreeing on a digest is not the same as verifying that local state and typed
+ * ledgers still conserve. Validators SHOULD refuse to Schnorr-sign Beacon
+ * epochs, sidechain patches, or vault withdrawals until these checks pass.
  *
  * @fileoverview Pre-sign verification for federation validators.
  * @module functions/federationValidatorVerify
  * @see docs/SIGNATURE_PROOF_MODEL.md
+ * @see docs/FEDERATED_SETTLEMENT.md
  * @see functions/federationReserveLedger.js
  */
 

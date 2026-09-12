@@ -1087,10 +1087,10 @@ function prepareLeafPsbt (opts = {}) {
 
   let destSats;
   let changeSats = 0;
-  const amountRaw = amountSats != null ? Number(amountSats) : null;
-  if (amountRaw != null && Number.isFinite(amountRaw)) {
-    const amount = Math.round(amountRaw);
-    if (!Number.isInteger(amount) || amount < 546) {
+  const hasAmount = amountSats != null;
+  if (hasAmount) {
+    const amount = Number(amountSats);
+    if (!Number.isSafeInteger(amount) || amount < 546) {
       throw new Error('amountSats must be an integer at or above dust (546).');
     }
     if (amount + fee > inputSats) {
@@ -1177,7 +1177,7 @@ function prepareLeafPsbt (opts = {}) {
     inputSats,
     destSats,
     changeSats: changeSats >= 546 ? changeSats : 0,
-    amountSats: amountRaw != null && Number.isFinite(amountRaw) ? Math.round(amountRaw) : destSats,
+    amountSats: destSats,
     feeSats: fee,
     tapscriptHex: ms.toString('hex'),
     controlBlockHex: controlBlock.toString('hex'),
@@ -1259,6 +1259,9 @@ function prepareDecayMigrationPsbt (opts = {}) {
   if (opts.destinationAddress && String(opts.destinationAddress).trim() !== childAddr) {
     throw new Error(`migration destination must be child address ${childAddr}`);
   }
+  if (opts.amountSats != null) {
+    throw new Error('partial amountSats migrations are forbidden; migrate the full UTXO (omit amountSats)');
+  }
 
   const result = prepareLeafPsbt({
     networkName: built.network,
@@ -1268,7 +1271,6 @@ function prepareDecayMigrationPsbt (opts = {}) {
     leaves,
     destinationAddress: childAddr,
     feeSats: opts.feeSats,
-    amountSats: opts.amountSats,
     after: target.decayAt,
     internalPubkeyHex: built.internalPubkeyHex,
     policy: built.policy

@@ -15,7 +15,9 @@ try {
   DepTree = require('dependency-tree');
 } catch (err) {
   // Only treat a missing optional package as absent; rethrow init / transitive errors.
-  if (err && err.code === 'MODULE_NOT_FOUND') {
+  const missingOptional = err && err.code === 'MODULE_NOT_FOUND' &&
+    /dependency-tree/.test(String(err.message || ''));
+  if (missingOptional) {
     DepTree = null;
   } else {
     throw err;
