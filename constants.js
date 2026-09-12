@@ -9,6 +9,12 @@
 // Networking and Environment
 const PEER_PORT = 7777;
 const MAX_PEERS = 32;
+/**
+ * Bitcoin L1 reference bandwidth: one ~1 MiB block every ~10 minutes.
+ * Fabric P2P uses this as the node-wide target window, split across {@link MAX_PEERS}.
+ */
+const BITCOIN_L1_BLOCK_BYTES = 1024 * 1024;
+const BITCOIN_L1_BLOCK_INTERVAL_MS = 10 * 60 * 1000;
 const PRECISION = 100;
 
 // Fabric Core
@@ -457,6 +463,8 @@ const INPUT_HINT = 'Press the "i" key to begin typing.';
 module.exports = {
   PEER_PORT,
   MAX_PEERS,
+  BITCOIN_L1_BLOCK_BYTES,
+  BITCOIN_L1_BLOCK_INTERVAL_MS,
   PRECISION,
   BITCOIN_NETWORK,
   BITCOIN_GENESIS,

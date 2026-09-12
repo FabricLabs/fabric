@@ -1,5 +1,10 @@
 # Codacy — reduce noise on generated / static trees (see PR checks on FabricLabs/fabric).
 # https://docs.codacy.com/repositories-configure/codacy-configuration-file/
+#
+# WONTFIX (2026-09-03): Semgrep/Opengrep excludes for path-hardened helpers stay.
+# Codacy ignores inline nosemgrep; local ESLint + unit tests cover containment.
+# Do not drop these excludes without a replacement SAST job. Do not add
+# functions/bytes.js (false-positive no-loss-of-precision was fixed at source).
 ---
 engines:
   # Semgrep still reported src/*.c on some PR analyses; mirror cppcheck/native exclusions.

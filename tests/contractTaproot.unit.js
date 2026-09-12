@@ -26,7 +26,9 @@ const {
   buildScriptLeaf,
   compileLeaves,
   prepareHashlockWithdrawalPsbt,
-  finalizeHashlockPsbt
+  finalizeHashlockPsbt,
+  prepareLeafPsbt,
+  prepareDecayMigrationPsbt
 } = require('../functions/contractTaproot');
 
 describe('contractTaproot', function () {
@@ -623,6 +625,69 @@ describe('contractTaproot', function () {
     assert.strictEqual(prep.sequence & 0x00400000, 0);
     assert.strictEqual(prep.sequence >>> 31, 0);
   });
+
+  it('prepareLeafPsbt rejects supplied invalid amountSats (no silent full sweep)', function () {
+    const policy = normalizeContractSpendPolicy({
+      version: 1,
+      network: 'regtest',
+      keySets: { full: [pk(1)] },
+      decay: { mode: 'none' },
+      tiers: [{ id: 'now', threshold: 1, keys: 'full' }]
+    });
+    const built = buildContractTaproot(policy);
+    const network = bitcoin.networks.regtest;
+    const funding = new bitcoin.Transaction();
+    funding.version = 2;
+    funding.addInput(Buffer.alloc(32), 0);
+    funding.addOutput(bitcoin.address.toOutputScript(built.address, network), 50_000n);
+    const dest = bitcoin.payments.p2wpkh({
+      pubkey: Buffer.from(pk(5), 'hex'),
+      network
+    }).address;
+    const leaves = compileLeaves(built.policy);
+    assert.throws(() => prepareLeafPsbt({
+      networkName: 'regtest',
+      fundedTxHex: funding.toHex(),
+      vaultAddress: built.address,
+      leafScript: leaves[0].script,
+      leaves,
+      destinationAddress: dest,
+      feeSats: 1000,
+      amountSats: 'not-a-number',
+      internalPubkeyHex: built.internalPubkeyHex,
+      policy: built.policy
+    }), /amountSats must be an integer/);
+  });
+
+  it('prepareDecayMigrationPsbt rejects partial amountSats', function () {
+    const policy = normalizeContractSpendPolicy({
+      network: 'regtest',
+      publisher: pk(0),
+      decay: { mode: 'both', migrateKeys: [pk(0), pk(1)], migrateThreshold: 1 },
+      keySets: {
+        full: keys.slice(0, 4).map((k) => k.pubkey),
+        mid: keys.slice(0, 2).map((k) => k.pubkey)
+      },
+      tiers: [
+        { id: 't0', threshold: 2, keys: 'full', after: null, until: { type: 'csv', blocks: 100 } },
+        { id: 't1', threshold: 1, keys: 'mid', after: { type: 'csv', blocks: 100 }, until: null }
+      ]
+    });
+    const built = buildContractTaproot(policy);
+    const network = bitcoin.networks.regtest;
+    const funding = new bitcoin.Transaction();
+    funding.version = 2;
+    funding.addInput(Buffer.alloc(32), 0);
+    funding.addOutput(bitcoin.address.toOutputScript(built.address, network), 50_000n);
+    assert.throws(() => prepareDecayMigrationPsbt({
+      policy,
+      fundedTxHex: funding.toHex(),
+      vaultAddress: built.address,
+      feeSats: 1000,
+      amountSats: 10000,
+      ctx: { utxoAgeBlocks: 100 }
+    }), /partial amountSats migrations are forbidden/);
+  });
 });
 
 const crypto = require('crypto');
@@ -970,6 +1035,7 @@ describe('contractSpend / ARC resolveSpend', function () {
     const req = buildWithdrawalRequest({
       tip,
       destinationAddress: 'bcrt1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh',
+      amountSats: 10000,
       feeSats: 500
     });
     assert.strictEqual(req.type, 'ContractWithdrawalRequest');
@@ -1034,6 +1100,7 @@ describe('contractSpend / ARC resolveSpend', function () {
     const stale = buildWithdrawalRequest({
       tip: Object.assign({}, tip, { stateDigest: '00'.repeat(32) }),
       destinationAddress: 'bcrt1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh',
+      amountSats: 10000,
       feeSats: 250
     });
     // Force stale digest onto a signed message
@@ -1053,6 +1120,7 @@ describe('contractSpend / ARC resolveSpend', function () {
     const goodReq = buildWithdrawalRequest({
       tip,
       destinationAddress: 'bcrt1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh',
+      amountSats: 10000,
       feeSats: 250
     });
     const good = Message.fromVector(['CONTRACT_MESSAGE', JSON.stringify({
@@ -1084,6 +1152,7 @@ describe('contractSpend / ARC resolveSpend', function () {
     const req = buildWithdrawalRequest({
       tip,
       destinationAddress: 'bcrt1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh',
+      amountSats: 10000,
       feeSats: 100
     });
     assert.throws(() => prepareWithdrawalFromRequest({
@@ -1126,6 +1195,7 @@ describe('contractSpend / ARC resolveSpend', function () {
     const req = buildWithdrawalRequest({
       tip,
       destinationAddress: 'bcrt1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh',
+      amountSats: 10000,
       feeSats: 100
     });
     assert.strictEqual(ingestMessageBuffer(store, contractId, Message.fromVector(['CONTRACT_MESSAGE', JSON.stringify({

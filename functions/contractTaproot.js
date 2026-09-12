@@ -1072,7 +1072,8 @@ function prepareLeafPsbt (opts = {}) {
     leafScript,
     leaves,
     destinationAddress,
-    feeSats
+    feeSats,
+    amountSats
   } = opts;
   const network = networkForFabricName(networkName);
   const tx = bitcoin.Transaction.fromHex(String(fundedTxHex || '').trim());
@@ -1082,8 +1083,29 @@ function prepareLeafPsbt (opts = {}) {
   const inputSats = typeof out.value === 'bigint' ? Number(out.value) : Number(out.value);
   if (!Number.isFinite(inputSats) || inputSats <= 0) throw new Error('Invalid vault output value.');
   const fee = Math.max(1, Math.round(Number(feeSats || 1000)));
-  const destSats = inputSats - fee;
-  if (destSats < 546) throw new Error('Amount after fee is below dust; lower fee or use a larger UTXO.');
+  const vaultAddr = String(vaultAddress || '').trim();
+
+  let destSats;
+  let changeSats = 0;
+  const hasAmount = amountSats != null;
+  if (hasAmount) {
+    const amount = Number(amountSats);
+    if (!Number.isSafeInteger(amount) || amount < 546) {
+      throw new Error('amountSats must be an integer at or above dust (546).');
+    }
+    if (amount + fee > inputSats) {
+      throw new Error('amountSats + feeSats exceeds vault UTXO value.');
+    }
+    destSats = amount;
+    changeSats = inputSats - amount - fee;
+    if (changeSats > 0 && changeSats < 546) {
+      throw new Error('Change after amount+fee is below dust; adjust amountSats or feeSats.');
+    }
+  } else {
+    // Legacy full-UTXO sweep (− fee) when amountSats omitted.
+    destSats = inputSats - fee;
+    if (destSats < 546) throw new Error('Amount after fee is below dust; lower fee or use a larger UTXO.');
+  }
 
   let ms;
   if (Buffer.isBuffer(leafScript)) {
@@ -1140,13 +1162,22 @@ function prepareLeafPsbt (opts = {}) {
     address: dest,
     value: BigInt(destSats)
   });
+  if (changeSats >= 546) {
+    if (!vaultAddr) throw new Error('vaultAddress required for change output.');
+    psbt.addOutput({
+      address: vaultAddr,
+      value: BigInt(changeSats)
+    });
+  }
 
   return {
     psbtBase64: psbt.toBase64(),
-    vaultAddress: String(vaultAddress || '').trim(),
+    vaultAddress: vaultAddr,
     vout,
     inputSats,
     destSats,
+    changeSats: changeSats >= 546 ? changeSats : 0,
+    amountSats: destSats,
     feeSats: fee,
     tapscriptHex: ms.toString('hex'),
     controlBlockHex: controlBlock.toString('hex'),
@@ -1195,6 +1226,7 @@ function prepareTierWithdrawalPsbt (opts = {}) {
     leaves,
     destinationAddress: opts.destinationAddress,
     feeSats: opts.feeSats,
+    amountSats: opts.amountSats,
     after: tier.after,
     internalPubkeyHex: built.internalPubkeyHex,
     policy: built.policy
@@ -1226,6 +1258,9 @@ function prepareDecayMigrationPsbt (opts = {}) {
   const childAddr = target.childAddress;
   if (opts.destinationAddress && String(opts.destinationAddress).trim() !== childAddr) {
     throw new Error(`migration destination must be child address ${childAddr}`);
+  }
+  if (opts.amountSats != null) {
+    throw new Error('partial amountSats migrations are forbidden; migrate the full UTXO (omit amountSats)');
   }
 
   const result = prepareLeafPsbt({
@@ -1321,6 +1356,7 @@ function prepareHashlockWithdrawalPsbt (opts = {}) {
     leaves,
     destinationAddress: opts.destinationAddress,
     feeSats: opts.feeSats,
+    amountSats: opts.amountSats,
     after: leaf.after,
     preimage32: preimage32 || undefined,
     internalPubkeyHex: internalPubkeyHex || undefined,
@@ -1656,7 +1692,8 @@ function prepareVaultWithdrawalPsbt (opts = {}) {
         leafScript: ms,
         leaves: [{ script: ms }],
         destinationAddress: opts.destinationAddress,
-        feeSats: opts.feeSats
+        feeSats: opts.feeSats,
+        amountSats: opts.amountSats
       }),
       signingNotes: 'Validators partially sign the same PSBT input (tapscript leaf).'
     };

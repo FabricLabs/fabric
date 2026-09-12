@@ -236,6 +236,102 @@ describe('@fabric/core/functions/sidechainState', function () {
     assert.strictEqual(parsed.proposal.basisClock, 0);
   });
 
+  it('buildSignedSidechainPatchMessage round-trip', function () {
+    const key = new Key({ private: '1111111111111111111111111111111111111111111111111111111111111111' });
+    const proposal = {
+      basisClock: 0,
+      basisDigest: 'aa',
+      patches: [{ op: 'add', path: '/rsi', value: { digest: 'bb' } }]
+    };
+    const msg = sc.buildSignedSidechainPatchMessage({ proposal, signKey: key });
+    const parsed = sc.parseSidechainStatePatchMessage(JSON.parse(msg.data.toString('utf8')));
+    assert.strictEqual(parsed.ok, true);
+    assert.ok(parsed.proposal.federationWitness);
+  });
+
+  it('buildSignedSidechainPatchMessage skips AMP sign when signKey cannot sign', function () {
+    const proposal = {
+      basisClock: 0,
+      basisDigest: 'aa',
+      patches: [{ op: 'add', path: '/z', value: 1 }]
+    };
+    const watchOnly = { pubkey: 'ab'.repeat(32) }; // no .sign
+    assert.doesNotThrow(function () {
+      sc.buildSignedSidechainPatchMessage({
+        proposal,
+        signKey: watchOnly,
+        federationWitness: { version: 1, signatures: {} }
+      });
+    });
+    const msg = sc.buildSignedSidechainPatchMessage({
+      proposal,
+      signKey: watchOnly,
+      federationWitness: { version: 1, signatures: {} }
+    });
+    const parsed = sc.parseSidechainStatePatchMessage(JSON.parse(msg.data.toString('utf8')));
+    assert.strictEqual(parsed.ok, true);
+  });
+
+  it('buildSignedSidechainPatchMessage skips AMP sign for watch-only Key', function () {
+    const full = new Key({ private: '1111111111111111111111111111111111111111111111111111111111111111' });
+    const watchOnly = new Key({ public: full.pubkey });
+    const proposal = {
+      basisClock: 0,
+      basisDigest: 'aa',
+      patches: [{ op: 'add', path: '/z', value: 1 }]
+    };
+    let msg;
+    assert.doesNotThrow(function () {
+      msg = sc.buildSignedSidechainPatchMessage({
+        proposal,
+        signKey: watchOnly,
+        federationWitness: { version: 1, signatures: {} }
+      });
+    });
+    const parsed = sc.parseSidechainStatePatchMessage(JSON.parse(msg.data.toString('utf8')));
+    assert.strictEqual(parsed.ok, true);
+  });
+
+  it('buildFederationWitnessForSidechainPatch returns null without a signing key', function () {
+    assert.strictEqual(sc.buildFederationWitnessForSidechainPatch({
+      proposal: { basisClock: 0, basisDigest: 'aa', patches: [] },
+      signKey: null
+    }), null);
+  });
+
+  it('buildFederationWitnessForSidechainPatch returns null for watch-only Key', function () {
+    const full = new Key({ private: '2222222222222222222222222222222222222222222222222222222222222222' });
+    const watchOnly = new Key({ public: full.pubkey });
+    assert.strictEqual(sc.buildFederationWitnessForSidechainPatch({
+      proposal: { basisClock: 0, basisDigest: 'aa', patches: [] },
+      signKey: watchOnly
+    }), null);
+  });
+
+  it('buildFederationWitnessForSidechainPatch attaches validators metadata when provided', function () {
+    const key = new Key({ private: '1111111111111111111111111111111111111111111111111111111111111111' });
+    const proposal = {
+      basisClock: 1,
+      basisDigest: 'cc',
+      patches: [{ op: 'add', path: '/y', value: 2 }]
+    };
+    const witness = sc.buildFederationWitnessForSidechainPatch({
+      proposal,
+      signKey: key,
+      validators: [key.pubkey],
+      threshold: 1
+    });
+    assert.ok(witness);
+    assert.deepStrictEqual(witness.validators, [key.pubkey]);
+    assert.strictEqual(witness.threshold, 1);
+    assert.ok(witness.signatures[key.pubkey]);
+  });
+
+  it('parseSidechainStatePatchMessage rejects incomplete bodies', function () {
+    assert.strictEqual(sc.parseSidechainStatePatchMessage(null).ok, false);
+    assert.strictEqual(sc.parseSidechainStatePatchMessage({ type: 'Other' }).ok, false);
+  });
+
   it('verifyEpochChainFederationWitnesses fail-closed', function () {
     const key = new Key({ private: '1111111111111111111111111111111111111111111111111111111111111111' });
     const epoch = { clock: 1, height: 1 };

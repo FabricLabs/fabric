@@ -1,7 +1,23 @@
 # Outstanding (security-first)
 Living queue for this repo. Detail and closed items live in [SECURITY.md](../SECURITY.md) and [AUDIT.md](../AUDIT.md). Suite production march: [PRODUCTION_MARCH.md](PRODUCTION_MARCH.md).
 
-**Last reviewed:** 2026-08-25 — Wave 1 core audit honesty pass (`Session.encrypt`
+**Last reviewed:** 2026-09-07 — Federated settlement docs: [FEDERATED_SETTLEMENT.md](FEDERATED_SETTLEMENT.md) (F0 shipped; F1 destination lock / F2 peg loop / F3 recovery next). Amount blinding stays behind receive privacy ([AMOUNT_PRIVACY.md](AMOUNT_PRIVACY.md)). **Still open:** Machine isolate/sandbox ([AUDIT.md](../AUDIT.md)); tag core before functionary vault funding (X1).
+
+**Prior:** 2026-09-07 — Production computational-layer slice: `federationValidatorVerify` (fail-closed epoch digests + reserve conservation pre-sign) wired into Hub Beacon auto-sign and vault PSBT prep; `programTaprootBind` (Program run → hashlock leaf). Builds on explicit-amount peg foundation (F0). **Deferred (P1/P2):** reusable receive then optional amount blinding — conservation proofs required; no verifier cache on a partial bind tuple.
+
+**Prior:** 2026-09-07 — Federation-safe peg foundation (F0) landed: `amountSats` tip-bound withdrawals, `federationReserveLedger`, Hub vault PSBT via `prepareWithdrawalFromRequest`, fail-closed epoch digest match, mandatory path policy when validators set.
+
+**Prior:** 2026-09-06 — [#187](https://github.com/FabricLabs/fabric/pull/187) tip feedback sweep (cursor High + CodeRabbit leftovers): fail-closed `FederationSignRequest`/`Response` (AMP signer must be a local federation validator; commitment digest check; observe-only — no mesh flood); `Beacon#adoptFederationSignRequest` requires local validators and ignores request-supplied policy; empty-validator rounds no longer meet threshold / recover as ready; `SIDECHAIN_STATE_PATCH` commitment replay via `_claimLogicalRegistration`; peerBandwidth fractional `maxPeers` clamp; CLI `_sendToAllServices` observes rejected `_send`; chaos report names confined with `path.basename`. Prior staged unifications still stand (`keyHasPrivateSigningMaterial`, etc.). **Not** a full production-plan close: WIP title, MuSig2 stub, Hub redeploy pin + Origin-GET redeem + coordinated `contractIdentifier` rename. Do not merge as “production complete.”
+
+**Prior:** 2026-09-06 — [#187](https://github.com/FabricLabs/fabric/pull/187) vs Hub production plan: **partially adequate** for Beacon ARC / registry / sidechain federation wire (fail-closed patches, contract publish authority, operator identity, Beacon sign rounds). **Staged unifications (append):** shared `functions/keyHasPrivateSigningMaterial.js` (sidechain + execution-run builders); Peer drops duplicate `normalizePeerPubkeyHex` and uses `authoritySetHasPubkey` in `_signerMayPatchContract`; `fabricProgramManifest` requires `sidechainState` directly (no silent catch). Skip for this PR: Environment/CLI identity unify, Hub↔Peer federation policy parser, `contractIdentifier` call-site adoption, MuSig2 implement.
+
+**Prior:** 2026-09-06 — CodeRabbit leftovers on tip `2eb343def` (watch-only `FABRIC_XPRV` before wallet; env federation threshold; typetree MODULE_NOT_FOUND-only; sidechain private-material guard).
+
+**Prior:** 2026-09-03 — Two-week cut series **staged** (C1–C10): #187 tip + Codecov c8 whitelist for new authority/operator/MuSig2-stub modules; NOISE deps declared; unloadable modules excluded from `files[]`; type-tree inventory locked; `sensitive` ≠ encrypted docs; `contractIdentifier` dual-field helper (rename Blocker stays open). **Owner:** commit → open PRs → Bugbot/Security → Hub redeploy for NOISE P0 verify.
+
+**Prior:** 2026-09-03 — [#187](https://github.com/FabricLabs/fabric/pull/187) Codecov **patch** red (65.5% vs ~85% auto target; project green). Expanded federation / sidechain / operator-identity tests; **fail-closed** `contractPublishSignerAuthorized` when authorities exist but AMP signer is missing; **`musig2EpochAggregate` marked incomplete** (not a shipped MuSig2 seal). Push tip to refresh Codecov.
+
+**Prior:** 2026-08-25 — Wave 1 core audit honesty pass (`Session.encrypt`
 throws; Capability scaffold opt-in; Service sensitive-path / `requirePatchCapability`
 gates; Identity `_verifyKeyIsChild`; Actor.sign Key path; CONTRACT_* body schemas;
 adversarial UNKNOWN + generic-carrier cases). `npm run ci` was green on the prior tip;
@@ -34,28 +50,32 @@ path and lockfile bumps in consuming packages — not another core helper.
 
 ## Blockers before shared-host / non-experimental tag
 1. **Third-party review** of `types/peer.js`, inventory HTLC, sealed exchange, `publishedDocumentEnvelope` ([AUDIT.md](../AUDIT.md) recommendations).
-2. **Do not claim** a hardened contract VM — `Machine.define` still binds host JS ([PUBLIC_API.md](../PUBLIC_API.md)).
-3. Downstream **site-login / device-link redeem** is not a core bug; Hub/`@fabric/http` still treat QR `sessionId` as the capability. Tracked in those repos.
+2. **Do not claim** a hardened contract VM — `Machine.define` still binds host JS ([PUBLIC_API.md](../PUBLIC_API.md)). Doc language locked; this blocker stays until an isolate exists.
+3. Downstream **site-login / device-link redeem** — write paths use `pollSecret`; **GET pending/linked** still Origin-gated for the QR responder ([`@fabric/http` OUTSTANDING](https://github.com/FabricLabs/fabric-http/blob/feature/rsi/docs/OUTSTANDING.md)). Not a core bug.
+4. **Coordinated `contractId` → `contractIdentifier` rename** across Hub / `@fabric/http` / apps. Prep helper: `functions/contractIdentifier.js` (`resolve` / `stamp` dual-read). Do not merge a breaking rename until consumers land.
 
 ## Next slices (this repo)
-- [ ] Production Hub **RSS / NOISE handshake bus (P0)** (production Hub host scan **10:39Z**: Hub **`6bf825d`**, restarts **542** / FATAL **317 +0**, PID **~61 m**). Named retainers stay flat. RSS tracks **`external`/`arrayBuffers` (38→984 MiB)** not V8 heap (~82 MiB). MaxListeners 65>64 on this life; `noiseHandshakeListeners: null` because live pin **`f63a33f`** still `require('noise-protocol-stream')`. This tip **`88f766c28`**: `functions/noiseProtocolStream.js` + `Peer#countNoiseHandshakeListeners` — Hub redeploy before claiming the leak is fixed. Do **not** raise `--max-old-space-size`. Oversized AMP frames on shared hosts remain P1.
-- [ ] Keep documenting that `sensitive` ≠ encrypted ([PRIVACY.md](../PRIVACY.md),
-  [MESSAGE_BODY.md](MESSAGE_BODY.md)). Mesh chat model:
-  [MESSAGES.md](../MESSAGES.md#mesh-chat-model-gossip-first) + `functions/fabricChatKind.js`. Privacy follow-ups live in HTTP Hub and application consumers' own `docs/OUTSTANDING.md`.
-- [ ] Type-tree keep/remove lock in [PRODUCTION_MARCH.md](PRODUCTION_MARCH.md) (inventory remaining classes; `Scribe`/`Reader` deprecation notes are in).
-- [ ] **Undeclared (phantom) dependencies.** `functions/noiseProtocolStream.js`
-  requires `duplexify`, `end-of-stream`, `length-prefixed-stream`, `stream-each`,
-  and `through2`; `types/remote.js` requires `ws`. All resolve today only because
-  they hoist out of `noise-protocol-stream` / other transitive trees — a dep bump
-  that drops one silently breaks the **NOISE transport path**. `types/typetree.js`
-  requires `dependency-tree`, which does **not** resolve at all right now, so
-  `require('@fabric/core/types/typetree')` throws. Decide per package: declare it
-  or drop the require (AGENTS.md: no new runtime deps without a strong reason).
-- [ ] Coordinated `contractId` → `contractIdentifier` rename.
-- [ ] Blinded-execution remains a **scaffold** (not Yao GC) even with signed `at`.
-- [ ] Keep `.codacy.yml` Semgrep/Opengrep exclusions for `functions/fabricSetup.js`, `functions/fabricHomeEnv.js`, `functions/fabricWalletIdentity.js`, `functions/fabricMessageCollection.js`, `types/environment.js`, and `types/filesystem.js` unless a replacement SAST job covers those path-construction helpers (CodeRabbit asked to drop the excludes; Codacy still ignores `nosemgrep`). The nine PR #185 criticals were all Filesystem `path.resolve` / `fs.*` on a contained name.
+
+Federated settlement — [FEDERATED_SETTLEMENT.md](FEDERATED_SETTLEMENT.md) / [PEG_OPERATIONS.md](PEG_OPERATIONS.md):
+
+- [ ] **F1** Destination authorization (BIP32 / descriptor allowlist + delayed set updates)
+- [ ] **F2** Peg loop (maturity watcher, burn-then-broadcast, reorg freeze)
+- [ ] **F3** Vault emergency recovery (CLTV/CSV + offline recovery quorum)
+- [ ] **F4** Real MuSig2 epoch aggregate **or** drop the claim (`musig2EpochAggregate` stub)
+- [ ] **F5** Hardware / airgap PSBT for functionaries
+- [ ] **X1** Tag core before any shared vault funding
+- [ ] **P1 / P2** Receive privacy then amount blinding — [AMOUNT_PRIVACY.md](AMOUNT_PRIVACY.md) (deferred)
+
+Blockers above (Machine isolate, third-party review, `contractIdentifier` rename) still apply.
 
 ## Closed this pass (do not re-open)
+- **Production Hub RSS / NOISE handshake bus (P0) — core ship complete.** Tip carries `functions/noiseProtocolStream.js` + `Peer#countNoiseHandshakeListeners`. Live verify + pin bump is **Hub ops** ([hub OUTSTANDING](https://github.com/FabricLabs/hub.fabric.pub/blob/feature/rsi/docs/OUTSTANDING.md)): redeploy past handshake-bus core, confirm `noiseHandshakeListeners` non-null and MaxListeners quiet; watch `memory.external`/`arrayBuffers`. Do **not** raise `--max-old-space-size`. Oversized AMP frames on shared hosts remain Hub P1.
+- **`sensitive` ≠ encrypted** documented in [PRIVACY.md](../PRIVACY.md), [MESSAGE_BODY.md](MESSAGE_BODY.md#sensitive-is-not-encryption), mesh chat in [MESSAGES.md](../MESSAGES.md#mesh-chat-model-gossip-first). Further privacy work is HTTP Hub / app OUTSTANDING.
+- **Type-tree keep/remove lock** — inventory tagged in [PRODUCTION_MARCH.md](PRODUCTION_MARCH.md) Phase 1; `Scribe`/`Reader` deprecation notes remain; `types/fabric.js` is the curated RC facade.
+- **Undeclared (phantom) NOISE dependencies** — `duplexify`, `end-of-stream`, `length-prefixed-stream`, `stream-each`, `through2` are direct `dependencies`. `types/remote.js` no longer requires `ws` (commented). `types/typetree.js` soft-fails without `dependency-tree` and is **not shipped**.
+- **Unloadable packed modules** — `services/exchange|mqtt|turntable`, `types/authority|component|renderer|typetree` excluded from `files[]`; `KNOWN_UNLOADABLE` is empty; packaging tests assert exclusions + NOISE direct deps.
+- **Blinded-execution scaffold honesty** — [PROGRAM.md](PROGRAM.md) / [PUBLIC_API.md](../PUBLIC_API.md) state composition+digests only (signed `at` ≠ Yao GC).
+- **Codacy Semgrep/Opengrep path-helper excludes** — **wontfix** (`.codacy.yml`); Codacy ignores `nosemgrep`. Do **not** drop excludes without a replacement SAST job. Do **not** add `functions/bytes.js` to excludes.
 - **Suite-wide packaging lesson from `@fabric/hub` red CI (2026-08-25).** Hub's
   `build-test` died on `Cannot find module '../components/browser-content'`
   because the http commit it pinned shipped `types/browser.js` without a

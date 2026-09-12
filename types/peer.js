@@ -7,6 +7,8 @@ const {
   GOSSIP_MAX_PAYLOAD_CACHE,
   GOSSIP_MAX_RELAYS_PER_ORIGIN_PER_MINUTE,
   MAX_PEERS,
+  BITCOIN_L1_BLOCK_BYTES,
+  BITCOIN_L1_BLOCK_INTERVAL_MS,
   PEERING_OFFER_MAX_HOPS,
   PEERING_OFFER_MAX_PAYLOAD_CACHE,
   PEERING_OFFER_MAX_RELAYS_PER_ORIGIN_PER_MINUTE,
@@ -57,6 +59,14 @@ const {
 } = require('../functions/onionChatSeal');
 const { individualPk } = require('../functions/musig2');
 const musig2Session = require('../functions/musig2Session');
+const sidechainState = require('../functions/sidechainState');
+const { verifyFederationWitnessOnMessage, epochCommitmentDigestHex } = require('../functions/beaconFederationSigning');
+const {
+  aggregatePeerBandwidth,
+  peerBandwidthSnapshot,
+  perPeerBandwidthBudgetBytes,
+  recordPeerBandwidth
+} = require('../functions/peerBandwidth');
 
 /** @private Max UTF-8 code units for first-class P2P_CHAT_MESSAGE body (text only). */
 const P2P_CHAT_MAX_CHARS = 2000;
@@ -266,25 +276,6 @@ function genericOfferObject (message) {
 }
 
 /**
- * Lowercase hex for comparing {@link P2P_FLUSH_CHAIN} authorized pubkeys.
- * @private
- */
-function normalizePeerPubkeyHex (pk) {
-  if (pk == null) return '';
-  if (Buffer.isBuffer(pk)) {
-    const h = pk.toString('hex').toLowerCase();
-    if (pk.length === 32) return h;
-    if (pk.length === 33 && (h.startsWith('02') || h.startsWith('03'))) return h.slice(2);
-    return h;
-  }
-  const s = String(pk).trim();
-  const h = (s.startsWith('0x') || s.startsWith('0X')) ? s.slice(2) : s;
-  const lo = h.toLowerCase();
-  if (lo.length === 66 && (lo.startsWith('02') || lo.startsWith('03'))) return lo.slice(2);
-  return lo;
-}
-
-/**
  * Unified delivery trust for frames that arrived under a transport envelope.
  *
  * Protocol rules (see SECURITY.md / docs/P2P_FORWARD.md):
@@ -330,76 +321,13 @@ function meshDeliveryContext (opts = {}, originName = null) {
   };
 }
 
-/**
- * Pubkeys declared as patch authorities on a CONTRACT_PUBLISH body.
- * @param {object} object
- * @returns {Set<string>}
- * @private
- */
-function collectContractAuthorityPubkeys (object) {
-  const set = new Set();
-  const add = (hex) => {
-    const h = normalizePeerPubkeyHex(hex);
-    if (/^[0-9a-f]{64}$/.test(h) || /^[0-9a-f]{66}$/.test(h)) set.add(h);
-  };
-  const addList = (list) => {
-    if (!Array.isArray(list)) return;
-    for (const entry of list) {
-      if (typeof entry === 'string') add(entry);
-      else if (entry && typeof entry === 'object') {
-        add(entry.pubkey || entry.publicKey || entry.id);
-      }
-    }
-  };
-  const def = object && typeof object === 'object' ? object : {};
-  // Flat publish bodies + ARC/Beacon genesis (`members.signers`, `spendPolicy.validators`).
-  addList(def.validators);
-  addList(def.parties);
-  addList(def.owners);
-  addList(def.authorities);
-  if (Array.isArray(def.members)) {
-    addList(def.members);
-  } else if (def.members && typeof def.members === 'object') {
-    addList(def.members.signers);
-    addList(def.members.validators);
-    addList(def.members.parties);
-    addList(def.members.owners);
-    addList(def.members.authorities);
-  }
-  if (def.spendPolicy && typeof def.spendPolicy === 'object') {
-    addList(def.spendPolicy.validators);
-    addList(def.spendPolicy.parties);
-  }
-  // Hub / Federation application genesis: proposedPolicy.validators.
-  if (def.proposedPolicy && typeof def.proposedPolicy === 'object') {
-    addList(def.proposedPolicy.validators);
-    addList(def.proposedPolicy.parties);
-    addList(def.proposedPolicy.signers);
-  }
-  return set;
-}
-
-/**
- * Whether {@code pubkeyHex} is present in an authority set (x-only ↔ compressed tolerant).
- * @param {Set<string>} authorities
- * @param {string} pubkeyHex
- * @returns {boolean}
- * @private
- */
-function authoritySetHasPubkey (authorities, pubkeyHex) {
-  const h = normalizePeerPubkeyHex(pubkeyHex);
-  if (!h || !authorities || !authorities.size) return false;
-  if (authorities.has(h)) return true;
-  if (h.length === 64) {
-    for (const entry of authorities) {
-      if (typeof entry === 'string' && entry.length === 66 && entry.slice(2) === h) return true;
-    }
-  } else if (h.length === 66) {
-    const xOnly = h.slice(2);
-    if (authorities.has(xOnly)) return true;
-  }
-  return false;
-}
+const contractPublishAuthority = require('../functions/contractPublishAuthority');
+const {
+  collectContractAuthorityPubkeys,
+  authoritySetHasPubkey,
+  contractPublishSignerAuthorized: contractPublishSignerAuthorizedFn,
+  normalizePeerPubkeyHex
+} = contractPublishAuthority;
 
 /**
  * Outer / generic types whose local registration side-effects are first-writer-wins.
@@ -425,7 +353,9 @@ const LOGICAL_REGISTER_ONCE_TYPES = new Set([
   'P2P_FLUSH_CHAIN',
   'FlushChain',
   'P2P_PEER_ALIAS',
-  'DocumentContentKeyReveal'
+  'DocumentContentKeyReveal',
+  // Authorized sidechain patches: commitment-level replay (re-signed envelope ≠ new patch)
+  'SIDECHAIN_STATE_PATCH'
 ]);
 
 /**
@@ -560,6 +490,12 @@ class Peer extends Service {
       }, config.state),
       upnp: false,
       key: {},
+      // Fabric P2P byte budget: Bitcoin L1 (1 MiB / 10 min) split across MAX_PEERS.
+      bandwidth: {
+        windowMs: BITCOIN_L1_BLOCK_INTERVAL_MS,
+        windowBytes: BITCOIN_L1_BLOCK_BYTES,
+        maxPeers: MAX_PEERS
+      },
       // Inbound wire traffic budgeting (Bitcoin Core-style peer quality).
       wireTraffic: {
         windowMs: 60 * 1000,
@@ -716,6 +652,8 @@ class Peer extends Service {
     this._peeringRelayByOrigin = new Map();
     /** `host:port` → { credits, windowStart, penalized } — inbound wire flood / de-rank (per peer). */
     this._wireInboundByOrigin = new Map();
+    /** `host:port` → rolling L1-window byte counters (session + 10 min). */
+    this._peerBandwidthByOrigin = new Map();
     /** `host:port` → { windowStart, penalized } — soft logical-duplicate derank once per window. */
     this._logicalDupPenaltyByOrigin = new Map();
     /**
@@ -870,6 +808,19 @@ class Peer extends Service {
       const pay = obj.paymentHashHex != null ? String(obj.paymentHashHex).trim().toLowerCase() : '';
       if (pay && pay !== derived) return null;
       return `keyreveal:${docId}:${derived}`;
+    }
+    if (t === 'SIDECHAIN_STATE_PATCH') {
+      try {
+        const digest = sidechainState.patchCommitmentDigestHex({
+          basisClock: obj.basisClock,
+          basisDigest: obj.basisDigest,
+          patches: obj.patches
+        });
+        if (!digest) return null;
+        return `sidechain-patch:${digest}`;
+      } catch (_) {
+        return null;
+      }
     }
     return null;
   }
@@ -1215,6 +1166,100 @@ class Peer extends Service {
   }
 
   /**
+   * L1 window + per-peer budget used for {@link Peer#knownPeers} bandwidth fields.
+   * @returns {Object}
+   * @private
+   */
+  _peerBandwidthOptions () {
+    const bw = (this.settings && this.settings.bandwidth) || {};
+    const constraintsMax = this.settings && this.settings.constraints && this.settings.constraints.peers
+      ? Number(this.settings.constraints.peers.max)
+      : NaN;
+    const maxPeers = Number.isFinite(constraintsMax) && constraintsMax > 0
+      ? Math.floor(constraintsMax)
+      : (Number(bw.maxPeers) > 0 ? Math.floor(Number(bw.maxPeers)) : MAX_PEERS);
+    const windowMs = Number(bw.windowMs) > 0 ? Number(bw.windowMs) : BITCOIN_L1_BLOCK_INTERVAL_MS;
+    const windowBytes = Number(bw.windowBytes) > 0 ? Number(bw.windowBytes) : BITCOIN_L1_BLOCK_BYTES;
+    return {
+      windowMs,
+      windowBytes,
+      maxPeers,
+      budgetBytes: perPeerBandwidthBudgetBytes(windowBytes, maxPeers)
+    };
+  }
+
+  /**
+   * Count plaintext AMP bytes on a connection (NOISE payload, after decrypt / before encrypt).
+   * @param {string} originName `host:port`
+   * @param {string} direction `in` or `out`
+   * @param {*} n payload or length
+   * @returns {void}
+   * @private
+   */
+  _recordPeerBandwidth (originName, direction, n) {
+    if (!originName) return;
+    const opts = this._peerBandwidthOptions();
+    const prev = this._peerBandwidthByOrigin.get(originName);
+    const next = recordPeerBandwidth(prev, direction, n, Date.now(), opts.windowMs);
+    this._peerBandwidthByOrigin.set(originName, next);
+  }
+
+  /**
+   * Snapshot for one connection or registry address.
+   * @param {string} address
+   * @returns {Object}
+   * @private
+   */
+  _peerBandwidthSnapshotForAddress (address) {
+    const opts = this._peerBandwidthOptions();
+    const slot = address && this._peerBandwidthByOrigin ? this._peerBandwidthByOrigin.get(address) : null;
+    return peerBandwidthSnapshot(slot, Date.now(), opts);
+  }
+
+  /**
+   * Drop idle bandwidth slots when the map grows past live connections plus a small remainder.
+   * @returns {void}
+   * @private
+   */
+  _prunePeerBandwidthMaps () {
+    const map = this._peerBandwidthByOrigin;
+    if (!map || map.size <= 256) return;
+    const live = this.connections && typeof this.connections === 'object' ? this.connections : {};
+    for (const key of map.keys()) {
+      if (!Object.prototype.hasOwnProperty.call(live, key)) map.delete(key);
+      if (map.size <= 256) return;
+    }
+  }
+
+  /**
+   * Node-wide Fabric P2P bandwidth vs the L1 1 MiB / 10 min target.
+   * @returns {Object}
+   */
+  get bandwidthSummary () {
+    const opts = this._peerBandwidthOptions();
+    const seen = new Set();
+    const snaps = [];
+    const connections = this.connections && typeof this.connections === 'object' ? this.connections : {};
+    for (const address of Object.keys(connections)) {
+      seen.add(address);
+      snaps.push(this._peerBandwidthSnapshotForAddress(address));
+    }
+    if (this._peerBandwidthByOrigin) {
+      for (const address of this._peerBandwidthByOrigin.keys()) {
+        if (seen.has(address)) continue;
+        seen.add(address);
+        snaps.push(this._peerBandwidthSnapshotForAddress(address));
+      }
+    }
+    return aggregatePeerBandwidth(snaps, {
+      windowMs: opts.windowMs,
+      windowBytes: opts.windowBytes,
+      maxPeers: opts.maxPeers,
+      peerBudgetBytes: opts.budgetBytes
+    });
+  }
+
+  /**
    * Stable id for peering-offer *logical* content (ignores advisory `peeringHop`).
    * @param {object} msg Generic message (`type`, `object`, …)
    * @returns {string} hex sha256
@@ -1535,6 +1580,11 @@ class Peer extends Service {
     return peers;
   }
 
+  /**
+   * Registry plus live connections. Each row includes rolling Fabric P2P
+   * bandwidth (`bytesIn` / `bytesOut` / `windowBytes` vs L1 `budgetBytes`).
+   * @returns {object[]}
+   */
   get knownPeers () {
     const now = new Date().toISOString();
     const byId = {};
@@ -1557,6 +1607,7 @@ class Peer extends Service {
         alias: reg.alias,
         lastMessage: reg.lastMessage
       };
+      Object.assign(byId[id], this._peerBandwidthSnapshotForAddress(byId[id].address));
     }
 
     // Overlay current connections (map address -> id, then update byId)
@@ -1569,6 +1620,7 @@ class Peer extends Service {
       byId[id].address = address;
       byId[id].lastMessage = socket._lastMessage || byId[id].lastMessage;
       if (socket._alias) byId[id].alias = socket._alias;
+      Object.assign(byId[id], this._peerBandwidthSnapshotForAddress(address));
     }
 
     // Include any this.peers not yet in registry
@@ -1584,6 +1636,7 @@ class Peer extends Service {
         score: 0,
         lastSeen: now
       };
+      Object.assign(byId[id], this._peerBandwidthSnapshotForAddress(key));
     }
 
     return Object.values(byId);
@@ -2477,6 +2530,7 @@ class Peer extends Service {
           socket.setTimeout(0);
         });
         client.decrypt.on('data', (data) => {
+          this._recordPeerBandwidth(target, 'in', data);
           this._handleFabricMessage(data, { name: target }, client);
         });
         client.encrypt.pipe(socket).pipe(client.decrypt);
@@ -2525,6 +2579,7 @@ class Peer extends Service {
     if (this._inboundNoiseStaticPubkeyByAddress) delete this._inboundNoiseStaticPubkeyByAddress[target];
     if (this._addressToId) delete this._addressToId[target];
     this._unregisterSocketActor(target);
+    this._prunePeerBandwidthMaps();
 
     this.emit('connections:close', {
       address: target,
@@ -3247,6 +3302,7 @@ class Peer extends Service {
       case 'P2P_FILE_SEND':
       case 'CONTRACT_PUBLISH':
       case 'CONTRACT_MESSAGE':
+      case 'SIDECHAIN_STATE_PATCH':
       {
         const prTyped = Message.tryParseMessageBody(message);
         if (!prTyped.ok || prTyped.value === null || typeof prTyped.value !== 'object' || Array.isArray(prTyped.value)) {
@@ -3660,6 +3716,113 @@ class Peer extends Service {
       default:
         this.emit('debug', `Unhandled Generic Message: ${msg.type}`);
         break;
+      case 'SIDECHAIN_STATE_PATCH': {
+        const body = msg.object || msg;
+        const parsed = sidechainState.parseSidechainStatePatchMessage(body);
+        if (!parsed.ok) {
+          this.emit('warning', `[FABRIC:PEER] SIDECHAIN_STATE_PATCH rejected: ${parsed.error}`);
+          break;
+        }
+        const proposal = parsed.proposal;
+        const validators = this._distributedFederationValidatorsFromSettings();
+        const threshold = this._distributedFederationThresholdFromSettings();
+        // Fail closed on the network path (matches CONTRACT_MESSAGE patch allow-lists
+        // and gossipNetwork `observe` policy). Unconfigured peers must not emit or
+        // mesh-flood attacker-controlled RFC6902 patches from any session peer.
+        if (!validators.length) {
+          this.emit('warning',
+            '[FABRIC:PEER] SIDECHAIN_STATE_PATCH rejected: no federation validators configured');
+          break;
+        }
+        const msgBuf = Buffer.from(
+          sidechainState.signingStringForSidechainStatePatch(proposal),
+          'utf8'
+        );
+        const witness = proposal.federationWitness || null;
+        if (!witness || !verifyFederationWitnessOnMessage(msgBuf, witness, validators, threshold)) {
+          this.emit('warning', '[FABRIC:PEER] SIDECHAIN_STATE_PATCH federationWitness missing or invalid');
+          break;
+        }
+        // Commitment-level replay: a new AMP envelope can re-carry the same patch.
+        const claim = this._claimLogicalRegistrationOrPunish(
+          'SIDECHAIN_STATE_PATCH',
+          proposal,
+          signerPubkeyHex || null,
+          punishOrigin
+        );
+        if (claim.duplicate) break;
+        this.emit('sidechain:patch', {
+          proposal,
+          federationWitness: proposal.federationWitness || null,
+          signer: signerPubkeyHex || null,
+          origin
+        });
+        // Observe-only: do not mesh-relay (gossipNetwork SIDECHAIN_STATE_PATCH = observe).
+        break;
+      }
+      case 'FederationSignRequest': {
+        const body = (msg.object && typeof msg.object === 'object') ? msg.object : msg;
+        const validators = this._distributedFederationValidatorsFromSettings();
+        if (!validators.length) {
+          this.emit('warning',
+            '[FABRIC:PEER] FederationSignRequest ignored: no federation validators configured');
+          break;
+        }
+        const validatorSet = new Set(validators.map((v) => normalizePeerPubkeyHex(v)).filter(Boolean));
+        if (!signerPubkeyHex || !authoritySetHasPubkey(validatorSet, signerPubkeyHex)) {
+          this.emit('warning',
+            '[FABRIC:PEER] FederationSignRequest rejected: AMP signer is not a federation validator');
+          break;
+        }
+        const epoch = body.epoch;
+        const digest = body.commitmentDigest != null ? String(body.commitmentDigest).trim() : '';
+        if (!epoch || typeof epoch !== 'object' || !digest) {
+          this.emit('warning',
+            '[FABRIC:PEER] FederationSignRequest rejected: epoch and commitmentDigest required');
+          break;
+        }
+        if (epochCommitmentDigestHex(epoch) !== digest) {
+          this.emit('warning',
+            '[FABRIC:PEER] FederationSignRequest rejected: commitmentDigest mismatch');
+          break;
+        }
+        this.emit('federation:sign-request', {
+          request: body,
+          signer: signerPubkeyHex || null,
+          origin
+        });
+        // Observe-only: do not mesh-flood unauthenticated federation protocol traffic.
+        break;
+      }
+      case 'FederationSignResponse': {
+        const body = (msg.object && typeof msg.object === 'object') ? msg.object : msg;
+        const validators = this._distributedFederationValidatorsFromSettings();
+        if (!validators.length) {
+          this.emit('warning',
+            '[FABRIC:PEER] FederationSignResponse ignored: no federation validators configured');
+          break;
+        }
+        const validatorSet = new Set(validators.map((v) => normalizePeerPubkeyHex(v)).filter(Boolean));
+        if (!signerPubkeyHex || !authoritySetHasPubkey(validatorSet, signerPubkeyHex)) {
+          this.emit('warning',
+            '[FABRIC:PEER] FederationSignResponse rejected: AMP signer is not a federation validator');
+          break;
+        }
+        const responsePubkey = body.pubkey != null ? normalizePeerPubkeyHex(body.pubkey) : '';
+        if (responsePubkey && normalizePeerPubkeyHex(signerPubkeyHex) !== responsePubkey &&
+            !authoritySetHasPubkey(new Set([responsePubkey]), signerPubkeyHex)) {
+          this.emit('warning',
+            '[FABRIC:PEER] FederationSignResponse rejected: AMP signer does not match response.pubkey');
+          break;
+        }
+        this.emit('federation:sign-response', {
+          response: body,
+          signer: signerPubkeyHex || null,
+          origin
+        });
+        // Observe-only: do not mesh-flood (same policy as FederationSignRequest).
+        break;
+      }
       case 'INVENTORY_REQUEST':
         // Upstream Inventory request (typically for documents). Emit an 'inventory'
         // event so higher-level services (e.g. hub) can respond appropriately.
@@ -4282,10 +4445,13 @@ class Peer extends Service {
     });
 
     handler.decrypt.on('data', (data) => {
+      this._recordPeerBandwidth(target, 'in', data);
       this._handleFabricMessage(data, { name: target });
     });
 
+    socket._fabricPeerAddress = target;
     socket._writeFabric = (msg) => {
+      this._recordPeerBandwidth(target, 'out', msg);
       this._writeFabric(msg, handler);
     };
 
@@ -5406,18 +5572,42 @@ class Peer extends Service {
 
   /**
    * When a publish body declares authority arrays, the AMP wire signer must be
-   * one of them. Bodies with no authorities are allowed (observe-only; empty
-   * patch allow-list). Missing signer (local seed) is allowed.
+   * present and listed. Bodies with no authorities are allowed (observe-only;
+   * empty patch allow-list). Missing signer fail-closes when authorities exist.
    * @param {object} object
    * @param {string|null} signerPubkeyHex
    * @returns {boolean}
    */
   _contractPublishSignerAuthorized (object, signerPubkeyHex = null) {
-    const authorities = collectContractAuthorityPubkeys(object);
-    if (!authorities.size) return true;
-    const pub = normalizePeerPubkeyHex(signerPubkeyHex);
-    if (!pub) return true;
-    return authoritySetHasPubkey(authorities, pub);
+    return contractPublishSignerAuthorizedFn(object, signerPubkeyHex);
+  }
+
+  /**
+   * Federation validator pubkeys for sidechain patch verification (settings or env).
+   * @returns {string[]}
+   */
+  _distributedFederationValidatorsFromSettings () {
+    const env = process.env.FABRIC_DISTRIBUTED_FEDERATION_VALIDATORS;
+    if (env && String(env).trim()) {
+      return String(env).split(',').map((s) => s.trim()).filter(Boolean);
+    }
+    const v = this.settings.distributed && this.settings.distributed.federation &&
+      this.settings.distributed.federation.validators;
+    return Array.isArray(v) ? v.slice() : [];
+  }
+
+  /**
+   * @returns {number}
+   */
+  _distributedFederationThresholdFromSettings () {
+    // Env threshold is independent of how validators were supplied (settings vs env).
+    const envThreshold = process.env.FABRIC_DISTRIBUTED_FEDERATION_THRESHOLD;
+    if (envThreshold != null && String(envThreshold).trim()) {
+      return Math.max(1, Number(envThreshold) || 1);
+    }
+    const t = this.settings.distributed && this.settings.distributed.federation &&
+      this.settings.distributed.federation.threshold;
+    return Math.max(1, Number(t) || 1);
   }
 
   /**
@@ -5497,16 +5687,7 @@ class Peer extends Service {
   _signerMayPatchContract (contractId, signerPubkeyHex) {
     const set = this._contractPatchAllowList[String(contractId || '')];
     if (!set || !set.size) return false; // fail closed: no parties recorded
-    const h = normalizePeerPubkeyHex(signerPubkeyHex);
-    if (!h) return false;
-    if (set.has(h)) return true;
-    // Tolerate allow-lists populated with compressed 66-char hex before normalize.
-    if (h.length === 64) {
-      for (const entry of set) {
-        if (typeof entry === 'string' && entry.length === 66 && entry.slice(2) === h) return true;
-      }
-    }
-    return false;
+    return authoritySetHasPubkey(set, signerPubkeyHex);
   }
 
   /**
@@ -5529,7 +5710,9 @@ class Peer extends Service {
       if ((socket._fabricPingOutstanding | 0) >= 1) return;
       socket._fabricPingOutstanding = 1;
       try {
-        encryptWrite.write(P2P_PING.toBuffer());
+        const buf = P2P_PING.toBuffer();
+        encryptWrite.write(buf);
+        this._recordPeerBandwidth(socket._fabricPeerAddress, 'out', buf);
       } catch (exception) {
         socket._fabricPingOutstanding = 0;
         if (exception && (exception.code === 'EPIPE' || exception.code === 'ECONNRESET')) {
@@ -5548,6 +5731,7 @@ class Peer extends Service {
     socket._lastMessage = null;
     socket._messageLog = [];
     socket._noiseClient = client;
+    socket._fabricPeerAddress = name;
 
     this._startFabricPingKeepalive(socket, client.encrypt);
 
@@ -5559,6 +5743,7 @@ class Peer extends Service {
 
     // Map write function
     socket._writeFabric = (msg) => {
+      this._recordPeerBandwidth(name, 'out', msg);
       this._writeFabric(msg, client);
     };
 

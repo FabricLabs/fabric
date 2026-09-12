@@ -328,6 +328,7 @@ Other **`Store`** subclasses add domain behavior — for example **`Datastore`**
 |------|-------------|
 | [QUICKSTART.md][quickstart-guide] | Install and first commands |
 | [docs/CONTRACTS.md](docs/CONTRACTS.md) | Contracts as interfaces; Hub registry (Hub publishes first) |
+| [docs/FEDERATED_SETTLEMENT.md](docs/FEDERATED_SETTLEMENT.md) | Two-way peg, destination lock, privacy / instruments tracks |
 | [docs/CLI.md](docs/CLI.md) | Terminal `/contracts`, refunds, verbosity |
 | [AGENTS.md](AGENTS.md) | Agent services, lifecycle, workers |
 | [SECURITY.md](SECURITY.md) | Disclosure process, release hygiene |
