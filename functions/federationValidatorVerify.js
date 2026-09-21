@@ -33,6 +33,7 @@ function verifyLocalEpochDigests (epoch, localSidechain, localContracts, opts = 
   if (!epoch || typeof epoch !== 'object') {
     return { ok: false, error: 'epoch required' };
   }
+  let completedChecks = 0;
 
   if (epoch.contracts && typeof epoch.contracts === 'object') {
     const remoteRoot = epoch.contracts.merkleRoot || epoch.contracts.stateDigest;
@@ -46,8 +47,11 @@ function verifyLocalEpochDigests (epoch, localSidechain, localContracts, opts = 
       if (String(remoteRoot) !== String(localRoot)) {
         return { ok: false, error: 'contracts digest mismatch vs local snapshot' };
       }
+      completedChecks++;
     } else if (remoteRoot && localRoot && String(remoteRoot) !== String(localRoot)) {
       return { ok: false, error: 'contracts digest mismatch vs local snapshot' };
+    } else if (remoteRoot && localRoot) {
+      completedChecks++;
     }
   }
 
@@ -63,11 +67,17 @@ function verifyLocalEpochDigests (epoch, localSidechain, localContracts, opts = 
       if (String(remoteDig) !== String(localDig)) {
         return { ok: false, error: 'sidechain digest mismatch vs local snapshot' };
       }
+      completedChecks++;
     } else if (remoteDig && localDig && String(remoteDig) !== String(localDig)) {
       return { ok: false, error: 'sidechain digest mismatch vs local snapshot' };
+    } else if (remoteDig && localDig) {
+      completedChecks++;
     }
   }
 
+  if (failClosed && completedChecks === 0) {
+    return { ok: false, error: 'no validator checks completed' };
+  }
   return { ok: true };
 }
 
@@ -81,6 +91,11 @@ function verifyLocalEpochDigests (epoch, localSidechain, localContracts, opts = 
 function verifyReserveConservation (content) {
   if (!content || typeof content !== 'object') return { ok: true };
   if (!content[federationReserveLedger.RESERVE_KEY]) return { ok: true };
+  // Reject invalid numerics before readReserve normalizes negatives to 0.
+  const schema = federationReserveLedger.validateReserveObjectSchema(
+    content[federationReserveLedger.RESERVE_KEY]
+  );
+  if (!schema.ok) return schema;
   const reserve = federationReserveLedger.readReserve(content);
   const cons = federationReserveLedger.assertConservation(reserve);
   if (!cons.ok) return cons;
@@ -150,6 +165,9 @@ function evaluateValidatorSignGate (opts = {}) {
     checks.push('program-run-recompute');
   }
 
+  if (failClosed && checks.length === 0) {
+    return { ok: false, error: 'no validator checks completed', checks };
+  }
   return { ok: true, checks };
 }
 

@@ -13,6 +13,10 @@ const {
   defaultFederationSidechainPolicy,
   RESERVE_KEY
 } = require('../functions/federationReserveLedger');
+const {
+  parseStatechainPathPolicy,
+  validatePatchesAgainstPolicy
+} = require('../functions/sidechainState');
 
 describe('federationReserveLedger', function () {
   it('starts empty and conserves', function () {
@@ -100,6 +104,31 @@ describe('federationReserveLedger', function () {
     assert.strictEqual(settled.reserve.withdrawals[0].status, 'settled');
   });
 
+  it('settlePegOutPayout does not mutate caller withdrawal when conservation fails', function () {
+    const credited = applyPegInCredit({}, {
+      txid: '55'.repeat(32),
+      vout: 0,
+      amountSats: 50000,
+      confirmations: 200
+    }, { vaultConfirmedSats: 50000 });
+    assert.ok(credited.ok);
+    const burn = applyPegOutBurn(credited.content, {
+      requestId: '66'.repeat(32),
+      amountSats: 20000,
+      destinationAddress: 'bcrt1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh'
+    });
+    assert.ok(burn.ok);
+    const originalRow = burn.content[RESERVE_KEY].withdrawals[0];
+    assert.strictEqual(originalRow.status, 'pending');
+
+    const failed = settlePegOutPayout(burn.content, '66'.repeat(32), {
+      vaultConfirmedSats: 0
+    });
+    assert.strictEqual(failed.ok, false);
+    assert.strictEqual(originalRow.status, 'pending');
+    assert.ok(!originalRow.settledAt);
+  });
+
   it('validateLedgerPatch allows full reserve object and rejects nested invent / bad schema', function () {
     const credited = applyPegInCredit({}, {
       txid: '44'.repeat(32),
@@ -153,5 +182,19 @@ describe('federationReserveLedger', function () {
     assert.ok(p.deniedPathPrefixes.includes('/balances'));
     assert.ok(p.allowedPathPrefixes.includes('/federationReserve'));
     assert.strictEqual(p.allowEmptyPolicy, false);
+  });
+
+  it('defaultFederationSidechainPolicy enforces those prefixes through the patch gate', function () {
+    const policy = parseStatechainPathPolicy(defaultFederationSidechainPolicy());
+    const check = (path) => validatePatchesAgainstPolicy(
+      [{ op: 'add', path, value: 1 }],
+      policy
+    ).ok;
+
+    assert.strictEqual(check(`/${RESERVE_KEY}/withdrawals/0`), true);
+    assert.strictEqual(check('/mint'), false);
+    assert.strictEqual(check('/balances/attacker'), false);
+    // Sibling keys must not inherit an allowed prefix.
+    assert.strictEqual(check(`/${RESERVE_KEY}Shadow`), false);
   });
 });

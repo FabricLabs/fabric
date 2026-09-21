@@ -253,7 +253,12 @@ function settlePegOutPayout (content, requestId, opts = {}) {
   }
   const nextContent = Object.assign({}, content && typeof content === 'object' ? content : {});
   const reserve = readReserve(nextContent);
-  const row = reserve.withdrawals.find((w) => String(w.requestId || '').toLowerCase() === id);
+  const rowIndex = reserve.withdrawals.findIndex(
+    (w) => String(w.requestId || '').toLowerCase() === id
+  );
+  // Clone before mutation so a failed assertConservation cannot mark the caller's row settled
+  // (readReserve only shallow-copies the withdrawals array).
+  const row = rowIndex >= 0 ? Object.assign({}, reserve.withdrawals[rowIndex]) : null;
   if (!row) return { ok: false, error: 'withdrawal not found' };
   if (String(row.status || '') === 'settled') {
     return { ok: false, error: 'withdrawal already settled' };
@@ -279,6 +284,7 @@ function settlePegOutPayout (content, requestId, opts = {}) {
   reserve.pendingBurnsSats -= amountSats;
   row.status = 'settled';
   row.settledAt = opts.settledAt || new Date().toISOString();
+  reserve.withdrawals[rowIndex] = row;
 
   const cons = assertConservation(reserve);
   if (!cons.ok) return cons;

@@ -88,4 +88,42 @@ describe('federationValidatorVerify', function () {
     });
     assert.strictEqual(gate.ok, false);
   });
+
+  it('fail-closed rejects empty epoch / no completed checks', function () {
+    const empty = verifyLocalEpochDigests({}, null, null, { failClosed: true });
+    assert.strictEqual(empty.ok, false);
+    assert.match(empty.error, /no validator checks completed/);
+
+    const gate = evaluateValidatorSignGate({ failClosed: true });
+    assert.strictEqual(gate.ok, false);
+    assert.match(gate.error, /no validator checks completed/);
+  });
+
+  it('fail-closed accepts contracts-only when digests match', function () {
+    const dig = 'dd'.repeat(32);
+    const r = verifyLocalEpochDigests(
+      { contracts: { stateDigest: dig } },
+      null,
+      { stateDigest: dig },
+      { failClosed: true }
+    );
+    assert.strictEqual(r.ok, true);
+  });
+
+  it('rejects negative outstandingSats before readReserve normalization', function () {
+    const forged = {
+      [RESERVE_KEY]: {
+        outstandingSats: -1,
+        pendingBurnsSats: 0,
+        vaultConfirmedSats: 0,
+        creditedSats: 0,
+        burnedSats: 0,
+        deposits: [],
+        withdrawals: []
+      }
+    };
+    const r = verifyReserveConservation(forged);
+    assert.strictEqual(r.ok, false);
+    assert.match(r.error, /outstandingSats/);
+  });
 });

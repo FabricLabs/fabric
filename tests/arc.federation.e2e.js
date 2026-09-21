@@ -901,7 +901,11 @@ describe('ARC / Federation L1 regtest withdrawals', function () {
     assert.ok(spendTxid);
     await confirm(1);
     const received = await rpc('getreceivedbyaddress', [dest]);
-    assert.ok(received > 0.009, `expected withdrawal on L1, got ${received}`);
+    assert.strictEqual(
+      Math.round(received * 1e8),
+      10000,
+      `expected withdrawal on L1, got ${received}`
+    );
 
     const decoded = bitcoin.Transaction.fromHex(fundedHex);
     const vout = decoded.outs.findIndex((o) => {
@@ -910,6 +914,17 @@ describe('ARC / Federation L1 regtest withdrawals', function () {
     });
     const leftover = await rpc('gettxout', [fundTxid, vout]);
     assert.strictEqual(leftover, null);
+
+    // An explicit amountSats pays the request exactly and returns the remainder to
+    // the vault as change; omitting amountSats is the only sweep path.
+    const inputSats = Number(decoded.outs[vout].value);
+    const spent = bitcoin.Transaction.fromHex(fin.txHex);
+    const change = spent.outs.find((o) => {
+      const addr = bitcoin.address.fromOutputScript(Buffer.from(o.script), bitcoin.networks.regtest);
+      return addr === spend.address;
+    });
+    assert.ok(change, 'remainder must return to the vault address as change');
+    assert.strictEqual(Number(change.value), inputSats - 10000 - 1000);
   });
 
   it('spends an unconfirmed (0-conf) vault funding from the mempool', async function () {

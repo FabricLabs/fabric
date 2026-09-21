@@ -57,6 +57,27 @@ describe('@fabric/core/functions/sidechainState', function () {
       sc.validatePatchesAgainstPolicy([{ op: 'add', path: '/app/ok', value: 1 }], policy).ok,
       true
     );
+    // A prefix must match a whole JSON Pointer segment. A bare `startsWith`
+    // would widen `/federationReserve` to `/federationReserveShadow`.
+    assert.strictEqual(
+      sc.validatePatchesAgainstPolicy([{ op: 'add', path: '/application', value: 1 }], policy).ok,
+      false,
+      '/app must not allow the sibling key /application'
+    );
+    assert.strictEqual(
+      sc.validatePatchesAgainstPolicy([{ op: 'add', path: '/applications/x', value: 1 }], policy).ok,
+      false
+    );
+    assert.strictEqual(
+      sc.validatePatchesAgainstPolicy([{
+        op: 'copy',
+        from: '/application',
+        path: '/app/ok'
+      }], policy).ok,
+      false,
+      'sibling-prefix widening must not leak through copy `from`'
+    );
+
     const rootPolicy = sc.parseStatechainPathPolicy({ allowedPathPrefixes: ['/'] });
     assert.strictEqual(
       sc.validatePatchesAgainstPolicy([{ op: 'add', path: '/anywhere', value: 1 }], rootPolicy).ok,

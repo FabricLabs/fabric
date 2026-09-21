@@ -40,5 +40,61 @@ describe('programTaprootBind', function () {
     assert.ok(withRun.leaves.some((l) => l.kind === 'hashlock'));
     assert.ok(withRun.programRunId);
     assert.strictEqual(withRun.hashlock.commitmentHex, '22'.repeat(32));
+    assert.strictEqual(withRun.hashlock.runCommitmentHex, '22'.repeat(32));
+  });
+
+  it('programRunId uses runCommitmentHex not leaf commitment override', function () {
+    const a = new Key();
+    const withRun = composePolicyWithRunHashlock({
+      ladder: {
+        validators: [a.pubkey],
+        threshold: 1,
+        publisher: a.pubkey,
+        network: 'regtest',
+        csvBlocks: 144
+      },
+      run: {
+        programHash: '11'.repeat(32),
+        runCommitmentHex: '22'.repeat(32),
+        commitmentHex: '33'.repeat(32)
+      }
+    });
+    const { programRunId } = require('../functions/contractProgramBind');
+    assert.strictEqual(
+      withRun.programRunId,
+      programRunId('11'.repeat(32), '22'.repeat(32))
+    );
+    assert.notStrictEqual(
+      withRun.programRunId,
+      programRunId('11'.repeat(32), '33'.repeat(32))
+    );
+  });
+
+  it('rejects policy.hashlock and conflicting network', function () {
+    const a = new Key();
+    const policy = {
+      network: 'regtest',
+      internalKeyMode: 'nums',
+      leaves: [],
+      hashlock: { commitmentHex: 'aa'.repeat(32), id: 'pre' }
+    };
+    assert.throws(() => composePolicyWithRunHashlock({
+      policy,
+      run: { runCommitmentHex: 'bb'.repeat(32) }
+    }), /policy\.hashlock/);
+
+    const clean = {
+      network: 'regtest',
+      validators: [a.pubkey],
+      threshold: 1,
+      publisher: a.pubkey,
+      csvBlocks: 144
+    };
+    const ladderPolicy = require('../functions/contractTaproot').synthesizeDefaultLadder(clean);
+    assert.throws(() => composePolicyWithRunHashlock({
+      policy: ladderPolicy,
+      network: 'testnet',
+      run: { runCommitmentHex: 'bb'.repeat(32) }
+    }), /conflicts with policy\.network/);
   });
 });

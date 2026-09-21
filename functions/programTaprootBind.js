@@ -27,7 +27,7 @@ const contractProgramBind = require('./contractProgramBind');
  * @param {string} [run.commitmentHex] Override commitment
  * @param {string} [run.id='hashlock-run']
  * @param {string} [run.pubkeyHex] Optional Schnorr key for preimage+sig path
- * @returns {{ id: string, commitmentHex: string, programHash: string|null, pubkeyHex?: string }}
+ * @returns {{ id: string, commitmentHex: string, runCommitmentHex: string|null, programHash: string|null, pubkeyHex?: string }}
  */
 function hashlockFromProgramRun (run = {}) {
   const runCommitmentHex = String(run.runCommitmentHex || run.runCommitment || '')
@@ -46,6 +46,8 @@ function hashlockFromProgramRun (run = {}) {
   const out = {
     id: run.id ? String(run.id) : 'hashlock-run',
     commitmentHex,
+    // Keep Program-run id material separate from an optional leaf commitment override.
+    runCommitmentHex: /^[0-9a-f]{64}$/.test(runCommitmentHex) ? runCommitmentHex : null,
     programHash
   };
   if (run.pubkeyHex) out.pubkeyHex = String(run.pubkeyHex).trim().toLowerCase();
@@ -72,10 +74,19 @@ function composePolicyWithRunHashlock (opts = {}) {
   if (!policy) {
     throw new Error('composePolicyWithRunHashlock: policy or ladder required');
   }
+  if (policy.hashlock) {
+    throw new Error(
+      'composePolicyWithRunHashlock: policy.hashlock already set; omit it so the Program-run hashlock is composed'
+    );
+  }
+  if (opts.network && policy.network && String(opts.network) !== String(policy.network)) {
+    throw new Error('composePolicyWithRunHashlock: opts.network conflicts with policy.network');
+  }
   const network = opts.network || policy.network || 'regtest';
+  const policyForTree = Object.assign({}, policy, { network });
   const tree = contractTaproot.composeTaprootTree({
     network,
-    policy,
+    policy: policyForTree,
     hashlock: {
       commitmentHex: hashlock.commitmentHex,
       id: hashlock.id,
@@ -83,8 +94,8 @@ function composePolicyWithRunHashlock (opts = {}) {
     },
     extraLeaves: Array.isArray(opts.extraLeaves) ? opts.extraLeaves : []
   });
-  const programRunId = hashlock.programHash
-    ? contractProgramBind.programRunId(hashlock.programHash, hashlock.commitmentHex)
+  const programRunId = (hashlock.programHash && hashlock.runCommitmentHex)
+    ? contractProgramBind.programRunId(hashlock.programHash, hashlock.runCommitmentHex)
     : null;
   return Object.assign({}, tree, {
     hashlock,
