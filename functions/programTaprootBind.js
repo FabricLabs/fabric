@@ -79,10 +79,11 @@ function composePolicyWithRunHashlock (opts = {}) {
       'composePolicyWithRunHashlock: policy.hashlock already set; omit it so the Program-run hashlock is composed'
     );
   }
-  if (opts.network && policy.network && String(opts.network) !== String(policy.network)) {
+  const policyNetwork = policy.network || policy.networkName || null;
+  if (opts.network && policyNetwork && String(opts.network) !== String(policyNetwork)) {
     throw new Error('composePolicyWithRunHashlock: opts.network conflicts with policy.network');
   }
-  const network = opts.network || policy.network || 'regtest';
+  const network = opts.network || policyNetwork || 'regtest';
   const policyForTree = Object.assign({}, policy, { network });
   const tree = contractTaproot.composeTaprootTree({
     network,

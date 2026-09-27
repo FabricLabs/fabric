@@ -97,4 +97,27 @@ describe('programTaprootBind', function () {
       run: { runCommitmentHex: 'bb'.repeat(32) }
     }), /conflicts with policy\.network/);
   });
+
+  it('honors policy.networkName when policy.network is omitted', function () {
+    const a = new Key();
+    const policy = {
+      validators: [a.pubkey],
+      threshold: 1,
+      publisher: a.pubkey,
+      networkName: 'testnet',
+      csvBlocks: 144
+    };
+    const withRun = composePolicyWithRunHashlock({
+      policy,
+      run: { runCommitmentHex: 'bb'.repeat(32) }
+    });
+    assert.ok(withRun.address.startsWith('tb1'));
+    assert.strictEqual(withRun.network, 'testnet');
+
+    assert.throws(() => composePolicyWithRunHashlock({
+      policy,
+      network: 'regtest',
+      run: { runCommitmentHex: 'bb'.repeat(32) }
+    }), /conflicts with policy\.network/);
+  });
 });

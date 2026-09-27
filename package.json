@@ -202,7 +202,7 @@
     "events": "=3.3.0",
     "fast-json-patch": "=3.1.1",
     "javascript-state-machine": "=3.1.0",
-    "jayson": "=4.3.0",
+    "jayson": "=5.0.0",
     "json-pointer": "=0.6.2",
     "length-prefixed-stream": "1.6.0",
     "level": "=10.0.0",
@@ -326,5 +326,13 @@
       "types": "./functions/*.d.ts",
       "require": "./functions/*.js"
     }
+  },
+  "allowScripts": {
+    "@soatok/elliptic-to-noble": true,
+    "@soatok/elliptic-to-noble@9999.0.0": true,
+    "classic-level": true,
+    "classic-level@3.0.0": true,
+    "zeromq": true,
+    "zeromq@6.5.0": true
   }
 }

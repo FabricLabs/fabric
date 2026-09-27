@@ -112,12 +112,16 @@ function writeFabric (peer, buf, report, type) {
     return false;
   }
   const conn = peer.connections[keys[0]];
-  if (!conn || typeof peer._writeFabric !== 'function') {
+  const stream = conn && (conn._noiseHandler || conn._noiseClient);
+  if (!stream || typeof peer._writeFabric !== 'function') {
     report.writes.fail += 1;
     return false;
   }
   try {
-    peer._writeFabric(buf, conn);
+    if (peer._writeFabric(buf, stream) !== true) {
+      report.writes.fail += 1;
+      return false;
+    }
     report.writes.ok += 1;
     if (type) report.writes.types[type] = (report.writes.types[type] || 0) + 1;
     return true;

@@ -5811,27 +5811,35 @@ class Peer extends Service {
     done(null, true);
   }
 
+  /**
+   * Write an AMP frame onto a NOISE encrypt stream.
+   * @param {Buffer} msg
+   * @param {object} stream Noise handler/client (`encrypt.write`)
+   * @returns {boolean} True only when the local encrypt stream accepted the write.
+   */
   _writeFabric (msg, stream) {
     const hash = crypto.createHash('sha256').update(msg).digest('hex');
     this._rememberWireHash(hash);
-    if (!stream || !stream.encrypt) return;
+    if (!stream || !stream.encrypt) return false;
 
     const encrypt = stream.encrypt;
     const isWritable = (encrypt.writable !== false) && !encrypt.writableEnded && !encrypt.destroyed;
 
     if (!isWritable) {
       this.emit('warning', 'Attempted to write to a closed or destroyed stream; skipping.');
-      return;
+      return false;
     }
 
     try {
       encrypt.write(msg);
+      return true;
     } catch (error) {
       if (error && (error.code === 'EPIPE' || error.code === 'ECONNRESET')) {
         this.emit('warning', `Suppressing transient write error (${error.code}) during NOISE write.`);
       } else {
         this.emit('error', error);
       }
+      return false;
     }
   }
 
