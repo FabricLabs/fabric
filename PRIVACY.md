@@ -30,6 +30,14 @@ against a global observer.
 
 ## What is not hidden by default
 
+- **`sensitive` ≠ encrypted** — Message `sensitive: true` zeros the wire
+  `preimage` and refuses to invent a body-hash payment secret; it does **not**
+  encrypt the AMP body. Relays and connected peers that receive the frame still
+  see plaintext fields. Confidentiality requires an application seal
+  (`documentSealedExchange`, `groupChatSeal` / `onionChatSeal`, or similar) or
+  transport that the hop cannot read. See
+  [docs/MESSAGE_BODY.md](docs/MESSAGE_BODY.md#sensitive-is-not-encryption) and
+  [MESSAGES.md](MESSAGES.md#mesh-chat-model-gossip-first).
 - **Direct dial metadata** — NOISE encrypts stream payloads; a direct TCP peer
   still sees your IP. Prefer `P2P_FORWARD` via a relay when the destination must
   not learn your address; use VPN/Tor at the operator layer for stronger cover.

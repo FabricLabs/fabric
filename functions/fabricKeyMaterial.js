@@ -67,6 +67,32 @@ function classifyFabricKeyMaterial (value) {
 }
 
 /**
+ * Values accepted in `FABRIC_XPRV` (and related identity slots).
+ * Private: BIP32 `xprv`/`tprv`. Public / combined: `xpub`/`tpub` or a
+ * compressed/uncompressed secp256k1 pubkey hex (watch-only Hub / MuSig aggregate).
+ *
+ * @param {*} value
+ * @returns {Object} `kind` plus `xprv`, `xpub`, or `public`
+ */
+function classifyFabricIdentityEnvValue (value) {
+  const trimmed = value == null ? '' : String(value).trim();
+  if (!trimmed) return { kind: null };
+  if (trimmed.startsWith('xprv') || trimmed.startsWith('tprv')) {
+    return { kind: 'xprv', xprv: trimmed };
+  }
+  if (trimmed.startsWith('xpub') || trimmed.startsWith('tpub')) {
+    return { kind: 'xpub', xpub: trimmed };
+  }
+  if (/^(02|03)[0-9a-fA-F]{64}$/.test(trimmed)) {
+    return { kind: 'pubkey', public: trimmed.toLowerCase() };
+  }
+  if (/^04[0-9a-fA-F]{128}$/.test(trimmed)) {
+    return { kind: 'pubkey', public: trimmed.toLowerCase() };
+  }
+  return { kind: 'unknown' };
+}
+
+/**
  * Key constructor settings from process/env identity variables.
  * Precedence: `FABRIC_XPRV` → `FABRIC_SEED` → `FABRIC_MNEMONIC`.
  *
@@ -74,10 +100,10 @@ function classifyFabricKeyMaterial (value) {
  * @returns {Object|null} Key settings with `xprv`, `seed`, or `mnemonic`
  */
 function keySettingsFromEnv (env = process.env) {
-  const xprv = String((env && env.FABRIC_XPRV) || '').trim();
-  if (xprv.startsWith('xprv') || xprv.startsWith('tprv')) {
-    return { xprv };
-  }
+  const identitySlot = classifyFabricIdentityEnvValue((env && env.FABRIC_XPRV) || '');
+  if (identitySlot.kind === 'xprv') return { xprv: identitySlot.xprv };
+  if (identitySlot.kind === 'xpub') return { xpub: identitySlot.xpub };
+  if (identitySlot.kind === 'pubkey') return { public: identitySlot.public };
 
   const seedRaw = String((env && env.FABRIC_SEED) || '').trim();
   if (seedRaw) {
@@ -95,6 +121,12 @@ function keySettingsFromEnv (env = process.env) {
     if (classified.kind === 'seedHex') return { seed: classified.seed };
   }
 
+  const xpub = String((env && env.FABRIC_XPUB) || '').trim();
+  if (xpub.startsWith('xpub') || xpub.startsWith('tpub')) return { xpub };
+  const pubkey = String((env && env.FABRIC_PUBKEY) || '').trim();
+  const pubClassified = classifyFabricIdentityEnvValue(pubkey);
+  if (pubClassified.kind === 'pubkey') return { public: pubClassified.public };
+
   return null;
 }
 
@@ -103,5 +135,6 @@ module.exports = {
   MAX_SEED_BYTES,
   parseRawSeedHex,
   classifyFabricKeyMaterial,
+  classifyFabricIdentityEnvValue,
   keySettingsFromEnv
 };

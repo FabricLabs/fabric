@@ -1186,7 +1186,10 @@ describe('contractProgramBind / Machine ↔ redeemable withdrawals', function ()
     const missing = validateWithdrawalRequest({
       stateDigest: tip.stateDigest,
       bitcoinBlockHash: tip.bitcoinBlockHash,
-      destinationAddress: 'bcrt1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq3l9y0'
+      destinationAddress: 'bcrt1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq3l9y0',
+      amountSats: 10000,
+      feeSats: 500,
+      requestId: '00'.repeat(32)
     }, tip);
     assert.strictEqual(missing.ok, false);
     assert.match(missing.error, /programHash|runCommitment/i);
@@ -1195,8 +1198,11 @@ describe('contractProgramBind / Machine ↔ redeemable withdrawals', function ()
       stateDigest: tip.stateDigest,
       bitcoinBlockHash: tip.bitcoinBlockHash,
       destinationAddress: 'bcrt1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq3l9y0',
+      amountSats: 10000,
+      feeSats: 500,
       programHash: match.programHash,
-      runCommitmentHex: 'ff'.repeat(32)
+      runCommitmentHex: 'ff'.repeat(32),
+      requestId: '00'.repeat(32)
     }, tip);
     assert.strictEqual(stale.ok, false);
     assert.match(stale.error, /runCommitmentHex/);
@@ -1205,6 +1211,7 @@ describe('contractProgramBind / Machine ↔ redeemable withdrawals', function ()
       tip,
       contractId: tip.contractId,
       destinationAddress: 'bcrt1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq3l9y0',
+      amountSats: 10000,
       feeSats: 500
     });
     assert.strictEqual(okReq.programHash, match.programHash);
