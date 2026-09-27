@@ -1260,7 +1260,22 @@ function prepareDecayMigrationPsbt (opts = {}) {
     throw new Error(`migration destination must be child address ${childAddr}`);
   }
   if (opts.amountSats != null) {
-    throw new Error('partial amountSats migrations are forbidden; migrate the full UTXO (omit amountSats)');
+    const network = networkForFabricName(built.network);
+    const tx = bitcoin.Transaction.fromHex(String(opts.fundedTxHex || '').trim());
+    const vaultAddr = String(opts.vaultAddress || built.address).trim();
+    const vout = findP2trVoutForAddress(tx, vaultAddr, network);
+    if (vout < 0) throw new Error('Funding tx has no P2TR output matching vault address.');
+    const out = tx.outs[vout];
+    const inputSats = typeof out.value === 'bigint' ? Number(out.value) : Number(out.value);
+    if (!Number.isFinite(inputSats) || inputSats <= 0) throw new Error('Invalid vault output value.');
+    const fee = Math.max(1, Math.round(Number(opts.feeSats || 1000)));
+    const fullSats = inputSats - fee;
+    const amount = Number(opts.amountSats);
+    if (!Number.isSafeInteger(amount) || amount !== fullSats) {
+      throw new Error(
+        `partial amountSats migrations are forbidden; amountSats must equal the full UTXO minus fee (${fullSats})`
+      );
+    }
   }
 
   const result = prepareLeafPsbt({

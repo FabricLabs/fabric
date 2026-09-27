@@ -687,6 +687,93 @@ describe('contractTaproot', function () {
       amountSats: 10000,
       ctx: { utxoAgeBlocks: 100 }
     }), /partial amountSats migrations are forbidden/);
+
+    const full = prepareDecayMigrationPsbt({
+      policy,
+      fundedTxHex: funding.toHex(),
+      vaultAddress: built.address,
+      feeSats: 1000,
+      amountSats: 49000,
+      ctx: { utxoAgeBlocks: 100 }
+    });
+    assert.strictEqual(full.action, 'migrate');
+    assert.strictEqual(full.amountSats, 49000);
+    assert.ok(full.psbtBase64);
+  });
+
+  it('prepareWithdrawalFromRequest prepares a full-UTXO migrate', function () {
+    const {
+      buildWithdrawalRequest,
+      prepareWithdrawalFromRequest
+    } = require('../functions/contractSpend');
+    const policy = normalizeContractSpendPolicy({
+      network: 'regtest',
+      publisher: pk(0),
+      decay: { mode: 'both', migrateKeys: [pk(0), pk(1)], migrateThreshold: 1 },
+      keySets: {
+        full: keys.slice(0, 4).map((k) => k.pubkey),
+        mid: keys.slice(0, 2).map((k) => k.pubkey)
+      },
+      tiers: [
+        { id: 't0', threshold: 2, keys: 'full', after: null, until: { type: 'csv', blocks: 100 } },
+        { id: 't1', threshold: 1, keys: 'mid', after: { type: 'csv', blocks: 100 }, until: null }
+      ]
+    });
+    const built = buildContractTaproot(policy);
+    const network = bitcoin.networks.regtest;
+    const funding = new bitcoin.Transaction();
+    funding.version = 2;
+    funding.addInput(Buffer.alloc(32), 0);
+    funding.addOutput(bitcoin.address.toOutputScript(built.address, network), 50_000n);
+    const sweep = prepareDecayMigrationPsbt({
+      policy,
+      fundedTxHex: funding.toHex(),
+      vaultAddress: built.address,
+      feeSats: 1000,
+      ctx: { utxoAgeBlocks: 100 }
+    });
+    const tip = {
+      contractId: 'ab'.repeat(32),
+      stateDigest: '11'.repeat(32),
+      bitcoinBlockHash: '22'.repeat(32),
+      clock: 1
+    };
+    const spend = { policy, address: built.address, network: 'regtest' };
+    const req = buildWithdrawalRequest({
+      tip,
+      destinationAddress: sweep.childAddress,
+      amountSats: 49000,
+      feeSats: 1000,
+      action: 'migrate',
+      vaultAddress: built.address
+    });
+    const prepared = prepareWithdrawalFromRequest({
+      request: req,
+      tip,
+      spend,
+      fundedTxHex: funding.toHex(),
+      ctx: { utxoAgeBlocks: 100 }
+    });
+    assert.strictEqual(prepared.action, 'migrate');
+    assert.strictEqual(prepared.amountSats, 49000);
+    assert.strictEqual(prepared.requestId, req.requestId);
+    assert.ok(prepared.psbtBase64);
+
+    const partial = buildWithdrawalRequest({
+      tip,
+      destinationAddress: sweep.childAddress,
+      amountSats: 10000,
+      feeSats: 1000,
+      action: 'migrate',
+      vaultAddress: built.address
+    });
+    assert.throws(() => prepareWithdrawalFromRequest({
+      request: partial,
+      tip,
+      spend,
+      fundedTxHex: funding.toHex(),
+      ctx: { utxoAgeBlocks: 100 }
+    }), /partial amountSats migrations are forbidden/);
   });
 });
 
