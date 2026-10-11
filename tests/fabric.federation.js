@@ -181,5 +181,25 @@ describe('@fabric/core/types/federation', function () {
         params: ['param1', 'param2']
       });
     });
+
+    it('can sign and verify with BLS when signatureScheme is bls', function () {
+      const federation = new Federation({ signatureScheme: 'bls' });
+      assert.strictEqual(federation.signatureScheme, 'bls');
+      const message = 'federation bls message';
+      const member = new Key({ private: '4444444444444444444444444444444444444444444444444444444444444444' });
+      federation.addMember({
+        private: member.private.toString('hex'),
+        public: member.public.encodeCompressed('hex')
+      });
+      const signature = federation.sign(message);
+      assert.ok(Buffer.isBuffer(signature));
+      assert.strictEqual(signature.length, 96);
+      assert.strictEqual(federation.verify(message, signature), true);
+      assert.strictEqual(federation.verify(message, Buffer.alloc(96, 1)), false);
+
+      const multiSig = federation.createMultiSignature(message);
+      assert.strictEqual(multiSig.scheme, 'bls');
+      assert.strictEqual(federation.verifyMultiSignature(multiSig, 1), true);
+    });
   });
 });

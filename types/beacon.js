@@ -16,6 +16,7 @@ const Actor = require('./actor');
 const Message = require('./message');
 const Chain = require('./chain');
 const beaconFederationSigning = require('../functions/beaconFederationSigning');
+const bls = require('../functions/bls');
 
 const SATS_PER_BTC = 100_000_000;
 const BEACON_CHAIN_PATH = 'beacon/CHAIN';
@@ -33,6 +34,7 @@ class Beacon extends Actor {
       mineOnStart: true,
       federationValidators: [],
       federationThreshold: 1,
+      federationSignatureScheme: 'schnorr',
       federationWitnessFailClosed: true,
       // When true (or when federation validators are set), also follow bitcoind
       // `block` events on regtest so every validator advances from local L1 tips.
@@ -49,6 +51,7 @@ class Beacon extends Actor {
       ? this.settings.federationValidators.slice()
       : [];
     this._federationThreshold = Math.max(1, Number(this.settings.federationThreshold) || 1);
+    this._federationSignatureScheme = bls.normalizeSignatureScheme(this.settings.federationSignatureScheme);
     this._getSidechainSnapshotForEpoch = null;
     this._getContractsSnapshotForEpoch = null;
     this._pendingEpochRounds = new Map();
@@ -94,6 +97,7 @@ class Beacon extends Actor {
    * @param {Object} [deps.key]
    * @param {Array.<string>} [deps.federationValidators]
    * @param {number} [deps.federationThreshold]
+   * @param {string} [deps.federationSignatureScheme] `schnorr` (default) or `bls`
    * @param {function(): (Object|null)} [deps.getSidechainSnapshotForEpoch]
    * @param {function(): (Object|null)} [deps.getContractsSnapshotForEpoch]
    */
@@ -106,6 +110,10 @@ class Beacon extends Actor {
     }
     if (deps.federationThreshold != null) {
       this._federationThreshold = Math.max(1, Number(deps.federationThreshold) || 1);
+    }
+    if (deps.federationSignatureScheme != null) {
+      this._federationSignatureScheme = bls.normalizeSignatureScheme(deps.federationSignatureScheme);
+      this.settings.federationSignatureScheme = this._federationSignatureScheme;
     }
     if (deps.federationWitnessFailClosed != null) {
       this.settings.federationWitnessFailClosed = deps.federationWitnessFailClosed !== false;
@@ -125,7 +133,8 @@ class Beacon extends Actor {
   getFederationPolicy () {
     return {
       validators: this._federationValidators.slice(),
-      threshold: this._federationThreshold
+      threshold: this._federationThreshold,
+      signatureScheme: this._federationSignatureScheme
     };
   }
 
@@ -190,6 +199,18 @@ class Beacon extends Actor {
     const pk = this._compressedPubkeyHex();
     if (!pk || !this._federationValidators.includes(pk)) return null;
     const msg = Buffer.from(beaconFederationSigning.signingStringForBeaconEpoch(epochPayload), 'utf8');
+    if (this._federationSignatureScheme === bls.SCHEME_BLS) {
+      try {
+        const bundle = bls.createFederationBlsBundle(msg, this.key);
+        return {
+          version: 1,
+          scheme: bls.SCHEME_BLS,
+          signatures: { [pk]: bundle }
+        };
+      } catch (_) {
+        return null;
+      }
+    }
     let sig;
     try {
       sig = this.key.signSchnorr(msg);
@@ -225,7 +246,11 @@ class Beacon extends Actor {
 
     const round = beaconFederationSigning.createRound(
       fullEpoch,
-      { validators: this._federationValidators, threshold: this._federationThreshold },
+      {
+        validators: this._federationValidators,
+        threshold: this._federationThreshold,
+        signatureScheme: this._federationSignatureScheme
+      },
       localWitness
     );
 
@@ -473,6 +498,12 @@ class Beacon extends Actor {
     if (computed !== digest) {
       return { ok: false, error: 'commitmentDigest mismatch' };
     }
+    const requestedScheme = signRequest.signatureScheme != null
+      ? bls.normalizeSignatureScheme(signRequest.signatureScheme)
+      : null;
+    if (requestedScheme && requestedScheme !== this._federationSignatureScheme) {
+      return { ok: false, error: 'federation signature scheme mismatch' };
+    }
 
     let round = this._pendingEpochRounds.get(digest);
     if (!round) {
@@ -487,7 +518,11 @@ class Beacon extends Actor {
     const validators = this._federationValidators.slice();
     const threshold = this._federationThreshold;
 
-    round = beaconFederationSigning.createRound(epoch, { validators, threshold });
+    round = beaconFederationSigning.createRound(epoch, {
+      validators,
+      threshold,
+      signatureScheme: this._federationSignatureScheme
+    });
     this._pendingEpochRounds.set(digest, round);
     try {
       const doc = beaconFederationSigning.loadPendingDoc(this.fs);
@@ -530,13 +565,20 @@ class Beacon extends Actor {
     if (!round) return { ok: false, error: 'unknown pending epoch round' };
 
     const msg = beaconFederationSigning.messageBufferForPayload(round.payload);
-    let sig;
+    const scheme = bls.normalizeSignatureScheme(
+      round.signatureScheme || (round.witness && round.witness.scheme) || this._federationSignatureScheme
+    );
+    let signatureHex;
     try {
-      sig = this.key.signSchnorr(msg);
+      if (scheme === bls.SCHEME_BLS) {
+        signatureHex = JSON.stringify(bls.createFederationBlsBundle(msg, this.key));
+      } else {
+        const sig = this.key.signSchnorr(msg);
+        signatureHex = Buffer.isBuffer(sig) ? sig.toString('hex') : String(sig);
+      }
     } catch (err) {
       return { ok: false, error: err && err.message ? err.message : 'sign failed' };
     }
-    const signatureHex = Buffer.isBuffer(sig) ? sig.toString('hex') : String(sig);
     const response = beaconFederationSigning.encodeSignResponse(digest, pk, signatureHex);
     const submit = await this.submitFederationEpochSignature(digest, pk, signatureHex);
     return { ok: true, response, submit };

@@ -8,6 +8,7 @@
  */
 
 const sidechainState = require('./sidechainState');
+const { normalizeSignatureScheme } = require('./bls');
 
 /**
  * Setup-phase manifest schema (v1).
@@ -29,7 +30,8 @@ function parseProgramManifestV1 (raw) {
         validators: Array.isArray(raw.federation.validators)
           ? raw.federation.validators.filter((v) => typeof v === 'string')
           : [],
-        threshold: Math.max(1, Number(raw.federation.threshold) || 1)
+        threshold: Math.max(1, Number(raw.federation.threshold) || 1),
+        signatureScheme: normalizeSignatureScheme(raw.federation.signatureScheme)
       }
     : null;
   let sidechainPolicy = null;

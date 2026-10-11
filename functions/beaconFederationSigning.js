@@ -4,7 +4,8 @@
  * Beacon Federation signature collection rounds + epoch signing helpers.
  *
  * When k-of-n validators are configured, epoch seals wait until a threshold
- * Schnorr witness is assembled over `signingStringForBeaconEpoch(payload)`.
+ * witness is assembled over `signingStringForBeaconEpoch(payload)`. The default
+ * witness is BIP340 Schnorr. `signatureScheme: 'bls'` uses BLS12-381 bundles.
  *
  * Used by Hub Beacon and any app that seals L1-tied epochs under a Federation.
  *
@@ -15,6 +16,7 @@
 const crypto = require('crypto');
 const Key = require('../types/key');
 const fabricCanonicalJson = require('./fabricCanonicalJson');
+const bls = require('./bls');
 const { jsonSafe } = fabricCanonicalJson;
 
 const BEACON_EPOCH_SIGNING_KIND = 'BeaconEpoch';
@@ -86,14 +88,24 @@ function epochCommitmentDigestHex (epochPayload) {
 }
 
 /**
- * Verify threshold Schnorr signatures over the same message buffer used when signing.
+ * Verify a threshold witness over the same message buffer used when signing.
+ * Missing `witness.scheme` is BIP340 Schnorr. `scheme: 'bls'` checks BLS12-381
+ * bundles from {@link module:functions/bls}.
  * @param {Buffer} messageBuffer
  * @param {object} witness
  * @param {string[]} validatorPubkeys
  * @param {number} [threshold=1]
+ * @param {string} [scheme] overrides `witness.scheme` when set
  * @returns {boolean}
  */
-function verifyFederationWitnessOnMessage (messageBuffer, witness, validatorPubkeys, threshold = 1) {
+function verifyFederationWitnessOnMessage (messageBuffer, witness, validatorPubkeys, threshold = 1, scheme) {
+  const resolved = bls.normalizeSignatureScheme(
+    scheme != null ? scheme : (witness && witness.scheme)
+  );
+  if (resolved === bls.SCHEME_BLS) {
+    if (!Buffer.isBuffer(messageBuffer)) return false;
+    return bls.verifyFederationBlsWitness(messageBuffer, witness, validatorPubkeys, threshold);
+  }
   if (!witness || !witness.signatures || typeof witness.signatures !== 'object') return false;
   if (!Buffer.isBuffer(messageBuffer)) return false;
   // Deduplicate so a repeated pubkey cannot satisfy k-of-n with one signature.
@@ -157,13 +169,16 @@ function createRound (epochPayload, policy = {}, initialWitness = null) {
   const commitmentDigest = epochCommitmentDigestHex(canonical);
   const validators = (pol.validators || []).map((v) => String(v).trim()).filter(Boolean);
   const threshold = Math.max(1, Number(pol.threshold) || 1);
+  const signatureScheme = bls.normalizeSignatureScheme(pol.signatureScheme);
   const round = {
     commitmentDigest,
     payload: canonical,
     validators,
     threshold: Math.min(threshold, validators.length || threshold),
+    signatureScheme,
     witness: {
       version: 1,
+      ...(signatureScheme === bls.SCHEME_BLS ? { scheme: bls.SCHEME_BLS } : {}),
       signatures: Object.assign({}, (initialWitness && initialWitness.signatures) || {})
     },
     status: 'collecting',
@@ -204,17 +219,45 @@ function addSignature (round, pubkey, signatureHex) {
     return { ok: false, error: 'round not open' };
   }
   const pk = String(pubkey || '').trim();
-  const sig = String(signatureHex || '').trim();
-  if (!pk || !sig) return { ok: false, error: 'pubkey and signature required' };
+  const scheme = bls.normalizeSignatureScheme(
+    round.signatureScheme || (round.witness && round.witness.scheme)
+  );
+  let stored = null;
+  if (scheme === bls.SCHEME_BLS) {
+    if (signatureHex && typeof signatureHex === 'object') {
+      stored = signatureHex;
+    } else if (typeof signatureHex === 'string' && signatureHex.trim().startsWith('{')) {
+      try {
+        stored = JSON.parse(signatureHex);
+      } catch (_) {
+        stored = null;
+      }
+    }
+    if (!pk || !stored || typeof stored !== 'object') {
+      return { ok: false, error: 'pubkey and signature required' };
+    }
+  } else {
+    const sig = String(signatureHex || '').trim();
+    if (!pk || !sig) return { ok: false, error: 'pubkey and signature required' };
+    stored = sig;
+  }
   if (!round.validators.includes(pk)) {
     return { ok: false, error: 'pubkey not in federation validators' };
   }
   const msg = messageBufferForPayload(round.payload);
-  const probe = { version: 1, signatures: { [pk]: sig } };
+  const probe = {
+    version: 1,
+    ...(scheme === bls.SCHEME_BLS ? { scheme: bls.SCHEME_BLS } : {}),
+    signatures: { [pk]: stored }
+  };
   if (!verifyFederationWitnessOnMessage(msg, probe, [pk], 1)) {
-    return { ok: false, error: 'invalid Schnorr signature' };
+    return {
+      ok: false,
+      error: scheme === bls.SCHEME_BLS ? 'invalid BLS signature' : 'invalid Schnorr signature'
+    };
   }
-  round.witness.signatures[pk] = sig;
+  if (scheme === bls.SCHEME_BLS) round.witness.scheme = bls.SCHEME_BLS;
+  round.witness.signatures[pk] = stored;
   round.updatedAt = new Date().toISOString();
   const sealed = roundMeetsThreshold(round);
   if (sealed) round.status = 'ready';
@@ -229,17 +272,21 @@ function encodeSignRequest (round) {
     epoch: round.payload,
     validators: round.validators.slice(),
     threshold: round.threshold,
+    signatureScheme: bls.normalizeSignatureScheme(round.signatureScheme),
     createdAt: round.createdAt
   };
 }
 
 function encodeSignResponse (commitmentDigest, pubkey, signatureHex) {
+  const signature = signatureHex && typeof signatureHex === 'object'
+    ? JSON.stringify(signatureHex)
+    : String(signatureHex);
   return {
     type: FEDERATION_SIGN_RESPONSE,
     version: 1,
     commitmentDigest: String(commitmentDigest),
     pubkey: String(pubkey),
-    signature: String(signatureHex)
+    signature
   };
 }
 

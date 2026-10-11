@@ -6,7 +6,7 @@ type. Distributed runs use:
 | Layer | Role |
 |-------|------|
 | **`Program` + `Machine`** | Executable artifact + runner (`docs/PROGRAM.md`) |
-| **`Contract` / `Federation`** | Shared coordination + k-of-n Schnorr policy |
+| **`Contract` / `Federation`** | Shared coordination + k-of-n Schnorr policy, optional BLS12-381 witnesses |
 | **`Chain` + `Block`** | Consensus ledgers (`pow` \| `federation` \| `gossip`) — `docs/CHAIN.md` |
 | **`functions/` helpers** | Canonical JSON, Beacon epoch signing, program manifest, **sidechain document** |
 
@@ -21,7 +21,8 @@ Hub’s longer narrative (Beacon, delegation, signing rounds): hub.fabric.pub
 | Module | Role |
 |--------|------|
 | `fabricCanonicalJson` | Deterministic digests (Actor / sidechain / Program) |
-| `beaconFederationSigning` | Epoch commitment strings + federation witness verify |
+| `beaconFederationSigning` | Epoch commitment strings + federation witness verify (Schnorr, or BLS when `signatureScheme` is `bls`) |
+| `bls` | BLS12-381 sign / verify / aggregate and federation bundles |
 | `contractStateSigning` | Contract-namespace tip Schnorr (`ContractStateTip`); same witness shape as Beacon |
 | `contractTaproot` | Failover ladder → P2TR (`toAddress` / `toTaprootContract`); `after`/`until` decay + migrate |
 | `contractTierWhen` | Off-chain `when` predicates for tier activation |

@@ -596,6 +596,73 @@ describe('@fabric/core/types/beacon', function () {
     assert.strictEqual(beacon._blockHandler, null);
     assert.strictEqual(bitcoin.listenerCount('block'), 0);
   });
+
+  it('seals a 2-of-2 BLS federation witness', async function () {
+    this.timeout(30000);
+    const k1 = new Key({ private: '1111111111111111111111111111111111111111111111111111111111111111' });
+    const k2 = new Key({ private: '2222222222222222222222222222222222222222222222222222222222222222' });
+    const contractsSnap = {
+      clock: 1,
+      stateDigest: 'ab'.repeat(32),
+      merkleRoot: 'ab'.repeat(32),
+      kind: 'TrackedApplicationContracts',
+      acceptedCount: 1
+    };
+    const b1 = new Beacon({
+      regtest: true,
+      mineOnStart: false,
+      interval: 0,
+      federationValidators: [k1.pubkey, k2.pubkey],
+      federationThreshold: 2,
+      federationSignatureScheme: 'bls'
+    });
+    const b2 = new Beacon({
+      regtest: true,
+      mineOnStart: false,
+      interval: 0,
+      federationValidators: [k1.pubkey, k2.pubkey],
+      federationThreshold: 2,
+      federationSignatureScheme: 'bls'
+    });
+    b1.attach({
+      fs: memoryFs(),
+      key: k1,
+      getContractsSnapshotForEpoch: () => contractsSnap
+    });
+    b2.attach({
+      fs: memoryFs(),
+      key: k2,
+      getContractsSnapshotForEpoch: () => contractsSnap
+    });
+
+    const epochBase = { clock: 4, blockHash: 'ee'.repeat(32), height: 40 };
+    const pending = await b1._commitEpochWithFederation(epochBase);
+    assert.strictEqual(pending.pending, true);
+    assert.strictEqual(pending.signRequest.signatureScheme, 'bls');
+
+    const adopted = await b2.adoptFederationSignRequest(pending.signRequest);
+    assert.strictEqual(adopted.ok, true);
+    const signed2 = await b2.signPendingFederationRoundAsLocalValidator(pending.commitmentDigest);
+    assert.strictEqual(signed2.ok, true);
+
+    const sealed = await b1.submitFederationEpochSignature(
+      pending.commitmentDigest,
+      signed2.response.pubkey,
+      signed2.response.signature
+    );
+    assert.strictEqual(sealed.status, 'success');
+    assert.strictEqual(sealed.sealed, true);
+    assert.strictEqual(sealed.federationWitness.scheme, 'bls');
+    const blsMod = require('../functions/bls');
+    const msg = Buffer.from(
+      require('../functions/beaconFederationSigning').signingStringForBeaconEpoch(sealed.payload),
+      'utf8'
+    );
+    assert.strictEqual(
+      blsMod.verifyFederationBlsWitness(msg, sealed.federationWitness, [k1.pubkey, k2.pubkey], 2),
+      true
+    );
+  });
 });
 
 const {

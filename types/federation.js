@@ -5,6 +5,7 @@ const merge = require('lodash.merge');
 const { run } = require('minsc');
 const crypto = require('crypto');
 const ecc = require('./ecc');
+const bls = require('../functions/bls');
 
 // Fabric Types
 const Contract = require('./contract');
@@ -35,7 +36,9 @@ class Federation extends Contract {
         xprv: null, // avoid using seed phrase
         xpub: null  // verify signatures only
       },
-      type: 'FabricFederation'
+      type: 'FabricFederation',
+      // 'schnorr' (BIP340, default) or 'bls' (BLS12-381 bundles).
+      signatureScheme: 'schnorr'
     }, settings);
 
     // Internal Key
@@ -54,6 +57,14 @@ class Federation extends Contract {
     };
 
     return this;
+  }
+
+  /**
+   * Witness scheme for this federation. Bitcoin vault spends stay BIP340.
+   * @returns {'schnorr'|'bls'}
+   */
+  get signatureScheme () {
+    return bls.normalizeSignatureScheme(this.settings.signatureScheme);
   }
 
   get contract () {
@@ -175,11 +186,19 @@ class Federation extends Contract {
     // Handle Message objects
     const messageToSign = msg.data ? msg.data : msg;
 
+    const signWith = (key) => {
+      if (this.signatureScheme === bls.SCHEME_BLS) {
+        const derived = bls.deriveFederationSigner(key.private);
+        return bls.sign(messageToSign, derived.secretKey);
+      }
+      return key.signSchnorr(messageToSign);
+    };
+
     // If pubkey is provided, use that specific key
     if (pubkey) {
       const key = this._state.content.keys[pubkey];
       if (key && key.private) {
-        return key.signSchnorr(messageToSign);
+        return signWith(key);
       }
       throw new Error(`No private key available for member ${pubkey}`);
     }
@@ -188,7 +207,7 @@ class Federation extends Contract {
     for (const memberPubkey of this._state.content.validators) {
       const key = this._state.content.keys[memberPubkey];
       if (key && key.private) {
-        return key.signSchnorr(messageToSign);
+        return signWith(key);
       }
     }
     throw new Error('No private key available for signing');
@@ -207,7 +226,12 @@ class Federation extends Contract {
     // Try to verify with any of the federation's keys
     for (const pubkey of this._state.content.validators) {
       const key = this._state.content.keys[pubkey];
-      if (key && key.verifySchnorr(messageToVerify, sig)) {
+      if (!key) continue;
+      if (this.signatureScheme === bls.SCHEME_BLS) {
+        if (!key.private) continue;
+        const derived = bls.deriveFederationSigner(key.private);
+        if (bls.verify(sig, messageToVerify, derived.publicKey)) return true;
+      } else if (key.verifySchnorr(messageToVerify, sig)) {
         return true;
       }
     }
@@ -223,14 +247,18 @@ class Federation extends Contract {
     const signatures = {};
     // Handle Message objects
     const messageToSign = msg.data ? msg.data : msg;
+    const useBls = this.signatureScheme === bls.SCHEME_BLS;
     for (const pubkey of this._state.content.validators) {
       const key = this._state.content.keys[pubkey];
       if (key && key.private) {
-        signatures[pubkey] = key.signSchnorr(messageToSign);
+        signatures[pubkey] = useBls
+          ? bls.createFederationBlsBundle(messageToSign, key)
+          : key.signSchnorr(messageToSign);
       }
     }
     return {
       message: msg,
+      scheme: useBls ? bls.SCHEME_BLS : bls.SCHEME_SCHNORR,
       signatures
     };
   }
@@ -262,6 +290,16 @@ class Federation extends Contract {
     // Ensure messageToVerify is a Buffer
     if (!Buffer.isBuffer(messageToVerify)) {
       messageToVerify = Buffer.from(messageToVerify);
+    }
+
+    const useBls = this.signatureScheme === bls.SCHEME_BLS || multiSig.scheme === bls.SCHEME_BLS;
+    if (useBls) {
+      return bls.verifyFederationBlsWitness(
+        messageToVerify,
+        { scheme: bls.SCHEME_BLS, signatures },
+        this._state.content.validators,
+        threshold
+      );
     }
 
     // Create message hash once for all verifications

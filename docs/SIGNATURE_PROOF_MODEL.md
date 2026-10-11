@@ -13,6 +13,7 @@ Fabric separates **who authorized a transition** from **what was committed** and
 | AMP `Message` | Tagged `Fabric/Message` hash | Wire signer authorized the frame |
 | `federationWitness` | `signingStringForSidechainStatePatch` | k-of-n approved an RFC6902 patch proposal |
 | `federationWitness` (epoch) | `signingStringForBeaconEpoch` | k-of-n approved a Beacon epoch payload |
+| `federationWitness` `scheme: "bls"` | same signing strings | k-of-n BLS12-381 bundles (`functions/bls.js`) bound to the secp256k1 validator keys. Default scheme remains BIP340 Schnorr |
 | `ContractStateTip` | Contract-namespace tip string | k-of-n approved a namespace head digest |
 | `CONTRACT_PUBLISH` | AMP + authority list in genesis body | Publisher is listed in `validators` / `members.signers` / `spendPolicy.validators` (empty authority list → open publish; **non-empty list requires a wire signer**) |
 | Device-link / identity cluster | UTF-8 challenge strings | Mutual Schnorr attestation between devices |
