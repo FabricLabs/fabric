@@ -97,9 +97,11 @@ Blockers above (Machine isolate, third-party review, `contractIdentifier` rename
   reaching for a package or path that is absent *and* undeclared:
   `services/exchange.js` (`../currencies/btc`, no such directory),
   `services/mqtt.js` (`tcp`, not a package), `services/turntable.js` (`ttfm`),
-  `types/authority.js` (`./http`, no such file), `types/component.js` and
-  `types/renderer.js` (`jade-lexer`), and `types/typetree.js`
-  (`dependency-tree` — already on the phantom-dependency list above). Nothing in
+  `types/authority.js` (`./http`, no such file), `types/component.js`
+  (`jade-lexer`), and `types/typetree.js`
+  (`dependency-tree` — already on the phantom-dependency list above).
+  `types/renderer.js` parses the CLI reference with `pug` and stays out of
+  `files[]` because it is the terminal reference, not a second public package. Nothing in
   the tree references any of them, and all are reachable through the `./types/*`
   and `./services/*` export wildcards, so an installed consumer gets
   MODULE_NOT_FOUND. **Deleting published modules is a release decision, not a

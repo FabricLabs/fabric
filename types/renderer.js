@@ -1,11 +1,12 @@
 'use strict';
 
 const fs = require('fs');
+const path = require('path');
 
 const { blessedParamsFromJadeAttrs } = require('../functions/wireJson');
 
-const lex = require('jade-lexer');
-const parse = require('jade-parser');
+const lex = require('pug-lexer');
+const parse = require('pug-parser');
 
 const blessed = require('blessed');
 
@@ -23,16 +24,24 @@ class Renderer {
         result += this.render(ast.nodes[n], screen, ui, eventHandlers, depth);
       }
     } else if (ast.type === 'Tag') {
-      // /////////////////////////////////////
-      let space = ' '.repeat(depth * 2);
-      // result += depth;
+      if (ast.name === 'script') return result;
+
+      const space = ' '.repeat(depth * 2);
+      const id = jadeAttr(ast, 'id');
+      let widgetName = ast.name;
+      if (widgetName === 'grid') widgetName = 'box';
+      if (id === 'peers' || id === 'logs') widgetName = 'list';
+      if (widgetName === 'screen') {
+        if (ast.block) result += this.render(ast.block, screen, ui, eventHandlers, depth + 1);
+        return result;
+      }
 
       const { attrs, params } = blessedParamsFromJadeAttrs(ast.attrs);
 
       params.parent = screen;
 
-      if (screen) {
-        let element = blessed[ast.name](params);
+      if (screen && typeof blessed[widgetName] === 'function') {
+        let element = blessed[widgetName](params);
         for (let p in params) {
           if (p.startsWith('on')) {
             let handler = eventHandlers[ params[p] ];
@@ -62,6 +71,36 @@ class Renderer {
     return result;
   }
 
+  _describeTemplate (filename) {
+    const file = filename || path.join(__dirname, '../assets/cli.jade');
+    return this._describeSource(fs.readFileSync(file, 'utf8'), file);
+  }
+
+  _describeSource (src, filename) {
+    const name = filename || 'inline.jade';
+    const tokens = lex(src, { filename: name });
+    const ast = parse(tokens, { filename: name, src: src });
+    const widgets = [];
+    const walk = (node) => {
+      if (!node) return;
+      if (node.type === 'Block') {
+        (node.nodes || []).forEach(walk);
+        return;
+      }
+      if (node.type !== 'Tag') return;
+      if (node.name === 'script') return;
+      const id = jadeAttr(node, 'id');
+      widgets.push({
+        tag: node.name,
+        id: id,
+        widget: widgetFor(node.name, id)
+      });
+      if (node.block) walk(node.block);
+    };
+    walk(ast);
+    return widgets;
+  }
+
   _fromPath (filename) {
     let src = fs.readFileSync(filename, 'utf8');
     let tokens = lex(src);
@@ -71,13 +110,14 @@ class Renderer {
   }
 
   _renderJadeFile (filename, ui, eventHandlers) {
-    let src = fs.readFileSync(filename, 'utf8');
+    const file = filename || path.join(__dirname, '../assets/cli.jade');
+    let src = fs.readFileSync(file, 'utf8');
     console.log('src:', src);
 
-    let tokens = lex(src);
+    let tokens = lex(src, { filename: file });
     console.log('tokens:', tokens);
 
-    let ast = parse(tokens, {filename, src});
+    let ast = parse(tokens, { filename: file, src: src });
     console.log('ast:', JSON.stringify(ast, null, '  '));
 
     let html = this.render(ast);
@@ -223,6 +263,24 @@ class Renderer {
     self.submit.on('press', eventHandlers.on_submit_press);
     self.form.on('submit', eventHandlers.on_form_submit); */
   }
+}
+
+function jadeAttr (node, name) {
+  const attrs = node && node.attrs;
+  if (!attrs) return '';
+  for (const attr of attrs) {
+    if (!attr || attr.name !== name) continue;
+    return String(attr.val || '').replace(/^['"]|['"]$/g, '');
+  }
+  return '';
+}
+
+function widgetFor (tag, id) {
+  if (id === 'peers' || id === 'logs') return 'list';
+  if (tag === 'screen') return 'screen';
+  if (tag === 'grid') return 'box';
+  if (tag === 'textbox' || tag === 'button' || tag === 'form' || tag === 'list' || tag === 'box') return tag;
+  return 'box';
 }
 
 module.exports = Renderer;
