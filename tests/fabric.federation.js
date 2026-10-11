@@ -200,6 +200,33 @@ describe('@fabric/core/types/federation', function () {
       const multiSig = federation.createMultiSignature(message);
       assert.strictEqual(multiSig.scheme, 'bls');
       assert.strictEqual(federation.verifyMultiSignature(multiSig, 1), true);
+
+      const schnorr = new Federation();
+      schnorr.addMember({
+        private: member.private.toString('hex'),
+        public: member.public.encodeCompressed('hex')
+      });
+      assert.strictEqual(schnorr.verifyMultiSignature(multiSig, 1), false);
+      assert.strictEqual(federation.verifyMultiSignature({
+        message,
+        scheme: 'schnorr',
+        signatures: multiSig.signatures
+      }, 1), false);
+    });
+
+    it('verifies a raw BLS signature for a public-only member', function () {
+      const blsMod = require('../functions/bls');
+      const federation = new Federation({ signatureScheme: 'bls' });
+      const member = new Key({ private: '5555555555555555555555555555555555555555555555555555555555555555' });
+      const derived = blsMod.deriveFederationSigner(member.private);
+      const message = 'public-only federation member';
+      const signature = blsMod.sign(message, derived.secretKey);
+      federation.addMember({
+        public: member.public.encodeCompressed('hex'),
+        blsPublicKey: derived.publicKey.toString('hex')
+      });
+      assert.strictEqual(federation.verify(message, signature), true);
+      assert.strictEqual(federation.verify(message, Buffer.alloc(96, 1)), false);
     });
   });
 });

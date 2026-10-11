@@ -4,9 +4,6 @@
 const fs = require('fs');
 const { readFile } = require('fs').promises;
 
-// TODO: rewrite these / use lexical parser
-// const lex = require('jade-lexer');
-// const parse = require('jade-parser');
 const { run } = require('minsc');
 
 // JavaScript & TypeScript ASTs

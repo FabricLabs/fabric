@@ -58,7 +58,6 @@
     "!services/turntable.js",
     "!types/authority.js",
     "!types/component.js",
-    "!types/renderer.js",
     "!types/typetree.js"
   ],
   "engines": {
@@ -309,10 +308,17 @@
     "./fixtures": {
       "require": "./fixtures.js"
     },
+    "./types/authority": null,
+    "./types/component": null,
+    "./types/renderer": null,
+    "./types/typetree": null,
     "./types/*": {
       "types": "./types/*.d.ts",
       "require": "./types/*.js"
     },
+    "./services/exchange": null,
+    "./services/mqtt": null,
+    "./services/turntable": null,
     "./services/*": {
       "require": "./services/*.js"
     },

@@ -38,9 +38,10 @@ const INTENTIONALLY_UNPACKED = new Set(['build/Release/fabric.node', 'settings/l
 
 /**
  * Modules that ship but throw on `require`. Empty after the RC ship-set cut:
- * unloadable exchange/mqtt/turntable/authority/component/renderer/typetree are
+ * unloadable exchange/mqtt/turntable/authority/component/typetree are
  * excluded from `package.json` `files[]` (repo copies may remain for history /
- * local experiments). Any *new* packed unloadable fails this suite.
+ * local experiments). The Jade CLI renderer lives in `@fabric/http`.
+ * Any *new* packed unloadable fails this suite.
  */
 const KNOWN_UNLOADABLE = new Set([]);
 
@@ -60,8 +61,18 @@ const SHIP_EXCLUDED = [
   'services/turntable.js',
   'types/authority.js',
   'types/component.js',
-  'types/renderer.js',
   'types/typetree.js'
+];
+
+/** Subpaths the `./types/*` and `./services/*` wildcards must not publish. */
+const DENIED_EXPORTS = [
+  './services/exchange',
+  './services/mqtt',
+  './services/turntable',
+  './types/authority',
+  './types/component',
+  './types/renderer',
+  './types/typetree'
 ];
 
 function packedPaths () {
@@ -158,6 +169,17 @@ describe('packaging closure', function () {
       fixed,
       [],
       `these now load — remove them from KNOWN_UNLOADABLE:\n  ${fixed.join('\n  ')}`
+    );
+  });
+
+  it('blocks quarantined subpaths that the export wildcards would otherwise map', function () {
+    const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
+    const exportsMap = pkg.exports || {};
+    const open = DENIED_EXPORTS.filter((subpath) => exportsMap[subpath] !== null);
+    assert.deepStrictEqual(
+      open,
+      [],
+      `set these package.json exports to null:\n  ${open.join('\n  ')}`
     );
   });
 

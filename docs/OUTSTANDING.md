@@ -77,7 +77,7 @@ Blockers above (Machine isolate, third-party review, `contractIdentifier` rename
 - **`sensitive` ≠ encrypted** documented in [PRIVACY.md](../PRIVACY.md), [MESSAGE_BODY.md](MESSAGE_BODY.md#sensitive-is-not-encryption), mesh chat in [MESSAGES.md](../MESSAGES.md#mesh-chat-model-gossip-first). Further privacy work is HTTP Hub / app OUTSTANDING.
 - **Type-tree keep/remove lock** — inventory tagged in [PRODUCTION_MARCH.md](PRODUCTION_MARCH.md) Phase 1; `Scribe`/`Reader` deprecation notes remain; `types/fabric.js` is the curated RC facade.
 - **Undeclared (phantom) NOISE dependencies** — `duplexify`, `end-of-stream`, `length-prefixed-stream`, `stream-each`, `through2` are direct `dependencies`. `types/remote.js` no longer requires `ws` (commented). `types/typetree.js` soft-fails without `dependency-tree` and is **not shipped**.
-- **Unloadable packed modules** — `services/exchange|mqtt|turntable`, `types/authority|component|renderer|typetree` excluded from `files[]`; `KNOWN_UNLOADABLE` is empty; packaging tests assert exclusions + NOISE direct deps.
+- **Unloadable packed modules** — `services/exchange|mqtt|turntable`, `types/authority|component|typetree` excluded from `files[]` and blocked on the `./types/*` / `./services/*` export wildcards (`exports` value `null`). The Jade CLI renderer (`types/renderer.js`, `assets/cli.jade`) lives in `@fabric/http`. `KNOWN_UNLOADABLE` is empty; packaging tests assert exclusions + NOISE direct deps.
 - **Blinded-execution scaffold honesty** — [PROGRAM.md](PROGRAM.md) / [PUBLIC_API.md](../PUBLIC_API.md) state composition+digests only (signed `at` ≠ Yao GC).
 - **Codacy Semgrep/Opengrep path-helper excludes** — **wontfix** (`.codacy.yml`); Codacy ignores `nosemgrep`. Do **not** drop excludes without a replacement SAST job. Do **not** add `functions/bytes.js` to excludes.
 - **Suite-wide packaging lesson from `@fabric/hub` red CI (2026-08-25).** Hub's
@@ -97,14 +97,13 @@ Blockers above (Machine isolate, third-party review, `contractIdentifier` rename
   reaching for a package or path that is absent *and* undeclared:
   `services/exchange.js` (`../currencies/btc`, no such directory),
   `services/mqtt.js` (`tcp`, not a package), `services/turntable.js` (`ttfm`),
-  `types/authority.js` (`./http`, no such file), `types/component.js`
-  (`jade-lexer`), and `types/typetree.js`
+  `types/authority.js` (`./http`, no such file) and `types/typetree.js`
   (`dependency-tree` — already on the phantom-dependency list above).
-  `types/renderer.js` parses the CLI reference with `pug` and stays out of
-  `files[]` because it is the terminal reference, not a second public package. Nothing in
-  the tree references any of them, and all are reachable through the `./types/*`
-  and `./services/*` export wildcards, so an installed consumer gets
-  MODULE_NOT_FOUND. **Deleting published modules is a release decision, not a
+  `types/component.js` no longer loads Jade; page composition is `@fabric/http`.
+  The CLI Jade renderer moved to `@fabric/http` (`types/renderer.js`,
+  `assets/cli.jade`) so core does not depend on Pug. Quarantined modules stay
+  out of `files[]`, and their `package.json` `exports` entries are `null` so
+  the wildcards do not point at missing files. **Deleting published modules is a release decision, not a
   test fixup**, so new `tests/functions.packaging.js` freezes the list instead:
   any *new* unloadable module fails the suite, and cleaning one up also fails
   (prompting the list update) so it cannot drift in either direction. Verified

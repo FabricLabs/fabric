@@ -89,7 +89,7 @@ Rationale:
 | **keep** | `Actor`, `Beacon`, `Chain`, `Circuit`, `Collection`, `Contract`, `Entity`, `Federation`, `Hash256`, `Key`, `Machine`, `Message`, `Peer`, `Program`, `Remote`, `Resource`, `Service`, `State`, `Store`, `Wallet`, `Worker`, `Block`, `Tree`, `Filesystem`, `Identity`, `Token`, `Environment` |
 | **consolidate** | `Scribe` (logging → Service helpers), `Reader` (→ Peer/Message ingest; `@deprecated`), `Interface` (→ Resource schema), `Stack`+`Script` (evaluate behind Program/Machine) |
 | **compat** | `DistributedExecution` (thin re-export; prefer leaf helpers + Machine/Program), `Vector`, `Observer`, `Oracle`, `RoundRobin`, `Session`, `Capability` (scaffold), `Channel` |
-| **remove-candidate / not shipped** | `authority`, `component`, `renderer`, `typetree` (excluded from `files[]`), plus dormant: `compiler`, `disk`, `datastore`, `transaction`, `history`, `promise`, `queue`, `router`, `setup`, `label`, `ledger`, `logger`, `network`, `node`, `path`, `secret`, `signature`, `validator`, `witness`, `instruction`, `challenge`, `bond`, `bech32` (prefer functions), `codec`, `document`, `ecc*`, `cli` (bin path), `hkdf` |
+| **remove-candidate / not shipped** | `authority`, `component`, `typetree` (excluded from `files[]`; CLI `renderer` moved to `@fabric/http`), plus dormant: `compiler`, `disk`, `datastore`, `transaction`, `history`, `promise`, `queue`, `router`, `setup`, `label`, `ledger`, `logger`, `network`, `node`, `path`, `secret`, `signature`, `validator`, `witness`, `instruction`, `challenge`, `bond`, `bech32` (prefer functions), `codec`, `document`, `ecc*`, `cli` (bin path), `hkdf` |
 
 ### Step B: Fast reductions
 

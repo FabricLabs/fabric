@@ -454,6 +454,29 @@ describe('@fabric/core/types/beacon', function () {
     assert.match(String(denied.error), /not a federation validator/i);
   });
 
+  it('signPendingFederationRoundAsLocalValidator rejects a stored scheme that disagrees', async function () {
+    const k1 = new Key({ private: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' });
+    const beacon = new Beacon({
+      regtest: true,
+      mineOnStart: false,
+      interval: 0,
+      federationValidators: [k1.pubkey],
+      federationThreshold: 1
+    });
+    beacon.attach({ key: k1, fs: memoryFs() });
+    const bfs = require('../functions/beaconFederationSigning');
+    const payload = { clock: 9, height: 9, blockHash: '88'.repeat(32) };
+    const round = bfs.createRound(payload, {
+      validators: [k1.pubkey],
+      threshold: 1,
+      signatureScheme: 'bls'
+    });
+    beacon._pendingEpochRounds.set(round.commitmentDigest, round);
+    const denied = await beacon.signPendingFederationRoundAsLocalValidator(round.commitmentDigest);
+    assert.strictEqual(denied.ok, false);
+    assert.match(String(denied.error), /signature scheme mismatch/i);
+  });
+
   it('listPendingFederationEpochRounds reports collecting rounds', async function () {
     const k1 = new Key({ private: '1111111111111111111111111111111111111111111111111111111111111111' });
     const k2 = new Key({ private: '2222222222222222222222222222222222222222222222222222222222222222' });

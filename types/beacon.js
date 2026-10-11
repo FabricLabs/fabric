@@ -568,6 +568,9 @@ class Beacon extends Actor {
     const scheme = bls.normalizeSignatureScheme(
       round.signatureScheme || (round.witness && round.witness.scheme) || this._federationSignatureScheme
     );
+    if (scheme !== this._federationSignatureScheme) {
+      return { ok: false, error: 'federation signature scheme mismatch' };
+    }
     let signatureHex;
     try {
       if (scheme === bls.SCHEME_BLS) {

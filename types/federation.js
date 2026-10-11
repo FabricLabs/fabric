@@ -13,6 +13,29 @@ const Key = require('./key');
 const Wallet = require('./wallet');
 
 /**
+ * BLS public key stored for a member. Private material derives it once.
+ * Public-only members must supply `blsPublicKey` (48-byte hex).
+ * @param {object} member
+ * @param {object} key
+ * @returns {string|null}
+ * @private
+ */
+function federationBlsPublicKey (member, key) {
+  const supplied = member && (member.blsPublicKey || member.blsPublic);
+  if (supplied != null && supplied !== '') {
+    const raw = String(supplied).trim().toLowerCase().replace(/^0x/, '');
+    if (!/^[0-9a-f]{96}$/.test(raw)) {
+      throw new Error('blsPublicKey must be a 48-byte hex key');
+    }
+    return raw;
+  }
+  if (key && key.private) {
+    return bls.deriveFederationSigner(key.private).publicKey.toString('hex');
+  }
+  return null;
+}
+
+/**
  * Create and manage sets of {Signer} instances with the Federation class.
  */
 class Federation extends Contract {
@@ -109,6 +132,12 @@ class Federation extends Contract {
     // Store the member's key for signing
     this._state.content.keys = this._state.content.keys || {};
     this._state.content.keys[pubkey] = key;
+
+    const blsPublicKey = federationBlsPublicKey(member, key);
+    if (blsPublicKey) {
+      this._state.content.blsPublicKeys = this._state.content.blsPublicKeys || {};
+      this._state.content.blsPublicKeys[pubkey] = blsPublicKey;
+    }
 
     // console.log('consensus validators:', this._state.content.validators);
     // console.log('contract for step 0:', this.contractForStep(0));
@@ -228,9 +257,8 @@ class Federation extends Contract {
       const key = this._state.content.keys[pubkey];
       if (!key) continue;
       if (this.signatureScheme === bls.SCHEME_BLS) {
-        if (!key.private) continue;
-        const derived = bls.deriveFederationSigner(key.private);
-        if (bls.verify(sig, messageToVerify, derived.publicKey)) return true;
+        const blsPublicKey = this._state.content.blsPublicKeys && this._state.content.blsPublicKeys[pubkey];
+        if (blsPublicKey && bls.verify(sig, messageToVerify, blsPublicKey)) return true;
       } else if (key.verifySchnorr(messageToVerify, sig)) {
         return true;
       }
@@ -292,7 +320,11 @@ class Federation extends Contract {
       messageToVerify = Buffer.from(messageToVerify);
     }
 
-    const useBls = this.signatureScheme === bls.SCHEME_BLS || multiSig.scheme === bls.SCHEME_BLS;
+    if (multiSig.scheme != null && multiSig.scheme !== '') {
+      const witnessScheme = bls.normalizeSignatureScheme(multiSig.scheme);
+      if (witnessScheme !== this.signatureScheme) return false;
+    }
+    const useBls = this.signatureScheme === bls.SCHEME_BLS;
     if (useBls) {
       return bls.verifyFederationBlsWitness(
         messageToVerify,
