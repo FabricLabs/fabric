@@ -328,6 +328,7 @@ Other **`Store`** subclasses add domain behavior — for example **`Datastore`**
 |------|-------------|
 | [QUICKSTART.md][quickstart-guide] | Install and first commands |
 | [docs/CONTRACTS.md](docs/CONTRACTS.md) | Contracts as interfaces; Hub registry (Hub publishes first) |
+| [docs/FEDERATED_SETTLEMENT.md](docs/FEDERATED_SETTLEMENT.md) | Two-way peg, destination lock, privacy / instruments tracks |
 | [docs/CLI.md](docs/CLI.md) | Terminal `/contracts`, refunds, verbosity |
 | [AGENTS.md](AGENTS.md) | Agent services, lifecycle, workers |
 | [SECURITY.md](SECURITY.md) | Disclosure process, release hygiene |
@@ -452,7 +453,7 @@ module.exports = require('@fabric/http/functions/httpSharedMode');
 | **Router** | core `types/router.js` (chat `!commands`) | http `types/router.js` (path-to-regexp) | name only | rename if touching |
 | **Remote** | core `types/remote.js` (base WS) | http `types/remote.js` **extends** core | healthy subclass | keep |
 | **Resource** | core `types/resource.js` (Store) | http `types/resource.js` **extends** Fabric.Resource | healthy subclass | keep |
-| **Component** | core `types/component.js` (jade stub, broken `super`) | http `types/component.js` (real custom element) | core dead | delete/ignore core stub; UI lives in http |
+| **Component** | core `types/component.js` (dead stub, broken `super`) | http `types/component.js` (real custom element) | core dead | delete/ignore core stub; UI lives in http |
 | **Hub** | **hub** `services/hub.js` (~14k LOC Service) | http `types/hub.js` (Oracle + Express toy) | **naming trap** | deprecate/rename http (`LegacyHttpHub`); never merge |
 | **Queue** | core `types/queue.js` | Hub `types/queue.js` (richer, unused at runtime) | stale fork | Hub runtime uses core Worker; delete or re-export core |
 | **Worker** | core `types/worker.js` | Hub `types/worker.js` | stale fork | hub.js requires **core** Worker |

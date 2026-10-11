@@ -1,6 +1,15 @@
 # `@fabric/core` Changelog
 Recent changes to Fabric Core.
 
+## 0.1.0 — 2026-10-01
+Scoped protocol stamp. Package version moves from `0.1.0-RC1` to `0.1.0`. This is not a production-hardened release.
+
+**Claim:** reference NOISE P2P with bounded gossip, Bitcoin document-exchange helpers, and local `Program` / `Machine`. See [PUBLIC_API.md](PUBLIC_API.md). `Machine.define` still binds host JavaScript. Document-market helpers are not a mainnet-hardened market. This tag does not authorize funding a shared federation vault (tracks F1–F5 stay open). Default identity coin type remains **7778**; Bitcoin mainnet uses **7777** via `fabricIdentityDerivationPath`.
+
+**Security review:** [#187](https://github.com/FabricLabs/fabric/pull/187) head `8092ba8` still shows `CHANGES_REQUESTED` because one High thread is unresolved in the GitHub UI. That thread (migrate withdrawals forwarding `amountSats` into `prepareDecayMigrationPsbt`) was filed before `8092ba8` (“Fix migrate transactions”). Full-UTXO migrate amounts prepare a PSBT; partial amounts throw (`tests/contractTaproot.unit.js`). Do not re-patch it. Earlier Highs on that PR are already resolved. `jayson` is pinned `=5.0.0`.
+
+**Still open (named, not papered over):** no Machine isolate; `contractId` → `contractIdentifier` rename; eager `messageHex`; third-party review of `types/peer.js`, inventory HTLC, sealed exchange, and `publishedDocumentEnvelope`. GitHub milestone **0.1 — Prototype** is stale and is not this gate. Git pins stay `github:FabricLabs/fabric#feature/rsi` until an annotated `v0.1.0` tag exists.
+
 ## 2026-08-24
 - **PR #186 CI smoke:** package `functions/fabricMessageParent.js` (Hub / Message `parent` chain). `types/message.js` already required it, so `npm run smoke` failed with `MODULE_NOT_FOUND` until the leaf was in the tree. Tests: `tests/functions.fabricMessageParent.js`.
 - **PR #186 review nits:** `isolatePeerContent` deep-copies top-level maps (not only `collections.documents`); gossip-relay extra constraint groups are copied (not aliased) and keep base `peers.shuffle`; directed `P2P_PING` asserts a single origin `P2P_PONG` and zero writes on other edges.

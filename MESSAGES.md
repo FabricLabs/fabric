@@ -261,8 +261,6 @@ Classifier: [`functions/fabricChatKind.js`](functions/fabricChatKind.js)
 
 Canonical policy list: [`functions/gossipNetwork.js`](functions/gossipNetwork.js).
 Validate-and-relay node: `node scripts/gossip-relay.js` (one Peer, no Hub/Bitcoin).
-Walkthroughs (open in a browser): [`examples/gossip-network/index.html`](examples/gossip-network/index.html)
-— gossip mesh, then [Application Resource Contracts](examples/gossip-network/arc.html).
 
 | Policy | Types | Peer behaviour |
 |---|---|---|

@@ -2363,7 +2363,32 @@ describe('@fabric/core/types/peer', function () {
           done();
         });
         const fakeStream = { encrypt: { writable: false, write: () => {} } };
-        peer._writeFabric(Buffer.from('x'), fakeStream);
+        assert.strictEqual(peer._writeFabric(Buffer.from('x'), fakeStream), false);
+      });
+
+      it('returns false when encrypt.write throws EPIPE or ECONNRESET', function () {
+        const peer = new Peer({ listen: false, peersDb: null });
+        const warnings = [];
+        peer.on('warning', (m) => warnings.push(String(m)));
+        const epipe = { encrypt: { writable: true, write () { const err = new Error('pipe'); err.code = 'EPIPE'; throw err; } } };
+        assert.strictEqual(peer._writeFabric(Buffer.from('x'), epipe), false);
+        const reset = { encrypt: { writable: true, write () { const err = new Error('reset'); err.code = 'ECONNRESET'; throw err; } } };
+        assert.strictEqual(peer._writeFabric(Buffer.from('y'), reset), false);
+        assert.ok(warnings.some((m) => /EPIPE/.test(m)));
+        assert.ok(warnings.some((m) => /ECONNRESET/.test(m)));
+      });
+
+      it('returns true when encrypt.write accepts the frame', function () {
+        const peer = new Peer({ listen: false, peersDb: null });
+        let got = null;
+        const fakeStream = {
+          encrypt: {
+            writable: true,
+            write (buf) { got = buf; return true; }
+          }
+        };
+        assert.strictEqual(peer._writeFabric(Buffer.from('ok'), fakeStream), true);
+        assert.ok(Buffer.isBuffer(got));
       });
     });
 

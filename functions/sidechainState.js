@@ -19,6 +19,7 @@ const crypto = require('crypto');
 const { applyPatch, validate } = require('fast-json-patch');
 const fabricCanonicalJson = require('./fabricCanonicalJson');
 const { jsonSafe, stableStringify } = fabricCanonicalJson;
+const keyHasPrivateSigningMaterial = require('./keyHasPrivateSigningMaterial');
 const {
   signingStringForBeaconEpoch,
   verifyFederationWitnessOnMessage
@@ -756,6 +757,49 @@ function summarizeSnapshots (fs, opts = {}) {
   };
 }
 
+/**
+ * Build a federation witness map for a sidechain patch proposal (1-of-n per available key).
+ * @param {{ proposal: object, signKey: object, validators?: string[], threshold?: number }} opts
+ * @returns {object|null}
+ */
+function buildFederationWitnessForSidechainPatch ({ proposal, signKey, validators = [], threshold = 1 }) {
+  if (!signKey || typeof signKey.signSchnorr !== 'function') return null;
+  // Watch-only keys expose signSchnorr but throw "Cannot sign without private key".
+  if (!keyHasPrivateSigningMaterial(signKey)) return null;
+  const msgBuf = Buffer.from(signingStringForSidechainStatePatch(proposal), 'utf8');
+  const sigHex = signKey.signSchnorr(msgBuf).toString('hex');
+  const pk = signKey.pubkey != null ? String(signKey.pubkey) : '';
+  if (!pk) return null;
+  const witness = { version: 1, signatures: { [pk]: sigHex } };
+  if (Array.isArray(validators) && validators.length) {
+    witness.validators = validators.slice();
+    witness.threshold = Math.max(1, Number(threshold) || 1);
+  }
+  return witness;
+}
+
+/**
+ * Encode, optionally witness, and AMP-sign a SIDECHAIN_STATE_PATCH message.
+ * @param {{ proposal: object, signKey?: object, federationWitness?: object|null }} opts
+ * @returns {import('../types/message')}
+ */
+function buildSignedSidechainPatchMessage ({ proposal, signKey, federationWitness = null }) {
+  const Message = require('../types/message');
+  const witness = federationWitness != null
+    ? federationWitness
+    : (signKey ? buildFederationWitnessForSidechainPatch({ proposal, signKey }) : null);
+  const body = encodeSidechainStatePatchMessage(Object.assign({}, proposal, {
+    federationWitness: witness
+  }));
+  const msg = Message.fromVector(['SIDECHAIN_STATE_PATCH', JSON.stringify(body)]);
+  // Only AMP-sign when the key has private material. Message#signWithKey throws on
+  // public-only keys; do not probe Message#signWithKey (always present).
+  if (signKey && keyHasPrivateSigningMaterial(signKey) && typeof signKey.sign === 'function') {
+    msg.signWithKey(signKey);
+  }
+  return msg;
+}
+
 module.exports = {
   SIDECHAIN_STATE_PATH,
   SIDECHAIN_SNAPSHOTS_PATH,
@@ -792,6 +836,8 @@ module.exports = {
   createSerializeQueue,
   encodeSidechainStatePatchMessage,
   parseSidechainStatePatchMessage,
+  buildFederationWitnessForSidechainPatch,
+  buildSignedSidechainPatchMessage,
   verifyEpochChainFederationWitnesses,
   summarizeJournal,
   summarizeSnapshots

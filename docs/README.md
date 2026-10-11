@@ -24,6 +24,8 @@
 | [MESSAGE_BODY.md](MESSAGE_BODY.md) | Canonical 208-byte header + body fields |
 | [../MESSAGES.md](../MESSAGES.md) | Message semantics |
 | [../POLICY.md](../POLICY.md) | Relay and policy constants |
+| [FORKS.md](FORKS.md) | Hard-fork vs soft-fork guidance + Core hotspots |
+| [CHAIN.md](CHAIN.md) | Chain consensus modes (`pow` / `federation` / `gossip`) |
 | [../API.md](../API.md) | Full JSDoc Markdown (run `npm run make:api`) |
 
 ## Generated output

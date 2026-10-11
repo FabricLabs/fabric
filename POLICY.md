@@ -430,6 +430,7 @@ Implementations SHOULD:
 - **Header size**: 208 bytes
 - **Backward Compatibility**: Not guaranteed for future versions
 - **Forward Compatibility**: Unknown message types should be handled as observe-only (`UNKNOWN_MESSAGE`), not aliased to `P2P_BASE_MESSAGE`
+- **Upgrade / fork class**: See [docs/FORKS.md](docs/FORKS.md) (soft- vs hard-fork-like changes across AMP, Beacon digests, and Taproot identity)
 
 ---
 

@@ -3,10 +3,12 @@ Frozen **leaf import map** for downstream applications. Prefer these paths over 
 `Fabric` facade (`require('@fabric/core')` / `types/fabric.js`), which remains for
 experiments and demos.
 
-**Release claim (0.1.0-RC):** reference **NOISE P2P** with bounded gossip/discovery,
+**Release claim (0.1.0):** reference **NOISE P2P** with bounded gossip/discovery,
 **Bitcoin-settled document market helpers**, and **local** `Program` / `Machine`
 execution. Distributed Beacon / federation orchestration is Hub-composed and
-**experimental**. This package is **not** a sandboxed remote contract VM.
+**experimental**. This package is **not** a sandboxed remote contract VM —
+`Machine.define` still binds host JavaScript; blinded-execution helpers are a
+**composition scaffold** (digests + BIP340 decisions), not Yao GC/OT.
 
 ## Canonical imports
 
