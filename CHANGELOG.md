@@ -1,6 +1,9 @@
 # `@fabric/core` Changelog
 Recent changes to Fabric Core.
 
+## 2026-10-14
+- **32 KiB AMP body cap:** `MAX_MESSAGE_SIZE` is now **32768** bytes (was 3888 = `4096 − HEADER_SIZE`); new `MAX_FRAME_BYTES` = `HEADER_SIZE + MAX_MESSAGE_SIZE` = 32976, which still fits one `noise-protocol-stream` message (65535 − 16-byte MAC). C mirror: `FABRIC_MAX_MESSAGE_BODY` / `FABRIC_MAX_FRAME_BYTES` in `src/constants.h`; `PEER_BUFFER_SIZE` follows. Derived sizes scale with it: `DEFAULT_BLOB_CHUNK_BYTES` (~2.4 KiB → ~24 KiB raw per `P2P_FILE_SEND` blob), `compactBlobIndexForWire`, `wireJson` caps, `MACHINE_MAX_MEMORY` (~3.8 MiB → 32 MiB per `Machine`), `State` / `Reader` allocations, chaos `chatBytes`. **Mixed-version mesh:** peers on the old cap drop frames over 4096 bytes before parse (warning, no score/ban), so blob chunks and large packs from upgraded producers are not delivered to them until they upgrade — deploy hubs (`hub.fabric.pub`, `relay.goon.vc`) before clients. Tests: `tests/fabric.message.js` (cap + Noise bound), `tests/functions.documentBlobManifest.js`.
+
 ## 0.1.0 — 2026-10-01
 Scoped protocol stamp. Package version moves from `0.1.0-RC1` to `0.1.0`. This is not a production-hardened release.
 

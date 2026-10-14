@@ -92,7 +92,7 @@ Exact wire duplicates remain a silent drop (no score change). Wire-hash dedup re
 `P2P_CHAT_MESSAGE` still emits locally, but mesh `relayFrom` is **per-origin rate-limited** (`CHAT_MAX_RELAYS_PER_ORIGIN_PER_MINUTE` / `settings.chat.maxRelaysPerOriginPerMinute`, default 30/min).
 
 ## Inbound frame size
-Wire frames larger than `HEADER_SIZE + MAX_MESSAGE_SIZE` (override body via `settings.maxMessageSize`) **or shorter than `HEADER_SIZE`** are dropped **before** parse / body-hash / signature work. Unparseable buffers are dropped the same way (no score / ban). Truncated frames are not treated as body-hash mismatches — that would hard-ban a TCP peer for a partial NOISE chunk.
+Wire frames larger than `HEADER_SIZE + MAX_MESSAGE_SIZE` (`MAX_FRAME_BYTES`, 32976 bytes for the 32 KiB body cap; override body via `settings.maxMessageSize`) **or shorter than `HEADER_SIZE`** are dropped **before** parse / body-hash / signature work. Unparseable buffers are dropped the same way (no score / ban). Truncated frames are not treated as body-hash mismatches — that would hard-ban a TCP peer for a partial NOISE chunk.
 
 ## Strict Protocol V1 (test contract)
 Adversarial Peer coverage under the assumption that **NOISE payloads are raw, well-formed Fabric Messages** (not random bytes) lives in [`tests/fabric.peer.adversarial.js`](tests/fabric.peer.adversarial.js): unknown-opcode policy (`UNKNOWN_MESSAGE` — must not alias to `P2P_BASE_MESSAGE`), hop/budget bounds, and first-class opcode isolation from generic JSON carriers. Parser crash fuzz remains in `tests/fuzz/` and is **not** counted as semantic adversarial coverage.

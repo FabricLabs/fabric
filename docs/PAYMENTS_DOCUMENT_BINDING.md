@@ -29,7 +29,7 @@ Same separation as Lightning HTLC chains: multi-hop Fabric Circuits need indepen
 Every document is advertised as a **`DocumentBlobIndex`** (Tree merkle over blob leaves):
 
 - Small files → one content blob listed in `blobs[]`
-- Large files → many wire-sized blobs (default chunk ≤ AMP `MAX_MESSAGE_SIZE` budget)
+- Large files → many wire-sized blobs (default chunk ≤ AMP `MAX_MESSAGE_SIZE` budget — ~24 KiB raw per blob with the 32 KiB body cap)
 - `blobHashHex` = `SHA256(blob bytes)` (ciphertext bytes when sealed)
 - `merkleRootHex` = Fabric [`Tree`](../types/tree.js) root over those leaf hashes
 - **Priced / sealed:** inventory `contentHash` = `SHA256(K)` via [`documentSealedExchange`](../functions/documentSealedExchange.js); seller reveals `K` only after payment-hash match (Fabric) **or** by claiming the HTLC on-chain (buyer `/claimwatch` extracts `K` from the claim witness)

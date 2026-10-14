@@ -87,8 +87,9 @@ operator `settings/local.js` (use `settings/local.example.js`).
 | Constant | Value | Notes |
 |----------|-------|-------|
 | `HEADER_SIZE` | 208 bytes | AMP header |
-| `MAX_MESSAGE_SIZE` | 3888 bytes | `4096 − HEADER_SIZE` body cap |
-| `MACHINE_MAX_MEMORY` | ~3.8 MiB | `MAX_MEMORY_ALLOC × MAX_MESSAGE_SIZE` for `Machine` |
+| `MAX_MESSAGE_SIZE` | 32768 bytes | AMP body cap (32 KiB; was 3888 = `4096 − HEADER_SIZE` before 2026-10-14) |
+| `MAX_FRAME_BYTES` | 32976 bytes | `HEADER_SIZE + MAX_MESSAGE_SIZE`; fits one Noise transport message (65535 − 16 MAC) |
+| `MACHINE_MAX_MEMORY` | 32 MiB | `MAX_MEMORY_ALLOC × MAX_MESSAGE_SIZE` for `Machine` |
 
 Peers drop frames shorter than `HEADER_SIZE` or longer than `HEADER_SIZE +
 MAX_MESSAGE_SIZE` before parse/crypto. Per-origin relay budgets (chat, gossip,

@@ -11,6 +11,7 @@
  */
 
 const crypto = require('crypto');
+const { MAX_MESSAGE_SIZE } = require('../constants');
 
 const DEFAULT_PLAYNET_PEERS = Object.freeze([
   'hub.fabric.pub:7777',
@@ -50,7 +51,7 @@ function listPlaynetChaosConditions () {
       id: 'oversized-chat-burst',
       description: 'Large UTF-8 P2P_CHAT_MESSAGE bodies to stress chat ingest',
       types: ['P2P_CHAT_MESSAGE'],
-      chatBytes: 4096,
+      chatBytes: MAX_MESSAGE_SIZE,
       rawAmp: false,
       reconnect: false
     },

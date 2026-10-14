@@ -665,6 +665,7 @@ function validateInventoryHtlcOffer (opts = {}) {
 }
 
 module.exports = {
+  signerFromPriv32,
   LEAF_VERSION_TAPSCRIPT,
   tapLeafScriptEntry,
   taprootPsbtInputFields,

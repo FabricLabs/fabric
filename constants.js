@@ -242,7 +242,13 @@ const VERSION_NUMBER = 0x01;
 /* magic, version, parent, author, type, size, hash, preimage, signature — then body */
 const HEADER_SIZE = 208;
 const LARGE_COLLECTION_SIZE = 10; // TODO: test with 1,000,000
-const MAX_MESSAGE_SIZE = 4096 - HEADER_SIZE;
+/** Max AMP body bytes (32 KiB). Wire frame = `HEADER_SIZE + MAX_MESSAGE_SIZE` = 32976 B,
+ * which fits one Noise transport message (65535 − 16-byte MAC). Keep in sync with
+ * `FABRIC_MAX_MESSAGE_BODY` in `src/constants.h`. Note `MACHINE_MAX_MEMORY` scales with
+ * this cap (≈32 MiB per `Machine`). Historical: `4096 − HEADER_SIZE` = 3888. */
+const MAX_MESSAGE_SIZE = 32768;
+/** Max bytes of one AMP frame on the wire (header + body). */
+const MAX_FRAME_BYTES = HEADER_SIZE + MAX_MESSAGE_SIZE;
 /** Max UTF-16 code units accepted for `JSON.parse` of locally persisted JSON (LevelDB peer registry, CLI STATE file). */
 const PERSISTED_JSON_MAX_CHARS = 2 * 1024 * 1024;
 
@@ -544,6 +550,7 @@ module.exports = {
   LIGHTNING_PARENT_SIDEBLOCK_HASH,
   HTTP_HEADER_CONTENT_TYPE,
   MAGIC_BYTES,
+  MAX_FRAME_BYTES,
   MAX_FRAME_SIZE,
   MAX_MEMORY_ALLOC,
   MAX_MESSAGE_SIZE,
