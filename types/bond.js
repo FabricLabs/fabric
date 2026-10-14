@@ -411,11 +411,11 @@ class Bond extends Contract {
    * @param {object} deposit
    * @param {object} preSig `DepositPenaltyPreSig`
    * @param {Buffer|string} publisherPrivateKey
-   * @param {object} [ctx] `{ tipHeight }` — refuses before `deadlineHeight` when supplied
+   * @param {object} [ctx] `{ tipHeight, penaltyAddress?, minPenaltySats? }` — refuses before `deadlineHeight` when supplied; the destination (else `deposit.penaltyAddress`) must be paid
    * @returns {{ txHex: string, txid: string, deadlineHeight: number }}
    */
   static finalizePreSignedPenalty (deposit, preSig, publisherPrivateKey, ctx = {}) {
-    const check = Witness.verifyPenaltyPreSig(preSig, { providerPubkey: deposit.providerPubkey, deposit: preSig.deposit, deadlineHeight: preSig.deadlineHeight });
+    const check = Witness.verifyPenaltyPreSig(preSig, Bond._penaltyExpectation(deposit, preSig, ctx));
     if (!check.ok) throw new Error(`finalizePreSignedPenalty: ${check.reason}`);
     if (ctx.tipHeight != null && Number(ctx.tipHeight) < Number(preSig.deadlineHeight)) {
       throw new Error(`finalizePreSignedPenalty: deadline ${preSig.deadlineHeight} not reached (tip ${ctx.tipHeight})`);
@@ -454,13 +454,32 @@ class Bond extends Contract {
   }
 
   /**
+   * `verifyPenaltyPreSig` expectation. The destination comes from the
+   * publisher (`opts` or its own `deposit` record), never from the provider's
+   * artifact — the provider signs the PSBT and so chooses its outputs.
+   * @private
+   * @param {object} deposit
+   * @param {object} preSig
+   * @param {object} [opts] `{ penaltyAddress?, minPenaltySats? }`
+   * @returns {object}
+   */
+  static _penaltyExpectation (deposit, preSig, opts = {}) {
+    const expect = { providerPubkey: deposit.providerPubkey, deposit: preSig.deposit, deadlineHeight: preSig.deadlineHeight };
+    const address = opts.penaltyAddress || deposit.penaltyAddress || null;
+    if (address) expect.destinationAddress = address;
+    const min = opts.minPenaltySats != null ? opts.minPenaltySats : deposit.minPenaltySats;
+    if (min != null) expect.minValueSats = min;
+    return expect;
+  }
+
+  /**
    * Record one check-in round in this bond's {@link Contract.Resolutions}:
    * round `n` is **resolvable** only when the provider's pre-signed penalty
    * for round `n + 1` (spending the post-check-in outpoint) is held. The
    * publisher must call this (and see `resolvable`) before co-signing the
    * round-`n` check-in — `P_{n+1}` before `C_n`.
    * @param {number} round
-   * @param {object} opts `{ penaltyPreSig, checkInPsbtBase64?, deposit }`
+   * @param {object} opts `{ penaltyPreSig, checkInPsbtBase64?, deposit, penaltyAddress?, minPenaltySats? }` — the pre-signed penalty must pay `penaltyAddress` (else `deposit.penaltyAddress`)
    * @returns {{ round: number, resolvable: boolean, missing: string[] }}
    */
   recordRound (round, opts = {}) {
@@ -470,7 +489,7 @@ class Bond extends Contract {
     const preSig = opts.penaltyPreSig;
     const deposit = opts.deposit;
     if (preSig && deposit) {
-      const check = Witness.verifyPenaltyPreSig(preSig, { providerPubkey: deposit.providerPubkey, deposit: preSig.deposit, deadlineHeight: preSig.deadlineHeight });
+      const check = Witness.verifyPenaltyPreSig(preSig, Bond._penaltyExpectation(deposit, preSig, opts));
       if (!check.ok) throw new Error(`recordRound: ${check.reason}`);
       this.resolutions.addExit(id, { id: 'penalty', kind: Resolutions.KINDS.PENALTY, psbtBase64: preSig.psbtBase64, required: [deposit.providerPubkey], locktime: { height: Number(preSig.deadlineHeight) }, meta: { deadlineHeight: Number(preSig.deadlineHeight) } });
     }

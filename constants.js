@@ -361,6 +361,10 @@ const CHAT_MAX_RELAYS_PER_ORIGIN_PER_MINUTE = 30;
 const PEER_MAX_PENDING_SEALED_DELIVERIES = 32;
 /** Max blobs (parts) accepted for one per-blob sealed tree (`blobTotal` cap). 4096 × ~24 KiB ≈ 96 MiB ciphertext. */
 const PEER_MAX_SEALED_BLOB_PARTS = 4096;
+/** Global byte budget across every pending sealed row (ciphertext + retained frames); fits one full-size tree. */
+const PEER_MAX_PENDING_SEALED_BYTES = 256 * 1024 * 1024;
+/** Pending sealed rows that never complete are dropped this long after their first frame. */
+const PEER_PENDING_SEALED_TTL_MS = 60 * 60 * 1000;
 /** Max private DocumentRequest reverse-route entries. */
 const PEER_MAX_DOCUMENT_RELAY_ROUTES = 256;
 /** Max concurrent BIP-327 `P2P_MUSIG_*` sessions on a Peer (FIFO eviction). */
@@ -602,6 +606,8 @@ module.exports = {
   PEER_SCORE_RELAY_NEST_EXCEEDED_PENALTY,
   CHAT_MAX_RELAYS_PER_ORIGIN_PER_MINUTE,
   PEER_MAX_PENDING_SEALED_DELIVERIES,
+  PEER_MAX_PENDING_SEALED_BYTES,
+  PEER_PENDING_SEALED_TTL_MS,
   PEER_MAX_SEALED_BLOB_PARTS,
   PEER_MAX_DOCUMENT_RELAY_ROUTES,
   PEER_MAX_MUSIG_SESSIONS,

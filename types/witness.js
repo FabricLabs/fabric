@@ -348,7 +348,8 @@ class FraudProof {
    * @param {object} [ctx] verifier's chain view
    * @param {number} [ctx.tipHeight] current block height (timelocked non-response)
    * @param {function} [ctx.outpointUnspent] `(txid, vout) → boolean` (timelocked non-response)
-   * @param {function} [ctx.txConfirmed] `(txid) → boolean` (stale-commitment without an inclusion artifact)
+   * @param {function} [ctx.txConfirmed] `(txid) → boolean` (stale-commitment / wrongful-penalty broadcast evidence)
+   * @param {function} [ctx.headerKnown] `(blockHash) → boolean` — whether an inclusion artifact's block is in the verifier's header chain
    * @returns {{ ok: boolean, offender: string|null, reason: string|null, evidence?: string, enforceableAfterHeight?: number }}
    */
   verify (ctx = {}) {
@@ -417,17 +418,19 @@ class FraudProof {
         let parsed;
         try { parsed = parseFileSendObject(JSON.parse(frame.body.toString('utf8'))); } catch (_) { return fail('delivery frame body is not a P2P_FILE_SEND object'); }
         if (!parsed.ok) return fail(`delivery frame body: ${parsed.error}`);
-        const framePaymentHash = String((delivery && delivery.paymentHashHex) || '').toLowerCase();
+        // Only the signed body binds the delivery to the payment; anything
+        // beside the frame (e.g. `delivery.paymentHashHex`) is attacker-chosen.
         let bodyObj = null;
         try { bodyObj = JSON.parse(frame.body.toString('utf8')); } catch (_) { bodyObj = null; }
-        const onWire = bodyObj && HEX64.test(String(bodyObj.paymentHashHex || '').toLowerCase()) ? String(bodyObj.paymentHashHex).toLowerCase() : framePaymentHash;
-        if (onWire && onWire !== offeredHash) return fail('delivery frame is for another payment hash');
+        const onWire = bodyObj ? String(bodyObj.paymentHashHex || '').toLowerCase() : '';
+        if (!HEX64.test(onWire)) return fail('delivery frame does not sign a paymentHashHex — it is not the paid delivery');
+        if (onWire !== offeredHash) return fail('delivery frame is for another payment hash');
         if (offer.blobIndex != null && Number(parsed.blobIndex) !== Number(offer.blobIndex)) return fail('delivery frame is for another blob index');
         if (verifyBlob(parsed.bytes, want)) return fail('delivered bytes match the offer — no wrong-bytes fraud');
         return { ok: true, offender: xOnlyHex(offer.pubkey), reason: 'seller-signed delivery does not hash to the offered blob', evidence: 'signed-frame', deliveredBlobHashHex: parsed.blobHashHex };
       }
       case FRAUD_PROOF_KINDS.WRONGFUL_PENALTY: {
-        const { challenge, response, penaltyTxHex } = a;
+        const { challenge, response, penaltyTxHex, inclusion } = a;
         const basic = FraudProof._challengePair(challenge, response);
         if (!basic.ok) return fail(basic.reason);
         if (response.blobIndex !== challenge.blobIndex) return fail('response answers a different blob index');
@@ -443,10 +446,13 @@ class FraudProof {
         if (!HEX64.test(String(dep.txid || '').toLowerCase())) return fail('challenge names no deposit outpoint');
         let penalty;
         try { penalty = bitcoinjs().Transaction.fromHex(String(penaltyTxHex || '').trim()); } catch (_) { return fail('penaltyTxHex missing or not a transaction'); }
-        const spends = penalty.ins.some((inp, i) => inputTxid(penalty, i) === String(dep.txid).toLowerCase() && (dep.vout == null || Number(inp.index) === Number(dep.vout)));
-        if (!spends) return fail('penalty transaction does not spend the deposit outpoint');
-        if (ctx.txConfirmed && !ctx.txConfirmed(penalty.getId())) return fail('penalty transaction is not confirmed in the verifier\'s chain view');
-        return { ok: true, offender: xOnlyHex(challenge.pubkey), reason: 'valid in-time response was penalized', evidence: 'penalty-tx', penaltyTxid: penalty.getId() };
+        const spendIndex = penalty.ins.findIndex((inp, i) => inputTxid(penalty, i) === String(dep.txid).toLowerCase() && (dep.vout == null || Number(inp.index) === Number(dep.vout)));
+        if (spendIndex < 0) return fail('penalty transaction does not spend the deposit outpoint');
+        const witness = penalty.ins[spendIndex].witness || [];
+        if (!witness.length || witness.every((w) => !w || !w.length)) return fail('penalty transaction carries no witness for the deposit input');
+        const evidence = FraudProof._broadcastEvidence(penalty, inclusion, ctx);
+        if (!evidence.ok) return fail(evidence.reason);
+        return { ok: true, offender: xOnlyHex(challenge.pubkey), reason: 'valid in-time response was penalized', evidence: evidence.kind, penaltyTxid: penalty.getId(), blockHash: evidence.blockHash || null };
       }
       case FRAUD_PROOF_KINDS.STALE_COMMITMENT: {
         const { revoke, staleTxHex, inclusion } = a;
@@ -462,20 +468,10 @@ class FraudProof {
         }
         const txid = tx.getId();
         if (txid !== String(revoke.commitmentTxid).toLowerCase()) return fail('transaction is not the revoked commitment');
-        // Broadcast evidence: possessing the signed bytes proves nothing (the
-        // verifier may simply hold the old commitment). Require inclusion.
-        let evidence = null;
-        if (inclusion && typeof inclusion === 'object') {
-          if (String(inclusion.txid || '').toLowerCase() !== txid) return fail('inclusion artifact is for another transaction');
-          const check = verifyInclusion(inclusion);
-          if (!check.ok) return fail(`inclusion artifact invalid: ${check.reason}`);
-          evidence = { kind: 'inclusion', blockHash: check.blockHash };
-        } else if (typeof ctx.txConfirmed === 'function') {
-          if (!ctx.txConfirmed(txid)) return fail('revoked commitment is not confirmed in the verifier\'s chain view');
-          evidence = { kind: 'chain-view' };
-        } else {
-          return fail('broadcast evidence required: inclusion artifact or ctx.txConfirmed');
-        }
+        // Possessing the signed bytes proves nothing (the verifier may simply
+        // hold the old commitment): require evidence it reached the chain.
+        const evidence = FraudProof._broadcastEvidence(tx, inclusion, ctx);
+        if (!evidence.ok) return fail(evidence.reason);
         return { ok: true, offender: xOnlyHex(revoke.pubkey), reason: `revoked commitment ${revoke.number} (${txid}) was broadcast`, evidence: evidence.kind, blockHash: evidence.blockHash || null };
       }
       default:
@@ -489,7 +485,7 @@ class FraudProof {
    * the challenge deadline height and carries the provider's valid tapscript
    * signature. Pure.
    * @param {object} preSig artifact `{ type: 'DepositPenaltyPreSig', psbtBase64, deposit: { txid, vout }, deadlineHeight, txid, pubkey, signature }`
-   * @param {object} expect `{ providerPubkey (x-only), deposit: { txid, vout }, deadlineHeight }`
+   * @param {object} expect `{ providerPubkey (x-only), deposit: { txid, vout, penaltyAddress?, minPenaltySats? }, deadlineHeight, destinationAddress?, destinationScriptHex?, minValueSats? }` — a destination (top-level or from the challenge's signed `deposit`) is mandatory when named
    * @returns {{ ok: boolean, reason?: string, txid?: string, psbt?: object }}
    */
   static verifyPenaltyPreSig (preSig, expect = {}) {
@@ -509,6 +505,13 @@ class FraudProof {
     if (Number(tx.locktime) !== deadline) return { ok: false, reason: `penalty nLockTime ${tx.locktime} is not the deadline ${deadline}` };
     if (Number(preSig.deadlineHeight) !== deadline) return { ok: false, reason: 'pre-signature names another deadline' };
     if (String(preSig.txid || '').toLowerCase() !== tx.getId()) return { ok: false, reason: 'pre-signature txid does not match its PSBT' };
+    const destination = FraudProof._penaltyDestination(expect);
+    if (destination) {
+      if (!destination.scripts.length) return { ok: false, reason: `penalty destination ${destination.label} is not a valid address or script` };
+      const min = destination.minValueSats;
+      const pays = tx.outs.some((o) => destination.scripts.some((s) => Buffer.from(o.script).equals(s)) && (!min || Number(o.value) >= min));
+      if (!pays) return { ok: false, reason: `penalty does not pay ${min ? `at least ${min} sats to ` : ''}${destination.label}` };
+    }
     const sigs = psbt.data.inputs[0].tapScriptSig || [];
     const mine = sigs.find((s) => Buffer.from(s.pubkey).toString('hex') === provider);
     if (!mine) return { ok: false, reason: 'PSBT carries no provider tapscript signature' };
@@ -520,6 +523,66 @@ class FraudProof {
     }
     if (!valid) return { ok: false, reason: 'provider tapscript signature invalid' };
     return { ok: true, txid: tx.getId(), psbt };
+  }
+
+  /**
+   * Publisher-controlled penalty destination from `expect` (explicit fields
+   * win over the challenge's signed `deposit`). `null` when none is named.
+   * @private
+   * @param {object} expect
+   * @returns {{ scripts: Buffer[], minValueSats: number, label: string }|null}
+   */
+  static _penaltyDestination (expect = {}) {
+    const dep = expect.deposit || {};
+    const address = expect.destinationAddress || dep.penaltyAddress || null;
+    const scriptHex = expect.destinationScriptHex || null;
+    if (!address && !scriptHex) return null;
+    const minValueSats = Math.max(0, Math.floor(Number(expect.minValueSats != null ? expect.minValueSats : dep.minPenaltySats) || 0));
+    const scripts = [];
+    if (scriptHex && /^([0-9a-f]{2})+$/i.test(String(scriptHex))) scripts.push(Buffer.from(String(scriptHex), 'hex'));
+    if (address) {
+      const { address: addr, networks } = bitcoinjs();
+      for (const net of [networks.bitcoin, networks.testnet, networks.regtest]) {
+        try { scripts.push(Buffer.from(addr.toOutputScript(String(address), net))); break; } catch (_) { /* try the next network */ }
+      }
+    }
+    return { scripts, minValueSats, label: String(address || scriptHex) };
+  }
+
+  /**
+   * Evidence that `tx` reached the verifier's chain: an SPV inclusion proof
+   * whose header meets its target **and** is in the verifier's header chain
+   * (`ctx.headerKnown`), or the verifier's own `ctx.txConfirmed`. Without a
+   * chain view nothing verifies — a header anyone can build proves nothing.
+   * @private
+   * @param {object} tx bitcoinjs Transaction
+   * @param {object} [inclusion] `BitcoinTxInclusion` artifact
+   * @param {object} ctx verifier chain view
+   * @returns {{ ok: boolean, reason?: string, kind?: string, blockHash?: string }}
+   */
+  static _broadcastEvidence (tx, inclusion, ctx = {}) {
+    const txid = tx.getId();
+    // A 64-byte transaction can masquerade as an inner Merkle node.
+    if (tx.byteLength(false) === 64) return { ok: false, reason: '64-byte transaction cannot be proven by a Merkle branch' };
+    if (inclusion && typeof inclusion === 'object') {
+      if (String(inclusion.txid || '').toLowerCase() !== txid) return { ok: false, reason: 'inclusion artifact is for another transaction' };
+      const check = verifyInclusion(inclusion);
+      if (!check.ok) return { ok: false, reason: `inclusion artifact invalid: ${check.reason}` };
+      if (typeof ctx.headerKnown === 'function') {
+        if (!ctx.headerKnown(check.blockHash)) return { ok: false, reason: `block ${check.blockHash} is not in the verifier's header chain` };
+        return { ok: true, kind: 'inclusion', blockHash: check.blockHash };
+      }
+      if (typeof ctx.txConfirmed === 'function') {
+        if (!ctx.txConfirmed(txid)) return { ok: false, reason: 'transaction is not confirmed in the verifier\'s chain view' };
+        return { ok: true, kind: 'chain-view', blockHash: check.blockHash };
+      }
+      return { ok: false, reason: 'chain view required: ctx.headerKnown or ctx.txConfirmed' };
+    }
+    if (typeof ctx.txConfirmed === 'function') {
+      if (!ctx.txConfirmed(txid)) return { ok: false, reason: 'transaction is not confirmed in the verifier\'s chain view' };
+      return { ok: true, kind: 'chain-view' };
+    }
+    return { ok: false, reason: 'broadcast evidence required: inclusion artifact with ctx.headerKnown, or ctx.txConfirmed' };
   }
 
   /** @private non-response absence anchored to a timelock (see class doc) */

@@ -207,6 +207,11 @@ describe('Market bonds, challenges, and fraud proofs (Phase 3)', function () {
     assert.strictEqual(new FraudProof({ kind: 'wrong-bytes', artifacts: { offer, claim, delivery: { frameHex: frameFor(garbage, stranger.priv) } } }).verify().ok, false);
     const tampered = Buffer.from(frameFor(garbage), 'hex'); tampered[tampered.length - 1] ^= 1;
     assert.strictEqual(new FraudProof({ kind: 'wrong-bytes', artifacts: { offer, claim, delivery: { frameHex: tampered.toString('hex') } } }).verify().ok, false);
+    // A seller-signed frame that does not sign the payment hash (e.g. a free
+    // document) is not the paid delivery — even with the hash supplied beside it.
+    const unpaidFrame = signedFileSendFrame({ name: 'bounty-demo', body: garbage.toString('base64'), blobIndex: 0, blobTotal: hashes.length, blobHashHex: crypto.createHash('sha256').update(garbage).digest('hex'), merkleRootHex: doc.merkleRootHex }, provider.priv);
+    assert.match(new FraudProof({ kind: 'wrong-bytes', artifacts: { offer, claim, delivery: { frameHex: unpaidFrame } } }).verify().reason, /does not sign a paymentHashHex/);
+    assert.strictEqual(new FraudProof({ kind: 'wrong-bytes', artifacts: { offer, claim, delivery: { frameHex: unpaidFrame, paymentHashHex } } }).verify().ok, false);
     // An offer without paymentHashHex cannot bind the payment.
     const unbound = Witness.signArtifact({ type: 'DocumentOffer', blobHashHex: hashes[0], rateSats: 3 }, provider.priv);
     assert.match(new FraudProof({ kind: 'wrong-bytes', artifacts: { offer: unbound, claim, delivery: { frameHex: frameFor(garbage) } } }).verify().reason, /paymentHashHex/);
@@ -227,15 +232,50 @@ describe('Market bonds, challenges, and fraud proofs (Phase 3)', function () {
     const preSig = Bond.signPenaltyAsProvider(deposit, penalty, provider.priv);
     const taken = Bond.finalizePreSignedPenalty(deposit, preSig, publisher.priv, { tipHeight: 1000 });
     const counter = Challenge.wrongfulPenaltyProof(challenge, response, { txHex: taken.txHex, txid: taken.txid });
-    const verdict = FraudProof.fromBody(JSON.parse(JSON.stringify(counter.toBody()))).verify();
+    assert.match(counter.verify().reason, /broadcast evidence/, 'a penalty that never reached the chain is not a penalty');
+    const verdict = FraudProof.fromBody(JSON.parse(JSON.stringify(counter.toBody()))).verify({ txConfirmed: (id) => id === taken.txid });
     assert.strictEqual(verdict.ok, true);
     assert.strictEqual(verdict.offender, publisher.xOnly);
     assert.strictEqual(verdict.penaltyTxid, taken.txid);
-    assert.strictEqual(counter.verify({ txConfirmed: () => false }).ok, false, 'verifier may demand confirmation');
+    assert.strictEqual(counter.verify({ txConfirmed: () => false }).ok, false, 'unconfirmed penalty');
+    // An unsigned transaction that merely names the deposit outpoint is not a penalty.
+    const unsigned = new bitcoin.Transaction();
+    unsigned.addInput(Buffer.from(fundedTxid, 'hex').reverse(), 0);
+    unsigned.addOutput(bitcoin.address.toOutputScript(dest, bitcoin.networks.regtest), BigInt(1000));
+    const unsignedProof = Challenge.wrongfulPenaltyProof(challenge, response, { txHex: unsigned.toHex() });
+    assert.match(unsignedProof.verify({ txConfirmed: () => true }).reason, /no witness/);
     // A spend of some other outpoint is not this penalty.
     const otherDeposit = Bond.buildDeposit({ network: 'regtest', providerPubkey: provider.pub, publisherPubkey: publisher.pub, withdrawAfter: 901, amountSats: 30000 });
     const otherTaken = Bond.finalizePreSignedPenalty(otherDeposit, Bond.signPenaltyAsProvider(otherDeposit, Bond.prepareDepositPenalty(otherDeposit, { fundedTxHex: fundingFor(otherDeposit.address), deadlineHeight: 1000, destinationAddress: dest, feeSats: 500 }), provider.priv), publisher.priv);
-    assert.strictEqual(Challenge.wrongfulPenaltyProof(challenge, response, { txHex: otherTaken.txHex }).verify().ok, false);
+    assert.strictEqual(Challenge.wrongfulPenaltyProof(challenge, response, { txHex: otherTaken.txHex }).verify({ txConfirmed: () => true }).ok, false);
+  });
+
+  it('penalty pre-signature must pay the publisher-named destination (provider cannot pay itself)', () => {
+    const deposit = Bond.buildDeposit({ network: 'regtest', providerPubkey: provider.pub, publisherPubkey: publisher.pub, withdrawAfter: 900, amountSats: 30000 });
+    const funded = fundingFor(deposit.address);
+    const fundedTxid = bitcoin.Transaction.fromHex(funded).getId();
+    const toPublisher = bitcoin.payments.p2wpkh({ pubkey: Buffer.from(publisher.pub, 'hex'), network: bitcoin.networks.regtest }).address;
+    const toProvider = bitcoin.payments.p2wpkh({ pubkey: Buffer.from(provider.pub, 'hex'), network: bitcoin.networks.regtest }).address;
+    const challenge = challenger.issue({
+      merkleRootHex: doc.merkleRootHex, blobHashes: hashes, epoch: 30, deadlineHeight: 1000,
+      deposit: { txid: fundedTxid, vout: 0, penaltyAddress: toPublisher, minPenaltySats: 45000 },
+      providerPubkey: provider.xOnly, publisherPrivateKey: publisher.priv
+    });
+    assert.strictEqual(challenge.deposit.penaltyAddress, toPublisher);
+    const preSigTo = (address, feeSats = 500) => Bond.signPenaltyAsProvider(deposit, Bond.prepareDepositPenalty(deposit, { fundedTxHex: funded, deadlineHeight: 1000, destinationAddress: address, feeSats }), provider.priv);
+    const expect = { providerPubkey: provider.pub, deposit: challenge.deposit, deadlineHeight: 1000 };
+    assert.strictEqual(Witness.verifyPenaltyPreSig(preSigTo(toPublisher), expect).ok, true);
+    assert.match(Witness.verifyPenaltyPreSig(preSigTo(toProvider), expect).reason, /does not pay/);
+    assert.match(Witness.verifyPenaltyPreSig(preSigTo(toPublisher, 10000), expect).reason, /at least 45000/, 'fee cannot eat the deposit');
+    // Timelocked absence proofs carry the challenge's signed deposit, so the destination binds there too.
+    const commitment = Challenge.commit({ merkleRootHex: doc.merkleRootHex, blobTotal: hashes.length, fromEpoch: 0, untilEpoch: 100, providerPrivateKey: provider.priv, depositAddress: deposit.address, depositTxid: fundedTxid });
+    const selfPaying = new FraudProof({ kind: 'non-response', artifacts: { challenge, commitment, penaltyPreSig: preSigTo(toProvider) } });
+    assert.match(selfPaying.verify({ tipHeight: 1000, outpointUnspent: () => true }).reason, /does not pay/);
+    // Bond rounds take the destination from the publisher, never the provider artifact.
+    const bond = new Bond({ network: 'regtest' });
+    assert.throws(() => bond.recordRound(0, { deposit, penaltyPreSig: preSigTo(toProvider), penaltyAddress: toPublisher }), /does not pay/);
+    assert.strictEqual(bond.recordRound(0, { deposit, penaltyPreSig: preSigTo(toPublisher), penaltyAddress: toPublisher }).resolvable, true);
+    assert.throws(() => Bond.finalizePreSignedPenalty(deposit, preSigTo(toProvider), publisher.priv, { tipHeight: 1000, penaltyAddress: toPublisher }), /does not pay/);
   });
 
   it('bounty: per-epoch outputs, deterministic preimages, claim + refund PSBTs', () => {

@@ -93,21 +93,72 @@ function parseHeader (blockHeaderHex) {
 }
 
 /**
- * Verify an inclusion proof against a block header.
- * @param {object} proof `{ blockHeaderHex, txid, index, branch }`
+ * Decode compact `bits` into the proof-of-work target.
+ * @param {number} bits
+ * @returns {bigint|null} `null` for a negative or overflowing encoding
+ */
+function targetFromBits (bits) {
+  const n = Number(bits) >>> 0;
+  const exponent = n >>> 24;
+  const mantissa = n & 0x007fffff;
+  if (n & 0x00800000) return null;
+  const target = exponent <= 3
+    ? BigInt(mantissa) >> BigInt(8 * (3 - exponent))
+    : BigInt(mantissa) << BigInt(8 * (exponent - 3));
+  if (target === 0n || target >= (1n << 256n)) return null;
+  return target;
+}
+
+/**
+ * Whether an 80-byte header meets the target its own `bits` declare. This
+ * proves work was done, not that the header is on any particular chain —
+ * callers must still check the block hash against their own header chain.
+ * @param {string} blockHeaderHex
+ * @returns {boolean}
+ */
+function headerMeetsTarget (blockHeaderHex) {
+  let header;
+  try { header = parseHeader(blockHeaderHex); } catch (_) { return false; }
+  const target = targetFromBits(header.bits);
+  if (target == null) return false;
+  return BigInt(`0x${header.blockHash}`) <= target;
+}
+
+/** @private Merkle depth of a tree with `count` leaves */
+function treeDepth (count) {
+  let depth = 0;
+  for (let width = count; width > 1; width = Math.ceil(width / 2)) depth++;
+  return depth;
+}
+
+/**
+ * Verify an inclusion proof against a block header: the header's own
+ * proof-of-work, then the Merkle branch. A valid result still says nothing
+ * about which chain the header belongs to (see {@link headerMeetsTarget}).
+ * @param {object} proof `{ blockHeaderHex, txid, index, branch, txCount? }` — `txCount` pins the branch depth
  * @returns {{ ok: boolean, reason?: string, blockHash?: string, merkleRootHex?: string }}
  */
 function verifyInclusion (proof = {}) {
   let header;
   try { header = parseHeader(proof.blockHeaderHex); } catch (e) { return { ok: false, reason: e.message }; }
+  if (!headerMeetsTarget(proof.blockHeaderHex)) return { ok: false, reason: 'block header does not meet its proof-of-work target', blockHash: header.blockHash };
   let node;
   try { node = toInternal(proof.txid); } catch (e) { return { ok: false, reason: e.message }; }
   if (!Array.isArray(proof.branch)) return { ok: false, reason: 'branch required' };
   let position = Math.floor(Number(proof.index));
   if (!Number.isFinite(position) || position < 0) return { ok: false, reason: 'index required' };
+  if (proof.txCount != null) {
+    const count = Math.floor(Number(proof.txCount));
+    if (!Number.isFinite(count) || count < 1) return { ok: false, reason: 'txCount invalid' };
+    if (position >= count) return { ok: false, reason: 'index beyond txCount' };
+    if (proof.branch.length !== treeDepth(count)) return { ok: false, reason: 'branch depth does not match txCount' };
+  }
   for (const sibHex of proof.branch) {
     let sibling;
     try { sibling = toInternal(sibHex); } catch (e) { return { ok: false, reason: e.message }; }
+    // CVE-2012-2459: a node is only ever paired with itself as the *last*
+    // (left, even) element of a level. An equal left sibling is a mutation.
+    if (position % 2 === 1 && sibling.equals(node)) return { ok: false, reason: 'duplicated merkle node (CVE-2012-2459)' };
     node = position % 2 === 0 ? hash256(Buffer.concat([node, sibling])) : hash256(Buffer.concat([sibling, node]));
     position = Math.floor(position / 2);
   }
@@ -126,7 +177,7 @@ function buildInclusion (opts = {}) {
   const header = parseHeader(opts.blockHeaderHex);
   const branch = buildBranch(opts.txids, opts.txid);
   if (branch.merkleRootHex !== header.merkleRootHex) throw new Error('bitcoinTxInclusion: txids do not match the header merkle root');
-  return { type: 'BitcoinTxInclusion', blockHeaderHex: String(opts.blockHeaderHex).toLowerCase(), blockHash: header.blockHash, txid: branch.txid, index: branch.index, branch: branch.branch };
+  return { type: 'BitcoinTxInclusion', blockHeaderHex: String(opts.blockHeaderHex).toLowerCase(), blockHash: header.blockHash, txid: branch.txid, index: branch.index, branch: branch.branch, txCount: opts.txids.length };
 }
 
-module.exports = { merkleRootFromTxids, buildBranch, parseHeader, verifyInclusion, buildInclusion };
+module.exports = { merkleRootFromTxids, buildBranch, parseHeader, targetFromBits, headerMeetsTarget, verifyInclusion, buildInclusion };

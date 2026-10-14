@@ -30,6 +30,8 @@ const {
   PEER_SCORE_RELAY_NEST_EXCEEDED_PENALTY,
   CHAT_MAX_RELAYS_PER_ORIGIN_PER_MINUTE,
   PEER_MAX_PENDING_SEALED_DELIVERIES,
+  PEER_MAX_PENDING_SEALED_BYTES,
+  PEER_PENDING_SEALED_TTL_MS,
   PEER_MAX_SEALED_BLOB_PARTS,
   PEER_MAX_DOCUMENT_RELAY_ROUTES,
   PEER_MAX_MUSIG_SESSIONS,
@@ -481,6 +483,8 @@ class Peer extends Service {
         maxRelaysPerOriginPerMinute: CHAT_MAX_RELAYS_PER_ORIGIN_PER_MINUTE
       },
       maxPendingSealedDeliveries: PEER_MAX_PENDING_SEALED_DELIVERIES,
+      maxPendingSealedBytes: PEER_MAX_PENDING_SEALED_BYTES,
+      pendingSealedTtlMs: PEER_PENDING_SEALED_TTL_MS,
       maxDocumentRelayRoutes: PEER_MAX_DOCUMENT_RELAY_ROUTES,
       state: Object.assign({
         actors: {},
@@ -5070,9 +5074,10 @@ class Peer extends Service {
       if (row.total !== frame.blobTotal) {
         return { status: 'reject', error: 'per-blob frame blobTotal disagrees with the tree being assembled', documentId: frame.documentId, blobIndex: frame.blobIndex, merkleRootHex: root };
       }
-      if (row.originName && originName && row.originName !== String(originName)) {
-        return { status: 'reject', error: 'per-blob frame from a different origin than the tree being assembled', documentId: frame.documentId, blobIndex: frame.blobIndex, merkleRootHex: root };
-      }
+      // No row-level origin lock: a per-blob plan buys blob i from one seller
+      // and blob j from another under the same root. The row key binds the
+      // root, held parts cannot be overwritten, and the final Merkle check
+      // covers the whole tree; each part records its own origin instead.
       const held = row.parts.get(frame.blobIndex);
       if (held && held.blobHashHex !== frame.blobHashHex) {
         return { status: 'reject', error: 'per-blob frame would overwrite a held blob with a different hash', documentId: frame.documentId, blobIndex: frame.blobIndex, merkleRootHex: root };
@@ -5085,13 +5090,14 @@ class Peer extends Service {
         parts: new Map(),
         opened: new Map(),
         origin: origin || null,
-        originName: originName ? String(originName) : null,
+        created: Date.now(),
         updated: Date.now()
       };
       this.pendingSealedBlobs[rowKey] = row;
-      this._capPendingSealedBlobs();
     }
     row.updated = Date.now();
+    let frame64 = null;
+    if (frameHex) frame64 = Buffer.isBuffer(frameHex) ? Buffer.from(frameHex) : Buffer.from(String(frameHex), 'hex');
     row.parts.set(frame.blobIndex, {
       ciphertext: frame.bytes,
       blobHashHex: frame.blobHashHex,
@@ -5099,8 +5105,13 @@ class Peer extends Service {
       iv: String(obj.iv),
       scheme: obj.scheme || null,
       plaintextSha256: obj.plaintextSha256 || null,
-      frameHex: frameHex ? String(frameHex) : null
+      origin: originName ? String(originName) : null,
+      frame: frame64
     });
+    this._capPendingSealedBlobs();
+    if (!this.pendingSealedBlobs[rowKey]) {
+      return { status: 'reject', error: 'pending sealed-blob memory budget exceeded', documentId: frame.documentId, blobIndex: frame.blobIndex, merkleRootHex: root };
+    }
     this.emit('documentCiphertextReceived', {
       documentId: frame.documentId,
       blobIndex: frame.blobIndex,
@@ -5155,17 +5166,43 @@ class Peer extends Service {
     return candidates.length === 1 ? candidates[0] : null;
   }
 
+  /** @private bytes held by one pending sealed row (ciphertext + retained frames) */
+  static _sealedRowBytes (row) {
+    let total = 0;
+    for (const p of row.parts.values()) total += (p.ciphertext ? p.ciphertext.length : 0) + (p.frame ? p.frame.length : 0);
+    for (const o of row.opened.values()) total += o ? o.length : 0;
+    return total;
+  }
+
   /**
-   * Bound the number of per-blob sealed trees held in memory (oldest first).
+   * Bound per-blob sealed trees held in memory: drop rows older than
+   * `pendingSealedTtlMs` (from first frame — refreshes do not extend it),
+   * then evict oldest-updated rows until both the row cap
+   * (`maxPendingSealedDeliveries`) and the byte budget
+   * (`maxPendingSealedBytes`) hold.
    * @private
    */
   _capPendingSealedBlobs () {
     const max = Number(this.settings.maxPendingSealedDeliveries);
     const cap = Number.isFinite(max) && max > 0 ? max : PEER_MAX_PENDING_SEALED_DELIVERIES;
+    const budgetSetting = Number(this.settings.maxPendingSealedBytes);
+    const budget = Number.isFinite(budgetSetting) && budgetSetting > 0 ? budgetSetting : PEER_MAX_PENDING_SEALED_BYTES;
+    const ttlSetting = Number(this.settings.pendingSealedTtlMs);
+    const ttl = Number.isFinite(ttlSetting) && ttlSetting > 0 ? ttlSetting : PEER_PENDING_SEALED_TTL_MS;
+    const now = Date.now();
+    for (const [key, row] of Object.entries(this.pendingSealedBlobs)) {
+      if (!row || now - (row.created || row.updated || 0) > ttl) delete this.pendingSealedBlobs[key];
+    }
     const keys = Object.keys(this.pendingSealedBlobs);
-    if (keys.length <= cap) return;
     keys.sort((a, b) => ((this.pendingSealedBlobs[a] || {}).updated || 0) - ((this.pendingSealedBlobs[b] || {}).updated || 0));
-    for (let i = 0; i < keys.length - cap; i++) delete this.pendingSealedBlobs[keys[i]];
+    let bytes = keys.reduce((sum, k) => sum + Peer._sealedRowBytes(this.pendingSealedBlobs[k]), 0);
+    let count = keys.length;
+    for (const key of keys) {
+      if (count <= cap && bytes <= budget) break;
+      bytes -= Peer._sealedRowBytes(this.pendingSealedBlobs[key]);
+      delete this.pendingSealedBlobs[key];
+      count--;
+    }
   }
 
   /**
@@ -5181,7 +5218,7 @@ class Peer extends Service {
       if (!row || !row.parts) continue;
       for (const [index, part] of row.parts) {
         if (part.paymentHashHex === ph) {
-          return { documentId: row.documentId, merkleRootHex: row.merkleRootHex, blobIndex: index, blobHashHex: part.blobHashHex, frameHex: part.frameHex || null };
+          return { documentId: row.documentId, merkleRootHex: row.merkleRootHex, blobIndex: index, blobHashHex: part.blobHashHex, frameHex: part.frame ? part.frame.toString('hex') : null };
         }
       }
     }

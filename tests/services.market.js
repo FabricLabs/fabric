@@ -284,4 +284,25 @@ describe('services/market (Phase 4 channel rail)', function () {
     assert.strictEqual(sellerBook.sessions.get(opened.session.channelId).balances.localSats, m.doc.blobTotal * 5);
     assert.strictEqual(market.spentSats, m.doc.blobTotal * 5);
   });
+
+  it('a channel HTLC fulfilled after the delivery timeout is still counted as spent', function () {
+    const EventEmitter = require('events');
+    const channels = Object.assign(new EventEmitter(), { sessionFor: () => null });
+    const market = new Market({ budgetSats: 100, deliveryTimeoutMs: 1000 }).attach({ channels });
+    const c = market._state.content;
+    c.wants.doc = { documentId: 'doc', status: 'buying' };
+    c.reservedSats = 7;
+    const session = { settlementId: 's1', documentId: 'doc', sellerId: 'alpha', rail: 'channel', channelId: 'ch', channelHtlcId: 'h1', amountSats: 7, status: 'delivery_pending', confirmedAt: Date.now() - 5000 };
+    c.sessions.s1 = session;
+    market._sweepTimeouts();
+    assert.strictEqual(session.status, 'delivery_pending', 'an open HTLC is not timed out — it ends through htlcSettled');
+    assert.strictEqual(c.wants.doc.status, 'buying');
+    // Even if the session had already failed, a late fulfil moves sats and must be booked.
+    session.status = 'failed';
+    channels.emit('htlcSettled', { channelId: 'ch', htlcId: 'h1', outcome: 'fulfilled', preimageHex: '11'.repeat(32) });
+    assert.strictEqual(market.spentSats, 7);
+    assert.strictEqual(c.reservedSats, 0);
+    channels.emit('htlcSettled', { channelId: 'ch', htlcId: 'h1', outcome: 'fulfilled', preimageHex: '11'.repeat(32) });
+    assert.strictEqual(market.spentSats, 7, 'counted once');
+  });
 });

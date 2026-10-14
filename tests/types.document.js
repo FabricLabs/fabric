@@ -185,10 +185,12 @@ describe('types/document (sealed blob tree)', function () {
     // Honest first frame.
     r = buyer._ingestP2pFileSend({ object: bodies[0] }, { name: 'seller' }, sends[0]);
     assert.strictEqual(r.status, 'awaiting_key');
-    // A frame for the same tree from a different origin is refused.
-    r = buyer._ingestP2pFileSend({ object: bodies[1] }, { name: 'mallory' });
-    assert.strictEqual(r.status, 'reject');
-    assert.match(r.error, /origin/);
+    // Multi-seller plan: an unheld index of the same tree from another seller lands.
+    r = buyer._ingestP2pFileSend({ object: bodies[1] }, { name: 'beta' });
+    assert.strictEqual(r.status, 'awaiting_key');
+    const rowKey = `${documentId}|${bodies[0].merkleRootHex.toLowerCase()}`;
+    assert.strictEqual(buyer.pendingSealedBlobs[rowKey].parts.get(0).origin, 'seller');
+    assert.strictEqual(buyer.pendingSealedBlobs[rowKey].parts.get(1).origin, 'beta', 'origin is recorded per part');
     // A frame that disagrees on blobTotal is refused.
     r = buyer._ingestP2pFileSend({ object: Object.assign({}, bodies[1], { blobTotal: 3 }) }, { name: 'seller' });
     assert.strictEqual(r.status, 'reject');
@@ -219,6 +221,39 @@ describe('types/document (sealed blob tree)', function () {
       assert.strictEqual(out.blobIndex, i, 'blob resolved from SHA256(key)');
     }
     assert.ok(received && received.buffer.equals(plain));
+  });
+
+  it('Peer: pending sealed blobs are bounded by a global byte budget and a TTL', function () {
+    const seller = new Peer({ listen: false, sealPricedDocuments: true });
+    const framesFor = (bytes) => {
+      const doc = Document.seal(crypto.randomBytes(bytes), { chunkBytes: 2048 });
+      const { documentId } = seller.publishSealedDocument(doc, { rateSats: 3 });
+      const written = [];
+      seller.connections['buyer'] = { _writeFabric: (buf) => written.push(buf) };
+      seller._sendP2pFileSendToPeer(documentId, 'buyer', { revealKey: false, settlementId: `s-${documentId}` });
+      const Message = require('../types/message');
+      return written.map((buf) => Message.fromBuffer(buf)).filter((m) => m.type === 'P2P_FILE_SEND');
+    };
+    const a = framesFor(2048);
+    const b = framesFor(2048);
+    // Budget fits one ~2 KiB row (ciphertext + its retained frame), not two.
+    const buyer = new Peer({ listen: false, maxPendingSealedBytes: 8 * 1024 });
+    assert.strictEqual(buyer._ingestP2pFileSend({ object: JSON.parse(a[0].body) }, { name: 'seller' }, a[0]).status, 'awaiting_key');
+    assert.ok(Buffer.isBuffer([...Object.values(buyer.pendingSealedBlobs)[0].parts.values()][0].frame), 'retained frame is a Buffer, not hex');
+    assert.strictEqual(buyer._ingestP2pFileSend({ object: JSON.parse(b[0].body) }, { name: 'seller' }, b[0]).status, 'awaiting_key');
+    assert.strictEqual(Object.keys(buyer.pendingSealedBlobs).length, 1, 'oldest row evicted to stay under budget');
+    assert.ok(Object.keys(buyer.pendingSealedBlobs)[0].startsWith(JSON.parse(b[0].body).name));
+    // A single frame larger than the whole budget is refused outright.
+    const tiny = new Peer({ listen: false, maxPendingSealedBytes: 64 });
+    const r = tiny._ingestP2pFileSend({ object: JSON.parse(a[0].body) }, { name: 'seller' }, a[0]);
+    assert.strictEqual(r.status, 'reject');
+    assert.match(r.error, /budget/);
+    // Rows that never complete expire.
+    const ttl = new Peer({ listen: false, pendingSealedTtlMs: 1000 });
+    ttl._ingestP2pFileSend({ object: JSON.parse(a[0].body) }, { name: 'seller' }, a[0]);
+    for (const row of Object.values(ttl.pendingSealedBlobs)) row.created -= 5000;
+    ttl._ingestP2pFileSend({ object: JSON.parse(b[0].body) }, { name: 'seller' }, b[0]);
+    assert.strictEqual(Object.keys(ttl.pendingSealedBlobs).length, 1);
   });
 
   it('Peer: request for one blob reveals only after authorizeDocumentKeyReveal for that blob', function () {

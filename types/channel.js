@@ -43,7 +43,7 @@ const HEX64 = /^[0-9a-f]{64}$/;
 const COMPRESSED = /^(02|03)[0-9a-f]{64}$/;
 const MAINNET_NAMES = new Set(['mainnet', 'main', 'bitcoin', 'livenet']);
 const DUST = 546;
-const SEQUENCE_NONFINAL = 0xfffffffe;
+const SEQUENCE_NONFINAL = (2 ** 32) - 2; // 0xfffffffe: enables nLockTime, opts out of RBF signalling
 const ECPoint = secp256k1.Point || secp256k1.ProjectivePoint;
 const CURVE_N = (ECPoint.Fn && ECPoint.Fn.ORDER) || (secp256k1.CURVE && secp256k1.CURVE.n);
 
@@ -1806,6 +1806,12 @@ class ChannelSession {
     s._state.htlcs = cloneHtlcs(s._state.htlcs);
     if (s._state.status !== 'opening' || s._state.pending) {
       try { s._localCommitment = s._buildLocal(s._state.htlcs, s._state.number); } catch (_) { s._localCommitment = null; }
+    }
+    // Exits are not exported: rebuild the current state's from its
+    // countersignature, rooted here (every earlier state is revoked).
+    if (s._localCommitment && s._state.remoteSig) {
+      s.resolutions.declare(String(s._state.number), null);
+      s._recordExit(s._state.number, s._state.remoteSig);
     }
     for (const [k, v] of Object.entries(snapshot.preimages || {})) s._preimages.set(k, v);
     return s;

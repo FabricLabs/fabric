@@ -178,6 +178,8 @@ describe('@fabric/core/types/channel (Phase 4 sessions)', function () {
     assert.strictEqual(B2.preimageFor(paymentHashHex), preimage);
     assert.strictEqual(B2.commitment.txid, B.commitment.txid);
     assert.strictEqual(Object.keys(B2.state.revoked).length, Object.keys(B.state.revoked).length);
+    assert.strictEqual(B.resolvable, true);
+    assert.strictEqual(B2.resolvable, true, 'restored session rebuilds the current state exit');
   });
 
   it('rejects tampered, self-serving, and out-of-order counterparty states', function () {
@@ -235,11 +237,15 @@ describe('@fabric/core/types/channel (Phase 4 sessions)', function () {
     const bare = B.observe(staleA.txHex, { destinationAddress: B.localAddress, feeSats: 400 });
     assert.strictEqual(Witness.FraudProof.fromBody(bare.fraudProof).verify().ok, false, 'no broadcast evidence');
     assert.strictEqual(Witness.FraudProof.fromBody(bare.fraudProof).verify({ txConfirmed: (id) => id === staleA.txid }).ok, true, 'verifier chain view suffices');
-    const { merkleRootFromTxids } = require('../functions/bitcoinTxInclusion');
+    const { merkleRootFromTxids, headerMeetsTarget, parseHeader } = require('../functions/bitcoinTxInclusion');
     const txids = [crypto.randomBytes(32).toString('hex'), staleA.txid, crypto.randomBytes(32).toString('hex')];
     const header = Buffer.alloc(80);
     header.writeInt32LE(2, 0);
     Buffer.from(merkleRootFromTxids(txids), 'hex').reverse().copy(header, 36);
+    header.writeUInt32LE(0x207fffff, 72); // regtest difficulty
+    while (!headerMeetsTarget(header.toString('hex'))) header.writeUInt32LE(header.readUInt32LE(76) + 1, 76);
+    const blockHash = parseHeader(header.toString('hex')).blockHash;
+    const chainView = { headerKnown: (hash) => hash === blockHash };
     const seen = B.observe(staleA.txHex, { destinationAddress: B.localAddress, feeSats: 400, inclusion: { blockHeaderHex: header.toString('hex'), txids } });
     assert.strictEqual(seen.kind, 'stale');
     assert.strictEqual(seen.number, 1);
@@ -250,14 +256,24 @@ describe('@fabric/core/types/channel (Phase 4 sessions)', function () {
     assert.strictEqual(Number(justice.outs[0].value), seen.justice.sweptSats - 400);
     for (const input of justice.ins) assert.strictEqual(input.witness.length, 3, 'sig + revocation script + control');
     const proof = Witness.FraudProof.fromBody(seen.fraudProof);
-    const verdict = proof.verify();
+    assert.strictEqual(proof.verify().ok, false, 'a header alone is not evidence: the verifier must know the block');
+    assert.strictEqual(proof.verify({ headerKnown: () => false }).ok, false, 'block outside the verifier chain');
+    const verdict = proof.verify(chainView);
     assert.strictEqual(verdict.ok, true, verdict.reason);
     assert.strictEqual(verdict.evidence, 'inclusion');
+    assert.strictEqual(verdict.blockHash, blockHash);
     assert.strictEqual(verdict.offender, seen.fraudProof.artifacts.revoke.pubkey);
     // A branch for another block header does not verify.
     const wrongHeader = Buffer.from(header); wrongHeader[40] ^= 1;
     const forged = new Witness.FraudProof(Object.assign({}, seen.fraudProof, { artifacts: Object.assign({}, seen.fraudProof.artifacts, { inclusion: Object.assign({}, seen.inclusion, { blockHeaderHex: wrongHeader.toString('hex') }) }) }));
-    assert.strictEqual(forged.verify().ok, false);
+    assert.strictEqual(forged.verify({ headerKnown: () => true }).ok, false);
+    // Blank header carrying the stale txid as its Merkle root (index 0, empty branch): no PoW.
+    const blank = Buffer.alloc(80);
+    Buffer.from(staleA.txid, 'hex').reverse().copy(blank, 36);
+    const blankProof = new Witness.FraudProof(Object.assign({}, seen.fraudProof, { artifacts: Object.assign({}, seen.fraudProof.artifacts, { inclusion: { type: 'BitcoinTxInclusion', blockHeaderHex: blank.toString('hex'), txid: staleA.txid, index: 0, branch: [] } }) }));
+    const blankVerdict = blankProof.verify({ headerKnown: () => true });
+    assert.strictEqual(blankVerdict.ok, false);
+    assert.match(blankVerdict.reason, /proof-of-work/);
     assert.strictEqual(seen.fraudProof.artifacts.revoke.pubkey, A.funding.localPubkey.slice(2));
     // Any third party can check it; a different tx is not the revoked commitment.
     const bogus = new Witness.FraudProof(Object.assign({}, seen.fraudProof, { artifacts: Object.assign({}, seen.fraudProof.artifacts, { staleTxHex: A.finalize().txHex }) }));

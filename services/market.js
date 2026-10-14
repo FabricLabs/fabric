@@ -192,14 +192,20 @@ class Market extends Service {
   _onChannelHtlcSettled (ev) {
     if (!ev || !ev.htlcId) return;
     const session = Object.values(this._state.content.sessions).find((s) => s.rail === 'channel' && String(s.channelId) === String(ev.channelId) && String(s.channelHtlcId) === String(ev.htlcId));
-    if (!session || session.status === 'complete' || session.status === 'failed') return;
+    if (!session || session.status === 'complete') return;
     if (ev.outcome === 'fulfilled' && ev.preimageHex) {
       session.channelSettled = true;
       session.revealedKeyHex = String(ev.preimageHex).toLowerCase();
+      // The sats left the channel whatever this session's status: always count them.
       this._accountChannelSpend(session);
+      if (session.status === 'failed') {
+        this._tryOpenWithKey(session);
+        this.commit();
+        return;
+      }
       if (session.status === 'settling') this._complete(session, { keyHex: session.revealedKeyHex });
       else this._tryOpenWithKey(session);
-    } else if (ev.outcome === 'failed') {
+    } else if (ev.outcome === 'failed' && session.status !== 'failed') {
       this._fail(session, `channel HTLC failed: ${ev.reason || 'unknown'}`, { penalize: false });
     }
     this.commit();
@@ -888,6 +894,9 @@ class Market extends Service {
     for (const s of Object.values(this._state.content.sessions)) {
       if (s.status !== 'delivery_pending' || !s.confirmedAt) continue;
       if (now - s.confirmedAt < timeout) continue;
+      // An open channel HTLC still moves sats if the seller fulfils late; it
+      // ends through `htlcSettled` (fulfil, or fail at CLTV expiry) instead.
+      if (s.rail === 'channel' && s.channelHtlcId && !s.channelSettled) continue;
       this._fail(s, 'delivery timed out');
       this.book.recordRefund(s.sellerId);
       const want = this._state.content.wants[s.documentId];

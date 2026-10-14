@@ -102,7 +102,7 @@ class Challenge {
    * @param {number} [opts.deadlineHeight] block height after which silence is enforceable (timelocked non-response); or derive from `tipHeight` + `deadlineBlocks`
    * @param {number} [opts.tipHeight] current block height (with `deadlineBlocks`)
    * @param {number} [opts.deadlineBlocks] blocks after `tipHeight` for the deadline
-   * @param {object} [opts.deposit] `{ txid, vout }` the provider's deposit outpoint the pre-signed penalty must spend
+   * @param {object} [opts.deposit] `{ txid, vout, penaltyAddress?, minPenaltySats? }` the provider's deposit outpoint the pre-signed penalty must spend, and where / how much it must pay the publisher
    * @param {Buffer|string} opts.publisherPrivateKey
    * @returns {object} signed artifact
    */
@@ -129,6 +129,14 @@ class Challenge {
       const txid = String(opts.deposit.txid || '').toLowerCase();
       if (!HEX64.test(txid)) throw new Error('issue: deposit.txid must be 64 hex chars');
       deposit = { txid, vout: Math.max(0, Math.floor(Number(opts.deposit.vout) || 0)) };
+      // Where the provider's pre-signed penalty must pay. Signed here by the
+      // publisher, so the provider cannot pre-sign a penalty to itself.
+      if (opts.deposit.penaltyAddress) deposit.penaltyAddress = String(opts.deposit.penaltyAddress);
+      if (opts.deposit.minPenaltySats != null) {
+        const min = Math.floor(Number(opts.deposit.minPenaltySats));
+        if (!(Number.isFinite(min) && min > 0)) throw new Error('issue: deposit.minPenaltySats must be a positive integer');
+        deposit.minPenaltySats = min;
+      }
     }
     if (deadlineHeight != null && !deposit) throw new Error('issue: deadlineHeight requires the deposit outpoint the penalty pre-signature spends');
     const body = {
