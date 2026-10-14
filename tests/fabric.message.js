@@ -75,11 +75,27 @@ describe('@fabric/core/types/message', function () {
     });
 
     it('round-trips a body at exactly MAX_MESSAGE_SIZE', function () {
-      const full = Message.fromVector(['P2P_BASE_MESSAGE', 'x'.repeat(MAX_MESSAGE_SIZE)]);
+      // AMP bodies carry no inline length prefix — the body length lives in the
+      // header `size` field — so a MAX_MESSAGE_SIZE-byte payload is the limit
+      // exactly. Build it from bytes (not characters) so multi-byte UTF-8 cannot
+      // make the test lie about the wire size.
+      const payload = Buffer.alloc(MAX_MESSAGE_SIZE, 'x');
+      assert.strictEqual(Buffer.byteLength(payload), MAX_MESSAGE_SIZE);
+      const full = Message.fromVector(['P2P_BASE_MESSAGE', payload.toString('utf8')]);
       const buf = full.toBuffer();
       assert.strictEqual(buf.length, HEADER_SIZE + MAX_MESSAGE_SIZE);
+      assert.strictEqual(Buffer.from(full.raw.size).readUInt32BE(0), MAX_MESSAGE_SIZE, 'header size field equals the body byte length');
       const parsed = Message.fromBuffer(buf);
       assert.strictEqual(parsed.raw.data.length, MAX_MESSAGE_SIZE);
+      assert.ok(parsed.raw.data.equals(payload));
+    });
+
+    it('a multi-byte body is bounded by bytes, not characters', function () {
+      const chars = Math.floor(MAX_MESSAGE_SIZE / 3); // '€' is 3 bytes in UTF-8
+      const text = '€'.repeat(chars);
+      const m = Message.fromVector(['P2P_BASE_MESSAGE', text]);
+      assert.strictEqual(m.raw.data.length, Buffer.byteLength(text, 'utf8'));
+      assert.ok(m.raw.data.length <= MAX_MESSAGE_SIZE);
     });
 
     it('can compose from a vector', async function prove () {

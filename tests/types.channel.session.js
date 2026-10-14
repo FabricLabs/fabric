@@ -230,10 +230,20 @@ describe('@fabric/core/types/channel (Phase 4 sessions)', function () {
     const staleA = A.finalize();
     sync(B, A, B.fulfillHtlc(B.state.htlcs[0].id, preimage));
     assert.strictEqual(A.number, 2);
-    // A broadcasts the revoked state 1.
-    const seen = B.observe(staleA.txHex, { destinationAddress: B.localAddress, feeSats: 400 });
+    // A broadcasts the revoked state 1. Without broadcast evidence the proof
+    // is a bare claim; with a block (header + txids) it carries an SPV branch.
+    const bare = B.observe(staleA.txHex, { destinationAddress: B.localAddress, feeSats: 400 });
+    assert.strictEqual(Witness.FraudProof.fromBody(bare.fraudProof).verify().ok, false, 'no broadcast evidence');
+    assert.strictEqual(Witness.FraudProof.fromBody(bare.fraudProof).verify({ txConfirmed: (id) => id === staleA.txid }).ok, true, 'verifier chain view suffices');
+    const { merkleRootFromTxids } = require('../functions/bitcoinTxInclusion');
+    const txids = [crypto.randomBytes(32).toString('hex'), staleA.txid, crypto.randomBytes(32).toString('hex')];
+    const header = Buffer.alloc(80);
+    header.writeInt32LE(2, 0);
+    Buffer.from(merkleRootFromTxids(txids), 'hex').reverse().copy(header, 36);
+    const seen = B.observe(staleA.txHex, { destinationAddress: B.localAddress, feeSats: 400, inclusion: { blockHeaderHex: header.toString('hex'), txids } });
     assert.strictEqual(seen.kind, 'stale');
     assert.strictEqual(seen.number, 1);
+    assert.ok(seen.inclusion && seen.inclusion.branch.length === 2);
     const justice = bitcoin.Transaction.fromHex(seen.justice.txHex);
     assert.strictEqual(justice.ins.length, 2, 'toLocal + HTLC swept');
     assert.strictEqual(seen.justice.sweptSats, 100000 - 500 - ANCHORS, 'everything but anchors');
@@ -242,7 +252,12 @@ describe('@fabric/core/types/channel (Phase 4 sessions)', function () {
     const proof = Witness.FraudProof.fromBody(seen.fraudProof);
     const verdict = proof.verify();
     assert.strictEqual(verdict.ok, true, verdict.reason);
-    assert.strictEqual(verdict.offender, Witness.xOnlyPubkeyHex ? seen.fraudProof.artifacts.revoke.pubkey : seen.fraudProof.artifacts.revoke.pubkey);
+    assert.strictEqual(verdict.evidence, 'inclusion');
+    assert.strictEqual(verdict.offender, seen.fraudProof.artifacts.revoke.pubkey);
+    // A branch for another block header does not verify.
+    const wrongHeader = Buffer.from(header); wrongHeader[40] ^= 1;
+    const forged = new Witness.FraudProof(Object.assign({}, seen.fraudProof, { artifacts: Object.assign({}, seen.fraudProof.artifacts, { inclusion: Object.assign({}, seen.inclusion, { blockHeaderHex: wrongHeader.toString('hex') }) }) }));
+    assert.strictEqual(forged.verify().ok, false);
     assert.strictEqual(seen.fraudProof.artifacts.revoke.pubkey, A.funding.localPubkey.slice(2));
     // Any third party can check it; a different tx is not the revoked commitment.
     const bogus = new Witness.FraudProof(Object.assign({}, seen.fraudProof, { artifacts: Object.assign({}, seen.fraudProof.artifacts, { staleTxHex: A.finalize().txHex }) }));
@@ -386,7 +401,7 @@ describe('@fabric/core/types/channel (Channel.Book host registry)', function () 
   });
 
   it('forwards an HTLC across two channels and propagates fulfil / fail upstream', function () {
-    const { out, pump } = books(3, { forwardPolicy: { feeSats: 10, cltvDelta: 40 } });
+    const { out, pump } = books(3, { tipHeight: () => 10, forwardPolicy: { feeSats: 10, cltvDelta: 40 } });
     const [A, B, C] = out;
     const fAB = Channel.buildFunding({ network: 'regtest', localPubkey: A.p.pub, remotePubkey: B.p.pub, expireAfter: 5000 });
     const fBC = Channel.buildFunding({ network: 'regtest', localPubkey: B.p.pub, remotePubkey: C.p.pub, expireAfter: 5000 });
@@ -425,5 +440,74 @@ describe('@fabric/core/types/channel (Channel.Book host registry)', function () 
     assert.strictEqual(ab.session.balances.localSats, 50000 - 500 - ANCHORS - 1010);
     assert.strictEqual(upstream.state.htlcs.length, 0);
     assert.strictEqual(upstream.state.settled.pop().outcome, 'failed');
+  });
+
+  it('seller-fulfils: the book fulfils a committed HTLC from preimageFor and the payer learns the preimage', function () {
+    const preimage = crypto.randomBytes(32).toString('hex');
+    const paymentHashHex = hashOf(preimage);
+    const { out, pump } = books(2, { tipHeight: () => 10 });
+    const [A, B] = out;
+    // Only the seller (B) knows the preimage.
+    B.book._preimageFor = (h) => (h === paymentHashHex ? preimage : null);
+    const events = { committed: [], fulfilled: [], settled: [] };
+    B.book.on('htlcCommitted', (e) => events.committed.push(e));
+    A.book.on('htlcFulfilled', (e) => events.fulfilled.push(e));
+    A.book.on('htlcSettled', (e) => events.settled.push(e));
+    const funding = Channel.buildFunding({ network: 'regtest', localPubkey: A.p.pub, remotePubkey: B.p.pub, expireAfter: 5000 });
+    const { session } = A.book.open({ remotePubkey: B.p.pub, fundedTxHex: fundingTx(funding.address, 20000), capacitySats: 20000, expireAfter: 5000, localAddress: A.p.address, remoteAddress: B.p.address });
+    pump();
+    A.book.publish(session.offerHtlc({ amountSats: 1000, paymentHashHex, blobHashHex: 'ab'.repeat(32), expireAfter: 4000 }), session);
+    pump();
+    assert.strictEqual(events.committed.length, 1);
+    assert.strictEqual(events.committed[0].paymentHashHex, paymentHashHex);
+    assert.strictEqual(events.fulfilled.length, 1, 'payer learned the preimage from ChannelHtlcFulfill');
+    assert.strictEqual(events.fulfilled[0].preimageHex, preimage);
+    assert.strictEqual(events.settled[0].outcome, 'fulfilled');
+    assert.strictEqual(session.preimageFor(paymentHashHex), preimage);
+    assert.strictEqual(session.balances.remoteSats, 1000);
+    assert.strictEqual(session.state.htlcs.length, 0);
+    assert.strictEqual(session.resolvable, true, 'latest state carries a counterparty-signed exit');
+    assert.strictEqual(session.resolutions.stateIds.length, session.number + 1);
+  });
+
+  it('does not register a session for a ChannelOpen that fails validation', function () {
+    const { out } = books(2, { tipHeight: () => 10 });
+    const [A, B] = out;
+    const funding = Channel.buildFunding({ network: 'regtest', localPubkey: A.p.pub, remotePubkey: B.p.pub, expireAfter: 5000 });
+    const { body } = A.book.open({ remotePubkey: B.p.pub, fundedTxHex: fundingTx(funding.address, 20000), capacitySats: 20000, expireAfter: 5000, localAddress: A.p.address, remoteAddress: B.p.address });
+    const forged = Object.assign({}, body, { signature: '00'.repeat(64) });
+    assert.throws(() => B.book.ingest(forged, { sellerId: 'peer-a' }));
+    assert.strictEqual(B.book.sessions.size, 0);
+    assert.strictEqual(B.book.sessionFor('peer-a'), null);
+  });
+});
+
+describe('@fabric/core/types/channel (unknown tip + output indices)', function () {
+  it('refuses sender-side fails when the chain tip is unknown', function () {
+    let tip = 10;
+    const { A, B } = opened(100000, 500, { A: { tipHeight: () => tip }, B: { tipHeight: () => tip } });
+    sync(A, B, A.offerHtlc({ amountSats: 1000, paymentHashHex: hashOf(crypto.randomBytes(32).toString('hex')), expireAfter: 4000 }));
+    tip = null;
+    assert.throws(() => A.failHtlc(A.state.htlcs[0].id), /chain tip unknown/);
+    tip = 4001;
+    const fail = A.failHtlc(A.state.htlcs[0].id, 'expired');
+    tip = null;
+    assert.throws(() => B.receiveSettlement(fail), /chain tip is unknown/);
+  });
+
+  it('keeps HTLC and anchor vouts aligned when a dust HTLC is trimmed', function () {
+    const { A, B } = opened(100000, 500, { A: { tipHeight: () => 10 }, B: { tipHeight: () => 10 } });
+    sync(A, B, A.offerHtlc({ amountSats: 100, paymentHashHex: hashOf(crypto.randomBytes(32).toString('hex')), expireAfter: 4000 }));
+    sync(A, B, A.offerHtlc({ amountSats: 5000, paymentHashHex: hashOf(crypto.randomBytes(32).toString('hex')), expireAfter: 4000 }));
+    const c = A.commitment;
+    const tx = bitcoin.Transaction.fromHex(bitcoin.Psbt.fromBase64(c.psbtBase64).__CACHE.__TX.toHex());
+    const trimmed = c.outputs.find((o) => o.kind === 'htlc' && o.trimmed);
+    assert.ok(trimmed && trimmed.vout === null, 'trimmed HTLC has no output index');
+    for (const row of c.outputs) {
+      if (row.vout == null) continue;
+      const script = bitcoin.address.toOutputScript(row.address, NET);
+      assert.ok(Buffer.from(tx.outs[row.vout].script).equals(script), `${row.kind} vout ${row.vout} points at its own script`);
+    }
+    assert.strictEqual(c.outputs.filter((o) => o.vout != null).length, tx.outs.length);
   });
 });

@@ -45,11 +45,10 @@ function buildMarket (opts = {}) {
     deliveries.push({ seller, blobIndex: reqOpts.blobIndex });
     const written = [];
     s.connections.buyer = { _writeFabric: (buf) => written.push(buf) };
-    const indexes = reqOpts.blobIndex != null ? [reqOpts.blobIndex] : undefined;
-    s._sendSealedBlobsToPeer(s._getSealedBlobDocument(id), id, 'buyer', { revealKey: true, settlementId: 't', indexes });
+    s._sendSealedBlobsToPeer(s._getSealedBlobDocument(id), id, 'buyer', { revealKey: true, settlementId: 't', blobIndex: reqOpts.blobIndex });
     for (const buf of written) {
       const m = Message.fromBuffer(buf);
-      if (m.type === 'P2P_FILE_SEND') buyer._ingestP2pFileSend({ object: JSON.parse(m.body) }, { name: seller });
+      if (m.type === 'P2P_FILE_SEND') buyer._ingestP2pFileSend({ object: JSON.parse(m.body) }, { name: seller }, m);
       else buyer._handleDocumentContentKeyReveal(JSON.parse(m.body).object, { name: seller });
     }
     return true;
@@ -200,5 +199,89 @@ describe('services/market (Phase 4 channel rail)', function () {
     assert.strictEqual(buyerChan.busy, false);
     assert.ok(Object.keys(sellerChan.state.revoked).length >= 2, 'every superseded state is revoked');
     assert.strictEqual(market.spentSats, viaChannel.length * 5 + (sessions.length - viaChannel.length) * 5);
+  });
+
+  it('seller-fulfils over Channel.Book: no key reveal on the wire, buyer opens blobs with the HTLC preimage, busy rounds defer', async function () {
+    const m = buildMarket({ rateSats: 5 });
+    // The channel seller never reveals keys over P2P_FILE_SEND: ciphertext only.
+    const sellerPeer = m.sellers.alpha;
+    const origRequest = m.buyer.requestDocument;
+    m.buyer.requestDocument = (id, seller, reqOpts = {}) => {
+      if (seller !== 'alpha') return origRequest(id, seller, reqOpts);
+      const written = [];
+      sellerPeer.connections.buyer = { _writeFabric: (buf) => written.push(buf) };
+      sellerPeer._sendSealedBlobsToPeer(sellerPeer._getSealedBlobDocument(id), id, 'buyer', { revealKey: false, settlementId: 't', blobIndex: reqOpts.blobIndex });
+      for (const buf of written) {
+        const msg = Message.fromBuffer(buf);
+        assert.strictEqual(msg.type, 'P2P_FILE_SEND');
+        m.buyer._ingestP2pFileSend({ object: JSON.parse(msg.body) }, { name: 'alpha' }, msg);
+      }
+      return true;
+    };
+    // Make the channel seller the only seller the book knows.
+    const only = new DocumentOfferBook();
+    only.ingestInventoryResponse({ origin: 'alpha', items: [m.doc.inventoryItem({ rateSats: 5, documentId: m.documentId })], latencyMs: 20 });
+
+    const buyerKey = party();
+    const sellerKey = party();
+    const wire = { toSeller: [], toBuyer: [] };
+    const buyerBook = new Channel.Book({ localPrivateKey: buyerKey.priv, network: 'regtest', tipHeight: () => 100, publish: (body) => wire.toSeller.push(body) });
+    const sellerBook = new Channel.Book({
+      localPrivateKey: sellerKey.priv,
+      network: 'regtest',
+      tipHeight: () => 100,
+      publish: (body) => wire.toBuyer.push(body),
+      // Seller-fulfils: K_i for any payment hash of a blob this Peer sells.
+      preimageFor: (h) => { const hit = sellerPeer.sealedBlobPreimageForPaymentHash(h); return hit ? hit.keyHex : null; }
+    });
+    const tx = new bitcoin.Transaction();
+    tx.addInput(crypto.randomBytes(32), 0);
+    const funding = Channel.buildFunding({ network: 'regtest', localPubkey: buyerKey.pub, remotePubkey: sellerKey.pub, expireAfter: 5000 });
+    tx.addOutput(bitcoin.address.toOutputScript(funding.address, NET), BigInt(50000));
+    const opened = buyerBook.open({ remotePubkey: sellerKey.pub, fundedTxHex: tx.toHex(), capacitySats: 50000, expireAfter: 5000, localAddress: buyerKey.address, remoteAddress: sellerKey.address, aliases: ['alpha'] });
+    const step = () => {
+      if (wire.toSeller.length) { sellerBook.ingest(wire.toSeller.shift(), { sellerId: 'buyer' }); return true; }
+      if (wire.toBuyer.length) { buyerBook.ingest(wire.toBuyer.shift(), { sellerId: 'alpha' }); return true; }
+      return false;
+    };
+    const pump = () => { while (step()); };
+    pump();
+    assert.strictEqual(opened.session.status, 'open');
+
+    const market = new Market({ budgetSats: 100, perPlanMaxSats: 100, tickMs: 0, book: only, proximityWeight: 1 });
+    market.attach({ peer: m.buyer, channels: buyerBook });
+    const deferred = [];
+    market.on('sessionDeferred', (s) => deferred.push(s));
+    market.want(m.documentId, { blobTotal: m.doc.blobTotal, merkleRootHex: m.doc.merkleRootHex });
+
+    let received = null;
+    m.buyer.on('documentReceived', (ev) => { received = ev; });
+
+    // Gossip is not pumped during the tick: the first HTLC leaves the channel
+    // busy, so the second chunk is deferred instead of being confirmed unpaid.
+    const first = await market.tick();
+    assert.ok(first.opened >= 1);
+    const afterFirst = market.listSessions().filter((s) => s.rail === 'channel');
+    assert.ok(afterFirst.some((s) => s.status === 'channel_pending'), 'second chunk waits for the round to finish');
+    assert.ok(deferred.length >= 1);
+    assert.ok(!afterFirst.some((s) => s.status === 'complete'), 'nothing completes before the HTLC settles');
+    assert.strictEqual(market.spentSats, 0, 'nothing is counted as spent until the HTLC is fulfilled');
+
+    // Finish the round: the seller fulfils with K_i, the buyer opens the blob with the preimage.
+    pump();
+    assert.ok(received === null || received.buffer.length > 0);
+    // Retry deferred chunks until everything is bought and opened.
+    for (let i = 0; i < 6 && !(received && received.buffer.equals(m.plain)); i++) {
+      await market.tick();
+      pump();
+    }
+    assert.ok(received && received.buffer.equals(m.plain), 'document reassembled from HTLC preimages alone');
+    const done = market.listSessions().filter((s) => s.rail === 'channel');
+    assert.ok(done.length >= m.doc.blobTotal);
+    assert.ok(done.every((s) => s.status === 'complete'), JSON.stringify(done.map((s) => s.status)));
+    assert.strictEqual(opened.session.state.htlcs.length, 0);
+    assert.strictEqual(opened.session.busy, false);
+    assert.strictEqual(sellerBook.sessions.get(opened.session.channelId).balances.localSats, m.doc.blobTotal * 5);
+    assert.strictEqual(market.spentSats, m.doc.blobTotal * 5);
   });
 });

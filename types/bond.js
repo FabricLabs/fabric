@@ -1,8 +1,11 @@
 'use strict';
 
 const crypto = require('crypto');
+const { Psbt } = require('bitcoinjs-lib');
 const Contract = require('./contract');
 const Witness = require('./witness');
+const Resolutions = require('./resolutions');
+const { signerFromPriv32 } = require('../functions/inventoryHtlc');
 const {
   composeTaprootTree,
   buildHashlockLeaf,
@@ -19,7 +22,15 @@ const MAINNET_NAMES = new Set(['mainnet', 'main', 'bitcoin', 'livenet']);
 
 const BOUNTY_TYPE = 'BountyBond';
 const DEPOSIT_TYPE = 'DepositBond';
+const PENALTY_PRESIG_TYPE = 'DepositPenaltyPreSig';
 
+/**
+ * Normalise and validate a 33-byte compressed pubkey hex.
+ * @param {string} label error prefix
+ * @param {string} hex
+ * @returns {string} lowercase hex
+ * @private
+ */
 function compressedOrThrow (label, hex) {
   const s = String(hex || '').trim().toLowerCase();
   if (!COMPRESSED.test(s)) throw new Error(`${label} must be a 33-byte compressed pubkey (hex)`);
@@ -38,6 +49,11 @@ function lockFrom (raw) {
   return normalizeLock(raw);
 }
 
+/**
+ * Throw for any mainnet network name (RC posture: regtest / signet only).
+ * @param {string} network
+ * @private
+ */
 function refuseMainnet (network) {
   if (MAINNET_NAMES.has(String(network || '').toLowerCase())) {
     throw new Error('Bond: mainnet refused — market bonds are regtest / signet only (RC posture)');
@@ -103,6 +119,12 @@ class Bond extends Contract {
     return crypto.createHash('sha256').update(Buffer.from(String(preimageHex), 'hex')).digest('hex');
   }
 
+  /**
+   * Deterministic leaf id for a provider's bounty claim at an epoch.
+   * @param {number} epoch
+   * @param {string} providerPubkey compressed hex
+   * @returns {string}
+   */
   static leafIdClaim (epoch, providerPubkey) {
     return `claim-e${Math.floor(Number(epoch) || 0)}-${String(providerPubkey).slice(0, 16)}`;
   }
@@ -236,6 +258,11 @@ class Bond extends Contract {
     const root = opts.merkleRootHex ? String(opts.merkleRootHex).toLowerCase() : null;
     const leaves = [
       buildSpendLeaf({ id: 'penalty', keys: [publisher, provider], threshold: 2 }),
+      // Check-in: both parties re-deposit (spend back to this address) once the
+      // deposit has one confirmation, defeating the pre-signed timelocked
+      // penalty for the current round. The CSV also keeps the leaf distinct
+      // from `penalty`, whose script would otherwise be byte-identical.
+      buildSpendLeaf({ id: 'checkin', keys: [publisher, provider], threshold: 2, after: { type: 'csv', blocks: 1 } }),
       buildSpendLeaf({ id: 'withdraw', keys: [provider], threshold: 1, after: withdrawAfter })
     ];
     const tree = composeTaprootTree({ network, leaves });
@@ -315,11 +342,155 @@ class Bond extends Contract {
   }
 
   /**
+   * Unsigned, **timelocked** penalty spend of a provider deposit for one
+   * challenge round: `nLockTime = deadlineHeight`. The provider pre-signs it
+   * ({@link Bond.signPenaltyAsProvider}) before the publisher co-signs that
+   * round's check-in; if the provider never checks in, the publisher adds its
+   * own signature after the deadline and broadcasts. No fraud proof is needed
+   * to *build* it — the timelock is the evidence (decision 6, timelock form).
+   * @param {object} deposit from {@link Bond.buildDeposit}
+   * @param {object} opts `{ fundedTxHex, deadlineHeight, destinationAddress, feeSats }`
+   * @returns {object} `{ psbtBase64, txid, deadlineHeight, deposit: { txid, vout }, leafId: 'penalty' }`
+   */
+  static prepareDepositPenalty (deposit, opts = {}) {
+    const deadlineHeight = Math.floor(Number(opts.deadlineHeight));
+    if (!Number.isFinite(deadlineHeight) || deadlineHeight <= 0) throw new Error('prepareDepositPenalty: deadlineHeight required');
+    const leaf = Bond._leaf(deposit, 'penalty');
+    const psbt = prepareLeafPsbt({
+      networkName: deposit.network,
+      fundedTxHex: opts.fundedTxHex,
+      vaultAddress: deposit.address,
+      leafScript: leaf.script,
+      leaves: deposit._leaves,
+      internalPubkeyHex: deposit.internalPubkeyHex,
+      destinationAddress: opts.destinationAddress,
+      feeSats: opts.feeSats,
+      after: { type: 'cltv', height: deadlineHeight }
+    });
+    const tx = Psbt.fromBase64(psbt.psbtBase64).__CACHE.__TX;
+    return Object.assign(psbt, {
+      leafId: 'penalty',
+      witnessShape: 'sigs',
+      txid: tx.getId(),
+      deadlineHeight,
+      deposit: { txid: Buffer.from(tx.ins[0].hash).reverse().toString('hex'), vout: tx.ins[0].index }
+    });
+  }
+
+  /**
+   * Provider pre-signs a {@link Bond.prepareDepositPenalty} PSBT and wraps it
+   * as a signed `DepositPenaltyPreSig` artifact (a `CONTRACT_MESSAGE` body).
+   * Verifiers use {@link Witness.verifyPenaltyPreSig}.
+   * @param {object} deposit
+   * @param {object} penalty from {@link Bond.prepareDepositPenalty}
+   * @param {Buffer|string} providerPrivateKey 32 bytes
+   * @returns {object} signed artifact
+   */
+  static signPenaltyAsProvider (deposit, penalty, providerPrivateKey) {
+    const priv = Buffer.isBuffer(providerPrivateKey) ? providerPrivateKey : Buffer.from(String(providerPrivateKey), 'hex');
+    if (priv.length !== 32) throw new Error('signPenaltyAsProvider: 32-byte private key required');
+    const pub = Buffer.from(signerFromPriv32(priv).publicKey).toString('hex');
+    if (pub !== String(deposit.providerPubkey).toLowerCase()) throw new Error('signPenaltyAsProvider: key is not the deposit provider');
+    const psbt = Psbt.fromBase64(penalty.psbtBase64);
+    psbt.signInput(0, signerFromPriv32(priv));
+    const tx = psbt.__CACHE.__TX;
+    return Witness.signArtifact({
+      type: PENALTY_PRESIG_TYPE,
+      version: 1,
+      depositAddress: deposit.address,
+      deposit: { txid: Buffer.from(tx.ins[0].hash).reverse().toString('hex'), vout: tx.ins[0].index },
+      deadlineHeight: Number(tx.locktime),
+      txid: tx.getId(),
+      psbtBase64: psbt.toBase64()
+    }, priv);
+  }
+
+  /**
+   * Publisher completes a pre-signed penalty after the deadline: verifies the
+   * provider's artifact, adds the publisher signature, finalizes.
+   * @param {object} deposit
+   * @param {object} preSig `DepositPenaltyPreSig`
+   * @param {Buffer|string} publisherPrivateKey
+   * @param {object} [ctx] `{ tipHeight }` — refuses before `deadlineHeight` when supplied
+   * @returns {{ txHex: string, txid: string, deadlineHeight: number }}
+   */
+  static finalizePreSignedPenalty (deposit, preSig, publisherPrivateKey, ctx = {}) {
+    const check = Witness.verifyPenaltyPreSig(preSig, { providerPubkey: deposit.providerPubkey, deposit: preSig.deposit, deadlineHeight: preSig.deadlineHeight });
+    if (!check.ok) throw new Error(`finalizePreSignedPenalty: ${check.reason}`);
+    if (ctx.tipHeight != null && Number(ctx.tipHeight) < Number(preSig.deadlineHeight)) {
+      throw new Error(`finalizePreSignedPenalty: deadline ${preSig.deadlineHeight} not reached (tip ${ctx.tipHeight})`);
+    }
+    const priv = Buffer.isBuffer(publisherPrivateKey) ? publisherPrivateKey : Buffer.from(String(publisherPrivateKey), 'hex');
+    const psbt = check.psbt;
+    psbt.signInput(0, signerFromPriv32(priv));
+    const done = finalizeSpendPsbt({ psbtBase64: psbt.toBase64() });
+    return { txHex: done.txHex, txid: done.txid, deadlineHeight: Number(preSig.deadlineHeight) };
+  }
+
+  /**
+   * Check-in transaction for one round: re-deposits the output to the same
+   * deposit address through the `checkin` leaf, which invalidates every
+   * pre-signed penalty on the old outpoint. Both parties sign (publisher only
+   * after holding the provider's pre-signature for the **next** round).
+   * @param {object} deposit
+   * @param {object} opts `{ fundedTxHex, feeSats }`
+   * @returns {object} `{ psbtBase64, txid, leafId: 'checkin', nextDeposit: { txid, vout } }`
+   */
+  static prepareDepositCheckIn (deposit, opts = {}) {
+    const leaf = Bond._leaf(deposit, 'checkin');
+    const psbt = prepareLeafPsbt({
+      networkName: deposit.network,
+      fundedTxHex: opts.fundedTxHex,
+      vaultAddress: deposit.address,
+      leafScript: leaf.script,
+      leaves: deposit._leaves,
+      internalPubkeyHex: deposit.internalPubkeyHex,
+      destinationAddress: deposit.address,
+      feeSats: opts.feeSats,
+      after: { type: 'csv', blocks: 1 }
+    });
+    const tx = Psbt.fromBase64(psbt.psbtBase64).__CACHE.__TX;
+    return Object.assign(psbt, { leafId: 'checkin', witnessShape: 'sigs', txid: tx.getId(), nextDeposit: { txid: tx.getId(), vout: 0 } });
+  }
+
+  /**
+   * Record one check-in round in this bond's {@link Contract.Resolutions}:
+   * round `n` is **resolvable** only when the provider's pre-signed penalty
+   * for round `n + 1` (spending the post-check-in outpoint) is held. The
+   * publisher must call this (and see `resolvable`) before co-signing the
+   * round-`n` check-in — `P_{n+1}` before `C_n`.
+   * @param {number} round
+   * @param {object} opts `{ penaltyPreSig, checkInPsbtBase64?, deposit }`
+   * @returns {{ round: number, resolvable: boolean, missing: string[] }}
+   */
+  recordRound (round, opts = {}) {
+    const n = Math.floor(Number(round));
+    const id = String(n);
+    if (!this.resolutions.stateIds.includes(id)) this.resolutions.declare(id, n > 0 ? String(n - 1) : null);
+    const preSig = opts.penaltyPreSig;
+    const deposit = opts.deposit;
+    if (preSig && deposit) {
+      const check = Witness.verifyPenaltyPreSig(preSig, { providerPubkey: deposit.providerPubkey, deposit: preSig.deposit, deadlineHeight: preSig.deadlineHeight });
+      if (!check.ok) throw new Error(`recordRound: ${check.reason}`);
+      this.resolutions.addExit(id, { id: 'penalty', kind: Resolutions.KINDS.PENALTY, psbtBase64: preSig.psbtBase64, required: [deposit.providerPubkey], locktime: { height: Number(preSig.deadlineHeight) }, meta: { deadlineHeight: Number(preSig.deadlineHeight) } });
+    }
+    if (opts.checkInPsbtBase64 && deposit) {
+      this.resolutions.addExit(id, { id: 'checkin', kind: Resolutions.KINDS.CHECKIN, psbtBase64: opts.checkInPsbtBase64, required: [deposit.providerPubkey, deposit.publisherPubkey] });
+    }
+    const missing = this.resolutions.missing(id);
+    const hasPenalty = !!this.resolutions.getExit(id, 'penalty');
+    if (!hasPenalty) missing.push(`penalty pre-signature for round ${n}`);
+    return { round: n, resolvable: missing.length === 0, missing };
+  }
+
+  /**
    * Penalty spend of a provider deposit. **Requires a verifying fraud proof**
    * naming this provider as offender; the proof hash is recorded on the result
-   * so the spend always travels with its evidence.
+   * so the spend always travels with its evidence. `ctx` is the verifier's
+   * chain view (`tipHeight`, `outpointUnspent`, `txConfirmed`) — kinds that
+   * assert on-chain facts refuse to verify without it.
    * @param {object} deposit from {@link Bond.buildDeposit}
-   * @param {object} opts `{ fraudProof, fundedTxHex, destinationAddress, feeSats, epoch }`
+   * @param {object} opts `{ fraudProof, fundedTxHex, destinationAddress, feeSats, ctx? }`
    * @returns {object}
    */
   static preparePenaltySpend (deposit, opts = {}) {
@@ -327,11 +498,14 @@ class Bond extends Contract {
       ? opts.fraudProof
       : Witness.FraudProof.fromBody(opts.fraudProof);
     if (!proof) throw new Error('preparePenaltySpend: fraudProof required');
-    const verdict = proof.verify({ epoch: opts.epoch });
+    const verdict = proof.verify(Object.assign({}, opts.ctx || {}, opts.epoch != null ? { epoch: opts.epoch } : {}));
     if (!verdict.ok) throw new Error(`preparePenaltySpend: fraud proof does not verify (${verdict.reason})`);
     const xOnly = String(deposit.providerPubkey).slice(2);
     if (String(verdict.offender || '').toLowerCase() !== xOnly) {
       throw new Error('preparePenaltySpend: fraud proof names a different offender');
+    }
+    if (verdict.evidence === 'timelock') {
+      throw new Error('preparePenaltySpend: timelocked non-response is enforced by the pre-signed penalty — use Bond.finalizePreSignedPenalty');
     }
     const leaf = Bond._leaf(deposit, 'penalty');
     const psbt = prepareLeafPsbt({
@@ -385,6 +559,13 @@ class Bond extends Contract {
     return finalizeSpendPsbt({ psbtBase64 });
   }
 
+  /**
+   * Build a `{ type, time }` expiry record.
+   * @param {string} type
+   * @param {number} time
+   * @returns {Object}
+   * @private
+   */
   _getExpiry (type, time) {
     return {
       type, time,

@@ -33,6 +33,10 @@ class Challenge {
     return this;
   }
 
+  /**
+   * Body `type` strings used on the wire.
+   * @type {{ CHALLENGE: string, RESPONSE: string, COMMITMENT: string }}
+   */
   static get TYPES () {
     return { CHALLENGE: CHALLENGE_TYPE, RESPONSE: RESPONSE_TYPE, COMMITMENT: COMMITMENT_TYPE };
   }
@@ -95,6 +99,10 @@ class Challenge {
    * @param {string[]} [opts.blobHashes] leaf hashes (pins `blobHashHex` for the chosen index)
    * @param {string} [opts.nonceHex] 32-byte hex (random when omitted)
    * @param {number} [opts.deadlineEpochs]
+   * @param {number} [opts.deadlineHeight] block height after which silence is enforceable (timelocked non-response); or derive from `tipHeight` + `deadlineBlocks`
+   * @param {number} [opts.tipHeight] current block height (with `deadlineBlocks`)
+   * @param {number} [opts.deadlineBlocks] blocks after `tipHeight` for the deadline
+   * @param {object} [opts.deposit] `{ txid, vout }` the provider's deposit outpoint the pre-signed penalty must spend
    * @param {Buffer|string} opts.publisherPrivateKey
    * @returns {object} signed artifact
    */
@@ -112,6 +120,17 @@ class Challenge {
     const pinned = Array.isArray(opts.blobHashes) && opts.blobHashes[blobIndex]
       ? String(opts.blobHashes[blobIndex]).toLowerCase()
       : null;
+    let deadlineHeight = null;
+    if (opts.deadlineHeight != null) deadlineHeight = Math.floor(Number(opts.deadlineHeight));
+    else if (opts.tipHeight != null && opts.deadlineBlocks != null) deadlineHeight = Math.floor(Number(opts.tipHeight)) + Math.max(1, Math.floor(Number(opts.deadlineBlocks)));
+    if (deadlineHeight != null && !(Number.isFinite(deadlineHeight) && deadlineHeight > 0)) throw new Error('issue: deadlineHeight must be a positive block height');
+    let deposit = null;
+    if (opts.deposit) {
+      const txid = String(opts.deposit.txid || '').toLowerCase();
+      if (!HEX64.test(txid)) throw new Error('issue: deposit.txid must be 64 hex chars');
+      deposit = { txid, vout: Math.max(0, Math.floor(Number(opts.deposit.vout) || 0)) };
+    }
+    if (deadlineHeight != null && !deposit) throw new Error('issue: deadlineHeight requires the deposit outpoint the penalty pre-signature spends');
     const body = {
       type: CHALLENGE_TYPE,
       version: 1,
@@ -122,6 +141,8 @@ class Challenge {
       nonceHex,
       epoch,
       deadlineEpoch: epoch + deadlineEpochs,
+      deadlineHeight,
+      deposit,
       providerPubkey: provider
     };
     return Witness.signArtifact(body, opts.publisherPrivateKey);
@@ -177,9 +198,17 @@ class Challenge {
     const out = (ok, reason = null, extra = {}) => Object.assign({ ok, reason, late: false, fraud: null }, extra);
     if (!Witness.verifyArtifact(challenge)) return out(false, 'challenge signature invalid');
     if (!response) {
+      // Silence is only *enforceable* through the timelocked penalty: the
+      // challenge must carry `deadlineHeight` and the caller's chain tip must
+      // have passed it. The epoch clock alone yields a hint, never a verdict.
       const now = ctx.epoch != null ? Number(ctx.epoch) : null;
+      const tip = ctx.tipHeight != null ? Number(ctx.tipHeight) : null;
+      const deadlineHeight = challenge.deadlineHeight != null ? Number(challenge.deadlineHeight) : null;
+      if (deadlineHeight != null && tip != null && tip >= deadlineHeight) {
+        return out(false, 'no response by deadline height', { late: true, fraud: Witness.FRAUD_PROOF_KINDS.NON_RESPONSE, evidence: 'timelock', enforceableAfterHeight: deadlineHeight });
+      }
       if (now != null && now > Number(challenge.deadlineEpoch)) {
-        return out(false, 'no response by deadline', { late: true, fraud: Witness.FRAUD_PROOF_KINDS.NON_RESPONSE });
+        return out(false, 'no response by deadline epoch (not enforceable without deadlineHeight + chain tip)', { late: true, fraud: null });
       }
       return out(false, 'awaiting response');
     }
@@ -221,22 +250,31 @@ class Challenge {
     const { FraudProof } = Witness;
     if (v.fraud === Witness.FRAUD_PROOF_KINDS.NON_RESPONSE) {
       if (!extra.commitment) return null;
-      return new FraudProof({ kind: v.fraud, artifacts: { challenge, commitment: extra.commitment, response: response || null } });
+      // Absence needs the provider's pre-signed timelocked penalty for this
+      // round; a late response needs nothing more than the response.
+      if (!response && !extra.penaltyPreSig) return null;
+      return new FraudProof({
+        kind: v.fraud,
+        artifacts: Object.assign({ challenge, commitment: extra.commitment, response: response || null }, response ? {} : { penaltyPreSig: extra.penaltyPreSig }),
+        claim: response ? {} : { evidence: 'timelock', enforceableAfterHeight: Number(challenge.deadlineHeight) }
+      });
     }
     return new FraudProof({ kind: v.fraud, artifacts: { challenge, response } });
   }
 
   /**
-   * Provider's counter-proof when penalized despite a valid response.
+   * Provider's counter-proof when penalized despite a valid response. The
+   * penalty transaction that spent the deposit outpoint **is** the evidence;
+   * without it the proof does not verify.
    * @param {object} challenge
    * @param {object} response
-   * @param {object} [penalty] `{ txid }` of the penalty spend, when known
+   * @param {object} [penalty] `{ txHex, txid? }` the penalty spend as seen on-chain
    * @returns {FraudProof}
    */
   static wrongfulPenaltyProof (challenge, response, penalty = null) {
     return new Witness.FraudProof({
       kind: Witness.FRAUD_PROOF_KINDS.WRONGFUL_PENALTY,
-      artifacts: { challenge, response },
+      artifacts: Object.assign({ challenge, response }, penalty && penalty.txHex ? { penaltyTxHex: String(penalty.txHex) } : {}),
       claim: penalty ? { penaltyTxid: String(penalty.txid || '') } : {}
     });
   }

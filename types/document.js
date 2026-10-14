@@ -293,7 +293,12 @@ class Document extends State {
   get blobTotal () { return this._meta.blobTotal; }
   get chunkBytes () { return this._meta.chunkBytes; }
   get sealed () { return this._meta.sealed; }
-  get size () { return this._meta.size; }
+  /**
+   * Plaintext byte length of the whole document. Named `contentSize` (not
+   * `size`) because `State` already defines an own `size` property.
+   * @type {number|null}
+   */
+  get contentSize () { return this._meta.size; }
   get documentId () { return this._meta.documentId; }
   get publisher () { return this._meta.publisher; }
 

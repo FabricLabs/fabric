@@ -113,7 +113,17 @@ class Market extends Service {
     if (deps.book instanceof DocumentOfferBook) this.book = deps.book;
     if (typeof deps.pay === 'function') this._pay = deps.pay;
     if (typeof deps.verify === 'function') this._verify = deps.verify;
-    if (deps.channels && typeof deps.channels.sessionFor === 'function') this._channels = deps.channels;
+    if (deps.channels && typeof deps.channels.sessionFor === 'function') {
+      if (this._channels && this._channelsBound && typeof this._channels.removeListener === 'function') {
+        this._channels.removeListener('htlcSettled', this._channelsBound);
+      }
+      this._channels = deps.channels;
+      this._channelsBound = null;
+      if (typeof deps.channels.on === 'function') {
+        this._channelsBound = (ev) => this._onChannelHtlcSettled(ev);
+        deps.channels.on('htlcSettled', this._channelsBound);
+      }
+    }
     if (deps.peer) this._bindPeer(deps.peer);
     return this;
   }
@@ -137,12 +147,20 @@ class Market extends Service {
     return channel;
   }
 
-  /** @private */
+  /**
+   * Offer the session's HTLC on its channel.
+   * @private
+   * @param {Object} session
+   * @returns {{ status: 'offered'|'busy'|'unavailable', reason?: string }} `busy` = retry next tick (a round is mid-flight); `unavailable` = no usable channel (never confirm unpaid)
+   */
   _settleOverChannel (session) {
-    if (session.rail !== 'channel' || !this._channels || !session.contentHashHex || !(session.amountSats > 0)) return false;
+    if (session.rail !== 'channel' || !this._channels || !session.contentHashHex || !(session.amountSats > 0)) return { status: 'unavailable', reason: 'not a channel session' };
     const channel = this._channels.sessionFor(session.sellerId, session.sellerPubkeyHex || null);
-    if (!channel || channel.status !== 'open' || channel.balances.localSats < session.amountSats) return false;
+    if (!channel || channel.status !== 'open') return { status: 'unavailable', reason: 'channel not open' };
+    if (channel.balances.localSats < session.amountSats) return { status: 'unavailable', reason: 'insufficient channel balance' };
+    if (channel.busy) return { status: 'busy', reason: 'channel round in flight' };
     const tip = this._channels.tipHeight ? Number(this._channels.tipHeight()) : 0;
+    if (!(tip > 0)) return { status: 'busy', reason: 'chain tip unknown' };
     const delta = Number(this.settings.channelCltvDelta) || 144;
     let body;
     try {
@@ -150,17 +168,59 @@ class Market extends Service {
         amountSats: session.amountSats,
         paymentHashHex: session.contentHashHex,
         blobHashHex: session.blobHashHex || null,
-        expireAfter: (tip > 0 ? tip : 1) + delta
+        expireAfter: tip + delta
       });
     } catch (e) {
-      return false;
+      const msg = String(e && e.message ? e.message : e);
+      return { status: /busy|tip unknown|in-flight|in flight/i.test(msg) ? 'busy' : 'unavailable', reason: msg };
     }
     session.rail = 'channel';
     session.channelId = channel.channelId;
     session.channelHtlcId = body.htlc ? body.htlc.id : null;
     if (typeof this._channels.publish === 'function') this._channels.publish(body, channel);
     this.emit('channelHtlcOffered', { session, body });
-    return true;
+    return { status: 'offered' };
+  }
+
+  /**
+   * Channel-book settlement events (seller-fulfils). A fulfilled HTLC hands
+   * the buyer `K_i`; a failed one releases the session without blaming the
+   * seller for our own channel trouble.
+   * @private
+   * @param {Object} ev `htlcSettled` payload from `Channel.Book`
+   */
+  _onChannelHtlcSettled (ev) {
+    if (!ev || !ev.htlcId) return;
+    const session = Object.values(this._state.content.sessions).find((s) => s.rail === 'channel' && String(s.channelId) === String(ev.channelId) && String(s.channelHtlcId) === String(ev.htlcId));
+    if (!session || session.status === 'complete' || session.status === 'failed') return;
+    if (ev.outcome === 'fulfilled' && ev.preimageHex) {
+      session.channelSettled = true;
+      session.revealedKeyHex = String(ev.preimageHex).toLowerCase();
+      this._accountChannelSpend(session);
+      if (session.status === 'settling') this._complete(session, { keyHex: session.revealedKeyHex });
+      else this._tryOpenWithKey(session);
+    } else if (ev.outcome === 'failed') {
+      this._fail(session, `channel HTLC failed: ${ev.reason || 'unknown'}`, { penalize: false });
+    }
+    this.commit();
+  }
+
+  /** @private open a pending sealed blob with the preimage learned on the channel */
+  _tryOpenWithKey (session) {
+    if (!session.revealedKeyHex || !this.peer || typeof this.peer.openSealedBlobWithKey !== 'function') return false;
+    let res = null;
+    try {
+      res = this.peer.openSealedBlobWithKey({ documentId: session.documentId, blobIndex: session.blobIndex, keyHex: session.revealedKeyHex, paymentHashHex: session.contentHashHex });
+    } catch (_) { res = null; }
+    return !!(res && res.ok);
+  }
+
+  /** @private count the channel payment once, when the HTLC is actually settled */
+  _accountChannelSpend (session) {
+    if (session._channelSpent) return;
+    session._channelSpent = true;
+    this._state.content.spentSats += session.amountSats || 0;
+    this._release(session);
   }
 
   /** @private */
@@ -171,11 +231,13 @@ class Market extends Service {
     this._bound = {
       inventory: (ev) => this._onInventoryResponse(ev),
       received: (ev) => this._onDocumentReceived(ev),
-      blob: (ev) => this._onBlobOpened(ev)
+      blob: (ev) => this._onBlobOpened(ev),
+      ciphertext: (ev) => this._onCiphertextReceived(ev)
     };
     peer.on('inventoryResponse', this._bound.inventory);
     peer.on('documentReceived', this._bound.received);
     peer.on('documentBlobOpened', this._bound.blob);
+    peer.on('documentCiphertextReceived', this._bound.ciphertext);
   }
 
   /** @private */
@@ -184,7 +246,16 @@ class Market extends Service {
     this.peer.removeListener('inventoryResponse', this._bound.inventory);
     this.peer.removeListener('documentReceived', this._bound.received);
     this.peer.removeListener('documentBlobOpened', this._bound.blob);
+    this.peer.removeListener('documentCiphertextReceived', this._bound.ciphertext);
     this._bound = null;
+  }
+
+  /** @private the ciphertext may land after the channel already revealed K_i */
+  _onCiphertextReceived (ev) {
+    if (!ev || !ev.documentId) return;
+    for (const s of this._sessionsFor(ev.documentId, ev.blobIndex)) {
+      if (s.revealedKeyHex) this._tryOpenWithKey(s);
+    }
   }
 
   // ---------------------------------------------------------------------
@@ -337,19 +408,26 @@ class Market extends Service {
       for (const [i, o] of picked.entries()) plan.set(i, o);
       if (plan.size < blobTotal) return { ok: false, error: `plan incomplete (${plan.size}/${blobTotal})`, plan, blobTotal };
     } else {
-      const best = this.book.pickBest(id, { weights });
+      const best = this.book.pickBest(id, { weights, merkleRootHex: want.merkleRootHex || undefined });
       if (!best) return { ok: false, error: 'no offers' };
       plan.set(0, best);
     }
+    // A plan is for one tree: every picked offer must agree on the root.
+    const roots = new Set([...plan.values()].map((o) => o.merkleRootHex).filter(Boolean));
+    if (roots.size > 1) return { ok: false, error: 'plan mixes merkle roots', plan, blobTotal };
     let costSats = 0;
     for (const o of plan.values()) costSats += Math.max(0, Math.floor(Number(o.rateSats) || 0));
-    return { ok: true, plan, costSats, blobTotal };
+    return { ok: true, plan, costSats, blobTotal, merkleRootHex: roots.size ? [...roots][0] : (want.merkleRootHex || null) };
   }
 
   // ---------------------------------------------------------------------
   // Scheduler
   // ---------------------------------------------------------------------
 
+  /**
+   * Start the agent: mark `running` and arm the periodic `tick` when `tickMs > 0`.
+   * @returns {Promise<Market>}
+   */
   async start () {
     this._state.content.status = 'running';
     this.emit('debug', `[MARKET] starting budget agent (${this.budgetSats} sats)`);
@@ -363,6 +441,10 @@ class Market extends Service {
     return this;
   }
 
+  /**
+   * Stop the agent: clear the tick timer and detach peer / channel listeners.
+   * @returns {Promise<Market>}
+   */
   async stop () {
     if (this._timer) {
       clearInterval(this._timer);
@@ -379,9 +461,14 @@ class Market extends Service {
    * @returns {Promise<Object>} summary `{ planned, opened, skipped }`
    */
   async tick () {
-    const summary = { planned: 0, opened: 0, skipped: 0 };
+    const summary = { planned: 0, opened: 0, skipped: 0, retried: 0 };
     this._state.content.lastTick = Date.now();
     this._sweepTimeouts();
+    // Channel sessions deferred on a busy round, or holding bytes while the
+    // HTLC is still open, get another try before new plans are made.
+    for (const s of Object.values(this._state.content.sessions)) {
+      if (s.status === 'channel_pending') { await this._settle(s); summary.retried++; } else if (s.status === 'settling') { this._complete(s, {}); summary.retried++; }
+    }
     for (const want of Object.values(this._state.content.wants)) {
       if (want.status !== 'wanted') continue;
       this._refreshInventory(want);
@@ -582,7 +669,21 @@ class Market extends Service {
 
   /** @private */
   async _settle (session) {
-    if (this._settleOverChannel(session)) return this.confirm(session.settlementId, null);
+    if (session.rail === 'channel') {
+      const r = this._settleOverChannel(session);
+      if (r.status === 'offered') return this.confirm(session.settlementId, null);
+      if (r.status === 'busy') {
+        // Defer: a channel round is in flight. The tick retries; nothing is
+        // confirmed and no DocumentRequest goes out until the HTLC is offered.
+        session.status = 'channel_pending';
+        session.lastError = r.reason || null;
+        this.emit('sessionDeferred', session);
+        return session;
+      }
+      // Channel gone / underfunded after planning: that is our failure, not
+      // the seller's — release the session without a reputation penalty.
+      return this._fail(session, `channel unavailable: ${r.reason || 'unknown'}`, { penalize: false });
+    }
     const needsFunding = session.amountSats > 0 && !!session.paymentAddress;
     if (needsFunding) {
       if (!this._pay) {
@@ -599,7 +700,7 @@ class Market extends Service {
       if (!txid) return this._fail(session, 'pay returned no txid');
       if (this._verify) {
         let ok = false;
-        try { ok = await this._verify(session, txid); } catch (e) { ok = false; }
+        try { ok = await this._verify(session, txid); } catch (_) { ok = false; }
         if (!ok) return this._fail(session, `payment to ${session.paymentAddress} not verified`);
       }
       session.txid = String(txid);
@@ -643,12 +744,26 @@ class Market extends Service {
     return session;
   }
 
-  /** @private */
-  _fail (session, reason) {
+  /**
+   * Fail a session, release its reservation, and hand the want back to the
+   * scheduler (`wanted`) when no other live session is still working on it.
+   * @private
+   * @param {Object} session
+   * @param {string} reason
+   * @param {Object} [opts] `{ penalize: boolean }` — `false` when the failure is local (our channel / funding), so the seller's score is untouched
+   * @returns {Object} session
+   */
+  _fail (session, reason, opts = {}) {
     session.status = 'failed';
     session.error = reason;
     this._release(session);
-    this.book.recordDelivery(session.sellerId, { ok: false, kind: 'settlement' });
+    if (opts.penalize !== false) this.book.recordDelivery(session.sellerId, { ok: false, kind: 'settlement' });
+    const want = this._state.content.wants[session.documentId];
+    if (want && want.status === 'buying') {
+      const live = Object.values(this._state.content.sessions).some((s) => s.documentId === session.documentId && s !== session && !['complete', 'failed'].includes(s.status));
+      if (!live) want.status = 'wanted';
+      want.lastError = reason;
+    }
     this.emit('sessionFailed', session);
     return session;
   }
@@ -663,22 +778,39 @@ class Market extends Service {
   /** @private */
   _complete (session, ev = {}) {
     if (session.status === 'complete') return;
-    if (session.rail === 'channel' && session.channelHtlcId && ev.keyHex && this._channels) {
-      const channel = this._channels.sessionFor(session.sellerId, session.sellerPubkeyHex || null);
+    if (session.rail === 'channel' && session.channelHtlcId && !session.channelSettled && this._channels) {
+      // Seller-fulfils is the normal path (`htlcSettled`). If the seller
+      // revealed K_i out of band instead, honour the deal by settling the
+      // HTLC we offered — that only ever pays the counterparty. Nothing is
+      // counted as spent until the settlement actually goes through.
+      const keyHex = ev.keyHex || session.revealedKeyHex;
+      const channel = keyHex ? this._channels.sessionFor(session.sellerId, session.sellerPubkeyHex || null) : null;
       if (channel) {
         try {
-          const body = channel.fulfillHtlc(session.channelHtlcId, ev.keyHex);
+          const body = channel.fulfillHtlc(session.channelHtlcId, keyHex);
           if (typeof this._channels.publish === 'function') this._channels.publish(body, channel);
+          session.channelSettled = true;
           this.emit('channelHtlcFulfilled', { session, body });
         } catch (e) {
           this.emit('warning', `[FABRIC:MARKET] channel settle failed: ${e.message}`);
         }
       }
+      if (!session.channelSettled) {
+        // Bytes are in hand but the HTLC is still open: keep the session
+        // alive for `htlcSettled` / the next tick instead of booking a spend.
+        session.status = 'settling';
+        session.revealedKeyHex = keyHex || session.revealedKeyHex || null;
+        this.emit('sessionSettling', session);
+        return;
+      }
     }
     session.status = 'complete';
     session.completedAt = Date.now();
-    this._release(session);
-    this._state.content.spentSats += session.amountSats || 0;
+    if (session.rail === 'channel') this._accountChannelSpend(session);
+    else {
+      this._release(session);
+      this._state.content.spentSats += session.amountSats || 0;
+    }
     const latencyMs = session.confirmedAt ? Date.now() - session.confirmedAt : null;
     this.book.recordDelivery(session.sellerId, {
       ok: true,
@@ -696,7 +828,11 @@ class Market extends Service {
   _onInventoryResponse (ev) {
     if (!ev || !ev.message) return;
     try {
-      const payload = JSON.parse(String(ev.message.body || ev.message.object || '{}'));
+      // Peers may hand us the raw body (string / Buffer) or an already-parsed object.
+      const raw = ev.message.body != null ? ev.message.body : ev.message.object;
+      let payload;
+      if (raw && typeof raw === 'object' && !Buffer.isBuffer(raw)) payload = raw;
+      else payload = JSON.parse(Buffer.isBuffer(raw) ? raw.toString('utf8') : String(raw || '{}'));
       if (!payload || !Array.isArray(payload.items)) return;
       const origin = ev.origin && typeof ev.origin === 'object' ? (ev.origin.name || ev.origin.address || ev.origin.id) : ev.origin;
       this.book.ingestInventoryResponse({
@@ -713,7 +849,7 @@ class Market extends Service {
   _sessionsFor (documentId, blobIndex) {
     return Object.values(this._state.content.sessions).filter((s) => {
       if (s.documentId !== documentId) return false;
-      if (s.status !== 'delivery_pending') return false;
+      if (s.status !== 'delivery_pending' && s.status !== 'settling') return false;
       if (blobIndex == null || s.blobIndex == null) return true;
       return Number(s.blobIndex) === Number(blobIndex);
     });
@@ -793,7 +929,7 @@ class Market extends Service {
     if (snapshot.completed && typeof snapshot.completed === 'object') c.completed = snapshot.completed;
     if (Array.isArray(snapshot.paidSettlements)) this.paidSettlements = new Set(snapshot.paidSettlements);
     c.reservedSats = Object.values(c.sessions)
-      .filter((s) => s.status === 'open' || s.status === 'awaiting_funding' || s.status === 'delivery_pending')
+      .filter((s) => ['open', 'awaiting_funding', 'delivery_pending', 'channel_pending', 'settling'].includes(s.status) && !s._channelSpent)
       .reduce((n, s) => n + (s.amountSats || 0), 0);
     if (snapshot.telemetry) this.book.importTelemetry(snapshot.telemetry);
     return this;

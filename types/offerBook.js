@@ -543,11 +543,12 @@ class DocumentOfferBook {
    * @param {number} [opts.blobIndex]
    * @param {number} [opts.maxSats]
    * @param {string[]} [opts.excludeSellers]
+   * @param {string} [opts.merkleRootHex] only offers for this tree root
    * @param {Object} [opts.weights]
    * @returns {object|null}
    */
   pickBest (documentId, opts = {}) {
-    let offers = this.listOffers({ documentId, blobIndex: opts.blobIndex });
+    let offers = this.listOffers({ documentId, blobIndex: opts.blobIndex, merkleRootHex: opts.merkleRootHex });
     offers = this._applyFilters(offers, opts);
     const ranked = this.rankOffers(offers, opts.weights);
     return ranked[0] || null;
@@ -564,19 +565,24 @@ class DocumentOfferBook {
    * @param {boolean} [opts.singleKey] legacy whole-document key: lock one seller
    * @param {number} [opts.maxSats] per-blob ceiling
    * @param {string[]} [opts.excludeSellers]
+   * @param {string} [opts.merkleRootHex] only offers for this tree root; when
+   *   omitted the plan still stays on **one** root (the first pick's), so
+   *   blobs from different trees are never mixed into a single document
    * @returns {Map<number, object>}
    */
   pickBlobPlan (documentId, blobTotal, opts = {}) {
     const n = Math.round(Number(blobTotal));
     const plan = new Map();
     if (!Number.isFinite(n) || n < 1) return plan;
-    const all = this._applyFilters(this.listOffers({ documentId }), opts);
+    const all = this._applyFilters(this.listOffers({ documentId, merkleRootHex: opts.merkleRootHex }), opts);
     const lockToOne = opts.singleKey === true || this._usesSingleKey(all, opts);
     const used = [];
     let lockedSeller = null;
+    let lockedRoot = hex64(opts.merkleRootHex) || null;
     for (let i = 0; i < n; i++) {
       let offers = all.filter((o) => o.blobIndex === i);
       if (!offers.length) offers = all.filter((o) => o.blobIndex == null);
+      if (lockedRoot) offers = offers.filter((o) => !o.merkleRootHex || o.merkleRootHex === lockedRoot);
       if (lockToOne && lockedSeller) {
         offers = offers.filter((o) => String(o.sellerId || o.sellerAddress) === lockedSeller);
       }
@@ -594,6 +600,7 @@ class DocumentOfferBook {
       plan.set(i, pick);
       used.push(String(pick.sellerId || pick.sellerAddress));
       if (lockToOne && !lockedSeller) lockedSeller = String(pick.sellerId || pick.sellerAddress);
+      if (!lockedRoot && pick.merkleRootHex) lockedRoot = pick.merkleRootHex;
     }
     return plan;
   }

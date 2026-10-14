@@ -30,6 +30,7 @@ const {
   PEER_SCORE_RELAY_NEST_EXCEEDED_PENALTY,
   CHAT_MAX_RELAYS_PER_ORIGIN_PER_MINUTE,
   PEER_MAX_PENDING_SEALED_DELIVERIES,
+  PEER_MAX_SEALED_BLOB_PARTS,
   PEER_MAX_DOCUMENT_RELAY_ROUTES,
   PEER_MAX_MUSIG_SESSIONS,
   PEER_MUSIG_SESSION_TTL_MS,
@@ -4131,7 +4132,7 @@ class Peer extends Service {
             break;
           }
         } catch (_) { /* fall through to ingest */ }
-        const ingest = this._ingestP2pFileSend(msg || message, origin);
+        const ingest = this._ingestP2pFileSend(msg || message, origin, wireMessage || (message && message.signature ? message : null));
         this.emit('file', Object.assign({ message, origin }, ingest));
         if (ingest && ingest.status === 'complete' && ingest.buffer) {
           this.emit('documentReceived', {
@@ -4744,6 +4745,32 @@ class Peer extends Service {
   }
 
   /**
+   * Seller side: the content key `K_i` whose SHA256 is `paymentHashHex`, from
+   * this node's published sealed-blob registry. Channel hosts hand this to
+   * `Channel.Book` as `preimageFor` so a committed HTLC for a blob we sell is
+   * fulfilled with the key (seller-fulfils; the buyer learns `K_i` from the
+   * `ChannelHtlcFulfill`).
+   * @param {string} paymentHashHex
+   * @returns {{ documentId: string, blobIndex: number, keyHex: string }|null}
+   */
+  sealedBlobPreimageForPaymentHash (paymentHashHex) {
+    const ph = String(paymentHashHex || '').toLowerCase();
+    if (!/^[0-9a-f]{64}$/.test(ph)) return null;
+    const reg = this._state.content.documentSealedBlobs || {};
+    for (const [documentId, row] of Object.entries(reg)) {
+      const blobs = row && row.record && Array.isArray(row.record.blobs) ? row.record.blobs : [];
+      for (const b of blobs) {
+        if (String(b.paymentHashHex || '').toLowerCase() !== ph) continue;
+        const keyHex = row.keys && row.keys[b.index];
+        if (!keyHex) continue;
+        if (crypto.createHash('sha256').update(Buffer.from(String(keyHex), 'hex')).digest('hex') !== ph) continue;
+        return { documentId, blobIndex: Number(b.index), keyHex: String(keyHex).toLowerCase() };
+      }
+    }
+    return null;
+  }
+
+  /**
    * @param {string} documentId
    * @returns {Document|null} rehydrated per-blob sealed document (with keys) or null
    */
@@ -4988,12 +5015,22 @@ class Peer extends Service {
 
   /**
    * Store one per-blob sealed ciphertext frame until its key reveal arrives.
+   *
+   * Reassembly is keyed by **document id + Merkle root**; the first frame no
+   * longer dictates the shape. Every frame must carry a 64-hex root and a
+   * sane `blobTotal`; frames whose root / total / origin disagree with the
+   * row already being assembled (or with what `blobTransfers.expectTransfer`
+   * registered for the purchase) are rejected, an index already held with a
+   * different blob hash is never overwritten, and both the number of rows and
+   * the parts per row are capped. The exact signed wire frame (`frameHex`) is
+   * kept per part so a `wrong-bytes` fraud proof can cite it.
    * @param {Object} obj raw `P2P_FILE_SEND` body (`perBlob: true`)
    * @param {Object} origin
+   * @param {string|null} [frameHex] raw AMP frame bytes (hex) the body arrived in
    * @returns {Object}
    * @private
    */
-  _ingestSealedBlobFrame (obj, origin) {
+  _ingestSealedBlobFrame (obj, origin, frameHex = null) {
     const frame = parseFileSendObject(obj);
     if (!frame.ok || frame.legacy) {
       return { status: 'reject', error: (frame && frame.error) || 'bad per-blob frame' };
@@ -5001,23 +5038,58 @@ class Peer extends Service {
     if (!verifyBlob(frame.bytes, frame.blobHashHex)) {
       return { status: 'reject', error: 'blob hash mismatch', documentId: frame.documentId, blobIndex: frame.blobIndex };
     }
+    const root = String(frame.merkleRootHex || '').toLowerCase();
+    if (!/^[0-9a-f]{64}$/.test(root)) {
+      return { status: 'reject', error: 'per-blob frame missing merkleRootHex', documentId: frame.documentId, blobIndex: frame.blobIndex };
+    }
+    const maxParts = Math.max(1, Number(this.settings.maxSealedBlobParts) || PEER_MAX_SEALED_BLOB_PARTS);
+    if (!(frame.blobTotal >= 1) || frame.blobTotal > maxParts || frame.blobIndex >= frame.blobTotal) {
+      return { status: 'reject', error: `per-blob frame blobTotal/blobIndex out of range (max ${maxParts})`, documentId: frame.documentId, blobIndex: frame.blobIndex };
+    }
     const paymentHashHex = /^[0-9a-f]{64}$/i.test(String(obj.paymentHashHex || ''))
       ? String(obj.paymentHashHex).toLowerCase()
       : null;
     if (!paymentHashHex || !obj.iv) {
       return { status: 'reject', error: 'per-blob frame missing paymentHashHex or iv', documentId: frame.documentId };
     }
-    let row = this.pendingSealedBlobs[frame.documentId];
-    if (!row) {
+    const originName = origin && typeof origin === 'object' ? (origin.name || origin.address || origin.id || null) : (origin || null);
+    // Purchase expectations win over whatever the wire claims.
+    const expected = this.blobTransfers && typeof this.blobTransfers.expectedFor === 'function' ? this.blobTransfers.expectedFor(frame.documentId) : [];
+    if (expected.length) {
+      const match = expected.find((e) => (!e.merkleRootHex || e.merkleRootHex === root) && (!e.total || e.total === frame.blobTotal));
+      if (!match) {
+        return { status: 'reject', error: 'per-blob frame does not match the expected transfer (root / total)', documentId: frame.documentId, blobIndex: frame.blobIndex, merkleRootHex: root };
+      }
+      if (match.expectedHashes && match.expectedHashes.length && !match.expectedHashes.includes(frame.blobHashHex)) {
+        return { status: 'reject', error: 'per-blob frame blob hash is not one we asked for', documentId: frame.documentId, blobIndex: frame.blobIndex, merkleRootHex: root };
+      }
+    }
+    const rowKey = `${frame.documentId}|${root}`;
+    let row = this.pendingSealedBlobs[rowKey];
+    if (row) {
+      if (row.total !== frame.blobTotal) {
+        return { status: 'reject', error: 'per-blob frame blobTotal disagrees with the tree being assembled', documentId: frame.documentId, blobIndex: frame.blobIndex, merkleRootHex: root };
+      }
+      if (row.originName && originName && row.originName !== String(originName)) {
+        return { status: 'reject', error: 'per-blob frame from a different origin than the tree being assembled', documentId: frame.documentId, blobIndex: frame.blobIndex, merkleRootHex: root };
+      }
+      const held = row.parts.get(frame.blobIndex);
+      if (held && held.blobHashHex !== frame.blobHashHex) {
+        return { status: 'reject', error: 'per-blob frame would overwrite a held blob with a different hash', documentId: frame.documentId, blobIndex: frame.blobIndex, merkleRootHex: root };
+      }
+    } else {
       row = {
+        documentId: frame.documentId,
         total: frame.blobTotal,
-        merkleRootHex: frame.merkleRootHex || null,
+        merkleRootHex: root,
         parts: new Map(),
         opened: new Map(),
         origin: origin || null,
+        originName: originName ? String(originName) : null,
         updated: Date.now()
       };
-      this.pendingSealedBlobs[frame.documentId] = row;
+      this.pendingSealedBlobs[rowKey] = row;
+      this._capPendingSealedBlobs();
     }
     row.updated = Date.now();
     row.parts.set(frame.blobIndex, {
@@ -5026,7 +5098,8 @@ class Peer extends Service {
       paymentHashHex,
       iv: String(obj.iv),
       scheme: obj.scheme || null,
-      plaintextSha256: obj.plaintextSha256 || null
+      plaintextSha256: obj.plaintextSha256 || null,
+      frameHex: frameHex ? String(frameHex) : null
     });
     this.emit('documentCiphertextReceived', {
       documentId: frame.documentId,
@@ -5054,6 +5127,104 @@ class Peer extends Service {
   }
 
   /**
+   * Find the sealed per-blob row for a document. Rows are keyed by
+   * `documentId|merkleRootHex`; callers that know the root or the payment
+   * hash of one part can disambiguate when two roots are in flight.
+   * @param {string} documentId
+   * @param {string} [merkleRootHex]
+   * @param {string} [paymentHashHex] payment hash of the part at `blobIndex`
+   * @param {number} [blobIndex]
+   * @returns {Object|null}
+   * @private
+   */
+  _sealedBlobRow (documentId, merkleRootHex = null, paymentHashHex = null, blobIndex = null) {
+    const id = String(documentId || '').trim();
+    if (!id) return null;
+    const root = merkleRootHex ? String(merkleRootHex).toLowerCase() : null;
+    if (root) return this.pendingSealedBlobs[`${id}|${root}`] || null;
+    const ph = paymentHashHex ? String(paymentHashHex).toLowerCase() : null;
+    const candidates = Object.values(this.pendingSealedBlobs).filter((r) => r && r.documentId === id);
+    if (!candidates.length) return null;
+    if (ph != null && Number.isFinite(Number(blobIndex))) {
+      const hit = candidates.find((r) => {
+        const p = r.parts.get(Number(blobIndex));
+        return p && p.paymentHashHex === ph;
+      });
+      if (hit) return hit;
+    }
+    return candidates.length === 1 ? candidates[0] : null;
+  }
+
+  /**
+   * Bound the number of per-blob sealed trees held in memory (oldest first).
+   * @private
+   */
+  _capPendingSealedBlobs () {
+    const max = Number(this.settings.maxPendingSealedDeliveries);
+    const cap = Number.isFinite(max) && max > 0 ? max : PEER_MAX_PENDING_SEALED_DELIVERIES;
+    const keys = Object.keys(this.pendingSealedBlobs);
+    if (keys.length <= cap) return;
+    keys.sort((a, b) => ((this.pendingSealedBlobs[a] || {}).updated || 0) - ((this.pendingSealedBlobs[b] || {}).updated || 0));
+    for (let i = 0; i < keys.length - cap; i++) delete this.pendingSealedBlobs[keys[i]];
+  }
+
+  /**
+   * Which held sealed blob a payment hash belongs to. Lets the buyer map a
+   * channel `ChannelHtlcFulfill` preimage back onto the blob it unlocks.
+   * @param {string} paymentHashHex
+   * @returns {{ documentId: string, merkleRootHex: string, blobIndex: number, blobHashHex: string, frameHex: (string|null) }|null}
+   */
+  sealedBlobKeyForPaymentHash (paymentHashHex) {
+    const ph = String(paymentHashHex || '').toLowerCase();
+    if (!/^[0-9a-f]{64}$/.test(ph)) return null;
+    for (const row of Object.values(this.pendingSealedBlobs)) {
+      if (!row || !row.parts) continue;
+      for (const [index, part] of row.parts) {
+        if (part.paymentHashHex === ph) {
+          return { documentId: row.documentId, merkleRootHex: row.merkleRootHex, blobIndex: index, blobHashHex: part.blobHashHex, frameHex: part.frameHex || null };
+        }
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Open a held sealed blob with a key learned out of band (seller-fulfils
+   * channel rail: the HTLC preimage **is** `K_i`). Same verification as a
+   * wire `DocumentContentKeyReveal`: SHA256(key) must equal the part's payment
+   * hash and the plaintext must hash to its advertised digest.
+   * @param {Object} opts
+   * @param {string} opts.documentId
+   * @param {string} opts.keyHex 32-byte key (hex)
+   * @param {number} [opts.blobIndex] resolved from `paymentHashHex` when omitted
+   * @param {string} [opts.paymentHashHex] SHA256(key); defaults to the hash of `keyHex`
+   * @param {string} [opts.merkleRootHex] disambiguates when two roots are pending
+   * @returns {Object} same shape as the key-reveal handler
+   */
+  openSealedBlobWithKey (opts = {}) {
+    const keyHex = String(opts.keyHex || '').toLowerCase();
+    if (!/^[0-9a-f]{64}$/.test(keyHex)) return { ok: false, error: 'keyHex must be 32 bytes hex' };
+    const paymentHashHex = opts.paymentHashHex
+      ? String(opts.paymentHashHex).toLowerCase()
+      : crypto.createHash('sha256').update(Buffer.from(keyHex, 'hex')).digest('hex');
+    let blobIndex = opts.blobIndex;
+    let merkleRootHex = opts.merkleRootHex || null;
+    if (!Number.isFinite(Number(blobIndex))) {
+      const located = this.sealedBlobKeyForPaymentHash(paymentHashHex);
+      if (!located) return { ok: false, error: 'no held blob for that payment hash', documentId: opts.documentId || null };
+      blobIndex = located.blobIndex;
+      if (!merkleRootHex) merkleRootHex = located.merkleRootHex;
+    }
+    return this._handleSealedBlobKeyReveal({
+      documentId: opts.documentId,
+      blobIndex: Number(blobIndex),
+      keyHex,
+      paymentHashHex,
+      merkleRootHex
+    }, opts.origin || null);
+  }
+
+  /**
    * Open one blob of a per-blob sealed tree with its revealed key; emits the
    * whole document once every blob is open and the Tree root checks out.
    * @param {Object} reveal `DocumentContentKeyReveal` object with `blobIndex`
@@ -5064,7 +5235,7 @@ class Peer extends Service {
   _handleSealedBlobKeyReveal (reveal, origin = null) {
     const documentId = String((reveal && reveal.documentId) || '').trim();
     const blobIndex = Number(reveal.blobIndex);
-    const row = documentId ? this.pendingSealedBlobs[documentId] : null;
+    const row = documentId ? this._sealedBlobRow(documentId, reveal.merkleRootHex, reveal.paymentHashHex, blobIndex) : null;
     const part = row ? row.parts.get(blobIndex) : null;
     if (!row || !part) {
       return { ok: false, error: 'no pending sealed blob', documentId, blobIndex };
@@ -5117,7 +5288,7 @@ class Peer extends Service {
       this.emit('documentBlobRejected', { documentId, error: 'merkle root mismatch', origin });
       return { ok: false, error: 'merkle root mismatch', documentId };
     }
-    delete this.pendingSealedBlobs[documentId];
+    delete this.pendingSealedBlobs[`${documentId}|${row.merkleRootHex}`];
     const buffer = Buffer.concat(plain);
     if (!this._state.content.documents) this._state.content.documents = {};
     this._state.content.documents[documentId] = buffer.toString('utf8');
@@ -5142,9 +5313,10 @@ class Peer extends Service {
    * @param {Message|Object} message
    * @param {Object} origin
    * @param {string} [origin.name]
+   * @param {Message} [wireMessage] raw signed AMP frame (kept per sealed blob for fraud proofs)
    * @returns {Object}
    */
-  _ingestP2pFileSend (message, origin) {
+  _ingestP2pFileSend (message, origin, wireMessage = null) {
     // Typed wire → Generic dispatch uses `{ type, object }`; raw Message has `.data`.
     let obj = null;
     if (message && message.object && typeof message.object === 'object' && !Array.isArray(message.object)) {
@@ -5160,7 +5332,13 @@ class Peer extends Service {
       return { status: 'reject', error: 'invalid P2P_FILE_SEND JSON' };
     }
     if (obj.sealed && obj.perBlob === true) {
-      return this._ingestSealedBlobFrame(obj, origin);
+      let frameHex = null;
+      try {
+        const src = wireMessage || message;
+        // Proof material only; `FraudProof` re-verifies the author signature itself.
+        if (src && typeof src.toBuffer === 'function') frameHex = src.toBuffer().toString('hex');
+      } catch (_) { /* synthetic frame — no proof material */ }
+      return this._ingestSealedBlobFrame(obj, origin, frameHex);
     }
     const frame = parseFileSendObject(obj);
     const result = this.blobTransfers.ingest(frame);
@@ -5209,7 +5387,7 @@ class Peer extends Service {
    */
   _handleDocumentContentKeyReveal (reveal, origin = null) {
     const documentId = String((reveal && reveal.documentId) || '').trim();
-    if (reveal && reveal.blobIndex != null && documentId && this.pendingSealedBlobs[documentId]) {
+    if (reveal && reveal.blobIndex != null && documentId && this._sealedBlobRow(documentId, reveal.merkleRootHex, reveal.paymentHashHex, Number(reveal.blobIndex))) {
       return this._handleSealedBlobKeyReveal(reveal, origin);
     }
     const pending = documentId ? this.pendingSealedDeliveries[documentId] : null;

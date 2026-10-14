@@ -14,6 +14,7 @@ const monitor = require('fast-json-patch');
 const Actor = require('./actor');
 const Key = require('./key');
 const Message = require('./message');
+const Resolutions = require('./resolutions');
 const Service = require('./service');
 
 /**
@@ -61,6 +62,34 @@ class Contract extends Service {
 
     this.observer = monitor.observe(this._state.content);
 
+    /**
+     * Pre-signed, timelocked exits per off-chain state (see {@link Resolutions}).
+     * A state may only be treated as live once `resolutions.resolvable(stateId)`.
+     * @type {Resolutions}
+     */
+    this.resolutions = new Resolutions({
+      network: this.settings.network || 'regtest',
+      contractId: this.settings.contractId || null
+    });
+
+    return this;
+  }
+
+  /**
+   * Gate an off-chain state transition on its resolution set: every exit the
+   * state depends on must hold all required signatures, otherwise a counterparty
+   * that stops responding would leave funds unrecoverable.
+   * @param {string} stateId
+   * @returns {Contract}
+   * @throws {Error} when exits are still missing signatures
+   */
+  advance (stateId) {
+    const missing = this.resolutions.missing(stateId);
+    if (missing.length) {
+      const first = missing[0];
+      throw new Error(`advance(${stateId}): not resolvable — ${first.exitId || first.stateId} missing ${first.missing.join(', ')}`);
+    }
+    this._state.content.resolvedState = String(stateId);
     return this;
   }
 
@@ -497,5 +526,7 @@ class Contract extends Service {
     });
   }
 }
+
+Contract.Resolutions = Resolutions;
 
 module.exports = Contract;

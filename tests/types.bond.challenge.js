@@ -98,7 +98,7 @@ describe('Market bonds, challenges, and fraud proofs (Phase 3)', function () {
     assert.strictEqual(verdict.offender, provider.xOnly);
   });
 
-  it('non-response: provable only against the epoch clock with a commitment', () => {
+  it('non-response (late answer): provable from the late response alone; silence needs a timelock', () => {
     const commitment = Challenge.commit({
       merkleRootHex: doc.merkleRootHex, blobTotal: hashes.length, fromEpoch: 0, untilEpoch: 100,
       providerPrivateKey: provider.priv, publisherPubkey: publisher.xOnly
@@ -107,42 +107,135 @@ describe('Market bonds, challenges, and fraud proofs (Phase 3)', function () {
       merkleRootHex: doc.merkleRootHex, blobHashes: hashes, epoch: 30,
       providerPubkey: provider.xOnly, publisherPrivateKey: publisher.priv
     });
+    assert.strictEqual(challenge.deadlineHeight, null);
     assert.strictEqual(challenger.proofFor(challenge, null, { commitment, epoch: 31 }), null, 'deadline not passed');
-    const proof = challenger.proofFor(challenge, null, { commitment, epoch: 33 });
-    assert.ok(proof);
-    assert.strictEqual(proof.verify({ epoch: 32 }).ok, false, 'verifier clock still inside deadline');
-    assert.strictEqual(proof.verify({ epoch: 33 }).ok, true);
+    // Epoch clock alone never yields an absence proof (silence is unprovable without a timelock).
+    assert.strictEqual(challenger.proofFor(challenge, null, { commitment, epoch: 99 }), null);
+    const absence = new FraudProof({ kind: 'non-response', artifacts: { challenge, commitment } }).verify({ epoch: 99, tipHeight: 10_000 });
+    assert.strictEqual(absence.ok, false);
+    assert.match(absence.reason, /deadlineHeight/);
     const late = challenger.respond(challenge, { blobHashes: hashes, epoch: 40, providerPrivateKey: provider.priv });
     const lateProof = challenger.proofFor(challenge, late, { commitment });
     assert.strictEqual(lateProof.kind, 'non-response');
     assert.strictEqual(lateProof.verify().ok, true);
     // A commitment from someone else does not implicate this provider.
     const other = Challenge.commit({ merkleRootHex: doc.merkleRootHex, fromEpoch: 0, untilEpoch: 100, providerPrivateKey: stranger.priv });
-    assert.strictEqual(new FraudProof({ kind: 'non-response', artifacts: { challenge, commitment: other } }).verify({ epoch: 99 }).ok, false);
+    assert.strictEqual(new FraudProof({ kind: 'non-response', artifacts: { challenge, commitment: other, response: late } }).verify().ok, false);
   });
 
-  it('wrong-bytes: signed offer + preimage + mismatching ciphertext', () => {
-    const preimage = crypto.randomBytes(32);
-    const offer = Witness.signArtifact({
-      type: 'DocumentOffer', blobHashHex: hashes[0], rateSats: 3,
-      paymentHashHex: crypto.createHash('sha256').update(preimage).digest('hex')
-    }, provider.priv);
-    const bad = new FraudProof({ kind: 'wrong-bytes', artifacts: { offer, claim: { preimageHex: preimage.toString('hex') }, bytesHex: Buffer.from('garbage').toString('hex') } });
-    assert.strictEqual(bad.verify().ok, true);
-    const good = new FraudProof({ kind: 'wrong-bytes', artifacts: { offer, claim: { preimageHex: preimage.toString('hex') }, bytesHex: doc.bytesFor(0).toString('hex') } });
-    assert.strictEqual(good.verify().ok, false, 'honest delivery is not fraud');
-  });
+  it('non-response (silence): timelocked penalty pre-signature + check-in round, enforced only from the verifier\'s chain view', () => {
+    const deposit = Bond.buildDeposit({ network: 'regtest', providerPubkey: provider.pub, publisherPubkey: publisher.pub, withdrawAfter: 900, amountSats: 30000 });
+    assert.deepStrictEqual(deposit.leaves.map((l) => l.id).sort(), ['checkin', 'penalty', 'withdraw']);
+    const funded = fundingFor(deposit.address);
+    const fundedTxid = bitcoin.Transaction.fromHex(funded).getId();
+    const dest = bitcoin.payments.p2wpkh({ pubkey: Buffer.from(publisher.pub, 'hex'), network: bitcoin.networks.regtest }).address;
+    const commitment = Challenge.commit({ merkleRootHex: doc.merkleRootHex, blobTotal: hashes.length, fromEpoch: 0, untilEpoch: 100, providerPrivateKey: provider.priv, depositAddress: deposit.address, depositTxid: fundedTxid });
 
-  it('wrongful-penalty: the provider can always publish the counter-proof', () => {
+    // Round 0: provider pre-signs the penalty for deadline 1000 before anything else is signed.
+    assert.throws(() => challenger.issue({ merkleRootHex: doc.merkleRootHex, blobHashes: hashes, epoch: 30, deadlineHeight: 1000, providerPubkey: provider.xOnly, publisherPrivateKey: publisher.priv }), /deposit outpoint/);
     const challenge = challenger.issue({
-      merkleRootHex: doc.merkleRootHex, blobHashes: hashes, epoch: 50,
+      merkleRootHex: doc.merkleRootHex, blobHashes: hashes, epoch: 30, tipHeight: 990, deadlineBlocks: 10,
+      deposit: { txid: fundedTxid, vout: 0 }, providerPubkey: provider.xOnly, publisherPrivateKey: publisher.priv
+    });
+    assert.strictEqual(challenge.deadlineHeight, 1000);
+    const penalty = Bond.prepareDepositPenalty(deposit, { fundedTxHex: funded, deadlineHeight: challenge.deadlineHeight, destinationAddress: dest, feeSats: 500 });
+    assert.strictEqual(penalty.locktime, 1000);
+    const preSig = Bond.signPenaltyAsProvider(deposit, penalty, provider.priv);
+    assert.strictEqual(preSig.type, 'DepositPenaltyPreSig');
+    assert.strictEqual(Witness.verifyPenaltyPreSig(preSig, { providerPubkey: provider.pub, deposit: { txid: fundedTxid, vout: 0 }, deadlineHeight: 1000 }).ok, true);
+    assert.strictEqual(Witness.verifyPenaltyPreSig(preSig, { providerPubkey: provider.pub, deposit: { txid: fundedTxid, vout: 0 }, deadlineHeight: 1001 }).ok, false, 'deadline bound into nLockTime');
+    assert.strictEqual(Witness.verifyPenaltyPreSig(preSig, { providerPubkey: stranger.pub, deposit: { txid: fundedTxid, vout: 0 }, deadlineHeight: 1000 }).ok, false);
+    assert.strictEqual(Witness.verifyPenaltyPreSig(Object.assign({}, preSig, { deadlineHeight: 999 }), { providerPubkey: provider.pub, deposit: { txid: fundedTxid, vout: 0 }, deadlineHeight: 1000 }).ok, false, 'artifact tamper');
+
+    // Publisher: the round is resolvable only with the pre-signature in hand (P_{n+1} before C_n).
+    const bond = new Bond({ network: 'regtest' });
+    assert.strictEqual(bond.recordRound(0, { deposit }).resolvable, false);
+    const checkIn = Bond.prepareDepositCheckIn(deposit, { fundedTxHex: funded, feeSats: 500 });
+    assert.strictEqual(checkIn.leafId, 'checkin');
+    assert.strictEqual(bitcoin.Psbt.fromBase64(checkIn.psbtBase64, { network: bitcoin.networks.regtest }).txOutputs[0].address, deposit.address, 'check-in re-deposits');
+    assert.strictEqual(bond.recordRound(0, { deposit, penaltyPreSig: preSig }).resolvable, true);
+    assert.strictEqual(bond.resolutions.exitsAfter(999, '0').length, 0);
+    assert.strictEqual(bond.resolutions.exitsAfter(1000, '0').length, 1);
+
+    // Absence proof: refused before the deadline, refused after a check-in, accepted otherwise.
+    assert.strictEqual(challenger.proofFor(challenge, null, { commitment, tipHeight: 999 }), null);
+    assert.strictEqual(challenger.proofFor(challenge, null, { commitment, tipHeight: 1000 }), null, 'needs the pre-signature');
+    const proof = challenger.proofFor(challenge, null, { commitment, penaltyPreSig: preSig, tipHeight: 1000 });
+    assert.ok(proof);
+    const body = JSON.parse(JSON.stringify(proof.toBody()));
+    assert.strictEqual(FraudProof.fromBody(body).verify({}).ok, false, 'no chain view');
+    assert.strictEqual(FraudProof.fromBody(body).verify({ epoch: 999, tipHeight: 999, outpointUnspent: () => true }).ok, false, 'deadline not reached');
+    assert.strictEqual(FraudProof.fromBody(body).verify({ tipHeight: 1000, outpointUnspent: () => false }).ok, false, 'provider checked in');
+    const verdict = FraudProof.fromBody(body).verify({ tipHeight: 1000, outpointUnspent: (txid, vout) => txid === fundedTxid && vout === 0 });
+    assert.strictEqual(verdict.ok, true);
+    assert.strictEqual(verdict.offender, provider.xOnly);
+    assert.strictEqual(verdict.evidence, 'timelock');
+    assert.strictEqual(verdict.enforceableAfterHeight, 1000);
+    // Enforcement is the pre-signed penalty itself, not a fresh spend.
+    assert.throws(() => Bond.preparePenaltySpend(deposit, { fraudProof: body, fundedTxHex: funded, destinationAddress: dest, ctx: { tipHeight: 1000, outpointUnspent: () => true } }), /finalizePreSignedPenalty/);
+    assert.throws(() => Bond.finalizePreSignedPenalty(deposit, preSig, publisher.priv, { tipHeight: 999 }), /not reached/);
+    const done = Bond.finalizePreSignedPenalty(deposit, preSig, publisher.priv, { tipHeight: 1000 });
+    const tx = bitcoin.Transaction.fromHex(done.txHex);
+    assert.strictEqual(tx.locktime, 1000);
+    assert.strictEqual(tx.ins[0].witness.length, 4, '2 sigs + script + control block');
+    assert.strictEqual(done.txid, preSig.txid);
+  });
+
+  function signedFileSendFrame (obj, priv) {
+    const Message = require('../types/message');
+    const Key = require('../types/key');
+    const key = new Key({ private: priv.toString('hex') });
+    return Message.fromVector(['P2P_FILE_SEND', JSON.stringify(obj)]).signWithKey(key).toBuffer().toString('hex');
+  }
+
+  it('wrong-bytes: offer + preimage + the seller-signed delivery frame (bare bytes are not evidence)', () => {
+    const preimage = crypto.randomBytes(32);
+    const paymentHashHex = crypto.createHash('sha256').update(preimage).digest('hex');
+    const offer = Witness.signArtifact({ type: 'DocumentOffer', documentId: 'bounty-demo', blobIndex: 0, blobHashHex: hashes[0], rateSats: 3, paymentHashHex }, provider.priv);
+    const claim = { preimageHex: preimage.toString('hex') };
+    const frameFor = (bytes, priv = provider.priv) => signedFileSendFrame({ name: 'bounty-demo', body: bytes.toString('base64'), blobIndex: 0, blobTotal: hashes.length, blobHashHex: crypto.createHash('sha256').update(bytes).digest('hex'), merkleRootHex: doc.merkleRootHex, paymentHashHex, sealed: true, iv: 'aa'.repeat(12) }, priv);
+    const garbage = Buffer.from('garbage');
+    const bad = new FraudProof({ kind: 'wrong-bytes', artifacts: { offer, claim, delivery: { frameHex: frameFor(garbage) } } });
+    const verdict = FraudProof.fromBody(JSON.parse(JSON.stringify(bad.toBody()))).verify();
+    assert.strictEqual(verdict.ok, true);
+    assert.strictEqual(verdict.offender, provider.xOnly);
+    assert.strictEqual(verdict.evidence, 'signed-frame');
+    const good = new FraudProof({ kind: 'wrong-bytes', artifacts: { offer, claim, delivery: { frameHex: frameFor(doc.bytesFor(0)) } } });
+    assert.strictEqual(good.verify().ok, false, 'honest delivery is not fraud');
+    // Legacy bare bytes, a frame signed by someone else, or a tampered frame prove nothing.
+    assert.strictEqual(new FraudProof({ kind: 'wrong-bytes', artifacts: { offer, claim, bytesHex: 'ff' } }).verify().ok, false);
+    assert.strictEqual(new FraudProof({ kind: 'wrong-bytes', artifacts: { offer, claim, delivery: { frameHex: frameFor(garbage, stranger.priv) } } }).verify().ok, false);
+    const tampered = Buffer.from(frameFor(garbage), 'hex'); tampered[tampered.length - 1] ^= 1;
+    assert.strictEqual(new FraudProof({ kind: 'wrong-bytes', artifacts: { offer, claim, delivery: { frameHex: tampered.toString('hex') } } }).verify().ok, false);
+    // An offer without paymentHashHex cannot bind the payment.
+    const unbound = Witness.signArtifact({ type: 'DocumentOffer', blobHashHex: hashes[0], rateSats: 3 }, provider.priv);
+    assert.match(new FraudProof({ kind: 'wrong-bytes', artifacts: { offer: unbound, claim, delivery: { frameHex: frameFor(garbage) } } }).verify().reason, /paymentHashHex/);
+  });
+
+  it('wrongful-penalty: the provider can always publish the counter-proof — with the penalty tx', () => {
+    const deposit = Bond.buildDeposit({ network: 'regtest', providerPubkey: provider.pub, publisherPubkey: publisher.pub, withdrawAfter: 900, amountSats: 30000 });
+    const funded = fundingFor(deposit.address);
+    const fundedTxid = bitcoin.Transaction.fromHex(funded).getId();
+    const dest = bitcoin.payments.p2wpkh({ pubkey: Buffer.from(publisher.pub, 'hex'), network: bitcoin.networks.regtest }).address;
+    const challenge = challenger.issue({
+      merkleRootHex: doc.merkleRootHex, blobHashes: hashes, epoch: 50, deadlineHeight: 1000, deposit: { txid: fundedTxid, vout: 0 },
       providerPubkey: provider.xOnly, publisherPrivateKey: publisher.priv
     });
     const response = challenger.respond(challenge, { blobHashes: hashes, epoch: 51, providerPrivateKey: provider.priv });
-    const counter = Challenge.wrongfulPenaltyProof(challenge, response, { txid: 'ab'.repeat(32) });
-    const verdict = counter.verify();
+    assert.strictEqual(Challenge.wrongfulPenaltyProof(challenge, response, { txid: 'ab'.repeat(32) }).verify().ok, false, 'no penalty tx → no proof');
+    const penalty = Bond.prepareDepositPenalty(deposit, { fundedTxHex: funded, deadlineHeight: 1000, destinationAddress: dest, feeSats: 500 });
+    const preSig = Bond.signPenaltyAsProvider(deposit, penalty, provider.priv);
+    const taken = Bond.finalizePreSignedPenalty(deposit, preSig, publisher.priv, { tipHeight: 1000 });
+    const counter = Challenge.wrongfulPenaltyProof(challenge, response, { txHex: taken.txHex, txid: taken.txid });
+    const verdict = FraudProof.fromBody(JSON.parse(JSON.stringify(counter.toBody()))).verify();
     assert.strictEqual(verdict.ok, true);
     assert.strictEqual(verdict.offender, publisher.xOnly);
+    assert.strictEqual(verdict.penaltyTxid, taken.txid);
+    assert.strictEqual(counter.verify({ txConfirmed: () => false }).ok, false, 'verifier may demand confirmation');
+    // A spend of some other outpoint is not this penalty.
+    const otherDeposit = Bond.buildDeposit({ network: 'regtest', providerPubkey: provider.pub, publisherPubkey: publisher.pub, withdrawAfter: 901, amountSats: 30000 });
+    const otherTaken = Bond.finalizePreSignedPenalty(otherDeposit, Bond.signPenaltyAsProvider(otherDeposit, Bond.prepareDepositPenalty(otherDeposit, { fundedTxHex: fundingFor(otherDeposit.address), deadlineHeight: 1000, destinationAddress: dest, feeSats: 500 }), provider.priv), publisher.priv);
+    assert.strictEqual(Challenge.wrongfulPenaltyProof(challenge, response, { txHex: otherTaken.txHex }).verify().ok, false);
   });
 
   it('bounty: per-epoch outputs, deterministic preimages, claim + refund PSBTs', () => {
@@ -185,16 +278,20 @@ describe('Market bonds, challenges, and fraud proofs (Phase 3)', function () {
     const notFraud = new FraudProof({ kind: 'wrong-leaf', artifacts: { challenge, response: honest } });
     assert.throws(() => Bond.preparePenaltySpend(deposit, { fraudProof: notFraud.toBody(), fundedTxHex: funded, destinationAddress: dest }), /does not verify/);
 
+    // Silence alone (epoch clock) is no longer a spendable verdict.
     const commitment = Challenge.commit({ merkleRootHex: doc.merkleRootHex, fromEpoch: 0, untilEpoch: 100, providerPrivateKey: provider.priv, depositAddress: deposit.address });
-    const proof = challenger.proofFor(challenge, null, { commitment, epoch: 70 });
-    const penalty = Bond.preparePenaltySpend(deposit, { fraudProof: proof.toBody(), epoch: 70, fundedTxHex: funded, destinationAddress: dest, feeSats: 500 });
+    assert.strictEqual(challenger.proofFor(challenge, null, { commitment, epoch: 70 }), null);
+    // A late response is.
+    const late = challenger.respond(challenge, { blobHashes: hashes, epoch: 70, providerPrivateKey: provider.priv });
+    const proof = challenger.proofFor(challenge, late, { commitment });
+    const penalty = Bond.preparePenaltySpend(deposit, { fraudProof: proof.toBody(), fundedTxHex: funded, destinationAddress: dest, feeSats: 500 });
     assert.strictEqual(penalty.leafId, 'penalty');
     assert.strictEqual(penalty.fraudProofHash, proof.hash);
     assert.strictEqual(penalty.offender, provider.xOnly);
 
     // Wrongful-penalty proof names the publisher, so it cannot be turned against the provider's deposit.
-    const counter = Challenge.wrongfulPenaltyProof(challenge, honest);
-    assert.throws(() => Bond.preparePenaltySpend(deposit, { fraudProof: counter, fundedTxHex: funded, destinationAddress: dest }), /different offender/);
+    const counter = Challenge.wrongfulPenaltyProof(challenge, honest, { txHex: funded });
+    assert.throws(() => Bond.preparePenaltySpend(deposit, { fraudProof: counter, fundedTxHex: funded, destinationAddress: dest }), /does not verify|different offender/);
 
     const withdraw = Bond.prepareDepositWithdraw(deposit, { fundedTxHex: funded, destinationAddress: dest, feeSats: 500 });
     assert.strictEqual(withdraw.locktime, 900);
@@ -210,8 +307,13 @@ describe('DocumentOfferBook#ingestFraudProof', function () {
     const book = new DocumentOfferBook();
     book.ingestInventoryResponse({ origin: 'seller-a', sellerPubkey: pub, items: [{ documentId: 'd', blobHashHex: 'aa'.repeat(32), rateSats: 1 }] });
     const preimage = crypto.randomBytes(32);
-    const offer = Witness.signArtifact({ type: 'DocumentOffer', blobHashHex: 'aa'.repeat(32), paymentHashHex: crypto.createHash('sha256').update(preimage).digest('hex') }, priv);
-    const proof = new FraudProof({ kind: 'wrong-bytes', artifacts: { offer, claim: { preimageHex: preimage.toString('hex') }, bytesHex: 'ff' } }).toBody();
+    const paymentHashHex = crypto.createHash('sha256').update(preimage).digest('hex');
+    const offer = Witness.signArtifact({ type: 'DocumentOffer', blobHashHex: 'aa'.repeat(32), paymentHashHex }, priv);
+    const Message = require('../types/message');
+    const Key = require('../types/key');
+    const garbage = Buffer.from('ff', 'hex');
+    const frameHex = Message.fromVector(['P2P_FILE_SEND', JSON.stringify({ name: 'd', body: garbage.toString('base64'), blobIndex: 0, blobTotal: 1, blobHashHex: crypto.createHash('sha256').update(garbage).digest('hex'), paymentHashHex })]).signWithKey(new Key({ private: priv.toString('hex') })).toBuffer().toString('hex');
+    const proof = new FraudProof({ kind: 'wrong-bytes', artifacts: { offer, claim: { preimageHex: preimage.toString('hex') }, delivery: { frameHex } } }).toBody();
     const res = book.ingestFraudProof(JSON.parse(JSON.stringify(proof)));
     assert.strictEqual(res.ok, true);
     assert.strictEqual(res.offender, xOnly);

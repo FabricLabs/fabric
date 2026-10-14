@@ -18,10 +18,13 @@ const Entity = require('./entity');
 const State = require('./state');
 const Secret = require('./secret');
 const Witness = require('./witness');
+const Resolutions = require('./resolutions');
 
 // Functions
 const { taprootPsbtInputFields, signerFromPriv32 } = require('../functions/inventoryHtlc');
+const { buildInclusion } = require('../functions/bitcoinTxInclusion');
 const ecc = require('./ecc');
+const EventEmitter = require('events');
 
 const {
   networkForFabricName,
@@ -77,22 +80,46 @@ const CHANNEL_DEFAULTS = Object.freeze({
   minFundingConfirmations: Object.freeze({ regtest: 1, signet: 1, default: 3 })
 });
 
+/**
+ * Normalise and validate a 33-byte compressed pubkey hex.
+ * @param {string} label error prefix
+ * @param {string} hex
+ * @returns {string} lowercase hex
+ * @private
+ */
 function compressedOrThrow (label, hex) {
   const s = String(hex || '').trim().toLowerCase();
   if (!COMPRESSED.test(s)) throw new Error(`${label} must be a 33-byte compressed pubkey (hex)`);
   return s;
 }
 
+/**
+ * x-only (32-byte) form of a compressed pubkey.
+ * @param {string} compressedHex
+ * @returns {string}
+ * @private
+ */
 function xOnlyOf (compressedHex) {
   return compressedHex.slice(2);
 }
 
+/**
+ * Throw for any mainnet network name (RC posture: regtest / signet / testnet only).
+ * @param {string} network
+ * @private
+ */
 function refuseMainnet (network) {
   if (MAINNET_NAMES.has(String(network || '').toLowerCase())) {
     throw new Error('Channel: mainnet refused (regtest/signet/testnet only)');
   }
 }
 
+/**
+ * Normalise an HTLC expiry into `{ type: 'cltv', height }`.
+ * @param {number|Object|null} raw block height or `{ type, height }`
+ * @returns {Object|null}
+ * @private
+ */
 function heightLock (raw) {
   if (raw == null) return null;
   if (typeof raw === 'object' && raw.type === 'cltv') return { type: 'cltv', height: Number(raw.height != null ? raw.height : raw.value) };
@@ -101,6 +128,11 @@ function heightLock (raw) {
   return { type: 'cltv', height: h };
 }
 
+/**
+ * @param {Buffer|string} buf
+ * @returns {string} SHA256 hex
+ * @private
+ */
 function sha256Hex (buf) {
   return crypto.createHash('sha256').update(buf).digest('hex');
 }
@@ -271,29 +303,62 @@ class Channel extends State {
 // Lightning-style penalty revocation (asymmetric commitments).
 // ---------------------------------------------------------------------------
 
+/**
+ * @param {string} hex
+ * @returns {bigint}
+ * @private
+ */
 function bigintFromHex (hex) {
   return BigInt('0x' + String(hex));
 }
 
+/**
+ * @param {bigint} n
+ * @returns {string} 32-byte zero-padded hex
+ * @private
+ */
 function hexFromBigint (n) {
   return n.toString(16).padStart(64, '0');
 }
 
+/**
+ * Decode a secp256k1 point from compressed hex (noble v1 / v2 compatible).
+ * @param {string} hex
+ * @returns {Object} ECPoint
+ * @private
+ */
 function pointFromHex (hex) {
   const buf = Buffer.from(String(hex), 'hex');
   if (typeof ECPoint.fromBytes === 'function') return ECPoint.fromBytes(Uint8Array.from(buf));
   return ECPoint.fromHex(buf.toString('hex'));
 }
 
+/**
+ * Encode a secp256k1 point as compressed hex.
+ * @param {Object} P ECPoint
+ * @returns {string}
+ * @private
+ */
 function pointToHex (P) {
   const bytes = typeof P.toBytes === 'function' ? P.toBytes(true) : P.toRawBytes(true);
   return Buffer.from(bytes).toString('hex');
 }
 
+/**
+ * Reduce 32 bytes to a scalar mod the curve order.
+ * @param {Buffer} buf
+ * @returns {bigint}
+ * @private
+ */
 function scalarOf (buf) {
   return bigintFromHex(Buffer.from(buf).toString('hex')) % CURVE_N;
 }
 
+/**
+ * @param {number} n
+ * @returns {Buffer} 8-byte big-endian encoding
+ * @private
+ */
 function u64be (n) {
   const b = Buffer.alloc(8);
   b.writeBigUInt64BE(BigInt(Math.floor(Number(n) || 0)));
@@ -602,11 +667,11 @@ Channel.buildCommitment = function buildCommitment (funding, state = {}, opts = 
   const toLocal = Channel.buildToLocalOutput({ network: funding.network, holderPubkey, revocationPubkey, toSelfDelay });
   if (holderSats >= DUST) {
     psbt.addOutput({ address: toLocal.address, value: BigInt(holderSats) });
-    outputs.push({ kind: 'toLocal', owner: holderPubkey, amountSats: holderSats, address: toLocal.address, vout: outputs.length, _toLocal: toLocal });
+    outputs.push({ kind: 'toLocal', owner: holderPubkey, amountSats: holderSats, address: toLocal.address, vout: psbt.txOutputs.length - 1, _toLocal: toLocal });
   }
   if (otherSats >= DUST) {
     psbt.addOutput({ address: otherAddress, value: BigInt(otherSats) });
-    outputs.push({ kind: 'toRemote', owner: otherPubkey, amountSats: otherSats, address: otherAddress, vout: outputs.length });
+    outputs.push({ kind: 'toRemote', owner: otherPubkey, amountSats: otherSats, address: otherAddress, vout: psbt.txOutputs.length - 1 });
   }
   const sorted = htlcs.slice().sort((a, b) => String(a.id).localeCompare(String(b.id)));
   let trimmedSats = 0;
@@ -619,7 +684,7 @@ Channel.buildCommitment = function buildCommitment (funding, state = {}, opts = 
       // dust get no output — their value rides in the fee until settled and
       // is enforced only by the off-chain state both parties sign.
       trimmedSats += amount;
-      outputs.push({ kind: 'htlc', id: String(h.id), amountSats: amount, direction: offered ? 'offered' : 'received', paymentHashHex: String(h.paymentHashHex).toLowerCase(), blobHashHex: h.blobHashHex || null, expireAfter: heightLock(h.expireAfter), trimmed: true });
+      outputs.push({ kind: 'htlc', id: String(h.id), amountSats: amount, direction: offered ? 'offered' : 'received', paymentHashHex: String(h.paymentHashHex).toLowerCase(), blobHashHex: h.blobHashHex || null, expireAfter: heightLock(h.expireAfter), vout: null, trimmed: true });
       continue;
     }
     const receiverPubkey = offered ? funding.remotePubkey : funding.localPubkey;
@@ -644,14 +709,14 @@ Channel.buildCommitment = function buildCommitment (funding, state = {}, opts = 
       blobHashHex: h.blobHashHex || null,
       expireAfter: out.expireAfter,
       address: out.address,
-      vout: outputs.length,
+      vout: psbt.txOutputs.length - 1,
       _htlc: out
     });
   }
   for (const pubkey of [holderPubkey, otherPubkey]) {
     const anchor = Channel.buildAnchorOutput({ network: funding.network, pubkey });
     psbt.addOutput({ address: anchor.address, value: BigInt(anchorSats) });
-    outputs.push({ kind: 'anchor', owner: pubkey, amountSats: anchorSats, address: anchor.address, vout: outputs.length, _anchor: anchor });
+    outputs.push({ kind: 'anchor', owner: pubkey, amountSats: anchorSats, address: anchor.address, vout: psbt.txOutputs.length - 1, _anchor: anchor });
   }
   const unsigned = psbt.__CACHE.__TX;
   return {
@@ -732,6 +797,14 @@ Channel.finalizeCommitment = function finalizeCommitment (psbtA, psbtB, network 
   return finalizeSpendPsbt({ psbt: a });
 };
 
+/**
+ * Find the on-chain HTLC output row for an id, refusing trimmed (dust) HTLCs.
+ * @param {Object} commitment built commitment
+ * @param {string} htlcId
+ * @param {string} label error prefix
+ * @returns {Object} output row
+ * @private
+ */
 function htlcRowOrThrow (commitment, htlcId, label) {
   const row = (commitment.outputs || []).find((o) => o.kind === 'htlc' && o.id === String(htlcId));
   if (row && row.trimmed) throw new Error(`${label}: trimmed HTLC has no on-chain output`);
@@ -824,6 +897,10 @@ Channel.prepareJusticeSpend = function prepareJusticeSpend (opts = {}) {
     const internal = Buffer.from(tree.internalPubkeyHex, 'hex');
     const control = buildControlBlockForLeaf(tree._leaves, leaf.script, internal);
     const out = stale.outs[row.vout];
+    const expected = bitcoin.address.toOutputScript(row.address, network);
+    if (!out || !Buffer.from(out.script).equals(expected)) {
+      throw new Error(`prepareJusticeSpend: output ${row.vout} of the stale tx is not the ${row.kind} output`);
+    }
     psbt.addInput(Object.assign({
       hash: stale.getId(),
       index: row.vout,
@@ -931,10 +1008,21 @@ Channel.harvestPreimages = function harvestPreimages (txHexOrTx, paymentHashes =
   return found;
 };
 
+/**
+ * Deep-ish copy of an HTLC list with normalised expiries.
+ * @param {Object[]} list
+ * @returns {Object[]}
+ * @private
+ */
 function cloneHtlcs (list) {
   return (list || []).map((h) => Object.assign({}, h, { expireAfter: heightLock(h.expireAfter) }));
 }
 
+/**
+ * @param {Object} h HTLC row
+ * @returns {number} CLTV expiry height (0 when none)
+ * @private
+ */
 function expireHeight (h) {
   const lock = heightLock(h && h.expireAfter);
   return lock ? Number(lock.height) : 0;
@@ -1005,6 +1093,27 @@ class ChannelSession {
     };
     this._localCommitment = null;
     this._preimages = new Map();
+    // Pre-signed exits (Contract.Resolutions): every counterparty-signed
+    // commitment is a timelocked unilateral exit for that state, so the
+    // channel is always resolvable on L1 without further cooperation.
+    this.resolutions = new Resolutions({ network: this.network, contractId: this.channelId });
+  }
+
+  /**
+   * @private record the counterparty-signed commitment for state `n` as that
+   * state's unilateral exit in {@link Resolutions}.
+   */
+  _recordExit (n, signedPsbtBase64) {
+    try {
+      const id = String(n);
+      if (!this.resolutions.stateIds.includes(id)) this.resolutions.declare(id, n > 0 ? String(n - 1) : null);
+      this.resolutions.addExit(id, { id: 'commitment', kind: Resolutions.KINDS.COMMITMENT, psbtBase64: signedPsbtBase64, required: [this.funding.remotePubkey], meta: { toSelfDelay: this.funding.toSelfDelay } });
+    } catch (_) { /* exits are advisory bookkeeping; the session state stays authoritative */ }
+  }
+
+  /** @returns {boolean} the current state has a counterparty-signed unilateral exit */
+  get resolvable () {
+    return this.resolutions.resolvable(String(this._state.number));
   }
 
   get state () { return this._state; }
@@ -1277,9 +1386,13 @@ class ChannelSession {
         if (h.direction === 'offered') remote += h.amountSats; else local += h.amountSats;
       } else {
         // Fail: the receiver may always fail; the sender only once expired.
+        // An unknown / stale tip is treated as "not expired" — otherwise a
+        // sender could claw back in-flight value before CLTV simply because
+        // our chain view is down.
         if (h.direction === 'received') {
           const tip = this._tipHeight();
-          if (tip != null && expireHeight(h) > tip) throw new Error('receive: counterparty failed its own unexpired HTLC');
+          if (tip == null) throw new Error('receive: counterparty failed its own HTLC but the chain tip is unknown — cannot confirm expiry');
+          if (expireHeight(h) > tip) throw new Error('receive: counterparty failed its own unexpired HTLC');
           remote += h.amountSats;
         } else {
           local += h.amountSats;
@@ -1360,6 +1473,7 @@ class ChannelSession {
     s.number = number;
     s.remoteSig = String(body.psbtBase64);
     this._localCommitment = local;
+    this._recordExit(number, s.remoteSig);
     this._rememberLocal(local);
     if (body.type === CHANNEL_BODY_TYPES.Close) s.status = 'closing';
     const revoke = this._localRevoke(number - 1);
@@ -1429,12 +1543,14 @@ class ChannelSession {
       this._notePoint(0, body.perCommitmentPoint);
       if (body.nextPerCommitmentPoint) this._notePoint(1, body.nextPerCommitmentPoint);
       s.remoteSig = String(body.psbtBase64);
+      this._recordExit(s.number, s.remoteSig);
       const remote = this._signRemote([], 0, { localSats: s.localSats, remoteSats: s.remoteSats }, s.feeSats);
       s.pending = null;
       this._refreshStatus();
       return this._body(CHANNEL_BODY_TYPES.Commitment, { commitmentTxid: remote.commitment.txid, psbtBase64: remote.sig, nextPerCommitmentPoint: this._localPoint(1) });
     }
     s.remoteSig = String(body.psbtBase64);
+    this._recordExit(s.number, s.remoteSig);
     if (body.nextPerCommitmentPoint) this._notePoint(s.number + 1, body.nextPerCommitmentPoint);
     s.pending = null;
     if (s.number === 0) {
@@ -1494,7 +1610,8 @@ class ChannelSession {
     if (this.busy) throw new Error('failHtlc: channel busy');
     if (row.direction === 'offered') {
       const tip = this._tipHeight();
-      if (tip != null && expireHeight(row) > tip) throw new Error('failHtlc: offered HTLC not yet expired');
+      if (tip == null) throw new Error('failHtlc: chain tip unknown — cannot prove the offered HTLC expired');
+      if (expireHeight(row) > tip) throw new Error('failHtlc: offered HTLC not yet expired');
     }
     this._state.settled.push({ id: row.id, blobHashHex: row.blobHashHex, amountSats: row.amountSats, paymentHashHex: row.paymentHashHex, outcome: 'failed', reason, forwardOf: row.forwardOf || null });
     const balances = { localSats: this._state.localSats, remoteSats: this._state.remoteSats };
@@ -1579,7 +1696,7 @@ class ChannelSession {
    * justice transaction and a `FraudProof` — or an HTLC spend whose witness
    * reveals preimages we are owed.
    * @param {string} txHex
-   * @param {object} [opts] `{ destinationAddress?, feeSats? }` for the justice spend
+   * @param {object} [opts] `{ destinationAddress?, feeSats?, inclusion?: { blockHeaderHex, txids } }` — `inclusion` lets a stale-commitment proof carry an SPV branch binding the broadcast to a block header
    * @returns {object} `{ kind, txid, justice?, fraudProof?, preimages? }`
    */
   observe (txHex, opts = {}) {
@@ -1598,12 +1715,16 @@ class ChannelSession {
         const justice = opts.destinationAddress
           ? Channel.prepareJusticeSpend({ funding: this.funding, state: Object.assign({ fundedTxHex: this.fundedTxHex }, stale.state), holderPoint: stale.pointHex, perCommitmentSecretHex: stale.perCommitmentSecretHex, staleTxHex: txHex, localPrivateKey: this.localPrivateKey, destinationAddress: opts.destinationAddress, feeSats: opts.feeSats, network: this.network })
           : null;
+        let inclusion = null;
+        if (opts.inclusion && opts.inclusion.blockHeaderHex && Array.isArray(opts.inclusion.txids)) {
+          try { inclusion = buildInclusion({ blockHeaderHex: opts.inclusion.blockHeaderHex, txids: opts.inclusion.txids, txid }); } catch (_) { inclusion = null; }
+        }
         const fraudProof = new Witness.FraudProof({
           kind: Witness.FraudProof.KINDS.STALE_COMMITMENT,
-          artifacts: { staleTxHex: txHex, revoke: stale.revoke },
+          artifacts: Object.assign({ staleTxHex: txHex, revoke: stale.revoke }, inclusion ? { inclusion } : {}),
           claim: { channelId: this.channelId, offenderPubkey: this.funding.remotePubkey, staleNumber: stale.number, latestNumber: s.number, staleTxid: txid }
         }).toBody();
-        return { kind: 'stale', txid, number: stale.number, justice, fraudProof };
+        return { kind: 'stale', txid, number: stale.number, justice, fraudProof, inclusion };
       }
       return { kind: 'unknown-funding-spend', txid };
     }
@@ -1722,13 +1843,25 @@ Channel.exchange = function exchange (from, to, body) {
  * multi-hop HTLCs, ticks sessions on new chain tips, and returns the bodies
  * the host must publish back. Shape expected by the market agent's
  * `attach({ channels })`.
+ *
+ * **Seller-fulfils (Lightning shape):** when the host supplies
+ * `preimageFor(paymentHashHex)` the book fulfils every received HTLC whose
+ * preimage the host knows as soon as the round that committed it completes;
+ * the payer learns the preimage from the resulting `ChannelHtlcFulfill`.
+ *
+ * Events: `htlcCommitted` (a received HTLC is irrevocably committed),
+ * `htlcFulfilled` (a counterparty revealed a preimage to us), and
+ * `htlcSettled` (any HTLC left the channel; `outcome` is `fulfilled` or
+ * `failed`). Payloads are `{ channelId, session, htlcId, paymentHashHex,
+ * blobHashHex, amountSats, direction, preimageHex?, outcome?, reason? }`.
  * @class ChannelBook
  */
-class ChannelBook {
+class ChannelBook extends EventEmitter {
   /**
-   * @param {object} opts `{ localPrivateKey, network, tipHeight?: function, confirmations?: function(txid), publish?: function(body), policy?, staleTipMs?, forwardPolicy?: { feeSats, cltvDelta } }`
+   * @param {object} opts `{ localPrivateKey, network, tipHeight?: function, confirmations?: function(txid), publish?: function(body), preimageFor?: function(paymentHashHex), policy?, staleTipMs?, forwardPolicy?: { feeSats, cltvDelta } }`
    */
   constructor (opts = {}) {
+    super();
     const priv = opts.localPrivateKey;
     this.localPrivateKey = Buffer.isBuffer(priv) ? priv : Buffer.from(String(priv || ''), 'hex');
     if (this.localPrivateKey.length !== 32) throw new Error('ChannelBook: localPrivateKey (32 bytes) required');
@@ -1743,6 +1876,7 @@ class ChannelBook {
       ? opts.confirmations
       : (opts.confirmations === true ? (txid) => this._confirmationCache.get(String(txid)) || 0 : null);
     this._publish = typeof opts.publish === 'function' ? opts.publish : null;
+    this._preimageFor = typeof opts.preimageFor === 'function' ? opts.preimageFor : null;
     this.policy = Object.assign({}, opts.policy || {});
     this.forwardPolicy = Object.assign({ feeSats: 1, cltvDelta: CHANNEL_DEFAULTS.minCltvDelta }, opts.forwardPolicy || {});
     this.staleTipMs = Math.floor(Number(opts.staleTipMs != null ? opts.staleTipMs : CHANNEL_DEFAULTS.staleTipMs));
@@ -1750,6 +1884,7 @@ class ChannelBook {
     this.sessions = new Map(); // channelId → ChannelSession
     this.peers = new Map(); // sellerId / address alias → channelId
     this.forwards = new Map(); // `${downstreamChannelId}:${htlcId}` → { channelId, htlcId }
+    this._announced = new Set(); // `${channelId}:${htlcId}` already emitted as htlcCommitted
   }
 
   /**
@@ -1785,13 +1920,14 @@ class ChannelBook {
   /**
    * New-block hook for hosts: record the tip, tick sessions, and classify any
    * transactions the host hands over (mempool / block bodies).
-   * @param {object} opts `{ height, txHexes?, destinationAddress?, feeSats? }`
+   * @param {object} opts `{ height, txHexes?, blockHeaderHex?, txids?, destinationAddress?, feeSats? }` — `blockHeaderHex` + `txids` (block order) let stale-commitment proofs carry an inclusion branch
    * @returns {{ published: object[], observations: object[] }}
    */
   onBlock (opts = {}) {
     const published = this.setTip(opts.height);
     const observations = [];
-    for (const hex of opts.txHexes || []) observations.push(...this.observe(hex, { destinationAddress: opts.destinationAddress, feeSats: opts.feeSats }));
+    const inclusion = opts.blockHeaderHex && Array.isArray(opts.txids) ? { blockHeaderHex: opts.blockHeaderHex, txids: opts.txids } : undefined;
+    for (const hex of opts.txHexes || []) observations.push(...this.observe(hex, { destinationAddress: opts.destinationAddress, feeSats: opts.feeSats, inclusion }));
     return { published, observations };
   }
 
@@ -1809,13 +1945,70 @@ class ChannelBook {
   /** @returns {boolean} chain view is usable for expiry decisions */
   get tipFresh () { return this.tipHeight() != null; }
 
-  /** @private deps handed to every session */
+  /**
+   * @private deps handed to every session. `tipHeight` is **always** wired so
+   * a session never mistakes "no chain view" for "no expiry rule": with an
+   * unknown tip sessions refuse new HTLCs and refuse sender-side fails.
+   */
   _sessionDeps () {
-    const gated = !!(this._tipFn || this._tip.height);
     return {
-      tipHeight: gated ? () => this.tipHeight() : undefined,
+      tipHeight: () => this.tipHeight(),
       confirmations: this._confirmations || undefined
     };
+  }
+
+  /**
+   * Host-side preimage lookup (seller-fulfils). Falls back to preimages any
+   * session on this book has already learned.
+   * @param {string} paymentHashHex
+   * @returns {string|null}
+   */
+  preimageFor (paymentHashHex) {
+    const hash = String(paymentHashHex || '').toLowerCase();
+    if (this._preimageFor) {
+      try {
+        const pre = this._preimageFor(hash);
+        if (pre && sha256Hex(Buffer.from(String(pre), 'hex')) === hash) return String(pre).toLowerCase();
+      } catch (_) { /* host lookup failed */ }
+    }
+    for (const s of this.sessions.values()) {
+      const pre = s.preimageFor(hash);
+      if (pre) return pre;
+    }
+    return null;
+  }
+
+  /** @private event payload for an HTLC row */
+  _htlcEvent (session, row, extra = {}) {
+    return Object.assign({
+      channelId: session.channelId,
+      session,
+      htlcId: row.id,
+      paymentHashHex: row.paymentHashHex,
+      blobHashHex: row.blobHashHex || null,
+      amountSats: row.amountSats,
+      direction: row.direction,
+      forwardOf: row.forwardOf || null
+    }, extra);
+  }
+
+  /**
+   * @private fulfil every committed received HTLC whose preimage we know
+   * (one per call — each fulfil opens a new round).
+   */
+  _autoFulfil (session) {
+    if (session.busy || session.status !== 'open') return null;
+    for (const h of session.state.htlcs) {
+      if (h.direction !== 'received') continue;
+      const pre = this.preimageFor(h.paymentHashHex);
+      if (!pre) continue;
+      try {
+        const body = session.fulfillHtlc(h.id, pre);
+        this.publish(body, session);
+        return body;
+      } catch (_) { /* try the next */ }
+    }
+    return null;
   }
 
   /**
@@ -1888,6 +2081,7 @@ class ChannelBook {
   ingest (body = {}, meta = {}) {
     if (!body || typeof body.type !== 'string' || !body.type.startsWith('Channel')) return null;
     let session = this.sessions.get(String(body.channelId));
+    let fresh = false;
     if (!session) {
       if (body.type !== CHANNEL_BODY_TYPES.Open || !body.funding) return null;
       const f = body.funding;
@@ -1906,11 +2100,35 @@ class ChannelBook {
         feeSats: body.feeSats,
         policy: this.policy
       }, this._sessionDeps()));
-      this.add(session, meta.sellerId ? [meta.sellerId] : []);
+      fresh = true;
     }
+    const wasBusy = session.busy;
+    // Validate first: a fresh session is registered only once its opening
+    // body verified, so a malformed `ChannelOpen` cannot park a dead entry
+    // under our counterparty's key.
     const reply = session.ingest(body);
+    if (fresh) this.add(session, meta.sellerId ? [meta.sellerId] : []);
     if (reply) this.publish(reply, session);
-    if (body.type === CHANNEL_BODY_TYPES.HtlcFulfill || body.type === CHANNEL_BODY_TYPES.HtlcFail) this._propagate(session, body);
+    if (body.type === CHANNEL_BODY_TYPES.HtlcFulfill || body.type === CHANNEL_BODY_TYPES.HtlcFail) {
+      const row = session.state.settled.slice().reverse().find((x) => x.id === String(body.htlcId));
+      if (row) {
+        const ev = this._htlcEvent(session, Object.assign({ direction: 'offered' }, row), { outcome: row.outcome, reason: row.reason || null, preimageHex: row.outcome === 'fulfilled' ? session.preimageFor(row.paymentHashHex) : null });
+        if (row.outcome === 'fulfilled') this.emit('htlcFulfilled', ev);
+        this.emit('htlcSettled', ev);
+      }
+      this._propagate(session, body);
+    }
+    // A received HTLC becomes irrevocably committed once the round that
+    // added it has completed on both sides (`busy` cleared).
+    if (wasBusy && !session.busy) {
+      for (const h of session.state.htlcs) {
+        const key = `${session.channelId}:${h.id}`;
+        if (h.direction !== 'received' || this._announced.has(key)) continue;
+        this._announced.add(key);
+        this.emit('htlcCommitted', this._htlcEvent(session, h));
+      }
+      this._autoFulfil(session);
+    }
     return reply;
   }
 

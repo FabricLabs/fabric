@@ -359,6 +359,8 @@ const PEER_SCORE_RELAY_NEST_EXCEEDED_PENALTY = 60;
 const CHAT_MAX_RELAYS_PER_ORIGIN_PER_MINUTE = 30;
 /** Max sealed ciphertext rows awaiting key reveal on a Peer. */
 const PEER_MAX_PENDING_SEALED_DELIVERIES = 32;
+/** Max blobs (parts) accepted for one per-blob sealed tree (`blobTotal` cap). 4096 × ~24 KiB ≈ 96 MiB ciphertext. */
+const PEER_MAX_SEALED_BLOB_PARTS = 4096;
 /** Max private DocumentRequest reverse-route entries. */
 const PEER_MAX_DOCUMENT_RELAY_ROUTES = 256;
 /** Max concurrent BIP-327 `P2P_MUSIG_*` sessions on a Peer (FIFO eviction). */
@@ -600,6 +602,7 @@ module.exports = {
   PEER_SCORE_RELAY_NEST_EXCEEDED_PENALTY,
   CHAT_MAX_RELAYS_PER_ORIGIN_PER_MINUTE,
   PEER_MAX_PENDING_SEALED_DELIVERIES,
+  PEER_MAX_SEALED_BLOB_PARTS,
   PEER_MAX_DOCUMENT_RELAY_ROUTES,
   PEER_MAX_MUSIG_SESSIONS,
   PEER_MUSIG_SESSION_TTL_MS,

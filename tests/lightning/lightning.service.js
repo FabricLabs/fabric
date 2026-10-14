@@ -353,11 +353,14 @@ d('@fabric/core/services/lightning', function () {
       // until the paying node has received the counterparty's `channel_update`,
       // so wait for the channel to appear in gossip with BOTH directions active —
       // not merely for the first direction to show up.
-      const waitForActiveChannel = async (node, otherId, label, maxTries = 45) => {
+      // Filter on the exact node pair (either direction) so an unrelated channel
+      // that merely touches `otherId` cannot satisfy the check.
+      const waitForActiveChannel = async (node, selfId, otherId, label, maxTries = 45) => {
         for (let i = 0; i < maxTries; i++) {
           const channels = await node._makeRPCRequest('listchannels', []);
           const edges = (channels.channels || []).filter((c) =>
-            c.source === otherId || c.destination === otherId
+            (c.source === selfId && c.destination === otherId) ||
+            (c.source === otherId && c.destination === selfId)
           );
           const active = edges.filter((c) => c.active);
           const directions = new Set(active.map((c) => `${c.source}->${c.destination}`));
@@ -368,7 +371,7 @@ d('@fabric/core/services/lightning', function () {
         throw new Error(`${label}: channel never became active in both gossip directions`);
       };
 
-      await waitForActiveChannel(lightning, peer.state.node.id, 'main<->peer');
+      await waitForActiveChannel(lightning, lightning.state.node.id, peer.state.node.id, 'main<->peer');
 
       // Connect peer to carol and create channel
       console.debug('Connecting peer to carol...');
@@ -397,8 +400,8 @@ d('@fabric/core/services/lightning', function () {
 
       // The paying node must see its own channel enabled in both directions
       // right before `pay`; the peer<->carol channel only needs to be known.
-      await waitForActiveChannel(peer, carol.state.node.id, 'peer<->carol');
-      await waitForActiveChannel(lightning, peer.state.node.id, 'main<->peer (pre-pay)');
+      await waitForActiveChannel(peer, peer.state.node.id, carol.state.node.id, 'peer<->carol');
+      await waitForActiveChannel(lightning, lightning.state.node.id, peer.state.node.id, 'main<->peer (pre-pay)');
 
       // Verify channel states
       const peerChannels = await peer._makeRPCRequest('listchannels', []);
