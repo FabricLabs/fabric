@@ -248,6 +248,21 @@ describe('Market bonds, challenges, and fraud proofs (Phase 3)', function () {
     const otherDeposit = Bond.buildDeposit({ network: 'regtest', providerPubkey: provider.pub, publisherPubkey: publisher.pub, withdrawAfter: 901, amountSats: 30000 });
     const otherTaken = Bond.finalizePreSignedPenalty(otherDeposit, Bond.signPenaltyAsProvider(otherDeposit, Bond.prepareDepositPenalty(otherDeposit, { fundedTxHex: fundingFor(otherDeposit.address), deadlineHeight: 1000, destinationAddress: dest, feeSats: 500 }), provider.priv), publisher.priv);
     assert.strictEqual(Challenge.wrongfulPenaltyProof(challenge, response, { txHex: otherTaken.txHex }).verify({ txConfirmed: () => true }).ok, false);
+
+    // The honest check-in (both sign, CSV 1) and the provider's own withdraw also
+    // spend the deposit outpoint with a full witness — neither is a penalty.
+    const signAll = (psbtBase64, privs) => {
+      const psbt = bitcoin.Psbt.fromBase64(psbtBase64, { network: bitcoin.networks.regtest });
+      for (const p of privs) psbt.signInput(0, signerFromPriv32(p));
+      return Bond.finalizeSpend(psbt.toBase64());
+    };
+    const checkIn = signAll(Bond.prepareDepositCheckIn(deposit, { fundedTxHex: funded, feeSats: 500 }).psbtBase64, [provider.priv, publisher.priv]);
+    const withdraw = signAll(Bond.prepareDepositWithdraw(deposit, { fundedTxHex: funded, destinationAddress: dest, feeSats: 500 }).psbtBase64, [provider.priv]);
+    for (const [label, spend] of [['check-in', checkIn], ['withdraw', withdraw]]) {
+      const v = Challenge.wrongfulPenaltyProof(challenge, response, { txHex: spend.txHex }).verify({ txConfirmed: (id) => id === spend.txid });
+      assert.strictEqual(v.ok, false, `${label} spend must not convict the publisher`);
+      assert.match(v.reason, /penalty leaf/);
+    }
   });
 
   it('penalty pre-signature must pay the publisher-named destination (provider cannot pay itself)', () => {

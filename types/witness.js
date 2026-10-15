@@ -450,6 +450,12 @@ class FraudProof {
         if (spendIndex < 0) return fail('penalty transaction does not spend the deposit outpoint');
         const witness = penalty.ins[spendIndex].witness || [];
         if (!witness.length || witness.every((w) => !w || !w.length)) return fail('penalty transaction carries no witness for the deposit input');
+        // Check-in (CSV 1) and withdraw (provider-only) also spend the deposit:
+        // only a spend through the 2-of-2 `penalty` leaf is a penalty.
+        const leafScript = FraudProof._tapscriptOf(witness);
+        if (!leafScript) return fail('deposit input is not a tapscript spend');
+        const penaltyLeaves = FraudProof._penaltyLeafScripts(challenge.pubkey, challenge.providerPubkey);
+        if (!penaltyLeaves.some((s) => s.equals(leafScript))) return fail('deposit input does not spend the penalty leaf (check-in or withdraw is not a penalty)');
         const evidence = FraudProof._broadcastEvidence(penalty, inclusion, ctx);
         if (!evidence.ok) return fail(evidence.reason);
         return { ok: true, offender: xOnlyHex(challenge.pubkey), reason: 'valid in-time response was penalized', evidence: evidence.kind, penaltyTxid: penalty.getId(), blockHash: evidence.blockHash || null };
@@ -547,6 +553,48 @@ class FraudProof {
       }
     }
     return { scripts, minValueSats, label: String(address || scriptHex) };
+  }
+
+  /**
+   * Leaf script revealed by a Taproot script-path witness
+   * (`[…stack, script, controlBlock, annex?]`), or `null` for a key-path spend.
+   * @private
+   * @param {Buffer[]} witness
+   * @returns {Buffer|null}
+   */
+  static _tapscriptOf (witness = []) {
+    let items = witness.filter((w) => Buffer.isBuffer(w) || w instanceof Uint8Array).map((w) => Buffer.from(w));
+    if (items.length >= 2 && items[items.length - 1].length && items[items.length - 1][0] === 0x50) items = items.slice(0, -1);
+    if (items.length < 2) return null;
+    const control = items[items.length - 1];
+    if (control.length < 33 || (control.length - 33) % 32 !== 0 || (control[0] & 0xfe) !== 0xc0) return null;
+    return items[items.length - 2];
+  }
+
+  /**
+   * Every byte form the deposit's `penalty` leaf (2-of-2 publisher + provider,
+   * no lock — see `Bond.buildDeposit`) can take for two x-only keys. The leaf
+   * sorts compressed keys, so each parity combination is a candidate.
+   * @private
+   * @param {string} publisherPubkey x-only or compressed hex
+   * @param {string} providerPubkey x-only or compressed hex
+   * @returns {Buffer[]}
+   */
+  static _penaltyLeafScripts (publisherPubkey, providerPubkey) {
+    const { buildSpendLeaf } = require('../functions/contractTaproot');
+    const a = xOnlyHex(publisherPubkey);
+    const b = xOnlyHex(providerPubkey);
+    if (!HEX64.test(String(a || '')) || !HEX64.test(String(b || '')) || a === b) return [];
+    const out = [];
+    for (const pa of ['02', '03']) {
+      for (const pb of ['02', '03']) {
+        try {
+          const script = buildSpendLeaf({ id: 'penalty', keys: [pa + a, pb + b], threshold: 2 }).script;
+          if (!out.some((s) => s.equals(script))) out.push(script);
+        } catch (_) { /* not a curve point */ }
+      }
+    }
+    return out;
   }
 
   /**
