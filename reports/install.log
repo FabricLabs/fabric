@@ -4,9 +4,9 @@ npm notice run @fabric/core@0.1.0-RC1 install
 npm notice run node scripts/install-native.js
 [@fabric/core] Skipping native addon build (JS is the canonical protocol). Optional: FABRIC_BUILD_NATIVE=1 or npm run build:c
 
-added 354 packages, and audited 355 packages in 5s
+added 355 packages, and audited 356 packages in 18s
 
-58 packages are looking for funding
+59 packages are looking for funding
   run `npm fund` for details
 
 7 high severity vulnerabilities
