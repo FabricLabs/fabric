@@ -445,6 +445,13 @@ function parseFileSendObject (obj) {
   };
 }
 
+/**
+ * Pending-transfer map key: document id + Merkle root (`legacy` when rootless).
+ * @param {string} documentId
+ * @param {string|null} merkleRootHex
+ * @returns {string}
+ * @private
+ */
 function transferKey (documentId, merkleRootHex) {
   return `${documentId}|${merkleRootHex || 'legacy'}`;
 }
@@ -493,6 +500,24 @@ class DocumentBlobTransferBook {
     return row;
   }
 
+  /**
+   * Expectations registered for a document (any root). Lets the per-blob
+   * sealed path refuse frames whose root / total disagree with what the buyer
+   * actually asked for.
+   * @param {string} documentId
+   * @returns {Object[]} rows from {@link DocumentBlobTransferBook#expectTransfer}
+   */
+  expectedFor (documentId) {
+    const id = String(documentId || '').trim();
+    const out = [];
+    for (const row of this._pending.values()) if (row.documentId === id) out.push(row);
+    return out;
+  }
+
+  /**
+   * Drop pending transfers idle longer than `ttlMs`.
+   * @private
+   */
   _purgeExpired () {
     const now = Date.now();
     for (const [k, row] of this._pending.entries()) {
@@ -502,6 +527,10 @@ class DocumentBlobTransferBook {
     }
   }
 
+  /**
+   * Evict oldest pending transfers until under `maxPending`.
+   * @private
+   */
   _evictOldestIfOverCap () {
     while (this._pending.size > this.maxPending) {
       const oldest = this._pending.keys().next().value;
@@ -643,6 +672,10 @@ class DocumentBlobTransferBook {
     };
   }
 
+  /**
+   * Number of in-flight transfers.
+   * @type {number}
+   */
   get pendingCount () {
     return this._pending.size;
   }

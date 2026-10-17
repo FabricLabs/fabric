@@ -83,10 +83,12 @@ describe('functions/documentBlobManifest', function () {
 
   it('compactBlobIndexForWire drops leaves when over budget', function () {
     const many = [];
-    for (let i = 0; i < 80; i++) {
+    // Enough leaves (~120 B each) to exceed the 32 KiB body cap.
+    const LEAVES = 400;
+    for (let i = 0; i < LEAVES; i++) {
       many.push({
         index: i,
-        total: 80,
+        total: LEAVES,
         blobHashHex: crypto.createHash('sha256').update(String(i)).digest('hex'),
         size: DEFAULT_BLOB_CHUNK_BYTES
       });
@@ -124,5 +126,31 @@ describe('functions/documentBlobManifest', function () {
         blobHashHex: adv.itemBlobs[0].blobHashHex
       })
     );
+  });
+
+  it('sealed Document leaves verify with the same blob index tooling as plain blobs', function () {
+    const Document = require('../types/document');
+    const doc = Document.seal(Buffer.alloc(5000, 7), { chunkBytes: 2048, documentId: 'sealed' });
+    const leaves = doc.blobs.map((b) => b.blobHashHex);
+    // Same Tree, same leaf shape → the wire index tooling is sealing-agnostic.
+    const index = buildBlobIndex({ documentId: 'sealed', chunkBytes: 2048, merkleRootHex: doc.merkleRootHex, blobs: doc.blobs });
+    assert.strictEqual(index.merkleRootHex, doc.merkleRootHex);
+    assert.strictEqual(verifyBlobIndex(index, leaves).ok, true);
+    assert.strictEqual(merkleRootHexFromBlobHashes(leaves), doc.hash);
+    for (const leaf of doc.blobs) {
+      assert.strictEqual(verifyBlob(doc.bytesFor(leaf.index), leaf.blobHashHex), true);
+      // Sealed payment hash is SHA256(K_i), not the plain-blob derivation.
+      assert.notStrictEqual(leaf.paymentHashHex, blobPaymentHashHex({
+        documentId: 'sealed',
+        blobIndex: leaf.index,
+        blobHashHex: leaf.blobHashHex
+      }));
+    }
+    // A plain-blob tree over the same plaintext has a different root (ciphertext leaves).
+    const plain = Document.fromPlain(Buffer.alloc(5000, 7), { chunkBytes: 2048 });
+    assert.notStrictEqual(plain.merkleRootHex, doc.merkleRootHex);
+    assert.strictEqual(plain.merkleRootHex, merkleRootHexFromBlobHashes(
+      splitBlobs(Buffer.alloc(5000, 7), 2048).blobs.map((b) => b.blobHashHex)
+    ));
   });
 });

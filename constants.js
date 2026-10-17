@@ -242,7 +242,13 @@ const VERSION_NUMBER = 0x01;
 /* magic, version, parent, author, type, size, hash, preimage, signature — then body */
 const HEADER_SIZE = 208;
 const LARGE_COLLECTION_SIZE = 10; // TODO: test with 1,000,000
-const MAX_MESSAGE_SIZE = 4096 - HEADER_SIZE;
+/** Max AMP body bytes (32 KiB). Wire frame = `HEADER_SIZE + MAX_MESSAGE_SIZE` = 32976 B,
+ * which fits one Noise transport message (65535 − 16-byte MAC). Keep in sync with
+ * `FABRIC_MAX_MESSAGE_BODY` in `src/constants.h`. Note `MACHINE_MAX_MEMORY` scales with
+ * this cap (≈32 MiB per `Machine`). Historical: `4096 − HEADER_SIZE` = 3888. */
+const MAX_MESSAGE_SIZE = 32768;
+/** Max bytes of one AMP frame on the wire (header + body). */
+const MAX_FRAME_BYTES = HEADER_SIZE + MAX_MESSAGE_SIZE;
 /** Max UTF-16 code units accepted for `JSON.parse` of locally persisted JSON (LevelDB peer registry, CLI STATE file). */
 const PERSISTED_JSON_MAX_CHARS = 2 * 1024 * 1024;
 
@@ -353,6 +359,12 @@ const PEER_SCORE_RELAY_NEST_EXCEEDED_PENALTY = 60;
 const CHAT_MAX_RELAYS_PER_ORIGIN_PER_MINUTE = 30;
 /** Max sealed ciphertext rows awaiting key reveal on a Peer. */
 const PEER_MAX_PENDING_SEALED_DELIVERIES = 32;
+/** Max blobs (parts) accepted for one per-blob sealed tree (`blobTotal` cap). 4096 × ~24 KiB ≈ 96 MiB ciphertext. */
+const PEER_MAX_SEALED_BLOB_PARTS = 4096;
+/** Global byte budget across every pending sealed row (ciphertext + retained frames); fits one full-size tree. */
+const PEER_MAX_PENDING_SEALED_BYTES = 256 * 1024 * 1024;
+/** Pending sealed rows that never complete are dropped this long after their first frame. */
+const PEER_PENDING_SEALED_TTL_MS = 60 * 60 * 1000;
 /** Max private DocumentRequest reverse-route entries. */
 const PEER_MAX_DOCUMENT_RELAY_ROUTES = 256;
 /** Max concurrent BIP-327 `P2P_MUSIG_*` sessions on a Peer (FIFO eviction). */
@@ -544,6 +556,7 @@ module.exports = {
   LIGHTNING_PARENT_SIDEBLOCK_HASH,
   HTTP_HEADER_CONTENT_TYPE,
   MAGIC_BYTES,
+  MAX_FRAME_BYTES,
   MAX_FRAME_SIZE,
   MAX_MEMORY_ALLOC,
   MAX_MESSAGE_SIZE,
@@ -593,6 +606,9 @@ module.exports = {
   PEER_SCORE_RELAY_NEST_EXCEEDED_PENALTY,
   CHAT_MAX_RELAYS_PER_ORIGIN_PER_MINUTE,
   PEER_MAX_PENDING_SEALED_DELIVERIES,
+  PEER_MAX_PENDING_SEALED_BYTES,
+  PEER_PENDING_SEALED_TTL_MS,
+  PEER_MAX_SEALED_BLOB_PARTS,
   PEER_MAX_DOCUMENT_RELAY_ROUTES,
   PEER_MAX_MUSIG_SESSIONS,
   PEER_MUSIG_SESSION_TTL_MS,

@@ -66,7 +66,7 @@ Cross-checks: `tests/fabric.message.js` (expected header hashes, `fromBuffer` pr
 
 - **Header**: 208 bytes = magic(4) + version(4) + parent(32) + author(32) + type(4) + size(4) + hash(32) + preimage(32) + signature(64). Wire **`version` = `0x01`** for 0.1.x (`VERSION_NUMBER` / `FABRIC_MESSAGE_VERSION`).
 - **preimage**: all-zero for public messages; optional **payment secret** for HTLC / Fabric Circuit hops (Lightning-style — not SHA256(body)). See [`MESSAGE_BODY.md`](./MESSAGE_BODY.md).
-- **Body**: variable, bounded by `MAX_MESSAGE_SIZE` in JS (`constants.js`), i.e. 3888 bytes for a 4096-byte frame with the V1 (208-byte) header. **V1:** body is a C-like typed field layout per opcode — not JSON ([`MESSAGE_BODY.md`](./MESSAGE_BODY.md)).
+- **Body**: variable, bounded by `MAX_MESSAGE_SIZE` in JS (`constants.js`) / `FABRIC_MAX_MESSAGE_BODY` in C (`src/constants.h`), i.e. 32768 bytes (32 KiB) for a 32976-byte frame with the V1 (208-byte) header — one Noise transport message. (Before 2026-10-14 the cap was 3888 bytes / a 4096-byte frame.) **V1:** body is a C-like typed field layout per opcode — not JSON ([`MESSAGE_BODY.md`](./MESSAGE_BODY.md)).
 
 ---
 
