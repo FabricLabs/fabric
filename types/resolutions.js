@@ -188,7 +188,7 @@ class Resolutions extends Actor {
    * Accept a counterparty's `ContractExitSignature` artifact after verifying
    * both the artifact signature and the tapscript signature it carries.
    * @param {Object} artifact output of {@link Resolutions#signExit}
-   * @returns {{ ok: boolean, reason?: string, stateId?: string, exitId?: string }}
+   * @returns {{ ok: boolean, reason: (string|undefined), stateId: (string|undefined), exitId: (string|undefined) }}
    */
   ingest (artifact) {
     if (!artifact || artifact.type !== EXIT_SIGNATURE_TYPE) return { ok: false, reason: 'not a ContractExitSignature' };
@@ -212,7 +212,7 @@ class Resolutions extends Actor {
    * Re-verify every held signature on an exit against its PSBT.
    * @param {string} stateId
    * @param {string} exitId
-   * @returns {{ ok: boolean, reason?: string, missing: string[] }}
+   * @returns {{ ok: boolean, reason: (string|undefined), missing: Array<string> }}
    */
   verifyExit (stateId, exitId) {
     const exit = this._exitOrThrow(stateId, exitId);

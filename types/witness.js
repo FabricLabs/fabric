@@ -350,7 +350,7 @@ class FraudProof {
    * @param {function} [ctx.outpointUnspent] `(txid, vout) → boolean` (timelocked non-response)
    * @param {function} [ctx.txConfirmed] `(txid) → boolean` (stale-commitment / wrongful-penalty broadcast evidence)
    * @param {function} [ctx.headerKnown] `(blockHash) → boolean` — whether an inclusion artifact's block is in the verifier's header chain
-   * @returns {{ ok: boolean, offender: string|null, reason: string|null, evidence?: string, enforceableAfterHeight?: number }}
+   * @returns {{ ok: boolean, offender: (string|null), reason: (string|null), evidence: (string|undefined), enforceableAfterHeight: (number|undefined) }}
    */
   verify (ctx = {}) {
     const a = this.artifacts;
@@ -492,7 +492,7 @@ class FraudProof {
    * signature. Pure.
    * @param {object} preSig artifact `{ type: 'DepositPenaltyPreSig', psbtBase64, deposit: { txid, vout }, deadlineHeight, txid, pubkey, signature }`
    * @param {object} expect `{ providerPubkey (x-only), deposit: { txid, vout, penaltyAddress?, minPenaltySats? }, deadlineHeight, destinationAddress?, destinationScriptHex?, minValueSats? }` — a destination (top-level or from the challenge's signed `deposit`) is mandatory when named
-   * @returns {{ ok: boolean, reason?: string, txid?: string, psbt?: object }}
+   * @returns {{ ok: boolean, reason: (string|undefined), txid: (string|undefined), psbt: (object|undefined) }}
    */
   static verifyPenaltyPreSig (preSig, expect = {}) {
     if (!preSig || preSig.type !== 'DepositPenaltyPreSig') return { ok: false, reason: 'DepositPenaltyPreSig artifact missing' };
@@ -606,7 +606,7 @@ class FraudProof {
    * @param {object} tx bitcoinjs Transaction
    * @param {object} [inclusion] `BitcoinTxInclusion` artifact
    * @param {object} ctx verifier chain view
-   * @returns {{ ok: boolean, reason?: string, kind?: string, blockHash?: string }}
+   * @returns {{ ok: boolean, reason: (string|undefined), kind: (string|undefined), blockHash: (string|undefined) }}
    */
   static _broadcastEvidence (tx, inclusion, ctx = {}) {
     const txid = tx.getId();

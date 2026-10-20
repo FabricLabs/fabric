@@ -136,7 +136,7 @@ class Bond extends Contract {
    * @param {string} opts.publisherPubkey compressed hex (refund key)
    * @param {string[]} opts.providerPubkeys compressed hex, eligible claimants
    * @param {Buffer|string} [opts.seed] publisher secret (preimages derived)
-   * @param {Array<{ epoch: number, amountSats: number, commitments?: object }>} opts.epochs
+   * @param {Array<{ epoch: number, amountSats: number, commitments: (object|undefined) }>} opts.epochs
    *   when `seed` is absent each epoch supplies `commitments[providerPubkey] = SHA256(R)`
    * @param {object|number} opts.refundAfter lock (`{ type: 'cltv', value }` or block height)
    * @param {string} [opts.merkleRootHex] the tree this bounty rewards

@@ -151,7 +151,7 @@ class Market extends Service {
    * Offer the session's HTLC on its channel.
    * @private
    * @param {Object} session
-   * @returns {{ status: 'offered'|'busy'|'unavailable', reason?: string }} `busy` = retry next tick (a round is mid-flight); `unavailable` = no usable channel (never confirm unpaid)
+   * @returns {{ status: ('offered'|'busy'|'unavailable'), reason: (string|undefined) }} `busy` = retry next tick (a round is mid-flight); `unavailable` = no usable channel (never confirm unpaid)
    */
   _settleOverChannel (session) {
     if (session.rail !== 'channel' || !this._channels || !session.contentHashHex || !(session.amountSats > 0)) return { status: 'unavailable', reason: 'not a channel session' };
@@ -400,7 +400,7 @@ class Market extends Service {
   /**
    * Build the blob plan for a want without spending anything.
    * @param {Object} want
-   * @returns {{ ok: boolean, plan?: Map<number, Object>, costSats?: number, blobTotal?: number, error?: string }}
+   * @returns {{ ok: boolean, plan: (Map<number, Object>|undefined), costSats: (number|undefined), blobTotal: (number|undefined), error: (string|undefined) }}
    */
   planFor (want) {
     const id = want.documentId;

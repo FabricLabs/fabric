@@ -477,7 +477,7 @@ class Beacon extends Actor {
    * can accumulate BIP340 signatures over the same deterministic payload.
    *
    * @param {object} signRequest
-   * @returns {Promise<{ ok: boolean, round?: object, error?: string, created?: boolean }>}
+   * @returns {Promise<{ ok: boolean, round: (object|undefined), error: (string|undefined), created: (boolean|undefined) }>}
    */
   async adoptFederationSignRequest (signRequest) {
     if (!signRequest || typeof signRequest !== 'object') {
@@ -539,7 +539,7 @@ class Beacon extends Actor {
    * Returns a {@link FederationSignResponse} body ready to gossip.
    *
    * @param {string} commitmentDigest
-   * @returns {Promise<{ ok: boolean, response?: object, submit?: object, error?: string }>}
+   * @returns {Promise<{ ok: boolean, response: (object|undefined), submit: (object|undefined), error: (string|undefined) }>}
    */
   async signPendingFederationRoundAsLocalValidator (commitmentDigest) {
     const digest = String(commitmentDigest || '').trim();

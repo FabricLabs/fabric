@@ -757,7 +757,7 @@ Channel.signCommitment = function signCommitment (psbtBase64, priv32, network = 
  * @param {string} signedPsbtBase64 counterparty partial
  * @param {string} signerPubkeyHex compressed
  * @param {string} network
- * @returns {{ ok: boolean, reason?: string }}
+ * @returns {{ ok: boolean, reason: (string|undefined) }}
  */
 Channel.verifyCommitmentSignature = function verifyCommitmentSignature (commitmentPsbtBase64, signedPsbtBase64, signerPubkeyHex, network = 'regtest') {
   const net = networkForFabricName(network);
@@ -968,7 +968,7 @@ Channel.planRoute = function planRoute (opts = {}) {
  * @param {object} upstream `{ amountSats, expireAfter }` HTLC received
  * @param {object} downstream `{ amountSats, expireAfter }` HTLC to offer
  * @param {object} policy `{ feeSats, cltvDelta }`
- * @returns {{ ok: boolean, reason?: string }}
+ * @returns {{ ok: boolean, reason: (string|undefined) }}
  */
 Channel.checkForward = function checkForward (upstream, downstream, policy = {}) {
   const fee = Math.floor(Number(policy.feeSats) || 0);
