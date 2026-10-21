@@ -464,7 +464,13 @@ class Bond extends Contract {
    * @returns {object}
    */
   static _penaltyExpectation (deposit, preSig, opts = {}) {
-    const expect = { providerPubkey: deposit.providerPubkey, deposit: preSig.deposit, deadlineHeight: preSig.deadlineHeight };
+    const expect = {
+      providerPubkey: deposit.providerPubkey,
+      publisherPubkey: deposit.publisherPubkey,
+      depositAddress: deposit.address,
+      deposit: preSig.deposit,
+      deadlineHeight: preSig.deadlineHeight
+    };
     const address = opts.penaltyAddress || deposit.penaltyAddress || null;
     if (address) expect.destinationAddress = address;
     const min = opts.minPenaltySats != null ? opts.minPenaltySats : deposit.minPenaltySats;

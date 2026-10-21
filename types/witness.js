@@ -11,6 +11,11 @@ const { P2P_FILE_SEND } = require('../constants');
 const HEX64 = /^[0-9a-f]{64}$/;
 /** @private lazily loaded bitcoinjs (fraud proofs that carry transactions) */
 function bitcoinjs () { return require('bitcoinjs-lib'); }
+/** @private BIP341 helpers; `contractTaproot` initialises the ECC library they need */
+function bip341 () {
+  require('../functions/contractTaproot');
+  return require('bitcoinjs-lib/src/payments/bip341');
+}
 
 /** @private x-only hex from compressed or x-only hex */
 function xOnlyHex (pubkey) {
@@ -300,7 +305,9 @@ class Witness {
  *   `blobHashHex`. The frame author must be the offer signer.
  * - `wrongful-penalty`: publisher-signed challenge + the provider's valid,
  *   Merkle-proven, in-time response + the penalty transaction that spent
- *   the deposit outpoint anyway — publisher fraud.
+ *   the deposit outpoint anyway — publisher fraud. The penalty's spent
+ *   outputs (`prevouts`) let the verifier check that the penalty leaf is
+ *   committed to the deposit output and signed by both parties.
  * - `stale-commitment`: a payment-channel party's own signed `ChannelRevoke`
  *   (naming the commitment txid it revoked) plus that very transaction and
  *   evidence it was broadcast: an SPV `inclusion` artifact
@@ -452,10 +459,22 @@ class FraudProof {
         if (!witness.length || witness.every((w) => !w || !w.length)) return fail('penalty transaction carries no witness for the deposit input');
         // Check-in (CSV 1) and withdraw (provider-only) also spend the deposit:
         // only a spend through the 2-of-2 `penalty` leaf is a penalty.
-        const leafScript = FraudProof._tapscriptOf(witness);
-        if (!leafScript) return fail('deposit input is not a tapscript spend');
+        const path = FraudProof._scriptPathOf(witness);
+        if (!path) return fail('deposit input is not a tapscript spend');
         const penaltyLeaves = FraudProof._penaltyLeafScripts(challenge.pubkey, challenge.providerPubkey);
-        if (!penaltyLeaves.some((s) => s.equals(leafScript))) return fail('deposit input does not spend the penalty leaf (check-in or withdraw is not a penalty)');
+        if (!penaltyLeaves.some((s) => s.equals(path.script))) return fail('deposit input does not spend the penalty leaf (check-in or withdraw is not a penalty)');
+        // The txid does not commit to the witness: the spend could be a check-in
+        // or withdraw re-dressed with a penalty leaf. The control block must
+        // commit that leaf to the deposit output, and both parties' signatures
+        // must verify over this spend through it.
+        const prevouts = FraudProof._prevouts(a.prevouts, penalty);
+        if (!prevouts) return fail('prevouts required: [{ scriptHex, valueSats }] for every penalty input');
+        if (!FraudProof._controlBlockCommits(prevouts.scripts[spendIndex], path.script, path.controlBlock)) {
+          return fail('control block does not commit the penalty leaf to the deposit output');
+        }
+        if (!FraudProof._scriptPathSignedBy(penalty, spendIndex, prevouts, path, [xOnlyHex(challenge.pubkey), xOnlyHex(challenge.providerPubkey)])) {
+          return fail('penalty leaf signatures do not verify for the deposit spend');
+        }
         const evidence = FraudProof._broadcastEvidence(penalty, inclusion, ctx);
         if (!evidence.ok) return fail(evidence.reason);
         return { ok: true, offender: xOnlyHex(challenge.pubkey), reason: 'valid in-time response was penalized', evidence: evidence.kind, penaltyTxid: penalty.getId(), blockHash: evidence.blockHash || null };
@@ -489,9 +508,10 @@ class FraudProof {
    * Verify a provider's `DepositPenaltyPreSig`: a signed artifact wrapping a
    * penalty PSBT that spends the deposit outpoint with `nLockTime` equal to
    * the challenge deadline height and carries the provider's valid tapscript
-   * signature. Pure.
+   * signature on the canonical publisher + provider penalty leaf, whose
+   * control block commits to the spent deposit output. Pure.
    * @param {object} preSig artifact `{ type: 'DepositPenaltyPreSig', psbtBase64, deposit: { txid, vout }, deadlineHeight, txid, pubkey, signature }`
-   * @param {object} expect `{ providerPubkey (x-only), deposit: { txid, vout, penaltyAddress?, minPenaltySats? }, deadlineHeight, destinationAddress?, destinationScriptHex?, minValueSats? }` — a destination (top-level or from the challenge's signed `deposit`) is mandatory when named
+   * @param {object} expect `{ providerPubkey (x-only), publisherPubkey, deposit: { txid, vout, penaltyAddress?, minPenaltySats? }, deadlineHeight, depositAddress?, destinationAddress?, destinationScriptHex?, minValueSats? }` — a destination (top-level or from the challenge's signed `deposit`) is mandatory when named; `depositAddress` binds the spent output
    * @returns {{ ok: boolean, reason: (string|undefined), txid: (string|undefined), psbt: (object|undefined) }}
    */
   static verifyPenaltyPreSig (preSig, expect = {}) {
@@ -518,9 +538,30 @@ class FraudProof {
       const pays = tx.outs.some((o) => destination.scripts.some((s) => Buffer.from(o.script).equals(s)) && (!min || Number(o.value) >= min));
       if (!pays) return { ok: false, reason: `penalty does not pay ${min ? `at least ${min} sats to ` : ''}${destination.label}` };
     }
-    const sigs = psbt.data.inputs[0].tapScriptSig || [];
-    const mine = sigs.find((s) => Buffer.from(s.pubkey).toString('hex') === provider);
-    if (!mine) return { ok: false, reason: 'PSBT carries no provider tapscript signature' };
+    // The provider signs the PSBT and so chooses its leaf: only the canonical
+    // 2-of-2 penalty leaf, committed to the deposit output, is a penalty.
+    const penaltyLeaves = FraudProof._penaltyLeafScripts(expect.publisherPubkey, provider);
+    if (!penaltyLeaves.length) return { ok: false, reason: 'publisherPubkey required to identify the penalty leaf' };
+    const input = psbt.data.inputs[0];
+    const leaves = input.tapLeafScript || [];
+    if (!leaves.length) return { ok: false, reason: 'PSBT names no tapscript leaf' };
+    if (!leaves.every((l) => penaltyLeaves.some((s) => s.equals(Buffer.from(l.script))))) {
+      return { ok: false, reason: 'PSBT spends a leaf other than the penalty leaf' };
+    }
+    const spent = input.witnessUtxo ? Buffer.from(input.witnessUtxo.script) : null;
+    if (!spent) return { ok: false, reason: 'PSBT carries no witnessUtxo for the deposit' };
+    if (expect.depositAddress) {
+      const scripts = FraudProof._addressScripts(expect.depositAddress);
+      if (!scripts.some((s) => s.equals(spent))) return { ok: false, reason: 'penalty does not spend the deposit address' };
+    }
+    if (!leaves.every((l) => FraudProof._controlBlockCommits(spent, Buffer.from(l.script), Buffer.from(l.controlBlock)))) {
+      return { ok: false, reason: 'control block does not commit the penalty leaf to the deposit output' };
+    }
+    const b = bip341();
+    const leafHashes = leaves.map((l) => Buffer.from(b.tapleafHash({ output: Buffer.from(l.script), version: l.leafVersion })));
+    const sigs = input.tapScriptSig || [];
+    const mine = sigs.find((s) => Buffer.from(s.pubkey).toString('hex') === provider && leafHashes.some((h) => h.equals(Buffer.from(s.leafHash))));
+    if (!mine) return { ok: false, reason: 'PSBT carries no provider tapscript signature on the penalty leaf' };
     let valid = false;
     try {
       valid = psbt.validateSignaturesOfInput(0, (pk, msghash, sig) => schnorr.verify(sig, msghash, pk), Buffer.from(provider, 'hex'));
@@ -546,13 +587,22 @@ class FraudProof {
     const minValueSats = Math.max(0, Math.floor(Number(expect.minValueSats != null ? expect.minValueSats : dep.minPenaltySats) || 0));
     const scripts = [];
     if (scriptHex && /^([0-9a-f]{2})+$/i.test(String(scriptHex))) scripts.push(Buffer.from(String(scriptHex), 'hex'));
-    if (address) {
-      const { address: addr, networks } = bitcoinjs();
-      for (const net of [networks.bitcoin, networks.testnet, networks.regtest]) {
-        try { scripts.push(Buffer.from(addr.toOutputScript(String(address), net))); break; } catch (_) { /* try the next network */ }
-      }
-    }
+    if (address) scripts.push(...FraudProof._addressScripts(address));
     return { scripts, minValueSats, label: String(address || scriptHex) };
+  }
+
+  /**
+   * Output script for `address` on the first network that parses it.
+   * @private
+   * @param {string} address
+   * @returns {Buffer[]} one script, or none when the address is invalid
+   */
+  static _addressScripts (address) {
+    const { address: addr, networks } = bitcoinjs();
+    for (const net of [networks.bitcoin, networks.testnet, networks.regtest]) {
+      try { return [Buffer.from(addr.toOutputScript(String(address), net))]; } catch (_) { /* try the next network */ }
+    }
+    return [];
   }
 
   /**
@@ -563,12 +613,109 @@ class FraudProof {
    * @returns {Buffer|null}
    */
   static _tapscriptOf (witness = []) {
+    const path = FraudProof._scriptPathOf(witness);
+    return path ? path.script : null;
+  }
+
+  /**
+   * Taproot script-path witness split into its parts, or `null` for a
+   * key-path spend.
+   * @private
+   * @param {Buffer[]} witness
+   * @returns {{ stack: Buffer[], script: Buffer, controlBlock: Buffer, annex: (Buffer|null) }|null}
+   */
+  static _scriptPathOf (witness = []) {
     let items = witness.filter((w) => Buffer.isBuffer(w) || w instanceof Uint8Array).map((w) => Buffer.from(w));
-    if (items.length >= 2 && items[items.length - 1].length && items[items.length - 1][0] === 0x50) items = items.slice(0, -1);
+    let annex = null;
+    if (items.length >= 2 && items[items.length - 1].length && items[items.length - 1][0] === 0x50) {
+      annex = items[items.length - 1];
+      items = items.slice(0, -1);
+    }
     if (items.length < 2) return null;
     const control = items[items.length - 1];
     if (control.length < 33 || (control.length - 33) % 32 !== 0 || (control[0] & 0xfe) !== 0xc0) return null;
-    return items[items.length - 2];
+    return { stack: items.slice(0, -2), script: items[items.length - 2], controlBlock: control, annex };
+  }
+
+  /**
+   * Spent outputs for every input of `tx` (the Taproot sighash commits to all
+   * of them), from `[{ scriptHex, valueSats }]` aligned with `tx.ins`.
+   * @private
+   * @param {object[]} rows
+   * @param {object} tx bitcoinjs Transaction
+   * @returns {{ scripts: Buffer[], values: bigint[] }|null}
+   */
+  static _prevouts (rows, tx) {
+    if (!Array.isArray(rows) || rows.length !== tx.ins.length) return null;
+    const scripts = [];
+    const values = [];
+    for (const row of rows) {
+      const scriptHex = String((row && row.scriptHex) || '');
+      if (!/^([0-9a-f]{2})+$/i.test(scriptHex)) return null;
+      let value;
+      try { value = BigInt(row.valueSats); } catch (_) { return null; }
+      if (value < 0n) return null;
+      scripts.push(Buffer.from(scriptHex, 'hex'));
+      values.push(value);
+    }
+    return { scripts, values };
+  }
+
+  /**
+   * Whether `controlBlock` commits `leafScript` to the Taproot output
+   * `prevoutScript` (`OP_1 <32-byte output key>`).
+   * @private
+   * @param {Buffer} prevoutScript
+   * @param {Buffer} leafScript
+   * @param {Buffer} controlBlock
+   * @returns {boolean}
+   */
+  static _controlBlockCommits (prevoutScript, leafScript, controlBlock) {
+    const out = Buffer.from(prevoutScript || []);
+    const control = Buffer.from(controlBlock || []);
+    if (out.length !== 34 || out[0] !== 0x51 || out[1] !== 0x20) return false;
+    if (control.length < 33 || (control.length - 33) % 32 !== 0) return false;
+    try {
+      const b = bip341();
+      const leafHash = b.tapleafHash({ output: Buffer.from(leafScript), version: control[0] & 0xfe });
+      const tweaked = b.tweakKey(control.subarray(1, 33), b.rootHashFromPath(control, leafHash));
+      return !!tweaked && tweaked.parity === (control[0] & 1) && Buffer.from(tweaked.x).equals(out.subarray(2));
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /**
+   * Whether every key in `pubkeys` has a valid BIP340 signature on the
+   * script-path stack over input `index` of `tx` through `path.script`.
+   * @private
+   * @param {object} tx bitcoinjs Transaction
+   * @param {number} index
+   * @param {{ scripts: Buffer[], values: bigint[] }} prevouts
+   * @param {object} path from {@link FraudProof._scriptPathOf}
+   * @param {string[]} pubkeys x-only hex
+   * @returns {boolean}
+   */
+  static _scriptPathSignedBy (tx, index, prevouts, path, pubkeys) {
+    const b = bip341();
+    const leafHash = b.tapleafHash({ output: path.script, version: path.controlBlock[0] & 0xfe });
+    const digests = new Map();
+    const digest = (hashType) => {
+      if (!digests.has(hashType)) {
+        digests.set(hashType, Buffer.from(tx.hashForWitnessV1(index, prevouts.scripts, prevouts.values, hashType, leafHash, path.annex || undefined)));
+      }
+      return digests.get(hashType);
+    };
+    return pubkeys.every((pk) => HEX64.test(String(pk || '')) && path.stack.some((sig) => {
+      if (sig.length !== 64 && sig.length !== 65) return false;
+      const hashType = sig.length === 65 ? sig[64] : 0x00;
+      if (sig.length === 65 && hashType === 0x00) return false;
+      try {
+        return schnorr.verify(sig.subarray(0, 64), digest(hashType), Buffer.from(pk, 'hex'));
+      } catch (_) {
+        return false;
+      }
+    }));
   }
 
   /**
@@ -639,7 +786,7 @@ class FraudProof {
     if (!Number.isFinite(deadlineHeight) || deadlineHeight <= 0) return fail('absence needs a challenge with deadlineHeight — silence alone is not provable');
     const dep = challenge.deposit || {};
     if (!HEX64.test(String(dep.txid || '').toLowerCase())) return fail('challenge names no deposit outpoint');
-    const check = Witness.verifyPenaltyPreSig(a.penaltyPreSig, { providerPubkey: commitment.pubkey, deposit: dep, deadlineHeight });
+    const check = Witness.verifyPenaltyPreSig(a.penaltyPreSig, { providerPubkey: commitment.pubkey, publisherPubkey: challenge.pubkey, deposit: dep, deadlineHeight, depositAddress: commitment.depositAddress || null });
     if (!check.ok) return fail(`penalty pre-signature: ${check.reason}`);
     const tip = ctx.tipHeight != null ? Number(ctx.tipHeight) : null;
     if (tip == null || !Number.isFinite(tip)) return fail('chain view required: ctx.tipHeight');

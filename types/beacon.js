@@ -21,6 +21,26 @@ const bls = require('../functions/bls');
 const SATS_PER_BTC = 100_000_000;
 const BEACON_CHAIN_PATH = 'beacon/CHAIN';
 
+/**
+ * Result of {@link Beacon#adoptFederationSignRequest}.
+ * @typedef {Object} FederationRoundAdoption
+ * @memberof Beacon
+ * @property {boolean} ok
+ * @property {Object} [round] the pending round (adopted or already held)
+ * @property {boolean} [created] whether this call created the round
+ * @property {string} [error] why the request was refused
+ */
+
+/**
+ * Result of {@link Beacon#signPendingFederationRoundAsLocalValidator}.
+ * @typedef {Object} FederationRoundSignature
+ * @memberof Beacon
+ * @property {boolean} ok
+ * @property {Object} [response] `FederationSignResponse` body to gossip
+ * @property {Object} [submit] result of submitting the signature locally
+ * @property {string} [error] why the round could not be signed
+ */
+
 class Beacon extends Actor {
   constructor (settings = {}) {
     super(settings);
@@ -46,6 +66,7 @@ class Beacon extends Actor {
     this.key = null;
     this.timer = null;
     this._blockHandler = null;
+    this._blockQueue = null;
     this._epochChain = Chain.create({ consensus: 'federation' });
     this._federationValidators = Array.isArray(this.settings.federationValidators)
       ? this.settings.federationValidators.slice()
@@ -477,7 +498,7 @@ class Beacon extends Actor {
    * can accumulate BIP340 signatures over the same deterministic payload.
    *
    * @param {object} signRequest
-   * @returns {Promise<{ ok: boolean, round: (object|undefined), error: (string|undefined), created: (boolean|undefined) }>}
+   * @returns {Promise<Beacon.FederationRoundAdoption>}
    */
   async adoptFederationSignRequest (signRequest) {
     if (!signRequest || typeof signRequest !== 'object') {
@@ -539,7 +560,7 @@ class Beacon extends Actor {
    * Returns a {@link FederationSignResponse} body ready to gossip.
    *
    * @param {string} commitmentDigest
-   * @returns {Promise<{ ok: boolean, response: (object|undefined), submit: (object|undefined), error: (string|undefined) }>}
+   * @returns {Promise<Beacon.FederationRoundSignature>}
    */
   async signPendingFederationRoundAsLocalValidator (commitmentDigest) {
     const digest = String(commitmentDigest || '').trim();
@@ -844,27 +865,51 @@ class Beacon extends Actor {
     }
 
     if (followBlocks) {
-      if (!isRegtest) {
-        const prime = async () => {
-          try {
-            const tip = await this.bitcoin._makeRPCRequest('getbestblockhash', []);
-            const height = await this.bitcoin._makeRPCRequest('getblockcount', []);
-            await this.recordEpochFromBlock({ tip, height });
-          } catch (err) {
-            this.emit('error', err);
-          }
-        };
-        await prime();
-      }
+      // Listen before priming so a block found during the prime RPCs is queued, not lost.
       this._blockHandler = (payload) => {
-        this.recordEpochFromBlock(payload).catch((err) => this.emit('error', err));
+        this._enqueueBlockFollow(payload);
       };
       if (this.bitcoin && typeof this.bitcoin.on === 'function') {
         this.bitcoin.on('block', this._blockHandler);
       }
+      if (!isRegtest) await this._enqueueBlockFollow(null);
     }
 
     return this;
+  }
+
+  /**
+   * Serialize block-follow work so an older tip never finishes after a newer one.
+   * @param {Object|null} payload `{ tip, height }` from Bitcoin, or null to prime from the best tip
+   * @returns {Promise<void>}
+   */
+  _enqueueBlockFollow (payload) {
+    this._blockQueue = (this._blockQueue || Promise.resolve())
+      .then(() => this._followBlock(payload))
+      .catch((err) => this.emit('error', err));
+    return this._blockQueue;
+  }
+
+  /**
+   * Record one followed block. Priming (null payload) reads the best tip when it runs;
+   * a delivered tip below the recorded height that is still on the best chain is stale
+   * and skipped, so only a real reorg reaches the prune path.
+   * @param {Object|null} payload
+   * @returns {Promise<Object|null>}
+   */
+  async _followBlock (payload) {
+    if (!this.bitcoin) return null;
+    if (!payload) {
+      const tip = await this.bitcoin._makeRPCRequest('getbestblockhash', []);
+      const height = await this.bitcoin._makeRPCRequest('getblockcount', []);
+      return this.recordEpochFromBlock({ tip, height });
+    }
+    const height = payload.height != null ? Number(payload.height) : null;
+    if (height != null && payload.tip && height < this._state.content.height) {
+      const atHeight = await this.bitcoin._makeRPCRequest('getblockhash', [height]).catch(() => null);
+      if (atHeight && String(atHeight) === String(payload.tip)) return null;
+    }
+    return this.recordEpochFromBlock(payload);
   }
 
   async stop () {
@@ -876,6 +921,7 @@ class Beacon extends Actor {
       this.bitcoin.removeListener('block', this._blockHandler);
       this._blockHandler = null;
     }
+    if (this._blockQueue) await this._blockQueue;
     await this._persistEpochChain();
     this._state.content.status = 'STOPPED';
     return this;

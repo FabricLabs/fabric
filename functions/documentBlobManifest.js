@@ -15,7 +15,7 @@
  */
 
 const crypto = require('crypto');
-const { MAX_MESSAGE_SIZE } = require('../constants');
+const { MAX_MESSAGE_SIZE, MAX_DOCUMENT_BLOBS } = require('../constants');
 const Tree = require('../types/tree');
 
 /** @deprecated Prefer {@link DEFAULT_BLOB_CHUNK_BYTES}; kept for Hub 1 MiB file-chunk callers. */
@@ -39,9 +39,18 @@ const DEFAULT_BLOB_CHUNK_BYTES = Math.max(
 /** Alias used by Peer settings historically. */
 const DEFAULT_CHUNK_BYTES = DEFAULT_BLOB_CHUNK_BYTES;
 
+/**
+ * Theoretical maximum document size at the default blob size:
+ * `MAX_DOCUMENT_BLOBS × DEFAULT_BLOB_CHUNK_BYTES` (98,697,216 bytes ≈ 94.1 MiB).
+ * Callers with a larger metadata reserve use smaller blobs and a lower ceiling.
+ */
+const MAX_DOCUMENT_BYTES = MAX_DOCUMENT_BLOBS * DEFAULT_BLOB_CHUNK_BYTES;
+
 const INCOMPLETE_TRANSFER_TTL_MS = 10 * 60 * 1000;
 /** Max concurrent incomplete transfers in {@link DocumentBlobTransferBook} (FIFO eviction). */
 const MAX_PENDING_BLOB_TRANSFERS = 64;
+/** Byte budget across every incomplete transfer in one {@link DocumentBlobTransferBook}. */
+const MAX_PENDING_BLOB_BYTES = 256 * 1024 * 1024;
 
 const BLOB_INDEX_TYPE = 'DocumentBlobIndex';
 const BLOB_INDEX_SCHEMA_VERSION = 2;
@@ -458,14 +467,35 @@ function transferKey (documentId, merkleRootHex) {
 
 class DocumentBlobTransferBook {
   /**
-   * @param {{ ttlMs?: number, maxPending?: number }} [opts]
+   * @param {Object} [opts]
+   * @param {number} [opts.ttlMs] drop incomplete transfers idle this long
+   * @param {number} [opts.maxPending] max concurrent incomplete transfers
+   * @param {number} [opts.maxParts] max `blobTotal` for one transfer
+   * @param {number} [opts.maxPendingBytes] byte budget across every incomplete transfer
    */
   constructor (opts = {}) {
     /** @type {Map<string, object>} */
     this._pending = new Map();
+    this._pendingBytes = 0;
     this.ttlMs = opts.ttlMs != null ? Number(opts.ttlMs) : INCOMPLETE_TRANSFER_TTL_MS;
     const maxP = Number(opts.maxPending);
     this.maxPending = Number.isFinite(maxP) && maxP > 0 ? maxP : MAX_PENDING_BLOB_TRANSFERS;
+    const maxParts = Number(opts.maxParts);
+    this.maxParts = Number.isFinite(maxParts) && maxParts > 0 ? maxParts : MAX_DOCUMENT_BLOBS;
+    const maxBytes = Number(opts.maxPendingBytes);
+    this.maxPendingBytes = Number.isFinite(maxBytes) && maxBytes > 0 ? maxBytes : MAX_PENDING_BLOB_BYTES;
+  }
+
+  /**
+   * Remove a pending transfer and release its bytes from the budget.
+   * @param {string} key
+   * @private
+   */
+  _drop (key) {
+    const row = this._pending.get(key);
+    if (!row) return;
+    this._pendingBytes -= row.bytes || 0;
+    this._pending.delete(key);
   }
 
   /**
@@ -479,7 +509,9 @@ class DocumentBlobTransferBook {
       ? String(opts.merkleRootHex).toLowerCase()
       : null;
     const total = Math.round(Number(opts.total || opts.blobTotal || 0));
+    if (total > this.maxParts) return null;
     const key = transferKey(documentId, merkleRootHex);
+    this._drop(key);
     const row = {
       key,
       documentId,
@@ -492,6 +524,7 @@ class DocumentBlobTransferBook {
         ? String(opts.contentSha256).toLowerCase()
         : null,
       parts: new Map(),
+      bytes: 0,
       created: Date.now(),
       updated: Date.now()
     };
@@ -522,7 +555,7 @@ class DocumentBlobTransferBook {
     const now = Date.now();
     for (const [k, row] of this._pending.entries()) {
       if (now - (row.updated || row.created) > this.ttlMs) {
-        this._pending.delete(k);
+        this._drop(k);
       }
     }
   }
@@ -535,7 +568,7 @@ class DocumentBlobTransferBook {
     while (this._pending.size > this.maxPending) {
       const oldest = this._pending.keys().next().value;
       if (oldest == null) break;
-      this._pending.delete(oldest);
+      this._drop(oldest);
     }
   }
 
@@ -572,6 +605,21 @@ class DocumentBlobTransferBook {
         blobIndex: frame.blobIndex
       };
     }
+    if (frame.blobTotal > this.maxParts) {
+      return {
+        status: 'reject',
+        error: `blobTotal exceeds ${this.maxParts}`,
+        documentId: frame.documentId
+      };
+    }
+    if (frame.blobIndex >= frame.blobTotal) {
+      return {
+        status: 'reject',
+        error: 'blobIndex out of range',
+        documentId: frame.documentId,
+        blobIndex: frame.blobIndex
+      };
+    }
 
     const key = transferKey(frame.documentId, frame.merkleRootHex);
     let row = this._pending.get(key);
@@ -584,6 +632,7 @@ class DocumentBlobTransferBook {
         expectedHashes: null,
         contentSha256: frame.contentSha256,
         parts: new Map(),
+        bytes: 0,
         created: Date.now(),
         updated: Date.now()
       };
@@ -628,7 +677,19 @@ class DocumentBlobTransferBook {
       };
     }
 
-    row.parts.set(frame.blobIndex, frame.bytes);
+    if (!row.parts.has(frame.blobIndex)) {
+      if (this._pendingBytes + frame.bytes.length > this.maxPendingBytes) {
+        return {
+          status: 'reject',
+          error: 'pending blob bytes exceeded',
+          documentId: frame.documentId,
+          blobIndex: frame.blobIndex
+        };
+      }
+      row.parts.set(frame.blobIndex, frame.bytes);
+      row.bytes += frame.bytes.length;
+      this._pendingBytes += frame.bytes.length;
+    }
 
     if (row.parts.size < row.total) {
       return {
@@ -642,7 +703,7 @@ class DocumentBlobTransferBook {
     }
 
     const assembled = reassemble(row.parts, row.total, row.merkleRootHex);
-    this._pending.delete(key);
+    this._drop(key);
     if (!assembled.ok) {
       return {
         status: 'reject',
@@ -679,6 +740,14 @@ class DocumentBlobTransferBook {
   get pendingCount () {
     return this._pending.size;
   }
+
+  /**
+   * Bytes held across every in-flight transfer.
+   * @type {number}
+   */
+  get pendingBytes () {
+    return this._pendingBytes;
+  }
 }
 
 /**
@@ -702,7 +771,10 @@ module.exports = {
   LEGACY_HUB_CHUNK_BYTES,
   FILE_SEND_JSON_OVERHEAD,
   INCOMPLETE_TRANSFER_TTL_MS,
+  MAX_DOCUMENT_BLOBS,
+  MAX_DOCUMENT_BYTES,
   MAX_PENDING_BLOB_TRANSFERS,
+  MAX_PENDING_BLOB_BYTES,
   MAX_MESSAGE_SIZE,
   createBlobMerkleTree,
   merkleRootHexFromBlobHashes,

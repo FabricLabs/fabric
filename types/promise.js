@@ -1,80 +1,85 @@
 'use strict';
 
 const crypto = require('crypto');
-const SimpleAES = require('simple-aes').default;
-const Hash256 = require('./hash256');
+const {
+  isSealedEnvelope,
+  openSealedJson,
+  sealJson
+} = require('../functions/sealedBlob');
+
 const MAX_MEMORY = Math.pow(2, 21) + (64 * 1000);
 
+/**
+ * A value that can be sealed with a password.  Sealing uses
+ * `functions/sealedBlob` (AES-256-GCM, PBKDF2-SHA256, random salt and IV);
+ * {@link EncryptedPromise#state} and {@link EncryptedPromise#toString} only
+ * ever expose the sealed envelope, never the plaintext or the password.
+ */
 class EncryptedPromise {
+  /**
+   * @param {Object} [settings]
+   * @param {string|Object} [settings.value] Plaintext to hold; objects are JSON-encoded.  Defaults to the other settings as JSON.
+   * @param {string} [settings.password] Seal immediately with this password (at least 8 characters).
+   * @param {Object} [settings.seal] Restore from a sealed envelope (see {@link EncryptedPromise#state}); call `decrypt` to read it.
+   */
   constructor (settings = {}) {
-    // Assign Settings
-    // TODO: make private
-    this.settings = Object.assign({
-      iv: '',
-      ciphertext: '',
-      password: '',
-      value: '',
-      state: 'UNSAFE'
-    }, settings);
+    const { password, seal, ...rest } = settings;
 
-    this._settings = Object.assign({}, this.settings);
-
-    // Create Internal State
+    this.settings = Object.assign({ value: '' }, rest);
     this._state = {
-      blob: Buffer.alloc(MAX_MEMORY),
-      data: (settings.value) ? settings.value : JSON.stringify(this._settings, null, '  '),
+      data: null,
+      seal: null,
       state: 'UNSAFE'
     };
 
-    if (!this._settings.iv && this._settings.password) {
-      this.settings.iv = Hash256.digest(this._settings.password);
+    if (seal) {
+      if (!isSealedEnvelope(seal)) throw new Error('Invalid sealed envelope.');
+      this._state.seal = seal;
+      this._state.state = 'ENCRYPTED';
+    } else {
+      this._setData(this.settings.value || JSON.stringify(this.settings, null, '  '));
+      if (password) this.encrypt(password);
     }
 
-    if (this._state.data.length > this._state.blob.size) {
-      throw new Error(`Promise not created, input too large, maximum size is ${MAX_MEMORY}`);
-    }
-
-    // Object.defineProperty(this, '_state', { enumerable: false });
-
-    this.load();
+    this.status = 'loaded';
   }
 
+  /**
+   * SHA-256 of the plaintext, or of the sealed ciphertext while only the
+   * envelope is known.
+   * @type {string}
+   */
   get id () {
-    return crypto.createHash('sha256').update(this._state.data).digest('hex');
+    const preimage = (this._state.data !== null) ? this._state.data : this._state.seal.ciphertext;
+    return crypto.createHash('sha256').update(preimage).digest('hex');
   }
 
+  /**
+   * Safe to persist: the sealed envelope (or `null` until sealed).
+   * @type {Object}
+   */
   get state () {
-    this.load();
-
-    // TODO: formalize type
     return {
       type: 'EncryptedPromise',
-      blob: this._state.blob
+      status: this._state.state,
+      seal: this._state.seal
     };
-  }
-
-  set settings (map) {
-    this._settings = map;
   }
 
   async _assignState (state) {
     this.status = 'assigning';
-    this._state.data = JSON.stringify(state);
-    this.load();
+    this._setData(JSON.stringify(state));
+    this._state.seal = null;
+    this._state.state = 'UNSAFE';
     this.status = 'assigned';
   }
 
-  load () {
-    this.status = 'loading';
-    this._state.blob.write(this._state.data);
-
-    if (this._settings.iv && this._settings.ciphertext) {
-
-    } else {
-      this.encrypt(this._settings.password);
+  _setData (value) {
+    const data = (typeof value === 'string') ? value : JSON.stringify(value);
+    if (Buffer.byteLength(data, 'utf8') > MAX_MEMORY) {
+      throw new Error(`Promise not created, input too large, maximum size is ${MAX_MEMORY}`);
     }
-
-    this.status = 'loaded';
+    this._state.data = data;
   }
 
   resolve (msg) {
@@ -88,23 +93,28 @@ class EncryptedPromise {
     // TODO: encrypt state
   }
 
-  encrypt (password = '') {
-    const iv = Hash256.digest(password);
-    const aes = new SimpleAES(256, iv);
-    const data = (this._state.data instanceof String) ? this._state.data : this._state.data.toString('utf8');
-    const enc = aes.encrypt(data);
-
-    this._state.blob.write(enc.ciphertext);
+  /**
+   * Seal the current plaintext.
+   * @param {string} password At least 8 characters.
+   * @returns {Object} The sealed envelope.
+   */
+  encrypt (password) {
+    if (this._state.data === null) throw new Error('Nothing to encrypt; decrypt the sealed envelope first.');
+    this._state.seal = sealJson(this._state.data, password, { type: 'EncryptedPromise' });
     this._state.state = 'ENCRYPTED';
+    return this._state.seal;
   }
 
-  decrypt (password = '') {
-    const iv = Hash256.digest(password);
-    const aes = new SimpleAES(256, iv);
-    const data = aes.decrypt(iv, this._state.blob);
-    this._state.data = data;
+  /**
+   * Open the sealed envelope.
+   * @param {string} password
+   * @returns {string} The plaintext.
+   */
+  decrypt (password) {
+    if (!this._state.seal) throw new Error('Nothing to decrypt; this promise has not been sealed.');
+    this._state.data = openSealedJson(this._state.seal, password);
     this._state.state = 'DECRYPTED';
-    return data;
+    return this._state.data;
   }
 
   unlock () {
@@ -112,7 +122,7 @@ class EncryptedPromise {
   }
 
   toString () {
-    return JSON.stringify(this._state, null, '  ');
+    return JSON.stringify(this.state, null, '  ');
   }
 }
 

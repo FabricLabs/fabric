@@ -14,7 +14,10 @@ required and must not regress.
    documented floor (propose **6** for signet, **100** for mainnet).
 3. **Burn then release.** Outstanding sats move to `pendingBurnsSats` (burn)
    **before** the vault PSBT is broadcast. After L1 confirms, `settlePegOutPayout`
-   clears pending and drops `vaultConfirmedSats`. A release without a matching
+   clears pending and drops `vaultConfirmedSats`. Settlement names the verified
+   payout output (`payout { txid, vout, amountSats, destinationAddress,
+   confirmations }`), which must match the burned withdrawal exactly; one output
+   never settles two withdrawals, and settled rows keep `payout`. A release without a matching
    burn is a bug. Credits require an independently verified `vaultConfirmedSats`
    (never invent vault totals from deposit proof fields alone).
 4. **Tip-bound request.** `ContractWithdrawalRequest` commits `amountSats`,

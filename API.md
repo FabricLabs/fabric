@@ -210,6 +210,12 @@ see <a href="#Message">Message</a> wire vs friendly names and <code>constants</c
 <dd></dd>
 <dt><a href="#Program">Program</a></dt>
 <dd></dd>
+<dt><a href="#EncryptedPromise">EncryptedPromise</a></dt>
+<dd><p>A value that can be sealed with a password.  Sealing uses
+<code>functions/sealedBlob</code> (AES-256-GCM, PBKDF2-SHA256, random salt and IV);
+<a href="#EncryptedPromise+state">state</a> and <a href="EncryptedPromise#toString">EncryptedPromise#toString</a> only
+ever expose the sealed envelope, never the plaintext or the password.</p>
+</dd>
 <dt><del><a href="#Reader">Reader</a></del></dt>
 <dd></dd>
 <dt><a href="#Remote">Remote</a> ⇐ <code><a href="#Actor">Actor</a></code></dt>
@@ -232,6 +238,10 @@ so commits and encryption options match the rest of the stack.</p>
 <dd></dd>
 <dt><a href="#Script">Script</a></dt>
 <dd></dd>
+<dt><a href="#Secret">Secret</a></dt>
+<dd><p>Secret material held as an <a href="#EncryptedPromise">EncryptedPromise</a>: 32 random bytes (hex)
+unless a value is supplied.</p>
+</dd>
 <dt><a href="#Service">Service</a> ⇐ <code><a href="#Actor">Actor</a></code></dt>
 <dd><p>Long-lived application surface extending <a href="#Actor">Actor</a>. Integrates external systems and the Fabric
 network: peers consume and produce <a href="#Message">Message</a> (AMP) instances, not ad-hoc JSON. Subclasses implement routing,
@@ -265,10 +275,14 @@ encrypted values; <a href="#Store.openEncrypted">openEncrypted</a> matches Hub/s
 <dd><p>Implements a capability-based security token.</p>
 </dd>
 <dt><a href="#Tree">Tree</a></dt>
-<dd><p>Class implementing a Bitcoin-compatible Merkle Tree (<code>merkletreejs</code> +
-<a href="#Hash256.digest">digest</a>, odd-leaf duplication). Optional <code>sortLeaves</code> makes
-the leaf order lexicographic so adjacent-leaf <strong>non-inclusion</strong> proofs are
-well-defined (inclusion proofs work either way).</p>
+<dd><p>Class implementing a Bitcoin Merkle Tree in display (RPC) byte order:
+SHA256d parents over byte-reversed children, and an odd last node paired
+with itself. Txid leaves in block order give the block header&#39;s
+<code>merkle_root</code>; one leaf is its own root and no leaves give an empty root.
+Leaf encoding, proofs, and verification match <code>merkletreejs</code>
+<code>isBitcoinTree</code> (which this replaced), so earlier roots are unchanged.
+Optional <code>sortLeaves</code> makes the leaf order lexicographic so adjacent-leaf
+<strong>non-inclusion</strong> proofs are well-defined (inclusion proofs work either way).</p>
 </dd>
 <dt><a href="#Vector">Vector</a> ⇐ <code>EventEmitter</code></dt>
 <dd><p>Lightweight <strong>event sink</strong> for instruction-stream and VM-adjacent signals.
@@ -4071,7 +4085,7 @@ The [Collection](#Collection) type maintains an ordered list of [State](#State) 
 
 * [Collection](#Collection)
     * [new Collection([configuration])](#new_Collection_new)
-    * [.asMerkleTree()](#Collection+asMerkleTree) ⇒ <code>MerkleTree</code>
+    * [.asMerkleTree()](#Collection+asMerkleTree) ⇒ [<code>Tree</code>](#Tree)
     * [._setKey(name)](#Collection+_setKey)
     * [.getByID(id)](#Collection+getByID)
     * [.getLatest()](#Collection+getLatest)
@@ -4101,8 +4115,8 @@ Create a list of [Entity](#Entity)-like objects for later retrieval.
 
 <a name="Collection+asMerkleTree"></a>
 
-### collection.asMerkleTree() ⇒ <code>MerkleTree</code>
-Current elements of the collection as a [MerkleTree](MerkleTree).
+### collection.asMerkleTree() ⇒ [<code>Tree</code>](#Tree)
+Current elements of the collection as a [Tree](#Tree).
 
 **Kind**: instance method of [<code>Collection</code>](#Collection)  
 <a name="Collection+_setKey"></a>
@@ -13032,6 +13046,71 @@ Stable digest binding program identity to a compute result (L1 / OP_RETURN / wit
 | [opts.steps] | <code>Array.&lt;string&gt;</code> | 
 | [opts.programId] | <code>string</code> | 
 
+<a name="EncryptedPromise"></a>
+
+## EncryptedPromise
+A value that can be sealed with a password.  Sealing uses
+`functions/sealedBlob` (AES-256-GCM, PBKDF2-SHA256, random salt and IV);
+[state](#EncryptedPromise+state) and [EncryptedPromise#toString](EncryptedPromise#toString) only
+ever expose the sealed envelope, never the plaintext or the password.
+
+**Kind**: global class  
+
+* [EncryptedPromise](#EncryptedPromise)
+    * [new EncryptedPromise([settings])](#new_EncryptedPromise_new)
+    * [.id](#EncryptedPromise+id) : <code>string</code>
+    * [.state](#EncryptedPromise+state) : <code>Object</code>
+    * [.encrypt(password)](#EncryptedPromise+encrypt) ⇒ <code>Object</code>
+    * [.decrypt(password)](#EncryptedPromise+decrypt) ⇒ <code>string</code>
+
+<a name="new_EncryptedPromise_new"></a>
+
+### new EncryptedPromise([settings])
+
+| Param | Type | Description |
+| --- | --- | --- |
+| [settings] | <code>Object</code> |  |
+| [settings.value] | <code>string</code> \| <code>Object</code> | Plaintext to hold; objects are JSON-encoded.  Defaults to the other settings as JSON. |
+| [settings.password] | <code>string</code> | Seal immediately with this password (at least 8 characters). |
+| [settings.seal] | <code>Object</code> | Restore from a sealed envelope (see [state](#EncryptedPromise+state)); call `decrypt` to read it. |
+
+<a name="EncryptedPromise+id"></a>
+
+### encryptedPromise.id : <code>string</code>
+SHA-256 of the plaintext, or of the sealed ciphertext while only the
+envelope is known.
+
+**Kind**: instance property of [<code>EncryptedPromise</code>](#EncryptedPromise)  
+<a name="EncryptedPromise+state"></a>
+
+### encryptedPromise.state : <code>Object</code>
+Safe to persist: the sealed envelope (or `null` until sealed).
+
+**Kind**: instance property of [<code>EncryptedPromise</code>](#EncryptedPromise)  
+<a name="EncryptedPromise+encrypt"></a>
+
+### encryptedPromise.encrypt(password) ⇒ <code>Object</code>
+Seal the current plaintext.
+
+**Kind**: instance method of [<code>EncryptedPromise</code>](#EncryptedPromise)  
+**Returns**: <code>Object</code> - The sealed envelope.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| password | <code>string</code> | At least 8 characters. |
+
+<a name="EncryptedPromise+decrypt"></a>
+
+### encryptedPromise.decrypt(password) ⇒ <code>string</code>
+Open the sealed envelope.
+
+**Kind**: instance method of [<code>EncryptedPromise</code>](#EncryptedPromise)  
+**Returns**: <code>string</code> - The plaintext.  
+
+| Param | Type |
+| --- | --- |
+| password | <code>string</code> | 
+
 <a name="Reader"></a>
 
 ## ~~Reader~~
@@ -14688,6 +14767,40 @@ Compose a [Script](#Script) for inclusion within a [Contract](#Contract).
 | --- | --- | --- |
 | config | <code>Mixed</code> | Configuration options for the script. |
 
+<a name="Secret"></a>
+
+## Secret
+Secret material held as an [EncryptedPromise](#EncryptedPromise): 32 random bytes (hex)
+unless a value is supplied.
+
+**Kind**: global class  
+
+* [Secret](#Secret)
+    * [new Secret([settings])](#new_Secret_new)
+    * [.hash](#Secret+hash) : <code>string</code>
+    * [.data](#Secret+data) : <code>Object</code>
+
+<a name="new_Secret_new"></a>
+
+### new Secret([settings])
+
+| Param | Type | Description |
+| --- | --- | --- |
+| [settings] | <code>string</code> \| <code>Object</code> | The secret itself, or settings. |
+| [settings.value] | <code>string</code> | The secret; defaults to 32 random bytes as hex. |
+| [settings.password] | <code>string</code> | Seal immediately with this password (at least 8 characters). |
+| [settings.seal] | <code>Object</code> | Restore from a sealed envelope. |
+
+<a name="Secret+hash"></a>
+
+### secret.hash : <code>string</code>
+SHA-256 of the secret (hex), or `null` while it is sealed and not yet decrypted.
+
+**Kind**: instance property of [<code>Secret</code>](#Secret)  
+<a name="Secret+data"></a>
+
+### secret.data : <code>Object</code>
+**Kind**: instance property of [<code>Secret</code>](#Secret)  
 <a name="Service"></a>
 
 ## Service ⇐ [<code>Actor</code>](#Actor)
@@ -16881,24 +16994,34 @@ Parse a legacy three-segment string from [toString](#Token+toString). Not for
 <a name="Tree"></a>
 
 ## Tree
-Class implementing a Bitcoin-compatible Merkle Tree (`merkletreejs` +
-[digest](#Hash256.digest), odd-leaf duplication). Optional `sortLeaves` makes
-the leaf order lexicographic so adjacent-leaf **non-inclusion** proofs are
-well-defined (inclusion proofs work either way).
+Class implementing a Bitcoin Merkle Tree in display (RPC) byte order:
+SHA256d parents over byte-reversed children, and an odd last node paired
+with itself. Txid leaves in block order give the block header's
+`merkle_root`; one leaf is its own root and no leaves give an empty root.
+Leaf encoding, proofs, and verification match `merkletreejs`
+`isBitcoinTree` (which this replaced), so earlier roots are unchanged.
+Optional `sortLeaves` makes the leaf order lexicographic so adjacent-leaf
+**non-inclusion** proofs are well-defined (inclusion proofs work either way).
 
 **Kind**: global class  
 
 * [Tree](#Tree)
     * [new Tree([settings])](#new_Tree_new)
-    * [.rootHex](#Tree+rootHex) ⇒ <code>string</code>
-    * [.addLeaf(leaf)](#Tree+addLeaf) ⇒ [<code>Tree</code>](#Tree)
-    * [.getLeaves()](#Tree+getLeaves) ⇒ <code>Array</code>
-    * [.getProof(leaf)](#Tree+getProof) ⇒ <code>Array</code>
-    * [.verify(proof, leaf, [root])](#Tree+verify) ⇒ <code>boolean</code>
-    * [.proveInclusion(leaf)](#Tree+proveInclusion) ⇒ <code>object</code>
-    * [.verifyInclusion(doc, [rootHex])](#Tree+verifyInclusion) ⇒ <code>boolean</code>
-    * [.proveNonInclusion(leaf)](#Tree+proveNonInclusion) ⇒ <code>object</code>
-    * [.verifyNonInclusion(doc, [opts])](#Tree+verifyNonInclusion) ⇒ <code>boolean</code>
+    * _instance_
+        * [.root](#Tree+root) ⇒ <code>Buffer</code>
+        * [.rootHex](#Tree+rootHex) ⇒ <code>string</code>
+        * [.addLeaf(leaf)](#Tree+addLeaf) ⇒ [<code>Tree</code>](#Tree)
+        * [.getLeaves()](#Tree+getLeaves) ⇒ <code>Array</code>
+        * [.getLayers()](#Tree+getLayers) ⇒ <code>Array.&lt;Array.&lt;Buffer&gt;&gt;</code>
+        * [.getRoot()](#Tree+getRoot) ⇒ <code>Buffer</code>
+        * [.getProof(leaf, [index])](#Tree+getProof) ⇒ <code>Array.&lt;{position: string, data: Buffer}&gt;</code>
+        * [.verify(proof, leaf, [root])](#Tree+verify) ⇒ <code>boolean</code>
+        * [.proveInclusion(leaf)](#Tree+proveInclusion) ⇒ <code>object</code>
+        * [.verifyInclusion(doc, [rootHex])](#Tree+verifyInclusion) ⇒ <code>boolean</code>
+        * [.proveNonInclusion(leaf)](#Tree+proveNonInclusion) ⇒ <code>object</code>
+        * [.verifyNonInclusion(doc, [opts])](#Tree+verifyNonInclusion) ⇒ <code>boolean</code>
+    * _static_
+        * [.verifyProof(proof, leaf, root)](#Tree.verifyProof) ⇒ <code>boolean</code>
 
 <a name="new_Tree_new"></a>
 
@@ -16913,10 +17036,16 @@ Create an instance of a Tree.
 | [settings.leaves] | <code>Array</code> |  |
 | [settings.sortLeaves] | <code>boolean</code> | When true, leaves are sorted before merkling (required for [proveNonInclusion](#Tree+proveNonInclusion)). |
 
+<a name="Tree+root"></a>
+
+### tree.root ⇒ <code>Buffer</code>
+Display-order root (an empty Buffer when there are no leaves).
+
+**Kind**: instance property of [<code>Tree</code>](#Tree)  
 <a name="Tree+rootHex"></a>
 
 ### tree.rootHex ⇒ <code>string</code>
-Hex encoding of [Tree#root](Tree#root) (empty string when the tree has no root bytes).
+Hex encoding of [root](#Tree+root) (empty string when the tree has no root bytes).
 
 **Kind**: instance property of [<code>Tree</code>](#Tree)  
 <a name="Tree+addLeaf"></a>
@@ -16938,16 +17067,31 @@ Get a list of the [Tree](#Tree)'s leaves.
 
 **Kind**: instance method of [<code>Tree</code>](#Tree)  
 **Returns**: <code>Array</code> - A list of the [Tree](#Tree)'s leaves.  
+<a name="Tree+getLayers"></a>
+
+### tree.getLayers() ⇒ <code>Array.&lt;Array.&lt;Buffer&gt;&gt;</code>
+Every layer of the tree, leaves first and the root layer last.
+
+**Kind**: instance method of [<code>Tree</code>](#Tree)  
+<a name="Tree+getRoot"></a>
+
+### tree.getRoot() ⇒ <code>Buffer</code>
+Same as [root](#Tree+root).
+
+**Kind**: instance method of [<code>Tree</code>](#Tree)  
 <a name="Tree+getProof"></a>
 
-### tree.getProof(leaf) ⇒ <code>Array</code>
-Bitcoin-style merkle inclusion branch for `leaf` (same object/bytes as constructed).
+### tree.getProof(leaf, [index]) ⇒ <code>Array.&lt;{position: string, data: Buffer}&gt;</code>
+Bitcoin-style merkle inclusion branch for `leaf`, leaf to root. Without
+an integer `index` the last leaf equal to `leaf` is proven; an unknown
+leaf gives `[]`. An odd last node lists itself as its right sibling.
 
 **Kind**: instance method of [<code>Tree</code>](#Tree)  
 
-| Param | Type |
-| --- | --- |
-| leaf | <code>String</code> \| <code>Buffer</code> | 
+| Param | Type | Description |
+| --- | --- | --- |
+| leaf | <code>String</code> \| <code>Buffer</code> |  |
+| [index] | <code>number</code> | leaf position (skips the lookup) |
 
 <a name="Tree+verify"></a>
 
@@ -17015,6 +17159,22 @@ without the leaf set is not supported.
 | [opts.root] | <code>string</code> | committed merkle root hex |
 | [opts.leafCount] | <code>number</code> | committed leaf count |
 | [opts.leaves] | <code>Array</code> | ordered or unordered leaf set (sorted here) |
+
+<a name="Tree.verifyProof"></a>
+
+### Tree.verifyProof(proof, leaf, root) ⇒ <code>boolean</code>
+Check an inclusion branch against `root`. Each step is
+`{ position: 'left'|'right', data }`, `[0|1, data]` (0 = left), or a bare
+string / Buffer sibling on the left. A missing or empty-string leaf never
+verifies; a malformed step throws `TypeError`.
+
+**Kind**: static method of [<code>Tree</code>](#Tree)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| proof | <code>Array</code> | sibling steps, leaf to root |
+| leaf | <code>\*</code> |  |
+| root | <code>Buffer</code> \| <code>string</code> |  |
 
 <a name="Vector"></a>
 

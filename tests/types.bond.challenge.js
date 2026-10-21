@@ -142,10 +142,10 @@ describe('Market bonds, challenges, and fraud proofs (Phase 3)', function () {
     assert.strictEqual(penalty.locktime, 1000);
     const preSig = Bond.signPenaltyAsProvider(deposit, penalty, provider.priv);
     assert.strictEqual(preSig.type, 'DepositPenaltyPreSig');
-    assert.strictEqual(Witness.verifyPenaltyPreSig(preSig, { providerPubkey: provider.pub, deposit: { txid: fundedTxid, vout: 0 }, deadlineHeight: 1000 }).ok, true);
-    assert.strictEqual(Witness.verifyPenaltyPreSig(preSig, { providerPubkey: provider.pub, deposit: { txid: fundedTxid, vout: 0 }, deadlineHeight: 1001 }).ok, false, 'deadline bound into nLockTime');
-    assert.strictEqual(Witness.verifyPenaltyPreSig(preSig, { providerPubkey: stranger.pub, deposit: { txid: fundedTxid, vout: 0 }, deadlineHeight: 1000 }).ok, false);
-    assert.strictEqual(Witness.verifyPenaltyPreSig(Object.assign({}, preSig, { deadlineHeight: 999 }), { providerPubkey: provider.pub, deposit: { txid: fundedTxid, vout: 0 }, deadlineHeight: 1000 }).ok, false, 'artifact tamper');
+    assert.strictEqual(Witness.verifyPenaltyPreSig(preSig, { providerPubkey: provider.pub, publisherPubkey: publisher.pub, deposit: { txid: fundedTxid, vout: 0 }, deadlineHeight: 1000 }).ok, true);
+    assert.strictEqual(Witness.verifyPenaltyPreSig(preSig, { providerPubkey: provider.pub, publisherPubkey: publisher.pub, deposit: { txid: fundedTxid, vout: 0 }, deadlineHeight: 1001 }).ok, false, 'deadline bound into nLockTime');
+    assert.strictEqual(Witness.verifyPenaltyPreSig(preSig, { providerPubkey: stranger.pub, publisherPubkey: publisher.pub, deposit: { txid: fundedTxid, vout: 0 }, deadlineHeight: 1000 }).ok, false);
+    assert.strictEqual(Witness.verifyPenaltyPreSig(Object.assign({}, preSig, { deadlineHeight: 999 }), { providerPubkey: provider.pub, publisherPubkey: publisher.pub, deposit: { txid: fundedTxid, vout: 0 }, deadlineHeight: 1000 }).ok, false, 'artifact tamper');
 
     // Publisher: the round is resolvable only with the pre-signature in hand (P_{n+1} before C_n).
     const bond = new Bond({ network: 'regtest' });
@@ -231,13 +231,18 @@ describe('Market bonds, challenges, and fraud proofs (Phase 3)', function () {
     const penalty = Bond.prepareDepositPenalty(deposit, { fundedTxHex: funded, deadlineHeight: 1000, destinationAddress: dest, feeSats: 500 });
     const preSig = Bond.signPenaltyAsProvider(deposit, penalty, provider.priv);
     const taken = Bond.finalizePreSignedPenalty(deposit, preSig, publisher.priv, { tipHeight: 1000 });
-    const counter = Challenge.wrongfulPenaltyProof(challenge, response, { txHex: taken.txHex, txid: taken.txid });
+    const fundedOut = bitcoin.Transaction.fromHex(funded).outs[0];
+    const prevouts = [{ scriptHex: Buffer.from(fundedOut.script).toString('hex'), valueSats: String(fundedOut.value) }];
+    const counter = Challenge.wrongfulPenaltyProof(challenge, response, { txHex: taken.txHex, txid: taken.txid, prevouts });
     assert.match(counter.verify().reason, /broadcast evidence/, 'a penalty that never reached the chain is not a penalty');
     const verdict = FraudProof.fromBody(JSON.parse(JSON.stringify(counter.toBody()))).verify({ txConfirmed: (id) => id === taken.txid });
     assert.strictEqual(verdict.ok, true);
     assert.strictEqual(verdict.offender, publisher.xOnly);
     assert.strictEqual(verdict.penaltyTxid, taken.txid);
     assert.strictEqual(counter.verify({ txConfirmed: () => false }).ok, false, 'unconfirmed penalty');
+    assert.match(Challenge.wrongfulPenaltyProof(challenge, response, { txHex: taken.txHex }).verify({ txConfirmed: () => true }).reason, /prevouts required/);
+    const wrongValue = [Object.assign({}, prevouts[0], { valueSats: String(fundedOut.value - 1n) })];
+    assert.match(Challenge.wrongfulPenaltyProof(challenge, response, { txHex: taken.txHex, prevouts: wrongValue }).verify({ txConfirmed: () => true }).reason, /signatures do not verify/, 'signatures commit to the spent amount');
     // An unsigned transaction that merely names the deposit outpoint is not a penalty.
     const unsigned = new bitcoin.Transaction();
     unsigned.addInput(Buffer.from(fundedTxid, 'hex').reverse(), 0);
@@ -259,10 +264,27 @@ describe('Market bonds, challenges, and fraud proofs (Phase 3)', function () {
     const checkIn = signAll(Bond.prepareDepositCheckIn(deposit, { fundedTxHex: funded, feeSats: 500 }).psbtBase64, [provider.priv, publisher.priv]);
     const withdraw = signAll(Bond.prepareDepositWithdraw(deposit, { fundedTxHex: funded, destinationAddress: dest, feeSats: 500 }).psbtBase64, [provider.priv]);
     for (const [label, spend] of [['check-in', checkIn], ['withdraw', withdraw]]) {
-      const v = Challenge.wrongfulPenaltyProof(challenge, response, { txHex: spend.txHex }).verify({ txConfirmed: (id) => id === spend.txid });
+      const v = Challenge.wrongfulPenaltyProof(challenge, response, { txHex: spend.txHex, prevouts }).verify({ txConfirmed: (id) => id === spend.txid });
       assert.strictEqual(v.ok, false, `${label} spend must not convict the publisher`);
       assert.match(v.reason, /penalty leaf/);
     }
+
+    // The txid does not commit to the witness: the confirmed check-in re-dressed
+    // with the penalty leaf (dummy signatures under a bare or the real control
+    // block, or the check-in's own signatures) is still not a penalty.
+    const [penaltyLeaf, penaltyControl] = bitcoin.Transaction.fromHex(taken.txHex).ins[0].witness.slice(-2);
+    const redress = (stack, controlBlock) => {
+      const tx = bitcoin.Transaction.fromHex(checkIn.txHex);
+      tx.ins[0].witness = [...stack, penaltyLeaf, controlBlock];
+      assert.strictEqual(tx.getId(), checkIn.txid);
+      return Challenge.wrongfulPenaltyProof(challenge, response, { txHex: tx.toHex(), prevouts }).verify({ txConfirmed: (id) => id === checkIn.txid });
+    };
+    const dummySigs = [Buffer.alloc(64, 1), Buffer.alloc(64, 2)];
+    const bareControl = Buffer.concat([Buffer.from([0xc0]), Buffer.from(schnorr.getPublicKey(crypto.randomBytes(32)))]);
+    assert.match(redress(dummySigs, bareControl).reason, /control block does not commit/);
+    assert.match(redress(dummySigs, penaltyControl).reason, /signatures do not verify/);
+    const checkInSigs = bitcoin.Transaction.fromHex(checkIn.txHex).ins[0].witness.slice(0, -2);
+    assert.match(redress(checkInSigs, penaltyControl).reason, /signatures do not verify/);
   });
 
   it('penalty pre-signature must pay the publisher-named destination (provider cannot pay itself)', () => {
@@ -278,7 +300,7 @@ describe('Market bonds, challenges, and fraud proofs (Phase 3)', function () {
     });
     assert.strictEqual(challenge.deposit.penaltyAddress, toPublisher);
     const preSigTo = (address, feeSats = 500) => Bond.signPenaltyAsProvider(deposit, Bond.prepareDepositPenalty(deposit, { fundedTxHex: funded, deadlineHeight: 1000, destinationAddress: address, feeSats }), provider.priv);
-    const expect = { providerPubkey: provider.pub, deposit: challenge.deposit, deadlineHeight: 1000 };
+    const expect = { providerPubkey: provider.pub, publisherPubkey: publisher.pub, deposit: challenge.deposit, deadlineHeight: 1000 };
     assert.strictEqual(Witness.verifyPenaltyPreSig(preSigTo(toPublisher), expect).ok, true);
     assert.match(Witness.verifyPenaltyPreSig(preSigTo(toProvider), expect).reason, /does not pay/);
     assert.match(Witness.verifyPenaltyPreSig(preSigTo(toPublisher, 10000), expect).reason, /at least 45000/, 'fee cannot eat the deposit');
@@ -291,6 +313,37 @@ describe('Market bonds, challenges, and fraud proofs (Phase 3)', function () {
     assert.throws(() => bond.recordRound(0, { deposit, penaltyPreSig: preSigTo(toProvider), penaltyAddress: toPublisher }), /does not pay/);
     assert.strictEqual(bond.recordRound(0, { deposit, penaltyPreSig: preSigTo(toPublisher), penaltyAddress: toPublisher }).resolvable, true);
     assert.throws(() => Bond.finalizePreSignedPenalty(deposit, preSigTo(toProvider), publisher.priv, { tipHeight: 1000, penaltyAddress: toPublisher }), /does not pay/);
+  });
+
+  it('penalty pre-signature must sign the deposit\'s canonical penalty leaf', () => {
+    const deposit = Bond.buildDeposit({ network: 'regtest', providerPubkey: provider.pub, publisherPubkey: publisher.pub, withdrawAfter: 900, amountSats: 30000 });
+    const funded = fundingFor(deposit.address);
+    const fundedTxid = bitcoin.Transaction.fromHex(funded).getId();
+    const dest = bitcoin.payments.p2wpkh({ pubkey: Buffer.from(publisher.pub, 'hex'), network: bitcoin.networks.regtest }).address;
+    const penalty = Bond.prepareDepositPenalty(deposit, { fundedTxHex: funded, deadlineHeight: 1000, destinationAddress: dest, feeSats: 500 });
+    const expect = { providerPubkey: provider.pub, publisherPubkey: publisher.pub, deposit: { txid: fundedTxid, vout: 0 }, deadlineHeight: 1000, depositAddress: deposit.address };
+    assert.strictEqual(Witness.verifyPenaltyPreSig(Bond.signPenaltyAsProvider(deposit, penalty, provider.priv), expect).ok, true);
+    assert.match(Witness.verifyPenaltyPreSig(Bond.signPenaltyAsProvider(deposit, penalty, provider.priv), Object.assign({}, expect, { publisherPubkey: null })).reason, /publisherPubkey required/);
+    const otherDeposit = Bond.buildDeposit({ network: 'regtest', providerPubkey: provider.pub, publisherPubkey: publisher.pub, withdrawAfter: 901, amountSats: 30000 });
+    assert.match(Witness.verifyPenaltyPreSig(Bond.signPenaltyAsProvider(deposit, penalty, provider.priv), Object.assign({}, expect, { depositAddress: otherDeposit.address })).reason, /does not spend the deposit address/);
+
+    // The provider signs the PSBT and so picks its leaf: point it at the check-in leaf instead.
+    const checkInLeaf = bitcoin.Psbt.fromBase64(Bond.prepareDepositCheckIn(deposit, { fundedTxHex: funded, feeSats: 500 }).psbtBase64).data.inputs[0].tapLeafScript;
+    const penaltyLeaf = bitcoin.Psbt.fromBase64(penalty.psbtBase64).data.inputs[0].tapLeafScript;
+    const preSigOver = (signLeaf, namedLeaf) => {
+      const psbt = bitcoin.Psbt.fromBase64(penalty.psbtBase64);
+      psbt.data.inputs[0].tapLeafScript = signLeaf;
+      psbt.signInput(0, signerFromPriv32(provider.priv));
+      psbt.data.inputs[0].tapLeafScript = namedLeaf;
+      const tx = psbt.__CACHE.__TX;
+      return Witness.signArtifact({ type: 'DepositPenaltyPreSig', version: 1, depositAddress: deposit.address, deposit: { txid: fundedTxid, vout: 0 }, deadlineHeight: 1000, txid: tx.getId(), psbtBase64: psbt.toBase64() }, provider.priv);
+    };
+    const alternate = preSigOver(checkInLeaf, checkInLeaf);
+    assert.match(Witness.verifyPenaltyPreSig(alternate, expect).reason, /other than the penalty leaf/);
+    assert.throws(() => new Bond({ network: 'regtest' }).recordRound(0, { deposit, penaltyPreSig: alternate }), /other than the penalty leaf/);
+    assert.throws(() => Bond.finalizePreSignedPenalty(deposit, alternate, publisher.priv, { tipHeight: 1000 }), /other than the penalty leaf/);
+    // Naming the penalty leaf does not help when the signature is over another leaf.
+    assert.match(Witness.verifyPenaltyPreSig(preSigOver(checkInLeaf, penaltyLeaf), expect).reason, /no provider tapscript signature on the penalty leaf/);
   });
 
   it('bounty: per-epoch outputs, deterministic preimages, claim + refund PSBTs', () => {

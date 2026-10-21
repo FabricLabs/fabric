@@ -276,13 +276,18 @@ class Challenge {
    * without it the proof does not verify.
    * @param {object} challenge
    * @param {object} response
-   * @param {object} [penalty] `{ txHex, txid? }` the penalty spend as seen on-chain
+   * @param {object} [penalty] `{ txHex, txid?, prevouts? }` the penalty spend as seen on-chain; `prevouts` are its spent outputs `[{ scriptHex, valueSats }]` in input order
    * @returns {FraudProof}
    */
   static wrongfulPenaltyProof (challenge, response, penalty = null) {
+    const artifacts = { challenge, response };
+    if (penalty && penalty.txHex) artifacts.penaltyTxHex = String(penalty.txHex);
+    if (penalty && Array.isArray(penalty.prevouts)) {
+      artifacts.prevouts = penalty.prevouts.map((p) => ({ scriptHex: String(p.scriptHex), valueSats: String(p.valueSats) }));
+    }
     return new Witness.FraudProof({
       kind: Witness.FRAUD_PROOF_KINDS.WRONGFUL_PENALTY,
-      artifacts: Object.assign({ challenge, response }, penalty && penalty.txHex ? { penaltyTxHex: String(penalty.txHex) } : {}),
+      artifacts,
       claim: penalty ? { penaltyTxid: String(penalty.txid || '') } : {}
     });
   }

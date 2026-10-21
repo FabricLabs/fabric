@@ -240,9 +240,20 @@ function applyPegOutBurn (content, withdrawal = {}, opts = {}) {
 /**
  * After L1 vault payout confirms, settle a pending burn: drop pendingBurns and
  * vaultConfirmed by the same amountSats (request-scoped).
+ *
+ * The caller verifies the payout on L1; this helper only settles against a
+ * named payout output that matches the burned withdrawal exactly, and never
+ * lets one output settle two withdrawals.
  * @param {object} content
  * @param {string} requestId
- * @param {Object} [opts]
+ * @param {Object} opts
+ * @param {Object} opts.payout Verified L1 payout output
+ * @param {string} opts.payout.txid
+ * @param {number} opts.payout.vout
+ * @param {number} opts.payout.amountSats Must equal the withdrawal amountSats
+ * @param {string} opts.payout.destinationAddress Must equal the withdrawal destinationAddress
+ * @param {number} opts.payout.confirmations
+ * @param {number} [opts.payoutMinConfirmations=1]
  * @param {number} [opts.vaultConfirmedSats] optional verified vault total after payout
  * @returns {{ ok: true, content: object, reserve: FederationReserveState }|{ ok: false, error: string }}
  */
@@ -250,6 +261,27 @@ function settlePegOutPayout (content, requestId, opts = {}) {
   const id = String(requestId || '').trim().toLowerCase();
   if (!/^[0-9a-f]{64}$/.test(id)) {
     return { ok: false, error: 'requestId required (64-hex)' };
+  }
+  const payout = opts.payout && typeof opts.payout === 'object' ? opts.payout : null;
+  if (!payout) {
+    return { ok: false, error: 'payout required (verified L1 payout output)' };
+  }
+  const payoutTxid = String(payout.txid || '').trim().toLowerCase();
+  const payoutVout = Number(payout.vout);
+  const payoutSats = Math.round(Number(payout.amountSats));
+  const payoutConfirmations = Math.round(Number(payout.confirmations));
+  const minConfirmations = Math.max(1, Number(opts.payoutMinConfirmations) || 1);
+  if (!/^[0-9a-f]{64}$/.test(payoutTxid)) {
+    return { ok: false, error: 'payout.txid required (64-hex)' };
+  }
+  if (!Number.isInteger(payoutVout) || payoutVout < 0) {
+    return { ok: false, error: 'payout.vout required (non-negative integer)' };
+  }
+  if (!Number.isInteger(payoutConfirmations) || payoutConfirmations < minConfirmations) {
+    return {
+      ok: false,
+      error: `payout not confirmed (need >= ${minConfirmations} confirmations, have ${payoutConfirmations})`
+    };
   }
   const nextContent = Object.assign({}, content && typeof content === 'object' ? content : {});
   const reserve = readReserve(nextContent);
@@ -270,6 +302,16 @@ function settlePegOutPayout (content, requestId, opts = {}) {
   if (amountSats > reserve.pendingBurnsSats) {
     return { ok: false, error: 'settle exceeds pendingBurnsSats' };
   }
+  if (payoutSats !== amountSats) {
+    return { ok: false, error: `payout.amountSats (${payoutSats}) must equal withdrawal amountSats (${amountSats})` };
+  }
+  if (String(payout.destinationAddress || '').trim() !== String(row.destinationAddress || '').trim()) {
+    return { ok: false, error: 'payout.destinationAddress must equal withdrawal destinationAddress' };
+  }
+  const outpoint = depositKey(payoutTxid, payoutVout);
+  if (reserve.withdrawals.some((w) => w && w.payout && depositKey(w.payout.txid, w.payout.vout) === outpoint)) {
+    return { ok: false, error: 'payout output already settled another withdrawal' };
+  }
 
   if (opts.vaultConfirmedSats != null) {
     const v = Math.round(Number(opts.vaultConfirmedSats));
@@ -284,6 +326,7 @@ function settlePegOutPayout (content, requestId, opts = {}) {
   reserve.pendingBurnsSats -= amountSats;
   row.status = 'settled';
   row.settledAt = opts.settledAt || new Date().toISOString();
+  row.payout = { txid: payoutTxid, vout: payoutVout, confirmations: payoutConfirmations };
   reserve.withdrawals[rowIndex] = row;
 
   const cons = assertConservation(reserve);
@@ -346,6 +389,15 @@ function validateReserveObjectSchema (value) {
     }
     if (!String(w.destinationAddress || '').trim()) {
       return { ok: false, error: 'withdrawal.destinationAddress required' };
+    }
+    if (String(w.status || '') === 'settled') {
+      const p = w.payout;
+      if (!p || typeof p !== 'object' || !/^[0-9a-f]{64}$/i.test(String(p.txid || ''))) {
+        return { ok: false, error: 'settled withdrawal.payout.txid must be 64-hex' };
+      }
+      if (!Number.isInteger(Number(p.vout)) || Number(p.vout) < 0) {
+        return { ok: false, error: 'settled withdrawal.payout.vout invalid' };
+      }
     }
   }
   return { ok: true };

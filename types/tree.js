@@ -2,11 +2,12 @@
 
 // Dependencies
 const merge = require('lodash.merge');
-const { MerkleTree } = require('merkletreejs');
+const { sha256 } = require('@noble/hashes/sha2.js');
 
 // Fabric Types
 const Actor = require('./actor');
-const Hash256 = require('./hash256');
+
+const HEX_PATTERN = /^(0x)?[0-9A-Fa-f]*$/;
 
 /**
  * @param {*} leaf
@@ -71,7 +72,7 @@ function deserializeProof (proof) {
 }
 
 /**
- * Restore a leaf for merkletreejs verify. 64-hex → 32-byte Buffer; else original string.
+ * Restore a leaf for proof lookup / verify. 64-hex → 32-byte Buffer; else original string.
  * @param {*} serialized
  * @returns {string|Buffer}
  * @private
@@ -86,10 +87,85 @@ function restoreLeaf (serialized) {
 }
 
 /**
- * Class implementing a Bitcoin-compatible Merkle Tree (`merkletreejs` +
- * {@link Hash256.digest}, odd-leaf duplication). Optional `sortLeaves` makes
- * the leaf order lexicographic so adjacent-leaf **non-inclusion** proofs are
- * well-defined (inclusion proofs work either way).
+ * @param {string} hex
+ * @returns {string}
+ * @private
+ */
+function evenHex (hex) {
+  return hex.length % 2 ? `0${hex}` : hex;
+}
+
+/**
+ * @param {Uint8Array} bytes
+ * @returns {Buffer} reversed copy
+ * @private
+ */
+function reversed (bytes) {
+  return Buffer.from(bytes).reverse();
+}
+
+/**
+ * Bytes of a leaf or proof node. Strings that look like hex (optional `0x`,
+ * odd length left-padded) decode as hex, so `'a'` is `0x0a`; other strings
+ * are UTF-8. Bigints are their hex value; numbers are their decimal digits
+ * read as hex (`12` → `0x12`). Typed arrays share their memory.
+ * @param {*} value
+ * @returns {Buffer}
+ * @private
+ */
+function toMerkleBuffer (value) {
+  if (Buffer.isBuffer(value)) return value;
+  if (typeof value === 'string') {
+    if (HEX_PATTERN.test(value)) return Buffer.from(evenHex(value.replace('0x', '')), 'hex');
+    return Buffer.from(value, 'utf8');
+  }
+  if (typeof value === 'bigint') return Buffer.from(evenHex(value.toString(16)), 'hex');
+  if (typeof value === 'number') return Buffer.from(evenHex(value.toString()), 'hex');
+  if (ArrayBuffer.isView(value)) return Buffer.from(value.buffer, value.byteOffset, value.byteLength);
+  throw new TypeError(`Merkle nodes are bytes, strings, or numbers, not ${value === null ? 'null' : typeof value}`);
+}
+
+/**
+ * Parent of two display-order nodes: `reverse(SHA256d(reverse(left) || reverse(right)))`.
+ * @param {Uint8Array} left
+ * @param {Uint8Array} right
+ * @returns {Buffer}
+ * @private
+ */
+function merkleParent (left, right) {
+  return reversed(sha256(sha256(Buffer.concat([reversed(left), reversed(right)]))));
+}
+
+/**
+ * Every layer, leaves first and the root layer last. An odd last node is
+ * paired with itself.
+ * @param {Buffer[]} leaves
+ * @returns {Buffer[][]}
+ * @private
+ */
+function merkleLayers (leaves) {
+  const layers = [leaves];
+  let nodes = leaves;
+  while (nodes.length > 1) {
+    const next = [];
+    for (let i = 0; i < nodes.length; i += 2) {
+      next.push(merkleParent(nodes[i], i + 1 < nodes.length ? nodes[i + 1] : nodes[i]));
+    }
+    layers.push(next);
+    nodes = next;
+  }
+  return layers;
+}
+
+/**
+ * Class implementing a Bitcoin Merkle Tree in display (RPC) byte order:
+ * SHA256d parents over byte-reversed children, and an odd last node paired
+ * with itself. Txid leaves in block order give the block header's
+ * `merkle_root`; one leaf is its own root and no leaves give an empty root.
+ * Leaf encoding, proofs, and verification match `merkletreejs`
+ * `isBitcoinTree` (which this replaced), so earlier roots are unchanged.
+ * Optional `sortLeaves` makes the leaf order lexicographic so adjacent-leaf
+ * **non-inclusion** proofs are well-defined (inclusion proofs work either way).
  */
 class Tree extends Actor {
   /**
@@ -125,14 +201,17 @@ class Tree extends Actor {
   _rebuild () {
     const source = this.settings.leaves || [];
     const leaves = this.settings.sortLeaves ? sortLeafList(source) : source;
-    this._tree = new MerkleTree(leaves, Hash256.digest, {
-      isBitcoinTree: true
-    });
+    this._leaves = Array.from(leaves, toMerkleBuffer);
+    this._layers = merkleLayers(this._leaves);
     if (this._state) this._state.root = this.root;
   }
 
+  /**
+   * Display-order root (an empty Buffer when there are no leaves).
+   * @returns {Buffer}
+   */
   get root () {
-    return this._tree.getRoot();
+    return this._layers[this._layers.length - 1][0] || Buffer.alloc(0);
   }
 
   get leafCount () {
@@ -166,17 +245,57 @@ class Tree extends Actor {
    * @returns {Array} A list of the {@link Tree}'s leaves.
    */
   getLeaves () {
-    return this._tree.getLeaves();
+    return this._leaves;
   }
 
   /**
-   * Bitcoin-style merkle inclusion branch for `leaf` (same object/bytes as constructed).
-   * @param {String|Buffer} leaf
-   * @returns {Array}
+   * Every layer of the tree, leaves first and the root layer last.
+   * @returns {Buffer[][]}
    */
-  getProof (leaf) {
-    if (!this._tree || !this.leafCount) return [];
-    return this._tree.getProof(restoreLeaf(leaf));
+  getLayers () {
+    return this._layers;
+  }
+
+  /**
+   * Same as {@link Tree#root}.
+   * @returns {Buffer}
+   */
+  getRoot () {
+    return this.root;
+  }
+
+  /**
+   * Bitcoin-style merkle inclusion branch for `leaf`, leaf to root. Without
+   * an integer `index` the last leaf equal to `leaf` is proven; an unknown
+   * leaf gives `[]`. An odd last node lists itself as its right sibling.
+   * @param {String|Buffer} leaf
+   * @param {number} [index] leaf position (skips the lookup)
+   * @returns {Array<{ position: string, data: Buffer }>}
+   */
+  getProof (leaf, index) {
+    if (!this.leafCount) return [];
+    const target = toMerkleBuffer(restoreLeaf(leaf));
+    if (!Number.isInteger(index)) {
+      index = -1;
+      for (let i = 0; i < this._leaves.length; i++) {
+        if (Buffer.compare(target, this._leaves[i]) === 0) index = i;
+      }
+    }
+    if (index <= -1) return [];
+
+    const proof = [];
+    for (let i = 0; i < this._layers.length; i++) {
+      const layer = this._layers[i];
+      const isRight = index % 2;
+      const pairIndex = isRight
+        ? index - 1
+        : (index === layer.length - 1 && i < this._layers.length - 1 ? index : index + 1);
+      if (pairIndex < layer.length) {
+        proof.push({ position: isRight ? 'left' : 'right', data: layer[pairIndex] });
+      }
+      index = (index / 2) | 0;
+    }
+    return proof;
   }
 
   /**
@@ -193,18 +312,47 @@ class Tree extends Actor {
     if (!r || !r.length) return false;
     const steps = Array.isArray(proof) ? proof : [];
     try {
-      if (typeof MerkleTree.verify === 'function') {
-        return !!MerkleTree.verify(steps, restoreLeaf(leaf), r, Hash256.digest, {
-          isBitcoinTree: true
-        });
-      }
-    } catch (_) { /* fall through */ }
-    if (!this._tree) return false;
-    try {
-      return !!this._tree.verify(steps, restoreLeaf(leaf), r);
+      return Tree.verifyProof(steps, restoreLeaf(leaf), r);
     } catch (_) {
       return false;
     }
+  }
+
+  /**
+   * Check an inclusion branch against `root`. Each step is
+   * `{ position: 'left'|'right', data }`, `[0|1, data]` (0 = left), or a bare
+   * string / Buffer sibling on the left. A missing or empty-string leaf never
+   * verifies; a malformed step throws `TypeError`.
+   * @param {Array} proof sibling steps, leaf to root
+   * @param {*} leaf
+   * @param {(Buffer|string)} root
+   * @returns {boolean}
+   */
+  static verifyProof (proof, leaf, root) {
+    if (!Array.isArray(proof) || !leaf || root == null) return false;
+    let hash = toMerkleBuffer(leaf);
+    const expected = toMerkleBuffer(root);
+    for (const step of proof) {
+      let data;
+      let left;
+      if (typeof step === 'string') {
+        data = toMerkleBuffer(step);
+        left = true;
+      } else if (Array.isArray(step)) {
+        data = toMerkleBuffer(step[1]);
+        left = step[0] === 0;
+      } else if (Buffer.isBuffer(step)) {
+        data = step;
+        left = true;
+      } else if (step instanceof Object) {
+        data = toMerkleBuffer(step.data);
+        left = step.position === 'left';
+      } else {
+        throw new TypeError('Expected node to be of type string or object');
+      }
+      hash = left ? merkleParent(data, hash) : merkleParent(hash, data);
+    }
+    return Buffer.compare(hash, expected) === 0;
   }
 
   /**

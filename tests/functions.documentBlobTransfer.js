@@ -237,4 +237,56 @@ describe('functions/documentBlobTransfer', function () {
     });
     assert.ok(stale.status === 'need_more' || stale.status === 'reject');
   });
+
+  it('caps one transfer at MAX_DOCUMENT_BLOBS and bounds pending bytes', function () {
+    const {
+      MAX_DOCUMENT_BLOBS,
+      MAX_DOCUMENT_BYTES,
+      DEFAULT_BLOB_CHUNK_BYTES
+    } = require('../functions/documentBlobManifest');
+    const crypto = require('crypto');
+    assert.strictEqual(MAX_DOCUMENT_BLOBS, require('../constants').MAX_DOCUMENT_BLOBS);
+    assert.strictEqual(MAX_DOCUMENT_BYTES, MAX_DOCUMENT_BLOBS * DEFAULT_BLOB_CHUNK_BYTES);
+    assert.strictEqual(MAX_DOCUMENT_BYTES, 98697216);
+
+    const bytes = Buffer.alloc(100, 3);
+    const blobHashHex = crypto.createHash('sha256').update(bytes).digest('hex');
+    const frame = (over) => Object.assign({
+      ok: true,
+      legacy: false,
+      documentId: 'cap',
+      bytes,
+      blobIndex: 0,
+      blobTotal: 2,
+      blobHashHex,
+      merkleRootHex: 'aa'.repeat(32),
+      contentSha256: null
+    }, over);
+
+    const book = new DocumentBlobTransferBook();
+    const huge = book.ingest(frame({ blobTotal: MAX_DOCUMENT_BLOBS + 1 }));
+    assert.strictEqual(huge.status, 'reject');
+    assert.ok(/blobTotal exceeds/.test(huge.error));
+    assert.strictEqual(book.pendingCount, 0);
+    assert.strictEqual(book.expectTransfer({ documentId: 'cap', total: MAX_DOCUMENT_BLOBS + 1 }), null);
+
+    const outOfRange = book.ingest(frame({ blobIndex: 2 }));
+    assert.strictEqual(outOfRange.error, 'blobIndex out of range');
+
+    const tight = new DocumentBlobTransferBook({ maxPendingBytes: 200 });
+    assert.strictEqual(tight.ingest(frame({ documentId: 'a' })).status, 'need_more');
+    assert.strictEqual(tight.pendingBytes, 100);
+    // A repeated blob is not counted twice.
+    assert.strictEqual(tight.ingest(frame({ documentId: 'a' })).status, 'need_more');
+    assert.strictEqual(tight.pendingBytes, 100);
+    // Finishing (or failing) a transfer releases its bytes.
+    tight.ingest(frame({ documentId: 'a', blobIndex: 1 }));
+    assert.strictEqual(tight.pendingBytes, 0);
+    assert.strictEqual(tight.ingest(frame({ documentId: 'b' })).status, 'need_more');
+    assert.strictEqual(tight.ingest(frame({ documentId: 'c' })).status, 'need_more');
+    const over = tight.ingest(frame({ documentId: 'd' }));
+    assert.strictEqual(over.status, 'reject');
+    assert.strictEqual(over.error, 'pending blob bytes exceeded');
+    assert.strictEqual(tight.pendingBytes, 200);
+  });
 });

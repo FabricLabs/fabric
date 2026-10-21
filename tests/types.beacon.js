@@ -620,6 +620,53 @@ describe('@fabric/core/types/beacon', function () {
     assert.strictEqual(bitcoin.listenerCount('block'), 0);
   });
 
+  it('start() queues a block found while priming and skips a stale older tip', async function () {
+    const { EventEmitter } = require('events');
+    const chain = ['01'.repeat(32), '02'.repeat(32), '03'.repeat(32)];
+    let best = 2;
+    let primed = null;
+    let releasePrime;
+    const primeGate = new Promise((resolve) => { releasePrime = resolve; });
+    const bitcoin = new EventEmitter();
+    bitcoin._makeRPCRequest = async (method, params) => {
+      if (method === 'getbestblockhash') {
+        primed = best;
+        return chain[primed - 1];
+      }
+      if (method === 'getblockcount') {
+        await primeGate;
+        return primed;
+      }
+      if (method === 'getblockhash') return chain[params[0] - 1];
+      if (method === 'getbalances') return { mine: { trusted: 0 } };
+      throw new Error(`unexpected rpc ${method}`);
+    };
+    const beacon = new Beacon({ regtest: false, mineOnStart: false, interval: 0 });
+    beacon.attach({ bitcoin, fs: memoryFs(), key: new Key({ network: 'regtest' }) });
+    const reorgs = [];
+    beacon.on('reorg', (r) => reorgs.push(r));
+
+    const started = beacon.start();
+    while (bitcoin.listenerCount('block') === 0) {
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+    best = 3;
+    bitcoin.emit('block', { tip: chain[2], height: 3 });
+    releasePrime();
+    await started;
+    await beacon._blockQueue;
+    assert.strictEqual(beacon._state.content.height, 3);
+    assert.strictEqual(beacon._state.content.lastBlockHash, chain[2]);
+    assert.strictEqual(beacon._state.content.clock, 2);
+
+    bitcoin.emit('block', { tip: chain[0], height: 1 });
+    await beacon._blockQueue;
+    assert.strictEqual(beacon._state.content.height, 3);
+    assert.strictEqual(beacon._state.content.lastBlockHash, chain[2]);
+    assert.strictEqual(reorgs.length, 0);
+    await beacon.stop();
+  });
+
   it('seals a 2-of-2 BLS federation witness', async function () {
     this.timeout(30000);
     const k1 = new Key({ private: '1111111111111111111111111111111111111111111111111111111111111111' });

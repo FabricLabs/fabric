@@ -70,8 +70,8 @@ class Collection extends Stack {
   }
 
   /**
-   * Current elements of the collection as a {@link MerkleTree}.
-   * @returns {MerkleTree}
+   * Current elements of the collection as a {@link Tree}.
+   * @returns {Tree}
    */
   asMerkleTree () {
     let list = pointer.get(this.value, this.path);
