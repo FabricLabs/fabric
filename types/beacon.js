@@ -17,6 +17,7 @@ const Message = require('./message');
 const Chain = require('./chain');
 const beaconFederationSigning = require('../functions/beaconFederationSigning');
 const bls = require('../functions/bls');
+const { resolveFederationThreshold } = require('../functions/federationValidators');
 
 const SATS_PER_BTC = 100_000_000;
 const BEACON_CHAIN_PATH = 'beacon/CHAIN';
@@ -53,7 +54,8 @@ class Beacon extends Actor {
       // When false, start() does not mine an initial epoch (regtest).
       mineOnStart: true,
       federationValidators: [],
-      federationThreshold: 1,
+      // k-of-n; null = strict majority of federationValidators.
+      federationThreshold: null,
       federationSignatureScheme: 'schnorr',
       federationWitnessFailClosed: true,
       // When true (or when federation validators are set), also follow bitcoind
@@ -71,7 +73,7 @@ class Beacon extends Actor {
     this._federationValidators = Array.isArray(this.settings.federationValidators)
       ? this.settings.federationValidators.slice()
       : [];
-    this._federationThreshold = Math.max(1, Number(this.settings.federationThreshold) || 1);
+    this._federationThresholdSetting = this.settings.federationThreshold;
     this._federationSignatureScheme = bls.normalizeSignatureScheme(this.settings.federationSignatureScheme);
     this._getSidechainSnapshotForEpoch = null;
     this._getContractsSnapshotForEpoch = null;
@@ -92,6 +94,15 @@ class Beacon extends Actor {
 
   get state () {
     return this._state.content;
+  }
+
+  /**
+   * k for epoch witnesses: the configured threshold, else a strict majority.
+   * @returns {number}
+   * @private
+   */
+  get _federationThreshold () {
+    return resolveFederationThreshold(this._federationThresholdSetting, this._federationValidators);
   }
 
   get merkleRoot () {
@@ -130,7 +141,7 @@ class Beacon extends Actor {
       this._federationValidators = deps.federationValidators.slice();
     }
     if (deps.federationThreshold != null) {
-      this._federationThreshold = Math.max(1, Number(deps.federationThreshold) || 1);
+      this._federationThresholdSetting = deps.federationThreshold;
     }
     if (deps.federationSignatureScheme != null) {
       this._federationSignatureScheme = bls.normalizeSignatureScheme(deps.federationSignatureScheme);

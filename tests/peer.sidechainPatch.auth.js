@@ -189,6 +189,25 @@ describe('Peer SIDECHAIN_STATE_PATCH authorization', function () {
       else process.env.FABRIC_DISTRIBUTED_FEDERATION_THRESHOLD = prevT;
     }
   });
+
+  it('defaults the threshold to a strict majority when none is configured', function () {
+    const prevT = process.env.FABRIC_DISTRIBUTED_FEDERATION_THRESHOLD;
+    const prevV = process.env.FABRIC_DISTRIBUTED_FEDERATION_VALIDATORS;
+    delete process.env.FABRIC_DISTRIBUTED_FEDERATION_VALIDATORS;
+    delete process.env.FABRIC_DISTRIBUTED_FEDERATION_THRESHOLD;
+    try {
+      const validators = ['11', '22', '33'].map((b) => new Key({ private: b.repeat(32) }).pubkey);
+      const peer = new Peer(Object.assign(offlinePeerSettings(), {
+        distributed: { federation: { validators } }
+      }));
+      assert.strictEqual(peer._distributedFederationThresholdFromSettings(), 2);
+    } finally {
+      if (prevV == null) delete process.env.FABRIC_DISTRIBUTED_FEDERATION_VALIDATORS;
+      else process.env.FABRIC_DISTRIBUTED_FEDERATION_VALIDATORS = prevV;
+      if (prevT == null) delete process.env.FABRIC_DISTRIBUTED_FEDERATION_THRESHOLD;
+      else process.env.FABRIC_DISTRIBUTED_FEDERATION_THRESHOLD = prevT;
+    }
+  });
 });
 
 function signedFederationCarrier (key, type, object) {

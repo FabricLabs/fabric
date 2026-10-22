@@ -43,6 +43,17 @@ function memoryFs () {
 }
 
 describe('@fabric/core/types/beacon', function () {
+  it('defaults the federation threshold to a strict majority of its validators', function () {
+    const validators = ['11', '22', '33'].map((b) => new Key({ private: b.repeat(32) }).pubkey);
+    const beacon = new Beacon({ federationValidators: validators });
+    assert.strictEqual(beacon._federationThreshold, 2);
+    const later = new Beacon();
+    later.attach({ federationValidators: validators.slice(0, 2) });
+    assert.strictEqual(later._federationThreshold, 2);
+    later.attach({ federationThreshold: 1 });
+    assert.strictEqual(later._federationThreshold, 1);
+  });
+
   it('createEpoch seals sidechain digest into BEACON_EPOCH', async function () {
     const key = new Key({ network: 'regtest' });
     const fs = memoryFs();

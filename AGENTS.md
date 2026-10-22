@@ -4,7 +4,7 @@ See also [DEVELOPERS.md](DEVELOPERS.md) (repo layout, tests) and [docs/PRODUCTIO
 ## Release posture
 - **Target:** `0.1.0` reference client — not a production-hardened VM claim
   ([PUBLIC_API.md](PUBLIC_API.md), [AUDIT.md](AUDIT.md)).
-- **Gate:** `npm run ci` on Node **24.15.0**. Tag **core before** bumping Hub / http.
+- **Gate:** `npm run ci` on Node **26.12.1**. Tag **core before** bumping Hub / http.
 - Do not paper over AUDIT “known gaps” or expand protocol surface for RC without
   owner go-ahead.
 

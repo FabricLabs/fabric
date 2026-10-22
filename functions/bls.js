@@ -13,8 +13,9 @@
  *
  * Federation members keep their secp256k1 validator identity. A BLS key is
  * derived from that Fabric private key (HKDF-SHA256). A portable witness
- * bundle is a BLS signature over the federation message, a Schnorr link from
- * the secp256k1 key over the BLS public key, and a BLS proof of possession
+ * bundle (`v: 2`) is a BLS signature over the federation message, a Schnorr
+ * link from the secp256k1 key over `LINK_PREFIX` + the BLS public key (hex),
+ * and a BLS proof of possession
  * over the secp256k1 pubkey. Threshold checks count those bundles. They do
  * not aggregate public keys, so a rogue-key sum cannot satisfy k-of-n.
  *
@@ -30,6 +31,7 @@
 
 const crypto = require('crypto');
 const Key = require('../types/key');
+const { uniqueValidatorPubkeys } = require('./federationValidators');
 
 const SCHEME_SCHNORR = 'schnorr';
 const SCHEME_BLS = 'bls';
@@ -39,6 +41,8 @@ const SIGNATURE_BYTES = 96;
 const SECRET_KEY_BYTES = 32;
 const SCHNORR_SIGNATURE_BYTES = 64;
 const POP_PREFIX = 'Fabric/BLS/PoP/v1:';
+const LINK_PREFIX = 'Fabric/BLS/Link/v1:';
+const BUNDLE_VERSION = 2;
 const HKDF_SALT = Buffer.from('Fabric-BLS-v1', 'utf8');
 const HKDF_INFO = Buffer.from('federation-signer', 'utf8');
 
@@ -250,6 +254,16 @@ function verifyAggregate (signature, message, publicKeys) {
 }
 
 /**
+ * Bytes the secp256k1 validator key Schnorr-signs to claim a BLS public key.
+ * @param {string} blsPublicKeyHex
+ * @returns {Buffer}
+ * @private
+ */
+function linkMessage (blsPublicKeyHex) {
+  return Buffer.from(LINK_PREFIX + blsPublicKeyHex, 'utf8');
+}
+
+/**
  * Portable federation witness entry for one secp256k1 validator.
  * @param {Buffer|Uint8Array|string|object} message
  * @param {object} fabricKey Fabric {@link Key} with a private key
@@ -267,9 +281,9 @@ function createFederationBlsBundle (message, fabricKey) {
   const blsPublicKey = derived.publicKey.toString('hex');
   const pop = sign(Buffer.from(POP_PREFIX + secpPubkey, 'utf8'), derived.secretKey);
   const signature = sign(message, derived.secretKey);
-  const link = fabricKey.signSchnorr(derived.publicKey);
+  const link = fabricKey.signSchnorr(linkMessage(blsPublicKey));
   return {
-    v: 1,
+    v: BUNDLE_VERSION,
     blsPublicKey,
     signature: signature.toString('hex'),
     pop: pop.toString('hex'),
@@ -306,7 +320,7 @@ function parseBundle (entry) {
  */
 function verifyFederationBlsBundle (message, secpPubkey, bundle) {
   const parsed = parseBundle(bundle);
-  if (!parsed || Number(parsed.v) !== 1) return false;
+  if (!parsed || Number(parsed.v) !== BUNDLE_VERSION) return false;
   const pk = String(secpPubkey || '').trim().toLowerCase();
   if (!/^0[23][0-9a-f]{64}$/.test(pk)) return false;
   const blsPk = String(parsed.blsPublicKey || '').trim().toLowerCase();
@@ -319,7 +333,7 @@ function verifyFederationBlsBundle (message, secpPubkey, bundle) {
   if (link.length !== SCHNORR_SIGNATURE_BYTES * 2) return false;
   try {
     const key = new Key({ pubkey: pk });
-    if (!key.verifySchnorr(Buffer.from(blsPk, 'hex'), Buffer.from(link, 'hex'))) return false;
+    if (!key.verifySchnorr(linkMessage(blsPk), Buffer.from(link, 'hex'))) return false;
     if (!verify(pop, Buffer.from(POP_PREFIX + pk, 'utf8'), blsPk)) return false;
     if (!verify(sig, message, blsPk)) return false;
     return true;
@@ -330,7 +344,7 @@ function verifyFederationBlsBundle (message, secpPubkey, bundle) {
 
 /**
  * k-of-n over secp256k1 validator ids. Each `witness.signatures[pubkey]` is a bundle.
- * Duplicate validator ids count once.
+ * Each signing key counts once, however its id is spelled.
  * @param {Buffer|Uint8Array|string|object} message
  * @param {object} witness
  * @param {string[]} validatorPubkeys
@@ -339,10 +353,7 @@ function verifyFederationBlsBundle (message, secpPubkey, bundle) {
  */
 function verifyFederationBlsWitness (message, witness, validatorPubkeys, threshold = 1) {
   if (!witness || !witness.signatures || typeof witness.signatures !== 'object') return false;
-  const pubkeys = Array.from(new Set(
-    (Array.isArray(validatorPubkeys) ? validatorPubkeys : [])
-      .filter((p) => typeof p === 'string' && p)
-  ));
+  const pubkeys = uniqueValidatorPubkeys(validatorPubkeys);
   const thr = Number(threshold);
   if (!Number.isInteger(thr) || thr < 1) return false;
   let valid = 0;
@@ -363,6 +374,8 @@ module.exports = {
   SIGNATURE_BYTES,
   SECRET_KEY_BYTES,
   POP_PREFIX,
+  LINK_PREFIX,
+  BUNDLE_VERSION,
   normalizeSignatureScheme,
   keygen,
   deriveFederationSigner,

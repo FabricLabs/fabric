@@ -64,6 +64,7 @@ const { individualPk } = require('../functions/musig2');
 const musig2Session = require('../functions/musig2Session');
 const sidechainState = require('../functions/sidechainState');
 const { verifyFederationWitnessOnMessage, epochCommitmentDigestHex } = require('../functions/beaconFederationSigning');
+const { resolveFederationThreshold } = require('../functions/federationValidators');
 const {
   aggregatePeerBandwidth,
   peerBandwidthSnapshot,
@@ -6201,17 +6202,19 @@ class Peer extends Service {
   }
 
   /**
+   * k for federation witnesses. Unset = strict majority of the configured validators.
    * @returns {number}
    */
   _distributedFederationThresholdFromSettings () {
+    const validators = this._distributedFederationValidatorsFromSettings();
     // Env threshold is independent of how validators were supplied (settings vs env).
     const envThreshold = process.env.FABRIC_DISTRIBUTED_FEDERATION_THRESHOLD;
     if (envThreshold != null && String(envThreshold).trim()) {
-      return Math.max(1, Number(envThreshold) || 1);
+      return resolveFederationThreshold(envThreshold, validators);
     }
     const t = this.settings.distributed && this.settings.distributed.federation &&
       this.settings.distributed.federation.threshold;
-    return Math.max(1, Number(t) || 1);
+    return resolveFederationThreshold(t, validators);
   }
 
   /**

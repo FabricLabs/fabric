@@ -17,6 +17,7 @@ const crypto = require('crypto');
 const Key = require('../types/key');
 const fabricCanonicalJson = require('./fabricCanonicalJson');
 const bls = require('./bls');
+const { uniqueValidatorPubkeys, resolveFederationThreshold } = require('./federationValidators');
 const { jsonSafe } = fabricCanonicalJson;
 
 const BEACON_EPOCH_SIGNING_KIND = 'BeaconEpoch';
@@ -108,11 +109,8 @@ function verifyFederationWitnessOnMessage (messageBuffer, witness, validatorPubk
   }
   if (!witness || !witness.signatures || typeof witness.signatures !== 'object') return false;
   if (!Buffer.isBuffer(messageBuffer)) return false;
-  // Deduplicate so a repeated pubkey cannot satisfy k-of-n with one signature.
-  const pubkeys = Array.from(new Set(
-    (Array.isArray(validatorPubkeys) ? validatorPubkeys : [])
-      .filter((p) => typeof p === 'string' && p)
-  ));
+  // One count per signing key, so a repeated or respelled pubkey cannot satisfy k-of-n with one signature.
+  const pubkeys = uniqueValidatorPubkeys(validatorPubkeys);
   const thr = Number(threshold);
   if (!Number.isInteger(thr) || thr < 1) return false;
   let valid = 0;
@@ -168,7 +166,7 @@ function createRound (epochPayload, policy = {}, initialWitness = null) {
   const canonical = canonicalEpochForFederation(epochPayload);
   const commitmentDigest = epochCommitmentDigestHex(canonical);
   const validators = (pol.validators || []).map((v) => String(v).trim()).filter(Boolean);
-  const threshold = Math.max(1, Number(pol.threshold) || 1);
+  const threshold = resolveFederationThreshold(pol.threshold, validators);
   const signatureScheme = bls.normalizeSignatureScheme(pol.signatureScheme);
   const round = {
     commitmentDigest,

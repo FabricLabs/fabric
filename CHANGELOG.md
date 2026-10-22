@@ -1,6 +1,14 @@
 # `@fabric/core` Changelog
 Recent changes to Fabric Core.
 
+## 2026-10-22
+- **Node 26.12.1:** `engines.node` and `.nvmrc` move from `24.15.0` to `26.12.1` (the Oct 21 security release; 26 becomes LTS on 2026-10-28). 24.15.0 predated the 24.18.1 and 24.22.1 security releases. No code changes: `npm run ci` passes on 26.12.1, and the native dependencies (`classic-level`, `zeromq`, the optional `fabric.node`) are N-API, so the ABI bump needs no rebuild changes. Node 26.12.1 bundles npm 11.20 — npm 12+ is still required. Hub / `@fabric/http` / apps still pin 24.15.0 and move after core is tagged.
+- **Federation threshold default:** an unset threshold is now a strict majority of the distinct validators (`functions/federationValidators` `resolveFederationThreshold`) instead of 1, for `Peer` (`distributed.federation.threshold` / `FABRIC_DISTRIBUTED_FEDERATION_THRESHOLD`), `Beacon` (`federationThreshold`, default `null`; recomputed when `attach()` changes validators), and `beaconFederationSigning.createRound`. Explicit thresholds are unchanged (non-integers round up). Hub passes its own threshold (still defaulting to 1) and needs the same change.
+- **Federation witnesses count each key once:** both the Schnorr and BLS verifiers dedupe validators by x-only lowercase key (`uniqueValidatorPubkeys`), so `02…` / `03…` / x-only / mixed-case spellings of one key no longer satisfy k-of-n with one signature.
+- **BLS bundle v2:** the Schnorr link now signs `Fabric/BLS/Link/v1:` + the BLS public key (hex) instead of the raw 48 bytes (`bls.LINK_PREFIX`, `bls.BUNDLE_VERSION`). v1 bundles no longer verify; pending BLS rounds from before the upgrade must be re-signed.
+- **`Federation.addMember`:** a member with a private key may pass `blsPublicKey` only when it matches the key derived from that private key; a mismatch throws instead of storing a key its own signatures can't satisfy.
+- **`peerBandwidth`:** documented as reporting only — `overBudget` does not throttle or drop a peer.
+
 ## 2026-10-20
 - **#187 review follow-up:**
   - **Beacon block follow:** `Beacon#start` now attaches its Bitcoin `block` listener before priming from the best tip, so a block found during the prime is no longer missed. Priming and every followed block run through one queue, so an older tip can't finish after a newer one. A tip below the recorded height that is still on the best chain is skipped instead of being treated as a reorg. `stop()` waits for the queue before persisting.

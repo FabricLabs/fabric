@@ -14,25 +14,29 @@ const Wallet = require('./wallet');
 
 /**
  * BLS public key stored for a member. Private material derives it once.
- * Public-only members must supply `blsPublicKey` (48-byte hex).
+ * Public-only members must supply `blsPublicKey` (48-byte hex); a member with
+ * private material may supply it only when it matches the derived key.
  * @param {object} member
  * @param {object} key
  * @returns {string|null}
  * @private
  */
 function federationBlsPublicKey (member, key) {
+  const derived = (key && key.private)
+    ? bls.deriveFederationSigner(key.private).publicKey.toString('hex')
+    : null;
   const supplied = member && (member.blsPublicKey || member.blsPublic);
   if (supplied != null && supplied !== '') {
     const raw = String(supplied).trim().toLowerCase().replace(/^0x/, '');
     if (!/^[0-9a-f]{96}$/.test(raw)) {
       throw new Error('blsPublicKey must be a 48-byte hex key');
     }
+    if (derived && raw !== derived) {
+      throw new Error('blsPublicKey does not match the key derived from the member private key');
+    }
     return raw;
   }
-  if (key && key.private) {
-    return bls.deriveFederationSigner(key.private).publicKey.toString('hex');
-  }
-  return null;
+  return derived;
 }
 
 /**

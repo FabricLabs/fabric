@@ -34,7 +34,7 @@ audit report.
 2. **Distributed execution composition** — Beacon epochs, federation sign rounds, and HTTP binders live in Hub / `@fabric/http`. Core provides helpers only.
 3. **PROTOCOL history** — Older root protocol sketches were stale; [PROTOCOL.md](PROTOCOL.md) now redirects to [docs/MESSAGE_BODY.md](docs/MESSAGE_BODY.md).
 4. **CLI `settings/local.js`** — Gitignored operator overlay. Packaged installs should ship/copy [settings/local.example.js](settings/local.example.js); shell loads example when local is absent.
-5. **Exact Node pin** — `engines.node` is `24.15.0`. Documented for CI parity; broad consumers may need a range in a later release.
+5. **Exact Node pin** — `engines.node` is `26.12.1`. Documented for CI parity; broad consumers may need a range in a later release.
 6. **Adversarial completeness** — Historical fuzz (`randomAmpFrame`, `P2P_BASE_MESSAGE` chaos) proves crash resilience more than semantic malice. Prefer expanding [`tests/fabric.peer.adversarial.js`](tests/fabric.peer.adversarial.js) (well-formed signed frames × delivery modes) before claiming mesh-wide adversarial hardness. Unregistered AMP opcodes must remain `UNKNOWN_MESSAGE` (not aliased to `P2P_BASE_MESSAGE`). Wave 1 added UNKNOWN score-stable + GenericMessage→CONTRACT_MESSAGE non-escalation locks; more delivery modes still welcome.
 7. ~~**Peer `_selfDialSuppressUntil`**~~ — FIFO-capped (default 256; `settings.selfDialSuppressMax`); expired entries still drop on read. Self-dial suppress from peering offers/announces uses **verified AMP signer** only (`meta.verifiedPubkey`), not attacker-controlled `obj.pubkey`.
 8. **Eager `messageHex`** — hot paths still materialize hex wire forms eagerly; laziness / cache invalidation is outstanding performance work, not a correctness claim.
@@ -61,7 +61,7 @@ Most CodeRabbit / automation actionable items on [#183](https://github.com/Fabri
 |------|--------|
 | Blinded-execution evaluator ≠ garbler | Fixed in `composeGarblerPublish` / `finalizeBlindedExecution` |
 | Hub / Federation `proposedPolicy` genesis | Fixed — `normalizeGenesis` + Peer `collectContractAuthorityPubkeys` read `proposedPolicy.validators` and top-level `messageTypes` |
-| `engines.npm: >=12` vs Node 24.15.0 bundled npm | Intentional — keep; DEVELOPERS.md documents upgrade |
+| `engines.npm: >=12` vs Node 26.12.1 bundled npm | Intentional — keep; DEVELOPERS.md documents upgrade |
 | Empty tip `signers: []` widening spend keys to `members` | Fixed — `tipSpendKeys` treats explicit empty `signers` as authoritative; `resolveSpend` keeps genesis validators |
 | Reader-role fold vs `members.set` test flake | Fixed — commutative `member.add` seed (hash-ordered fold) |
 | Hallmark malformed digest / mutable magic export | Fixed — omit bad digests; export fresh `HALLMARK_MAGIC` Buffer |
