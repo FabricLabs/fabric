@@ -730,18 +730,26 @@ class Market extends Service {
     session.confirmedAt = Date.now();
     const peer = this.peer;
     if (peer && peer.blobTransfers && session.merkleRootHex) {
+      const index = Math.max(0, Math.floor(Number(session.blobIndex) || 0));
       let blobHashHexes = null;
+      let paymentHashHexes = null;
       if (session.blobHashHex) {
-        // Indexed by blobIndex: only this session's blob is pinned.
+        // Indexed by blobIndex and merged: earlier purchases of this tree stay pinned.
         blobHashHexes = [];
-        blobHashHexes[Math.max(0, Math.floor(Number(session.blobIndex) || 0))] = session.blobHashHex;
+        blobHashHexes[index] = session.blobHashHex;
+      }
+      if (session.contentHashHex) {
+        paymentHashHexes = [];
+        paymentHashHexes[index] = session.contentHashHex;
       }
       try {
         peer.blobTransfers.expectTransfer({
           documentId: session.documentId,
           merkleRootHex: session.merkleRootHex,
           total: session.blobTotal,
-          blobHashHexes
+          blobHashHexes,
+          paymentHashHexes,
+          merge: true
         });
       } catch (_) { /* optional */ }
     }

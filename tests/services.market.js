@@ -77,6 +77,10 @@ describe('services/market (consumer budget agent)', function () {
     const summary = await market.tick();
     assert.strictEqual(summary.opened, 2);
     assert.ok(received && received.buffer.equals(m.plain));
+    // Confirming blob 1 kept blob 0's pins (merged, not replaced).
+    const [expected] = m.buyer.blobTransfers.expectedFor(m.documentId);
+    assert.deepStrictEqual(expected.expectedHashes, [m.doc.blob(0).blobHashHex, m.doc.blob(1).blobHashHex]);
+    assert.deepStrictEqual(expected.expectedPaymentHashes, [m.doc.paymentHashFor(0), m.doc.paymentHashFor(1)]);
     const st = market.status();
     assert.strictEqual(st.wants[0].status, 'complete');
     assert.ok(st.sessions.every((s) => s.status === 'complete'));

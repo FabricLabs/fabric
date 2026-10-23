@@ -710,11 +710,18 @@ class CliDocumentExchange {
     if (fundedHex) session.fundedTxHex = fundedHex;
     const peer = this._peer();
     if (session.merkleRootHex && peer && peer.blobTransfers) {
+      const index = Math.max(0, Math.floor(Number(session.blobIndex) || 0));
+      const blobHashHexes = session.blobHashHex ? [] : null;
+      const paymentHashHexes = session.contentHashHex ? [] : null;
+      if (blobHashHexes) blobHashHexes[index] = session.blobHashHex;
+      if (paymentHashHexes) paymentHashHexes[index] = session.contentHashHex;
       peer.blobTransfers.expectTransfer({
         documentId: session.documentId,
         merkleRootHex: session.merkleRootHex,
         total: session.blobTotal,
-        blobHashHexes: session.blobHashHex ? [session.blobHashHex] : null
+        blobHashHexes,
+        paymentHashHexes,
+        merge: true
       });
     }
     session.status = 'delivery_pending';

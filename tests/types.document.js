@@ -206,13 +206,20 @@ describe('types/document (sealed blob tree)', function () {
     });
     r = buyer._ingestP2pFileSend({ object: forged }, { name: 'seller' });
     assert.strictEqual(r.status, 'reject');
-    // Same ciphertext under a different payment hash or IV is refused too.
+    // Same ciphertext under a different payment hash or IV never replaces the
+    // held frame; it waits as an alternate (bounded) for the key reveal.
     const held = buyer.pendingSealedBlobs[rowKey].parts.get(0);
     r = buyer._ingestP2pFileSend({ object: Object.assign({}, bodies[0], { paymentHashHex: 'ee'.repeat(32) }) }, { name: 'mallory' });
-    assert.strictEqual(r.status, 'reject');
-    assert.match(r.error, /payment hash/);
+    assert.strictEqual(r.status, 'awaiting_key');
+    assert.strictEqual(r.alternate, true);
     r = buyer._ingestP2pFileSend({ object: Object.assign({}, bodies[0], { iv: 'ab'.repeat(12) }) }, { name: 'mallory' });
-    assert.strictEqual(r.status, 'reject');
+    assert.strictEqual(r.alternate, true);
+    assert.strictEqual(held.alternates.length, 2);
+    assert.strictEqual(held.paymentHashHex, bodies[0].paymentHashHex.toLowerCase());
+    for (let i = 0; i < 4; i++) {
+      buyer._ingestP2pFileSend({ object: Object.assign({}, bodies[0], { paymentHashHex: String(i).repeat(64) }) }, { name: 'mallory' });
+    }
+    assert.strictEqual(held.alternates.length, 4, 'alternates are capped');
     // An identical resend is a duplicate; the first frame and origin stay.
     r = buyer._ingestP2pFileSend({ object: bodies[0] }, { name: 'mallory' });
     assert.strictEqual(r.status, 'awaiting_key');
@@ -266,6 +273,54 @@ describe('types/document (sealed blob tree)', function () {
     pinned[1] = doc.blob(1).blobHashHex;
     single.blobTransfers.expectTransfer({ documentId, merkleRootHex: doc.merkleRootHex, total: doc.blobTotal, blobHashHexes: pinned });
     assert.strictEqual(single._ingestP2pFileSend({ object: bodies[1] }, { name: 'seller' }).status, 'awaiting_key');
+  });
+
+  it('Peer: a poisoned first frame cannot block the paid blob, and pins survive later purchases', function () {
+    const seller = new Peer({ listen: false, sealPricedDocuments: true });
+    const doc = Document.seal(crypto.randomBytes(4000), { chunkBytes: 2048 });
+    const { documentId } = seller.publishSealedDocument(doc, { rateSats: 3 });
+    const written = [];
+    seller.connections['buyer'] = { _writeFabric: (buf) => written.push(buf) };
+    seller._sendP2pFileSendToPeer(documentId, 'buyer', { revealKey: false, settlementId: 's' });
+    const Message = require('../types/message');
+    const bodies = written.map((buf) => Message.fromBuffer(buf)).filter((m) => m.type === 'P2P_FILE_SEND').map((m) => JSON.parse(m.body));
+    const expect = (peer, index) => {
+      const blobHashHexes = [];
+      const paymentHashHexes = [];
+      blobHashHexes[index] = doc.blob(index).blobHashHex;
+      paymentHashHexes[index] = doc.paymentHashFor(index);
+      return peer.blobTransfers.expectTransfer({ documentId, merkleRootHex: doc.merkleRootHex, total: doc.blobTotal, blobHashHexes, paymentHashHexes, merge: true });
+    };
+
+    // Buying blob 1 after blob 0 keeps blob 0 pinned (Market#confirm merges).
+    const buyer = new Peer({ listen: false });
+    expect(buyer, 0);
+    const row = expect(buyer, 1);
+    assert.deepStrictEqual(row.expectedHashes, [doc.blob(0).blobHashHex, doc.blob(1).blobHashHex]);
+    let r = buyer._ingestP2pFileSend({ object: Object.assign({}, bodies[0], { paymentHashHex: 'ee'.repeat(32) }) }, { name: 'mallory' });
+    assert.strictEqual(r.status, 'reject');
+    assert.match(r.error, /paid for/);
+
+    // An index that was not bought is refused outright.
+    const single = new Peer({ listen: false });
+    expect(single, 1);
+    r = single._ingestP2pFileSend({ object: bodies[0] }, { name: 'mallory' });
+    assert.strictEqual(r.status, 'reject');
+    assert.match(r.error, /did not buy/);
+
+    // The right ciphertext and payment hash with a wrong IV arrives first; the
+    // seller's frame still lands and is the one the paid key opens.
+    expect(single, 0);
+    const poison = Object.assign({}, bodies[0], { iv: crypto.randomBytes(12).toString('base64') });
+    assert.strictEqual(single._ingestP2pFileSend({ object: poison }, { name: 'mallory' }).status, 'awaiting_key');
+    r = single._ingestP2pFileSend({ object: bodies[0] }, { name: 'seller' });
+    assert.strictEqual(r.alternate, true);
+    const out = single.openSealedBlobWithKey({ documentId, keyHex: doc.keyFor(0) });
+    assert.ok(out.ok, out.error);
+    const part = single.pendingSealedBlobs[`${documentId}|${doc.merkleRootHex}`].parts.get(0);
+    assert.strictEqual(part.origin, 'seller');
+    assert.strictEqual(part.iv, bodies[0].iv);
+    assert.strictEqual(part.alternates, undefined);
   });
 
   it('Peer: pending sealed blobs are bounded by a global byte budget and a TTL', function () {

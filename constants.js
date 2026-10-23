@@ -363,6 +363,8 @@ const PEER_MAX_PENDING_SEALED_DELIVERIES = 32;
 const MAX_DOCUMENT_BLOBS = 4096;
 /** Max blobs (parts) accepted for one per-blob sealed tree (`blobTotal` cap). */
 const PEER_MAX_SEALED_BLOB_PARTS = MAX_DOCUMENT_BLOBS;
+/** Alternate frames kept per held sealed blob (same ciphertext, another payment hash or IV) so a poisoned first frame cannot block the paid delivery. */
+const PEER_MAX_SEALED_BLOB_ALTERNATES = 4;
 /** Global byte budget across every pending sealed row (ciphertext + retained frames); fits one full-size tree. */
 const PEER_MAX_PENDING_SEALED_BYTES = 256 * 1024 * 1024;
 /** Pending sealed rows that never complete are dropped this long after their first frame. */
@@ -612,6 +614,7 @@ module.exports = {
   PEER_PENDING_SEALED_TTL_MS,
   MAX_DOCUMENT_BLOBS,
   PEER_MAX_SEALED_BLOB_PARTS,
+  PEER_MAX_SEALED_BLOB_ALTERNATES,
   PEER_MAX_DOCUMENT_RELAY_ROUTES,
   PEER_MAX_MUSIG_SESSIONS,
   PEER_MUSIG_SESSION_TTL_MS,

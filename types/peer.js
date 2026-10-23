@@ -33,6 +33,7 @@ const {
   PEER_MAX_PENDING_SEALED_BYTES,
   PEER_PENDING_SEALED_TTL_MS,
   PEER_MAX_SEALED_BLOB_PARTS,
+  PEER_MAX_SEALED_BLOB_ALTERNATES,
   PEER_MAX_DOCUMENT_RELAY_ROUTES,
   PEER_MAX_MUSIG_SESSIONS,
   PEER_MUSIG_SESSION_TTL_MS,
@@ -5025,9 +5026,11 @@ class Peer extends Service {
    * longer dictates the shape. Every frame must carry a 64-hex root and a
    * sane `blobTotal`; frames whose root / total / origin disagree with the
    * row already being assembled (or with what `blobTransfers.expectTransfer`
-   * registered for the purchase, checked per blob index) are rejected, an index
-   * already held is never overwritten (a resend must carry the same blob hash,
-   * payment hash, and IV, and the first frame is kept), and both the number of rows and
+   * registered for the purchase: blob hash and payment hash per blob index, and
+   * no index that was not bought) are rejected. An index already held never
+   * takes different ciphertext; the same ciphertext with another payment hash
+   * or IV is kept as a bounded alternate until the key reveal shows which one
+   * opens. Both the number of rows and
    * the parts per row are capped. The exact signed wire frame (`frameHex`) is
    * kept per part so a `wrong-bytes` fraud proof can cite it.
    * @param {Object} obj raw `P2P_FILE_SEND` body (`perBlob: true`)
@@ -5067,8 +5070,15 @@ class Peer extends Service {
         return { status: 'reject', error: 'per-blob frame does not match the expected transfer (root / total)', documentId: frame.documentId, blobIndex: frame.blobIndex, merkleRootHex: root };
       }
       const wantHash = match.expectedHashes ? match.expectedHashes[frame.blobIndex] : null;
+      if (!wantHash && match.expectedHashes && match.expectedHashes.some(Boolean)) {
+        return { status: 'reject', error: 'per-blob frame is for a blob index we did not buy', documentId: frame.documentId, blobIndex: frame.blobIndex, merkleRootHex: root };
+      }
       if (wantHash && wantHash !== frame.blobHashHex) {
         return { status: 'reject', error: 'per-blob frame blob hash is not the one we asked for at that index', documentId: frame.documentId, blobIndex: frame.blobIndex, merkleRootHex: root };
+      }
+      const wantPayment = match.expectedPaymentHashes ? match.expectedPaymentHashes[frame.blobIndex] : null;
+      if (wantPayment && wantPayment !== paymentHashHex) {
+        return { status: 'reject', error: 'per-blob frame payment hash is not the one we paid for at that index', documentId: frame.documentId, blobIndex: frame.blobIndex, merkleRootHex: root };
       }
     }
     const rowKey = `${frame.documentId}|${root}`;
@@ -5082,18 +5092,40 @@ class Peer extends Service {
       // root, held parts cannot be overwritten, and the final Merkle check
       // covers the whole tree; each part records its own origin instead.
       // Sellers of one tree share ciphertext and K_i, so an honest resend
-      // carries the same payment hash and IV; keep the first frame either way.
+      // carries the same payment hash and IV. Different ciphertext never
+      // replaces a held part. The same ciphertext with another payment hash or
+      // IV is kept as a bounded alternate (the first frame might be a peer's
+      // poison, not the paid delivery); the key reveal opens whichever decrypts.
       const held = row.parts.get(frame.blobIndex);
       if (held) {
-        if (held.blobHashHex !== frame.blobHashHex || held.paymentHashHex !== paymentHashHex || held.iv !== String(obj.iv)) {
-          return { status: 'reject', error: 'per-blob frame would overwrite a held blob with a different hash, payment hash, or iv', documentId: frame.documentId, blobIndex: frame.blobIndex, merkleRootHex: root };
+        if (held.blobHashHex !== frame.blobHashHex) {
+          return { status: 'reject', error: 'per-blob frame would overwrite a held blob with a different hash', documentId: frame.documentId, blobIndex: frame.blobIndex, merkleRootHex: root };
+        }
+        const candidates = [held, ...(held.alternates || [])];
+        const known = candidates.some((c) => c.paymentHashHex === paymentHashHex && c.iv === String(obj.iv));
+        if (!known) {
+          if (row.opened.has(frame.blobIndex) || (held.alternates || []).length >= PEER_MAX_SEALED_BLOB_ALTERNATES) {
+            return { status: 'reject', error: 'per-blob frame conflicts with a held blob (payment hash or iv)', documentId: frame.documentId, blobIndex: frame.blobIndex, merkleRootHex: root };
+          }
+          held.alternates = held.alternates || [];
+          held.alternates.push({
+            paymentHashHex,
+            iv: String(obj.iv),
+            scheme: obj.scheme || null,
+            plaintextSha256: obj.plaintextSha256 || null,
+            origin: originName ? String(originName) : null,
+            frame: frameHex ? (Buffer.isBuffer(frameHex) ? Buffer.from(frameHex) : Buffer.from(String(frameHex), 'hex')) : null
+          });
+          row.updated = Date.now();
+          this._capPendingSealedBlobs();
         }
         return {
           status: 'awaiting_key',
           sealed: true,
           perBlob: true,
           awaitingKey: true,
-          duplicate: true,
+          duplicate: known,
+          alternate: !known,
           documentId: frame.documentId,
           blobIndex: frame.blobIndex,
           received: row.parts.size,
@@ -5179,7 +5211,7 @@ class Peer extends Service {
     if (ph != null && Number.isFinite(Number(blobIndex))) {
       const hit = candidates.find((r) => {
         const p = r.parts.get(Number(blobIndex));
-        return p && p.paymentHashHex === ph;
+        return p && (p.paymentHashHex === ph || (p.alternates || []).some((a) => a.paymentHashHex === ph));
       });
       if (hit) return hit;
     }
@@ -5189,7 +5221,10 @@ class Peer extends Service {
   /** @private bytes held by one pending sealed row (ciphertext + retained frames) */
   static _sealedRowBytes (row) {
     let total = 0;
-    for (const p of row.parts.values()) total += (p.ciphertext ? p.ciphertext.length : 0) + (p.frame ? p.frame.length : 0);
+    for (const p of row.parts.values()) {
+      total += (p.ciphertext ? p.ciphertext.length : 0) + (p.frame ? p.frame.length : 0);
+      for (const a of p.alternates || []) total += a.frame ? a.frame.length : 0;
+    }
     for (const o of row.opened.values()) total += o ? o.length : 0;
     return total;
   }
@@ -5237,8 +5272,9 @@ class Peer extends Service {
     for (const row of Object.values(this.pendingSealedBlobs)) {
       if (!row || !row.parts) continue;
       for (const [index, part] of row.parts) {
-        if (part.paymentHashHex === ph) {
-          return { documentId: row.documentId, merkleRootHex: row.merkleRootHex, blobIndex: index, blobHashHex: part.blobHashHex, frameHex: part.frame ? part.frame.toString('hex') : null };
+        const hit = [part, ...(part.alternates || [])].find((c) => c.paymentHashHex === ph);
+        if (hit) {
+          return { documentId: row.documentId, merkleRootHex: row.merkleRootHex, blobIndex: index, blobHashHex: part.blobHashHex, frameHex: hit.frame ? hit.frame.toString('hex') : null };
         }
       }
     }
@@ -5300,21 +5336,40 @@ class Peer extends Service {
     if (reveal.blobHashHex && String(reveal.blobHashHex).toLowerCase() !== part.blobHashHex) {
       return { ok: false, error: 'reveal blobHashHex mismatch', documentId, blobIndex };
     }
-    const opened = openSealedDelivery({
-      keyHex: reveal.keyHex,
-      paymentHashHex: reveal.paymentHashHex || part.paymentHashHex,
-      iv: reveal.iv || part.iv,
-      plaintextSha256: reveal.plaintextSha256 || part.plaintextSha256
-    }, part.ciphertext);
-    if (!opened.ok || String(reveal.paymentHashHex || '').toLowerCase() !== part.paymentHashHex) {
-      this.emit('documentBlobRejected', {
-        documentId,
-        blobIndex,
-        error: opened.ok ? 'reveal paymentHashHex does not match blob' : (opened.error || 'open failed'),
-        origin
-      });
-      return { ok: false, error: opened.error || 'reveal paymentHashHex does not match blob', documentId, blobIndex };
+    const revealHash = String(reveal.paymentHashHex || '').toLowerCase();
+    const candidates = [part, ...(part.alternates || [])].filter((c) => c.paymentHashHex === revealHash);
+    let opened = null;
+    let chosen = null;
+    for (const candidate of candidates) {
+      const attempt = openSealedDelivery({
+        keyHex: reveal.keyHex,
+        paymentHashHex: revealHash,
+        iv: reveal.iv || candidate.iv,
+        plaintextSha256: reveal.plaintextSha256 || candidate.plaintextSha256
+      }, part.ciphertext);
+      if (attempt.ok) {
+        opened = attempt;
+        chosen = candidate;
+        break;
+      }
+      if (!opened) opened = attempt;
     }
+    if (!chosen) {
+      const error = (opened && opened.error) || (candidates.length ? 'open failed' : 'reveal paymentHashHex does not match blob');
+      this.emit('documentBlobRejected', { documentId, blobIndex, error, origin });
+      return { ok: false, error, documentId, blobIndex };
+    }
+    // Keep the frame that actually opened (a `wrong-bytes` proof cites it).
+    const base = Object.assign({}, part);
+    delete base.alternates;
+    row.parts.set(blobIndex, chosen === part ? base : Object.assign(base, {
+      paymentHashHex: chosen.paymentHashHex,
+      iv: chosen.iv,
+      scheme: chosen.scheme,
+      plaintextSha256: chosen.plaintextSha256,
+      origin: chosen.origin,
+      frame: chosen.frame
+    }));
     row.opened.set(blobIndex, opened.plaintext);
     row.updated = Date.now();
     this.emit('documentBlobOpened', {
@@ -5326,7 +5381,7 @@ class Peer extends Service {
       // K_i doubles as the payment preimage (paymentHash = SHA256(K_i)); the
       // market agent settles a channel HTLC with it.
       keyHex: reveal.keyHex ? String(reveal.keyHex).toLowerCase() : null,
-      paymentHashHex: part.paymentHashHex || null,
+      paymentHashHex: chosen.paymentHashHex || null,
       origin: origin || row.origin
     });
     if (row.opened.size < row.total) {

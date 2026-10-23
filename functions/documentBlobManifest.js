@@ -502,7 +502,11 @@ class DocumentBlobTransferBook {
    * Pre-register expected leaves (from inventory DocumentBlobIndex).
    * @param {object} opts
    * @param {string[]} [opts.blobHashHexes] expected blob hash per blob index; empty or null
-   * entries leave that index unchecked
+   * entries leave that index unchecked here (the sealed per-blob path refuses them once any
+   * index is pinned: that blob was not bought)
+   * @param {string[]} [opts.paymentHashHexes] expected sealed payment hash (SHA256(K_i)) per blob index
+   * @param {boolean} [opts.merge] add these pins to an existing expectation for the same
+   * document and root (same `total`) instead of replacing it, so buying blob j keeps blob i pinned
    */
   expectTransfer (opts = {}) {
     const documentId = String(opts.documentId || '').trim();
@@ -513,16 +517,31 @@ class DocumentBlobTransferBook {
     const total = Math.round(Number(opts.total || opts.blobTotal || 0));
     if (total > this.maxParts) return null;
     if (Array.isArray(opts.blobHashHexes) && opts.blobHashHexes.length > this.maxParts) return null;
+    if (Array.isArray(opts.paymentHashHexes) && opts.paymentHashHexes.length > this.maxParts) return null;
+    const pins = (list) => (Array.isArray(list) ? Array.from(list, (h) => (h ? String(h).toLowerCase() : null)) : null);
+    const expectedHashes = pins(opts.blobHashHexes);
+    const expectedPaymentHashes = pins(opts.paymentHashHexes);
     const key = transferKey(documentId, merkleRootHex);
+    const prior = opts.merge ? this._pending.get(key) : null;
+    if (prior && (!prior.total || !(total > 0) || prior.total === total)) {
+      const merge = (a, b) => {
+        if (!a || !b) return a || b;
+        return Array.from({ length: Math.max(a.length, b.length) }, (_, i) => b[i] || a[i] || null);
+      };
+      prior.expectedHashes = merge(prior.expectedHashes, expectedHashes);
+      prior.expectedPaymentHashes = merge(prior.expectedPaymentHashes, expectedPaymentHashes);
+      if (!prior.total && total > 0) prior.total = total;
+      prior.updated = Date.now();
+      return prior;
+    }
     this._drop(key);
     const row = {
       key,
       documentId,
       merkleRootHex,
       total: Number.isFinite(total) && total > 0 ? total : null,
-      expectedHashes: Array.isArray(opts.blobHashHexes)
-        ? Array.from(opts.blobHashHexes, (h) => (h ? String(h).toLowerCase() : null))
-        : null,
+      expectedHashes,
+      expectedPaymentHashes,
       contentSha256: opts.contentSha256
         ? String(opts.contentSha256).toLowerCase()
         : null,
