@@ -56,10 +56,18 @@ class Collection extends Stack {
     return this;
   }
 
+  /**
+   * Route templates from `settings.routes`.
+   * @type {Object}
+   */
   get routes () {
     return this.settings.routes;
   }
 
+  /**
+   * Store path the collection is kept under.
+   * @type {string}
+   */
   get path () {
     return this._path;
   }

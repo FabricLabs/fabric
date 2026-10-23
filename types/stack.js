@@ -75,10 +75,18 @@ class Stack extends State {
     return element;
   }
 
+  /**
+   * Copy of the stack's elements, bottom first.
+   * @returns {Array}
+   */
   asArray () {
     return Array.from(this['@data']);
   }
 
+  /**
+   * Merkle {@link Tree} over the stack's elements, bottom first.
+   * @returns {Tree}
+   */
   asMerkleTree () {
     return new Tree(this.asArray());
   }

@@ -58,16 +58,17 @@ describe('@fabric/core/functions/bls', function () {
     assert.strictEqual(bls.verifyFederationBlsBundle(message, other.pubkey, bundle), false);
   });
 
-  it('requires a domain-tagged link and the current bundle version', function () {
+  it('requires a domain-tagged link and bundle version 1', function () {
     const key = new Key({ private: secretA.toString('hex') });
     const message = Buffer.from('epoch signing string', 'utf8');
     const bundle = bls.createFederationBlsBundle(message, key);
-    assert.strictEqual(bundle.v, bls.BUNDLE_VERSION);
+    assert.strictEqual(bls.BUNDLE_VERSION, 1);
+    assert.strictEqual(bundle.v, 1);
     const untagged = key.signSchnorr(Buffer.from(bundle.blsPublicKey, 'hex'));
     assert.strictEqual(bls.verifyFederationBlsBundle(message, key.pubkey, Object.assign({}, bundle, {
       link: Buffer.from(untagged).toString('hex')
     })), false);
-    assert.strictEqual(bls.verifyFederationBlsBundle(message, key.pubkey, Object.assign({}, bundle, { v: 1 })), false);
+    assert.strictEqual(bls.verifyFederationBlsBundle(message, key.pubkey, Object.assign({}, bundle, { v: 2 })), false);
   });
 
   it('counts one bundle once when a validator id is respelled', function () {

@@ -13,7 +13,7 @@
  *
  * Federation members keep their secp256k1 validator identity. A BLS key is
  * derived from that Fabric private key (HKDF-SHA256). A portable witness
- * bundle (`v: 2`) is a BLS signature over the federation message, a Schnorr
+ * bundle (`v: 1`) is a BLS signature over the federation message, a Schnorr
  * link from the secp256k1 key over `LINK_PREFIX` + the BLS public key (hex),
  * and a BLS proof of possession
  * over the secp256k1 pubkey. Threshold checks count those bundles. They do
@@ -42,7 +42,7 @@ const SECRET_KEY_BYTES = 32;
 const SCHNORR_SIGNATURE_BYTES = 64;
 const POP_PREFIX = 'Fabric/BLS/PoP/v1:';
 const LINK_PREFIX = 'Fabric/BLS/Link/v1:';
-const BUNDLE_VERSION = 2;
+const BUNDLE_VERSION = 1;
 const HKDF_SALT = Buffer.from('Fabric-BLS-v1', 'utf8');
 const HKDF_INFO = Buffer.from('federation-signer', 'utf8');
 

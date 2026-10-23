@@ -43,7 +43,7 @@ Working from a **git checkout** (not the global package) is best when you are ch
 | `assets/` | **Generated** browser bundles; rebuild with `npm run build` after type changes. |
 
 ## Development workflow
-- **Node:** engines field in `package.json` is authoritative (currently Node 26.12.x).
+- **Node:** engines field in `package.json` is authoritative (currently Node 26.12.1).
 - **Unit tests:** `npm test` — runs Mocha recursively under `tests/`.
 - **Lint:** `npm run lint` / `npm run lint:fix` (Semistandard).
 - **API reference:** `npm run make:api` writes `API.md` from JSDoc (see `scripts/list-jsdoc-type-files.js` for which `types/*.js` files are included).

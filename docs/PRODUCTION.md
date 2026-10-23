@@ -27,7 +27,7 @@
 Use before tagging **v0.1.0**:
 
 - [ ] Clean tree on the agreed branch.
-- [ ] `npm ci` on **Node 26.12.x**.
+- [ ] `npm ci` on **Node 26.12.1**.
 - [ ] **`npm run ci`** (full test suite).
 - [ ] Confirm **native** modules build on a fresh Linux image if you ship to production servers.
 - [ ] Update **CHANGELOG.md** with version, date, breaking vs additive notes.

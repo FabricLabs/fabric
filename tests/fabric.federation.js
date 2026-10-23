@@ -239,6 +239,8 @@ describe('@fabric/core/types/federation', function () {
         public: member.public.encodeCompressed('hex'),
         blsPublicKey: other.publicKey.toString('hex')
       }), /does not match/);
+      assert.deepStrictEqual(federation._state.content.validators, []);
+      assert.deepStrictEqual(Object.keys(federation._state.content.keys || {}), []);
 
       const own = blsMod.deriveFederationSigner(member.private);
       federation.addMember({
@@ -246,6 +248,7 @@ describe('@fabric/core/types/federation', function () {
         public: member.public.encodeCompressed('hex'),
         blsPublicKey: own.publicKey.toString('hex')
       });
+      assert.strictEqual(federation._state.content.validators.length, 1);
       const signature = federation.sign('matching member key');
       assert.strictEqual(federation.verify('matching member key', signature), true);
     });

@@ -123,6 +123,39 @@ describe('Market bonds, challenges, and fraud proofs (Phase 3)', function () {
     assert.strictEqual(new FraudProof({ kind: 'non-response', artifacts: { challenge, commitment: other, response: late } }).verify().ok, false);
   });
 
+  it('non-response (late answer): binds the challenge to the committed publisher and epoch window', () => {
+    const commitment = Challenge.commit({
+      merkleRootHex: doc.merkleRootHex, blobTotal: hashes.length, fromEpoch: 50, untilEpoch: 100,
+      providerPrivateKey: provider.priv, publisherPubkey: publisher.xOnly
+    });
+    const lateFor = (challenge) => challenger.respond(challenge, { blobHashes: hashes, epoch: challenge.deadlineEpoch + 5, providerPrivateKey: provider.priv });
+    const verdict = (challenge) => new FraudProof({ kind: 'non-response', artifacts: { challenge, commitment, response: lateFor(challenge) } }).verify();
+
+    const inWindow = challenger.issue({
+      merkleRootHex: doc.merkleRootHex, blobHashes: hashes, epoch: 60,
+      providerPubkey: provider.xOnly, publisherPrivateKey: publisher.priv
+    });
+    assert.strictEqual(verdict(inWindow).ok, true);
+
+    // A backdated challenge, answered "late" in a later epoch, is not fraud.
+    const early = challenger.issue({
+      merkleRootHex: doc.merkleRootHex, blobHashes: hashes, epoch: 10,
+      providerPubkey: provider.xOnly, publisherPrivateKey: publisher.priv
+    });
+    const earlyVerdict = verdict(early);
+    assert.strictEqual(earlyVerdict.ok, false);
+    assert.match(earlyVerdict.reason, /before the commitment began/);
+
+    // Only the committed publisher may issue the challenge.
+    const thirdParty = challenger.issue({
+      merkleRootHex: doc.merkleRootHex, blobHashes: hashes, epoch: 60,
+      providerPubkey: provider.xOnly, publisherPrivateKey: stranger.priv
+    });
+    const thirdVerdict = verdict(thirdParty);
+    assert.strictEqual(thirdVerdict.ok, false);
+    assert.match(thirdVerdict.reason, /committed publisher/);
+  });
+
   it('non-response (silence): timelocked penalty pre-signature + check-in round, enforced only from the verifier\'s chain view', () => {
     const deposit = Bond.buildDeposit({ network: 'regtest', providerPubkey: provider.pub, publisherPubkey: publisher.pub, withdrawAfter: 900, amountSats: 30000 });
     assert.deepStrictEqual(deposit.leaves.map((l) => l.id).sort(), ['checkin', 'penalty', 'withdraw']);

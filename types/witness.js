@@ -392,6 +392,12 @@ class FraudProof {
         if (commitment.untilEpoch != null && Number(challenge.epoch) > Number(commitment.untilEpoch)) {
           return fail('challenge issued after the commitment expired');
         }
+        if (commitment.fromEpoch != null && !(Number(challenge.epoch) >= Number(commitment.fromEpoch))) {
+          return fail('challenge issued before the commitment began');
+        }
+        if (commitment.publisherPubkey && xOnlyHex(commitment.publisherPubkey) !== xOnlyHex(challenge.pubkey)) {
+          return fail('challenge was not issued by the committed publisher');
+        }
         const deadline = Number(challenge.deadlineEpoch);
         if (response) {
           if (!Witness.verifyArtifact(response, commitment.pubkey)) return fail('response signature invalid');

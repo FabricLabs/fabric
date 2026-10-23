@@ -206,6 +206,19 @@ describe('types/document (sealed blob tree)', function () {
     });
     r = buyer._ingestP2pFileSend({ object: forged }, { name: 'seller' });
     assert.strictEqual(r.status, 'reject');
+    // Same ciphertext under a different payment hash or IV is refused too.
+    const held = buyer.pendingSealedBlobs[rowKey].parts.get(0);
+    r = buyer._ingestP2pFileSend({ object: Object.assign({}, bodies[0], { paymentHashHex: 'ee'.repeat(32) }) }, { name: 'mallory' });
+    assert.strictEqual(r.status, 'reject');
+    assert.match(r.error, /payment hash/);
+    r = buyer._ingestP2pFileSend({ object: Object.assign({}, bodies[0], { iv: 'ab'.repeat(12) }) }, { name: 'mallory' });
+    assert.strictEqual(r.status, 'reject');
+    // An identical resend is a duplicate; the first frame and origin stay.
+    r = buyer._ingestP2pFileSend({ object: bodies[0] }, { name: 'mallory' });
+    assert.strictEqual(r.status, 'awaiting_key');
+    assert.strictEqual(r.duplicate, true);
+    assert.strictEqual(buyer.pendingSealedBlobs[rowKey].parts.get(0), held);
+    assert.strictEqual(held.origin, 'seller');
     // Second honest frame lands.
     r = buyer._ingestP2pFileSend({ object: bodies[1] }, { name: 'seller' }, sends[1]);
     assert.strictEqual(r.status, 'awaiting_key');
@@ -221,6 +234,38 @@ describe('types/document (sealed blob tree)', function () {
       assert.strictEqual(out.blobIndex, i, 'blob resolved from SHA256(key)');
     }
     assert.ok(received && received.buffer.equals(plain));
+  });
+
+  it('Peer: expected blob hashes are checked per index', function () {
+    const seller = new Peer({ listen: false, sealPricedDocuments: true });
+    const doc = Document.seal(crypto.randomBytes(4000), { chunkBytes: 2048 });
+    const { documentId } = seller.publishSealedDocument(doc, { rateSats: 3 });
+    const written = [];
+    seller.connections['buyer'] = { _writeFabric: (buf) => written.push(buf) };
+    seller._sendP2pFileSendToPeer(documentId, 'buyer', { revealKey: false, settlementId: 's' });
+    const Message = require('../types/message');
+    const bodies = written.map((buf) => Message.fromBuffer(buf)).filter((m) => m.type === 'P2P_FILE_SEND').map((m) => JSON.parse(m.body));
+
+    const buyer = new Peer({ listen: false });
+    buyer.blobTransfers.expectTransfer({
+      documentId,
+      merkleRootHex: doc.merkleRootHex,
+      total: doc.blobTotal,
+      blobHashHexes: [doc.blob(0).blobHashHex, doc.blob(1).blobHashHex]
+    });
+    // Blob 0's bytes delivered at index 1 hash to a leaf we asked for, but not at that index.
+    let r = buyer._ingestP2pFileSend({ object: Object.assign({}, bodies[0], { blobIndex: 1 }) }, { name: 'seller' });
+    assert.strictEqual(r.status, 'reject');
+    assert.match(r.error, /at that index/);
+    r = buyer._ingestP2pFileSend({ object: bodies[1] }, { name: 'seller' });
+    assert.strictEqual(r.status, 'awaiting_key');
+
+    // A single-blob purchase pins only its own index (Market#confirm).
+    const single = new Peer({ listen: false });
+    const pinned = [];
+    pinned[1] = doc.blob(1).blobHashHex;
+    single.blobTransfers.expectTransfer({ documentId, merkleRootHex: doc.merkleRootHex, total: doc.blobTotal, blobHashHexes: pinned });
+    assert.strictEqual(single._ingestP2pFileSend({ object: bodies[1] }, { name: 'seller' }).status, 'awaiting_key');
   });
 
   it('Peer: pending sealed blobs are bounded by a global byte budget and a TTL', function () {

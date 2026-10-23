@@ -147,6 +147,13 @@ function loadPendingDoc (fs) {
   }
 }
 
+/**
+ * Persist pending rounds to `PENDING_STORE_PATH`; no-op without a Filesystem.
+ * @private
+ * @param {Object} fs Fabric Filesystem
+ * @param {Object} doc `{ rounds }` keyed by commitment digest
+ * @returns {Promise<void>}
+ */
 async function persistPendingDoc (fs, doc) {
   if (!fs || typeof fs.publish !== 'function') return;
   await fs.publish(PENDING_STORE_PATH, {
@@ -156,9 +163,13 @@ async function persistPendingDoc (fs, doc) {
 }
 
 /**
+ * Open a pending federation signing round for one epoch.
  * @param {object} epochPayload full epoch incl. sidechain / contracts heads
- * @param {{ validators?: string[], threshold?: number }} [policy]
- * @param {{ version?: number, signatures?: object }|null} [initialWitness]
+ * @param {Object} [policy]
+ * @param {string[]} [policy.validators] x-only hex validator pubkeys
+ * @param {number} [policy.threshold] k; omitted = strict majority of the unique validators
+ * @param {string} [policy.signatureScheme] `schnorr` (default) or `bls`
+ * @param {Object|null} [initialWitness] signatures already collected (`version`, `signatures`)
  * @returns {object} pending round
  */
 function createRound (epochPayload, policy = {}, initialWitness = null) {

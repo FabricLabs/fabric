@@ -43,6 +43,17 @@ const BEACON_CHAIN_PATH = 'beacon/CHAIN';
  */
 
 class Beacon extends Actor {
+  /**
+   * @param {Object} [settings]
+   * @param {number} [settings.interval=60000] regtest epoch interval in ms (0 = none)
+   * @param {boolean} [settings.regtest=true] mine epochs; false follows L1 tips only
+   * @param {boolean} [settings.mineOnStart=true] mine one epoch on start (regtest)
+   * @param {string[]} [settings.federationValidators] x-only hex pubkeys that witness epochs
+   * @param {number|null} [settings.federationThreshold=null] k; null = strict majority of validators
+   * @param {string} [settings.federationSignatureScheme='schnorr'] `schnorr` or `bls`
+   * @param {boolean} [settings.federationWitnessFailClosed=true] truncate the stored chain at the first epoch without k valid witnesses
+   * @param {boolean} [settings.followBlocks=false] follow bitcoind `block` events on regtest
+   */
   constructor (settings = {}) {
     super(settings);
 
@@ -92,6 +103,10 @@ class Beacon extends Actor {
     return this;
   }
 
+  /**
+   * Live epoch state: `clock`, `status`, `lastBlockHash`, `height`, `balance`, `balanceSats`.
+   * @type {Object}
+   */
   get state () {
     return this._state.content;
   }
@@ -486,6 +501,11 @@ class Beacon extends Actor {
     }
   }
 
+  /**
+   * Summaries of the epoch rounds still collecting witnesses.
+   * @returns {Object[]} `commitmentDigest`, `clock`, `blockHash`, `signatureCount`,
+   * `threshold`, `validators`, `status`, `createdAt` per round
+   */
   listPendingFederationEpochRounds () {
     const out = [];
     for (const round of this._pendingEpochRounds.values()) {
@@ -844,12 +864,22 @@ class Beacon extends Actor {
     return committedPayload;
   }
 
+  /**
+   * Follow bitcoind `block` events: when asked, when validators are set, or off regtest.
+   * @private
+   * @returns {boolean}
+   */
   _shouldFollowBitcoinBlocks () {
     if (this.settings.followBlocks === true) return true;
     if (this._federationValidators.length > 0) return true;
     return this.settings.regtest === false;
   }
 
+  /**
+   * Restore the epoch chain, then mine on the interval (regtest) and/or follow L1 tips.
+   * Idempotent while running.
+   * @returns {Promise<Beacon>}
+   */
   async start () {
     if (this._state.content.status === 'RUNNING') return this;
     this._state.content.status = 'RUNNING';
@@ -893,6 +923,7 @@ class Beacon extends Actor {
    * Serialize block-follow work so an older tip never finishes after a newer one.
    * @param {Object|null} payload `{ tip, height }` from Bitcoin, or null to prime from the best tip
    * @returns {Promise<void>}
+   * @private
    */
   _enqueueBlockFollow (payload) {
     this._blockQueue = (this._blockQueue || Promise.resolve())
@@ -903,10 +934,13 @@ class Beacon extends Actor {
 
   /**
    * Record one followed block. Priming (null payload) reads the best tip when it runs;
-   * a delivered tip below the recorded height that is still on the best chain is stale
-   * and skipped, so only a real reorg reaches the prune path.
+   * a delivered tip below the recorded height is stale and skipped only while the best
+   * chain still reaches the recorded height and holds that tip, so a reorg to a shorter
+   * best chain still reaches the prune path. RPC failures propagate (never prune on a
+   * failed lookup).
    * @param {Object|null} payload
    * @returns {Promise<Object|null>}
+   * @private
    */
   async _followBlock (payload) {
     if (!this.bitcoin) return null;
@@ -917,12 +951,19 @@ class Beacon extends Actor {
     }
     const height = payload.height != null ? Number(payload.height) : null;
     if (height != null && payload.tip && height < this._state.content.height) {
-      const atHeight = await this.bitcoin._makeRPCRequest('getblockhash', [height]).catch(() => null);
-      if (atHeight && String(atHeight) === String(payload.tip)) return null;
+      const bestHeight = Number(await this.bitcoin._makeRPCRequest('getblockcount', []));
+      if (bestHeight >= this._state.content.height) {
+        const atHeight = await this.bitcoin._makeRPCRequest('getblockhash', [height]);
+        if (atHeight && String(atHeight) === String(payload.tip)) return null;
+      }
     }
     return this.recordEpochFromBlock(payload);
   }
 
+  /**
+   * Stop mining and block following, drain queued blocks, and persist the epoch chain.
+   * @returns {Promise<Beacon>}
+   */
   async stop () {
     if (this.timer) {
       clearInterval(this.timer);

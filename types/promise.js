@@ -66,6 +66,11 @@ class EncryptedPromise {
     };
   }
 
+  /**
+   * Replace the plaintext with `state` and drop the sealed envelope.
+   * @private
+   * @param {*} state JSON-serializable value
+   */
   async _assignState (state) {
     this.status = 'assigning';
     this._setData(JSON.stringify(state));
@@ -74,6 +79,12 @@ class EncryptedPromise {
     this.status = 'assigned';
   }
 
+  /**
+   * Set the plaintext, serializing non-strings as JSON.
+   * @private
+   * @param {*} value
+   * @throws {Error} when the UTF-8 plaintext exceeds `MAX_MEMORY` bytes
+   */
   _setData (value) {
     const data = (typeof value === 'string') ? value : JSON.stringify(value);
     if (Buffer.byteLength(data, 'utf8') > MAX_MEMORY) {
@@ -82,6 +93,11 @@ class EncryptedPromise {
     this._state.data = data;
   }
 
+  /**
+   * Pair a message with this promise's id.
+   * @param {*} msg
+   * @returns {{ id: string, msg: * }}
+   */
   resolve (msg) {
     return {
       id: this.id,
@@ -89,6 +105,9 @@ class EncryptedPromise {
     };
   }
 
+  /**
+   * Not implemented; use {@link EncryptedPromise#encrypt}.
+   */
   lock () {
     // TODO: encrypt state
   }
@@ -117,10 +136,17 @@ class EncryptedPromise {
     return this._state.data;
   }
 
+  /**
+   * Not implemented; use {@link EncryptedPromise#decrypt}.
+   */
   unlock () {
     // TODO: recover state
   }
 
+  /**
+   * The persistable {@link EncryptedPromise#state} as indented JSON (never the plaintext).
+   * @returns {string}
+   */
   toString () {
     return JSON.stringify(this.state, null, '  ');
   }

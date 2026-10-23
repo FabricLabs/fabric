@@ -25,6 +25,8 @@ arbitrary app string hash. <strong>Wire traffic</strong> — see <a href="#Messa
 </dd>
 <dt><a href="#Actor">Actor</a></dt>
 <dd></dd>
+<dt><a href="#Beacon">Beacon</a></dt>
+<dd></dd>
 <dt><a href="#Block">Block</a></dt>
 <dd></dd>
 <dt><a href="#Bond">Bond</a> ⇐ <code><a href="#Contract">Contract</a></code></dt>
@@ -213,7 +215,7 @@ see <a href="#Message">Message</a> wire vs friendly names and <code>constants</c
 <dt><a href="#EncryptedPromise">EncryptedPromise</a></dt>
 <dd><p>A value that can be sealed with a password.  Sealing uses
 <code>functions/sealedBlob</code> (AES-256-GCM, PBKDF2-SHA256, random salt and IV);
-<a href="#EncryptedPromise+state">state</a> and <a href="EncryptedPromise#toString">EncryptedPromise#toString</a> only
+<a href="#EncryptedPromise+state">state</a> and <a href="#EncryptedPromise+toString">toString</a> only
 ever expose the sealed envelope, never the plaintext or the password.</p>
 </dd>
 <dt><del><a href="#Reader">Reader</a></del></dt>
@@ -319,7 +321,9 @@ claim preimage that opens that payment hash + the seller-signed AMP
 <code>blobHashHex</code>. The frame author must be the offer signer.</li>
 <li><code>wrongful-penalty</code>: publisher-signed challenge + the provider&#39;s valid,
 Merkle-proven, in-time response + the penalty transaction that spent
-the deposit outpoint anyway — publisher fraud.</li>
+the deposit outpoint anyway — publisher fraud. The penalty&#39;s spent
+outputs (<code>prevouts</code>) let the verifier check that the penalty leaf is
+committed to the deposit output and signed by both parties.</li>
 <li><code>stale-commitment</code>: a payment-channel party&#39;s own signed <code>ChannelRevoke</code>
 (naming the commitment txid it revoked) plus that very transaction and
 evidence it was broadcast: an SPV <code>inclusion</code> artifact
@@ -899,6 +903,147 @@ Get a number of random bytes from the runtime environment.
 | Param | Type | Default | Description |
 | --- | --- | --- | --- |
 | [count] | <code>Number</code> | <code>32</code> | Number of random bytes to retrieve. |
+
+<a name="Beacon"></a>
+
+## Beacon
+**Kind**: global class  
+
+* [Beacon](#Beacon)
+    * [new Beacon([settings])](#new_Beacon_new)
+    * _instance_
+        * [.state](#Beacon+state) : <code>Object</code>
+        * [.attach([deps])](#Beacon+attach)
+        * ~~[._hubCompressedPubkeyHex()](#Beacon+_hubCompressedPubkeyHex)~~
+        * [.listPendingFederationEpochRounds()](#Beacon+listPendingFederationEpochRounds) ⇒ <code>Array.&lt;Object&gt;</code>
+        * [.adoptFederationSignRequest(signRequest)](#Beacon+adoptFederationSignRequest) ⇒ [<code>Promise.&lt;FederationRoundAdoption&gt;</code>](#Beacon.FederationRoundAdoption)
+        * [.signPendingFederationRoundAsLocalValidator(commitmentDigest)](#Beacon+signPendingFederationRoundAsLocalValidator) ⇒ [<code>Promise.&lt;FederationRoundSignature&gt;</code>](#Beacon.FederationRoundSignature)
+        * [.start()](#Beacon+start) ⇒ [<code>Promise.&lt;Beacon&gt;</code>](#Beacon)
+        * [.stop()](#Beacon+stop) ⇒ [<code>Promise.&lt;Beacon&gt;</code>](#Beacon)
+    * _static_
+        * [.FederationRoundAdoption](#Beacon.FederationRoundAdoption) : <code>Object</code>
+        * [.FederationRoundSignature](#Beacon.FederationRoundSignature) : <code>Object</code>
+
+<a name="new_Beacon_new"></a>
+
+### new Beacon([settings])
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [settings] | <code>Object</code> |  |  |
+| [settings.interval] | <code>number</code> | <code>60000</code> | regtest epoch interval in ms (0 = none) |
+| [settings.regtest] | <code>boolean</code> | <code>true</code> | mine epochs; false follows L1 tips only |
+| [settings.mineOnStart] | <code>boolean</code> | <code>true</code> | mine one epoch on start (regtest) |
+| [settings.federationValidators] | <code>Array.&lt;string&gt;</code> |  | x-only hex pubkeys that witness epochs |
+| [settings.federationThreshold] | <code>number</code> \| <code>null</code> | <code></code> | k; null = strict majority of validators |
+| [settings.federationSignatureScheme] | <code>string</code> | <code>&quot;&#x27;schnorr&#x27;&quot;</code> | `schnorr` or `bls` |
+| [settings.federationWitnessFailClosed] | <code>boolean</code> | <code>true</code> | truncate the stored chain at the first epoch without k valid witnesses |
+| [settings.followBlocks] | <code>boolean</code> | <code>false</code> | follow bitcoind `block` events on regtest |
+
+<a name="Beacon+state"></a>
+
+### beacon.state : <code>Object</code>
+Live epoch state: `clock`, `status`, `lastBlockHash`, `height`, `balance`, `balanceSats`.
+
+**Kind**: instance property of [<code>Beacon</code>](#Beacon)  
+<a name="Beacon+attach"></a>
+
+### beacon.attach([deps])
+**Kind**: instance method of [<code>Beacon</code>](#Beacon)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| [deps] | <code>Object</code> |  |
+| [deps.bitcoin] | <code>Object</code> |  |
+| [deps.fs] | <code>Object</code> |  |
+| [deps.key] | <code>Object</code> |  |
+| [deps.federationValidators] | <code>Array.&lt;string&gt;</code> |  |
+| [deps.federationThreshold] | <code>number</code> |  |
+| [deps.federationSignatureScheme] | <code>string</code> | `schnorr` (default) or `bls` |
+| [deps.getSidechainSnapshotForEpoch] | <code>function</code> |  |
+| [deps.getContractsSnapshotForEpoch] | <code>function</code> |  |
+
+<a name="Beacon+_hubCompressedPubkeyHex"></a>
+
+### ~~beacon.\_hubCompressedPubkeyHex()~~
+***Hub alias — use [Beacon#_compressedPubkeyHex](Beacon#_compressedPubkeyHex)***
+
+**Kind**: instance method of [<code>Beacon</code>](#Beacon)  
+<a name="Beacon+listPendingFederationEpochRounds"></a>
+
+### beacon.listPendingFederationEpochRounds() ⇒ <code>Array.&lt;Object&gt;</code>
+Summaries of the epoch rounds still collecting witnesses.
+
+**Kind**: instance method of [<code>Beacon</code>](#Beacon)  
+**Returns**: <code>Array.&lt;Object&gt;</code> - `commitmentDigest`, `clock`, `blockHash`, `signatureCount`,
+`threshold`, `validators`, `status`, `createdAt` per round  
+<a name="Beacon+adoptFederationSignRequest"></a>
+
+### beacon.adoptFederationSignRequest(signRequest) ⇒ [<code>Promise.&lt;FederationRoundAdoption&gt;</code>](#Beacon.FederationRoundAdoption)
+Adopt a peer [FederationSignRequest](FederationSignRequest) into the pending map when the
+commitment digest matches the epoch body. Validators use this so each node
+can accumulate BIP340 signatures over the same deterministic payload.
+
+**Kind**: instance method of [<code>Beacon</code>](#Beacon)  
+
+| Param | Type |
+| --- | --- |
+| signRequest | <code>object</code> | 
+
+<a name="Beacon+signPendingFederationRoundAsLocalValidator"></a>
+
+### beacon.signPendingFederationRoundAsLocalValidator(commitmentDigest) ⇒ [<code>Promise.&lt;FederationRoundSignature&gt;</code>](#Beacon.FederationRoundSignature)
+Sign the pending round as this Beacon's identity key (must be a validator).
+Returns a [FederationSignResponse](FederationSignResponse) body ready to gossip.
+
+**Kind**: instance method of [<code>Beacon</code>](#Beacon)  
+
+| Param | Type |
+| --- | --- |
+| commitmentDigest | <code>string</code> | 
+
+<a name="Beacon+start"></a>
+
+### beacon.start() ⇒ [<code>Promise.&lt;Beacon&gt;</code>](#Beacon)
+Restore the epoch chain, then mine on the interval (regtest) and/or follow L1 tips.
+Idempotent while running.
+
+**Kind**: instance method of [<code>Beacon</code>](#Beacon)  
+<a name="Beacon+stop"></a>
+
+### beacon.stop() ⇒ [<code>Promise.&lt;Beacon&gt;</code>](#Beacon)
+Stop mining and block following, drain queued blocks, and persist the epoch chain.
+
+**Kind**: instance method of [<code>Beacon</code>](#Beacon)  
+<a name="Beacon.FederationRoundAdoption"></a>
+
+### Beacon.FederationRoundAdoption : <code>Object</code>
+Result of [adoptFederationSignRequest](#Beacon+adoptFederationSignRequest).
+
+**Kind**: static typedef of [<code>Beacon</code>](#Beacon)  
+**Properties**
+
+| Name | Type | Description |
+| --- | --- | --- |
+| ok | <code>boolean</code> |  |
+| [round] | <code>Object</code> | the pending round (adopted or already held) |
+| [created] | <code>boolean</code> | whether this call created the round |
+| [error] | <code>string</code> | why the request was refused |
+
+<a name="Beacon.FederationRoundSignature"></a>
+
+### Beacon.FederationRoundSignature : <code>Object</code>
+Result of [signPendingFederationRoundAsLocalValidator](#Beacon+signPendingFederationRoundAsLocalValidator).
+
+**Kind**: static typedef of [<code>Beacon</code>](#Beacon)  
+**Properties**
+
+| Name | Type | Description |
+| --- | --- | --- |
+| ok | <code>boolean</code> |  |
+| [response] | <code>Object</code> | `FederationSignResponse` body to gossip |
+| [submit] | <code>Object</code> | result of submitting the signature locally |
+| [error] | <code>string</code> | why the round could not be signed |
 
 <a name="Block"></a>
 
@@ -1885,7 +2030,7 @@ without it the proof does not verify.
 | --- | --- | --- | --- |
 | challenge | <code>object</code> |  |  |
 | response | <code>object</code> |  |  |
-| [penalty] | <code>object</code> | <code></code> | `{ txHex, txid? }` the penalty spend as seen on-chain |
+| [penalty] | <code>object</code> | <code></code> | `{ txHex, txid?, prevouts? }` the penalty spend as seen on-chain; `prevouts` are its spent outputs `[{ scriptHex, valueSats }]` in input order |
 
 <a name="Channel"></a>
 
@@ -4085,6 +4230,8 @@ The [Collection](#Collection) type maintains an ordered list of [State](#State) 
 
 * [Collection](#Collection)
     * [new Collection([configuration])](#new_Collection_new)
+    * [.routes](#Collection+routes) : <code>Object</code>
+    * [.path](#Collection+path) : <code>string</code>
     * [.asMerkleTree()](#Collection+asMerkleTree) ⇒ [<code>Tree</code>](#Tree)
     * [._setKey(name)](#Collection+_setKey)
     * [.getByID(id)](#Collection+getByID)
@@ -4113,6 +4260,18 @@ Create a list of [Entity](#Entity)-like objects for later retrieval.
 | --- | --- | --- | --- |
 | [configuration] | <code>Object</code> | <code>{}</code> | Configuration object. |
 
+<a name="Collection+routes"></a>
+
+### collection.routes : <code>Object</code>
+Route templates from `settings.routes`.
+
+**Kind**: instance property of [<code>Collection</code>](#Collection)  
+<a name="Collection+path"></a>
+
+### collection.path : <code>string</code>
+Store path the collection is kept under.
+
+**Kind**: instance property of [<code>Collection</code>](#Collection)  
 <a name="Collection+asMerkleTree"></a>
 
 ### collection.asMerkleTree() ⇒ [<code>Tree</code>](#Tree)
@@ -10723,6 +10882,8 @@ Federation validator pubkeys for sidechain patch verification (settings or env).
 <a name="Peer+_distributedFederationThresholdFromSettings"></a>
 
 ### peer.\_distributedFederationThresholdFromSettings() ⇒ <code>number</code>
+k for federation witnesses. Unset = strict majority of the configured validators.
+
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
 <a name="Peer+_registerContract"></a>
 
@@ -12514,6 +12675,8 @@ Federation validator pubkeys for sidechain patch verification (settings or env).
 <a name="Peer+_distributedFederationThresholdFromSettings"></a>
 
 ### peer.\_distributedFederationThresholdFromSettings() ⇒ <code>number</code>
+k for federation witnesses. Unset = strict majority of the configured validators.
+
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
 <a name="Peer+_registerContract"></a>
 
@@ -13051,7 +13214,7 @@ Stable digest binding program identity to a compute result (L1 / OP_RETURN / wit
 ## EncryptedPromise
 A value that can be sealed with a password.  Sealing uses
 `functions/sealedBlob` (AES-256-GCM, PBKDF2-SHA256, random salt and IV);
-[state](#EncryptedPromise+state) and [EncryptedPromise#toString](EncryptedPromise#toString) only
+[state](#EncryptedPromise+state) and [toString](#EncryptedPromise+toString) only
 ever expose the sealed envelope, never the plaintext or the password.
 
 **Kind**: global class  
@@ -13060,8 +13223,12 @@ ever expose the sealed envelope, never the plaintext or the password.
     * [new EncryptedPromise([settings])](#new_EncryptedPromise_new)
     * [.id](#EncryptedPromise+id) : <code>string</code>
     * [.state](#EncryptedPromise+state) : <code>Object</code>
+    * [.resolve(msg)](#EncryptedPromise+resolve) ⇒ <code>Object</code>
+    * [.lock()](#EncryptedPromise+lock)
     * [.encrypt(password)](#EncryptedPromise+encrypt) ⇒ <code>Object</code>
     * [.decrypt(password)](#EncryptedPromise+decrypt) ⇒ <code>string</code>
+    * [.unlock()](#EncryptedPromise+unlock)
+    * [.toString()](#EncryptedPromise+toString) ⇒ <code>string</code>
 
 <a name="new_EncryptedPromise_new"></a>
 
@@ -13087,6 +13254,23 @@ envelope is known.
 Safe to persist: the sealed envelope (or `null` until sealed).
 
 **Kind**: instance property of [<code>EncryptedPromise</code>](#EncryptedPromise)  
+<a name="EncryptedPromise+resolve"></a>
+
+### encryptedPromise.resolve(msg) ⇒ <code>Object</code>
+Pair a message with this promise's id.
+
+**Kind**: instance method of [<code>EncryptedPromise</code>](#EncryptedPromise)  
+
+| Param | Type |
+| --- | --- |
+| msg | <code>\*</code> | 
+
+<a name="EncryptedPromise+lock"></a>
+
+### encryptedPromise.lock()
+Not implemented; use [encrypt](#EncryptedPromise+encrypt).
+
+**Kind**: instance method of [<code>EncryptedPromise</code>](#EncryptedPromise)  
 <a name="EncryptedPromise+encrypt"></a>
 
 ### encryptedPromise.encrypt(password) ⇒ <code>Object</code>
@@ -13111,6 +13295,18 @@ Open the sealed envelope.
 | --- | --- |
 | password | <code>string</code> | 
 
+<a name="EncryptedPromise+unlock"></a>
+
+### encryptedPromise.unlock()
+Not implemented; use [decrypt](#EncryptedPromise+decrypt).
+
+**Kind**: instance method of [<code>EncryptedPromise</code>](#EncryptedPromise)  
+<a name="EncryptedPromise+toString"></a>
+
+### encryptedPromise.toString() ⇒ <code>string</code>
+The persistable [state](#EncryptedPromise+state) as indented JSON (never the plaintext).
+
+**Kind**: instance method of [<code>EncryptedPromise</code>](#EncryptedPromise)  
 <a name="Reader"></a>
 
 ## ~~Reader~~
@@ -17553,7 +17749,9 @@ Kinds:
   `blobHashHex`. The frame author must be the offer signer.
 - `wrongful-penalty`: publisher-signed challenge + the provider's valid,
   Merkle-proven, in-time response + the penalty transaction that spent
-  the deposit outpoint anyway — publisher fraud.
+  the deposit outpoint anyway — publisher fraud. The penalty's spent
+  outputs (`prevouts`) let the verifier check that the penalty leaf is
+  committed to the deposit output and signed by both parties.
 - `stale-commitment`: a payment-channel party's own signed `ChannelRevoke`
   (naming the commitment txid it revoked) plus that very transaction and
   evidence it was broadcast: an SPV `inclusion` artifact
@@ -17610,14 +17808,15 @@ Rehydrate a `FraudProof` from a `CONTRACT_MESSAGE` body (or `null` for other typ
 Verify a provider's `DepositPenaltyPreSig`: a signed artifact wrapping a
 penalty PSBT that spends the deposit outpoint with `nLockTime` equal to
 the challenge deadline height and carries the provider's valid tapscript
-signature. Pure.
+signature on the canonical publisher + provider penalty leaf, whose
+control block commits to the spent deposit output. Pure.
 
 **Kind**: static method of [<code>FraudProof</code>](#FraudProof)  
 
 | Param | Type | Description |
 | --- | --- | --- |
 | preSig | <code>object</code> | artifact `{ type: 'DepositPenaltyPreSig', psbtBase64, deposit: { txid, vout }, deadlineHeight, txid, pubkey, signature }` |
-| expect | <code>object</code> | `{ providerPubkey (x-only), deposit: { txid, vout, penaltyAddress?, minPenaltySats? }, deadlineHeight, destinationAddress?, destinationScriptHex?, minValueSats? }` — a destination (top-level or from the challenge's signed `deposit`) is mandatory when named |
+| expect | <code>object</code> | `{ providerPubkey (x-only), publisherPubkey, deposit: { txid, vout, penaltyAddress?, minPenaltySats? }, deadlineHeight, depositAddress?, destinationAddress?, destinationScriptHex?, minValueSats? }` — a destination (top-level or from the challenge's signed `deposit`) is mandatory when named; `depositAddress` binds the spent output |
 
 <a name="Worker"></a>
 

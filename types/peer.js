@@ -5025,8 +5025,9 @@ class Peer extends Service {
    * longer dictates the shape. Every frame must carry a 64-hex root and a
    * sane `blobTotal`; frames whose root / total / origin disagree with the
    * row already being assembled (or with what `blobTransfers.expectTransfer`
-   * registered for the purchase) are rejected, an index already held with a
-   * different blob hash is never overwritten, and both the number of rows and
+   * registered for the purchase, checked per blob index) are rejected, an index
+   * already held is never overwritten (a resend must carry the same blob hash,
+   * payment hash, and IV, and the first frame is kept), and both the number of rows and
    * the parts per row are capped. The exact signed wire frame (`frameHex`) is
    * kept per part so a `wrong-bytes` fraud proof can cite it.
    * @param {Object} obj raw `P2P_FILE_SEND` body (`perBlob: true`)
@@ -5065,8 +5066,9 @@ class Peer extends Service {
       if (!match) {
         return { status: 'reject', error: 'per-blob frame does not match the expected transfer (root / total)', documentId: frame.documentId, blobIndex: frame.blobIndex, merkleRootHex: root };
       }
-      if (match.expectedHashes && match.expectedHashes.length && !match.expectedHashes.includes(frame.blobHashHex)) {
-        return { status: 'reject', error: 'per-blob frame blob hash is not one we asked for', documentId: frame.documentId, blobIndex: frame.blobIndex, merkleRootHex: root };
+      const wantHash = match.expectedHashes ? match.expectedHashes[frame.blobIndex] : null;
+      if (wantHash && wantHash !== frame.blobHashHex) {
+        return { status: 'reject', error: 'per-blob frame blob hash is not the one we asked for at that index', documentId: frame.documentId, blobIndex: frame.blobIndex, merkleRootHex: root };
       }
     }
     const rowKey = `${frame.documentId}|${root}`;
@@ -5079,9 +5081,26 @@ class Peer extends Service {
       // and blob j from another under the same root. The row key binds the
       // root, held parts cannot be overwritten, and the final Merkle check
       // covers the whole tree; each part records its own origin instead.
+      // Sellers of one tree share ciphertext and K_i, so an honest resend
+      // carries the same payment hash and IV; keep the first frame either way.
       const held = row.parts.get(frame.blobIndex);
-      if (held && held.blobHashHex !== frame.blobHashHex) {
-        return { status: 'reject', error: 'per-blob frame would overwrite a held blob with a different hash', documentId: frame.documentId, blobIndex: frame.blobIndex, merkleRootHex: root };
+      if (held) {
+        if (held.blobHashHex !== frame.blobHashHex || held.paymentHashHex !== paymentHashHex || held.iv !== String(obj.iv)) {
+          return { status: 'reject', error: 'per-blob frame would overwrite a held blob with a different hash, payment hash, or iv', documentId: frame.documentId, blobIndex: frame.blobIndex, merkleRootHex: root };
+        }
+        return {
+          status: 'awaiting_key',
+          sealed: true,
+          perBlob: true,
+          awaitingKey: true,
+          duplicate: true,
+          documentId: frame.documentId,
+          blobIndex: frame.blobIndex,
+          received: row.parts.size,
+          total: row.total,
+          merkleRootHex: row.merkleRootHex,
+          origin
+        };
       }
     } else {
       row = {

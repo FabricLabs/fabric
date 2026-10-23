@@ -501,6 +501,8 @@ class DocumentBlobTransferBook {
   /**
    * Pre-register expected leaves (from inventory DocumentBlobIndex).
    * @param {object} opts
+   * @param {string[]} [opts.blobHashHexes] expected blob hash per blob index; empty or null
+   * entries leave that index unchecked
    */
   expectTransfer (opts = {}) {
     const documentId = String(opts.documentId || '').trim();
@@ -510,6 +512,7 @@ class DocumentBlobTransferBook {
       : null;
     const total = Math.round(Number(opts.total || opts.blobTotal || 0));
     if (total > this.maxParts) return null;
+    if (Array.isArray(opts.blobHashHexes) && opts.blobHashHexes.length > this.maxParts) return null;
     const key = transferKey(documentId, merkleRootHex);
     this._drop(key);
     const row = {
@@ -518,7 +521,7 @@ class DocumentBlobTransferBook {
       merkleRootHex,
       total: Number.isFinite(total) && total > 0 ? total : null,
       expectedHashes: Array.isArray(opts.blobHashHexes)
-        ? opts.blobHashHexes.map((h) => String(h).toLowerCase())
+        ? Array.from(opts.blobHashHexes, (h) => (h ? String(h).toLowerCase() : null))
         : null,
       contentSha256: opts.contentSha256
         ? String(opts.contentSha256).toLowerCase()

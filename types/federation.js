@@ -129,6 +129,9 @@ class Federation extends Contract {
       throw new Error('Failed to initialize private key');
     }
 
+    // Throws on a bad blsPublicKey; must run before any state changes.
+    const blsPublicKey = federationBlsPublicKey(member, key);
+
     // Store the member's public key in hex format
     const pubkey = key.public.encodeCompressed('hex');
     this._state.content.validators.push(pubkey);
@@ -137,7 +140,6 @@ class Federation extends Contract {
     this._state.content.keys = this._state.content.keys || {};
     this._state.content.keys[pubkey] = key;
 
-    const blsPublicKey = federationBlsPublicKey(member, key);
     if (blsPublicKey) {
       this._state.content.blsPublicKeys = this._state.content.blsPublicKeys || {};
       this._state.content.blsPublicKeys[pubkey] = blsPublicKey;
