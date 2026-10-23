@@ -2,7 +2,9 @@
 
 // Constants
 const {
-  MAX_CHANNEL_VALUE
+  MAX_CHANNEL_VALUE,
+  BITCOIN_DUST_SATS,
+  HTLC_MINIMUM_SATS
 } = require('../constants');
 
 // Dependencies
@@ -42,7 +44,7 @@ const {
 const HEX64 = /^[0-9a-f]{64}$/;
 const COMPRESSED = /^(02|03)[0-9a-f]{64}$/;
 const MAINNET_NAMES = new Set(['mainnet', 'main', 'bitcoin', 'livenet']);
-const DUST = 546;
+const DUST = BITCOIN_DUST_SATS;
 const SEQUENCE_NONFINAL = (2 ** 32) - 2; // 0xfffffffe: enables nLockTime, opts out of RBF signalling
 const ECPoint = secp256k1.Point || secp256k1.ProjectivePoint;
 const CURVE_N = (ECPoint.Fn && ECPoint.Fn.ORDER) || (secp256k1.CURVE && secp256k1.CURVE.n);
@@ -63,8 +65,10 @@ const CHANNEL_BODY_TYPES = Object.freeze({
 });
 
 /**
- * Channel defaults (Lightning-derived, scaled for a per-chunk market).
- * Policy fields are negotiated at `ChannelOpen` — the stricter value wins.
+ * Channel defaults (Lightning-derived). Policy fields are negotiated at
+ * `ChannelOpen` — the stricter value wins. HTLCs are never trimmed: every one
+ * carries at least `HTLC_MINIMUM_SATS`, so it has a commitment output its
+ * receiver can claim on chain.
  */
 const CHANNEL_DEFAULTS = Object.freeze({
   toSelfDelay: 144,
@@ -72,8 +76,7 @@ const CHANNEL_DEFAULTS = Object.freeze({
   minCommitFeeSats: 200,
   maxCommitFeeSats: 50000,
   maxAcceptedHtlcs: 30,
-  htlcMinimumSats: 1,
-  maxDustExposureSats: 5000,
+  htlcMinimumSats: HTLC_MINIMUM_SATS,
   minCltvDelta: 6,
   closeMarginBlocks: 144,
   staleTipMs: 60 * 60 * 1000,
@@ -448,8 +451,7 @@ Channel.negotiatePolicy = function negotiatePolicy (a = {}, b = {}, capacitySats
   const policy = {
     maxAcceptedHtlcs: pick('maxAcceptedHtlcs', d.maxAcceptedHtlcs, 'min'),
     maxHtlcValueInFlightSats: pick('maxHtlcValueInFlightSats', defaultInFlight, 'min'),
-    htlcMinimumSats: pick('htlcMinimumSats', d.htlcMinimumSats, 'max'),
-    maxDustExposureSats: pick('maxDustExposureSats', d.maxDustExposureSats, 'min'),
+    htlcMinimumSats: Math.max(HTLC_MINIMUM_SATS, pick('htlcMinimumSats', d.htlcMinimumSats, 'max')),
     channelReserveSats: pick('channelReserveSats', defaultReserve, 'max'),
     minCommitFeeSats: pick('minCommitFeeSats', d.minCommitFeeSats, 'max'),
     maxCommitFeeSats: pick('maxCommitFeeSats', d.maxCommitFeeSats, 'min'),
@@ -674,19 +676,11 @@ Channel.buildCommitment = function buildCommitment (funding, state = {}, opts = 
     outputs.push({ kind: 'toRemote', owner: otherPubkey, amountSats: otherSats, address: otherAddress, vout: psbt.txOutputs.length - 1 });
   }
   const sorted = htlcs.slice().sort((a, b) => String(a.id).localeCompare(String(b.id)));
-  let trimmedSats = 0;
   for (const h of sorted) {
     const amount = Math.floor(Number(h.amountSats) || 0);
-    if (amount < 1) throw new Error(`buildCommitment: HTLC ${h.id} amount required`);
+    // No trimmed HTLCs: one without a claimable output would be trusted.
+    if (amount < HTLC_MINIMUM_SATS) throw new Error(`buildCommitment: HTLC ${h.id} below ${HTLC_MINIMUM_SATS} sats has no claimable output`);
     const offered = h.direction !== 'received'; // offered by the local party
-    if (amount < DUST) {
-      // Trimmed HTLC (Lightning convention): per-chunk micro-payments below
-      // dust get no output — their value rides in the fee until settled and
-      // is enforced only by the off-chain state both parties sign.
-      trimmedSats += amount;
-      outputs.push({ kind: 'htlc', id: String(h.id), amountSats: amount, direction: offered ? 'offered' : 'received', paymentHashHex: String(h.paymentHashHex).toLowerCase(), blobHashHex: h.blobHashHex || null, expireAfter: heightLock(h.expireAfter), vout: null, trimmed: true });
-      continue;
-    }
     const receiverPubkey = offered ? funding.remotePubkey : funding.localPubkey;
     const holderIsReceiver = receiverPubkey === holderPubkey;
     const out = Channel.buildHtlcOutput({
@@ -729,8 +723,7 @@ Channel.buildCommitment = function buildCommitment (funding, state = {}, opts = 
     fundingTxid: tx.getId(),
     fundingVout: vout,
     inputSats,
-    feeSats: fee + trimmedSats,
-    trimmedSats,
+    feeSats: fee,
     anchorSats: 2 * anchorSats,
     localSats,
     remoteSats,
@@ -798,7 +791,7 @@ Channel.finalizeCommitment = function finalizeCommitment (psbtA, psbtB, network 
 };
 
 /**
- * Find the on-chain HTLC output row for an id, refusing trimmed (dust) HTLCs.
+ * Find the on-chain HTLC output row for an id.
  * @param {Object} commitment built commitment
  * @param {string} htlcId
  * @param {string} label error prefix
@@ -807,7 +800,6 @@ Channel.finalizeCommitment = function finalizeCommitment (psbtA, psbtB, network 
  */
 function htlcRowOrThrow (commitment, htlcId, label) {
   const row = (commitment.outputs || []).find((o) => o.kind === 'htlc' && o.id === String(htlcId));
-  if (row && row.trimmed) throw new Error(`${label}: trimmed HTLC has no on-chain output`);
   if (!row || !row._htlc) throw new Error(`${label}: HTLC not on this commitment (rebuild with buildCommitment)`);
   return row;
 }
@@ -943,7 +935,7 @@ Channel.planRoute = function planRoute (opts = {}) {
   const hops = Array.isArray(opts.hops) ? opts.hops : [];
   if (!hops.length) throw new Error('planRoute: at least one hop');
   const finalAmount = Math.floor(Number(opts.amountSats) || 0);
-  if (finalAmount < DUST) throw new Error('planRoute: amountSats below dust');
+  if (finalAmount < HTLC_MINIMUM_SATS) throw new Error(`planRoute: amountSats below the ${HTLC_MINIMUM_SATS}-sat HTLC minimum`);
   const finalHeight = Math.floor(Number(opts.finalExpireHeight) || 0);
   if (finalHeight <= 0) throw new Error('planRoute: finalExpireHeight required');
   // Walk destination → source.
@@ -1269,13 +1261,12 @@ class ChannelSession {
   _checkHtlcPolicy (row, htlcs, proposerBalanceAfter, proposer) {
     const p = this._state.policy;
     const label = proposer === 'local' ? 'offerHtlc' : 'receive';
-    if (row.amountSats < p.htlcMinimumSats) throw new Error(`${label}: HTLC below htlcMinimumSats ${p.htlcMinimumSats}`);
+    const minimum = Math.max(HTLC_MINIMUM_SATS, Number(p.htlcMinimumSats) || 0);
+    if (row.amountSats < minimum) throw new Error(`${label}: HTLC below htlcMinimumSats ${minimum}`);
     if (htlcs.length > p.maxAcceptedHtlcs) throw new Error(`${label}: maxAcceptedHtlcs ${p.maxAcceptedHtlcs} exceeded`);
     if (htlcs.some((h) => h.id !== row.id && h.paymentHashHex === row.paymentHashHex)) throw new Error(`${label}: duplicate paymentHash in flight`);
     const inFlight = htlcs.filter((h) => h.direction === row.direction).reduce((n, h) => n + h.amountSats, 0);
     if (inFlight > p.maxHtlcValueInFlightSats) throw new Error(`${label}: maxHtlcValueInFlightSats ${p.maxHtlcValueInFlightSats} exceeded`);
-    const dust = htlcs.filter((h) => h.amountSats < DUST).reduce((n, h) => n + h.amountSats, 0);
-    if (dust > p.maxDustExposureSats) throw new Error(`${label}: maxDustExposureSats ${p.maxDustExposureSats} exceeded`);
     if (proposerBalanceAfter < p.channelReserveSats) throw new Error(`${label}: balance would drop below channelReserveSats ${p.channelReserveSats}`);
     const tip = this._tipHeight();
     if (this._tip && tip == null) throw new Error(`${label}: chain tip unknown or stale — refusing new HTLC`);
@@ -1578,6 +1569,11 @@ class ChannelSession {
    * reveals; the sender may also settle an HTLC it offered once it learned
    * the preimage elsewhere (e.g. the seller's public key reveal) — that only
    * ever pays the counterparty.
+   *
+   * Revealing the preimage before the peer countersigns is safe because no
+   * HTLC is trimmed: each one carries at least `HTLC_MINIMUM_SATS` and has a
+   * commitment output the receiver can claim with the preimage
+   * ({@link Channel.prepareHtlcClaim}) if the peer stalls.
    * @param {string} id
    * @param {string} preimageHex
    * @returns {object} `ChannelHtlcFulfill` body (+ the new commitment via `commitment`)

@@ -6,6 +6,7 @@ const bitcoin = require('bitcoinjs-lib');
 const Channel = require('../types/channel');
 const Witness = require('../types/witness');
 const { signerFromPriv32 } = require('../functions/inventoryHtlc');
+const { HTLC_MINIMUM_SATS } = require('../constants');
 
 const NET = bitcoin.networks.regtest;
 const ANCHORS = 2 * Channel.DEFAULTS.anchorSats;
@@ -139,26 +140,21 @@ describe('@fabric/core/types/channel (Phase 4 sessions)', function () {
 
     // The sender may also settle its own offered HTLC with a preimage it learned elsewhere — pays B.
     const pre3 = crypto.randomBytes(32).toString('hex');
-    sync(A, B, A.offerHtlc({ amountSats: 700, paymentHashHex: hashOf(pre3), expireAfter: 4000 }));
+    sync(A, B, A.offerHtlc({ amountSats: 1000, paymentHashHex: hashOf(pre3), expireAfter: 4000 }));
     sync(A, B, A.fulfillHtlc(A.state.htlcs[0].id, pre3));
-    assert.strictEqual(B.balances.localSats, 1700);
+    assert.strictEqual(B.balances.localSats, 2000);
     assert.strictEqual(B.state.htlcs.length, 0);
 
-    // Sub-dust chunk prices become trimmed HTLCs: tracked off-chain, no output.
-    const tiny = A.offerHtlc({ amountSats: 5, paymentHashHex: crypto.randomBytes(32).toString('hex'), expireAfter: 4000 });
-    sync(A, B, tiny);
-    const trimmedRow = A.commitment.outputs.find((o) => o.kind === 'htlc');
-    assert.strictEqual(trimmedRow.trimmed, true);
-    assert.strictEqual(A.commitment.trimmedSats, 5);
-    assert.throws(() => Channel.prepareHtlcClaim(A.commitment, { htlcId: trimmedRow.id }), /trimmed/);
-    sync(B, A, B.failHtlc(trimmedRow.id));
+    // Every HTLC needs a mainnet-claimable output: nothing below dust + claim fee is offered.
+    assert.throws(() => A.offerHtlc({ amountSats: HTLC_MINIMUM_SATS - 1, paymentHashHex: crypto.randomBytes(32).toString('hex'), expireAfter: 4000 }), /htlcMinimumSats 716/);
+    assert.strictEqual(A.busy, false);
 
     // Failure returns funds to the sender.
     const fail1 = A.offerHtlc({ amountSats: 2000, paymentHashHex: crypto.randomBytes(32).toString('hex'), expireAfter: 4000 });
     sync(A, B, fail1);
     sync(B, A, B.failHtlc(B.state.htlcs[0].id, 'no-such-chunk'));
-    assert.strictEqual(A.balances.localSats, open - 1700);
-    assert.strictEqual(B.balances.remoteSats, open - 1700);
+    assert.strictEqual(A.balances.localSats, open - 2000);
+    assert.strictEqual(B.balances.remoteSats, open - 2000);
 
     // Cooperative close carries both signatures after exchange.
     const close = A.close();
@@ -174,7 +170,7 @@ describe('@fabric/core/types/channel (Phase 4 sessions)', function () {
     const snap = B.export();
     assert.strictEqual(JSON.stringify(snap).includes('"_leaves"'), false);
     const B2 = Channel.Session.import(snap, B.localPrivateKey);
-    assert.strictEqual(B2.balances.localSats, 1700);
+    assert.strictEqual(B2.balances.localSats, 2000);
     assert.strictEqual(B2.preimageFor(paymentHashHex), preimage);
     assert.strictEqual(B2.commitment.txid, B.commitment.txid);
     assert.strictEqual(Object.keys(B2.state.revoked).length, Object.keys(B.state.revoked).length);
@@ -214,7 +210,7 @@ describe('@fabric/core/types/channel (Phase 4 sessions)', function () {
     assert.strictEqual(revoke.type, 'ChannelRevoke');
     assert.strictEqual(A.busy, false);
     // B cannot be pushed to state 2 before it sees A's revoke of state 0.
-    const next = A.offerHtlc({ amountSats: 10, paymentHashHex: crypto.randomBytes(32).toString('hex'), expireAfter: 4000 });
+    const next = A.offerHtlc({ amountSats: 1000, paymentHashHex: crypto.randomBytes(32).toString('hex'), expireAfter: 4000 });
     assert.throws(() => B.receive(next), /has not revoked state 0/);
     // A wrong secret is rejected; the right one unblocks.
     const bogus = Witness.signArtifact(Object.assign({}, revoke, { pubkey: undefined, signature: undefined, perCommitmentSecret: '22'.repeat(32) }), A.localPrivateKey);
@@ -305,7 +301,7 @@ describe('@fabric/core/types/channel (Phase 4 sessions)', function () {
     assert.throws(() => A.offerHtlc({ amountSats: 1000, paymentHashHex: crypto.randomBytes(32).toString('hex'), expireAfter: 4900 }), /past channel expiry window/);
     assert.throws(() => A.offerHtlc({ amountSats: open - 1000, paymentHashHex: crypto.randomBytes(32).toString('hex'), expireAfter: 4000 }), /maxHtlcValueInFlightSats|reserve/);
     sync(A, B, A.offerHtlc({ amountSats: 1000, paymentHashHex: crypto.randomBytes(32).toString('hex'), expireAfter: 4000 }));
-    assert.throws(() => A.offerHtlc({ amountSats: 500, paymentHashHex: crypto.randomBytes(32).toString('hex'), expireAfter: 4000 }), /maxAcceptedHtlcs/);
+    assert.throws(() => A.offerHtlc({ amountSats: 800, paymentHashHex: crypto.randomBytes(32).toString('hex'), expireAfter: 4000 }), /maxAcceptedHtlcs/);
     assert.throws(() => A.updateFee(5000), /within/);
     const feeBump = A.updateFee(700);
     sync(A, B, feeBump);
@@ -320,11 +316,11 @@ describe('@fabric/core/types/channel (Phase 4 sessions)', function () {
     const { A, B } = pair(100000, 500, { A: deps, B: deps });
     sync(A, B, A.open());
     assert.strictEqual(A.status, 'pending');
-    assert.throws(() => A.offerHtlc({ amountSats: 10, paymentHashHex: crypto.randomBytes(32).toString('hex'), expireAfter: 400 }), /pending/);
+    assert.throws(() => A.offerHtlc({ amountSats: 1000, paymentHashHex: crypto.randomBytes(32).toString('hex'), expireAfter: 400 }), /pending/);
     confs = 1;
     A.tick(tip); B.tick(tip);
     assert.strictEqual(A.status, 'open');
-    assert.throws(() => A.offerHtlc({ amountSats: 10, paymentHashHex: crypto.randomBytes(32).toString('hex'), expireAfter: 103 }), /expires too soon/);
+    assert.throws(() => A.offerHtlc({ amountSats: 1000, paymentHashHex: crypto.randomBytes(32).toString('hex'), expireAfter: 103 }), /expires too soon/);
     const h = crypto.randomBytes(32).toString('hex');
     sync(A, B, A.offerHtlc({ amountSats: 1000, paymentHashHex: h, expireAfter: 200 }));
     assert.throws(() => A.failHtlc(A.state.htlcs[0].id), /not yet expired/);
@@ -336,7 +332,7 @@ describe('@fabric/core/types/channel (Phase 4 sessions)', function () {
     assert.strictEqual(A.balances.localSats, 100000 - 500 - ANCHORS);
     // Unknown / stale tip refuses new HTLCs.
     tip = null;
-    assert.throws(() => A.offerHtlc({ amountSats: 10, paymentHashHex: crypto.randomBytes(32).toString('hex'), expireAfter: 400 }), /tip unknown or stale/);
+    assert.throws(() => A.offerHtlc({ amountSats: 1000, paymentHashHex: crypto.randomBytes(32).toString('hex'), expireAfter: 400 }), /tip unknown or stale/);
   });
 
   it('plans a multi-hop atomic HTLC and settles it backward by preimage', function () {
@@ -447,7 +443,7 @@ describe('@fabric/core/types/channel (Channel.Book host registry)', function () 
     assert.strictEqual(B.book.forwards.size, 0);
 
     // Downstream failure refunds upstream.
-    A.book.publish(ab.session.offerHtlc({ amountSats: 500 + 10, paymentHashHex: crypto.randomBytes(32).toString('hex'), expireAfter: 3040 }), ab.session);
+    A.book.publish(ab.session.offerHtlc({ amountSats: 1000 + 10, paymentHashHex: crypto.randomBytes(32).toString('hex'), expireAfter: 3040 }), ab.session);
     pump();
     B.book.forward(upstream, upstream.state.htlcs[0].id, bc.session);
     pump();
@@ -511,19 +507,36 @@ describe('@fabric/core/types/channel (unknown tip + output indices)', function (
     assert.throws(() => B.receiveSettlement(fail), /chain tip is unknown/);
   });
 
-  it('keeps HTLC and anchor vouts aligned when a dust HTLC is trimmed', function () {
-    const { A, B } = opened(100000, 500, { A: { tipHeight: () => 10 }, B: { tipHeight: () => 10 } });
-    sync(A, B, A.offerHtlc({ amountSats: 100, paymentHashHex: hashOf(crypto.randomBytes(32).toString('hex')), expireAfter: 4000 }));
-    sync(A, B, A.offerHtlc({ amountSats: 5000, paymentHashHex: hashOf(crypto.randomBytes(32).toString('hex')), expireAfter: 4000 }));
+  it('gives every HTLC its own mainnet-claimable output (no trimming, no sub-minimum HTLCs)', function () {
+    const low = { policy: { htlcMinimumSats: 1 } };
+    const { A, B } = opened(100000, 500, { A: Object.assign({ tipHeight: () => 10 }, low), B: Object.assign({ tipHeight: () => 10 }, low) });
+    assert.strictEqual(A.policy.htlcMinimumSats, HTLC_MINIMUM_SATS, 'peers cannot negotiate below the minimum');
+
+    // A peer that signs a commitment carrying a sub-minimum HTLC is refused.
+    const offer = A.offerHtlc({ amountSats: 1000, paymentHashHex: hashOf(crypto.randomBytes(32).toString('hex')), expireAfter: 4000 });
+    const tiny = Object.assign({}, offer.htlcs[0], { amountSats: 100 });
+    const forged = Witness.signArtifact(Object.assign({}, offer, { pubkey: undefined, signature: undefined, htlcs: [tiny], localSats: offer.localSats + 900 }), A.localPrivateKey);
+    assert.throws(() => B.receive(forged), /HTLC below|claimable output/);
+    assert.throws(() => Channel.planRoute({ paymentHashHex: tiny.paymentHashHex, amountSats: HTLC_MINIMUM_SATS - 1, finalExpireHeight: 3000, hops: [{ feeSats: 0, cltvDelta: 40 }] }), /HTLC minimum/);
+    sync(A, B, offer);
+
+    sync(A, B, A.offerHtlc({ amountSats: HTLC_MINIMUM_SATS, paymentHashHex: hashOf(crypto.randomBytes(32).toString('hex')), expireAfter: 4000 }));
     const c = A.commitment;
     const tx = bitcoin.Transaction.fromHex(bitcoin.Psbt.fromBase64(c.psbtBase64).__CACHE.__TX.toHex());
-    const trimmed = c.outputs.find((o) => o.kind === 'htlc' && o.trimmed);
-    assert.ok(trimmed && trimmed.vout === null, 'trimmed HTLC has no output index');
+    const htlcs = c.outputs.filter((o) => o.kind === 'htlc');
+    assert.strictEqual(htlcs.length, 2);
     for (const row of c.outputs) {
-      if (row.vout == null) continue;
+      assert.ok(Number.isInteger(row.vout), `${row.kind} has an output`);
       const script = bitcoin.address.toOutputScript(row.address, NET);
       assert.ok(Buffer.from(tx.outs[row.vout].script).equals(script), `${row.kind} vout ${row.vout} points at its own script`);
     }
-    assert.strictEqual(c.outputs.filter((o) => o.vout != null).length, tx.outs.length);
+    assert.strictEqual(c.outputs.length, tx.outs.length);
+
+    // The smallest HTLC still claims to a non-dust output at 1 sat/vB.
+    const smallest = htlcs.find((o) => o.amountSats === HTLC_MINIMUM_SATS);
+    const fin = A.finalize();
+    assert.throws(() => Channel.prepareHtlcTimeout(c, { htlcId: smallest.id, commitmentTxHex: fin.txHex, destinationAddress: A.localAddress, feeSats: HTLC_MINIMUM_SATS - 545, network: 'regtest' }), /dust|546/);
+    const timeout = Channel.prepareHtlcTimeout(c, { htlcId: smallest.id, commitmentTxHex: fin.txHex, destinationAddress: A.localAddress, feeSats: HTLC_MINIMUM_SATS - 546, network: 'regtest' });
+    assert.ok(timeout.psbtBase64);
   });
 });

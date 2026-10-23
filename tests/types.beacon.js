@@ -684,7 +684,7 @@ describe('@fabric/core/types/beacon', function () {
   it('prunes on a reorg to a shorter best chain and never on a failed lookup', async function () {
     const { EventEmitter } = require('events');
     const chain = ['01'.repeat(32), '02'.repeat(32), '03'.repeat(32)];
-    let best = 3;
+    let best = 1;
     let failHash = false;
     const bitcoin = new EventEmitter();
     bitcoin._makeRPCRequest = async (method, params) => {
@@ -703,9 +703,15 @@ describe('@fabric/core/types/beacon', function () {
     const errors = [];
     beacon.on('reorg', (r) => reorgs.push(r));
     beacon.on('error', (e) => errors.push(e));
+    const epochs = () => beacon._epochChain.entries.map((b) => [b.payload.height, b.payload.blockHash]);
     await beacon.start();
     await beacon._blockQueue;
-    assert.strictEqual(beacon._state.content.height, 3);
+    for (const h of [2, 3]) {
+      best = h;
+      bitcoin.emit('block', { tip: chain[h - 1], height: h });
+      await beacon._blockQueue;
+    }
+    assert.deepStrictEqual(epochs(), [[1, chain[0]], [2, chain[1]], [3, chain[2]]]);
 
     failHash = true;
     bitcoin.emit('block', { tip: chain[0], height: 1 });
@@ -714,14 +720,27 @@ describe('@fabric/core/types/beacon', function () {
     assert.strictEqual(reorgs.length, 0);
     assert.strictEqual(errors.length, 1);
 
+    // Shorter best chain with another block at height 2: the losing height-2
+    // epoch is replaced, never kept next to the new one.
     failHash = false;
     best = 2;
+    const stale = chain[1];
     chain[1] = '0b'.repeat(32);
     bitcoin.emit('block', { tip: chain[1], height: 2 });
     await beacon._blockQueue;
-    assert.strictEqual(reorgs.length, 1);
+    assert.deepStrictEqual(epochs(), [[1, chain[0]], [2, chain[1]]]);
+    assert.notStrictEqual(chain[1], stale);
     assert.strictEqual(beacon._state.content.height, 2);
     assert.strictEqual(beacon._state.content.lastBlockHash, chain[1]);
+
+    // Shorter best chain whose tip is the epoch already kept: prune only.
+    best = 1;
+    const before = reorgs.length;
+    bitcoin.emit('block', { tip: chain[0], height: 1 });
+    await beacon._blockQueue;
+    assert.deepStrictEqual(epochs(), [[1, chain[0]]]);
+    assert.strictEqual(reorgs.length, before + 1);
+    assert.strictEqual(beacon._state.content.lastBlockHash, chain[0]);
     await beacon.stop();
   });
 

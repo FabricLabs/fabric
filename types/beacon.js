@@ -787,6 +787,37 @@ class Beacon extends Actor {
     this.emit('reorg', { pruned, inclusiveMaxHeight, removedBeaconClocks });
   }
 
+  /**
+   * Drop the tip epoch (another block at the same height won) and restore
+   * state from the epoch below it.
+   * @private
+   */
+  _dropTipEpoch () {
+    const popped = this._epochChain.pop();
+    const poppedClock = popped && popped.payload && popped.payload.clock != null
+      ? Number(popped.payload.clock)
+      : null;
+    const last = this._epochChain.tip;
+    if (last && last.payload) {
+      this._state.content.clock = last.payload.clock != null ? last.payload.clock : 0;
+      this._state.content.lastBlockHash = last.payload.blockHash || null;
+      this._state.content.height = last.payload.height != null ? last.payload.height : 0;
+      this._state.content.balance = last.payload.balance != null ? last.payload.balance : 0;
+      this._state.content.balanceSats = last.payload.balanceSats != null ? last.payload.balanceSats : 0;
+    } else if (!this._epochChain.height) {
+      this._state.content.clock = 0;
+      this._state.content.lastBlockHash = null;
+      this._state.content.height = 0;
+      this._state.content.balance = 0;
+      this._state.content.balanceSats = 0;
+    }
+    this.emit('reorg', {
+      pruned: 1,
+      sameHeight: true,
+      removedBeaconClocks: poppedClock != null && Number.isFinite(poppedClock) ? [poppedClock] : []
+    });
+  }
+
   async recordEpochFromBlock (payload = {}) {
     if (!this.bitcoin) throw new Error('Beacon has no Bitcoin service attached.');
 
@@ -804,30 +835,15 @@ class Beacon extends Actor {
 
     if (height < this._state.content.height) {
       this._pruneEpochChain(height);
-    } else if (height === this._state.content.height && blockHash !== this._state.content.lastBlockHash) {
-      const popped = this._epochChain.pop();
-      const poppedClock = popped && popped.payload && popped.payload.clock != null
-        ? Number(popped.payload.clock)
-        : null;
-      const last = this._epochChain.tip;
-      if (last && last.payload) {
-        this._state.content.clock = last.payload.clock != null ? last.payload.clock : 0;
-        this._state.content.lastBlockHash = last.payload.blockHash || null;
-        this._state.content.height = last.payload.height != null ? last.payload.height : 0;
-        this._state.content.balance = last.payload.balance != null ? last.payload.balance : 0;
-        this._state.content.balanceSats = last.payload.balanceSats != null ? last.payload.balanceSats : 0;
-      } else if (!this._epochChain.height) {
-        this._state.content.clock = 0;
-        this._state.content.lastBlockHash = null;
-        this._state.content.height = 0;
-        this._state.content.balance = 0;
-        this._state.content.balanceSats = 0;
+      // The prune keeps the epoch at `height`: it is either this block or the
+      // losing branch's block at that height.
+      const kept = this._epochChain.tip;
+      if (kept && kept.payload && Number(kept.payload.height) === height) {
+        if (blockHash === kept.payload.blockHash) return null;
+        this._dropTipEpoch();
       }
-      this.emit('reorg', {
-        pruned: 1,
-        sameHeight: true,
-        removedBeaconClocks: poppedClock != null && Number.isFinite(poppedClock) ? [poppedClock] : []
-      });
+    } else if (height === this._state.content.height && blockHash !== this._state.content.lastBlockHash) {
+      this._dropTipEpoch();
     }
 
     this._state.content.clock += 1;

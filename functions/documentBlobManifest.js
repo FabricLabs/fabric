@@ -505,6 +505,9 @@ class DocumentBlobTransferBook {
    * entries leave that index unchecked here (the sealed per-blob path refuses them once any
    * index is pinned: that blob was not bought)
    * @param {string[]} [opts.paymentHashHexes] expected sealed payment hash (SHA256(K_i)) per blob index
+   * @param {string[]} [opts.ivs] advertised AES-GCM IV (base64) per blob index
+   * @param {string[]} [opts.origins] peer the index was bought from (its frame may displace
+   * another origin's alternate when the IV is not advertised)
    * @param {boolean} [opts.merge] add these pins to an existing expectation for the same
    * document and root (same `total`) instead of replacing it, so buying blob j keeps blob i pinned
    */
@@ -517,10 +520,17 @@ class DocumentBlobTransferBook {
     const total = Math.round(Number(opts.total || opts.blobTotal || 0));
     if (total > this.maxParts) return null;
     if (Array.isArray(opts.blobHashHexes) && opts.blobHashHexes.length > this.maxParts) return null;
-    if (Array.isArray(opts.paymentHashHexes) && opts.paymentHashHexes.length > this.maxParts) return null;
-    const pins = (list) => (Array.isArray(list) ? Array.from(list, (h) => (h ? String(h).toLowerCase() : null)) : null);
+    for (const list of [opts.paymentHashHexes, opts.ivs, opts.origins]) {
+      if (Array.isArray(list) && list.length > this.maxParts) return null;
+    }
+    const pins = (list, lower = true) => (Array.isArray(list)
+      ? Array.from(list, (h) => (h ? (lower ? String(h).toLowerCase() : String(h)) : null))
+      : null);
     const expectedHashes = pins(opts.blobHashHexes);
     const expectedPaymentHashes = pins(opts.paymentHashHexes);
+    // IVs are base64 and origins are peer names: case matters.
+    const expectedIvs = pins(opts.ivs, false);
+    const expectedOrigins = pins(opts.origins, false);
     const key = transferKey(documentId, merkleRootHex);
     const prior = opts.merge ? this._pending.get(key) : null;
     if (prior && (!prior.total || !(total > 0) || prior.total === total)) {
@@ -530,6 +540,8 @@ class DocumentBlobTransferBook {
       };
       prior.expectedHashes = merge(prior.expectedHashes, expectedHashes);
       prior.expectedPaymentHashes = merge(prior.expectedPaymentHashes, expectedPaymentHashes);
+      prior.expectedIvs = merge(prior.expectedIvs, expectedIvs);
+      prior.expectedOrigins = merge(prior.expectedOrigins, expectedOrigins);
       if (!prior.total && total > 0) prior.total = total;
       prior.updated = Date.now();
       return prior;
@@ -542,6 +554,8 @@ class DocumentBlobTransferBook {
       total: Number.isFinite(total) && total > 0 ? total : null,
       expectedHashes,
       expectedPaymentHashes,
+      expectedIvs,
+      expectedOrigins,
       contentSha256: opts.contentSha256
         ? String(opts.contentSha256).toLowerCase()
         : null,

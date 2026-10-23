@@ -485,7 +485,7 @@ class Document extends State {
       network: 'bitcoin',
       blobs: this._blobs.map((b) => {
         const pay = this.paymentHashFor(b.index);
-        return {
+        const out = {
           index: b.index,
           total: b.total,
           blobHashHex: b.blobHashHex,
@@ -494,6 +494,9 @@ class Document extends State {
           contentHash: pay,
           contentHashHex: pay
         };
+        // Public (it rides every unpaid frame); lets buyers pin it.
+        if (b.iv) out.iv = b.iv;
+        return out;
       })
     };
     if (this._meta.publisher) item.publisher = this._meta.publisher;

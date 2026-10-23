@@ -359,11 +359,22 @@ const PEER_SCORE_RELAY_NEST_EXCEEDED_PENALTY = 60;
 const CHAT_MAX_RELAYS_PER_ORIGIN_PER_MINUTE = 30;
 /** Max sealed ciphertext rows awaiting key reveal on a Peer. */
 const PEER_MAX_PENDING_SEALED_DELIVERIES = 32;
+/** Smallest standard output on Bitcoin mainnet (P2PKH dust at the default relay fee); anything smaller is non-standard. */
+const BITCOIN_DUST_SATS = 546;
+/** Size budget for a single-input HTLC claim or timeout spend (measured 162 vB for the tapscript claim leaf to a P2TR address). */
+const HTLC_CLAIM_VBYTES = 170;
+/**
+ * Smallest payment an HTLC may carry (channel or L1): its claim pays at least
+ * 1 sat/vB and still leaves a non-dust output, so the preimage holder can
+ * always collect on chain. Raise `htlcMinimumSats` for fee-spike margin, or
+ * CPFP the claim output.
+ */
+const HTLC_MINIMUM_SATS = BITCOIN_DUST_SATS + HTLC_CLAIM_VBYTES;
 /** Max blobs in one document transfer (`blobTotal` cap). 4096 × ~24 KiB blobs ≈ 94 MiB per document. */
 const MAX_DOCUMENT_BLOBS = 4096;
 /** Max blobs (parts) accepted for one per-blob sealed tree (`blobTotal` cap). */
 const PEER_MAX_SEALED_BLOB_PARTS = MAX_DOCUMENT_BLOBS;
-/** Alternate frames kept per held sealed blob (same ciphertext, another payment hash or IV) so a poisoned first frame cannot block the paid delivery. */
+/** Alternate frames kept per held sealed blob (same ciphertext, another payment hash or IV). Bounds memory only: purchase pins (payment hash, advertised IV, seller origin) are what keep poisoned frames from blocking the paid delivery. */
 const PEER_MAX_SEALED_BLOB_ALTERNATES = 4;
 /** Global byte budget across every pending sealed row (ciphertext + retained frames); fits one full-size tree. */
 const PEER_MAX_PENDING_SEALED_BYTES = 256 * 1024 * 1024;
@@ -612,6 +623,9 @@ module.exports = {
   PEER_MAX_PENDING_SEALED_DELIVERIES,
   PEER_MAX_PENDING_SEALED_BYTES,
   PEER_PENDING_SEALED_TTL_MS,
+  BITCOIN_DUST_SATS,
+  HTLC_CLAIM_VBYTES,
+  HTLC_MINIMUM_SATS,
   MAX_DOCUMENT_BLOBS,
   PEER_MAX_SEALED_BLOB_PARTS,
   PEER_MAX_SEALED_BLOB_ALTERNATES,

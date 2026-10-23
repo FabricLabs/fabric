@@ -8,6 +8,9 @@ const Peer = require('../types/peer');
 const { merkleRootHexFromBlobHashes, DEFAULT_BLOB_CHUNK_BYTES } = require('../functions/documentBlobManifest');
 const { paymentHashHexFromKey, isWellFormedKeyReveal } = require('../functions/documentSealedExchange');
 const { DocumentOfferBook } = require('../types/offerBook');
+const { HTLC_MINIMUM_SATS } = require('../constants');
+
+const RATE = HTLC_MINIMUM_SATS;
 
 const sha256 = (b) => crypto.createHash('sha256').update(b).digest('hex');
 
@@ -114,7 +117,9 @@ describe('types/document (sealed blob tree)', function () {
     const plain = crypto.randomBytes(4000);
     const doc = Document.seal(plain, { chunkBytes: 2048 });
     assert.strictEqual(doc.blobTotal, 2);
-    const pub = seller.publishSealedDocument(doc, { rateSats: 3 });
+    // A paid blob must settle with an HTLC its claim can collect on chain.
+    assert.match(seller.publishSealedDocument(doc, { rateSats: RATE - 1 }).error, /HTLC minimum/);
+    const pub = seller.publishSealedDocument(doc, { rateSats: RATE });
     assert.ok(pub.ok, pub.error);
     const docId = pub.documentId;
 
@@ -166,7 +171,7 @@ describe('types/document (sealed blob tree)', function () {
     const buyer = new Peer({ listen: false });
     const plain = crypto.randomBytes(4000);
     const doc = Document.seal(plain, { chunkBytes: 2048 });
-    const { documentId } = seller.publishSealedDocument(doc, { rateSats: 3 });
+    const { documentId } = seller.publishSealedDocument(doc, { rateSats: RATE });
     const written = [];
     seller.connections['buyer'] = { _writeFabric: (buf) => written.push(buf) };
     assert.ok(seller._sendP2pFileSendToPeer(documentId, 'buyer', { revealKey: false, settlementId: 's' }));
@@ -246,7 +251,7 @@ describe('types/document (sealed blob tree)', function () {
   it('Peer: expected blob hashes are checked per index', function () {
     const seller = new Peer({ listen: false, sealPricedDocuments: true });
     const doc = Document.seal(crypto.randomBytes(4000), { chunkBytes: 2048 });
-    const { documentId } = seller.publishSealedDocument(doc, { rateSats: 3 });
+    const { documentId } = seller.publishSealedDocument(doc, { rateSats: RATE });
     const written = [];
     seller.connections['buyer'] = { _writeFabric: (buf) => written.push(buf) };
     seller._sendP2pFileSendToPeer(documentId, 'buyer', { revealKey: false, settlementId: 's' });
@@ -278,7 +283,7 @@ describe('types/document (sealed blob tree)', function () {
   it('Peer: a poisoned first frame cannot block the paid blob, and pins survive later purchases', function () {
     const seller = new Peer({ listen: false, sealPricedDocuments: true });
     const doc = Document.seal(crypto.randomBytes(4000), { chunkBytes: 2048 });
-    const { documentId } = seller.publishSealedDocument(doc, { rateSats: 3 });
+    const { documentId } = seller.publishSealedDocument(doc, { rateSats: RATE });
     const written = [];
     seller.connections['buyer'] = { _writeFabric: (buf) => written.push(buf) };
     seller._sendP2pFileSendToPeer(documentId, 'buyer', { revealKey: false, settlementId: 's' });
@@ -323,11 +328,88 @@ describe('types/document (sealed blob tree)', function () {
     assert.strictEqual(part.alternates, undefined);
   });
 
+  it('Peer: frames held before the purchase pin, or a full alternates list, never block the paid blob', function () {
+    const seller = new Peer({ listen: false, sealPricedDocuments: true });
+    const doc = Document.seal(crypto.randomBytes(4000), { chunkBytes: 2048 });
+    const { documentId } = seller.publishSealedDocument(doc, { rateSats: RATE });
+    const written = [];
+    seller.connections['buyer'] = { _writeFabric: (buf) => written.push(buf) };
+    seller._sendP2pFileSendToPeer(documentId, 'buyer', { revealKey: false, settlementId: 's' });
+    const Message = require('../types/message');
+    const bodies = written.map((buf) => Message.fromBuffer(buf)).filter((m) => m.type === 'P2P_FILE_SEND').map((m) => JSON.parse(m.body));
+    const rowKey = `${documentId}|${doc.merkleRootHex}`;
+
+    // Inventory advertises each blob's IV; the offer book keeps it.
+    const item = doc.inventoryItem({ rateSats: RATE });
+    assert.strictEqual(item.blobs[0].iv, bodies[0].iv);
+    const book = new DocumentOfferBook();
+    const [offer] = book.ingestInventoryResponse({ origin: 'seller', items: [item] });
+    assert.strictEqual(offer.iv, bodies[0].iv);
+
+    const pin = (peer, opts = {}) => {
+      const at = (v) => { const a = []; a[0] = v; return a; };
+      return peer.blobTransfers.expectTransfer({
+        documentId,
+        merkleRootHex: doc.merkleRootHex,
+        total: doc.blobTotal,
+        blobHashHexes: at(doc.blob(0).blobHashHex),
+        paymentHashHexes: at(doc.paymentHashFor(0)),
+        ivs: opts.iv === false ? null : at(bodies[0].iv),
+        origins: at('seller'),
+        merge: true
+      });
+    };
+    const randomIv = () => Object.assign({}, bodies[0], { iv: crypto.randomBytes(12).toString('base64') });
+    const openOnChannelRail = (peer) => peer.openSealedBlobWithKey({ documentId, blobIndex: 0, keyHex: doc.keyFor(0) });
+
+    // Self-hashed junk under the advertised root lands before the buyer pays.
+    const junkBytes = crypto.randomBytes(2048);
+    const junk = Object.assign({}, bodies[0], {
+      body: junkBytes.toString('base64'),
+      blobHashHex: crypto.createHash('sha256').update(junkBytes).digest('hex')
+    });
+    const a = new Peer({ listen: false });
+    assert.strictEqual(a._ingestP2pFileSend({ object: junk }, { name: 'mallory' }).status, 'awaiting_key');
+    pin(a);
+    assert.strictEqual(a._ingestP2pFileSend({ object: bodies[0] }, { name: 'seller' }).status, 'awaiting_key');
+    assert.strictEqual(a.pendingSealedBlobs[rowKey].parts.get(0).blobHashHex, doc.blob(0).blobHashHex);
+    assert.ok(openOnChannelRail(a).ok);
+
+    // Five random-IV frames before the pin; the advertised IV clears them.
+    const b = new Peer({ listen: false });
+    for (let i = 0; i < 5; i++) b._ingestP2pFileSend({ object: randomIv() }, { name: 'mallory' });
+    assert.strictEqual(b.pendingSealedBlobs[rowKey].parts.get(0).alternates.length, 4);
+    pin(b);
+    const late = b._ingestP2pFileSend({ object: randomIv() }, { name: 'mallory' });
+    assert.strictEqual(late.status, 'reject');
+    assert.match(late.error, /advertised/);
+    assert.strictEqual(b._ingestP2pFileSend({ object: bodies[0] }, { name: 'seller' }).status, 'awaiting_key');
+    assert.strictEqual(b.pendingSealedBlobs[rowKey].parts.get(0).alternates, undefined);
+    assert.ok(openOnChannelRail(b).ok);
+
+    // No advertised IV: the seller bought from displaces another origin's alternate.
+    const c = new Peer({ listen: false });
+    pin(c, { iv: false });
+    for (let i = 0; i < 5; i++) c._ingestP2pFileSend({ object: randomIv() }, { name: 'mallory' });
+    assert.strictEqual(c._ingestP2pFileSend({ object: randomIv() }, { name: 'mallory' }).status, 'reject');
+    assert.strictEqual(c._ingestP2pFileSend({ object: bodies[0] }, { name: 'seller' }).alternate, true);
+    const opened = openOnChannelRail(c);
+    assert.ok(opened.ok, opened.error);
+    assert.strictEqual(c.pendingSealedBlobs[rowKey].parts.get(0).origin, 'seller');
+
+    // A frame's unauthenticated plaintextSha256 cannot veto the paid open.
+    const d = new Peer({ listen: false });
+    pin(d);
+    d._ingestP2pFileSend({ object: Object.assign({}, bodies[0], { plaintextSha256: 'ab'.repeat(32) }) }, { name: 'mallory' });
+    assert.strictEqual(d._ingestP2pFileSend({ object: bodies[0] }, { name: 'seller' }).duplicate, true);
+    assert.ok(openOnChannelRail(d).ok);
+  });
+
   it('Peer: pending sealed blobs are bounded by a global byte budget and a TTL', function () {
     const seller = new Peer({ listen: false, sealPricedDocuments: true });
     const framesFor = (bytes) => {
       const doc = Document.seal(crypto.randomBytes(bytes), { chunkBytes: 2048 });
-      const { documentId } = seller.publishSealedDocument(doc, { rateSats: 3 });
+      const { documentId } = seller.publishSealedDocument(doc, { rateSats: RATE });
       const written = [];
       seller.connections['buyer'] = { _writeFabric: (buf) => written.push(buf) };
       seller._sendP2pFileSendToPeer(documentId, 'buyer', { revealKey: false, settlementId: `s-${documentId}` });
@@ -359,7 +441,7 @@ describe('types/document (sealed blob tree)', function () {
   it('Peer: request for one blob reveals only after authorizeDocumentKeyReveal for that blob', function () {
     const seller = new Peer({ listen: false });
     const doc = Document.seal(crypto.randomBytes(3000), { chunkBytes: 2048 });
-    const { documentId } = seller.publishSealedDocument(doc, { rateSats: 1 });
+    const { documentId } = seller.publishSealedDocument(doc, { rateSats: RATE });
     const parsed = { document: documentId, blobIndex: 1, contentHashHex: doc.paymentHashFor(1) };
     assert.strictEqual(seller._mayRevealSealedBlobKey(documentId, parsed), false, 'hash echo alone never unlocks');
     seller.authorizeDocumentKeyReveal({ documentId, contentHashHex: doc.paymentHashFor(1), settlementId: 'x' });

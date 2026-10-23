@@ -390,6 +390,7 @@ class DocumentOfferBook {
             rateSats: Number(b.rateSats != null ? b.rateSats : rateSats) || 0,
             contentHashHex: paymentHash,
             blobHashHex: hex64(b.blobHashHex),
+            iv: typeof b.iv === 'string' && /^[A-Za-z0-9+/]{16,64}={0,2}$/.test(b.iv) ? b.iv : null,
             size: b.size != null ? Number(b.size) : (it.size != null ? Number(it.size) : null),
             htlc: b.htlc || it.htlc || null,
             completeness: 1
@@ -494,6 +495,14 @@ class DocumentOfferBook {
       const max = Number(opts.maxSats);
       out = out.filter((o) => (Number(o.rateSats) || 0) <= max);
     }
+    if (opts.minPaidSats != null && Number.isFinite(Number(opts.minPaidSats))) {
+      // Free offers stay; a paid one must be large enough to settle.
+      const min = Number(opts.minPaidSats);
+      out = out.filter((o) => {
+        const rate = Number(o.rateSats) || 0;
+        return rate <= 0 || rate >= min;
+      });
+    }
     if (Array.isArray(opts.excludeSellers) && opts.excludeSellers.length) {
       const ex = new Set(opts.excludeSellers.map(String));
       out = out.filter((o) => !ex.has(String(o.sellerId)) && !ex.has(String(o.sellerAddress)));
@@ -542,6 +551,7 @@ class DocumentOfferBook {
    * @param {Object} [opts]
    * @param {number} [opts.blobIndex]
    * @param {number} [opts.maxSats]
+   * @param {number} [opts.minPaidSats] drop paid offers below this (free offers stay)
    * @param {string[]} [opts.excludeSellers]
    * @param {string} [opts.merkleRootHex] only offers for this tree root
    * @param {Object} [opts.weights]
@@ -564,6 +574,7 @@ class DocumentOfferBook {
    * @param {Object} [opts]
    * @param {boolean} [opts.singleKey] legacy whole-document key: lock one seller
    * @param {number} [opts.maxSats] per-blob ceiling
+   * @param {number} [opts.minPaidSats] drop paid offers below this (free offers stay)
    * @param {string[]} [opts.excludeSellers]
    * @param {string} [opts.merkleRootHex] only offers for this tree root; when
    *   omitted the plan still stays on **one** root (the first pick's), so

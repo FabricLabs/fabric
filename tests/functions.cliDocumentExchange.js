@@ -12,6 +12,7 @@ const {
 } = require('../functions/cliDocumentExchange');
 const { DocumentOfferBook } = require('../functions/documentMarket');
 const { createDocumentPurchaseSession } = require('../functions/documentMarket');
+const { HTLC_MINIMUM_SATS } = require('../constants');
 
 describe('functions/cliDocumentExchange (headless CLI surface)', function () {
   it('catalog exposes documents + documents-market packs and commands', function () {
@@ -111,7 +112,7 @@ describe('functions/cliDocumentExchange (headless CLI surface)', function () {
       latencyMs: 10,
       items: [{
         id: 'doc-a',
-        rateSats: 100,
+        rateSats: 1000,
         contentHash,
         sellerPubkey: String(seller.pubkey).toLowerCase(),
         htlc: {
@@ -151,10 +152,15 @@ describe('functions/cliDocumentExchange (headless CLI surface)', function () {
     assert.ok(!poisoned.ok);
     assert.match(poisoned.error, /buyer-bound HTLC|seller pubkey/i);
 
+    const dusty = exchange.buy('doc-a', 'seller1', HTLC_MINIMUM_SATS - 1);
+    assert.ok(!dusty.ok);
+    assert.match(dusty.error, /HTLC minimum/);
+    assert.strictEqual(exchange.purchaseSessions.size, 0);
+
     const first = exchange.buy('doc-a', 'auto');
     assert.ok(first.ok, first.error);
     assert.ok(first.session);
-    assert.strictEqual(first.session.amountSats, 100);
+    assert.strictEqual(first.session.amountSats, 1000);
     assert.strictEqual(first.session.paymentAddress, built.address);
     assert.strictEqual(exchange.purchaseSessions.size, 1);
 
@@ -173,7 +179,7 @@ describe('functions/cliDocumentExchange (headless CLI surface)', function () {
       sellerPubkey: String(seller.pubkey).toLowerCase(),
       items: [{
         id: 'doc-evil',
-        rateSats: 50,
+        rateSats: 1000,
         contentHash: 'bb'.repeat(32),
         sellerPubkey: String(seller.pubkey).toLowerCase(),
         htlc: { paymentAddress: 'bcrt1qattackercontrolledxxxxxxxxxxxxxxxxxxxxxxxxx' }
@@ -496,12 +502,12 @@ describe('functions/cliDocumentExchange (headless CLI surface)', function () {
       latencyMs: 5,
       items: [{
         id: 'doc-multi',
-        rateSats: 10,
+        rateSats: 1000,
         contentHash,
         sealed: true,
         blobs: [
-          { index: 0, total: 2, blobHashHex: 'f1'.repeat(32), rateSats: 10 },
-          { index: 1, total: 2, blobHashHex: 'f2'.repeat(32), rateSats: 10 }
+          { index: 0, total: 2, blobHashHex: 'f1'.repeat(32), rateSats: 1000 },
+          { index: 1, total: 2, blobHashHex: 'f2'.repeat(32), rateSats: 1000 }
         ],
         merkleRootHex: 'f3'.repeat(32),
         htlc: { paymentAddress: built.address, paymentHashHex: contentHash }

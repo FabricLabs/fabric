@@ -8,6 +8,10 @@ const Document = require('../types/document');
 const Peer = require('../types/peer');
 const Message = require('../types/message');
 const { DocumentOfferBook } = require('../types/offerBook');
+const { HTLC_MINIMUM_SATS } = require('../constants');
+
+// Smallest per-blob price that settles with an enforceable HTLC.
+const P = HTLC_MINIMUM_SATS;
 
 /**
  * Minimal two-seller market: sellers hold the same sealed document; the
@@ -81,6 +85,9 @@ describe('services/market (consumer budget agent)', function () {
     const [expected] = m.buyer.blobTransfers.expectedFor(m.documentId);
     assert.deepStrictEqual(expected.expectedHashes, [m.doc.blob(0).blobHashHex, m.doc.blob(1).blobHashHex]);
     assert.deepStrictEqual(expected.expectedPaymentHashes, [m.doc.paymentHashFor(0), m.doc.paymentHashFor(1)]);
+    assert.deepStrictEqual(expected.expectedIvs, [m.doc.blob(0).iv, m.doc.blob(1).iv]);
+    assert.strictEqual(expected.expectedOrigins.length, 2);
+    assert.ok(expected.expectedOrigins.every((o) => o === 'alpha' || o === 'beta'));
     const st = market.status();
     assert.strictEqual(st.wants[0].status, 'complete');
     assert.ok(st.sessions.every((s) => s.status === 'complete'));
@@ -91,18 +98,18 @@ describe('services/market (consumer budget agent)', function () {
   });
 
   it('refuses plans over the cap and spends within budget using pay/verify', async function () {
-    const m = buildMarket({ rateSats: 5 });
+    const m = buildMarket({ rateSats: P });
     // HTLC construction needs seller keys + locktime; the pay/verify path is
     // exercised with a plain payment address (hosts inject real funding).
-    const market = new Market({ budgetSats: 8, perPlanMaxSats: 100, tickMs: 0, book: m.book });
+    const market = new Market({ budgetSats: P + 1, perPlanMaxSats: 10 * P, tickMs: 0, book: m.book });
     market.attach({ peer: m.buyer, pay: async () => 'ff'.repeat(32), verify: async () => true });
     market.want(m.documentId, { blobTotal: m.doc.blobTotal });
 
     const first = await market.tick();
-    assert.strictEqual(first.opened, 0, 'two blobs at 5 sats each exceed the 8 sat budget');
+    assert.strictEqual(first.opened, 0, 'two blobs at P sats each exceed a budget of P + 1');
     assert.ok(/cap/.test(market.status().wants[0].lastError));
 
-    market.setBudget(10);
+    market.setBudget(2 * P);
     // Offers without a seller pubkey cannot build a buyer-bound HTLC: the
     // agent must refuse to fund rather than pay a bare address.
     const second = await market.tick();
@@ -110,6 +117,20 @@ describe('services/market (consumer budget agent)', function () {
     assert.ok(/buyer refund key|seller pubkey|HTLC/.test(market.status().wants[0].lastError));
     assert.strictEqual(market.spentSats, 0);
     assert.strictEqual(market.reservedSats, 0);
+  });
+
+  it('never plans a paid blob below the HTLC minimum (no enforceable settlement)', function () {
+    const doc = Document.seal(crypto.randomBytes(4000), { chunkBytes: 2048 });
+    const book = new DocumentOfferBook();
+    book.ingestInventoryResponse({ origin: 'cheap', items: [doc.inventoryItem({ rateSats: P - 1, documentId: 'd' })] });
+    const market = new Market({ budgetSats: 10 * P, tickMs: 0, book });
+    const want = { documentId: 'd', blobTotal: doc.blobTotal, merkleRootHex: doc.merkleRootHex };
+    assert.strictEqual(market.planFor(want).ok, false);
+    book.ingestInventoryResponse({ origin: 'fair', items: [doc.inventoryItem({ rateSats: P, documentId: 'd' })] });
+    const planned = market.planFor(want);
+    assert.ok(planned.ok, planned.error);
+    assert.ok([...planned.plan.values()].every((o) => o.sellerAddress === 'fair'));
+    assert.strictEqual(market.openSession(want, Object.assign({}, planned.plan.get(0), { rateSats: P - 1 }), 0, doc.blobTotal), null);
   });
 
   it('exports and imports agent state with telemetry', async function () {
@@ -156,7 +177,7 @@ describe('services/market (Phase 4 channel rail)', function () {
   }
 
   it('pays per chunk over an open channel and settles each HTLC with the revealed K_i', async function () {
-    const m = buildMarket({ rateSats: 5 });
+    const m = buildMarket({ rateSats: P });
     const buyerKey = party();
     const sellerKey = party();
     const fundingBuyer = Channel.buildFunding({ network: 'regtest', localPubkey: buyerKey.pub, remotePubkey: sellerKey.pub, expireAfter: 5000 });
@@ -182,7 +203,7 @@ describe('services/market (Phase 4 channel rail)', function () {
         Channel.exchange(buyerChan, sellerChan, body);
       }
     };
-    const market = new Market({ budgetSats: 100, perPlanMaxSats: 100, tickMs: 0, book: m.book, proximityWeight: 1 });
+    const market = new Market({ budgetSats: 10 * P, perPlanMaxSats: 10 * P, tickMs: 0, book: m.book, proximityWeight: 1 });
     market.attach({ peer: m.buyer, channels });
     market.want(m.documentId, { blobTotal: m.doc.blobTotal, merkleRootHex: m.doc.merkleRootHex });
 
@@ -195,18 +216,18 @@ describe('services/market (Phase 4 channel rail)', function () {
     assert.ok(viaChannel.length >= 1);
     assert.ok(viaChannel.every((s) => s.status === "complete" && s.channelHtlcId), JSON.stringify(viaChannel.map((s) => ({ status: s.status, htlc: s.channelHtlcId, err: s.error, amount: s.amountSats })), null, 1));
     assert.ok(received && received.buffer.equals(m.plain));
-    // Seller got paid off-chain: 5 sats per channel-settled chunk.
-    assert.strictEqual(sellerChan.balances.localSats, viaChannel.length * 5);
+    // Seller got paid off-chain: P sats per channel-settled chunk.
+    assert.strictEqual(sellerChan.balances.localSats, viaChannel.length * P);
     assert.strictEqual(buyerChan.state.htlcs.length, 0);
     assert.strictEqual(buyerChan.fullySigned, true);
     assert.ok(published.includes('ChannelHtlcFulfill'));
     assert.strictEqual(buyerChan.busy, false);
     assert.ok(Object.keys(sellerChan.state.revoked).length >= 2, 'every superseded state is revoked');
-    assert.strictEqual(market.spentSats, viaChannel.length * 5 + (sessions.length - viaChannel.length) * 5);
+    assert.strictEqual(market.spentSats, viaChannel.length * P + (sessions.length - viaChannel.length) * P);
   });
 
   it('seller-fulfils over Channel.Book: no key reveal on the wire, buyer opens blobs with the HTLC preimage, busy rounds defer', async function () {
-    const m = buildMarket({ rateSats: 5 });
+    const m = buildMarket({ rateSats: P });
     // The channel seller never reveals keys over P2P_FILE_SEND: ciphertext only.
     const sellerPeer = m.sellers.alpha;
     const origRequest = m.buyer.requestDocument;
@@ -224,7 +245,7 @@ describe('services/market (Phase 4 channel rail)', function () {
     };
     // Make the channel seller the only seller the book knows.
     const only = new DocumentOfferBook();
-    only.ingestInventoryResponse({ origin: 'alpha', items: [m.doc.inventoryItem({ rateSats: 5, documentId: m.documentId })], latencyMs: 20 });
+    only.ingestInventoryResponse({ origin: 'alpha', items: [m.doc.inventoryItem({ rateSats: P, documentId: m.documentId })], latencyMs: 20 });
 
     const buyerKey = party();
     const sellerKey = party();
@@ -252,7 +273,7 @@ describe('services/market (Phase 4 channel rail)', function () {
     pump();
     assert.strictEqual(opened.session.status, 'open');
 
-    const market = new Market({ budgetSats: 100, perPlanMaxSats: 100, tickMs: 0, book: only, proximityWeight: 1 });
+    const market = new Market({ budgetSats: 10 * P, perPlanMaxSats: 10 * P, tickMs: 0, book: only, proximityWeight: 1 });
     market.attach({ peer: m.buyer, channels: buyerBook });
     const deferred = [];
     market.on('sessionDeferred', (s) => deferred.push(s));
@@ -285,8 +306,8 @@ describe('services/market (Phase 4 channel rail)', function () {
     assert.ok(done.every((s) => s.status === 'complete'), JSON.stringify(done.map((s) => s.status)));
     assert.strictEqual(opened.session.state.htlcs.length, 0);
     assert.strictEqual(opened.session.busy, false);
-    assert.strictEqual(sellerBook.sessions.get(opened.session.channelId).balances.localSats, m.doc.blobTotal * 5);
-    assert.strictEqual(market.spentSats, m.doc.blobTotal * 5);
+    assert.strictEqual(sellerBook.sessions.get(opened.session.channelId).balances.localSats, m.doc.blobTotal * P);
+    assert.strictEqual(market.spentSats, m.doc.blobTotal * P);
   });
 
   it('a channel HTLC fulfilled after the delivery timeout is still counted as spent', function () {

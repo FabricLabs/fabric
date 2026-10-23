@@ -19,6 +19,7 @@
  */
 
 const crypto = require('crypto');
+const { HTLC_MINIMUM_SATS } = require('../constants');
 const Service = require('../types/service');
 const DocumentOfferBook = require('../types/offerBook');
 const inventoryHtlc = require('../functions/inventoryHtlc');
@@ -408,13 +409,15 @@ class Market extends Service {
     if (!offers.length) return { ok: false, error: 'no offers' };
     const blobTotal = want.blobTotal || Number(offers.find((o) => o.blobTotal != null && o.blobTotal > 0)?.blobTotal) || 1;
     const weights = this.weights();
+    // Paid offers below the HTLC minimum can't be settled enforceably on either rail.
+    const pick = { weights, merkleRootHex: want.merkleRootHex || undefined, minPaidSats: HTLC_MINIMUM_SATS };
     const plan = new Map();
     if (blobTotal > 1) {
-      const picked = this.book.pickBlobPlan(id, blobTotal, { weights, merkleRootHex: want.merkleRootHex || undefined });
+      const picked = this.book.pickBlobPlan(id, blobTotal, pick);
       for (const [i, o] of picked.entries()) plan.set(i, o);
       if (plan.size < blobTotal) return { ok: false, error: `plan incomplete (${plan.size}/${blobTotal})`, plan, blobTotal };
     } else {
-      const best = this.book.pickBest(id, { weights, merkleRootHex: want.merkleRootHex || undefined });
+      const best = this.book.pickBest(id, pick);
       if (!best) return { ok: false, error: 'no offers' };
       plan.set(0, best);
     }
@@ -564,6 +567,10 @@ class Market extends Service {
    */
   openSession (want, offer, blobIndex, blobTotal) {
     const amountSats = Math.max(0, Math.floor(Number(offer.rateSats) || 0));
+    if (amountSats > 0 && amountSats < HTLC_MINIMUM_SATS) {
+      want.lastError = `offer of ${amountSats} sats is below the ${HTLC_MINIMUM_SATS}-sat HTLC minimum`;
+      return null;
+    }
     const contentHashHex = contentHashHexFromObject(offer);
     let htlc = null;
     let paymentAddress = '';
@@ -597,6 +604,7 @@ class Market extends Service {
     }
     session.sellerId = String(offer.sellerId || offer.sellerAddress || '');
     session.sellerPubkeyHex = this._resolveSellerPubkeyHex(offer) || null;
+    session.iv = offer.iv || null;
     if (channel) {
       session.rail = 'channel';
       session.channelId = channel.channelId;
@@ -742,6 +750,10 @@ class Market extends Service {
         paymentHashHexes = [];
         paymentHashHexes[index] = session.contentHashHex;
       }
+      const ivs = session.iv ? [] : null;
+      if (ivs) ivs[index] = session.iv;
+      const origins = session.seller ? [] : null;
+      if (origins) origins[index] = String(session.seller);
       try {
         peer.blobTransfers.expectTransfer({
           documentId: session.documentId,
@@ -749,6 +761,8 @@ class Market extends Service {
           total: session.blobTotal,
           blobHashHexes,
           paymentHashHexes,
+          ivs,
+          origins,
           merge: true
         });
       } catch (_) { /* optional */ }

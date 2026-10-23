@@ -15,6 +15,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { HTLC_MINIMUM_SATS } = require('../constants');
 const Actor = require('../types/actor');
 const {
   DocumentOfferBook,
@@ -416,6 +417,9 @@ class CliDocumentExchange {
     const amountSats = amountArg != null && Number.isFinite(amountArg)
       ? amountArg
       : (Number(offer.rateSats) || 0);
+    if (amountSats > 0 && amountSats < HTLC_MINIMUM_SATS) {
+      return { error: `Cannot open paid buy: ${amountSats} sats is below the ${HTLC_MINIMUM_SATS}-sat HTLC minimum (the claim could not leave a non-dust output)` };
+    }
     // Never fund a seller-supplied address without rebuilding a buyer-bound HTLC tree.
     let paymentAddress = null;
     let bitcoinUri = null;
@@ -489,6 +493,7 @@ class CliDocumentExchange {
       merkleRootHex: offer.merkleRootHex,
       htlc
     });
+    session.iv = offer.iv || null;
     if (isDuplicateSettlement(this.paidSettlements, session)) {
       return { error: `Already settled ${session.dedupeKey} — refusing double-pay` };
     }
@@ -532,7 +537,7 @@ class CliDocumentExchange {
     const sample = this.offerBook.listOffers({ documentId: id })[0];
     const blobTotal = sample && sample.blobTotal != null ? Number(sample.blobTotal) : 0;
     if (seller === 'auto' && blobTotal > 1) {
-      const plan = this.offerBook.pickBlobPlan(id, blobTotal);
+      const plan = this.offerBook.pickBlobPlan(id, blobTotal, { minPaidSats: HTLC_MINIMUM_SATS });
       if (!plan.size) {
         return { ok: false, error: `No blob plan for ${id}. Run /inventory <peer> btc then /offers.` };
       }
@@ -558,7 +563,9 @@ class CliDocumentExchange {
 
     let offer = null;
     if (seller === 'auto') {
-      offer = this.offerBook.pickBest(id, amount != null ? { maxSats: amount } : {});
+      const pick = { minPaidSats: HTLC_MINIMUM_SATS };
+      if (amount != null) pick.maxSats = amount;
+      offer = this.offerBook.pickBest(id, pick);
     } else {
       const offers = this.offerBook.listOffers({ documentId: id }).filter((o) => {
         return o.sellerAddress === seller || o.sellerId === seller;
@@ -715,12 +722,18 @@ class CliDocumentExchange {
       const paymentHashHexes = session.contentHashHex ? [] : null;
       if (blobHashHexes) blobHashHexes[index] = session.blobHashHex;
       if (paymentHashHexes) paymentHashHexes[index] = session.contentHashHex;
+      const ivs = session.iv ? [] : null;
+      if (ivs) ivs[index] = session.iv;
+      const origins = session.seller ? [] : null;
+      if (origins) origins[index] = String(session.seller);
       peer.blobTransfers.expectTransfer({
         documentId: session.documentId,
         merkleRootHex: session.merkleRootHex,
         total: session.blobTotal,
         blobHashHexes,
         paymentHashHexes,
+        ivs,
+        origins,
         merge: true
       });
     }

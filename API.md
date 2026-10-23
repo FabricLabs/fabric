@@ -367,8 +367,10 @@ the existing <code>CONTRACT_MESSAGE</code> opcode as signed artifacts
 dedicated opcode is a separate, later protocol decision.</p>
 </dd>
 <dt><a href="#CHANNEL_DEFAULTS">CHANNEL_DEFAULTS</a></dt>
-<dd><p>Channel defaults (Lightning-derived, scaled for a per-chunk market).
-Policy fields are negotiated at <code>ChannelOpen</code> — the stricter value wins.</p>
+<dd><p>Channel defaults (Lightning-derived). Policy fields are negotiated at
+<code>ChannelOpen</code> — the stricter value wins. HTLCs are never trimmed: every one
+carries at least <code>HTLC_MINIMUM_SATS</code>, so it has a commitment output its
+receiver can claim on chain.</p>
 </dd>
 <dt><a href="#GCM_TAG_BYTES">GCM_TAG_BYTES</a></dt>
 <dd><p>AES-GCM tag appended to each sealed blob.</p>
@@ -3414,6 +3416,11 @@ reveals; the sender may also settle an HTLC it offered once it learned
 the preimage elsewhere (e.g. the seller's public key reveal) — that only
 ever pays the counterparty.
 
+Revealing the preimage before the peer countersigns is safe because no
+HTLC is trimmed: each one carries at least `HTLC_MINIMUM_SATS` and has a
+commitment output the receiver can claim with the preimage
+([prepareHtlcClaim](#Channel.prepareHtlcClaim)) if the peer stalls.
+
 **Kind**: instance method of [<code>ChannelSession</code>](#ChannelSession)  
 **Returns**: <code>object</code> - `ChannelHtlcFulfill` body (+ the new commitment via `commitment`)  
 
@@ -3640,6 +3647,11 @@ balance and the proposal carries the preimage. Normally the receiver
 reveals; the sender may also settle an HTLC it offered once it learned
 the preimage elsewhere (e.g. the seller's public key reveal) — that only
 ever pays the counterparty.
+
+Revealing the preimage before the peer countersigns is safe because no
+HTLC is trimmed: each one carries at least `HTLC_MINIMUM_SATS` and has a
+commitment output the receiver can claim with the preimage
+([prepareHtlcClaim](#Channel.prepareHtlcClaim)) if the peer stalls.
 
 **Kind**: instance method of [<code>ChannelSession</code>](#ChannelSession)  
 **Returns**: <code>object</code> - `ChannelHtlcFulfill` body (+ the new commitment via `commitment`)  
@@ -9508,6 +9520,7 @@ Full chunk index: blob hash → ranked offers.
 | [opts] | <code>Object</code> |  |
 | [opts.blobIndex] | <code>number</code> |  |
 | [opts.maxSats] | <code>number</code> |  |
+| [opts.minPaidSats] | <code>number</code> | drop paid offers below this (free offers stay) |
 | [opts.excludeSellers] | <code>Array.&lt;string&gt;</code> |  |
 | [opts.merkleRootHex] | <code>string</code> | only offers for this tree root |
 | [opts.weights] | <code>Object</code> |  |
@@ -9529,6 +9542,7 @@ ones; a legacy document-level seal (`opts.singleKey`) stays on one seller.
 | [opts] | <code>Object</code> |  |
 | [opts.singleKey] | <code>boolean</code> | legacy whole-document key: lock one seller |
 | [opts.maxSats] | <code>number</code> | per-blob ceiling |
+| [opts.minPaidSats] | <code>number</code> | drop paid offers below this (free offers stay) |
 | [opts.excludeSellers] | <code>Array.&lt;string&gt;</code> |  |
 | [opts.merkleRootHex] | <code>string</code> | only offers for this tree root; when   omitted the plan still stays on **one** root (the first pick's), so   blobs from different trees are never mixed into a single document |
 
@@ -10510,7 +10524,7 @@ settle one HTLC per blob plan and receive one key reveal per blob.
 | --- | --- | --- | --- |
 | doc | [<code>Document</code>](#Document) |  | Sealed document that holds its blob keys. |
 | [opts] | <code>Object</code> |  |  |
-| [opts.rateSats] | <code>number</code> | <code>0</code> | Per-blob ask. |
+| [opts.rateSats] | <code>number</code> | <code>0</code> | Per-blob ask: 0 (free) or at least `HTLC_MINIMUM_SATS`, since each blob settles with its own HTLC. |
 | [opts.documentId] | <code>string</code> |  | Catalog id (default: the Document's). |
 
 <a name="Peer+sealedBlobPreimageForPaymentHash"></a>
@@ -12303,7 +12317,7 @@ settle one HTLC per blob plan and receive one key reveal per blob.
 | --- | --- | --- | --- |
 | doc | [<code>Document</code>](#Document) |  | Sealed document that holds its blob keys. |
 | [opts] | <code>Object</code> |  |  |
-| [opts.rateSats] | <code>number</code> | <code>0</code> | Per-blob ask. |
+| [opts.rateSats] | <code>number</code> | <code>0</code> | Per-blob ask: 0 (free) or at least `HTLC_MINIMUM_SATS`, since each blob settles with its own HTLC. |
 | [opts.documentId] | <code>string</code> |  | Catalog id (default: the Document's). |
 
 <a name="Peer+sealedBlobPreimageForPaymentHash"></a>
@@ -19828,8 +19842,10 @@ dedicated opcode is a separate, later protocol decision.
 <a name="CHANNEL_DEFAULTS"></a>
 
 ## CHANNEL\_DEFAULTS
-Channel defaults (Lightning-derived, scaled for a per-chunk market).
-Policy fields are negotiated at `ChannelOpen` — the stricter value wins.
+Channel defaults (Lightning-derived). Policy fields are negotiated at
+`ChannelOpen` — the stricter value wins. HTLCs are never trimmed: every one
+carries at least `HTLC_MINIMUM_SATS`, so it has a commitment output its
+receiver can claim on chain.
 
 **Kind**: global constant  
 <a name="GCM_TAG_BYTES"></a>

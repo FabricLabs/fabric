@@ -160,7 +160,7 @@ describe('functions/cliDocumentExchange path & publish edges', function () {
       latencyMs: 5,
       items: [{
         id: 'doc-named',
-        rateSats: 25,
+        rateSats: 1000,
         contentHash,
         sellerPubkey: String(seller.pubkey).toLowerCase(),
         sellerAddress: 'seller-named',
@@ -201,7 +201,7 @@ describe('functions/cliDocumentExchange path & publish edges', function () {
       latencyMs: 5,
       items: [{
         id: 'doc-named-2',
-        rateSats: 25,
+        rateSats: 1000,
         contentHash: 'ac'.repeat(32),
         sellerAddress: 'seller-named',
         htlc: {
