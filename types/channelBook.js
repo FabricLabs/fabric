@@ -20,6 +20,15 @@ const expireHeight = Channel.expireHeight;
 /** @private */
 const HEX64 = /^[0-9a-f]{64}$/;
 
+/** Settled credit rows kept (open rows are bounded by the credit limit). */
+const MAX_SETTLED_CREDITS = 4096;
+
+/** @private a credit / transfer ref: non-empty, ≤ 256 printable characters */
+function creditRef (ref) {
+  const s = ref == null ? '' : String(ref);
+  return s && s.length <= 256 && !/[\u0000-\u001f\u007f]/.test(s) ? s : null;
+}
+
 /** @private */
 function sha256Hex (buf) {
   return crypto.createHash('sha256').update(buf).digest('hex');
@@ -40,9 +49,16 @@ function sha256Hex (buf) {
  * `ChannelHtlcFulfill`. The host sees the HTLC (amount, expiry, blob hash) and
  * must refuse underpaid ones.
  *
+ * **Pay-after-verify credit:** a seller may serve a chunk before payment,
+ * up to `creditLimitSats` outstanding per channel ({@link ChannelBook#extendCredit});
+ * the buyer pays with a balance transfer ({@link ChannelBook#transfer}) whose
+ * `ref` names the credit. No HTLC, so no HTLC minimum.
+ *
  * Events: `htlcCommitted` (a received HTLC is irrevocably committed),
  * `htlcFulfilled` (a counterparty revealed a preimage to us), `htlcSettled`
- * (any HTLC left the channel; `outcome` is `fulfilled` or `failed`), and
+ * (any HTLC left the channel; `outcome` is `fulfilled` or `failed`),
+ * `transferReceived` (a balance transfer to us is final: the payer revoked
+ * the state before it), `creditExtended` / `creditSettled`, and
  * `channelAction` (a new watchdog action, see {@link ChannelSession#tick}).
  * HTLC payloads are `{ channelId, session, htlcId, paymentHashHex,
  * blobHashHex, amountSats, direction, preimageHex?, outcome?, reason? }`.
@@ -50,10 +66,11 @@ function sha256Hex (buf) {
  */
 class ChannelBook extends Book {
   /**
-   * @param {object} opts `{ localPrivateKey, network, tipHeight?: function, confirmations?: function(txid)|true, publish?: function(body, session), persist?: function(session, body), preimageFor?: function(paymentHashHex, htlc), policy?, feerate?, staleTipMs?, forwardPolicy?: { feeSats, cltvDelta }, maxEntries?, now? }`
+   * @param {object} opts `{ localPrivateKey, network, tipHeight?: function, confirmations?: function(txid)|true, publish?: function(body, session), persist?: function(session, body), preimageFor?: function(paymentHashHex, htlc), policy?, feerate?, staleTipMs?, forwardPolicy?: { feeSats, cltvDelta }, creditLimitSats?, maxEntries?, now? }`
    *   `persist(session, body)` runs before every publish (a returned promise
    *   delays the publish; a throw cancels it). Inbound `ChannelOpen` needs
    *   `confirmations`. `maxEntries` caps the channels held (default no cap).
+   *   `creditLimitSats` (default 0: no credit) caps what one channel may owe.
    */
   constructor (opts = {}) {
     const settings = { maxEntries: opts.maxEntries != null ? opts.maxEntries : Infinity };
@@ -83,8 +100,10 @@ class ChannelBook extends Book {
     this.forwards = new Map(); // `${downstreamChannelId}:${htlcId}` → { channelId, htlcId }
     this.pendingPropagation = []; // upstream settlements to retry: { link, body }
     this.timeouts = []; // expired offered HTLCs as of the last tick
-    this._announced = new Set(); // `${channelId}:${htlcId}` already emitted as htlcCommitted
+    this._announced = new Set(); // `${channelId}:${htlcId}` already emitted as htlcCommitted; `transfer:${channelId}:${number}` as transferReceived
     this._actionKeys = new Set();
+    this.creditLimitSats = Math.max(0, Math.floor(Number(opts.creditLimitSats) || 0));
+    this.credits = new Map(); // `${channelId}|${ref}` → { channelId, ref, amountSats, paidSats, extendedAt, settledAt }
   }
 
   /**
@@ -389,7 +408,123 @@ class ChannelBook extends Book {
       }
       if (!session.busy && !this._autoFulfil(session)) this._repropose(session);
     }
+    this._announceTransfers(session);
     return reply;
+  }
+
+  /**
+   * @private emit received transfers once final (the payer revoked the state
+   * before the transfer, so it can no longer close without it) and apply
+   * them to the credit their `ref` names
+   */
+  _announceTransfers (session) {
+    const s = session.state;
+    for (const t of s.transfers || []) {
+      if (t.direction !== 'received' || s.remoteRevokedThrough < t.number - 1) continue;
+      const key = `transfer:${session.channelId}:${t.number}`;
+      if (this._announced.has(key)) continue;
+      this._announced.add(key);
+      const credit = t.ref ? this.credits.get(`${session.channelId}|${t.ref}`) : null;
+      if (credit && !credit.settledAt) {
+        credit.paidSats += t.amountSats;
+        if (credit.paidSats >= credit.amountSats) {
+          credit.settledAt = this.now();
+          this.emit('creditSettled', Object.assign({ session }, credit));
+          this._trimCredits();
+        }
+      }
+      this.emit('transferReceived', { channelId: session.channelId, session, amountSats: t.amountSats, ref: t.ref || null, number: t.number, credit: credit ? Object.assign({}, credit) : null });
+    }
+  }
+
+  /** @private resolve a channel id or a counterparty alias / key to a session */
+  _sessionOf (counterparty, pubkeyHex = null) {
+    return this._row(String(counterparty || '')) || this.sessionFor(counterparty, pubkeyHex);
+  }
+
+  /**
+   * Sats a channel still owes on credit we extended.
+   * @param {string} counterparty channel id, or a counterparty alias / key
+   * @param {string|null} [pubkeyHex]
+   * @returns {number}
+   */
+  outstanding (counterparty, pubkeyHex = null) {
+    const session = this._sessionOf(counterparty, pubkeyHex);
+    if (!session) return 0;
+    let owed = 0;
+    for (const c of this.credits.values()) {
+      if (c.channelId === session.channelId && !c.settledAt) owed += c.amountSats - c.paidSats;
+    }
+    return owed;
+  }
+
+  /**
+   * Seller side of pay-after-verify: serve first, record that the buyer owes
+   * `amountSats` for `ref` over its channel with us. Refused without an open
+   * channel, for a `ref` already used, past the credit limit, or when the
+   * buyer's channel balance (above its reserve) could not pay everything it
+   * would then owe. Paid by a transfer carrying the same `ref`. Also takes
+   * the request `Peer` passes to `settings.sealedBlobCredit` (`buyer`,
+   * `buyerPubkey`, `priceSats`), so hosts wire
+   * `sealedBlobCredit: (r) => book.extendCredit(r)`.
+   * @param {object} opts `{ counterparty, pubkeyHex?, ref, amountSats, limitSats? }`
+   * @returns {{ ok: boolean, channelId: (string|undefined), outstandingSats: (number|undefined), error: (string|undefined) }}
+   */
+  extendCredit (opts = {}) {
+    const session = this._sessionOf(opts.counterparty || opts.buyer, opts.pubkeyHex || opts.buyerPubkey || null);
+    if (!session || session.status !== 'open') return { ok: false, error: 'no open channel with that buyer' };
+    const ref = creditRef(opts.ref);
+    if (!ref) return { ok: false, error: 'credit ref required (≤ 256 printable characters)' };
+    const amount = Number(opts.amountSats != null ? opts.amountSats : opts.priceSats);
+    if (!Number.isSafeInteger(amount) || amount < 1) return { ok: false, error: 'amountSats must be a positive integer' };
+    const key = `${session.channelId}|${ref}`;
+    if (this.credits.has(key)) return { ok: false, error: 'credit ref already used' };
+    const limit = opts.limitSats != null ? Math.max(0, Math.floor(Number(opts.limitSats) || 0)) : this.creditLimitSats;
+    const owed = this.outstanding(session.channelId);
+    if (owed + amount > limit) return { ok: false, error: `credit limit ${limit} sats reached (${owed} outstanding)` };
+    const payable = session.balances.remoteSats - session.state.policy.channelReserveSats;
+    if (owed + amount > payable) return { ok: false, error: 'buyer channel balance cannot cover the credit' };
+    const row = { channelId: session.channelId, ref, amountSats: amount, paidSats: 0, extendedAt: this.now(), settledAt: null };
+    this.credits.set(key, row);
+    this.emit('creditExtended', Object.assign({ session }, row));
+    return { ok: true, channelId: session.channelId, outstandingSats: owed + amount };
+  }
+
+  /**
+   * @param {string} [channelId] only this channel
+   * @returns {object[]} credit rows (`settledAt` null while owed)
+   */
+  listCredits (channelId = null) {
+    return [...this.credits.values()].filter((c) => !channelId || c.channelId === String(channelId)).map((c) => Object.assign({}, c));
+  }
+
+  /** @private drop the oldest settled rows past `MAX_SETTLED_CREDITS` */
+  _trimCredits () {
+    let settled = 0;
+    for (const c of this.credits.values()) if (c.settledAt) settled++;
+    for (const [k, c] of this.credits) {
+      if (settled <= MAX_SETTLED_CREDITS) break;
+      if (!c.settledAt) continue;
+      this.credits.delete(k);
+      settled--;
+    }
+  }
+
+  /**
+   * Buyer side: pay a counterparty `amountSats` from our channel balance
+   * (no HTLC; see {@link ChannelSession#transfer}) and publish it.
+   * @param {string} counterparty seller id / alias, key, or channel id
+   * @param {number} amountSats
+   * @param {string} [ref] the credit being paid
+   * @param {string|null} [pubkeyHex]
+   * @returns {object} `ChannelCommitment` body (published)
+   */
+  transfer (counterparty, amountSats, ref = null, pubkeyHex = null) {
+    const session = this._sessionOf(counterparty, pubkeyHex);
+    if (!session) throw new Error('ChannelBook.transfer: no channel with that counterparty');
+    const body = session.transfer({ amountSats, ref });
+    this.publish(body, session);
+    return body;
   }
 
   /** @private settle the upstream leg of a forwarded HTLC */
@@ -495,6 +630,7 @@ class ChannelBook extends Book {
         if (row.outcome === 'fulfilled') this.emit('htlcFulfilled', ev);
         this.emit('htlcSettled', ev);
       }
+      this._announceTransfers(session);
     }
     const keys = new Set();
     for (const a of actions) {
@@ -553,7 +689,8 @@ class ChannelBook extends Book {
       peers: Object.fromEntries(this.peers),
       forwards: Object.fromEntries(this.forwards),
       announced: [...this._announced],
-      pendingPropagation: this.pendingPropagation.map((p) => ({ link: p.link, body: p.body }))
+      pendingPropagation: this.pendingPropagation.map((p) => ({ link: p.link, body: p.body })),
+      credits: this.listCredits()
     };
   }
 
@@ -566,6 +703,19 @@ class ChannelBook extends Book {
     for (const [k, v] of Object.entries(snapshot.forwards || {})) this.forwards.set(k, v);
     for (const k of snapshot.announced || []) this._announced.add(String(k));
     for (const p of snapshot.pendingPropagation || []) if (p && p.link && p.body) this.pendingPropagation.push({ link: p.link, body: p.body });
+    for (const c of snapshot.credits || []) {
+      const ref = c && creditRef(c.ref);
+      const amountSats = Number(c && c.amountSats);
+      if (!ref || !this.has(c.channelId) || !Number.isSafeInteger(amountSats) || amountSats < 1) continue;
+      this.credits.set(`${c.channelId}|${ref}`, {
+        channelId: String(c.channelId),
+        ref,
+        amountSats,
+        paidSats: Math.max(0, Math.floor(Number(c.paidSats) || 0)),
+        extendedAt: Number(c.extendedAt) || 0,
+        settledAt: c.settledAt ? Number(c.settledAt) : null
+      });
+    }
     return this;
   }
 

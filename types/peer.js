@@ -31,6 +31,7 @@ const {
   CHAT_MAX_RELAYS_PER_ORIGIN_PER_MINUTE,
   PEER_MAX_PENDING_SEALED_DELIVERIES,
   PEER_MAX_PENDING_SEALED_BYTES,
+  PEER_MAX_HELD_CHUNK_BYTES,
   PEER_PENDING_SEALED_TTL_MS,
   PEER_MAX_SEALED_BLOB_PARTS,
   PEER_MAX_SEALED_BLOB_ALTERNATES,
@@ -132,6 +133,7 @@ function isolatePeerContent (input) {
     contracts: {},
     documents: {},
     documentRates: {},
+    documentCreditRates: {},
     documentSealed: {},
     documentSealedBlobs: {},
     documentContentKeys: {},
@@ -246,7 +248,9 @@ const {
   openSealedDelivery,
   openWithClaimPreimage,
   requestMatchesPaymentHash,
-  requestUnlocksContentKey
+  requestUnlocksContentKey,
+  CONVERGENT_SCHEME,
+  isConvergentKey
 } = require('../functions/documentSealedExchange');
 
 // Strict JSON
@@ -517,6 +521,7 @@ class Peer extends Service {
       },
       maxPendingSealedDeliveries: PEER_MAX_PENDING_SEALED_DELIVERIES,
       maxPendingSealedBytes: PEER_MAX_PENDING_SEALED_BYTES,
+      maxHeldChunkBytes: PEER_MAX_HELD_CHUNK_BYTES,
       pendingSealedTtlMs: PEER_PENDING_SEALED_TTL_MS,
       maxDocumentRelayRoutes: PEER_MAX_DOCUMENT_RELAY_ROUTES,
       state: Object.assign({
@@ -525,6 +530,7 @@ class Peer extends Service {
         contracts: {},
         documents: {},
         documentRates: {},
+        documentCreditRates: {},
         documentSealed: {},
         documentSealedBlobs: {},
         documentContentKeys: {},
@@ -676,6 +682,20 @@ class Peer extends Service {
     this._sealedBlobQuotes = new Map();
     /** Buyer: quotes received, paymentHashHex → `{ quote, origin, frameHex, received }`. */
     this._receivedBlobQuotes = new Map();
+    /**
+     * Opened convergent chunks, `"blobHashHex|paymentHashHex"` →
+     * `{ keyHex, iv, scheme, convergence, ciphertext }`. A chunk another
+     * document shares is opened from here instead of bought again. Bounded by
+     * `maxHeldChunkBytes`, oldest first.
+     */
+    this._heldChunks = new Map();
+    this._heldChunkBytes = 0;
+    /**
+     * Leaf records of convergent trees received here (`documentId` → hash-only
+     * Document record, newest last, at most 256), so {@link Peer#seedDocument}
+     * can sell the same tree again from the held chunks.
+     */
+    this._seedRecords = new Map();
     this._pendingDocumentRequestSeq = 0;
     /** Private reverse routes for rewritten DocumentRequests (never gossiped). */
     this._documentRelayRoutes = Object.create(null);
@@ -4903,8 +4923,17 @@ class Peer extends Service {
    * @param {Object} [opts]
    * @param {number} [opts.rateSats=0] Per-blob ask: 0 (free) or at least
    * `HTLC_MINIMUM_SATS`, since each blob settles with its own HTLC.
+   * @param {number} [opts.creditRateSats] Per-blob price on the credit rail:
+   * the key is revealed first and the buyer pays afterwards with a channel
+   * transfer, so any positive price works (no HTLC minimum). Convergent
+   * documents only — random-key documents never reveal before payment.
+   * Each credit request goes through `settings.sealedBlobCredit`.
+   * @param {number} [opts.creditLimitSats] Most a buyer may owe this seller
+   * at once (passed to `settings.sealedBlobCredit` as `limitSats`).
    * @param {string} [opts.documentId] Catalog id (default: the Document's).
-   * @returns {{ ok: boolean, documentId: (string|undefined), error: (string|undefined) }}
+   * A convergent document is always published under its tree root, so every
+   * seller's offers line up; a different id is kept only as a local `label`.
+   * @returns {{ ok: boolean, documentId: (string|undefined), label: (string|null|undefined), error: (string|undefined) }}
    */
   publishSealedDocument (doc, opts = {}) {
     if (!doc || typeof doc.record !== 'function' || !doc.sealed) {
@@ -4914,7 +4943,14 @@ class Peer extends Service {
     if (rateSats > 0 && rateSats < HTLC_MINIMUM_SATS) {
       return { ok: false, error: `rateSats ${rateSats} is below the ${HTLC_MINIMUM_SATS}-sat HTLC minimum (use 0 for free, or larger blobs)` };
     }
-    const documentId = String(opts.documentId || doc.documentId || doc.merkleRootHex || '').trim();
+    const creditRateSats = Math.max(0, Math.floor(Number(opts.creditRateSats) || 0));
+    if (creditRateSats > 0 && !doc.convergent) {
+      return { ok: false, error: 'creditRateSats needs a convergent document (private documents are paid before the key is revealed)' };
+    }
+    const creditLimitSats = opts.creditLimitSats != null ? Math.max(0, Math.floor(Number(opts.creditLimitSats) || 0)) : null;
+    const named = String(opts.documentId || doc.documentId || doc.merkleRootHex || '').trim();
+    const documentId = doc.convergent ? String(doc.merkleRootHex || '') : named;
+    const label = named && named !== documentId ? named : null;
     if (!documentId) return { ok: false, error: 'documentId required' };
     if (!isWireDocumentId(documentId)) return { ok: false, error: 'documentId too long for the wire' };
     const record = Object.assign(doc.record(), { documentId });
@@ -4935,11 +4971,69 @@ class Peer extends Service {
     }
     if (!this._state.content.documentSealedBlobs) this._state.content.documentSealedBlobs = {};
     if (!this._state.content.documentRates) this._state.content.documentRates = {};
-    this._state.content.documentSealedBlobs[documentId] = { record };
+    this._state.content.documentSealedBlobs[documentId] = label ? { record, label } : { record };
     this._state.content.documentRates[documentId] = rateSats;
+    if (!this._state.content.documentCreditRates) this._state.content.documentCreditRates = {};
+    if (creditRateSats > 0) this._state.content.documentCreditRates[documentId] = { rateSats: creditRateSats, limitSats: creditLimitSats };
+    else delete this._state.content.documentCreditRates[documentId];
     this.commit();
-    this.emit('documentSealedBlobsPublished', { documentId, merkleRootHex: doc.merkleRootHex, blobTotal: doc.blobTotal });
-    return { ok: true, documentId };
+    this.emit('documentSealedBlobsPublished', { documentId, label, merkleRootHex: doc.merkleRootHex, blobTotal: doc.blobTotal });
+    return { ok: true, documentId, label };
+  }
+
+  /**
+   * Credit-rail terms for a published sealed document.
+   * @param {string} documentId
+   * @returns {{ rateSats: number, limitSats: (number|null) }|null}
+   * @private
+   */
+  _sealedBlobCreditTerms (documentId) {
+    const row = (this._state.content.documentCreditRates || {})[documentId];
+    if (!row || !(Number(row.rateSats) > 0)) return null;
+    return { rateSats: Math.floor(Number(row.rateSats)), limitSats: row.limitSats != null ? Number(row.limitSats) : null };
+  }
+
+  /**
+   * Seller: reveal a convergent blob key on credit (pay after verify). The
+   * request must name the blob's payment hash, set `credit: true`, and carry
+   * a `creditRef` the buyer will name in its channel transfer. The host's
+   * `settings.sealedBlobCredit({ buyer, buyerPubkey, documentId, blobIndex,
+   * priceSats, ref, limitSats })` decides (typically
+   * `ChannelBook#extendCredit`); it must return `true` or `{ ok: true }`.
+   * @param {string} documentId
+   * @param {number} blobIndex
+   * @param {string} paymentHashHex
+   * @param {Object} parsed DocumentRequest body
+   * @param {string|null} peerAddress the buyer's connection
+   * @returns {boolean}
+   * @private
+   */
+  _extendSealedBlobCredit (documentId, blobIndex, paymentHashHex, parsed, peerAddress) {
+    const terms = this._sealedBlobCreditTerms(documentId);
+    const hook = this.settings.sealedBlobCredit;
+    if (!terms || typeof hook !== 'function' || !peerAddress) return false;
+    if (!requestMatchesPaymentHash(parsed, paymentHashHex)) return false;
+    const ref = String(parsed.creditRef || '').trim();
+    if (!ref || ref.length > 256) return false;
+    const row = this.peers && this.peers[peerAddress];
+    const request = {
+      buyer: peerAddress,
+      buyerPubkey: (row && row.publicKey) || null,
+      documentId,
+      blobIndex,
+      priceSats: terms.rateSats,
+      ref,
+      limitSats: terms.limitSats
+    };
+    let out;
+    try {
+      out = hook(request);
+    } catch (e) {
+      out = { ok: false, error: e && e.message ? e.message : String(e) };
+    }
+    const ok = out === true || !!(out && out.ok === true);
+    this.emit('documentBlobCredit', Object.assign({ ok, error: ok ? null : String((out && out.error) || 'credit refused') }, request));
+    return ok;
   }
 
   /**
@@ -5112,7 +5206,9 @@ class Peer extends Service {
     for (const docId of Object.keys(reg)) {
       const doc = Document.fromRecord(reg[docId].record);
       const rateSats = Object.prototype.hasOwnProperty.call(rates, docId) ? rates[docId] : 0;
-      if (maxSats != null && Number.isFinite(maxSats) && rateSats > maxSats) continue;
+      const credit = this._sealedBlobCreditTerms(docId);
+      const cheapest = credit ? Math.min(rateSats || Infinity, credit.rateSats) : rateSats;
+      if (maxSats != null && Number.isFinite(maxSats) && cheapest > maxSats) continue;
       if (wantRoot && String(doc.merkleRootHex || '').toLowerCase() !== wantRoot) continue;
       let indexes;
       if (wantBlob) {
@@ -5120,7 +5216,7 @@ class Peer extends Service {
         if (!indexes.length) continue;
       }
       // A subset carries a v2 inclusion proof per blob.
-      const item = doc.inventoryItem({ documentId: docId, rateSats, indexes });
+      const item = doc.inventoryItem({ documentId: docId, rateSats, indexes, creditRateSats: credit && credit.rateSats });
       if (this.settings.attachInventoryHtlc && rateSats > 0) {
         try {
           for (const b of item.blobs) {
@@ -5512,6 +5608,7 @@ class Peer extends Service {
             paymentHashHex: first.paymentHashHex,
             iv: first.iv,
             scheme: first.scheme,
+            convergence: first.convergence || null,
             verified: !!first.verified,
             origin: first.origin,
             frame: first.frame
@@ -5551,6 +5648,7 @@ class Peer extends Service {
             paymentHashHex,
             iv: String(obj.iv),
             scheme: obj.scheme || null,
+            convergence: Peer._frameConvergence(obj),
             origin: originName ? String(originName) : null,
             frame: altFrame
           });
@@ -5606,6 +5704,7 @@ class Peer extends Service {
       paymentHashHex,
       iv: String(obj.iv),
       scheme: obj.scheme || null,
+      convergence: Peer._frameConvergence(obj),
       verified,
       origin: originName ? String(originName) : null,
       frame: frame64
@@ -5867,6 +5966,263 @@ class Peer extends Service {
     }
   }
 
+  /** @private `convergence` claimed by a frame: 'public' | 'scoped' | null */
+  static _frameConvergence (obj) {
+    const c = obj && obj.convergence;
+    return c === 'public' || c === 'scoped' ? c : null;
+  }
+
+  /**
+   * Whether an opened key is the one the plaintext derives. Unauthenticated
+   * frame fields only choose whether to check, so this reports rather than
+   * refuses: GCM under the paid key and the Merkle root already bind the bytes.
+   * @param {Object} candidate held part (scheme, iv, convergence)
+   * @param {Buffer} plaintext
+   * @param {string|null} keyHex
+   * @returns {boolean|null} null when it cannot be checked
+   * @private
+   */
+  _convergentDerivation (candidate, plaintext, keyHex) {
+    if (!candidate || candidate.scheme !== CONVERGENT_SCHEME || !keyHex) return null;
+    const scoped = candidate.convergence === 'scoped';
+    const secret = this.settings.convergenceSecret;
+    if (scoped && (secret == null || secret === '')) return null;
+    return isConvergentKey(plaintext, keyHex, { iv: candidate.iv, secret: scoped ? secret : null });
+  }
+
+  /**
+   * Keep an opened convergent chunk (ciphertext + key) so another document
+   * sharing it opens without buying it again. Oldest go first past
+   * `maxHeldChunkBytes` (0 keeps none).
+   * @param {Object} chunk `{ blobHashHex, paymentHashHex, keyHex, iv, scheme, convergence, ciphertext }`
+   * @private
+   */
+  _rememberHeldChunk (chunk) {
+    const setting = Number(this.settings.maxHeldChunkBytes);
+    const budget = Number.isFinite(setting) && setting >= 0 ? setting : PEER_MAX_HELD_CHUNK_BYTES;
+    const size = chunk.ciphertext ? chunk.ciphertext.length : 0;
+    if (!budget || !size || size > budget) return;
+    const key = `${chunk.blobHashHex}|${chunk.paymentHashHex}`;
+    const prior = this._heldChunks.get(key);
+    if (prior) {
+      this._heldChunks.delete(key);
+      this._heldChunkBytes -= prior.ciphertext.length;
+    }
+    while (this._heldChunks.size && this._heldChunkBytes + size > budget) {
+      const [oldest, value] = this._heldChunks.entries().next().value;
+      this._heldChunks.delete(oldest);
+      this._heldChunkBytes -= value.ciphertext.length;
+    }
+    this._heldChunks.set(key, {
+      keyHex: chunk.keyHex,
+      iv: String(chunk.iv),
+      scheme: chunk.scheme || null,
+      convergence: chunk.convergence || null,
+      ciphertext: chunk.ciphertext
+    });
+    this._heldChunkBytes += size;
+  }
+
+  /**
+   * A chunk this Peer can open without buying it: one opened before (any
+   * document), or one of a sealed document it sells. Chunk identity is the
+   * blob hash plus the payment hash (`SHA256(K_i)`), so a match is the same
+   * ciphertext under the same key.
+   * @param {string} blobHashHex
+   * @param {string} paymentHashHex
+   * @returns {{ keyHex: string, iv: string, scheme: (string|null), convergence: (string|null), ciphertext: Buffer }|null}
+   */
+  /**
+   * Keep the leaf record of a convergent tree just received in full, so it
+   * can be seeded. Random-key trees are not kept: their chunks are not held.
+   * @private
+   * @returns {boolean} kept
+   */
+  _rememberSeedRecord (documentId, row, leaves, plain, size) {
+    const parts = leaves.map((l) => row.parts.get(l.index));
+    if (!parts.length || !parts.every((p) => p && p.scheme === CONVERGENT_SCHEME)) return false;
+    const record = {
+      type: 'Document',
+      documentId,
+      merkleRootHex: row.merkleRootHex,
+      treeVersion: row.treeVersion || undefined,
+      blobTotal: row.total,
+      chunkBytes: Math.max(...parts.map((p) => p.ciphertext.length)),
+      sealed: true,
+      convergence: parts.some((p) => p.convergence === 'scoped') ? 'scoped' : 'public',
+      size,
+      blobs: parts.map((p, i) => ({
+        index: i,
+        total: row.total,
+        blobHashHex: p.blobHashHex,
+        paymentHashHex: p.paymentHashHex,
+        size: p.ciphertext.length,
+        plaintextSize: plain[i].length,
+        iv: p.iv,
+        scheme: p.scheme
+      }))
+    };
+    this._seedRecords.delete(documentId);
+    this._seedRecords.set(documentId, record);
+    while (this._seedRecords.size > 256) this._seedRecords.delete(this._seedRecords.keys().next().value);
+    return true;
+  }
+
+  /**
+   * @param {string} documentId
+   * @returns {boolean} a convergent tree received here that {@link Peer#seedDocument} may sell
+   */
+  seedableDocument (documentId) {
+    return this._seedRecords.has(String(documentId || '').trim());
+  }
+
+  /**
+   * Seed after download: sell a convergent tree this Peer received, as the
+   * same tree (same root, chunks, and keys), rebuilt from the held chunks —
+   * nothing is resealed. Fails when a chunk was evicted from the held store
+   * (`maxHeldChunkBytes`); reseal the plaintext then, which gives the same
+   * tree for public convergence. Seller terms as {@link Peer#publishSealedDocument}.
+   * @param {string} documentId
+   * @param {Object} [opts] `{ rateSats, creditRateSats, creditLimitSats, convergenceSecret }`
+   * @returns {{ ok: boolean, documentId: (string|undefined), error: (string|undefined) }}
+   */
+  seedDocument (documentId, opts = {}) {
+    const id = String(documentId || '').trim();
+    const record = this._seedRecords.get(id);
+    if (!record) return { ok: false, error: 'no convergent document received under that id' };
+    const doc = Document.fromRecord(record);
+    if (opts.convergenceSecret != null) doc.setConvergenceSecret(opts.convergenceSecret);
+    for (const b of record.blobs) {
+      const held = this.heldChunk(b.blobHashHex, b.paymentHashHex);
+      if (!held) return { ok: false, error: `blob ${b.index} is no longer held (raise maxHeldChunkBytes, or reseal the plaintext)` };
+      if (!doc.acceptBytes(b.index, held.ciphertext) || !doc.setKey(b.index, held.keyHex)) {
+        return { ok: false, error: `held blob ${b.index} does not match the tree` };
+      }
+    }
+    const out = this.publishSealedDocument(doc, Object.assign({}, opts, { documentId: id }));
+    if (out.ok) this.emit('documentSeeded', { documentId: out.documentId, merkleRootHex: doc.merkleRootHex, blobTotal: doc.blobTotal });
+    return out;
+  }
+
+  heldChunk (blobHashHex, paymentHashHex) {
+    const bh = String(blobHashHex || '').toLowerCase();
+    const ph = String(paymentHashHex || '').toLowerCase();
+    if (!/^[0-9a-f]{64}$/.test(bh) || !/^[0-9a-f]{64}$/.test(ph)) return null;
+    const key = `${bh}|${ph}`;
+    const own = this._heldChunks.get(key);
+    if (own) {
+      this._heldChunks.delete(key);
+      this._heldChunks.set(key, own);
+      return Object.assign({}, own);
+    }
+    const hit = this._sealedBlobByPaymentHash.get(ph);
+    const doc = hit ? this._getSealedBlobDocument(hit.documentId) : null;
+    const leaf = doc ? doc.blob(hit.blobIndex) : null;
+    if (!leaf || leaf.blobHashHex !== bh) return null;
+    const keyHex = doc.keyFor(hit.blobIndex);
+    const ciphertext = doc.bytesFor(hit.blobIndex);
+    if (!keyHex || !ciphertext) return null;
+    return { keyHex, iv: leaf.iv, scheme: leaf.scheme || null, convergence: doc.convergence || null, ciphertext };
+  }
+
+  /**
+   * Fill one blob of a sealed tree from a held chunk (see {@link Peer#heldChunk})
+   * and open it, as a paid key reveal would. The offer's leaf names the chunk;
+   * the IV must match, a v2 proof is checked when given, and the whole tree is
+   * still checked against its root once every blob is open.
+   * @param {Object} opts
+   * @param {string} opts.documentId
+   * @param {string} opts.merkleRootHex
+   * @param {number} opts.blobTotal
+   * @param {number} opts.blobIndex
+   * @param {string} opts.blobHashHex
+   * @param {string} opts.paymentHashHex
+   * @param {string} [opts.iv] advertised IV
+   * @param {number} [opts.treeVersion]
+   * @param {string[]} [opts.proof] v2 inclusion proof
+   * @returns {Object} same shape as the key-reveal handler
+   */
+  adoptHeldChunk (opts = {}) {
+    const documentId = String(opts.documentId || '').trim();
+    const root = String(opts.merkleRootHex || '').toLowerCase();
+    const blobIndex = Number(opts.blobIndex);
+    const blobTotal = Number(opts.blobTotal);
+    const blobHashHex = String(opts.blobHashHex || '').toLowerCase();
+    const paymentHashHex = String(opts.paymentHashHex || '').toLowerCase();
+    const fail = (error) => ({ ok: false, error, documentId, blobIndex });
+    if (!documentId || !isWireDocumentId(documentId)) return fail('documentId required');
+    if (!/^[0-9a-f]{64}$/.test(root)) return fail('merkleRootHex required');
+    const maxParts = Math.max(1, Number(this.settings.maxSealedBlobParts) || PEER_MAX_SEALED_BLOB_PARTS);
+    if (!Number.isInteger(blobTotal) || blobTotal < 1 || blobTotal > maxParts || !Number.isInteger(blobIndex) || blobIndex < 0 || blobIndex >= blobTotal) {
+      return fail('blobTotal/blobIndex out of range');
+    }
+    const held = this.heldChunk(blobHashHex, paymentHashHex);
+    if (!held) return fail('chunk not held');
+    if (opts.iv && !sameIv(opts.iv, held.iv)) return fail('held chunk iv differs from the offer');
+    let verified = false;
+    if (Array.isArray(opts.proof) && Number(opts.treeVersion) === DOCUMENT_TREE_VERSION) {
+      verified = verifyDocumentInclusion({ merkleRootHex: root, blobTotal, blobIndex, blobHashHex, paymentHashHex, iv: held.iv, proof: opts.proof });
+      if (!verified) return fail('held chunk is not committed by the document root (inclusion proof)');
+    }
+    const rowKey = `${documentId}|${root}`;
+    let row = this.pendingSealedBlobs[rowKey];
+    if (row && row.total !== blobTotal) return fail('blobTotal disagrees with the tree being assembled');
+    if (row && row.opened.has(blobIndex)) {
+      const part = row.parts.get(blobIndex);
+      if (part && part.blobHashHex === blobHashHex) return { ok: true, already: true, documentId, blobIndex, opened: row.opened.size, total: row.total };
+      return fail('a different blob is already open at that index');
+    }
+    if (!row) {
+      row = {
+        documentId,
+        total: blobTotal,
+        merkleRootHex: root,
+        treeVersion: verified ? DOCUMENT_TREE_VERSION : null,
+        parts: new Map(),
+        opened: new Map(),
+        origin: null,
+        originName: null,
+        pinned: true,
+        bytes: 0,
+        originBytes: new Map(),
+        created: Date.now(),
+        updated: Date.now()
+      };
+      this.pendingSealedBlobs[rowKey] = row;
+    } else if (!row.pinned) {
+      row.pinned = true;
+      this._resizeSealedRow(row);
+    }
+    const reserved = this._reserveSealedBytes(row, rowKey, null, held.ciphertext.length);
+    if (!reserved.ok) {
+      if (!row.parts.size && !row.opened.size) this._dropSealedRow(rowKey);
+      return fail(reserved.error);
+    }
+    row.parts.set(blobIndex, {
+      ciphertext: held.ciphertext,
+      blobHashHex,
+      paymentHashHex,
+      iv: held.iv,
+      scheme: held.scheme,
+      convergence: held.convergence,
+      verified,
+      origin: null,
+      frame: null
+    });
+    row.updated = Date.now();
+    const room = this._settleSealedRow(row, rowKey);
+    if (!room.ok) return fail(room.error);
+    return this._handleSealedBlobKeyReveal({
+      documentId,
+      blobIndex,
+      keyHex: held.keyHex,
+      paymentHashHex,
+      merkleRootHex: root,
+      iv: held.iv,
+      held: true
+    }, null);
+  }
+
   /**
    * Which held sealed blob a payment hash belongs to. Lets the buyer map a
    * channel `ChannelHtlcFulfill` preimage back onto the blob it unlocks.
@@ -6016,6 +6372,18 @@ class Peer extends Service {
     row.updated = Date.now();
     this._resizeSealedRow(row);
     const keyHex = reveal.keyHex ? String(reveal.keyHex).toLowerCase() : null;
+    const derived = this._convergentDerivation(chosen, opened.plaintext, keyHex);
+    if (chosen.scheme === CONVERGENT_SCHEME && keyHex) {
+      this._rememberHeldChunk({
+        blobHashHex: part.blobHashHex,
+        paymentHashHex: chosen.paymentHashHex,
+        keyHex,
+        iv: chosen.iv,
+        scheme: chosen.scheme,
+        convergence: chosen.convergence || null,
+        ciphertext: part.ciphertext
+      });
+    }
     this.emit('documentBlobOpened', {
       documentId,
       blobIndex,
@@ -6027,6 +6395,11 @@ class Peer extends Service {
       keyHex,
       preimageHex: reveal.preimageHex ? String(reveal.preimageHex).toLowerCase() : keyHex,
       paymentHashHex: chosen.paymentHashHex || null,
+      blobHashHex: part.blobHashHex,
+      // true / false when the key could be checked against the content
+      // (convergent scheme, and the scope secret when scoped); null otherwise.
+      derived,
+      held: reveal.held === true,
       origin: origin || row.origin
     });
     if (row.opened.size < row.total) {
@@ -6056,6 +6429,7 @@ class Peer extends Service {
     this._dropSealedRow(`${documentId}|${row.merkleRootHex}`);
     const buffer = Buffer.concat(plain);
     this._storeReceivedDocument(documentId, buffer);
+    const seedable = this._rememberSeedRecord(documentId, row, leaves, plain, buffer.length);
     const ev = {
       documentId,
       buffer,
@@ -6064,6 +6438,7 @@ class Peer extends Service {
       sealed: true,
       perBlob: true,
       opened: true,
+      seedable,
       origin: origin || row.origin
     };
     this.emit('documentReceived', ev);
@@ -6294,6 +6669,9 @@ class Peer extends Service {
    * @param {number} [opts.blobIndex]
    * @param {number} [opts.blobTotal]
    * @param {string} [opts.contentHashHex]
+   * @param {boolean} [opts.credit] Ask for the blob key on credit (pay after
+   * verify with a channel transfer naming `creditRef`).
+   * @param {string} [opts.creditRef]
    * @returns {boolean}
    */
   requestDocument (documentId, peerAddress = null, opts = {}) {
@@ -6314,6 +6692,10 @@ class Peer extends Service {
     if (opts.blobIndex != null) body.blobIndex = Number(opts.blobIndex);
     if (opts.blobTotal != null) body.blobTotal = Number(opts.blobTotal);
     if (opts.quote === true) body.quote = true;
+    if (opts.credit === true && opts.creditRef) {
+      body.credit = true;
+      body.creditRef = String(opts.creditRef).slice(0, 256);
+    }
     {
       const hash = contentHashHexFromObject(opts) || contentHashHexFromObject({ contentHashHex: opts.contentHashHex });
       if (hash) body.contentHashHex = hash;
@@ -6411,7 +6793,7 @@ class Peer extends Service {
     // Sealed key reveal requires prior authorizeDocumentKeyReveal (or explicit force).
     if (sealedMeta && this._mayRevealDocumentContentKey(row.documentId, sealedMeta.paymentHashHex, row.parsed || {}, opts)) {
       sendOpts.revealKey = true;
-    } else if (!sealedMeta && this._mayRevealSealedBlobKey(row.documentId, row.parsed || {}, opts)) {
+    } else if (!sealedMeta && this._mayRevealSealedBlobKey(row.documentId, row.parsed || {}, Object.assign({}, opts, { peerAddress: row.peerAddress }))) {
       sendOpts.revealKey = true;
     }
     if (!this._sendP2pFileSendToPeer(row.documentId, row.peerAddress, sendOpts)) {
@@ -6484,7 +6866,9 @@ class Peer extends Service {
     if (!doc || !parsed || parsed.blobIndex == null) return false;
     const pay = doc.paymentHashFor(Number(parsed.blobIndex));
     if (!pay) return false;
-    return this._mayRevealDocumentContentKey(documentId, pay, parsed, opts);
+    if (this._mayRevealDocumentContentKey(documentId, pay, parsed, opts)) return true;
+    if (parsed.credit !== true || opts.forceReveal === true) return false;
+    return this._extendSealedBlobCredit(documentId, Number(parsed.blobIndex), pay, parsed, opts.peerAddress || null);
   }
 
   /**
@@ -6814,7 +7198,7 @@ class Peer extends Service {
     // Ciphertext anytime; content key only after authorizeDocumentKeyReveal (never hash echo).
     if (sealedMeta && this._mayRevealDocumentContentKey(docId, sealedMeta.paymentHashHex, parsed)) {
       sendOpts.revealKey = true;
-    } else if (!sealedMeta && this._mayRevealSealedBlobKey(docId, parsed)) {
+    } else if (!sealedMeta && this._mayRevealSealedBlobKey(docId, parsed, { peerAddress: origin && origin.name })) {
       sendOpts.revealKey = true;
     }
     if (!this._sendP2pFileSendToPeer(docId, origin.name, sendOpts)) {

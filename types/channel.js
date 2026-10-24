@@ -1292,6 +1292,33 @@ function expireHeight (h) {
 
 Channel.expireHeight = expireHeight;
 
+/** Balance transfers remembered per session (newest kept). */
+const MAX_TRANSFERS = 1024;
+
+/**
+ * A transfer `ref`: what the payment is for, echoed to the receiver.
+ * @param {*} ref
+ * @param {string} label error prefix
+ * @returns {string|null}
+ * @private
+ */
+function transferRef (ref, label) {
+  if (ref == null || ref === '') return null;
+  const s = String(ref);
+  if (s.length > 256 || /[\u0000-\u001f\u007f]/.test(s)) throw new Error(`${label}: transfer ref must be ≤ 256 printable characters`);
+  return s;
+}
+
+/**
+ * @param {Object} state session state
+ * @param {Object} row `{ amountSats, ref, direction, number }`
+ * @private
+ */
+function recordTransfer (state, row) {
+  state.transfers = (state.transfers || []).concat([row]);
+  if (state.transfers.length > MAX_TRANSFERS) state.transfers = state.transfers.slice(-MAX_TRANSFERS);
+}
+
 /**
  * Validate HTLC rows received from a counterparty: unique non-empty ids,
  * positive integer amounts, 32-byte payment hashes, a direction, an expiry.
@@ -1408,6 +1435,7 @@ class ChannelSession {
       policy: Channel.negotiatePolicy(this.localPolicy, {}, this.funding.capacitySats || 0),
       htlcs: [],
       settled: [],
+      transfers: [],
       status: 'opening',
       fundingConfirmed: this._confirmations ? false : (opts.fundingConfirmed === true || (opts.fundingConfirmed !== false && this.isFunder)),
       remoteSig: null,
@@ -1462,6 +1490,8 @@ class ChannelSession {
   get feeSats () { return this._state.feeSats; }
   get feerate () { return this._state.feerate; }
   get balances () { return { localSats: this._state.localSats, remoteSats: this._state.remoteSats }; }
+  /** Balance transfers sent and received (`{ amountSats, ref, direction, number }`), newest last. */
+  get transfers () { return (this._state.transfers || []).map((t) => Object.assign({}, t)); }
   /** @returns {object|null} our latest commitment (holder = local) */
   get commitment () { return this._localCommitment; }
   /** @returns {object|null} `{ number, txid, sig, htlcs, localSats, remoteSats, feeSats }` — newest of our commitments the counterparty signed */
@@ -1736,6 +1766,33 @@ class ChannelSession {
     return this._propose(htlcs, { localSats: this._state.localSats - amount, remoteSats: this._state.remoteSats }, { extra: { htlc: Object.assign({}, row) }, intent: { kind: 'offer', htlc: Object.assign({}, row) } });
   }
 
+  /**
+   * Pay the counterparty from our balance with no HTLC: the next commitment
+   * just moves `amountSats` to them (pay-after-verify credit — nothing to
+   * claim, refund, or settle on chain, so no HTLC minimum). No HTLC or fee
+   * change rides along, and our balance must stay above the reserve.
+   * @param {object} opts `{ amountSats, ref? }` — `ref` names what is paid
+   * for and reaches the receiver; a `ref` already sent is refused.
+   * @returns {object} `ChannelCommitment` proposal carrying `transfer`
+   */
+  transfer (opts = {}) {
+    const s = this._state;
+    if (s.status !== 'open') throw new Error(`transfer: channel ${s.status}`);
+    if (this.busy) throw new Error('transfer: channel busy (previous update not yet revoked)');
+    const amount = Number(opts.amountSats);
+    if (!Number.isSafeInteger(amount) || amount < 1) throw new Error('transfer: amountSats must be a positive integer');
+    const ref = transferRef(opts.ref, 'transfer');
+    if (s.localSats - amount < s.policy.channelReserveSats) throw new Error(`transfer: balance would drop below channelReserveSats ${s.policy.channelReserveSats}`);
+    if (ref && (s.transfers || []).some((t) => t.direction === 'sent' && t.ref === ref)) throw new Error(`transfer: ref ${ref} already paid`);
+    const row = { amountSats: amount, ref };
+    const body = this._propose(s.htlcs.slice(), { localSats: s.localSats - amount, remoteSats: s.remoteSats + amount }, {
+      extra: { transfer: Object.assign({}, row) },
+      intent: { kind: 'transfer', amountSats: amount, ref }
+    });
+    recordTransfer(s, Object.assign({ direction: 'sent', number: s.number }, row));
+    return body;
+  }
+
   /** @private funder's balance after a fee change must stay above the reserve */
   _checkFunderCovers (fee, label) {
     const s = this._state;
@@ -1849,6 +1906,7 @@ class ChannelSession {
     s.feeSats = r.feeSats;
     s.feerate = r.feerate || null;
     s.settled = s.settled.slice(0, r.settledLength);
+    s.transfers = (s.transfers || []).filter((t) => t.number <= r.number);
     s.status = r.status;
     s.pending = null;
     s.remoteSig = s.lastSigned && s.lastSigned.number === r.number ? s.lastSigned.sig : null;
@@ -1862,7 +1920,7 @@ class ChannelSession {
 
   /**
    * Replay the first intent abandoned in a simultaneous-proposal tie-break
-   * (offer / fulfill / fail / fee / close). Intents that no longer apply are
+   * (offer / fulfill / fail / fee / transfer / close). Intents that no longer apply are
    * dropped into `state.droppedIntents`.
    * @returns {object|null} new proposal body, or `null`
    */
@@ -1877,6 +1935,7 @@ class ChannelSession {
           case 'fulfill': return this.fulfillHtlc(intent.id, intent.preimageHex);
           case 'fail': return this.failHtlc(intent.id, intent.reason);
           case 'fee': return intent.feerate ? this.updateFeerate(intent.feerate) : this.updateFee(intent.feeSats);
+          case 'transfer': return this.transfer({ amountSats: intent.amountSats, ref: intent.ref });
           case 'close': return this.close();
           default: throw new Error(`unknown intent ${intent.kind}`);
         }
@@ -1935,6 +1994,16 @@ class ChannelSession {
       }
     }
     const p = this._state.policy;
+    if (ctx.transfer) {
+      // A balance transfer from the proposer: nothing else changes.
+      const amount = Number(ctx.transfer.amountSats);
+      if (!Number.isSafeInteger(amount) || amount < 1) throw new Error('receive: transfer amountSats must be a positive integer');
+      if (next.htlcs.length !== prev.htlcs.length || next.htlcs.some((h) => !prevById.has(h.id))) throw new Error('receive: a transfer cannot change HTLCs');
+      if (next.feeSats !== prev.feeSats || (next.feerate || null) !== (prev.feerate || null)) throw new Error('receive: a transfer cannot change the commitment fee');
+      remote -= amount;
+      local += amount;
+      if (remote < p.channelReserveSats) throw new Error(`receive: transfer would drop the counterparty below channelReserveSats ${p.channelReserveSats}`);
+    }
     const prevRate = prev.feerate || null;
     const nextRate = next.feerate || null;
     if (nextRate !== prevRate) {
@@ -2035,7 +2104,12 @@ class ChannelSession {
       feerate: body.feerate !== undefined ? (body.feerate == null ? null : Number(body.feerate)) : (s.feerate || null),
       htlcs
     };
-    this._validateTransition({ localSats: s.localSats, remoteSats: s.remoteSats, feeSats: s.feeSats, feerate: s.feerate || null, htlcs: s.htlcs }, next, ctx);
+    let transfer = null;
+    if (body.transfer != null) {
+      if (body.type !== CHANNEL_BODY_TYPES.Commitment || typeof body.transfer !== 'object') throw new Error('receive: transfer only rides a ChannelCommitment');
+      transfer = { amountSats: Number(body.transfer.amountSats), ref: transferRef(body.transfer.ref, 'receive') };
+    }
+    this._validateTransition({ localSats: s.localSats, remoteSats: s.remoteSats, feeSats: s.feeSats, feerate: s.feerate || null, htlcs: s.htlcs }, next, Object.assign({}, ctx, { transfer }));
     let local;
     try {
       local = this._buildLocal(htlcs, number, next, next.feeSats);
@@ -2058,6 +2132,7 @@ class ChannelSession {
     this._localCommitment = local;
     this._noteSigned();
     this._rememberLocal(local);
+    if (transfer) recordTransfer(s, Object.assign({ direction: 'received', number }, transfer));
     if (body.type === CHANNEL_BODY_TYPES.Close) s.status = 'closing';
     s.rollback = null;
     s.intent = null;
@@ -2575,7 +2650,7 @@ class ChannelSession {
       tipHeight: deps.tipHeight,
       confirmations: deps.confirmations
     });
-    const defaults = { outbox: { update: null }, rolledBack: [], remoteAlternates: {}, revokedSecrets: {}, lastSigned: null, rollback: null, intent: null, onChain: null, feerate: null };
+    const defaults = { outbox: { update: null }, rolledBack: [], remoteAlternates: {}, revokedSecrets: {}, lastSigned: null, rollback: null, intent: null, onChain: null, feerate: null, transfers: [] };
     s._state = Object.assign(s._state, defaults, JSON.parse(JSON.stringify(st)));
     s._state.htlcs = cloneHtlcs(s._state.htlcs);
     for (const [k, v] of Object.entries(snapshot.preimages || {})) s._preimages.set(k, v);

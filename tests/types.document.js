@@ -14,7 +14,13 @@ const {
   DOCUMENT_TREE_VERSION,
   SEALED_BLOB_CHUNK_BYTES
 } = require('../functions/documentBlobManifest');
-const { paymentHashHexFromKey, isWellFormedKeyReveal, BLOB_QUOTE_TYPE } = require('../functions/documentSealedExchange');
+const {
+  paymentHashHexFromKey,
+  isWellFormedKeyReveal,
+  BLOB_QUOTE_TYPE,
+  SCHEME,
+  CONVERGENT_SCHEME
+} = require('../functions/documentSealedExchange');
 const DocumentBook = require('../types/documentBook');
 const Message = require('../types/message');
 const { HTLC_MINIMUM_SATS } = require('../constants');
@@ -818,6 +824,101 @@ describe('types/document (sealed blob tree)', function () {
       assert.strictEqual(buyer.pendingSealedBlobs[key], undefined, 'expires once the session ends');
       const total = Object.values(buyer.pendingSealedBlobs).reduce((n, row) => n + row.bytes, 0);
       assert.strictEqual(buyer._pendingSealedBytes, total);
+    });
+  });
+
+  describe('convergent sealing', function () {
+    it('two independent seals of the same bytes give the same root, blob hashes, payment hashes, and IVs', function () {
+      const plain = crypto.randomBytes(5000);
+      const a = Document.seal(plain, { chunkBytes: 2048, documentId: 'mine' });
+      const b = Document.seal(plain, { chunkBytes: 2048 });
+      assert.strictEqual(a.convergence, 'public');
+      assert.strictEqual(a.convergent, true);
+      assert.strictEqual(a.merkleRootHex, b.merkleRootHex);
+      assert.deepStrictEqual(a.blobs, b.blobs);
+      assert.ok(a.blobs.every((x) => x.scheme === CONVERGENT_SCHEME));
+      assert.strictEqual(a.documentId, 'mine', 'a custom id is a label');
+      assert.strictEqual(b.documentId, b.merkleRootHex);
+      assert.strictEqual(a.record().convergence, 'public');
+      assert.strictEqual(a.inventoryItem().convergence, 'public');
+    });
+
+    it('a shared segment is one chunk across different files', function () {
+      const shared = crypto.randomBytes(2032);
+      const a = Document.seal(Buffer.concat([shared, crypto.randomBytes(900)]), { chunkBytes: 2048 });
+      const b = Document.seal(Buffer.concat([shared, crypto.randomBytes(700)]), { chunkBytes: 2048 });
+      assert.notStrictEqual(a.merkleRootHex, b.merkleRootHex);
+      assert.strictEqual(a.blob(0).blobHashHex, b.blob(0).blobHashHex);
+      assert.strictEqual(a.blob(0).paymentHashHex, b.blob(0).paymentHashHex);
+      assert.notStrictEqual(a.blob(1).blobHashHex, b.blob(1).blobHashHex);
+    });
+
+    it('a convergence secret scopes the keys; only its holders check the derivation', function () {
+      const plain = crypto.randomBytes(3000);
+      const open = Document.seal(plain, { chunkBytes: 2048 });
+      const scoped = Document.seal(plain, { chunkBytes: 2048, convergenceSecret: 'goon' });
+      const again = Document.seal(plain, { chunkBytes: 2048, convergenceSecret: 'goon' });
+      assert.strictEqual(scoped.convergence, 'scoped');
+      assert.notStrictEqual(scoped.merkleRootHex, open.merkleRootHex);
+      assert.strictEqual(scoped.merkleRootHex, again.merkleRootHex);
+      assert.ok(!JSON.stringify(scoped.record()).includes('goon'), 'the secret never leaves');
+
+      const outsider = Document.fromRecord(scoped.record());
+      const insider = Document.fromRecord(scoped.record()).setConvergenceSecret('goon');
+      const wrong = Document.fromRecord(scoped.record()).setConvergenceSecret('other');
+      for (const b of scoped.blobs) {
+        const ct = scoped.bytesFor(b.index);
+        const key = scoped.keyFor(b.index);
+        assert.strictEqual(outsider.openBlob(b.index, key, ct).ok, true);
+        assert.strictEqual(insider.openBlob(b.index, key, ct).ok, true);
+        const bad = wrong.openBlob(b.index, key, ct);
+        assert.strictEqual(bad.ok, false);
+        assert.strictEqual(bad.error, 'key is not derived from the blob content');
+      }
+    });
+
+    it('private mode keeps random keys and the old scheme still opens', function () {
+      const plain = crypto.randomBytes(3000);
+      const a = Document.seal(plain, { chunkBytes: 2048, private: true });
+      const b = Document.seal(plain, { chunkBytes: 2048, private: true });
+      assert.strictEqual(a.convergence, null);
+      assert.notStrictEqual(a.merkleRootHex, b.merkleRootHex);
+      assert.ok(a.blobs.every((x) => x.scheme === SCHEME));
+      assert.ok(!('convergence' in a.inventoryItem()));
+      const buyer = Document.fromRecord(a.record());
+      for (const x of a.blobs) {
+        assert.strictEqual(buyer.openBlob(x.index, a.keyFor(x.index), a.bytesFor(x.index)).ok, true);
+      }
+      assert.ok(buyer.content().equals(plain));
+    });
+
+    it('a convergent leaf opened with a key not derived from its content is refused', function () {
+      const forged = Document.seal(crypto.randomBytes(3000), { chunkBytes: 2048, private: true });
+      const record = forged.record();
+      // The scheme is not a tree leaf, so relabelling keeps the root.
+      for (const b of record.blobs) b.scheme = CONVERGENT_SCHEME;
+      const buyer = Document.fromRecord(record);
+      assert.strictEqual(buyer.convergence, 'public');
+      assert.strictEqual(buyer.merkleRootHex, forged.merkleRootHex);
+      const out = buyer.openBlob(0, forged.keyFor(0), forged.bytesFor(0));
+      assert.strictEqual(out.ok, false);
+      assert.strictEqual(out.error, 'key is not derived from the blob content');
+    });
+
+    it('repeated content under a legacy v1 request uses the count-bound v2 root', function () {
+      const doc = Document.seal(Buffer.alloc(2032 * 4, 3), { chunkBytes: 2048, treeVersion: 1 });
+      assert.strictEqual(new Set(doc.blobs.map((b) => b.blobHashHex)).size, 1);
+      assert.strictEqual(doc.treeVersion, DOCUMENT_TREE_VERSION);
+      const buyer = Document.fromRecord(doc.record());
+      for (const b of doc.blobs) assert.ok(buyer.acceptBytes(b.index, doc.bytesFor(b.index)));
+    });
+
+    it('advertises a credit price only on sealed trees', function () {
+      const doc = Document.seal(crypto.randomBytes(100));
+      const item = doc.inventoryItem({ rateSats: RATE, creditRateSats: 12 });
+      assert.strictEqual(item.creditRateSats, 12);
+      assert.deepStrictEqual(item.paymentModes, ['htlc', 'credit']);
+      assert.ok(!('creditRateSats' in Document.fromPlain(Buffer.from('x')).inventoryItem({ creditRateSats: 12 })));
     });
   });
 

@@ -1081,3 +1081,290 @@ describe('services/market (Phase 5 hardening)', function () {
     });
   });
 });
+
+describe('services/market (convergent de-dup)', function () {
+  // Plaintext bytes per 2048-byte sealed blob (the GCM tag takes 16).
+  const CHUNK = 2048 - Document.GCM_TAG_BYTES;
+
+  // One seller of every document; a free request delivers the blob and its key.
+  function wire (docs) {
+    const buyer = new Peer({ listen: false });
+    const seller = new Peer({ listen: false, sealPricedDocuments: true });
+    const book = new DocumentBook();
+    const requested = [];
+    for (const doc of docs) {
+      const pub = seller.publishSealedDocument(doc, { rateSats: 0 });
+      assert.ok(pub.ok, pub.error);
+      book.ingestInventoryResponse({ origin: 'alpha', items: [doc.inventoryItem({ rateSats: 0, documentId: pub.documentId })] });
+    }
+    buyer.connections.alpha = { _writeFabric: () => {} };
+    buyer.requestDocument = (id, name, reqOpts = {}) => {
+      requested.push({ id, blobIndex: reqOpts.blobIndex });
+      const written = [];
+      seller.connections.buyer = { _writeFabric: (buf) => written.push(buf) };
+      seller._sendSealedBlobsToPeer(seller._getSealedBlobDocument(id), id, 'buyer', { settlementId: 't', blobIndex: reqOpts.blobIndex, revealKey: true });
+      for (const buf of written) {
+        const m = Message.fromBuffer(buf);
+        const body = JSON.parse(m.body);
+        if (m.type === 'P2P_FILE_SEND') buyer._ingestP2pFileSend({ object: body }, { name: 'alpha' }, m);
+        else buyer._handleDocumentContentKeyReveal(body.object, { name: 'alpha' });
+      }
+      return true;
+    };
+    const market = new Market({ budgetSats: 0, tickMs: 0, book });
+    market.attach({ peer: buyer });
+    const received = {};
+    buyer.on('documentReceived', (ev) => { received[ev.documentId] = ev.buffer; });
+    return { buyer, seller, book, market, requested, received };
+  }
+
+  it('publishes a convergent document under its root and keeps a custom id as a label', function () {
+    const doc = Document.seal(crypto.randomBytes(3000), { chunkBytes: 2048, documentId: 'my-file' });
+    const seller = new Peer({ listen: false, sealPricedDocuments: true });
+    const pub = seller.publishSealedDocument(doc, { rateSats: 0 });
+    assert.strictEqual(pub.documentId, doc.merkleRootHex);
+    assert.strictEqual(pub.label, 'my-file');
+    const priv = Document.seal(crypto.randomBytes(3000), { chunkBytes: 2048, documentId: 'secret', private: true });
+    assert.strictEqual(seller.publishSealedDocument(priv, { rateSats: 0 }).documentId, 'secret');
+  });
+
+  it('opens a chunk shared with a document already received instead of buying it again', async function () {
+    const shared = crypto.randomBytes(CHUNK);
+    const aPlain = Buffer.concat([shared, crypto.randomBytes(CHUNK)]);
+    const bPlain = Buffer.concat([crypto.randomBytes(CHUNK), shared]);
+    const a = Document.seal(aPlain, { chunkBytes: 2048 });
+    const b = Document.seal(bPlain, { chunkBytes: 2048 });
+    assert.strictEqual(a.blob(0).blobHashHex, b.blob(1).blobHashHex);
+    const m = wire([a, b]);
+
+    m.market.want(a.merkleRootHex, { blobTotal: a.blobTotal, merkleRootHex: a.merkleRootHex });
+    await m.market.tick();
+    assert.ok(m.received[a.merkleRootHex] && m.received[a.merkleRootHex].equals(aPlain));
+    assert.ok(m.buyer.heldChunk(a.blob(0).blobHashHex, a.paymentHashFor(0)));
+
+    m.requested.length = 0;
+    m.market.want(b.merkleRootHex, { blobTotal: b.blobTotal, merkleRootHex: b.merkleRootHex });
+    await m.market.tick();
+    assert.deepStrictEqual(m.requested, [{ id: b.merkleRootHex, blobIndex: 0 }], 'only the new chunk is requested');
+    const got = m.received[b.merkleRootHex];
+    assert.ok(got && got.equals(bPlain));
+    const heldSession = m.market.listSessions().find((s) => s.documentId === b.merkleRootHex && Number(s.blobIndex) === 1);
+    assert.strictEqual(heldSession.held, true);
+    assert.strictEqual(heldSession.status, 'complete');
+    assert.strictEqual(m.market.status().wants.find((w) => w.documentId === b.merkleRootHex).status, 'complete');
+    assert.ok(m.market.audit().ok);
+  });
+
+  it('buys a chunk repeated inside one document once', async function () {
+    const block = crypto.randomBytes(CHUNK);
+    const doc = Document.seal(Buffer.concat([block, block, block]), { chunkBytes: 2048 });
+    assert.strictEqual(doc.treeVersion, 2);
+    const m = wire([doc]);
+    m.market.want(doc.merkleRootHex, { blobTotal: doc.blobTotal, merkleRootHex: doc.merkleRootHex });
+    await m.market.tick();
+    await m.market.tick();
+    assert.deepStrictEqual(m.requested.map((r) => r.blobIndex), [0]);
+    assert.ok(m.received[doc.merkleRootHex].equals(Buffer.concat([block, block, block])));
+  });
+
+  it('a held chunk must match the advertised IV', function () {
+    const doc = Document.seal(crypto.randomBytes(3000), { chunkBytes: 2048 });
+    const peer = new Peer({ listen: false, sealPricedDocuments: true });
+    peer.publishSealedDocument(doc, { rateSats: 0 });
+    const leaf = doc.blob(0);
+    const opts = {
+      documentId: doc.merkleRootHex,
+      merkleRootHex: doc.merkleRootHex,
+      blobTotal: doc.blobTotal,
+      blobIndex: 0,
+      blobHashHex: leaf.blobHashHex,
+      paymentHashHex: leaf.paymentHashHex
+    };
+    assert.match(peer.adoptHeldChunk(Object.assign({}, opts, { iv: doc.blob(1).iv })).error, /iv differs/);
+    assert.match(peer.adoptHeldChunk(Object.assign({}, opts, { paymentHashHex: 'ab'.repeat(32) })).error, /not held/);
+    const opened = peer.adoptHeldChunk(Object.assign({}, opts, { iv: leaf.iv, treeVersion: doc.treeVersion, proof: doc.proofFor(0) }));
+    assert.ok(opened.ok, opened.error);
+  });
+});
+
+describe('services/market (credit rail: pay after verify)', function () {
+  const bitcoin = require('bitcoinjs-lib');
+  const Channel = require('../types/channel');
+  const { signerFromPriv32 } = require('../types/htlc');
+  const NET = bitcoin.networks.regtest;
+  const CREDIT = 50;
+
+  function party () {
+    const priv = crypto.randomBytes(32);
+    const pub = Buffer.from(signerFromPriv32(priv).publicKey).toString('hex');
+    return { priv, pub, address: bitcoin.payments.p2wpkh({ pubkey: Buffer.from(pub, 'hex'), network: NET }).address };
+  }
+
+  /**
+   * One seller ("alpha") selling a convergent document at P (HTLC) or CREDIT
+   * (pay after verify), a channel buyer → seller, and the seller's credit
+   * decided by its ChannelBook. `ctl.badKey(blobIndex)` makes the seller
+   * reveal a wrong key for that blob.
+   */
+  function build (opts = {}) {
+    const plain = crypto.randomBytes(4000);
+    const doc = Document.seal(plain, { chunkBytes: 2048 });
+    const buyerKey = party();
+    const sellerKey = party();
+    const wire = { toSeller: [], toBuyer: [] };
+    const buyerBook = new ChannelBook({ localPrivateKey: buyerKey.priv, network: 'regtest', tipHeight: () => 100, publish: (body) => wire.toSeller.push(body) });
+    const sellerBook = new ChannelBook({ localPrivateKey: sellerKey.priv, network: 'regtest', tipHeight: () => 100, confirmations: () => 6, publish: (body) => wire.toBuyer.push(body), creditLimitSats: opts.creditLimitSats != null ? opts.creditLimitSats : 1000 });
+    const seller = new Peer({ listen: false, sealPricedDocuments: true, sealedBlobCredit: (r) => sellerBook.extendCredit(r) });
+    const pub = seller.publishSealedDocument(doc, { rateSats: P, creditRateSats: CREDIT });
+    assert.ok(pub.ok, pub.error);
+    const buyer = new Peer(Object.assign({ listen: false }, opts.buyer || {}));
+    buyer.connections.alpha = { _writeFabric: () => {} };
+    const book = new DocumentBook();
+    book.ingestInventoryResponse({ origin: 'alpha', items: seller._sealedBlobInventoryItems({}), latencyMs: 20 });
+
+    const ctl = { badKey: () => false, revealed: [] };
+    buyer.requestDocument = (id, name, reqOpts = {}) => {
+      // What the seller's DocumentRequest handler decides for this request.
+      const parsed = { document: id, blobIndex: reqOpts.blobIndex, contentHashHex: reqOpts.contentHashHex };
+      if (reqOpts.credit) Object.assign(parsed, { credit: true, creditRef: reqOpts.creditRef });
+      const revealKey = seller._mayRevealSealedBlobKey(id, parsed, { peerAddress: 'buyer' });
+      ctl.revealed.push({ blobIndex: reqOpts.blobIndex, revealKey, credit: !!reqOpts.credit });
+      const written = [];
+      seller.connections.buyer = { _writeFabric: (buf) => written.push(buf) };
+      seller._sendSealedBlobsToPeer(seller._getSealedBlobDocument(id), id, 'buyer', { settlementId: 't', blobIndex: reqOpts.blobIndex, revealKey });
+      for (const buf of written) {
+        const m = Message.fromBuffer(buf);
+        const body = JSON.parse(m.body);
+        if (m.type === 'P2P_FILE_SEND') buyer._ingestP2pFileSend({ object: body }, { name: 'alpha' }, m);
+        else {
+          const reveal = ctl.badKey(Number(reqOpts.blobIndex)) ? Object.assign({}, body.object, { keyHex: crypto.randomBytes(32).toString('hex') }) : body.object;
+          buyer._handleDocumentContentKeyReveal(reveal, { name: 'alpha' });
+        }
+      }
+      return true;
+    };
+
+    const tx = new bitcoin.Transaction();
+    tx.addInput(crypto.randomBytes(32), 0);
+    const funding = Channel.buildFunding({ network: 'regtest', localPubkey: buyerKey.pub, remotePubkey: sellerKey.pub, expireAfter: 5000 });
+    tx.addOutput(bitcoin.address.toOutputScript(funding.address, NET), BigInt(50000));
+    const opened = buyerBook.open({ remotePubkey: sellerKey.pub, fundedTxHex: tx.toHex(), capacitySats: 50000, expireAfter: 5000, localAddress: buyerKey.address, remoteAddress: sellerKey.address, aliases: ['alpha'] });
+    const step = () => {
+      if (wire.toSeller.length) { sellerBook.ingest(wire.toSeller.shift(), { sellerId: 'buyer' }); return true; }
+      if (wire.toBuyer.length) { buyerBook.ingest(wire.toBuyer.shift(), { sellerId: 'alpha' }); return true; }
+      return false;
+    };
+    const pump = () => { while (step()); };
+    pump();
+    assert.strictEqual(opened.session.status, 'open');
+    const market = new Market({ budgetSats: 10 * P, tickMs: 0, book, proximityWeight: 1, seed: opts.seed });
+    market.attach({ peer: buyer, channels: buyerBook });
+    const received = [];
+    buyer.on('documentReceived', (ev) => received.push(ev.buffer));
+    return { plain, doc, buyer, seller, book, market, buyerBook, sellerBook, channel: opened.session, pump, ctl, received, documentId: pub.documentId };
+  }
+
+  it('advertises the credit price with paymentModes; private documents cannot take credit', function () {
+    const m = build();
+    const item = m.seller._sealedBlobInventoryItems({})[0];
+    assert.strictEqual(item.creditRateSats, CREDIT);
+    assert.deepStrictEqual(item.paymentModes, ['htlc', 'credit']);
+    const priv = Document.seal(crypto.randomBytes(3000), { chunkBytes: 2048, private: true });
+    assert.match(m.seller.publishSealedDocument(priv, { rateSats: P, creditRateSats: CREDIT }).error, /convergent/);
+  });
+
+  it('opens each blob on credit, then pays it with a channel transfer the seller ledger settles', async function () {
+    const m = build();
+    const settled = [];
+    m.sellerBook.on('creditSettled', (c) => settled.push(c));
+    m.market.want(m.documentId, { blobTotal: m.doc.blobTotal, merkleRootHex: m.doc.merkleRootHex });
+    assert.strictEqual(m.market.planFor(m.market.listWants()[0]).costSats, m.doc.blobTotal * CREDIT);
+    for (let i = 0; i < 4 && !m.received.length; i++) {
+      await m.market.tick();
+      m.pump();
+    }
+    await m.market.tick();
+    m.pump();
+    assert.ok(m.received[0] && m.received[0].equals(m.plain));
+    assert.ok(m.ctl.revealed.every((r) => r.credit && r.revealKey), 'keys revealed on credit before any payment');
+    const sessions = m.market.listSessions();
+    assert.strictEqual(sessions.length, m.doc.blobTotal);
+    assert.ok(sessions.every((s) => s.rail === 'credit' && s.status === 'complete' && s.creditPaid), JSON.stringify(sessions.map((s) => [s.status, s.lastError])));
+    assert.strictEqual(m.market.spentSats, m.doc.blobTotal * CREDIT);
+    assert.ok(m.market.audit().ok);
+    assert.strictEqual(m.sellerBook.get(m.channel.channelId).balances.localSats, m.doc.blobTotal * CREDIT);
+    assert.strictEqual(m.sellerBook.outstanding(m.channel.channelId), 0);
+    assert.strictEqual(settled.length, m.doc.blobTotal);
+  });
+
+  it('never pays for a blob whose revealed key does not open it, and does not ask that seller again', async function () {
+    const m = build();
+    m.ctl.badKey = (i) => i === 0;
+    m.market.want(m.documentId, { blobTotal: m.doc.blobTotal, merkleRootHex: m.doc.merkleRootHex });
+    await m.market.tick();
+    m.pump();
+    await m.market.tick();
+    m.pump();
+    const bad = m.market.listSessions().find((s) => Number(s.blobIndex) === 0);
+    assert.strictEqual(bad.status, 'fraud');
+    assert.ok(!bad.creditPaid);
+    assert.ok(m.market.listSessions().find((s) => Number(s.blobIndex) === 1).creditPaid);
+    assert.strictEqual(m.market.spentSats, CREDIT, 'only the good blob is paid');
+    assert.strictEqual(m.sellerBook.outstanding(m.channel.channelId), CREDIT, 'the seller carries the unpaid credit');
+    // The lying seller is not asked for that blob again: with no other seller the plan stalls.
+    assert.strictEqual(m.market.listWants()[0].status, 'wanted');
+    assert.ok(m.market.audit().ok);
+  });
+
+  it('falls back to the HTLC price without a channel, and the seller refuses credit past its limit', async function () {
+    const m = build({ creditLimitSats: CREDIT });
+    const noChannels = new Market({ budgetSats: 10 * P, tickMs: 0, book: m.book });
+    noChannels.attach({ peer: m.buyer });
+    noChannels.want(m.documentId, { blobTotal: m.doc.blobTotal, merkleRootHex: m.doc.merkleRootHex });
+    assert.strictEqual(noChannels.planFor(noChannels.listWants()[0]).costSats, m.doc.blobTotal * P);
+    const refused = [];
+    m.seller.on('documentBlobCredit', (ev) => { if (!ev.ok) refused.push(ev.error); });
+    m.market.want(m.documentId, { blobTotal: m.doc.blobTotal, merkleRootHex: m.doc.merkleRootHex });
+    await m.market.tick();
+    assert.strictEqual(m.ctl.revealed.filter((r) => r.revealKey).length, 1, 'one blob within the limit');
+    assert.match(refused[0], /credit limit/);
+  });
+
+  async function buyAll (m) {
+    m.market.want(m.documentId, { blobTotal: m.doc.blobTotal, merkleRootHex: m.doc.merkleRootHex });
+    for (let i = 0; i < 5 && !m.received.length; i++) {
+      await m.market.tick();
+      m.pump();
+    }
+    assert.ok(m.received[0] && m.received[0].equals(m.plain));
+  }
+
+  it('seeds after download: the buyer sells the same tree from its held chunks, nothing resealed', async function () {
+    const m = build({ seed: { rateSats: P, creditRateSats: CREDIT } });
+    const seeded = [];
+    m.market.on('seeded', (ev) => seeded.push(ev.documentId));
+    await buyAll(m);
+    assert.deepStrictEqual(seeded, [m.documentId]);
+    const mine = m.buyer._sealedBlobInventoryItems({});
+    const theirs = m.seller._sealedBlobInventoryItems({});
+    assert.strictEqual(mine.length, 1);
+    for (const field of ['documentId', 'merkleRootHex', 'blobTotal', 'rateSats', 'creditRateSats']) {
+      assert.deepStrictEqual(mine[0][field], theirs[0][field], field);
+    }
+    assert.deepStrictEqual(mine[0].blobs.map((b) => [b.blobHashHex, b.paymentHashHex]), theirs[0].blobs.map((b) => [b.blobHashHex, b.paymentHashHex]));
+    const held = m.buyer._getSealedBlobDocument(m.documentId);
+    const sold = m.seller._getSealedBlobDocument(m.documentId);
+    for (let i = 0; i < m.doc.blobTotal; i++) {
+      assert.ok(held.bytesFor(i).equals(sold.bytesFor(i)));
+      assert.strictEqual(held.keyFor(i), sold.keyFor(i));
+    }
+  });
+
+  it('refuses to seed a tree whose chunks were evicted, and a tree it never received', async function () {
+    const m = build({ buyer: { maxHeldChunkBytes: 2048 } });
+    await buyAll(m);
+    assert.ok(m.buyer.seedableDocument(m.documentId));
+    assert.match(m.buyer.seedDocument(m.documentId, { rateSats: P }).error, /no longer held/);
+    assert.match(m.buyer.seedDocument('00'.repeat(32)).error, /no convergent document/);
+  });
+});

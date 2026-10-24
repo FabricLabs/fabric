@@ -620,6 +620,11 @@ class DocumentBook extends Book {
         treeVersion,
         mime: it.mime || null,
         sealed,
+        // Sealed only: the convergence scope, and a pay-after-verify price
+        // (channel balance transfer once the chunk opened) next to the HTLC ask.
+        convergence: sealed && (it.convergence === 'public' || it.convergence === 'scoped') ? it.convergence : null,
+        creditRateSats: sealed && Number.isSafeInteger(Number(it.creditRateSats)) && Number(it.creditRateSats) > 0 ? Number(it.creditRateSats) : null,
+        paymentModes: Array.isArray(it.paymentModes) ? it.paymentModes.filter((m) => m === 'htlc' || m === 'credit') : null,
         peerScore,
         latencyMs,
         hops,
@@ -931,11 +936,16 @@ class DocumentBook extends Book {
     const sealedRows = offers.filter((o) => o && o.sealed === true && o.blobIndex != null);
     if (!sealedRows.length) return opts.sealed === true && offers.some((o) => o.blobIndex == null);
     const byIndex = new Map();
+    const blobHashes = new Set();
     for (const o of sealedRows) {
+      if (o.blobHashHex) blobHashes.add(o.blobHashHex);
       if (!o.contentHashHex) continue;
       byIndex.set(o.blobIndex, o.contentHashHex);
     }
     const distinct = new Set(byIndex.values());
+    // One convergent chunk repeated at every index is one key for one
+    // ciphertext, not a document-level seal.
+    if (byIndex.size > 1 && blobHashes.size === 1) return false;
     return distinct.size <= 1;
   }
 

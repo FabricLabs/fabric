@@ -26,6 +26,14 @@
  * (and the pinned key hash and IV) before paying. Version 1 (Bitcoin-style
  * root over blob hashes, as `splitBlobs`) stays readable; v1 lists that are
  * CVE-2012-2459 twins of a shorter list are refused.
+ *
+ * **Convergent by default.** `seal` derives each `K_i` (and its IV) from the
+ * blob's plaintext, so the same bytes seal to the same blob hash, payment
+ * hash, and root for every seller: a chunk two files (or two sellers) share is
+ * one chunk, bought once and served by anyone holding it. Opening checks that
+ * the key really is the content-derived one. `{ private: true }` keeps random
+ * per-blob keys (no de-duplication, no confirmation-of-file exposure);
+ * `convergenceSecret` scopes de-duplication to those who hold the secret.
  */
 
 const crypto = require('crypto');
@@ -44,9 +52,10 @@ const {
   splitBlobs
 } = require('../functions/documentBlobManifest');
 const {
-  SCHEME,
+  CONVERGENT_SCHEME,
   sealPlaintext,
   openCiphertext,
+  isConvergentKey,
   paymentHashHexFromKey,
   buildKeyRevealMessage
 } = require('../functions/documentSealedExchange');
@@ -104,6 +113,8 @@ class Document extends State {
     /** @private */
     this._plaintexts = new Map();
     /** @private */
+    this._convergenceSecret = null;
+    /** @private */
     this._meta = {
       merkleRootHex: null,
       computedRootHex: null,
@@ -112,6 +123,7 @@ class Document extends State {
       blobTotal: 0,
       chunkBytes: DEFAULT_BLOB_CHUNK_BYTES,
       sealed: false,
+      convergence: null,
       size: null,
       documentId: null,
       publisher: null,
@@ -133,28 +145,36 @@ class Document extends State {
   // ---------------------------------------------------------------------
 
   /**
-   * Seal plaintext as a blob tree with one key per blob.
+   * Seal plaintext as a blob tree with one key per blob. Keys are derived
+   * from each blob's content (convergent) unless `private` is set.
    * @param {Buffer|string} plaintext
    * @param {Object} [opts]
    * @param {number} [opts.chunkBytes] Ciphertext blob size (default AMP-sized, leaving room for the v2 inclusion proof); plaintext chunks are 16 bytes smaller.
-   * @param {string} [opts.documentId] Catalog id (defaults to the Tree root).
+   * @param {string} [opts.documentId] Catalog label (defaults to the Tree root). Offers from different sellers meet on the root, whatever label each uses.
    * @param {string} [opts.publisher] Publisher public key (hex).
    * @param {number} [opts.treeVersion=2] 1 only to interoperate with pre-v2 buyers.
+   * @param {boolean} [opts.private] random per-blob keys (no cross-seller de-duplication)
+   * @param {Buffer|string} [opts.convergenceSecret] scope convergent keys to holders of this secret
    * @returns {Document}
    */
   static seal (plaintext, opts = {}) {
     const plain = Buffer.isBuffer(plaintext) ? plaintext : Buffer.from(plaintext == null ? '' : plaintext);
-    const treeVersion = Number(opts.treeVersion) === DOCUMENT_TREE_VERSION_LEGACY ? DOCUMENT_TREE_VERSION_LEGACY : DOCUMENT_TREE_VERSION;
+    let treeVersion = Number(opts.treeVersion) === DOCUMENT_TREE_VERSION_LEGACY ? DOCUMENT_TREE_VERSION_LEGACY : DOCUMENT_TREE_VERSION;
     const chunkBytes = treeVersion === DOCUMENT_TREE_VERSION
       ? Math.min(normalizeChunkBytes(opts.chunkBytes || SEALED_BLOB_CHUNK_BYTES), SEALED_BLOB_CHUNK_BYTES)
       : normalizeChunkBytes(opts.chunkBytes);
     const plainChunk = Math.max(1, chunkBytes - GCM_TAG_BYTES);
     const total = Math.max(1, Math.ceil(plain.length / plainChunk));
+    const convergent = opts.private !== true;
+    const secret = convergent && opts.convergenceSecret != null && opts.convergenceSecret !== ''
+      ? opts.convergenceSecret
+      : null;
     const doc = new Document({ blobs: [] });
+    doc._convergenceSecret = secret;
     const blobs = [];
     for (let i = 0; i < total; i++) {
       const slice = plain.subarray(i * plainChunk, Math.min(plain.length, (i + 1) * plainChunk));
-      const sealed = sealPlaintext(slice);
+      const sealed = sealPlaintext(slice, { convergent, secret });
       const blobHashHex = sha256Hex(sealed.ciphertext);
       blobs.push({
         index: i,
@@ -164,14 +184,20 @@ class Document extends State {
         size: sealed.ciphertext.length,
         plaintextSize: slice.length,
         iv: sealed.encryption.iv,
-        scheme: SCHEME
+        scheme: sealed.encryption.scheme
       });
       doc._keys.set(i, sealed.key.toString('hex'));
       doc._ciphertexts.set(i, sealed.ciphertext);
       doc._plaintexts.set(i, Buffer.from(slice));
     }
+    // Repeated content seals to repeated leaves; a v1 root can't tell those
+    // from a CVE-2012-2459 twin, so such a tree uses the count-bound v2 root.
+    if (treeVersion === DOCUMENT_TREE_VERSION_LEGACY && blobHashesMutated(blobs.map((b) => b.blobHashHex))) {
+      treeVersion = DOCUMENT_TREE_VERSION;
+    }
     doc._setBlobs(blobs, {
       sealed: true,
+      convergence: convergent ? (secret ? 'scoped' : 'public') : null,
       treeVersion,
       chunkBytes,
       size: plain.length,
@@ -285,6 +311,8 @@ class Document extends State {
       // Records from before tree versions carry none: they are version 1.
       treeVersion: Number(record.treeVersion) === DOCUMENT_TREE_VERSION ? DOCUMENT_TREE_VERSION : DOCUMENT_TREE_VERSION_LEGACY,
       sealed: record.sealed === true || blobs.some((b) => !!b.paymentHashHex && !!b.iv),
+      convergence: record.convergence === 'scoped' ? 'scoped'
+        : (record.convergence === 'public' || blobs.some((b) => b.scheme === CONVERGENT_SCHEME) ? 'public' : null),
       chunkBytes: record.chunkBytes != null ? Number(record.chunkBytes) : DEFAULT_BLOB_CHUNK_BYTES,
       size: record.size != null ? Number(record.size) : null,
       documentId: record.documentId || null,
@@ -324,6 +352,7 @@ class Document extends State {
     this._meta.blobTotal = this._blobs.length;
     this._meta.chunkBytes = meta.chunkBytes || this._meta.chunkBytes;
     this._meta.sealed = !!meta.sealed;
+    this._meta.convergence = meta.sealed && meta.convergence ? meta.convergence : null;
     this._meta.size = meta.size != null ? meta.size : null;
     this._meta.documentId = meta.documentId || this._meta.merkleRootHex;
     this._meta.publisher = meta.publisher || null;
@@ -342,6 +371,14 @@ class Document extends State {
   get blobTotal () { return this._meta.blobTotal; }
   get chunkBytes () { return this._meta.chunkBytes; }
   get sealed () { return this._meta.sealed; }
+  /**
+   * `'public'` (content-derived keys anyone can check), `'scoped'` (derived
+   * under a convergence secret), or `null` (private random keys / unsealed).
+   * @type {string|null}
+   */
+  get convergence () { return this._meta.convergence; }
+  /** True when blob keys are derived from content (cross-seller de-duplication). */
+  get convergent () { return !!this._meta.convergence; }
   /**
    * Plaintext byte length of the whole document. Named `contentSize` (not
    * `size`) because `State` already defines an own `size` property.
@@ -374,6 +411,7 @@ class Document extends State {
       blobTotal: this._meta.blobTotal,
       chunkBytes: this._meta.chunkBytes,
       sealed: this._meta.sealed,
+      convergence: this._meta.convergence,
       size: this._meta.size,
       publisher: this._meta.publisher,
       signature: this._meta.signature,
@@ -434,6 +472,30 @@ class Document extends State {
     if (!leaf || !leaf.paymentHashHex || !HEX64.test(key)) return false;
     if (paymentHashHexFromKey(key) !== leaf.paymentHashHex) return false;
     this._keys.set(leaf.index, key);
+    return true;
+  }
+
+  /**
+   * Hold the convergence secret of a `'scoped'` document so opened blobs can
+   * be checked against their content-derived keys. Never part of `record()`.
+   * @param {Buffer|string|null} secret
+   * @returns {Document}
+   */
+  setConvergenceSecret (secret) {
+    this._convergenceSecret = secret == null || secret === '' ? null : secret;
+    return this;
+  }
+
+  /**
+   * True when a convergent blob's key can be checked against its plaintext
+   * here (public convergence, or scoped with the secret held).
+   * @param {Object} leaf
+   * @returns {boolean}
+   * @private
+   */
+  _checksConvergence (leaf) {
+    if (!leaf || leaf.scheme !== CONVERGENT_SCHEME) return false;
+    if (this._meta.convergence === 'scoped') return this._convergenceSecret != null;
     return true;
   }
 
@@ -512,6 +574,10 @@ class Document extends State {
     if (sha256Hex(ct) !== leaf.blobHashHex) return { ok: false, error: 'blob hash mismatch' };
     try {
       const plaintext = openCiphertext(ct, key, leaf.iv);
+      if (this._checksConvergence(leaf) &&
+          !isConvergentKey(plaintext, key, { iv: leaf.iv, secret: this._convergenceSecret })) {
+        return { ok: false, error: 'key is not derived from the blob content' };
+      }
       this._keys.set(i, key);
       this._ciphertexts.set(i, Buffer.from(ct));
       this._plaintexts.set(i, plaintext);
@@ -545,10 +611,13 @@ class Document extends State {
    * @param {string} [opts.documentId]
    * @param {number[]} [opts.indexes] Subset of blob indexes.
    * @param {boolean} [opts.proofs] Attach proofs even to a full list.
+   * @param {number} [opts.creditRateSats] Per-blob price on the credit rail
+   *   (pay after verify over a channel); advertised with `paymentModes`.
    * @returns {Object}
    */
   inventoryItem (opts = {}) {
     const rateSats = Math.max(0, Math.floor(Number(opts.rateSats) || 0));
+    const creditRateSats = Number(opts.creditRateSats) > 0 ? Math.floor(Number(opts.creditRateSats)) : null;
     const id = opts.documentId || this._meta.documentId;
     const want = Array.isArray(opts.indexes) ? new Set(opts.indexes.map(Number)) : null;
     const withProofs = this._meta.treeVersion === DOCUMENT_TREE_VERSION && (!!want || opts.proofs === true);
@@ -583,6 +652,11 @@ class Document extends State {
         return out;
       })
     };
+    if (this._meta.convergence) item.convergence = this._meta.convergence;
+    if (creditRateSats != null && this._meta.sealed) {
+      item.creditRateSats = creditRateSats;
+      item.paymentModes = ['htlc', 'credit'];
+    }
     if (this._meta.publisher) item.publisher = this._meta.publisher;
     return item;
   }
@@ -618,6 +692,7 @@ class Document extends State {
         obj.paymentHashHex = b.paymentHashHex;
         obj.iv = b.iv;
         obj.scheme = b.scheme;
+        if (this._meta.convergence) obj.convergence = this._meta.convergence;
       }
       if (this._meta.treeVersion === DOCUMENT_TREE_VERSION) {
         obj.treeVersion = DOCUMENT_TREE_VERSION;

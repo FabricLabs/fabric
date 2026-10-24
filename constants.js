@@ -397,6 +397,8 @@ const PEER_MAX_SEALED_BLOB_PARTS = MAX_DOCUMENT_BLOBS;
 const PEER_MAX_SEALED_BLOB_ALTERNATES = 4;
 /** Global byte budget across every pending sealed row (ciphertext + retained frames); fits one full-size tree. */
 const PEER_MAX_PENDING_SEALED_BYTES = 256 * 1024 * 1024;
+/** Byte budget for opened convergent chunks a Peer keeps so a chunk another document shares is not bought again. */
+const PEER_MAX_HELD_CHUNK_BYTES = 64 * 1024 * 1024;
 /** Pending sealed rows that never complete are dropped this long after their first frame. */
 const PEER_PENDING_SEALED_TTL_MS = 60 * 60 * 1000;
 /** Max private DocumentRequest reverse-route entries. */
@@ -660,6 +662,7 @@ module.exports = {
   CHAT_MAX_RELAYS_PER_ORIGIN_PER_MINUTE,
   PEER_MAX_PENDING_SEALED_DELIVERIES,
   PEER_MAX_PENDING_SEALED_BYTES,
+  PEER_MAX_HELD_CHUNK_BYTES,
   PEER_PENDING_SEALED_TTL_MS,
   BITCOIN_DUST_SATS,
   HTLC_CLAIM_VBYTES,

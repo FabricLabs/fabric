@@ -487,6 +487,47 @@ describe('@fabric/core/types/channelBook (host registry)', function () {
     assert.strictEqual(session.resolutions.stateIds.length, session.number + 1);
   });
 
+  it('pay-after-verify: credit within the limit, settled by a final transfer naming it', function () {
+    const { out, pump } = books(2, { tipHeight: () => 10 });
+    const [A, B] = out;
+    B.book.creditLimitSats = 1000;
+    const funding = Channel.buildFunding({ network: 'regtest', localPubkey: A.p.pub, remotePubkey: B.p.pub, expireAfter: 5000 });
+    const { session } = A.book.open({ remotePubkey: B.p.pub, fundedTxHex: fundingTx(funding.address, 20000), capacitySats: 20000, expireAfter: 5000, feeSats: 500, localAddress: A.p.address, remoteAddress: B.p.address });
+    pump();
+    const received = [];
+    const settled = [];
+    B.book.on('transferReceived', (e) => received.push(e));
+    B.book.on('creditSettled', (e) => settled.push(e));
+
+    assert.match(B.book.extendCredit({ counterparty: 'nobody', ref: 'r0', amountSats: 100 }).error, /no open channel/);
+    const first = B.book.extendCredit({ counterparty: 'peer-0', ref: 'blob-1', amountSats: 300 });
+    assert.ok(first.ok, first.error);
+    assert.strictEqual(B.book.outstanding('peer-0'), 300);
+    assert.match(B.book.extendCredit({ counterparty: 'peer-0', ref: 'blob-1', amountSats: 1 }).error, /already used/);
+    assert.match(B.book.extendCredit({ counterparty: 'peer-0', ref: 'blob-2', amountSats: 701 }).error, /credit limit 1000/);
+
+    // Below the HTLC minimum: a balance transfer has no on-chain claim to fund.
+    const body = A.book.transfer('x', 300, 'blob-1', B.p.pub);
+    assert.deepStrictEqual(body.transfer, { amountSats: 300, ref: 'blob-1' });
+    assert.strictEqual(received.length, 0, 'not final before the round completes');
+    pump();
+    assert.strictEqual(received.length, 1);
+    assert.strictEqual(received[0].amountSats, 300);
+    assert.strictEqual(settled.length, 1);
+    assert.strictEqual(B.book.outstanding('peer-0'), 0);
+    assert.strictEqual(B.book.get(session.channelId).balances.localSats, 300);
+    assert.throws(() => A.book.transfer('x', 300, 'blob-1', B.p.pub), /already paid/);
+
+    // Credits survive a restart; a transfer is never announced twice.
+    B.book.extendCredit({ counterparty: 'peer-0', ref: 'blob-3', amountSats: 200 });
+    const B2 = new ChannelBook({ localPrivateKey: B.p.priv, network: 'regtest', tipHeight: () => 10 }).import(JSON.parse(JSON.stringify(B.book.export())));
+    assert.strictEqual(B2.outstanding(session.channelId), 200);
+    const again = [];
+    B2.on('transferReceived', (e) => again.push(e));
+    B2.tick();
+    assert.strictEqual(again.length, 0);
+  });
+
   it('does not register a session for a ChannelOpen that fails validation', function () {
     const { out } = books(2, { tipHeight: () => 10 });
     const [A, B] = out;
@@ -543,5 +584,60 @@ describe('@fabric/core/types/channel (unknown tip + output indices)', function (
     assert.throws(() => Channel.prepareHtlcTimeout(c, { htlcId: smallest.id, commitmentTxHex: fin.txHex, destinationAddress: A.localAddress, feeSats: HTLC_MINIMUM_SATS - 545, network: 'regtest' }), /dust|546/);
     const timeout = Channel.prepareHtlcTimeout(c, { htlcId: smallest.id, commitmentTxHex: fin.txHex, destinationAddress: A.localAddress, feeSats: HTLC_MINIMUM_SATS - 546, network: 'regtest' });
     assert.ok(timeout.psbtBase64);
+  });
+});
+
+describe('@fabric/core/types/channel (balance transfers)', function () {
+  it('moves value with no HTLC, below the HTLC minimum, and records it on both sides', function () {
+    const { A, B, open } = opened(100000, 500);
+    const body = A.transfer({ amountSats: 500, ref: 'chunk-0' });
+    assert.strictEqual(body.type, 'ChannelCommitment');
+    assert.deepStrictEqual(body.htlcs, []);
+    sync(A, B, body);
+    assert.strictEqual(A.balances.localSats, open - 500);
+    assert.strictEqual(B.balances.localSats, 500);
+    assert.deepStrictEqual(A.transfers.map((t) => [t.direction, t.amountSats, t.ref]), [['sent', 500, 'chunk-0']]);
+    assert.deepStrictEqual(B.transfers.map((t) => [t.direction, t.amountSats, t.ref, t.number]), [['received', 500, 'chunk-0', 1]]);
+    // A's exit for the new state no longer holds the transferred sats.
+    assert.strictEqual(A.commitment.outputs.find((o) => o.kind === 'toLocal').amountSats, open - 500);
+  });
+
+  it('refuses bad amounts, a balance under the reserve, a repeated ref, and a busy channel', function () {
+    const { A, B, open } = opened(100000, 500);
+    const reserve = A.state.policy.channelReserveSats;
+    assert.throws(() => A.transfer({ amountSats: 0 }), /positive integer/);
+    assert.throws(() => A.transfer({ amountSats: 1.5 }), /positive integer/);
+    assert.throws(() => A.transfer({ amountSats: open - reserve + 1 }), /channelReserveSats/);
+    const body = A.transfer({ amountSats: 10, ref: 'r' });
+    assert.throws(() => A.transfer({ amountSats: 10 }), /busy/);
+    sync(A, B, body);
+    assert.throws(() => A.transfer({ amountSats: 10, ref: 'r' }), /already paid/);
+    // B has no balance above its reserve to send.
+    assert.throws(() => B.transfer({ amountSats: 5 }), /channelReserveSats/);
+  });
+
+  it('a counterparty cannot move value without declaring a transfer, or declare one that does not match', function () {
+    const { A, B } = opened(100000, 500);
+    const body = A.transfer({ amountSats: 100, ref: 'x' });
+    const undeclared = Object.assign({}, body);
+    delete undeclared.transfer;
+    assert.throws(() => B.receive(Witness.signArtifact(undeclared, A.localPrivateKey)), /balances do not follow/);
+    const inflated = Object.assign({}, body, { transfer: { amountSats: 50, ref: 'x' } });
+    assert.throws(() => B.receive(Witness.signArtifact(inflated, A.localPrivateKey)), /balances do not follow/);
+    assert.throws(() => B.receive(Object.assign({}, body, { transfer: { amountSats: 100, ref: 'y' } })), /bad counterparty signature/);
+    assert.strictEqual(B.transfers.length, 0);
+  });
+
+  it('a rolled-back transfer is forgotten and replayed by repropose', function () {
+    const { A, B } = opened(100000, 500);
+    sync(A, B, A.transfer({ amountSats: 5000 }));
+    B.transfer({ amountSats: 1000, ref: 'back' });
+    assert.strictEqual(B.transfers.filter((t) => t.direction === 'sent').length, 1);
+    B._rollback();
+    assert.strictEqual(B.transfers.filter((t) => t.direction === 'sent').length, 0);
+    const replay = B.repropose();
+    assert.deepStrictEqual(replay.transfer, { amountSats: 1000, ref: 'back' });
+    sync(B, A, replay);
+    assert.strictEqual(A.transfers.filter((t) => t.direction === 'received').length, 1);
   });
 });
