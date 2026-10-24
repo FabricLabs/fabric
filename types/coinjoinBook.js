@@ -14,6 +14,7 @@
 
 const crypto = require('crypto');
 const coinjoin = require('../functions/coinjoin');
+const fidelityBond = require('../functions/fidelityBond');
 
 /**
  * Offers held before the oldest is evicted.
@@ -278,7 +279,9 @@ class CoinjoinBook {
 
   /**
    * Check every advertised bond on chain. A maker's value is its best valid
-   * bond; an outpoint advertised by more than one maker counts for none.
+   * bond; an outpoint the bond key certified for more than one maker counts
+   * for none. Bond descriptors are public, so a copy without a certificate for
+   * the copying maker is not a claim.
    * @param {Object} verifier `{ verify(bond, makerPubkey) }` (e.g. `functions/fidelityBond` `BondVerifier`)
    * @returns {Promise<{ checked: number, valid: number, shared: number }>}
    */
@@ -290,8 +293,10 @@ class CoinjoinBook {
       const bond = row.offer.fidelityBond;
       if (!bond) continue;
       const outpoint = `${bond.txid}:${bond.vout}`;
-      if (!claims.has(outpoint)) claims.set(outpoint, new Set());
-      claims.get(outpoint).add(row.offer.makerPubkey);
+      if (fidelityBond.verifyBondCertificate(bond, { makerPubkey: row.offer.makerPubkey, network: this.settings.network })) {
+        if (!claims.has(outpoint)) claims.set(outpoint, new Set());
+        claims.get(outpoint).add(row.offer.makerPubkey);
+      }
       if (!perMaker.has(row.offer.makerPubkey)) perMaker.set(row.offer.makerPubkey, new Map());
       perMaker.get(row.offer.makerPubkey).set(outpoint, bond);
     }
@@ -302,7 +307,8 @@ class CoinjoinBook {
     for (const [maker, bonds] of perMaker) {
       let best = { ok: false, value: 0, outpoint: null, reason: 'no valid bond' };
       for (const [outpoint, bond] of bonds) {
-        if (claims.get(outpoint).size > 1) {
+        const claimants = claims.get(outpoint);
+        if (claimants && claimants.size > 1) {
           shared++;
           if (!best.ok) best.reason = 'bond advertised by another maker';
           continue;

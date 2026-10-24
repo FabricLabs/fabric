@@ -1017,7 +1017,14 @@ class CoinjoinMakerRound extends RoundBase {
     const unsignedTxid = coinjoin.unsignedTxid(txBody.psbt);
     const signed = await this.adapters.wallet.signPsbt(txBody.psbt);
     if (coinjoin.unsignedTxid(signed) !== unsignedTxid) throw await this._refuse('wallet changed the transaction');
-    coinjoin.mergeMakerSignatures(txBody.psbt, signed, this._state.inputs);
+    // The wallet signs every input it can spend: a taker who slipped in
+    // another of this wallet's coins must not get a signature for it.
+    const before = coinjoin.describeCoinjoinPsbt(txBody.psbt).inputs;
+    const after = coinjoin.describeCoinjoinPsbt(signed).inputs;
+    const foreign = after.some((row, i) => row.signed && !before[i].signed && !check.inputIndexes.includes(i));
+    if (foreign) throw await this._refuse('transaction spends wallet coins the maker did not offer');
+    // Reply with the maker's own signatures only (no wallet derivation paths).
+    const psbt = coinjoin.mergeMakerSignatures(txBody.psbt, signed, this._state.inputs);
     this._state.signs++;
     this._state.signedTxids.push(unsignedTxid);
     const reply = this._reply({
@@ -1025,7 +1032,7 @@ class CoinjoinMakerRound extends RoundBase {
       roundId: this._state.roundId,
       fillId: this._state.fillId,
       makerPubkey: this.offer.makerPubkey,
-      psbt: signed,
+      psbt,
       createdAt: this.settings.now()
     });
     this._transition(MAKER_STATES.SIGNED, { unsignedTxid });

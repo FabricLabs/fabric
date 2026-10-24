@@ -753,6 +753,39 @@ describe('services/market (Phase 5 hardening)', function () {
     assert.strictEqual(sessions.alpha.error, 'document delivered by another seller');
   });
 
+  it('the session whose key is opening wins over a conflicting origin', function () {
+    const market = new Market({ budgetSats: 4 * P, tickMs: 0, book: new Book() });
+    const documentId = 'ce'.repeat(32);
+    const session = (id, seller) => ({ settlementId: id, documentId, seller, sellerId: seller, status: 'delivery_pending', amountSats: P, budget: 'locked', confirmedAt: 1 });
+    const sessions = { alpha: session('a', 'alpha'), beta: session('b', 'beta') };
+    Object.assign(market._state.content.sessions, sessions);
+    market._state.content.lockedSats = 2 * P;
+    market._opening = 'b';
+    market._onDocumentReceived({ documentId, origin: { name: 'alpha' }, buffer: Buffer.from('doc') });
+    market._opening = null;
+    assert.strictEqual(sessions.beta.status, 'complete');
+    assert.strictEqual(sessions.alpha.status, 'refund_pending');
+    assert.strictEqual(sessions.alpha.error, 'document delivered by another seller');
+    assert.strictEqual(market.spentSats, P, 'one delivery pays one purchase');
+    assert.strictEqual(market.lockedSats, P);
+  });
+
+  it('a blob opened with one session\'s key completes only that session', function () {
+    const market = new Market({ budgetSats: 4 * P, tickMs: 0, book: new Book() });
+    const documentId = 'cf'.repeat(32);
+    const session = (id, seller) => ({ settlementId: id, documentId, seller, sellerId: seller, blobIndex: 0, status: 'delivery_pending', amountSats: P, budget: 'locked', confirmedAt: 1 });
+    const sessions = { alpha: session('a', 'alpha'), beta: session('b', 'beta') };
+    Object.assign(market._state.content.sessions, sessions);
+    market._state.content.lockedSats = 2 * P;
+    market._opening = 'b';
+    market._onBlobOpened({ documentId, blobIndex: 0, origin: { name: 'alpha' } });
+    market._opening = null;
+    assert.strictEqual(sessions.beta.status, 'complete');
+    assert.strictEqual(sessions.alpha.status, 'refund_pending');
+    assert.strictEqual(sessions.alpha.error, 'blob delivered by another seller');
+    assert.strictEqual(market.spentSats, P);
+  });
+
   it('a whole-document delivery from a per-blob purchase\'s own seller leaves it to its blob', function () {
     const market = new Market({ budgetSats: 4 * P, tickMs: 0, book: new Book() });
     const documentId = 'ef'.repeat(32);

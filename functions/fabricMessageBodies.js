@@ -23,6 +23,8 @@ const SIDECHAIN_PATCH_KIND = 'SidechainStatePatch';
 const ZERO_DIGEST_HEX = '0'.repeat(64);
 /** @private */
 const MAX_UINT32 = (2 ** 32) - 1;
+/** @private */
+const MAX_PORT = 65535;
 
 /**
  * Wire names this module maps.
@@ -69,11 +71,23 @@ function str (value) {
 }
 
 /**
+ * Socket port; anything outside 0–65535 is 0 (the wire field is u32, but a
+ * larger port cannot be dialed).
  * @private
  * @param {*} value
  * @returns {number}
  */
 function port (value) {
+  const n = Number(value);
+  return Number.isInteger(n) && n >= 0 && n <= MAX_PORT ? n : 0;
+}
+
+/**
+ * @private
+ * @param {*} value
+ * @returns {number}
+ */
+function uint32 (value) {
   const n = Number(value);
   return Number.isInteger(n) && n >= 0 && n <= MAX_UINT32 ? n : 0;
 }
@@ -189,7 +203,7 @@ function encodeLegacyBody (type, body) {
         port: port(o.port),
         peeringHop: hop(o.peeringHop, PEERING_OFFER_MAX_HOPS),
         pubkey: str(o.pubkey),
-        slots: port(o.slots),
+        slots: uint32(o.slots),
         peering: str(o.peering),
         nonce: str(o.nonce)
       };
@@ -243,14 +257,14 @@ function decodeToLegacyBody (type, fields) {
     case 'P2P_PONG':
       return compact({ nonce: f.nonce });
     case 'P2P_PEER_ANNOUNCE':
-      return compact({ host: f.host, port: f.port, pubkey: f.pubkey, nonce: f.nonce });
+      return compact({ host: f.host, port: port(f.port), pubkey: f.pubkey, nonce: f.nonce });
     case 'P2P_PEER_GOSSIP':
-      return compact({ host: f.host, port: f.port, gossipHop: f.gossipHop, nonce: f.nonce, pubkey: f.pubkey });
+      return compact({ host: f.host, port: port(f.port), gossipHop: f.gossipHop, nonce: f.nonce, pubkey: f.pubkey });
     case 'P2P_PEERING_OFFER':
       return compact({
         transport: f.transport,
         host: f.host,
-        port: f.port,
+        port: port(f.port),
         peeringHop: f.peeringHop,
         pubkey: f.pubkey,
         slots: f.slots,
@@ -338,9 +352,10 @@ function canonicalPeeringObject (obj, omit = []) {
     if (drop.has(key)) continue;
     let v = src[key];
     if (v === '' || v == null) continue;
-    if (key === 'port' || key === 'slots') {
-      v = port(v);
-      if (v === 0 && key === 'slots') continue;
+    if (key === 'port') v = port(v);
+    if (key === 'slots') {
+      v = uint32(v);
+      if (v === 0) continue;
     }
     out[key] = v;
   }

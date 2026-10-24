@@ -174,6 +174,57 @@ describe('types/coinjoinRound', function () {
     assert.ok(txs.length === 2);
   });
 
+  it('refuses a transaction that spends another of the maker\'s coins', async function () {
+    const s = setup(2);
+    await s.deliver(await s.deliver(await s.taker.start(s.makers.map((m) => m.offer))));
+    await s.taker.buildTx();
+    const victim = s.makers[0];
+    const round = s.makerFor(victim);
+    const extra = coin(500000, s.chain);
+    victim.wallet.coins.push(Object.assign({ scriptPubKeyHex: coinjoin.taprootKeyPath(extra.internalPrivateKey).scriptPubKeyHex }, extra));
+    const psbt = bitcoin.Psbt.fromBase64(s.taker.psbt);
+    const forged = new bitcoin.Psbt({ network: bitcoin.networks.regtest });
+    forged.setVersion(2);
+    forged.setLocktime(psbt.locktime);
+    psbt.txInputs.forEach((input, i) => forged.addInput({ hash: input.hash, index: input.index, sequence: input.sequence, witnessUtxo: psbt.data.inputs[i].witnessUtxo }));
+    forged.addInput({
+      hash: extra.txid,
+      index: 0,
+      witnessUtxo: { script: Buffer.from(coinjoin.taprootKeyPath(extra.internalPrivateKey).scriptPubKeyHex, 'hex'), value: BigInt(extra.valueSats) }
+    });
+    psbt.txOutputs.forEach((o) => forged.addOutput({ script: Buffer.from(o.script), value: o.value }));
+    const thief = coinjoin.taprootKeyPath(coinjoin.randomPrivateKey()).scriptPubKeyHex;
+    forged.addOutput({ script: Buffer.from(thief, 'hex'), value: BigInt(extra.valueSats - 1000) });
+    const roundKey = s.taker.toJSON({ includeSecrets: true }).roundKey;
+    const body = coinjoin.signBody({
+      type: coinjoin.BODY_TYPES.TX,
+      roundId: s.taker.roundId,
+      takerPubkey: s.taker.takerPubkey,
+      psbt: forged.toBase64(),
+      createdAt: NOW
+    }, roundKey);
+    await assert.rejects(() => round.receive(coinjoin.sealRoundMessage(body, round.sealPubkey)), /did not offer/);
+    assert.strictEqual(round.status, 'aborted');
+  });
+
+  it('returns signatures for the maker\'s own inputs only', async function () {
+    const s = setup(2);
+    await s.deliver(await s.deliver(await s.taker.start(s.makers.map((m) => m.offer))));
+    const txs = await s.taker.buildTx();
+    const m = s.makers[0];
+    const round = s.makerFor(m);
+    const reply = await round.receive(txs.find((t) => t.to === m.offer.makerPubkey).envelope);
+    const roundKey = s.taker.toJSON({ includeSecrets: true }).roundKey;
+    const opened = coinjoin.openRoundMessage(reply, roundKey);
+    assert.ok(opened.ok, opened.reason);
+    const own = new Set(round.toJSON().inputs.map((c) => `${c.txid}:${c.vout}`));
+    const rows = coinjoin.describeCoinjoinPsbt(opened.body.psbt).inputs;
+    assert.ok(rows.some((r) => r.signed));
+    for (const r of rows) assert.strictEqual(r.signed, own.has(`${r.txid}:${r.vout}`));
+    const parsed = bitcoin.Psbt.fromBase64(opened.body.psbt);
+    assert.ok(parsed.data.inputs.every((d) => !d.tapBip32Derivation), 'no wallet derivation paths');
+  });
+
   it('refuses a reused PoDLE commitment and a bad proof', async function () {
     const s = setup(2);
     await s.deliver(await s.deliver(await s.taker.start(s.makers.map((m) => m.offer))));

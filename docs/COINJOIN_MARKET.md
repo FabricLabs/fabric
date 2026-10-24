@@ -114,6 +114,10 @@ unchanged, its coinjoin output pays exactly `amountSats` to its script, its
 change output pays exactly `makerChange` (absent when that is dust), at least
 `minEqualOutputs` outputs pay `amountSats`, no other output pays its scripts,
 and the transaction is v2 with a sane `nLockTime`. Anything else is refused.
+After the wallet signs, the maker also refuses if any input besides its own
+gained a signature (a taker who adds another of the maker's coins), and its
+`CoinjoinSig` carries only its own inputs' final witnesses, with no wallet
+derivation paths.
 
 **Taker check** (`validateCoinjoinForTaker`): the signed PSBT still matches the
 plan (inputs, outputs, values), and the fee rate is within
@@ -176,7 +180,9 @@ lend its weight to a hot offer key until block `certExpiresAt` (at most 2016 ×
 certificate valid for this maker and network, not expired, output unspent,
 script rebuilt from `bondXOnly` + `locktime` matches, at least 6
 confirmations. `CoinjoinBook#refreshBonds(verifier)` re-checks every bond; an
-outpoint claimed by more than one maker counts for none of them.
+outpoint the bond key certified for more than one maker counts for none of
+them. A copied descriptor without a certificate for the copying maker does not
+count as a claim, so it cannot void the real maker's bond.
 
 **Value** (JoinMarket's formula, heights in place of times, year = 52560
 blocks):

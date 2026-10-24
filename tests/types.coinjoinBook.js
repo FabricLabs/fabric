@@ -32,9 +32,9 @@ function cancel (m, offerId) {
   return coinjoin.signBody({ type: coinjoin.BODY_TYPES.CANCEL, offerId, makerPubkey: m.pubkey, createdAt: NOW }, m.key);
 }
 
-function bondFor (m, valueSats, utxos) {
-  const bondKey = coinjoin.randomPrivateKey();
-  const txid = crypto.randomBytes(32).toString('hex');
+function bondFor (m, valueSats, utxos, opts = {}) {
+  const bondKey = opts.bondKey || coinjoin.randomPrivateKey();
+  const txid = opts.txid || crypto.randomBytes(32).toString('hex');
   const locktime = 60000;
   const out = fidelityBond.buildBondP2tr({ networkName: 'regtest', bondPubkey: coinjoin.pubkeyFromPrivate(bondKey), locktime });
   utxos.set(`${txid}:0`, { valueSats, scriptPubKeyHex: out.scriptPubKeyHex, confirmations: 10 });
@@ -134,7 +134,20 @@ describe('types/coinjoinBook', function () {
     assert.strictEqual(book.choose(1000000, 2, { requireBond: true }).length, 1);
   });
 
-  it('gives a bond outpoint claimed by two makers to neither', async function () {
+  it('gives a bond outpoint certified for two makers to neither', async function () {
+    const utxos = new Map();
+    const a = maker();
+    const b = maker();
+    const shared = { bondKey: coinjoin.randomPrivateKey(), txid: crypto.randomBytes(32).toString('hex') };
+    book.ingestOffer(offer(a, { fidelityBond: bondFor(a, 100000000, utxos, shared) }));
+    book.ingestOffer(offer(b, { fidelityBond: bondFor(b, 100000000, utxos, shared) }));
+    const report = await book.refreshBonds(verifier(utxos));
+    assert.strictEqual(report.shared, 2);
+    assert.strictEqual(book.bondOf(a.pubkey).ok, false);
+    assert.strictEqual(book.bondOf(b.pubkey).reason, 'bond advertised by another maker');
+  });
+
+  it('keeps a bond valid when another maker copies its descriptor', async function () {
     const utxos = new Map();
     const a = maker();
     const b = maker();
@@ -142,9 +155,10 @@ describe('types/coinjoinBook', function () {
     book.ingestOffer(offer(a, { fidelityBond: bond }));
     book.ingestOffer(offer(b, { fidelityBond: bond }));
     const report = await book.refreshBonds(verifier(utxos));
-    assert.strictEqual(report.shared, 2);
-    assert.strictEqual(book.bondOf(a.pubkey).ok, false);
-    assert.strictEqual(book.bondOf(b.pubkey).reason, 'bond advertised by another maker');
+    assert.strictEqual(report.shared, 0);
+    assert.strictEqual(book.bondOf(a.pubkey).ok, true);
+    assert.strictEqual(book.bondOf(b.pubkey).ok, false);
+    assert.strictEqual(book.bondOf(b.pubkey).reason, 'bad certificate');
   });
 
   it('rejects a bond certified for another maker', async function () {

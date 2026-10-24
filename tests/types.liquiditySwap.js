@@ -418,4 +418,17 @@ describe('types/liquiditySwap', function () {
     assert.deepStrictEqual(calls.map((c) => c.slice(0, 2)), [['node', 'getblockcount'], ['miner', 'sendtoaddress'], ['miner', 'gettransaction']]);
     assert.deepStrictEqual(calls[1][2], ['bcrt1q', 0.00012345]);
   });
+
+  it('bitcoinAdapter keeps the txid when the lookup after a send fails', async function () {
+    const fake = {
+      _makeRPCRequest: async (method) => {
+        if (method === 'sendtoaddress') return 'txid';
+        throw new Error('wallet locked');
+      }
+    };
+    const adapter = LiquiditySwap.bitcoinAdapter(fake);
+    assert.deepStrictEqual(await adapter.fundAddress('bcrt1q', 12345), { txid: 'txid', txHex: null });
+    const failing = LiquiditySwap.bitcoinAdapter({ _makeRPCRequest: async () => { throw new Error('insufficient funds'); } });
+    await assert.rejects(() => failing.fundAddress('bcrt1q', 12345), /insufficient funds/);
+  });
 });

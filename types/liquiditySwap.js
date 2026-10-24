@@ -772,7 +772,10 @@ class LiquiditySwap extends EventEmitter {
   /**
    * Bitcoin adapter over `services/bitcoin` (bitcoind JSON-RPC, wallet
    * loaded). Reading the counterparty's funding transaction needs it in the
-   * mempool or `txindex=1`.
+   * mempool or `txindex=1`. `fundAddress` rejects only when `sendtoaddress`
+   * fails; once it returns a txid, a failed transaction lookup yields
+   * `{ txid, txHex: null }` and the swap reads the transaction by txid later.
+   * A timeout on `sendtoaddress` itself still leaves the outcome unknown.
    * @param {Object} service a `Bitcoin` service instance
    * @param {Object} [options]
    * @param {String} [options.wallet] named bitcoind wallet for funding and addresses (default: the node's default wallet)
@@ -790,8 +793,14 @@ class LiquiditySwap extends EventEmitter {
       },
       async fundAddress (address, amountSats) {
         const txid = await walletRpc('sendtoaddress', [address, Number((amountSats / 1e8).toFixed(8))]);
-        const tx = await walletRpc('gettransaction', [txid]);
-        return { txid, txHex: tx && tx.hex };
+        // The coins have moved: a failed lookup must not reject, or `fund`
+        // would let the send be retried and pay the HTLC twice.
+        let txHex = null;
+        try {
+          const tx = await walletRpc('gettransaction', [txid]);
+          txHex = (tx && tx.hex) || null;
+        } catch {}
+        return { txid, txHex };
       },
       async getTransaction (txid) {
         try {

@@ -144,7 +144,7 @@ invoiceExpiresAt + marginSeconds ≤ now + (refundLockHeight − tip) × seconds
 | Bitcoin adapter | Returns |
 |-----------------|---------|
 | `getTipHeight()` | height |
-| `fundAddress(address, sats)` | `{ txid, txHex }` (or `{ txid, vout }`) |
+| `fundAddress(address, sats)` | `{ txid, txHex }` (or `{ txid, vout }`); rejects only when nothing was sent, so `txHex` may be null when the lookup after the send fails |
 | `getTransaction(txid)` | `{ txHex, confirmations }` or `null` |
 | `broadcast(txHex)` | txid |
 | `getNewAddress()` | address |

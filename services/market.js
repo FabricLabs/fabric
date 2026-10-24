@@ -1694,8 +1694,9 @@ class Market extends Service {
     const from = originName(ev.origin);
     for (const s of this._sessionsFor(ev.documentId, ev.blobIndex)) {
       if (s.fraud) continue;
-      const mine = this._opening === s.settlementId ||
-        (from != null && (String(from) === String(s.seller) || String(from) === String(s.sellerId)));
+      const mine = this._opening != null
+        ? this._opening === s.settlementId
+        : (from != null && (String(from) === String(s.seller) || String(from) === String(s.sellerId)));
       if (mine || (from == null && this._opening == null)) {
         this._complete(s, ev);
         continue;
@@ -1753,8 +1754,11 @@ class Market extends Service {
       // delivery, and only before it timed out: a timed-out one settles by
       // refund or the seller's on-chain claim. Per-blob purchases complete on
       // their own blob's open. A delivery we cannot attribute pays no one.
-      const mine = this._opening === s.settlementId ||
-        (from != null && (String(from) === String(s.seller) || String(from) === String(s.sellerId)));
+      // The session whose key we are opening wins over the event's origin, so
+      // one delivery never pays two sellers.
+      const mine = this._opening != null
+        ? this._opening === s.settlementId
+        : (from != null && (String(from) === String(s.seller) || String(from) === String(s.sellerId)));
       if (mine) {
         if (s.blobIndex == null && s.status !== 'refund_pending') this._complete(s, ev);
         continue;

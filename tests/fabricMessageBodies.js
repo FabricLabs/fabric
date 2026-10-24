@@ -60,6 +60,18 @@ describe('functions/fabricMessageBodies', function () {
         { host: 'hub.example', port: 7777 });
     });
 
+    it('keeps ports in the socket range and slots in the u32 range', function () {
+      assert.strictEqual(bodies.encodeLegacyBody('P2P_PEER_ANNOUNCE', { host: 'h', port: 65535 }).port, 65535);
+      assert.strictEqual(bodies.encodeLegacyBody('P2P_PEER_ANNOUNCE', { host: 'h', port: 65536 }).port, 0);
+      assert.strictEqual(bodies.encodeLegacyBody('P2P_PEER_GOSSIP', { host: 'h', port: 70000 }).port, 0);
+      assert.strictEqual(bodies.decodeToLegacyBody('P2P_PEER_ANNOUNCE', { host: 'h', port: 70000 }).port, 0);
+      const offer = roundTrip('P2P_PEERING_OFFER', { transport: 'fabric', host: 'h', port: 70000, slots: 100000 });
+      assert.strictEqual(offer.port, 0);
+      assert.strictEqual(offer.slots, 100000);
+      assert.deepStrictEqual(bodies.canonicalPeeringObject({ host: 'h', port: 70000, slots: 100000 }),
+        { host: 'h', port: 0, slots: 100000 });
+    });
+
     it('P2P_PEER_GOSSIP keeps an explicit hop and flattens the envelope', function () {
       assert.deepStrictEqual(
         roundTrip('P2P_PEER_GOSSIP', {
