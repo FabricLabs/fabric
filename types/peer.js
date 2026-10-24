@@ -70,6 +70,7 @@ const {
 const { individualPk } = require('../functions/musig2');
 const musig2Session = require('../functions/musig2Session');
 const sidechainState = require('../functions/sidechainState');
+const fabricMessageBodies = require('../functions/fabricMessageBodies');
 const { verifyFederationWitnessOnMessage, epochCommitmentDigestHex } = require('../functions/beaconFederationSigning');
 const { resolveFederationThreshold } = require('../functions/federationValidators');
 const { paginateInventoryItems } = require('../functions/inventoryPages');
@@ -776,9 +777,8 @@ class Peer extends Service {
    * @returns {string} hex sha256
    */
   _gossipPayloadDedupKey (msg) {
-    const obj = (msg && msg.object && typeof msg.object === 'object') ? { ...msg.object } : {};
-    delete obj.gossipHop;
-    const body = JSON.stringify({ type: msg && msg.type, object: obj });
+    const obj = fabricMessageBodies.canonicalPeeringObject(msg && msg.object);
+    const body = fabricCanonicalJson({ type: msg && msg.type, object: obj });
     return crypto.createHash('sha256').update(body).digest('hex');
   }
 
@@ -833,7 +833,7 @@ class Peer extends Service {
       return `proposal:${cid}:${root}`;
     }
     if (t === 'P2P_PEER_ANNOUNCE') {
-      return `announce:${new Actor(obj).id}`;
+      return `announce:${new Actor(fabricMessageBodies.canonicalPeeringObject(obj)).id}`;
     }
     if (t === 'P2P_STATE_ANNOUNCE') {
       const stateObj = (obj.state && typeof obj.state === 'object') ? obj.state : obj;
@@ -1325,9 +1325,8 @@ class Peer extends Service {
    * @returns {string} hex sha256
    */
   _peeringOfferPayloadDedupKey (msg) {
-    const obj = (msg && msg.object && typeof msg.object === 'object') ? { ...msg.object } : {};
-    delete obj.peeringHop;
-    const body = JSON.stringify({ type: msg && msg.type, object: obj });
+    const obj = fabricMessageBodies.canonicalPeeringObject(msg && msg.object);
+    const body = fabricCanonicalJson({ type: msg && msg.type, object: obj });
     return crypto.createHash('sha256').update(body).digest('hex');
   }
 
@@ -3382,7 +3381,15 @@ class Peer extends Service {
           P2P_INVENTORY_RESPONSE: 'INVENTORY_RESPONSE'
         };
         const innerType = wireToInner[message.type] || message.type;
-        const parsed = prTyped.value;
+        let parsed = prTyped.value;
+        if (prTyped.encoding === 'fields' && fabricMessageBodies.LEGACY_BODY_TYPES.includes(message.type)) {
+          // Handlers and app events keep the legacy JSON shape for either encoding.
+          parsed = fabricMessageBodies.decodeToLegacyBody(message.type, parsed);
+          if (!parsed) {
+            this.emit('warning', `[FABRIC:PEER] ${message.type} parse failed: unusable field body`);
+            break;
+          }
+        }
         let genericBody;
         if (message.type === 'CONTRACT_PUBLISH' || message.type === 'CONTRACT_MESSAGE') {
           // Contract frames dispatch by WIRE type (namespace routing). The app
@@ -4101,17 +4108,18 @@ class Peer extends Service {
         if (wireMessage) this.relayFrom(origin.name, wireMessage);
         break;
       }
-      case 'P2P_PING':
+      case 'P2P_PING': {
         // Peel / foreign RELAY: do not write PONG to the TCP last hop.
         if (!delivery.allowTcpOriginSideEffects) break;
-        const now = (new Date()).toISOString();
-        const P2P_PONG = Message.fromVector(['P2P_PONG', JSON.stringify({
-          created: now
-        })]).signWithKey(this.key);
+        const pingNonce = msg.object && msg.object.nonce ? String(msg.object.nonce) : '';
+        const P2P_PONG = fabricMessageBodies.buildMessage('P2P_PONG', {
+          nonce: pingNonce || this._freshKeepaliveNonce()
+        }).signWithKey(this.key);
         if (this.connections[origin.name] && this.connections[origin.name]._writeFabric) {
           this.connections[origin.name]._writeFabric(P2P_PONG.toBuffer());
         }
         break;
+      }
       case 'P2P_PONG': {
         // Peel / foreign RELAY: ignore score credit under the last hop.
         if (!delivery.allowTcpOriginSideEffects) break;
@@ -7120,14 +7128,12 @@ class Peer extends Service {
     if (socket._keepalive) clearInterval(socket._keepalive);
     socket._fabricPingOutstanding = 0;
     socket._keepalive = setInterval(() => {
-      const now = (new Date()).toISOString();
-      const P2P_PING = Message.fromVector(['P2P_PING', JSON.stringify({
-        created: now
-      })]).signWithKey(this.key);
-
       // At most one unanswered PING per connection so burst P2P_PONG cannot inflate registry score
       // (FLUSH_CHAIN trust gate uses _registryScoreForConnectionAddress).
       if ((socket._fabricPingOutstanding | 0) >= 1) return;
+      const P2P_PING = fabricMessageBodies.buildMessage('P2P_PING', {
+        nonce: this._freshKeepaliveNonce()
+      }).signWithKey(this.key);
       socket._fabricPingOutstanding = 1;
       try {
         const buf = P2P_PING.toBuffer();
@@ -7142,6 +7148,16 @@ class Peer extends Service {
         }
       }
     }, 60000);
+  }
+
+  /**
+   * Keepalive nonce. BIP340 signing here is deterministic, so a repeated body
+   * would yield a byte-identical frame that wire-hash dedup drops.
+   * @private
+   * @returns {string}
+   */
+  _freshKeepaliveNonce () {
+    return `${crypto.randomBytes(8).toString('hex')}-${Date.now().toString(36)}`;
   }
 
   _registerNOISEClient (name, socket, client) {
@@ -7535,19 +7551,6 @@ class Peer extends Service {
   _maintainConnection (address) {
     const peer = this;
     if (!peer.connections[address]) return new Error(`Connection for address "${address}" does not exist.`);
-    /* peer.connections[address]._player = setInterval(function () {
-      peer._pingConnection.apply(peer, [ address ]);
-    }, 60000); */
-  }
-
-  _pingConnection (address) {
-    const ping = Message.fromVector(['Ping', `${Date.now().toString()}`]);
-
-    try {
-      this.sendToSocket(address, ping);
-    } catch (exception) {
-      this.emit('error', `Couldn't deliver message to socket: ${exception}`);
-    }
   }
 
   _updateLiveness (address) {

@@ -266,9 +266,23 @@ class Lightning extends Service {
   /**
    * Create a new Lightning invoice.
    * @param {String} amount Amount in millisatoshi (msat).
+   * @param {String} [label]
+   * @param {String} [description]
+   * @param {Object} [options]
+   * @param {String} [options.preimage] 32-byte hex preimage to lock the invoice to (swaps: the HTLC hash must match)
+   * @param {Number} [options.expiry] seconds until the invoice expires
    */
-  async createInvoice (amount, label = 'Generic Invoice', description = 'Generic description.') {
-    const result = await this._makeRPCRequest('invoice', [amount, label, description]);
+  async createInvoice (amount, label = 'Generic Invoice', description = 'Generic description.', options = {}) {
+    const opts = options || {};
+    // JSON-RPC keyword params are the object itself; wrapped in an array it would be read as `amount_msat`.
+    const params = (opts.preimage != null || opts.expiry != null)
+      ? Object.assign(
+          { amount_msat: amount, label, description },
+          opts.preimage != null ? { preimage: String(opts.preimage) } : {},
+          opts.expiry != null ? { expiry: Number(opts.expiry) } : {}
+        )
+      : [amount, label, description];
+    const result = await this._makeRPCRequest('invoice', params);
     return {
       bolt11: result.bolt11,
       paymentHash: result.payment_hash,
@@ -350,10 +364,14 @@ class Lightning extends Service {
    * Pay a BOLT11 invoice or BOLT12-fetched bolt11 string (Core Lightning `pay`).
    * @param {String|Object} invoiceOrParams Bolt11 string, or keyword object (e.g. `{ bolt11 }`, `{ bolt12 }` per CLN).
    * @param {Number} [timeoutMs=30000]
-   * @returns {Promise<Object>} Payment result.
+   * @returns {Promise<Object>} Payment result; `paymentPreimage` mirrors CLN `payment_preimage`.
    */
   async pay (invoiceOrParams, timeoutMs = 30000) {
-    return this._makeRPCRequest('pay', [invoiceOrParams], timeoutMs);
+    const result = await this._makeRPCRequest('pay', [invoiceOrParams], timeoutMs);
+    if (result && typeof result === 'object' && result.payment_preimage != null && result.paymentPreimage == null) {
+      return Object.assign({}, result, { paymentPreimage: result.payment_preimage });
+    }
+    return result;
   }
 
   /**

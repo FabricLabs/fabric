@@ -47,6 +47,15 @@ Password-sealed JSON and in-memory lock sessions (CLI / setup wallets):
 `@fabric/core/services/bitcoin`, `@fabric/core/services/lightning` — optional RPC
 integrations. Explorer URLs must be configured explicitly (no public default).
 
+### Experimental (not frozen)
+
+L1/L2 liquidity swap market, regtest-only prototype
+([docs/LIQUIDITY_MARKET.md](docs/LIQUIDITY_MARKET.md)):
+`@fabric/core/functions/liquiditySwap` (bodies, quotes, escrow / invoice checks),
+`@fabric/core/types/liquidityBook` (local order book),
+`@fabric/core/types/liquiditySwap` (settlement state machine). Paths and body
+shapes may change in any 0.1.x release.
+
 ## Minimal Peer example
 
 ```js
@@ -89,7 +98,7 @@ operator `settings/local.js` (use `settings/local.example.js`).
 | `HEADER_SIZE` | 208 bytes | AMP header |
 | `MAX_MESSAGE_SIZE` | 32768 bytes | AMP body cap (32 KiB; was 3888 = `4096 − HEADER_SIZE` before 2026-10-14) |
 | `MAX_FRAME_BYTES` | 32976 bytes | `HEADER_SIZE + MAX_MESSAGE_SIZE`; fits one Noise transport message (65535 − 16 MAC) |
-| `MACHINE_MAX_MEMORY` | 32 MiB | `MAX_MEMORY_ALLOC × MAX_MESSAGE_SIZE` for `Machine` |
+| `MACHINE_MAX_MEMORY` | ≈3.8 MiB | `MAX_MEMORY_ALLOC × MACHINE_MEMORY_PAGE_SIZE` (3888, independent of the wire cap); allocated on first access by `Machine` |
 
 Peers drop frames shorter than `HEADER_SIZE` or longer than `HEADER_SIZE +
 MAX_MESSAGE_SIZE` before parse/crypto. Per-origin relay budgets (chat, gossip,

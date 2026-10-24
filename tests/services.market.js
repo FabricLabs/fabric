@@ -710,6 +710,29 @@ describe('services/market (Phase 5 hardening)', function () {
     assert.ok(market.audit().ok);
   });
 
+  it('a whole-document delivery completes only its own seller\'s locked purchase, never a timed-out one', function () {
+    const market = new Market({ budgetSats: 4 * P, tickMs: 0, book: new Book() });
+    const documentId = 'ab'.repeat(32);
+    const session = (id, seller, status) => ({ settlementId: id, documentId, seller, sellerId: seller, status, amountSats: P, budget: 'locked', confirmedAt: 1 });
+    const sessions = {
+      timedOut: session('timed-out', 'alpha', 'refund_pending'),
+      other: session('other', 'gamma', 'delivery_pending'),
+      own: session('own', 'beta', 'delivery_pending')
+    };
+    Object.assign(market._state.content.sessions, sessions);
+    market._state.content.lockedSats = 3 * P;
+    market._onDocumentReceived({ documentId, origin: { name: 'beta' }, buffer: Buffer.from('doc') });
+    assert.strictEqual(sessions.timedOut.status, 'refund_pending', 'the timed-out seller is still refunded');
+    assert.strictEqual(sessions.timedOut.budget, 'locked');
+    assert.strictEqual(sessions.other.status, 'refund_pending', 'another seller was not paid by this delivery');
+    assert.strictEqual(sessions.other.error, 'document delivered by another seller');
+    assert.strictEqual(sessions.own.status, 'complete');
+    assert.strictEqual(market.lockedSats, 2 * P);
+    assert.strictEqual(market.spentSats, P);
+    market._onDocumentReceived({ documentId, origin: { name: 'alpha' }, buffer: Buffer.from('doc') });
+    assert.strictEqual(sessions.timedOut.status, 'refund_pending', 'a late delivery from the timed-out seller does not cancel its refund');
+  });
+
   it('forget releases never-paid sessions and keeps the budget of ones that may have paid', async function () {
     const m = buildL1();
     m.ctl.silent = true;

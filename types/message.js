@@ -1376,22 +1376,43 @@ const SCHEMA_P2P_FORWARD = Object.freeze([
   { name: 'ttl', type: 'u8' },
   { name: 'inner', type: 'message' }
 ]);
-/** @private Discovery / peering field layouts (Phase B); JSON bodies remain accepted. */
+/**
+ * @private Discovery / peering field layouts; JSON bodies remain accepted.
+ * Optional fields are appended only — older decoders ignore trailing bytes.
+ */
 const SCHEMA_P2P_PEER_GOSSIP = Object.freeze([
   { name: 'host', type: 'string' },
   { name: 'port', type: 'u32' },
   { name: 'gossipHop', type: 'u8' },
-  { name: 'nonce', type: 'string' }
+  { name: 'nonce', type: 'string' },
+  { name: 'pubkey', type: 'string', optional: true }
 ]);
 const SCHEMA_P2P_PEERING_OFFER = Object.freeze([
   { name: 'transport', type: 'string' },
   { name: 'host', type: 'string' },
   { name: 'port', type: 'u32' },
-  { name: 'peeringHop', type: 'u8' }
+  { name: 'peeringHop', type: 'u8' },
+  { name: 'pubkey', type: 'string', optional: true },
+  { name: 'slots', type: 'u32', optional: true },
+  { name: 'peering', type: 'string', optional: true },
+  { name: 'nonce', type: 'string', optional: true }
 ]);
 const SCHEMA_P2P_PEER_ANNOUNCE = Object.freeze([
   { name: 'host', type: 'string' },
-  { name: 'port', type: 'u32' }
+  { name: 'port', type: 'u32' },
+  { name: 'pubkey', type: 'string', optional: true },
+  { name: 'nonce', type: 'string', optional: true }
+]);
+/**
+ * @private Statechain patch proposal. `catalogCanonical` is the document-registry
+ * shorthand; `patchesCanonical` (RFC6902 JSON array) wins when non-empty.
+ */
+const SCHEMA_SIDECHAIN_STATE_PATCH = Object.freeze([
+  { name: 'basisClock', type: 'u32' },
+  { name: 'basisDigest', type: 'bytes32' },
+  { name: 'catalogCanonical', type: 'string' },
+  { name: 'patchesCanonical', type: 'string', optional: true },
+  { name: 'federationWitnessCanonical', type: 'string', optional: true }
 ]);
 /** @private BIP-327 directed MuSig2 session (JSON bodies still accepted). */
 const SCHEMA_P2P_MUSIG_START = Object.freeze([
@@ -1481,6 +1502,9 @@ function tryParseMessageBody (message) {
   registerBodySchema(P2P_PEER_ANNOUNCE, SCHEMA_P2P_PEER_ANNOUNCE);
   registerBodySchema('P2P_PEER_ANNOUNCE', SCHEMA_P2P_PEER_ANNOUNCE);
   registerBodySchema('PeerAnnounce', SCHEMA_P2P_PEER_ANNOUNCE);
+  registerBodySchema(SIDECHAIN_STATE_PATCH_TYPE, SCHEMA_SIDECHAIN_STATE_PATCH);
+  registerBodySchema('SIDECHAIN_STATE_PATCH', SCHEMA_SIDECHAIN_STATE_PATCH);
+  registerBodySchema('SidechainStatePatch', SCHEMA_SIDECHAIN_STATE_PATCH);
   registerBodySchema(P2P_MUSIG_START, SCHEMA_P2P_MUSIG_START);
   registerBodySchema('P2P_MUSIG_START', SCHEMA_P2P_MUSIG_START);
   registerBodySchema('MusigStart', SCHEMA_P2P_MUSIG_START);
@@ -1524,6 +1548,7 @@ Message.SCHEMA_P2P_FORWARD = SCHEMA_P2P_FORWARD;
 Message.SCHEMA_P2P_PEER_GOSSIP = SCHEMA_P2P_PEER_GOSSIP;
 Message.SCHEMA_P2P_PEERING_OFFER = SCHEMA_P2P_PEERING_OFFER;
 Message.SCHEMA_P2P_PEER_ANNOUNCE = SCHEMA_P2P_PEER_ANNOUNCE;
+Message.SCHEMA_SIDECHAIN_STATE_PATCH = SCHEMA_SIDECHAIN_STATE_PATCH;
 Message.SCHEMA_P2P_MUSIG_START = SCHEMA_P2P_MUSIG_START;
 
 const fs = require('fs');

@@ -15,6 +15,8 @@ const Actor = require('./actor');
 const Key = require('./key');
 const Message = require('./message');
 const Resolutions = require('./resolutions');
+const { buildMessage } = require('../functions/fabricMessageBodies');
+const { LOG_TYPES } = require('../functions/applicationNamespaces');
 const Service = require('./service');
 
 /**
@@ -227,7 +229,7 @@ class Contract extends Service {
       created: now,
       genesis: hash,
       history: [ hash ], // most recent first
-      messages: this.messages,
+      messages: Object.assign({}, this.messages),
       name: this.settings.name,
       signature: '',
       state: input,
@@ -238,11 +240,9 @@ class Contract extends Service {
     this.actor = new Actor(template);
     this.emit('log', `Deploying Contract [0x${this.actor.id}] (${PACKET_CONTRACT_GENESIS.byteLength} bytes): ${this.messages[hash]}`);
 
-    // Network publish message (contract)
-    const PACKET_CONTRACT_PUBLISH = Message.fromVector(['CONTRACT_PUBLISH', JSON.stringify({
-      type: 'CONTRACT_PUBLISH',
-      object: template
-    })]).signWithKey(this.key);
+    // Network publish message: the body is the definition itself, so peers
+    // derive the same namespace id (`Actor(template).id`).
+    const PACKET_CONTRACT_PUBLISH = buildMessage('CONTRACT_PUBLISH', template).signWithKey(this.key);
 
     const signed = PACKET_CONTRACT_PUBLISH.signWithKey(this.key);
     const pubhash = crypto.createHash('sha256').update(signed.toBuffer()).digest('hex');
@@ -288,13 +288,11 @@ class Contract extends Service {
     const changes = monitor.generate(this.observer);
 
     if (changes.length) {
-      const message = Message.fromVector(['CONTRACT_MESSAGE', {
-        type: 'CONTRACT_MESSAGE',
-        object: {
-          contract: this.id,
-          ops: changes
-        }
-      }]);
+      const message = buildMessage('CONTRACT_MESSAGE', {
+        contract: this.id,
+        type: LOG_TYPES.ContractMessage,
+        ops: changes
+      });
 
       this.emit('changes', changes);
       this.emit('message', message);

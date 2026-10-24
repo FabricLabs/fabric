@@ -1740,11 +1740,15 @@ class Market extends Service {
   /** @private */
   _onDocumentReceived (ev) {
     if (!ev || !ev.documentId) return;
+    const from = originName(ev.origin);
     for (const s of this._sessionsFor(ev.documentId, null)) {
       if (s.fraud) continue;
-      // Per-blob purchases complete on their own blob's open; one still
-      // holding an HTLC was not paid by this delivery and resolves on its own.
-      if (s.blobIndex != null && this._bucketOf(s) === 'locked') {
+      const mine = from == null || String(from) === String(s.seller) || String(from) === String(s.sellerId);
+      // A purchase still holding an HTLC completes only on its own seller's
+      // delivery, and only before it timed out: another seller's delivery did
+      // not pay it, and a timed-out one settles by refund or the seller's
+      // on-chain claim. Per-blob purchases complete on their own blob's open.
+      if (this._bucketOf(s) === 'locked' && (s.blobIndex != null || !mine || s.status === 'refund_pending')) {
         if (s.status === 'delivery_pending' && s.rail !== 'channel') {
           s.status = 'refund_pending';
           s.error = 'document delivered by another seller';

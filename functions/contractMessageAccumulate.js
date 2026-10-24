@@ -17,6 +17,7 @@
 const crypto = require('crypto');
 const Message = require('../types/message');
 const Key = require('../types/key');
+const { tryParseLegacyBody } = require('./fabricMessageBodies');
 const { HEADER_SIZE, MAX_MESSAGE_SIZE } = require('../constants');
 const { OUTER, CONTRACT_BODY_TYPES, isKnownContractBodyType } = require('./applicationNamespaces');
 const { pubkeyXOnly, pubkeyCompressed } = require('./groupChatSeal');
@@ -273,7 +274,7 @@ function verifyMessageSignature (msg) {
 }
 
 /**
- * Parse CONTRACT_MESSAGE JSON body.
+ * Parse a CONTRACT_MESSAGE body (typed fields or transitional JSON).
  * @param {Message} msg
  * @returns {{ contract: string, type: string, object: object }|null}
  */
@@ -281,15 +282,9 @@ function parseContractMessageBody (msg) {
   if (!msg || (msg.type !== OUTER.CONTRACT_MESSAGE && msg.type !== 'P2P_CONTRACT_MESSAGE')) {
     return null;
   }
-  let raw = msg.body != null ? msg.body : (msg.raw && msg.raw.data);
-  if (Buffer.isBuffer(raw)) raw = raw.toString('utf8');
-  if (typeof raw !== 'string') return null;
-  let parsed;
-  try {
-    parsed = JSON.parse(raw);
-  } catch (_) {
-    return null;
-  }
+  const result = tryParseLegacyBody(msg);
+  if (!result.ok) return null;
+  const parsed = result.value;
   if (!parsed || typeof parsed !== 'object') return null;
   const contract = String(parsed.contract || '').trim().toLowerCase();
   const type = String(parsed.type || '').trim();
