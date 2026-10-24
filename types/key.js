@@ -8,10 +8,7 @@
 'use strict';
 
 // Constants
-const {
-  FABRIC_KEY_DERIVATION_PATH,
-  BECH32M_CHARSET
-} = require('../constants');
+const { FABRIC_KEY_DERIVATION_PATH } = require('../constants');
 
 // Node Modules
 const crypto = require('crypto');
@@ -131,7 +128,9 @@ const bip32Module = require('../functions/bip32');
 const BIP32 = bip32Module.default;
 const BIP32_DEFAULT_NETWORK = bip32Module.DEFAULT_NETWORK;
 const { payments } = require('bitcoinjs-lib');
-const { p2shP2wpkhPayment } = require('../functions/bip69');
+const { p2shP2wpkhPayment } = require('../functions/bip49');
+const { encodeSegwitAddress } = require('../functions/bech32');
+const taggedHash = require('../functions/taggedHash');
 
 // Fabric Dependencies
 const Actor = require('./actor');
@@ -242,7 +241,6 @@ class Key extends EventEmitter {
     }, input);
 
     this.bip32 = new BIP32(ecc);
-    this._bech32mCharset = BECH32M_CHARSET;
 
     this.clock = 0;
     this.master = null;
@@ -518,16 +516,10 @@ class Key extends EventEmitter {
           privateKey: key.privateKey
         };
       }
-      case 'p2tr':
-        // For p2tr, we need to use the x-only pubkey (first 32 bytes after the prefix)
-        const pubkeyBuffer = Buffer.from(key.publicKey, 'hex');
-        const xOnlyPubkey = pubkeyBuffer.slice(1, 33); // Remove prefix byte and take next 32 bytes
-
-        // Generate taproot address using bech32m encoding
-        const commitHash = crypto.createHash('sha256')
-          .update(Buffer.concat([xOnlyPubkey, Buffer.alloc(32)]))
-          .digest();
-        const tweakResult = ecc.xOnlyPointAddTweak(xOnlyPubkey, commitHash);
+      case 'p2tr': {
+        // BIP-341 key-path only (BIP-86): Q = P + int(taggedHash('TapTweak', P_x))·G
+        const xOnlyPubkey = Buffer.from(key.publicKey, 'hex').subarray(1, 33);
+        const tweakResult = ecc.xOnlyPointAddTweak(xOnlyPubkey, taggedHash('TapTweak', xOnlyPubkey));
         if (!tweakResult) throw new Error('Invalid tweak');
 
         // Use the correct network prefix for bech32m
@@ -546,100 +538,18 @@ class Key extends EventEmitter {
             throw new Error(`Unsupported network: ${this.settings.network}`);
         }
 
-        const address = this._encodeBech32m(tweakResult.xOnlyPubkey, hrp);
+        const address = encodeSegwitAddress(hrp, 1, Buffer.from(tweakResult.xOnlyPubkey));
+        if (!address) throw new Error('Invalid program');
 
         return {
           address: address,
           publicKey: key.publicKey,
           privateKey: key.privateKey
         };
+      }
       default:
         throw new Error(`Unsupported address type: ${type}`);
     }
-  }
-
-  _encodeBech32m (data, hrp) {
-    // Witness version 1 for P2TR
-    const version = [1];
-    // Convert witness program to 5-bit words
-    const program = this._convertBits(Array.from(data), 8, 5, true);
-    if (!program) throw new Error('Invalid program');
-
-    // Combine version and program
-    const words = version.concat(program);
-
-    // Generate checksum
-    const chk = this._bech32mCreateChecksum(hrp, words);
-
-    // Return final address
-    return hrp + '1' + words.map(x => this._bech32mCharset[x]).join('') + chk;
-  }
-
-  _convertBits (data, fromBits, toBits, pad) {
-    let acc = 0;
-    let bits = 0;
-    const maxv = (1 << toBits) - 1;
-    const result = [];
-
-    for (let i = 0; i < data.length; i++) {
-      const value = data[i];
-      if (value < 0 || value >> fromBits !== 0) {
-        return null;
-      }
-      acc = (acc << fromBits) | value;
-      bits += fromBits;
-      while (bits >= toBits) {
-        bits -= toBits;
-        result.push((acc >> bits) & maxv);
-      }
-    }
-
-    if (pad) {
-      if (bits > 0) {
-        result.push((acc << (toBits - bits)) & maxv);
-      }
-    } else if (bits >= fromBits || ((acc << (toBits - bits)) & maxv)) {
-      return null;
-    }
-
-    return result;
-  }
-
-  _bech32mCreateChecksum (hrp, data) {
-    const values = this._bech32mExpandHrp(hrp).concat(data).concat([0, 0, 0, 0, 0, 0]);
-    const polymod = this._bech32mPolymod(values) ^ 0x2bc830a3;
-    const ret = [];
-    for (let i = 0; i < 6; i++) {
-      ret.push((polymod >> 5 * (5 - i)) & 31);
-    }
-    return ret.map(x => this._bech32mCharset[x]).join('');
-  }
-
-  _bech32mExpandHrp (hrp) {
-    const ret = [];
-    for (let i = 0; i < hrp.length; i++) {
-      ret.push(hrp.charCodeAt(i) >> 5);
-    }
-    ret.push(0);
-    for (let i = 0; i < hrp.length; i++) {
-      ret.push(hrp.charCodeAt(i) & 31);
-    }
-    return ret;
-  }
-
-  _bech32mPolymod (values) {
-    const GEN = [0x3b6a57b2, 0x26508e6d, 0x1ea119fa, 0x3d4233dd, 0x2a1462b3];
-    let chk = 1;
-    for (let i = 0; i < values.length; i++) {
-      const top = chk >> 25;
-      chk = ((chk & 0x1ffffff) << 5) ^ values[i];
-      for (let j = 0; j < 5; j++) {
-        if ((top >> j) & 1) {
-          chk ^= GEN[j];
-        }
-      }
-    }
-    return chk;
   }
 
   deriveKeyPair (addressID = 0, change = 0) {

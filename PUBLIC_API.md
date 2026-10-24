@@ -21,7 +21,8 @@ execution. Distributed Beacon / federation orchestration is Hub-composed and
 | Document exchange | `@fabric/core/functions/cliDocumentExchange` | Headless + CLI packs |
 | HTLC | `@fabric/core/types/htlc` | P2TR claim / refund HTLC (`Htlc`) |
 | Spend policy | `@fabric/core/types/policy` | Contract failover ladder → P2TR, leaves, PSBTs (`Policy`) |
-| Sealed delivery | `@fabric/core/functions/documentSealedExchange` | AES-GCM + content key |
+| Sealed delivery | `@fabric/core/functions/documentSealedExchange` | AES-GCM + content key (convergent by default, or random) |
+| Sealed document | `@fabric/core/types/document` | Per-chunk sealed Tree (`Document.seal`, `fromRecord`) |
 | Publish envelope | `@fabric/core/functions/publishedDocumentEnvelope` | DocumentPublish binding |
 | Payment hash | `@fabric/core/functions/documentPaymentHash` | `contentHashHex` |
 | Onion forward | `@fabric/core/functions/fabricOnion` | `P2P_FORWARD` wrap / decode; `Peer#sendOnion` |
@@ -79,6 +80,15 @@ peer.start();
 Operator flows: [docs/L1_DOCUMENT_EXCHANGE.md](docs/L1_DOCUMENT_EXCHANGE.md).
 Programmatic surface: `CliDocumentExchange` from
 `@fabric/core/functions/cliDocumentExchange`.
+
+`Document.seal` is **convergent** by default: the same bytes seal to the same
+chunks and root for every seller, and `Peer#publishSealedDocument` lists such a
+document under its `merkleRootHex` (a custom `documentId` is a local label).
+Pass `{ private: true }` for random keys. Sellers may also sell convergent
+chunks on credit (`creditRateSats`, `settings.sealedBlobCredit`), paid by a
+channel balance transfer after the buyer opens the chunk (`Channel.Session#transfer`,
+`ChannelBook#transfer` / `extendCredit`); buyers may sell a received tree again
+with `Peer#seedDocument`. These market surfaces are experimental.
 
 ## TypeScript
 

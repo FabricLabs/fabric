@@ -953,7 +953,7 @@ const {
   prepareWithdrawalFromRequest,
   verifyWithdrawalWitnessSignature
 } = require('../functions/contractSpend');
-const { pubkeyXOnly } = require('../functions/groupChatSeal');
+const { pubkeyXOnly } = require('../functions/pubkey');
 const {
   createMemoryStore,
   ingestMessageBuffer,
@@ -1051,7 +1051,7 @@ describe('contractSpend / ARC resolveSpend', function () {
       overrides: { network: 'regtest' }
     });
     assert.strictEqual(spend.validators.length, 1);
-    assert.strictEqual(spend.validators[0], require('../functions/groupChatSeal').pubkeyCompressed(a.pubkey) || a.pubkey);
+    assert.strictEqual(spend.validators[0], require('../functions/pubkey').pubkeyCompressed(a.pubkey) || a.pubkey);
   });
 
   it('resolveSpend is stable for tip members', function () {

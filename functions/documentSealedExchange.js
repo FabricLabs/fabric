@@ -39,10 +39,10 @@
 const crypto = require('crypto');
 const taggedHash = require('./taggedHash');
 
-const SCHEME = 'aes-256-gcm-content-v1';
-const CONVERGENT_SCHEME = 'aes-256-gcm-convergent-v1';
-const CONVERGENT_KEY_TAG = 'Fabric/DocumentConvergentKey/v1';
-const CONVERGENT_IV_TAG = 'Fabric/DocumentConvergentIv/v1';
+const SCHEME = 'aes-256-gcm-content';
+const CONVERGENT_SCHEME = 'aes-256-gcm-convergent';
+const CONVERGENT_KEY_TAG = 'Fabric/DocumentConvergentKey';
+const CONVERGENT_IV_TAG = 'Fabric/DocumentConvergentIv';
 const SEALED_SCHEMES = Object.freeze([SCHEME, CONVERGENT_SCHEME]);
 
 /**
@@ -231,7 +231,7 @@ async function writeContentKey (fs, documentId, key32) {
     created: new Date().toISOString()
   });
 }
-const { splitBlobs, advertiseDocumentBlobs } = require('./documentBlobManifest');
+const { splitBlobs, advertiseDocumentBlobs, merkleRootHexFromBlobHashes } = require('./documentBlobManifest');
 
 const KEY_REVEAL_TYPE = 'DocumentContentKeyReveal';
 
@@ -275,6 +275,13 @@ function advertiseSealedDocument (sale, opts = {}) {
     // Sealed sales bind one HTLC to SHA256(K) — never per-blob tagged hashes.
     includePaymentHashes: false
   });
+  // Every leaf commits SHA256(K): the root binds the ciphertext to the key sold.
+  const merkleRootHex = merkleRootHexFromBlobHashes(
+    (advertised.blobs || []).map((b) => b.blobHashHex),
+    { paymentHashHex: pay }
+  );
+  advertised.merkleRootHex = merkleRootHex;
+  if (advertised.index) advertised.index.merkleRootHex = merkleRootHex;
   for (const b of advertised.itemBlobs || []) {
     b.contentHash = pay;
     b.contentHashHex = pay;
@@ -298,7 +305,7 @@ function advertiseSealedDocument (sale, opts = {}) {
 }
 
 const BLOB_QUOTE_TYPE = 'DocumentBlobQuote';
-const BLOB_KEY_WRAP_TAG = 'Fabric/DocumentBlobKeyWrap/v1';
+const BLOB_KEY_WRAP_TAG = 'Fabric/DocumentBlobKeyWrap';
 const HEX64 = /^[0-9a-f]{64}$/;
 
 /**

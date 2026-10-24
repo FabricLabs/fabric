@@ -1949,7 +1949,7 @@ class CLI extends FabricShell {
       `Verified document ${name} (${buf.length} bytes) from ${from}` +
       (ev.opened ? ' (opened with content key)' : '') +
       (ev.merkleRootHex ? ` merkle=${ev.merkleRootHex.slice(0, 16)}…` : '') +
-      (ev.legacy ? ' (legacy single frame)' : '') +
+      (ev.unindexed ? ' (single unindexed frame)' : '') +
       ' — stored in local inventory.'
     );
   }

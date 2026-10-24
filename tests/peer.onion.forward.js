@@ -1334,9 +1334,9 @@ const {
   sealParticipantGroupChatBody,
   openGroupChatBody,
   isSealedGroupChat,
-  isParticipantSealedGroupChat,
-  pubkeyXOnly
+  isParticipantSealedGroupChat
 } = require('../functions/groupChatSeal');
+const { pubkeyXOnly } = require('../functions/pubkey');
 
 describe('@fabric/core groupChatSeal', function () {
   const a = new Key();

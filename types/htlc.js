@@ -37,7 +37,8 @@ const {
   composeTaprootTree,
   buildControlBlockForLeaf
 } = require('./policy');
-const { asBuffer, taprootPsbtInputFields } = require('../functions/bip371');
+const { taprootPsbtInputFields } = require('../functions/bip371');
+const { toBuffer } = require('../functions/bytes');
 const { encodeBitcoinUri } = require('../functions/bip21');
 const { BIP125_SEQUENCE_LOCKTIME_ONLY } = require('../functions/bip125');
 
@@ -61,8 +62,13 @@ function sha256 (buf) {
  * @returns {Buffer|null} 32-byte x-only key
  */
 function xOnlyOf (pubkey33) {
-  const key = asBuffer(pubkey33);
-  if (!key || key.length !== 33) return null;
+  let key;
+  try {
+    key = toBuffer(pubkey33);
+  } catch (_) {
+    return null;
+  }
+  if (key.length !== 33) return null;
   if (key[0] !== 0x02 && key[0] !== 0x03) return null;
   return key.subarray(1, 33);
 }
@@ -121,15 +127,15 @@ class Htlc {
     if (!xOnlyOf(settings.claimPubkey) || !xOnlyOf(settings.refundPubkey)) {
       throw new Error('Invalid compressed public keys (expect 33-byte 02/03).');
     }
-    const paymentHash = asBuffer(settings.paymentHash);
-    if (!paymentHash || paymentHash.length !== 32) throw new Error('paymentHash must be 32 bytes.');
+    const paymentHash = toBuffer(settings.paymentHash, 'paymentHash');
+    if (paymentHash.length !== 32) throw new Error('paymentHash must be 32 bytes.');
     const lock = Number(settings.refundLocktime);
     if (!Number.isInteger(lock) || lock < 1 || lock >= LOCKTIME_THRESHOLD) {
       throw new Error('refundLocktime must be a valid block height (< 500000000).');
     }
 
-    const claimPubkeyHex = asBuffer(settings.claimPubkey).toString('hex');
-    const refundPubkeyHex = asBuffer(settings.refundPubkey).toString('hex');
+    const claimPubkeyHex = toBuffer(settings.claimPubkey).toString('hex');
+    const refundPubkeyHex = toBuffer(settings.refundPubkey).toString('hex');
     const claim = buildHashlockLeaf({ id: 'claim', commitmentHex: paymentHash.toString('hex'), pubkeyHex: claimPubkeyHex });
     const refund = buildSpendLeaf({ id: 'refund', keys: [refundPubkeyHex], threshold: 1, after: { type: 'cltv', height: lock } });
     const tree = composeTaprootTree({
@@ -237,8 +243,8 @@ class Htlc {
    * @returns {Object}
    */
   static signerFromPriv32 (priv32) {
-    const priv = asBuffer(priv32);
-    if (!priv || priv.length !== 32) throw new Error('Private key must be 32 bytes.');
+    const priv = toBuffer(priv32, 'priv32');
+    if (priv.length !== 32) throw new Error('Private key must be 32 bytes.');
     const publicKey = ecc.pointFromScalar(priv, true);
     if (!publicKey) throw new Error('Invalid private key (pointFromScalar failed).');
     return {
@@ -324,10 +330,9 @@ class Htlc {
    * @returns {Buffer}
    */
   static controlBlockFor (claimScript, refundScript, leafScript) {
-    const claim = asBuffer(claimScript);
-    const refund = asBuffer(refundScript);
-    const leaf = asBuffer(leafScript);
-    if (!claim || !refund || !leaf) throw new Error('Invalid HTLC tapleaf script bytes.');
+    const claim = toBuffer(claimScript, 'claimScript');
+    const refund = toBuffer(refundScript, 'refundScript');
+    const leaf = toBuffer(leafScript, 'leafScript');
     try {
       return buildControlBlockForLeaf([{ script: claim }, { script: refund }], leaf, TAPROOT_INTERNAL_NUMS);
     } catch (err) {
@@ -367,11 +372,10 @@ class Htlc {
    */
   static prepareClaimPsbt (opts = {}) {
     const { network, tx, vout, out, inputSats, fee, destSats } = fundedOutput(opts);
-    const claimBuf = asBuffer(opts.claimScript);
-    const refundBuf = asBuffer(opts.refundScript);
-    const preimage = asBuffer(opts.preimage32);
-    if (!claimBuf || !refundBuf) throw new Error('Invalid HTLC script bytes.');
-    if (!preimage || preimage.length !== 32) throw new Error('preimage must be 32 bytes.');
+    const claimBuf = toBuffer(opts.claimScript, 'claimScript');
+    const refundBuf = toBuffer(opts.refundScript, 'refundScript');
+    const preimage = toBuffer(opts.preimage32, 'preimage32');
+    if (preimage.length !== 32) throw new Error('preimage must be 32 bytes.');
 
     const controlBlock = Htlc.controlBlockFor(claimBuf, refundBuf, claimBuf);
     const psbt = new bitcoin.Psbt({ network });
@@ -399,9 +403,9 @@ class Htlc {
    */
   static signClaim (bundle, priv32) {
     if (!bundle || !bundle.psbt) throw new Error('Invalid PSBT bundle.');
-    const priv = asBuffer(priv32);
-    if (!priv || priv.length !== 32) throw new Error('Seller private key must be 32 bytes.');
-    return signLeafAndExtract(bundle.psbt, priv, [asBuffer(bundle.preimage32)]);
+    const priv = toBuffer(priv32, 'priv32');
+    if (priv.length !== 32) throw new Error('Seller private key must be 32 bytes.');
+    return signLeafAndExtract(bundle.psbt, priv, [toBuffer(bundle.preimage32, 'preimage32')]);
   }
 
   /**
@@ -412,9 +416,8 @@ class Htlc {
    */
   static prepareRefundPsbt (opts = {}) {
     const { network, tx, vout, out, inputSats, fee, destSats } = fundedOutput(opts);
-    const claimBuf = asBuffer(opts.claimScript);
-    const refundBuf = asBuffer(opts.refundScript);
-    if (!claimBuf || !refundBuf) throw new Error('Invalid HTLC script bytes.');
+    const claimBuf = toBuffer(opts.claimScript, 'claimScript');
+    const refundBuf = toBuffer(opts.refundScript, 'refundScript');
     const lock = Number(opts.refundLocktimeHeight);
     if (!Number.isFinite(lock) || lock < 1) throw new Error('refundLocktimeHeight is required.');
 
@@ -445,8 +448,8 @@ class Htlc {
    */
   static signRefund (bundle, priv32) {
     if (!bundle || !bundle.psbt) throw new Error('Invalid PSBT bundle.');
-    const priv = asBuffer(priv32);
-    if (!priv || priv.length !== 32) throw new Error('Buyer private key must be 32 bytes.');
+    const priv = toBuffer(priv32, 'priv32');
+    if (priv.length !== 32) throw new Error('Buyer private key must be 32 bytes.');
     return signLeafAndExtract(bundle.psbt, priv, []);
   }
 
@@ -457,11 +460,21 @@ class Htlc {
    * @returns {Buffer|null}
    */
   static extractPreimageFromWitness (witness, paymentHash32) {
-    const want = asBuffer(paymentHash32) || Buffer.from(String(paymentHash32 || '').trim(), 'hex');
+    let want;
+    try {
+      want = toBuffer(paymentHash32);
+    } catch (_) {
+      return null;
+    }
     if (want.length !== 32) return null;
     for (const item of Array.isArray(witness) ? witness : []) {
-      const buf = asBuffer(item);
-      if (!buf || buf.length !== 32) continue;
+      let buf;
+      try {
+        buf = toBuffer(item);
+      } catch (_) {
+        continue;
+      }
+      if (buf.length !== 32) continue;
       if (sha256(buf).equals(want)) return Buffer.from(buf);
     }
     return null;

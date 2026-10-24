@@ -113,7 +113,7 @@ const EVALUATION_SUITE = [
     layer: 'Applications',
     adoption: 'common',
     why: 'Wrapped SegWit path — still seen in older wallets / migrations.',
-    patterns: ["m/49'", 'BIP49', 'p2sh-p2wpkh', 'p2shP2wpkh', 'bitcoinBip49ReceiveDerivationPath', 'functions/bip69'],
+    patterns: ["m/49'", 'BIP49', 'p2sh-p2wpkh', 'p2shP2wpkh', 'bitcoinBip49ReceiveDerivationPath', 'functions/bip49'],
     expected: { core: 'strong', hub: 'absent', passport: 'absent', application: 'absent' },
     notes: 'Named m/49\' path templates plus p2sh-p2wpkh payment helper (BIP-49 testnet vector). Default funds path remains BIP-44.'
   },

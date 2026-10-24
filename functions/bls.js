@@ -35,11 +35,7 @@
 
 const crypto = require('crypto');
 const Key = require('../types/key');
-const {
-  federationValidatorId,
-  uniqueValidatorPubkeys,
-  witnessSignatureFor
-} = require('./federationValidators');
+const Federation = require('../types/federation');
 
 const SCHEME_SCHNORR = 'schnorr';
 const SCHEME_BLS = 'bls';
@@ -345,7 +341,7 @@ function verifyFederationBlsBundle (message, secpPubkey, bundle, opts = {}) {
   const version = Number(parsed.v);
   const allowLegacy = !opts || opts.allowLegacy !== false;
   if (version !== BUNDLE_VERSION && !(allowLegacy && version === LEGACY_BUNDLE_VERSION)) return false;
-  const x = federationValidatorId(secpPubkey);
+  const x = Federation.validatorId(secpPubkey);
   if (!x) return false;
   const given = String(secpPubkey).trim().toLowerCase().replace(/^0x/, '');
   const popCandidates = /^0[23][0-9a-f]{64}$/.test(given)
@@ -385,12 +381,12 @@ function verifyFederationBlsBundle (message, secpPubkey, bundle, opts = {}) {
  */
 function verifyFederationBlsWitness (message, witness, validatorPubkeys, threshold = 1, opts = {}) {
   if (!witness || !witness.signatures || typeof witness.signatures !== 'object') return false;
-  const pubkeys = uniqueValidatorPubkeys(validatorPubkeys);
+  const pubkeys = Federation.uniqueValidatorPubkeys(validatorPubkeys);
   const thr = Number(threshold);
   if (!Number.isInteger(thr) || thr < 1) return false;
   let valid = 0;
   for (const pubkey of pubkeys) {
-    const entry = witnessSignatureFor(witness.signatures, pubkey);
+    const entry = Federation.witnessSignatureFor(witness.signatures, pubkey);
     if (!verifyFederationBlsBundle(message, pubkey, entry, opts)) continue;
     valid++;
     if (valid >= thr) return true;

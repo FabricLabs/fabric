@@ -94,7 +94,7 @@ preimage; a preimage-only leaf needs an explicit `allowPreimageOnly: true` —
 intentional threat model only.
 
 **Validator recompute:** federation members SHOULD refuse to sign until
-`functions/federationValidatorVerify.evaluateValidatorSignGate` passes (epoch
+`Federation.evaluateValidatorSignGate` (`types/federation`) passes (epoch
 digests + reserve conservation + optional `assertMachineRunMatches`). Hub
 Beacon auto-sign and vault PSBT prep call this gate when validators are set.
 

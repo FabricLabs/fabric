@@ -3,7 +3,6 @@
 const assert = require('assert');
 const crypto = require('crypto');
 const { MAX_MESSAGE_SIZE } = require('../constants');
-const Tree = require('../types/tree');
 const {
   DEFAULT_BLOB_CHUNK_BYTES,
   DEFAULT_CHUNK_BYTES,
@@ -15,15 +14,11 @@ const {
   advertiseDocumentBlobs,
   verifyBlobIndex,
   merkleRootHexFromBlobHashes,
-  accumulateBlobLeaf,
-  createBlobMerkleTree,
   verifyBlob,
   reassemble,
   blobPaymentHashHex,
-  DOCUMENT_TREE_VERSION,
   SEALED_BLOB_CHUNK_BYTES,
   SEALED_FRAME_JSON_OVERHEAD,
-  blobHashesMutated,
   sameIv,
   documentMerkleRootHex,
   documentInclusionProof,
@@ -49,7 +44,7 @@ describe('functions/documentBlobManifest', function () {
     assert.ok(split.index);
     assert.strictEqual(split.index['@type'], BLOB_INDEX_TYPE);
     assert.strictEqual(split.index.schemaVersion, BLOB_INDEX_SCHEMA_VERSION);
-    assert.strictEqual(split.index.merkle, 'Tree');
+    assert.strictEqual(split.index.merkle, 'DocumentTree');
     assert.strictEqual(split.index.blobs.length, 1);
     assert.strictEqual(split.index.total, 1);
     assert.ok(verifyBlob(split.blobs[0].bytes, split.blobs[0].blobHashHex));
@@ -69,24 +64,15 @@ describe('functions/documentBlobManifest', function () {
     assert.ok(out.buffer.equals(data));
   });
 
-  it('Tree root matches merkleRootHexFromBlobHashes / accumulateBlobLeaf', function () {
+  it('split root is the document tree over the blob hashes', function () {
     const data = Buffer.alloc(5000, 3);
     const split = splitBlobs(data, 1200);
     const fromHashes = merkleRootHexFromBlobHashes(split.blobs.map((b) => b.blobHashHex));
     assert.strictEqual(fromHashes, split.merkleRootHex);
-
-    let tree = new Tree({ leaves: [] });
-    for (const b of split.blobs) {
-      tree = accumulateBlobLeaf(tree, b.blobHashHex);
-    }
-    assert.strictEqual(tree.rootHex, split.merkleRootHex);
-    assert.strictEqual(tree.settings.leaves.length, split.blobs.length);
-
-    const direct = createBlobMerkleTree(split.blobs.map((b) => b.blobHashHex));
-    assert.strictEqual(direct.rootHex, split.merkleRootHex);
+    assert.strictEqual(documentMerkleRootHex(split.blobs.map((b) => ({ blobHashHex: b.blobHashHex }))), split.merkleRootHex);
   });
 
-  it('empty content is one empty blob with a Tree root', function () {
+  it('empty content is one empty blob with a document root', function () {
     const split = splitBlobs(Buffer.alloc(0), 64, 'empty');
     assert.strictEqual(split.blobs.length, 1);
     assert.strictEqual(split.blobs[0].size, 0);
@@ -141,28 +127,16 @@ describe('functions/documentBlobManifest', function () {
     );
   });
 
-  it('legacy (v1) sealed Document leaves verify with the plain blob index tooling', function () {
-    const Document = require('../types/document');
-    const doc = Document.seal(Buffer.alloc(5000, 7), { chunkBytes: 2048, documentId: 'sealed', treeVersion: 1 });
-    assert.strictEqual(doc.treeVersion, 1);
-    const leaves = doc.blobs.map((b) => b.blobHashHex);
-    const index = buildBlobIndex({ documentId: 'sealed', chunkBytes: 2048, merkleRootHex: doc.merkleRootHex, blobs: doc.blobs });
-    assert.strictEqual(index.merkleRootHex, doc.merkleRootHex);
-    assert.strictEqual(verifyBlobIndex(index, leaves).ok, true);
-    assert.strictEqual(merkleRootHexFromBlobHashes(leaves), doc.hash);
-  });
-
-  it('sealed Document (v2) roots commit blob hash, payment hash, IV and count', function () {
+  it('sealed Document roots commit blob hash, payment hash, IV and count', function () {
     const Document = require('../types/document');
     const doc = Document.seal(Buffer.alloc(5000, 7), { chunkBytes: 2048, documentId: 'sealed' });
-    assert.strictEqual(doc.treeVersion, DOCUMENT_TREE_VERSION);
     const leaves = doc.blobs.map((b) => b.blobHashHex);
     assert.strictEqual(documentMerkleRootHex(doc.blobs), doc.hash);
     assert.notStrictEqual(merkleRootHexFromBlobHashes(leaves), doc.hash);
     const offer = doc.blobs.map((b) => ({ blobHashHex: b.blobHashHex, paymentHashHex: b.paymentHashHex, iv: b.iv }));
     assert.deepStrictEqual(
       verifyOfferLeaves({ merkleRootHex: doc.merkleRootHex, blobTotal: doc.blobTotal, blobs: offer }),
-      { ok: true, treeVersion: 2, committed: true, indexes: [0, 1, 2] }
+      { ok: true, indexes: [0, 1, 2] }
     );
     for (const leaf of doc.blobs) {
       assert.strictEqual(verifyBlob(doc.bytesFor(leaf.index), leaf.blobHashHex), true);
@@ -186,37 +160,26 @@ describe('functions/documentBlobManifest', function () {
     const b = sha('b');
     const c = sha('c');
 
-    it('[a,b,c] and [a,b,c,c] share a legacy root; the padded list is flagged mutated', function () {
-      assert.strictEqual(merkleRootHexFromBlobHashes([a, b, c]), merkleRootHexFromBlobHashes([a, b, c, c]));
-      assert.strictEqual(blobHashesMutated([a, b, c]), false);
-      assert.strictEqual(blobHashesMutated([a, b, c, c]), true);
-      // Repeated content that is not a padding artifact stays valid.
-      assert.strictEqual(blobHashesMutated([a, a, b]), false);
-      assert.strictEqual(blobHashesMutated([a, a]), false);
-    });
-
-    it('legacy verifiers reject the mutated list', function () {
+    it('a mutated list has its own root and never verifies against the original', function () {
       const root = merkleRootHexFromBlobHashes([a, b, c]);
+      assert.notStrictEqual(root, merkleRootHexFromBlobHashes([a, b, c, c]));
       assert.strictEqual(verifyBlobIndex({ merkleRootHex: root, total: 3 }, [a, b, c]).ok, true);
       assert.strictEqual(verifyBlobIndex({ merkleRootHex: root }, [a, b, c, c]).error, 'merkle/root mismatch');
       assert.strictEqual(verifyOfferLeaves({ merkleRootHex: root, blobTotal: 4, blobs: [a, b, c, c].map((h) => ({ blobHashHex: h })) }).ok, false);
       const parts = ['x', 'y', 'z', 'z'].map((s) => Buffer.from(s));
-      const legacyRoot = merkleRootHexFromBlobHashes(parts.slice(0, 3).map((p) => sha(p)));
-      assert.strictEqual(reassemble(parts, 4, legacyRoot).error, 'merkle/root mismatch');
+      const threeRoot = merkleRootHexFromBlobHashes(parts.slice(0, 3).map((p) => sha(p)));
+      assert.strictEqual(reassemble(parts, 4, threeRoot).error, 'merkle/root mismatch');
     });
 
-    it('a plain mutated list is committed with the count-bound v2 root, end to end', function () {
-      const { splitBlobs, plainBlobRoot, documentMerkleRootHex, DocumentBlobTransferBook, parseFileSendObject } = require('../functions/documentBlobManifest');
+    it('repeated content is committed by the count-bound root, end to end', function () {
+      const { DocumentBlobTransferBook, parseFileSendObject } = require('../functions/documentBlobManifest');
       const twin = [a, b, c, c];
-      const v2 = documentMerkleRootHex(twin.map((h) => ({ blobHashHex: h })));
-      assert.deepStrictEqual(plainBlobRoot(twin), { merkleRootHex: v2, treeVersion: 2 });
-      assert.deepStrictEqual(plainBlobRoot([a, b, c]), { merkleRootHex: merkleRootHexFromBlobHashes([a, b, c]), treeVersion: 1 });
-      assert.strictEqual(verifyBlobIndex({ merkleRootHex: v2, total: 4 }, twin).ok, true);
+      const root = documentMerkleRootHex(twin.map((h) => ({ blobHashHex: h })));
+      assert.strictEqual(merkleRootHexFromBlobHashes(twin), root);
+      assert.strictEqual(verifyBlobIndex({ merkleRootHex: root, total: 4 }, twin).ok, true);
       // A zero-filled file: four identical chunks.
       const zeros = Buffer.alloc(4 * 1024);
       const split = splitBlobs(zeros, 1024, 'zeros');
-      assert.strictEqual(split.treeVersion, 2);
-      assert.strictEqual(split.index.treeVersion, 2);
       assert.strictEqual(verifyBlobIndex(split.index).ok, true);
       const book = new DocumentBlobTransferBook();
       book.expectTransfer({ documentId: 'zeros', merkleRootHex: split.merkleRootHex, total: 4 });
@@ -238,20 +201,20 @@ describe('functions/documentBlobManifest', function () {
       assert.ok(done && done.buffer.equals(zeros), 'the buyer reassembles the zero-filled file');
     });
 
-    it('v2 roots bind the blob count, so the padded list has a different root', function () {
+    it('roots bind the blob count, so the padded list has a different root', function () {
       const three = [a, b, c].map((h) => ({ blobHashHex: h }));
       const four = [a, b, c, c].map((h) => ({ blobHashHex: h }));
       assert.notStrictEqual(documentMerkleRootHex(three), documentMerkleRootHex(four));
       const root = documentMerkleRootHex(three);
       assert.strictEqual(verifyOfferLeaves({ merkleRootHex: root, blobTotal: 3, blobs: three }).ok, true);
       assert.strictEqual(verifyOfferLeaves({ merkleRootHex: root, blobTotal: 4, blobs: four }).ok, false);
-      // A v2 tree tolerates repeated content anywhere (the count disambiguates).
+      // Repeated content is fine anywhere (the count disambiguates).
       const dup = documentMerkleRootHex(four);
-      assert.strictEqual(verifyOfferLeaves({ merkleRootHex: dup, blobTotal: 4, blobs: four, treeVersion: 2 }).ok, true);
+      assert.strictEqual(verifyOfferLeaves({ merkleRootHex: dup, blobTotal: 4, blobs: four }).ok, true);
     });
   });
 
-  describe('v2 document tree', function () {
+  describe('document tree', function () {
     const blobsOf = (n) => Array.from({ length: n }, (_, i) => ({
       blobHashHex: sha(`blob${i}`),
       paymentHashHex: sha(`pay${i}`),
@@ -305,7 +268,7 @@ describe('functions/documentBlobManifest', function () {
       const subset = [1, 4].map((i) => Object.assign({ index: i, proof: documentInclusionProof(blobs, i) }, blobs[i]));
       assert.deepStrictEqual(
         verifyOfferLeaves({ merkleRootHex: root, blobTotal: 6, blobs: subset }),
-        { ok: true, treeVersion: 2, committed: true, indexes: [1, 4] }
+        { ok: true, indexes: [1, 4] }
       );
       const noProof = subset.map((b) => Object.assign({}, b, { proof: undefined }));
       assert.strictEqual(verifyOfferLeaves({ merkleRootHex: root, blobTotal: 6, blobs: noProof }).ok, false);
@@ -318,17 +281,11 @@ describe('functions/documentBlobManifest', function () {
       assert.strictEqual(verifyOfferLeaves({ merkleRootHex: root, blobTotal: 6, blobs: alias }).ok, true);
     });
 
-    it('verifyOfferLeaves falls back to a legacy root only for a complete list', function () {
+    it('verifyOfferLeaves rejects a root that does not commit the payment hashes', function () {
       const blobs = blobsOf(3);
-      const legacy = merkleRootHexFromBlobHashes(blobs.map((b) => b.blobHashHex));
-      assert.deepStrictEqual(
-        verifyOfferLeaves({ merkleRootHex: legacy, blobTotal: 3, blobs }),
-        { ok: true, treeVersion: 1, committed: false, indexes: [0, 1, 2] }
-      );
-      assert.strictEqual(verifyOfferLeaves({ merkleRootHex: legacy, blobTotal: 3, blobs, treeVersion: 2 }).ok, false);
-      assert.strictEqual(verifyOfferLeaves({ merkleRootHex: legacy, blobTotal: 3, blobs: blobs.slice(0, 2) }).ok, false);
-      assert.strictEqual(verifyOfferLeaves({ merkleRootHex: legacy, blobTotal: 3, blobs, treeVersion: 9 }).ok, false);
-      assert.strictEqual(verifyOfferLeaves({ merkleRootHex: legacy, blobTotal: 3, blobs: [blobs[0], blobs[0]].map((b) => Object.assign({ index: 0 }, b)) }).error, 'duplicate blob index');
+      const bare = merkleRootHexFromBlobHashes(blobs.map((b) => b.blobHashHex));
+      assert.strictEqual(verifyOfferLeaves({ merkleRootHex: bare, blobTotal: 3, blobs }).ok, false);
+      assert.strictEqual(verifyOfferLeaves({ merkleRootHex: documentMerkleRootHex(blobs), blobTotal: 3, blobs: [blobs[0], blobs[0]].map((b) => Object.assign({ index: 0 }, b)) }).error, 'duplicate blob index');
     });
 
     it('verifySealedBlobFrame checks a free ciphertext frame before payment', function () {
@@ -347,8 +304,8 @@ describe('functions/documentBlobManifest', function () {
       assert.strictEqual(verifySealedBlobFrame(forged, expected).error, 'inclusion proof does not open to merkleRootHex');
       const noProof = Object.assign({}, frames[0], { proof: undefined });
       assert.strictEqual(verifySealedBlobFrame(noProof, expected).error, 'missing inclusion proof');
-      // The frame cannot downgrade a v2 root to v1 to skip its proof (and plant an uncommitted payment hash).
-      const downgraded = Object.assign({}, frames[0], { treeVersion: 1, proof: undefined, paymentHashHex: sha('attacker') });
+      // A frame without its proof cannot plant an uncommitted payment hash.
+      const downgraded = Object.assign({}, frames[0], { proof: undefined, paymentHashHex: sha('attacker') });
       const pinned = Object.assign({ blobHashHex: frames[0].blobHashHex }, expected);
       assert.strictEqual(verifySealedBlobFrame(downgraded, pinned).error, 'missing inclusion proof');
       assert.strictEqual(verifySealedBlobFrame(frames[0], Object.assign({}, expected, { blobTotal: doc.blobTotal + 1 })).error, 'blobTotal mismatch');

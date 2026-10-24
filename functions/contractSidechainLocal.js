@@ -167,18 +167,8 @@ function publishContent (storeRoot, contractId, content, meta = {}) {
 
 module.exports = {
   storePathsForLocalContract,
-  /** Alias used by some desktop/relay call sites. */
-  storePathsForContract: storePathsForLocalContract,
   loadState,
   persistState,
   ensureLocalContractChain,
-  publishContent,
-  // Re-export common Statechain namespace helpers so apps need one import.
-  normalizeContractId: Statechain.normalizeContractId,
-  parentSealPath: Statechain.parentSealPath,
-  createInitialState: Statechain.createInitialState,
-  stateDigest: Statechain.stateDigest,
-  namespaceHeadFromState: Statechain.namespaceHeadFromState,
-  patchesForNamespaceHead: Statechain.patchesForNamespaceHead,
-  fromCore: true
+  publishContent
 };

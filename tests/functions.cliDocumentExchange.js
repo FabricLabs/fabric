@@ -671,6 +671,5 @@ describe('@fabric/core/functions/contractSidechainLocal path hardening', functio
     // Second ensure is not created
     const again = local.ensureLocalContractChain(root, id);
     assert.strictEqual(again.created, false);
-    assert.strictEqual(local.storePathsForContract, local.storePathsForLocalContract);
   });
 });

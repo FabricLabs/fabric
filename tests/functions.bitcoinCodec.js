@@ -94,7 +94,7 @@ describe('functions/bech32', function () {
     assert.strictEqual(d.words[0], 0); // witness v0
   });
 
-  it('segwit address encode/decode (sipa reference on Node, pure otherwise)', function () {
+  it('segwit address encode/decode (sipa reference)', function () {
     const program = Buffer.alloc(20, 0xab);
     const addr = encodeSegwitAddress('bc', 0, program);
     assert.ok(addr);
@@ -133,58 +133,18 @@ describe('functions/bech32', function () {
     assert.throws(() => fromWords(Array(10).fill(31)), /invalid padding/);
   });
 
-  it('decodeSegwitAddress pure path rejects witness/version mismatch', function () {
+  it('decodeSegwitAddress rejects an address for another network', function () {
     const program = Buffer.alloc(20, 1);
     const addr = encodeSegwitAddress('tb', 0, program);
     assert.ok(addr);
     assert.strictEqual(decodeSegwitAddress('bc', addr), null);
   });
 
-  it('FABRIC_PURE_BECH32=1 uses bundled pure codec (fresh process)', function () {
-    const bech32Path = path.join(__dirname, '../functions/bech32.js');
-    const r = spawnSync(process.execPath, [
-      '-e',
-      `process.env.FABRIC_PURE_BECH32='1';
-      const b = require(${JSON.stringify(bech32Path)});
-      const program = Buffer.alloc(20, 2);
-      const a = b.encodeSegwitAddress('tb', 0, program);
-      const d = b.decodeSegwitAddress('tb', a);
-      if (!d || !d.program.equals(program)) process.exit(2);
-      const payload = Buffer.from('cafe', 'hex');
-      const w = b.toWords(payload);
-      const s = b.encode('id', w, 'bech32m');
-      if (b.decode(s).spec !== 'bech32m') process.exit(3);`
-    ], bech32SubprocessOpts());
-    assert.strictEqual(r.status, 0, r.stderr || r.stdout || '');
+  it('decode throws on a bad checksum', function () {
+    assert.throws(() => bech32Decode('bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t5'), /Invalid bech32 string/);
   });
 
-  it('FABRIC_PURE_BECH32=1 decode throws on bad checksum (decodePure path)', function () {
-    const bech32Path = path.join(__dirname, '../functions/bech32.js');
-    const r = spawnSync(process.execPath, [
-      '-e',
-      `process.env.FABRIC_PURE_BECH32='1';
-      const b = require(${JSON.stringify(bech32Path)});
-      const bad = 'bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t5';
-      try {
-        b.decode(bad);
-        process.exit(2);
-      } catch (e) {
-        if (!/Invalid bech32 checksum/.test(e.message)) process.exit(3);
-      }`
-    ], bech32SubprocessOpts());
-    assert.strictEqual(r.status, 0, r.stderr || r.stdout || '');
-  });
-
-  it('FABRIC_PURE_BECH32=1 decodeSegwitAddress returns null on mixed-case addr (decodePure throw)', function () {
-    const { spawnSync } = require('child_process');
-    const bech32Path = path.join(__dirname, '../functions/bech32.js');
-    const r = spawnSync(process.execPath, [
-      '-e',
-      `process.env.FABRIC_PURE_BECH32='1';
-      const b = require(${JSON.stringify(bech32Path)});
-      const mixed = 'Bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4';
-      if (b.decodeSegwitAddress('bc', mixed) !== null) process.exit(2);`
-    ], bech32SubprocessOpts());
-    assert.strictEqual(r.status, 0, r.stderr || r.stdout || 'mixed-case bech32 subprocess failed');
+  it('decodeSegwitAddress returns null on a mixed-case address', function () {
+    assert.strictEqual(decodeSegwitAddress('bc', 'Bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4'), null);
   });
 });

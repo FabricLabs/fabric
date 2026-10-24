@@ -35,7 +35,7 @@ same identity — they are not a substitute for (1)–(5).
 
 | Id | Name | Status | Gate |
 |----|------|--------|------|
-| **F0** | Explicit reserve + tip-bound withdrawal | **Shipped** | `amountSats` in `ContractWithdrawalRequest`; `federationReserveLedger` (verified `vaultConfirmedSats` on credit; pending burns until L1 settle); `evaluateValidatorSignGate` |
+| **F0** | Explicit reserve + tip-bound withdrawal | **Shipped** | `amountSats` in `ContractWithdrawalRequest`; `Federation` reserve ledger (verified `vaultConfirmedSats` on credit; pending burns until L1 settle); `Federation.evaluateValidatorSignGate` |
 | **F1** | Destination authorization | Next | Withdrawal address must prove membership in a published allowlist (xpub / descriptor), not “any script the signers accept” |
 | **F2** | Peg loop | Next | Watch vault deposits to `maturityDepth`; credit once; burn outstanding **then** broadcast the vault spend |
 | **F3** | Emergency recovery | Next | Script-path CLTV (or CSV) + recovery quorum; documented test that the live key set cannot block forever |
@@ -59,10 +59,10 @@ Application mesh (chat, Groups, mission gossip) does **not** wait on F1–F5.
 ## Current code (F0)
 | Piece | Where |
 |-------|--------|
-| Reserve conservation | `functions/federationReserveLedger.js` |
+| Reserve conservation | `types/federation.js` (`Federation.applyPegInCredit`, `applyPegOutBurn`, `assertConservation`, …) |
 | Withdrawal request / witnesses | `functions/contractSpend.js` |
 | Partial vault PSBT | `types/policy.js` `Policy.prepareLeafPsbt` |
-| Pre-sign gate | `functions/federationValidatorVerify.js` |
+| Pre-sign gate | `types/federation.js` (`Federation.evaluateValidatorSignGate`) |
 | Program → hashlock leaf | `types/policy.js` `Policy.withRunHashlock` |
 | Hub credit / propose / prepare | `CreateFederationPegInCredit`, `ProposeFederationPegOut`, `PrepareFederationVaultWithdrawalPsbt` |
 

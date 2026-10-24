@@ -1116,7 +1116,6 @@ class Market extends Service {
     session.iv = offer.iv || null;
     session.sealed = offer.sealed === true;
     session.rootVerified = offer.rootVerified === true;
-    if (offer.treeVersion != null) session.treeVersion = Number(offer.treeVersion);
     if (held) session.held = true;
     if (channel) {
       session.rail = 'channel';
@@ -1344,8 +1343,7 @@ class Market extends Service {
         blobIndex: session.blobIndex,
         blobHashHex: session.blobHashHex,
         paymentHashHex: session.contentHashHex,
-        iv: session.iv || undefined,
-        treeVersion: session.treeVersion
+        iv: session.iv || undefined
       });
     } catch (e) {
       res = { ok: false, error: errorMessage(e) };
@@ -1396,7 +1394,6 @@ class Market extends Service {
       origins,
       merge: true
     };
-    if (session.treeVersion != null) opts.treeVersion = session.treeVersion;
     try { peer.blobTransfers.expectTransfer(opts); } catch (_) { /* optional */ }
   }
 
@@ -1447,9 +1444,8 @@ class Market extends Service {
   /**
    * The blob's ciphertext is held by the Peer under this purchase's pins:
    * the frame hashes to the committed blob hash and carries the committed
-   * (static) payment hash; for a v2 root it was proven by an inclusion proof
-   * (`verifySealedBlobFrame` rules, applied at ingest), for a v1 root the
-   * blob hash comes from a verified full leaf list.
+   * (static) payment hash, proven by an inclusion proof against the root
+   * (`verifySealedBlobFrame` rules, applied at ingest).
    * @private
    * @returns {boolean}
    */

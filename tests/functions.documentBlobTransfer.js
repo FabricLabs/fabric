@@ -84,7 +84,7 @@ describe('functions/documentBlobTransfer', function () {
         id: 'd',
         rateSats: 50,
         contentHash: 'cd'.repeat(32),
-        merkleRootHex: merkleRootHexFromBlobHashes([blobHashHex]),
+        merkleRootHex: merkleRootHexFromBlobHashes([blobHashHex], { paymentHashHex: pay }),
         blobs: [{
           index: 0,
           total: 1,
@@ -118,16 +118,16 @@ describe('functions/documentBlobTransfer', function () {
     assert.strictEqual(settlementDedupeKey(s1), s1.dedupeKey);
   });
 
-  it('completes legacy whole-body frames without pending state', function () {
+  it('completes unindexed whole-body frames without pending state', function () {
     const book = new DocumentBlobTransferBook();
     const frame = parseFileSendObject({
-      name: 'legacy-doc',
+      name: 'unindexed-doc',
       body: Buffer.from('whole-file').toString('base64')
     });
-    assert.strictEqual(frame.legacy, true);
+    assert.strictEqual(frame.unindexed, true);
     const out = book.ingest(frame);
     assert.strictEqual(out.status, 'complete');
-    assert.strictEqual(out.legacy, true);
+    assert.strictEqual(out.unindexed, true);
     assert.strictEqual(out.verified, true);
     assert.ok(out.buffer.equals(Buffer.from('whole-file')));
     assert.strictEqual(book.pendingCount, 0);
@@ -170,7 +170,7 @@ describe('functions/documentBlobTransfer', function () {
     const leafHash = require('crypto').createHash('sha256').update(leafBytes).digest('hex');
     const drift = indexBook.ingest({
       ok: true,
-      legacy: false,
+      unindexed: false,
       documentId: 'idx',
       bytes: leafBytes,
       blobIndex: 0,
@@ -229,7 +229,7 @@ describe('functions/documentBlobTransfer', function () {
     assert.ok(book.pendingCount <= 1);
     const stale = book.ingest({
       ok: true,
-      legacy: false,
+      unindexed: false,
       documentId: 'ghost',
       bytes: Buffer.alloc(4),
       blobIndex: 0,
@@ -255,7 +255,7 @@ describe('functions/documentBlobTransfer', function () {
     const blobHashHex = crypto.createHash('sha256').update(bytes).digest('hex');
     const frame = (over) => Object.assign({
       ok: true,
-      legacy: false,
+      unindexed: false,
       documentId: 'cap',
       bytes,
       blobIndex: 0,
@@ -298,7 +298,7 @@ describe('functions/documentBlobTransfer', function () {
     const root = merkleRootHexFromBlobHashes([blobHashHex, blobHashHex]);
     const frame = (over) => Object.assign({
       ok: true,
-      legacy: false,
+      unindexed: false,
       documentId: 'doc',
       bytes,
       blobIndex: 0,

@@ -114,8 +114,7 @@ function telemetryHash (record) {
 
 /**
  * Leaf check for an advertised blob list: `functions/documentBlobManifest`
- * `verifyOfferLeaves` (v2 and v1 trees), else a v1 blob-hash root over a
- * complete list. Returns the `verifyOfferLeaves` result (or `true` / `false`),
+ * `verifyOfferLeaves`, else the document root over a complete list. Returns the `verifyOfferLeaves` result (or `true` / `false`),
  * or `null` when the list cannot be checked (a subset without inclusion proofs).
  * @private
  */
@@ -124,7 +123,7 @@ function defaultVerifyOfferLeaves (opts) {
   const hashes = [];
   for (const b of opts.blobs) hashes[Number(b.index)] = b.blobHashHex;
   if (hashes.length !== opts.blobTotal || hashes.some((h) => !h)) return null;
-  return manifest.createBlobMerkleTree(hashes).rootHex === opts.merkleRootHex;
+  return manifest.merkleRootHexFromBlobHashes(hashes) === opts.merkleRootHex;
 }
 
 class DocumentBook extends Book {
@@ -136,7 +135,7 @@ class DocumentBook extends Book {
    * @param {number} [settings.maxProviders=10000] tracked providers (LRU over unpenalized ones)
    * @param {number} [settings.maxOffers=100000] offer rows (oldest evicted)
    * @param {string} [settings.nodeId] stamped on exported telemetry; imports from another node are refused
-   * @param {Function} [settings.verifyOfferLeaves] `({ merkleRootHex, blobs, blobTotal, treeVersion }) → boolean|null|{ ok }`
+   * @param {Function} [settings.verifyOfferLeaves] `({ merkleRootHex, blobs, blobTotal }) → boolean|null|{ ok }`
    */
   constructor (settings = {}) {
     super(Object.assign({
@@ -598,15 +597,11 @@ class DocumentBook extends Book {
         ? it.documentBlobIndex
         : null;
       const merkleRootHex = hex64(it.merkleRootHex || (indexObj && indexObj.merkleRootHex));
-      const rawTreeVersion = it.treeVersion != null ? it.treeVersion : (indexObj && indexObj.treeVersion);
-      const treeVersion = Number.isSafeInteger(Number(rawTreeVersion)) && Number(rawTreeVersion) > 0 ? Number(rawTreeVersion) : null;
       let rootVerified = false;
-      let leavesCommitted = null;
       if (blobs && blobs.length && merkleRootHex) {
         const leaves = this._verifyLeaves(it, merkleRootHex, blobs, indexObj);
         if (leaves === false) continue;
         rootVerified = leaves != null;
-        leavesCommitted = leaves ? leaves.committed : null;
       }
       const base = {
         documentId,
@@ -616,8 +611,6 @@ class DocumentBook extends Book {
         ampSignerPubkey: ampSignerPubkey || null,
         merkleRootHex,
         rootVerified,
-        leavesCommitted,
-        treeVersion,
         mime: it.mime || null,
         sealed,
         // Sealed only: the convergence scope, and a pay-after-verify price
@@ -682,10 +675,9 @@ class DocumentBook extends Book {
    * Check an item's inline blob leaves against its `merkleRootHex`
    * (`settings.verifyOfferLeaves`, else `documentBlobManifest.verifyOfferLeaves`).
    * @private
-   * @returns {Object|boolean|null} `false` = reject the item; `null` = a subset
+   * @returns {boolean|null} `false` = reject the item; `null` = a subset
    *   without inclusion proofs (rows kept with `rootVerified: false`); else
-   *   `{ committed }` — `true` when the root commits the payment hashes and
-   *   IVs (v2), `false` for a v1 root, `null` when the verifier does not say
+   *   `true` when the root checks out
    */
   _verifyLeaves (it, merkleRootHex, blobs, indexObj) {
     const first = blobs.find((b) => b && b.total != null);
@@ -712,14 +704,10 @@ class DocumentBook extends Book {
     const verify = typeof this.settings.verifyOfferLeaves === 'function'
       ? this.settings.verifyOfferLeaves
       : defaultVerifyOfferLeaves;
-    const treeVersion = it.treeVersion != null ? it.treeVersion : (indexObj && indexObj.treeVersion);
     try {
-      const out = verify({ merkleRootHex, blobs: leaves, blobTotal, treeVersion: treeVersion != null ? Number(treeVersion) : undefined });
+      const out = verify({ merkleRootHex, blobs: leaves, blobTotal });
       if (out === null) return null;
-      if (out === true) return { committed: null };
-      if (out != null && typeof out === 'object' && out.ok === true) {
-        return { committed: typeof out.committed === 'boolean' ? out.committed : null };
-      }
+      if (out === true || (out != null && typeof out === 'object' && out.ok === true)) return true;
       return false;
     } catch (err) {
       return false;
@@ -810,10 +798,6 @@ class DocumentBook extends Book {
       const ex = new Set(opts.excludeSellers.map(String));
       out = out.filter((o) => !ex.has(String(o.sellerId)) && !ex.has(String(o.sellerAddress)));
     }
-    // A v1 root over the same blobs commits no payment hashes, so a reseller
-    // could pair real ciphertext with keys it doesn't hold: never pick one
-    // while an offer whose root commits them is listed.
-    if (out.some((o) => o.leavesCommitted === true)) out = out.filter((o) => o.leavesCommitted !== false);
     return out;
   }
 

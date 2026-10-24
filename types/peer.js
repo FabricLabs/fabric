@@ -72,7 +72,7 @@ const { individualPk } = require('../functions/musig2');
 const musig2Session = require('../functions/musig2Session');
 const sidechainState = require('../functions/sidechainState');
 const { verifyFederationWitnessOnMessage, epochCommitmentDigestHex } = require('../functions/beaconFederationSigning');
-const { resolveFederationThreshold } = require('../functions/federationValidators');
+const Federation = require('./federation');
 const {
   aggregatePeerBandwidth,
   peerBandwidthSnapshot,
@@ -225,10 +225,10 @@ const {
   DEFAULT_CHUNK_BYTES,
   advertiseDocumentBlobs,
   splitBlobs,
+  merkleRootHexFromBlobHashes,
   DocumentBlobTransferBook,
   parseFileSendObject,
   verifyBlob,
-  DOCUMENT_TREE_VERSION,
   MAX_PENDING_BLOB_TRANSFERS_PER_ORIGIN,
   sameIv,
   verifyDocumentInclusion,
@@ -4254,7 +4254,7 @@ class Peer extends Service {
             buffer: ingest.buffer,
             merkleRootHex: ingest.merkleRootHex,
             verified: !!ingest.verified,
-            legacy: !!ingest.legacy,
+            unindexed: !!ingest.unindexed,
             origin
           });
         } else if (ingest && ingest.status === 'awaiting_key') {
@@ -5215,7 +5215,7 @@ class Peer extends Service {
         indexes = doc.blobs.filter((b) => b.blobHashHex === wantBlob).map((b) => b.index);
         if (!indexes.length) continue;
       }
-      // A subset carries a v2 inclusion proof per blob.
+      // A subset carries an inclusion proof per blob.
       const item = doc.inventoryItem({ documentId: docId, rateSats, indexes, creditRateSats: credit && credit.rateSats });
       if (this.settings.attachInventoryHtlc && rateSats > 0) {
         try {
@@ -5311,6 +5311,9 @@ class Peer extends Service {
     const sealedMeta = this._getDocumentSealedMeta(documentId);
     const bodyBuf = sealedMeta ? sealedMeta.ciphertext : this.getDocumentBuffer(documentId);
     const split = splitBlobs(bodyBuf, chunkBytes, documentId);
+    const merkleRootHex = sealedMeta
+      ? merkleRootHexFromBlobHashes(split.blobs.map((b) => b.blobHashHex), { paymentHashHex: sealedMeta.paymentHashHex })
+      : split.merkleRootHex;
     const only = opts.blobIndex != null ? Math.round(Number(opts.blobIndex)) : null;
     let wrote = 0;
     for (const b of split.blobs) {
@@ -5321,7 +5324,7 @@ class Peer extends Service {
         blobIndex: b.index,
         blobTotal: b.total,
         blobHashHex: b.blobHashHex,
-        merkleRootHex: split.merkleRootHex,
+        merkleRootHex,
         contentSha256: split.contentSha256,
         chunkBytes: split.chunkBytes
       };
@@ -5480,7 +5483,7 @@ class Peer extends Service {
    */
   _ingestSealedBlobFrame (obj, origin, frameHex = null) {
     const frame = parseFileSendObject(obj);
-    if (!frame.ok || frame.legacy) {
+    if (!frame.ok || frame.unindexed) {
       return { status: 'reject', error: (frame && frame.error) || 'bad per-blob frame' };
     }
     if (!verifyBlob(frame.bytes, frame.blobHashHex)) {
@@ -5501,22 +5504,19 @@ class Peer extends Service {
       return { status: 'reject', error: 'per-blob frame missing paymentHashHex or iv', documentId: frame.documentId };
     }
     const originName = origin && typeof origin === 'object' ? (origin.name || origin.address || origin.id || null) : (origin || null);
-    // A v2 frame proves its leaf (blob hash, payment hash, IV) and the blob
+    // Every frame proves its leaf (blob hash, payment hash, IV) and the blob
     // count against the root, so unpaid ciphertext is checked before funding.
-    let verified = false;
-    if (Number(obj.treeVersion) === DOCUMENT_TREE_VERSION || Array.isArray(obj.proof)) {
-      verified = verifyDocumentInclusion({
-        merkleRootHex: root,
-        blobTotal: frame.blobTotal,
-        blobIndex: frame.blobIndex,
-        blobHashHex: frame.blobHashHex,
-        paymentHashHex,
-        iv: obj.iv,
-        proof: obj.proof
-      });
-      if (!verified) {
-        return { status: 'reject', error: 'per-blob frame is not committed by its document root (inclusion proof)', documentId: frame.documentId, blobIndex: frame.blobIndex, merkleRootHex: root };
-      }
+    const verified = verifyDocumentInclusion({
+      merkleRootHex: root,
+      blobTotal: frame.blobTotal,
+      blobIndex: frame.blobIndex,
+      blobHashHex: frame.blobHashHex,
+      paymentHashHex,
+      iv: obj.iv,
+      proof: obj.proof
+    });
+    if (!verified) {
+      return { status: 'reject', error: 'per-blob frame is not committed by its document root (inclusion proof)', documentId: frame.documentId, blobIndex: frame.blobIndex, merkleRootHex: root };
     }
     // Purchase expectations win over whatever the wire claims.
     const expected = this.blobTransfers && typeof this.blobTransfers.expectedFor === 'function' ? this.blobTransfers.expectedFor(frame.documentId) : [];
@@ -5525,9 +5525,6 @@ class Peer extends Service {
       const match = expected.find((e) => (!e.merkleRootHex || e.merkleRootHex === root) && (!e.total || e.total === frame.blobTotal));
       if (!match) {
         return { status: 'reject', error: 'per-blob frame does not match the expected transfer (root / total)', documentId: frame.documentId, blobIndex: frame.blobIndex, merkleRootHex: root };
-      }
-      if (match.treeVersion === DOCUMENT_TREE_VERSION && !verified) {
-        return { status: 'reject', error: 'per-blob frame lacks the inclusion proof this document requires', documentId: frame.documentId, blobIndex: frame.blobIndex, merkleRootHex: root };
       }
       const wantHash = match.expectedHashes ? match.expectedHashes[frame.blobIndex] : null;
       if (!wantHash && match.expectedHashes && match.expectedHashes.some(Boolean)) {
@@ -5554,22 +5551,10 @@ class Peer extends Service {
     }
     const rowKey = `${frame.documentId}|${root}`;
     let row = this.pendingSealedBlobs[rowKey];
-    if (row && row.total !== frame.blobTotal && (pin || verified) && !row.opened.size) {
-      // Planted before the purchase (or by a peer without a proof): the
-      // pinned / proven total wins.
+    if (row && row.total !== frame.blobTotal && !row.opened.size) {
+      // Planted before the purchase: the proven total wins.
       this._dropSealedRow(rowKey);
       row = null;
-    }
-    if (row && verified && row.treeVersion !== DOCUMENT_TREE_VERSION) {
-      // A proof settles the tree version: unproven parts can only be junk.
-      row.treeVersion = DOCUMENT_TREE_VERSION;
-      for (const [i, p] of row.parts) {
-        if (!p.verified && !row.opened.has(i)) row.parts.delete(i);
-      }
-      this._resizeSealedRow(row);
-    }
-    if (row && !verified && row.treeVersion === DOCUMENT_TREE_VERSION) {
-      return { status: 'reject', error: 'per-blob frame lacks the inclusion proof this document requires', documentId: frame.documentId, blobIndex: frame.blobIndex, merkleRootHex: root };
     }
     if (row && pin && !row.pinned) {
       row.pinned = true;
@@ -5677,7 +5662,6 @@ class Peer extends Service {
         documentId: frame.documentId,
         total: frame.blobTotal,
         merkleRootHex: root,
-        treeVersion: verified ? DOCUMENT_TREE_VERSION : null,
         parts: new Map(),
         opened: new Map(),
         origin: origin || null,
@@ -6045,7 +6029,6 @@ class Peer extends Service {
       type: 'Document',
       documentId,
       merkleRootHex: row.merkleRootHex,
-      treeVersion: row.treeVersion || undefined,
       blobTotal: row.total,
       chunkBytes: Math.max(...parts.map((p) => p.ciphertext.length)),
       sealed: true,
@@ -6128,7 +6111,7 @@ class Peer extends Service {
   /**
    * Fill one blob of a sealed tree from a held chunk (see {@link Peer#heldChunk})
    * and open it, as a paid key reveal would. The offer's leaf names the chunk;
-   * the IV must match, a v2 proof is checked when given, and the whole tree is
+   * the IV must match, an inclusion proof is checked when given, and the whole tree is
    * still checked against its root once every blob is open.
    * @param {Object} opts
    * @param {string} opts.documentId
@@ -6138,8 +6121,7 @@ class Peer extends Service {
    * @param {string} opts.blobHashHex
    * @param {string} opts.paymentHashHex
    * @param {string} [opts.iv] advertised IV
-   * @param {number} [opts.treeVersion]
-   * @param {string[]} [opts.proof] v2 inclusion proof
+   * @param {string[]} [opts.proof] inclusion proof
    * @returns {Object} same shape as the key-reveal handler
    */
   adoptHeldChunk (opts = {}) {
@@ -6160,7 +6142,7 @@ class Peer extends Service {
     if (!held) return fail('chunk not held');
     if (opts.iv && !sameIv(opts.iv, held.iv)) return fail('held chunk iv differs from the offer');
     let verified = false;
-    if (Array.isArray(opts.proof) && Number(opts.treeVersion) === DOCUMENT_TREE_VERSION) {
+    if (Array.isArray(opts.proof)) {
       verified = verifyDocumentInclusion({ merkleRootHex: root, blobTotal, blobIndex, blobHashHex, paymentHashHex, iv: held.iv, proof: opts.proof });
       if (!verified) return fail('held chunk is not committed by the document root (inclusion proof)');
     }
@@ -6177,7 +6159,6 @@ class Peer extends Service {
         documentId,
         total: blobTotal,
         merkleRootHex: root,
-        treeVersion: verified ? DOCUMENT_TREE_VERSION : null,
         parts: new Map(),
         opened: new Map(),
         origin: null,
@@ -6418,8 +6399,7 @@ class Peer extends Service {
       const check = verifyOfferLeaves({
         merkleRootHex: row.merkleRootHex,
         blobTotal: row.total,
-        blobs: leaves,
-        treeVersion: row.treeVersion || undefined
+        blobs: leaves
       });
       if (!check.ok) {
         this.emit('documentBlobRejected', { documentId, error: 'merkle root mismatch', origin });
@@ -6483,7 +6463,7 @@ class Peer extends Service {
     const originName = origin && typeof origin === 'object' ? (origin.name || origin.address || origin.id || null) : (origin || null);
     const result = this.blobTransfers.ingest(frame, { origin: originName });
     if (result.status === 'complete' && result.buffer && result.documentId) {
-      const sealed = !!(obj.sealed || (frame && !frame.legacy && obj.paymentHashHex && obj.iv));
+      const sealed = !!(obj.sealed || (frame && !frame.unindexed && obj.paymentHashHex && obj.iv));
       if (sealed) {
         // No frame-supplied plaintextSha256: it is unauthenticated (a peer
         // could veto the paid open); the key reveal may carry one.
@@ -7413,11 +7393,11 @@ class Peer extends Service {
     // Env threshold is independent of how validators were supplied (settings vs env).
     const envThreshold = process.env.FABRIC_DISTRIBUTED_FEDERATION_THRESHOLD;
     if (envThreshold != null && String(envThreshold).trim()) {
-      return resolveFederationThreshold(envThreshold, validators);
+      return Federation.resolveThreshold(envThreshold, validators);
     }
     const t = this.settings.distributed && this.settings.distributed.federation &&
       this.settings.distributed.federation.threshold;
-    return resolveFederationThreshold(t, validators);
+    return Federation.resolveThreshold(t, validators);
   }
 
   /**

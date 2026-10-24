@@ -23,13 +23,7 @@ const Message = require('./message');
 const Chain = require('./chain');
 const beaconFederationSigning = require('../functions/beaconFederationSigning');
 const bls = require('../functions/bls');
-const {
-  normalizeFederationValidators,
-  findValidatorEntry,
-  resolveFederationThreshold,
-  federationThresholdExceedsValidators,
-  uniqueValidatorPubkeys
-} = require('../functions/federationValidators');
+const Federation = require('./federation');
 
 const SATS_PER_BTC = 100_000_000;
 const BEACON_CHAIN_PATH = 'beacon/CHAIN';
@@ -120,7 +114,7 @@ class Beacon extends Actor {
     this._blockQueue = null;
     this._bitcoinChainInfo = null;
     this._epochChain = Chain.create({ consensus: 'federation' });
-    this._federationValidators = normalizeFederationValidators(this.settings.federationValidators);
+    this._federationValidators = Federation.normalizeValidators(this.settings.federationValidators);
     this._federationThresholdSetting = this.settings.federationThreshold;
     this._federationSignatureScheme = bls.normalizeSignatureScheme(this.settings.federationSignatureScheme);
     this._getSidechainSnapshotForEpoch = null;
@@ -158,7 +152,7 @@ class Beacon extends Actor {
    * @private
    */
   get _federationThreshold () {
-    return resolveFederationThreshold(this._federationThresholdSetting, this._federationValidators);
+    return Federation.resolveThreshold(this._federationThresholdSetting, this._federationValidators);
   }
 
   get merkleRoot () {
@@ -194,7 +188,7 @@ class Beacon extends Actor {
     if (deps.fs) this.fs = deps.fs;
     if (deps.key) this.key = deps.key;
     if (Array.isArray(deps.federationValidators)) {
-      this._federationValidators = normalizeFederationValidators(deps.federationValidators);
+      this._federationValidators = Federation.normalizeValidators(deps.federationValidators);
     }
     if (deps.federationThreshold !== undefined) {
       this._federationThresholdSetting = deps.federationThreshold;
@@ -233,8 +227,8 @@ class Beacon extends Actor {
    * @private
    */
   _warnIfThresholdClamped () {
-    if (!federationThresholdExceedsValidators(this._federationThresholdSetting, this._federationValidators)) return;
-    const n = uniqueValidatorPubkeys(this._federationValidators).length;
+    if (!Federation.thresholdExceedsValidators(this._federationThresholdSetting, this._federationValidators)) return;
+    const n = Federation.uniqueValidatorPubkeys(this._federationValidators).length;
     this.emit('warning', `[BEACON] federationThreshold ${this._federationThresholdSetting} exceeds the ${n} distinct federation validators; using ${n}`);
   }
 
@@ -244,7 +238,7 @@ class Beacon extends Actor {
    * @private
    */
   _isFederationValidator (pubkey) {
-    return !!findValidatorEntry(this._federationValidators, pubkey);
+    return !!Federation.findValidatorEntry(this._federationValidators, pubkey);
   }
 
   _compressedPubkeyHex () {
@@ -306,7 +300,7 @@ class Beacon extends Actor {
     if (!this._federationValidators.length) return null;
     if (!this.key || !this.key.private) return null;
     const pk = this._compressedPubkeyHex();
-    const member = pk ? findValidatorEntry(this._federationValidators, pk) : null;
+    const member = pk ? Federation.findValidatorEntry(this._federationValidators, pk) : null;
     if (!member) return null;
     const msg = Buffer.from(beaconFederationSigning.signingStringForBeaconEpoch(epochPayload), 'utf8');
     if (this._federationSignatureScheme === bls.SCHEME_BLS) {

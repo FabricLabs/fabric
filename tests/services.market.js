@@ -1158,7 +1158,6 @@ describe('services/market (convergent de-dup)', function () {
   it('buys a chunk repeated inside one document once', async function () {
     const block = crypto.randomBytes(CHUNK);
     const doc = Document.seal(Buffer.concat([block, block, block]), { chunkBytes: 2048 });
-    assert.strictEqual(doc.treeVersion, 2);
     const m = wire([doc]);
     m.market.want(doc.merkleRootHex, { blobTotal: doc.blobTotal, merkleRootHex: doc.merkleRootHex });
     await m.market.tick();
@@ -1182,7 +1181,7 @@ describe('services/market (convergent de-dup)', function () {
     };
     assert.match(peer.adoptHeldChunk(Object.assign({}, opts, { iv: doc.blob(1).iv })).error, /iv differs/);
     assert.match(peer.adoptHeldChunk(Object.assign({}, opts, { paymentHashHex: 'ab'.repeat(32) })).error, /not held/);
-    const opened = peer.adoptHeldChunk(Object.assign({}, opts, { iv: leaf.iv, treeVersion: doc.treeVersion, proof: doc.proofFor(0) }));
+    const opened = peer.adoptHeldChunk(Object.assign({}, opts, { iv: leaf.iv, proof: doc.proofFor(0) }));
     assert.ok(opened.ok, opened.error);
   });
 });

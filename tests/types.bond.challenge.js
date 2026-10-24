@@ -10,7 +10,7 @@ const Challenge = require('../types/challenge');
 const Witness = require('../types/witness');
 const Document = require('../types/document');
 const { signerFromPriv32 } = require('../types/htlc');
-const { createBlobMerkleTree } = require('../functions/documentBlobManifest');
+const { createBlobMerkleTree } = Challenge;
 
 const { FraudProof } = Witness;
 
@@ -51,7 +51,7 @@ describe('Market bonds, challenges, and fraud proofs (Phase 3)', function () {
   let doc;
   let hashes;
   // Availability challenges commit to the blob-hash tree (the storage root),
-  // not the v2 document root that also commits payment hashes and IVs.
+  // not the document root that also commits payment hashes and IVs.
   let root;
   let total;
   let dest;

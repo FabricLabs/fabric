@@ -14,12 +14,12 @@
  * @module functions/contractMessageAccumulate
  */
 
-const crypto = require('crypto');
 const Message = require('../types/message');
 const Key = require('../types/key');
 const { HEADER_SIZE, MAX_MESSAGE_SIZE } = require('../constants');
 const { OUTER, CONTRACT_BODY_TYPES, isKnownContractBodyType } = require('./applicationNamespaces');
-const { pubkeyXOnly, pubkeyCompressed } = require('./groupChatSeal');
+const { pubkeyXOnly, pubkeyCompressed } = require('./pubkey');
+const { normalizeContractId, stateDigest } = require('./sidechainState');
 const {
   OP_CONTRACT_READ,
   OP_CONTRACT_SIGN,
@@ -199,33 +199,6 @@ function isSyncTrackedType (type, doc = {}, meta = {}) {
   }
   // mode === 'all' (default): track content types; skip default control-plane excludes
   return !DEFAULT_SYNC_EXCLUDE.includes(t);
-}
-
-function normalizeContractId (contractId) {
-  const id = String(contractId || '').trim().toLowerCase();
-  if (!id || id.includes('/') || id.includes('..') || id.length > 128) {
-    throw new Error('invalid contractId');
-  }
-  return id;
-}
-
-function _canonicalStringify (value) {
-  if (value === null || typeof value !== 'object') return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map(_canonicalStringify).join(',')}]`;
-  const keys = Object.keys(value).sort();
-  return `{${keys.map((k) => `${JSON.stringify(k)}:${_canonicalStringify(value[k])}`).join(',')}}`;
-}
-
-/**
- * @param {{ version?: number, clock?: number, content?: object }} state
- * @returns {string}
- */
-function stateDigest (state) {
-  return crypto.createHash('sha256').update(_canonicalStringify({
-    version: state && state.version != null ? Number(state.version) : 1,
-    clock: Number(state && state.clock) || 0,
-    content: (state && state.content) || {}
-  })).digest('hex');
 }
 
 /**
@@ -1325,11 +1298,9 @@ module.exports = {
   isDeliveryAckType,
   resolveDeliverySyncPolicy,
   isSyncTrackedType,
-  normalizeContractId,
   normalizeGenesis,
   normalizePubkeyList,
   authorAllowedByReaders,
-  stateDigest,
   bufferFromPaste,
   verifyMessageSignature,
   parseContractMessageBody,

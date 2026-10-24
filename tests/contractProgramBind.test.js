@@ -8,13 +8,13 @@ const Program = require('../types/program');
 const {
   resolveSpend,
   buildWithdrawalRequest,
-  validateWithdrawalRequest,
-  bindProgramRunToTip,
-  programMetaFromTip,
-  requiresProgramBind
+  validateWithdrawalRequest
 } = require('../functions/contractSpend');
 const {
   assertMachineRunMatches,
+  bindProgramRunToTip,
+  programMetaFromTip,
+  requiresProgramBind,
   validateProgramRunBinding
 } = require('../functions/contractProgramBind');
 const { buildExecutionRunOutput } = require('../functions/executionRunBridge');

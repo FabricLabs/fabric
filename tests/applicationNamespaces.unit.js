@@ -65,14 +65,14 @@ const {
   ingestMessageBuffer,
   ingestContractPublishBuffer,
   foldContractState,
-  stateDigest,
   bufferFromPaste,
   tipFromDoc,
   loadDoc,
   normalizeGenesis,
   resolveMaxJournalEntries
 } = require('../functions/contractMessageAccumulate');
-const { pubkeyXOnly } = require('../functions/groupChatSeal');
+const { stateDigest } = require('../functions/sidechainState');
+const { pubkeyXOnly } = require('../functions/pubkey');
 const {
   signProposalVote
 } = require('../functions/groupChangeGovernance');
@@ -896,7 +896,7 @@ describe('@fabric/core contractMessageCommit', function () {
 
   it('markReceived initializes peers map when missing (legacy records)', function () {
     const a = new Key();
-    const x = require('../functions/groupChatSeal').pubkeyXOnly(a.pubkey);
+    const x = require('../functions/pubkey').pubkeyXOnly(a.pubkey);
     const record = {
       id: 'm4',
       contractId: 'c'.repeat(64),
@@ -1062,13 +1062,13 @@ const Program = require('../types/program');
 const {
   resolveSpend,
   buildWithdrawalRequest,
-  validateWithdrawalRequest,
-  bindProgramRunToTip,
-  programMetaFromTip,
-  requiresProgramBind
+  validateWithdrawalRequest
 } = require('../functions/contractSpend');
 const {
   assertMachineRunMatches,
+  bindProgramRunToTip,
+  programMetaFromTip,
+  requiresProgramBind,
   validateProgramRunBinding
 } = require('../functions/contractProgramBind');
 

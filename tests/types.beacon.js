@@ -1187,7 +1187,6 @@ describe('beaconContractDefinition', function () {
 const {
   BEACON_NETWORK_PATH,
   BEACON_CHAIN_PATH,
-  SIDECHAIN_STATE_PATH,
   normalizeBitcoinNetwork,
   readNetworkBinding,
   writeNetworkBinding,
@@ -1196,6 +1195,7 @@ const {
   ensureBeaconNetworkBinding,
   hasBeaconOrSidechainData
 } = require('../functions/beaconNetworkGuard');
+const { SIDECHAIN_STATE_PATH } = require('../functions/sidechainState');
 
 function memoryFsBeaconGuard (seed = {}) {
   const data = Object.assign(Object.create(null), seed);

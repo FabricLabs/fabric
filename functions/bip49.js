@@ -11,30 +11,7 @@
 'use strict';
 
 const { payments, networks } = require('bitcoinjs-lib');
-
-/**
- * @param {Buffer|Uint8Array|string} key
- * @returns {Buffer}
- * @private
- */
-function asCompressedPubkey (key) {
-  let buf;
-  if (Buffer.isBuffer(key)) buf = key;
-  else if (key instanceof Uint8Array) buf = Buffer.from(key);
-  else if (typeof key === 'string') {
-    const hex = String(key).trim().toLowerCase().replace(/^0x/, '');
-    if (!/^(02|03)[0-9a-f]{64}$/.test(hex)) {
-      throw new Error('BIP49 pubkey must be 33-byte compressed hex');
-    }
-    buf = Buffer.from(hex, 'hex');
-  } else {
-    throw new TypeError('BIP49 pubkey must be Buffer, Uint8Array, or hex string');
-  }
-  if (buf.length !== 33 || (buf[0] !== 0x02 && buf[0] !== 0x03)) {
-    throw new Error('BIP49 pubkey must be a 33-byte compressed secp256k1 key');
-  }
-  return buf;
-}
+const { asCompressedPubkey } = require('./bip67');
 
 /**
  * bitcoinjs `payments.p2sh({ redeem: p2wpkh })` for a compressed pubkey.

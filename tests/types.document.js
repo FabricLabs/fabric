@@ -11,7 +11,6 @@ const {
   verifyOfferLeaves,
   verifySealedBlobFrame,
   DEFAULT_BLOB_CHUNK_BYTES,
-  DOCUMENT_TREE_VERSION,
   SEALED_BLOB_CHUNK_BYTES
 } = require('../functions/documentBlobManifest');
 const {
@@ -53,7 +52,6 @@ describe('types/document (sealed blob tree)', function () {
       pays.add(b.paymentHashHex);
     }
     assert.strictEqual(pays.size, 3, 'distinct K_i per blob');
-    assert.strictEqual(doc.treeVersion, DOCUMENT_TREE_VERSION);
     assert.strictEqual(doc.chunkBytes, SEALED_BLOB_CHUNK_BYTES, 'leaves room for the inclusion proof');
     assert.strictEqual(doc.merkleRootHex, documentMerkleRootHex(doc.blobs));
     assert.notStrictEqual(doc.merkleRootHex, merkleRootHexFromBlobHashes(doc.blobs.map((b) => b.blobHashHex)));
@@ -167,10 +165,10 @@ describe('types/document (sealed blob tree)', function () {
     assert.strictEqual(sends.length, 2);
     assert.strictEqual(reveals.length, 2);
 
-    // A frame the socket refuses (legacy frame cap) is not sent, and its key is not revealed.
+    // A frame the socket refuses (an older peer's frame cap) is not sent, and its key is not revealed.
     const partial = [];
     let sendCount = 0;
-    seller.connections['legacy'] = {
+    seller.connections['capped'] = {
       _writeFabric: (buf) => {
         const m = Message.fromBuffer(buf);
         if (m.type === 'P2P_FILE_SEND' && sendCount++ === 0) return false;
@@ -178,7 +176,7 @@ describe('types/document (sealed blob tree)', function () {
         return true;
       }
     };
-    assert.ok(seller._sendP2pFileSendToPeer(docId, 'legacy', { revealKey: true, settlementId: 's' }));
+    assert.ok(seller._sendP2pFileSendToPeer(docId, 'capped', { revealKey: true, settlementId: 's' }));
     assert.strictEqual(partial.filter((m) => m.type === 'P2P_FILE_SEND').length, 1);
     assert.strictEqual(partial.filter((m) => m.type !== 'P2P_FILE_SEND').length, 1);
     seller.connections['closed'] = { _writeFabric: () => false };
@@ -210,11 +208,11 @@ describe('types/document (sealed blob tree)', function () {
     assert.strictEqual(buyer.pendingSealedBlobs[rowKey], undefined);
   });
 
-  it('Peer (legacy v1 tree): per-blob reassembly rejects forged shape and opens blobs with an out-of-band key', function () {
+  it('Peer: every frame must prove its leaf; forged shape, index, payment hash, and IV are refused', function () {
     const seller = new Peer({ listen: false, sealPricedDocuments: true });
     const buyer = new Peer({ listen: false });
     const plain = crypto.randomBytes(4000);
-    const doc = Document.seal(plain, { chunkBytes: 2048, treeVersion: 1 });
+    const doc = Document.seal(plain, { chunkBytes: 2048 });
     const { documentId } = seller.publishSealedDocument(doc, { rateSats: RATE });
     const written = [];
     seller.connections['buyer'] = { _writeFabric: (buf) => written.push(buf) };
@@ -223,67 +221,42 @@ describe('types/document (sealed blob tree)', function () {
     const sends = written.map((buf) => Message.fromBuffer(buf)).filter((m) => m.type === 'P2P_FILE_SEND');
     const bodies = sends.map((m) => JSON.parse(m.body));
     assert.strictEqual(bodies.length, 2);
+    const refused = (patch) => {
+      const r = buyer._ingestP2pFileSend({ object: Object.assign({}, bodies[0], patch) }, { name: 'mallory' });
+      assert.strictEqual(r.status, 'reject', JSON.stringify(Object.keys(patch)));
+      return r;
+    };
 
-    // Missing / malformed root is refused outright.
-    let r = buyer._ingestP2pFileSend({ object: Object.assign({}, bodies[0], { merkleRootHex: undefined }) }, { name: 'seller' });
-    assert.strictEqual(r.status, 'reject');
-    assert.match(r.error, /merkleRootHex/);
-    // Index past the advertised total is refused.
-    r = buyer._ingestP2pFileSend({ object: Object.assign({}, bodies[0], { blobIndex: 7 }) }, { name: 'seller' });
-    assert.strictEqual(r.status, 'reject');
-    // Honest first frame.
-    r = buyer._ingestP2pFileSend({ object: bodies[0] }, { name: 'seller' }, sends[0]);
-    assert.strictEqual(r.status, 'awaiting_key');
-    // Multi-seller plan: an unheld index of the same tree from another seller lands.
-    r = buyer._ingestP2pFileSend({ object: bodies[1] }, { name: 'beta' });
-    assert.strictEqual(r.status, 'awaiting_key');
-    const rowKey = `${documentId}|${bodies[0].merkleRootHex.toLowerCase()}`;
-    assert.strictEqual(buyer.pendingSealedBlobs[rowKey].parts.get(0).origin, 'seller');
-    assert.strictEqual(buyer.pendingSealedBlobs[rowKey].parts.get(1).origin, 'beta', 'origin is recorded per part');
-    // A frame that disagrees on blobTotal is refused.
-    r = buyer._ingestP2pFileSend({ object: Object.assign({}, bodies[1], { blobTotal: 3 }) }, { name: 'seller' });
-    assert.strictEqual(r.status, 'reject');
-    assert.match(r.error, /blobTotal/);
-    // Re-sending index 0 with different bytes never overwrites the held blob.
+    assert.match(refused({ merkleRootHex: undefined }).error, /merkleRootHex/);
+    refused({ blobIndex: 7 });
+    refused({ blobIndex: 1 });
+    refused({ blobTotal: 3 });
+    refused({ proof: undefined });
+    refused({ paymentHashHex: 'ee'.repeat(32) });
+    refused({ iv: crypto.randomBytes(12).toString('base64') });
+    const junk = crypto.randomBytes(2048);
+    refused({ body: junk.toString('base64'), blobHashHex: crypto.createHash('sha256').update(junk).digest('hex') });
     const other = Document.seal(crypto.randomBytes(2048), { chunkBytes: 2048 });
     const ob = other.blob(0);
-    const forged = Object.assign({}, bodies[0], {
-      blobHashHex: ob.blobHashHex,
-      paymentHashHex: ob.paymentHashHex,
-      iv: ob.iv,
-      body: other.bytesFor ? other.bytesFor(0).toString('base64') : bodies[0].body
-    });
-    r = buyer._ingestP2pFileSend({ object: forged }, { name: 'seller' });
-    assert.strictEqual(r.status, 'reject');
-    // Same ciphertext under a different payment hash or IV never replaces the
-    // held frame; it waits as an alternate (bounded) for the key reveal.
-    const held = buyer.pendingSealedBlobs[rowKey].parts.get(0);
-    r = buyer._ingestP2pFileSend({ object: Object.assign({}, bodies[0], { paymentHashHex: 'ee'.repeat(32) }) }, { name: 'mallory' });
+    refused({ blobHashHex: ob.blobHashHex, paymentHashHex: ob.paymentHashHex, iv: ob.iv, body: other.bytesFor(0).toString('base64') });
+    const rowKey = `${documentId}|${bodies[0].merkleRootHex.toLowerCase()}`;
+    assert.strictEqual(buyer.pendingSealedBlobs[rowKey], undefined, 'nothing forged is held');
+
+    // Honest frames land from any seller of the same tree; origin is per part.
+    let r = buyer._ingestP2pFileSend({ object: bodies[0] }, { name: 'seller' }, sends[0]);
     assert.strictEqual(r.status, 'awaiting_key');
-    assert.strictEqual(r.alternate, true);
-    r = buyer._ingestP2pFileSend({ object: Object.assign({}, bodies[0], { iv: 'ab'.repeat(12) }) }, { name: 'mallory' });
-    assert.strictEqual(r.alternate, true);
-    assert.strictEqual(held.alternates.length, 2);
-    assert.strictEqual(held.paymentHashHex, bodies[0].paymentHashHex.toLowerCase());
-    for (let i = 0; i < 4; i++) {
-      buyer._ingestP2pFileSend({ object: Object.assign({}, bodies[0], { paymentHashHex: String(i).repeat(64) }) }, { name: 'mallory' });
-    }
-    assert.strictEqual(held.alternates.length, 4, 'alternates are capped');
-    // An identical resend is a duplicate; the first frame and origin stay.
+    r = buyer._ingestP2pFileSend({ object: bodies[1] }, { name: 'beta' }, sends[1]);
+    assert.strictEqual(r.status, 'awaiting_key');
+    assert.strictEqual(buyer.pendingSealedBlobs[rowKey].parts.get(0).origin, 'seller');
+    assert.strictEqual(buyer.pendingSealedBlobs[rowKey].parts.get(1).origin, 'beta');
     r = buyer._ingestP2pFileSend({ object: bodies[0] }, { name: 'mallory' });
-    assert.strictEqual(r.status, 'awaiting_key');
     assert.strictEqual(r.duplicate, true);
-    assert.strictEqual(buyer.pendingSealedBlobs[rowKey].parts.get(0), held);
-    assert.strictEqual(held.origin, 'seller');
-    // Second honest frame lands.
-    r = buyer._ingestP2pFileSend({ object: bodies[1] }, { name: 'seller' }, sends[1]);
-    assert.strictEqual(r.status, 'awaiting_key');
+    assert.strictEqual(buyer.pendingSealedBlobs[rowKey].parts.get(0).origin, 'seller');
 
     // Seller-fulfils channel rail: the HTLC preimage is K_i; open with it directly.
     let received = null;
     buyer.on('documentReceived', (ev) => { received = ev; });
-    const bad = buyer.openSealedBlobWithKey({ documentId, keyHex: crypto.randomBytes(32).toString('hex') });
-    assert.strictEqual(bad.ok, false);
+    assert.strictEqual(buyer.openSealedBlobWithKey({ documentId, keyHex: crypto.randomBytes(32).toString('hex') }).ok, false);
     for (let i = 0; i < doc.blobTotal; i++) {
       const out = buyer.openSealedBlobWithKey({ documentId, keyHex: doc.keyFor(i) });
       assert.ok(out.ok, out.error);
@@ -292,41 +265,9 @@ describe('types/document (sealed blob tree)', function () {
     assert.ok(received && received.buffer.equals(plain));
   });
 
-  it('Peer (legacy v1 tree): expected blob hashes are checked per index', function () {
+  it('Peer: a purchase pins its own indexes; unbought indexes are refused', function () {
     const seller = new Peer({ listen: false, sealPricedDocuments: true });
-    const doc = Document.seal(crypto.randomBytes(4000), { chunkBytes: 2048, treeVersion: 1 });
-    const { documentId } = seller.publishSealedDocument(doc, { rateSats: RATE });
-    const written = [];
-    seller.connections['buyer'] = { _writeFabric: (buf) => written.push(buf) };
-    seller._sendP2pFileSendToPeer(documentId, 'buyer', { revealKey: false, settlementId: 's' });
-    const Message = require('../types/message');
-    const bodies = written.map((buf) => Message.fromBuffer(buf)).filter((m) => m.type === 'P2P_FILE_SEND').map((m) => JSON.parse(m.body));
-
-    const buyer = new Peer({ listen: false });
-    buyer.blobTransfers.expectTransfer({
-      documentId,
-      merkleRootHex: doc.merkleRootHex,
-      total: doc.blobTotal,
-      blobHashHexes: [doc.blob(0).blobHashHex, doc.blob(1).blobHashHex]
-    });
-    // Blob 0's bytes delivered at index 1 hash to a leaf we asked for, but not at that index.
-    let r = buyer._ingestP2pFileSend({ object: Object.assign({}, bodies[0], { blobIndex: 1 }) }, { name: 'seller' });
-    assert.strictEqual(r.status, 'reject');
-    assert.match(r.error, /at that index/);
-    r = buyer._ingestP2pFileSend({ object: bodies[1] }, { name: 'seller' });
-    assert.strictEqual(r.status, 'awaiting_key');
-
-    // A single-blob purchase pins only its own index (Market#confirm).
-    const single = new Peer({ listen: false });
-    const pinned = [];
-    pinned[1] = doc.blob(1).blobHashHex;
-    single.blobTransfers.expectTransfer({ documentId, merkleRootHex: doc.merkleRootHex, total: doc.blobTotal, blobHashHexes: pinned });
-    assert.strictEqual(single._ingestP2pFileSend({ object: bodies[1] }, { name: 'seller' }).status, 'awaiting_key');
-  });
-
-  it('Peer (legacy v1 tree): a poisoned first frame cannot block the paid blob, and pins survive later purchases', function () {
-    const seller = new Peer({ listen: false, sealPricedDocuments: true });
-    const doc = Document.seal(crypto.randomBytes(4000), { chunkBytes: 2048, treeVersion: 1 });
+    const doc = Document.seal(crypto.randomBytes(4000), { chunkBytes: 2048 });
     const { documentId } = seller.publishSealedDocument(doc, { rateSats: RATE });
     const written = [];
     seller.connections['buyer'] = { _writeFabric: (buf) => written.push(buf) };
@@ -340,113 +281,33 @@ describe('types/document (sealed blob tree)', function () {
       paymentHashHexes[index] = doc.paymentHashFor(index);
       return peer.blobTransfers.expectTransfer({ documentId, merkleRootHex: doc.merkleRootHex, total: doc.blobTotal, blobHashHexes, paymentHashHexes, merge: true });
     };
-
     // Buying blob 1 after blob 0 keeps blob 0 pinned (Market#confirm merges).
     const buyer = new Peer({ listen: false });
     expect(buyer, 0);
     const row = expect(buyer, 1);
     assert.deepStrictEqual(row.expectedHashes, [doc.blob(0).blobHashHex, doc.blob(1).blobHashHex]);
-    let r = buyer._ingestP2pFileSend({ object: Object.assign({}, bodies[0], { paymentHashHex: 'ee'.repeat(32) }) }, { name: 'mallory' });
-    assert.strictEqual(r.status, 'reject');
-    assert.match(r.error, /paid for/);
+    assert.strictEqual(buyer._ingestP2pFileSend({ object: bodies[0] }, { name: 'seller' }).status, 'awaiting_key');
 
-    // An index that was not bought is refused outright.
     const single = new Peer({ listen: false });
     expect(single, 1);
-    r = single._ingestP2pFileSend({ object: bodies[0] }, { name: 'mallory' });
+    const r = single._ingestP2pFileSend({ object: bodies[0] }, { name: 'mallory' });
     assert.strictEqual(r.status, 'reject');
     assert.match(r.error, /did not buy/);
-
-    // The right ciphertext and payment hash with a wrong IV arrives first; the
-    // seller's frame still lands and is the one the paid key opens.
-    expect(single, 0);
-    const poison = Object.assign({}, bodies[0], { iv: crypto.randomBytes(12).toString('base64') });
-    assert.strictEqual(single._ingestP2pFileSend({ object: poison }, { name: 'mallory' }).status, 'awaiting_key');
-    r = single._ingestP2pFileSend({ object: bodies[0] }, { name: 'seller' });
-    assert.strictEqual(r.alternate, true);
-    const out = single.openSealedBlobWithKey({ documentId, keyHex: doc.keyFor(0) });
-    assert.ok(out.ok, out.error);
-    const part = single.pendingSealedBlobs[`${documentId}|${doc.merkleRootHex}`].parts.get(0);
-    assert.strictEqual(part.origin, 'seller');
-    assert.strictEqual(part.iv, bodies[0].iv);
-    assert.strictEqual(part.alternates, undefined);
-  });
-
-  it('Peer (legacy v1 tree): frames held before the purchase pin, or a full alternates list, never block the paid blob', function () {
-    const seller = new Peer({ listen: false, sealPricedDocuments: true });
-    const doc = Document.seal(crypto.randomBytes(4000), { chunkBytes: 2048, treeVersion: 1 });
-    const { documentId } = seller.publishSealedDocument(doc, { rateSats: RATE });
-    const written = [];
-    seller.connections['buyer'] = { _writeFabric: (buf) => written.push(buf) };
-    seller._sendP2pFileSendToPeer(documentId, 'buyer', { revealKey: false, settlementId: 's' });
-    const Message = require('../types/message');
-    const bodies = written.map((buf) => Message.fromBuffer(buf)).filter((m) => m.type === 'P2P_FILE_SEND').map((m) => JSON.parse(m.body));
-    const rowKey = `${documentId}|${doc.merkleRootHex}`;
+    assert.strictEqual(single._ingestP2pFileSend({ object: bodies[1] }, { name: 'seller' }).status, 'awaiting_key');
+    assert.ok(single.openSealedBlobWithKey({ documentId, blobIndex: 1, keyHex: doc.keyFor(1) }).ok);
 
     // Inventory advertises each blob's IV; the offer book keeps it.
     const item = doc.inventoryItem({ rateSats: RATE });
     assert.strictEqual(item.blobs[0].iv, bodies[0].iv);
-    const book = new DocumentBook();
-    const [offer] = book.ingestInventoryResponse({ origin: 'seller', items: [item] });
+    const [offer] = new DocumentBook().ingestInventoryResponse({ origin: 'seller', items: [item] });
     assert.strictEqual(offer.iv, bodies[0].iv);
-
-    const pin = (peer, opts = {}) => {
-      const at = (v) => { const a = []; a[0] = v; return a; };
-      return peer.blobTransfers.expectTransfer({
-        documentId,
-        merkleRootHex: doc.merkleRootHex,
-        total: doc.blobTotal,
-        blobHashHexes: at(doc.blob(0).blobHashHex),
-        paymentHashHexes: at(doc.paymentHashFor(0)),
-        ivs: opts.iv === false ? null : at(bodies[0].iv),
-        origins: at('seller'),
-        merge: true
-      });
-    };
-    const randomIv = () => Object.assign({}, bodies[0], { iv: crypto.randomBytes(12).toString('base64') });
-    const openOnChannelRail = (peer) => peer.openSealedBlobWithKey({ documentId, blobIndex: 0, keyHex: doc.keyFor(0) });
-
-    // Self-hashed junk under the advertised root lands before the buyer pays.
-    const junkBytes = crypto.randomBytes(2048);
-    const junk = Object.assign({}, bodies[0], {
-      body: junkBytes.toString('base64'),
-      blobHashHex: crypto.createHash('sha256').update(junkBytes).digest('hex')
-    });
-    const a = new Peer({ listen: false });
-    assert.strictEqual(a._ingestP2pFileSend({ object: junk }, { name: 'mallory' }).status, 'awaiting_key');
-    pin(a);
-    assert.strictEqual(a._ingestP2pFileSend({ object: bodies[0] }, { name: 'seller' }).status, 'awaiting_key');
-    assert.strictEqual(a.pendingSealedBlobs[rowKey].parts.get(0).blobHashHex, doc.blob(0).blobHashHex);
-    assert.ok(openOnChannelRail(a).ok);
-
-    // Five random-IV frames before the pin; the advertised IV clears them.
-    const b = new Peer({ listen: false });
-    for (let i = 0; i < 5; i++) b._ingestP2pFileSend({ object: randomIv() }, { name: 'mallory' });
-    assert.strictEqual(b.pendingSealedBlobs[rowKey].parts.get(0).alternates.length, 4);
-    pin(b);
-    const late = b._ingestP2pFileSend({ object: randomIv() }, { name: 'mallory' });
-    assert.strictEqual(late.status, 'reject');
-    assert.match(late.error, /advertised/);
-    assert.strictEqual(b._ingestP2pFileSend({ object: bodies[0] }, { name: 'seller' }).status, 'awaiting_key');
-    assert.strictEqual(b.pendingSealedBlobs[rowKey].parts.get(0).alternates, undefined);
-    assert.ok(openOnChannelRail(b).ok);
-
-    // No advertised IV: the seller bought from displaces another origin's alternate.
-    const c = new Peer({ listen: false });
-    pin(c, { iv: false });
-    for (let i = 0; i < 5; i++) c._ingestP2pFileSend({ object: randomIv() }, { name: 'mallory' });
-    assert.strictEqual(c._ingestP2pFileSend({ object: randomIv() }, { name: 'mallory' }).status, 'reject');
-    assert.strictEqual(c._ingestP2pFileSend({ object: bodies[0] }, { name: 'seller' }).alternate, true);
-    const opened = openOnChannelRail(c);
-    assert.ok(opened.ok, opened.error);
-    assert.strictEqual(c.pendingSealedBlobs[rowKey].parts.get(0).origin, 'seller');
 
     // A frame's unauthenticated plaintextSha256 cannot veto the paid open.
     const d = new Peer({ listen: false });
-    pin(d);
+    expect(d, 0);
     d._ingestP2pFileSend({ object: Object.assign({}, bodies[0], { plaintextSha256: 'ab'.repeat(32) }) }, { name: 'mallory' });
     assert.strictEqual(d._ingestP2pFileSend({ object: bodies[0] }, { name: 'seller' }).duplicate, true);
-    assert.ok(openOnChannelRail(d).ok);
+    assert.ok(d.openSealedBlobWithKey({ documentId, blobIndex: 0, keyHex: doc.keyFor(0) }).ok);
   });
 
   it('Peer: pending sealed blobs are bounded by a global byte budget and a TTL', function () {
@@ -493,7 +354,7 @@ describe('types/document (sealed blob tree)', function () {
     assert.strictEqual(seller._mayRevealSealedBlobKey(documentId, Object.assign({}, parsed, { blobIndex: 0 })), false);
   });
 
-  describe('v2 tree: verify before pay', function () {
+  describe('verify before pay', function () {
     const publish = (opts = {}) => {
       const seller = new Peer(Object.assign({ listen: false }, opts.peer || {}));
       const plain = opts.plain || crypto.randomBytes(4000);
@@ -504,9 +365,7 @@ describe('types/document (sealed blob tree)', function () {
 
     it('free ciphertext frames carry an inclusion proof and no plaintext hash', function () {
       const { doc, bodies } = publish();
-      assert.strictEqual(doc.treeVersion, 2);
       for (const b of bodies) {
-        assert.strictEqual(b.treeVersion, 2);
         assert.ok(Array.isArray(b.proof));
         assert.ok(!('plaintextSha256' in b));
         const v = verifySealedBlobFrame(b, { merkleRootHex: doc.merkleRootHex, blobTotal: doc.blobTotal });
@@ -515,7 +374,6 @@ describe('types/document (sealed blob tree)', function () {
       const item = doc.inventoryItem({ rateSats: RATE });
       assert.ok(!('plaintextSha256' in item));
       assert.ok(!('plaintextSha256' in doc.record()));
-      assert.strictEqual(item.treeVersion, 2);
       const leaves = item.blobs.map((b) => ({ index: b.index, blobHashHex: b.blobHashHex, contentHashHex: b.contentHashHex, iv: b.iv }));
       assert.strictEqual(verifyOfferLeaves({ merkleRootHex: item.merkleRootHex, blobTotal: item.blobTotal, blobs: leaves }).ok, true);
     });
@@ -562,33 +420,24 @@ describe('types/document (sealed blob tree)', function () {
       assert.ok(received.buffer.equals(plain));
     });
 
-    it('a proven frame replaces an unproven planted part; a v2 pin refuses unproven frames', function () {
+    it('unproven frames are refused, with or without a purchase pin', function () {
       const { doc, documentId, sends, bodies } = publish();
       const rowKey = `${documentId}|${doc.merkleRootHex}`;
       const junk = crypto.randomBytes(2048);
-      const unproven = Object.assign({}, bodies[0], { body: junk.toString('base64'), blobHashHex: sha256(junk), proof: undefined, treeVersion: undefined });
+      const unproven = Object.assign({}, bodies[0], { body: junk.toString('base64'), blobHashHex: sha256(junk), proof: undefined });
 
       const a = new Peer({ listen: false });
-      assert.strictEqual(a._ingestP2pFileSend({ object: unproven }, { name: 'mallory' }).status, 'awaiting_key');
+      assert.strictEqual(a._ingestP2pFileSend({ object: unproven }, { name: 'mallory' }).status, 'reject');
+      assert.strictEqual(a._ingestP2pFileSend({ object: Object.assign({}, unproven, { blobTotal: 3 }) }, { name: 'mallory' }).status, 'reject');
+      assert.strictEqual(a._ingestP2pFileSend({ object: Object.assign({}, bodies[1], { proof: undefined }) }, { name: 'seller' }).status, 'reject');
+      assert.strictEqual(a.pendingSealedBlobs[rowKey], undefined);
       assert.strictEqual(a._ingestP2pFileSend({ object: bodies[0] }, { name: 'seller' }, sends[0]).status, 'awaiting_key');
-      const part = a.pendingSealedBlobs[rowKey].parts.get(0);
-      assert.strictEqual(part.blobHashHex, doc.blob(0).blobHashHex);
-      assert.strictEqual(part.verified, true);
-      assert.strictEqual(part.alternates, undefined);
-      const late = a._ingestP2pFileSend({ object: Object.assign({}, bodies[1], { proof: undefined, treeVersion: undefined }) }, { name: 'seller' });
-      assert.strictEqual(late.status, 'reject', 'a v2 row refuses unproven frames');
+      assert.strictEqual(a.pendingSealedBlobs[rowKey].parts.get(0).verified, true);
 
       const b = new Peer({ listen: false });
-      b.blobTransfers.expectTransfer({ documentId, merkleRootHex: doc.merkleRootHex, total: doc.blobTotal, treeVersion: 2 });
-      assert.strictEqual(b._ingestP2pFileSend({ object: Object.assign({}, bodies[0], { proof: undefined, treeVersion: undefined }) }, { name: 'seller' }).status, 'reject');
+      b.blobTransfers.expectTransfer({ documentId, merkleRootHex: doc.merkleRootHex, total: doc.blobTotal });
+      assert.strictEqual(b._ingestP2pFileSend({ object: Object.assign({}, bodies[0], { proof: undefined }) }, { name: 'seller' }).status, 'reject');
       assert.strictEqual(b._ingestP2pFileSend({ object: bodies[0] }, { name: 'seller' }, sends[0]).status, 'awaiting_key');
-
-      // A planted row with a different blob count is replaced by the proven frame.
-      const c = new Peer({ listen: false });
-      assert.strictEqual(c._ingestP2pFileSend({ object: Object.assign({}, unproven, { blobTotal: 3 }) }, { name: 'mallory' }).status, 'awaiting_key');
-      assert.strictEqual(c.pendingSealedBlobs[rowKey].total, 3);
-      assert.strictEqual(c._ingestP2pFileSend({ object: bodies[0] }, { name: 'seller' }, sends[0]).status, 'awaiting_key');
-      assert.strictEqual(c.pendingSealedBlobs[rowKey].total, doc.blobTotal);
     });
 
     it('a DocumentRequest for a per-blob document must name one held blob', function () {
@@ -811,7 +660,7 @@ describe('types/document (sealed blob tree)', function () {
       const paid = framesFor(seller, 2000);
       const spam = Array.from({ length: 4 }, () => framesFor(seller, 2000));
       const buyer = new Peer({ listen: false, pendingSealedTtlMs: 1000, maxPendingSealedDeliveries: 3, maxPendingSealedRowsPerOrigin: 100 });
-      buyer.blobTransfers.expectTransfer({ documentId: paid.documentId, merkleRootHex: paid.doc.merkleRootHex, total: paid.doc.blobTotal, treeVersion: 2 });
+      buyer.blobTransfers.expectTransfer({ documentId: paid.documentId, merkleRootHex: paid.doc.merkleRootHex, total: paid.doc.blobTotal });
       buyer._ingestP2pFileSend({ object: paid.bodies[0] }, { name: 'seller' }, paid.sends[0]);
       const key = `${paid.documentId}|${paid.doc.merkleRootHex}`;
       assert.strictEqual(buyer.pendingSealedBlobs[key].pinned, true);
@@ -905,10 +754,9 @@ describe('types/document (sealed blob tree)', function () {
       assert.strictEqual(out.error, 'key is not derived from the blob content');
     });
 
-    it('repeated content under a legacy v1 request uses the count-bound v2 root', function () {
-      const doc = Document.seal(Buffer.alloc(2032 * 4, 3), { chunkBytes: 2048, treeVersion: 1 });
+    it('repeated content is committed by the count-bound root', function () {
+      const doc = Document.seal(Buffer.alloc(2032 * 4, 3), { chunkBytes: 2048 });
       assert.strictEqual(new Set(doc.blobs.map((b) => b.blobHashHex)).size, 1);
-      assert.strictEqual(doc.treeVersion, DOCUMENT_TREE_VERSION);
       const buyer = Document.fromRecord(doc.record());
       for (const b of doc.blobs) assert.ok(buyer.acceptBytes(b.index, doc.bytesFor(b.index)));
     });

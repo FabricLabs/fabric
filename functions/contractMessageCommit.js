@@ -12,7 +12,7 @@
  */
 
 const Key = require('../types/key');
-const { pubkeyXOnly } = require('./groupChatSeal');
+const { pubkeyXOnly } = require('./pubkey');
 
 /**
  * Canonical UTF-8 message for BIP340 MessageReceipt signatures.

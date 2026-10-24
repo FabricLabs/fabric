@@ -41,6 +41,7 @@ const { sortInputs, sortOutputs } = require('../functions/bip69');
 const { BIP125_SEQUENCE_LOCKTIME_ONLY } = require('../functions/bip125');
 const { networkForFabricName } = require('./policy');
 const groupChatSeal = require('../functions/groupChatSeal');
+const { pubkeyXOnly } = require('../functions/pubkey');
 const { MAX_MESSAGE_SIZE } = require('../constants');
 
 bitcoin.initEccLib(ecc);
@@ -435,7 +436,7 @@ function sealRoundMessage (body, recipientPubkey) {
   const normalized = fromBody(body);
   if (!normalized || !ROUND_TYPES.includes(normalized.type)) fail('only round messages are sealed');
   if (!normalized.signature) fail('seal a signed body');
-  const to = groupChatSeal.pubkeyXOnly(recipientPubkey);
+  const to = pubkeyXOnly(recipientPubkey);
   if (!to) fail('recipient must be a public key');
   const seal = groupChatSeal.sealParticipantGroupChatBody({
     body: JSON.stringify(normalized),

@@ -38,6 +38,7 @@ const { payments, networks, script, Psbt } = bitcoin;
 const psbtutils = require('bitcoinjs-lib/src/psbt/psbtutils');
 const { sortPubkeysBip67 } = require('../functions/bip67');
 const { taprootPsbtInputFields } = require('../functions/bip371');
+const { BIP125_SEQUENCE_FINAL, BIP125_SEQUENCE_LOCKTIME_ONLY } = require('../functions/bip125');
 const { aggregateXonly } = require('../functions/musig2');
 const contractProgramBind = require('../functions/contractProgramBind');
 
@@ -114,7 +115,6 @@ const DEFAULT_CSV_BLOCKS = 144;
 const CLTV_TIMESTAMP_THRESHOLD = Number('500000000');
 /** nLockTime / nSequence max (2^32 − 1). Avoid a 32-bit hex literal. */
 const MAX_LOCKTIME = (2 ** 32) - 1;
-const SEQUENCE_NONFINAL = MAX_LOCKTIME - 1;
 
 function networkForFabricName (name = '') {
   const n = String(name || '').trim().toLowerCase();
@@ -1208,7 +1208,7 @@ function prepareLeafPsbt (opts = {}) {
   } else if (afterLock && afterLock.type === 'cltv') {
     locktime = afterLock.value;
     // CLTV requires a non-final nSequence on the input.
-    if (sequence == null || sequence === MAX_LOCKTIME) sequence = SEQUENCE_NONFINAL;
+    if (sequence == null || sequence === BIP125_SEQUENCE_FINAL) sequence = BIP125_SEQUENCE_LOCKTIME_ONLY;
   }
 
   const internalPubkey = resolveTaprootInternalPubkey(opts, opts.policy || null);

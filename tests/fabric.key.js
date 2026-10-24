@@ -203,6 +203,17 @@ describe('@fabric/core/types/key', function () {
       assert.ok(target.address.length >= 62 && target.address.length <= 90);
     });
 
+    it('derives p2tr addresses matching the BIP-86 test vectors', function () {
+      const key = new Key({
+        mnemonic: 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about',
+        purpose: 86,
+        network: 'main'
+      });
+      assert.equal(key.deriveAddress(0, 0, 'p2tr').address, 'bc1p5cyxnuxmeuwuvkwfem96lqzszd02n6xdcjrs20cac6yqjjwudpxqkedrcr');
+      assert.equal(key.deriveAddress(1, 0, 'p2tr').address, 'bc1p4qhjn9zdvkux4e44uhx8tc55attvtyu358kutcqkudyccelu0was9fqzwh');
+      assert.equal(key.deriveAddress(0, 1, 'p2tr').address, 'bc1p3qkhfews2uk44qtvauqyr2ttdsw7svhkl9nkm9s9c3x4ax5h60wqwruhk7');
+    });
+
     it('can sign messages using Schnorr signatures', function () {
       const key = new Key({ private: '1111111111111111111111111111111111111111111111111111111111111111' });
       const message = 'test message';
