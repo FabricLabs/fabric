@@ -830,8 +830,52 @@ describe('services/market (Phase 5 hardening)', function () {
     const forged = createBlobQuote({ documentId: m.documentId, blobIndex: 0, keyHex: crypto.randomBytes(32).toString('hex'), amountSats: P }).quote;
     m.market._onBlobQuote({ quote: Object.assign({}, forged, { keyHashHex: m.doc.paymentHashFor(0) }), origin: 'alpha' });
     assert.strictEqual(quoted.length, 0, 'an unsolicited quote is ignored');
-    for (const s of m.market.listSessions()) assert.strictEqual(s.paymentHashHex, m.doc.paymentHashFor(s.blobIndex));
+    const sessions = m.market.listSessions();
+    assert.strictEqual(sessions.length, m.doc.blobTotal);
+    for (const s of sessions) assert.strictEqual(s.paymentHashHex, m.doc.paymentHashFor(s.blobIndex));
+    assert.strictEqual(paid.length, m.doc.blobTotal, 'default market pays every blob');
     assert.ok(paid.every((h, i) => h === m.doc.paymentHashFor(i)));
+  });
+
+  it('a quote-enabled session waits for the quote even when the ciphertext came first', async function () {
+    for (const late of [true, false]) {
+      const m = buildL1({ market: { quotes: true, prepayTimeoutMs: 60000 } });
+      m.ctl.reveal = false;
+      const paid = [];
+      m.market.attach({
+        peer: m.buyer,
+        pay: async (s) => { paid.push(s.htlc.paymentHashHex); return payer(m, [])(s); },
+        verify: async () => true
+      });
+      want(m);
+      // The seller sends ciphertext but (not yet) a quote.
+      await m.market.tick();
+      const sessions = m.market.listSessions();
+      assert.strictEqual(sessions.length, m.doc.blobTotal);
+      assert.strictEqual(paid.length, 0, 'never the static hash while a quote was asked for');
+      assert.ok(sessions.every((s) => s.status === 'quote_pending'));
+      if (late) {
+        const seller = m.sellers.alpha;
+        seller.settings.sealedBlobPaymentMode = 'perBuyer';
+        for (const s of sessions) {
+          const written = [];
+          seller.connections.buyer = { _writeFabric: (buf) => written.push(buf) };
+          seller._sendSealedBlobQuote(m.documentId, s.blobIndex, 'buyer');
+          m.ingest(written, 'alpha');
+        }
+        await m.market.tick();
+        assert.strictEqual(paid.length, m.doc.blobTotal);
+        for (const s of m.market.listSessions()) {
+          assert.notStrictEqual(s.paymentHashHex, m.doc.paymentHashFor(s.blobIndex));
+          assert.ok(paid.includes(s.paymentHashHex));
+        }
+      } else {
+        m.clock.t += 60000;
+        await m.market.tick();
+        assert.strictEqual(paid.length, 0);
+        assert.ok(sessions.every((s) => s.status === 'failed' && /no quote/.test(s.error)), JSON.stringify(sessions.map((s) => [s.status, s.error])));
+      }
+    }
   });
 
   describe('channel rail', function () {

@@ -38,13 +38,13 @@ PR #188 production hardening. Breaking for wire peers, document publishers, chan
   - **`federationReserveLedger`:** `payoutMinConfirmations` defaults to **6** (was 1); payouts match by scriptPubKey; `unsettlePegOutPayout` reverses a settlement whose payout was reorged out.
 - **Offer book renamed `Book`** (`types/book.js`, was `DocumentOfferBook` in `types/offerBook.js`). `DocumentOfferBook` and `@fabric/core/types/offerBook` remain as deprecated aliases.
 - **PR #188 review, third round:**
-  - **Per-buyer quotes are opt-in** (`Market` `quotes`, default `false`). The quote's wrapped key can only be checked after the HTLC is claimed, so a seller can take payment without a working key (the buyer keeps `documentBlobQuoteFraud` evidence). By default the market pays the committed static hash, which is atomic, and ignores unsolicited quotes.
+  - **Per-buyer quotes are opt-in** (`Market` `quotes`, default `false`). The quote's wrapped key can only be checked after the HTLC is claimed, so a seller can take payment without a working key (the buyer keeps `documentBlobQuoteFraud` evidence). By default the market pays the committed static hash, which is atomic, and ignores unsolicited quotes. With `quotes` on, a session pays only once both the ciphertext and the quote are in (never the static hash because the ciphertext arrived first), and fails at `prepayTimeoutMs` without a quote.
   - **Plain blob lists that pad to the same root** (a file of identical chunks) are committed with the count-bound v2 root (`plainBlobRoot`, `treeVersion: 2` on the index) instead of being undeliverable; other plain lists keep the legacy root. `verifySealedBlobFrame` takes the tree version from the trusted offer, never the frame.
   - **NOISE:** the handshake deadline runs until `options.verify` accepts the peer, not just until the handshake splits.
   - **Beacon:** a late `recordEpochFromBlock` for an older best-chain block returns without pruning while the recorded tip is still on the best chain.
   - **`EncryptedPromise`:** sealing drops the settings the plaintext came from; `decrypt` applies the size limit.
   - **`Tree` non-inclusion** sorts and compares leaves by their Merkle bytes, so `'a'`, `'0a'`, and `Buffer.from([0x0a])` are one leaf. Roots over buffers or lowercase even-length hex are unchanged.
-  - **CLI `/publish`** refuses a paid rate under the 716-sat HTLC minimum.
+  - **CLI `/publish`** refuses a paid rate whose advertised per-blob price (`ceil(rate / blobs)`, counted as the Peer seals and chunks it) is under the 716-sat HTLC minimum.
 - **Downstream:** Hub listens for `federation:round-cancelled`, handles `tick` action objects and the market's new states, merges `blobsPartial` inventory pages, and gives peg-out tests 6 confirmations. Apps that build `Tree`s over untrusted leaves should check `mutated`.
 
 ## 2026-10-22

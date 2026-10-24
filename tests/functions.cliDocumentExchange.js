@@ -91,6 +91,28 @@ describe('functions/cliDocumentExchange (headless CLI surface)', function () {
     assert.ok(!exchange.publish('doc1', 1000).ok); // peer not ready
   });
 
+  it('publish sets the floor per advertised blob, as a real Peer advertises them', function () {
+    const { HTLC_MINIMUM_SATS } = require('../constants');
+    const Peer = require('../types/peer');
+    const Message = require('../types/message');
+    const { DEFAULT_CHUNK_BYTES } = require('../functions/documentBlobManifest');
+    const peer = new Peer({ listen: false });
+    const exchange = new CliDocumentExchange({ getPeer: () => peer, getFilesystem: () => null });
+    // One chunk of plaintext, two once sealed (the 16-byte GCM tag spills over).
+    exchange.documents.d = Buffer.alloc(DEFAULT_CHUNK_BYTES - 8, 0x61);
+    const low = exchange.publish('d', HTLC_MINIMUM_SATS);
+    assert.strictEqual(low.ok, false);
+    assert.match(low.error, new RegExp(`at least ${2 * HTLC_MINIMUM_SATS}`));
+    assert.ok(exchange.publish('d', 2 * HTLC_MINIMUM_SATS).ok);
+    const written = [];
+    peer.connections.b = { _writeFabric: (buf) => { written.push(buf); return true; } };
+    peer._respondInventoryFromLocalDocuments({ object: { offerBtc: true } }, { name: 'b' });
+    const item = JSON.parse(Message.fromBuffer(written[0]).body).items[0];
+    const blobs = item.blobs || (item.documentBlobIndex && item.documentBlobIndex.blobs);
+    assert.strictEqual(blobs.length, 2);
+    assert.ok(blobs.every((b) => Number(b.rateSats) >= HTLC_MINIMUM_SATS), JSON.stringify(blobs.map((b) => b.rateSats)));
+  });
+
   it('publish refuses a paid rate under the HTLC minimum', function () {
     const { HTLC_MINIMUM_SATS } = require('../constants');
     const published = [];

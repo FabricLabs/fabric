@@ -26,6 +26,7 @@ const {
   listRefundCandidates
 } = require('./documentMarket');
 const inventoryHtlc = require('./inventoryHtlc');
+const { DEFAULT_CHUNK_BYTES } = require('./documentBlobManifest');
 const { contentHashHexFromObject } = require('./documentPaymentHash');
 const {
   extractPreimageFromClaimTx,
@@ -118,6 +119,22 @@ function readResolvedImportFile (absolutePath) {
  * @property {function(): string} [getNetworkName]
  * @property {function(string): void} [onWarning]
  */
+
+/**
+ * Blobs the Peer will advertise for a priced document of `plainBytes`:
+ * sealed as AES-256-GCM (16-byte tag) unless `sealPricedDocuments` is off,
+ * cut at `inventoryBlobChunkBytes`.
+ * @private
+ * @param {object} peer
+ * @param {number} plainBytes
+ * @returns {number}
+ */
+function advertisedBlobCount (peer, plainBytes) {
+  const settings = (peer && peer.settings) || {};
+  const bytes = plainBytes + (settings.sealPricedDocuments !== false ? 16 : 0);
+  const chunk = Math.max(1, Number(settings.inventoryBlobChunkBytes) || DEFAULT_CHUNK_BYTES);
+  return Math.max(1, Math.ceil(bytes / chunk));
+}
 
 /**
  * Structured result for CLI / headless callers.
@@ -308,14 +325,18 @@ class CliDocumentExchange {
     if (!Number.isFinite(rate) || rate < 0) {
       return { ok: false, error: 'rateSats must be a non-negative number' };
     }
-    if (rate > 0 && rate < HTLC_MINIMUM_SATS) {
-      return { ok: false, error: `rateSats must be 0 (free) or at least the ${HTLC_MINIMUM_SATS}-sat HTLC minimum; buyers cannot pay less` };
-    }
     const peer = this._peer();
     if (!peer || typeof peer._publishDocument !== 'function') {
       return { ok: false, error: 'Peer not ready.' };
     }
     const body = this.documents[id].toString('utf8');
+    if (rate > 0) {
+      // The Peer advertises `ceil(rate / blobs)` per blob; buyers skip blobs under the minimum.
+      const blobs = advertisedBlobCount(peer, Buffer.byteLength(body, 'utf8'));
+      if (Math.ceil(rate / blobs) < HTLC_MINIMUM_SATS) {
+        return { ok: false, error: `rateSats must be 0 (free) or at least ${HTLC_MINIMUM_SATS * blobs} (${blobs} blob${blobs === 1 ? '' : 's'} × the ${HTLC_MINIMUM_SATS}-sat HTLC minimum); buyers cannot pay less per blob` };
+      }
+    }
     const filesystem = this._fs();
     if (filesystem && typeof filesystem.touchDir === 'function') {
       filesystem.touchDir('documents');

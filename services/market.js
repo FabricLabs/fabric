@@ -1246,20 +1246,24 @@ class Market extends Service {
   }
 
   /**
-   * Pay once the ciphertext is verified; fail the session when the seller
-   * never sends verifiable ciphertext within `prepayTimeoutMs`.
+   * Pay once the ciphertext is verified (and, with `quotes`, the quote is
+   * accepted); fail the session when the seller sends neither within
+   * `prepayTimeoutMs`.
    * @private
    */
   async _advancePrepay (session) {
     if (session.status !== 'quote_pending') return session;
-    if (this._ciphertextVerified(session)) {
+    const verified = this._ciphertextVerified(session);
+    const quoted = this.settings.quotes !== true || !!session.quote;
+    if (verified && quoted) {
       session.ciphertextVerifiedAt = this._now();
       this.emit('sessionVerified', session);
       return this._fund(session);
     }
     const timeout = Math.max(0, Number(this.settings.prepayTimeoutMs) || 0);
     if (timeout && this._now() - (session.prepayAt || 0) >= timeout) {
-      return this._fail(session, 'seller sent no verifiable ciphertext before payment', { kind: 'prepay' });
+      const missing = verified ? 'no quote' : 'no verifiable ciphertext';
+      return this._fail(session, `seller sent ${missing} before payment`, { kind: 'prepay' });
     }
     return session;
   }
