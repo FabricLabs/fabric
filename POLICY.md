@@ -148,7 +148,12 @@ Several application types use codes **outside** this range (see [`constants.js`]
 | `0x4223` | 16931 | `P2P_MUSIG_SEND_PROPOSAL` † | Coordinator aggnonce | ❌ No |
 | `0x4224` | 16932 | `P2P_MUSIG_REPLY_TO_PROPOSAL` † | Partial signature | ❌ No |
 | `0x4225` | 16933 | `P2P_MUSIG_ACCEPT_PROPOSAL` † | Aggregated BIP-340 signature | ❌ No |
+| `0x4230` | 16944 | `SITE_LOGIN_REQUEST` † | Site asks for a login to its own origin (`fabric:` frame; site signature optional) | ❌ No |
+| `0x4231` | 16945 | `SITE_LOGIN_RESPONSE` † | Login signed by the identity, bound to origin + nonce + expiry | ❌ No |
+| `0x4232` | 16946 | `FABRIC_SIGN_REQUEST` † | Linked device asks a desktop signer to answer a site login | ❌ No |
 | `0x81`-`0x8F` (legacy draft) | … | CHAT / ACCEPT / REJECT / PAYMENT_* | Not all registered in `constants.js` — see Remaining work | ⚠️ Varies |
+
+The site-login types travel as `fabric:<frame>` strings between a page, Passport, and a desktop app (`functions/fabricUri`, `functions/fabricSiteLogin`), not over the mesh: `Peer` has no handler for them and does not relay them. Like the MuSig rows they are JS-only for now — `src/constants.h` does not list them.
 
 ### Bitcoin Integration Types
 

@@ -6,7 +6,7 @@
  * A `Market` holds a sats budget and a list of wanted documents (by id,
  * optionally Tree root + blob total). On each `tick()` it refreshes peer
  * inventories (filtered by `merkleRootHex` / `maxSats`), asks the local
- * `Book` for the cheapest / fastest / most reliable blob plan,
+ * `DocumentBook` for the cheapest / fastest / most reliable blob plan,
  * and — when the plan fits `perPlanMaxSats` and the remaining budget — opens
  * one purchase session per blob (`createDocumentPurchaseSession`, one HTLC per
  * seller per blob). Paid sealed blobs are verified before paying: the seller's
@@ -29,21 +29,19 @@
  *
  * Follows the Fabric Agent contract: `start()` / `stop()` / `tick()`, state
  * under `_state.content`, `debug` / `error` events. No wire changes: it only
- * drives existing `Peer` / `Channel.Book` methods and existing message types.
+ * drives existing `Peer` / `ChannelBook` methods and existing message types.
  */
 
 const crypto = require('crypto');
 const bitcoin = require('bitcoinjs-lib');
 const { HTLC_MINIMUM_SATS } = require('../constants');
 const Service = require('../types/service');
-const Book = require('../types/book');
-const inventoryHtlc = require('../functions/inventoryHtlc');
+const DocumentBook = require('../types/documentBook');
+const Htlc = require('../types/htlc');
+const { networkForFabricName } = require('../types/policy');
 const { assertTestNetwork } = require('../functions/bitcoinNetworkAllowlist');
 const { contentHashHexFromObject } = require('../functions/documentPaymentHash');
-const {
-  createDocumentPurchaseSession,
-  settlementDedupeKey
-} = require('../functions/documentMarket');
+const { settlementDedupeKey } = require('../functions/documentBlobManifest');
 
 /** @private */
 const HEX64 = /^[0-9a-f]{64}$/i;
@@ -124,7 +122,7 @@ class Market extends Service {
    * @param {Function} [settings.tipHeight] `() => number` chain tip (else `attach({ tipHeight })`, the channel book, or `onBlock`).
    * @param {Function} [settings.now] clock override (`() => ms`), for tests.
    * @param {string} [settings.network='regtest'] Bitcoin test network (mainnet refused).
-   * @param {Object} [settings.book] `Book` settings.
+   * @param {Object} [settings.book] `DocumentBook` settings.
    */
   constructor (settings = {}) {
     super(settings);
@@ -152,7 +150,7 @@ class Market extends Service {
     this.settings.network = assertTestNetwork(this.settings.network, 'Market');
 
     this.peer = null;
-    this.book = (settings.book instanceof Book) ? settings.book : new Book(this.settings.book || {});
+    this.book = (settings.book instanceof DocumentBook) ? settings.book : new DocumentBook(this.settings.book || {});
     this._pay = null;
     this._verify = null;
     this._addressFunded = null;
@@ -191,7 +189,7 @@ class Market extends Service {
   /**
    * @param {Object} deps
    * @param {Object} deps.peer `@fabric/core` Peer (inventory, requests, delivery events).
-   * @param {Book} [deps.book] shared offer book (defaults to the agent's own).
+   * @param {DocumentBook} [deps.book] shared offer book (defaults to the agent's own).
    * @param {Function} [deps.pay] `async (session) => txid | { txid, txHex }` — funds the session HTLC address.
    * @param {Function} [deps.verify] `async (session, txid) => boolean` — L1 / Hub payment proof.
    * @param {Function} [deps.addressFunded] `async (address, session) => boolean | { funded, txid?, txHex? } | null` — `null` = unknown.
@@ -199,11 +197,11 @@ class Market extends Service {
    * @param {Function} [deps.broadcast] `async (txHex, session) => txid` — broadcast a signed refund.
    * @param {Function} [deps.confirmations] `async (txid) => number` — refund confirmation depth.
    * @param {Function} [deps.tipHeight] `() => number` chain tip.
-   * @param {Object} [deps.channels] `Channel.Book` (or `{ sessionFor, tipHeight, publish }`).
+   * @param {Object} [deps.channels] `ChannelBook` (`types/channelBook`, or `{ sessionFor, tipHeight, publish }`).
    * @returns {Market}
    */
   attach (deps = {}) {
-    if (deps.book instanceof Book) this.book = deps.book;
+    if (deps.book instanceof DocumentBook) this.book = deps.book;
     if (typeof deps.pay === 'function') this._pay = deps.pay;
     if (typeof deps.verify === 'function') this._verify = deps.verify;
     if (typeof deps.addressFunded === 'function') this._addressFunded = deps.addressFunded;
@@ -282,8 +280,8 @@ class Market extends Service {
   /** @private the channel session a purchase was offered on */
   _channelOf (session) {
     if (!this._channels) return null;
-    const byId = this._channels.sessions && typeof this._channels.sessions.get === 'function'
-      ? this._channels.sessions.get(String(session.channelId))
+    const byId = typeof this._channels.get === 'function'
+      ? this._channels.get(String(session.channelId))
       : null;
     if (byId) return byId;
     const ch = this._channels.sessionFor(session.sellerId, session.sellerPubkeyHex || null);
@@ -1029,7 +1027,7 @@ class Market extends Service {
       htlc = built.htlc;
       paymentAddress = built.htlc ? built.htlc.paymentAddress : '';
     }
-    const session = createDocumentPurchaseSession({
+    const session = DocumentBook.createDocumentPurchaseSession({
       documentId: want.documentId,
       seller: offer.sellerAddress || offer.sellerId,
       contentHashHex,
@@ -1112,7 +1110,7 @@ class Market extends Service {
     }
     const ampSigner = offer.ampSignerPubkey || offer.wireSignerPubkey ||
       (offer.htlc && (offer.htlc.ampSignerPubkey || offer.htlc.sellerPublicKeyHex)) || null;
-    if (ampSigner && !inventoryHtlc.pubkeysMatchXOnly(ampSigner, sellerHex)) {
+    if (ampSigner && !Htlc.pubkeysMatchXOnly(ampSigner, sellerHex)) {
       return { error: 'offer AMP signer does not match resolved seller pubkey — refusing to fund' };
     }
     const lockError = this._lockError(lock);
@@ -1124,18 +1122,17 @@ class Market extends Service {
   /** @private buyer-bound HTLC for one payment hash */
   _htlcFor (opts) {
     try {
-      const verdict = inventoryHtlc.validateInventoryHtlcOffer({
-        networkName: this._htlcNetwork(),
-        sellerPubkeyCompressed: opts.sellerHex,
-        buyerRefundPubkeyCompressed: opts.buyerHex,
-        paymentHash32: opts.paymentHashHex,
-        refundLocktimeHeight: opts.lock,
+      const verdict = Htlc.validateOffer({
+        network: this._htlcNetwork(),
+        claimPubkey: opts.sellerHex,
+        refundPubkey: opts.buyerHex,
+        paymentHash: opts.paymentHashHex,
+        refundLocktime: opts.lock,
         paymentAddress: opts.offerAddress
       });
       if (!verdict.ok) return { error: verdict.error || 'HTLC offer validation failed' };
-      const built = verdict.built;
-      const hints = inventoryHtlc.buildHtlcFundingHints({
-        paymentAddress: built.address,
+      const built = verdict.htlc;
+      const hints = built.fundingHints({
         amountSats: opts.amountSats,
         label: String(opts.documentId).slice(0, 32)
       });
@@ -1836,7 +1833,7 @@ class Market extends Service {
     }
     if (session.refund) return session;
     const tip = this.tipHeight();
-    if (tip == null || !inventoryHtlc.refundLocktimeMature(tip, session.htlc.refundLocktimeHeight)) return session;
+    if (tip == null || !Htlc.refundMature(tip, session.htlc.refundLocktimeHeight)) return session;
     const built = await this.buildRefund(session.settlementId);
     if (!built.ok) {
       if (session.refundError !== built.error) this.emit('warning', `[MARKET] refund for ${session.settlementId} not ready: ${built.error}`);
@@ -1876,7 +1873,7 @@ class Market extends Service {
     if (!dest) return { ok: false, error: 'settings.refundAddress required' };
     let bundle;
     try {
-      bundle = inventoryHtlc.prepareInventoryHtlcBuyerRefundPsbt({
+      bundle = Htlc.prepareRefundPsbt({
         networkName: this._htlcNetwork(),
         fundedTxHex,
         paymentAddress: session.htlc.paymentAddress,
@@ -1895,7 +1892,7 @@ class Market extends Service {
     const priv = this._refundKeyFor(session);
     if (priv) {
       try {
-        const signed = inventoryHtlc.signAndExtractInventoryHtlcBuyerRefund(bundle, priv);
+        const signed = Htlc.signRefund(bundle, priv);
         txHex = signed.txHex;
         txid = signed.txid;
       } catch (e) {
@@ -1918,7 +1915,7 @@ class Market extends Service {
       const priv = Buffer.isBuffer(c) ? c : (/^[0-9a-f]{64}$/i.test(String(c)) ? Buffer.from(String(c), 'hex') : null);
       if (!priv || priv.length !== 32) continue;
       try {
-        const pub = Buffer.from(inventoryHtlc.signerFromPriv32(priv).publicKey).toString('hex');
+        const pub = Buffer.from(Htlc.signerFromPriv32(priv).publicKey).toString('hex');
         if (!want || pub === want) return priv;
       } catch (_) { /* not a key */ }
     }
@@ -1987,7 +1984,7 @@ class Market extends Service {
     let tx;
     try { tx = bitcoin.Transaction.fromHex(String(txHex).trim()); } catch (_) { return []; }
     const txid = tx.getId();
-    const network = inventoryHtlc.networkForFabricName(this._htlcNetwork());
+    const network = networkForFabricName(this._htlcNetwork());
     const out = [];
     const sessions = Object.values(this._state.content.sessions).filter((s) => s.rail !== 'channel' && s.paymentAddress && s.htlc);
     // A funding output belongs to one session: the live one for that address,
@@ -1995,7 +1992,7 @@ class Market extends Service {
     // Several sessions share an address when the same seller/blob/lock repeats.
     const claimed = new Set();
     for (const s of sessions) {
-      const vout = inventoryHtlc.findP2trVoutForAddress(tx, s.paymentAddress, network);
+      const vout = Htlc.findVout(tx, s.paymentAddress, network);
       if (vout < 0) continue;
       if (s.txid === txid && !s.fundedTxHex) s.fundedTxHex = String(txHex).trim();
       if (claimed.has(s.paymentAddress)) continue;
@@ -2015,7 +2012,7 @@ class Market extends Service {
       if (!s.txid || s.txid === txid || this._bucketOf(s) !== 'locked') continue;
       const spends = tx.ins.some((i) => Buffer.from(i.hash).reverse().toString('hex') === s.txid && (s.fundingVout == null || i.index === Number(s.fundingVout)));
       if (!spends) continue;
-      const hit = inventoryHtlc.extractPreimageFromClaimTx(tx, s.paymentHashHex || s.contentHashHex);
+      const hit = Htlc.extractPreimage(tx, s.paymentHashHex || s.contentHashHex);
       if (hit.ok) {
         this.claimObserved(s.settlementId, { preimageHex: hit.preimageHex, txid });
         out.push({ settlementId: s.settlementId, kind: 'claim' });

@@ -2,7 +2,7 @@
 
 /**
  * @fileoverview Locally held offer book for the L1:L1 coinjoin market
- * (`functions/coinjoin`). Makers gossip signed `CoinjoinOffer` bodies; each
+ * ({@link Coinjoin}). Makers gossip signed `CoinjoinOffer` bodies; each
  * node verifies and keeps its own book. A taker draws makers at random with
  * {@link CoinjoinBook#choose}: fee is a hard limit, not a ranking (always
  * taking the cheapest makers would let one cheap Sybil fill every round), and
@@ -13,8 +13,8 @@
  */
 
 const crypto = require('crypto');
-const coinjoin = require('../functions/coinjoin');
-const fidelityBond = require('../functions/fidelityBond');
+const Coinjoin = require('./coinjoin');
+const OrderBook = require('./orderBook');
 
 /**
  * Offers held before the oldest is evicted.
@@ -27,32 +27,17 @@ const MAX_OFFERS = 10000;
  */
 const MAX_OFFERS_PER_MAKER = 10;
 /**
- * Cancels remembered so a replayed offer stays dead.
- * @private
- */
-const MAX_CANCELLED = 10000;
-/**
- * Cancels one key may hold for offers this book has not seen.
- * @private
- */
-const MAX_PENDING_CANCELS_PER_MAKER = 100;
-/**
  * Selection weight of an unbonded maker, as a share of the mean bond value.
  * @private
  */
 const NO_BOND_SHARE = 0.1;
 
 /** @private */
-function cancelKey (offerId, makerPubkey) {
-  return `${offerId}:${makerPubkey}`;
-}
-
-/** @private */
 function defaultRandom () {
   return crypto.randomBytes(6).readUIntBE(0, 6) / 2 ** 48;
 }
 
-class CoinjoinBook {
+class CoinjoinBook extends OrderBook {
   /**
    * @param {Object} [settings]
    * @param {string} [settings.network='regtest'] only offers for this network are held
@@ -64,182 +49,38 @@ class CoinjoinBook {
    * @param {Function} [settings.now] clock in ms (tests)
    */
   constructor (settings = {}) {
-    this.settings = Object.assign({
-      network: 'regtest',
+    super(Object.assign({
       maxOffers: MAX_OFFERS,
       maxOffersPerMaker: MAX_OFFERS_PER_MAKER,
-      maxCancelled: MAX_CANCELLED,
-      maxPendingCancelsPerMaker: MAX_PENDING_CANCELS_PER_MAKER,
-      noBondShare: NO_BOND_SHARE,
-      now: () => Date.now()
-    }, settings);
-    this.settings.network = String(this.settings.network).toLowerCase();
-    // offer id → `{ id, offer, seq }`
-    this._offers = new Map();
-    // `offerId:makerPubkey` → the cancelled offer's `expiresAt`, or null while it is not held
-    this._cancelled = new Map();
-    // maker → keys of its cancels for offers not held
-    this._pendingCancels = new Map();
+      noBondShare: NO_BOND_SHARE
+    }, settings), {
+      codec: Coinjoin,
+      entryType: Coinjoin.BODY_TYPES.OFFER,
+      cancelType: Coinjoin.BODY_TYPES.CANCEL,
+      field: 'offer',
+      idField: 'offerId',
+      noun: 'offer',
+      capacitySetting: 'maxOffers',
+      perMakerSetting: 'maxOffersPerMaker'
+    });
     // maker → `{ ok, value, outpoint, reason, checkedAt }`
     this._bonds = new Map();
-    this._seq = 0;
-  }
-
-  /** @returns {number} offers held */
-  get size () {
-    return this._offers.size;
   }
 
   /**
-   * Verify and hold a signed `CoinjoinOffer` body.
-   * @param {Object} body
-   * @returns {{ ok: boolean, id: (string|null), reason: (string|null), duplicate: (boolean|undefined) }}
+   * Bond results go with a maker's last offer.
+   * @protected
    */
-  ingestOffer (body) {
-    if (!body || body.type !== coinjoin.BODY_TYPES.OFFER) return { ok: false, id: null, reason: 'not a CoinjoinOffer' };
-    const v = coinjoin.verifyBody(body);
-    if (!v.ok) return { ok: false, id: null, reason: v.reason };
-    const offer = v.body;
-    if (offer.network !== this.settings.network) return { ok: false, id: v.id, reason: 'wrong network' };
-    if (offer.expiresAt <= this.settings.now()) return { ok: false, id: v.id, reason: 'offer expired' };
-    const cancelled = cancelKey(v.id, offer.makerPubkey);
-    if (this._cancelled.has(cancelled)) {
-      this._confirmCancel(cancelled, offer.expiresAt);
-      return { ok: false, id: v.id, reason: 'offer cancelled' };
-    }
-    if (this._offers.has(v.id)) return { ok: false, id: v.id, reason: 'duplicate offer', duplicate: true };
-    this.prune();
-    const mine = [...this._offers.values()].filter((row) => row.offer.makerPubkey === offer.makerPubkey);
-    if (mine.length >= this.settings.maxOffersPerMaker) this._offers.delete(mine[0].id);
-    while (this._offers.size >= this.settings.maxOffers) {
-      this._offers.delete(this._offers.keys().next().value);
-    }
-    this._offers.set(v.id, { id: v.id, offer, seq: ++this._seq });
-    return { ok: true, id: v.id, reason: null };
-  }
-
-  /**
-   * Apply a signed `CoinjoinOfferCancel` from the offer's maker. A cancel for
-   * an offer not held yet is remembered with its signer, so the offer cannot
-   * arrive later from that maker; another key's cancel never blocks it.
-   * @param {Object} body
-   * @returns {{ ok: boolean, id: (string|null), reason: (string|null) }}
-   */
-  cancel (body) {
-    if (!body || body.type !== coinjoin.BODY_TYPES.CANCEL) return { ok: false, id: null, reason: 'not a CoinjoinOfferCancel' };
-    const v = coinjoin.verifyBody(body);
-    if (!v.ok) return { ok: false, id: null, reason: v.reason };
-    const { offerId, makerPubkey } = v.body;
-    const held = this._offers.get(offerId);
-    if (held && held.offer.makerPubkey !== makerPubkey) return { ok: false, id: offerId, reason: 'cancel is not from the maker' };
-    this._offers.delete(offerId);
-    this._rememberCancelled(offerId, makerPubkey, held ? held.offer.expiresAt : null);
-    return { ok: true, id: offerId, reason: null };
-  }
-
-  /** @private */
-  _rememberCancelled (offerId, makerPubkey, expiresAt) {
-    const key = cancelKey(offerId, makerPubkey);
-    if (this._cancelled.has(key)) {
-      if (expiresAt != null) this._confirmCancel(key, expiresAt);
-      return;
-    }
-    if (expiresAt == null) {
-      const pending = this._pendingCancels.get(makerPubkey);
-      if (pending && pending.size >= this.settings.maxPendingCancelsPerMaker) {
-        this._forgetCancel(pending.values().next().value);
-      }
-    }
-    if (this._cancelled.size >= this.settings.maxCancelled) this._evictCancel();
-    this._cancelled.set(key, expiresAt);
-    if (expiresAt == null) {
-      if (!this._pendingCancels.has(makerPubkey)) this._pendingCancels.set(makerPubkey, new Set());
-      this._pendingCancels.get(makerPubkey).add(key);
-    }
-  }
-
-  /** @private */
-  _confirmCancel (key, expiresAt) {
-    this._cancelled.set(key, expiresAt);
-    this._dropPending(key);
-  }
-
-  /** @private */
-  _forgetCancel (key) {
-    this._cancelled.delete(key);
-    this._dropPending(key);
-  }
-
-  /** @private */
-  _dropPending (key) {
-    const maker = key.slice(key.indexOf(':') + 1);
-    const pending = this._pendingCancels.get(maker);
-    if (pending && pending.delete(key) && !pending.size) this._pendingCancels.delete(maker);
-  }
-
-  /** @private */
-  _evictCancel () {
-    const now = this.settings.now();
-    for (const [key, expiresAt] of this._cancelled) {
-      if (expiresAt != null && expiresAt <= now) this._cancelled.delete(key);
-    }
-    if (this._cancelled.size < this.settings.maxCancelled) return;
-    for (const [key, expiresAt] of this._cancelled) {
-      if (expiresAt == null) return this._forgetCancel(key);
-    }
-    this._cancelled.delete(this._cancelled.keys().next().value);
-  }
-
-  /**
-   * Drop expired offers (and bond results for makers with none left).
-   * @returns {number} offers removed
-   */
-  prune () {
-    const now = this.settings.now();
-    let n = 0;
-    for (const [id, row] of this._offers) {
-      if (row.offer.expiresAt <= now) {
-        this._offers.delete(id);
-        n++;
-      }
-    }
-    if (n) this._dropOrphanBonds();
-    return n;
-  }
-
-  /** @private */
-  _dropOrphanBonds () {
-    const makers = new Set([...this._offers.values()].map((row) => row.offer.makerPubkey));
+  _afterPrune () {
+    const makers = this.makers();
     for (const maker of this._bonds.keys()) {
       if (!makers.has(maker)) this._bonds.delete(maker);
     }
   }
 
-  /**
-   * Drop every offer from one maker (stalled a round, failed validation).
-   * @param {string} makerPubkey
-   * @returns {number} offers removed
-   */
-  forgetMaker (makerPubkey) {
-    const key = String(makerPubkey || '').toLowerCase();
-    let n = 0;
-    for (const [id, row] of this._offers) {
-      if (row.offer.makerPubkey === key) {
-        this._offers.delete(id);
-        n++;
-      }
-    }
-    this._bonds.delete(key);
-    return n;
-  }
-
-  /**
-   * @param {string} id
-   * @returns {Object|null} the offer body
-   */
-  get (id) {
-    const row = this._offers.get(String(id || ''));
-    return row ? Object.assign({}, row.offer) : null;
+  /** @protected */
+  _afterForget (makerPubkey) {
+    this._bonds.delete(makerPubkey);
   }
 
   /**
@@ -253,72 +94,71 @@ class CoinjoinBook {
   }
 
   /**
-   * Live offers in arrival order.
-   * @param {Object} [filter]
-   * @param {string} [filter.makerPubkey]
-   * @param {number} [filter.amountSats] only offers whose range covers this
-   * @returns {Object[]} `{ id, bondValue, ...offer }`
+   * Live offers in arrival order ({@link OrderBook#list}), each `{ id, bondValue, ...offer }`.
+   * `filter.amountSats` keeps only offers whose range covers it.
+   * @protected
    */
-  listOffers (filter = {}) {
-    const now = this.settings.now();
-    const maker = filter.makerPubkey ? String(filter.makerPubkey).toLowerCase() : null;
+  _matches (offer, filter) {
     const amount = filter.amountSats != null ? Number(filter.amountSats) : null;
-    const rows = [];
-    for (const row of this._offers.values()) {
-      if (row.offer.expiresAt <= now) continue;
-      if (maker && row.offer.makerPubkey !== maker) continue;
-      if (amount != null && (amount < row.offer.minSats || amount > row.offer.maxSats)) continue;
-      rows.push(row);
-    }
-    rows.sort((a, b) => a.seq - b.seq);
-    return rows.map((row) => {
-      const bond = this._bonds.get(row.offer.makerPubkey);
-      return Object.assign({ id: row.id, bondValue: bond && bond.ok ? bond.value : 0 }, row.offer);
-    });
+    return amount == null || !(amount < offer.minSats || amount > offer.maxSats);
+  }
+
+  /** @protected */
+  _view (row) {
+    const bond = this._bonds.get(row.offer.makerPubkey);
+    return Object.assign({ id: row.id, bondValue: bond && bond.ok ? bond.value : 0 }, row.offer);
   }
 
   /**
    * Check every advertised bond on chain. A maker's value is its best valid
-   * bond; an outpoint the bond key certified for more than one maker counts
-   * for none. Bond descriptors are public, so a copy without a certificate for
-   * the copying maker is not a claim.
-   * @param {Object} verifier `{ verify(bond, makerPubkey) }` (e.g. `functions/fidelityBond` `BondVerifier`)
+   * bond; an outpoint whose bond key certified more than one maker counts for
+   * none. Bond descriptors are public, so only a claim that verifies on chain
+   * (certificate, output script, unspent) can share an outpoint: a copy, or a
+   * certificate from a key that does not lock the output, leaves the owner's
+   * bond standing.
+   * @param {Object} verifier `{ verify(bond, makerPubkey) }` (e.g. `Bond.FidelityVerifier`)
    * @returns {Promise<{ checked: number, valid: number, shared: number }>}
    */
   async refreshBonds (verifier) {
     this.prune();
-    const claims = new Map();
     const perMaker = new Map();
-    for (const row of this._offers.values()) {
+    for (const row of this._rows()) {
       const bond = row.offer.fidelityBond;
       if (!bond) continue;
-      const outpoint = `${bond.txid}:${bond.vout}`;
-      if (fidelityBond.verifyBondCertificate(bond, { makerPubkey: row.offer.makerPubkey, network: this.settings.network })) {
-        if (!claims.has(outpoint)) claims.set(outpoint, new Set());
-        claims.get(outpoint).add(row.offer.makerPubkey);
-      }
       if (!perMaker.has(row.offer.makerPubkey)) perMaker.set(row.offer.makerPubkey, new Map());
-      perMaker.get(row.offer.makerPubkey).set(outpoint, bond);
+      perMaker.get(row.offer.makerPubkey).set(`${bond.txid}:${bond.vout}`, bond);
     }
     let checked = 0;
     let valid = 0;
     let shared = 0;
-    const next = new Map();
+    // maker → outpoint → verify result
+    const results = new Map();
+    const claims = new Map();
     for (const [maker, bonds] of perMaker) {
-      let best = { ok: false, value: 0, outpoint: null, reason: 'no valid bond' };
+      const rows = new Map();
       for (const [outpoint, bond] of bonds) {
-        const claimants = claims.get(outpoint);
-        if (claimants && claimants.size > 1) {
-          shared++;
-          if (!best.ok) best.reason = 'bond advertised by another maker';
-          continue;
-        }
         checked++;
         let result;
         try {
           result = await verifier.verify(bond, maker);
         } catch (err) {
           result = { ok: false, reason: err.message, value: 0 };
+        }
+        rows.set(outpoint, result);
+        if (!result.ok) continue;
+        if (!claims.has(outpoint)) claims.set(outpoint, new Set());
+        claims.get(outpoint).add(maker);
+      }
+      results.set(maker, rows);
+    }
+    const next = new Map();
+    for (const [maker, rows] of results) {
+      let best = { ok: false, value: 0, outpoint: null, reason: 'no valid bond' };
+      for (const [outpoint, result] of rows) {
+        if (result.ok && claims.get(outpoint).size > 1) {
+          shared++;
+          if (!best.ok) best.reason = 'bond advertised by another maker';
+          continue;
         }
         if (result.ok && (!best.ok || result.value > best.value)) {
           best = { ok: true, value: result.value, outpoint, reason: null };
@@ -327,7 +167,7 @@ class CoinjoinBook {
         }
       }
       if (best.ok) valid++;
-      best.checkedAt = this.settings.now();
+      best.checkedAt = this.now();
       next.set(maker, best);
     }
     this._bonds = next;
@@ -342,9 +182,9 @@ class CoinjoinBook {
     const exclude = new Set((opts.exclude || []).map((k) => String(k).toLowerCase()));
     const maxFee = opts.maxFeeSats != null ? Number(opts.maxFeeSats) : Infinity;
     const best = new Map();
-    for (const offer of this.listOffers({ amountSats })) {
+    for (const offer of this.list({ amountSats })) {
       if (exclude.has(offer.makerPubkey)) continue;
-      const cjfeeSats = coinjoin.makerFee(offer, amountSats);
+      const cjfeeSats = Coinjoin.makerFee(offer, amountSats);
       if (cjfeeSats > maxFee) continue;
       if (opts.requireBond && !offer.bondValue) continue;
       const prior = best.get(offer.makerPubkey);
@@ -401,7 +241,7 @@ class CoinjoinBook {
    * @returns {Object}
    */
   index (amountSats) {
-    const offers = this.listOffers();
+    const offers = this.list();
     const makers = new Set(offers.map((o) => o.makerPubkey));
     const bonded = [...makers].filter((m) => {
       const b = this._bonds.get(m);

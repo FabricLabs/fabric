@@ -451,6 +451,16 @@ const P2P_MUSIG_RECEIVE_COUNTER = 0x4222;
 const P2P_MUSIG_SEND_PROPOSAL = 0x4223;
 const P2P_MUSIG_REPLY_TO_PROPOSAL = 0x4224;
 const P2P_MUSIG_ACCEPT_PROPOSAL = 0x4225;
+/**
+ * Cross-boundary sign-in frames, carried as `fabric:<frame>` strings between a
+ * page, a browser extension, and a desktop app — never relayed on the mesh.
+ * See `functions/fabricSiteLogin.js`.
+ */
+const SITE_LOGIN_REQUEST = 0x4230;
+const SITE_LOGIN_RESPONSE = 0x4231;
+const FABRIC_SIGN_REQUEST = 0x4232;
+/** Longest lifetime a site-login or sign request may ask for. */
+const SITE_LOGIN_MAX_TTL_MS = 5 * 60 * 1000;
 
 // Message Types
 const PEER_CANDIDATE = 0x09;
@@ -699,6 +709,10 @@ module.exports = {
   P2P_MUSIG_SEND_PROPOSAL,
   P2P_MUSIG_REPLY_TO_PROPOSAL,
   P2P_MUSIG_ACCEPT_PROPOSAL,
+  SITE_LOGIN_REQUEST,
+  SITE_LOGIN_RESPONSE,
+  FABRIC_SIGN_REQUEST,
+  SITE_LOGIN_MAX_TTL_MS,
   PEER_CANDIDATE,
   SIDECHAIN_STATE_PATCH_TYPE,
   DOCUMENT_PUBLISH_TYPE,

@@ -38,16 +38,16 @@ const {
   prepareWithdrawalFromRequest,
   bindProgramRunToTip
 } = require('../functions/contractSpend');
+const Policy = require('../types/policy');
 const {
   buildFederationVaultFromPolicy,
-  buildContractTaproot,
   synthesizeDefaultLadder,
   selectActiveTiers,
   prepareTierWithdrawalPsbt,
   prepareHashlockWithdrawalPsbt,
   finalizeHashlockPsbt,
   toAddress
-} = require('../functions/contractTaproot');
+} = Policy;
 const {
   observePaymentToAddress,
   applyPaymentObservationToTip
@@ -582,7 +582,7 @@ describe('ARC / Federation network E2E', function () {
         tip,
         genesis: def,
         spend,
-        fundedTxHex: syntheticFundedTxHex(buildContractTaproot(spend.policy).output, 100000),
+        fundedTxHex: syntheticFundedTxHex(Policy.compile(spend.policy).output, 100000),
         ctx: { utxoAgeBlocks: 0 }
       });
       assert.ok(prepared.psbtBase64);
@@ -603,7 +603,7 @@ describe('ARC / Federation network E2E', function () {
         network: 'regtest',
         csvBlocks: CSV_BLOCKS
       });
-      const built = buildContractTaproot(policy);
+      const built = Policy.compile(policy);
       const dest = p2wpkhAddress(compressedPubkey(keys[2]));
       const fundedTxHex = syntheticFundedTxHex(built.output, 100000);
 
@@ -664,7 +664,7 @@ describe('ARC / Federation network E2E', function () {
         tip,
         genesis: def,
         spend,
-        fundedTxHex: syntheticFundedTxHex(buildContractTaproot(spend.policy).output, 100000)
+        fundedTxHex: syntheticFundedTxHex(Policy.compile(spend.policy).output, 100000)
       }), /dust/i);
     });
 
@@ -719,7 +719,7 @@ describe('ARC / Federation network E2E', function () {
           tip,
           genesis: def,
           spend,
-          fundedTxHex: syntheticFundedTxHex(buildContractTaproot(spend.policy).output, 80000)
+          fundedTxHex: syntheticFundedTxHex(Policy.compile(spend.policy).output, 80000)
         });
         const fin = signSpendPsbt(prepared.psbtBase64, keys);
         assert.ok(fin.txHex, mode);
@@ -738,7 +738,7 @@ describe('ARC / Federation network E2E', function () {
         csvBlocks: CSV_BLOCKS,
         hashlock: { commitmentHex, id: 'hashlock-run' }
       });
-      const built = buildContractTaproot(policy);
+      const built = Policy.compile(policy);
       assert.ok(built.leaves.some((l) => l.kind === 'hashlock'));
       const dest = p2wpkhAddress(compressedPubkey(keys[2]));
       const prepared = prepareHashlockWithdrawalPsbt({
@@ -1177,7 +1177,7 @@ describe('ARC / Federation L1 regtest withdrawals', function () {
       csvBlocks: CSV_BLOCKS,
       hashlock: { commitmentHex, id: 'hashlock-l1' }
     });
-    const built = buildContractTaproot(policy);
+    const built = Policy.compile(policy);
     const fundTxid = await fundAddress(built.address, 0.01);
     await confirm(1);
     const fundedHex = await rawTx(fundTxid);

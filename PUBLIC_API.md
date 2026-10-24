@@ -19,13 +19,14 @@ execution. Distributed Beacon / federation orchestration is Hub-composed and
 | P2P node | `@fabric/core/types/peer` | TCP/NOISE; `Peer.Swarm` |
 | Opcodes / constants | `@fabric/core/constants` | Shared with Hub |
 | Document exchange | `@fabric/core/functions/cliDocumentExchange` | Headless + CLI packs |
-| HTLC builders | `@fabric/core/functions/inventoryHtlc` | P2TR inventory escrow |
+| HTLC | `@fabric/core/types/htlc` | P2TR claim / refund HTLC (`Htlc`) |
+| Spend policy | `@fabric/core/types/policy` | Contract failover ladder → P2TR, leaves, PSBTs (`Policy`) |
 | Sealed delivery | `@fabric/core/functions/documentSealedExchange` | AES-GCM + content key |
 | Publish envelope | `@fabric/core/functions/publishedDocumentEnvelope` | DocumentPublish binding |
 | Payment hash | `@fabric/core/functions/documentPaymentHash` | `contentHashHex` |
 | Onion forward | `@fabric/core/functions/fabricOnion` | `P2P_FORWARD` wrap / decode; `Peer#sendOnion` |
 | Gossip catalog | `@fabric/core/functions/gossipNetwork` | Public flood vs directed/session; `gossipRelayPeerSettings` (ambient stub `functions/gossipNetwork.d.ts`) |
-| AMP parent | `@fabric/core/functions/fabricMessageParent` | Header `parent` (previous `Message.id` or genesis zeros) |
+| AMP parent | `@fabric/core/types/message` | `Message.ZERO_PARENT`, `normalizeParent`, `setMessageParent`, … for header `parent` (previous `Message.id` or genesis zeros) |
 | Programs | `@fabric/core/types/program` | Multi-language artifact |
 | Local VM | `@fabric/core/types/machine` | Opcode runner (host-defined ops) |
 | Sidechain document | `@fabric/core/functions/sidechainState` | Patches, digests, journal |
@@ -51,9 +52,9 @@ integrations. Explorer URLs must be configured explicitly (no public default).
 
 L1/L2 liquidity swap market, regtest-only prototype
 ([docs/LIQUIDITY_MARKET.md](docs/LIQUIDITY_MARKET.md)):
-`@fabric/core/functions/liquiditySwap` (bodies, quotes, escrow / invoice checks),
-`@fabric/core/types/liquidityBook` (local order book),
-`@fabric/core/types/liquiditySwap` (settlement state machine). Paths and body
+`@fabric/core/types/swap` (settlement state machine; statics for bodies, quotes,
+escrow / invoice checks),
+`@fabric/core/types/liquidityBook` (local order book). Paths and body
 shapes may change in any 0.1.x release.
 
 ## Minimal Peer example

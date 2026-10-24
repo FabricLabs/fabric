@@ -9,7 +9,7 @@ const Bond = require('../types/bond');
 const Challenge = require('../types/challenge');
 const Witness = require('../types/witness');
 const Document = require('../types/document');
-const { signerFromPriv32 } = require('../functions/inventoryHtlc');
+const { signerFromPriv32 } = require('../types/htlc');
 const { createBlobMerkleTree } = require('../functions/documentBlobManifest');
 
 const { FraudProof } = Witness;
@@ -603,14 +603,14 @@ describe('Market bonds, challenges, and fraud proofs (Phase 3)', function () {
   });
 });
 
-describe('Book#ingestFraudProof', function () {
+describe('DocumentBook#ingestFraudProof', function () {
   it('penalizes only sellers whose verified AMP signer is the offender, once per evidence id', () => {
-    const Book = require('../types/book');
+    const DocumentBook = require('../types/documentBook');
     const priv = crypto.randomBytes(32);
     const pub = Buffer.from(secp256k1.getPublicKey(priv, true)).toString('hex');
     const xOnly = Buffer.from(schnorr.getPublicKey(priv)).toString('hex');
     const rootHex = 'ee'.repeat(32);
-    const book = new Book();
+    const book = new DocumentBook();
     book.ingestInventoryResponse({ origin: 'seller-a', signerPubkeyHex: pub, items: [{ documentId: 'd', blobHashHex: 'aa'.repeat(32), rateSats: 1 }] });
     // A self-asserted sellerPubkey never routes a penalty (anyone can claim a key).
     book.ingestInventoryResponse({ origin: 'seller-b', sellerPubkey: pub, items: [{ documentId: 'd', blobHashHex: 'aa'.repeat(32), rateSats: 1 }] });

@@ -18,8 +18,8 @@ const Actor = require('./actor');
 const Tree = require('./tree');
 const Witness = require('./witness');
 const ecc = require('./ecc');
-const { signerFromPriv32 } = require('../functions/inventoryHtlc');
-const { networkForFabricName } = require('../functions/contractTaproot');
+const Htlc = require('./htlc');
+const { networkForFabricName } = require('./policy');
 
 const HEX64 = /^[0-9a-f]{64}$/;
 const HEX66 = /^[0-9a-f]{66}$/;
@@ -175,7 +175,7 @@ class Resolutions extends Actor {
     const pubkey = Witness.xOnlyPubkeyHex(priv);
     if (!exit.signers.required.includes(pubkey)) throw new Error('signExit: key is not a required signer of this exit');
     const psbt = this._psbt(exit.psbtBase64);
-    psbt.signInput(0, signerFromPriv32(priv));
+    psbt.signInput(0, Htlc.signerFromPriv32(priv));
     const sig = (psbt.data.inputs[0].tapScriptSig || []).find((s) => Buffer.from(s.pubkey).toString('hex') === pubkey);
     if (!sig) throw new Error('signExit: signer produced no tapscript signature');
     const signatureHex = Buffer.from(sig.signature).toString('hex');
@@ -302,7 +302,7 @@ class Resolutions extends Actor {
     const missing = this.missingSigners(exit);
     if (missing.length) throw new Error(`finalizeExit: missing ${missing.length} signature(s)`);
     const psbt = this._withSignatures(exit, exit.signers.have);
-    const { finalizeSpendPsbt } = require('../functions/contractTaproot');
+    const { finalizeSpendPsbt } = require('./policy');
     return finalizeSpendPsbt({ psbt });
   }
 

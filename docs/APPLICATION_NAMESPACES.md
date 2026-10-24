@@ -65,9 +65,9 @@ Both opcodes have field schemas, and JSON bodies are still accepted:
   `{ contract, ...payload }`; a `contract` inside `payload` never overrides the
   field.
 
-Build either with `buildMessage(type, body)` from
-[`functions/fabricMessageBodies.js`](../functions/fabricMessageBodies.js) and
-read either encoding with `tryParseLegacyBody(message)`. Peer events
+Build either with `Message.fromLegacyBody(type, body)` from
+[`types/message.js`](../types/message.js) and
+read either encoding with `Message.tryParseLegacyBody(message)`. Peer events
 (`contract:publish`, `contract:message`) and `parseContractMessageBody` hand
 apps the same object for both encodings, but the two encodings of one body are
 different frames with different hashes. Accumulate dedups by frame hash and
@@ -105,7 +105,7 @@ Hub stores under `contract-message-queue/` and later-relays on peer connect
 (`kind: ContractStateTip`, same k-of-n witness shape as Beacon epochs). Hub must
 track this module when sealing contract-namespace sidechains.
 
-**Taproot spend ladder:** [`functions/contractTaproot`](../functions/contractTaproot.js)
+**Taproot spend ladder:** [`Policy`](../types/policy.js)
 builds deterministic P2TR trees from author-defined failover tiers (`after` / `until`
 decay + optional migrate). See DISTRIBUTED_EXECUTION.md.
 

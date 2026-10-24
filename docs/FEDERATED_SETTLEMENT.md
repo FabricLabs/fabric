@@ -61,9 +61,9 @@ Application mesh (chat, Groups, mission gossip) does **not** wait on F1–F5.
 |-------|--------|
 | Reserve conservation | `functions/federationReserveLedger.js` |
 | Withdrawal request / witnesses | `functions/contractSpend.js` |
-| Partial vault PSBT | `functions/contractTaproot.js` `prepareLeafPsbt` |
+| Partial vault PSBT | `types/policy.js` `Policy.prepareLeafPsbt` |
 | Pre-sign gate | `functions/federationValidatorVerify.js` |
-| Program → hashlock leaf | `functions/programTaprootBind.js` |
+| Program → hashlock leaf | `types/policy.js` `Policy.withRunHashlock` |
 | Hub credit / propose / prepare | `CreateFederationPegInCredit`, `ProposeFederationPegOut`, `PrepareFederationVaultWithdrawalPsbt` |
 
 ## How to take a track

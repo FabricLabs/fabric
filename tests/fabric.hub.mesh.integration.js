@@ -455,7 +455,6 @@ describe('generic application contract chain', function () {
 
 const Actor = require('../types/actor');
 const Key = require('../types/key');
-const { buildMessage, tryParseLegacyBody } = require('../functions/fabricMessageBodies');
 const { pubkeyXOnly } = require('../functions/groupChatSeal');
 const {
   GOVERNANCE_ACTIONS,
@@ -546,7 +545,7 @@ function applicationDefinition (keys) {
 
 function signPublish (key, definition, encoding = 'json') {
   const message = encoding === 'fields'
-    ? buildMessage('CONTRACT_PUBLISH', definition)
+    ? Message.fromLegacyBody('CONTRACT_PUBLISH', definition)
     : Message.fromVector(['CONTRACT_PUBLISH', JSON.stringify(definition)]);
   return message.signWithKey(key);
 }
@@ -554,14 +553,14 @@ function signPublish (key, definition, encoding = 'json') {
 function signContractMessage (key, contractId, type, object, encoding = 'json') {
   const body = { contract: contractId, type, object };
   const message = encoding === 'fields'
-    ? buildMessage('CONTRACT_MESSAGE', body)
+    ? Message.fromLegacyBody('CONTRACT_MESSAGE', body)
     : Message.fromVector(['CONTRACT_MESSAGE', JSON.stringify(body)]);
   return message.signWithKey(key);
 }
 
 function changeActionOf (message) {
   if (!message || message.type !== 'CONTRACT_MESSAGE') return null;
-  const parsed = tryParseLegacyBody(message);
+  const parsed = Message.tryParseLegacyBody(message);
   if (!parsed.ok) return null;
   const body = parsed.value;
   if (body.type !== 'GroupChange' && body.type !== 'GroupChangeProposal') return null;
@@ -929,13 +928,13 @@ describe('playnet contract publish + re-publish', function () {
     const parsed = Message.fromBuffer(writes[0]);
     assert.strictEqual(parsed.type, 'CONTRACT_PUBLISH');
 
-    const fieldMsg = buildMessage('CONTRACT_PUBLISH', definition).signWithKey(owner);
+    const fieldMsg = Message.fromLegacyBody('CONTRACT_PUBLISH', definition).signWithKey(owner);
     assert.ok(peer.broadcast(fieldMsg.toBuffer()) > 0);
     assert.strictEqual(writes.length, 2);
     const fieldParsed = Message.fromBuffer(writes[1]);
     assert.strictEqual(fieldParsed.type, 'CONTRACT_PUBLISH');
-    assert.deepStrictEqual(tryParseLegacyBody(fieldParsed).value, definition);
-    assert.strictEqual(new Actor(tryParseLegacyBody(fieldParsed).value).id, new Actor(definition).id);
+    assert.deepStrictEqual(Message.tryParseLegacyBody(fieldParsed).value, definition);
+    assert.strictEqual(new Actor(Message.tryParseLegacyBody(fieldParsed).value).id, new Actor(definition).id);
   });
 
   it('deterministic Actor id is stable across JSON clone (re-publish body)', function () {

@@ -13,9 +13,8 @@ const Bitcoin = require('../../services/bitcoin');
 const Message = require('../../types/message');
 const CoinjoinBook = require('../../types/coinjoinBook');
 const { CoinjoinTakerRound, CoinjoinMakerRound } = require('../../types/coinjoinRound');
-const coinjoin = require('../../functions/coinjoin');
-const fidelityBond = require('../../functions/fidelityBond');
-const { buildMessage, tryParseLegacyBody } = require('../../functions/fabricMessageBodies');
+const Coinjoin = require('../../types/coinjoin');
+const Bond = require('../../types/bond');
 const { getFreePort } = require('../helpers/peer');
 
 const runRegtest = !!process.env.FABRIC_E2E_REGTEST;
@@ -24,10 +23,10 @@ const AMOUNT = 2000000;
 
 // Every message crosses the wire as a CONTRACT_MESSAGE.
 function wire (value) {
-  const message = buildMessage('CONTRACT_MESSAGE', coinjoin.toContractMessage(value));
-  const parsed = tryParseLegacyBody(Message.fromBuffer(message.toBuffer()));
+  const message = Message.fromLegacyBody('CONTRACT_MESSAGE', Coinjoin.toContractMessage(value));
+  const parsed = Message.tryParseLegacyBody(Message.fromBuffer(message.toBuffer()));
   assert.strictEqual(parsed.ok, true);
-  const read = coinjoin.fromContractMessage(parsed.value);
+  const read = Coinjoin.fromContractMessage(parsed.value);
   assert.ok(read, 'coinjoin body survives the wire');
   return read;
 }
@@ -111,9 +110,9 @@ describe('@fabric/core coinjoin (regtest)', function () {
     const now = Date.now();
     const book = new CoinjoinBook({ network: 'regtest' });
     const makers = ['a', 'b'].map((label) => {
-      const identityKey = coinjoin.randomPrivateKey();
-      const offer = coinjoin.signBody({
-        type: coinjoin.BODY_TYPES.OFFER,
+      const identityKey = Coinjoin.randomPrivateKey();
+      const offer = Coinjoin.signBody({
+        type: Coinjoin.BODY_TYPES.OFFER,
         network: 'regtest',
         minSats: 100000,
         maxSats: 5000000,
@@ -122,12 +121,12 @@ describe('@fabric/core coinjoin (regtest)', function () {
         txFeeContributionSats: 200,
         createdAt: now,
         expiresAt: now + 3600000,
-        makerPubkey: coinjoin.pubkeyFromPrivate(identityKey),
-        nonce: coinjoin.randomNonce()
+        makerPubkey: Coinjoin.pubkeyFromPrivate(identityKey),
+        nonce: Coinjoin.randomNonce()
       }, identityKey);
       const heard = wire(offer);
       assert.strictEqual(heard.kind, 'offer');
-      assert.strictEqual(book.ingestOffer(heard.body).ok, true);
+      assert.strictEqual(book.ingest(heard.body).ok, true);
       const wallet = `coinjoin-e2e-maker-${label}`;
       return {
         wallet,
@@ -172,24 +171,24 @@ describe('@fabric/core coinjoin (regtest)', function () {
     const confirmed = await walletCall('coinjoin-e2e-taker', 'gettransaction', [final.txid]);
     assert.ok(confirmed.confirmations >= 1);
     for (const m of makers) {
-      const earned = coinjoin.makerFee(m.offer, AMOUNT) - m.offer.txFeeContributionSats;
+      const earned = Coinjoin.makerFee(m.offer, AMOUNT) - m.offer.txFeeContributionSats;
       assert.strictEqual(await balance(m.wallet), before[m.wallet] + earned, `${m.wallet} earns its fee less its contribution`);
     }
   });
 
   it('funds, verifies, and redeems a fidelity bond only after its lock', async function () {
-    const makerKey = coinjoin.randomPrivateKey();
-    const makerPubkey = coinjoin.pubkeyFromPrivate(makerKey);
-    const bondKey = coinjoin.randomPrivateKey();
+    const makerKey = Coinjoin.randomPrivateKey();
+    const makerPubkey = Coinjoin.pubkeyFromPrivate(makerKey);
+    const bondKey = Coinjoin.randomPrivateKey();
     const tip = await chain.getTipHeight();
     const locktime = tip + 20;
-    const out = fidelityBond.buildBondP2tr({ bondPubkey: coinjoin.pubkeyFromPrivate(bondKey), locktime });
+    const out = Bond.buildFidelity({ bondPubkey: Coinjoin.pubkeyFromPrivate(bondKey), locktime });
     const txid = await walletCall(MINER_WALLET, 'sendtoaddress', [out.address, 0.1]);
     await mine(6);
     const raw = await walletCall(MINER_WALLET, 'gettransaction', [txid, false, true]);
     const vout = raw.decoded.vout.find((o) => o.scriptPubKey.hex === out.scriptPubKeyHex).n;
 
-    const bond = fidelityBond.signBondCertificate({
+    const bond = Bond.signFidelityCertificate({
       network: 'regtest',
       txid,
       vout,
@@ -198,16 +197,16 @@ describe('@fabric/core coinjoin (regtest)', function () {
       certExpiresAt: tip + 1000,
       bondPrivateKey: bondKey
     });
-    const verifier = new fidelityBond.BondVerifier({ bitcoin: chain, network: 'regtest' });
+    const verifier = new Bond.FidelityVerifier({ bitcoin: chain, network: 'regtest' });
     const verified = await verifier.verify(bond, makerPubkey);
     assert.strictEqual(verified.ok, true, verified.reason);
     assert.strictEqual(verified.valueSats, 10000000);
     assert.ok(verified.value > 0);
-    assert.strictEqual((await verifier.verify(bond, coinjoin.pubkeyFromPrivate(coinjoin.randomPrivateKey()))).ok, false);
+    assert.strictEqual((await verifier.verify(bond, Coinjoin.pubkeyFromPrivate(Coinjoin.randomPrivateKey()))).ok, false);
 
     const now = Date.now();
-    const offer = coinjoin.signBody({
-      type: coinjoin.BODY_TYPES.OFFER,
+    const offer = Coinjoin.signBody({
+      type: Coinjoin.BODY_TYPES.OFFER,
       network: 'regtest',
       minSats: 100000,
       maxSats: 5000000,
@@ -215,16 +214,16 @@ describe('@fabric/core coinjoin (regtest)', function () {
       createdAt: now,
       expiresAt: now + 3600000,
       makerPubkey,
-      nonce: coinjoin.randomNonce(),
+      nonce: Coinjoin.randomNonce(),
       fidelityBond: bond
     }, makerKey);
     const book = new CoinjoinBook({ network: 'regtest' });
-    book.ingestOffer(wire(offer).body);
+    book.ingest(wire(offer).body);
     const refreshed = await book.refreshBonds(verifier);
     assert.strictEqual(refreshed.valid, 1);
-    assert.ok(book.listOffers()[0].bondValue > 0);
+    assert.ok(book.list()[0].bondValue > 0);
 
-    const redeem = (feeSats) => fidelityBond.signAndExtractBondRedeem(fidelityBond.buildBondRedeemPsbt({
+    const redeem = (feeSats) => Bond.signFidelityRedeem(Bond.prepareFidelityRedeem({
       bond: { txid, vout, valueSats: 10000000, locktime, bondXOnly: bond.bondXOnly },
       destinationAddress: miner,
       feeSats

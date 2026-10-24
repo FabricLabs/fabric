@@ -126,7 +126,7 @@ const EVALUATION_SUITE = [
     why: 'Absolute timelocks for channels, escrow, vaults.',
     patterns: ['BIP65', 'CLTV', 'CHECKLOCKTIMEVERIFY', '500000000', 'normalizeLock'],
     expected: { core: 'strong', hub: 'dependent', passport: 'n/a', application: 'partial' },
-    notes: 'contractTaproot normalizeLock enforces BIP65 height/unix threshold.'
+    notes: 'Policy.normalizeLock enforces BIP65 height/unix threshold.'
   },
   {
     bip: 67,
@@ -137,7 +137,7 @@ const EVALUATION_SUITE = [
     why: 'Lexicographic pubkey sort for deterministic multisig scripts.',
     patterns: ['BIP67', 'functions/bip67', 'sortPubkeysBip67', 'lexicographically sorted', 'sorted validator', 'sorted keys', 'sortPub'],
     expected: { core: 'strong', hub: 'partial', passport: 'n/a', application: 'strong' },
-    notes: 'Named sortPubkeysBip67; contractTaproot k-of-n leaves, ARC spend keys, and Beacon validators use it.'
+    notes: 'Named sortPubkeysBip67; Policy k-of-n leaves, ARC spend keys, and Beacon validators use it.'
   },
   {
     bip: 68,

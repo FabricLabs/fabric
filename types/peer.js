@@ -70,10 +70,8 @@ const {
 const { individualPk } = require('../functions/musig2');
 const musig2Session = require('../functions/musig2Session');
 const sidechainState = require('../functions/sidechainState');
-const fabricMessageBodies = require('../functions/fabricMessageBodies');
 const { verifyFederationWitnessOnMessage, epochCommitmentDigestHex } = require('../functions/beaconFederationSigning');
 const { resolveFederationThreshold } = require('../functions/federationValidators');
-const { paginateInventoryItems } = require('../functions/inventoryPages');
 const {
   aggregatePeerBandwidth,
   peerBandwidthSnapshot,
@@ -215,11 +213,12 @@ const {
 const {
   normalizeFabricDocumentOfferEnvelopeForHandlers
 } = require('../functions/publishedDocumentEnvelope');
-const inventoryHtlc = require('../functions/inventoryHtlc');
+const Htlc = require('./htlc');
 const { resolveFabricPeerInterface } = require('../functions/fabricListenInterface');
 const {
-  buildForwardedDocumentRequest
-} = require('../functions/documentMarket');
+  buildForwardedDocumentRequest,
+  paginateInventoryItems
+} = require('./documentBook');
 const {
   DEFAULT_CHUNK_BYTES,
   advertiseDocumentBlobs,
@@ -777,7 +776,7 @@ class Peer extends Service {
    * @returns {string} hex sha256
    */
   _gossipPayloadDedupKey (msg) {
-    const obj = fabricMessageBodies.canonicalPeeringObject(msg && msg.object);
+    const obj = Message.canonicalPeeringObject(msg && msg.object);
     const body = fabricCanonicalJson({ type: msg && msg.type, object: obj });
     return crypto.createHash('sha256').update(body).digest('hex');
   }
@@ -833,7 +832,7 @@ class Peer extends Service {
       return `proposal:${cid}:${root}`;
     }
     if (t === 'P2P_PEER_ANNOUNCE') {
-      return `announce:${new Actor(fabricMessageBodies.canonicalPeeringObject(obj)).id}`;
+      return `announce:${new Actor(Message.canonicalPeeringObject(obj)).id}`;
     }
     if (t === 'P2P_STATE_ANNOUNCE') {
       const stateObj = (obj.state && typeof obj.state === 'object') ? obj.state : obj;
@@ -1325,7 +1324,7 @@ class Peer extends Service {
    * @returns {string} hex sha256
    */
   _peeringOfferPayloadDedupKey (msg) {
-    const obj = fabricMessageBodies.canonicalPeeringObject(msg && msg.object);
+    const obj = Message.canonicalPeeringObject(msg && msg.object);
     const body = fabricCanonicalJson({ type: msg && msg.type, object: obj });
     return crypto.createHash('sha256').update(body).digest('hex');
   }
@@ -3382,9 +3381,9 @@ class Peer extends Service {
         };
         const innerType = wireToInner[message.type] || message.type;
         let parsed = prTyped.value;
-        if (prTyped.encoding === 'fields' && fabricMessageBodies.LEGACY_BODY_TYPES.includes(message.type)) {
+        if (prTyped.encoding === 'fields' && Message.LEGACY_BODY_TYPES.includes(message.type)) {
           // Handlers and app events keep the legacy JSON shape for either encoding.
-          parsed = fabricMessageBodies.decodeToLegacyBody(message.type, parsed);
+          parsed = Message.decodeLegacyBody(message.type, parsed);
           if (!parsed) {
             this.emit('warning', `[FABRIC:PEER] ${message.type} parse failed: unusable field body`);
             break;
@@ -4112,7 +4111,7 @@ class Peer extends Service {
         // Peel / foreign RELAY: do not write PONG to the TCP last hop.
         if (!delivery.allowTcpOriginSideEffects) break;
         const pingNonce = msg.object && msg.object.nonce ? String(msg.object.nonce) : '';
-        const P2P_PONG = fabricMessageBodies.buildMessage('P2P_PONG', {
+        const P2P_PONG = Message.fromLegacyBody('P2P_PONG', {
           nonce: pingNonce || this._freshKeepaliveNonce()
         }).signWithKey(this.key);
         if (this.connections[origin.name] && this.connections[origin.name]._writeFabric) {
@@ -4947,7 +4946,7 @@ class Peer extends Service {
    * Seller side: the HTLC preimage for `paymentHashHex` — `K_i` for a static
    * blob hash (`SHA256(K_i)`), or the per-buyer secret `s` of a live
    * {@link Peer#quoteSealedBlob} quote. Channel hosts hand this to
-   * `Channel.Book` as `preimageFor` so a committed HTLC for a blob we sell is
+   * `ChannelBook` as `preimageFor` so a committed HTLC for a blob we sell is
    * fulfilled (seller-fulfils; the buyer learns the preimage from the
    * `ChannelHtlcFulfill`).
    *
@@ -6355,15 +6354,14 @@ class Peer extends Service {
     if (!Number.isFinite(lock) || lock < 1) return null;
     const paymentHash32 = Buffer.from(String(contentHashHex), 'hex');
     if (paymentHash32.length !== 32) return null;
-    const built = inventoryHtlc.buildInventoryHtlcP2tr({
-      networkName: this.settings.network || 'regtest',
-      sellerPubkeyCompressed: sellerCompressed,
-      buyerRefundPubkeyCompressed: Buffer.from(String(buyerHex), 'hex'),
-      paymentHash32,
-      refundLocktimeHeight: lock
+    const built = new Htlc({
+      network: this.settings.network || 'regtest',
+      claimPubkey: sellerCompressed,
+      refundPubkey: Buffer.from(String(buyerHex), 'hex'),
+      paymentHash: paymentHash32,
+      refundLocktime: lock
     });
-    const hints = inventoryHtlc.buildHtlcFundingHints({
-      paymentAddress: built.address,
+    const hints = built.fundingHints({
       amountSats: Math.round(Number(amountSats) || 0),
       label: String(item.id || '').slice(0, 32)
     });
@@ -7131,7 +7129,7 @@ class Peer extends Service {
       // At most one unanswered PING per connection so burst P2P_PONG cannot inflate registry score
       // (FLUSH_CHAIN trust gate uses _registryScoreForConnectionAddress).
       if ((socket._fabricPingOutstanding | 0) >= 1) return;
-      const P2P_PING = fabricMessageBodies.buildMessage('P2P_PING', {
+      const P2P_PING = Message.fromLegacyBody('P2P_PING', {
         nonce: this._freshKeepaliveNonce()
       }).signWithKey(this.key);
       socket._fabricPingOutstanding = 1;

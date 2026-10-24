@@ -68,7 +68,7 @@ const {
   isZeroParent,
   parentHexOf,
   frameIdOf
-} = require('./fabricMessageParent');
+} = Message;
 /** @private */
 const COLLECTION_TYPE = 'FabricMessageCollection';
 /** @private */

@@ -776,7 +776,7 @@ class Wallet extends Service {
 
   /**
    * @deprecated Legacy bcoin-style HTLC for channels — not the document-market P2TR profile.
-   * Use {@link Wallet.buildInventoryHtlcP2tr} / `@fabric/core/functions/inventoryHtlc` instead.
+   * Use `@fabric/core/types/htlc` instead.
    */
   async createHTLC (contract) {
     // if (!contract.asset) throw new Error('Contract parameter "asset" is required.');
@@ -1357,16 +1357,6 @@ class Wallet extends Service {
    */
   static resolveDocumentContentHashHex (opts) {
     return require('../functions/documentPaymentHash').resolveDocumentContentHashHex(opts);
-  }
-
-  /** @see {@link module:functions/inventoryHtlc.buildInventoryHtlcP2tr} */
-  static buildInventoryHtlcP2tr (opts) {
-    return require('../functions/inventoryHtlc').buildInventoryHtlcP2tr(opts);
-  }
-
-  /** @see {@link module:functions/inventoryHtlc.buildHtlcFundingHints} */
-  static buildHtlcFundingHints (opts) {
-    return require('../functions/inventoryHtlc').buildHtlcFundingHints(opts);
   }
 }
 

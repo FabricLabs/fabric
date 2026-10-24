@@ -15,7 +15,7 @@ const {
   SEALED_BLOB_CHUNK_BYTES
 } = require('../functions/documentBlobManifest');
 const { paymentHashHexFromKey, isWellFormedKeyReveal, BLOB_QUOTE_TYPE } = require('../functions/documentSealedExchange');
-const { Book } = require('../types/book');
+const DocumentBook = require('../types/documentBook');
 const Message = require('../types/message');
 const { HTLC_MINIMUM_SATS } = require('../constants');
 
@@ -118,7 +118,7 @@ describe('types/document (sealed blob tree)', function () {
 
   it('per-blob sealed inventory yields a multi-seller blob plan in the offer book', function () {
     const doc = Document.seal(crypto.randomBytes(6000), { chunkBytes: 2048 });
-    const book = new Book();
+    const book = new DocumentBook();
     const item = doc.inventoryItem({ rateSats: 10 });
     book.ingestInventoryResponse({ origin: 'A', items: [item], latencyMs: 50 });
     const cheaper = JSON.parse(JSON.stringify(item));
@@ -380,7 +380,7 @@ describe('types/document (sealed blob tree)', function () {
     // Inventory advertises each blob's IV; the offer book keeps it.
     const item = doc.inventoryItem({ rateSats: RATE });
     assert.strictEqual(item.blobs[0].iv, bodies[0].iv);
-    const book = new Book();
+    const book = new DocumentBook();
     const [offer] = book.ingestInventoryResponse({ origin: 'seller', items: [item] });
     assert.strictEqual(offer.iv, bodies[0].iv);
 

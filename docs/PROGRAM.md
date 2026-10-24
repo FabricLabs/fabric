@@ -67,7 +67,7 @@ const {
   buildScriptLeaf,
   prepareHashlockWithdrawalPsbt,
   finalizeHashlockPsbt
-} = require('@fabric/core/functions/contractTaproot');
+} = require('@fabric/core/types/policy');
 
 const tree = composeTaprootTree({
   network: 'regtest',
@@ -85,8 +85,8 @@ Leaf kinds: `spend` | `migrate` | `hashlock` | `script`. Authority ladders stay
 the default; wallets SHOULD render `leaves[]` and let operators pick `leafId`
 when preparing a PSBT.
 
-**Program → hashlock leaf:** `functions/programTaprootBind.js`
-(`hashlockFromProgramRun`, `composePolicyWithRunHashlock`) attaches a hashlock
+**Program → hashlock leaf:** `Policy.hashlockFromProgramRun`,
+`Policy.withRunHashlock` (or `policy.withRunHashlock(run)` on an instance) attaches a hashlock
 whose `commitmentHex` is the Machine `runCommitmentHex`. That **changes** the
 P2TR address and L1-enforces the commitment without co-signers on the hashlock
 path. The leaf requires a Schnorr signature from `run.pubkeyHex` as well as the

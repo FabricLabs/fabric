@@ -14,10 +14,10 @@ const Witness = require('../types/witness');
 const Document = require('../types/document');
 const Tree = require('../types/tree');
 const Contract = require('../types/contract');
-const Book = require('../types/book');
+const DocumentBook = require('../types/documentBook');
 const Message = require('../types/message');
 const Key = require('../types/key');
-const { signerFromPriv32 } = require('../functions/inventoryHtlc');
+const { signerFromPriv32 } = require('../types/htlc');
 const { createBlobMerkleTree, merkleRootHexFromBlobHashes } = require('../functions/documentBlobManifest');
 const { buildInclusion, merkleRootFromTxids, headerMeetsTarget } = require('../functions/bitcoinTxInclusion');
 
@@ -344,9 +344,9 @@ describe('Market fraud proofs — adversarial regressions', function () {
     });
   });
 
-  describe('Book hardening', function () {
+  describe('DocumentBook hardening', function () {
     it('caps providers (LRU over unpenalized) and offers', () => {
-      const book = new Book({ maxProviders: 3, maxOffers: 2 });
+      const book = new DocumentBook({ maxProviders: 3, maxOffers: 2 });
       book.recordDelivery('a', { ok: true });
       book.recordDelivery('b', { ok: true });
       book.recordDelivery('c', { ok: true });
@@ -356,7 +356,7 @@ describe('Market fraud proofs — adversarial regressions', function () {
       book.recordDelivery('d', { ok: true });
       assert.ok(book.providerStats('a'), 'penalized providers are never evicted');
       assert.strictEqual(book.providerStats('b'), null, 'least recently updated unpenalized provider evicted');
-      const full = new Book({ maxProviders: 1 });
+      const full = new DocumentBook({ maxProviders: 1 });
       full.recordPenalty('x', { kind: 'wrong-leaf' });
       assert.strictEqual(full.recordDelivery('y', { ok: true }), null, 'no room without dropping a penalty');
       for (const id of ['d1', 'd2', 'd3']) book.ingestInventoryResponse({ origin: 'a', items: [{ documentId: id, blobHashHex: 'aa'.repeat(32), rateSats: 1 }] });
@@ -365,10 +365,10 @@ describe('Market fraud proofs — adversarial regressions', function () {
 
     it('scores inventory-only sellers below neutral; key penalties stick across seller ids and forgetSeller', () => {
       const seller = keypair();
-      const book = new Book();
+      const book = new DocumentBook();
       book.ingestInventoryResponse({ origin: 'fresh', latencyMs: 5, items: [{ documentId: 'd', blobHashHex: 'aa'.repeat(32), rateSats: 1 }] });
-      assert.strictEqual(book.scoreFor('fresh'), Book.SCORE_INVENTORY_ONLY);
-      assert.ok(Book.SCORE_INVENTORY_ONLY < 500);
+      assert.strictEqual(book.scoreFor('fresh'), DocumentBook.SCORE_INVENTORY_ONLY);
+      assert.ok(DocumentBook.SCORE_INVENTORY_ONLY < 500);
       book.ingestInventoryResponse({ origin: 'seller-a', latencyMs: 5, signerPubkeyHex: seller.pub, items: [{ documentId: 'd', blobHashHex: 'aa'.repeat(32), rateSats: 1 }] });
       const proof = wrongBytesProof(seller);
       assert.deepStrictEqual(book.ingestFraudProof(proof.toBody()).penalized, ['seller-a']);
@@ -388,7 +388,7 @@ describe('Market fraud proofs — adversarial regressions', function () {
       class Unattributed extends FraudProof {
         verify () { return { ok: true, offender: provider.xOnly, reputational: false, reason: 'timelock only' }; }
       }
-      const book = new Book();
+      const book = new DocumentBook();
       book.ingestInventoryResponse({ origin: 'p', latencyMs: 5, signerPubkeyHex: provider.pub, items: [{ documentId: 'd', blobHashHex: 'aa'.repeat(32), rateSats: 1 }] });
       const res = book.ingestFraudProof(new Unattributed({ kind: KINDS.NON_RESPONSE, artifacts: {} }));
       assert.strictEqual(res.ok, false);
@@ -402,7 +402,7 @@ describe('Market fraud proofs — adversarial regressions', function () {
         { index: 0, total: 2, blobHashHex: H('c0'), rateSats: 5, contentHash: H('d0') },
         { index: 1, total: 2, blobHashHex: H('c1'), rateSats: 5, contentHash: H('d1') }
       ];
-      const book = new Book();
+      const book = new DocumentBook();
       assert.strictEqual(book.ingestInventoryResponse({ origin: 'liar', items: [{ id: 'doc', merkleRootHex: H('ee'), blobs }] }).length, 0);
       const good = book.ingestInventoryResponse({ origin: 'honest', items: [{ id: 'doc', merkleRootHex: merkleRootHexFromBlobHashes([H('c0'), H('c1')]), blobs }] });
       assert.deepStrictEqual(good.map((r) => r.rootVerified), [true, true]);
@@ -415,7 +415,7 @@ describe('Market fraud proofs — adversarial regressions', function () {
       assert.strictEqual(book.ingestInventoryResponse({ origin: 'v2-liar', items: [swapped] }).length, 0);
       // The leaf check is swappable.
       const calls = [];
-      const hooked = new Book({ verifyOfferLeaves: (opts) => { calls.push(opts); return false; } });
+      const hooked = new DocumentBook({ verifyOfferLeaves: (opts) => { calls.push(opts); return false; } });
       assert.strictEqual(hooked.ingestInventoryResponse({ origin: 'x', items: [{ id: 'doc', merkleRootHex: H('ee'), blobs }] }).length, 0);
       assert.strictEqual(calls[0].blobTotal, 2);
       assert.strictEqual(calls[0].merkleRootHex, H('ee'));
@@ -423,7 +423,7 @@ describe('Market fraud proofs — adversarial regressions', function () {
 
     it('telemetry: canonical hash, idempotent max-merge, penalties never reduced, foreign records refused', () => {
       const seller = keypair();
-      const a = new Book({ nodeId: 'me' });
+      const a = new DocumentBook({ nodeId: 'me' });
       a.recordDelivery('x', { ok: true, bytes: 10 });
       a.recordPenalty('x', { kind: 'wrong-leaf' });
       a.ingestInventoryResponse({ origin: 's', latencyMs: 5, signerPubkeyHex: seller.pub, items: [{ documentId: 'd', blobHashHex: 'aa'.repeat(32), rateSats: 1 }] });
@@ -431,7 +431,7 @@ describe('Market fraud proofs — adversarial regressions', function () {
       a.ingestFraudProof(proof.toBody());
       const rec = JSON.parse(JSON.stringify(a.exportTelemetry()));
 
-      const b = new Book({ nodeId: 'me' });
+      const b = new DocumentBook({ nodeId: 'me' });
       for (let i = 0; i < 5; i++) b.recordPenalty('x', { kind: 'wrong-bytes' });
       assert.strictEqual(b.importTelemetry(rec), 2);
       assert.strictEqual(b.importTelemetry(rec), 2);
@@ -442,12 +442,12 @@ describe('Market fraud proofs — adversarial regressions', function () {
 
       const tampered = JSON.parse(JSON.stringify(rec));
       tampered.providers[0].deliveries = 1e6;
-      assert.strictEqual(new Book({ nodeId: 'me' }).importTelemetry(tampered), 0);
+      assert.strictEqual(new DocumentBook({ nodeId: 'me' }).importTelemetry(tampered), 0);
       const negative = JSON.parse(JSON.stringify(rec));
       delete negative.hash;
-      assert.strictEqual(new Book().importTelemetry(negative), 0, 'unhashed records are refused');
-      assert.strictEqual(new Book({ nodeId: 'them' }).importTelemetry(rec), 0);
-      assert.strictEqual(new Book({ nodeId: 'them' }).importTelemetry(rec, { allowForeign: true }), 2);
+      assert.strictEqual(new DocumentBook().importTelemetry(negative), 0, 'unhashed records are refused');
+      assert.strictEqual(new DocumentBook({ nodeId: 'them' }).importTelemetry(rec), 0);
+      assert.strictEqual(new DocumentBook({ nodeId: 'them' }).importTelemetry(rec, { allowForeign: true }), 2);
     });
   });
 });

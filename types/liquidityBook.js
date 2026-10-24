@@ -2,40 +2,25 @@
 
 /**
  * @fileoverview Locally held order book for the L1/L2 liquidity swap market
- * (`functions/liquiditySwap`). Makers gossip signed `LiquidityOrder` bodies;
+ * (bodies and codec: `types/swap`). Makers gossip signed `LiquidityOrder` bodies;
  * each node verifies and keeps its own book — there is no central matcher.
  * A taker walks the book by price-time priority with {@link LiquidityBook#fill}
- * and settles each fill with its maker (`types/liquiditySwap`). The mid
+ * and settles each fill with its maker (a {@link Swap}). The mid
  * premium and spread from {@link LiquidityBook#index} are the market's priced
  * view of which layer's liquidity is scarcer: a positive mid means L1 sats
  * trade above L2 sats.
  */
 
-const swap = require('../functions/liquiditySwap');
+const Swap = require('./swap');
+const OrderBook = require('./orderBook');
 
 /**
  * Orders held before the oldest is evicted.
  * @private
  */
 const MAX_ORDERS = 10000;
-/**
- * Cancels remembered so a replayed order stays dead.
- * @private
- */
-const MAX_CANCELLED = 10000;
-/**
- * Cancels one key may hold for orders this book has not seen. Anyone can
- * sign those, so they are capped per signer and evicted first.
- * @private
- */
-const MAX_PENDING_CANCELS_PER_MAKER = 100;
 
-/** @private */
-function cancelKey (orderId, makerPubkey) {
-  return `${orderId}:${makerPubkey}`;
-}
-
-class LiquidityBook {
+class LiquidityBook extends OrderBook {
   /**
    * @param {Object} [settings]
    * @param {string} [settings.network='regtest'] only orders for this network are held
@@ -45,210 +30,44 @@ class LiquidityBook {
    * @param {Function} [settings.now] clock in ms (tests)
    */
   constructor (settings = {}) {
-    this.settings = Object.assign({
-      network: 'regtest',
-      maxOrders: MAX_ORDERS,
-      maxCancelled: MAX_CANCELLED,
-      maxPendingCancelsPerMaker: MAX_PENDING_CANCELS_PER_MAKER,
-      now: () => Date.now()
-    }, settings);
-    this.settings.network = String(this.settings.network).toLowerCase();
-    // order id → `{ id, order, seq }`
-    this._orders = new Map();
-    // `orderId:makerPubkey` → the cancelled order's `expiresAt`, or null while it is not held
-    this._cancelled = new Map();
-    // maker → keys of its cancels for orders not held
-    this._pendingCancels = new Map();
-    this._seq = 0;
-  }
-
-  /** @returns {number} orders held */
-  get size () {
-    return this._orders.size;
-  }
-
-  /**
-   * Verify and hold a signed `LiquidityOrder` body.
-   * @param {Object} body
-   * @returns {{ ok: boolean, id: (string|null), reason: (string|null), duplicate: (boolean|undefined) }}
-   */
-  ingestOrder (body) {
-    if (!body || body.type !== swap.BODY_TYPES.ORDER) return { ok: false, id: null, reason: 'not a LiquidityOrder' };
-    const v = swap.verifyBody(body);
-    if (!v.ok) return { ok: false, id: null, reason: v.reason };
-    const order = v.body;
-    if (order.network !== this.settings.network) return { ok: false, id: v.id, reason: 'wrong network' };
-    if (order.expiresAt <= this.settings.now()) return { ok: false, id: v.id, reason: 'order expired' };
-    const cancelled = cancelKey(v.id, order.makerPubkey);
-    if (this._cancelled.has(cancelled)) {
-      this._confirmCancel(cancelled, order.expiresAt);
-      return { ok: false, id: v.id, reason: 'order cancelled' };
-    }
-    if (this._orders.has(v.id)) return { ok: false, id: v.id, reason: 'duplicate order', duplicate: true };
-    this.prune();
-    while (this._orders.size >= this.settings.maxOrders) {
-      this._orders.delete(this._orders.keys().next().value);
-    }
-    this._orders.set(v.id, { id: v.id, order, seq: ++this._seq });
-    return { ok: true, id: v.id, reason: null };
-  }
-
-  /**
-   * Apply a signed `LiquidityOrderCancel` from the order's maker. A cancel
-   * for an order not held yet is remembered with its signer, so the order
-   * cannot arrive later from that maker; another key's cancel never blocks it.
-   * @param {Object} body
-   * @returns {{ ok: boolean, id: (string|null), reason: (string|null) }}
-   */
-  cancel (body) {
-    if (!body || body.type !== swap.BODY_TYPES.CANCEL) return { ok: false, id: null, reason: 'not a LiquidityOrderCancel' };
-    const v = swap.verifyBody(body);
-    if (!v.ok) return { ok: false, id: null, reason: v.reason };
-    const { orderId, makerPubkey } = v.body;
-    const held = this._orders.get(orderId);
-    if (held && held.order.makerPubkey !== makerPubkey) return { ok: false, id: orderId, reason: 'cancel is not from the maker' };
-    this._orders.delete(orderId);
-    this._rememberCancelled(orderId, makerPubkey, held ? held.order.expiresAt : null);
-    return { ok: true, id: orderId, reason: null };
-  }
-
-  /** @private */
-  _rememberCancelled (orderId, makerPubkey, expiresAt) {
-    const key = cancelKey(orderId, makerPubkey);
-    if (this._cancelled.has(key)) {
-      if (expiresAt != null) this._confirmCancel(key, expiresAt);
-      return;
-    }
-    if (expiresAt == null) {
-      const pending = this._pendingCancels.get(makerPubkey);
-      if (pending && pending.size >= this.settings.maxPendingCancelsPerMaker) {
-        this._forgetCancel(pending.values().next().value);
-      }
-    }
-    if (this._cancelled.size >= this.settings.maxCancelled) this._evictCancel();
-    this._cancelled.set(key, expiresAt);
-    if (expiresAt == null) {
-      if (!this._pendingCancels.has(makerPubkey)) this._pendingCancels.set(makerPubkey, new Set());
-      this._pendingCancels.get(makerPubkey).add(key);
-    }
-  }
-
-  /**
-   * The cancelled order is known now: keep the cancel until it expires.
-   * @private
-   */
-  _confirmCancel (key, expiresAt) {
-    this._cancelled.set(key, expiresAt);
-    this._dropPending(key);
-  }
-
-  /** @private */
-  _forgetCancel (key) {
-    this._cancelled.delete(key);
-    this._dropPending(key);
-  }
-
-  /** @private */
-  _dropPending (key) {
-    const maker = key.slice(key.indexOf(':') + 1);
-    const pending = this._pendingCancels.get(maker);
-    if (pending && pending.delete(key) && !pending.size) this._pendingCancels.delete(maker);
-  }
-
-  /**
-   * Make room for one cancel: drop cancels whose order expired, else the
-   * oldest cancel for an order never held, else the oldest cancel.
-   * @private
-   */
-  _evictCancel () {
-    const now = this.settings.now();
-    for (const [key, expiresAt] of this._cancelled) {
-      if (expiresAt != null && expiresAt <= now) this._cancelled.delete(key);
-    }
-    if (this._cancelled.size < this.settings.maxCancelled) return;
-    for (const [key, expiresAt] of this._cancelled) {
-      if (expiresAt == null) return this._forgetCancel(key);
-    }
-    this._cancelled.delete(this._cancelled.keys().next().value);
-  }
-
-  /**
-   * Drop expired orders.
-   * @returns {number} orders removed
-   */
-  prune () {
-    const now = this.settings.now();
-    let n = 0;
-    for (const [id, row] of this._orders) {
-      if (row.order.expiresAt <= now) {
-        this._orders.delete(id);
-        n++;
-      }
-    }
-    return n;
-  }
-
-  /**
-   * Drop every order from one maker (disconnect, fraud, failed settlement).
-   * @param {string} makerPubkey
-   * @returns {number} orders removed
-   */
-  forgetMaker (makerPubkey) {
-    const key = String(makerPubkey || '').toLowerCase();
-    let n = 0;
-    for (const [id, row] of this._orders) {
-      if (row.order.makerPubkey === key) {
-        this._orders.delete(id);
-        n++;
-      }
-    }
-    return n;
-  }
-
-  /**
-   * @param {string} id
-   * @returns {Object|null} the order body
-   */
-  get (id) {
-    const row = this._orders.get(String(id || ''));
-    return row ? Object.assign({}, row.order) : null;
-  }
-
-  /**
-   * Live orders, best first within each side (bids by highest premium, asks
-   * by lowest; ties by arrival).
-   * @param {Object} [filter]
-   * @param {string} [filter.side]
-   * @param {string} [filter.makerPubkey]
-   * @returns {Object[]} `{ id, ...order }`
-   */
-  listOrders (filter = {}) {
-    const now = this.settings.now();
-    const rows = [];
-    for (const row of this._orders.values()) {
-      if (row.order.expiresAt <= now) continue;
-      if (filter.side && row.order.side !== filter.side) continue;
-      if (filter.makerPubkey && row.order.makerPubkey !== String(filter.makerPubkey).toLowerCase()) continue;
-      rows.push(row);
-    }
-    rows.sort((a, b) => {
-      if (a.order.side !== b.order.side) return a.order.side === 'bid' ? -1 : 1;
-      const byPrice = a.order.side === 'bid'
-        ? b.order.premiumPpm - a.order.premiumPpm
-        : a.order.premiumPpm - b.order.premiumPpm;
-      return byPrice || (a.seq - b.seq);
+    super(Object.assign({ maxOrders: MAX_ORDERS }, settings), {
+      codec: Swap,
+      entryType: Swap.BODY_TYPES.ORDER,
+      cancelType: Swap.BODY_TYPES.CANCEL,
+      field: 'order',
+      idField: 'orderId',
+      noun: 'order',
+      capacitySetting: 'maxOrders'
     });
-    return rows.map((row) => Object.assign({ id: row.id }, row.order));
+  }
+
+  /**
+   * {@link OrderBook#list} lists bids, then asks, best first within each side
+   * (bids by highest premium, asks by lowest; ties by arrival).
+   * `filter.side` keeps one side.
+   * @protected
+   */
+  _matches (order, filter) {
+    return !filter.side || order.side === filter.side;
+  }
+
+  /** @protected */
+  _compare (a, b) {
+    if (a.order.side !== b.order.side) return a.order.side === 'bid' ? -1 : 1;
+    const byPrice = a.order.side === 'bid'
+      ? b.order.premiumPpm - a.order.premiumPpm
+      : a.order.premiumPpm - b.order.premiumPpm;
+    return byPrice || (a.seq - b.seq);
   }
 
   /** @returns {Object|null} highest-premium live bid */
   bestBid () {
-    return this.listOrders({ side: 'bid' })[0] || null;
+    return this.list({ side: 'bid' })[0] || null;
   }
 
   /** @returns {Object|null} lowest-premium live ask */
   bestAsk () {
-    return this.listOrders({ side: 'ask' })[0] || null;
+    return this.list({ side: 'ask' })[0] || null;
   }
 
   /**
@@ -258,7 +77,7 @@ class LiquidityBook {
    */
   depth (side) {
     const levels = [];
-    for (const order of this.listOrders({ side })) {
+    for (const order of this.list({ side })) {
       const last = levels[levels.length - 1];
       if (last && last.premiumPpm === order.premiumPpm) {
         last.sats += order.maxSats;
@@ -277,10 +96,10 @@ class LiquidityBook {
   index () {
     const bid = this.bestBid();
     const ask = this.bestAsk();
-    const sum = (side) => this.listOrders({ side }).reduce((total, o) => total + o.maxSats, 0);
+    const sum = (side) => this.list({ side }).reduce((total, o) => total + o.maxSats, 0);
     const both = bid && ask;
     return {
-      instrument: swap.INSTRUMENT,
+      instrument: Swap.INSTRUMENT,
       network: this.settings.network,
       bestBidPpm: bid ? bid.premiumPpm : null,
       bestAskPpm: ask ? ask.premiumPpm : null,
@@ -307,7 +126,7 @@ class LiquidityBook {
    */
   fill (side, amountSats, opts = {}) {
     const want = Math.floor(Number(amountSats));
-    if (!swap.SIDES.includes(side)) throw new Error('liquidityBook: side must be "bid" or "ask"');
+    if (!Swap.SIDES.includes(side)) throw new Error('liquidityBook: side must be "bid" or "ask"');
     if (!Number.isSafeInteger(want) || want <= 0) throw new Error('liquidityBook: amountSats must be a positive integer');
     const exclude = new Set((opts.excludeMakers || []).map((k) => String(k).toLowerCase()));
     const limit = opts.limitPpm != null ? Number(opts.limitPpm) : null;
@@ -315,7 +134,7 @@ class LiquidityBook {
     let remaining = want;
     let weighted = 0;
     let l2Msat = 0;
-    for (const order of this.listOrders({ side })) {
+    for (const order of this.list({ side })) {
       if (remaining <= 0) break;
       if (exclude.has(order.makerPubkey)) continue;
       if (limit != null && (side === 'ask' ? order.premiumPpm > limit : order.premiumPpm < limit)) break;
@@ -323,7 +142,7 @@ class LiquidityBook {
       if (chunk < order.minSats) continue;
       let q;
       try {
-        q = swap.quote({ side, premiumPpm: order.premiumPpm, feeSats: order.feeSats, amountSats: chunk });
+        q = Swap.quote({ side, premiumPpm: order.premiumPpm, feeSats: order.feeSats, amountSats: chunk });
       } catch {
         continue;
       }
@@ -346,5 +165,3 @@ class LiquidityBook {
 module.exports = LiquidityBook;
 module.exports.LiquidityBook = LiquidityBook;
 module.exports.MAX_ORDERS = MAX_ORDERS;
-module.exports.MAX_CANCELLED = MAX_CANCELLED;
-module.exports.MAX_PENDING_CANCELS_PER_MAKER = MAX_PENDING_CANCELS_PER_MAKER;

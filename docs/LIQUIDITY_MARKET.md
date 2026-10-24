@@ -10,9 +10,8 @@ which layer is scarcer.
 
 | Module | Role |
 |--------|------|
-| [`functions/liquiditySwap.js`](../functions/liquiditySwap.js) | Pure helpers: body normalize / sign / verify, quotes, roles, escrow + invoice checks |
 | [`types/liquidityBook.js`](../types/liquidityBook.js) | `LiquidityBook` — local order book, price-time priority, index, fills |
-| [`types/liquiditySwap.js`](../types/liquiditySwap.js) | `LiquiditySwap` — one fill's settlement state machine over injected adapters |
+| [`types/swap.js`](../types/swap.js) | `Swap` — one fill's settlement state machine over injected adapters; its statics are the body codec (normalize / sign / verify), quotes, roles, and escrow + invoice checks |
 | [`services/lightning.js`](../services/lightning.js) | `createInvoice(…, { preimage, expiry })`; `pay` returns `paymentPreimage` |
 
 ## Market model
@@ -67,14 +66,14 @@ be the payee of the counterparty's invoice.
 
 ## Settlement
 The **L1 giver owns the preimage** `P` (`H = SHA256(P)`). Roles by side
-(`swapRoles`):
+(`Swap.roles`):
 
 | Order side | L1 giver (preimage owner, funds HTLC, invoices L2) | L2 giver (pays invoice, claims HTLC) |
 |------------|------|------|
 | ask | maker | taker |
 | bid | taker | maker |
 
-Escrow is the inventory P2TR HTLC (`buildInventoryHtlcP2tr`): claim leaf =
+Escrow is the P2TR HTLC (`types/htlc`): claim leaf =
 hashlock `H` + L2 giver's HTLC key; refund leaf = CLTV `refundLockHeight` +
 L1 giver's HTLC key.
 
@@ -92,7 +91,7 @@ taker                                   maker
   L1 giver: after refundLockHeight → refund
 ```
 
-`LiquiditySwap` states:
+`Swap` states:
 `new → proposed → accepted → prepaid? → l1Funded → l2Paid → l1Claimed | refunded | aborted`.
 `abort` is allowed only before L1 moves. Illegal transitions throw. `fund`
 records the escrow before it sends and runs at most once; once the send
@@ -103,9 +102,9 @@ nothing was sent.
 written only with `includeSecrets`).
 
 ### Checks before the L2 giver pays
-`validateSwapEscrow` rebuilds the HTLC from both keys, `H`, and the lock and
+`Swap.validateEscrow` rebuilds the HTLC from both keys, `H`, and the lock and
 compares the address; the funding output must pay exactly `amountSats` and have
-`minConfirmations`. `validateSwapInvoice` requires the invoice to commit to `H`,
+`minConfirmations`. `Swap.validateInvoice` requires the invoice to commit to `H`,
 ask exactly `l2Msat`, name the counterparty node as payee, be unexpired, and
 leave time to claim:
 
@@ -139,7 +138,7 @@ invoiceExpiresAt + marginSeconds ≤ now + (refundLockHeight − tip) × seconds
   cancel that arrived before its order.
 
 ## Adapters
-`LiquiditySwap` never talks to nodes directly. Pass `adapters: { bitcoin, lightning }`:
+`Swap` never talks to nodes directly. Pass `adapters: { bitcoin, lightning }`:
 
 | Bitcoin adapter | Returns |
 |-----------------|---------|
@@ -156,17 +155,17 @@ invoiceExpiresAt + marginSeconds ≤ now + (refundLockHeight − tip) × seconds
 | `pay(bolt11)` | `{ paymentPreimage }` |
 | `isInvoicePaid(paymentHashHex)` | boolean |
 
-`LiquiditySwap.bitcoinAdapter(bitcoinService, { wallet })` and
-`LiquiditySwap.lightningAdapter(lightningService)` wrap `services/bitcoin`
+`Swap.bitcoinAdapter(bitcoinService, { wallet })` and
+`Swap.lightningAdapter(lightningService)` wrap `services/bitcoin`
 (bitcoind with `txindex`, which managed regtest enables) and
 `services/lightning` (Core Lightning; `decode`, falling back to `decodepay`).
 
 ## Tests
-- `tests/functions.liquiditySwap.js`, `tests/types.liquidityBook.js`,
-  `tests/types.liquiditySwap.js` — run in `npm test` (mock chain + Lightning).
-- `tests/lightning/liquiditySwap.regtest.js` — managed bitcoind + two Core
+- `tests/types.swap.bodies.js`, `tests/types.liquidityBook.js`,
+  `tests/types.swap.js` — run in `npm test` (mock chain + Lightning).
+- `tests/lightning/swap.regtest.js` — managed bitcoind + two Core
   Lightning nodes; settles an ask end to end and refunds an unpaid swap.
-  Gated: `FABRIC_E2E_REGTEST=1 npx mocha tests/lightning/liquiditySwap.regtest.js`
+  Gated: `FABRIC_E2E_REGTEST=1 npx mocha tests/lightning/swap.regtest.js`
   (needs `bitcoind` and `lightningd` on `PATH`).
 
 ## Non-goals

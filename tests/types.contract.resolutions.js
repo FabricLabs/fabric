@@ -7,7 +7,7 @@ const { secp256k1, schnorr } = require('@noble/curves/secp256k1.js');
 
 const Contract = require('../types/contract');
 const Bond = require('../types/bond');
-const { prepareLeafPsbt } = require('../functions/contractTaproot');
+const { prepareLeafPsbt } = require('../types/policy');
 
 const { Resolutions } = Contract;
 

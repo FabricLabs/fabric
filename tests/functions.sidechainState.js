@@ -8,10 +8,9 @@ const { jsonSafe, stableStringify } = require('../functions/fabricCanonicalJson'
 const { parseDistributedManifestV1 } = require('../functions/fabricProgramManifest');
 const sc = require('../functions/sidechainState');
 const Message = require('../types/message');
-const { tryParseLegacyBody } = require('../functions/fabricMessageBodies');
 
 function legacyBody (msg) {
-  const parsed = tryParseLegacyBody(Message.fromBuffer(msg.toBuffer()));
+  const parsed = Message.tryParseLegacyBody(Message.fromBuffer(msg.toBuffer()));
   assert.strictEqual(parsed.encoding, 'fields');
   return parsed.value;
 }

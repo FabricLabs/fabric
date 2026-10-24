@@ -9,7 +9,7 @@
  */
 
 const bitcoin = require('bitcoinjs-lib');
-const inventoryHtlc = require('./inventoryHtlc');
+const Htlc = require('../types/htlc');
 
 /** Fabric / ZMQ Bitcoin message types we monitor. */
 const BITCOIN_MESSAGE_TYPES = Object.freeze([
@@ -143,12 +143,12 @@ function settlementForPaymentHash (watchSet, paymentHashHex) {
 function extractClaimPreimage (verbose, hex, paymentHashHex) {
   if (!paymentHashHex) return null;
   if (hex) {
-    const got = inventoryHtlc.extractPreimageFromClaimTx(hex, paymentHashHex);
+    const got = Htlc.extractPreimage(hex, paymentHashHex);
     if (got.ok) return got;
   }
   for (let i = 0; i < ((verbose && verbose.vin) || []).length; i++) {
     const wit = verbose.vin[i] && (verbose.vin[i].txinwitness || verbose.vin[i].witness);
-    const pre = inventoryHtlc.extractPreimageFromWitnessStack(wit, paymentHashHex);
+    const pre = Htlc.extractPreimageFromWitness(wit, paymentHashHex);
     if (pre) {
       return { ok: true, preimageHex: pre.toString('hex'), preimage32: pre, vin: i };
     }

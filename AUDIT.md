@@ -14,7 +14,7 @@ audit report.
 | P2P_RELAY amplification | Mitigated: bit-identical outer forward + nest depth cap + relay-as-is pin; gossip hop remains advisory |
 | Chat mesh amplify | Mitigated: per-origin relay budget (`CHAT_MAX_RELAYS_*`) |
 | Oversize / undersize wire frames | Mitigated: drop before parse/crypto (`< HEADER_SIZE` or `> HEADER_SIZE + MAX_MESSAGE_SIZE`, i.e. 32976 bytes with the 32 KiB body cap); unparseable buffers drop without score/ban |
-| Inventory HTLC address spoof | Mitigated: rebuild+match (`validateInventoryHtlcOffer`); AMP signer binding when present |
+| Inventory HTLC address spoof | Mitigated: rebuild+match (`Htlc.validateOffer`); AMP signer binding when present |
 | Paid `/confirm` without L1 proof | Mitigated: fail-closed local verify or Hub `ConfirmInventoryHtlcPayment` (`cliDocumentExchange`) |
 | Key reveal from hash echo | Mitigated: `authorizeDocumentKeyReveal` requires `settlementId`/`txid`; `forceReveal` opt-in only; inbound reveal requires key preimage + claim-after-open |
 | Private DocumentRequest mesh broadcast | Mitigated: directed relay (`relayPath` / `nextPeer` / fan-out excluding origin) |
@@ -76,7 +76,7 @@ Most CodeRabbit / automation actionable items on [#183](https://github.com/Fabri
 
 ## Recommendations before a non-experimental tag
 
-- [ ] Third-party review of `types/peer.js`, `functions/inventoryHtlc.js`, `functions/documentSealedExchange.js`, `functions/publishedDocumentEnvelope.js`
+- [ ] Third-party review of `types/peer.js`, `types/htlc.js`, `functions/documentSealedExchange.js`, `functions/publishedDocumentEnvelope.js`
 - [ ] Run `npm run ci` + `npm run test:fuzz` on a clean tree
 - [ ] Freeze [PUBLIC_API.md](PUBLIC_API.md) import map; keep `package.json` `files` whitelist green
 - [ ] Coordinate Hub / `@fabric/http` pins to the tagged core ([docs/PRODUCTION.md](docs/PRODUCTION.md))

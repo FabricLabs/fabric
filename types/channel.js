@@ -23,10 +23,10 @@ const Witness = require('./witness');
 const Resolutions = require('./resolutions');
 
 // Functions
-const { taprootPsbtInputFields, signerFromPriv32 } = require('../functions/inventoryHtlc');
+const { taprootPsbtInputFields } = require('../functions/bip371');
+const Htlc = require('./htlc');
 const { buildInclusion } = require('../functions/bitcoinTxInclusion');
 const ecc = require('./ecc');
-const EventEmitter = require('events');
 
 const {
   networkForFabricName,
@@ -38,8 +38,8 @@ const {
   prepareLeafPsbt,
   finalizeSpendPsbt,
   finalizeHashlockPsbt
-} = require('../functions/contractTaproot');
-const { assertTestNetwork, normalizeNetworkName } = require('../functions/bitcoinNetworkAllowlist');
+} = require('./policy');
+const { assertTestNetwork } = require('../functions/bitcoinNetworkAllowlist');
 
 // Locals
 const HEX64 = /^[0-9a-f]{64}$/;
@@ -895,7 +895,7 @@ Channel.buildCommitment = function buildCommitment (funding, state = {}, opts = 
  */
 Channel.signCommitment = function signCommitment (psbtBase64, priv32, network = 'regtest') {
   const psbt = bitcoin.Psbt.fromBase64(String(psbtBase64), { network: networkForFabricName(network) });
-  psbt.signInput(0, signerFromPriv32(Buffer.isBuffer(priv32) ? priv32 : Buffer.from(String(priv32), 'hex')));
+  psbt.signInput(0, Htlc.signerFromPriv32(Buffer.isBuffer(priv32) ? priv32 : Buffer.from(String(priv32), 'hex')));
   return psbt.toBase64();
 };
 
@@ -1126,7 +1126,7 @@ Channel.prepareJusticeSpend = function prepareJusticeSpend (opts = {}) {
   const revPriv = Channel.revocationPrivkey(priv, opts.perCommitmentSecretHex);
   const revPub = pointToHex(ECPoint.BASE.multiply(scalarOf(revPriv)));
   if (revPub !== commitment.revocationPubkey) throw new Error('prepareJusticeSpend: secret does not derive the commitment revocation key');
-  const signer = signerFromPriv32(revPriv);
+  const signer = Htlc.signerFromPriv32(revPriv);
   const psbt = new bitcoin.Psbt({ network });
   const inputs = [];
   let swept = 0;
@@ -1284,12 +1284,13 @@ function cloneHtlcs (list) {
 /**
  * @param {Object} h HTLC row
  * @returns {number} CLTV expiry height (0 when none)
- * @private
  */
 function expireHeight (h) {
   const lock = heightLock(h && h.expireAfter);
   return lock ? Number(lock.height) : 0;
 }
+
+Channel.expireHeight = expireHeight;
 
 /**
  * Validate HTLC rows received from a counterparty: unique non-empty ids,
@@ -1384,7 +1385,7 @@ class ChannelSession {
     const priv = opts.localPrivateKey;
     this.localPrivateKey = Buffer.isBuffer(priv) ? priv : Buffer.from(String(priv || ''), 'hex');
     if (this.localPrivateKey.length !== 32) throw new Error('ChannelSession: localPrivateKey (32 bytes) required');
-    const derived = Buffer.from(signerFromPriv32(this.localPrivateKey).publicKey).toString('hex');
+    const derived = Buffer.from(Htlc.signerFromPriv32(this.localPrivateKey).publicKey).toString('hex');
     if (derived !== this.funding.localPubkey) throw new Error('ChannelSession: localPrivateKey does not match funding.localPubkey');
     this.localAddress = String(opts.localAddress || '');
     this.remoteAddress = String(opts.remoteAddress || '');
@@ -2624,556 +2625,5 @@ Channel.exchange = function exchange (from, to, body) {
   }
   return trace;
 };
-
-/**
- * @classdesc Local registry of {@link ChannelSession}s for a host (Hub,
- * GoonCitizen, Passport): looks a channel up by counterparty, routes inbound
- * `Channel*` `CONTRACT_MESSAGE` bodies to the right session, forwards
- * multi-hop HTLCs, ticks sessions on new chain tips, and returns the bodies
- * and on-chain actions the host must handle. Shape expected by the market
- * agent's `attach({ channels })`.
- *
- * **Seller-fulfills (Lightning shape):** when the host supplies
- * `preimageFor(paymentHashHex, htlc)` the book fulfills every received HTLC
- * the host releases a preimage for as soon as the round that committed it
- * completes; the payer learns the preimage from the resulting
- * `ChannelHtlcFulfill`. The host sees the HTLC (amount, expiry, blob hash) and
- * must refuse underpaid ones.
- *
- * Events: `htlcCommitted` (a received HTLC is irrevocably committed),
- * `htlcFulfilled` (a counterparty revealed a preimage to us), `htlcSettled`
- * (any HTLC left the channel; `outcome` is `fulfilled` or `failed`), and
- * `channelAction` (a new watchdog action, see {@link ChannelSession#tick}).
- * HTLC payloads are `{ channelId, session, htlcId, paymentHashHex,
- * blobHashHex, amountSats, direction, preimageHex?, outcome?, reason? }`.
- * @class ChannelBook
- */
-class ChannelBook extends EventEmitter {
-  /**
-   * @param {object} opts `{ localPrivateKey, network, tipHeight?: function, confirmations?: function(txid)|true, publish?: function(body, session), persist?: function(session, body), preimageFor?: function(paymentHashHex, htlc), policy?, feerate?, staleTipMs?, forwardPolicy?: { feeSats, cltvDelta } }`
-   *   `persist(session, body)` runs before every publish (a returned promise
-   *   delays the publish; a throw cancels it). Inbound `ChannelOpen` needs
-   *   `confirmations`.
-   */
-  constructor (opts = {}) {
-    super();
-    const priv = opts.localPrivateKey;
-    this.localPrivateKey = Buffer.isBuffer(priv) ? priv : Buffer.from(String(priv || ''), 'hex');
-    if (this.localPrivateKey.length !== 32) throw new Error('ChannelBook: localPrivateKey (32 bytes) required');
-    this.localPubkey = Buffer.from(signerFromPriv32(this.localPrivateKey).publicKey).toString('hex');
-    this.network = refuseMainnet(opts.network || 'regtest');
-    this._tipFn = typeof opts.tipHeight === 'function' ? opts.tipHeight : null;
-    // `confirmations: fn(txid)` (sync) or `true` to gate funding on the
-    // host-fed cache (`setConfirmations`); omitted = funder-side trust only.
-    this._confirmationCache = new Map();
-    this._confirmations = typeof opts.confirmations === 'function'
-      ? opts.confirmations
-      : (opts.confirmations === true ? (txid) => this._confirmationCache.get(String(txid)) || 0 : null);
-    this._publish = typeof opts.publish === 'function' ? opts.publish : null;
-    this._persist = typeof opts.persist === 'function' ? opts.persist : null;
-    this._preimageFor = typeof opts.preimageFor === 'function' ? opts.preimageFor : null;
-    this.policy = Object.assign({}, opts.policy || {});
-    this.feerate = Math.max(1, Math.floor(Number(opts.feerate) || 1));
-    this.forwardPolicy = Object.assign({ feeSats: 1, cltvDelta: CHANNEL_DEFAULTS.minCltvDelta }, opts.forwardPolicy || {});
-    this.staleTipMs = Math.floor(Number(opts.staleTipMs != null ? opts.staleTipMs : CHANNEL_DEFAULTS.staleTipMs));
-    this._tip = { height: 0, at: 0 };
-    this.sessions = new Map(); // channelId → ChannelSession
-    this.peers = new Map(); // sellerId / address alias → channelId
-    this.forwards = new Map(); // `${downstreamChannelId}:${htlcId}` → { channelId, htlcId }
-    this.pendingPropagation = []; // upstream settlements to retry: { link, body }
-    this.timeouts = []; // expired offered HTLCs as of the last tick
-    this._announced = new Set(); // `${channelId}:${htlcId}` already emitted as htlcCommitted
-    this._actionKeys = new Set();
-  }
-
-  /**
-   * Record a fresh chain tip (hosts call on every block) and tick sessions.
-   * @param {number} height
-   * @returns {{ published: object[], actions: object[], timeouts: object[] }}
-   */
-  setTip (height) {
-    const h = Math.floor(Number(height) || 0);
-    if (h > 0) this._tip = { height: h, at: Date.now() };
-    return this.tick();
-  }
-
-  /**
-   * Host-fed confirmation count for a funding txid (see `confirmations: true`).
-   * @param {string} txid
-   * @param {number} confirmations
-   */
-  setConfirmations (txid, confirmations) {
-    this._confirmationCache.set(String(txid), Math.floor(Number(confirmations) || 0));
-  }
-
-  /** @returns {string[]} funding txids of sessions still waiting on confirmations */
-  pendingFundingTxids () {
-    const out = [];
-    for (const s of this.sessions.values()) {
-      if (s.state.fundingConfirmed) continue;
-      if (s.funding.fundingTxid) out.push(s.funding.fundingTxid);
-    }
-    return [...new Set(out)];
-  }
-
-  /**
-   * New-block hook for hosts: record the tip, tick sessions, and classify any
-   * transactions the host hands over (mempool / block bodies).
-   * @param {object} opts `{ height, txHexes?, blockHeaderHex?, txids?, destinationAddress?, feeSats? }` — `blockHeaderHex` + `txids` (block order) let stale-commitment proofs carry an inclusion branch
-   * @returns {{ published: object[], actions: object[], observations: object[] }}
-   */
-  onBlock (opts = {}) {
-    const ticked = this.setTip(opts.height);
-    const observations = [];
-    const inclusion = opts.blockHeaderHex && Array.isArray(opts.txids) ? { blockHeaderHex: opts.blockHeaderHex, txids: opts.txids } : undefined;
-    for (const hex of opts.txHexes || []) observations.push(...this.observe(hex, { destinationAddress: opts.destinationAddress, feeSats: opts.feeSats, inclusion }));
-    return { published: ticked.published, actions: ticked.actions, observations };
-  }
-
-  /** @returns {number|null} tip height, or `null` when unknown / stale (refuses new HTLCs) */
-  tipHeight () {
-    if (this._tipFn) {
-      const h = Number(this._tipFn());
-      if (Number.isFinite(h) && h > 0) { this._tip = { height: h, at: Date.now() }; return h; }
-    }
-    if (!this._tip.height) return null;
-    if (this.staleTipMs > 0 && Date.now() - this._tip.at > this.staleTipMs) return null;
-    return this._tip.height;
-  }
-
-  /** @returns {boolean} chain view is usable for expiry decisions */
-  get tipFresh () { return this.tipHeight() != null; }
-
-  /**
-   * @private deps handed to every session. `tipHeight` is **always** wired so
-   * a session never mistakes "no chain view" for "no expiry rule": with an
-   * unknown tip sessions refuse new HTLCs and refuse sender-side fails.
-   */
-  _sessionDeps () {
-    return {
-      tipHeight: () => this.tipHeight(),
-      confirmations: this._confirmations || undefined
-    };
-  }
-
-  /**
-   * Host-side preimage lookup (seller-fulfills). The host function receives
-   * `(paymentHashHex, htlc)` and may return the preimage hex or an object with
-   * `keyHex` / `preimageHex`. With an `htlc` the host is authoritative (it
-   * decides whether that HTLC pays enough); without one, preimages any session
-   * on this book has learned are a fallback.
-   * @param {string} paymentHashHex
-   * @param {object} [htlc] the received HTLC row asking for it
-   * @returns {string|null}
-   */
-  preimageFor (paymentHashHex, htlc = null) {
-    const hash = String(paymentHashHex || '').toLowerCase();
-    const norm = (v) => {
-      const raw = v && typeof v === 'object' ? (v.keyHex || v.preimageHex) : v;
-      const pre = String(raw || '').toLowerCase();
-      return HEX64.test(pre) && sha256Hex(Buffer.from(pre, 'hex')) === hash ? pre : null;
-    };
-    if (this._preimageFor) {
-      let pre = null;
-      try { pre = norm(this._preimageFor(hash, htlc ? Object.assign({}, htlc) : undefined)); } catch (_) { pre = null; }
-      if (pre || htlc) return pre;
-    }
-    for (const s of this.sessions.values()) {
-      const pre = s.preimageFor(hash);
-      if (pre) return pre;
-    }
-    return null;
-  }
-
-  /** @private event payload for an HTLC row */
-  _htlcEvent (session, row, extra = {}) {
-    return Object.assign({
-      channelId: session.channelId,
-      session,
-      htlcId: row.id,
-      paymentHashHex: row.paymentHashHex,
-      blobHashHex: row.blobHashHex || null,
-      amountSats: row.amountSats,
-      direction: row.direction,
-      forwardOf: row.forwardOf || null
-    }, extra);
-  }
-
-  /**
-   * @private fulfill the first committed received HTLC whose preimage we may
-   * release (one per call — each fulfill opens a new round). Too close to
-   * expiry the preimage is only handed to the session, whose watchdog then
-   * asks for an on-chain claim.
-   */
-  _autoFulfil (session) {
-    const ready = !session.busy && session.status === 'open';
-    for (const h of session.state.htlcs) {
-      if (h.direction !== 'received') continue;
-      const pre = session.preimageFor(h.paymentHashHex) || this.preimageFor(h.paymentHashHex, h);
-      if (!pre) continue;
-      if (!session.canFulfil(h)) { session.learnPreimage(h.paymentHashHex, pre); continue; }
-      if (!ready) continue;
-      try {
-        const body = session.fulfillHtlc(h.id, pre);
-        this.publish(body, session);
-        return body;
-      } catch (_) { /* try the next */ }
-    }
-    return null;
-  }
-
-  /** @private replay an intent rolled back in a proposal collision */
-  _repropose (session) {
-    const body = session.repropose();
-    if (body) this.publish(body, session);
-    return body;
-  }
-
-  /**
-   * Register a session under a channel id plus any peer aliases (Fabric id,
-   * `pubkey@host:port`, connection name) used by offers. Refuses to replace
-   * a different session already registered under that channel id.
-   * @param {ChannelSession} session
-   * @param {string[]} [aliases]
-   * @returns {ChannelSession}
-   */
-  add (session, aliases = []) {
-    const existing = this.sessions.get(session.channelId);
-    if (existing && existing !== session) throw new Error(`ChannelBook: channel ${session.channelId} already registered`);
-    this.sessions.set(session.channelId, session);
-    this.peers.set(session.funding.remotePubkey, session.channelId);
-    for (const a of aliases) if (a) this.peers.set(String(a), session.channelId);
-    return session;
-  }
-
-  /**
-   * @param {string} sellerId offer `sellerId` / `sellerAddress`
-   * @param {string|null} [pubkeyHex] compressed counterparty key when known
-   * @returns {ChannelSession|null}
-   */
-  sessionFor (sellerId, pubkeyHex = null) {
-    const id = (pubkeyHex && this.peers.get(String(pubkeyHex).toLowerCase())) || this.peers.get(String(sellerId || ''));
-    return id ? this.sessions.get(id) || null : null;
-  }
-
-  /**
-   * Publish hook used by the market agent (`channels.publish(body, session)`).
-   * Runs `persist(session, body)` first: a sync throw cancels the publish and
-   * propagates; a returned promise delays it (rejection → `error` event).
-   * @param {object|object[]} body
-   * @param {ChannelSession} [session]
-   */
-  publish (body, session = null) {
-    if (!body) return;
-    if (Array.isArray(body)) { for (const b of body) this.publish(b, session); return; }
-    const send = () => { if (this._publish) this._publish(body, session); };
-    if (this._persist && session) {
-      const persisted = this._persist(session, body);
-      if (persisted && typeof persisted.then === 'function') {
-        persisted.then(send, (e) => { if (this.listenerCount('error')) this.emit('error', e); });
-        return;
-      }
-    }
-    send();
-  }
-
-  /**
-   * Open a channel toward a counterparty as the funder. The funder's opening
-   * balance is `capacity − fee − anchors`. Without `feeSats` the commitment
-   * fee follows `feerate` (default the book's, 1 sat/vB) and the HTLC count.
-   * @param {object} opts `{ remotePubkey, fundedTxHex, capacitySats, expireAfter, localAddress, remoteAddress, feeSats?, feerate?, toSelfDelay?, fundingVout?, policy?, aliases? }`
-   * @returns {{ session: ChannelSession, body: object }} `ChannelOpen` body to publish
-   */
-  open (opts = {}) {
-    const policy = Object.assign({}, this.policy, opts.policy || {});
-    const capacity = Math.floor(Number(opts.capacitySats));
-    const feerate = opts.feeSats != null ? null : Math.max(1, Math.floor(Number(opts.feerate) || this.feerate));
-    const fee = opts.feeSats != null
-      ? Math.floor(Number(opts.feeSats))
-      : Math.max(Channel.negotiatePolicy(policy, {}, capacity).minCommitFeeSats, Channel.commitmentFeeSats(feerate, 0));
-    const funding = Channel.buildFunding({ network: this.network, localPubkey: this.localPubkey, remotePubkey: opts.remotePubkey, expireAfter: opts.expireAfter, capacitySats: capacity, toSelfDelay: opts.toSelfDelay });
-    if (opts.fundingVout != null) funding.fundingVout = Math.floor(Number(opts.fundingVout));
-    const session = new ChannelSession(Object.assign({
-      funding,
-      fundedTxHex: opts.fundedTxHex,
-      localPrivateKey: this.localPrivateKey,
-      localSats: capacity - fee - 2 * CHANNEL_DEFAULTS.anchorSats,
-      remoteSats: 0,
-      localAddress: opts.localAddress,
-      remoteAddress: opts.remoteAddress,
-      feeSats: fee,
-      feerate,
-      policy
-    }, this._sessionDeps()));
-    this.add(session, opts.aliases || []);
-    const body = session.open();
-    this.publish(body, session);
-    return { session, body };
-  }
-
-  /**
-   * Route an inbound `Channel*` body. Unknown channels are accepted only on
-   * `ChannelOpen` addressed to our key (we become the non-funding side), and
-   * only when the book has a `confirmations` source. Settlements on a
-   * forwarded downstream HTLC propagate upstream.
-   * @param {object} body signed artifact
-   * @param {object} [meta] `{ sellerId? }` alias for the counterparty
-   * @returns {object|object[]|null} reply body (already published through the hook)
-   */
-  ingest (body = {}, meta = {}) {
-    if (!body || typeof body.type !== 'string' || !body.type.startsWith('Channel')) return null;
-    let session = this.sessions.get(String(body.channelId));
-    let fresh = false;
-    if (!session) {
-      if (body.type !== CHANNEL_BODY_TYPES.Open || !body.funding) return null;
-      const f = body.funding;
-      if (String(f.remotePubkey).toLowerCase() !== this.localPubkey) return null;
-      if (normalizeNetworkName(f.network) !== this.network) return null;
-      if (!this._confirmations) throw new Error('ChannelBook: inbound ChannelOpen needs a confirmations source (confirmations option)');
-      if (!f.fundingTxid) throw new Error('ChannelBook: inbound ChannelOpen without a funding outpoint');
-      const funding = Channel.buildFunding({ network: f.network, localPubkey: this.localPubkey, remotePubkey: f.localPubkey, expireAfter: f.expireAfter, capacitySats: f.capacitySats, toSelfDelay: f.toSelfDelay, funder: f.funder === f.localPubkey ? 'remote' : 'local', fundingTxid: f.fundingTxid, fundingVout: f.fundingVout });
-      session = new ChannelSession(Object.assign({
-        funding,
-        fundedTxHex: body.fundedTxHex,
-        localPrivateKey: this.localPrivateKey,
-        localSats: Number(body.remoteSats) || 0,
-        remoteSats: Number(body.localSats) || 0,
-        localAddress: body.remoteAddress,
-        remoteAddress: body.localAddress,
-        feeSats: body.feeSats,
-        feerate: body.feerate,
-        policy: this.policy
-      }, this._sessionDeps()));
-      if (session.channelId !== String(body.channelId)) return null;
-      fresh = true;
-    }
-    const wasBusy = session.busy;
-    const settledBefore = session.state.settled.length;
-    // Validate first: a fresh session is registered only once its opening
-    // body verified, so a malformed `ChannelOpen` cannot park a dead entry
-    // under our counterparty's key.
-    const reply = session.ingest(body);
-    if (fresh) this.add(session, meta.sellerId ? [meta.sellerId] : []);
-    this.publish(reply, session);
-    if ((body.type === CHANNEL_BODY_TYPES.HtlcFulfill || body.type === CHANNEL_BODY_TYPES.HtlcFail) && session.state.settled.length > settledBefore) {
-      const row = session.state.settled[session.state.settled.length - 1];
-      const ev = this._htlcEvent(session, Object.assign({ direction: 'offered' }, row), { outcome: row.outcome, reason: row.reason || null, preimageHex: row.outcome === 'fulfilled' ? session.preimageFor(row.paymentHashHex) : null });
-      if (row.outcome === 'fulfilled') this.emit('htlcFulfilled', ev);
-      this.emit('htlcSettled', ev);
-      this._propagate(session, body);
-    }
-    // A received HTLC becomes irrevocably committed once the round that
-    // added it has completed on both sides (`busy` cleared).
-    if (!session.busy) {
-      if (wasBusy) {
-        for (const h of session.state.htlcs) {
-          const key = `${session.channelId}:${h.id}`;
-          if (h.direction !== 'received' || this._announced.has(key)) continue;
-          this._announced.add(key);
-          this.emit('htlcCommitted', this._htlcEvent(session, h));
-        }
-        this._retryPropagation();
-      }
-      if (!session.busy && !this._autoFulfil(session)) this._repropose(session);
-    }
-    return reply;
-  }
-
-  /** @private settle the upstream leg of a forwarded HTLC */
-  _propagate (downstream, body) {
-    const key = `${downstream.channelId}:${body.htlcId}`;
-    const link = this.forwards.get(key);
-    if (!link) return;
-    this.forwards.delete(key);
-    this._settleUpstream(link, { type: body.type, htlcId: body.htlcId, preimageHex: body.preimageHex || null, reason: body.reason || null });
-  }
-
-  /** @private @returns {object|null} body published upstream */
-  _settleUpstream (link, body) {
-    const upstream = this.sessions.get(link.channelId);
-    if (!upstream) return null;
-    const fulfil = body.type === CHANNEL_BODY_TYPES.HtlcFulfill;
-    if (fulfil) upstream.learnPreimage(null, body.preimageHex);
-    if (!upstream.state.htlcs.some((h) => h.id === link.htlcId)) return null;
-    try {
-      const out = fulfil
-        ? upstream.fulfillHtlc(link.htlcId, body.preimageHex)
-        : upstream.failHtlc(link.htlcId, body.reason || 'downstream-failed');
-      this.publish(out, upstream);
-      return out;
-    } catch (e) {
-      this.pendingPropagation.push({ link, body, error: e.message });
-      return null;
-    }
-  }
-
-  /** @private retry upstream settlements that failed (busy / tip unknown) */
-  _retryPropagation () {
-    const pending = this.pendingPropagation;
-    this.pendingPropagation = [];
-    const out = [];
-    for (const p of pending) {
-      const body = this._settleUpstream(p.link, p.body);
-      if (body) out.push(body);
-    }
-    return out;
-  }
-
-  /**
-   * Forward a received HTLC onto another channel (multi-hop): the upstream
-   * HTLC must be irrevocably committed (in the last countersigned state, no
-   * round in flight); enforces {@link Channel.checkForward} with this node's
-   * policy, with a CLTV delta of at least {@link Channel.minForwardCltvDelta}
-   * for the downstream channel; offers the downstream HTLC with `forwardOf`,
-   * and links the two for settlement.
-   * @param {ChannelSession} upstream
-   * @param {string} upstreamHtlcId
-   * @param {ChannelSession} downstream
-   * @param {object} [policy] `{ feeSats, cltvDelta }` (defaults to `forwardPolicy`)
-   * @returns {object} downstream `ChannelCommitment` body (published)
-   */
-  forward (upstream, upstreamHtlcId, downstream, policy = null) {
-    if (upstream === downstream) throw new Error('forward: cannot forward onto the same channel');
-    const p = Object.assign({}, this.forwardPolicy, policy || {});
-    const up = upstream.state.htlcs.find((h) => h.id === String(upstreamHtlcId) && h.direction === 'received');
-    if (!up) throw new Error('forward: upstream HTLC not received on that channel');
-    const ls = upstream.state.lastSigned;
-    if (upstream.busy || !ls || !ls.htlcs.some((h) => h.id === up.id)) throw new Error('forward: upstream HTLC not irrevocably committed yet');
-    const cltvDelta = Math.max(Math.floor(Number(p.cltvDelta) || 0), Channel.minForwardCltvDelta(downstream));
-    const fwd = Object.assign({}, p, { cltvDelta });
-    const down = { amountSats: up.amountSats - Math.floor(Number(p.feeSats) || 0), expireAfter: { type: 'cltv', height: expireHeight(up) - cltvDelta }, paymentHashHex: up.paymentHashHex };
-    if (down.amountSats < 1) throw new Error('forward: fee-short');
-    const check = Channel.checkForward(up, down, fwd);
-    if (!check.ok) throw new Error(`forward: ${check.reason}`);
-    const body = downstream.offerHtlc({ amountSats: down.amountSats, paymentHashHex: up.paymentHashHex, blobHashHex: up.blobHashHex, expireAfter: down.expireAfter, forwardOf: { channelId: upstream.channelId, htlcId: up.id } });
-    this.forwards.set(`${downstream.channelId}:${body.htlc.id}`, { channelId: upstream.channelId, htlcId: up.id });
-    this.publish(body, downstream);
-    return body;
-  }
-
-  /**
-   * Tick every session with the current tip: publishes auto-fail / fulfil
-   * bodies, retries pending upstream settlements and rolled-back proposals,
-   * and collects the watchdog actions ({@link ChannelSession#tick}). New
-   * actions are also emitted as `channelAction`.
-   * @returns {{ published: object[], actions: object[], timeouts: object[] }}
-   */
-  tick () {
-    const tip = this.tipHeight();
-    const published = this._retryPropagation();
-    const actions = [];
-    const timeouts = [];
-    for (const session of this.sessions.values()) {
-      const settledBefore = session.state.settled.length;
-      // Released preimages reach the session before its watchdog runs, so a
-      // fulfill without margin becomes a claim action this tick.
-      const early = this._autoFulfil(session);
-      if (early) published.push(early);
-      const r = session.tick(tip || 0);
-      for (const b of r.bodies) { this.publish(b, session); published.push(b); }
-      for (const t of r.timeouts) timeouts.push(Object.assign({ channelId: session.channelId }, t));
-      actions.push(...r.actions);
-      if (!session.busy) {
-        const b = this._autoFulfil(session) || this._repropose(session);
-        if (b) published.push(b);
-      }
-      for (const row of session.state.settled.slice(settledBefore)) {
-        const ev = this._htlcEvent(session, Object.assign({ direction: 'offered' }, row), { outcome: row.outcome, reason: row.reason || null, preimageHex: row.outcome === 'fulfilled' ? session.preimageFor(row.paymentHashHex) : null });
-        if (row.outcome === 'fulfilled') this.emit('htlcFulfilled', ev);
-        this.emit('htlcSettled', ev);
-      }
-    }
-    const keys = new Set();
-    for (const a of actions) {
-      const key = `${a.type}:${a.channelId}:${a.htlcId || a.reason}`;
-      keys.add(key);
-      if (!this._actionKeys.has(key)) this.emit('channelAction', a);
-    }
-    this._actionKeys = keys;
-    this.timeouts = timeouts;
-    return { published, actions, timeouts };
-  }
-
-  /**
-   * Resend state after a reconnect: a `ChannelReestablish` per session (the
-   * peer answers with what we missed), or the `ChannelOpen` itself while the
-   * peer never answered it.
-   * @param {string} [channelId] one channel, default all
-   * @returns {object[]} bodies published
-   */
-  reestablish (channelId = null) {
-    const sessions = channelId ? [this.sessions.get(String(channelId))].filter(Boolean) : [...this.sessions.values()];
-    const out = [];
-    for (const s of sessions) {
-      const update = s.state.outbox && s.state.outbox.update;
-      const body = s.isFunder && !s.state.lastSigned && update && update.type === CHANNEL_BODY_TYPES.Open ? update : s.reestablish();
-      this.publish(body, s);
-      out.push(body);
-    }
-    return out;
-  }
-
-  /**
-   * Hand an observed transaction to every session (mempool / block hook).
-   * @param {string} txHex
-   * @param {object} [opts] `{ destinationAddress?, feeSats?, excludeVouts?, perOutput? }`
-   * @returns {object[]} non-`unknown` observations
-   */
-  observe (txHex, opts = {}) {
-    const out = [];
-    for (const session of this.sessions.values()) {
-      try {
-        const r = session.observe(txHex, opts);
-        if (r.kind !== 'unknown') out.push(Object.assign({ channelId: session.channelId }, r));
-      } catch (_) { /* not ours */ }
-    }
-    return out;
-  }
-
-  /** @returns {object} persistence snapshot (no private key) */
-  export () {
-    return {
-      type: 'ChannelBookState',
-      version: 2,
-      network: this.network,
-      sessions: [...this.sessions.values()].map((s) => s.export()),
-      peers: Object.fromEntries(this.peers),
-      forwards: Object.fromEntries(this.forwards),
-      announced: [...this._announced],
-      pendingPropagation: this.pendingPropagation.map((p) => ({ link: p.link, body: p.body }))
-    };
-  }
-
-  /** @param {object} snapshot @returns {ChannelBook} */
-  import (snapshot = {}) {
-    for (const snap of snapshot.sessions || []) {
-      try { this.add(ChannelSession.import(snap, this.localPrivateKey, this._sessionDeps())); } catch (_) { /* skip foreign / duplicate */ }
-    }
-    for (const [alias, id] of Object.entries(snapshot.peers || {})) if (this.sessions.has(id)) this.peers.set(alias, id);
-    for (const [k, v] of Object.entries(snapshot.forwards || {})) this.forwards.set(k, v);
-    for (const k of snapshot.announced || []) this._announced.add(String(k));
-    for (const p of snapshot.pendingPropagation || []) if (p && p.link && p.body) this.pendingPropagation.push({ link: p.link, body: p.body });
-    return this;
-  }
-
-  /** @returns {object[]} public summaries */
-  list () {
-    return [...this.sessions.values()].map((s) => ({
-      channelId: s.channelId,
-      remotePubkey: s.funding.remotePubkey,
-      status: s.status,
-      number: s.number,
-      lastSignedNumber: s.state.lastSigned ? s.state.lastSigned.number : null,
-      balances: s.balances,
-      pendingHtlcs: s.state.htlcs.length,
-      settled: s.state.settled.length,
-      fullySigned: s.fullySigned,
-      busy: s.busy,
-      revokedStates: Object.keys(s.state.revoked).length
-    }));
-  }
-}
-
-Channel.Book = ChannelBook;
 
 module.exports = Channel;

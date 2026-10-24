@@ -1,10 +1,10 @@
 'use strict';
 
 /**
- * @fileoverview State machines for one coinjoin round (`functions/coinjoin`).
+ * @fileoverview State machines for one coinjoin round, on {@link Coinjoin}.
  * The taker runs one {@link CoinjoinTakerRound} across all its makers; each
  * maker runs one {@link CoinjoinMakerRound} per fill. They exchange sealed
- * round messages (`sealRoundMessage` envelopes) over any transport — Fabric
+ * round messages (`Coinjoin.sealRoundMessage` envelopes) over any transport — Fabric
  * `CONTRACT_MESSAGE` direct to the peer, or `P2P_FORWARD` to hide the
  * taker's address. Every method that talks returns the envelopes to send;
  * nothing here touches the network.
@@ -22,10 +22,8 @@
  * {@link CoinjoinTakerRound.walletAdapter}) so the machines run without daemons in tests.
  */
 
-const EventEmitter = require('events');
 const bitcoin = require('bitcoinjs-lib');
-const coinjoin = require('../functions/coinjoin');
-const podle = require('../functions/podle');
+const Coinjoin = require('./coinjoin');
 const bip32 = require('../functions/bip32');
 
 const TAKER_STATES = Object.freeze({
@@ -91,44 +89,10 @@ function inputKey (row) {
   return `${row.txid}:${row.vout}`;
 }
 
-/** @private */
-class RoundBase extends EventEmitter {
-  constructor (name, transitions, settings) {
-    super();
-    this._name = name;
-    this._transitions = transitions;
-    this.settings = Object.assign({ now: () => Date.now() }, settings);
-    this.adapters = settings.adapters || {};
-  }
-
-  get status () { return this._state.status; }
-
-  _transition (to, detail = {}) {
-    const from = this._state.status;
-    if (!this._transitions[from].includes(to)) throw new Error(`${this._name}: cannot move from ${from} to ${to}`);
-    this._state.status = to;
-    this._state.history.push(Object.assign({ from, to, at: this.settings.now() }, detail));
-    this.emit('debug', `[COINJOIN] ${this._name} ${this._state.roundId || ''} ${from} → ${to}`);
-    this.emit('state', { from, to, round: this });
-  }
-
-  _expect (statuses) {
-    if (!statuses.includes(this._state.status)) {
-      throw new Error(`${this._name}: expected state ${statuses.join(' | ')}, got ${this._state.status}`);
-    }
-  }
-
-  _fail (message) {
-    const err = new Error(`${this._name}: ${message}`);
-    if (this.listenerCount('error') > 0) this.emit('error', err);
-    return err;
-  }
-}
-
 /**
  * The taker's side of a round.
  */
-class CoinjoinTakerRound extends RoundBase {
+class CoinjoinTakerRound extends Coinjoin {
   /**
    * @param {Object} settings
    * @param {string} [settings.network='regtest']
@@ -153,26 +117,26 @@ class CoinjoinTakerRound extends RoundBase {
   constructor (settings = {}) {
     super('CoinjoinTakerRound', TAKER_TRANSITIONS, Object.assign({
       network: 'regtest',
-      minMakers: coinjoin.DEFAULT_MIN_MAKERS,
+      minMakers: Coinjoin.DEFAULT_MIN_MAKERS,
       feeRateSatVb: 2,
       minFeeRateSatVb: 1,
       maxFeeRateSatVb: 500,
       minMakerConfs: 1,
       requireOwnership: false,
-      podleMinAgeConfs: podle.DEFAULT_MIN_AGE_CONFS,
-      podleMinValuePct: podle.DEFAULT_MIN_VALUE_PCT,
+      podleMinAgeConfs: Coinjoin.PODLE_MIN_AGE_CONFS,
+      podleMinValuePct: Coinjoin.PODLE_MIN_VALUE_PCT,
       ackTimeoutMs: DEFAULT_ACK_TIMEOUT_MS,
       sigTimeoutMs: DEFAULT_SIG_TIMEOUT_MS,
       maxRebuilds: DEFAULT_MAX_REBUILDS
     }, settings));
     if (!this.adapters.bitcoin || !this.adapters.wallet) throw new Error('CoinjoinTakerRound: adapters.bitcoin and adapters.wallet are required');
     const amount = Number(settings.amountSats);
-    if (!Number.isSafeInteger(amount) || amount < coinjoin.MIN_COINJOIN_SATS) throw new Error('CoinjoinTakerRound: amountSats is too small');
-    this._roundKey = settings.roundKey ? privBuffer(settings.roundKey, 'roundKey') : coinjoin.randomPrivateKey();
-    this.takerPubkey = coinjoin.pubkeyFromPrivate(this._roundKey);
+    if (!Number.isSafeInteger(amount) || amount < Coinjoin.MIN_COINJOIN_SATS) throw new Error('CoinjoinTakerRound: amountSats is too small');
+    this._roundKey = settings.roundKey ? privBuffer(settings.roundKey, 'roundKey') : Coinjoin.randomPrivateKey();
+    this.takerPubkey = Coinjoin.pubkeyFromPrivate(this._roundKey);
     this._state = {
       status: TAKER_STATES.NEW,
-      roundId: settings.roundId || coinjoin.randomRoundId(),
+      roundId: settings.roundId || Coinjoin.randomRoundId(),
       amountSats: amount,
       podle: null,
       makers: new Map(),
@@ -198,7 +162,7 @@ class CoinjoinTakerRound extends RoundBase {
   get amountSats () { return this._state.amountSats; }
   /** @returns {string} x-only key round messages to this taker are sealed to */
   get sealXOnly () { return xOnly(this.takerPubkey); }
-  /** @returns {Object|null} {@link functions/coinjoin.planCoinjoin} result of the current transaction */
+  /** @returns {Object|null} {@link Coinjoin.plan} result of the current transaction */
   get plan () { return this._state.plan; }
   /** @returns {string|null} current PSBT */
   get psbt () { return this._state.psbt; }
@@ -217,7 +181,7 @@ class CoinjoinTakerRound extends RoundBase {
       stage: m.stage,
       dropped: m.stage === 'dropped',
       reason: m.reason || null,
-      cjfeeSats: coinjoin.makerFee(m.offer, this._state.amountSats)
+      cjfeeSats: Coinjoin.makerFee(m.offer, this._state.amountSats)
     }));
   }
 
@@ -231,11 +195,22 @@ class CoinjoinTakerRound extends RoundBase {
     return [...this._state.makers.values()].filter((m) => m.stage !== 'dropped' && (!stages || stages.includes(m.stage)));
   }
 
+  /**
+   * Makers dropped since the current transaction was built: it spends their
+   * inputs, so it cannot be completed and must be rebuilt.
+   * @private
+   */
+  _droppedFromTx () {
+    if (!this._state.plan) return [];
+    const ids = new Set(this._state.plan.makers.map((m) => m.id));
+    return [...this._state.makers.values()].filter((m) => m.stage === 'dropped' && ids.has(m.fillId));
+  }
+
   /** @private */
   _send (maker, body) {
-    const signed = coinjoin.signBody(body, this._roundKey);
+    const signed = Coinjoin.signBody(body, this._roundKey);
     const to = maker.sealPubkey || maker.offer.makerPubkey;
-    return { to: maker.offer.makerPubkey, fillId: maker.fillId, envelope: coinjoin.sealRoundMessage(signed, to) };
+    return { to: maker.offer.makerPubkey, fillId: maker.fillId, envelope: Coinjoin.sealRoundMessage(signed, to) };
   }
 
   /** @private */
@@ -254,12 +229,12 @@ class CoinjoinTakerRound extends RoundBase {
       minValuePct: this.settings.podleMinValuePct
     });
     for (const c of candidates || []) {
-      const index = podle.nextIndex(c.usedIndexes || []);
+      const index = Coinjoin.nextPodleIndex(c.usedIndexes || []);
       if (index == null) continue;
       const key = c.outputPrivateKey
         ? privBuffer(c.outputPrivateKey, 'outputPrivateKey')
-        : coinjoin.taprootOutputPrivateKey(privBuffer(c.internalPrivateKey, 'internalPrivateKey'));
-      const proof = podle.generatePodle({ privateKey: key, utxo: { txid: c.txid, vout: c.vout }, index });
+        : Coinjoin.taprootOutputPrivateKey(privBuffer(c.internalPrivateKey, 'internalPrivateKey'));
+      const proof = Coinjoin.generatePodle({ privateKey: key, utxo: { txid: c.txid, vout: c.vout }, index });
       this.emit('podle', { txid: c.txid, vout: c.vout, index, commitment: proof.commitment });
       return proof;
     }
@@ -278,12 +253,12 @@ class CoinjoinTakerRound extends RoundBase {
     const accepted = [];
     const seen = new Set();
     for (const raw of offers) {
-      const v = coinjoin.verifyBody(raw);
-      if (!v.ok || v.body.type !== coinjoin.BODY_TYPES.OFFER) continue;
+      const v = Coinjoin.verifyBody(raw);
+      if (!v.ok || v.body.type !== Coinjoin.BODY_TYPES.OFFER) continue;
       const offer = v.body;
       if (offer.network !== this.settings.network || offer.expiresAt <= now) continue;
       if (this._state.amountSats < offer.minSats || this._state.amountSats > offer.maxSats) continue;
-      if (this.settings.maxFeeSats != null && coinjoin.makerFee(offer, this._state.amountSats) > this.settings.maxFeeSats) continue;
+      if (this.settings.maxFeeSats != null && Coinjoin.makerFee(offer, this._state.amountSats) > this.settings.maxFeeSats) continue;
       if (seen.has(offer.makerPubkey)) continue;
       seen.add(offer.makerPubkey);
       accepted.push({ offer, offerId: v.id });
@@ -292,20 +267,20 @@ class CoinjoinTakerRound extends RoundBase {
     this._state.podle = await this._podle();
     const out = [];
     for (const { offer, offerId } of accepted) {
-      const fill = coinjoin.signBody({
-        type: coinjoin.BODY_TYPES.FILL,
+      const fill = Coinjoin.signBody({
+        type: Coinjoin.BODY_TYPES.FILL,
         offerId,
         roundId: this._state.roundId,
         amountSats: this._state.amountSats,
         commitment: this._state.podle.commitment,
         takerPubkey: this.takerPubkey,
         createdAt: now,
-        nonce: coinjoin.randomNonce()
+        nonce: Coinjoin.randomNonce()
       }, this._roundKey);
-      const fillId = coinjoin.bodyId(fill);
+      const fillId = Coinjoin.bodyId(fill);
       const maker = { offer, offerId, fillId, fill, stage: 'filled', sealPubkey: null, ioauth: null, sig: null, sentAt: now, txSentAt: null, reason: null };
       this._state.makers.set(fillId, maker);
-      out.push({ to: offer.makerPubkey, fillId, envelope: coinjoin.sealRoundMessage(fill, offer.makerPubkey) });
+      out.push({ to: offer.makerPubkey, fillId, envelope: Coinjoin.sealRoundMessage(fill, offer.makerPubkey) });
     }
     this._transition(TAKER_STATES.FILLED, { makers: out.length });
     return out;
@@ -317,7 +292,7 @@ class CoinjoinTakerRound extends RoundBase {
    * @returns {Promise<Object[]>} replies `{ to, fillId, envelope }`
    */
   async receive (envelope) {
-    const opened = coinjoin.openRoundMessage(envelope, this._roundKey);
+    const opened = Coinjoin.openRoundMessage(envelope, this._roundKey);
     if (!opened.ok) throw this._fail(`unreadable message: ${opened.reason}`);
     const body = opened.body;
     if (body.roundId !== this._state.roundId) throw this._fail('message for another round');
@@ -326,9 +301,9 @@ class CoinjoinTakerRound extends RoundBase {
     if (body.makerPubkey !== maker.offer.makerPubkey) throw this._fail('message not signed by the maker');
     if (maker.stage === 'dropped') return [];
     switch (body.type) {
-      case coinjoin.BODY_TYPES.FILL_ACK: return this._onFillAck(maker, body);
-      case coinjoin.BODY_TYPES.IOAUTH: return this._onIoAuth(maker, body);
-      case coinjoin.BODY_TYPES.SIG: return this._onSig(maker, body);
+      case Coinjoin.BODY_TYPES.FILL_ACK: return this._onFillAck(maker, body);
+      case Coinjoin.BODY_TYPES.IOAUTH: return this._onIoAuth(maker, body);
+      case Coinjoin.BODY_TYPES.SIG: return this._onSig(maker, body);
       default: throw this._fail(`unexpected ${body.type}`);
     }
   }
@@ -340,7 +315,7 @@ class CoinjoinTakerRound extends RoundBase {
     maker.sealPubkey = ack.sealPubkey;
     maker.stage = 'authed';
     const reply = this._send(maker, {
-      type: coinjoin.BODY_TYPES.AUTH,
+      type: Coinjoin.BODY_TYPES.AUTH,
       roundId: this._state.roundId,
       fillId: maker.fillId,
       takerPubkey: this.takerPubkey,
@@ -367,10 +342,10 @@ class CoinjoinTakerRound extends RoundBase {
       return [];
     }
     try {
-      coinjoin.makerChange({
+      Coinjoin.makerChange({
         inputSats: ioauth.inputs.reduce((t, r) => t + r.valueSats, 0),
         amountSats: this._state.amountSats,
-        cjfeeSats: coinjoin.makerFee(maker.offer, this._state.amountSats),
+        cjfeeSats: Coinjoin.makerFee(maker.offer, this._state.amountSats),
         txFeeContributionSats: maker.offer.txFeeContributionSats
       });
     } catch (err) {
@@ -387,7 +362,7 @@ class CoinjoinTakerRound extends RoundBase {
     if (taken.has(ioauth.coinjoinScriptHex) || taken.has(ioauth.changeScriptHex)) return 'reuses another maker\'s script';
     for (const row of ioauth.inputs) {
       if (taken.has(inputKey(row))) return `input ${inputKey(row)} offered by another maker`;
-      if (this.settings.requireOwnership && !coinjoin.verifyOwnership({ roundId: this._state.roundId, input: row })) {
+      if (this.settings.requireOwnership && !Coinjoin.verifyOwnership({ roundId: this._state.roundId, input: row })) {
         return `no ownership proof for ${inputKey(row)}`;
       }
       let utxo;
@@ -411,8 +386,8 @@ class CoinjoinTakerRound extends RoundBase {
     const wallet = this.adapters.wallet;
     const makerInputs = makers.reduce((t, m) => t + m.ioauth.inputs.length, 0);
     const outputs = 2 + (2 * makers.length);
-    const fees = makers.reduce((t, m) => t + coinjoin.makerFee(m.offer, this._state.amountSats), 0);
-    const vsize = coinjoin.estimateVsize(makerInputs + INPUT_HEADROOM, outputs);
+    const fees = makers.reduce((t, m) => t + Coinjoin.makerFee(m.offer, this._state.amountSats), 0);
+    const vsize = Coinjoin.estimateVsize(makerInputs + INPUT_HEADROOM, outputs);
     const amountSats = this._state.amountSats + fees + Math.ceil(vsize * feeRate);
     const inputs = await wallet.selectInputs({ amountSats });
     if (!Array.isArray(inputs) || !inputs.length) throw this._fail('wallet has no coins for the coinjoin');
@@ -436,7 +411,7 @@ class CoinjoinTakerRound extends RoundBase {
     if (makers.length < this.settings.minMakers) throw this._fail(`only ${makers.length} makers left, need ${this.settings.minMakers}`);
     await this._ensureTakerSide(makers, feeRate);
     const tip = Number(await this.adapters.bitcoin.getTipHeight());
-    const built = coinjoin.buildCoinjoinPsbt({
+    const built = Coinjoin.buildPsbt({
       networkName: this.settings.network,
       amountSats: this._state.amountSats,
       feeRateSatVb: feeRate,
@@ -464,7 +439,7 @@ class CoinjoinTakerRound extends RoundBase {
       m.sig = null;
       m.txSentAt = now;
       return this._send(m, {
-        type: coinjoin.BODY_TYPES.TX,
+        type: Coinjoin.BODY_TYPES.TX,
         roundId: this._state.roundId,
         takerPubkey: this.takerPubkey,
         psbt: built.psbtBase64,
@@ -496,21 +471,23 @@ class CoinjoinTakerRound extends RoundBase {
     if (maker.stage !== 'built') throw this._fail('unexpected signature');
     let signedTxid;
     try {
-      signedTxid = coinjoin.unsignedTxid(sig.psbt);
+      signedTxid = Coinjoin.unsignedTxid(sig.psbt);
     } catch {
       signedTxid = null;
     }
     // A late answer to a transaction since rebuilt: wait for the current one.
     if (signedTxid && signedTxid !== this._state.unsignedTxid) return [];
     try {
-      this._state.psbt = coinjoin.mergeMakerSignatures(this._state.psbt, sig.psbt, maker.ioauth.inputs);
+      this._state.psbt = Coinjoin.mergeMakerSignatures(this._state.psbt, sig.psbt, maker.ioauth.inputs);
     } catch (err) {
       this._drop(maker, `bad signature: ${err.message}`);
       return [];
     }
     maker.sig = sig;
     maker.stage = 'signed';
-    if (!this._live(['built']).length) this._transition(TAKER_STATES.SIGNED, { unsignedTxid: this._state.unsignedTxid });
+    if (!this._live(['built']).length && !this._droppedFromTx().length) {
+      this._transition(TAKER_STATES.SIGNED, { unsignedTxid: this._state.unsignedTxid });
+    }
     return [];
   }
 
@@ -525,6 +502,10 @@ class CoinjoinTakerRound extends RoundBase {
       const waitingInputs = ['filled', 'authed'].includes(m.stage) && now - m.sentAt >= this.settings.ackTimeoutMs;
       const waitingSig = m.stage === 'built' && m.txSentAt != null && now - m.txSentAt >= this.settings.sigTimeoutMs;
       if (waitingInputs || waitingSig) out.push({ makerPubkey: m.offer.makerPubkey, fillId: m.fillId, stage: m.stage });
+    }
+    // A maker dropped for a bad signature will never sign the current transaction.
+    if (this._state.status === TAKER_STATES.BUILT) {
+      for (const m of this._droppedFromTx()) out.push({ makerPubkey: m.offer.makerPubkey, fillId: m.fillId, stage: m.stage });
     }
     return out;
   }
@@ -541,7 +522,7 @@ class CoinjoinTakerRound extends RoundBase {
     this._expect([TAKER_STATES.BUILT, TAKER_STATES.SIGNED]);
     if (this._state.rebuilds >= this.settings.maxRebuilds) throw this._fail('too many rebuilds');
     const drop = new Set((opts.drop || this.timedOut().map((t) => t.fillId)).map((k) => String(k).toLowerCase()));
-    let dropped = 0;
+    let dropped = this._droppedFromTx().length;
     for (const m of this._live()) {
       if (drop.has(m.fillId) || drop.has(m.offer.makerPubkey)) {
         this._drop(m, 'dropped on rebuild');
@@ -561,7 +542,7 @@ class CoinjoinTakerRound extends RoundBase {
    */
   async finalize () {
     this._expect([TAKER_STATES.SIGNED]);
-    const check = coinjoin.validateCoinjoinForTaker({
+    const check = Coinjoin.validateForTaker({
       psbtBase64: this._state.psbt,
       plan: this._state.plan,
       minFeeRateSatVb: this.settings.minFeeRateSatVb,
@@ -569,12 +550,16 @@ class CoinjoinTakerRound extends RoundBase {
     });
     if (!check.ok) throw this._fail(`transaction failed the final check: ${check.reason}`);
     const signed = await this.adapters.wallet.signPsbt(this._state.psbt);
-    if (coinjoin.unsignedTxid(signed) !== this._state.unsignedTxid) throw this._fail('wallet changed the transaction');
-    let merged = signed;
-    for (const m of this._live(['signed'])) {
-      merged = coinjoin.mergeMakerSignatures(merged, this._state.psbt, m.ioauth.inputs);
+    if (Coinjoin.unsignedTxid(signed) !== this._state.unsignedTxid) throw this._fail('wallet changed the transaction');
+    // The wallet signs every input it can spend, including a coin a maker
+    // listed as its own: only the taker's inputs are taken from its copy.
+    let merged;
+    try {
+      merged = Coinjoin.mergeMakerSignatures(this._state.psbt, signed, this._state.takerInputs);
+    } catch (err) {
+      throw this._fail(`wallet did not sign the taker's inputs: ${err.message}`);
     }
-    const final = coinjoin.finalizeCoinjoin(merged);
+    const final = Coinjoin.finalize(merged);
     const txid = await this.adapters.bitcoin.broadcast(final.txHex);
     if (txid && String(txid) !== final.txid) throw this._fail(`node returned txid ${txid}, expected ${final.txid}`);
     this._state.txid = final.txid;
@@ -764,7 +749,7 @@ class CoinjoinTakerRound extends RoundBase {
         const out = [];
         for (const r of rows) {
           const used = usedIndexes(r.txid, r.vout) || [];
-          if (podle.nextIndex(used) == null) continue;
+          if (Coinjoin.nextPodleIndex(used) == null) continue;
           let key;
           try {
             key = await adapter.privateKeyFor(r.address);
@@ -814,7 +799,7 @@ function descriptorPrivateKey (info, descriptors) {
       node = node.derive(hardened ? index + 0x80000000 : index);
     }
     const priv = Buffer.from(node.privateKey);
-    if (info.scriptPubKey && coinjoin.taprootKeyPath(priv).scriptPubKeyHex !== String(info.scriptPubKey).toLowerCase()) continue;
+    if (info.scriptPubKey && Coinjoin.taprootKeyPath(priv).scriptPubKeyHex !== String(info.scriptPubKey).toLowerCase()) continue;
     return priv;
   }
   throw new Error('no private tr() descriptor derives this address');
@@ -823,7 +808,7 @@ function descriptorPrivateKey (info, descriptors) {
 /**
  * The maker's side of one fill.
  */
-class CoinjoinMakerRound extends RoundBase {
+class CoinjoinMakerRound extends Coinjoin {
   /**
    * @param {Object} settings
    * @param {Object} settings.offer the maker's signed `CoinjoinOffer`
@@ -839,21 +824,21 @@ class CoinjoinMakerRound extends RoundBase {
    */
   constructor (settings = {}) {
     super('CoinjoinMakerRound', MAKER_TRANSITIONS, Object.assign({
-      podleMinAgeConfs: podle.DEFAULT_MIN_AGE_CONFS,
-      podleMinValuePct: podle.DEFAULT_MIN_VALUE_PCT,
-      minEqualOutputs: coinjoin.DEFAULT_MIN_EQUAL_OUTPUTS,
+      podleMinAgeConfs: Coinjoin.PODLE_MIN_AGE_CONFS,
+      podleMinValuePct: Coinjoin.PODLE_MIN_VALUE_PCT,
+      minEqualOutputs: Coinjoin.DEFAULT_MIN_EQUAL_OUTPUTS,
       maxSigns: DEFAULT_MAX_SIGNS
     }, settings));
     if (!this.adapters.bitcoin || !this.adapters.wallet) throw new Error('CoinjoinMakerRound: adapters.bitcoin and adapters.wallet are required');
-    const v = coinjoin.verifyBody(settings.offer);
-    if (!v.ok || v.body.type !== coinjoin.BODY_TYPES.OFFER) throw new Error(`CoinjoinMakerRound: invalid offer (${v.reason || 'not a CoinjoinOffer'})`);
+    const v = Coinjoin.verifyBody(settings.offer);
+    if (!v.ok || v.body.type !== Coinjoin.BODY_TYPES.OFFER) throw new Error(`CoinjoinMakerRound: invalid offer (${v.reason || 'not a CoinjoinOffer'})`);
     this.offer = v.body;
     this.offerId = v.id;
     this._identityKey = privBuffer(settings.identityKey, 'identityKey');
-    if (coinjoin.pubkeyFromPrivate(this._identityKey) !== this.offer.makerPubkey) throw new Error('CoinjoinMakerRound: identityKey does not match the offer');
-    this._sealKey = settings.sealKey ? privBuffer(settings.sealKey, 'sealKey') : coinjoin.randomPrivateKey();
-    this.sealPubkey = coinjoin.pubkeyFromPrivate(this._sealKey);
-    this.blacklist = settings.blacklist || new podle.PodleBlacklist();
+    if (Coinjoin.pubkeyFromPrivate(this._identityKey) !== this.offer.makerPubkey) throw new Error('CoinjoinMakerRound: identityKey does not match the offer');
+    this._sealKey = settings.sealKey ? privBuffer(settings.sealKey, 'sealKey') : Coinjoin.randomPrivateKey();
+    this.sealPubkey = Coinjoin.pubkeyFromPrivate(this._sealKey);
+    this.blacklist = settings.blacklist || new Coinjoin.PodleBlacklist();
     this._state = {
       status: MAKER_STATES.NEW,
       roundId: null,
@@ -882,14 +867,14 @@ class CoinjoinMakerRound extends RoundBase {
 
   /** @private */
   _reply (body) {
-    const signed = coinjoin.signBody(body, this._identityKey);
-    return coinjoin.sealRoundMessage(signed, this._state.fill.takerPubkey);
+    const signed = Coinjoin.signBody(body, this._identityKey);
+    return Coinjoin.sealRoundMessage(signed, this._state.fill.takerPubkey);
   }
 
   /** @private */
   _open (envelope) {
-    let opened = coinjoin.openRoundMessage(envelope, this._sealKey);
-    if (!opened.ok) opened = coinjoin.openRoundMessage(envelope, this._identityKey);
+    let opened = Coinjoin.openRoundMessage(envelope, this._sealKey);
+    if (!opened.ok) opened = Coinjoin.openRoundMessage(envelope, this._identityKey);
     return opened;
   }
 
@@ -913,9 +898,9 @@ class CoinjoinMakerRound extends RoundBase {
       if (body.takerPubkey !== this._state.fill.takerPubkey) throw this._fail('message not signed by the taker');
     }
     switch (body.type) {
-      case coinjoin.BODY_TYPES.FILL: return this._onFill(body);
-      case coinjoin.BODY_TYPES.AUTH: return this._onAuth(body);
-      case coinjoin.BODY_TYPES.TX: return this._onTx(body);
+      case Coinjoin.BODY_TYPES.FILL: return this._onFill(body);
+      case Coinjoin.BODY_TYPES.AUTH: return this._onAuth(body);
+      case Coinjoin.BODY_TYPES.TX: return this._onTx(body);
       default: throw this._fail(`unexpected ${body.type}`);
     }
   }
@@ -923,14 +908,14 @@ class CoinjoinMakerRound extends RoundBase {
   /** @private */
   async _onFill (fill) {
     this._expect([MAKER_STATES.NEW]);
-    const check = coinjoin.validateFill(this.offer, fill, { now: this.settings.now() });
+    const check = Coinjoin.validateFill(this.offer, fill, { now: this.settings.now() });
     if (!check.ok) throw await this._refuse(check.reason);
     if (this.blacklist.has(fill.commitment)) throw await this._refuse('PoDLE commitment already used');
     this._state.fill = fill;
-    this._state.fillId = coinjoin.bodyId(fill);
+    this._state.fillId = Coinjoin.bodyId(fill);
     this._state.roundId = fill.roundId;
     const reply = this._reply({
-      type: coinjoin.BODY_TYPES.FILL_ACK,
+      type: Coinjoin.BODY_TYPES.FILL_ACK,
       offerId: this.offerId,
       roundId: fill.roundId,
       fillId: this._state.fillId,
@@ -947,7 +932,7 @@ class CoinjoinMakerRound extends RoundBase {
     this._expect([MAKER_STATES.ACKED]);
     if (auth.fillId !== this._state.fillId) throw this._fail('auth for another fill');
     const fill = this._state.fill;
-    const proof = podle.verifyPodle({ commitment: fill.commitment, reveal: auth.reveal });
+    const proof = Coinjoin.verifyPodle({ commitment: fill.commitment, reveal: auth.reveal });
     if (!proof.ok) throw await this._refuse(`bad PoDLE: ${proof.reason}`);
     let utxo;
     try {
@@ -955,7 +940,7 @@ class CoinjoinMakerRound extends RoundBase {
     } catch (err) {
       throw this._fail(`cannot look up the PoDLE UTXO: ${err.message}`);
     }
-    const backed = podle.checkPodleUtxo({
+    const backed = Coinjoin.checkPodleUtxo({
       reveal: auth.reveal,
       utxo,
       amountSats: fill.amountSats,
@@ -985,7 +970,7 @@ class CoinjoinMakerRound extends RoundBase {
       rows.push(out);
     }
     const reply = this._reply({
-      type: coinjoin.BODY_TYPES.IOAUTH,
+      type: Coinjoin.BODY_TYPES.IOAUTH,
       roundId: this._state.roundId,
       fillId: this._state.fillId,
       makerPubkey: this.offer.makerPubkey,
@@ -1003,7 +988,7 @@ class CoinjoinMakerRound extends RoundBase {
     this._expect([MAKER_STATES.IOAUTHED, MAKER_STATES.SIGNED]);
     if (this._state.signs >= this.settings.maxSigns) throw await this._refuse('too many rebuilt transactions');
     const tip = Number(await this.adapters.bitcoin.getTipHeight());
-    const check = coinjoin.validateCoinjoinForMaker({
+    const check = Coinjoin.validateForMaker({
       psbtBase64: txBody.psbt,
       amountSats: this._state.fill.amountSats,
       offer: this.offer,
@@ -1014,21 +999,21 @@ class CoinjoinMakerRound extends RoundBase {
       lockTimeMax: tip + LOCKTIME_SLACK_BLOCKS
     });
     if (!check.ok) throw await this._refuse(`transaction refused: ${check.reason}`);
-    const unsignedTxid = coinjoin.unsignedTxid(txBody.psbt);
+    const unsignedTxid = Coinjoin.unsignedTxid(txBody.psbt);
     const signed = await this.adapters.wallet.signPsbt(txBody.psbt);
-    if (coinjoin.unsignedTxid(signed) !== unsignedTxid) throw await this._refuse('wallet changed the transaction');
+    if (Coinjoin.unsignedTxid(signed) !== unsignedTxid) throw await this._refuse('wallet changed the transaction');
     // The wallet signs every input it can spend: a taker who slipped in
     // another of this wallet's coins must not get a signature for it.
-    const before = coinjoin.describeCoinjoinPsbt(txBody.psbt).inputs;
-    const after = coinjoin.describeCoinjoinPsbt(signed).inputs;
+    const before = Coinjoin.describePsbt(txBody.psbt).inputs;
+    const after = Coinjoin.describePsbt(signed).inputs;
     const foreign = after.some((row, i) => row.signed && !before[i].signed && !check.inputIndexes.includes(i));
     if (foreign) throw await this._refuse('transaction spends wallet coins the maker did not offer');
     // Reply with the maker's own signatures only (no wallet derivation paths).
-    const psbt = coinjoin.mergeMakerSignatures(txBody.psbt, signed, this._state.inputs);
+    const psbt = Coinjoin.mergeMakerSignatures(txBody.psbt, signed, this._state.inputs);
     this._state.signs++;
     this._state.signedTxids.push(unsignedTxid);
     const reply = this._reply({
-      type: coinjoin.BODY_TYPES.SIG,
+      type: Coinjoin.BODY_TYPES.SIG,
       roundId: this._state.roundId,
       fillId: this._state.fillId,
       makerPubkey: this.offer.makerPubkey,
@@ -1122,7 +1107,7 @@ class CoinjoinMakerRound extends RoundBase {
  * @returns {string|null}
  */
 function envelopeRecipient (envelope) {
-  return envelope && envelope.type === coinjoin.SEALED_TYPE && /^[0-9a-f]{64}$/.test(String(envelope.to || '')) ? envelope.to : null;
+  return envelope && envelope.type === Coinjoin.SEALED_TYPE && /^[0-9a-f]{64}$/.test(String(envelope.to || '')) ? envelope.to : null;
 }
 
 /**
@@ -1134,7 +1119,7 @@ function envelopeRecipient (envelope) {
  */
 function memoryWallet (opts = {}) {
   const coins = (opts.coins || []).map((c) => Object.assign({
-    scriptPubKeyHex: coinjoin.taprootKeyPath(c.internalPrivateKey).scriptPubKeyHex,
+    scriptPubKeyHex: Coinjoin.taprootKeyPath(c.internalPrivateKey).scriptPubKeyHex,
     confirmations: 10
   }, c));
   const locked = new Set();
@@ -1159,16 +1144,16 @@ function memoryWallet (opts = {}) {
       inputs.forEach((c) => locked.delete(inputKey(c)));
     },
     async getNewScript () {
-      const key = coinjoin.randomPrivateKey();
+      const key = Coinjoin.randomPrivateKey();
       keys.push(key);
-      return coinjoin.taprootKeyPath(key, opts.network).scriptPubKeyHex;
+      return Coinjoin.taprootKeyPath(key, opts.network).scriptPubKeyHex;
     },
     async signPsbt (psbtBase64) {
-      return coinjoin.signKeyPathInputs(psbtBase64, coins.map((c) => c.internalPrivateKey)).psbtBase64;
+      return Coinjoin.signKeyPathInputs(psbtBase64, coins.map((c) => c.internalPrivateKey)).psbtBase64;
     },
     async signOwnership ({ roundId, input }) {
       const coin = coins.find((c) => inputKey(c) === inputKey(input));
-      return coinjoin.signOwnership({ roundId, txid: input.txid, vout: input.vout, internalPrivateKey: coin.internalPrivateKey });
+      return Coinjoin.signOwnership({ roundId, txid: input.txid, vout: input.vout, internalPrivateKey: coin.internalPrivateKey });
     },
     async podleCandidates ({ amountSats, minAgeConfs, minValuePct }) {
       return coins

@@ -15,7 +15,7 @@ const CANONICAL_REQUIRES = [
   '@fabric/core/types/peer',
   '@fabric/core/constants',
   '@fabric/core/functions/cliDocumentExchange',
-  '@fabric/core/functions/inventoryHtlc',
+  '@fabric/core/types/htlc',
   '@fabric/core/functions/documentSealedExchange',
   '@fabric/core/functions/publishedDocumentEnvelope',
   '@fabric/core/functions/documentPaymentHash',
@@ -74,7 +74,7 @@ describe('@fabric/core public API surface (0.1 RC)', function () {
       'types/program.d.ts',
       'types/machine.d.ts',
       'functions/cliDocumentExchange.d.ts',
-      'functions/inventoryHtlc.d.ts',
+      'types/htlc.d.ts',
       'functions/documentSealedExchange.d.ts',
       'functions/sidechainState.d.ts',
       'functions/loadLocalSettings.d.ts'
@@ -107,12 +107,13 @@ describe('@fabric/core public API surface (0.1 RC)', function () {
     assert.ok(/third-party|External security/i.test(audit));
   });
 
-  it('CliDocumentExchange and inventoryHtlc export expected symbols', function () {
+  it('CliDocumentExchange and Htlc export expected symbols', function () {
     const cli = require('../functions/cliDocumentExchange');
     assert.strictEqual(typeof cli.CliDocumentExchange, 'function');
     assert.ok(Array.isArray(cli.DOCUMENT_EXCHANGE_CLI_PACKS));
-    const htlc = require('../functions/inventoryHtlc');
-    assert.strictEqual(typeof htlc.buildInventoryHtlcP2tr, 'function');
-    assert.strictEqual(typeof htlc.buildDocumentOfferEscrow, 'function');
+    const Htlc = require('../types/htlc');
+    assert.strictEqual(typeof Htlc, 'function');
+    assert.strictEqual(typeof Htlc.validateOffer, 'function');
+    assert.strictEqual(typeof Htlc.prepareClaimPsbt, 'function');
   });
 });

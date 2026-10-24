@@ -5,7 +5,7 @@ const crypto = require('crypto');
 const bitcoin = require('bitcoinjs-lib');
 const ecc = require('../types/ecc');
 const Wallet = require('../types/wallet');
-const inventoryHtlc = require('../functions/inventoryHtlc');
+const Htlc = require('../types/htlc');
 const {
   BITCOIN_MESSAGE_TYPES,
   isKnownBitcoinMessageType,
@@ -39,13 +39,13 @@ describe('functions/walletTransactionWatch', function () {
     const seller = randomKeyPair();
     const buyer = randomKeyPair();
     const preimage = crypto.randomBytes(32);
-    const paymentHash32 = inventoryHtlc.hash256(preimage);
-    const built = inventoryHtlc.buildInventoryHtlcP2tr({
-      networkName: 'regtest',
-      sellerPubkeyCompressed: seller.publicKey,
-      buyerRefundPubkeyCompressed: buyer.publicKey,
-      paymentHash32,
-      refundLocktimeHeight: 500
+    const paymentHash32 = Htlc.sha256(preimage);
+    const built = new Htlc({
+      network: 'regtest',
+      claimPubkey: seller.publicKey,
+      refundPubkey: buyer.publicKey,
+      paymentHash: paymentHash32,
+      refundLocktime: 500
     });
     const fundingTx = new bitcoin.Transaction();
     fundingTx.version = 2;
@@ -55,7 +55,7 @@ describe('functions/walletTransactionWatch', function () {
       pubkey: buyer.publicKey,
       network: bitcoin.networks.regtest
     }).address;
-    const bundle = inventoryHtlc.prepareInventoryHtlcSellerClaimPsbt({
+    const bundle = Htlc.prepareClaimPsbt({
       networkName: 'regtest',
       fundedTxHex: fundingTx.toHex(),
       paymentAddress: built.address,
@@ -65,7 +65,7 @@ describe('functions/walletTransactionWatch', function () {
       destinationAddress: destAddr,
       feeSats: 1000
     });
-    const { txHex, txid } = inventoryHtlc.signAndExtractInventoryHtlcSellerClaim(bundle, seller.privateKey);
+    const { txHex, txid } = Htlc.signClaim(bundle, seller.privateKey);
 
     const watchSet = buildWatchSet({}, {
       htlcAddresses: {
@@ -131,13 +131,13 @@ describe('Wallet multi-seed watch', function () {
     const seller = randomKeyPair();
     const buyer = randomKeyPair();
     const preimage = crypto.randomBytes(32);
-    const paymentHash32 = inventoryHtlc.hash256(preimage);
-    const built = inventoryHtlc.buildInventoryHtlcP2tr({
-      networkName: 'regtest',
-      sellerPubkeyCompressed: seller.publicKey,
-      buyerRefundPubkeyCompressed: buyer.publicKey,
-      paymentHash32,
-      refundLocktimeHeight: 10
+    const paymentHash32 = Htlc.sha256(preimage);
+    const built = new Htlc({
+      network: 'regtest',
+      claimPubkey: seller.publicKey,
+      refundPubkey: buyer.publicKey,
+      paymentHash: paymentHash32,
+      refundLocktime: 10
     });
     wallet.watchHtlc({
       paymentAddress: built.address,

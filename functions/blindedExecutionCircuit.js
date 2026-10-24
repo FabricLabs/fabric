@@ -33,7 +33,7 @@ const {
   prepareHashlockWithdrawalPsbt,
   finalizeHashlockPsbt,
   DEFAULT_CSV_BLOCKS
-} = require('./contractTaproot');
+} = require('../types/policy');
 
 const SESSION_VERSION = 1;
 const HASHLOCK_LEAF_ID = 'blinded-execution-hashlock';

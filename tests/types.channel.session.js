@@ -4,8 +4,9 @@ const assert = require('assert');
 const crypto = require('crypto');
 const bitcoin = require('bitcoinjs-lib');
 const Channel = require('../types/channel');
+const ChannelBook = require('../types/channelBook');
 const Witness = require('../types/witness');
-const { signerFromPriv32 } = require('../functions/inventoryHtlc');
+const { signerFromPriv32 } = require('../types/htlc');
 const { HTLC_MINIMUM_SATS } = require('../constants');
 
 const NET = bitcoin.networks.regtest;
@@ -362,13 +363,13 @@ describe('@fabric/core/types/channel (Phase 4 sessions)', function () {
   });
 });
 
-describe('@fabric/core/types/channel (Channel.Book host registry)', function () {
+describe('@fabric/core/types/channelBook (host registry)', function () {
   function books (n = 2, extra = {}) {
     const wires = new Map();
     const out = [];
     for (let i = 0; i < n; i++) {
       const p = party();
-      const book = new Channel.Book(Object.assign({ localPrivateKey: p.priv, network: 'regtest', confirmations: () => 6, publish: (body) => wires.get(book).push(body) }, extra));
+      const book = new ChannelBook(Object.assign({ localPrivateKey: p.priv, network: 'regtest', confirmations: () => 6, publish: (body) => wires.get(book).push(body) }, extra));
       wires.set(book, []);
       out.push({ p, book });
     }
@@ -411,7 +412,7 @@ describe('@fabric/core/types/channel (Channel.Book host registry)', function () 
     // The proposal was returned, not published automatically — hosts publish what offerHtlc returns.
     assert.strictEqual(session.number, 1);
     // Snapshot round trip.
-    const bookA2 = new Channel.Book({ localPrivateKey: A.p.priv, network: 'regtest' }).import(JSON.parse(JSON.stringify(A.book.export())));
+    const bookA2 = new ChannelBook({ localPrivateKey: A.p.priv, network: 'regtest' }).import(JSON.parse(JSON.stringify(A.book.export())));
     assert.strictEqual(bookA2.list()[0].channelId, session.channelId);
     assert.strictEqual(bookA2.sessionFor('peer-b').number, 1);
   });
@@ -429,13 +430,13 @@ describe('@fabric/core/types/channel (Channel.Book host registry)', function () 
     const route = Channel.planRoute({ paymentHashHex, amountSats: 1000, finalExpireHeight: 3000, hops: [{ feeSats: 10, cltvDelta: 200 }, { feeSats: 0, cltvDelta: 200 }] });
     A.book.publish(ab.session.offerHtlc({ amountSats: route.hops[0].amountSats, paymentHashHex, expireAfter: route.hops[0].expireAfter }), ab.session);
     pump();
-    const upstream = B.book.sessions.get(ab.session.channelId);
+    const upstream = B.book.get(ab.session.channelId);
     assert.strictEqual(upstream.state.htlcs.length, 1);
     // B refuses to forward below its fee / delta policy.
     assert.throws(() => B.book.forward(upstream, upstream.state.htlcs[0].id, bc.session, { feeSats: 2000 }), /fee-short|insufficient/);
     B.book.forward(upstream, upstream.state.htlcs[0].id, bc.session);
     pump();
-    const atC = C.book.sessions.get(bc.session.channelId);
+    const atC = C.book.get(bc.session.channelId);
     assert.strictEqual(atC.state.htlcs[0].amountSats, 1000);
     assert.strictEqual(atC.state.htlcs[0].expireAfter.height, 3000);
     C.book.publish(atC.fulfillHtlc(atC.state.htlcs[0].id, preimage), atC);
@@ -443,7 +444,7 @@ describe('@fabric/core/types/channel (Channel.Book host registry)', function () 
     assert.strictEqual(bc.session.preimageFor(paymentHashHex), preimage);
     assert.strictEqual(upstream.balances.localSats, 1010, 'B earned 10 sats forwarding');
     assert.strictEqual(atC.balances.localSats, 1000);
-    assert.strictEqual(A.book.sessions.get(ab.session.channelId).balances.remoteSats, 1010);
+    assert.strictEqual(A.book.get(ab.session.channelId).balances.remoteSats, 1010);
     assert.strictEqual(B.book.forwards.size, 0);
 
     // Downstream failure refunds upstream.
@@ -493,7 +494,7 @@ describe('@fabric/core/types/channel (Channel.Book host registry)', function () 
     const { body } = A.book.open({ remotePubkey: B.p.pub, fundedTxHex: fundingTx(funding.address, 20000), capacitySats: 20000, expireAfter: 5000, feeSats: 500, localAddress: A.p.address, remoteAddress: B.p.address });
     const forged = Object.assign({}, body, { signature: '00'.repeat(64) });
     assert.throws(() => B.book.ingest(forged, { sellerId: 'peer-a' }));
-    assert.strictEqual(B.book.sessions.size, 0);
+    assert.strictEqual(B.book.size, 0);
     assert.strictEqual(B.book.sessionFor('peer-a'), null);
   });
 });

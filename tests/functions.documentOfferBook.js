@@ -1,7 +1,7 @@
 'use strict';
 
 const assert = require('assert');
-const { Book } = require('../functions/documentMarket');
+const { DocumentBook } = require('../types/documentBook');
 const {
   splitBlobs,
   verifyBlob,
@@ -11,13 +11,13 @@ const {
 const {
   computeRelayFee,
   buildForwardedDocumentRequest,
-  assertMonotoneBudget
-} = require('../functions/documentMarket');
-const { createDocumentPurchaseSession } = require('../functions/documentMarket');
+  assertMonotoneBudget,
+  createDocumentPurchaseSession
+} = require('../types/documentBook');
 
 describe('documentOfferBook + blobs + relay', function () {
   it('ranks cheaper faster higher-score offers first', function () {
-    const book = new Book();
+    const book = new DocumentBook();
     book.ingestInventoryResponse({
       origin: 'a:1',
       peerScore: 900,
@@ -48,7 +48,7 @@ describe('documentOfferBook + blobs + relay', function () {
   });
 
   it('prefers high peerScore over equal-price zero-score sybil', function () {
-    const book = new Book();
+    const book = new DocumentBook();
     book.ingestInventoryResponse({
       origin: 'honest:1',
       peerScore: 900,
@@ -116,7 +116,7 @@ describe('documentOfferBook + blobs + relay', function () {
   });
 
   it('pickBlobPlan diversifies unsealed sellers but locks sealed to one seller', function () {
-    const book = new Book();
+    const book = new DocumentBook();
     book.ingestInventoryResponse({
       origin: 'seller-a',
       peerScore: 500,
@@ -155,7 +155,7 @@ describe('documentOfferBook + blobs + relay', function () {
     ]);
     assert.strictEqual(sellersUnsealed.size, 2, 'unsealed plan should diversify sellers');
 
-    const sealedBook = new Book();
+    const sealedBook = new DocumentBook();
     sealedBook.ingestInventoryResponse({
       origin: 'seal-a',
       peerScore: 900,
@@ -197,7 +197,7 @@ describe('documentOfferBook + blobs + relay', function () {
   });
 
   it('updates the same origin when a seller reprices (inventory snapshot)', function () {
-    const book = new Book();
+    const book = new DocumentBook();
     const hash = 'aa'.repeat(32);
     book.ingestInventoryResponse({
       origin: 'relay:7',
@@ -237,7 +237,7 @@ describe('documentOfferBook + blobs + relay', function () {
   });
 
   it('does not keep peer contentBase64 or costBasis on ranked offers', function () {
-    const book = new Book();
+    const book = new DocumentBook();
     book.ingestInventoryResponse({
       origin: 'seller:1',
       peerScore: 400,
@@ -258,7 +258,7 @@ describe('documentOfferBook + blobs + relay', function () {
   });
 
   it('skips inventory items without an id and filters listOffers by blobIndex', function () {
-    const book = new Book();
+    const book = new DocumentBook();
     book.ingestInventoryResponse({
       origin: 'seller:1',
       items: [

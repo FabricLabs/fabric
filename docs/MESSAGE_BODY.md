@@ -89,17 +89,17 @@ API: `types/message.js` body codec helpers (`Message.encodeBody` /
 
 ## Legacy JSON objects ↔ fields
 
-[`functions/fabricMessageBodies.js`](../functions/fabricMessageBodies.js) maps
+`Message` statics in [`types/message.js`](../types/message.js) map
 the JSON objects apps already build onto the field schemas of eight opcodes,
 and back:
 
-- `buildMessage(type, body)` — field-encoded `Message` from the legacy object.
+- `Message.fromLegacyBody(type, body)` — field-encoded `Message` from the legacy object.
   Replaces `Message.fromVector([type, JSON.stringify(body)])` one for one.
-- `encodeLegacyBody(type, body)` / `decodeToLegacyBody(type, fields)` — the
+- `Message.encodeLegacyBody(type, body)` / `Message.decodeLegacyBody(type, fields)` — the
   two halves of that mapping.
-- `tryParseLegacyBody(message)` — the legacy object from either encoding.
+- `Message.tryParseLegacyBody(message)` — the legacy object from either encoding.
 
-Peer runs `decodeToLegacyBody` on every field body of these types before its
+Peer runs `decodeLegacyBody` on every field body of these types before its
 checks and before `contract:publish`, `contract:message`, `peeringGossip`,
 `peeringOffer`, `peerAnnounce` and `sidechain:patch` are emitted, so handlers
 see the same object whichever encoding the sender used.

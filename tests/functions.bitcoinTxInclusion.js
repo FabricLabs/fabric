@@ -3,7 +3,7 @@
 const assert = require('assert');
 const crypto = require('crypto');
 const { merkleRootFromTxids, buildBranch, verifyInclusion, buildInclusion, parseHeader, targetFromBits, headerMeetsTarget } = require('../functions/bitcoinTxInclusion');
-const { verifyFrameAuthor } = require('../functions/fabricFrameAuthor');
+const Message = require('../types/message');
 
 /** Header over `txids`, mined at regtest difficulty (`bits` 0x207fffff). */
 function headerFor (txids, bits = 0x207fffff) {
@@ -77,20 +77,19 @@ describe('functions/bitcoinTxInclusion', function () {
   });
 });
 
-describe('functions/fabricFrameAuthor', function () {
+describe('Message.verifyFrameAuthor', function () {
   it('recovers the x-only author of a signed AMP frame and rejects tampering', () => {
-    const Message = require('../types/message');
     const Key = require('../types/key');
     const key = new Key();
     const frame = Message.fromVector(['P2P_FILE_SEND', JSON.stringify({ name: 'd', body: 'AA==' })]).signWithKey(key).toBuffer();
-    const ok = verifyFrameAuthor(frame);
+    const ok = Message.verifyFrameAuthor(frame);
     assert.strictEqual(ok.ok, true, ok.reason);
     assert.strictEqual(ok.author, key.pubkey.slice(2));
     assert.strictEqual(ok.type, 0x59);
     assert.strictEqual(ok.body.toString('utf8'), JSON.stringify({ name: 'd', body: 'AA==' }));
     const tampered = Buffer.from(frame); tampered[tampered.length - 1] ^= 1;
-    assert.strictEqual(verifyFrameAuthor(tampered).ok, false);
-    assert.strictEqual(verifyFrameAuthor(frame.subarray(0, 100)).ok, false);
-    assert.strictEqual(verifyFrameAuthor(Message.fromVector(['P2P_FILE_SEND', 'x']).toBuffer()).ok, false, 'unsigned');
+    assert.strictEqual(Message.verifyFrameAuthor(tampered).ok, false);
+    assert.strictEqual(Message.verifyFrameAuthor(frame.subarray(0, 100)).ok, false);
+    assert.strictEqual(Message.verifyFrameAuthor(Message.fromVector(['P2P_FILE_SEND', 'x']).toBuffer()).ok, false, 'unsigned');
   });
 });

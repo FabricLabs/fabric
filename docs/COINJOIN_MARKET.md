@@ -13,11 +13,10 @@ Native Fabric protocol: not wire-compatible with JoinMarket
 
 | Module | Role |
 |--------|------|
-| [`functions/coinjoin.js`](../functions/coinjoin.js) | Pure helpers: body normalize / sign / verify / seal, fees, plan, PSBT build, maker + taker checks, key-path signing, ownership proofs |
-| [`functions/podle.js`](../functions/podle.js) | Proof of discrete-log equivalence: one commitment per taker UTXO and index, `PodleBlacklist` |
-| [`functions/fidelityBond.js`](../functions/fidelityBond.js) | Bond script, redeem PSBT, certificate, chain verification, `bondValue`, `BondVerifier` |
+| [`types/coinjoin.js`](../types/coinjoin.js) | `Coinjoin` — the round base; statics for body normalize / sign / verify / seal, fees, `plan`, `buildPsbt`, maker + taker checks, key-path signing, ownership proofs, and PoDLE (one commitment per taker UTXO and index, `PodleBlacklist`) |
+| [`types/bond.js`](../types/bond.js) | `Bond` — fidelity statics: bond script, redeem PSBT, certificate, chain verification, `fidelityValue`, `FidelityVerifier` |
 | [`types/coinjoinBook.js`](../types/coinjoinBook.js) | `CoinjoinBook` — local offer book, bond refresh, weighted-random maker choice, index |
-| [`types/coinjoinRound.js`](../types/coinjoinRound.js) | `CoinjoinTakerRound` / `CoinjoinMakerRound` — one round's state machines over injected adapters |
+| [`types/coinjoinRound.js`](../types/coinjoinRound.js) | `CoinjoinTakerRound` / `CoinjoinMakerRound` (extend `Coinjoin`) — one round's state machines over injected adapters |
 
 ## Market model
 One instrument: a coinjoin of `amountSats`, P2TR key-path only. An offer covers
@@ -54,7 +53,7 @@ for anything that does not normalize; `verifyBody` returns
 `{ ok, reason, body, id }`.
 
 `toContractMessage(x)` wraps a signed offer, cancel, or sealed envelope for
-`buildMessage('CONTRACT_MESSAGE', …)`; `fromContractMessage(value)` reads one
+`Message.fromLegacyBody('CONTRACT_MESSAGE', …)`; `fromContractMessage(value)` reads one
 back as `{ kind: 'offer'|'cancel', body, id }` (verified) or
 `{ kind: 'sealed', envelope, to }`. Round bodies are refused unsealed.
 
@@ -77,7 +76,7 @@ the fill is sealed to it. Sealing is the participant ECDH seal of
 `{ type: 'CoinjoinSealed', version, to: <x-only>, seal }`. Relays see only `to`.
 
 A PSBT is capped at 22000 base64 characters (`MAX_PSBT_CHARS`) so a sealed
-round message fits one 32 KiB message; `buildCoinjoinPsbt` refuses an unsigned
+round message fits one 32 KiB message; `Coinjoin.buildPsbt` refuses an unsigned
 PSBT over half of that (signatures and wallet metadata roughly double it).
 
 ## Settlement
@@ -96,9 +95,9 @@ taker (round key)                          maker
   | <------------ CoinjoinIoAuth (inputs, coinjoin + change scripts)
   check maker inputs on chain (unspent, value, script, confs, distinct)
   build PSBT (BIP-69, nLockTime = tip, all P2TR)
-  | CoinjoinTx (psbt) --------------------> |  validateCoinjoinForMaker, sign
+  | CoinjoinTx (psbt) --------------------> |  validateForMaker, sign
   | <------------ CoinjoinSig (psbt)
-  merge + verify each maker signature, validateCoinjoinForTaker
+  merge + verify each maker signature, validateForTaker
   sign own inputs, finalize, broadcast
 ```
 
@@ -109,7 +108,7 @@ every input and output P2TR key-path, signed `SIGHASH_DEFAULT`. One equal output
 per party (at least `minMakers` + 1, default 3), plus change outputs above dust.
 Size estimate: `vsize = ⌈(42 + 230 × inputs + 172 × outputs) / 4⌉`.
 
-**Maker check** (`validateCoinjoinForMaker`): its inputs are all present and
+**Maker check** (`Coinjoin.validateForMaker`): its inputs are all present and
 unchanged, its coinjoin output pays exactly `amountSats` to its script, its
 change output pays exactly `makerChange` (absent when that is dust), at least
 `minEqualOutputs` outputs pay `amountSats`, no other output pays its scripts,
@@ -119,7 +118,7 @@ gained a signature (a taker who adds another of the maker's coins), and its
 `CoinjoinSig` carries only its own inputs' final witnesses, with no wallet
 derivation paths.
 
-**Taker check** (`validateCoinjoinForTaker`): the signed PSBT still matches the
+**Taker check** (`Coinjoin.validateForTaker`): the signed PSBT still matches the
 plan (inputs, outputs, values), and the fee rate is within
 `[minFeeRateSatVb, maxFeeRateSatVb]`.
 
@@ -166,8 +165,8 @@ A bond is a P2TR output with a NUMS internal key (no key path) and one leaf:
 
 `locktime` is a block height; on mainnet it must be a multiple of 4320 (about a
 month), so bonds fall into a few public buckets. The suggested key path is
-`m/86'/coin'/0'/2/i` (`bondPath`). `buildBondRedeemPsbt` +
-`signAndExtractBondRedeem` spend it after the lock (`nLockTime` = locktime).
+`m/86'/coin'/0'/2/i` (`Bond.fidelityPath`). `Bond.prepareFidelityRedeem` +
+`Bond.signFidelityRedeem` spend it after the lock (`nLockTime` = locktime).
 
 **Certificate.** The bond key signs, BIP340, the stable JSON of
 `{ type: 'FidelityBondCertificate', version, network, txid, vout,
@@ -176,7 +175,7 @@ lend its weight to a hot offer key until block `certExpiresAt` (at most 2016 ×
 26 blocks ahead). `CoinjoinOffer.fidelityBond` carries
 `{ txid, vout, locktime, bondXOnly, certExpiresAt, certSig }`.
 
-**Verification** (`verifyFidelityBond`, cached per tip by `BondVerifier`):
+**Verification** (`Bond.verifyFidelity`, cached per tip by `Bond.FidelityVerifier`):
 certificate valid for this maker and network, not expired, output unspent,
 script rebuilt from `bondXOnly` + `locktime` matches, at least 6
 confirmations. `CoinjoinBook#refreshBonds(verifier)` re-checks every bond; an
@@ -250,8 +249,8 @@ true` for PoDLE keys — so not watch-only). `memoryWallet` / `memoryChain` are
 in-memory versions for tests.
 
 ## Tests
-- `tests/functions.podle.js`, `tests/functions.coinjoin.js`,
-  `tests/functions.fidelityBond.js`, `tests/types.coinjoinBook.js`,
+- `tests/types.coinjoin.js`, `tests/types.coinjoin.podle.js`,
+  `tests/types.bond.fidelity.js`, `tests/types.coinjoinBook.js`,
   `tests/types.coinjoinRound.js` — run in `npm test` (in-memory chain + wallets).
 - `tests/bitcoin/coinjoin.regtest.js` — managed bitcoind with a taker and two
   maker descriptor wallets: one round end to end over `CONTRACT_MESSAGE`

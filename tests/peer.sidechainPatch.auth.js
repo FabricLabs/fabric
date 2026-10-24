@@ -6,11 +6,10 @@ const Message = require('../types/message');
 const Peer = require('../types/peer');
 const sidechainState = require('../functions/sidechainState');
 const bfs = require('../functions/beaconFederationSigning');
-const { tryParseLegacyBody } = require('../functions/fabricMessageBodies');
 const { offlinePeerSettings } = require('./helpers/peer');
 
 function legacyBody (msg) {
-  return tryParseLegacyBody(Message.fromBuffer(msg.toBuffer())).value;
+  return Message.tryParseLegacyBody(Message.fromBuffer(msg.toBuffer())).value;
 }
 
 describe('Peer SIDECHAIN_STATE_PATCH authorization', function () {

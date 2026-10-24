@@ -17,7 +17,6 @@
 const crypto = require('crypto');
 const Message = require('../types/message');
 const Key = require('../types/key');
-const { tryParseLegacyBody } = require('./fabricMessageBodies');
 const { HEADER_SIZE, MAX_MESSAGE_SIZE } = require('../constants');
 const { OUTER, CONTRACT_BODY_TYPES, isKnownContractBodyType } = require('./applicationNamespaces');
 const { pubkeyXOnly, pubkeyCompressed } = require('./groupChatSeal');
@@ -282,7 +281,7 @@ function parseContractMessageBody (msg) {
   if (!msg || (msg.type !== OUTER.CONTRACT_MESSAGE && msg.type !== 'P2P_CONTRACT_MESSAGE')) {
     return null;
   }
-  const result = tryParseLegacyBody(msg);
+  const result = Message.tryParseLegacyBody(msg);
   if (!result.ok) return null;
   const parsed = result.value;
   if (!parsed || typeof parsed !== 'object') return null;

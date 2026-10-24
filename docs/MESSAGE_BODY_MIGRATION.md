@@ -23,7 +23,7 @@ as of Phase 1.
 |--------|---------|---------|
 | **Typed fields** (7) | Schema registered; every originator uses `Message.fromFields`. | `P2P_FORWARD` `0x45`, `P2P_MUSIG_START` `0x4220`, `P2P_MUSIG_ACCEPT` `0x4221`, `P2P_MUSIG_RECEIVE_COUNTER` `0x4222`, `P2P_MUSIG_SEND_PROPOSAL` `0x4223`, `P2P_MUSIG_REPLY_TO_PROPOSAL` `0x4224`, `P2P_MUSIG_ACCEPT_PROPOSAL` `0x4225` |
 | **Raw bytes, by design** (3) | No schema on purpose: UTF-8 text or a raw inner frame. | `P2P_CHAT_MESSAGE` `0x68`, `P2P_PEER_ALIAS` `0x5b`, `P2P_RELAY` `0x43` |
-| **Core sends fields; downstream still JSON** (8, Phase 1) | Core senders use `buildMessage`; every receiver accepts both. Hub, GoonCitizen and goon.vc still send JSON. | `P2P_PING` `0x12`, `P2P_PONG` `0x13`, `P2P_PEER_ANNOUNCE` `0x5c`, `P2P_PEER_GOSSIP` `0x61`, `P2P_PEERING_OFFER` `0x62`, `CONTRACT_PUBLISH` `0x5f`, `CONTRACT_MESSAGE` `0x60`, `SIDECHAIN_STATE_PATCH` `0x3e5` |
+| **Core sends fields; downstream still JSON** (8, Phase 1) | Core senders use `Message.fromLegacyBody`; every receiver accepts both. Hub, GoonCitizen and goon.vc still send JSON. | `P2P_PING` `0x12`, `P2P_PONG` `0x13`, `P2P_PEER_ANNOUNCE` `0x5c`, `P2P_PEER_GOSSIP` `0x61`, `P2P_PEERING_OFFER` `0x62`, `CONTRACT_PUBLISH` `0x5f`, `CONTRACT_MESSAGE` `0x60`, `SIDECHAIN_STATE_PATCH` `0x3e5` |
 | **Needs a schema** (17, Phase 3) | Mesh traffic with a JSON body and no schema. | `P2P_SESSION_OFFER` `0x5d`, `P2P_SESSION_OPEN` `0x5e`, `P2P_SESSION_ACK` `0x4200`, `P2P_INVENTORY_REQUEST` `0x57`, `P2P_INVENTORY_RESPONSE` `0x58`, `P2P_FILE_SEND` `0x59`, `P2P_DOCUMENT_PUBLISH` `0x5a`, `DOCUMENT_PUBLISH` `0x3e6`, `DOCUMENT_REQUEST` `0x3e7`, `CONTRACT_PROPOSAL` `0x8a`, `P2P_INSTRUCTION` `0x20`, `P2P_STATE_COMMITTMENT` `0x32`, `P2P_FLUSH_CHAIN` `0x56`, `BITCOIN_BLOCK` `0x5208`, `BITCOIN_BLOCK_HASH` `0x526c`, `BITCOIN_TRANSACTION` `0x55f0`, `BITCOIN_TRANSACTION_HASH` `0x5654` |
 | **JSON at the edge, by design** (5) | Hub / `@fabric/http` carriers where JSON is the intended body. | `JSON_CALL` `0x3e80`, `JSON_PATCH` `0x400`, `GENERIC_MESSAGE` `0x3aff`, `CHAT_MESSAGE` `0x67`, `P2P_MESSAGE_RECEIPT` `0x44` |
 | **Legacy, unplanned** (16, Phase 4) | JSON or empty body, nothing plans to modernize them; deprecation candidates. | `P2P_BASE_MESSAGE` `0x31`, `P2P_GENERIC` `0x80`, `P2P_STATE_REQUEST` `0x29`, `P2P_TRANSACTION` `0x39`, `P2P_CHAIN_SYNC_REQUEST` `0x55`, `LOG_MESSAGE` `0xc0d49070`, `GENERIC_LIST` `0xc0d4c76e`, `BLOCK_CANDIDATE` `0x3`, `P2P_IDENT_REQUEST` `0x1`, `P2P_IDENT_RESPONSE` `0x11`, `P2P_STATE_ROOT` `0x30`, `P2P_STATE_CHANGE` `0x33`, `P2P_CALL` `0x42`, `PEER_CANDIDATE` `0x9`, `SESSION_START` `0x2`, `P2P_START_CHAIN` `0x21` |
@@ -45,15 +45,17 @@ so these go out as generic JSON frames:
 What changed is in `CHANGELOG.md` (2026-10-24) and the mapping is documented
 in [MESSAGE_BODY.md](./MESSAGE_BODY.md#legacy-json-objects--fields). In short:
 
-- `functions/fabricMessageBodies.js` maps the legacy JSON object of each of
-  the eight types to fields and back (`buildMessage`, `encodeLegacyBody`,
-  `decodeToLegacyBody`, `tryParseLegacyBody`).
+- `Message` statics map the legacy JSON object of each of the eight types
+  to fields and back (`Message.fromLegacyBody`, `encodeLegacyBody`,
+  `decodeLegacyBody`, `tryParseLegacyBody`). Older pins have them in
+  `functions/fabricMessageBodies.js` as `buildMessage`, `encodeLegacyBody`,
+  `decodeToLegacyBody`, `tryParseLegacyBody`; that module is gone.
 - `Peer` rebuilds the legacy object from field bodies before its checks and
   events, so app handlers did not change. Dedup and registration keys hash a
   canonical object.
 - Core's own senders use fields: keepalive ping/pong (fresh nonce per ping),
   `Contract#deploy` / `Contract#commit`, `buildSignedSidechainPatchMessage`.
-- Tests: `tests/fabricMessageBodies.js`, the field-encoded fixture variant in
+- Tests: `tests/types.message.legacyBody.js`, the field-encoded fixture variant in
   `tests/fabric.hub.mesh.integration.js`, and the updated sidechain tests.
 
 Verified on 2026-10-24: `npm run ci` in core (2960 passing). GoonCitizen
@@ -64,7 +66,7 @@ pricing, `MarketManager`, the path inventory and the seed list.
 
 ## Phase 2 — downstream senders and readers
 Goal: every app sends these eight types as fields and reads raw bodies with
-`tryParseLegacyBody`. Readers go first, then senders, repository by
+`Message.tryParseLegacyBody`. Readers go first, then senders, repository by
 repository, and only after the [rollout](#rollout-order) prerequisites hold.
 
 The sender change is usually one line:
@@ -73,14 +75,13 @@ The sender change is usually one line:
 // before
 Message.fromVector(['CONTRACT_MESSAGE', JSON.stringify(body)])
 // after
-const { buildMessage } = require('@fabric/core/functions/fabricMessageBodies');
-buildMessage('CONTRACT_MESSAGE', body)
+Message.fromLegacyBody('CONTRACT_MESSAGE', body)
 ```
 
 ### Readers (do these first)
 Code that `JSON.parse`s a raw body of one of the eight types breaks on a field
 frame. Replace the parse with `tryParseLegacyBody(message)` (or
-`decodeToLegacyBody` when it already has decoded fields).
+`decodeLegacyBody` when it already has decoded fields).
 
 | Repository | Where | Today |
 |------------|-------|-------|
@@ -126,13 +127,13 @@ GoonCitizen and Passport, as the coordinated pin move the release posture
 describes. The deployed Hub's core (`bb007a7`) also predates Phase 1.
 
 ## Phase 3 — schemas for the 17 types without one
-Write a schema for each type and its `encodeLegacyBody` / `decodeToLegacyBody`
+Write a schema for each type and its `encodeLegacyBody` / `decodeLegacyBody`
 mapping (add it to `LEGACY_BODY_TYPES`), then switch the senders.
 
 | Group | Types | Notes |
 |-------|-------|-------|
 | Session | `P2P_SESSION_OFFER`, `P2P_SESSION_OPEN`, `P2P_SESSION_ACK` | Carry `maxFrameBytes` (frame cap negotiation). A legacy peer that can't decode fields must still get a frame it understands, so the offer may need to stay JSON until Phase 5. `P2P_SESSION_ACK` has no core originator. |
-| Inventory | `P2P_INVENTORY_REQUEST`, `P2P_INVENTORY_RESPONSE` | Responses are paged by byte budget (`functions/inventoryPages`); a field layout changes the page arithmetic. Offer rows hold proofs and leaves: nested arrays, so a `string` field with canonical JSON (as with sidechain patches) is the likely shape. |
+| Inventory | `P2P_INVENTORY_REQUEST`, `P2P_INVENTORY_RESPONSE` | Responses are paged by byte budget (`DocumentBook.paginateInventoryItems`); a field layout changes the page arithmetic. Offer rows hold proofs and leaves: nested arrays, so a `string` field with canonical JSON (as with sidechain patches) is the likely shape. |
 | Files and documents | `P2P_FILE_SEND`, `P2P_DOCUMENT_PUBLISH`, `DOCUMENT_PUBLISH`, `DOCUMENT_REQUEST` | `P2P_FILE_SEND` sends the blob as a JSON string today; a `bytes` field removes the base64 overhead (about a quarter of each blob frame). `DOCUMENT_PUBLISH` bodies are the canonical published-document envelope that seller signatures cover; keep that string intact. |
 | Contracts | `CONTRACT_PROPOSAL` | Batched messages + Merkle root + JSON Patch + optional PSBT. The batched messages can be `message` fields. |
 | Control | `P2P_INSTRUCTION`, `P2P_STATE_COMMITTMENT`, `P2P_FLUSH_CHAIN` | The first two have no core originator: a schema, or move them to Phase 4. |
@@ -176,7 +177,7 @@ stored frames even after the wire rejects them.
    ones (deploy scripts, `identityClusterHttp`) and leaving GoonCitizen
    `_signMessage` until last.
 4. **Watch for drops.** Peer logs a warning and skips a field body that
-   `decodeToLegacyBody` can't map. A rising count after a sender switch means
+   `decodeLegacyBody` can't map. A rising count after a sender switch means
    a peer is sending a shape the mapping doesn't know.
 
 ## Risks
@@ -212,10 +213,10 @@ stored frames even after the wire rejects them.
 
 ### Phase 2, per repository
 
-- [ ] The core pin has Phase 1 (`functions/fabricMessageBodies.js` exists).
+- [ ] The core pin has Phase 1 (`Message.fromLegacyBody`, or `functions/fabricMessageBodies.js` on older pins).
 - [ ] Every raw-body `JSON.parse` of the eight types goes through
       `tryParseLegacyBody`.
-- [ ] Every sender of the eight types uses `buildMessage`.
+- [ ] Every sender of the eight types uses `Message.fromLegacyBody` (`buildMessage` on older pins).
 - [ ] The app's own tests pass with field frames, and a JSON frame from an old
       peer is still accepted.
 - [ ] Stored journals / collections replay unchanged (old JSON frames stay JSON).
@@ -225,7 +226,7 @@ stored frames even after the wire rejects them.
 
 - [ ] Schema appended in `types/message.js` and registered under the opcode,
       the wire name and any friendly alias.
-- [ ] Mapping in `fabricMessageBodies.js`, with a round-trip test.
+- [ ] Mapping in the legacy-body codec in `types/message.js`, with a round-trip test.
 - [ ] Peer accepts both encodings; dedup keys are encoding-independent.
 - [ ] Senders switched in core, then downstream (as in Phase 2).
 - [ ] `MESSAGES.md`, `MESSAGE_BODY.md` and this table updated.

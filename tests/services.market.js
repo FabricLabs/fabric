@@ -1,5 +1,6 @@
 'use strict';
 
+const ChannelBook = require('../types/channelBook');
 const assert = require('assert');
 const crypto = require('crypto');
 
@@ -7,7 +8,7 @@ const Market = require('../services/market');
 const Document = require('../types/document');
 const Peer = require('../types/peer');
 const Message = require('../types/message');
-const { Book } = require('../types/book');
+const DocumentBook = require('../types/documentBook');
 const { HTLC_MINIMUM_SATS } = require('../constants');
 const { createBlobQuote } = require('../functions/documentSealedExchange');
 
@@ -25,7 +26,7 @@ function buildMarket (opts = {}) {
   const doc = Document.seal(plain, { chunkBytes: 2048 });
   const buyer = new Peer({ listen: false });
   const sellers = {};
-  const book = new Book();
+  const book = new DocumentBook();
   const deliveries = [];
   let documentId = null;
 
@@ -146,7 +147,7 @@ describe('services/market (consumer budget agent)', function () {
 
   it('never plans a paid blob below the HTLC minimum (no enforceable settlement)', function () {
     const doc = Document.seal(crypto.randomBytes(4000), { chunkBytes: 2048 });
-    const book = new Book();
+    const book = new DocumentBook();
     book.ingestInventoryResponse({ origin: 'cheap', items: [doc.inventoryItem({ rateSats: P - 1, documentId: 'd' })] });
     const market = new Market({ budgetSats: 10 * P, tickMs: 0, book });
     const want = { documentId: 'd', blobTotal: doc.blobTotal, merkleRootHex: doc.merkleRootHex };
@@ -192,7 +193,7 @@ describe('services/market (consumer budget agent)', function () {
 describe('services/market (Phase 4 channel rail)', function () {
   const bitcoin = require('bitcoinjs-lib');
   const Channel = require('../types/channel');
-  const { signerFromPriv32 } = require('../functions/inventoryHtlc');
+  const { signerFromPriv32 } = require('../types/htlc');
   const NET = bitcoin.networks.regtest;
 
   function party () {
@@ -253,7 +254,7 @@ describe('services/market (Phase 4 channel rail)', function () {
     assert.strictEqual(market.spentSats, viaChannel.length * P + (sessions.length - viaChannel.length) * P);
   });
 
-  it('seller-fulfils over Channel.Book: no key reveal on the wire, buyer opens blobs with the HTLC preimage, busy rounds defer', async function () {
+  it('seller-fulfils over ChannelBook: no key reveal on the wire, buyer opens blobs with the HTLC preimage, busy rounds defer', async function () {
     const m = buildMarket({ rateSats: P });
     // The channel seller never reveals keys over P2P_FILE_SEND: ciphertext only.
     const sellerPeer = m.sellers.alpha;
@@ -271,14 +272,14 @@ describe('services/market (Phase 4 channel rail)', function () {
       return true;
     };
     // Make the channel seller the only seller the book knows.
-    const only = new Book();
+    const only = new DocumentBook();
     only.ingestInventoryResponse({ origin: 'alpha', items: [m.doc.inventoryItem({ rateSats: P, documentId: m.documentId })], latencyMs: 20 });
 
     const buyerKey = party();
     const sellerKey = party();
     const wire = { toSeller: [], toBuyer: [] };
-    const buyerBook = new Channel.Book({ localPrivateKey: buyerKey.priv, network: 'regtest', tipHeight: () => 100, publish: (body) => wire.toSeller.push(body) });
-    const sellerBook = new Channel.Book({
+    const buyerBook = new ChannelBook({ localPrivateKey: buyerKey.priv, network: 'regtest', tipHeight: () => 100, publish: (body) => wire.toSeller.push(body) });
+    const sellerBook = new ChannelBook({
       localPrivateKey: sellerKey.priv,
       network: 'regtest',
       tipHeight: () => 100,
@@ -334,7 +335,7 @@ describe('services/market (Phase 4 channel rail)', function () {
     assert.ok(done.every((s) => s.status === 'complete'), JSON.stringify(done.map((s) => s.status)));
     assert.strictEqual(opened.session.state.htlcs.length, 0);
     assert.strictEqual(opened.session.busy, false);
-    assert.strictEqual(sellerBook.sessions.get(opened.session.channelId).balances.localSats, m.doc.blobTotal * P);
+    assert.strictEqual(sellerBook.get(opened.session.channelId).balances.localSats, m.doc.blobTotal * P);
     assert.strictEqual(market.spentSats, m.doc.blobTotal * P);
   });
 
@@ -367,7 +368,7 @@ describe('services/market (Phase 4 channel rail)', function () {
 describe('services/market (Phase 5 hardening)', function () {
   const bitcoin = require('bitcoinjs-lib');
   const Channel = require('../types/channel');
-  const { signerFromPriv32 } = require('../functions/inventoryHtlc');
+  const { signerFromPriv32 } = require('../types/htlc');
   const NET = bitcoin.networks.regtest;
 
   function fundingTx (address, sats) {
@@ -384,7 +385,7 @@ describe('services/market (Phase 5 hardening)', function () {
    */
   function buildL1 (opts = {}) {
     const m = buildMarket({ rateSats: P, bytes: opts.bytes });
-    const book = new Book();
+    const book = new DocumentBook();
     for (const name of opts.sellers || ['alpha']) {
       book.ingestInventoryResponse({
         origin: name,
@@ -711,7 +712,7 @@ describe('services/market (Phase 5 hardening)', function () {
   });
 
   it('a whole-document delivery completes only its own seller\'s locked purchase, never a timed-out one', function () {
-    const market = new Market({ budgetSats: 4 * P, tickMs: 0, book: new Book() });
+    const market = new Market({ budgetSats: 4 * P, tickMs: 0, book: new DocumentBook() });
     const documentId = 'ab'.repeat(32);
     const session = (id, seller, status) => ({ settlementId: id, documentId, seller, sellerId: seller, status, amountSats: P, budget: 'locked', confirmedAt: 1 });
     const sessions = {
@@ -734,7 +735,7 @@ describe('services/market (Phase 5 hardening)', function () {
   });
 
   it('a delivery without an origin completes no locked purchase', function () {
-    const market = new Market({ budgetSats: 4 * P, tickMs: 0, book: new Book() });
+    const market = new Market({ budgetSats: 4 * P, tickMs: 0, book: new DocumentBook() });
     const documentId = 'cd'.repeat(32);
     const session = (id, seller) => ({ settlementId: id, documentId, seller, sellerId: seller, status: 'delivery_pending', amountSats: P, budget: 'locked', confirmedAt: 1 });
     const sessions = { alpha: session('a', 'alpha'), beta: session('b', 'beta') };
@@ -754,7 +755,7 @@ describe('services/market (Phase 5 hardening)', function () {
   });
 
   it('the session whose key is opening wins over a conflicting origin', function () {
-    const market = new Market({ budgetSats: 4 * P, tickMs: 0, book: new Book() });
+    const market = new Market({ budgetSats: 4 * P, tickMs: 0, book: new DocumentBook() });
     const documentId = 'ce'.repeat(32);
     const session = (id, seller) => ({ settlementId: id, documentId, seller, sellerId: seller, status: 'delivery_pending', amountSats: P, budget: 'locked', confirmedAt: 1 });
     const sessions = { alpha: session('a', 'alpha'), beta: session('b', 'beta') };
@@ -771,7 +772,7 @@ describe('services/market (Phase 5 hardening)', function () {
   });
 
   it('a blob opened with one session\'s key completes only that session', function () {
-    const market = new Market({ budgetSats: 4 * P, tickMs: 0, book: new Book() });
+    const market = new Market({ budgetSats: 4 * P, tickMs: 0, book: new DocumentBook() });
     const documentId = 'cf'.repeat(32);
     const session = (id, seller) => ({ settlementId: id, documentId, seller, sellerId: seller, blobIndex: 0, status: 'delivery_pending', amountSats: P, budget: 'locked', confirmedAt: 1 });
     const sessions = { alpha: session('a', 'alpha'), beta: session('b', 'beta') };
@@ -787,7 +788,7 @@ describe('services/market (Phase 5 hardening)', function () {
   });
 
   it('a whole-document delivery from a per-blob purchase\'s own seller leaves it to its blob', function () {
-    const market = new Market({ budgetSats: 4 * P, tickMs: 0, book: new Book() });
+    const market = new Market({ budgetSats: 4 * P, tickMs: 0, book: new DocumentBook() });
     const documentId = 'ef'.repeat(32);
     const own = { settlementId: 'own', documentId, seller: 'beta', sellerId: 'beta', blobIndex: 1, status: 'delivery_pending', amountSats: P, budget: 'locked', confirmedAt: 1 };
     const other = Object.assign({}, own, { settlementId: 'other', seller: 'gamma', sellerId: 'gamma' });
@@ -978,8 +979,8 @@ describe('services/market (Phase 5 hardening)', function () {
       const buyerKey = party();
       const sellerKey = party();
       const wire = { toSeller: [], toBuyer: [] };
-      const buyerBook = new Channel.Book({ localPrivateKey: buyerKey.priv, network: 'regtest', tipHeight: () => chain.tip, publish: (body) => wire.toSeller.push(body) });
-      const sellerBook = new Channel.Book({
+      const buyerBook = new ChannelBook({ localPrivateKey: buyerKey.priv, network: 'regtest', tipHeight: () => chain.tip, publish: (body) => wire.toSeller.push(body) });
+      const sellerBook = new ChannelBook({
         localPrivateKey: sellerKey.priv,
         network: 'regtest',
         tipHeight: () => chain.tip,
@@ -1004,7 +1005,7 @@ describe('services/market (Phase 5 hardening)', function () {
     }
 
     function alphaOnly (m) {
-      const only = new Book();
+      const only = new DocumentBook();
       only.ingestInventoryResponse({ origin: 'alpha', items: [m.doc.inventoryItem({ rateSats: P, documentId: m.documentId })], latencyMs: 20 });
       return only;
     }
@@ -1017,7 +1018,7 @@ describe('services/market (Phase 5 hardening)', function () {
       // The host's adapter forwards calls but drops every event.
       const channels = {
         sessionFor: (id, pk) => buyerBook.sessionFor(id, pk),
-        sessions: buyerBook.sessions,
+        get: (channelId) => buyerBook.get(channelId),
         tipHeight: () => buyerBook.tipHeight(),
         publish: (body, s) => buyerBook.publish(body, s)
       };
@@ -1037,7 +1038,7 @@ describe('services/market (Phase 5 hardening)', function () {
       assert.strictEqual(market.spentSats, m.doc.blobTotal * P);
       assert.strictEqual(market.lockedSats + market.reservedSats, 0);
       assert.strictEqual(channel.state.htlcs.length, 0);
-      assert.strictEqual(sellerBook.sessions.get(channel.channelId).balances.localSats, m.doc.blobTotal * P);
+      assert.strictEqual(sellerBook.get(channel.channelId).balances.localSats, m.doc.blobTotal * P);
       assert.ok(market.audit().ok);
     });
 

@@ -137,7 +137,7 @@ Peg-out L1 confirmations are a separate operator policy (when to mark
 | F1 | `tests/functions.federationDestinationAuth.js` (new) |
 | F2 watcher | Hub test with mocked `listunspent` / reorg |
 | F2 loop | Credit → propose → prepare → broadcast fixture; double-prepare |
-| F3 | `contractTaproot` vector: lock unspent, then recovery spend |
+| F3 | `Policy` vector: lock unspent, then recovery spend |
 
 Existing: `tests/functions.federationReserveLedger.js`,
 `tests/functions.federationValidatorVerify.js`, contract spend / taproot
@@ -146,5 +146,5 @@ suites that already require `amountSats`.
 ## Related
 - `functions/federationReserveLedger.js`
 - `functions/contractSpend.js` (`buildWithdrawalRequest`, `validateWithdrawalRequest`)
-- `functions/contractTaproot.js`
+- `types/policy.js` (`Policy`)
 - Hub `docs/FEDERATION_DEPLOYMENT.md` (network promotion, peg RPC names)
