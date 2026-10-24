@@ -22,6 +22,7 @@
 const merge = require('lodash.merge');
 const crypto = require('crypto');
 const bitcoin = require('bitcoinjs-lib');
+const bip341 = require('bitcoinjs-lib/src/payments/bip341');
 const { secp256k1 } = require('@noble/curves/secp256k1.js');
 const ecc = require('./ecc');
 
@@ -203,8 +204,20 @@ function hex (bytes) {
 }
 
 /**
- * Input 0's authority-leaf signatures that come from a validator and verify
- * against the transaction, each checked on its own.
+ * Tapleaf hash of the leaf input 0 spends (its first `tapLeafScript`).
+ * @param {bitcoin.Psbt} psbt
+ * @returns {string|null}
+ * @private
+ */
+function _withdrawalLeafHash (psbt) {
+  const leaf = (psbt.data.inputs[0].tapLeafScript || [])[0];
+  if (!leaf || !leaf.script) return null;
+  return hex(bip341.tapleafHash({ output: leaf.script, version: leaf.leafVersion }));
+}
+
+/**
+ * Input 0's authority-leaf signatures that come from a validator, sign the
+ * leaf being spent, and verify against the transaction, each checked on its own.
  * @param {bitcoin.Psbt} psbt
  * @param {Object} descriptor Canonical descriptor
  * @returns {Object[]} `tapScriptSig` entries
@@ -212,8 +225,11 @@ function hex (bytes) {
  */
 function _verifiedWithdrawalSignatures (psbt, descriptor) {
   const verifier = (pubkey, msghash, signature) => ecc.verifySchnorr(msghash, pubkey, signature);
+  const leafHash = _withdrawalLeafHash(psbt);
+  if (!leafHash) return [];
   return (psbt.data.inputs[0].tapScriptSig || []).filter((s) => {
     if (!Federation.isValidator(descriptor, hex(s.pubkey))) return false;
+    if (hex(s.leafHash) !== leafHash) return false;
     const probe = psbt.clone();
     probe.data.inputs[0].tapScriptSig = [s];
     try {
@@ -1581,6 +1597,7 @@ class Federation extends Contract {
     const input = psbt.data.inputs[0];
     // The PSBT may come from another member: keep only entries that verify.
     input.tapScriptSig = _verifiedWithdrawalSignatures(psbt, descriptor);
+    const leafHash = _withdrawalLeafHash(psbt);
     const have = new Set(input.tapScriptSig.map((s) => hex(s.pubkey)));
     const add = [];
     for (const s of Array.isArray(opts.signatures) ? opts.signatures : []) {
@@ -1589,6 +1606,7 @@ class Federation extends Contract {
       if (!/^[0-9a-f]{64}$/.test(String(s.leafHash)) || !/^[0-9a-f]{128}$/.test(String(s.signature))) {
         throw new Error('malformed signature');
       }
+      if (String(s.leafHash) !== leafHash) throw new Error('signature for a different leaf');
       if (have.has(x)) continue;
       have.add(x);
       add.push({ pubkey: Buffer.from(x, 'hex'), leafHash: Buffer.from(s.leafHash, 'hex'), signature: Buffer.from(s.signature, 'hex') });

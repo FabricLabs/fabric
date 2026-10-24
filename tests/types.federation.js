@@ -726,6 +726,25 @@ describe('Federation named federations', function () {
       assert.ok(/^[0-9a-f]{64}$/.test(done.txid));
       assert.throws(() => Federation.finalizeWithdrawal({ descriptor, psbtBase64: plant(req.psbtBase64, sigs[0][0]) }), /0 of 2/);
     });
+
+    it('counts only signatures over the leaf being spent', function () {
+      const tx = fundingTx(vault.address, 100000);
+      const req = Federation.prepareWithdrawal({ descriptor, fundedTxHex: tx.toHex(), destinationAddress: dest, amountSats: 50000, feeSats: 500 });
+      // A valid signature by a validator, but over another leaf that also names its key.
+      const elsewhere = Psbt.fromBase64(req.psbtBase64);
+      const leaf = elsewhere.data.inputs[0].tapLeafScript[0];
+      elsewhere.data.inputs[0].tapLeafScript = [Object.assign({}, leaf, { script: Buffer.concat([leaf.script, Buffer.from([0x75])]) })];
+      const other = Federation.signWithdrawal({ psbtBase64: elsewhere.toBase64(), privateKey: privs[0] }).signatures;
+      const good = Federation.signWithdrawal({ psbtBase64: req.psbtBase64, privateKey: privs[0] }).signatures;
+      assert.notStrictEqual(other[0].leafHash, good[0].leafHash);
+      assert.throws(() => Federation.addWithdrawalSignatures({ descriptor, psbtBase64: req.psbtBase64, signatures: other }), /different leaf/);
+      // Planted in a shared PSBT, it neither counts nor blocks the member's real signature.
+      const shared = Psbt.fromBase64(req.psbtBase64);
+      shared.updateInput(0, { tapScriptSig: other.map((s) => ({ pubkey: Buffer.from(s.pubkey, 'hex'), leafHash: Buffer.from(s.leafHash, 'hex'), signature: Buffer.from(s.signature, 'hex') })) });
+      assert.throws(() => Federation.finalizeWithdrawal({ descriptor, psbtBase64: shared.toBase64() }), /0 of 2/);
+      const acc = Federation.addWithdrawalSignatures({ descriptor, psbtBase64: shared.toBase64(), signatures: good });
+      assert.deepStrictEqual(acc.signers, [good[0].pubkey]);
+    });
   });
 
   describe('messages', function () {

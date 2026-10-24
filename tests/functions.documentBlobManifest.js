@@ -314,6 +314,38 @@ describe('functions/documentBlobManifest', function () {
       assert.strictEqual(verifySealedBlobFrame(tampered, expected).ok, false);
     });
 
+    it('verifySealedBlobFrame opens a whole-document frame whose IV is not in the tree', function () {
+      const bodies = [crypto.randomBytes(100), crypto.randomBytes(100)];
+      const paymentHashHex = sha('whole document');
+      const blobs = bodies.map((b) => ({ blobHashHex: crypto.createHash('sha256').update(b).digest('hex'), paymentHashHex }));
+      const merkleRootHex = documentMerkleRootHex(blobs);
+      const frame = {
+        documentId: 'whole',
+        sealed: true,
+        blobIndex: 1,
+        blobTotal: 2,
+        blobHashHex: blobs[1].blobHashHex,
+        merkleRootHex,
+        paymentHashHex,
+        iv: crypto.randomBytes(12).toString('hex'),
+        proof: documentInclusionProof(blobs, 1),
+        body: bodies[1].toString('base64')
+      };
+      const out = verifySealedBlobFrame(frame, { merkleRootHex, blobTotal: 2 });
+      assert.strictEqual(out.ok, true, out.error);
+      assert.strictEqual(out.iv, frame.iv);
+      // A per-blob frame commits its IV: the same proof no longer opens.
+      assert.strictEqual(verifySealedBlobFrame(Object.assign({}, frame, { perBlob: true }), { merkleRootHex, blobTotal: 2 }).error, 'inclusion proof does not open to merkleRootHex');
+    });
+
+    it('reassemble accepts a whole-content hash as the root only without leaf metadata', function () {
+      const parts = [crypto.randomBytes(64), crypto.randomBytes(64)];
+      const full = crypto.createHash('sha256').update(Buffer.concat(parts)).digest('hex');
+      assert.strictEqual(reassemble(parts, 2, full).ok, true);
+      const leaves = [{ paymentHashHex: sha('a') }, { paymentHashHex: sha('a') }];
+      assert.strictEqual(reassemble(parts, 2, full, { leaves }).error, 'merkle/root mismatch');
+    });
+
     it('a worst-case sealed frame fits one AMP message', function () {
       const Document = require('../types/document');
       const doc = Document.seal(crypto.randomBytes(SEALED_BLOB_CHUNK_BYTES * 4100 + 1), { documentId: 'x'.repeat(200) });

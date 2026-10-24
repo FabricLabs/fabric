@@ -592,6 +592,8 @@ function reassemble (blobsByIndex, total, merkleRootHex = null, opts = {}) {
   if (merkleRootHex) {
     const want = String(merkleRootHex).toLowerCase();
     if (gotRoot !== want) {
+      // With leaf metadata the root must commit it; the whole-content hash proves nothing about the leaves.
+      if (opts.leaves != null) return { ok: false, error: 'merkle/root mismatch', merkleRootHex: gotRoot };
       const full = crypto.createHash('sha256').update(buffer).digest('hex');
       if (full !== want) {
         return { ok: false, error: 'merkle/root mismatch', merkleRootHex: gotRoot };
@@ -785,7 +787,7 @@ function verifySealedBlobFrame (obj, expected = {}) {
   const out = { ok: true, blobIndex: frame.blobIndex, blobHashHex: frame.blobHashHex, paymentHashHex, iv, bytes: frame.bytes };
   const proof = Array.isArray(obj.proof) ? obj.proof : expected.proof;
   if (!Array.isArray(proof)) return { ok: false, error: 'missing inclusion proof', blobIndex: frame.blobIndex };
-  if (!verifyDocumentInclusion({ merkleRootHex: root, blobTotal: total, blobIndex: frame.blobIndex, blobHashHex: frame.blobHashHex, paymentHashHex, iv, proof })) {
+  if (!verifyDocumentInclusion({ merkleRootHex: root, blobTotal: total, blobIndex: frame.blobIndex, blobHashHex: frame.blobHashHex, paymentHashHex, iv: frame.leafIv, proof })) {
     return { ok: false, error: 'inclusion proof does not open to merkleRootHex', blobIndex: frame.blobIndex };
   }
   return out;
