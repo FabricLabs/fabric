@@ -7,6 +7,14 @@ const de = require('../functions/beaconFederationSigning');
 const { jsonSafe, stableStringify } = require('../functions/fabricCanonicalJson');
 const { parseDistributedManifestV1 } = require('../functions/fabricProgramManifest');
 const sc = require('../functions/sidechainState');
+const Message = require('../types/message');
+const { tryParseLegacyBody } = require('../functions/fabricMessageBodies');
+
+function legacyBody (msg) {
+  const parsed = tryParseLegacyBody(Message.fromBuffer(msg.toBuffer()));
+  assert.strictEqual(parsed.encoding, 'fields');
+  return parsed.value;
+}
 
 // Compat aliases used by older assertions in this file
 de.jsonSafe = jsonSafe;
@@ -248,7 +256,7 @@ describe('@fabric/core/functions/sidechainState', function () {
   it('encode/parse SIDECHAIN_STATE_PATCH message', function () {
     const body = sc.encodeSidechainStatePatchMessage({
       basisClock: 0,
-      basisDigest: 'aa',
+      basisDigest: 'aa'.repeat(32),
       patches: [{ op: 'add', path: '/x', value: 1 }]
     });
     assert.strictEqual(body.type, sc.SIDECHAIN_STATE_PATCH_TYPE);
@@ -261,19 +269,45 @@ describe('@fabric/core/functions/sidechainState', function () {
     const key = new Key({ private: '1111111111111111111111111111111111111111111111111111111111111111' });
     const proposal = {
       basisClock: 0,
-      basisDigest: 'aa',
+      basisDigest: 'aa'.repeat(32),
       patches: [{ op: 'add', path: '/rsi', value: { digest: 'bb' } }]
     };
     const msg = sc.buildSignedSidechainPatchMessage({ proposal, signKey: key });
-    const parsed = sc.parseSidechainStatePatchMessage(JSON.parse(msg.data.toString('utf8')));
+    const parsed = sc.parseSidechainStatePatchMessage(legacyBody(msg));
     assert.strictEqual(parsed.ok, true);
     assert.ok(parsed.proposal.federationWitness);
+    assert.strictEqual(parsed.proposal.basisDigest, proposal.basisDigest);
+    assert.deepStrictEqual(parsed.proposal.patches, proposal.patches);
+  });
+
+  it('parseSidechainStatePatchMessage accepts decoded field objects', function () {
+    const key = new Key({ private: '1111111111111111111111111111111111111111111111111111111111111111' });
+    const proposal = {
+      basisClock: 3,
+      basisDigest: 'ab'.repeat(32),
+      patches: [{ op: 'add', path: '/rsi', value: { digest: 'bb' } }]
+    };
+    const msg = sc.buildSignedSidechainPatchMessage({ proposal, signKey: key });
+    const fields = Message.fromBuffer(msg.toBuffer()).toFields();
+    assert.ok(Buffer.isBuffer(fields.basisDigest));
+    const parsed = sc.parseSidechainStatePatchMessage(fields);
+    assert.strictEqual(parsed.ok, true);
+    assert.strictEqual(parsed.proposal.basisClock, 3);
+    assert.strictEqual(parsed.proposal.basisDigest, proposal.basisDigest);
+    assert.deepStrictEqual(parsed.proposal.patches, proposal.patches);
+    assert.ok(parsed.proposal.federationWitness);
+  });
+
+  it('buildSignedSidechainPatchMessage rejects a non-hex basisDigest', function () {
+    assert.throws(() => sc.buildSignedSidechainPatchMessage({
+      proposal: { basisClock: 0, basisDigest: 'aa', patches: [{ op: 'add', path: '/z', value: 1 }] }
+    }), /64 lowercase hex/);
   });
 
   it('buildSignedSidechainPatchMessage skips AMP sign when signKey cannot sign', function () {
     const proposal = {
       basisClock: 0,
-      basisDigest: 'aa',
+      basisDigest: 'aa'.repeat(32),
       patches: [{ op: 'add', path: '/z', value: 1 }]
     };
     const watchOnly = { pubkey: 'ab'.repeat(32) }; // no .sign
@@ -289,7 +323,7 @@ describe('@fabric/core/functions/sidechainState', function () {
       signKey: watchOnly,
       federationWitness: { version: 1, signatures: {} }
     });
-    const parsed = sc.parseSidechainStatePatchMessage(JSON.parse(msg.data.toString('utf8')));
+    const parsed = sc.parseSidechainStatePatchMessage(legacyBody(msg));
     assert.strictEqual(parsed.ok, true);
   });
 
@@ -298,7 +332,7 @@ describe('@fabric/core/functions/sidechainState', function () {
     const watchOnly = new Key({ public: full.pubkey });
     const proposal = {
       basisClock: 0,
-      basisDigest: 'aa',
+      basisDigest: 'aa'.repeat(32),
       patches: [{ op: 'add', path: '/z', value: 1 }]
     };
     let msg;
@@ -309,13 +343,13 @@ describe('@fabric/core/functions/sidechainState', function () {
         federationWitness: { version: 1, signatures: {} }
       });
     });
-    const parsed = sc.parseSidechainStatePatchMessage(JSON.parse(msg.data.toString('utf8')));
+    const parsed = sc.parseSidechainStatePatchMessage(legacyBody(msg));
     assert.strictEqual(parsed.ok, true);
   });
 
   it('buildFederationWitnessForSidechainPatch returns null without a signing key', function () {
     assert.strictEqual(sc.buildFederationWitnessForSidechainPatch({
-      proposal: { basisClock: 0, basisDigest: 'aa', patches: [] },
+      proposal: { basisClock: 0, basisDigest: 'aa'.repeat(32), patches: [] },
       signKey: null
     }), null);
   });
@@ -324,7 +358,7 @@ describe('@fabric/core/functions/sidechainState', function () {
     const full = new Key({ private: '2222222222222222222222222222222222222222222222222222222222222222' });
     const watchOnly = new Key({ public: full.pubkey });
     assert.strictEqual(sc.buildFederationWitnessForSidechainPatch({
-      proposal: { basisClock: 0, basisDigest: 'aa', patches: [] },
+      proposal: { basisClock: 0, basisDigest: 'aa'.repeat(32), patches: [] },
       signKey: watchOnly
     }), null);
   });
@@ -333,7 +367,7 @@ describe('@fabric/core/functions/sidechainState', function () {
     const key = new Key({ private: '1111111111111111111111111111111111111111111111111111111111111111' });
     const proposal = {
       basisClock: 1,
-      basisDigest: 'cc',
+      basisDigest: 'cc'.repeat(32),
       patches: [{ op: 'add', path: '/y', value: 2 }]
     };
     const witness = sc.buildFederationWitnessForSidechainPatch({

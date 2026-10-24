@@ -204,7 +204,7 @@ This catalog: **76** decode names, **76** unique opcodes, **15** with a register
 
 These are routed from decoded JSON bodies (often received as `P2P_BASE_MESSAGE` / `P2P_GENERIC`).
 
-> `P2P_CHAT_MESSAGE` (`0x0068`), `P2P_PEER_ALIAS` (`0x005b`), `P2P_PEER_GOSSIP` (`0x0061`), and `P2P_PEERING_OFFER` (`0x0062`) are **first-class outer opcodes** (table above). Chat and alias bodies are opaque UTF-8 text (not JSON); gossip/offer bodies remain JSON objects.
+> `P2P_CHAT_MESSAGE` (`0x0068`), `P2P_PEER_ALIAS` (`0x005b`), `P2P_PEER_GOSSIP` (`0x0061`), and `P2P_PEERING_OFFER` (`0x0062`) are **first-class outer opcodes** (table above). Chat and alias bodies are opaque UTF-8 text (not JSON). Gossip and offer bodies are typed fields when core sends them; JSON bodies are still accepted on receive (see [docs/MESSAGE_BODY_MIGRATION.md](docs/MESSAGE_BODY_MIGRATION.md)).
 
 | Generic `type` | Purpose |
 |---|---|
@@ -280,7 +280,7 @@ Owner-gated. Protocol version stays `0x01`.
 
 1. **Hub catalog** — Drop INNER pending rows that are already outer opcodes. Do not register `JSONBlob` until core owns `15104`.
 2. **Dual-carrier kill** — Originate inventory / file / chat only on first-class opcodes. Mesh chat = `0x68` only.
-3. **Field schemas** — Still JSON for session offer/open/ack, inventory, file send, document publish/request, contract publish/proposal, instruction, state commitment.
+3. **Field schemas** — Phase 1 is done: core sends `P2P_PING`, `P2P_PONG`, `CONTRACT_PUBLISH`, `CONTRACT_MESSAGE` and `SIDECHAIN_STATE_PATCH` as typed fields, the announce, gossip and offer schemas carry every key core reads, and JSON is still accepted on receive. Next are the downstream senders (Phase 2), then schemas for session offer/open/ack, inventory, file send, document publish/request, `CONTRACT_PROPOSAL`, instruction and state commitment (Phase 3). Plan: [docs/MESSAGE_BODY_MIGRATION.md](docs/MESSAGE_BODY_MIGRATION.md).
 4. **Protocol-v1 matrix** — Add `P2P_FORWARD`, `P2P_RELAY`, `P2P_PONG`, `P2P_INVENTORY_RESPONSE`, `P2P_SESSION_OPEN`, `P2P_DOCUMENT_PUBLISH`, `SIDECHAIN_STATE_PATCH`, `CONTRACT_PROPOSAL`. MuSig2 stays directed.
 
 ## Fabric Message collections

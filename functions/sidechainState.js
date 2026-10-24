@@ -632,6 +632,12 @@ function encodeSidechainStatePatchMessage (proposal) {
  */
 function parseSidechainStatePatchMessage (body) {
   if (!body || typeof body !== 'object') return { ok: false, error: 'body must be an object' };
+  if (body.patchesCanonical != null || body.catalogCanonical != null) {
+    const { decodeToLegacyBody } = require('./fabricMessageBodies');
+    const legacy = decodeToLegacyBody(SIDECHAIN_STATE_PATCH_TYPE, body);
+    if (!legacy) return { ok: false, error: 'patches required' };
+    body = legacy;
+  }
   const type = body.type || body['@type'];
   if (type && type !== SIDECHAIN_STATE_PATCH_TYPE && body.kind !== SIDECHAIN_PATCH_KIND) {
     return { ok: false, error: 'not a SIDECHAIN_STATE_PATCH message' };
@@ -784,14 +790,14 @@ function buildFederationWitnessForSidechainPatch ({ proposal, signKey, validator
  * @returns {import('../types/message')}
  */
 function buildSignedSidechainPatchMessage ({ proposal, signKey, federationWitness = null }) {
-  const Message = require('../types/message');
+  const { buildMessage } = require('./fabricMessageBodies');
   const witness = federationWitness != null
     ? federationWitness
     : (signKey ? buildFederationWitnessForSidechainPatch({ proposal, signKey }) : null);
   const body = encodeSidechainStatePatchMessage(Object.assign({}, proposal, {
     federationWitness: witness
   }));
-  const msg = Message.fromVector(['SIDECHAIN_STATE_PATCH', JSON.stringify(body)]);
+  const msg = buildMessage('SIDECHAIN_STATE_PATCH', body);
   // Only AMP-sign when the key has private material. Message#signWithKey throws on
   // public-only keys; do not probe Message#signWithKey (always present).
   if (signKey && keyHasPrivateSigningMaterial(signKey) && typeof signKey.sign === 'function') {

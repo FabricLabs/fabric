@@ -49,6 +49,30 @@ trees) belong in **app catalogs**, not this core list.
 | `ContractWithdrawalWitness` | Co-signer witness for withdrawal / migration |
 | `MessageReceived` | Phase-1 delivery ACK for **any** sync-tracked wire frame — stored/relayed as `CONTRACT_MESSAGE`; 2PC sidecar only (does not advance tip clock) |
 | `MessageReceipt` | Phase-2 BIP340 receipt over message / content hash — same path; tip digest unchanged |
+| `ContractMessage` | Generic `ops` (RFC6902) commit from `Contract#commit`; Peer applies the ops to its copy of the contract state |
+
+### Wire encoding
+
+Both opcodes have field schemas, and JSON bodies are still accepted:
+
+- **`CONTRACT_PUBLISH`** carries `{ definition }`, where `definition` is
+  `JSON.stringify` of the genesis object. Key order is kept, because
+  `Actor(definition).id` depends on it, so the namespace id is the same for a
+  JSON body and a field body.
+- **`CONTRACT_MESSAGE`** carries `{ contract, payload }`. `contract` is the
+  namespace id, and `payload` is `JSON.stringify` of the rest of the body:
+  `{ type, actor?, object?, ops?, … }`. Receivers rebuild
+  `{ contract, ...payload }`; a `contract` inside `payload` never overrides the
+  field.
+
+Build either with `buildMessage(type, body)` from
+[`functions/fabricMessageBodies.js`](../functions/fabricMessageBodies.js) and
+read either encoding with `tryParseLegacyBody(message)`. Peer events
+(`contract:publish`, `contract:message`) and `parseContractMessageBody` hand
+apps the same object for both encodings, but the two encodings of one body are
+different frames with different hashes. Accumulate dedups by frame hash and
+orders by it, so a sender should pick one encoding per frame and keep it; see
+[MESSAGE_BODY_MIGRATION.md](./MESSAGE_BODY_MIGRATION.md#risks).
 
 
 **Multi-origin accumulate:** publisher and participants ingest the same signed
