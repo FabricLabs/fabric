@@ -1196,6 +1196,13 @@ describe('@fabric/core/types/peer', function () {
         assert.ok(opened && opened.opened && opened.verified);
         assert.strictEqual(opened.buffer.toString('utf8'), secret);
 
+        // A refused write (closed stream, legacy frame cap) is not a send, and no key follows it.
+        let revealed = 0;
+        seller.on('documentContentKeyRevealed', () => { revealed += 1; });
+        seller.connections['buyer:legacy'] = { _writeFabric: () => false };
+        assert.strictEqual(seller._sendP2pFileSendToPeer('doc-seal', 'buyer:legacy', { revealKey: true }), false);
+        assert.strictEqual(revealed, 0);
+
         // DocumentRequest echoing public paymentHash alone must not unlock.
         const buyer2 = new Peer({ listen: false, peersDb: null });
         let opened2 = null;
@@ -2363,7 +2370,32 @@ describe('@fabric/core/types/peer', function () {
           done();
         });
         const fakeStream = { encrypt: { writable: false, write: () => {} } };
-        peer._writeFabric(Buffer.from('x'), fakeStream);
+        assert.strictEqual(peer._writeFabric(Buffer.from('x'), fakeStream), false);
+      });
+
+      it('returns false when encrypt.write throws EPIPE or ECONNRESET', function () {
+        const peer = new Peer({ listen: false, peersDb: null });
+        const warnings = [];
+        peer.on('warning', (m) => warnings.push(String(m)));
+        const epipe = { encrypt: { writable: true, write () { const err = new Error('pipe'); err.code = 'EPIPE'; throw err; } } };
+        assert.strictEqual(peer._writeFabric(Buffer.from('x'), epipe), false);
+        const reset = { encrypt: { writable: true, write () { const err = new Error('reset'); err.code = 'ECONNRESET'; throw err; } } };
+        assert.strictEqual(peer._writeFabric(Buffer.from('y'), reset), false);
+        assert.ok(warnings.some((m) => /EPIPE/.test(m)));
+        assert.ok(warnings.some((m) => /ECONNRESET/.test(m)));
+      });
+
+      it('returns true when encrypt.write accepts the frame', function () {
+        const peer = new Peer({ listen: false, peersDb: null });
+        let got = null;
+        const fakeStream = {
+          encrypt: {
+            writable: true,
+            write (buf) { got = buf; return true; }
+          }
+        };
+        assert.strictEqual(peer._writeFabric(Buffer.from('ok'), fakeStream), true);
+        assert.ok(Buffer.isBuffer(got));
       });
     });
 

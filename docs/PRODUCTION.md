@@ -1,12 +1,12 @@
 # Production — `@fabric/core`
-`@fabric/core` is the **0.1 RC reference Fabric client**: P2P `Peer`, `Message`, `Key` / identity, Bitcoin document-exchange helpers, local `Program` / `Machine`, plus services that **hub.fabric.pub** and **`@fabric/http`** build on.
+`@fabric/core` is the **0.1.0 reference Fabric client**: P2P `Peer`, `Message`, `Key` / identity, Bitcoin document-exchange helpers, local `Program` / `Machine`, plus services that **hub.fabric.pub** and **`@fabric/http`** build on.
 
 **Scoped claim:** see [PUBLIC_API.md](../PUBLIC_API.md). Do not market as a production-hardened sandboxed contract VM.
 
 ## Pre-flight
 | Step | Command |
 |------|---------|
-| Node | **24.15.0** (see `package.json` `engines` / `.nvmrc`). |
+| Node | **26.12.1** (see `package.json` `engines` / `.nvmrc`). |
 | Install | `npm ci` |
 | Release gate | **`npm run ci`** — full recursive **`mocha`** test suite (`NODE_ENV=test`). |
 
@@ -16,7 +16,7 @@
 **level**, **zeromq**) may still compile their own bindings.
 
 ## Downstream alignment
-- **hub.fabric.pub** and **@fabric/http** often pin **Git branches** of this repo during RC. For a coordinated release, tag **`@fabric/core`** first (or in lockstep), then bump pins in Hub and fabric-http.
+- **hub.fabric.pub** and **@fabric/http** pin **`github:FabricLabs/fabric#feature/rsi`** until an annotated `v0.1.0` tag exists. Tag **`@fabric/core`** first, then bump pins in Hub and fabric-http.
 - **Do not** commit seeds, `stores/` production data, or RPC passwords.
 
 ## Security
@@ -24,10 +24,10 @@
 - **P2P exposure** — Bind `FABRIC_PORT` / listen interfaces deliberately; use firewall rules in datacenter deploys.
 
 ## Release checklist
-Use before tagging an RC or release:
+Use before tagging **v0.1.0**:
 
 - [ ] Clean tree on the agreed branch.
-- [ ] `npm ci` on **Node 24.15.x**.
+- [ ] `npm ci` on **Node 26.12.1**.
 - [ ] **`npm run ci`** (full test suite).
 - [ ] Confirm **native** modules build on a fresh Linux image if you ship to production servers.
 - [ ] Update **CHANGELOG.md** with version, date, breaking vs additive notes.

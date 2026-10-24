@@ -1,5 +1,4 @@
 # Sidechain document helpers (moved)
-
 There is **no** Fabric `Statechain` type.
 
 Sealed JSON document APIs live under distributed-execution helpers:

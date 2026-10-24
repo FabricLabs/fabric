@@ -7,6 +7,9 @@
  * @module functions/fabricProgramManifest
  */
 
+const sidechainState = require('./sidechainState');
+const { normalizeSignatureScheme } = require('./bls');
+
 /**
  * Setup-phase manifest schema (v1).
  * @param {object} raw
@@ -27,16 +30,19 @@ function parseProgramManifestV1 (raw) {
         validators: Array.isArray(raw.federation.validators)
           ? raw.federation.validators.filter((v) => typeof v === 'string')
           : [],
-        threshold: Math.max(1, Number(raw.federation.threshold) || 1)
+        threshold: Math.max(1, Number(raw.federation.threshold) || 1),
+        signatureScheme: normalizeSignatureScheme(raw.federation.signatureScheme)
       }
     : null;
   let sidechainPolicy = null;
   if (raw.sidechainPolicy && typeof raw.sidechainPolicy === 'object') {
     try {
-      const sidechainState = require('./sidechainState');
       sidechainPolicy = sidechainState.parseStatechainPathPolicy(raw.sidechainPolicy);
-    } catch (_) {
-      sidechainPolicy = null;
+    } catch (err) {
+      return {
+        ok: false,
+        error: `invalid sidechainPolicy: ${err && err.message ? err.message : err}`
+      };
     }
   }
   return {

@@ -5,6 +5,7 @@ const {
   VERSION_NUMBER,
   HEADER_SIZE,
   MAX_MESSAGE_SIZE,
+  MAX_FRAME_BYTES,
   OP_CYCLE,
   LOG_MESSAGE_TYPE,
   GENERIC_LIST_TYPE,
@@ -629,8 +630,17 @@ class Message extends Actor {
     this._explicitPreimage = !isAllZero32(this.raw.preimage);
   }
 
+  /**
+   * Wire bytes of the message.
+   * @return {Buffer}
+   * @throws {RangeError} When the frame exceeds `MAX_FRAME_BYTES` (no peer would accept it).
+   */
   toBuffer () {
-    return this.asRaw();
+    const raw = this.asRaw();
+    if (raw.length > MAX_FRAME_BYTES) {
+      throw new RangeError(`message frame (${raw.length} bytes) exceeds MAX_FRAME_BYTES (${MAX_FRAME_BYTES})`);
+    }
+    return raw;
   }
 
   /**
@@ -1493,6 +1503,7 @@ function tryParseMessageBody (message) {
 
 Message.FIELD_TYPES = BODY_FIELD_TYPES;
 Message.MAX_MESSAGE_SIZE = MAX_MESSAGE_SIZE;
+Message.MAX_FRAME_BYTES = MAX_FRAME_BYTES;
 Message.ZERO_PARENT = fabricMessageParent.ZERO_PARENT;
 Message.isZeroParent = fabricMessageParent.isZeroParent;
 Message.normalizeParent = fabricMessageParent.normalizeParentHex;

@@ -21,6 +21,8 @@ Interfaces are named capability surfaces — not mutually exclusive types:
 | Payment / escrow | Hashlock / timelock / invoice settlement | HTLC builders, `/buy`, `/confirm`, `/claimwatch`, `/refund` |
 | Document exchange | Offers, sealed delivery, purchase sessions | `/offers`, `/inventory`, blob plans |
 | Crowdfund / federation | Threshold funding, validator rounds | Hub crowdfunds, Beacon federation |
+| Federated settlement | Explicit reserve, tip-bound vault spend | [FEDERATED_SETTLEMENT.md](FEDERATED_SETTLEMENT.md) |
+| Issued instruments | Named contract-layer balances (later) | [ISSUED_INSTRUMENTS.md](ISSUED_INSTRUMENTS.md) |
 | Program / machine | Deterministic opcode runs | `/create`, `/deploy`, `Machine` + `Program` |
 | Proposal / patch | Merkle-batched messages + JSON Patch (+ optional PSBT) | [CONTRACT_PROPOSAL.md](CONTRACT_PROPOSAL.md) |
 | CLI shell | Slash-command packs loaded into the TUI | [cliContracts.js](../functions/cliContracts.js) |
@@ -224,7 +226,7 @@ resolveSpend({ genesis, tip }) =
 
 Implementation: [`functions/contractSpend.js`](../functions/contractSpend.js) (`resolveSpend`, `buildWithdrawalRequest`, `validateWithdrawalRequest`, `prepareWithdrawalFromRequest`). `Contract#resolveSpend` delegates here.
 
-- **L1 withdrawal:** `ContractWithdrawalRequest` **MUST** bind `{ stateDigest, bitcoinBlockHash, destinationAddress, feeSats, … }` to the current tip; co-signers add `ContractWithdrawalWitness` with the same tip fields + `requestId`. Accumulate rejects stale bindings at ingest.
+- **L1 withdrawal:** `ContractWithdrawalRequest` **MUST** bind `{ stateDigest, bitcoinBlockHash, destinationAddress, amountSats, feeSats, … }` to the current tip (`amountSats` is hashed into `requestId`); co-signers add `ContractWithdrawalWitness` with the same tip fields + `requestId`. Accumulate rejects stale bindings at ingest. Federation vault PSBT prep uses `prepareWithdrawalFromRequest` (partial send + change to vault when `amountSats` is set). Peg conservation: `functions/federationReserveLedger.js` (`/federationReserve`).
 - **Program run binding:** When the tip seals `content.program` (`programHash` + `runCommitmentHex` from `Machine.runProgram` / `FabricProgramRun`), withdrawals MUST carry matching digests (`functions/contractProgramBind`). Genesis may require this via `interfaces: ['fabric.program']`, non-empty `primitives.opcodes`, or `spendPolicy.requireProgramRun`. Binding does **not** by itself change the P2TR address — Machine is the deterministic compute layer; Taproot remains the authority redeem surface.
 - **Optional hashlock leaf:** `spendPolicy.hashlock` / `composeTaprootTree({ hashlock, extraLeaves })` adds a tapscript leaf (`OP_SHA256 <commitment> EQUAL` or `… EQUALVERIFY <pk> CHECKSIG`). This **does** change the address. Commitment MAY be `runCommitmentHex` or `SHA256(preimage)`. See `docs/PROGRAM.md` and `prepareHashlockWithdrawalPsbt` / `finalizeHashlockPsbt`.
 - **Composable trees:** `buildSpendLeaf` / `buildHashlockLeaf` / `buildScriptLeaf` + `composeTaprootTree` are the wallet-facing leaf API; Hub vault summaries expose `leaves[]` for UI selection.
@@ -267,7 +269,7 @@ Implementation: [`functions/contractSpend.js`](../functions/contractSpend.js) (`
 13. **Optional hashlock / composable trees:** `composeTaprootTree`, leaf builders, `prepareHashlockWithdrawalPsbt` — Hub vault PSBT uses full `policy` leaves; wallet UIs list `leaves[]`
 14. ~~**ExecutionRun → FabricProgramRun / full Machine runner:**~~ Hub uses `fabric-execution` on `Machine`/`Program` (`executionProgramRunner`); digests via `executionRunBridge`
 15. ~~**Enforce** genesis `primitives.opcodes` on `Machine.loadProgram` / `define`~~ — `functions/opcodeAllowList.js` + `Machine.setAllowedOpcodes` / `applyGenesisOpcodes` (fail closed when set; unrestricted legacy soft-coerce otherwise)
-16. **API naming (Author Style):** public short ids such as `contractId` → `contractIdentifier` (and kin) where call sites allow — breaking; coordinate Hub / `@fabric/http` / apps (see root `AGENTS.md`)
+16. **API naming (Author Style):** public short ids such as `contractId` → `contractIdentifier` (and kin) where call sites allow — breaking; coordinate Hub / `@fabric/http` / apps (see root `AGENTS.md`). Prep helper (dual-read / stamp both fields): `functions/contractIdentifier.js` — does not rewrite wire schemas until consumers land.
 17. ~~**Journal / re-fold growth:**~~ compactable types (`GroupChat`, `MessageReceived`, `MessageReceipt`) drop by hex-hash order above `maxJournalEntries` (genesis/meta; hard cap 20000); mutations are never evicted
 18. ~~**Seal AAD:**~~ tip-bound `groupChatSeal` and participant / onion seals bind scheme (+ tip / contract / ephemeral) as AES-GCM AAD. Public API renames (16) remain.
 19. ~~**Blinded-execution `at` bind (PR #183 follow-up):**~~ `decisionSigningMessage` v2 includes `at`; `recordProposalDecision` requires it. Same actor/proposal/decision/`at` is idempotent; a different `at` conflicts.

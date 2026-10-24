@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Fabric examples</title>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --fg: #e7ecf1;
+      --muted: #8b98a5;
+      --accent: #3d9cf0;
+      --line: #243040;
+    }
+    body {
+      margin: 0;
+      font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--fg);
+      line-height: 1.5;
+    }
+    main { max-width: 40rem; margin: 0 auto; padding: 2.5rem 1.25rem 3rem; }
+    h1 { font-size: 1.35rem; margin: 0 0 0.4rem; }
+    p { color: var(--muted); }
+    a { color: var(--accent); }
+    ul { padding-left: 1.2rem; }
+    li { margin: 0.45rem 0; }
+    code {
+      font-family: ui-monospace, monospace;
+      font-size: 0.88em;
+      background: #1a222c;
+      padding: 0.1em 0.35em;
+      border-radius: 3px;
+    }
+    .tag {
+      display: inline-block;
+      font-size: 0.75rem;
+      color: var(--muted);
+      border: 1px solid var(--line);
+      border-radius: 3px;
+      padding: 0 0.35rem;
+      margin-left: 0.35rem;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Fabric examples</h1>
+    <p>Literate sources for the curated demos. Prefer running the Node scripts from a clone; these pages are for reading.</p>
+    <ul>
+      <li><a href="fabric-basic-usage.html">fabric-basic-usage.js</a> <span class="tag">flagship</span> — Key + sign/verify</li>
+      <li><a href="fabric-demo.html">fabric-demo.js</a> <span class="tag">flagship</span> — Collection + shoutbox</li>
+      <li><a href="message.html">message.js</a> <span class="tag">flagship</span> — Wire message + chat smoke</li>
+      <li><a href="onion-forward.html">onion-forward.js</a> <span class="tag">flagship</span> — P2P_FORWARD peel</li>
+      <li><a href="index.html">index.js</a> — Fabric state get/set + <code>example:smoke</code> runner</li>
+      <li><a href="agents.html">agents.js</a> — Multi-core distributor</li>
+    </ul>
+    <p>Site root: <a href="../index.html">@fabric/core demos</a> · Repo: <a href="https://github.com/FabricLabs/fabric">FabricLabs/fabric</a></p>
+  </main>
+</body>
+</html>

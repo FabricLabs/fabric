@@ -101,6 +101,25 @@ describe('@fabric/core federation / program helpers (ex-distributedExecution)', 
       assert.deepStrictEqual(r.manifest.allowedMessageTypes, ['P2P_PING', 'x']);
       assert.deepStrictEqual(r.manifest.federation.validators, ['02aa']);
       assert.strictEqual(r.manifest.federation.threshold, 2);
+      assert.strictEqual(r.manifest.federation.signatureScheme, 'schnorr');
+    });
+
+    it('keeps an explicit BLS federation signature scheme', function () {
+      const r = parseProgramManifestV1({
+        version: 1,
+        programId: 'prog',
+        programHash: 'deadbeef',
+        federation: { validators: ['02aa'], threshold: 1, signatureScheme: 'BLS' }
+      });
+      assert.strictEqual(r.ok, true);
+      assert.strictEqual(r.manifest.federation.signatureScheme, 'bls');
+      const dropped = parseProgramManifestV1({
+        version: 1,
+        programId: 'prog',
+        programHash: 'deadbeef',
+        federation: { validators: ['02aa'], threshold: 1, signatureScheme: 'musig' }
+      });
+      assert.strictEqual(dropped.manifest.federation.signatureScheme, 'schnorr');
     });
 
     it('returns ok false for invalid manifests', function () {

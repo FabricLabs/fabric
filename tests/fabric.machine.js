@@ -11,6 +11,20 @@ describe('@fabric/core/types/machine', function () {
       assert.equal(Machine instanceof Function, true);
     });
 
+    it('allocates memory lazily, sized independently of the wire cap', function () {
+      const { MACHINE_MAX_MEMORY, MAX_MEMORY_ALLOC, MACHINE_MEMORY_PAGE_SIZE, MAX_MESSAGE_SIZE } = require('../constants');
+      assert.strictEqual(MACHINE_MAX_MEMORY, MAX_MEMORY_ALLOC * MACHINE_MEMORY_PAGE_SIZE);
+      assert.ok(MACHINE_MAX_MEMORY < MAX_MEMORY_ALLOC * MAX_MESSAGE_SIZE);
+      const machine = new Machine(false);
+      assert.strictEqual(machine._memory, null, 'no buffer before first use');
+      assert.strictEqual(Object.keys(machine).includes('_memory'), false);
+      assert.strictEqual(machine.memory.length, MACHINE_MAX_MEMORY);
+      assert.strictEqual(machine.memory, machine.memory, 'same buffer on later access');
+      const replacement = Buffer.alloc(8);
+      machine.memory = replacement;
+      assert.strictEqual(machine.memory, replacement);
+    });
+
     it('provides entropy on first sip', function () {
       const machine = new Machine(false);
       const sip = machine.sip();

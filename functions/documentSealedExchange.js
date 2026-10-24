@@ -14,6 +14,18 @@
  * 4. Buyer verifies ciphertext Tree root, then opens with K.
  * 5. If K never arrives, buyer refunds after HTLC locktime (seller cannot
  *    claim without revealing K on-chain either).
+ *
+ * **Per-buyer payment hashes** (`DocumentBlobQuote`). Settling on the static
+ * hash `SHA256(K_i)` puts `K_i` in a public claim witness (and in every hop of
+ * a forwarded channel HTLC), after which anyone holding the free ciphertext
+ * can decrypt blob i. A quote instead binds the HTLC to a fresh secret `s`
+ * the seller draws for one buyer: `paymentHash = SHA256(s)` and the buyer is
+ * handed `wrappedKey = K_i XOR HMAC-SHA256(s, tag || documentId || root ||
+ * blobIndex)`. Revealing `s` (claim witness / channel fulfil) only lets the
+ * holder of `wrappedKey` recover `K_i`, which is checked against the
+ * committed `SHA256(K_i)`. Unlike the static hash this is not atomic: a
+ * seller can quote a `wrappedKey` that does not unwrap. The signed quote plus
+ * the public `s` is then a self-contained fraud proof (`checkBlobQuote`).
  */
 
 const crypto = require('crypto');
@@ -198,15 +210,179 @@ function advertiseSealedDocument (sale, opts = {}) {
       b.contentHashHex = pay;
     }
   }
+  // No plaintextSha256: a public plaintext digest is a confirmation oracle
+  // for guessable content. It travels only with the key reveal.
   return {
     ...advertised,
     contentHash: pay,
     contentHashHex: pay,
     paymentHashHex: pay,
     sealed: true,
-    encryption: sale.encryption,
-    plaintextSha256: sale.plaintextSha256
+    encryption: sale.encryption
   };
+}
+
+const BLOB_QUOTE_TYPE = 'DocumentBlobQuote';
+const BLOB_KEY_WRAP_TAG = 'Fabric/DocumentBlobKeyWrap/v1';
+const HEX64 = /^[0-9a-f]{64}$/;
+
+/**
+ * @param {*} v
+ * @param {string} name
+ * @returns {Buffer}
+ * @private
+ */
+function _key32 (v, name) {
+  const s = Buffer.isBuffer(v) ? v.toString('hex') : String(v == null ? '' : v).trim().toLowerCase();
+  if (!HEX64.test(s)) throw new Error(`${name} must be 64 hex chars`);
+  return Buffer.from(s, 'hex');
+}
+
+/**
+ * Key-wrap pad for one blob: `HMAC-SHA256(s, tag || 0 || documentId || 0 || root || uint32be(blobIndex))`.
+ * @param {Buffer} secret
+ * @param {Object} opts `{ documentId, merkleRootHex, blobIndex }`
+ * @returns {Buffer}
+ * @private
+ */
+function _blobKeyWrapPad (secret, opts = {}) {
+  const index = Math.round(Number(opts.blobIndex));
+  if (!Number.isInteger(index) || index < 0) throw new Error('blobIndex must be >= 0');
+  const root = String(opts.merkleRootHex || '').trim().toLowerCase();
+  const count = Buffer.alloc(4);
+  count.writeUInt32BE(index >>> 0, 0);
+  return crypto.createHmac('sha256', secret).update(Buffer.concat([
+    Buffer.from(BLOB_KEY_WRAP_TAG, 'utf8'),
+    Buffer.from([0]),
+    Buffer.from(String(opts.documentId || ''), 'utf8'),
+    Buffer.from([0]),
+    HEX64.test(root) ? Buffer.from(root, 'hex') : Buffer.alloc(0),
+    count
+  ])).digest();
+}
+
+/**
+ * Wrap `K_i` under a per-buyer secret `s` (see the file overview).
+ * @param {Object} opts
+ * @param {string} opts.keyHex `K_i`
+ * @param {string} opts.secretHex `s` (the HTLC preimage)
+ * @param {string} opts.documentId
+ * @param {string} [opts.merkleRootHex]
+ * @param {number} opts.blobIndex
+ * @returns {string} wrapped key (64 hex)
+ */
+function wrapBlobKey (opts = {}) {
+  const key = _key32(opts.keyHex, 'keyHex');
+  const pad = _blobKeyWrapPad(_key32(opts.secretHex, 'secretHex'), opts);
+  const out = Buffer.alloc(32);
+  for (let i = 0; i < 32; i++) out[i] = key[i] ^ pad[i];
+  return out.toString('hex');
+}
+
+/**
+ * Recover `K_i` from a wrapped key once `s` is known.
+ * @param {Object} opts `{ wrappedKeyHex, secretHex, documentId, merkleRootHex?, blobIndex, keyHashHex? }`
+ * @returns {{ ok: boolean, keyHex: (string|undefined), error: (string|undefined) }}
+ */
+function unwrapBlobKey (opts = {}) {
+  try {
+    const keyHex = wrapBlobKey(Object.assign({}, opts, { keyHex: opts.wrappedKeyHex }));
+    const want = opts.keyHashHex ? String(opts.keyHashHex).trim().toLowerCase() : null;
+    if (want && paymentHashHexFromKey(keyHex) !== want) return { ok: false, error: 'unwrapped key does not match keyHashHex' };
+    return { ok: true, keyHex };
+  } catch (err) {
+    return { ok: false, error: err && err.message ? err.message : String(err) };
+  }
+}
+
+/**
+ * Seller side: a per-buyer quote for one sealed blob. Keep `secretHex`
+ * private (it is the HTLC preimage); send only `quote` to the buyer, over a
+ * signed message so a bad `wrappedKeyHex` is attributable.
+ * @param {Object} opts
+ * @param {string} opts.documentId
+ * @param {string} [opts.merkleRootHex]
+ * @param {number} opts.blobIndex
+ * @param {string} [opts.blobHashHex]
+ * @param {string} opts.keyHex `K_i`
+ * @param {number} [opts.amountSats]
+ * @param {number} [opts.expiresAt] epoch ms
+ * @param {string} [opts.secretHex] fixed `s` (tests); random by default
+ * @returns {{ quote: Object, secretHex: string }}
+ */
+function createBlobQuote (opts = {}) {
+  const documentId = String(opts.documentId || '').trim();
+  if (!documentId) throw new Error('documentId required');
+  const key = _key32(opts.keyHex, 'keyHex');
+  const secret = opts.secretHex ? _key32(opts.secretHex, 'secretHex') : crypto.randomBytes(32);
+  const merkleRootHex = opts.merkleRootHex ? String(opts.merkleRootHex).toLowerCase() : null;
+  const blobIndex = Math.round(Number(opts.blobIndex));
+  const quote = {
+    type: BLOB_QUOTE_TYPE,
+    documentId,
+    merkleRootHex,
+    blobIndex,
+    blobHashHex: opts.blobHashHex ? String(opts.blobHashHex).toLowerCase() : null,
+    keyHashHex: paymentHashHexFromKey(key),
+    paymentHashHex: paymentHashHexFromKey(secret),
+    wrappedKeyHex: wrapBlobKey({ keyHex: key, secretHex: secret, documentId, merkleRootHex, blobIndex }),
+    amountSats: Math.max(0, Math.floor(Number(opts.amountSats) || 0)),
+    expiresAt: Number(opts.expiresAt) > 0 ? Number(opts.expiresAt) : null
+  };
+  return { quote, secretHex: secret.toString('hex') };
+}
+
+/**
+ * Shape check for a received quote (no secrets involved).
+ * @param {Object} quote
+ * @returns {boolean}
+ */
+function isWellFormedBlobQuote (quote) {
+  if (!quote || typeof quote !== 'object') return false;
+  if (!String(quote.documentId || '').trim()) return false;
+  if (!Number.isInteger(Number(quote.blobIndex)) || Number(quote.blobIndex) < 0) return false;
+  for (const k of ['keyHashHex', 'paymentHashHex', 'wrappedKeyHex']) {
+    if (!HEX64.test(String(quote[k] || '').toLowerCase())) return false;
+  }
+  return String(quote.keyHashHex).toLowerCase() !== String(quote.paymentHashHex).toLowerCase();
+}
+
+/**
+ * Buyer side, after payment: recover `K_i` from a quote with the revealed
+ * preimage `s`. `ok: false` with `fraud: true` means `s` is the paid
+ * preimage but the quote's wrapped key does not open to `keyHashHex` — the
+ * signed quote plus `s` prove the seller cheated.
+ * @param {Object} opts
+ * @param {Object} opts.quote from {@link createBlobQuote}
+ * @param {string} opts.preimageHex `s`
+ * @param {string} [opts.keyHashHex] committed `SHA256(K_i)` (defaults to `quote.keyHashHex`)
+ * @returns {{ ok: boolean, keyHex: (string|undefined), error: (string|undefined), fraud: (boolean|undefined) }}
+ */
+function checkBlobQuote (opts = {}) {
+  const quote = opts.quote;
+  if (!isWellFormedBlobQuote(quote)) return { ok: false, error: 'malformed quote' };
+  let pre;
+  try {
+    pre = _key32(opts.preimageHex, 'preimageHex');
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+  if (paymentHashHexFromKey(pre) !== String(quote.paymentHashHex).toLowerCase()) {
+    return { ok: false, error: 'preimage does not match quote paymentHashHex' };
+  }
+  const keyHashHex = String(opts.keyHashHex || quote.keyHashHex).toLowerCase();
+  if (keyHashHex !== String(quote.keyHashHex).toLowerCase()) {
+    return { ok: false, error: 'quote keyHashHex is not the committed key hash', fraud: true };
+  }
+  const out = unwrapBlobKey({
+    wrappedKeyHex: quote.wrappedKeyHex,
+    secretHex: pre,
+    documentId: quote.documentId,
+    merkleRootHex: quote.merkleRootHex,
+    blobIndex: quote.blobIndex,
+    keyHashHex
+  });
+  return out.ok ? out : Object.assign(out, { fraud: true });
 }
 
 /**
@@ -338,7 +514,13 @@ function openWithClaimPreimage (opts = {}) {
 
 module.exports = {
   KEY_REVEAL_TYPE,
+  BLOB_QUOTE_TYPE,
   SCHEME,
+  wrapBlobKey,
+  unwrapBlobKey,
+  createBlobQuote,
+  isWellFormedBlobQuote,
+  checkBlobQuote,
   sealPlaintext,
   openCiphertext,
   paymentHashHexFromKey,

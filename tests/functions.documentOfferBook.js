@@ -1,7 +1,7 @@
 'use strict';
 
 const assert = require('assert');
-const { DocumentOfferBook } = require('../functions/documentMarket');
+const { Book } = require('../functions/documentMarket');
 const {
   splitBlobs,
   verifyBlob,
@@ -17,7 +17,7 @@ const { createDocumentPurchaseSession } = require('../functions/documentMarket')
 
 describe('documentOfferBook + blobs + relay', function () {
   it('ranks cheaper faster higher-score offers first', function () {
-    const book = new DocumentOfferBook();
+    const book = new Book();
     book.ingestInventoryResponse({
       origin: 'a:1',
       peerScore: 900,
@@ -48,7 +48,7 @@ describe('documentOfferBook + blobs + relay', function () {
   });
 
   it('prefers high peerScore over equal-price zero-score sybil', function () {
-    const book = new DocumentOfferBook();
+    const book = new Book();
     book.ingestInventoryResponse({
       origin: 'honest:1',
       peerScore: 900,
@@ -116,7 +116,7 @@ describe('documentOfferBook + blobs + relay', function () {
   });
 
   it('pickBlobPlan diversifies unsealed sellers but locks sealed to one seller', function () {
-    const book = new DocumentOfferBook();
+    const book = new Book();
     book.ingestInventoryResponse({
       origin: 'seller-a',
       peerScore: 500,
@@ -155,7 +155,7 @@ describe('documentOfferBook + blobs + relay', function () {
     ]);
     assert.strictEqual(sellersUnsealed.size, 2, 'unsealed plan should diversify sellers');
 
-    const sealedBook = new DocumentOfferBook();
+    const sealedBook = new Book();
     sealedBook.ingestInventoryResponse({
       origin: 'seal-a',
       peerScore: 900,
@@ -197,7 +197,7 @@ describe('documentOfferBook + blobs + relay', function () {
   });
 
   it('updates the same origin when a seller reprices (inventory snapshot)', function () {
-    const book = new DocumentOfferBook();
+    const book = new Book();
     const hash = 'aa'.repeat(32);
     book.ingestInventoryResponse({
       origin: 'relay:7',
@@ -219,8 +219,9 @@ describe('documentOfferBook + blobs + relay', function () {
   });
 
   it('Hub-style 10% listing markup covers a 10% relay skim on origin cost', function () {
-    const origin = 100;
-    let hubList = 110;
+    // Above HTLC_MINIMUM_SATS (716), where Hub floors every paid list price.
+    const origin = 10000;
+    let hubList = 11000;
     try {
       const path = require('path');
       const market = require(path.join(__dirname, '..', '..', 'hub.fabric.pub', 'functions', 'documentInventoryMarket'));
@@ -228,15 +229,15 @@ describe('documentOfferBook + blobs + relay', function () {
     } catch (_) {
       hubList = Math.ceil((origin * 11000) / 10000);
     }
-    assert.strictEqual(hubList, 110);
+    assert.strictEqual(hubList, 11000);
     const fee = computeRelayFee({ documentRelayFeeBps: 1000 }, origin);
     assert.strictEqual(fee.ok, true);
-    assert.strictEqual(fee.feeSats, 10);
+    assert.strictEqual(fee.feeSats, 1000);
     assert.ok(hubList - origin >= fee.feeSats, 'republish spread should cover a same-bps hop fee');
   });
 
   it('does not keep peer contentBase64 or costBasis on ranked offers', function () {
-    const book = new DocumentOfferBook();
+    const book = new Book();
     book.ingestInventoryResponse({
       origin: 'seller:1',
       peerScore: 400,
@@ -257,7 +258,7 @@ describe('documentOfferBook + blobs + relay', function () {
   });
 
   it('skips inventory items without an id and filters listOffers by blobIndex', function () {
-    const book = new DocumentOfferBook();
+    const book = new Book();
     book.ingestInventoryResponse({
       origin: 'seller:1',
       items: [

@@ -487,11 +487,13 @@ function resolveSpend (opts = {}) {
  * @returns {object}
  */
 function withdrawalRequestCommitmentFields (object = {}) {
+  const amountRaw = object.amountSats != null ? Number(object.amountSats) : NaN;
   return {
     contractId: String(object.contractId || '').trim().toLowerCase(),
     stateDigest: String(object.stateDigest || '').trim().toLowerCase(),
     bitcoinBlockHash: String(object.bitcoinBlockHash || '').trim().toLowerCase(),
     destinationAddress: String(object.destinationAddress || object.destination || '').trim(),
+    amountSats: Number.isFinite(amountRaw) ? Math.max(0, Math.round(amountRaw)) : 0,
     feeSats: Math.max(0, Number(object.feeSats) || 0),
     action: object.action === 'migrate' ? 'migrate' : 'spend',
     after: object.after || null,
@@ -553,6 +555,11 @@ function validateWithdrawalRequest (object, tip, opts = {}) {
   const dest = String(object.destinationAddress || object.destination || '').trim();
   if (!dest) return { ok: false, error: 'destinationAddress required' };
 
+  const amountRaw = object.amountSats != null ? Number(object.amountSats) : NaN;
+  if (!Number.isFinite(amountRaw) || !Number.isInteger(amountRaw) || amountRaw < 546) {
+    return { ok: false, error: 'amountSats required (integer >= 546)' };
+  }
+
   const genesis = opts.genesis
     || (opts.meta && opts.meta.genesis)
     || tip.genesis
@@ -564,7 +571,7 @@ function validateWithdrawalRequest (object, tip, opts = {}) {
   });
   if (!programCheck.ok) return programCheck;
 
-  // requestId MUST bind destination/fee/vault (witness signs only requestId).
+  // requestId MUST bind destination/amount/fee/vault (witness signs only requestId).
   const gotId = String(object.requestId || '').trim().toLowerCase();
   if (!/^[0-9a-f]{64}$/.test(gotId)) {
     return { ok: false, error: 'requestId required (64-hex)' };
@@ -602,6 +609,11 @@ function buildWithdrawalRequest (opts = {}) {
     ? String(opts.runCommitmentHex).trim().toLowerCase()
     : (tipProgram && tipProgram.runCommitmentHex);
 
+  const amountRaw = opts.amountSats != null ? Number(opts.amountSats) : NaN;
+  if (!Number.isFinite(amountRaw) || !Number.isInteger(amountRaw) || amountRaw < 546) {
+    throw new Error('amountSats required (integer >= 546)');
+  }
+
   const object = {
     type: WITHDRAWAL_REQUEST,
     v: 1,
@@ -610,6 +622,7 @@ function buildWithdrawalRequest (opts = {}) {
     bitcoinBlockHash: String(tip.bitcoinBlockHash).toLowerCase(),
     clock: tip.clock != null ? Number(tip.clock) : 0,
     destinationAddress,
+    amountSats: Math.round(amountRaw),
     feeSats: Math.max(0, Number(opts.feeSats) || 0),
     action: opts.action === 'migrate' ? 'migrate' : 'spend',
     createdAt: opts.createdAt || new Date().toISOString()
@@ -735,8 +748,11 @@ function prepareWithdrawalFromRequest (opts = {}) {
     fundedTxHex: opts.fundedTxHex,
     vaultAddress: request.vaultAddress || spend.address,
     destinationAddress: request.destinationAddress,
+    amountSats: request.amountSats,
     feeSats: request.feeSats,
     tierId: request.tierId,
+    leafId: opts.leafId || request.tierId,
+    networkName: spend.network || opts.networkName,
     ctx: opts.ctx || {}
   };
 
@@ -757,6 +773,61 @@ function prepareWithdrawalFromRequest (opts = {}) {
   });
 }
 
+/**
+ * Count distinct validator BIP340 witnesses for a withdrawal request.
+ * @param {object} request
+ * @param {object[]} witnesses
+ * @param {string[]} validatorPubkeys
+ * @returns {number}
+ */
+function countValidWithdrawalWitnesses (request, witnesses, validatorPubkeys) {
+  if (!request || typeof request !== 'object') return 0;
+  if (!Array.isArray(witnesses) || !witnesses.length) return 0;
+  const validators = new Set(
+    (Array.isArray(validatorPubkeys) ? validatorPubkeys : [])
+      .map((p) => pubkeyXOnly(p) || String(p || '').toLowerCase())
+      .filter((p) => /^[0-9a-f]{64}$/.test(p))
+  );
+  if (!validators.size) return 0;
+  const requestId = String(request.requestId || '').trim().toLowerCase();
+  const seen = new Set();
+  let valid = 0;
+  for (const w of witnesses) {
+    if (!w || typeof w !== 'object') continue;
+    if (String(w.requestId || '').trim().toLowerCase() !== requestId) continue;
+    const signer = pubkeyXOnly(w.signer) || String(w.signer || '').toLowerCase();
+    if (!validators.has(signer) || seen.has(signer)) continue;
+    const check = verifyWithdrawalWitnessSignature(Object.assign({}, w, {
+      stateDigest: w.stateDigest || request.stateDigest,
+      bitcoinBlockHash: w.bitcoinBlockHash || request.bitcoinBlockHash
+    }));
+    if (!check.ok) continue;
+    seen.add(signer);
+    valid += 1;
+  }
+  return valid;
+}
+
+/**
+ * @param {object} request
+ * @param {object[]} witnesses
+ * @param {string[]} validatorPubkeys
+ * @param {number} threshold
+ * @returns {{ ok: true, count: number }|{ ok: false, error: string, count: number }}
+ */
+function meetWithdrawalWitnessThreshold (request, witnesses, validatorPubkeys, threshold) {
+  const thr = Math.max(1, Number(threshold) || 1);
+  const count = countValidWithdrawalWitnesses(request, witnesses, validatorPubkeys);
+  if (count < thr) {
+    return {
+      ok: false,
+      count,
+      error: `need ${thr} withdrawal witnesses, have ${count}`
+    };
+  }
+  return { ok: true, count };
+}
+
 module.exports = {
   WITHDRAWAL_REQUEST,
   WITHDRAWAL_WITNESS,
@@ -772,6 +843,8 @@ module.exports = {
   buildWithdrawalWitness,
   withdrawalWitnessSigningMessage,
   verifyWithdrawalWitnessSignature,
+  countValidWithdrawalWitnesses,
+  meetWithdrawalWitnessThreshold,
   prepareWithdrawalFromRequest,
   toCompressedPubkeys,
   programMetaFromTip,

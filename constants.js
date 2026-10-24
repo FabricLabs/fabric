@@ -9,6 +9,12 @@
 // Networking and Environment
 const PEER_PORT = 7777;
 const MAX_PEERS = 32;
+/**
+ * Bitcoin L1 reference bandwidth: one ~1 MiB block every ~10 minutes.
+ * Fabric P2P uses this as the node-wide target window, split across {@link MAX_PEERS}.
+ */
+const BITCOIN_L1_BLOCK_BYTES = 1024 * 1024;
+const BITCOIN_L1_BLOCK_INTERVAL_MS = 10 * 60 * 1000;
 const PRECISION = 100;
 
 // Fabric Core
@@ -236,7 +242,27 @@ const VERSION_NUMBER = 0x01;
 /* magic, version, parent, author, type, size, hash, preimage, signature — then body */
 const HEADER_SIZE = 208;
 const LARGE_COLLECTION_SIZE = 10; // TODO: test with 1,000,000
-const MAX_MESSAGE_SIZE = 4096 - HEADER_SIZE;
+/** Max AMP body bytes (32 KiB). Wire frame = `HEADER_SIZE + MAX_MESSAGE_SIZE` = 32976 B,
+ * which fits one Noise transport message (65535 − 16-byte MAC). Keep in sync with
+ * `FABRIC_MAX_MESSAGE_BODY` in `src/constants.h`. Historical: `4096 − HEADER_SIZE` = 3888. */
+const MAX_MESSAGE_SIZE = 32768;
+/** Max bytes of one AMP frame on the wire (header + body). */
+const MAX_FRAME_BYTES = HEADER_SIZE + MAX_MESSAGE_SIZE;
+/** Frame cap assumed for peers that do not advertise `maxFrameBytes` in their session
+ * message (pre-32 KiB JS peers drop larger frames; pre-32 KiB C fabricd disconnects). */
+const LEGACY_MAX_FRAME_BYTES = 4096;
+/** Body cap matching {@link LEGACY_MAX_FRAME_BYTES}. */
+const LEGACY_MAX_MESSAGE_SIZE = LEGACY_MAX_FRAME_BYTES - HEADER_SIZE;
+/** Max bytes of one length-prefixed Noise message (handshake or transport). */
+const NOISE_MAX_MESSAGE_BYTES = 65535;
+/** Bytes a remote may send before the Noise handshake completes (XX needs < 200). */
+const NOISE_HANDSHAKE_MAX_BYTES = 64 * 1024;
+/** Time a remote has to complete the Noise handshake before the socket is destroyed. */
+const NOISE_HANDSHAKE_TIMEOUT_MS = 15000;
+/** Max characters in a document id carried on the wire (keeps `P2P_FILE_SEND` under the frame cap). */
+const MAX_DOCUMENT_ID_LENGTH = 128;
+/** Byte budget for the items of one `P2P_INVENTORY_RESPONSE` page (JSON body under `MAX_MESSAGE_SIZE`). */
+const INVENTORY_RESPONSE_PAGE_BYTES = MAX_MESSAGE_SIZE - 2048;
 /** Max UTF-16 code units accepted for `JSON.parse` of locally persisted JSON (LevelDB peer registry, CLI STATE file). */
 const PERSISTED_JSON_MAX_CHARS = 2 * 1024 * 1024;
 
@@ -248,7 +274,10 @@ const MAX_TX_PER_BLOCK = 4;
 const MAX_CHANNEL_VALUE = 100000000;
 
 // Machine Constraints
-const MACHINE_MAX_MEMORY = MAX_MEMORY_ALLOC * MAX_MESSAGE_SIZE;
+/** VM memory page; independent of the wire cap (the pre-32 KiB `MAX_MESSAGE_SIZE`). */
+const MACHINE_MEMORY_PAGE_SIZE = 3888;
+/** Bytes of `Machine#memory` (≈3.8 MiB), allocated on first access. */
+const MACHINE_MAX_MEMORY = MAX_MEMORY_ALLOC * MACHINE_MEMORY_PAGE_SIZE;
 /** Matches Peer `P2P_CHAT_MAX_CHARS` so TUI send is not dropped on the mesh. */
 const MAX_CHAT_MESSAGE_LENGTH = 2000;
 
@@ -331,6 +360,8 @@ const PEER_MAX_LOGICAL_REGISTER_CACHE = 10000;
 const PEER_SCORE_BODY_HASH_MISMATCH_PENALTY = 100;
 const PEER_SCORE_INVALID_SIGNATURE_PENALTY = 100;
 const PEER_SCORE_SIGNER_PIN_MISMATCH_PENALTY = 100;
+/** Frame larger than this node's advertised cap (protocol violation; same as C fabricd "oversize body"). */
+const PEER_SCORE_OVERSIZE_FRAME_PENALTY = 100;
 const PEER_SCORE_SESSION_KEY_VIOLATION_PENALTY = 240;
 const PEER_SCORE_CONTRACT_OPS_FORBIDDEN_PENALTY = 80;
 const PEER_SCORE_LOGICAL_REGISTER_HIJACK_PENALTY = 40;
@@ -347,6 +378,27 @@ const PEER_SCORE_RELAY_NEST_EXCEEDED_PENALTY = 60;
 const CHAT_MAX_RELAYS_PER_ORIGIN_PER_MINUTE = 30;
 /** Max sealed ciphertext rows awaiting key reveal on a Peer. */
 const PEER_MAX_PENDING_SEALED_DELIVERIES = 32;
+/** Smallest standard output on Bitcoin mainnet (P2PKH dust at the default relay fee); anything smaller is non-standard. */
+const BITCOIN_DUST_SATS = 546;
+/** Size budget for a single-input HTLC claim or timeout spend (measured 162 vB for the tapscript claim leaf to a P2TR address). */
+const HTLC_CLAIM_VBYTES = 170;
+/**
+ * Smallest payment an HTLC may carry (channel or L1): its claim pays at least
+ * 1 sat/vB and still leaves a non-dust output, so the preimage holder can
+ * always collect on chain. Raise `htlcMinimumSats` for fee-spike margin, or
+ * CPFP the claim output.
+ */
+const HTLC_MINIMUM_SATS = BITCOIN_DUST_SATS + HTLC_CLAIM_VBYTES;
+/** Max blobs in one document transfer (`blobTotal` cap). 4096 × ~24 KiB blobs ≈ 94 MiB per document. */
+const MAX_DOCUMENT_BLOBS = 4096;
+/** Max blobs (parts) accepted for one per-blob sealed tree (`blobTotal` cap). */
+const PEER_MAX_SEALED_BLOB_PARTS = MAX_DOCUMENT_BLOBS;
+/** Alternate frames kept per held sealed blob (same ciphertext, another payment hash or IV). Bounds memory only: purchase pins (payment hash, advertised IV, seller origin) are what keep poisoned frames from blocking the paid delivery. */
+const PEER_MAX_SEALED_BLOB_ALTERNATES = 4;
+/** Global byte budget across every pending sealed row (ciphertext + retained frames); fits one full-size tree. */
+const PEER_MAX_PENDING_SEALED_BYTES = 256 * 1024 * 1024;
+/** Pending sealed rows that never complete are dropped this long after their first frame. */
+const PEER_PENDING_SEALED_TTL_MS = 60 * 60 * 1000;
 /** Max private DocumentRequest reverse-route entries. */
 const PEER_MAX_DOCUMENT_RELAY_ROUTES = 256;
 /** Max concurrent BIP-327 `P2P_MUSIG_*` sessions on a Peer (FIFO eviction). */
@@ -457,6 +509,8 @@ const INPUT_HINT = 'Press the "i" key to begin typing.';
 module.exports = {
   PEER_PORT,
   MAX_PEERS,
+  BITCOIN_L1_BLOCK_BYTES,
+  BITCOIN_L1_BLOCK_INTERVAL_MS,
   PRECISION,
   BITCOIN_NETWORK,
   BITCOIN_GENESIS,
@@ -536,9 +590,18 @@ module.exports = {
   LIGHTNING_PARENT_SIDEBLOCK_HASH,
   HTTP_HEADER_CONTENT_TYPE,
   MAGIC_BYTES,
+  MAX_FRAME_BYTES,
   MAX_FRAME_SIZE,
   MAX_MEMORY_ALLOC,
   MAX_MESSAGE_SIZE,
+  LEGACY_MAX_FRAME_BYTES,
+  LEGACY_MAX_MESSAGE_SIZE,
+  NOISE_MAX_MESSAGE_BYTES,
+  NOISE_HANDSHAKE_MAX_BYTES,
+  NOISE_HANDSHAKE_TIMEOUT_MS,
+  MAX_DOCUMENT_ID_LENGTH,
+  INVENTORY_RESPONSE_PAGE_BYTES,
+  MACHINE_MEMORY_PAGE_SIZE,
   PERSISTED_JSON_MAX_CHARS,
   MAX_STACK_HEIGHT,
   MAX_CHANNEL_VALUE,
@@ -583,8 +646,17 @@ module.exports = {
   PEER_BAN_TTL_MS,
   PEER_RELAY_CREDIT_COST,
   PEER_SCORE_RELAY_NEST_EXCEEDED_PENALTY,
+  PEER_SCORE_OVERSIZE_FRAME_PENALTY,
   CHAT_MAX_RELAYS_PER_ORIGIN_PER_MINUTE,
   PEER_MAX_PENDING_SEALED_DELIVERIES,
+  PEER_MAX_PENDING_SEALED_BYTES,
+  PEER_PENDING_SEALED_TTL_MS,
+  BITCOIN_DUST_SATS,
+  HTLC_CLAIM_VBYTES,
+  HTLC_MINIMUM_SATS,
+  MAX_DOCUMENT_BLOBS,
+  PEER_MAX_SEALED_BLOB_PARTS,
+  PEER_MAX_SEALED_BLOB_ALTERNATES,
   PEER_MAX_DOCUMENT_RELAY_ROUTES,
   PEER_MAX_MUSIG_SESSIONS,
   PEER_MUSIG_SESSION_TTL_MS,

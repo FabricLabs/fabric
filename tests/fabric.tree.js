@@ -12,16 +12,28 @@ describe('@fabric/core/types/tree', function () {
     it('can construct an empty tree', async function () {
       let tree = new Tree();
       assert.ok(tree);
-      assert.ok(tree._tree);
+      assert.deepStrictEqual(tree.getLayers(), [[]]);
       assert.ok(tree.root);
-      // merkletreejs + isBitcoinTree: no leaves → empty Buffer (hex '').
+      // No leaves → empty Buffer (hex '').
       assert.strictEqual(tree.root.toString('hex'), '');
+    });
+
+    it('gives a block header merkle_root from its txids', function () {
+      const { blocks } = require('./fixtures/bitcoin-merkle.json');
+      for (const block of blocks) {
+        const tree = new Tree(block.txids);
+        assert.strictEqual(tree.rootHex, block.merkleRoot, `block ${block.height}`);
+        const index = block.txids.length - 1;
+        const hit = tree.proveInclusion(block.txids[index]);
+        assert.strictEqual(hit.included, true);
+        assert.ok(tree.verifyInclusion(hit, block.merkleRoot));
+      }
     });
 
     it('can construct a known tree', async function () {
       let tree = new Tree(['foo', 'bar']);
       assert.ok(tree);
-      assert.ok(tree._tree);
+      assert.strictEqual(tree.getLayers().length, 2);
       // Bitcoin-style merkle of string leaves ['foo','bar'] via Hash256.digest.
       assert.strictEqual(tree.root.toString('hex'), '906b5aaf65ae98f8c98848de5e81ba865659f16fd53aefa4c78b34176f068079');
     });
@@ -119,9 +131,25 @@ describe('@fabric/core/types/tree', function () {
       const tree = new Tree({ leaves: ['b', 'a', 'a', 'c'], sortLeaves: true });
       assert.strictEqual(tree.leafCount, 4);
       assert.strictEqual(tree.rootHex.length, 64);
+      // Hex-looking strings are their bytes: 'bb' is 0xbb, after 0x0c.
       const doc = tree.proveNonInclusion('bb');
-      assert.strictEqual(doc.side, 'between');
+      assert.strictEqual(doc.side, 'after');
       assert.strictEqual(tree.verifyNonInclusion(doc), true);
+      const between = tree.proveNonInclusion('0b01');
+      assert.strictEqual(between.side, 'between');
+      assert.strictEqual(tree.verifyNonInclusion(between), true);
+    });
+
+    it('compares leaves by their Merkle bytes, not their spelling', function () {
+      const tree = new Tree({ leaves: ['0a', '0c'], sortLeaves: true });
+      for (const spelling of ['a', '0a', '0x0A', Buffer.from([0x0a])]) {
+        const doc = tree.proveNonInclusion(spelling);
+        assert.strictEqual(doc.side, 'included', String(spelling));
+        assert.strictEqual(tree.verifyNonInclusion(Object.assign({}, doc, { included: false, side: 'between' })), false);
+      }
+      // A forged gap around a differently spelled member does not verify.
+      const forged = { included: false, empty: false, side: 'after', target: 'a', root: tree.rootHex, leafCount: 2, left: tree.proveInclusion('0c'), right: null };
+      assert.strictEqual(tree.verifyNonInclusion(forged), false);
     });
 
     it('returns an unincluded proof for a leaf outside the tree', function () {
@@ -139,42 +167,31 @@ describe('@fabric/core/types/tree', function () {
       assert.strictEqual(new Tree().verify([], leaf), false);
     });
 
-    it('falls back to the instance verifier when the static is unusable', function () {
-      // Compatibility path for merkletreejs builds without MerkleTree.verify.
-      const { MerkleTree } = require('merkletreejs');
+    it('fails closed when the verifier throws', function () {
       const tree = sorted();
       const leaf = B('55');
       const proof = tree.getProof(leaf);
-      const original = MerkleTree.verify;
+      const original = Tree.verifyProof;
       try {
-        MerkleTree.verify = () => { throw new Error('static unavailable'); };
-        assert.strictEqual(tree.verify(proof, leaf), true);
-        MerkleTree.verify = undefined;
-        assert.strictEqual(tree.verify(proof, leaf), true);
-      } finally {
-        MerkleTree.verify = original;
-      }
-    });
-
-    it('fails closed when both verifiers throw', function () {
-      const { MerkleTree } = require('merkletreejs');
-      const tree = sorted();
-      const leaf = B('55');
-      const proof = tree.getProof(leaf);
-      const original = MerkleTree.verify;
-      try {
-        MerkleTree.verify = () => { throw new Error('static unavailable'); };
-        tree._tree.verify = () => { throw new Error('instance unavailable'); };
+        Tree.verifyProof = () => { throw new Error('verifier unavailable'); };
         // A throwing verifier is an unproven leaf, not a raised exception.
         assert.strictEqual(tree.verify(proof, leaf), false);
       } finally {
-        MerkleTree.verify = original;
+        Tree.verifyProof = original;
       }
+    });
+
+    it('fails closed on malformed proof steps', function () {
+      const tree = sorted();
+      const leaf = B('55');
+      assert.strictEqual(tree.verify([42], leaf), false);
+      assert.strictEqual(tree.verify([null], leaf), false);
+      assert.strictEqual(tree.verify([{ position: 'left' }], leaf), false);
     });
 
     it('fails closed when proof construction throws', function () {
       const tree = sorted();
-      tree._tree.getProof = () => { throw new Error('no proof'); };
+      tree.getProof = () => { throw new Error('no proof'); };
       const doc = tree.proveInclusion(B('55'));
       assert.strictEqual(doc.included, false);
       assert.deepStrictEqual(doc.proof, []);
@@ -294,6 +311,158 @@ describe('@fabric/core/types/tree', function () {
       assert.deepStrictEqual(empty.getProof(B('11')), []);
       const miss = tree.proveInclusion(B('99'));
       assert.strictEqual(miss.included, false);
+    });
+  });
+
+  describe('Bitcoin Merkle tree', function () {
+    const { sha256 } = require('@noble/hashes/sha2.js');
+    const { merkleRootFromTxids, buildBranch } = require('../functions/bitcoinTxInclusion');
+    const vectors = require('./fixtures/bitcoin-merkle.json');
+    const steps = (proof) => proof.map((step) => [step.position, step.data.toString('hex')]);
+    const reverse = (bytes) => Buffer.from(bytes).reverse();
+    const parent = (left, right) => reverse(sha256(sha256(Buffer.concat([reverse(left), reverse(right)]))));
+    const decode = (spec) => {
+      if (typeof spec === 'string') return spec;
+      if ('buffer' in spec) return Buffer.from(spec.buffer, 'hex');
+      if ('number' in spec) return spec.number;
+      throw new Error(`unknown leaf spec ${JSON.stringify(spec)}`);
+    };
+
+    for (const block of vectors.blocks) {
+      it(`block ${block.height} (${block.txids.length} txs) proofs match the SPV branch for every tx`, function () {
+        const tree = new Tree(block.txids);
+        assert.strictEqual(tree.rootHex, block.merkleRoot);
+        assert.strictEqual(merkleRootFromTxids(block.txids), block.merkleRoot);
+        block.txids.forEach((txid, index) => {
+          const proof = tree.getProof(txid, index);
+          assert.deepStrictEqual(proof.map((step) => step.data.toString('hex')), buildBranch(block.txids, txid).branch);
+          assert.strictEqual(Tree.verifyProof(proof, txid, block.merkleRoot), true);
+        });
+      });
+    }
+
+    for (const vector of vectors.cases) {
+      it(`matches merkletreejs 0.6.0: ${vector.name}`, function () {
+        const leaves = vector.leaves.map(decode);
+        const tree = new Tree(leaves);
+        assert.strictEqual(tree.root.toString('hex'), vector.root);
+        const lookups = vector.lookups || vector.proofs;
+        leaves.forEach((leaf, index) => {
+          assert.deepStrictEqual(steps(tree.getProof(leaf, index)), vector.proofs[index], `proof ${index}`);
+          assert.deepStrictEqual(steps(tree.getProof(leaf)), lookups[index], `lookup ${index}`);
+          assert.strictEqual(Tree.verifyProof(tree.getProof(leaf, index), leaf, tree.root), vector.verified[index], `verify ${index}`);
+        });
+      });
+    }
+
+    it('has an empty root without leaves and the leaf itself for one', function () {
+      assert.strictEqual(new Tree().getRoot().length, 0);
+      const leaf = Buffer.alloc(32, 7);
+      assert.ok(new Tree([leaf]).getRoot().equals(leaf));
+    });
+
+    it('pairs an odd last node with itself', function () {
+      const [a, b, c] = [1, 2, 3].map((n) => Buffer.alloc(32, n));
+      const tree = new Tree([a, b, c]);
+      const layers = tree.getLayers();
+      assert.strictEqual(layers.length, 3);
+      assert.ok(layers[1][1].equals(parent(c, c)));
+      assert.ok(tree.root.equals(parent(parent(a, b), parent(c, c))));
+      assert.deepStrictEqual(tree.getProof(c)[0], { position: 'right', data: c });
+    });
+
+    it('proves the last duplicate and returns [] for unknown leaves', function () {
+      const tree = new Tree(['aa', 'bb', 'aa']);
+      assert.deepStrictEqual(steps(tree.getProof('aa')), steps(tree.getProof('aa', 2)));
+      assert.deepStrictEqual(tree.getProof('cc'), []);
+    });
+
+    it('verifyProof accepts object, array, hex string, and Buffer steps', function () {
+      const leaves = [1, 2, 3, 4].map((n) => Buffer.alloc(32, n));
+      const tree = new Tree(leaves);
+      const proof = tree.getProof(leaves[1]);
+      const arrays = proof.map((step) => [step.position === 'left' ? 0 : 1, step.data.toString('hex')]);
+      assert.strictEqual(Tree.verifyProof(arrays, leaves[1].toString('hex'), tree.rootHex), true);
+      // Bare strings and Buffers are left siblings, as on the rightmost path.
+      const rightmost = tree.getProof(leaves[3]);
+      assert.ok(rightmost.every((step) => step.position === 'left'));
+      assert.strictEqual(Tree.verifyProof(rightmost.map((step) => step.data), leaves[3], tree.root), true);
+      assert.strictEqual(Tree.verifyProof(rightmost.map((step) => step.data.toString('hex')), leaves[3], tree.root), true);
+    });
+
+    it('verifyProof rejects a wrong root, leaf, or proof', function () {
+      const leaves = [1, 2, 3, 4].map((n) => Buffer.alloc(32, n));
+      const tree = new Tree(leaves);
+      const proof = tree.getProof(leaves[1]);
+      assert.strictEqual(Tree.verifyProof(proof, leaves[2], tree.root), false);
+      assert.strictEqual(Tree.verifyProof(proof, leaves[1], Buffer.alloc(32)), false);
+      assert.strictEqual(Tree.verifyProof('nope', leaves[1], tree.root), false);
+      assert.strictEqual(Tree.verifyProof(proof, '', tree.root), false);
+      assert.strictEqual(Tree.verifyProof(proof, leaves[1]), false);
+      assert.throws(() => Tree.verifyProof([42], leaves[1], tree.root), TypeError);
+    });
+
+    it('decodes hex-looking strings as hex, others as UTF-8, numbers as decimal digits', function () {
+      assert.strictEqual(new Tree(['0xabc']).rootHex, '0abc');
+      assert.strictEqual(new Tree(['a']).rootHex, '0a');
+      assert.strictEqual(new Tree(['foo']).root.toString('utf8'), 'foo');
+      assert.strictEqual(new Tree([12]).rootHex, '12');
+      assert.strictEqual(new Tree([Uint8Array.from([1, 2, 3])]).rootHex, '010203');
+    });
+
+    it('refuses leaves that are not bytes, strings, or numbers', function () {
+      for (const leaf of [null, {}, true]) {
+        assert.throws(() => new Tree([leaf]), TypeError);
+      }
+    });
+
+    it('backs Stack#asMerkleTree', function () {
+      const Stack = require('../types/stack');
+      const tree = new Stack(['a', 'b', 'c']).asMerkleTree();
+      assert.ok(tree instanceof Tree);
+      assert.ok(Buffer.isBuffer(tree.getRoot()));
+      assert.strictEqual(tree.getRoot().length, 32);
+    });
+  });
+
+  describe('CVE-2012-2459 mutation detection', function () {
+    const crypto = require('crypto');
+    const h = (s) => crypto.createHash('sha256').update(s).digest();
+    const [a, b, c, d, e, f] = ['a', 'b', 'c', 'd', 'e', 'f'].map(h);
+    const rootOf = (leaves) => new Tree({ leaves }).root.toString('hex');
+
+    it('flags a duplicated last leaf without changing the root', function () {
+      assert.strictEqual(rootOf([a, b, c]), rootOf([a, b, c, c]));
+      assert.strictEqual(new Tree({ leaves: [a, b, c] }).mutated, false);
+      assert.strictEqual(new Tree({ leaves: [a, b, c, c] }).mutated, true);
+      assert.strictEqual(Tree.isMutated([a, b, c, c]), true);
+    });
+
+    it('flags a duplicated pair at a higher layer', function () {
+      assert.strictEqual(rootOf([a, b, c, d, e, f]), rootOf([a, b, c, d, e, f, e, f]));
+      assert.strictEqual(Tree.isMutated([a, b, c, d, e, f]), false);
+      assert.strictEqual(Tree.isMutated([a, b, c, d, e, f, e, f]), true);
+    });
+
+    it('does not flag repeated content that no shorter list shares', function () {
+      assert.strictEqual(Tree.isMutated([a, a]), false);
+      assert.strictEqual(Tree.isMutated([a, a, b]), false);
+      assert.strictEqual(Tree.isMutated([a, b, a, b]), false);
+      assert.strictEqual(Tree.isMutated([a, b, c, d, c, d]), false);
+      assert.strictEqual(Tree.isMutated([]), false);
+      assert.strictEqual(Tree.isMutated([a]), false);
+    });
+
+    it('rejectMutated refuses a mutated build and rolls back addLeaf', function () {
+      assert.throws(() => new Tree({ leaves: [a, b, c, c], rejectMutated: true }), /mutated/);
+      const tree = new Tree({ leaves: [a, b, c], rejectMutated: true });
+      const root = tree.root.toString('hex');
+      assert.throws(() => tree.addLeaf(c), /mutated/);
+      assert.strictEqual(tree.getLayers()[0].length, 3);
+      assert.strictEqual(tree.root.toString('hex'), root);
+      assert.strictEqual(tree.mutated, false);
+      tree.addLeaf(d);
+      assert.strictEqual(tree.getLayers()[0].length, 4);
     });
   });
 });

@@ -29,10 +29,12 @@ Same separation as Lightning HTLC chains: multi-hop Fabric Circuits need indepen
 Every document is advertised as a **`DocumentBlobIndex`** (Tree merkle over blob leaves):
 
 - Small files → one content blob listed in `blobs[]`
-- Large files → many wire-sized blobs (default chunk ≤ AMP `MAX_MESSAGE_SIZE` budget)
+- Large files → many wire-sized blobs (default chunk ≤ AMP `MAX_MESSAGE_SIZE` budget — ~24 KiB raw per blob with the 32 KiB body cap)
 - `blobHashHex` = `SHA256(blob bytes)` (ciphertext bytes when sealed)
 - `merkleRootHex` = Fabric [`Tree`](../types/tree.js) root over those leaf hashes
 - **Priced / sealed:** inventory `contentHash` = `SHA256(K)` via [`documentSealedExchange`](../functions/documentSealedExchange.js); seller reveals `K` only after payment-hash match (Fabric) **or** by claiming the HTLC on-chain (buyer `/claimwatch` extracts `K` from the claim witness)
+- **Per-blob sealed trees** ([`types/document.js`](../types/document.js)): one key `K_i` per blob, `paymentHashHex_i = SHA256(K_i)`. Over a **payment channel** the seller fulfills the HTLC with `K_i` itself (`Channel.Book({ preimageFor })`, `Peer#sealedBlobPreimageForPaymentHash`); the buyer learns the key from the `ChannelHtlcFulfill` and opens the held ciphertext (`Peer#openSealedBlobWithKey`). The channel HTLC **is** the payment-hash binding — no separate key-reveal body, and the key can never be clawed back because the HTLC settles atomically with its disclosure.
+- **Buyer-side reassembly** is keyed by `documentId | merkleRootHex`; frames whose root / `blobTotal` / origin disagree with that row (or with the purchase's `expectTransfer`) are rejected, and each held part keeps the seller's raw signed `P2P_FILE_SEND` frame for `wrong-bytes` fraud proofs ([`L1_DOCUMENT_EXCHANGE.md`](L1_DOCUMENT_EXCHANGE.md)).
 - **Unsealed per-blob:** `blobPaymentHashHex` tagged hash — see [`documentBlobManifest.js`](../functions/documentBlobManifest.js)
 - **Refund:** after `refundLocktimeHeight`, buyer `/refund` spends the CLTV leaf if the sale never completed
 

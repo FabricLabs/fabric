@@ -83,4 +83,93 @@ describe('@fabric/core/functions/noiseProtocolStream', function () {
     assert.strictEqual(handshakes, 0);
     assert.strictEqual(noise.countNativeStreams(), beforeNative);
   });
+
+  function closedWithError (pair) {
+    return new Promise((resolve) => {
+      let error = null;
+      pair.decrypt.on('error', (err) => { error = err; });
+      pair.encrypt.on('error', () => {});
+      pair.decrypt.once('close', () => resolve(error));
+    });
+  }
+
+  it('rejects an oversize length prefix before allocating it', async function () {
+    const pair = noise({ initiator: false, prologue: Buffer.from('FABRIC') });
+    const closed = closedWithError(pair);
+    const before = process.memoryUsage().arrayBuffers;
+    // varint(512 MiB) followed by three body bytes: upstream allocates 512 MiB here.
+    const prefix = Buffer.from([0x80, 0x80, 0x80, 0x80, 0x02]);
+    pair.decrypt.write(Buffer.concat([prefix, Buffer.from([1, 2, 3])]));
+    const err = await closed;
+    const grown = process.memoryUsage().arrayBuffers - before;
+    assert.ok(err && /noise_message_too_large/.test(err.message), `expected limit error, got ${err && err.message}`);
+    assert.ok(grown < 16 * 1024 * 1024, `arrayBuffers grew ${grown} bytes`);
+    assert.strictEqual(pair.encrypt.destroyed, true);
+  });
+
+  it('rejects a 65536-byte message even when it fits the varint prefix', async function () {
+    const pair = noise({ initiator: false, prologue: Buffer.from('FABRIC') });
+    const closed = closedWithError(pair);
+    pair.decrypt.write(Buffer.from([0x80, 0x80, 0x04])); // varint(65536)
+    const err = await closed;
+    assert.ok(err && /noise_message_too_large/.test(err.message));
+  });
+
+  it('enforces the pre-handshake byte budget', async function () {
+    const pair = noise({ initiator: false, prologue: Buffer.from('FABRIC'), handshakeMaxBytes: 1024 });
+    const closed = closedWithError(pair);
+    // Two well-formed 600-byte length-prefixed messages: under the frame limit, over the budget.
+    const msg = Buffer.concat([Buffer.from([0xd8, 0x04]), Buffer.alloc(600, 7)]);
+    pair.decrypt.write(msg);
+    pair.decrypt.write(msg);
+    const err = await closed;
+    assert.ok(err && /noise_handshake_budget/.test(err.message), `expected budget error, got ${err && err.message}`);
+  });
+
+  it('destroys a session whose handshake does not finish in handshakeTimeout', async function () {
+    const pair = noise({ initiator: false, prologue: Buffer.from('FABRIC'), handshakeTimeout: 150 });
+    const closed = closedWithError(pair);
+    const started = Date.now();
+    const err = await closed;
+    assert.ok(err && /noise_handshake_timeout/.test(err.message));
+    assert.ok(Date.now() - started < 5000);
+  });
+
+  it('keeps the deadline while options.verify has not accepted the peer', async function () {
+    if (!noise.supported) this.skip();
+    const a = noise({ initiator: true, prologue: Buffer.from('FABRIC'), handshakeTimeout: 5000 });
+    let asked = false;
+    // Never calls back: the split session must still time out.
+    const b = noise({ initiator: false, prologue: Buffer.from('FABRIC'), handshakeTimeout: 300, verify: () => { asked = true; } });
+    a.encrypt.pipe(b.decrypt);
+    b.encrypt.pipe(a.decrypt);
+    const err = await closedWithError(b);
+    assert.ok(asked, 'the handshake reached verify');
+    assert.ok(err && /noise_handshake_timeout/.test(err.message), `expected timeout, got ${err && err.message}`);
+    for (const d of [a.encrypt, a.decrypt]) d.destroy();
+  });
+
+  it('completes a handshake under the limits and carries a full-size AMP frame', async function () {
+    if (!noise.supported) this.skip();
+    const { MAX_FRAME_BYTES } = require('../constants');
+    const a = noise({ initiator: true, prologue: Buffer.from('FABRIC'), handshakeTimeout: 5000 });
+    const b = noise({ initiator: false, prologue: Buffer.from('FABRIC'), handshakeTimeout: 5000 });
+    a.encrypt.pipe(b.decrypt);
+    b.encrypt.pipe(a.decrypt);
+    const frame = Buffer.alloc(MAX_FRAME_BYTES, 0x5a);
+    const received = new Promise((resolve) => {
+      const chunks = [];
+      let total = 0;
+      b.decrypt.on('data', (data) => {
+        chunks.push(data);
+        total += data.length;
+        if (total >= frame.length) resolve(Buffer.concat(chunks));
+      });
+    });
+    await new Promise((resolve) => a.encrypt.once('handshake', resolve));
+    a.encrypt.write(frame);
+    const got = await received;
+    assert.ok(got.equals(frame));
+    for (const d of [a.encrypt, a.decrypt, b.encrypt, b.decrypt]) d.destroy();
+  });
 });

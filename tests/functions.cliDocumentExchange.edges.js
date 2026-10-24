@@ -8,7 +8,7 @@ const { describe, it } = require('mocha');
 
 const { CliDocumentExchange } = require('../functions/cliDocumentExchange');
 const {
-  DocumentOfferBook,
+  Book,
   createDocumentPurchaseSession
 } = require('../functions/documentMarket');
 
@@ -85,9 +85,10 @@ describe('functions/cliDocumentExchange path & publish edges', function () {
     for (const bad of [NaN, Infinity, -Infinity, -1, 'nope']) {
       assert.strictEqual(exchange.publish('docA', bad).ok, false, String(bad));
     }
-    // Current policy: Number.isFinite only — fractional sats are accepted.
-    assert.strictEqual(exchange.publish('docA', 1.5).ok, true);
-    assert.deepStrictEqual(published, [1.5]);
+    // Paid rates start at the HTLC minimum; above it, finite fractions are accepted.
+    assert.strictEqual(exchange.publish('docA', 1.5).ok, false);
+    assert.strictEqual(exchange.publish('docA', 716.5).ok, true);
+    assert.deepStrictEqual(published, [716.5]);
   });
 
   it('publish propagates host getPeer errors (not swallowed)', function () {
@@ -150,7 +151,7 @@ describe('functions/cliDocumentExchange path & publish edges', function () {
       paymentHash32: Buffer.from(contentHash, 'hex'),
       refundLocktimeHeight: lock
     });
-    const book = new DocumentOfferBook();
+    const book = new Book();
     book.ingestInventoryResponse({
       origin: 'seller-named',
       sellerPubkey: String(seller.pubkey).toLowerCase(),
@@ -160,7 +161,7 @@ describe('functions/cliDocumentExchange path & publish edges', function () {
       latencyMs: 5,
       items: [{
         id: 'doc-named',
-        rateSats: 25,
+        rateSats: 1000,
         contentHash,
         sellerPubkey: String(seller.pubkey).toLowerCase(),
         sellerAddress: 'seller-named',
@@ -201,7 +202,7 @@ describe('functions/cliDocumentExchange path & publish edges', function () {
       latencyMs: 5,
       items: [{
         id: 'doc-named-2',
-        rateSats: 25,
+        rateSats: 1000,
         contentHash: 'ac'.repeat(32),
         sellerAddress: 'seller-named',
         htlc: {

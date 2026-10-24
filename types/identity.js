@@ -188,7 +188,7 @@ class Identity extends Actor {
   /**
    * True when `key` matches the BIP32 child of `parent` at this identity's
    * Fabric derivation path (or an explicit `path`).
-   * @param {Key|string|{ pubkey?: string }} key Candidate key or pubkey hex.
+   * @param {Key|string|{ pubkey: (string|undefined) }} key Candidate key or pubkey hex.
    * @param {Key} [parent=this.master] Parent HD key.
    * @param {string} [path] Override derivation path (default {@link Identity#derivation}).
    * @returns {boolean}

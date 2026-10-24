@@ -1,21 +1,21 @@
 'use strict';
 
-const lexer = require('jade-lexer');
-const parse = require('jade-parser');
-
 const Service = require('./service');
 
+/**
+ * Dead stub. Page composition lives in `@fabric/http` (`types/component.js`,
+ * `functions/compose.js`). This module stays out of the published package.
+ */
 class Component extends Service {
   constructor (config) {
     this.config = Object.assign({
-      'encoding': 'jade',
-      'input': 'fabric-component Hello, world!'
+      encoding: 'html',
+      input: ''
     }, config);
 
     this['@encoding'] = 'html';
-
-    this.tokens = lexer(this.config.input);
-    this.ast = parse(this.tokens);
+    this.tokens = null;
+    this.ast = null;
 
     return this;
   }

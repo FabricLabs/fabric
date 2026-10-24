@@ -67,6 +67,7 @@ lib-cov
 ### Coverage directory used by tools like istanbul
 coverage
 reports/coverage-btc-tmp/
+reports/coverage-*/
 reports/credits.json
 reports/licenses.json
 reports/benchmark-latest.json
@@ -125,6 +126,10 @@ coverage-hot*/
 coverage-covfocus/
 coverage-hot
 reports/cov-*/
+
+# Local run artifacts (chaos/adversary probes, ad-hoc review bundles)
+reports/playnet-chaos-neighbors*.json
+reports/rsi-*-review/
 
 # Pesky Mac Stuff
 .DS_Store

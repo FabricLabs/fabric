@@ -5,11 +5,39 @@ const merge = require('lodash.merge');
 const { run } = require('minsc');
 const crypto = require('crypto');
 const ecc = require('./ecc');
+const bls = require('../functions/bls');
 
 // Fabric Types
 const Contract = require('./contract');
 const Key = require('./key');
 const Wallet = require('./wallet');
+
+/**
+ * BLS public key stored for a member. Private material derives it once.
+ * Public-only members must supply `blsPublicKey` (48-byte hex); a member with
+ * private material may supply it only when it matches the derived key.
+ * @param {object} member
+ * @param {object} key
+ * @returns {string|null}
+ * @private
+ */
+function federationBlsPublicKey (member, key) {
+  const derived = (key && key.private)
+    ? bls.deriveFederationSigner(key.private).publicKey.toString('hex')
+    : null;
+  const supplied = member && (member.blsPublicKey || member.blsPublic);
+  if (supplied != null && supplied !== '') {
+    const raw = String(supplied).trim().toLowerCase().replace(/^0x/, '');
+    if (!/^[0-9a-f]{96}$/.test(raw)) {
+      throw new Error('blsPublicKey must be a 48-byte hex key');
+    }
+    if (derived && raw !== derived) {
+      throw new Error('blsPublicKey does not match the key derived from the member private key');
+    }
+    return raw;
+  }
+  return derived;
+}
 
 /**
  * Create and manage sets of {Signer} instances with the Federation class.
@@ -35,7 +63,9 @@ class Federation extends Contract {
         xprv: null, // avoid using seed phrase
         xpub: null  // verify signatures only
       },
-      type: 'FabricFederation'
+      type: 'FabricFederation',
+      // 'schnorr' (BIP340, default) or 'bls' (BLS12-381 bundles).
+      signatureScheme: 'schnorr'
     }, settings);
 
     // Internal Key
@@ -54,6 +84,14 @@ class Federation extends Contract {
     };
 
     return this;
+  }
+
+  /**
+   * Witness scheme for this federation. Bitcoin vault spends stay BIP340.
+   * @returns {'schnorr'|'bls'}
+   */
+  get signatureScheme () {
+    return bls.normalizeSignatureScheme(this.settings.signatureScheme);
   }
 
   get contract () {
@@ -91,6 +129,9 @@ class Federation extends Contract {
       throw new Error('Failed to initialize private key');
     }
 
+    // Throws on a bad blsPublicKey; must run before any state changes.
+    const blsPublicKey = federationBlsPublicKey(member, key);
+
     // Store the member's public key in hex format
     const pubkey = key.public.encodeCompressed('hex');
     this._state.content.validators.push(pubkey);
@@ -98,6 +139,11 @@ class Federation extends Contract {
     // Store the member's key for signing
     this._state.content.keys = this._state.content.keys || {};
     this._state.content.keys[pubkey] = key;
+
+    if (blsPublicKey) {
+      this._state.content.blsPublicKeys = this._state.content.blsPublicKeys || {};
+      this._state.content.blsPublicKeys[pubkey] = blsPublicKey;
+    }
 
     // console.log('consensus validators:', this._state.content.validators);
     // console.log('contract for step 0:', this.contractForStep(0));
@@ -175,11 +221,19 @@ class Federation extends Contract {
     // Handle Message objects
     const messageToSign = msg.data ? msg.data : msg;
 
+    const signWith = (key) => {
+      if (this.signatureScheme === bls.SCHEME_BLS) {
+        const derived = bls.deriveFederationSigner(key.private);
+        return bls.sign(messageToSign, derived.secretKey);
+      }
+      return key.signSchnorr(messageToSign);
+    };
+
     // If pubkey is provided, use that specific key
     if (pubkey) {
       const key = this._state.content.keys[pubkey];
       if (key && key.private) {
-        return key.signSchnorr(messageToSign);
+        return signWith(key);
       }
       throw new Error(`No private key available for member ${pubkey}`);
     }
@@ -188,7 +242,7 @@ class Federation extends Contract {
     for (const memberPubkey of this._state.content.validators) {
       const key = this._state.content.keys[memberPubkey];
       if (key && key.private) {
-        return key.signSchnorr(messageToSign);
+        return signWith(key);
       }
     }
     throw new Error('No private key available for signing');
@@ -207,7 +261,11 @@ class Federation extends Contract {
     // Try to verify with any of the federation's keys
     for (const pubkey of this._state.content.validators) {
       const key = this._state.content.keys[pubkey];
-      if (key && key.verifySchnorr(messageToVerify, sig)) {
+      if (!key) continue;
+      if (this.signatureScheme === bls.SCHEME_BLS) {
+        const blsPublicKey = this._state.content.blsPublicKeys && this._state.content.blsPublicKeys[pubkey];
+        if (blsPublicKey && bls.verify(sig, messageToVerify, blsPublicKey)) return true;
+      } else if (key.verifySchnorr(messageToVerify, sig)) {
         return true;
       }
     }
@@ -223,14 +281,18 @@ class Federation extends Contract {
     const signatures = {};
     // Handle Message objects
     const messageToSign = msg.data ? msg.data : msg;
+    const useBls = this.signatureScheme === bls.SCHEME_BLS;
     for (const pubkey of this._state.content.validators) {
       const key = this._state.content.keys[pubkey];
       if (key && key.private) {
-        signatures[pubkey] = key.signSchnorr(messageToSign);
+        signatures[pubkey] = useBls
+          ? bls.createFederationBlsBundle(messageToSign, key)
+          : key.signSchnorr(messageToSign);
       }
     }
     return {
       message: msg,
+      scheme: useBls ? bls.SCHEME_BLS : bls.SCHEME_SCHNORR,
       signatures
     };
   }
@@ -262,6 +324,20 @@ class Federation extends Contract {
     // Ensure messageToVerify is a Buffer
     if (!Buffer.isBuffer(messageToVerify)) {
       messageToVerify = Buffer.from(messageToVerify);
+    }
+
+    if (multiSig.scheme != null && multiSig.scheme !== '') {
+      const witnessScheme = bls.normalizeSignatureScheme(multiSig.scheme);
+      if (witnessScheme !== this.signatureScheme) return false;
+    }
+    const useBls = this.signatureScheme === bls.SCHEME_BLS;
+    if (useBls) {
+      return bls.verifyFederationBlsWitness(
+        messageToVerify,
+        { scheme: bls.SCHEME_BLS, signatures },
+        this._state.content.validators,
+        threshold
+      );
     }
 
     // Create message hash once for all verifications
