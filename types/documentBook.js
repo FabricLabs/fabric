@@ -627,8 +627,19 @@ class DocumentBook extends Book {
         for (const b of blobs) {
           if (!b || typeof b !== 'object') continue;
           // Per-blob payment hash when present (sealed K_i or unsealed tagged
-          // hash); fall back to the item-level hash. Never bind to blobHashHex.
-          const paymentHash = contentHashHexFromObject(b) || contentHashHex;
+          // hash). Never bind to blobHashHex. On a verified root the paid hash
+          // must be one the root commits: an unsealed leaf's tagged hash is
+          // derived from its committed blobHashHex, and the item-level hash is
+          // only a fallback for unverified rows.
+          let paymentHash = contentHashHexFromObject(b);
+          if (!paymentHash && rootVerified && !sealed) {
+            try {
+              paymentHash = manifest.blobPaymentHashHex({ documentId, blobIndex: Number(b.index), blobHashHex: b.blobHashHex });
+            } catch (_) {
+              paymentHash = null;
+            }
+          }
+          if (!paymentHash && !rootVerified) paymentHash = contentHashHex;
           const row = Object.assign({}, base, {
             blobIndex: Number(b.index),
             blobTotal: Number(b.total != null ? b.total : blobs.length),

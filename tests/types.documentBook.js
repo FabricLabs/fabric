@@ -160,4 +160,23 @@ describe('types/documentBook (chunk index + local telemetry)', function () {
     assert.strictEqual(book.pickBest('doc').sellerAddress, 'publisher');
     assert.ok(Array.from(book.pickBlobPlan('doc', 2).values()).every((o) => o.sellerAddress === 'publisher'));
   });
+
+  it('ingests a producer advertisement and pays only hashes its root commits', function () {
+    const { advertiseDocumentBlobs, blobPaymentHashHex } = require('../functions/documentBlobManifest');
+    const ad = advertiseDocumentBlobs(Buffer.alloc(3000, 7), { documentId: 'doc', chunkBytes: 1024, rateSats: 30 });
+    const book = new DocumentBook();
+    const rows = book.ingestInventoryResponse({ origin: 'publisher', items: [{ id: 'doc', merkleRootHex: ad.merkleRootHex, blobs: ad.itemBlobs }] });
+    assert.strictEqual(rows.length, ad.itemBlobs.length);
+    assert.ok(rows.every((r) => r.rootVerified === true));
+
+    // Leaves without their own payment hash, plus a stray item-level hash:
+    // the rows must carry the tagged hash of each committed leaf.
+    const bare = ad.itemBlobs.map((b) => ({ index: b.index, total: b.total, blobHashHex: b.blobHashHex, size: b.size }));
+    const relisted = new DocumentBook().ingestInventoryResponse({ origin: 'reseller', items: [{ id: 'doc', contentHash: H('ee'), merkleRootHex: ad.merkleRootHex, blobs: bare }] });
+    assert.strictEqual(relisted.length, bare.length);
+    for (const r of relisted) {
+      assert.strictEqual(r.rootVerified, true);
+      assert.strictEqual(r.contentHashHex, blobPaymentHashHex({ documentId: 'doc', blobIndex: r.blobIndex, blobHashHex: r.blobHashHex }));
+    }
+  });
 });
