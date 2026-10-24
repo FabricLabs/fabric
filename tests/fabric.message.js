@@ -74,6 +74,15 @@ describe('@fabric/core/types/message', function () {
       assert.strictEqual(Message.MAX_MESSAGE_SIZE, MAX_MESSAGE_SIZE);
     });
 
+    it('toBuffer throws when a fromVector (JSON) frame exceeds MAX_FRAME_BYTES', function () {
+      const { MAX_FRAME_BYTES } = require('../constants');
+      const body = JSON.stringify({ blob: 'x'.repeat(MAX_MESSAGE_SIZE) });
+      const msg = Message.fromVector(['GenericMessage', body]);
+      assert.ok(msg.asRaw().length > MAX_FRAME_BYTES);
+      assert.throws(() => msg.toBuffer(), (err) => err instanceof RangeError && /MAX_FRAME_BYTES/.test(err.message));
+      assert.strictEqual(Message.MAX_FRAME_BYTES, MAX_FRAME_BYTES);
+    });
+
     it('round-trips a body at exactly MAX_MESSAGE_SIZE', function () {
       // AMP bodies carry no inline length prefix — the body length lives in the
       // header `size` field — so a MAX_MESSAGE_SIZE-byte payload is the limit

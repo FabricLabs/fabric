@@ -53,9 +53,9 @@ const TAPROOT_INTERNAL_NUMS = Buffer.from(
 );
 
 function networkForFabricName (name = '') {
-  const n = String(name || '').toLowerCase();
+  const n = String(name || '').trim().toLowerCase();
   if (n === 'regtest' || n === 'test') return networks.regtest;
-  if (n === 'testnet' || n === 'signet') return networks.testnet;
+  if (n === 'testnet' || n === 'testnet4' || n === 'signet') return networks.testnet;
   return networks.bitcoin;
 }
 

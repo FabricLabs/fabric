@@ -20,6 +20,7 @@ const {
   keySettingsFromEnv
 } = require('./fabricKeyMaterial');
 
+/** @private copies a non-empty `passphrase` (or `password`) from `bag` onto `out` */
 function withPassphrase (out, bag) {
   if (!out || !bag || typeof bag !== 'object') return out;
   const passphrase = bag.passphrase != null ? bag.passphrase : bag.password;

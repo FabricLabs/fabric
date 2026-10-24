@@ -8,6 +8,12 @@
  *
  * Hub product wiring lives in hub.fabric.pub `contracts/beacon.js` (extends this
  * type). Ready-round retry finalize is implemented here so Hub and CLI share it.
+ *
+ * Federation rounds seal in clock order: a round seals only directly on top of
+ * the sealed tip (`clock === tip.clock + 1`, higher L1 height). Rounds above a
+ * reorg, rounds left below the sealed tip, and rounds older than
+ * `federationRoundTtlMs` are cancelled (`federation:round-cancelled`); late
+ * signatures for them are refused.
  */
 
 const merge = require('lodash.merge');
@@ -17,10 +23,35 @@ const Message = require('./message');
 const Chain = require('./chain');
 const beaconFederationSigning = require('../functions/beaconFederationSigning');
 const bls = require('../functions/bls');
-const { resolveFederationThreshold } = require('../functions/federationValidators');
+const {
+  normalizeFederationValidators,
+  findValidatorEntry,
+  resolveFederationThreshold,
+  federationThresholdExceedsValidators,
+  uniqueValidatorPubkeys
+} = require('../functions/federationValidators');
 
 const SATS_PER_BTC = 100_000_000;
 const BEACON_CHAIN_PATH = 'beacon/CHAIN';
+const MAX_REMEMBERED_CANCELLED_ROUNDS = 1024;
+
+/**
+ * @param {object} round
+ * @returns {number}
+ * @private
+ */
+function roundClock (round) {
+  return Number(round && round.payload ? round.payload.clock : NaN);
+}
+
+/**
+ * @param {object} round
+ * @returns {number}
+ * @private
+ */
+function roundHeight (round) {
+  return Number(round && round.payload ? round.payload.height : NaN);
+}
 
 /**
  * Result of {@link Beacon#adoptFederationSignRequest}.
@@ -48,10 +79,15 @@ class Beacon extends Actor {
    * @param {number} [settings.interval=60000] regtest epoch interval in ms (0 = none)
    * @param {boolean} [settings.regtest=true] mine epochs; false follows L1 tips only
    * @param {boolean} [settings.mineOnStart=true] mine one epoch on start (regtest)
-   * @param {string[]} [settings.federationValidators] x-only hex pubkeys that witness epochs
-   * @param {number|null} [settings.federationThreshold=null] k; null = strict majority of validators
+   * @param {string[]} [settings.federationValidators] pubkeys (compressed or x-only hex) that witness
+   * epochs; stored lowercase compressed, one per signing key
+   * @param {number|null} [settings.federationThreshold=null] k (clamped to the distinct validators,
+   * with a `warning`); null = strict majority of validators
    * @param {string} [settings.federationSignatureScheme='schnorr'] `schnorr` or `bls`
    * @param {boolean} [settings.federationWitnessFailClosed=true] truncate the stored chain at the first epoch without k valid witnesses
+   * @param {number} [settings.federationRoundTtlMs=3600000] cancel a pending round (and the rounds
+   * above it) this long after it opened; 0 = never
+   * @param {number} [settings.maxReorgDepth=100] most epochs walked back looking for the fork point
    * @param {boolean} [settings.followBlocks=false] follow bitcoind `block` events on regtest
    */
   constructor (settings = {}) {
@@ -69,6 +105,8 @@ class Beacon extends Actor {
       federationThreshold: null,
       federationSignatureScheme: 'schnorr',
       federationWitnessFailClosed: true,
+      federationRoundTtlMs: 60 * 60 * 1000,
+      maxReorgDepth: 100,
       // When true (or when federation validators are set), also follow bitcoind
       // `block` events on regtest so every validator advances from local L1 tips.
       followBlocks: false
@@ -80,15 +118,16 @@ class Beacon extends Actor {
     this.timer = null;
     this._blockHandler = null;
     this._blockQueue = null;
+    this._bitcoinChainInfo = null;
     this._epochChain = Chain.create({ consensus: 'federation' });
-    this._federationValidators = Array.isArray(this.settings.federationValidators)
-      ? this.settings.federationValidators.slice()
-      : [];
+    this._federationValidators = normalizeFederationValidators(this.settings.federationValidators);
     this._federationThresholdSetting = this.settings.federationThreshold;
     this._federationSignatureScheme = bls.normalizeSignatureScheme(this.settings.federationSignatureScheme);
     this._getSidechainSnapshotForEpoch = null;
     this._getContractsSnapshotForEpoch = null;
     this._pendingEpochRounds = new Map();
+    this._cancelledEpochRounds = new Map();
+    this._drainingRounds = false;
     this._state = {
       content: {
         clock: 0,
@@ -105,6 +144,7 @@ class Beacon extends Actor {
 
   /**
    * Live epoch state: `clock`, `status`, `lastBlockHash`, `height`, `balance`, `balanceSats`.
+   * Tracks the newest epoch recorded, which may still be a pending federation round.
    * @type {Object}
    */
   get state () {
@@ -112,7 +152,8 @@ class Beacon extends Actor {
   }
 
   /**
-   * k for epoch witnesses: the configured threshold, else a strict majority.
+   * k for epoch witnesses: the configured threshold (clamped to the distinct
+   * validators), else a strict majority.
    * @returns {number}
    * @private
    */
@@ -143,7 +184,7 @@ class Beacon extends Actor {
    * @param {Object} [deps.fs]
    * @param {Object} [deps.key]
    * @param {Array.<string>} [deps.federationValidators]
-   * @param {number} [deps.federationThreshold]
+   * @param {number|null} [deps.federationThreshold] `null` resets to the strict-majority default
    * @param {string} [deps.federationSignatureScheme] `schnorr` (default) or `bls`
    * @param {function(): (Object|null)} [deps.getSidechainSnapshotForEpoch]
    * @param {function(): (Object|null)} [deps.getContractsSnapshotForEpoch]
@@ -153,10 +194,13 @@ class Beacon extends Actor {
     if (deps.fs) this.fs = deps.fs;
     if (deps.key) this.key = deps.key;
     if (Array.isArray(deps.federationValidators)) {
-      this._federationValidators = deps.federationValidators.slice();
+      this._federationValidators = normalizeFederationValidators(deps.federationValidators);
     }
-    if (deps.federationThreshold != null) {
+    if (deps.federationThreshold !== undefined) {
       this._federationThresholdSetting = deps.federationThreshold;
+    }
+    if (Array.isArray(deps.federationValidators) || deps.federationThreshold !== undefined) {
+      this._warnIfThresholdClamped();
     }
     if (deps.federationSignatureScheme != null) {
       this._federationSignatureScheme = bls.normalizeSignatureScheme(deps.federationSignatureScheme);
@@ -183,6 +227,24 @@ class Beacon extends Actor {
       threshold: this._federationThreshold,
       signatureScheme: this._federationSignatureScheme
     };
+  }
+
+  /**
+   * @private
+   */
+  _warnIfThresholdClamped () {
+    if (!federationThresholdExceedsValidators(this._federationThresholdSetting, this._federationValidators)) return;
+    const n = uniqueValidatorPubkeys(this._federationValidators).length;
+    this.emit('warning', `[BEACON] federationThreshold ${this._federationThresholdSetting} exceeds the ${n} distinct federation validators; using ${n}`);
+  }
+
+  /**
+   * @param {string} pubkey
+   * @returns {boolean}
+   * @private
+   */
+  _isFederationValidator (pubkey) {
+    return !!findValidatorEntry(this._federationValidators, pubkey);
   }
 
   _compressedPubkeyHex () {
@@ -244,7 +306,8 @@ class Beacon extends Actor {
     if (!this._federationValidators.length) return null;
     if (!this.key || !this.key.private) return null;
     const pk = this._compressedPubkeyHex();
-    if (!pk || !this._federationValidators.includes(pk)) return null;
+    const member = pk ? findValidatorEntry(this._federationValidators, pk) : null;
+    if (!member) return null;
     const msg = Buffer.from(beaconFederationSigning.signingStringForBeaconEpoch(epochPayload), 'utf8');
     if (this._federationSignatureScheme === bls.SCHEME_BLS) {
       try {
@@ -252,7 +315,7 @@ class Beacon extends Actor {
         return {
           version: 1,
           scheme: bls.SCHEME_BLS,
-          signatures: { [pk]: bundle }
+          signatures: { [member]: bundle }
         };
       } catch (_) {
         return null;
@@ -266,7 +329,7 @@ class Beacon extends Actor {
     }
     return {
       version: 1,
-      signatures: { [pk]: Buffer.isBuffer(sig) ? sig.toString('hex') : String(sig) }
+      signatures: { [member]: Buffer.isBuffer(sig) ? sig.toString('hex') : String(sig) }
     };
   }
 
@@ -280,17 +343,295 @@ class Beacon extends Actor {
     return entry;
   }
 
+  /**
+   * Append one epoch exactly as committed (no snapshot re-read).
+   * @param {object} payload
+   * @param {object|null} witness
+   * @returns {object} the appended entry
+   * @private
+   */
+  _appendSealedEpoch (payload, witness = null) {
+    const message = Message.fromVector(['BEACON_EPOCH', JSON.stringify(payload)]);
+    if (this.key && this.key.private) message.signWithKey(this.key);
+    const entry = { type: 'BEACON_EPOCH', payload, id: message.id || null };
+    if (witness) entry.federationWitness = witness;
+    this._epochChain.append(entry);
+    return entry;
+  }
+
+  /**
+   * @returns {object|null} payload of the newest sealed epoch
+   * @private
+   */
+  _sealedTipPayload () {
+    const tip = this._epochChain.tip;
+    return tip && tip.payload ? tip.payload : null;
+  }
+
+  /**
+   * Set live state from the sealed tip (zero state on an empty chain), then
+   * from the newest pending round above it so its clock stays reserved.
+   * @private
+   */
+  _restoreStateFromTip () {
+    const s = this._state.content;
+    const tip = this._sealedTipPayload();
+    s.clock = tip && tip.clock != null ? (Number(tip.clock) || 0) : 0;
+    s.lastBlockHash = tip ? (tip.blockHash || null) : null;
+    s.height = tip && tip.height != null ? (Number(tip.height) || 0) : 0;
+    s.balance = tip && tip.balance != null ? tip.balance : 0;
+    s.balanceSats = tip && tip.balanceSats != null ? tip.balanceSats : 0;
+    const rounds = this._pendingRoundsByClock();
+    const top = rounds.length ? rounds[rounds.length - 1] : null;
+    if (top && roundClock(top) > s.clock && roundHeight(top) > s.height) {
+      s.clock = roundClock(top);
+      s.lastBlockHash = top.payload.blockHash || null;
+      s.height = roundHeight(top);
+    }
+  }
+
+  /**
+   * @returns {object[]} in-memory pending rounds, lowest clock first
+   * @private
+   */
+  _pendingRoundsByClock () {
+    return [...this._pendingEpochRounds.values()]
+      .filter((r) => r && r.payload)
+      .sort((a, b) => roundClock(a) - roundClock(b));
+  }
+
+  /**
+   * @returns {boolean}
+   * @private
+   */
+  _canQueryBitcoin () {
+    return !!(this.bitcoin && typeof this.bitcoin._makeRPCRequest === 'function');
+  }
+
+  /**
+   * Whether `blockHash` is the best-chain block at `height`. RPC failures throw.
+   * @param {number} height
+   * @param {string} blockHash
+   * @param {number|null} [bestHeight] known best height (saves a `getblockcount`)
+   * @returns {Promise<boolean>}
+   * @private
+   */
+  async _blockOnBestChain (height, blockHash, bestHeight = null) {
+    if (!blockHash || !Number.isFinite(height)) return false;
+    const best = bestHeight != null
+      ? bestHeight
+      : Number(await this.bitcoin._makeRPCRequest('getblockcount', []));
+    if (!Number.isFinite(best)) throw new Error('[BEACON] getblockcount returned no height');
+    if (height > best) return false;
+    const at = await this.bitcoin._makeRPCRequest('getblockhash', [height]);
+    return at != null && String(at) === String(blockHash);
+  }
+
+  /**
+   * @param {string} digest
+   * @param {string} reason
+   * @private
+   */
+  _rememberCancelledRound (digest, reason) {
+    this._cancelledEpochRounds.delete(digest);
+    this._cancelledEpochRounds.set(digest, reason);
+    while (this._cancelledEpochRounds.size > MAX_REMEMBERED_CANCELLED_ROUNDS) {
+      this._cancelledEpochRounds.delete(this._cancelledEpochRounds.keys().next().value);
+    }
+  }
+
+  /**
+   * Remove matching rounds from memory and the pending store, remember them so
+   * late signatures are refused, and emit `federation:round-cancelled` for each.
+   * Does not touch live state; callers restore it.
+   * @param {function(object): boolean} predicate
+   * @param {string} reason `reorg` | `orphaned` | `stale` | `expired` | `invalid`
+   * @returns {object[]} cancelled rounds
+   * @private
+   */
+  _cancelPendingRounds (predicate, reason) {
+    const cancelled = new Map();
+    for (const [digest, round] of this._pendingEpochRounds) {
+      if (!predicate(round)) continue;
+      this._pendingEpochRounds.delete(digest);
+      cancelled.set(digest, round);
+    }
+    const doc = beaconFederationSigning.loadPendingDoc(this.fs);
+    let changed = false;
+    for (const digest of Object.keys(doc.rounds)) {
+      if (!cancelled.has(digest)) {
+        if (!predicate(doc.rounds[digest])) continue;
+        cancelled.set(digest, doc.rounds[digest]);
+      }
+      delete doc.rounds[digest];
+      changed = true;
+    }
+    if (changed) {
+      beaconFederationSigning.persistPendingDoc(this.fs, doc).catch((err) => {
+        this.emit('warning', '[BEACON] Failed to persist cancelled epoch rounds:', err && err.message ? err.message : err);
+      });
+    }
+    for (const [digest, round] of cancelled) {
+      this._rememberCancelledRound(digest, reason);
+      const p = (round && round.payload) || {};
+      this.emit('federation:round-cancelled', {
+        commitmentDigest: digest,
+        clock: p.clock != null ? p.clock : null,
+        height: p.height != null ? p.height : null,
+        blockHash: p.blockHash || null,
+        reason
+      });
+    }
+    return [...cancelled.values()];
+  }
+
+  /**
+   * @param {number} minHeight
+   * @param {string} reason
+   * @returns {object[]}
+   * @private
+   */
+  _cancelRoundsFromHeight (minHeight, reason) {
+    return this._cancelPendingRounds((r) => roundHeight(r) >= minHeight, reason);
+  }
+
+  /**
+   * Cancel `round` and restore live state. A round that can no longer seal
+   * blocks every round above it, so `expired` / `orphaned` take those too.
+   * @param {object} round
+   * @param {string} reason
+   * @private
+   */
+  _cancelRoundForReason (round, reason) {
+    const clock = roundClock(round);
+    const digest = round && round.commitmentDigest;
+    const cascade = (reason === 'expired' || reason === 'orphaned') && Number.isFinite(clock);
+    this._cancelPendingRounds((r) => r === round ||
+      (digest != null && r && r.commitmentDigest === digest) ||
+      (cascade && roundClock(r) >= clock), reason);
+    this._restoreStateFromTip();
+  }
+
+  /**
+   * @param {object} round
+   * @param {number} [now]
+   * @returns {boolean}
+   * @private
+   */
+  _roundExpired (round, now = Date.now()) {
+    const ttl = Number(this.settings.federationRoundTtlMs);
+    if (!Number.isFinite(ttl) || ttl <= 0) return false;
+    const opened = Date.parse(round && round.createdAt);
+    return Number.isFinite(opened) && now - opened > ttl;
+  }
+
+  /**
+   * Why a pending round must be cancelled, or null while it can still seal.
+   * @param {string} digest
+   * @param {object} round
+   * @returns {string|null}
+   * @private
+   */
+  _roundCancelReason (digest, round) {
+    if (!round || !round.payload) return 'invalid';
+    if (this._epochAlreadySealed(digest, round)) return null;
+    const tip = this._sealedTipPayload();
+    if (tip && (!(roundHeight(round) > Number(tip.height)) || !(roundClock(round) > Number(tip.clock)))) {
+      return 'stale';
+    }
+    if (this._roundExpired(round)) return 'expired';
+    return null;
+  }
+
+  /**
+   * Whether `round` may seal now: directly above the sealed tip, or the
+   * lowest pending clock on an empty chain.
+   * @param {object} round
+   * @returns {{ ok: boolean, reason?: string }}
+   * @private
+   */
+  _roundSealable (round) {
+    const clock = roundClock(round);
+    const height = roundHeight(round);
+    if (!Number.isFinite(clock) || !Number.isFinite(height)) return { ok: false, reason: 'stale' };
+    const tip = this._sealedTipPayload();
+    if (tip) {
+      if (!(height > Number(tip.height)) || !(clock > Number(tip.clock))) return { ok: false, reason: 'stale' };
+      if (clock !== Number(tip.clock) + 1) return { ok: false, reason: 'out-of-order' };
+      return { ok: true };
+    }
+    for (const other of this._pendingEpochRounds.values()) {
+      if (other !== round && roundClock(other) < clock) return { ok: false, reason: 'out-of-order' };
+    }
+    return { ok: true };
+  }
+
+  /**
+   * Find a pending round in memory or the pending store, cancelling it when it
+   * can no longer seal.
+   * @param {string} digest
+   * @returns {{ round?: object|null, cancelled?: string }}
+   * @private
+   */
+  _lookupPendingRound (digest) {
+    if (!digest) return { round: null };
+    if (this._cancelledEpochRounds.has(digest)) {
+      return { cancelled: this._cancelledEpochRounds.get(digest) };
+    }
+    let round = this._pendingEpochRounds.get(digest) || null;
+    if (!round) {
+      const doc = beaconFederationSigning.loadPendingDoc(this.fs);
+      round = doc.rounds[digest] || null;
+      if (!round) return { round: null };
+      this._pendingEpochRounds.set(digest, round);
+    }
+    const reason = this._roundCancelReason(digest, round);
+    if (reason) {
+      this._cancelRoundForReason(round, reason);
+      return { cancelled: reason };
+    }
+    return { round };
+  }
+
+  /**
+   * @param {string} digest
+   * @param {string} reason
+   * @returns {object}
+   * @private
+   */
+  _cancelledRoundResult (digest, reason) {
+    return {
+      status: 'error',
+      cancelled: true,
+      reason,
+      commitmentDigest: digest,
+      message: `epoch round cancelled (${reason})`
+    };
+  }
+
+  /**
+   * Cancel rounds that fell below the sealed tip or outlived the TTL.
+   * @private
+   */
+  _sweepPendingRounds () {
+    for (const round of this._pendingRoundsByClock()) {
+      const digest = round.commitmentDigest;
+      if (!this._pendingEpochRounds.has(digest)) continue;
+      const reason = this._roundCancelReason(digest, round);
+      if (reason) this._cancelRoundForReason(round, reason);
+    }
+  }
+
   async _commitEpochWithFederation (epochBase) {
     const fullEpoch = this._mergeSidechainIntoEpoch(epochBase);
-    const localWitness = this._makeFederationWitnessForEpoch(fullEpoch);
 
     if (!this._federationValidators.length) {
-      const entry = this._buildEpochEntry(epochBase, null);
-      this._epochChain.append(entry);
+      const entry = this._appendSealedEpoch(fullEpoch, null);
       await this._persistEpochChain();
       return entry.payload;
     }
 
+    const localWitness = this._makeFederationWitnessForEpoch(fullEpoch);
     const round = beaconFederationSigning.createRound(
       fullEpoch,
       {
@@ -301,13 +642,13 @@ class Beacon extends Actor {
       localWitness
     );
 
-    if (beaconFederationSigning.roundMeetsThreshold(round)) {
-      const entry = this._buildEpochEntry(epochBase, round.witness);
-      this._epochChain.append(entry);
+    if (round.status === 'ready' && this._roundSealable(round).ok) {
+      const entry = this._appendSealedEpoch(round.payload, round.witness);
       await this._persistEpochChain();
       return entry.payload;
     }
 
+    this._cancelledEpochRounds.delete(round.commitmentDigest);
     this._pendingEpochRounds.set(round.commitmentDigest, round);
     try {
       const doc = beaconFederationSigning.loadPendingDoc(this.fs);
@@ -322,19 +663,16 @@ class Beacon extends Actor {
     return {
       pending: true,
       commitmentDigest: round.commitmentDigest,
-      payload: fullEpoch,
+      payload: round.payload,
       signRequest
     };
   }
 
   async submitFederationEpochSignature (commitmentDigest, pubkey, signatureHex) {
     const digest = String(commitmentDigest || '').trim();
-    let round = this._pendingEpochRounds.get(digest);
-    if (!round) {
-      const doc = beaconFederationSigning.loadPendingDoc(this.fs);
-      round = doc.rounds[digest] || null;
-      if (round) this._pendingEpochRounds.set(digest, round);
-    }
+    const found = this._lookupPendingRound(digest);
+    if (found.cancelled) return this._cancelledRoundResult(digest, found.cancelled);
+    const round = found.round;
     if (!round) {
       return { status: 'error', message: 'unknown pending epoch round' };
     }
@@ -400,53 +738,101 @@ class Beacon extends Actor {
       beaconFederationSigning.messageBufferForPayload(round.payload),
       round.witness,
       this._federationValidators,
-      this._federationThreshold
+      this._federationThreshold,
+      undefined,
+      { allowLegacy: false }
     );
   }
 
   /**
+   * Drop a round that is on the epoch chain from memory and the pending store.
+   * @param {string} digest
+   * @param {object} round
+   * @returns {Promise<object>}
+   * @private
+   */
+  async _finishAlreadySealedRound (digest, round) {
+    const persisted = await this._persistEpochChain();
+    if (!persisted) {
+      return {
+        status: 'error',
+        pending: true,
+        message: 'failed to persist epoch chain',
+        commitmentDigest: digest
+      };
+    }
+    this._pendingEpochRounds.delete(digest);
+    try {
+      const doc = beaconFederationSigning.loadPendingDoc(this.fs);
+      delete doc.rounds[digest];
+      await beaconFederationSigning.persistPendingDoc(this.fs, doc);
+    } catch (_) { /* ignore */ }
+    return {
+      status: 'success',
+      sealed: true,
+      commitmentDigest: digest,
+      payload: round.payload,
+      federationWitness: round.witness
+    };
+  }
+
+  /**
    * Persist a threshold-ready round onto the epoch chain. Idempotent if the
-   * digest is already sealed.
+   * digest is already sealed. A round that is not directly above the sealed tip
+   * stays `ready` and seals once the rounds below it do; a round whose block
+   * left the best chain (checked when Bitcoin RPC is attached) is cancelled.
    * @param {string} digest
    * @param {object} round
    * @returns {Promise<object>}
    * @private
    */
   async _finalizeReadyFederationRound (digest, round) {
-    if (this._epochAlreadySealed(digest, round)) {
-      const persisted = await this._persistEpochChain();
-      if (!persisted) {
+    if (this._epochAlreadySealed(digest, round)) return this._finishAlreadySealedRound(digest, round);
+    if (this._cancelledEpochRounds.has(digest)) {
+      return this._cancelledRoundResult(digest, this._cancelledEpochRounds.get(digest));
+    }
+
+    let order = this._roundSealable(round);
+    if (order.ok && this._canQueryBitcoin()) {
+      let onBest;
+      try {
+        onBest = await this._blockOnBestChain(roundHeight(round), round.payload.blockHash);
+      } catch (err) {
         return {
           status: 'error',
           pending: true,
-          message: 'failed to persist epoch chain',
-          commitmentDigest: digest
+          commitmentDigest: digest,
+          message: 'unable to confirm the epoch block is on the best chain: ' + (err && err.message ? err.message : err)
         };
       }
-      this._pendingEpochRounds.delete(digest);
-      try {
-        const doc = beaconFederationSigning.loadPendingDoc(this.fs);
-        delete doc.rounds[digest];
-        await beaconFederationSigning.persistPendingDoc(this.fs, doc);
-      } catch (_) { /* ignore */ }
+      if (!onBest) {
+        this._cancelRoundForReason(round, 'orphaned');
+        return this._cancelledRoundResult(digest, 'orphaned');
+      }
+      // The RPC yielded: re-check against whatever changed meanwhile.
+      if (this._cancelledEpochRounds.has(digest)) {
+        return this._cancelledRoundResult(digest, this._cancelledEpochRounds.get(digest));
+      }
+      if (this._epochAlreadySealed(digest, round)) return this._finishAlreadySealedRound(digest, round);
+      order = this._roundSealable(round);
+    }
+    if (!order.ok) {
+      if (order.reason === 'stale') {
+        this._cancelRoundForReason(round, 'stale');
+        return this._cancelledRoundResult(digest, 'stale');
+      }
       return {
         status: 'success',
-        sealed: true,
+        pending: true,
+        ready: true,
         commitmentDigest: digest,
-        payload: round.payload,
-        federationWitness: round.witness
+        message: 'threshold met; waiting for the epoch below it to seal',
+        signatureCount: Object.keys((round.witness && round.witness.signatures) || {}).length,
+        threshold: round.threshold
       };
     }
 
-    const message = Message.fromVector(['BEACON_EPOCH', JSON.stringify(round.payload)]);
-    if (this.key && this.key.private) message.signWithKey(this.key);
-    const entry = {
-      type: 'BEACON_EPOCH',
-      payload: round.payload,
-      id: message.id || null,
-      federationWitness: round.witness
-    };
-    this._epochChain.append(entry);
+    const entry = this._appendSealedEpoch(round.payload, round.witness);
     const persisted = await this._persistEpochChain();
     if (!persisted) {
       return {
@@ -467,6 +853,7 @@ class Beacon extends Actor {
     } catch (_) { /* ignore */ }
 
     this.emit('epoch', entry.payload);
+    await this._drainReadyFederationRounds();
     return {
       status: 'success',
       sealed: true,
@@ -474,6 +861,27 @@ class Beacon extends Actor {
       payload: entry.payload,
       federationWitness: entry.federationWitness
     };
+  }
+
+  /**
+   * Seal ready rounds that now sit directly above the sealed tip, in clock order.
+   * @returns {Promise<void>}
+   * @private
+   */
+  async _drainReadyFederationRounds () {
+    if (this._drainingRounds) return;
+    this._drainingRounds = true;
+    try {
+      for (;;) {
+        const next = this._pendingRoundsByClock().find((r) =>
+          r.status === 'ready' && this._roundSealable(r).ok);
+        if (!next || !this._recoveredRoundWitnessOk(next.commitmentDigest, next)) break;
+        const result = await this._finalizeReadyFederationRound(next.commitmentDigest, next);
+        if (!result || !result.sealed) break;
+      }
+    } finally {
+      this._drainingRounds = false;
+    }
   }
 
   /**
@@ -487,12 +895,14 @@ class Beacon extends Actor {
       const msgs = typeof this._epochChain.toBeaconMessages === 'function'
         ? this._epochChain.toBeaconMessages()
         : [];
+      const clock = round && round.payload ? round.payload.clock : null;
       return msgs.some((e) => {
         if (!e || !e.payload) return false;
+        // The digest commits to the clock, so only same-clock epochs can match.
+        if (clock != null && Number(e.payload.clock) !== Number(clock)) return false;
         try {
           return beaconFederationSigning.epochCommitmentDigestHex(e.payload) === digest;
         } catch (_) {
-          const clock = round && round.payload && round.payload.clock;
           return clock != null && e.payload.clock === clock;
         }
       });
@@ -503,7 +913,7 @@ class Beacon extends Actor {
 
   /**
    * Summaries of the epoch rounds still collecting witnesses.
-   * @returns {Object[]} `commitmentDigest`, `clock`, `blockHash`, `signatureCount`,
+   * @returns {Object[]} `commitmentDigest`, `clock`, `height`, `blockHash`, `signatureCount`,
    * `threshold`, `validators`, `status`, `createdAt` per round
    */
   listPendingFederationEpochRounds () {
@@ -512,6 +922,7 @@ class Beacon extends Actor {
       out.push({
         commitmentDigest: round.commitmentDigest,
         clock: round.payload && round.payload.clock,
+        height: round.payload && round.payload.height,
         blockHash: round.payload && round.payload.blockHash,
         signatureCount: Object.keys((round.witness && round.witness.signatures) || {}).length,
         threshold: round.threshold,
@@ -527,6 +938,7 @@ class Beacon extends Actor {
    * Adopt a peer {@link FederationSignRequest} into the pending map when the
    * commitment digest matches the epoch body. Validators use this so each node
    * can accumulate BIP340 signatures over the same deterministic payload.
+   * Refuses rounds this node cancelled and epochs at or below its sealed tip.
    *
    * @param {object} signRequest
    * @returns {Promise<Beacon.FederationRoundAdoption>}
@@ -557,20 +969,21 @@ class Beacon extends Actor {
       return { ok: false, error: 'federation signature scheme mismatch' };
     }
 
-    let round = this._pendingEpochRounds.get(digest);
-    if (!round) {
-      const doc = beaconFederationSigning.loadPendingDoc(this.fs);
-      round = doc.rounds[digest] || null;
-      if (round) this._pendingEpochRounds.set(digest, round);
+    const found = this._lookupPendingRound(digest);
+    if (found.cancelled) return { ok: false, error: `epoch round cancelled (${found.cancelled})` };
+    if (found.round) {
+      return { ok: true, round: found.round, created: false };
     }
-    if (round) {
-      return { ok: true, round, created: false };
+
+    const canonical = beaconFederationSigning.canonicalEpochForFederation(epoch);
+    if (this._roundCancelReason(digest, { commitmentDigest: digest, payload: canonical }) === 'stale') {
+      return { ok: false, error: 'epoch is not above the sealed tip' };
     }
 
     const validators = this._federationValidators.slice();
     const threshold = this._federationThreshold;
 
-    round = beaconFederationSigning.createRound(epoch, {
+    const round = beaconFederationSigning.createRound(epoch, {
       validators,
       threshold,
       signatureScheme: this._federationSignatureScheme
@@ -604,16 +1017,13 @@ class Beacon extends Actor {
     if (!this._federationValidators.length) {
       return { ok: false, error: 'no federation validators configured' };
     }
-    if (!this._federationValidators.includes(pk)) {
+    if (!this._isFederationValidator(pk)) {
       return { ok: false, error: 'local key is not a federation validator' };
     }
 
-    let round = this._pendingEpochRounds.get(digest);
-    if (!round) {
-      const doc = beaconFederationSigning.loadPendingDoc(this.fs);
-      round = doc.rounds[digest] || null;
-      if (round) this._pendingEpochRounds.set(digest, round);
-    }
+    const found = this._lookupPendingRound(digest);
+    if (found.cancelled) return { ok: false, error: `epoch round cancelled (${found.cancelled})` };
+    const round = found.round;
     if (!round) return { ok: false, error: 'unknown pending epoch round' };
 
     const msg = beaconFederationSigning.messageBufferForPayload(round.payload);
@@ -659,20 +1069,7 @@ class Beacon extends Actor {
     );
     if (idx < 0) return;
     this._epochChain.truncateAt(idx);
-    const last = this._epochChain.tip;
-    if (last && last.payload) {
-      this._state.content.clock = last.payload.clock != null ? last.payload.clock : 0;
-      this._state.content.lastBlockHash = last.payload.blockHash || null;
-      this._state.content.height = last.payload.height != null ? last.payload.height : 0;
-      this._state.content.balance = last.payload.balance != null ? last.payload.balance : 0;
-      this._state.content.balanceSats = last.payload.balanceSats != null ? last.payload.balanceSats : 0;
-    } else {
-      this._state.content.clock = 0;
-      this._state.content.lastBlockHash = null;
-      this._state.content.height = 0;
-      this._state.content.balance = 0;
-      this._state.content.balanceSats = 0;
-    }
+    this._restoreStateFromTip();
     this.emit('error', new Error(
       `[BEACON] Fail-closed: truncated epoch chain before clock ${firstBad.clock} (${result.failures.length} invalid witness(es))`
     ));
@@ -686,18 +1083,41 @@ class Beacon extends Actor {
       const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
       if (!parsed || !Array.isArray(parsed.messages)) return;
       this._epochChain = Chain.fromBeaconMessages(parsed.messages);
-      const last = this._epochChain.tip;
-      if (last && last.payload && Number.isFinite(last.payload.clock)) {
-        this._state.content.clock = last.payload.clock;
-        this._state.content.lastBlockHash = last.payload.blockHash || null;
-        this._state.content.height = last.payload.height != null ? last.payload.height : 0;
-        this._state.content.balance = last.payload.balance != null ? last.payload.balance : 0;
-        this._state.content.balanceSats = last.payload.balanceSats != null ? last.payload.balanceSats : 0;
-      }
+      this._restoreStateFromTip();
       this._verifyEpochWitnessesIfConfigured();
     } catch (err) {
       this.emit('warning', '[BEACON] Failed to load epoch chain from filesystem:', err && err.message ? err.message : err);
     }
+  }
+
+  /**
+   * Load stored pending rounds, dropping ones already sealed and cancelling
+   * ones that can no longer seal.
+   * @returns {Promise<void>}
+   * @private
+   */
+  async _loadPendingRoundsFromFilesystem () {
+    const doc = beaconFederationSigning.loadPendingDoc(this.fs);
+    let changed = false;
+    for (const digest of Object.keys(doc.rounds)) {
+      if (this._pendingEpochRounds.has(digest)) continue;
+      const round = doc.rounds[digest];
+      if (!round || !round.payload || this._cancelledEpochRounds.has(digest) || this._epochAlreadySealed(digest, round)) {
+        delete doc.rounds[digest];
+        changed = true;
+        continue;
+      }
+      this._pendingEpochRounds.set(digest, round);
+    }
+    if (changed) {
+      try {
+        await beaconFederationSigning.persistPendingDoc(this.fs, doc);
+      } catch (err) {
+        this.emit('warning', '[BEACON] Failed to persist pending epoch rounds:', err && err.message ? err.message : err);
+      }
+    }
+    this._sweepPendingRounds();
+    this._restoreStateFromTip();
   }
 
   _computeMerkleRoot () {
@@ -717,100 +1137,70 @@ class Beacon extends Actor {
     }
   }
 
-  async createEpoch () {
-    if (!this.bitcoin) throw new Error('Beacon has no Bitcoin service attached.');
-
-    const address = await this.bitcoin.getUnusedAddress();
-    const generated = await this.bitcoin._makeRPCRequest('generatetoaddress', [1, address]);
-    const blockHash = Array.isArray(generated) ? generated[0] : generated;
-    const height = await this.bitcoin._makeRPCRequest('getblockcount', []);
-    const balances = await this.bitcoin._makeRPCRequest('getbalances', []).catch(() => null);
-    const trusted = (balances && balances.mine && balances.mine.trusted != null) ? Number(balances.mine.trusted) : 0;
-    const balanceSats = Math.round(trusted * SATS_PER_BTC);
-
-    this._state.content.clock += 1;
-    this._state.content.lastBlockHash = blockHash || null;
-    this._state.content.height = Number(height || 0);
-    this._state.content.balance = trusted;
-    this._state.content.balanceSats = balanceSats;
-
-    // Federation-signed epochs are L1 tip + digests only (deterministic across validators).
-    const epoch = this._federationValidators.length
-      ? {
-        clock: this._state.content.clock,
-        blockHash: this._state.content.lastBlockHash,
-        height: this._state.content.height
-      }
-      : {
-        clock: this._state.content.clock,
-        blockHash: this._state.content.lastBlockHash,
-        height: this._state.content.height,
-        balance: trusted,
-        balanceSats,
-        timestamp: new Date().toISOString()
-      };
-
-    let committedPayload = epoch;
-    try {
-      committedPayload = await this._commitEpochWithFederation(epoch);
-    } catch (err) {
-      this.emit('error', err);
-    }
-
-    if (!(committedPayload && committedPayload.pending)) {
-      this.emit('epoch', committedPayload);
-    }
-    return committedPayload;
-  }
-
-  _pruneEpochChain (inclusiveMaxHeight) {
-    const maxH = Number(inclusiveMaxHeight);
-    if (!Number.isFinite(maxH)) return;
-
-    const { pruned, removedBeaconClocks } = this._epochChain.pruneByBeaconHeight(maxH);
-    if (pruned === 0) return;
-
-    const last = this._epochChain.tip;
-    if (last && last.payload) {
-      this._state.content.clock = last.payload.clock != null ? last.payload.clock : 0;
-      this._state.content.lastBlockHash = last.payload.blockHash || null;
-      this._state.content.height = last.payload.height != null ? last.payload.height : 0;
-      this._state.content.balance = last.payload.balance != null ? last.payload.balance : 0;
-      this._state.content.balanceSats = last.payload.balanceSats != null ? last.payload.balanceSats : 0;
-    } else {
-      this._state.content.clock = 0;
-      this._state.content.lastBlockHash = null;
-      this._state.content.height = 0;
-      this._state.content.balance = 0;
-      this._state.content.balanceSats = 0;
-    }
-    this.emit('reorg', { pruned, inclusiveMaxHeight, removedBeaconClocks });
+  /**
+   * `getblockchaininfo().chain` of the attached bitcoind, cached per service.
+   * @returns {Promise<string>}
+   * @private
+   */
+  async _bitcoinChainName () {
+    const cached = this._bitcoinChainInfo;
+    if (cached && cached.bitcoin === this.bitcoin) return cached.chain;
+    const info = await this.bitcoin._makeRPCRequest('getblockchaininfo', []);
+    const chain = info && info.chain != null ? String(info.chain) : '';
+    this._bitcoinChainInfo = { bitcoin: this.bitcoin, chain };
+    return chain;
   }
 
   /**
-   * Drop the tip epoch (another block at the same height won) and restore
-   * state from the epoch below it.
+   * Regtest only: mine one block and record its epoch through the same queue
+   * (and duplicate checks) as followed blocks, so a block seen both here and
+   * via `block` events gets one epoch.
+   * @returns {Promise<Object|null>} committed payload, pending result, or null when not recorded
+   */
+  async createEpoch () {
+    if (!this.bitcoin) throw new Error('Beacon has no Bitcoin service attached.');
+
+    const chain = await this._bitcoinChainName();
+    if (chain !== 'regtest') {
+      throw new Error(`[BEACON] createEpoch mines blocks and only runs against regtest (bitcoind chain: ${chain || 'unknown'})`);
+    }
+    const address = await this.bitcoin.getUnusedAddress();
+    const generated = await this.bitcoin._makeRPCRequest('generatetoaddress', [1, address]);
+    const blockHash = Array.isArray(generated) ? generated[0] : generated;
+    if (!blockHash) throw new Error('[BEACON] generatetoaddress returned no block; epoch not recorded');
+    const height = Number(await this.bitcoin._makeRPCRequest('getblockcount', []));
+    return this._enqueueBlockWork(() => this._recordEpochFromBlock({ tip: String(blockHash), height }));
+  }
+
+  /**
+   * Drop sealed epochs above `inclusiveMaxHeight`, cancel pending rounds above
+   * it, and restore live state.
+   * @param {number} inclusiveMaxHeight
+   * @returns {number} sealed epochs removed
+   * @private
+   */
+  _pruneEpochChain (inclusiveMaxHeight) {
+    const maxH = Number(inclusiveMaxHeight);
+    if (!Number.isFinite(maxH)) return 0;
+
+    const { pruned, removedBeaconClocks } = this._epochChain.pruneByBeaconHeight(maxH);
+    this._cancelRoundsFromHeight(maxH + 1, 'reorg');
+    this._restoreStateFromTip();
+    if (pruned > 0) this.emit('reorg', { pruned, inclusiveMaxHeight, removedBeaconClocks });
+    return pruned;
+  }
+
+  /**
+   * Drop the tip epoch (another block at the same height won), cancel rounds
+   * at or above its height, and restore state.
    * @private
    */
   _dropTipEpoch () {
     const popped = this._epochChain.pop();
-    const poppedClock = popped && popped.payload && popped.payload.clock != null
-      ? Number(popped.payload.clock)
-      : null;
-    const last = this._epochChain.tip;
-    if (last && last.payload) {
-      this._state.content.clock = last.payload.clock != null ? last.payload.clock : 0;
-      this._state.content.lastBlockHash = last.payload.blockHash || null;
-      this._state.content.height = last.payload.height != null ? last.payload.height : 0;
-      this._state.content.balance = last.payload.balance != null ? last.payload.balance : 0;
-      this._state.content.balanceSats = last.payload.balanceSats != null ? last.payload.balanceSats : 0;
-    } else if (!this._epochChain.height) {
-      this._state.content.clock = 0;
-      this._state.content.lastBlockHash = null;
-      this._state.content.height = 0;
-      this._state.content.balance = 0;
-      this._state.content.balanceSats = 0;
-    }
+    const payload = popped && popped.payload ? popped.payload : null;
+    const poppedClock = payload && payload.clock != null ? Number(payload.clock) : null;
+    if (payload && payload.height != null) this._cancelRoundsFromHeight(Number(payload.height), 'reorg');
+    this._restoreStateFromTip();
     this.emit('reorg', {
       pruned: 1,
       sameHeight: true,
@@ -818,50 +1208,148 @@ class Beacon extends Actor {
     });
   }
 
-  async recordEpochFromBlock (payload = {}) {
-    if (!this.bitcoin) throw new Error('Beacon has no Bitcoin service attached.');
+  /**
+   * Walk back from the sealed tip while its block is off the best chain
+   * (at most `maxReorgDepth` epochs), prune to the fork point, then cancel
+   * pending rounds whose blocks left the best chain. RPC failures throw before
+   * anything is pruned.
+   * @returns {Promise<{ pruned: number, cancelled: number }>}
+   * @private
+   */
+  async _reconcileWithBestChain () {
+    if (!this._canQueryBitcoin()) return { pruned: 0, cancelled: 0 };
+    const sealed = this._epochChain.toBeaconMessages();
+    if (!sealed.length && !this._pendingEpochRounds.size) return { pruned: 0, cancelled: 0 };
 
-    const blockHash = payload.tip || null;
-    const height = payload.height != null
-      ? Number(payload.height)
-      : (await this.bitcoin._makeRPCRequest('getblockcount', []));
+    const best = Number(await this.bitcoin._makeRPCRequest('getblockcount', []));
+    if (!Number.isFinite(best)) throw new Error('[BEACON] getblockcount returned no height');
+    const maxDepth = Math.max(1, Number(this.settings.maxReorgDepth) || 100);
+
+    let keep = sealed.length;
+    let walked = 0;
+    while (keep > 0) {
+      const p = sealed[keep - 1].payload || {};
+      const h = Number(p.height);
+      if (!p.blockHash || !Number.isFinite(h)) break;
+      if (await this._blockOnBestChain(h, p.blockHash, best)) break;
+      walked += 1;
+      if (walked > maxDepth) {
+        throw new Error(`[BEACON] reorg deeper than maxReorgDepth (${maxDepth} epochs); epoch chain left as is`);
+      }
+      keep -= 1;
+    }
+
+    let pruned = 0;
+    if (keep < sealed.length) {
+      const forkHeight = keep > 0 ? Number(sealed[keep - 1].payload.height) : -1;
+      pruned = this._pruneEpochChain(forkHeight);
+    }
+
+    const tip = this._sealedTipPayload();
+    const tipHeight = tip ? Number(tip.height) : -Infinity;
+    let orphanFrom = null;
+    for (const round of this._pendingRoundsByClock()) {
+      const h = roundHeight(round);
+      if (!(h > tipHeight)) continue;
+      if (!(await this._blockOnBestChain(h, round.payload.blockHash, best))) {
+        orphanFrom = h;
+        break;
+      }
+    }
+    let cancelled = 0;
+    if (orphanFrom != null) {
+      cancelled = this._cancelRoundsFromHeight(orphanFrom, 'orphaned').length;
+      this._restoreStateFromTip();
+    }
+    return { pruned, cancelled };
+  }
+
+  /**
+   * Record the epoch for one L1 block. Serialized with followed blocks and
+   * `createEpoch`, so a block delivered twice gets one epoch.
+   * @param {Object} [payload]
+   * @param {string} [payload.tip] block hash (looked up from `height` when omitted)
+   * @param {number} [payload.height] block height (best height when omitted)
+   * @returns {Promise<Object|null>} committed payload, pending result, or null when not recorded
+   */
+  recordEpochFromBlock (payload = {}) {
+    if (!this.bitcoin) return Promise.reject(new Error('Beacon has no Bitcoin service attached.'));
+    return this._enqueueBlockWork(() => this._recordEpochFromBlock(payload));
+  }
+
+  /**
+   * @param {Object} payload
+   * @returns {Promise<Object|null>}
+   * @private
+   */
+  async _recordEpochFromBlock (payload = {}) {
+    if (!this.bitcoin) throw new Error('Beacon has no Bitcoin service attached.');
+    const p = payload || {};
+
+    const height = p.height != null
+      ? Number(p.height)
+      : Number(await this.bitcoin._makeRPCRequest('getblockcount', []));
+    if (!Number.isFinite(height)) throw new Error('[BEACON] block height unavailable; epoch not recorded');
+    let blockHash = p.tip || null;
+    if (!blockHash) blockHash = await this.bitcoin._makeRPCRequest('getblockhash', [height]);
+    if (!blockHash) throw new Error('[BEACON] block hash unavailable; epoch not recorded');
+    blockHash = String(blockHash);
+
+    this._sweepPendingRounds();
+    await this._drainReadyFederationRounds();
+
+    const s = this._state.content;
+    if (height <= s.height && blockHash === s.lastBlockHash) {
+      return null;
+    }
+
+    if (!(await this._blockOnBestChain(height, blockHash))) {
+      this.emit('warning', `[BEACON] Block ${blockHash} at height ${height} is not on the best chain; epoch not recorded`);
+      return null;
+    }
+
+    if (height < s.height) {
+      const pruned = this._pruneEpochChain(height);
+      // The prune keeps the epoch (or pending round) at `height`: either this
+      // block, or the losing branch's block at that height (handled below).
+      if (s.height === height && s.lastBlockHash === blockHash) {
+        if (pruned) await this._persistEpochChain();
+        return null;
+      }
+    }
+    if (height === s.height && blockHash !== s.lastBlockHash) {
+      const tip = this._sealedTipPayload();
+      if (tip && Number(tip.height) === height) {
+        this._dropTipEpoch();
+      } else {
+        this._cancelRoundsFromHeight(height, 'reorg');
+        this._restoreStateFromTip();
+      }
+    }
+
+    await this._reconcileWithBestChain();
+
     const balances = await this.bitcoin._makeRPCRequest('getbalances', []).catch(() => null);
     const trusted = (balances && balances.mine && balances.mine.trusted != null) ? Number(balances.mine.trusted) : 0;
     const balanceSats = Math.round(trusted * SATS_PER_BTC);
 
-    if (height <= this._state.content.height && blockHash === this._state.content.lastBlockHash) {
-      return null;
-    }
+    s.clock += 1;
+    s.lastBlockHash = blockHash;
+    s.height = height;
+    s.balance = trusted;
+    s.balanceSats = balanceSats;
 
-    if (height < this._state.content.height) {
-      this._pruneEpochChain(height);
-      // The prune keeps the epoch at `height`: it is either this block or the
-      // losing branch's block at that height.
-      const kept = this._epochChain.tip;
-      if (kept && kept.payload && Number(kept.payload.height) === height) {
-        if (blockHash === kept.payload.blockHash) return null;
-        this._dropTipEpoch();
-      }
-    } else if (height === this._state.content.height && blockHash !== this._state.content.lastBlockHash) {
-      this._dropTipEpoch();
-    }
-
-    this._state.content.clock += 1;
-    this._state.content.lastBlockHash = blockHash;
-    this._state.content.height = height;
-    this._state.content.balance = trusted;
-    this._state.content.balanceSats = balanceSats;
-
+    // Federation-signed epochs are L1 tip + digests only (deterministic across validators).
     const epoch = this._federationValidators.length
       ? {
-        clock: this._state.content.clock,
-        blockHash: this._state.content.lastBlockHash,
-        height: this._state.content.height
+        clock: s.clock,
+        blockHash: s.lastBlockHash,
+        height: s.height
       }
       : {
-        clock: this._state.content.clock,
-        blockHash: this._state.content.lastBlockHash,
-        height: this._state.content.height,
+        clock: s.clock,
+        blockHash: s.lastBlockHash,
+        height: s.height,
         balance: trusted,
         balanceSats,
         timestamp: new Date().toISOString()
@@ -892,7 +1380,8 @@ class Beacon extends Actor {
   }
 
   /**
-   * Restore the epoch chain, then mine on the interval (regtest) and/or follow L1 tips.
+   * Restore the epoch chain and pending rounds, prune epochs whose blocks left
+   * the best chain, then mine on the interval (regtest) and/or follow L1 tips.
    * Idempotent while running.
    * @returns {Promise<Beacon>}
    */
@@ -901,6 +1390,19 @@ class Beacon extends Actor {
     this._state.content.status = 'RUNNING';
 
     await this._loadEpochChainFromFilesystem();
+    await this._loadPendingRoundsFromFilesystem();
+    this._warnIfThresholdClamped();
+
+    if (this._canQueryBitcoin()) {
+      await this._enqueueBlockWork(async () => {
+        try {
+          const result = await this._reconcileWithBestChain();
+          if (result.pruned) await this._persistEpochChain();
+        } catch (err) {
+          this.emit('error', err);
+        }
+      });
+    }
 
     const isRegtest = this.settings.regtest !== false;
     const followBlocks = this._shouldFollowBitcoinBlocks();
@@ -936,16 +1438,34 @@ class Beacon extends Actor {
   }
 
   /**
+   * Run `work` after every queued block job. The returned promise settles with
+   * `work`; the queue itself never rejects.
+   * @param {function(): Promise<*>} work
+   * @returns {Promise<*>}
+   * @private
+   */
+  _enqueueBlockWork (work) {
+    const run = (this._blockQueue || Promise.resolve()).then(() => work());
+    this._blockQueue = run.then(() => {}, () => {});
+    return run;
+  }
+
+  /**
    * Serialize block-follow work so an older tip never finishes after a newer one.
+   * Errors are emitted, not thrown.
    * @param {Object|null} payload `{ tip, height }` from Bitcoin, or null to prime from the best tip
-   * @returns {Promise<void>}
+   * @returns {Promise<Object|null>}
    * @private
    */
   _enqueueBlockFollow (payload) {
-    this._blockQueue = (this._blockQueue || Promise.resolve())
-      .then(() => this._followBlock(payload))
-      .catch((err) => this.emit('error', err));
-    return this._blockQueue;
+    return this._enqueueBlockWork(async () => {
+      try {
+        return await this._followBlock(payload);
+      } catch (err) {
+        this.emit('error', err);
+        return null;
+      }
+    });
   }
 
   /**
@@ -963,7 +1483,7 @@ class Beacon extends Actor {
     if (!payload) {
       const tip = await this.bitcoin._makeRPCRequest('getbestblockhash', []);
       const height = await this.bitcoin._makeRPCRequest('getblockcount', []);
-      return this.recordEpochFromBlock({ tip, height });
+      return this._recordEpochFromBlock({ tip, height });
     }
     const height = payload.height != null ? Number(payload.height) : null;
     if (height != null && payload.tip && height < this._state.content.height) {
@@ -973,7 +1493,7 @@ class Beacon extends Actor {
         if (atHeight && String(atHeight) === String(payload.tip)) return null;
       }
     }
-    return this.recordEpochFromBlock(payload);
+    return this._recordEpochFromBlock(payload);
   }
 
   /**

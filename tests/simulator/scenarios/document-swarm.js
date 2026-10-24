@@ -7,7 +7,7 @@ const {
   DocumentBlobTransferBook,
   parseFileSendObject
 } = require('../../../functions/documentBlobManifest');
-const { DocumentOfferBook } = require('../../../functions/documentMarket');
+const { Book } = require('../../../functions/documentMarket');
 const { blobPaymentHashHex } = require('../../../functions/documentBlobManifest');
 
 const packs = composeUseCases(['document-market', 'gossip']);
@@ -119,7 +119,7 @@ module.exports = {
     }
 
     // Offer book payment binding: sealed inventory uses SHA256(K) as contentHash.
-    const offers = new DocumentOfferBook();
+    const offers = new Book();
     const sealedMeta = seller._getDocumentSealedMeta('sim/large');
     const blobHashHex = split.blobs[0].blobHashHex;
     const pay = sealedMeta

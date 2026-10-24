@@ -5,6 +5,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include "errors.h"
+#include "constants.h"
 
 /**
  * @file validation.h
@@ -20,7 +21,7 @@
 #define FABRIC_MAX_PEER_ID_LENGTH 64
 #define FABRIC_MAX_IP_ADDRESS_LENGTH 45  // IPv6 max length
 #define FABRIC_MAX_HOSTNAME_LENGTH 253   // DNS hostname max
-#define FABRIC_MAX_MESSAGE_SIZE 65536    // 64KB max message
+#define FABRIC_MAX_MESSAGE_SIZE FABRIC_MAX_MESSAGE_BODY  // AMP body cap (header excluded)
 #define FABRIC_MAX_PATH_LENGTH 4096      // Maximum file path length
 
 // Port number ranges

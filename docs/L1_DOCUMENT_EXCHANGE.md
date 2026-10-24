@@ -31,7 +31,7 @@ Operator document exchange is standardized on the Fabric CLI packs
 | Name | Where | Meaning |
 |------|-------|---------|
 | **`FABRIC_DOCUMENT_OFFER`** | Wire envelope (`publishedDocumentEnvelope`) | Inventory-request JSON `type` alias for catalog/terms |
-| **`DocumentOfferBook`** | `@fabric/core` (`documentMarket`) | Ranked local book of seller listings after `/inventory … btc` |
+| **`Book`** | `@fabric/core/types/book` (re-exported by `documentMarket`) | Ranked local book of seller listings after `/inventory … btc` |
 | **Hub sidechain `DocumentOffer`** | Hub Beacon / reward flows | Application-state reward offer — **not** this inventory envelope |
 | **HTTP 402 `documentOffer`** | `@fabric/http` | Payment-request summary for web/extension auto-pay |
 
@@ -59,7 +59,7 @@ HTTP **402** + `X-Fabric-Payment-Request` mapping: `@fabric/http`
 
 | Area | Status | Notes |
 |------|--------|--------|
-| Inventory + offer book | Implemented | `/inventory [peer] [btc]` ingests into `DocumentOfferBook`; `/offers` ranks by price/latency/score/completeness |
+| Inventory + offer book | Implemented | `/inventory [peer] [btc]` ingests into `Book`; `/offers` ranks by price/latency/score/completeness |
 | Multi-blob | Implemented | Indexed wire-sized `P2P_FILE_SEND`; Tree verify; priced docs **sealed-until-claim** (AES-GCM; HTLC = SHA256(K); key reveal only on matching payment hash) |
 | Consent file path | Implemented | `/request` → `/pending` → `/approve` / `/deny`; `autoFulfillDocumentRequests` off in CLI |
 | L1 buy/confirm | Implemented | `/buy` session + `/confirm <id> <txid>` (local L1 verify and/or Hub `ConfirmInventoryHtlcPayment`) via `CliDocumentExchange` |
@@ -129,7 +129,7 @@ A `Document` is a Tree over wire-sized blobs. When sealed, **every blob has its 
 
 A one-blob document is indistinguishable from any other blob. The wire carries **hashes, public keys, and signatures only**:
 
-- `Document#record()` / `Document#inventoryItem()` have no `name`, `mime`, `url`, or `title`; each inventory blob's `contentHashHex` is `paymentHashHex_i`, so the existing `DocumentOfferBook` builds one HTLC per blob and a **multi-seller** plan.
+- `Document#record()` / `Document#inventoryItem()` have no `name`, `mime`, `url`, or `title`; each inventory blob's `contentHashHex` is `paymentHashHex_i`, so the existing `Book` builds one HTLC per blob and a **multi-seller** plan.
 - `DocumentPublish` envelope is unchanged (`whitelistedDocumentFields` still has `name` / `mime` / `size`); publishers fill `name` with the blob hash and `mime` with `application/octet-stream` (already the defaults). Applications must not copy titles back into the envelope.
 - Human-readable metadata lives in a **manifest blob**: `Document.encodeManifest({ title, url, mime, merkleRootHex, … })` → canonical JSON → sealed as its own one-blob `Document` and bought like any other chunk (`Document.decodeManifest` on the buyer). The content tree's root inside the manifest is what links the two.
 
@@ -140,7 +140,7 @@ Wire path (no new opcodes):
 3. Seller `P2P_FILE_SEND` frame for blob `i` (`sealed: true, perBlob: true, paymentHashHex, iv`) then **one existing `DocumentContentKeyReveal` per blob** (`object.blobIndex`, `object.blobHashHex` added to the same body).
 4. Buyer `Peer` keeps `pendingSealedBlobs[documentId|merkleRootHex]`, opens each blob on its reveal (`documentBlobOpened`) — or with a key learned on a payment channel (`openSealedBlobWithKey`, `sealedBlobKeyForPaymentHash`) — and emits `documentReceived` / `documentOpened` once all blobs open and the Tree root matches. `Document.fromRecord(record)` + `acceptBytes` / `openBlob` do the same outside a Peer (Hub, GoonCitizen, Passport).
 
-Reassembly rules (the first frame never dictates the shape): every per-blob frame must carry a 64-hex `merkleRootHex` and a sane `blobTotal` (≤ `PEER_MAX_SEALED_BLOB_PARTS`); frames whose root / total differ from the row already being assembled, or from what `blobTransfers.expectTransfer` registered for the purchase, are rejected; a row may collect parts from several sellers (swarm plans), so origin is recorded per part rather than locked per row; an index already held with a different `blobHashHex` is never overwritten; rows are capped by count (`PEER_MAX_PENDING_SEALED_DELIVERIES`), by total held frame bytes (`PEER_MAX_PENDING_SEALED_BYTES`), and expire after `PEER_PENDING_SEALED_TTL_MS`. Each held part keeps the raw signed `P2P_FILE_SEND` frame (exposed as `frameHex`) so a `wrong-bytes` fraud proof can cite the seller's own signature. On the buying side, `DocumentOfferBook#pickBest` / `pickBlobPlan` filter listed offers by the wanted `merkleRootHex` (or lock to the first pick's root) so a plan never mixes blobs from two trees.
+Reassembly rules (the first frame never dictates the shape): every per-blob frame must carry a 64-hex `merkleRootHex` and a sane `blobTotal` (≤ `PEER_MAX_SEALED_BLOB_PARTS`); frames whose root / total differ from the row already being assembled, or from what `blobTransfers.expectTransfer` registered for the purchase, are rejected; a row may collect parts from several sellers (swarm plans), so origin is recorded per part rather than locked per row; an index already held with a different `blobHashHex` is never overwritten; rows are capped by count (`PEER_MAX_PENDING_SEALED_DELIVERIES`), by total held frame bytes (`PEER_MAX_PENDING_SEALED_BYTES`), and expire after `PEER_PENDING_SEALED_TTL_MS`. Each held part keeps the raw signed `P2P_FILE_SEND` frame (exposed as `frameHex`) so a `wrong-bytes` fraud proof can cite the seller's own signature. On the buying side, `Book#pickBest` / `pickBlobPlan` filter listed offers by the wanted `merkleRootHex` (or lock to the first pick's root) so a plan never mixes blobs from two trees.
 
 Presentation: `Document#compile([env, ui])` still emits the Jade fragment `extends <env> / block body / <ui>(state="<id>") {{state}}`; `@fabric/http` `components/document.js` (`fabric-document`) renders the hash-only record plus ranked offers, and only shows manifest / content client-side after the keys are held.
 
@@ -176,7 +176,7 @@ Publisher bounties and provider deposits are **Taproot scripts only** (no custod
   - `wrongful-penalty` — the honest challenge/response pair plus the **signed penalty transaction** that spent the challenge's deposit outpoint through the deposit's 2-of-2 `penalty` leaf (`penaltyTxHex`; an honest `checkin` or the provider's `withdraw` also spends the outpoint and never verifies), and broadcast evidence exactly as for `stale-commitment` (`evidence: 'inclusion' | 'chain-view'`). The penalized party can always publish it.
   - `stale-commitment` — the offender's signed `ChannelRevoke` plus the broadcast commitment **and** broadcast evidence: a `BitcoinTxInclusion` SPV artifact (`functions/bitcoinTxInclusion.js`: 80-byte header meeting its own `bits` proof-of-work target + Merkle branch, depth pinned by `txCount`, CVE-2012-2459 duplicate nodes rejected) **whose header the verifier knows** (`ctx.headerKnown(blockHash)`), or `ctx.txConfirmed(txid)` (`evidence: 'inclusion' | 'chain-view'`). An inclusion artifact alone never verifies; 64-byte transactions are refused.
   `DepositPenaltyPreSig` destinations are the publisher's: `Challenge.issue({ deposit: { penaltyAddress, minPenaltySats } })` signs them, and `Witness.verifyPenaltyPreSig` (and `Bond#recordRound` / `finalizePreSignedPenalty`) refuse a pre-signature that does not pay at least `minPenaltySats` to `penaltyAddress`.
-  `DocumentOfferBook#ingestFraudProof` penalizes the offender **locally**; reputation is never gossiped.
+  `Book#ingestFraudProof` penalizes the offender **locally**; reputation is never gossiped.
 - Bodies `AvailabilityCommitment` / `AvailabilityChallenge` / `AvailabilityResponse` / `FraudProof` ride `CONTRACT_MESSAGE` under `SHA256('fabric-document-market')` as `Witness.signArtifact` artifacts (x-only BIP340 pubkey + signature; canonical form is the JSON round trip, so bodies verify after the wire).
 
 ## Fabric payment channels (`types/channel.js`) — Phase 4

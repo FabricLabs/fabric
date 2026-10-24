@@ -15,7 +15,49 @@ describe('@fabric/core/types/promise', function () {
       const p = new EncryptedPromise({ value: 'hello' });
       assert.strictEqual(p._state.state, 'UNSAFE');
       assert.strictEqual(p.state.seal, null);
-      assert.strictEqual(p.id, crypto.createHash('sha256').update('hello').digest('hex'));
+      assert.match(p.id, /^[0-9a-f]{64}$/);
+    });
+
+    it('never derives the id from the plaintext', function () {
+      const a = new EncryptedPromise({ value: 'hello' });
+      const b = new EncryptedPromise({ value: 'hello' });
+      const plainHash = crypto.createHash('sha256').update('hello').digest('hex');
+      assert.notStrictEqual(a.id, plainHash);
+      assert.notStrictEqual(a.id, b.id);
+      assert.strictEqual(a.id, a.id);
+    });
+
+    it('derives the id from the ciphertext once sealed', function () {
+      const p = new EncryptedPromise({ value: 'hello' });
+      const before = p.id;
+      p.encrypt(PASSWORD);
+      assert.notStrictEqual(p.id, before);
+      assert.strictEqual(p.id, crypto.createHash('sha256').update(p.state.seal.ciphertext).digest('hex'));
+      p.decrypt(PASSWORD);
+      assert.strictEqual(p.id, crypto.createHash('sha256').update(p.state.seal.ciphertext).digest('hex'));
+    });
+
+    it('drops the plaintext after encrypting', function () {
+      const p = new EncryptedPromise({ value: 'drop me', password: PASSWORD });
+      assert.strictEqual(p._state.data, null);
+      assert.throws(() => p.encrypt(PASSWORD), /Nothing to encrypt/);
+      assert.strictEqual(p.decrypt(PASSWORD), 'drop me');
+    });
+
+    it('rejects envelopes over the PBKDF2 iteration cap', function () {
+      const p = new EncryptedPromise({ value: 'x', password: PASSWORD });
+      const kdf = Object.assign({}, p.state.seal.kdf, { iterations: EncryptedPromise.MAX_PBKDF2_ITERATIONS + 1 });
+      const seal = Object.assign({}, p.state.seal, { kdf });
+      assert.throws(() => new EncryptedPromise({ seal }), /iteration count/);
+      const restored = new EncryptedPromise({ seal: p.state.seal });
+      restored._state.seal = seal;
+      assert.throws(() => restored.decrypt(PASSWORD), /iteration count/);
+    });
+
+    it('accepts envelopes at the PBKDF2 iteration cap', function () {
+      const { sealJson } = require('../functions/sealedBlob');
+      const seal = sealJson('at cap', PASSWORD, { type: 'EncryptedPromise', iterations: EncryptedPromise.MAX_PBKDF2_ITERATIONS });
+      assert.strictEqual(new EncryptedPromise({ seal }).decrypt(PASSWORD), 'at cap');
     });
 
     it('resolve returns id and message', function () {
@@ -120,9 +162,12 @@ describe('@fabric/core/types/promise', function () {
 
     it('seals and restores the secret', function () {
       const s = new Secret({ password: PASSWORD });
+      assert.strictEqual(s.hash, null);
       const restored = new Secret({ seal: s.state.seal });
       assert.strictEqual(restored.hash, null);
       restored.decrypt(PASSWORD);
+      s.decrypt(PASSWORD);
+      assert.match(restored.hash, /^[0-9a-f]{64}$/);
       assert.strictEqual(restored.hash, s.hash);
     });
   });

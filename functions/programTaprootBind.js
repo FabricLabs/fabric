@@ -9,6 +9,11 @@
  * preimage; a preimage-only leaf (anyone who learns the preimage can spend)
  * needs an explicit `allowPreimageOnly: true`.
  *
+ * That guard lives here only. Passing `hashlockFromProgramRun(run)` (or any
+ * `{ hashlock }` without `pubkeyHex`) straight to
+ * `contractTaproot.composeTaprootTree` still builds a preimage-only leaf unless
+ * the caller also sets `hashlock.requirePubkey: true`.
+ *
  * @fileoverview Program run → Taproot hashlock composition.
  * @module functions/programTaprootBind
  * @see docs/PROGRAM.md

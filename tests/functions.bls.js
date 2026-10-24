@@ -58,17 +58,60 @@ describe('@fabric/core/functions/bls', function () {
     assert.strictEqual(bls.verifyFederationBlsBundle(message, other.pubkey, bundle), false);
   });
 
-  it('requires a domain-tagged link and bundle version 1', function () {
+  it('signs v2 bundles with a domain-tagged link', function () {
     const key = new Key({ private: secretA.toString('hex') });
     const message = Buffer.from('epoch signing string', 'utf8');
     const bundle = bls.createFederationBlsBundle(message, key);
-    assert.strictEqual(bls.BUNDLE_VERSION, 1);
-    assert.strictEqual(bundle.v, 1);
-    const untagged = key.signSchnorr(Buffer.from(bundle.blsPublicKey, 'hex'));
-    assert.strictEqual(bls.verifyFederationBlsBundle(message, key.pubkey, Object.assign({}, bundle, {
-      link: Buffer.from(untagged).toString('hex')
-    })), false);
-    assert.strictEqual(bls.verifyFederationBlsBundle(message, key.pubkey, Object.assign({}, bundle, { v: 2 })), false);
+    assert.strictEqual(bls.BUNDLE_VERSION, 2);
+    assert.strictEqual(bundle.v, 2);
+    assert.ok(key.verifySchnorr(
+      Buffer.from(bls.LINK_PREFIX + bundle.blsPublicKey, 'utf8'),
+      Buffer.from(bundle.link, 'hex')
+    ));
+    assert.strictEqual(bls.verifyFederationBlsBundle(message, key.pubkey, bundle), true);
+    assert.strictEqual(bls.verifyFederationBlsBundle(message, key.pubkey, bundle, { allowLegacy: false }), true);
+    const untagged = Buffer.from(key.signSchnorr(Buffer.from(bundle.blsPublicKey, 'hex'))).toString('hex');
+    assert.strictEqual(bls.verifyFederationBlsBundle(message, key.pubkey, Object.assign({}, bundle, { link: untagged })), false);
+    assert.strictEqual(bls.verifyFederationBlsBundle(message, key.pubkey, Object.assign({}, bundle, { v: 3 })), false);
+  });
+
+  it('verifies legacy v1 bundles (untagged link) unless allowLegacy is false', function () {
+    const key = new Key({ private: secretA.toString('hex') });
+    const message = Buffer.from('epoch signing string', 'utf8');
+    const bundle = bls.createFederationBlsBundle(message, key);
+    const untagged = Buffer.from(key.signSchnorr(Buffer.from(bundle.blsPublicKey, 'hex'))).toString('hex');
+    const legacy = Object.assign({}, bundle, { v: bls.LEGACY_BUNDLE_VERSION, link: untagged });
+    assert.strictEqual(bls.verifyFederationBlsBundle(message, key.pubkey, legacy), true);
+    assert.strictEqual(bls.verifyFederationBlsBundle(message, key.pubkey, legacy, { allowLegacy: false }), false);
+    assert.strictEqual(bls.verifyFederationBlsBundle(message, key.pubkey, Object.assign({}, bundle, { v: 1 })), false);
+
+    const witness = { scheme: 'bls', signatures: { [key.pubkey]: legacy } };
+    assert.strictEqual(bls.verifyFederationBlsWitness(message, witness, [key.pubkey], 1), true);
+    assert.strictEqual(bfs.verifyFederationWitnessOnMessage(message, witness, [key.pubkey], 1), true);
+    assert.strictEqual(
+      bfs.verifyFederationWitnessOnMessage(message, witness, [key.pubkey], 1, undefined, { allowLegacy: false }),
+      false
+    );
+
+    const round = bfs.createRound({ clock: 1, height: 1, blockHash: 'ab'.repeat(32) }, {
+      validators: [key.pubkey],
+      threshold: 1,
+      signatureScheme: 'bls'
+    });
+    const roundMsg = bfs.messageBufferForPayload(round.payload);
+    const legacyForRound = Object.assign(bls.createFederationBlsBundle(roundMsg, key), { v: 1 });
+    legacyForRound.link = untagged;
+    assert.strictEqual(bfs.addSignature(round, key.pubkey, JSON.stringify(legacyForRound)).ok, false);
+  });
+
+  it('accepts an x-only validator id for a BLS bundle', function () {
+    const key = new Key({ private: secretB.toString('hex') });
+    const message = Buffer.from('epoch signing string', 'utf8');
+    const bundle = bls.createFederationBlsBundle(message, key);
+    const xOnly = key.pubkey.slice(2);
+    assert.strictEqual(bls.verifyFederationBlsBundle(message, xOnly, bundle), true);
+    const witness = { scheme: 'bls', signatures: { [key.pubkey]: bundle } };
+    assert.strictEqual(bls.verifyFederationBlsWitness(message, witness, [xOnly], 1), true);
   });
 
   it('counts one bundle once when a validator id is respelled', function () {

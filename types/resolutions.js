@@ -135,9 +135,17 @@ class Resolutions extends Actor {
       signers: { required, have: {} },
       meta: exit.meta || {}
     };
+    // A harvested signature counts only if it is over this spend through the
+    // exit's one leaf, by that key.
+    const leaves = psbt.data.inputs[0].tapLeafScript || [];
     for (const s of (psbt.data.inputs[0].tapScriptSig || [])) {
       const pk = Buffer.from(s.pubkey).toString('hex');
-      if (required.includes(pk)) record.signers.have[pk] = Buffer.from(s.signature).toString('hex');
+      if (!required.includes(pk)) continue;
+      if (leaves.length !== 1 || !Buffer.from(s.leafHash).equals(leafHashOf(psbt))) throw new Error(`addExit: signature by ${pk} is not on the exit's leaf`);
+      const signatureHex = Buffer.from(s.signature).toString('hex');
+      const check = this._verifySignature(record, pk, signatureHex);
+      if (!check.ok) throw new Error(`addExit: signature by ${pk} does not verify (${check.reason})`);
+      record.signers.have[pk] = signatureHex;
     }
     this._states.get(id).exits.set(record.id, record);
     return record;
@@ -328,6 +336,8 @@ class Resolutions extends Actor {
   }
 
   /**
+   * Load a snapshot. Every held signature is re-verified against its PSBT;
+   * ones that do not verify are dropped (the exit then reports them missing).
    * @param {Object} snapshot output of {@link Resolutions#export}
    * @returns {Resolutions}
    */
@@ -337,7 +347,12 @@ class Resolutions extends Actor {
       this.declare(id, node.parent);
       for (const exit of node.exits || []) {
         const record = this.addExit(id, Object.assign({}, exit, { required: exit.signers ? exit.signers.required : exit.required }));
-        if (exit.signers && exit.signers.have) Object.assign(record.signers.have, exit.signers.have);
+        const have = (exit.signers && exit.signers.have) || {};
+        for (const [pubkey, signatureHex] of Object.entries(have)) {
+          const pk = String(pubkey).toLowerCase();
+          if (!record.signers.required.includes(pk) || record.signers.have[pk]) continue;
+          if (this._verifySignature(record, pk, String(signatureHex || '')).ok) record.signers.have[pk] = String(signatureHex).toLowerCase();
+        }
       }
     }
     return this;
@@ -361,10 +376,16 @@ class Resolutions extends Actor {
   _withSignatures (exit, have) {
     const psbt = this._psbt(exit.psbtBase64);
     const leafHash = leafHashOf(psbt);
-    const existing = new Set((psbt.data.inputs[0].tapScriptSig || []).map((s) => Buffer.from(s.pubkey).toString('hex')));
+    const input = psbt.data.inputs[0];
+    // Replace, never keep, an embedded signature for the same key: what is
+    // checked (and finalized) is exactly the signature held for it.
+    if (input.tapScriptSig) {
+      const kept = input.tapScriptSig.filter((s) => !have[Buffer.from(s.pubkey).toString('hex')]);
+      if (kept.length) input.tapScriptSig = kept;
+      else delete input.tapScriptSig;
+    }
     const add = [];
     for (const [pubkey, sig] of Object.entries(have)) {
-      if (existing.has(pubkey)) continue;
       add.push({ pubkey: Buffer.from(pubkey, 'hex'), leafHash, signature: Buffer.from(sig, 'hex') });
     }
     if (add.length) psbt.updateInput(0, { tapScriptSig: add });

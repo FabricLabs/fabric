@@ -55,8 +55,19 @@ class State extends Actor {
     };
 
     // TODO: test and document memory alignment
-    // this['@buffer'] = Buffer.alloc(Constants.MAX_MESSAGE_SIZE);
-    this['@allocation'] = Buffer.alloc(MAX_MESSAGE_SIZE);
+    // `@allocation` (MAX_MESSAGE_SIZE bytes) is allocated on first access.
+    let allocation = null;
+    Object.defineProperty(this, '@allocation', {
+      configurable: true,
+      enumerable: false,
+      get () {
+        if (!allocation) allocation = Buffer.alloc(MAX_MESSAGE_SIZE);
+        return allocation;
+      },
+      set (value) {
+        allocation = value;
+      }
+    });
     this['@buffer'] = Buffer.from(this.serialize(this['@entity']['@data']));
 
     // if not destined to be an object...

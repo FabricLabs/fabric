@@ -13,6 +13,12 @@
  * This copy: drop handshake listeners as soon as the split callback runs (the
  * session no longer needs the bus); always `noise_stream_free` when either
  * duplex is destroyed.
+ *
+ * Upstream also decodes length prefixes without a limit, so one varint
+ * announcing 512 MiB allocates 512 MiB before any authentication. This copy
+ * caps every length-prefixed message (`maxMessageBytes`, default 65535), caps
+ * bytes received before the handshake completes (`handshakeMaxBytes`), and
+ * destroys both duplexes when the handshake is not done in `handshakeTimeout` ms.
  */
 
 const util = require('util');
@@ -23,6 +29,12 @@ const each = require('stream-each');
 const eos = require('end-of-stream');
 
 const createNoiseLib = require('noise-protocol-stream/noise-stream');
+
+const {
+  NOISE_MAX_MESSAGE_BYTES,
+  NOISE_HANDSHAKE_MAX_BYTES,
+  NOISE_HANDSHAKE_TIMEOUT_MS
+} = require('../constants');
 
 const PTR_SIZE = 4;
 const MESSAGE_SIZE = 65535;
@@ -62,6 +74,12 @@ function createError (s, code) {
   return new Error(s + (code != null ? (' ' + code) : ''));
 }
 
+/** @private positive integer option, else `fallback` */
+function positiveIntegerOr (value, fallback) {
+  const n = Number(value);
+  return (Number.isInteger(n) && n > 0) ? n : fallback;
+}
+
 function pointer () {
   return lib.malloc(PTR_SIZE);
 }
@@ -91,12 +109,51 @@ function readmem (ptr, size, dest, destOffset) {
   return dest;
 }
 
-function DecryptStream () {
+/**
+ * Inbound half: length-prefixed NOISE messages (each at most `maxMessageBytes`,
+ * never above 65535) decrypted into plaintext. Until the handshake completes it
+ * accepts at most `handshakeMaxBytes` and fails with `noise_message_too_large`
+ * or a handshake budget error instead of buffering.
+ * @private
+ * @param {Object} [options]
+ * @param {number} [options.maxMessageBytes]
+ * @param {number} [options.handshakeMaxBytes]
+ */
+function DecryptStream (options) {
   Duplexify.call(this);
+  if (!options) options = {};
 
   const self = this;
-  const decode = lpStream.decode();
+  const limit = Math.min(positiveIntegerOr(options.maxMessageBytes, NOISE_MAX_MESSAGE_BYTES), NOISE_MAX_MESSAGE_BYTES);
+  const handshakeBudget = positiveIntegerOr(options.handshakeMaxBytes, NOISE_HANDSHAKE_MAX_BYTES);
+  const decode = lpStream.decode({ limit: limit });
   const pass = through();
+
+  this._handshakeDone = false;
+  this._handshakeBytes = 0;
+  // Destroys the stream with `err`; the session wrapper replaces it to tear down both halves.
+  this._fail = function (err) { self.destroy(err); };
+
+  // Fail before the decoder allocates: an oversize prefix never reaches `bufferAlloc`.
+  decode._prefixError = function (data) {
+    this._destroyed = true;
+    self._fail(createError('noise_message_too_large', '(limit ' + limit + ')'));
+    return data.length;
+  };
+
+  const transform = decode._transform;
+  decode._transform = function (data, enc, cb) {
+    if (!self._handshakeDone) {
+      self._handshakeBytes += data.length;
+      if (self._handshakeBytes > handshakeBudget) {
+        this._destroyed = true;
+        self._fail(createError('noise_handshake_budget', '(' + self._handshakeBytes + ' > ' + handshakeBudget + ' bytes)'));
+        cb();
+        return;
+      }
+    }
+    transform.call(this, data, enc, cb);
+  };
 
   decode.on('end', function () {
     pass.end();
@@ -201,11 +258,20 @@ DecryptStream.prototype._writeOutput = function (data, cb) {
   }
 };
 
-function EncryptStream () {
+/**
+ * Outbound half: encrypts plaintext into length-prefixed NOISE messages of at
+ * most `maxMessageBytes` (never above 65535).
+ * @private
+ * @param {Object} [options]
+ * @param {number} [options.maxMessageBytes]
+ */
+function EncryptStream (options) {
   Duplexify.call(this);
+  if (!options) options = {};
 
   const pass = through();
   const encode = lpStream.encode();
+  this._limit = Math.min(positiveIntegerOr(options.maxMessageBytes, NOISE_MAX_MESSAGE_BYTES), NOISE_MAX_MESSAGE_BYTES);
 
   pass.on('end', function () {
     encode.end();
@@ -245,6 +311,10 @@ EncryptStream.prototype._splitHandshake = function (ptr, macSize) {
 
     n = Math.ceil(data.length / (MESSAGE_SIZE - macSize));
     totalSize = data.length + n * macSize;
+    if (totalSize > self._limit) {
+      next(createError('noise_message_too_large', '(' + totalSize + ' > ' + self._limit + ' bytes)'));
+      return;
+    }
     dataPtr = lib.malloc(totalSize);
 
     if (dataPtr) {
@@ -285,10 +355,18 @@ function createNoiseStream (options) {
   let streamPtr = null;
   let listenersDropped = false;
   let nativeFreed = false;
-  const decrypt = new DecryptStream();
-  const encrypt = new EncryptStream();
+  let handshakeTimer = null;
+  const decrypt = new DecryptStream(options);
+  const encrypt = new EncryptStream(options);
+
+  const clearHandshakeTimer = function () {
+    if (!handshakeTimer) return;
+    clearTimeout(handshakeTimer);
+    handshakeTimer = null;
+  };
 
   const dropHandshakeListeners = function () {
+    clearHandshakeTimer();
     if (listenersDropped) return;
     listenersDropped = true;
     lib.removeListener('ready', onready);
@@ -395,6 +473,7 @@ function createNoiseStream (options) {
 
   const onhandshakesplit = function (ptr, macSize, localPrivateKey, localPublicKey, remotePublicKey) {
     if (ptr === streamPtr) {
+      decrypt._handshakeDone = true;
       const onverify = function (err, accept) {
         // `options.verify` may be asynchronous, so both duplexes can be destroyed
         // (and the native session freed) before this runs. Never restore a pointer
@@ -434,6 +513,23 @@ function createNoiseStream (options) {
 
   wrapDestroy(decrypt);
   wrapDestroy(encrypt);
+
+  decrypt._fail = function (err) {
+    decrypt.destroy(err);
+    encrypt.destroy(err);
+  };
+
+  const handshakeTimeout = (options.handshakeTimeout === 0)
+    ? 0
+    : positiveIntegerOr(options.handshakeTimeout, NOISE_HANDSHAKE_TIMEOUT_MS);
+  if (handshakeTimeout > 0) {
+    handshakeTimer = setTimeout(function () {
+      handshakeTimer = null;
+      if (decrypt._handshakeDone || sessionTornDown()) return;
+      destroy('noise_handshake_timeout', '(' + handshakeTimeout + 'ms)');
+    }, handshakeTimeout);
+    if (typeof handshakeTimer.unref === 'function') handshakeTimer.unref();
+  }
 
   lib.on(HANDSHAKE_WRITE, onhandshakewrite);
   lib.on(HANDSHAKE_READ, onhandshakeread);

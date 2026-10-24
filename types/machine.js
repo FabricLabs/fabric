@@ -95,7 +95,8 @@ class Machine extends Actor {
 
     // deterministic entropy and RNG
     this.entropy = this.sip();
-    this.memory = Buffer.alloc(MACHINE_MAX_MEMORY);
+    // `memory` is allocated on first access (see getter); most Machines never touch it.
+    Object.defineProperty(this, '_memory', { value: null, writable: true, enumerable: false, configurable: true });
 
     this.known = {}; // definitions
     this.opcodes = createDefaultOpcodeRegistry();
@@ -115,6 +116,21 @@ class Machine extends Actor {
 
     // ensure chainability
     return this;
+  }
+
+  /**
+   * VM memory (`MACHINE_MAX_MEMORY` bytes), allocated on first access.
+   * @type {Buffer}
+   */
+  get memory () {
+    if (this._memory === null || this._memory === undefined) {
+      this._memory = Buffer.alloc(MACHINE_MAX_MEMORY);
+    }
+    return this._memory;
+  }
+
+  set memory (value) {
+    this._memory = value;
   }
 
   get interval () {

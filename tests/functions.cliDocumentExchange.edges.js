@@ -8,7 +8,7 @@ const { describe, it } = require('mocha');
 
 const { CliDocumentExchange } = require('../functions/cliDocumentExchange');
 const {
-  DocumentOfferBook,
+  Book,
   createDocumentPurchaseSession
 } = require('../functions/documentMarket');
 
@@ -150,7 +150,7 @@ describe('functions/cliDocumentExchange path & publish edges', function () {
       paymentHash32: Buffer.from(contentHash, 'hex'),
       refundLocktimeHeight: lock
     });
-    const book = new DocumentOfferBook();
+    const book = new Book();
     book.ingestInventoryResponse({
       origin: 'seller-named',
       sellerPubkey: String(seller.pubkey).toLowerCase(),

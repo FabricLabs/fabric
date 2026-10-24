@@ -13,6 +13,7 @@ const {
   PEER_BAN_TTL_MS,
   PEER_MAX_RELAY_NEST_DEPTH,
   PEER_SCORE_BODY_HASH_MISMATCH_PENALTY,
+  PEER_SCORE_OVERSIZE_FRAME_PENALTY,
   HEADER_SIZE,
   MAX_MESSAGE_SIZE,
   CHAT_MAX_RELAYS_PER_ORIGIN_PER_MINUTE,
@@ -175,16 +176,32 @@ describe('@fabric/core Peer adversarial hardening', function () {
     assert.ok(PEER_MAX_RELAY_NEST_DEPTH >= 1);
   });
 
-  it('drops oversized frames before verify (no score change)', function () {
+  it('drops oversized frames before verify and treats them as a protocol violation', function () {
     const peer = offlinePeer();
     const origin = '127.0.0.1:9130';
     peer._addressToId[origin] = 'big-peer';
     peer._state.peers = {
-      'big-peer': { id: 'big-peer', address: origin, score: 100, publicKey: 'cd'.repeat(32) }
+      'big-peer': { id: 'big-peer', address: origin, score: 150, publicKey: 'cd'.repeat(32) }
     };
+    let destroyed = false;
+    peer.connections[origin] = { destroy () { destroyed = true; } };
     const huge = Buffer.alloc(HEADER_SIZE + MAX_MESSAGE_SIZE + 64, 0xab);
     peer._handleFabricMessage(huge, { name: origin }, null);
-    assert.strictEqual(peer._state.peers['big-peer'].score, 100);
+    assert.strictEqual(peer._state.peers['big-peer'].score, 150 - PEER_SCORE_OVERSIZE_FRAME_PENALTY);
+    assert.strictEqual(destroyed, true);
+    assert.strictEqual(peer._isPeerBanned(origin), true);
+  });
+
+  it('does not punish oversized inner frames delivered by peel / relay-as-is', function () {
+    const peer = offlinePeer();
+    const origin = '127.0.0.1:9131';
+    peer._addressToId[origin] = 'relay-hop';
+    peer._state.peers = {
+      'relay-hop': { id: 'relay-hop', address: origin, score: 150, publicKey: 'ce'.repeat(32) }
+    };
+    const huge = Buffer.alloc(HEADER_SIZE + MAX_MESSAGE_SIZE + 64, 0xab);
+    peer._handleFabricMessage(huge, { name: origin }, null, { peeledForward: true });
+    assert.strictEqual(peer._state.peers['relay-hop'].score, 150);
     assert.strictEqual(peer._isPeerBanned(origin), false);
   });
 

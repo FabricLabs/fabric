@@ -135,21 +135,32 @@ function treeDepth (count) {
  * Verify an inclusion proof against a block header: the header's own
  * proof-of-work, then the Merkle branch. A valid result still says nothing
  * about which chain the header belongs to (see {@link headerMeetsTarget}).
- * @param {object} proof `{ blockHeaderHex, txid, index, branch, txCount? }` — `txCount` pins the branch depth
+ *
+ * The transaction count pins the branch depth (a 64-byte transaction can
+ * otherwise pose as an inner node). The proof's own `txCount` is chosen by
+ * whoever built it; a verifier with a chain view should pass the block's
+ * real count as `opts.txCount`, which then wins.
+ * @param {object} proof `{ blockHeaderHex, txid, index, branch, txCount? }`
+ * @param {object} [opts]
+ * @param {number} [opts.txCount] the block's transaction count from the verifier's chain view
+ * @param {boolean} [opts.requireTxCount] fail when neither `opts.txCount` nor `proof.txCount` is known
  * @returns {{ ok: boolean, reason?: string, blockHash?: string, merkleRootHex?: string }}
  */
-function verifyInclusion (proof = {}) {
+function verifyInclusion (proof = {}, opts = {}) {
   let header;
   try { header = parseHeader(proof.blockHeaderHex); } catch (e) { return { ok: false, reason: e.message }; }
   if (!headerMeetsTarget(proof.blockHeaderHex)) return { ok: false, reason: 'block header does not meet its proof-of-work target', blockHash: header.blockHash };
   let node;
   try { node = toInternal(proof.txid); } catch (e) { return { ok: false, reason: e.message }; }
   if (!Array.isArray(proof.branch)) return { ok: false, reason: 'branch required' };
-  let position = Math.floor(Number(proof.index));
-  if (!Number.isFinite(position) || position < 0) return { ok: false, reason: 'index required' };
-  if (proof.txCount != null) {
-    const count = Math.floor(Number(proof.txCount));
-    if (!Number.isFinite(count) || count < 1) return { ok: false, reason: 'txCount invalid' };
+  if (!Number.isSafeInteger(Number(proof.index)) || typeof proof.index === 'boolean') return { ok: false, reason: 'index required' };
+  let position = Number(proof.index);
+  if (position < 0) return { ok: false, reason: 'index required' };
+  const rawCount = opts.txCount != null ? opts.txCount : proof.txCount;
+  if (rawCount == null && opts.requireTxCount) return { ok: false, reason: 'txCount required to pin the branch depth', blockHash: header.blockHash };
+  if (rawCount != null) {
+    const count = Number(rawCount);
+    if (!Number.isSafeInteger(count) || count < 1) return { ok: false, reason: 'txCount invalid' };
     if (position >= count) return { ok: false, reason: 'index beyond txCount' };
     if (proof.branch.length !== treeDepth(count)) return { ok: false, reason: 'branch depth does not match txCount' };
   }

@@ -408,4 +408,45 @@ describe('@fabric/core/types/tree', function () {
       assert.strictEqual(tree.getRoot().length, 32);
     });
   });
+
+  describe('CVE-2012-2459 mutation detection', function () {
+    const crypto = require('crypto');
+    const h = (s) => crypto.createHash('sha256').update(s).digest();
+    const [a, b, c, d, e, f] = ['a', 'b', 'c', 'd', 'e', 'f'].map(h);
+    const rootOf = (leaves) => new Tree({ leaves }).root.toString('hex');
+
+    it('flags a duplicated last leaf without changing the root', function () {
+      assert.strictEqual(rootOf([a, b, c]), rootOf([a, b, c, c]));
+      assert.strictEqual(new Tree({ leaves: [a, b, c] }).mutated, false);
+      assert.strictEqual(new Tree({ leaves: [a, b, c, c] }).mutated, true);
+      assert.strictEqual(Tree.isMutated([a, b, c, c]), true);
+    });
+
+    it('flags a duplicated pair at a higher layer', function () {
+      assert.strictEqual(rootOf([a, b, c, d, e, f]), rootOf([a, b, c, d, e, f, e, f]));
+      assert.strictEqual(Tree.isMutated([a, b, c, d, e, f]), false);
+      assert.strictEqual(Tree.isMutated([a, b, c, d, e, f, e, f]), true);
+    });
+
+    it('does not flag repeated content that no shorter list shares', function () {
+      assert.strictEqual(Tree.isMutated([a, a]), false);
+      assert.strictEqual(Tree.isMutated([a, a, b]), false);
+      assert.strictEqual(Tree.isMutated([a, b, a, b]), false);
+      assert.strictEqual(Tree.isMutated([a, b, c, d, c, d]), false);
+      assert.strictEqual(Tree.isMutated([]), false);
+      assert.strictEqual(Tree.isMutated([a]), false);
+    });
+
+    it('rejectMutated refuses a mutated build and rolls back addLeaf', function () {
+      assert.throws(() => new Tree({ leaves: [a, b, c, c], rejectMutated: true }), /mutated/);
+      const tree = new Tree({ leaves: [a, b, c], rejectMutated: true });
+      const root = tree.root.toString('hex');
+      assert.throws(() => tree.addLeaf(c), /mutated/);
+      assert.strictEqual(tree.getLayers()[0].length, 3);
+      assert.strictEqual(tree.root.toString('hex'), root);
+      assert.strictEqual(tree.mutated, false);
+      tree.addLeaf(d);
+      assert.strictEqual(tree.getLayers()[0].length, 4);
+    });
+  });
 });

@@ -139,14 +139,25 @@ function merkleParent (left, right) {
 /**
  * Every layer, leaves first and the root layer last. An odd last node is
  * paired with itself.
+ *
+ * `mutated` (CVE-2012-2459): some layer of even length ≥ 4 ends in two equal
+ * nodes, i.e. it is the self-paired form of the odd layer one node shorter,
+ * so a shorter leaf list (`[a, b, c]` for `[a, b, c, c]`) commits to the same
+ * root. Only the padded list is flagged; the shortest form of a root, and
+ * repeated leaves anywhere else (a file of identical chunks), are not. This
+ * is narrower than Bitcoin Core's check, which also flags any equal pair
+ * because a block may never repeat a transaction.
  * @param {Buffer[]} leaves
- * @returns {Buffer[][]}
+ * @returns {{ layers: Buffer[][], mutated: boolean }}
  * @private
  */
 function merkleLayers (leaves) {
   const layers = [leaves];
   let nodes = leaves;
+  let mutated = false;
   while (nodes.length > 1) {
+    const n = nodes.length;
+    if (n >= 4 && n % 2 === 0 && Buffer.compare(nodes[n - 2], nodes[n - 1]) === 0) mutated = true;
     const next = [];
     for (let i = 0; i < nodes.length; i += 2) {
       next.push(merkleParent(nodes[i], i + 1 < nodes.length ? nodes[i + 1] : nodes[i]));
@@ -154,7 +165,7 @@ function merkleLayers (leaves) {
     layers.push(next);
     nodes = next;
   }
-  return layers;
+  return { layers, mutated };
 }
 
 /**
@@ -166,6 +177,11 @@ function merkleLayers (leaves) {
  * `isBitcoinTree` (which this replaced), so earlier roots are unchanged.
  * Optional `sortLeaves` makes the leaf order lexicographic so adjacent-leaf
  * **non-inclusion** proofs are well-defined (inclusion proofs work either way).
+ *
+ * Like Bitcoin's, the root does not commit the leaf count: `[a, b, c]` and
+ * `[a, b, c, c]` share a root. {@link Tree#mutated} flags such leaf lists and
+ * `rejectMutated: true` refuses them; callers that accept leaves from the
+ * network must check one or the other and bind the count separately.
  */
 class Tree extends Actor {
   /**
@@ -174,6 +190,8 @@ class Tree extends Actor {
    * @param {Array} [settings.leaves]
    * @param {boolean} [settings.sortLeaves] When true, leaves are sorted before
    * merkling (required for {@link Tree#proveNonInclusion}).
+   * @param {boolean} [settings.rejectMutated] When true, building (or adding
+   * a leaf to) a {@link Tree#mutated} tree throws.
    * @returns {Tree} Instance of the tree.
    */
   constructor (settings = {}) {
@@ -183,7 +201,8 @@ class Tree extends Actor {
 
     this.settings = merge({
       leaves: [],
-      sortLeaves: false
+      sortLeaves: false,
+      rejectMutated: false
     }, this.settings, settings);
 
     this._rebuild();
@@ -201,9 +220,32 @@ class Tree extends Actor {
   _rebuild () {
     const source = this.settings.leaves || [];
     const leaves = this.settings.sortLeaves ? sortLeafList(source) : source;
-    this._leaves = Array.from(leaves, toMerkleBuffer);
-    this._layers = merkleLayers(this._leaves);
+    const built = merkleLayers(Array.from(leaves, toMerkleBuffer));
+    if (built.mutated && this.settings.rejectMutated) {
+      throw new Error('Tree is mutated: another leaf list commits to the same root');
+    }
+    this._leaves = built.layers[0];
+    this._layers = built.layers;
+    this._mutated = built.mutated;
     if (this._state) this._state.root = this.root;
+  }
+
+  /**
+   * True when a shorter leaf list has the same root: these leaves are the
+   * self-paired padding of it (CVE-2012-2459).
+   * @type {boolean}
+   */
+  get mutated () {
+    return this._mutated;
+  }
+
+  /**
+   * {@link Tree#mutated} for a leaf list without keeping the tree.
+   * @param {Array} leaves
+   * @returns {boolean}
+   */
+  static isMutated (leaves = []) {
+    return merkleLayers(Array.from(leaves || [], toMerkleBuffer)).mutated;
   }
 
   /**
@@ -224,8 +266,14 @@ class Tree extends Actor {
    * @returns {Tree} Instance of the tree.
    */
   addLeaf (leaf = '') {
-    this.settings.leaves = (this.settings.leaves || []).concat([leaf]);
-    this._rebuild();
+    const prior = this.settings.leaves || [];
+    this.settings.leaves = prior.concat([leaf]);
+    try {
+      this._rebuild();
+    } catch (err) {
+      this.settings.leaves = prior;
+      throw err;
+    }
     this.emit('leaf', leaf);
     return this;
   }

@@ -11,8 +11,14 @@
  * @module functions/federationReserveLedger
  */
 
+const bitcoin = require('bitcoinjs-lib');
+
 const RESERVE_KEY = 'federationReserve';
 const DUST_SATS = 546;
+const DEFAULT_PAYOUT_MIN_CONFIRMATIONS = 6;
+// Base58 version bytes: mainnet, then testnet / signet / regtest.
+const P2PKH_VERSIONS = new Set([0x00, 0x6f]);
+const P2SH_VERSIONS = new Set([0x05, 0xc4]);
 
 /**
  * @typedef {object} FederationReserveDeposit
@@ -100,6 +106,53 @@ function assertConservation (reserve) {
  */
 function depositKey (txid, vout) {
   return `${String(txid || '').trim().toLowerCase()}:${Number(vout)}`;
+}
+
+/**
+ * scriptPubKey hex for a Bitcoin address on any network, or null when the
+ * address does not decode.
+ * @param {string} address
+ * @returns {string|null}
+ * @private
+ */
+function addressScriptHex (address) {
+  const s = String(address || '').trim();
+  if (!s) return null;
+  try {
+    const { version, data } = bitcoin.address.fromBech32(s);
+    const program = Buffer.from(data);
+    if (version < 0 || version > 16 || program.length < 2 || program.length > 40) return null;
+    return Buffer.concat([
+      Buffer.from([version === 0 ? 0x00 : 0x50 + version, program.length]),
+      program
+    ]).toString('hex');
+  } catch (_) { /* not bech32 */ }
+  try {
+    const { version, hash } = bitcoin.address.fromBase58Check(s);
+    const h = Buffer.from(hash).toString('hex');
+    if (P2PKH_VERSIONS.has(version)) return `76a914${h}88ac`;
+    if (P2SH_VERSIONS.has(version)) return `a914${h}87`;
+  } catch (_) { /* not base58 */ }
+  return null;
+}
+
+/**
+ * Whether a payout output pays the withdrawal destination: same scriptPubKey
+ * (`payout.scriptPubKey` when given), so bech32 case does not matter. Strings
+ * that do not decode as addresses must match exactly.
+ * @param {object} payout
+ * @param {object} withdrawal
+ * @returns {boolean}
+ * @private
+ */
+function payoutPaysDestination (payout, withdrawal) {
+  const want = addressScriptHex(withdrawal.destinationAddress);
+  const given = payout.scriptPubKey != null && String(payout.scriptPubKey).trim()
+    ? String(payout.scriptPubKey).trim().toLowerCase()
+    : addressScriptHex(payout.destinationAddress);
+  if (want && given) return want === given;
+  const a = String(payout.destinationAddress || '').trim();
+  return !!a && a === String(withdrawal.destinationAddress || '').trim();
 }
 
 /**
@@ -244,6 +297,16 @@ function applyPegOutBurn (content, withdrawal = {}, opts = {}) {
  * The caller verifies the payout on L1; this helper only settles against a
  * named payout output that matches the burned withdrawal exactly, and never
  * lets one output settle two withdrawals.
+ *
+ * Fees: the payout output must carry the full withdrawal `amountSats`; the
+ * federation pays the L1 fee from vault funds above `outstandingSats +
+ * pendingBurnsSats`. Without `opts.vaultConfirmedSats` the vault only drops
+ * by `amountSats`, so the fee stays counted in it until the caller passes the
+ * verified vault total (which fails conservation when there was no surplus to
+ * pay the fee from).
+ *
+ * A settled payout that later leaves the best chain is undone with
+ * {@link unsettlePegOutPayout}; wait for `payoutMinConfirmations` to make that rare.
  * @param {object} content
  * @param {string} requestId
  * @param {Object} opts
@@ -251,9 +314,10 @@ function applyPegOutBurn (content, withdrawal = {}, opts = {}) {
  * @param {string} opts.payout.txid
  * @param {number} opts.payout.vout
  * @param {number} opts.payout.amountSats Must equal the withdrawal amountSats
- * @param {string} opts.payout.destinationAddress Must equal the withdrawal destinationAddress
+ * @param {string} opts.payout.destinationAddress Must pay the withdrawal destination (compared by scriptPubKey)
+ * @param {string} [opts.payout.scriptPubKey] output script hex; preferred over destinationAddress
  * @param {number} opts.payout.confirmations
- * @param {number} [opts.payoutMinConfirmations=1]
+ * @param {number} [opts.payoutMinConfirmations=6]
  * @param {number} [opts.vaultConfirmedSats] optional verified vault total after payout
  * @returns {{ ok: true, content: object, reserve: FederationReserveState }|{ ok: false, error: string }}
  */
@@ -270,7 +334,7 @@ function settlePegOutPayout (content, requestId, opts = {}) {
   const payoutVout = Number(payout.vout);
   const payoutSats = Math.round(Number(payout.amountSats));
   const payoutConfirmations = Math.round(Number(payout.confirmations));
-  const minConfirmations = Math.max(1, Number(opts.payoutMinConfirmations) || 1);
+  const minConfirmations = Math.max(1, Number(opts.payoutMinConfirmations) || DEFAULT_PAYOUT_MIN_CONFIRMATIONS);
   if (!/^[0-9a-f]{64}$/.test(payoutTxid)) {
     return { ok: false, error: 'payout.txid required (64-hex)' };
   }
@@ -305,8 +369,8 @@ function settlePegOutPayout (content, requestId, opts = {}) {
   if (payoutSats !== amountSats) {
     return { ok: false, error: `payout.amountSats (${payoutSats}) must equal withdrawal amountSats (${amountSats})` };
   }
-  if (String(payout.destinationAddress || '').trim() !== String(row.destinationAddress || '').trim()) {
-    return { ok: false, error: 'payout.destinationAddress must equal withdrawal destinationAddress' };
+  if (!payoutPaysDestination(payout, row)) {
+    return { ok: false, error: 'payout.destinationAddress must pay the withdrawal destinationAddress' };
   }
   const outpoint = depositKey(payoutTxid, payoutVout);
   if (reserve.withdrawals.some((w) => w && w.payout && depositKey(w.payout.txid, w.payout.vout) === outpoint)) {
@@ -327,6 +391,69 @@ function settlePegOutPayout (content, requestId, opts = {}) {
   row.status = 'settled';
   row.settledAt = opts.settledAt || new Date().toISOString();
   row.payout = { txid: payoutTxid, vout: payoutVout, confirmations: payoutConfirmations };
+  reserve.withdrawals[rowIndex] = row;
+
+  const cons = assertConservation(reserve);
+  if (!cons.ok) return cons;
+
+  nextContent[RESERVE_KEY] = reserve;
+  return { ok: true, content: nextContent, reserve };
+}
+
+/**
+ * Undo {@link settlePegOutPayout} after the payout transaction left the best
+ * chain: the withdrawal is pending again and its amount returns to
+ * `pendingBurnsSats` and the vault, so it can settle against a new payout.
+ * @param {object} content
+ * @param {string} requestId
+ * @param {Object} opts
+ * @param {Object} opts.payout the reorged payout outpoint (must match the settled one)
+ * @param {string} opts.payout.txid
+ * @param {number} opts.payout.vout
+ * @param {number} [opts.vaultConfirmedSats] verified vault total after the reorg
+ * (default: the settled total plus `amountSats`)
+ * @returns {{ ok: true, content: object, reserve: FederationReserveState }|{ ok: false, error: string }}
+ */
+function unsettlePegOutPayout (content, requestId, opts = {}) {
+  const id = String(requestId || '').trim().toLowerCase();
+  if (!/^[0-9a-f]{64}$/.test(id)) {
+    return { ok: false, error: 'requestId required (64-hex)' };
+  }
+  const payout = opts.payout && typeof opts.payout === 'object' ? opts.payout : null;
+  if (!payout) return { ok: false, error: 'payout required (the reorged payout outpoint)' };
+
+  const nextContent = Object.assign({}, content && typeof content === 'object' ? content : {});
+  const reserve = readReserve(nextContent);
+  const rowIndex = reserve.withdrawals.findIndex(
+    (w) => String(w.requestId || '').toLowerCase() === id
+  );
+  const row = rowIndex >= 0 ? Object.assign({}, reserve.withdrawals[rowIndex]) : null;
+  if (!row) return { ok: false, error: 'withdrawal not found' };
+  if (String(row.status || '') !== 'settled' || !row.payout) {
+    return { ok: false, error: 'withdrawal is not settled' };
+  }
+  if (depositKey(row.payout.txid, row.payout.vout) !== depositKey(payout.txid, payout.vout)) {
+    return { ok: false, error: 'payout does not match the settled payout' };
+  }
+  const amountSats = Math.round(Number(row.amountSats));
+  if (!Number.isInteger(amountSats) || amountSats < DUST_SATS) {
+    return { ok: false, error: 'withdrawal amountSats invalid' };
+  }
+
+  if (opts.vaultConfirmedSats != null) {
+    const v = Math.round(Number(opts.vaultConfirmedSats));
+    if (!Number.isFinite(v) || v < 0) {
+      return { ok: false, error: 'vaultConfirmedSats invalid' };
+    }
+    reserve.vaultConfirmedSats = v;
+  } else {
+    reserve.vaultConfirmedSats += amountSats;
+  }
+  reserve.pendingBurnsSats += amountSats;
+  row.status = 'pending';
+  delete row.payout;
+  delete row.settledAt;
+  row.unsettledAt = opts.unsettledAt || new Date().toISOString();
   reserve.withdrawals[rowIndex] = row;
 
   const cons = assertConservation(reserve);
@@ -472,12 +599,14 @@ function defaultFederationSidechainPolicy () {
 module.exports = {
   RESERVE_KEY,
   DUST_SATS,
+  DEFAULT_PAYOUT_MIN_CONFIRMATIONS,
   emptyReserve,
   readReserve,
   assertConservation,
   applyPegInCredit,
   applyPegOutBurn,
   settlePegOutPayout,
+  unsettlePegOutPayout,
   patchesForReserve,
   validateLedgerPatch,
   validateReserveObjectSchema,

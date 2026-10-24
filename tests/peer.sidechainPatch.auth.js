@@ -168,6 +168,7 @@ describe('Peer SIDECHAIN_STATE_PATCH authorization', function () {
 
   it('reads FABRIC_DISTRIBUTED_FEDERATION_THRESHOLD when validators come from settings', function () {
     const key = new Key({ private: '4444444444444444444444444444444444444444444444444444444444444444' });
+    const other = new Key({ private: '5555555555555555555555555555555555555555555555555555555555555555' });
     const prevT = process.env.FABRIC_DISTRIBUTED_FEDERATION_THRESHOLD;
     const prevV = process.env.FABRIC_DISTRIBUTED_FEDERATION_VALIDATORS;
     delete process.env.FABRIC_DISTRIBUTED_FEDERATION_VALIDATORS;
@@ -176,7 +177,7 @@ describe('Peer SIDECHAIN_STATE_PATCH authorization', function () {
       const peer = new Peer(Object.assign(offlinePeerSettings(), {
         distributed: {
           federation: {
-            validators: [key.pubkey],
+            validators: [key.pubkey, other.pubkey],
             threshold: 1
           }
         }

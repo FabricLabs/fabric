@@ -1,24 +1,37 @@
 'use strict';
 
 const assert = require('assert');
+const crypto = require('crypto');
 const Beacon = require('../types/beacon');
 const Key = require('../types/key');
+const beaconFederationSigning = require('../functions/beaconFederationSigning');
 const sidechainState = require('../functions/sidechainState');
 
 function stubBitcoin (opts = {}) {
   let height = opts.height != null ? opts.height : 0;
   let tip = opts.tip || ('ab'.repeat(32));
+  const hashes = { [height]: tip };
+  const calls = [];
   return {
+    calls,
     async getUnusedAddress () {
       return 'bcrt1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh';
     },
-    async _makeRPCRequest (method) {
+    async _makeRPCRequest (method, params = []) {
+      calls.push(method);
+      if (method === 'getblockchaininfo') return { chain: opts.chain || 'regtest' };
       if (method === 'generatetoaddress') {
+        if (opts.emptyGenerate) return [];
         height += 1;
         tip = Buffer.alloc(32, height % 255).toString('hex');
+        hashes[height] = tip;
         return [tip];
       }
       if (method === 'getblockcount') return height;
+      if (method === 'getblockhash') {
+        if (hashes[params[0]] == null) throw new Error('Block height out of range');
+        return hashes[params[0]];
+      }
       if (method === 'getbalances') {
         return { mine: { trusted: height * 50 } };
       }
@@ -26,6 +39,52 @@ function stubBitcoin (opts = {}) {
       throw new Error(`unexpected rpc ${method}`);
     }
   };
+}
+
+function blockHash (branch, height) {
+  return crypto.createHash('sha256').update(`${branch}:${height}`).digest('hex');
+}
+
+/** Best chain is `hashes` (index = height); edit it to reorg. */
+function chainBitcoin (hashes) {
+  return {
+    async _makeRPCRequest (method, params = []) {
+      if (method === 'getblockcount') return hashes.length - 1;
+      if (method === 'getblockhash') {
+        if (hashes[params[0]] == null) throw new Error('Block height out of range');
+        return hashes[params[0]];
+      }
+      if (method === 'getbestblockhash') return hashes[hashes.length - 1];
+      if (method === 'getbalances') return { mine: { trusted: 0 } };
+      if (method === 'getblockchaininfo') return { chain: 'regtest' };
+      throw new Error(`unexpected rpc ${method}`);
+    }
+  };
+}
+
+function federatedBeacon (hashes, settings = {}) {
+  const k1 = new Key({ private: '71'.repeat(32) });
+  const k2 = new Key({ private: '72'.repeat(32) });
+  const beacon = new Beacon(Object.assign({
+    regtest: false,
+    mineOnStart: false,
+    interval: 0,
+    federationValidators: [k1.pubkey, k2.pubkey],
+    federationThreshold: 2
+  }, settings));
+  beacon.attach({ bitcoin: chainBitcoin(hashes), fs: memoryFs(), key: k1 });
+  return { beacon, k2 };
+}
+
+function cosign (beacon, pending, key) {
+  const msg = beaconFederationSigning.messageBufferForPayload(pending.payload);
+  return beacon.submitFederationEpochSignature(
+    pending.commitmentDigest, key.pubkey, key.signSchnorr(msg).toString('hex')
+  );
+}
+
+function sealedEpochs (beacon) {
+  return beacon._epochChain.entries.map((b) => [b.payload.clock, b.payload.height, b.payload.blockHash]);
 }
 
 function memoryFs () {
@@ -809,6 +868,226 @@ describe('@fabric/core/types/beacon', function () {
       blsMod.verifyFederationBlsWitness(msg, sealed.federationWitness, [k1.pubkey, k2.pubkey], 2),
       true
     );
+  });
+
+  it('clamps an oversized threshold, resets on null, and normalizes x-only validators', async function () {
+    const keys = ['31', '32', '33'].map((b) => new Key({ private: b.repeat(32) }));
+    const xOnly = keys.map((k) => k.pubkey.slice(2));
+    const beacon = new Beacon({
+      federationValidators: xOnly.concat([keys[0].pubkey.toUpperCase(), 'zz', null])
+    });
+    const policy = beacon.getFederationPolicy();
+    assert.strictEqual(policy.validators.length, 3);
+    for (const [i, pk] of policy.validators.entries()) {
+      assert.match(pk, /^0[23][0-9a-f]{64}$/);
+      assert.strictEqual(pk.slice(2), xOnly[i]);
+    }
+    assert.strictEqual(policy.threshold, 2);
+
+    const warnings = [];
+    beacon.on('warning', (w) => warnings.push(String(w)));
+    beacon.attach({ federationThreshold: 5 });
+    assert.strictEqual(beacon._federationThreshold, 3);
+    assert.ok(warnings.some((w) => /exceeds the 3 distinct/.test(w)));
+    beacon.attach({ federationThreshold: null });
+    assert.strictEqual(beacon._federationThreshold, 2);
+
+    const solo = new Beacon({ federationValidators: [xOnly[2]], federationThreshold: 1 });
+    solo.attach({ key: keys[2], fs: memoryFs() });
+    const payload = await solo._commitEpochWithFederation({ clock: 1, height: 1, blockHash: 'ab'.repeat(32) });
+    assert.strictEqual(payload.pending, undefined);
+    assert.strictEqual(solo._epochChain.verify(solo._federationValidators, 1).ok, true);
+  });
+
+  it('keeps the sealed epoch when a competing block replaces a pending round at the same height', async function () {
+    const hashes = [blockHash('a', 0), blockHash('a', 1)];
+    const { beacon, k2 } = federatedBeacon(hashes);
+    const p1 = await beacon.recordEpochFromBlock({ tip: hashes[1], height: 1 });
+    assert.strictEqual(p1.pending, true);
+    assert.strictEqual((await cosign(beacon, p1, k2)).sealed, true);
+
+    hashes.push(blockHash('a', 2));
+    const p2 = await beacon.recordEpochFromBlock({ tip: hashes[2], height: 2 });
+    assert.strictEqual(p2.payload.clock, 2);
+
+    const cancelled = [];
+    const reorgs = [];
+    beacon.on('federation:round-cancelled', (e) => cancelled.push(e));
+    beacon.on('reorg', (e) => reorgs.push(e));
+    hashes[2] = blockHash('b', 2);
+    const p2b = await beacon.recordEpochFromBlock({ tip: hashes[2], height: 2 });
+    assert.deepStrictEqual(sealedEpochs(beacon), [[1, 1, hashes[1]]]);
+    assert.strictEqual(reorgs.length, 0);
+    assert.deepStrictEqual(cancelled.map((e) => [e.commitmentDigest, e.height, e.reason]), [
+      [p2.commitmentDigest, 2, 'reorg']
+    ]);
+    assert.strictEqual(p2b.pending, true);
+    assert.strictEqual(p2b.payload.clock, 2);
+    assert.strictEqual(p2b.payload.blockHash, hashes[2]);
+
+    const late = await cosign(beacon, p2, k2);
+    assert.strictEqual(late.status, 'error');
+    assert.strictEqual(late.cancelled, true);
+    assert.strictEqual((await cosign(beacon, p2b, k2)).sealed, true);
+    assert.deepStrictEqual(sealedEpochs(beacon).map((e) => e[0]), [1, 2]);
+  });
+
+  it('holds a round that reaches threshold out of order until the round below it seals', async function () {
+    const hashes = [blockHash('a', 0), blockHash('a', 1)];
+    const { beacon, k2 } = federatedBeacon(hashes);
+    const p1 = await beacon.recordEpochFromBlock({ tip: hashes[1], height: 1 });
+    await cosign(beacon, p1, k2);
+    hashes.push(blockHash('a', 2));
+    const p2 = await beacon.recordEpochFromBlock({ tip: hashes[2], height: 2 });
+    hashes.push(blockHash('a', 3));
+    const p3 = await beacon.recordEpochFromBlock({ tip: hashes[3], height: 3 });
+    assert.deepStrictEqual([p2.payload.clock, p3.payload.clock], [2, 3]);
+
+    const epochs = [];
+    beacon.on('epoch', (e) => epochs.push(e.clock));
+    const early = await cosign(beacon, p3, k2);
+    assert.strictEqual(early.status, 'success');
+    assert.strictEqual(early.pending, true);
+    assert.strictEqual(early.ready, true);
+    assert.strictEqual(beacon._epochChain.height, 1);
+
+    const sealed = await cosign(beacon, p2, k2);
+    assert.strictEqual(sealed.sealed, true);
+    assert.deepStrictEqual(sealedEpochs(beacon).map((e) => e[0]), [1, 2, 3]);
+    assert.deepStrictEqual(epochs, [2, 3]);
+    assert.strictEqual(beacon.listPendingFederationEpochRounds().length, 0);
+  });
+
+  it('cancels a pending round orphaned by a reorg and refuses its late signature', async function () {
+    const hashes = [blockHash('a', 0), blockHash('a', 1)];
+    const { beacon, k2 } = federatedBeacon(hashes);
+    const p1 = await beacon.recordEpochFromBlock({ tip: hashes[1], height: 1 });
+    await cosign(beacon, p1, k2);
+    hashes.push(blockHash('a', 2));
+    const p2 = await beacon.recordEpochFromBlock({ tip: hashes[2], height: 2 });
+
+    const cancelled = [];
+    beacon.on('federation:round-cancelled', (e) => cancelled.push(e));
+    hashes[2] = blockHash('b', 2);
+    hashes.push(blockHash('b', 3));
+    const p3 = await beacon.recordEpochFromBlock({ tip: hashes[3], height: 3 });
+    assert.deepStrictEqual(cancelled.map((e) => [e.commitmentDigest, e.reason]), [[p2.commitmentDigest, 'orphaned']]);
+    assert.strictEqual(p3.payload.clock, 2);
+    assert.strictEqual(p3.payload.height, 3);
+
+    const late = await cosign(beacon, p2, k2);
+    assert.strictEqual(late.status, 'error');
+    assert.strictEqual(late.cancelled, true);
+    assert.strictEqual(late.reason, 'orphaned');
+    assert.strictEqual(beacon._epochChain.height, 1);
+    const adopted = await beacon.adoptFederationSignRequest(beaconFederationSigning.encodeSignRequest({
+      commitmentDigest: p2.commitmentDigest,
+      payload: p2.payload,
+      validators: beacon._federationValidators,
+      threshold: 2,
+      signatureScheme: 'schnorr'
+    }));
+    assert.strictEqual(adopted.ok, false);
+    assert.match(String(adopted.error), /cancelled/);
+
+    assert.strictEqual((await cosign(beacon, p3, k2)).sealed, true);
+    assert.deepStrictEqual(sealedEpochs(beacon), [[1, 1, hashes[1]], [2, 3, hashes[3]]]);
+  });
+
+  it('cancels expired rounds and refuses epochs at or below the sealed tip', async function () {
+    const hashes = [blockHash('a', 0), blockHash('a', 1)];
+    const { beacon, k2 } = federatedBeacon(hashes, { federationRoundTtlMs: 1000 });
+    const p1 = await beacon.recordEpochFromBlock({ tip: hashes[1], height: 1 });
+    beacon._pendingEpochRounds.get(p1.commitmentDigest).createdAt = new Date(Date.now() - 5000).toISOString();
+    const late = await cosign(beacon, p1, k2);
+    assert.strictEqual(late.cancelled, true);
+    assert.strictEqual(late.reason, 'expired');
+    assert.strictEqual(beacon._state.content.clock, 0);
+
+    const p1b = await beacon.recordEpochFromBlock({ tip: hashes[1], height: 1 });
+    assert.strictEqual(p1b.payload.clock, 1);
+    await cosign(beacon, p1b, k2);
+    const below = { clock: 1, height: 1, blockHash: blockHash('b', 1) };
+    const adopted = await beacon.adoptFederationSignRequest({
+      commitmentDigest: beaconFederationSigning.epochCommitmentDigestHex(below),
+      epoch: below
+    });
+    assert.strictEqual(adopted.ok, false);
+    assert.match(String(adopted.error), /not above the sealed tip/);
+  });
+
+  it('prunes a deep reorg back to the fork point, bounded by maxReorgDepth, and on start()', async function () {
+    const key = new Key({ network: 'regtest' });
+    const hashes = [0, 1, 2, 3, 4].map((h) => blockHash('a', h));
+    const fs = memoryFs();
+    const beacon = new Beacon({ regtest: false, mineOnStart: false, interval: 0 });
+    beacon.attach({ bitcoin: chainBitcoin(hashes), fs, key });
+    for (let h = 1; h <= 4; h++) await beacon.recordEpochFromBlock({ tip: hashes[h], height: h });
+    assert.strictEqual(beacon._epochChain.height, 4);
+    const snapshot = fs.readFile(Beacon.BEACON_CHAIN_PATH);
+
+    for (let h = 2; h <= 5; h++) hashes[h] = blockHash('b', h);
+    const shallow = new Beacon({ regtest: false, mineOnStart: false, interval: 0, maxReorgDepth: 2 });
+    shallow.attach({ bitcoin: chainBitcoin(hashes), fs: memoryFs(), key });
+    shallow._epochChain = require('../types/chain').fromBeaconMessages(JSON.parse(snapshot).messages);
+    shallow._restoreStateFromTip();
+    await assert.rejects(shallow.recordEpochFromBlock({ tip: hashes[5], height: 5 }), /maxReorgDepth/);
+    assert.strictEqual(shallow._epochChain.height, 4);
+
+    const reorgs = [];
+    beacon.on('reorg', (e) => reorgs.push(e));
+    const next = await beacon.recordEpochFromBlock({ tip: hashes[5], height: 5 });
+    assert.deepStrictEqual(sealedEpochs(beacon), [[1, 1, hashes[1]], [2, 5, hashes[5]]]);
+    assert.strictEqual(next.clock, 2);
+    assert.strictEqual(reorgs.length, 1);
+    assert.strictEqual(reorgs[0].pruned, 3);
+
+    const restartFs = memoryFs();
+    await restartFs.publish(Beacon.BEACON_CHAIN_PATH, snapshot);
+    const restarted = new Beacon({ regtest: true, mineOnStart: false, interval: 0 });
+    restarted.attach({ bitcoin: chainBitcoin(hashes), fs: restartFs, key });
+    await restarted.start();
+    assert.deepStrictEqual(sealedEpochs(restarted).map((e) => e[1]), [1]);
+    assert.strictEqual(JSON.parse(restartFs.readFile(Beacon.BEACON_CHAIN_PATH)).messages.length, 1);
+    await restarted.stop();
+  });
+
+  it('createEpoch refuses non-regtest bitcoind and a generate that returns no block', async function () {
+    const key = new Key({ network: 'regtest' });
+    const main = stubBitcoin({ chain: 'main' });
+    const beacon = new Beacon({ regtest: true, mineOnStart: false, interval: 0 });
+    beacon.attach({ bitcoin: main, fs: memoryFs(), key });
+    await assert.rejects(beacon.createEpoch(), /only runs against regtest/);
+    assert.strictEqual(main.calls.includes('generatetoaddress'), false);
+    await assert.rejects(beacon.createEpoch(), /only runs against regtest/);
+    assert.strictEqual(main.calls.filter((m) => m === 'getblockchaininfo').length, 1);
+
+    const empty = new Beacon({ regtest: true, mineOnStart: false, interval: 0 });
+    empty.attach({ bitcoin: stubBitcoin({ emptyGenerate: true }), fs: memoryFs(), key });
+    await assert.rejects(empty.createEpoch(), /no block/);
+    assert.strictEqual(empty._epochChain.height, 0);
+    assert.strictEqual(empty._state.content.clock, 0);
+  });
+
+  it('records one epoch when createEpoch and a followed block report the same tip', async function () {
+    const bitcoin = stubBitcoin();
+    const beacon = new Beacon({ regtest: true, mineOnStart: false, interval: 0 });
+    beacon.attach({ bitcoin, fs: memoryFs(), key: new Key({ network: 'regtest' }) });
+    const rpc = bitcoin._makeRPCRequest;
+    let followed = null;
+    bitcoin._makeRPCRequest = async (method, params) => {
+      const out = await rpc(method, params);
+      if (method === 'generatetoaddress') {
+        const height = await rpc('getblockcount', []);
+        followed = beacon.recordEpochFromBlock({ tip: out[0], height });
+      }
+      return out;
+    };
+    const created = await beacon.createEpoch();
+    const fromBlock = await followed;
+    assert.strictEqual(beacon._epochChain.height, 1);
+    assert.strictEqual([created, fromBlock].filter(Boolean).length, 1);
+    assert.strictEqual(await beacon.recordEpochFromBlock({ tip: beacon.state.lastBlockHash, height: 1 }), null);
   });
 });
 

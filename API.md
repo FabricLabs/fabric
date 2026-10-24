@@ -201,7 +201,7 @@ JSON bridging is <strong>@fabric/http</strong>. See <code>docs/MESSAGE_BODY.md</
 <code>types/message.js</code>.</p></dd>
 <dt><a href="#Message">Message</a></dt>
 <dd></dd>
-<dt><a href="#DocumentOfferBook">DocumentOfferBook</a></dt>
+<dt><a href="#Book">Book</a></dt>
 <dd></dd>
 <dt><a href="#Peer">Peer</a> ⇐ <code><a href="#Service">Service</a></code></dt>
 <dd><p>P2P node: TCP/NOISE sessions, gossip, and relay of <a href="#Message">Message</a> (AMP) frames. Extends <a href="#Service">Service</a>
@@ -5023,7 +5023,7 @@ Reassembled plaintext when every blob has been opened.
 ### document.inventoryItem([opts]) ⇒ <code>Object</code>
 `P2P_INVENTORY_RESPONSE` item — hash-only. `contentHashHex` on each blob is
 the per-blob payment hash so one HTLC per blob (and multi-seller plans) work
-with the existing `DocumentOfferBook`.
+with the existing `Book`.
 
 **Kind**: instance method of [<code>Document</code>](#Document)  
 
@@ -9251,39 +9251,39 @@ Build a Message whose body is encoded from a registered field schema (V1).
 | [fields] | <code>object</code> | <code>{}</code> | Named fields matching the schema. |
 | [opts] | <code>object</code> | <code>{}</code> | Extra Message constructor options (`signer`, `sensitive`, …). |
 
-<a name="DocumentOfferBook"></a>
+<a name="Book"></a>
 
-## DocumentOfferBook
+## Book
 **Kind**: global class  
 
-* [DocumentOfferBook](#DocumentOfferBook)
-    * [new DocumentOfferBook([settings])](#new_DocumentOfferBook_new)
-    * [._offers](#DocumentOfferBook+_offers) : <code>Map.&lt;string, object&gt;</code>
-    * [._providers](#DocumentOfferBook+_providers) : <code>Map.&lt;string, object&gt;</code>
-    * [.recordInventoryLatency(sellerId, latencyMs, [opts])](#DocumentOfferBook+recordInventoryLatency)
-    * [.recordDelivery(sellerId, outcome)](#DocumentOfferBook+recordDelivery)
-    * [.recordRefund(sellerId)](#DocumentOfferBook+recordRefund)
-    * [.recordPenalty(sellerId, [proof])](#DocumentOfferBook+recordPenalty)
-    * [.ingestFraudProof(body, [ctx])](#DocumentOfferBook+ingestFraudProof) ⇒ <code>Object</code>
-    * [.scoreFor(sellerId)](#DocumentOfferBook+scoreFor) ⇒ <code>number</code>
-    * [.latencyFor(sellerId)](#DocumentOfferBook+latencyFor) ⇒ <code>number</code>
-    * [.providerStats(sellerId)](#DocumentOfferBook+providerStats) ⇒ <code>object</code> \| <code>null</code>
-    * [.listProviders()](#DocumentOfferBook+listProviders) ⇒ <code>Array.&lt;object&gt;</code>
-    * [.exportTelemetry()](#DocumentOfferBook+exportTelemetry) ⇒ <code>Object</code>
-    * [.importTelemetry(record)](#DocumentOfferBook+importTelemetry) ⇒ <code>number</code>
-    * [.ingestInventoryResponse(opts)](#DocumentOfferBook+ingestInventoryResponse)
-    * [.forgetSeller(sellerId)](#DocumentOfferBook+forgetSeller) ⇒ <code>number</code>
-    * [.listOffers([filter])](#DocumentOfferBook+listOffers) ⇒ <code>Array.&lt;object&gt;</code>
-    * [.providersForBlob(blobHashHex, [opts])](#DocumentOfferBook+providersForBlob) ⇒ <code>Array.&lt;object&gt;</code>
-    * [.indexByBlobHash([filter])](#DocumentOfferBook+indexByBlobHash) ⇒ <code>Map.&lt;string, Array.&lt;object&gt;&gt;</code>
-    * [.rankOffers(offers, [weights])](#DocumentOfferBook+rankOffers) ⇒ <code>Array.&lt;object&gt;</code>
-    * [.pickBest(documentId, [opts])](#DocumentOfferBook+pickBest) ⇒ <code>object</code> \| <code>null</code>
-    * [.pickBlobPlan(documentId, blobTotal, [opts])](#DocumentOfferBook+pickBlobPlan) ⇒ <code>Map.&lt;number, object&gt;</code>
-    * [.groupPlanBySeller(plan)](#DocumentOfferBook+groupPlanBySeller) ⇒ <code>Array.&lt;object&gt;</code>
+* [Book](#Book)
+    * [new Book([settings])](#new_DocumentOfferBook_new)
+    * [._offers](#Book+_offers) : <code>Map.&lt;string, object&gt;</code>
+    * [._providers](#Book+_providers) : <code>Map.&lt;string, object&gt;</code>
+    * [.recordInventoryLatency(sellerId, latencyMs, [opts])](#Book+recordInventoryLatency)
+    * [.recordDelivery(sellerId, outcome)](#Book+recordDelivery)
+    * [.recordRefund(sellerId)](#Book+recordRefund)
+    * [.recordPenalty(sellerId, [proof])](#Book+recordPenalty)
+    * [.ingestFraudProof(body, [ctx])](#Book+ingestFraudProof) ⇒ <code>Object</code>
+    * [.scoreFor(sellerId)](#Book+scoreFor) ⇒ <code>number</code>
+    * [.latencyFor(sellerId)](#Book+latencyFor) ⇒ <code>number</code>
+    * [.providerStats(sellerId)](#Book+providerStats) ⇒ <code>object</code> \| <code>null</code>
+    * [.listProviders()](#Book+listProviders) ⇒ <code>Array.&lt;object&gt;</code>
+    * [.exportTelemetry()](#Book+exportTelemetry) ⇒ <code>Object</code>
+    * [.importTelemetry(record)](#Book+importTelemetry) ⇒ <code>number</code>
+    * [.ingestInventoryResponse(opts)](#Book+ingestInventoryResponse)
+    * [.forgetSeller(sellerId)](#Book+forgetSeller) ⇒ <code>number</code>
+    * [.listOffers([filter])](#Book+listOffers) ⇒ <code>Array.&lt;object&gt;</code>
+    * [.providersForBlob(blobHashHex, [opts])](#Book+providersForBlob) ⇒ <code>Array.&lt;object&gt;</code>
+    * [.indexByBlobHash([filter])](#Book+indexByBlobHash) ⇒ <code>Map.&lt;string, Array.&lt;object&gt;&gt;</code>
+    * [.rankOffers(offers, [weights])](#Book+rankOffers) ⇒ <code>Array.&lt;object&gt;</code>
+    * [.pickBest(documentId, [opts])](#Book+pickBest) ⇒ <code>object</code> \| <code>null</code>
+    * [.pickBlobPlan(documentId, blobTotal, [opts])](#Book+pickBlobPlan) ⇒ <code>Map.&lt;number, object&gt;</code>
+    * [.groupPlanBySeller(plan)](#Book+groupPlanBySeller) ⇒ <code>Array.&lt;object&gt;</code>
 
 <a name="new_DocumentOfferBook_new"></a>
 
-### new DocumentOfferBook([settings])
+### new Book([settings])
 
 | Param | Type | Default | Description |
 | --- | --- | --- | --- |
@@ -9292,24 +9292,24 @@ Build a Message whose body is encoded from a registered field schema (V1).
 | [settings.hopPenaltyMs] | <code>number</code> | <code>50</code> | latency added per gossip hop |
 | [settings.weights] | <code>Object</code> |  | ranking weight overrides |
 
-<a name="DocumentOfferBook+_offers"></a>
+<a name="Book+_offers"></a>
 
 ### documentOfferBook.\_offers : <code>Map.&lt;string, object&gt;</code>
 offerKey → offer row
 
-**Kind**: instance property of [<code>DocumentOfferBook</code>](#DocumentOfferBook)  
-<a name="DocumentOfferBook+_providers"></a>
+**Kind**: instance property of [<code>Book</code>](#Book)  
+<a name="Book+_providers"></a>
 
 ### documentOfferBook.\_providers : <code>Map.&lt;string, object&gt;</code>
 sellerId → provider telemetry
 
-**Kind**: instance property of [<code>DocumentOfferBook</code>](#DocumentOfferBook)  
-<a name="DocumentOfferBook+recordInventoryLatency"></a>
+**Kind**: instance property of [<code>Book</code>](#Book)  
+<a name="Book+recordInventoryLatency"></a>
 
 ### documentOfferBook.recordInventoryLatency(sellerId, latencyMs, [opts])
 Record an inventory round trip for a provider.
 
-**Kind**: instance method of [<code>DocumentOfferBook</code>](#DocumentOfferBook)  
+**Kind**: instance method of [<code>Book</code>](#Book)  
 
 | Param | Type | Description |
 | --- | --- | --- |
@@ -9318,12 +9318,12 @@ Record an inventory round trip for a provider.
 | [opts] | <code>Object</code> |  |
 | [opts.hops] | <code>number</code> | gossip hops the response travelled |
 
-<a name="DocumentOfferBook+recordDelivery"></a>
+<a name="Book+recordDelivery"></a>
 
 ### documentOfferBook.recordDelivery(sellerId, outcome)
 Record a delivery outcome (a blob plan or a single blob).
 
-**Kind**: instance method of [<code>DocumentOfferBook</code>](#DocumentOfferBook)  
+**Kind**: instance method of [<code>Book</code>](#Book)  
 
 | Param | Type | Description |
 | --- | --- | --- |
@@ -9333,30 +9333,30 @@ Record a delivery outcome (a blob plan or a single blob).
 | [outcome.latencyMs] | <code>number</code> |  |
 | [outcome.bytes] | <code>number</code> |  |
 
-<a name="DocumentOfferBook+recordRefund"></a>
+<a name="Book+recordRefund"></a>
 
 ### documentOfferBook.recordRefund(sellerId)
 Record that a purchase from this provider ended in an HTLC refund.
 
-**Kind**: instance method of [<code>DocumentOfferBook</code>](#DocumentOfferBook)  
+**Kind**: instance method of [<code>Book</code>](#Book)  
 
 | Param | Type |
 | --- | --- |
 | sellerId | <code>string</code> | 
 
-<a name="DocumentOfferBook+recordPenalty"></a>
+<a name="Book+recordPenalty"></a>
 
 ### documentOfferBook.recordPenalty(sellerId, [proof])
 Record a verified fraud proof against this provider.
 
-**Kind**: instance method of [<code>DocumentOfferBook</code>](#DocumentOfferBook)  
+**Kind**: instance method of [<code>Book</code>](#Book)  
 
 | Param | Type | Description |
 | --- | --- | --- |
 | sellerId | <code>string</code> |  |
 | [proof] | <code>Object</code> | `{ kind }` from `types/witness` FraudProof |
 
-<a name="DocumentOfferBook+ingestFraudProof"></a>
+<a name="Book+ingestFraudProof"></a>
 
 ### documentOfferBook.ingestFraudProof(body, [ctx]) ⇒ <code>Object</code>
 Verify a `FraudProof` body (`types/witness`) and penalize the offender
@@ -9364,77 +9364,77 @@ locally. The offender is an x-only pubkey; every seller whose offer rows
 were signed by that key (33-byte `sellerPubkey` / `ampSignerPubkey`, or an
 x-only `sellerId`) takes the penalty. Reputation stays local (decision 4).
 
-**Kind**: instance method of [<code>DocumentOfferBook</code>](#DocumentOfferBook)  
+**Kind**: instance method of [<code>Book</code>](#Book)  
 
 | Param | Type | Description |
 | --- | --- | --- |
 | body | <code>Object</code> | `CONTRACT_MESSAGE` body |
 | [ctx] | <code>Object</code> | `{ epoch }` for non-response proofs |
 
-<a name="DocumentOfferBook+scoreFor"></a>
+<a name="Book+scoreFor"></a>
 
 ### documentOfferBook.scoreFor(sellerId) ⇒ <code>number</code>
 Derived 0..1000 score. Unknown providers score [SCORE_UNKNOWN](#SCORE_UNKNOWN); a
 verified penalty is weighted as ten failed deliveries.
 
-**Kind**: instance method of [<code>DocumentOfferBook</code>](#DocumentOfferBook)  
+**Kind**: instance method of [<code>Book</code>](#Book)  
 
 | Param | Type |
 | --- | --- |
 | sellerId | <code>string</code> | 
 
-<a name="DocumentOfferBook+latencyFor"></a>
+<a name="Book+latencyFor"></a>
 
 ### documentOfferBook.latencyFor(sellerId) ⇒ <code>number</code>
 Effective latency for ranking: measured RTT plus a per-hop penalty.
 
-**Kind**: instance method of [<code>DocumentOfferBook</code>](#DocumentOfferBook)  
+**Kind**: instance method of [<code>Book</code>](#Book)  
 
 | Param | Type |
 | --- | --- |
 | sellerId | <code>string</code> | 
 
-<a name="DocumentOfferBook+providerStats"></a>
+<a name="Book+providerStats"></a>
 
 ### documentOfferBook.providerStats(sellerId) ⇒ <code>object</code> \| <code>null</code>
-**Kind**: instance method of [<code>DocumentOfferBook</code>](#DocumentOfferBook)  
+**Kind**: instance method of [<code>Book</code>](#Book)  
 
 | Param | Type |
 | --- | --- |
 | sellerId | <code>string</code> | 
 
-<a name="DocumentOfferBook+listProviders"></a>
+<a name="Book+listProviders"></a>
 
 ### documentOfferBook.listProviders() ⇒ <code>Array.&lt;object&gt;</code>
 All known providers with derived score, best first.
 
-**Kind**: instance method of [<code>DocumentOfferBook</code>](#DocumentOfferBook)  
-<a name="DocumentOfferBook+exportTelemetry"></a>
+**Kind**: instance method of [<code>Book</code>](#Book)  
+<a name="Book+exportTelemetry"></a>
 
 ### documentOfferBook.exportTelemetry() ⇒ <code>Object</code>
 Signable, versioned telemetry record (local persistence; future gossip).
 
-**Kind**: instance method of [<code>DocumentOfferBook</code>](#DocumentOfferBook)  
-<a name="DocumentOfferBook+importTelemetry"></a>
+**Kind**: instance method of [<code>Book</code>](#Book)  
+<a name="Book+importTelemetry"></a>
 
 ### documentOfferBook.importTelemetry(record) ⇒ <code>number</code>
 Merge a telemetry record exported earlier (same node). Counters add;
 latencies take the newer sample.
 
-**Kind**: instance method of [<code>DocumentOfferBook</code>](#DocumentOfferBook)  
+**Kind**: instance method of [<code>Book</code>](#Book)  
 **Returns**: <code>number</code> - providers merged  
 
 | Param | Type |
 | --- | --- |
 | record | <code>object</code> | 
 
-<a name="DocumentOfferBook+ingestInventoryResponse"></a>
+<a name="Book+ingestInventoryResponse"></a>
 
 ### documentOfferBook.ingestInventoryResponse(opts)
 Ingest an `INVENTORY_RESPONSE`. Caller-supplied `peerScore` / `latencyMs`
 win; otherwise local telemetry for the seller is applied.
 
-**Kind**: instance method of [<code>DocumentOfferBook</code>](#DocumentOfferBook)  
+**Kind**: instance method of [<code>Book</code>](#Book)  
 
 | Param | Type | Description |
 | --- | --- | --- |
@@ -9448,22 +9448,22 @@ win; otherwise local telemetry for the seller is applied.
 | [opts.sellerPubkey] | <code>string</code> |  |
 | [opts.signerPubkeyHex] | <code>string</code> | AMP signer (preferred identity) |
 
-<a name="DocumentOfferBook+forgetSeller"></a>
+<a name="Book+forgetSeller"></a>
 
 ### documentOfferBook.forgetSeller(sellerId) ⇒ <code>number</code>
 Drop every offer from one seller (disconnect, fraud, expiry).
 
-**Kind**: instance method of [<code>DocumentOfferBook</code>](#DocumentOfferBook)  
+**Kind**: instance method of [<code>Book</code>](#Book)  
 **Returns**: <code>number</code> - rows removed  
 
 | Param | Type |
 | --- | --- |
 | sellerId | <code>string</code> | 
 
-<a name="DocumentOfferBook+listOffers"></a>
+<a name="Book+listOffers"></a>
 
 ### documentOfferBook.listOffers([filter]) ⇒ <code>Array.&lt;object&gt;</code>
-**Kind**: instance method of [<code>DocumentOfferBook</code>](#DocumentOfferBook)  
+**Kind**: instance method of [<code>Book</code>](#Book)  
 
 | Param | Type | Description |
 | --- | --- | --- |
@@ -9474,34 +9474,34 @@ Drop every offer from one seller (disconnect, fraud, expiry).
 | [filter.merkleRootHex] | <code>string</code> | tree selector |
 | [filter.sellerId] | <code>string</code> |  |
 
-<a name="DocumentOfferBook+providersForBlob"></a>
+<a name="Book+providersForBlob"></a>
 
 ### documentOfferBook.providersForBlob(blobHashHex, [opts]) ⇒ <code>Array.&lt;object&gt;</code>
 Chunk index: ranked providers for one blob hash.
 
-**Kind**: instance method of [<code>DocumentOfferBook</code>](#DocumentOfferBook)  
+**Kind**: instance method of [<code>Book</code>](#Book)  
 **Returns**: <code>Array.&lt;object&gt;</code> - ranked offers, best first  
 
 | Param | Type | Description |
 | --- | --- | --- |
 | blobHashHex | <code>string</code> |  |
-| [opts] | <code>Object</code> | see [pickBest](#DocumentOfferBook+pickBest) |
+| [opts] | <code>Object</code> | see [pickBest](#Book+pickBest) |
 
-<a name="DocumentOfferBook+indexByBlobHash"></a>
+<a name="Book+indexByBlobHash"></a>
 
 ### documentOfferBook.indexByBlobHash([filter]) ⇒ <code>Map.&lt;string, Array.&lt;object&gt;&gt;</code>
 Full chunk index: blob hash → ranked offers.
 
-**Kind**: instance method of [<code>DocumentOfferBook</code>](#DocumentOfferBook)  
+**Kind**: instance method of [<code>Book</code>](#Book)  
 
 | Param | Type | Description |
 | --- | --- | --- |
 | [filter] | <code>Object</code> | `{ merkleRootHex, documentId }` |
 
-<a name="DocumentOfferBook+rankOffers"></a>
+<a name="Book+rankOffers"></a>
 
 ### documentOfferBook.rankOffers(offers, [weights]) ⇒ <code>Array.&lt;object&gt;</code>
-**Kind**: instance method of [<code>DocumentOfferBook</code>](#DocumentOfferBook)  
+**Kind**: instance method of [<code>Book</code>](#Book)  
 **Returns**: <code>Array.&lt;object&gt;</code> - offers with `rankScore`, best first  
 
 | Param | Type |
@@ -9509,10 +9509,10 @@ Full chunk index: blob hash → ranked offers.
 | offers | <code>Array.&lt;object&gt;</code> | 
 | [weights] | <code>Object</code> | 
 
-<a name="DocumentOfferBook+pickBest"></a>
+<a name="Book+pickBest"></a>
 
 ### documentOfferBook.pickBest(documentId, [opts]) ⇒ <code>object</code> \| <code>null</code>
-**Kind**: instance method of [<code>DocumentOfferBook</code>](#DocumentOfferBook)  
+**Kind**: instance method of [<code>Book</code>](#Book)  
 
 | Param | Type | Description |
 | --- | --- | --- |
@@ -9525,7 +9525,7 @@ Full chunk index: blob hash → ranked offers.
 | [opts.merkleRootHex] | <code>string</code> | only offers for this tree root |
 | [opts.weights] | <code>Object</code> |  |
 
-<a name="DocumentOfferBook+pickBlobPlan"></a>
+<a name="Book+pickBlobPlan"></a>
 
 ### documentOfferBook.pickBlobPlan(documentId, blobTotal, [opts]) ⇒ <code>Map.&lt;number, object&gt;</code>
 One offer per blob index. Prefers seller diversity when rank scores are
@@ -9533,7 +9533,7 @@ within 10%. With per-blob sealing (every blob has its own `K_i` and
 payment hash) sealed trees split across sellers exactly like unsealed
 ones; a legacy document-level seal (`opts.singleKey`) stays on one seller.
 
-**Kind**: instance method of [<code>DocumentOfferBook</code>](#DocumentOfferBook)  
+**Kind**: instance method of [<code>Book</code>](#Book)  
 
 | Param | Type | Description |
 | --- | --- | --- |
@@ -9546,18 +9546,18 @@ ones; a legacy document-level seal (`opts.singleKey`) stays on one seller.
 | [opts.excludeSellers] | <code>Array.&lt;string&gt;</code> |  |
 | [opts.merkleRootHex] | <code>string</code> | only offers for this tree root; when   omitted the plan still stays on **one** root (the first pick's), so   blobs from different trees are never mixed into a single document |
 
-<a name="DocumentOfferBook+groupPlanBySeller"></a>
+<a name="Book+groupPlanBySeller"></a>
 
 ### documentOfferBook.groupPlanBySeller(plan) ⇒ <code>Array.&lt;object&gt;</code>
 Group a blob plan by seller: the MVP economic unit (one L1 HTLC per
 seller covering every blob picked from them).
 
-**Kind**: instance method of [<code>DocumentOfferBook</code>](#DocumentOfferBook)  
+**Kind**: instance method of [<code>Book</code>](#Book)  
 **Returns**: <code>Array.&lt;object&gt;</code> - `[{ sellerId, sellerAddress, blobIndexes, totalSats, offers }]`  
 
 | Param | Type | Description |
 | --- | --- | --- |
-| plan | <code>Map.&lt;number, object&gt;</code> | from [pickBlobPlan](#DocumentOfferBook+pickBlobPlan) |
+| plan | <code>Map.&lt;number, object&gt;</code> | from [pickBlobPlan](#Book+pickBlobPlan) |
 
 <a name="Peer"></a>
 
@@ -19081,7 +19081,7 @@ Default TCP port lightningd listens on when [settings.port](settings.port) is om
 | [settings.inventoryEveryMs] | <code>number</code> | <code>30000</code> | Minimum spacing between inventory refreshes per want. |
 | [settings.deliveryTimeoutMs] | <code>number</code> | <code>600000</code> | Confirmed sessions without delivery fail after this (0 = never). |
 | [settings.network] | <code>string</code> | <code>&quot;&#x27;regtest&#x27;&quot;</code> | Bitcoin network for HTLC construction (mainnet refused). |
-| [settings.book] | <code>Object</code> |  | `DocumentOfferBook` settings. |
+| [settings.book] | <code>Object</code> |  | `Book` settings. |
 
 <a name="Market+attach"></a>
 
@@ -19092,7 +19092,7 @@ Default TCP port lightningd listens on when [settings.port](settings.port) is om
 | --- | --- | --- |
 | deps | <code>Object</code> |  |
 | deps.peer | <code>Object</code> | `@fabric/core` Peer (inventory, requests, delivery events). |
-| [deps.book] | [<code>DocumentOfferBook</code>](#DocumentOfferBook) | shared offer book (defaults to the agent's own). |
+| [deps.book] | [<code>Book</code>](#Book) | shared offer book (defaults to the agent's own). |
 | [deps.pay] | <code>function</code> | `async (session) => txid|null` — funds the session HTLC address. |
 | [deps.verify] | <code>function</code> | `async (session, txid) => boolean` — L1 / Hub payment proof. |
 

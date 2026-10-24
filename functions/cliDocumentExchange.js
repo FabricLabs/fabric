@@ -18,7 +18,7 @@ const path = require('path');
 const { HTLC_MINIMUM_SATS } = require('../constants');
 const Actor = require('../types/actor');
 const {
-  DocumentOfferBook,
+  Book,
   createDocumentPurchaseSession,
   findSession,
   isDuplicateSettlement,
@@ -139,7 +139,7 @@ class CliDocumentExchange {
   constructor (host = {}) {
     this.host = host;
     this.documents = host.documents || {};
-    this.offerBook = host.offerBook || new DocumentOfferBook();
+    this.offerBook = host.offerBook || new Book();
     this.purchaseSessions = host.purchaseSessions || new Map();
     this.paidSettlements = host.paidSettlements || new Set();
     this.remoteInventories = host.remoteInventories || {};
@@ -1040,7 +1040,7 @@ class CliDocumentExchange {
 
 module.exports = {
   CliDocumentExchange,
-  DocumentOfferBook,
+  Book,
   createDocumentPurchaseSession,
   findSession,
   isDuplicateSettlement,

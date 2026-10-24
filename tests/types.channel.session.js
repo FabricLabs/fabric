@@ -40,8 +40,12 @@ function pair (capacity = 100000, fee = 500, extra = {}) {
   assert.strictEqual(fundingA.channelId, fundingB.channelId);
   const fundedTxHex = fundingTx(fundingA.address, capacity);
   const open = capacity - fee - ANCHORS;
-  const A = new Channel.Session(Object.assign({ funding: fundingA, fundedTxHex, localPrivateKey: a.priv, localSats: open, remoteSats: 0, localAddress: a.address, remoteAddress: b.address, feeSats: fee }, extra.A || {}));
-  const B = new Channel.Session(Object.assign({ funding: fundingB, fundedTxHex, localPrivateKey: b.priv, localSats: 0, remoteSats: open, localAddress: b.address, remoteAddress: a.address, feeSats: fee }, extra.B || {}));
+  // Short test delays: the non-funder must opt in below the 144-block floor.
+  const base = { tipHeight: () => 100, fundingConfirmed: true };
+  const optsA = Object.assign({}, base, extra.A || {});
+  const optsB = Object.assign({}, base, extra.B || {}, { policy: Object.assign({ minToSelfDelay: 1 }, (extra.B && extra.B.policy) || {}) });
+  const A = new Channel.Session(Object.assign({ funding: fundingA, fundedTxHex, localPrivateKey: a.priv, localSats: open, remoteSats: 0, localAddress: a.address, remoteAddress: b.address, feeSats: fee }, optsA));
+  const B = new Channel.Session(Object.assign({ funding: fundingB, fundedTxHex, localPrivateKey: b.priv, localSats: 0, remoteSats: open, localAddress: b.address, remoteAddress: a.address, feeSats: fee }, optsB));
   return { a, b, A, B, fundedTxHex, open };
 }
 
@@ -241,7 +245,7 @@ describe('@fabric/core/types/channel (Phase 4 sessions)', function () {
     header.writeUInt32LE(0x207fffff, 72); // regtest difficulty
     while (!headerMeetsTarget(header.toString('hex'))) header.writeUInt32LE(header.readUInt32LE(76) + 1, 76);
     const blockHash = parseHeader(header.toString('hex')).blockHash;
-    const chainView = { headerKnown: (hash) => hash === blockHash };
+    const chainView = { headerKnown: (hash) => hash === blockHash, confirmations: () => 6, txCount: () => txids.length };
     const seen = B.observe(staleA.txHex, { destinationAddress: B.localAddress, feeSats: 400, inclusion: { blockHeaderHex: header.toString('hex'), txids } });
     assert.strictEqual(seen.kind, 'stale');
     assert.strictEqual(seen.number, 1);
@@ -322,9 +326,9 @@ describe('@fabric/core/types/channel (Phase 4 sessions)', function () {
     assert.strictEqual(A.status, 'open');
     assert.throws(() => A.offerHtlc({ amountSats: 1000, paymentHashHex: crypto.randomBytes(32).toString('hex'), expireAfter: 103 }), /expires too soon/);
     const h = crypto.randomBytes(32).toString('hex');
-    sync(A, B, A.offerHtlc({ amountSats: 1000, paymentHashHex: h, expireAfter: 200 }));
+    sync(A, B, A.offerHtlc({ amountSats: 1000, paymentHashHex: h, expireAfter: 300 }));
     assert.throws(() => A.failHtlc(A.state.htlcs[0].id), /not yet expired/);
-    tip = 250;
+    tip = 310;
     const r = B.tick(tip);
     assert.strictEqual(r.bodies.length, 1, 'receiver auto-fails the expired HTLC');
     assert.strictEqual(r.bodies[0].type, 'ChannelHtlcFail');
@@ -364,7 +368,7 @@ describe('@fabric/core/types/channel (Channel.Book host registry)', function () 
     const out = [];
     for (let i = 0; i < n; i++) {
       const p = party();
-      const book = new Channel.Book(Object.assign({ localPrivateKey: p.priv, network: 'regtest', publish: (body) => wires.get(book).push(body) }, extra));
+      const book = new Channel.Book(Object.assign({ localPrivateKey: p.priv, network: 'regtest', confirmations: () => 6, publish: (body) => wires.get(book).push(body) }, extra));
       wires.set(book, []);
       out.push({ p, book });
     }
@@ -389,7 +393,7 @@ describe('@fabric/core/types/channel (Channel.Book host registry)', function () 
     const { out, pump } = books(2, { tipHeight: () => 10 });
     const [A, B] = out;
     const funding = Channel.buildFunding({ network: 'regtest', localPubkey: A.p.pub, remotePubkey: B.p.pub, expireAfter: 5000 });
-    const { session } = A.book.open({ remotePubkey: B.p.pub, fundedTxHex: fundingTx(funding.address, 20000), capacitySats: 20000, expireAfter: 5000, localAddress: A.p.address, remoteAddress: B.p.address, aliases: ['peer-b'] });
+    const { session } = A.book.open({ remotePubkey: B.p.pub, fundedTxHex: fundingTx(funding.address, 20000), capacitySats: 20000, expireAfter: 5000, feeSats: 500, localAddress: A.p.address, remoteAddress: B.p.address, aliases: ['peer-b'] });
     assert.strictEqual(A.book.sessionFor('peer-b'), session);
     assert.strictEqual(A.book.sessionFor('nobody', B.p.pub), session);
     pump();
@@ -413,16 +417,16 @@ describe('@fabric/core/types/channel (Channel.Book host registry)', function () 
   });
 
   it('forwards an HTLC across two channels and propagates fulfil / fail upstream', function () {
-    const { out, pump } = books(3, { tipHeight: () => 10, forwardPolicy: { feeSats: 10, cltvDelta: 40 } });
+    const { out, pump } = books(3, { tipHeight: () => 10, forwardPolicy: { feeSats: 10, cltvDelta: 200 } });
     const [A, B, C] = out;
     const fAB = Channel.buildFunding({ network: 'regtest', localPubkey: A.p.pub, remotePubkey: B.p.pub, expireAfter: 5000 });
     const fBC = Channel.buildFunding({ network: 'regtest', localPubkey: B.p.pub, remotePubkey: C.p.pub, expireAfter: 5000 });
-    const ab = A.book.open({ remotePubkey: B.p.pub, fundedTxHex: fundingTx(fAB.address, 50000), capacitySats: 50000, expireAfter: 5000, localAddress: A.p.address, remoteAddress: B.p.address });
-    const bc = B.book.open({ remotePubkey: C.p.pub, fundedTxHex: fundingTx(fBC.address, 50000), capacitySats: 50000, expireAfter: 5000, localAddress: B.p.address, remoteAddress: C.p.address });
+    const ab = A.book.open({ remotePubkey: B.p.pub, fundedTxHex: fundingTx(fAB.address, 50000), capacitySats: 50000, expireAfter: 5000, feeSats: 500, localAddress: A.p.address, remoteAddress: B.p.address });
+    const bc = B.book.open({ remotePubkey: C.p.pub, fundedTxHex: fundingTx(fBC.address, 50000), capacitySats: 50000, expireAfter: 5000, feeSats: 500, localAddress: B.p.address, remoteAddress: C.p.address });
     pump();
     const preimage = crypto.randomBytes(32).toString('hex');
     const paymentHashHex = hashOf(preimage);
-    const route = Channel.planRoute({ paymentHashHex, amountSats: 1000, finalExpireHeight: 3000, hops: [{ feeSats: 10, cltvDelta: 40 }, { feeSats: 0, cltvDelta: 40 }] });
+    const route = Channel.planRoute({ paymentHashHex, amountSats: 1000, finalExpireHeight: 3000, hops: [{ feeSats: 10, cltvDelta: 200 }, { feeSats: 0, cltvDelta: 200 }] });
     A.book.publish(ab.session.offerHtlc({ amountSats: route.hops[0].amountSats, paymentHashHex, expireAfter: route.hops[0].expireAfter }), ab.session);
     pump();
     const upstream = B.book.sessions.get(ab.session.channelId);
@@ -443,7 +447,7 @@ describe('@fabric/core/types/channel (Channel.Book host registry)', function () 
     assert.strictEqual(B.book.forwards.size, 0);
 
     // Downstream failure refunds upstream.
-    A.book.publish(ab.session.offerHtlc({ amountSats: 1000 + 10, paymentHashHex: crypto.randomBytes(32).toString('hex'), expireAfter: 3040 }), ab.session);
+    A.book.publish(ab.session.offerHtlc({ amountSats: 1000 + 10, paymentHashHex: crypto.randomBytes(32).toString('hex'), expireAfter: 3200 }), ab.session);
     pump();
     B.book.forward(upstream, upstream.state.htlcs[0].id, bc.session);
     pump();
@@ -466,7 +470,7 @@ describe('@fabric/core/types/channel (Channel.Book host registry)', function () 
     A.book.on('htlcFulfilled', (e) => events.fulfilled.push(e));
     A.book.on('htlcSettled', (e) => events.settled.push(e));
     const funding = Channel.buildFunding({ network: 'regtest', localPubkey: A.p.pub, remotePubkey: B.p.pub, expireAfter: 5000 });
-    const { session } = A.book.open({ remotePubkey: B.p.pub, fundedTxHex: fundingTx(funding.address, 20000), capacitySats: 20000, expireAfter: 5000, localAddress: A.p.address, remoteAddress: B.p.address });
+    const { session } = A.book.open({ remotePubkey: B.p.pub, fundedTxHex: fundingTx(funding.address, 20000), capacitySats: 20000, expireAfter: 5000, feeSats: 500, localAddress: A.p.address, remoteAddress: B.p.address });
     pump();
     A.book.publish(session.offerHtlc({ amountSats: 1000, paymentHashHex, blobHashHex: 'ab'.repeat(32), expireAfter: 4000 }), session);
     pump();
@@ -486,7 +490,7 @@ describe('@fabric/core/types/channel (Channel.Book host registry)', function () 
     const { out } = books(2, { tipHeight: () => 10 });
     const [A, B] = out;
     const funding = Channel.buildFunding({ network: 'regtest', localPubkey: A.p.pub, remotePubkey: B.p.pub, expireAfter: 5000 });
-    const { body } = A.book.open({ remotePubkey: B.p.pub, fundedTxHex: fundingTx(funding.address, 20000), capacitySats: 20000, expireAfter: 5000, localAddress: A.p.address, remoteAddress: B.p.address });
+    const { body } = A.book.open({ remotePubkey: B.p.pub, fundedTxHex: fundingTx(funding.address, 20000), capacitySats: 20000, expireAfter: 5000, feeSats: 500, localAddress: A.p.address, remoteAddress: B.p.address });
     const forged = Object.assign({}, body, { signature: '00'.repeat(64) });
     assert.throws(() => B.book.ingest(forged, { sellerId: 'peer-a' }));
     assert.strictEqual(B.book.sessions.size, 0);

@@ -21,13 +21,13 @@ const {
 
 /**
  * Ranked multi-peer document / blob sale offer book — the class lives in
- * `types/offerBook.js`; re-exported here for `PUBLIC_API.md` compatibility.
+ * `types/book.js` (`Book`); re-exported here for `PUBLIC_API.md` compatibility.
  */
 const {
-  DocumentOfferBook,
+  Book,
   DEFAULT_WEIGHTS,
   offerKey
-} = require('../types/offerBook');
+} = require('../types/book');
 
 /** Buyer/seller document purchase session records (whole-doc or per-blob). */
 
@@ -285,7 +285,9 @@ function assertMonotoneBudget (maxSatsIn, maxSatsOut) {
 }
 
 module.exports = {
-  DocumentOfferBook,
+  Book,
+  // Deprecated alias of `Book`.
+  DocumentOfferBook: Book,
   DEFAULT_WEIGHTS,
   offerKey,
   createDocumentPurchaseSession,

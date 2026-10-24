@@ -1,6 +1,6 @@
 {
   "name": "@fabric/core",
-  "version": "0.1.0-RC1",
+  "version": "0.1.0",
   "description": "Fabric 0.1.0 reference client — NOISE P2P with bounded gossip, Bitcoin document-exchange helpers, local Program/Machine (experimental; not a sandboxed dapp VM).",
   "main": "types/fabric.js",
   "module": "types/fabric.mjs",

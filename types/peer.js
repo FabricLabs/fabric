@@ -40,6 +40,11 @@ const {
   PEER_MUSIG_SESSION_TTL_MS,
   HEADER_SIZE,
   MAX_MESSAGE_SIZE,
+  LEGACY_MAX_FRAME_BYTES,
+  NOISE_HANDSHAKE_MAX_BYTES,
+  MAX_DOCUMENT_ID_LENGTH,
+  INVENTORY_RESPONSE_PAGE_BYTES,
+  PEER_SCORE_OVERSIZE_FRAME_PENALTY,
   P2P_PORT,
   P2P_CHAIN_SYNC_REQUEST,
   P2P_FLUSH_CHAIN,
@@ -67,6 +72,7 @@ const musig2Session = require('../functions/musig2Session');
 const sidechainState = require('../functions/sidechainState');
 const { verifyFederationWitnessOnMessage, epochCommitmentDigestHex } = require('../functions/beaconFederationSigning');
 const { resolveFederationThreshold } = require('../functions/federationValidators');
+const { paginateInventoryItems } = require('../functions/inventoryPages');
 const {
   aggregatePeerBandwidth,
   peerBandwidthSnapshot,
@@ -78,6 +84,19 @@ const {
 const P2P_CHAT_MAX_CHARS = 2000;
 /** @private Max UTF-8 code units for first-class P2P_PEER_ALIAS body (nickname). */
 const P2P_PEER_ALIAS_MAX_CHARS = 64;
+
+/**
+ * Document ids ride in `P2P_FILE_SEND` / inventory / request frames next to a full
+ * blob; longer ids would push those frames over the cap.
+ * @param {*} id
+ * @returns {boolean}
+ * @private
+ */
+function isWireDocumentId (id) {
+  if (id === null || id === undefined || typeof id === 'object') return false;
+  const text = String(id);
+  return text.length > 0 && text.length <= MAX_DOCUMENT_ID_LENGTH;
+}
 
 /**
  * Peer-owned content maps. Hub passes `new Peer(this.settings)` so lodash.merge
@@ -207,10 +226,18 @@ const {
   DocumentBlobTransferBook,
   parseFileSendObject,
   verifyBlob,
-  merkleRootHexFromBlobHashes
+  DOCUMENT_TREE_VERSION,
+  MAX_PENDING_BLOB_TRANSFERS_PER_ORIGIN,
+  sameIv,
+  verifyDocumentInclusion,
+  verifyOfferLeaves
 } = require('../functions/documentBlobManifest');
 const {
   KEY_REVEAL_TYPE,
+  BLOB_QUOTE_TYPE,
+  createBlobQuote,
+  checkBlobQuote,
+  isWellFormedBlobQuote,
   prepareSealedSale,
   advertiseSealedDocument,
   buildKeyRevealMessage,
@@ -472,7 +499,10 @@ class Peer extends Service {
       connectTimeout: 5000,
       // Inbound NOISE must finish before this; scanners that hold :7777 without
       // completing handshake would otherwise sit on the shared WASM bus.
+      // Absolute deadline (not idle), so a byte-at-a-time handshake cannot extend it.
       handshakeTimeout: 10000,
+      // Bytes a remote may send before the NOISE handshake completes.
+      handshakeMaxBytes: NOISE_HANDSHAKE_MAX_BYTES,
       commitHistoryMax: 256,
       // Relay amplification controls for P2P_PEER_GOSSIP.
       gossip: {
@@ -631,6 +661,21 @@ class Peer extends Service {
     this.pendingSealedDeliveries = Object.create(null);
     /** Per-blob sealed trees awaiting one `DocumentContentKeyReveal` per blob (types/document.js). */
     this.pendingSealedBlobs = Object.create(null);
+    /** Running byte total of `pendingSealedBlobs`, and of unpinned rows per origin. */
+    this._pendingSealedBytes = 0;
+    this._pendingSealedOriginBytes = new Map();
+    /**
+     * Seller-private material for published sealed documents: documentId →
+     * `{ keys: Map<index, K_i hex>, ciphertexts: Map<index, Buffer>, doc: Document|null }`.
+     * Kept out of `_state` so keys and bytes never reach commits or observers.
+     */
+    this._sealedBlobSecrets = new Map();
+    /** Seller: static payment hash `SHA256(K_i)` → `{ documentId, blobIndex }`. */
+    this._sealedBlobByPaymentHash = new Map();
+    /** Seller per-buyer quotes: paymentHashHex → `{ documentId, blobIndex, secretHex, priceSats, expiresAt, keyHashHex }`. */
+    this._sealedBlobQuotes = new Map();
+    /** Buyer: quotes received, paymentHashHex → `{ quote, origin, frameHex, received }`. */
+    this._receivedBlobQuotes = new Map();
     this._pendingDocumentRequestSeq = 0;
     /** Private reverse routes for rewritten DocumentRequests (never gossiped). */
     this._documentRelayRoutes = Object.create(null);
@@ -2367,6 +2412,7 @@ class Peer extends Service {
       },
       object: {
         challenge: crypto.randomBytes(8).toString('hex'),
+        maxFrameBytes: this._localMaxFrameBytes()
       }
     })];
 
@@ -2521,13 +2567,14 @@ class Peer extends Service {
         socket.removeListener('timeout', onConnectTimeout);
         socket.setTimeout(0);
         if (socket.destroyed) return;
-        const client = noise({
+        const client = noise(Object.assign(this._noiseTransportOptions(), {
           initiator: true,
           prologue: Buffer.from(PROLOGUE),
           // privateKey: _derived.privkey — enable when NOISE static === Fabric derived key.
           verify: this._verifyNOISE.bind(this)
-        });
+        }));
         this._attachNoiseStreamErrorHandlers(client, 'NOISE');
+        this._bindNoiseTransportToSocket(client, socket);
         const handshakeTimeoutMs = (typeof this.settings.handshakeTimeout === 'number')
           ? this.settings.handshakeTimeout
           : 10000;
@@ -2916,12 +2963,18 @@ class Peer extends Service {
       if (wire instanceof Uint8Array) wire = Buffer.from(wire);
       else return this;
     }
-    const maxBody = Number(this.settings.maxMessageSize);
-    const bodyCap = Number.isFinite(maxBody) && maxBody > 0 ? maxBody : MAX_MESSAGE_SIZE;
-    const maxWire = HEADER_SIZE + bodyCap;
+    const maxWire = this._localMaxFrameBytes();
     if (wire.length > maxWire) {
       this.emit('warning',
         `[FABRIC:PEER] Dropping oversized frame (${wire.length} > ${maxWire}) from ${originName || 'unknown'}`);
+      // Senders clamp to our advertised cap, and unannounced peers to the legacy 4096 bytes,
+      // so anything over both is a protocol violation (C fabricd: "oversize body").
+      if (wire.length > Math.max(maxWire, LEGACY_MAX_FRAME_BYTES) && delivery.allowTcpOriginSideEffects) {
+        this._applyPeerMisbehavior(scoreOrigin, 'oversize-frame', {
+          penalty: Number(ps.oversizeFramePenalty) || PEER_SCORE_OVERSIZE_FRAME_PENALTY,
+          disconnect: delivery.hardDisconnect
+        });
+      }
       return this;
     }
     if (wire.length < HEADER_SIZE) {
@@ -3628,6 +3681,7 @@ class Peer extends Service {
       lastSeen: new Date().toISOString()
     });
     this._addressToId[connAddress] = peerId;
+    this._recordRemoteFrameCap(connAddress, message.object);
 
     // Emit peer event
     this.emit('peer', this.peers[connAddress]);
@@ -3646,7 +3700,8 @@ class Peer extends Service {
       object: {
         initiator: message.actor.id,
         counterparty: this.identity.id,
-        solution: message.object.challenge
+        solution: message.object.challenge,
+        maxFrameBytes: this._localMaxFrameBytes()
       }
     })];
 
@@ -3697,6 +3752,7 @@ class Peer extends Service {
       lastSeen: new Date().toISOString()
     });
     this._addressToId[origin.name] = openPeerId;
+    this._recordRemoteFrameCap(origin.name, message.object);
     // Don't emit peer event here - it's already emitted in P2P_SESSION_OFFER
     return this;
   }
@@ -3754,7 +3810,7 @@ class Peer extends Service {
           'utf8'
         );
         const witness = proposal.federationWitness || null;
-        if (!witness || !verifyFederationWitnessOnMessage(msgBuf, witness, validators, threshold)) {
+        if (!witness || !verifyFederationWitnessOnMessage(msgBuf, witness, validators, threshold, undefined, { allowLegacy: false })) {
           this.emit('warning', '[FABRIC:PEER] SIDECHAIN_STATE_PATCH federationWitness missing or invalid');
           break;
         }
@@ -3925,6 +3981,30 @@ class Peer extends Service {
           this._claimLogicalRegistrationOrPunish(
             'DocumentContentKeyReveal', reveal, signerPubkeyHex, punishOrigin);
         }
+        break;
+      }
+      case BLOB_QUOTE_TYPE: {
+        const quote = (msg && msg.object) ? msg.object : msg;
+        if (!isWellFormedBlobQuote(quote)) {
+          this.emit('warning', '[FABRIC:PEER] DocumentBlobQuote rejected: malformed');
+          break;
+        }
+        if (quote.routeId && this._documentRelayRoutes[quote.routeId]) {
+          const route = this._documentRelayRoutes[quote.routeId];
+          const prev = route.prevHopAddress;
+          if (prev && this.connections[prev] && this.connections[prev]._writeFabric &&
+              !(origin && origin.name === prev)) {
+            // Re-signed by this relay: the buyer's fraud evidence names the relay.
+            const fwdMsg = Message.fromVector(['GenericMessage', JSON.stringify({
+              type: BLOB_QUOTE_TYPE,
+              object: Object.assign({}, quote, { routeId: route.prevRouteId || quote.routeId })
+            })]);
+            fwdMsg.signWithKey(this.key);
+            this.connections[prev]._writeFabric(fwdMsg.toBuffer());
+            break;
+          }
+        }
+        this._ingestSealedBlobQuote(quote, origin, wireMessage);
         break;
       }
       case 'P2P_SESSION_OFFER':
@@ -4279,6 +4359,67 @@ class Peer extends Service {
   }
 
   /**
+   * NOISE transport limits from settings (absolute handshake deadline + pre-handshake byte budget).
+   * @returns {{ handshakeTimeout: number, handshakeMaxBytes: number }}
+   */
+  _noiseTransportOptions () {
+    const timeout = (typeof this.settings.handshakeTimeout === 'number')
+      ? this.settings.handshakeTimeout
+      : ((typeof this.settings.connectTimeout === 'number') ? this.settings.connectTimeout : 10000);
+    const budget = Number(this.settings.handshakeMaxBytes);
+    return {
+      handshakeTimeout: timeout > 0 ? timeout : 0,
+      handshakeMaxBytes: Number.isInteger(budget) && budget > 0 ? budget : NOISE_HANDSHAKE_MAX_BYTES
+    };
+  }
+
+  /**
+   * Tie a NOISE pair to its TCP socket: a destroyed decrypt side (limit broken, handshake
+   * timeout, decrypt failure) destroys the socket. The remote frame cap starts at the
+   * legacy 4096 bytes until its session message advertises `maxFrameBytes`.
+   * @param {Object} noiseStream noise-protocol-stream duplex pair
+   * @param {Object} socket
+   * @returns {void}
+   */
+  _bindNoiseTransportToSocket (noiseStream, socket) {
+    if (!noiseStream || !noiseStream.decrypt || !socket) return;
+    noiseStream._fabricRemoteMaxFrameBytes = LEGACY_MAX_FRAME_BYTES;
+    noiseStream.decrypt.once('close', () => {
+      if (!socket.destroyed && typeof socket.destroy === 'function') socket.destroy();
+    });
+  }
+
+  /**
+   * Local AMP frame cap (header + `maxMessageSize` body) — what this node accepts and advertises.
+   * @returns {number}
+   */
+  _localMaxFrameBytes () {
+    const maxBody = Number(this.settings.maxMessageSize);
+    const bodyCap = Number.isFinite(maxBody) && maxBody > 0 ? Math.min(maxBody, MAX_MESSAGE_SIZE) : MAX_MESSAGE_SIZE;
+    return HEADER_SIZE + bodyCap;
+  }
+
+  /**
+   * Record the frame cap a remote advertised in `P2P_SESSION_OFFER` / `P2P_SESSION_OPEN`
+   * (`object.maxFrameBytes`). Absent or invalid = legacy 4096-byte peer.
+   * @param {string} connAddress
+   * @param {Object} sessionObject Session message `object`
+   * @returns {number} Cap now used for frames sent to that connection
+   */
+  _recordRemoteFrameCap (connAddress, sessionObject) {
+    const advertised = Number(sessionObject && sessionObject.maxFrameBytes);
+    const cap = (Number.isInteger(advertised) && advertised > HEADER_SIZE)
+      ? Math.min(advertised, HEADER_SIZE + MAX_MESSAGE_SIZE)
+      : LEGACY_MAX_FRAME_BYTES;
+    const socket = connAddress && this.connections ? this.connections[connAddress] : null;
+    if (!socket) return cap;
+    socket._fabricRemoteMaxFrameBytes = cap;
+    const noiseClient = socket._noiseClient || socket._noiseHandler;
+    if (noiseClient) noiseClient._fabricRemoteMaxFrameBytes = cap;
+    return cap;
+  }
+
+  /**
    * Bind encrypt/decrypt 'error' before piping. noise-protocol-stream calls
    * stream.destroy(err) on handshake failure; without listeners Node raises
    * uncaught Exceptions (e.g. `noise_stream_new`, `malloc`).
@@ -4300,8 +4441,9 @@ class Peer extends Service {
       }
       const text = String((error && error.message) || error || '');
       const msg = `${label} ${side} error: ${error}`;
-      // Native teardown after a bad self-handshake / OOM — keep process alive.
-      if (/noise_stream_new|\bmalloc\b/i.test(text)) {
+      // Native teardown after a bad self-handshake / OOM, or a remote that broke a
+      // transport limit (socket is destroyed by _bindNoiseTransportToSocket) — keep process alive.
+      if (/noise_stream_new|\bmalloc\b|noise_message_too_large|noise_handshake_(budget|timeout)/i.test(text)) {
         this.emit('warning', msg);
         return;
       }
@@ -4409,11 +4551,12 @@ class Peer extends Service {
     }
 
     // Create NOISE handler
-    const handler = noise({
+    const handler = noise(Object.assign(this._noiseTransportOptions(), {
       prologue: Buffer.from(PROLOGUE),
       // privateKey: _derived.private.toString('hex'),
       verify: this._verifyNOISE.bind(this)
-    });
+    }));
+    this._bindNoiseTransportToSocket(handler, socket);
 
     // Handle low-level socket errors for inbound connections
     socket.on('error', (error) => {
@@ -4476,8 +4619,9 @@ class Peer extends Service {
 
     socket._fabricPeerAddress = target;
     socket._writeFabric = (msg) => {
-      this._recordPeerBandwidth(target, 'out', msg);
-      this._writeFabric(msg, handler);
+      const written = this._writeFabric(msg, handler);
+      if (written) this._recordPeerBandwidth(target, 'out', msg);
+      return written;
     };
 
     // Store socket in collection
@@ -4500,7 +4644,9 @@ class Peer extends Service {
    * @returns {Object} Parsed document record (whitelisted fields)
    */
   _buildDocumentParsedForPublish (documentId, content) {
-    const buf = Buffer.from(content === null || content === undefined ? '' : String(content), 'utf8');
+    const docs = this._state.content.documents;
+    const stored = docs && docs[documentId] === content ? this.getDocumentBuffer(documentId) : null;
+    const buf = stored || Buffer.from(content === null || content === undefined ? '' : String(content), 'utf8');
     return {
       id: documentId,
       name: (documentId && String(documentId).split('/').pop()) || 'document',
@@ -4556,11 +4702,13 @@ class Peer extends Service {
   /**
    * Write {@link INVENTORY_RESPONSE} (`P2P_INVENTORY_RESPONSE`) compatible with `@fabric/hub` Bridge merging
    * (body includes `kind: 'documents'` so the browser can merge `object.items`).
+   * Items are split across as many responses as needed so each frame fits the
+   * requester's frame cap; every page carries `inventoryId`, `page` (1-based), and `pages`.
    * @param {string} originName connection key {@link Peer#connections}
    * @param {object[]} items
    * @param {Object} [opts]
    * @param {boolean} [opts.allowEmpty]
-   * @returns {boolean}
+   * @returns {boolean} true when at least one page was written
    */
   _sendLocalInventoryDocumentsWireResponse (originName, items, opts = {}) {
     const allowEmpty = !!(opts && opts.allowEmpty);
@@ -4568,15 +4716,43 @@ class Peer extends Service {
     if (!allowEmpty && items.length === 0) return false;
     const conn = this.connections[originName];
     if (!conn || !conn._writeFabric) return false;
-    const obj = {
-      kind: 'documents',
-      items,
-      created: Date.now()
-    };
-    const m = Message.fromVector(['P2P_INVENTORY_RESPONSE', JSON.stringify(obj)]);
-    m.signWithKey(this.key);
-    conn._writeFabric(m.toBuffer());
-    return true;
+    const remoteCap = Number.isInteger(conn._fabricRemoteMaxFrameBytes)
+      ? conn._fabricRemoteMaxFrameBytes
+      : HEADER_SIZE + MAX_MESSAGE_SIZE;
+    // 256 bytes leaves room for the page envelope (kind, created, inventoryId, page, pages).
+    const pageBytes = Math.max(512, Math.min(INVENTORY_RESPONSE_PAGE_BYTES, remoteCap - HEADER_SIZE - 256));
+    const { pages, skipped } = paginateInventoryItems(items, { pageBytes });
+    for (const item of skipped) {
+      this.emit('warning',
+        `[FABRIC:PEER] Inventory item ${String(item.id || item.documentId || '?').slice(0, MAX_DOCUMENT_ID_LENGTH)} ` +
+        `does not fit one ${remoteCap}-byte frame; omitted`);
+    }
+    if (!pages.length) {
+      if (!allowEmpty || items.length) return false;
+      pages.push([]);
+    }
+    const inventoryId = crypto.randomBytes(8).toString('hex');
+    const created = Date.now();
+    let written = 0;
+    for (let i = 0; i < pages.length; i++) {
+      const obj = {
+        kind: 'documents',
+        items: pages[i],
+        created,
+        inventoryId,
+        page: i + 1,
+        pages: pages.length
+      };
+      let buf;
+      try {
+        buf = Message.fromVector(['P2P_INVENTORY_RESPONSE', JSON.stringify(obj)]).signWithKey(this.key).toBuffer();
+      } catch (err) {
+        this.emit('warning', `[FABRIC:PEER] Inventory page ${i + 1}/${pages.length} not sent: ${err && err.message ? err.message : err}`);
+        continue;
+      }
+      if (conn._writeFabric(buf) !== false) written++;
+    }
+    return written > 0;
   }
 
   /**
@@ -4606,7 +4782,7 @@ class Peer extends Service {
         const rateSats = Object.prototype.hasOwnProperty.call(rates, docId) ? rates[docId] : 0;
         if (maxSats != null && Number.isFinite(maxSats) && rateSats > maxSats) continue;
         const sealedMeta = this._getDocumentSealedMeta(docId);
-        const bodyBuf = Buffer.from(String(body == null ? '' : body), 'utf8');
+        const bodyBuf = this.getDocumentBuffer(docId) || Buffer.alloc(0);
         const advertiseBuf = sealedMeta ? sealedMeta.ciphertext : bodyBuf;
         const resolved = resolveDocumentContentHashHex({
           documentId: docId,
@@ -4645,7 +4821,6 @@ class Peer extends Service {
         if (sealedMeta) {
           item.sealed = true;
           item.encryption = sealedMeta.encryption;
-          item.plaintextSha256 = sealedMeta.plaintextSha256;
         }
         item.merkleRootHex = advertised.merkleRootHex;
         item.documentBlobIndex = advertised.index;
@@ -4734,22 +4909,26 @@ class Peer extends Service {
     }
     const documentId = String(opts.documentId || doc.documentId || doc.merkleRootHex || '').trim();
     if (!documentId) return { ok: false, error: 'documentId required' };
-    const ciphertextsBase64 = {};
-    const keys = {};
+    if (!isWireDocumentId(documentId)) return { ok: false, error: 'documentId too long for the wire' };
+    const record = Object.assign(doc.record(), { documentId });
+    // Ciphertext + keys only (no plaintext), held outside `_state`.
+    const held = Document.fromRecord(record);
     for (const b of doc.blobs) {
       const bytes = doc.bytesFor(b.index);
       const key = doc.keyFor(b.index);
       if (!bytes || !key) return { ok: false, error: `blob ${b.index} missing ciphertext or key` };
-      ciphertextsBase64[b.index] = bytes.toString('base64');
-      keys[b.index] = key;
+      if (!held.acceptBytes(b.index, bytes) || !held.setKey(b.index, key)) {
+        return { ok: false, error: `blob ${b.index} does not match the document root` };
+      }
+    }
+    this._forgetSealedBlobDocument(documentId);
+    this._sealedBlobSecrets.set(documentId, { doc: held });
+    for (const b of held.blobs) {
+      if (b.paymentHashHex) this._sealedBlobByPaymentHash.set(b.paymentHashHex, { documentId, blobIndex: b.index });
     }
     if (!this._state.content.documentSealedBlobs) this._state.content.documentSealedBlobs = {};
     if (!this._state.content.documentRates) this._state.content.documentRates = {};
-    this._state.content.documentSealedBlobs[documentId] = {
-      record: Object.assign(doc.record(), { documentId }),
-      ciphertextsBase64,
-      keys
-    };
+    this._state.content.documentSealedBlobs[documentId] = { record };
     this._state.content.documentRates[documentId] = rateSats;
     this.commit();
     this.emit('documentSealedBlobsPublished', { documentId, merkleRootHex: doc.merkleRootHex, blobTotal: doc.blobTotal });
@@ -4757,46 +4936,155 @@ class Peer extends Service {
   }
 
   /**
-   * Seller side: the content key `K_i` whose SHA256 is `paymentHashHex`, from
-   * this node's published sealed-blob registry. Channel hosts hand this to
+   * Seller side: the HTLC preimage for `paymentHashHex` — `K_i` for a static
+   * blob hash (`SHA256(K_i)`), or the per-buyer secret `s` of a live
+   * {@link Peer#quoteSealedBlob} quote. Channel hosts hand this to
    * `Channel.Book` as `preimageFor` so a committed HTLC for a blob we sell is
-   * fulfilled with the key (seller-fulfils; the buyer learns `K_i` from the
+   * fulfilled (seller-fulfils; the buyer learns the preimage from the
    * `ChannelHtlcFulfill`).
+   *
+   * Pass the HTLC being fulfilled: one paying less than the blob's price
+   * (`documentRates`, or the quote's `priceSats`) gets `null`. Without `htlc`
+   * no amount check is possible; settlement code must always pass it. With
+   * `sealedBlobPaymentMode: 'perBuyer'` static hashes are never fulfilled
+   * (that would publish `K_i`).
    * @param {string} paymentHashHex
-   * @returns {{ documentId: string, blobIndex: number, keyHex: string }|null}
+   * @param {Object} [htlc] `{ amountSats, expireAfter?, expireHeight? }`
+   * @returns {{ documentId: string, blobIndex: number, preimageHex: string, keyHex: string, perBuyer: boolean, priceSats: number }|null}
+   * `keyHex` is the preimage (kept for callers written against static hashes).
    */
-  sealedBlobPreimageForPaymentHash (paymentHashHex) {
+  sealedBlobPreimageForPaymentHash (paymentHashHex, htlc = null) {
     const ph = String(paymentHashHex || '').toLowerCase();
     if (!/^[0-9a-f]{64}$/.test(ph)) return null;
-    const reg = this._state.content.documentSealedBlobs || {};
-    for (const [documentId, row] of Object.entries(reg)) {
-      const blobs = row && row.record && Array.isArray(row.record.blobs) ? row.record.blobs : [];
-      for (const b of blobs) {
-        if (String(b.paymentHashHex || '').toLowerCase() !== ph) continue;
-        const keyHex = row.keys && row.keys[b.index];
-        if (!keyHex) continue;
-        if (crypto.createHash('sha256').update(Buffer.from(String(keyHex), 'hex')).digest('hex') !== ph) continue;
-        return { documentId, blobIndex: Number(b.index), keyHex: String(keyHex).toLowerCase() };
+    const paid = htlc && typeof htlc === 'object' ? Number(htlc.amountSats) : null;
+    if (htlc && !(paid >= 0)) return null;
+    const quote = this._sealedBlobQuotes.get(ph);
+    if (quote) {
+      if (quote.expiresAt && Date.now() > quote.expiresAt) {
+        this._sealedBlobQuotes.delete(ph);
+        return null;
       }
+      if (paid != null && paid < quote.priceSats) return null;
+      return { documentId: quote.documentId, blobIndex: quote.blobIndex, preimageHex: quote.secretHex, keyHex: quote.secretHex, perBuyer: true, priceSats: quote.priceSats };
     }
-    return null;
+    if (this.settings.sealedBlobPaymentMode === 'perBuyer') return null;
+    const hit = this._sealedBlobByPaymentHash.get(ph);
+    if (!hit) return null;
+    const doc = this._getSealedBlobDocument(hit.documentId);
+    const keyHex = doc && doc.keyFor(hit.blobIndex);
+    if (!keyHex || doc.paymentHashFor(hit.blobIndex) !== ph) return null;
+    const priceSats = this._sealedBlobPriceSats(hit.documentId);
+    if (paid != null && paid < priceSats) return null;
+    return { documentId: hit.documentId, blobIndex: hit.blobIndex, preimageHex: keyHex, keyHex, perBuyer: false, priceSats };
   }
 
   /**
+   * Per-blob ask for a published sealed document.
    * @param {string} documentId
-   * @returns {Document|null} rehydrated per-blob sealed document (with keys) or null
+   * @returns {number}
+   * @private
+   */
+  _sealedBlobPriceSats (documentId) {
+    const rates = this._state.content.documentRates || {};
+    const rate = Object.prototype.hasOwnProperty.call(rates, documentId) ? Number(rates[documentId]) : 0;
+    return Number.isFinite(rate) && rate > 0 ? Math.floor(rate) : 0;
+  }
+
+  /**
+   * Seller: issue a per-buyer quote for one blob (see
+   * `functions/documentSealedExchange.js` `createBlobQuote`). The buyer funds
+   * an HTLC to `quote.paymentHashHex`; fulfilling it reveals `s`, which
+   * unwraps `K_i` only for the holder of `quote.wrappedKeyHex`. Quotes live
+   * in a bounded private map until `expiresAt`.
+   * @param {Object} opts
+   * @param {string} opts.documentId
+   * @param {number} opts.blobIndex
+   * @param {number} [opts.ttlMs] default `sealedBlobQuoteTtlMs` (1 h)
+   * @returns {{ ok: boolean, quote: (Object|undefined), error: (string|undefined) }}
+   */
+  quoteSealedBlob (opts = {}) {
+    const documentId = String(opts.documentId || '').trim();
+    const blobIndex = Math.round(Number(opts.blobIndex));
+    const doc = documentId ? this._getSealedBlobDocument(documentId) : null;
+    if (!doc) return { ok: false, error: 'unknown sealed document' };
+    const leaf = Number.isInteger(blobIndex) ? doc.blob(blobIndex) : null;
+    const keyHex = leaf ? doc.keyFor(blobIndex) : null;
+    if (!leaf || !keyHex) return { ok: false, error: 'unknown blob index' };
+    const ttlSetting = Number(opts.ttlMs || this.settings.sealedBlobQuoteTtlMs);
+    const ttl = Number.isFinite(ttlSetting) && ttlSetting > 0 ? ttlSetting : 60 * 60 * 1000;
+    const priceSats = this._sealedBlobPriceSats(documentId);
+    const expiresAt = Date.now() + ttl;
+    const { quote, secretHex } = createBlobQuote({
+      documentId,
+      merkleRootHex: doc.merkleRootHex,
+      blobIndex,
+      blobHashHex: leaf.blobHashHex,
+      keyHex,
+      amountSats: priceSats,
+      expiresAt
+    });
+    const now = Date.now();
+    for (const [h, q] of this._sealedBlobQuotes) {
+      if (q.expiresAt && now > q.expiresAt) this._sealedBlobQuotes.delete(h);
+    }
+    const capSetting = Number(this.settings.maxSealedBlobQuotes);
+    const cap = Number.isFinite(capSetting) && capSetting > 0 ? capSetting : 4096;
+    while (this._sealedBlobQuotes.size >= cap) {
+      this._sealedBlobQuotes.delete(this._sealedBlobQuotes.keys().next().value);
+    }
+    this._sealedBlobQuotes.set(quote.paymentHashHex, {
+      documentId,
+      blobIndex,
+      secretHex,
+      priceSats,
+      expiresAt,
+      keyHashHex: quote.keyHashHex
+    });
+    return { ok: true, quote };
+  }
+
+  /**
+   * Seller: drop the private keys / ciphertext and live quotes of a document.
+   * @param {string} documentId
+   * @private
+   */
+  _forgetSealedBlobDocument (documentId) {
+    const held = this._sealedBlobSecrets.get(documentId);
+    if (held && held.doc) {
+      for (const b of held.doc.blobs) {
+        const hit = b.paymentHashHex && this._sealedBlobByPaymentHash.get(b.paymentHashHex);
+        if (hit && hit.documentId === documentId) this._sealedBlobByPaymentHash.delete(b.paymentHashHex);
+      }
+    }
+    for (const [h, q] of this._sealedBlobQuotes) {
+      if (q.documentId === documentId) this._sealedBlobQuotes.delete(h);
+    }
+    this._sealedBlobSecrets.delete(documentId);
+  }
+
+  /**
+   * Seller copy of a published per-blob sealed document: ciphertext and keys,
+   * never plaintext. Cached (no per-request decrypt). Rows written into
+   * `_state` by older versions (`keys` / `ciphertextsBase64`) move to the
+   * private map on first use.
+   * @param {string} documentId
+   * @returns {Document|null}
    */
   _getSealedBlobDocument (documentId) {
+    const held = this._sealedBlobSecrets.get(documentId);
+    if (held && held.doc) return held.doc;
     const reg = this._state.content.documentSealedBlobs || {};
     const row = reg[documentId];
-    if (!row || !row.record) return null;
+    if (!row || !row.record || !row.keys || !row.ciphertextsBase64) return null;
     const doc = Document.fromRecord(row.record);
     for (const b of doc.blobs) {
-      const ct = row.ciphertextsBase64 && row.ciphertextsBase64[b.index];
-      const key = row.keys && row.keys[b.index];
+      const ct = row.ciphertextsBase64[b.index];
       if (ct) doc.acceptBytes(b.index, Buffer.from(String(ct), 'base64'));
-      if (key && ct) doc.openBlob(b.index, key);
+      if (row.keys[b.index]) doc.setKey(b.index, row.keys[b.index]);
+      if (b.paymentHashHex) this._sealedBlobByPaymentHash.set(b.paymentHashHex, { documentId, blobIndex: b.index });
     }
+    this._sealedBlobSecrets.set(documentId, { doc });
+    reg[documentId] = { record: row.record };
     return doc;
   }
 
@@ -4819,11 +5107,13 @@ class Peer extends Service {
       const rateSats = Object.prototype.hasOwnProperty.call(rates, docId) ? rates[docId] : 0;
       if (maxSats != null && Number.isFinite(maxSats) && rateSats > maxSats) continue;
       if (wantRoot && String(doc.merkleRootHex || '').toLowerCase() !== wantRoot) continue;
-      const item = doc.inventoryItem({ documentId: docId, rateSats });
+      let indexes;
       if (wantBlob) {
-        item.blobs = item.blobs.filter((b) => b.blobHashHex === wantBlob);
-        if (!item.blobs.length) continue;
+        indexes = doc.blobs.filter((b) => b.blobHashHex === wantBlob).map((b) => b.index);
+        if (!indexes.length) continue;
       }
+      // A subset carries a v2 inclusion proof per blob.
+      const item = doc.inventoryItem({ documentId: docId, rateSats, indexes });
       if (this.settings.attachInventoryHtlc && rateSats > 0) {
         try {
           for (const b of item.blobs) {
@@ -4853,6 +5143,48 @@ class Peer extends Service {
   }
 
   /**
+   * Store received document bytes under `documents[documentId]` without
+   * losing binary content: valid UTF-8 stays a string (as before); anything
+   * else is stored base64 with `documentEncodings[documentId] = 'base64'`.
+   * Read bytes back with {@link Peer#getDocumentBuffer}.
+   * @param {string} documentId
+   * @param {Buffer} buffer
+   * @param {Object} [opts]
+   * @param {boolean} [opts.overwrite=true]
+   * @private
+   */
+  _storeReceivedDocument (documentId, buffer, opts = {}) {
+    if (!this._state.content.documents) this._state.content.documents = {};
+    if (!this._state.content.documentEncodings) this._state.content.documentEncodings = {};
+    const docs = this._state.content.documents;
+    if (opts.overwrite === false && Object.prototype.hasOwnProperty.call(docs, documentId)) return;
+    const bytes = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer || '');
+    const text = bytes.toString('utf8');
+    if (Buffer.from(text, 'utf8').equals(bytes)) {
+      docs[documentId] = text;
+      delete this._state.content.documentEncodings[documentId];
+    } else {
+      docs[documentId] = bytes.toString('base64');
+      this._state.content.documentEncodings[documentId] = 'base64';
+    }
+  }
+
+  /**
+   * Bytes of a locally held document (decodes base64-stored binary documents).
+   * @param {string} documentId
+   * @returns {Buffer|null}
+   */
+  getDocumentBuffer (documentId) {
+    const docs = this._state.content.documents;
+    if (!docs || !Object.prototype.hasOwnProperty.call(docs, documentId)) return null;
+    const body = docs[documentId];
+    if (Buffer.isBuffer(body)) return Buffer.from(body);
+    const encodings = this._state.content.documentEncodings || {};
+    if (encodings[documentId] === 'base64') return Buffer.from(String(body), 'base64');
+    return Buffer.from(String(body == null ? '' : body), 'utf8');
+  }
+
+  /**
    * Send a locally stored document as indexed, wire-sized `P2P_FILE_SEND` blobs.
    * Priced sealed docs send **ciphertext** (safe without the content key).
    * @param {string} documentId
@@ -4865,6 +5197,7 @@ class Peer extends Service {
    * @returns {boolean} true if at least one frame was written
    */
   _sendP2pFileSendToPeer (documentId, peerAddress, opts = {}) {
+    if (!isWireDocumentId(documentId)) return false;
     const sealedBlobDoc = this._getSealedBlobDocument(documentId);
     if (sealedBlobDoc) return this._sendSealedBlobsToPeer(sealedBlobDoc, documentId, peerAddress, opts);
     const docs = this._state.content.documents;
@@ -4873,9 +5206,7 @@ class Peer extends Service {
     if (!conn || !conn._writeFabric) return false;
     const chunkBytes = Math.max(1, Number(this.settings.inventoryBlobChunkBytes) || DEFAULT_CHUNK_BYTES);
     const sealedMeta = this._getDocumentSealedMeta(documentId);
-    const bodyBuf = sealedMeta
-      ? sealedMeta.ciphertext
-      : Buffer.from(String(docs[documentId] == null ? '' : docs[documentId]), 'utf8');
+    const bodyBuf = sealedMeta ? sealedMeta.ciphertext : this.getDocumentBuffer(documentId);
     const split = splitBlobs(bodyBuf, chunkBytes, documentId);
     const only = opts.blobIndex != null ? Math.round(Number(opts.blobIndex)) : null;
     let wrote = 0;
@@ -4897,12 +5228,11 @@ class Peer extends Service {
         fileObj.paymentHashHex = sealedMeta.paymentHashHex;
         fileObj.iv = sealedMeta.encryption && sealedMeta.encryption.iv;
         fileObj.scheme = sealedMeta.encryption && sealedMeta.encryption.scheme;
-        fileObj.plaintextSha256 = sealedMeta.plaintextSha256;
       }
       const reply = Message.fromVector(['P2P_FILE_SEND', JSON.stringify(fileObj)]);
       reply.signWithKey(this.key);
-      conn._writeFabric(reply.toBuffer());
-      wrote += 1;
+      // `false` = refused (closed stream, or over a legacy peer's frame cap).
+      if (conn._writeFabric(reply.toBuffer()) !== false) wrote += 1;
     }
     if (wrote > 0 && opts.revealKey && sealedMeta && sealedMeta.keyHex) {
       this._sendDocumentContentKeyReveal(documentId, peerAddress, {
@@ -4948,7 +5278,7 @@ class Peer extends Service {
     if (opts.routeId) body.object.routeId = String(opts.routeId);
     const msg = Message.fromVector(['GenericMessage', JSON.stringify(body)]);
     msg.signWithKey(this.key);
-    conn._writeFabric(msg.toBuffer());
+    if (conn._writeFabric(msg.toBuffer()) === false) return false;
     this.emit('documentContentKeyRevealed', {
       documentId,
       peerAddress,
@@ -4976,20 +5306,17 @@ class Peer extends Service {
     if (!conn || !conn._writeFabric) return false;
     const indexes = opts.blobIndex != null ? [Number(opts.blobIndex)] : undefined;
     const frames = doc.fileSendObjects({ documentId, indexes });
-    let wrote = 0;
+    const sent = [];
     for (const fileObj of frames) {
       if (opts.routeId) fileObj.routeId = String(opts.routeId);
       const reply = Message.fromVector(['P2P_FILE_SEND', JSON.stringify(fileObj)]);
       reply.signWithKey(this.key);
-      conn._writeFabric(reply.toBuffer());
-      wrote += 1;
+      if (conn._writeFabric(reply.toBuffer()) !== false) sent.push(fileObj.blobIndex);
     }
-    if (wrote > 0 && opts.revealKey) {
-      for (const fileObj of frames) {
-        this._sendSealedBlobKeyReveal(doc, documentId, peerAddress, fileObj.blobIndex, opts);
-      }
+    if (opts.revealKey) {
+      for (const blobIndex of sent) this._sendSealedBlobKeyReveal(doc, documentId, peerAddress, blobIndex, opts);
     }
-    return wrote > 0;
+    return sent.length > 0;
   }
 
   /**
@@ -5015,7 +5342,7 @@ class Peer extends Service {
     if (opts.routeId) body.object.routeId = String(opts.routeId);
     const msg = Message.fromVector(['GenericMessage', JSON.stringify(body)]);
     msg.signWithKey(this.key);
-    conn._writeFabric(msg.toBuffer());
+    if (conn._writeFabric(msg.toBuffer()) === false) return false;
     this.emit('documentContentKeyRevealed', {
       documentId,
       peerAddress,
@@ -5071,6 +5398,23 @@ class Peer extends Service {
       return { status: 'reject', error: 'per-blob frame missing paymentHashHex or iv', documentId: frame.documentId };
     }
     const originName = origin && typeof origin === 'object' ? (origin.name || origin.address || origin.id || null) : (origin || null);
+    // A v2 frame proves its leaf (blob hash, payment hash, IV) and the blob
+    // count against the root, so unpaid ciphertext is checked before funding.
+    let verified = false;
+    if (Number(obj.treeVersion) === DOCUMENT_TREE_VERSION || Array.isArray(obj.proof)) {
+      verified = verifyDocumentInclusion({
+        merkleRootHex: root,
+        blobTotal: frame.blobTotal,
+        blobIndex: frame.blobIndex,
+        blobHashHex: frame.blobHashHex,
+        paymentHashHex,
+        iv: obj.iv,
+        proof: obj.proof
+      });
+      if (!verified) {
+        return { status: 'reject', error: 'per-blob frame is not committed by its document root (inclusion proof)', documentId: frame.documentId, blobIndex: frame.blobIndex, merkleRootHex: root };
+      }
+    }
     // Purchase expectations win over whatever the wire claims.
     const expected = this.blobTransfers && typeof this.blobTransfers.expectedFor === 'function' ? this.blobTransfers.expectedFor(frame.documentId) : [];
     let pin = null;
@@ -5078,6 +5422,9 @@ class Peer extends Service {
       const match = expected.find((e) => (!e.merkleRootHex || e.merkleRootHex === root) && (!e.total || e.total === frame.blobTotal));
       if (!match) {
         return { status: 'reject', error: 'per-blob frame does not match the expected transfer (root / total)', documentId: frame.documentId, blobIndex: frame.blobIndex, merkleRootHex: root };
+      }
+      if (match.treeVersion === DOCUMENT_TREE_VERSION && !verified) {
+        return { status: 'reject', error: 'per-blob frame lacks the inclusion proof this document requires', documentId: frame.documentId, blobIndex: frame.blobIndex, merkleRootHex: root };
       }
       const wantHash = match.expectedHashes ? match.expectedHashes[frame.blobIndex] : null;
       if (!wantHash && match.expectedHashes && match.expectedHashes.some(Boolean)) {
@@ -5091,9 +5438,10 @@ class Peer extends Service {
         return { status: 'reject', error: 'per-blob frame payment hash is not the one we paid for at that index', documentId: frame.documentId, blobIndex: frame.blobIndex, merkleRootHex: root };
       }
       const wantIv = match.expectedIvs ? match.expectedIvs[frame.blobIndex] : null;
-      if (wantIv && wantIv !== String(obj.iv)) {
+      if (wantIv && !sameIv(wantIv, obj.iv)) {
         return { status: 'reject', error: 'per-blob frame iv is not the one advertised at that index', documentId: frame.documentId, blobIndex: frame.blobIndex, merkleRootHex: root };
       }
+      this.blobTransfers.touch(frame.documentId, match.merkleRootHex);
       pin = {
         hash: wantHash || null,
         payment: wantPayment || null,
@@ -5103,6 +5451,27 @@ class Peer extends Service {
     }
     const rowKey = `${frame.documentId}|${root}`;
     let row = this.pendingSealedBlobs[rowKey];
+    if (row && row.total !== frame.blobTotal && (pin || verified) && !row.opened.size) {
+      // Planted before the purchase (or by a peer without a proof): the
+      // pinned / proven total wins.
+      this._dropSealedRow(rowKey);
+      row = null;
+    }
+    if (row && verified && row.treeVersion !== DOCUMENT_TREE_VERSION) {
+      // A proof settles the tree version: unproven parts can only be junk.
+      row.treeVersion = DOCUMENT_TREE_VERSION;
+      for (const [i, p] of row.parts) {
+        if (!p.verified && !row.opened.has(i)) row.parts.delete(i);
+      }
+      this._resizeSealedRow(row);
+    }
+    if (row && !verified && row.treeVersion === DOCUMENT_TREE_VERSION) {
+      return { status: 'reject', error: 'per-blob frame lacks the inclusion proof this document requires', documentId: frame.documentId, blobIndex: frame.blobIndex, merkleRootHex: root };
+    }
+    if (row && pin && !row.pinned) {
+      row.pinned = true;
+      this._resizeSealedRow(row);
+    }
     if (row) {
       if (row.total !== frame.blobTotal) {
         return { status: 'reject', error: 'per-blob frame blobTotal disagrees with the tree being assembled', documentId: frame.documentId, blobIndex: frame.blobIndex, merkleRootHex: root };
@@ -5121,7 +5490,7 @@ class Peer extends Service {
         // Frames held from before the purchase pins existed may violate them
         // (any peer can send self-hashed junk under an advertised root); a
         // frame that satisfies the pins replaces them instead of bouncing off.
-        const fits = (c) => (!pin.payment || c.paymentHashHex === pin.payment) && (!pin.iv || c.iv === pin.iv);
+        const fits = (c) => (!pin.payment || c.paymentHashHex === pin.payment) && (!pin.iv || sameIv(c.iv, pin.iv));
         const keep = pin.hash && held.blobHashHex !== pin.hash
           ? []
           : [held, ...(held.alternates || [])].filter(fits);
@@ -5136,7 +5505,7 @@ class Peer extends Service {
             paymentHashHex: first.paymentHashHex,
             iv: first.iv,
             scheme: first.scheme,
-            plaintextSha256: first.plaintextSha256,
+            verified: !!first.verified,
             origin: first.origin,
             frame: first.frame
           };
@@ -5144,13 +5513,18 @@ class Peer extends Service {
           row.parts.set(frame.blobIndex, next);
           held = next;
         }
+        this._resizeSealedRow(row);
       }
       if (held) {
         if (held.blobHashHex !== frame.blobHashHex) {
           return { status: 'reject', error: 'per-blob frame would overwrite a held blob with a different hash', documentId: frame.documentId, blobIndex: frame.blobIndex, merkleRootHex: root };
         }
         const candidates = [held, ...(held.alternates || [])];
-        const known = candidates.some((c) => c.paymentHashHex === paymentHashHex && c.iv === String(obj.iv));
+        const known = candidates.some((c) => c.paymentHashHex === paymentHashHex && sameIv(c.iv, obj.iv));
+        if (!known && verified && held.verified) {
+          // Two proofs for one index under one root cannot differ.
+          return { status: 'reject', error: 'per-blob frame conflicts with a proven held blob', documentId: frame.documentId, blobIndex: frame.blobIndex, merkleRootHex: root };
+        }
         if (!known) {
           const conflict = { status: 'reject', error: 'per-blob frame conflicts with a held blob (payment hash or iv)', documentId: frame.documentId, blobIndex: frame.blobIndex, merkleRootHex: root };
           if (row.opened.has(frame.blobIndex)) return conflict;
@@ -5163,16 +5537,19 @@ class Peer extends Service {
             if (victim < 0) return conflict;
             held.alternates.splice(victim, 1);
           }
+          const altFrame = frameHex ? (Buffer.isBuffer(frameHex) ? Buffer.from(frameHex) : Buffer.from(String(frameHex), 'hex')) : null;
+          const reserved = this._reserveSealedBytes(row, rowKey, originName, altFrame ? altFrame.length : 0);
+          if (!reserved.ok) return Object.assign(reserved, { documentId: frame.documentId, blobIndex: frame.blobIndex, merkleRootHex: root });
           held.alternates.push({
             paymentHashHex,
             iv: String(obj.iv),
             scheme: obj.scheme || null,
-            plaintextSha256: obj.plaintextSha256 || null,
             origin: originName ? String(originName) : null,
-            frame: frameHex ? (Buffer.isBuffer(frameHex) ? Buffer.from(frameHex) : Buffer.from(String(frameHex), 'hex')) : null
+            frame: altFrame
           });
           row.updated = Date.now();
-          this._capPendingSealedBlobs();
+          const room = this._settleSealedRow(row, rowKey);
+          if (!room.ok) return Object.assign(room, { documentId: frame.documentId, blobIndex: frame.blobIndex, merkleRootHex: root });
         }
         return {
           status: 'awaiting_key',
@@ -5190,13 +5567,19 @@ class Peer extends Service {
         };
       }
     } else {
+      if (!pin) this._limitUnpinnedSealedRows(originName, rowKey);
       row = {
         documentId: frame.documentId,
         total: frame.blobTotal,
         merkleRootHex: root,
+        treeVersion: verified ? DOCUMENT_TREE_VERSION : null,
         parts: new Map(),
         opened: new Map(),
         origin: origin || null,
+        originName: originName ? String(originName) : null,
+        pinned: !!pin,
+        bytes: 0,
+        originBytes: new Map(),
         created: Date.now(),
         updated: Date.now()
       };
@@ -5205,20 +5588,23 @@ class Peer extends Service {
     row.updated = Date.now();
     let frame64 = null;
     if (frameHex) frame64 = Buffer.isBuffer(frameHex) ? Buffer.from(frameHex) : Buffer.from(String(frameHex), 'hex');
+    const reserved = this._reserveSealedBytes(row, rowKey, originName, frame.bytes.length + (frame64 ? frame64.length : 0));
+    if (!reserved.ok) {
+      if (!row.parts.size && !row.opened.size) this._dropSealedRow(rowKey);
+      return Object.assign(reserved, { documentId: frame.documentId, blobIndex: frame.blobIndex, merkleRootHex: root });
+    }
     row.parts.set(frame.blobIndex, {
       ciphertext: frame.bytes,
       blobHashHex: frame.blobHashHex,
       paymentHashHex,
       iv: String(obj.iv),
       scheme: obj.scheme || null,
-      plaintextSha256: obj.plaintextSha256 || null,
+      verified,
       origin: originName ? String(originName) : null,
       frame: frame64
     });
-    this._capPendingSealedBlobs();
-    if (!this.pendingSealedBlobs[rowKey]) {
-      return { status: 'reject', error: 'pending sealed-blob memory budget exceeded', documentId: frame.documentId, blobIndex: frame.blobIndex, merkleRootHex: root };
-    }
+    const room = this._settleSealedRow(row, rowKey);
+    if (!room.ok) return Object.assign(room, { documentId: frame.documentId, blobIndex: frame.blobIndex, merkleRootHex: root });
     this.emit('documentCiphertextReceived', {
       documentId: frame.documentId,
       blobIndex: frame.blobIndex,
@@ -5228,6 +5614,7 @@ class Peer extends Service {
       paymentHashHex,
       perBlob: true,
       verified: true,
+      committed: verified,
       origin
     });
     return {
@@ -5235,6 +5622,7 @@ class Peer extends Service {
       sealed: true,
       perBlob: true,
       awaitingKey: true,
+      committed: verified,
       documentId: frame.documentId,
       blobIndex: frame.blobIndex,
       received: row.parts.size,
@@ -5284,33 +5672,190 @@ class Peer extends Service {
     return total;
   }
 
+  /** @private global byte budget for `pendingSealedBlobs` */
+  _pendingSealedBudget () {
+    const budgetSetting = Number(this.settings.maxPendingSealedBytes);
+    return Number.isFinite(budgetSetting) && budgetSetting > 0 ? budgetSetting : PEER_MAX_PENDING_SEALED_BYTES;
+  }
+
   /**
-   * Bound per-blob sealed trees held in memory: drop rows older than
-   * `pendingSealedTtlMs` (from first frame — refreshes do not extend it),
-   * then evict oldest-updated rows until both the row cap
-   * (`maxPendingSealedDeliveries`) and the byte budget
-   * (`maxPendingSealedBytes`) hold.
+   * Re-measure one row and move the running totals (`_pendingSealedBytes`,
+   * and per part origin for unpinned rows) by the difference. Cost is one
+   * row, not the whole map.
+   * @param {Object} row
+   * @private
+   */
+  _resizeSealedRow (row) {
+    const bytes = Peer._sealedRowBytes(row);
+    const byOrigin = new Map();
+    if (!row.pinned) {
+      const add = (name, n) => { if (n) byOrigin.set(name || '', (byOrigin.get(name || '') || 0) + n); };
+      for (const [i, p] of row.parts) {
+        add(p.origin, (p.ciphertext ? p.ciphertext.length : 0) + (p.frame ? p.frame.length : 0));
+        for (const a of p.alternates || []) add(a.origin, a.frame ? a.frame.length : 0);
+        const o = row.opened.get(i);
+        if (o) add(p.origin, o.length);
+      }
+    }
+    this._pendingSealedBytes += bytes - (row.bytes || 0);
+    const shift = (name, n) => {
+      const next = (this._pendingSealedOriginBytes.get(name) || 0) + n;
+      if (next > 0) this._pendingSealedOriginBytes.set(name, next);
+      else this._pendingSealedOriginBytes.delete(name);
+    };
+    for (const [name, n] of row.originBytes || []) shift(name, -n);
+    for (const [name, n] of byOrigin) shift(name, n);
+    row.bytes = bytes;
+    row.originBytes = byOrigin;
+  }
+
+  /**
+   * Remove a pending sealed row and release its bytes.
+   * @param {string} key
+   * @private
+   */
+  _dropSealedRow (key) {
+    const row = this.pendingSealedBlobs[key];
+    if (!row) return;
+    this._pendingSealedBytes -= row.bytes || 0;
+    for (const [name, n] of row.originBytes || []) {
+      const next = (this._pendingSealedOriginBytes.get(name) || 0) - n;
+      if (next > 0) this._pendingSealedOriginBytes.set(name, next);
+      else this._pendingSealedOriginBytes.delete(name);
+    }
+    delete this.pendingSealedBlobs[key];
+  }
+
+  /**
+   * Unpinned row keys started by `originName`, oldest first.
+   * @param {string|null} originName
+   * @param {string} [skip]
+   * @returns {string[]}
+   * @private
+   */
+  _unpinnedSealedRowsFrom (originName, skip = null) {
+    const name = originName ? String(originName) : null;
+    return Object.keys(this.pendingSealedBlobs)
+      .filter((k) => {
+        const r = this.pendingSealedBlobs[k];
+        return k !== skip && r && !r.pinned && (r.originName || null) === name;
+      })
+      .sort((a, b) => (this.pendingSealedBlobs[a].updated || 0) - (this.pendingSealedBlobs[b].updated || 0));
+  }
+
+  /**
+   * Per-origin row quota for unsolicited trees (`maxPendingSealedRowsPerOrigin`,
+   * default `MAX_PENDING_BLOB_TRANSFERS_PER_ORIGIN`): a peer over it loses its
+   * own oldest unsolicited row, never someone else's.
+   * @param {string|null} originName
+   * @param {string} rowKey row about to be created
+   * @private
+   */
+  _limitUnpinnedSealedRows (originName, rowKey) {
+    const setting = Number(this.settings.maxPendingSealedRowsPerOrigin);
+    const limit = Number.isFinite(setting) && setting > 0 ? setting : MAX_PENDING_BLOB_TRANSFERS_PER_ORIGIN;
+    const own = this._unpinnedSealedRowsFrom(originName, rowKey);
+    for (let i = 0; i <= own.length - limit; i++) this._dropSealedRow(own[i]);
+  }
+
+  /**
+   * Before holding `incoming` more bytes from `originName` in `row`: unsolicited
+   * bytes count against a per-origin quota (`maxPendingSealedBytesPerOrigin`,
+   * default a quarter of the default budget, at most the budget). Over it, the
+   * origin's own older unsolicited rows go first; then the frame is refused.
+   * @param {Object} row
+   * @param {string} rowKey
+   * @param {string|null} originName
+   * @param {number} incoming
+   * @returns {{ ok: boolean, status: (string|undefined), error: (string|undefined) }}
+   * @private
+   */
+  _reserveSealedBytes (row, rowKey, originName, incoming) {
+    const budget = this._pendingSealedBudget();
+    if (incoming > budget) return { ok: false, status: 'reject', error: 'pending sealed-blob memory budget exceeded' };
+    if (row.pinned) return { ok: true };
+    const setting = Number(this.settings.maxPendingSealedBytesPerOrigin);
+    const limit = Number.isFinite(setting) && setting > 0
+      ? setting
+      : Math.min(budget, Math.floor(PEER_MAX_PENDING_SEALED_BYTES / 4));
+    const name = originName ? String(originName) : '';
+    const used = () => this._pendingSealedOriginBytes.get(name) || 0;
+    if (used() + incoming > limit) {
+      for (const key of this._unpinnedSealedRowsFrom(originName, rowKey)) {
+        if (used() + incoming <= limit) break;
+        this._dropSealedRow(key);
+      }
+    }
+    if (used() + incoming > limit) {
+      return { ok: false, status: 'reject', error: 'pending sealed-blob memory budget exceeded for this peer' };
+    }
+    return { ok: true };
+  }
+
+  /**
+   * After a row changed: update the running totals and enforce the global caps.
+   * @param {Object} row
+   * @param {string} rowKey
+   * @returns {{ ok: boolean, status: (string|undefined), error: (string|undefined) }}
+   * @private
+   */
+  _settleSealedRow (row, rowKey) {
+    this._resizeSealedRow(row);
+    this._capPendingSealedBlobs();
+    if (!this.pendingSealedBlobs[rowKey]) {
+      return { ok: false, status: 'reject', error: 'pending sealed-blob memory budget exceeded' };
+    }
+    return { ok: true };
+  }
+
+  /**
+   * True while a purchase expectation still backs a pinned row.
+   * @param {Object} row
+   * @returns {boolean}
+   * @private
+   */
+  _sealedRowExpected (row) {
+    if (!this.blobTransfers || typeof this.blobTransfers.expectedFor !== 'function') return false;
+    return this.blobTransfers.expectedFor(row.documentId)
+      .some((e) => !e.merkleRootHex || e.merkleRootHex === row.merkleRootHex);
+  }
+
+  /**
+   * Bound per-blob sealed trees held in memory. Unsolicited rows expire
+   * `pendingSealedTtlMs` after their first frame; a pinned row (a purchase
+   * expectation matched it) lives as long as that expectation. Then rows are
+   * evicted — unpinned before pinned, oldest-updated first — until both the
+   * row cap (`maxPendingSealedDeliveries`) and the byte budget
+   * (`maxPendingSealedBytes`, tracked as a running total) hold.
    * @private
    */
   _capPendingSealedBlobs () {
     const max = Number(this.settings.maxPendingSealedDeliveries);
     const cap = Number.isFinite(max) && max > 0 ? max : PEER_MAX_PENDING_SEALED_DELIVERIES;
-    const budgetSetting = Number(this.settings.maxPendingSealedBytes);
-    const budget = Number.isFinite(budgetSetting) && budgetSetting > 0 ? budgetSetting : PEER_MAX_PENDING_SEALED_BYTES;
+    const budget = this._pendingSealedBudget();
     const ttlSetting = Number(this.settings.pendingSealedTtlMs);
     const ttl = Number.isFinite(ttlSetting) && ttlSetting > 0 ? ttlSetting : PEER_PENDING_SEALED_TTL_MS;
     const now = Date.now();
     for (const [key, row] of Object.entries(this.pendingSealedBlobs)) {
-      if (!row || now - (row.created || row.updated || 0) > ttl) delete this.pendingSealedBlobs[key];
+      if (!row) {
+        delete this.pendingSealedBlobs[key];
+        continue;
+      }
+      if (now - (row.created || row.updated || 0) <= ttl) continue;
+      if (row.pinned && this._sealedRowExpected(row)) continue;
+      this._dropSealedRow(key);
     }
-    const keys = Object.keys(this.pendingSealedBlobs);
-    keys.sort((a, b) => ((this.pendingSealedBlobs[a] || {}).updated || 0) - ((this.pendingSealedBlobs[b] || {}).updated || 0));
-    let bytes = keys.reduce((sum, k) => sum + Peer._sealedRowBytes(this.pendingSealedBlobs[k]), 0);
-    let count = keys.length;
+    let count = Object.keys(this.pendingSealedBlobs).length;
+    if (count <= cap && this._pendingSealedBytes <= budget) return;
+    const rank = (r) => (r.pinned ? 1 : 0);
+    const keys = Object.keys(this.pendingSealedBlobs).sort((a, b) => {
+      const x = this.pendingSealedBlobs[a];
+      const y = this.pendingSealedBlobs[b];
+      return (rank(x) - rank(y)) || ((x.updated || 0) - (y.updated || 0));
+    });
     for (const key of keys) {
-      if (count <= cap && bytes <= budget) break;
-      bytes -= Peer._sealedRowBytes(this.pendingSealedBlobs[key]);
-      delete this.pendingSealedBlobs[key];
+      if (count <= cap && this._pendingSealedBytes <= budget) break;
+      this._dropSealedRow(key);
       count--;
     }
   }
@@ -5337,39 +5882,72 @@ class Peer extends Service {
   }
 
   /**
-   * Open a held sealed blob with a key learned out of band (seller-fulfils
-   * channel rail: the HTLC preimage **is** `K_i`). Same verification as a
-   * wire `DocumentContentKeyReveal`: SHA256(key) must equal the part's payment
-   * hash and the plaintext must hash to its advertised digest.
+   * Open a held sealed blob with an HTLC preimage learned out of band
+   * (seller-fulfils channel rail). For a static payment hash the preimage
+   * **is** `K_i`; for a per-buyer `DocumentBlobQuote` it is `s`, which
+   * unwraps `K_i` from the quote (a quote that does not unwrap to the
+   * committed key hash emits `documentBlobQuoteFraud` with the signed quote
+   * frame). Same verification as a wire `DocumentContentKeyReveal`:
+   * SHA256(K_i) must equal the part's payment hash and GCM must authenticate.
    * @param {Object} opts
-   * @param {string} opts.documentId
-   * @param {string} opts.keyHex 32-byte key (hex)
+   * @param {string} [opts.documentId]
+   * @param {string} opts.keyHex 32-byte preimage (hex)
    * @param {number} [opts.blobIndex] resolved from `paymentHashHex` when omitted
    * @param {string} [opts.paymentHashHex] SHA256(key); defaults to the hash of `keyHex`
    * @param {string} [opts.merkleRootHex] disambiguates when two roots are pending
    * @returns {Object} same shape as the key-reveal handler
    */
   openSealedBlobWithKey (opts = {}) {
-    const keyHex = String(opts.keyHex || '').toLowerCase();
+    let keyHex = String(opts.keyHex || '').toLowerCase();
     if (!/^[0-9a-f]{64}$/.test(keyHex)) return { ok: false, error: 'keyHex must be 32 bytes hex' };
-    const paymentHashHex = opts.paymentHashHex
+    let paymentHashHex = opts.paymentHashHex
       ? String(opts.paymentHashHex).toLowerCase()
       : crypto.createHash('sha256').update(Buffer.from(keyHex, 'hex')).digest('hex');
     let blobIndex = opts.blobIndex;
     let merkleRootHex = opts.merkleRootHex || null;
+    let documentId = opts.documentId;
+    const preimageHex = keyHex;
+    const quoted = this._receivedBlobQuotes.get(paymentHashHex);
+    if (quoted) {
+      const q = quoted.quote;
+      const row = this._sealedBlobRow(q.documentId, q.merkleRootHex);
+      const part = row ? row.parts.get(Number(q.blobIndex)) : null;
+      const out = checkBlobQuote({ quote: q, preimageHex: keyHex, keyHashHex: part && part.verified ? part.paymentHashHex : null });
+      if (!out.ok) {
+        if (out.fraud) {
+          this.emit('documentBlobQuoteFraud', {
+            quote: Object.assign({}, q),
+            preimageHex: keyHex,
+            quoteFrameHex: quoted.frame ? quoted.frame.toString('hex') : null,
+            origin: quoted.origin,
+            error: out.error
+          });
+        }
+        return { ok: false, error: out.error, fraud: !!out.fraud, documentId: q.documentId, blobIndex: Number(q.blobIndex) };
+      }
+      keyHex = out.keyHex;
+      paymentHashHex = String(q.keyHashHex).toLowerCase();
+      if (!Number.isFinite(Number(blobIndex))) blobIndex = Number(q.blobIndex);
+      if (!merkleRootHex) merkleRootHex = q.merkleRootHex || null;
+      if (!documentId) documentId = q.documentId;
+    }
     if (!Number.isFinite(Number(blobIndex))) {
       const located = this.sealedBlobKeyForPaymentHash(paymentHashHex);
       if (!located) return { ok: false, error: 'no held blob for that payment hash', documentId: opts.documentId || null };
       blobIndex = located.blobIndex;
       if (!merkleRootHex) merkleRootHex = located.merkleRootHex;
+      if (!documentId) documentId = located.documentId;
     }
-    return this._handleSealedBlobKeyReveal({
-      documentId: opts.documentId,
+    const result = this._handleSealedBlobKeyReveal({
+      documentId,
       blobIndex: Number(blobIndex),
       keyHex,
       paymentHashHex,
-      merkleRootHex
+      merkleRootHex,
+      preimageHex
     }, opts.origin || null);
+    if (quoted && result && result.ok) this._receivedBlobQuotes.delete(quoted.quote.paymentHashHex.toLowerCase());
+    return result;
   }
 
   /**
@@ -5424,44 +6002,53 @@ class Peer extends Service {
       paymentHashHex: chosen.paymentHashHex,
       iv: chosen.iv,
       scheme: chosen.scheme,
-      plaintextSha256: chosen.plaintextSha256,
       origin: chosen.origin,
       frame: chosen.frame
     }));
     row.opened.set(blobIndex, opened.plaintext);
     row.updated = Date.now();
+    this._resizeSealedRow(row);
+    const keyHex = reveal.keyHex ? String(reveal.keyHex).toLowerCase() : null;
     this.emit('documentBlobOpened', {
       documentId,
       blobIndex,
       blobTotal: row.total,
       buffer: opened.plaintext,
       opened: row.opened.size,
-      // K_i doubles as the payment preimage (paymentHash = SHA256(K_i)); the
-      // market agent settles a channel HTLC with it.
-      keyHex: reveal.keyHex ? String(reveal.keyHex).toLowerCase() : null,
+      // For a static hash K_i is the payment preimage (paymentHash =
+      // SHA256(K_i)); for a per-buyer quote it is `s` (`preimageHex`).
+      keyHex,
+      preimageHex: reveal.preimageHex ? String(reveal.preimageHex).toLowerCase() : keyHex,
       paymentHashHex: chosen.paymentHashHex || null,
       origin: origin || row.origin
     });
     if (row.opened.size < row.total) {
       return { ok: true, documentId, blobIndex, opened: row.opened.size, total: row.total, complete: false };
     }
-    const hashes = [];
+    const leaves = [];
     const plain = [];
     for (let i = 0; i < row.total; i++) {
       const p = row.parts.get(i);
       const o = row.opened.get(i);
       if (!p || !o) return { ok: true, documentId, blobIndex, complete: false };
-      hashes.push(p.blobHashHex);
+      leaves.push({ index: i, blobHashHex: p.blobHashHex, paymentHashHex: p.paymentHashHex, iv: p.iv });
       plain.push(o);
     }
-    if (row.merkleRootHex && merkleRootHexFromBlobHashes(hashes) !== String(row.merkleRootHex).toLowerCase()) {
-      this.emit('documentBlobRejected', { documentId, error: 'merkle root mismatch', origin });
-      return { ok: false, error: 'merkle root mismatch', documentId };
+    if (row.merkleRootHex) {
+      const check = verifyOfferLeaves({
+        merkleRootHex: row.merkleRootHex,
+        blobTotal: row.total,
+        blobs: leaves,
+        treeVersion: row.treeVersion || undefined
+      });
+      if (!check.ok) {
+        this.emit('documentBlobRejected', { documentId, error: 'merkle root mismatch', origin });
+        return { ok: false, error: 'merkle root mismatch', documentId };
+      }
     }
-    delete this.pendingSealedBlobs[`${documentId}|${row.merkleRootHex}`];
+    this._dropSealedRow(`${documentId}|${row.merkleRootHex}`);
     const buffer = Buffer.concat(plain);
-    if (!this._state.content.documents) this._state.content.documents = {};
-    this._state.content.documents[documentId] = buffer.toString('utf8');
+    this._storeReceivedDocument(documentId, buffer);
     const ev = {
       documentId,
       buffer,
@@ -5511,17 +6098,19 @@ class Peer extends Service {
       return this._ingestSealedBlobFrame(obj, origin, frameHex);
     }
     const frame = parseFileSendObject(obj);
-    const result = this.blobTransfers.ingest(frame);
+    const originName = origin && typeof origin === 'object' ? (origin.name || origin.address || origin.id || null) : (origin || null);
+    const result = this.blobTransfers.ingest(frame, { origin: originName });
     if (result.status === 'complete' && result.buffer && result.documentId) {
       const sealed = !!(obj.sealed || (frame && !frame.legacy && obj.paymentHashHex && obj.iv));
       if (sealed) {
+        // No frame-supplied plaintextSha256: it is unauthenticated (a peer
+        // could veto the paid open); the key reveal may carry one.
         this.pendingSealedDeliveries[result.documentId] = {
           ciphertext: result.buffer,
           merkleRootHex: result.merkleRootHex,
           paymentHashHex: obj.paymentHashHex || null,
           iv: obj.iv || null,
           scheme: obj.scheme || null,
-          plaintextSha256: obj.plaintextSha256 || null,
           origin: origin || null,
           updated: Date.now()
         };
@@ -5540,10 +6129,7 @@ class Peer extends Service {
           buffer: null
         });
       }
-      if (!this._state.content.documents) this._state.content.documents = {};
-      if (!Object.prototype.hasOwnProperty.call(this._state.content.documents, result.documentId)) {
-        this._state.content.documents[result.documentId] = result.buffer.toString('utf8');
-      }
+      this._storeReceivedDocument(result.documentId, result.buffer, { overwrite: false });
     }
     return Object.assign({ origin }, result);
   }
@@ -5568,7 +6154,7 @@ class Peer extends Service {
       keyHex: reveal.keyHex,
       paymentHashHex: reveal.paymentHashHex || pending.paymentHashHex,
       iv: reveal.iv || pending.iv,
-      plaintextSha256: reveal.plaintextSha256 || pending.plaintextSha256
+      plaintextSha256: reveal.plaintextSha256 || null
     }, pending.ciphertext);
     if (!opened.ok) {
       this.emit('documentBlobRejected', {
@@ -5579,8 +6165,7 @@ class Peer extends Service {
       return { ok: false, error: opened.error, documentId };
     }
     delete this.pendingSealedDeliveries[documentId];
-    if (!this._state.content.documents) this._state.content.documents = {};
-    this._state.content.documents[documentId] = opened.plaintext.toString('utf8');
+    this._storeReceivedDocument(documentId, opened.plaintext);
     const ev = {
       documentId,
       buffer: opened.plaintext,
@@ -5609,8 +6194,7 @@ class Peer extends Service {
       ciphertext: pending.ciphertext,
       preimageHex,
       paymentHashHex: pending.paymentHashHex,
-      iv: pending.iv,
-      plaintextSha256: pending.plaintextSha256
+      iv: pending.iv
     });
     if (!opened.ok) {
       this.emit('documentBlobRejected', {
@@ -5620,8 +6204,7 @@ class Peer extends Service {
       return { ok: false, error: opened.error, documentId: id };
     }
     delete this.pendingSealedDeliveries[id];
-    if (!this._state.content.documents) this._state.content.documents = {};
-    this._state.content.documents[id] = opened.plaintext.toString('utf8');
+    this._storeReceivedDocument(id, opened.plaintext);
     const ev = {
       documentId: id,
       buffer: opened.plaintext,
@@ -5708,6 +6291,10 @@ class Peer extends Service {
    */
   requestDocument (documentId, peerAddress = null, opts = {}) {
     if (!documentId) return false;
+    if (!isWireDocumentId(documentId)) {
+      this.emit('warning', `[FABRIC:PEER] requestDocument: document id longer than ${MAX_DOCUMENT_ID_LENGTH} characters`);
+      return false;
+    }
 
     const body = { document: documentId };
     if (opts.maxSats != null && Number.isFinite(Number(opts.maxSats))) {
@@ -5719,6 +6306,7 @@ class Peer extends Service {
     }
     if (opts.blobIndex != null) body.blobIndex = Number(opts.blobIndex);
     if (opts.blobTotal != null) body.blobTotal = Number(opts.blobTotal);
+    if (opts.quote === true) body.quote = true;
     {
       const hash = contentHashHexFromObject(opts) || contentHashHexFromObject({ contentHashHex: opts.contentHashHex });
       if (hash) body.contentHashHex = hash;
@@ -5803,6 +6391,12 @@ class Peer extends Service {
   approveDocumentRequest (requestKey, opts = {}) {
     const row = this._findPendingDocumentRequest(requestKey);
     if (!row) return { ok: false, error: 'pending request not found' };
+    if (!this._documentRequestNamesBlob(row.documentId, row.parsed || {})) {
+      return { ok: false, error: 'blobIndex required for a per-blob sealed document' };
+    }
+    if (row.parsed && row.parsed.quote === true && this._getSealedBlobDocument(row.documentId)) {
+      this._sendSealedBlobQuote(row.documentId, Number(row.parsed.blobIndex), row.peerAddress, { routeId: row.parsed.routeId });
+    }
     const sendOpts = {};
     if (row.parsed && row.parsed.blobIndex != null) {
       sendOpts.blobIndex = Number(row.parsed.blobIndex);
@@ -5885,6 +6479,77 @@ class Peer extends Service {
     const pay = doc.paymentHashFor(Number(parsed.blobIndex));
     if (!pay) return false;
     return this._mayRevealDocumentContentKey(documentId, pay, parsed, opts);
+  }
+
+  /**
+   * A DocumentRequest for a per-blob sealed document must name one held blob:
+   * answering an index-less request would send every blob (up to
+   * `MAX_DOCUMENT_BLOBS` frames) for one small message.
+   * @param {string} documentId
+   * @param {Object} parsed DocumentRequest body
+   * @returns {boolean} true when the request may be served
+   * @private
+   */
+  _documentRequestNamesBlob (documentId, parsed) {
+    const doc = this._getSealedBlobDocument(documentId);
+    if (!doc) return true;
+    if (!parsed || parsed.blobIndex == null || parsed.blobIndex === '') return false;
+    const idx = Number(parsed.blobIndex);
+    return Number.isInteger(idx) && !!doc.blob(idx);
+  }
+
+  /**
+   * Seller: send a signed `DocumentBlobQuote` (per-buyer payment hash) for one blob.
+   * @param {string} documentId
+   * @param {number} blobIndex
+   * @param {string} peerAddress
+   * @param {Object} [opts] `{ routeId }`
+   * @returns {Object|null} the quote sent
+   * @private
+   */
+  _sendSealedBlobQuote (documentId, blobIndex, peerAddress, opts = {}) {
+    const conn = peerAddress && this.connections[peerAddress];
+    if (!conn || !conn._writeFabric) return null;
+    const out = this.quoteSealedBlob({ documentId, blobIndex });
+    if (!out.ok) {
+      this.emit('warning', `[FABRIC:PEER] blob quote failed for ${documentId}#${blobIndex}: ${out.error}`);
+      return null;
+    }
+    const object = Object.assign({}, out.quote);
+    if (opts.routeId) object.routeId = String(opts.routeId);
+    const msg = Message.fromVector(['GenericMessage', JSON.stringify({ type: BLOB_QUOTE_TYPE, object })]);
+    msg.signWithKey(this.key);
+    conn._writeFabric(msg.toBuffer());
+    this.emit('documentBlobQuoted', { documentId, blobIndex, peerAddress, paymentHashHex: out.quote.paymentHashHex, amountSats: out.quote.amountSats });
+    return out.quote;
+  }
+
+  /**
+   * Buyer: keep a seller's `DocumentBlobQuote` so the HTLC preimage it
+   * settles with (`s`) can be unwrapped to `K_i` ({@link Peer#openSealedBlobWithKey}).
+   * The signed frame is kept as fraud evidence.
+   * @param {Object} quote
+   * @param {Object|string} [origin]
+   * @param {Message|null} [wireMessage]
+   * @returns {{ ok: boolean, error: (string|undefined), paymentHashHex: (string|undefined) }}
+   */
+  _ingestSealedBlobQuote (quote, origin = null, wireMessage = null) {
+    if (!isWellFormedBlobQuote(quote)) return { ok: false, error: 'malformed DocumentBlobQuote' };
+    const paymentHashHex = String(quote.paymentHashHex).toLowerCase();
+    let frame = null;
+    try {
+      if (wireMessage && typeof wireMessage.toBuffer === 'function') frame = wireMessage.toBuffer();
+    } catch (_) { /* synthetic — no evidence */ }
+    const capSetting = Number(this.settings.maxSealedBlobQuotes);
+    const cap = Number.isFinite(capSetting) && capSetting > 0 ? capSetting : 4096;
+    this._receivedBlobQuotes.delete(paymentHashHex);
+    while (this._receivedBlobQuotes.size >= cap) {
+      this._receivedBlobQuotes.delete(this._receivedBlobQuotes.keys().next().value);
+    }
+    const originName = origin && typeof origin === 'object' ? (origin.name || origin.address || null) : (origin || null);
+    this._receivedBlobQuotes.set(paymentHashHex, { quote: Object.assign({}, quote), origin: originName, frame, received: Date.now() });
+    this.emit('documentBlobQuote', { quote: Object.assign({}, quote), origin: originName });
+    return { ok: true, paymentHashHex };
   }
 
   _mayRevealDocumentContentKey (documentId, paymentHashHex, parsed, opts = {}) {
@@ -6011,6 +6676,11 @@ class Peer extends Service {
    * @param {Number} [rateSats=0] - Ask price in satoshis (gossip only; not part of canonical hash).
    */
   _publishDocument (documentId, content = '', rateSats = 0) {
+    if (!isWireDocumentId(documentId)) {
+      this.emit('warning',
+        `[FABRIC:PEER] Not publishing document: id must be 1–${MAX_DOCUMENT_ID_LENGTH} characters`);
+      return false;
+    }
     if (!this._state.content.documents) this._state.content.documents = {};
     if (!this._state.content.documentRates) this._state.content.documentRates = {};
     if (!this._state.content.documentSealed) this._state.content.documentSealed = {};
@@ -6069,6 +6739,10 @@ class Peer extends Service {
 
     const docId = parsed.document || parsed.id;
     if (!docId) return;
+    if (!isWireDocumentId(docId)) {
+      this.emit('warning', `[FABRIC:PEER] Ignoring DOCUMENT_REQUEST with an invalid document id from ${(origin && origin.name) || 'unknown'}`);
+      return;
+    }
 
     const docs = this._state.content.documents;
     const sealedBlobs = this._state.content.documentSealedBlobs;
@@ -6120,6 +6794,13 @@ class Peer extends Service {
       return;
     }
 
+    if (!this._documentRequestNamesBlob(docId, parsed)) {
+      this.emit('warning', `[FABRIC:PEER] DOCUMENT_REQUEST for per-blob document ${docId} without a valid blobIndex from ${(origin && origin.name) || 'unknown'}`);
+      return;
+    }
+    if (parsed.quote === true && this._getSealedBlobDocument(docId)) {
+      this._sendSealedBlobQuote(docId, Number(parsed.blobIndex), origin.name, { routeId: parsed.routeId });
+    }
     const sendOpts = {};
     if (parsed.blobIndex != null) sendOpts.blobIndex = Number(parsed.blobIndex);
     if (parsed.routeId) sendOpts.routeId = String(parsed.routeId);
@@ -6482,8 +7163,9 @@ class Peer extends Service {
 
     // Map write function
     socket._writeFabric = (msg) => {
-      this._recordPeerBandwidth(name, 'out', msg);
-      this._writeFabric(msg, client);
+      const written = this._writeFabric(msg, client);
+      if (written) this._recordPeerBandwidth(name, 'out', msg);
+      return written;
     };
 
     this.connections[name] = socket;
@@ -6566,6 +7248,14 @@ class Peer extends Service {
 
     if (!isWritable) {
       this.emit('warning', 'Attempted to write to a closed or destroyed stream; skipping.');
+      return false;
+    }
+
+    const remoteCap = stream._fabricRemoteMaxFrameBytes;
+    if (Number.isInteger(remoteCap) && msg && msg.length > remoteCap) {
+      const type = (Buffer.isBuffer(msg) && msg.length >= 76) ? msg.readUInt32BE(72) : null;
+      this.emit('warning',
+        `[FABRIC:PEER] Not sending ${msg.length}-byte frame (type=${type}) over remote frame cap ${remoteCap}`);
       return false;
     }
 

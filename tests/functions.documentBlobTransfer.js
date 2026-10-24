@@ -1,16 +1,18 @@
 'use strict';
 
 const assert = require('assert');
+const crypto = require('crypto');
 const {
   splitBlobs,
-  blobPaymentHashHex
+  blobPaymentHashHex,
+  merkleRootHexFromBlobHashes
 } = require('../functions/documentBlobManifest');
 const {
   parseFileSendObject,
   DocumentBlobTransferBook,
   settlementDedupeKey
 } = require('../functions/documentBlobManifest');
-const { DocumentOfferBook } = require('../functions/documentMarket');
+const { Book } = require('../functions/documentMarket');
 const {
   createDocumentPurchaseSession,
   isDuplicateSettlement,
@@ -75,14 +77,14 @@ describe('functions/documentBlobTransfer', function () {
   it('offer book binds payment hash not raw blob hash', function () {
     const blobHashHex = 'ab'.repeat(32);
     const pay = blobPaymentHashHex({ documentId: 'd', blobIndex: 0, blobHashHex });
-    const book = new DocumentOfferBook();
+    const book = new Book();
     book.ingestInventoryResponse({
       origin: 'seller:1',
       items: [{
         id: 'd',
         rateSats: 50,
         contentHash: 'cd'.repeat(32),
-        merkleRootHex: 'ef'.repeat(32),
+        merkleRootHex: merkleRootHexFromBlobHashes([blobHashHex]),
         blobs: [{
           index: 0,
           total: 1,
@@ -216,7 +218,7 @@ describe('functions/documentBlobTransfer', function () {
       merkleRootHex: 'aa'.repeat(32),
       total: 2
     });
-    const row = book._pending.get(`old|${'aa'.repeat(32)}`);
+    const row = book._expectations.get(`old|${'aa'.repeat(32)}`);
     row.updated = Date.now() - 1000;
     book.expectTransfer({
       documentId: 'new',
@@ -288,5 +290,107 @@ describe('functions/documentBlobTransfer', function () {
     assert.strictEqual(over.status, 'reject');
     assert.strictEqual(over.error, 'pending blob bytes exceeded');
     assert.strictEqual(tight.pendingBytes, 200);
+  });
+
+  describe('purchase pins', function () {
+    const bytes = Buffer.alloc(100, 3);
+    const blobHashHex = crypto.createHash('sha256').update(bytes).digest('hex');
+    const root = merkleRootHexFromBlobHashes([blobHashHex, blobHashHex]);
+    const frame = (over) => Object.assign({
+      ok: true,
+      legacy: false,
+      documentId: 'doc',
+      bytes,
+      blobIndex: 0,
+      blobTotal: 2,
+      blobHashHex,
+      merkleRootHex: root,
+      contentSha256: null
+    }, over);
+
+    it('expectations outlive the idle TTL until their session expires', function () {
+      const book = new DocumentBlobTransferBook({ ttlMs: 1 });
+      book.expectTransfer({ documentId: 'doc', merkleRootHex: root, total: 2, ttlMs: 60000 });
+      assert.strictEqual(book.ingest(frame()).status, 'need_more');
+      const key = `doc|${root}`;
+      book._pending.get(key).updated = Date.now() - 1000;
+      assert.strictEqual(book.expectedFor('doc').length, 1);
+      assert.ok(book._pending.has(key), 'pinned row survives the idle TTL');
+      book._expectations.get(key).expiresAt = Date.now() - 1;
+      assert.strictEqual(book.expectedFor('doc').length, 0);
+      assert.ok(!book._pending.has(key));
+    });
+
+    it('unsolicited transfers never evict an expectation', function () {
+      const book = new DocumentBlobTransferBook({ maxPending: 2, maxPendingPerOrigin: 100 });
+      book.expectTransfer({ documentId: 'doc', merkleRootHex: root, total: 2 });
+      for (let i = 0; i < 10; i++) {
+        book.ingest(frame({ documentId: `spam${i}`, merkleRootHex: 'bb'.repeat(32) }), { origin: 'attacker' });
+      }
+      assert.strictEqual(book.expectedFor('doc').length, 1);
+      assert.strictEqual(book.ingest(frame(), { origin: 'seller' }).status, 'need_more');
+      assert.strictEqual(book.ingest(frame({ blobIndex: 1 }), { origin: 'seller' }).status, 'complete');
+    });
+
+    it('a planted row whose total contradicts the pin is replaced', function () {
+      const book = new DocumentBlobTransferBook();
+      assert.strictEqual(book.ingest(frame({ blobTotal: 3 }), { origin: 'attacker' }).status, 'need_more');
+      book.expectTransfer({ documentId: 'doc', merkleRootHex: root, total: 2 });
+      assert.strictEqual(book.pendingBytes, 0, 'the planted row was dropped');
+      assert.strictEqual(book.ingest(frame({ blobTotal: 3 }), { origin: 'attacker' }).error, 'blobTotal mismatch');
+      assert.strictEqual(book.ingest(frame(), { origin: 'seller' }).status, 'need_more');
+      assert.strictEqual(book.ingest(frame({ blobIndex: 1 }), { origin: 'seller' }).status, 'complete');
+    });
+
+    it('a planted part at the right total never shadows the seller\'s frame', function () {
+      const junk = Buffer.alloc(100, 9);
+      const junkHash = crypto.createHash('sha256').update(junk).digest('hex');
+      const book = new DocumentBlobTransferBook();
+      assert.strictEqual(book.ingest(frame({ bytes: junk, blobHashHex: junkHash }), { origin: 'attacker' }).status, 'need_more');
+      book.expectTransfer({ documentId: 'doc', merkleRootHex: root, total: 2, blobHashHexes: [blobHashHex, blobHashHex] });
+      assert.strictEqual(book.pendingBytes, 0, 'the unsolicited row was dropped');
+      assert.strictEqual(book.ingest(frame(), { origin: 'seller' }).status, 'need_more');
+      assert.strictEqual(book.ingest(frame({ blobIndex: 1 }), { origin: 'seller' }).status, 'complete');
+    });
+
+    it('merging pins drops held parts that contradict them', function () {
+      const junk = Buffer.alloc(100, 9);
+      const junkHash = crypto.createHash('sha256').update(junk).digest('hex');
+      const book = new DocumentBlobTransferBook();
+      book.expectTransfer({ documentId: 'doc', merkleRootHex: root, total: 2 });
+      assert.strictEqual(book.ingest(frame({ bytes: junk, blobHashHex: junkHash }), { origin: 'attacker' }).status, 'need_more');
+      book.expectTransfer({ documentId: 'doc', merkleRootHex: root, total: 2, blobHashHexes: [blobHashHex, null], merge: true });
+      assert.strictEqual(book.pendingBytes, 0);
+      assert.strictEqual(book.ingest(frame(), { origin: 'seller' }).status, 'need_more');
+      assert.strictEqual(book.ingest(frame({ blobIndex: 1 }), { origin: 'seller' }).status, 'complete');
+    });
+
+    it('per-origin row and byte quotas only cost the noisy origin', function () {
+      const rows = new DocumentBlobTransferBook({ maxPendingPerOrigin: 2 });
+      const results = [];
+      for (let i = 0; i < 5; i++) results.push(rows.ingest(frame({ documentId: `a${i}` }), { origin: 'attacker' }));
+      assert.strictEqual(results[4].error, 'too many pending blob transfers from this peer');
+      assert.strictEqual(rows.ingest(frame({ documentId: 'honest' }), { origin: 'other' }).status, 'need_more');
+      const attackerRows = Array.from(rows._pending.values()).filter((r) => r.origin === 'attacker');
+      assert.deepStrictEqual(attackerRows.map((r) => r.documentId).sort(), ['a0', 'a1']);
+      assert.ok(rows._pending.has(`honest|${root}`));
+
+      const quota = new DocumentBlobTransferBook({ maxPendingBytes: 10000, maxPendingBytesPerOrigin: 200, maxPendingPerOrigin: 100 });
+      quota.ingest(frame({ documentId: 'x1' }), { origin: 'attacker' });
+      quota.ingest(frame({ documentId: 'x2' }), { origin: 'attacker' });
+      quota.ingest(frame({ documentId: 'x3' }), { origin: 'attacker' });
+      assert.ok((quota._originBytes.get('attacker') || 0) <= 200);
+      assert.strictEqual(quota.ingest(frame({ documentId: 'y1' }), { origin: 'other' }).status, 'need_more');
+    });
+
+    it('releaseTransfer ends the session and frees its bytes', function () {
+      const book = new DocumentBlobTransferBook();
+      book.expectTransfer({ documentId: 'doc', merkleRootHex: root, total: 2 });
+      book.ingest(frame(), { origin: 'seller' });
+      assert.strictEqual(book.pendingBytes, 100);
+      assert.strictEqual(book.releaseTransfer({ documentId: 'doc', merkleRootHex: root }), true);
+      assert.strictEqual(book.pendingBytes, 0);
+      assert.strictEqual(book.expectedFor('doc').length, 0);
+    });
   });
 });

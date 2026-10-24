@@ -10,7 +10,7 @@ const {
   listDocumentExchangeCliContracts,
   listDocumentExchangeCommands
 } = require('../functions/cliDocumentExchange');
-const { DocumentOfferBook } = require('../functions/documentMarket');
+const { Book } = require('../functions/documentMarket');
 const { createDocumentPurchaseSession } = require('../functions/documentMarket');
 const { HTLC_MINIMUM_SATS } = require('../constants');
 
@@ -104,7 +104,7 @@ describe('functions/cliDocumentExchange (headless CLI surface)', function () {
       paymentHash32: Buffer.from(contentHash, 'hex'),
       refundLocktimeHeight: lock
     });
-    const book = new DocumentOfferBook();
+    const book = new Book();
     book.ingestInventoryResponse({
       origin: 'seller1',
       sellerPubkey: String(seller.pubkey).toLowerCase(),
@@ -173,7 +173,7 @@ describe('functions/cliDocumentExchange (headless CLI surface)', function () {
     const Key = require('../types/key');
     const seller = new Key();
     const buyer = new Key();
-    const book = new DocumentOfferBook();
+    const book = new Book();
     book.ingestInventoryResponse({
       origin: 'seller1',
       sellerPubkey: String(seller.pubkey).toLowerCase(),
@@ -207,7 +207,7 @@ describe('functions/cliDocumentExchange (headless CLI surface)', function () {
   });
 
   it('listOffers ranks ingested inventory rows', function () {
-    const book = new DocumentOfferBook();
+    const book = new Book();
     book.ingestInventoryResponse({
       origin: 'a',
       peerScore: 2,
@@ -494,7 +494,7 @@ describe('functions/cliDocumentExchange (headless CLI surface)', function () {
       paymentHash32: Buffer.from(contentHash, 'hex'),
       refundLocktimeHeight: lock
     });
-    const book = new DocumentOfferBook();
+    const book = new Book();
     book.ingestInventoryResponse({
       origin: 'seller-blobs',
       sellerPubkey: String(seller.pubkey).toLowerCase(),
@@ -509,7 +509,7 @@ describe('functions/cliDocumentExchange (headless CLI surface)', function () {
           { index: 0, total: 2, blobHashHex: 'f1'.repeat(32), rateSats: 1000 },
           { index: 1, total: 2, blobHashHex: 'f2'.repeat(32), rateSats: 1000 }
         ],
-        merkleRootHex: 'f3'.repeat(32),
+        merkleRootHex: require('../functions/documentBlobManifest').merkleRootHexFromBlobHashes(['f1'.repeat(32), 'f2'.repeat(32)]),
         htlc: { paymentAddress: built.address, paymentHashHex: contentHash }
       }]
     });

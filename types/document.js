@@ -18,6 +18,14 @@
  * Per-blob key reveal reuses the existing `DocumentContentKeyReveal` body
  * (`functions/documentSealedExchange.js` `buildKeyRevealMessage`) once per blob
  * — the same message, more of them. No new opcodes.
+ *
+ * **Tree versions.** Sealed documents use tree version 2
+ * (`documentMerkleRootHex`): each leaf commits `blobHash || paymentHash || iv`,
+ * nodes are domain separated, and the root commits `blobTotal`, so a frame
+ * carries a short inclusion proof and a buyer verifies the free ciphertext
+ * (and the pinned key hash and IV) before paying. Version 1 (Bitcoin-style
+ * root over blob hashes, as `splitBlobs`) stays readable; v1 lists that are
+ * CVE-2012-2459 twins of a shorter list are refused.
  */
 
 const crypto = require('crypto');
@@ -25,6 +33,12 @@ const crypto = require('crypto');
 const State = require('./state');
 const {
   DEFAULT_BLOB_CHUNK_BYTES,
+  DOCUMENT_TREE_VERSION,
+  DOCUMENT_TREE_VERSION_LEGACY,
+  SEALED_BLOB_CHUNK_BYTES,
+  blobHashesMutated,
+  documentInclusionProofs,
+  documentMerkleRootHex,
   merkleRootHexFromBlobHashes,
   normalizeChunkBytes,
   splitBlobs
@@ -92,6 +106,9 @@ class Document extends State {
     /** @private */
     this._meta = {
       merkleRootHex: null,
+      computedRootHex: null,
+      treeVersion: DOCUMENT_TREE_VERSION_LEGACY,
+      mutated: false,
       blobTotal: 0,
       chunkBytes: DEFAULT_BLOB_CHUNK_BYTES,
       sealed: false,
@@ -119,14 +136,18 @@ class Document extends State {
    * Seal plaintext as a blob tree with one key per blob.
    * @param {Buffer|string} plaintext
    * @param {Object} [opts]
-   * @param {number} [opts.chunkBytes] Ciphertext blob size (default AMP-sized); plaintext chunks are 16 bytes smaller.
+   * @param {number} [opts.chunkBytes] Ciphertext blob size (default AMP-sized, leaving room for the v2 inclusion proof); plaintext chunks are 16 bytes smaller.
    * @param {string} [opts.documentId] Catalog id (defaults to the Tree root).
    * @param {string} [opts.publisher] Publisher public key (hex).
+   * @param {number} [opts.treeVersion=2] 1 only to interoperate with pre-v2 buyers.
    * @returns {Document}
    */
   static seal (plaintext, opts = {}) {
     const plain = Buffer.isBuffer(plaintext) ? plaintext : Buffer.from(plaintext == null ? '' : plaintext);
-    const chunkBytes = normalizeChunkBytes(opts.chunkBytes);
+    const treeVersion = Number(opts.treeVersion) === DOCUMENT_TREE_VERSION_LEGACY ? DOCUMENT_TREE_VERSION_LEGACY : DOCUMENT_TREE_VERSION;
+    const chunkBytes = treeVersion === DOCUMENT_TREE_VERSION
+      ? Math.min(normalizeChunkBytes(opts.chunkBytes || SEALED_BLOB_CHUNK_BYTES), SEALED_BLOB_CHUNK_BYTES)
+      : normalizeChunkBytes(opts.chunkBytes);
     const plainChunk = Math.max(1, chunkBytes - GCM_TAG_BYTES);
     const total = Math.max(1, Math.ceil(plain.length / plainChunk));
     const doc = new Document({ blobs: [] });
@@ -142,7 +163,6 @@ class Document extends State {
         paymentHashHex: paymentHashHexFromKey(sealed.key),
         size: sealed.ciphertext.length,
         plaintextSize: slice.length,
-        plaintextSha256: sha256Hex(slice),
         iv: sealed.encryption.iv,
         scheme: SCHEME
       });
@@ -152,6 +172,7 @@ class Document extends State {
     }
     doc._setBlobs(blobs, {
       sealed: true,
+      treeVersion,
       chunkBytes,
       size: plain.length,
       documentId: opts.documentId || null,
@@ -161,12 +182,15 @@ class Document extends State {
   }
 
   /**
-   * Unsealed blob tree over raw content (same leaves as `splitBlobs`).
+   * Unsealed blob tree over raw content (same leaves as `splitBlobs`). Tree
+   * version 1 (the `splitBlobs` root) unless that list is a CVE-2012-2459
+   * twin of a shorter one (e.g. four identical chunks), which uses version 2.
    * @param {Buffer|string} content
    * @param {Object} [opts]
    * @param {number} [opts.chunkBytes]
    * @param {string} [opts.documentId]
    * @param {string} [opts.publisher]
+   * @param {number} [opts.treeVersion]
    * @returns {Document}
    */
   static fromPlain (content, opts = {}) {
@@ -182,13 +206,17 @@ class Document extends State {
         paymentHashHex: null,
         size: b.bytes.length,
         plaintextSize: b.bytes.length,
-        plaintextSha256: b.blobHashHex,
         iv: null,
         scheme: null
       };
     });
+    let treeVersion = Number(opts.treeVersion);
+    if (treeVersion !== DOCUMENT_TREE_VERSION && treeVersion !== DOCUMENT_TREE_VERSION_LEGACY) {
+      treeVersion = blobHashesMutated(blobs.map((b) => b.blobHashHex)) ? DOCUMENT_TREE_VERSION : DOCUMENT_TREE_VERSION_LEGACY;
+    }
     doc._setBlobs(blobs, {
       sealed: false,
+      treeVersion,
       chunkBytes: split.chunkBytes,
       size: buf.length,
       documentId: opts.documentId || null,
@@ -250,11 +278,12 @@ class Document extends State {
       paymentHashHex: hex64(b.paymentHashHex || b.contentHashHex),
       size: b.size != null ? Number(b.size) : null,
       plaintextSize: b.plaintextSize != null ? Number(b.plaintextSize) : null,
-      plaintextSha256: hex64(b.plaintextSha256),
       iv: b.iv != null ? String(b.iv) : null,
       scheme: b.scheme != null ? String(b.scheme) : null
     }));
     this._setBlobs(blobs, {
+      // Records from before tree versions carry none: they are version 1.
+      treeVersion: Number(record.treeVersion) === DOCUMENT_TREE_VERSION ? DOCUMENT_TREE_VERSION : DOCUMENT_TREE_VERSION_LEGACY,
       sealed: record.sealed === true || blobs.some((b) => !!b.paymentHashHex && !!b.iv),
       chunkBytes: record.chunkBytes != null ? Number(record.chunkBytes) : DEFAULT_BLOB_CHUNK_BYTES,
       size: record.size != null ? Number(record.size) : null,
@@ -272,7 +301,25 @@ class Document extends State {
    */
   _setBlobs (blobs, meta = {}) {
     this._blobs = blobs.slice().sort((a, b) => a.index - b.index);
-    const computed = merkleRootHexFromBlobHashes(this._blobs.map((b) => b.blobHashHex).filter(Boolean));
+    const treeVersion = meta.treeVersion === DOCUMENT_TREE_VERSION ? DOCUMENT_TREE_VERSION : DOCUMENT_TREE_VERSION_LEGACY;
+    const hashes = this._blobs.map((b) => b.blobHashHex);
+    let computed = null;
+    this._meta.mutated = false;
+    if (this._blobs.length && hashes.every(Boolean)) {
+      if (treeVersion === DOCUMENT_TREE_VERSION) {
+        try {
+          computed = documentMerkleRootHex(this._blobs, { treeVersion });
+        } catch (_) {
+          computed = null;
+        }
+      } else {
+        this._meta.mutated = blobHashesMutated(hashes);
+        computed = merkleRootHexFromBlobHashes(hashes);
+      }
+    }
+    this._proofs = null;
+    this._meta.treeVersion = treeVersion;
+    this._meta.computedRootHex = this._meta.mutated ? null : computed;
     this._meta.merkleRootHex = meta.merkleRootHex || computed;
     this._meta.blobTotal = this._blobs.length;
     this._meta.chunkBytes = meta.chunkBytes || this._meta.chunkBytes;
@@ -290,6 +337,8 @@ class Document extends State {
   }
 
   get merkleRootHex () { return this._meta.merkleRootHex; }
+  /** 2 = domain-separated leaves committing payment hash + IV + count; 1 = legacy. */
+  get treeVersion () { return this._meta.treeVersion; }
   get blobTotal () { return this._meta.blobTotal; }
   get chunkBytes () { return this._meta.chunkBytes; }
   get sealed () { return this._meta.sealed; }
@@ -321,6 +370,7 @@ class Document extends State {
       type: 'Document',
       documentId: this._meta.documentId,
       merkleRootHex: this._meta.merkleRootHex,
+      treeVersion: this._meta.treeVersion,
       blobTotal: this._meta.blobTotal,
       chunkBytes: this._meta.chunkBytes,
       sealed: this._meta.sealed,
@@ -334,7 +384,6 @@ class Document extends State {
         paymentHashHex: b.paymentHashHex,
         size: b.size,
         plaintextSize: b.plaintextSize,
-        plaintextSha256: b.plaintextSha256,
         iv: b.iv,
         scheme: b.scheme
       }))
@@ -374,6 +423,34 @@ class Document extends State {
   }
 
   /**
+   * Hold `K_i` without opening the blob (seller rehydrating from storage).
+   * @param {number} index
+   * @param {string|Buffer} keyHex must hash to the blob's payment hash
+   * @returns {boolean}
+   */
+  setKey (index, keyHex) {
+    const leaf = this.blob(index);
+    const key = Buffer.isBuffer(keyHex) ? keyHex.toString('hex') : String(keyHex || '').toLowerCase();
+    if (!leaf || !leaf.paymentHashHex || !HEX64.test(key)) return false;
+    if (paymentHashHexFromKey(key) !== leaf.paymentHashHex) return false;
+    this._keys.set(leaf.index, key);
+    return true;
+  }
+
+  /**
+   * v2 inclusion proof for one blob (`[]` for a one-blob tree).
+   * @param {number} index
+   * @returns {string[]|null} null for version-1 trees
+   */
+  proofFor (index) {
+    if (this._meta.treeVersion !== DOCUMENT_TREE_VERSION || !this._meta.computedRootHex) return null;
+    const i = this._blobs.findIndex((b) => b.index === Number(index));
+    if (i < 0) return null;
+    if (!this._proofs) this._proofs = documentInclusionProofs(this._blobs);
+    return this._proofs[i].slice();
+  }
+
+  /**
    * @param {number} index
    * @returns {Buffer|null} wire bytes (ciphertext when sealed, plaintext otherwise)
    */
@@ -393,8 +470,7 @@ class Document extends State {
     const leaf = this.blob(blob.index);
     if (!leaf || !leaf.blobHashHex) return false;
     if (sha256Hex(blob.bytes) !== leaf.blobHashHex) return false;
-    const root = merkleRootHexFromBlobHashes(this._blobs.map((b) => b.blobHashHex));
-    return root === this._meta.merkleRootHex;
+    return !!this._meta.computedRootHex && this._meta.computedRootHex === this._meta.merkleRootHex;
   }
 
   /**
@@ -412,7 +488,7 @@ class Document extends State {
   }
 
   /**
-   * Open one sealed blob with its key (checks `SHA256(K_i)` and the plaintext hash).
+   * Open one sealed blob with its key (checks `SHA256(K_i)`; GCM authenticates the plaintext).
    * @param {number} index
    * @param {string|Buffer} keyHex
    * @param {Buffer} [ciphertext] Defaults to bytes accepted earlier.
@@ -436,9 +512,6 @@ class Document extends State {
     if (sha256Hex(ct) !== leaf.blobHashHex) return { ok: false, error: 'blob hash mismatch' };
     try {
       const plaintext = openCiphertext(ct, key, leaf.iv);
-      if (leaf.plaintextSha256 && sha256Hex(plaintext) !== leaf.plaintextSha256) {
-        return { ok: false, error: 'plaintextSha256 mismatch' };
-      }
       this._keys.set(i, key);
       this._ciphertexts.set(i, Buffer.from(ct));
       this._plaintexts.set(i, plaintext);
@@ -464,26 +537,33 @@ class Document extends State {
   /**
    * `P2P_INVENTORY_RESPONSE` item — hash-only. `contentHashHex` on each blob is
    * the per-blob payment hash so one HTLC per blob (and multi-seller plans) work
-   * with the existing `DocumentOfferBook`.
+   * with the existing `Book`.
+   * A full list lets the buyer recompute the root (`verifyOfferLeaves`); a
+   * subset (`indexes`) carries a v2 inclusion proof per blob instead.
    * @param {Object} [opts]
    * @param {number} [opts.rateSats] Per-blob ask.
    * @param {string} [opts.documentId]
+   * @param {number[]} [opts.indexes] Subset of blob indexes.
+   * @param {boolean} [opts.proofs] Attach proofs even to a full list.
    * @returns {Object}
    */
   inventoryItem (opts = {}) {
     const rateSats = Math.max(0, Math.floor(Number(opts.rateSats) || 0));
     const id = opts.documentId || this._meta.documentId;
+    const want = Array.isArray(opts.indexes) ? new Set(opts.indexes.map(Number)) : null;
+    const withProofs = this._meta.treeVersion === DOCUMENT_TREE_VERSION && (!!want || opts.proofs === true);
     const item = {
       id,
       rateSats,
       sealed: this._meta.sealed,
       merkleRootHex: this._meta.merkleRootHex,
+      treeVersion: this._meta.treeVersion,
       blobTotal: this._meta.blobTotal,
       chunkBytes: this._meta.chunkBytes,
       size: this._meta.size,
       perBlob: this._meta.sealed,
       network: 'bitcoin',
-      blobs: this._blobs.map((b) => {
+      blobs: this._blobs.filter((b) => !want || want.has(b.index)).map((b) => {
         const pay = this.paymentHashFor(b.index);
         const out = {
           index: b.index,
@@ -496,6 +576,10 @@ class Document extends State {
         };
         // Public (it rides every unpaid frame); lets buyers pin it.
         if (b.iv) out.iv = b.iv;
+        if (withProofs) {
+          const proof = this.proofFor(b.index);
+          if (proof) out.proof = proof;
+        }
         return out;
       })
     };
@@ -534,7 +618,10 @@ class Document extends State {
         obj.paymentHashHex = b.paymentHashHex;
         obj.iv = b.iv;
         obj.scheme = b.scheme;
-        obj.plaintextSha256 = b.plaintextSha256;
+      }
+      if (this._meta.treeVersion === DOCUMENT_TREE_VERSION) {
+        obj.treeVersion = DOCUMENT_TREE_VERSION;
+        obj.proof = this.proofFor(b.index) || [];
       }
       out.push(obj);
     }
@@ -560,7 +647,6 @@ class Document extends State {
       paymentHashHex: leaf.paymentHashHex,
       iv: leaf.iv,
       scheme: leaf.scheme,
-      plaintextSha256: leaf.plaintextSha256,
       settlementId: opts.settlementId
     });
     body.object.blobIndex = i;
