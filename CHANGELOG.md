@@ -2,6 +2,14 @@
 Recent changes to Fabric Core.
 
 ## 2026-10-24
+L1:L1 coinjoin market, regtest-only and not frozen ([docs/COINJOIN_MARKET.md](docs/COINJOIN_MARKET.md)): makers offer UTXOs for a fee, a taker builds one P2TR transaction with equal outputs for every party, so there is no free option; stalling makers are dropped and the round rebuilt.
+
+- **`functions/coinjoin`**: signed `Coinjoin*` bodies carried in `CONTRACT_MESSAGE` under `fabric/coinjoin/v1` (`toContractMessage` / `fromContractMessage`); round messages are sealed to the counterparty. Fee and change math, BIP-69 PSBT build, maker and taker checks, key-path signing, signature merge, ownership proofs.
+- **`functions/podle`**: DLEQ commitments (3 per UTXO) and `PodleBlacklist`, so takers cannot open rounds just to learn maker UTXOs.
+- **`functions/fidelityBond`**: NUMS + CLTV P2TR bonds, redeem PSBT, certificates binding a bond to an offer key, chain verification, JoinMarket's bond value, `BondVerifier`.
+- **`types/coinjoinBook`**: local offer book; makers are drawn at random weighted by bond value. **`types/coinjoinRound`**: taker / maker state machines with timeouts, rebuilds, persistence, and bitcoind adapters.
+- Gated e2e: `FABRIC_E2E_REGTEST=1 npx mocha tests/bitcoin/coinjoin.regtest.js`.
+
 Message body migration, phase 1: eight opcodes with a field schema now go out as typed fields from core, and JSON bodies are still accepted. Wire version stays `0x01`; downstream notes at the end. Plan for the remaining phases: [docs/MESSAGE_BODY_MIGRATION.md](docs/MESSAGE_BODY_MIGRATION.md).
 
 - **`functions/fabricMessageBodies.js`** maps the legacy JSON objects of `P2P_PING`, `P2P_PONG`, `P2P_PEER_ANNOUNCE`, `P2P_PEER_GOSSIP`, `P2P_PEERING_OFFER`, `CONTRACT_PUBLISH`, `CONTRACT_MESSAGE` and `SIDECHAIN_STATE_PATCH` onto their field schemas and back (`buildMessage`, `encodeLegacyBody`, `decodeToLegacyBody`, `tryParseLegacyBody`). A missing gossip or offer hop encodes as the maximum, since an encoded 0 is dropped.
@@ -14,6 +22,13 @@ Message body migration, phase 1: eight opcodes with a field schema now go out as
   - `Contract#commit` sends a top-level `contract` with `type: 'ContractMessage'` and `ops`. Before, Peer dropped it for a missing contract.
   - `buildSignedSidechainPatchMessage` sends fields. **Breaking:** `basisDigest` must now be 64 lowercase hex or empty; anything else throws `TypeError`.
 - **PR #187 review:** `Market` no longer completes a whole-document purchase whose L1 HTLC is still locked when another seller delivers the document, or when the purchase already timed out. Before, the timed-out seller's sats were counted as spent and its refund never ran, so that seller could claim them later without delivering. Such a purchase now stays `refund_pending`. The `MACHINE_MAX_MEMORY` figures in the 2026-10-14 entry and `PUBLIC_API.md` are corrected to ≈3.8 MiB.
+- **PR #189 review:**
+  - `Market`: a `documentReceived` without an origin (and not from a key we are opening) no longer completes locked purchases; a whole-document delivery from a per-blob purchase's own seller leaves it to its blob's open instead of moving it to `refund_pending`.
+  - `LiquidityBook`: cancels are remembered with their signer, so another key's cancel never blocks an order. Cancels for orders not held are capped per key (`maxPendingCancelsPerMaker`, default 100) and evicted before cancels of held orders. `fill` skips an order whose fee exceeds the L2 amount of its chunk instead of throwing.
+  - `LiquiditySwap#fund` records the escrow before the send and refuses a second or concurrent call. Once the send returns, the swap is `l1Funded` (refundable, not abortable) even if the funding notice fails. `abort` refuses while funding is under way. `fromJSON` refuses keys that do not match the saved take / accept.
+  - `MIN_REFUND_LOCK_BLOCKS` is 15 (was 12): with the default timings, locks of 12–14 blocks could not issue a safe invoice.
+  - `functions/liquiditySwap` looks body types up in a `Map`, so a remote `type` like `toString` cannot reach an inherited method.
+  - `decodeToLegacyBody` rejects a malformed `patchesCanonical` instead of falling back to `catalogCanonical`; `tryParseLegacyBody` reports that failure as an `Error`. `Contract#commit` emits `changes` before building its message and warns instead of throwing when the diff is too large for one message.
 - **Downstream:**
   - Handlers of the Peer events above need no change. Code that `JSON.parse`s a raw body of these types itself must use `tryParseLegacyBody` (GoonCitizen `fabricMessageLog`, `groupShareMessage`; Hub `fabricMessageRegistry`; fabric-http `messageBodyJsonBridge`).
   - Upgrade the seeds (`hub.fabric.pub`, `relay.goon.vc`) to this core before any downstream sender switches to fields.

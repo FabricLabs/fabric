@@ -733,6 +733,38 @@ describe('services/market (Phase 5 hardening)', function () {
     assert.strictEqual(sessions.timedOut.status, 'refund_pending', 'a late delivery from the timed-out seller does not cancel its refund');
   });
 
+  it('a delivery without an origin completes no locked purchase', function () {
+    const market = new Market({ budgetSats: 4 * P, tickMs: 0, book: new Book() });
+    const documentId = 'cd'.repeat(32);
+    const session = (id, seller) => ({ settlementId: id, documentId, seller, sellerId: seller, status: 'delivery_pending', amountSats: P, budget: 'locked', confirmedAt: 1 });
+    const sessions = { alpha: session('a', 'alpha'), beta: session('b', 'beta') };
+    Object.assign(market._state.content.sessions, sessions);
+    market._state.content.lockedSats = 2 * P;
+    market._onDocumentReceived({ documentId, buffer: Buffer.from('doc') });
+    assert.strictEqual(sessions.alpha.status, 'delivery_pending');
+    assert.strictEqual(sessions.beta.status, 'delivery_pending');
+    assert.strictEqual(market.lockedSats, 2 * P);
+    // Opening one session's key attributes the delivery to that session.
+    market._opening = 'b';
+    market._onDocumentReceived({ documentId, buffer: Buffer.from('doc') });
+    market._opening = null;
+    assert.strictEqual(sessions.beta.status, 'complete');
+    assert.strictEqual(sessions.alpha.status, 'refund_pending');
+    assert.strictEqual(sessions.alpha.error, 'document delivered by another seller');
+  });
+
+  it('a whole-document delivery from a per-blob purchase\'s own seller leaves it to its blob', function () {
+    const market = new Market({ budgetSats: 4 * P, tickMs: 0, book: new Book() });
+    const documentId = 'ef'.repeat(32);
+    const own = { settlementId: 'own', documentId, seller: 'beta', sellerId: 'beta', blobIndex: 1, status: 'delivery_pending', amountSats: P, budget: 'locked', confirmedAt: 1 };
+    const other = Object.assign({}, own, { settlementId: 'other', seller: 'gamma', sellerId: 'gamma' });
+    Object.assign(market._state.content.sessions, { own, other });
+    market._state.content.lockedSats = 2 * P;
+    market._onDocumentReceived({ documentId, origin: { name: 'beta' }, buffer: Buffer.from('doc') });
+    assert.strictEqual(own.status, 'delivery_pending', 'its blob has not opened yet');
+    assert.strictEqual(other.status, 'refund_pending');
+  });
+
   it('forget releases never-paid sessions and keeps the budget of ones that may have paid', async function () {
     const m = buildL1();
     m.ctl.silent = true;

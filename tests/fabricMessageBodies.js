@@ -168,6 +168,25 @@ describe('functions/fabricMessageBodies', function () {
       assert.strictEqual(bodies.decodeToLegacyBody('P2P_CHAT_MESSAGE', {}), null);
     });
 
+    it('a malformed patch list is rejected, not replaced by the catalog', function () {
+      const fields = {
+        basisClock: 0,
+        basisDigest: Buffer.alloc(32),
+        catalogCanonical: '{"documents":{},"version":1}'
+      };
+      assert.strictEqual(bodies.decodeToLegacyBody('SIDECHAIN_STATE_PATCH', Object.assign({ patchesCanonical: '{"op":"add"}' }, fields)), null);
+      assert.strictEqual(bodies.decodeToLegacyBody('SIDECHAIN_STATE_PATCH', Object.assign({ patchesCanonical: 'not json' }, fields)), null);
+      assert.ok(bodies.decodeToLegacyBody('SIDECHAIN_STATE_PATCH', Object.assign({ patchesCanonical: '[]' }, fields)));
+    });
+
+    it('tryParseLegacyBody reports an unusable field body as an Error', function () {
+      const wire = Message.fromBuffer(Message.fromFields('CONTRACT_PUBLISH', { definition: '[1]' }).signWithKey(OWNER).toBuffer());
+      const parsed = bodies.tryParseLegacyBody(wire);
+      assert.strictEqual(parsed.ok, false);
+      assert.ok(parsed.error instanceof Error);
+      assert.match(parsed.error.message, /unusable CONTRACT_PUBLISH field body/);
+    });
+
     it('JSON bodies still parse through tryParseLegacyBody', function () {
       const parsed = bodies.tryParseLegacyBody(Message.fromBuffer(jsonFrame('P2P_PING', { created: 'x' }).toBuffer()));
       assert.strictEqual(parsed.encoding, 'json');

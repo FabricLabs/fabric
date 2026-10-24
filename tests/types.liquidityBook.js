@@ -110,6 +110,41 @@ describe('types/liquidityBook', function () {
     assert.strictEqual(book.ingestOrder(order).reason, 'order cancelled');
   });
 
+  it('a cancel from another key never blocks an order that has not arrived', function () {
+    const m = randomPriv();
+    const other = randomPriv();
+    const order = makeOrder(m);
+    const id = swap.bodyId(order);
+    const forged = swap.signBody({ type: swap.BODY_TYPES.CANCEL, orderId: id, makerPubkey: swap.pubkeyFromPrivate(other), createdAt: 1 }, other);
+    assert.strictEqual(book.cancel(forged).ok, true);
+    assert.strictEqual(book.ingestOrder(order).ok, true);
+    const early = new LiquidityBook({ now: () => clock });
+    const own = swap.signBody({ type: swap.BODY_TYPES.CANCEL, orderId: id, makerPubkey: order.makerPubkey, createdAt: 1 }, m);
+    assert.strictEqual(early.cancel(own).ok, true);
+    assert.strictEqual(early.ingestOrder(order).reason, 'order cancelled', 'the maker can cancel before its order arrives');
+  });
+
+  it('a cancel flood cannot evict the cancel of a held order', function () {
+    const small = new LiquidityBook({ now: () => clock, maxCancelled: 4, maxPendingCancelsPerMaker: 2 });
+    const m = randomPriv();
+    const order = makeOrder(m);
+    small.ingestOrder(order);
+    small.cancel(swap.signBody({ type: swap.BODY_TYPES.CANCEL, orderId: swap.bodyId(order), makerPubkey: order.makerPubkey, createdAt: 1 }, m));
+    const flooder = randomPriv();
+    for (let i = 0; i < 10; i++) {
+      const signer = i % 2 ? flooder : randomPriv();
+      small.cancel(swap.signBody({
+        type: swap.BODY_TYPES.CANCEL,
+        orderId: crypto.randomBytes(32).toString('hex'),
+        makerPubkey: swap.pubkeyFromPrivate(signer),
+        createdAt: 1
+      }, signer));
+    }
+    assert.ok(small._cancelled.size <= 4);
+    assert.ok((small._pendingCancels.get(swap.pubkeyFromPrivate(flooder)) || new Set()).size <= 2);
+    assert.strictEqual(small.ingestOrder(order).reason, 'order cancelled');
+  });
+
   it('fill walks price-time priority within order limits', function () {
     const a = randomPriv();
     const b = randomPriv();
@@ -141,6 +176,18 @@ describe('types/liquidityBook', function () {
     assert.strictEqual(excluded.fills.length, 1);
     assert.strictEqual(excluded.fills[0].order.premiumPpm, 1000);
     assert.throws(() => book.fill('mid', 1), /side/);
+  });
+
+  it('fill skips a bid whose fee leaves nothing to pay on L2', function () {
+    const a = randomPriv();
+    const b = randomPriv();
+    const greedy = makeOrder(a, { side: 'bid', premiumPpm: 4000, feeSats: 50000 });
+    const fair = makeOrder(b, { side: 'bid', premiumPpm: 1000 });
+    book.ingestOrder(greedy);
+    book.ingestOrder(fair);
+    const r = book.fill('bid', 20000);
+    assert.deepStrictEqual(r.fills.map((f) => f.orderId), [swap.bodyId(fair)]);
+    assert.strictEqual(r.filledSats, 20000);
   });
 
   it('evicts the oldest order when full and forgets makers', function () {

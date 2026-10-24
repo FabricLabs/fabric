@@ -111,6 +111,10 @@ describe('functions/liquiditySwap', function () {
     it('fromBody returns null for other types, versions, and malformed fields', function () {
       const priv = randomPriv();
       assert.strictEqual(swap.fromBody({ type: 'FraudProof' }), null);
+      assert.strictEqual(swap.fromBody({ type: 'toString' }), null);
+      assert.strictEqual(swap.fromBody({ type: '__proto__' }), null);
+      assert.strictEqual(swap.verifyBody({ type: 'constructor' }).reason, 'malformed body');
+      assert.throws(() => swap.toBody('hasOwnProperty', {}), /unknown body type/);
       assert.strictEqual(swap.fromBody(Object.assign(orderFields(priv), { version: 2 })), null);
       assert.strictEqual(swap.fromBody(orderFields(priv, { minSats: 10 })), null);
       assert.strictEqual(swap.fromBody(orderFields(priv, { maxSats: 5000, minSats: 10000 })), null);

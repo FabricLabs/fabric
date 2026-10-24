@@ -113,6 +113,8 @@ function setup (side, orderOverrides = {}) {
   const ln = new MockLightning(now);
   const makerKey = randomPriv();
   const takerKey = randomPriv();
+  const makerHtlcKey = randomPriv();
+  const takerHtlcKey = randomPriv();
   const makerNode = swap.pubkeyFromPrivate(randomPriv());
   const takerNode = swap.pubkeyFromPrivate(randomPriv());
   const order = swap.signBody(swap.toBody(swap.BODY_TYPES.ORDER, Object.assign({
@@ -134,7 +136,7 @@ function setup (side, orderOverrides = {}) {
     order,
     role: 'maker',
     identityKey: makerKey,
-    htlcKey: randomPriv(),
+    htlcKey: makerHtlcKey,
     adapters: { bitcoin: chain.adapter(), lightning: ln.node(makerNode) },
     now
   });
@@ -142,12 +144,12 @@ function setup (side, orderOverrides = {}) {
     order,
     role: 'taker',
     identityKey: takerKey,
-    htlcKey: randomPriv(),
+    htlcKey: takerHtlcKey,
     lightningNodeId: takerNode,
     adapters: { bitcoin: chain.adapter(), lightning: ln.node(takerNode) },
     now
   });
-  return { chain, ln, order, maker, taker, makerKey, advance: (ms) => { clock += ms; } };
+  return { chain, ln, order, maker, taker, makerKey, takerKey, makerHtlcKey, takerHtlcKey, advance: (ms) => { clock += ms; } };
 }
 
 async function negotiate (ctx, amountSats = 100000) {
@@ -285,7 +287,7 @@ describe('types/liquiditySwap', function () {
     assert.strictEqual(ctx.maker.toJSON().preimageHex, undefined);
     const restored = LiquiditySwap.fromJSON(saved, {
       identityKey: ctx.makerKey,
-      htlcKey: randomPriv(),
+      htlcKey: ctx.makerHtlcKey,
       adapters: ctx.maker.adapters
     });
     assert.strictEqual(restored.status, 'accepted');
@@ -294,6 +296,86 @@ describe('types/liquiditySwap', function () {
     assert.throws(() => ctx.maker.abort(), /expected state/);
     ctx.taker.abort('changed my mind');
     assert.strictEqual(ctx.taker.status, 'aborted');
+  });
+
+  it('refuses to restore with keys the saved swap was not made with', async function () {
+    const ctx = setup('ask');
+    await negotiate(ctx);
+    const maker = JSON.parse(JSON.stringify(ctx.maker.toJSON({ includeSecrets: true })));
+    assert.throws(() => LiquiditySwap.fromJSON(maker, {
+      identityKey: ctx.makerKey,
+      htlcKey: randomPriv(),
+      adapters: ctx.maker.adapters
+    }), /htlcKey does not match/);
+    const taker = JSON.parse(JSON.stringify(ctx.taker.toJSON()));
+    const takerSettings = { htlcKey: ctx.takerHtlcKey, adapters: ctx.taker.adapters };
+    assert.throws(() => LiquiditySwap.fromJSON(taker, Object.assign({ identityKey: randomPriv() }, takerSettings)), /identityKey does not match/);
+    assert.throws(() => LiquiditySwap.fromJSON(taker, Object.assign({}, takerSettings, { identityKey: ctx.takerKey, htlcKey: randomPriv() })), /htlcKey does not match/);
+    assert.strictEqual(LiquiditySwap.fromJSON(taker, Object.assign({ identityKey: ctx.takerKey }, takerSettings)).status, 'accepted');
+  });
+
+  it('settles an order at the shortest refund lock', async function () {
+    assert.strictEqual(swap.MIN_REFUND_LOCK_BLOCKS, 15);
+    for (const side of ['ask', 'bid']) {
+      const ctx = setup(side, { refundLockBlocks: swap.MIN_REFUND_LOCK_BLOCKS, prepaySats: side === 'ask' ? 1000 : 0 });
+      await negotiate(ctx);
+      assert.ok(ctx.taker.terms.invoice);
+    }
+    assert.throws(() => swap.toBody(swap.BODY_TYPES.ORDER, Object.assign({}, setup('ask').order, { refundLockBlocks: 14, signature: undefined })), /refundLockBlocks/);
+  });
+
+  it('funds once: a send that returns moves the swap to l1Funded even when the notice fails', async function () {
+    const ctx = setup('ask');
+    await negotiate(ctx);
+    const fundAddress = ctx.maker.adapters.bitcoin.fundAddress;
+    let sends = 0;
+    ctx.maker.adapters.bitcoin.fundAddress = async (address, amountSats) => {
+      sends++;
+      const sent = await fundAddress(address, amountSats);
+      return { txid: sent.txid };
+    };
+    await assert.rejects(ctx.maker.fund(), /HTLC funded but no funding notice/);
+    assert.strictEqual(ctx.maker.status, 'l1Funded');
+    assert.strictEqual(ctx.maker.funded, null);
+    assert.ok(ctx.maker.escrow);
+    await assert.rejects(ctx.maker.fund(), /expected state/);
+    assert.strictEqual(sends, 1);
+    ctx.chain.mine(144);
+    await ctx.maker.refund();
+    assert.strictEqual(ctx.maker.status, 'refunded');
+  });
+
+  it('funds once: a concurrent fund or abort is refused while the send is in flight', async function () {
+    const ctx = setup('ask');
+    await negotiate(ctx);
+    const fundAddress = ctx.maker.adapters.bitcoin.fundAddress;
+    let release;
+    const gate = new Promise((resolve) => { release = resolve; });
+    let sends = 0;
+    ctx.maker.adapters.bitcoin.fundAddress = async (address, amountSats) => {
+      sends++;
+      await gate;
+      return fundAddress(address, amountSats);
+    };
+    const first = ctx.maker.fund();
+    await assert.rejects(ctx.maker.fund(), /funding already started/);
+    assert.throws(() => ctx.maker.abort(), /funding already started/);
+    release();
+    await first;
+    assert.strictEqual(sends, 1);
+    assert.strictEqual(ctx.maker.status, 'l1Funded');
+  });
+
+  it('funds again after a send that sent nothing', async function () {
+    const ctx = setup('ask');
+    await negotiate(ctx);
+    const fundAddress = ctx.maker.adapters.bitcoin.fundAddress;
+    ctx.maker.adapters.bitcoin.fundAddress = async () => { throw new Error('insufficient funds'); };
+    await assert.rejects(ctx.maker.fund(), /insufficient funds/);
+    assert.strictEqual(ctx.maker.status, 'accepted');
+    ctx.maker.adapters.bitcoin.fundAddress = fundAddress;
+    await ctx.maker.fund();
+    assert.strictEqual(ctx.maker.status, 'l1Funded');
   });
 
   it('lightningAdapter maps onto services/lightning', async function () {

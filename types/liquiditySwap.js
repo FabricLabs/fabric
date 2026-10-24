@@ -56,7 +56,7 @@ const TRANSITIONS = Object.freeze({
  */
 const LOCK_SLACK_BLOCKS = 2;
 const DEFAULT_INVOICE_EXPIRY_SECONDS = 3600;
-const MIN_INVOICE_EXPIRY_SECONDS = 60;
+const MIN_INVOICE_EXPIRY_SECONDS = swap.MIN_INVOICE_EXPIRY_SECONDS;
 
 /** @private */
 function sha256Hex (buf) {
@@ -92,7 +92,7 @@ class LiquiditySwap extends EventEmitter {
       secondsPerBlock: swap.DEFAULT_SECONDS_PER_BLOCK,
       marginSeconds: swap.DEFAULT_INVOICE_MARGIN_SECONDS,
       minClaimBlocks: swap.DEFAULT_MIN_CLAIM_BLOCKS,
-      minConfirmations: 1,
+      minConfirmations: swap.DEFAULT_MIN_CONFIRMATIONS,
       invoiceExpirySeconds: DEFAULT_INVOICE_EXPIRY_SECONDS,
       now: () => Date.now()
     }, settings);
@@ -130,11 +130,14 @@ class LiquiditySwap extends EventEmitter {
       escrow: null,
       preimageHex: null,
       prepayPaymentHash: null,
+      fundingStartedAt: null,
+      fundingTxid: null,
       fundingTxHex: null,
       claimTxid: null,
       refundTxid: null,
       history: []
     };
+    this._funding = false;
   }
 
   static get STATES () { return STATES; }
@@ -400,11 +403,25 @@ class LiquiditySwap extends EventEmitter {
 
   /**
    * L1 giver: fund the HTLC. A maker that asked for a prepay funds only once
-   * its node reports the prepay invoice paid.
+   * its node reports the prepay invoice paid. Funding happens at most once:
+   * the escrow is recorded before the send, and once the send returns the
+   * swap is `l1Funded` (refundable, no longer abortable) even if the funding
+   * notice cannot be built — that error is thrown after the transition.
    * @returns {Promise<Object>} signed `LiquiditySwapFunded` body to send
    */
   async fund () {
     this._expect([STATES.ACCEPTED, STATES.PREPAID], 'l1Giver');
+    if (this._funding || this._state.fundingStartedAt != null) throw this._fail('HTLC funding already started');
+    this._funding = true;
+    try {
+      return await this._fund();
+    } finally {
+      this._funding = false;
+    }
+  }
+
+  /** @private */
+  async _fund () {
     if (this._state.prepayPaymentHash && this._state.status === STATES.ACCEPTED) {
       const paid = await this.adapters.lightning.isInvoicePaid(this._state.prepayPaymentHash);
       if (!paid) throw this._fail('prepay not received yet');
@@ -423,28 +440,48 @@ class LiquiditySwap extends EventEmitter {
       refundLockHeight: terms.refundLockHeight,
       amountSats: this._state.quote.l1Sats
     });
-    const sent = await this.adapters.bitcoin.fundAddress(escrow.paymentAddress, escrow.amountSats);
-    const txHex = sent.txHex;
-    let vout = sent.vout;
-    if (txHex) {
-      const tx = bitcoin.Transaction.fromHex(txHex);
-      vout = inventoryHtlc.findP2trVoutForAddress(tx, escrow.paymentAddress, inventoryHtlc.networkForFabricName(this.order.network));
-    }
-    if (!Number.isInteger(vout) || vout < 0) throw this._fail('funding transaction has no HTLC output');
-    const funded = swap.signBody({
-      type: swap.BODY_TYPES.FUNDED,
-      takeId: this._state.takeId,
-      l1GiverPubkey: this.identityPubkey,
-      txid: sent.txid,
-      vout,
-      paymentAddress: escrow.paymentAddress,
-      amountSats: escrow.amountSats,
-      createdAt: this.settings.now()
-    }, this._identityKey);
     this._state.escrow = escrow;
+    this._state.fundingStartedAt = this.settings.now();
+    let sent;
+    try {
+      sent = await this.adapters.bitcoin.fundAddress(escrow.paymentAddress, escrow.amountSats);
+    } catch (err) {
+      // Adapters reject only when nothing was sent, so funding may be retried.
+      this._state.fundingStartedAt = null;
+      throw err;
+    }
+    const txid = (sent && sent.txid) || null;
+    const txHex = (sent && sent.txHex) || null;
+    this._state.fundingTxid = txid;
+    this._state.fundingTxHex = txHex;
+
+    let funded = null;
+    let problem = null;
+    try {
+      let vout = sent && sent.vout;
+      if (txHex) {
+        const tx = bitcoin.Transaction.fromHex(txHex);
+        vout = inventoryHtlc.findP2trVoutForAddress(tx, escrow.paymentAddress, inventoryHtlc.networkForFabricName(this.order.network));
+      }
+      if (!Number.isInteger(vout) || vout < 0) throw new Error('funding transaction has no HTLC output');
+      funded = swap.signBody({
+        type: swap.BODY_TYPES.FUNDED,
+        takeId: this._state.takeId,
+        l1GiverPubkey: this.identityPubkey,
+        txid,
+        vout,
+        paymentAddress: escrow.paymentAddress,
+        amountSats: escrow.amountSats,
+        createdAt: this.settings.now()
+      }, this._identityKey);
+    } catch (err) {
+      problem = err;
+    }
     this._state.funded = funded;
-    this._state.fundingTxHex = txHex || null;
-    this._transition(STATES.L1_FUNDED, { txid: sent.txid });
+    this._transition(STATES.L1_FUNDED, { txid });
+    if (problem) {
+      throw this._fail(`HTLC funded but no funding notice (${problem.message}); refund after height ${terms.refundLockHeight}`);
+    }
     return funded;
   }
 
@@ -488,6 +525,7 @@ class LiquiditySwap extends EventEmitter {
     await this._checkInvoice(terms, Number(await this.adapters.bitcoin.getTipHeight()));
     this._state.escrow = check.escrow;
     this._state.funded = funded;
+    this._state.fundingTxid = funded.txid;
     this._state.fundingTxHex = tx.txHex;
     this._transition(STATES.L1_FUNDED, { txid: funded.txid });
     return { ok: true, confirmations };
@@ -581,8 +619,9 @@ class LiquiditySwap extends EventEmitter {
     if (tip < terms.refundLockHeight) throw this._fail(`refund lock opens at height ${terms.refundLockHeight} (tip ${tip})`);
     const escrow = this._state.escrow;
     let fundedTxHex = this._state.fundingTxHex;
-    if (!fundedTxHex) {
-      const tx = await this.adapters.bitcoin.getTransaction(this._state.funded.txid);
+    const fundingTxid = this._state.fundingTxid || (this._state.funded && this._state.funded.txid);
+    if (!fundedTxHex && fundingTxid) {
+      const tx = await this.adapters.bitcoin.getTransaction(fundingTxid);
       fundedTxHex = tx && tx.txHex;
     }
     if (!fundedTxHex) throw this._fail('funding transaction not found');
@@ -610,6 +649,7 @@ class LiquiditySwap extends EventEmitter {
    */
   abort (reason = 'aborted') {
     this._expect([STATES.NEW, STATES.PROPOSED, STATES.ACCEPTED, STATES.PREPAID]);
+    if (this._funding || this._state.fundingStartedAt != null) throw this._fail('HTLC funding already started; refund after the lock instead');
     this._transition(STATES.ABORTED, { reason: String(reason) });
   }
 
@@ -640,6 +680,8 @@ class LiquiditySwap extends EventEmitter {
       terms: s.terms,
       escrow: s.escrow,
       prepayPaymentHash: s.prepayPaymentHash,
+      fundingStartedAt: s.fundingStartedAt,
+      fundingTxid: s.fundingTxid,
       fundingTxHex: s.fundingTxHex,
       claimTxid: s.claimTxid,
       refundTxid: s.refundTxid,
@@ -650,7 +692,9 @@ class LiquiditySwap extends EventEmitter {
   }
 
   /**
-   * Restore a swap saved with {@link LiquiditySwap#toJSON}.
+   * Restore a swap saved with {@link LiquiditySwap#toJSON}. The keys must be
+   * the ones the saved take / accept were made with, or the swap could not
+   * fund, claim, or refund its HTLC.
    * @param {Object} json
    * @param {Object} settings constructor settings (keys, adapters, …) without `order` / `role`
    * @returns {LiquiditySwap}
@@ -662,7 +706,16 @@ class LiquiditySwap extends EventEmitter {
       role: json.role,
       lightningNodeId: settings.lightningNodeId || json.lightningNodeId
     }));
-    if (!TRANSITIONS[json.status]) throw new Error(`LiquiditySwap: unknown state ${json.status}`);
+    if (!Object.prototype.hasOwnProperty.call(TRANSITIONS, json.status)) throw new Error(`LiquiditySwap: unknown state ${json.status}`);
+    const savedHtlcPubkey = restored.isMaker
+      ? (json.accept && json.accept.makerHtlcPubkey)
+      : (json.take && json.take.takerHtlcPubkey);
+    if (savedHtlcPubkey && savedHtlcPubkey !== restored.htlcPubkey) {
+      throw new Error('LiquiditySwap: htlcKey does not match the saved swap');
+    }
+    if (!restored.isMaker && json.take && json.take.takerPubkey !== restored.identityPubkey) {
+      throw new Error('LiquiditySwap: identityKey does not match the saved take');
+    }
     Object.assign(restored._state, {
       status: json.status,
       take: json.take || null,
@@ -674,6 +727,8 @@ class LiquiditySwap extends EventEmitter {
       escrow: json.escrow || null,
       preimageHex: json.preimageHex || null,
       prepayPaymentHash: json.prepayPaymentHash || null,
+      fundingStartedAt: json.fundingStartedAt != null ? json.fundingStartedAt : null,
+      fundingTxid: json.fundingTxid || null,
       fundingTxHex: json.fundingTxHex || null,
       claimTxid: json.claimTxid || null,
       refundTxid: json.refundTxid || null,

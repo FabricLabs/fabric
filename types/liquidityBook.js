@@ -19,10 +19,21 @@ const swap = require('../functions/liquiditySwap');
  */
 const MAX_ORDERS = 10000;
 /**
- * Cancelled order ids remembered so a replayed order stays dead.
+ * Cancels remembered so a replayed order stays dead.
  * @private
  */
 const MAX_CANCELLED = 10000;
+/**
+ * Cancels one key may hold for orders this book has not seen. Anyone can
+ * sign those, so they are capped per signer and evicted first.
+ * @private
+ */
+const MAX_PENDING_CANCELS_PER_MAKER = 100;
+
+/** @private */
+function cancelKey (orderId, makerPubkey) {
+  return `${orderId}:${makerPubkey}`;
+}
 
 class LiquidityBook {
   /**
@@ -30,6 +41,7 @@ class LiquidityBook {
    * @param {string} [settings.network='regtest'] only orders for this network are held
    * @param {number} [settings.maxOrders=10000]
    * @param {number} [settings.maxCancelled=10000]
+   * @param {number} [settings.maxPendingCancelsPerMaker=100] cancels per key for orders not held
    * @param {Function} [settings.now] clock in ms (tests)
    */
   constructor (settings = {}) {
@@ -37,13 +49,16 @@ class LiquidityBook {
       network: 'regtest',
       maxOrders: MAX_ORDERS,
       maxCancelled: MAX_CANCELLED,
+      maxPendingCancelsPerMaker: MAX_PENDING_CANCELS_PER_MAKER,
       now: () => Date.now()
     }, settings);
     this.settings.network = String(this.settings.network).toLowerCase();
     // order id → `{ id, order, seq }`
     this._orders = new Map();
-    // cancelled order ids
-    this._cancelled = new Set();
+    // `orderId:makerPubkey` → the cancelled order's `expiresAt`, or null while it is not held
+    this._cancelled = new Map();
+    // maker → keys of its cancels for orders not held
+    this._pendingCancels = new Map();
     this._seq = 0;
   }
 
@@ -64,7 +79,11 @@ class LiquidityBook {
     const order = v.body;
     if (order.network !== this.settings.network) return { ok: false, id: v.id, reason: 'wrong network' };
     if (order.expiresAt <= this.settings.now()) return { ok: false, id: v.id, reason: 'order expired' };
-    if (this._cancelled.has(v.id)) return { ok: false, id: v.id, reason: 'order cancelled' };
+    const cancelled = cancelKey(v.id, order.makerPubkey);
+    if (this._cancelled.has(cancelled)) {
+      this._confirmCancel(cancelled, order.expiresAt);
+      return { ok: false, id: v.id, reason: 'order cancelled' };
+    }
     if (this._orders.has(v.id)) return { ok: false, id: v.id, reason: 'duplicate order', duplicate: true };
     this.prune();
     while (this._orders.size >= this.settings.maxOrders) {
@@ -75,8 +94,9 @@ class LiquidityBook {
   }
 
   /**
-   * Apply a signed `LiquidityOrderCancel` from the order's maker. The id is
-   * remembered even when the order is not held, so it cannot arrive later.
+   * Apply a signed `LiquidityOrderCancel` from the order's maker. A cancel
+   * for an order not held yet is remembered with its signer, so the order
+   * cannot arrive later from that maker; another key's cancel never blocks it.
    * @param {Object} body
    * @returns {{ ok: boolean, id: (string|null), reason: (string|null) }}
    */
@@ -88,16 +108,68 @@ class LiquidityBook {
     const held = this._orders.get(orderId);
     if (held && held.order.makerPubkey !== makerPubkey) return { ok: false, id: orderId, reason: 'cancel is not from the maker' };
     this._orders.delete(orderId);
-    this._rememberCancelled(orderId);
+    this._rememberCancelled(orderId, makerPubkey, held ? held.order.expiresAt : null);
     return { ok: true, id: orderId, reason: null };
   }
 
   /** @private */
-  _rememberCancelled (id) {
-    if (this._cancelled.size >= this.settings.maxCancelled) {
-      this._cancelled.delete(this._cancelled.values().next().value);
+  _rememberCancelled (orderId, makerPubkey, expiresAt) {
+    const key = cancelKey(orderId, makerPubkey);
+    if (this._cancelled.has(key)) {
+      if (expiresAt != null) this._confirmCancel(key, expiresAt);
+      return;
     }
-    this._cancelled.add(id);
+    if (expiresAt == null) {
+      const pending = this._pendingCancels.get(makerPubkey);
+      if (pending && pending.size >= this.settings.maxPendingCancelsPerMaker) {
+        this._forgetCancel(pending.values().next().value);
+      }
+    }
+    if (this._cancelled.size >= this.settings.maxCancelled) this._evictCancel();
+    this._cancelled.set(key, expiresAt);
+    if (expiresAt == null) {
+      if (!this._pendingCancels.has(makerPubkey)) this._pendingCancels.set(makerPubkey, new Set());
+      this._pendingCancels.get(makerPubkey).add(key);
+    }
+  }
+
+  /**
+   * The cancelled order is known now: keep the cancel until it expires.
+   * @private
+   */
+  _confirmCancel (key, expiresAt) {
+    this._cancelled.set(key, expiresAt);
+    this._dropPending(key);
+  }
+
+  /** @private */
+  _forgetCancel (key) {
+    this._cancelled.delete(key);
+    this._dropPending(key);
+  }
+
+  /** @private */
+  _dropPending (key) {
+    const maker = key.slice(key.indexOf(':') + 1);
+    const pending = this._pendingCancels.get(maker);
+    if (pending && pending.delete(key) && !pending.size) this._pendingCancels.delete(maker);
+  }
+
+  /**
+   * Make room for one cancel: drop cancels whose order expired, else the
+   * oldest cancel for an order never held, else the oldest cancel.
+   * @private
+   */
+  _evictCancel () {
+    const now = this.settings.now();
+    for (const [key, expiresAt] of this._cancelled) {
+      if (expiresAt != null && expiresAt <= now) this._cancelled.delete(key);
+    }
+    if (this._cancelled.size < this.settings.maxCancelled) return;
+    for (const [key, expiresAt] of this._cancelled) {
+      if (expiresAt == null) return this._forgetCancel(key);
+    }
+    this._cancelled.delete(this._cancelled.keys().next().value);
   }
 
   /**
@@ -223,8 +295,9 @@ class LiquidityBook {
   /**
    * Walk one side of the book for `amountSats` of L1, best price first, then
    * earliest order. Each fill respects the order's `minSats` / `maxSats`; an
-   * order whose minimum exceeds what is left is skipped. Nothing is reserved
-   * — the taker settles each fill with its maker.
+   * order whose minimum exceeds what is left, or whose fee leaves nothing to
+   * pay on L2 for that amount, is skipped. Nothing is reserved — the taker
+   * settles each fill with its maker.
    * @param {string} side the side being taken: `ask` buys L1, `bid` sells it
    * @param {number} amountSats
    * @param {Object} [opts]
@@ -248,7 +321,12 @@ class LiquidityBook {
       if (limit != null && (side === 'ask' ? order.premiumPpm > limit : order.premiumPpm < limit)) break;
       const chunk = Math.min(remaining, order.maxSats);
       if (chunk < order.minSats) continue;
-      const q = swap.quote({ side, premiumPpm: order.premiumPpm, feeSats: order.feeSats, amountSats: chunk });
+      let q;
+      try {
+        q = swap.quote({ side, premiumPpm: order.premiumPpm, feeSats: order.feeSats, amountSats: chunk });
+      } catch {
+        continue;
+      }
       fills.push({ orderId: order.id, order, amountSats: chunk, quote: q });
       remaining -= chunk;
       weighted += chunk * order.premiumPpm;
@@ -269,3 +347,4 @@ module.exports = LiquidityBook;
 module.exports.LiquidityBook = LiquidityBook;
 module.exports.MAX_ORDERS = MAX_ORDERS;
 module.exports.MAX_CANCELLED = MAX_CANCELLED;
+module.exports.MAX_PENDING_CANCELS_PER_MAKER = MAX_PENDING_CANCELS_PER_MAKER;

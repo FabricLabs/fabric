@@ -79,5 +79,19 @@ describe('@fabric/core/types/contract', function () {
 
       test();
     });
+
+    it('emits committed changes even when the diff is too large for one message', function () {
+      const contract = new Contract(sample);
+      const seen = { changes: null, messages: 0, warnings: [] };
+      contract.on('changes', (changes) => { seen.changes = changes; });
+      contract.on('message', () => { seen.messages++; });
+      contract.on('warning', (w) => { seen.warnings.push(w); });
+      contract._state.content.blob = 'x'.repeat(64 * 1024);
+      contract.commit();
+      assert.ok(seen.changes && seen.changes.length, 'listeners got the changes');
+      assert.strictEqual(seen.messages, 0);
+      assert.strictEqual(seen.warnings.length, 1);
+      assert.match(seen.warnings[0], /commit message not built/);
+    });
   });
 });

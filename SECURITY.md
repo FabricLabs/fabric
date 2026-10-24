@@ -102,7 +102,7 @@ Adversarial Peer coverage under the assumption that **NOISE payloads are raw, we
 **Typed bodies:** registered field schemas (`Message.fromFields` / `tryParseMessageBody`) cover
 `P2P_PING` / `P2P_PONG` / `P2P_FORWARD` / `P2P_PEER_GOSSIP` / `P2P_PEERING_OFFER` /
 `P2P_PEER_ANNOUNCE` / `CONTRACT_PUBLISH` / `CONTRACT_MESSAGE` / `SIDECHAIN_STATE_PATCH`. Peer typed
-handlers accept **JSON or field-layout forms**: field bodies of the last eight are turned back into
+handlers accept **JSON or field-layout forms**: field bodies of all of these except `P2P_FORWARD` are turned back into
 the legacy JSON object (`functions/fabricMessageBodies.js`) before any check or app event, so
 contract ids, signer gates and sidechain witness checks run on the same object either way. Gossip
 and offer dedup keys and the announce registration key hash a canonical object, so a JSON copy and

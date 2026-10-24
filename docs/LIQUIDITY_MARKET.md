@@ -50,7 +50,7 @@ signed by one key over `stableStringify(jsonSafe(body without signature))`.
 
 | Type | Signed by | Fields |
 |------|-----------|--------|
-| `LiquidityOrder` | `makerPubkey` | `instrument`, `side`, `premiumPpm`, `feeSats`, `minSats` (≥ `HTLC_MINIMUM_SATS`), `maxSats`, `prepaySats`, `refundLockBlocks` (12–2016), `createdAt`, `expiresAt`, `makerPubkey`, `lightningNodeId`, `network`, `nonce` |
+| `LiquidityOrder` | `makerPubkey` | `instrument`, `side`, `premiumPpm`, `feeSats`, `minSats` (≥ `HTLC_MINIMUM_SATS`), `maxSats`, `prepaySats`, `refundLockBlocks` (15–2016), `createdAt`, `expiresAt`, `makerPubkey`, `lightningNodeId`, `network`, `nonce` |
 | `LiquidityOrderCancel` | `makerPubkey` | `orderId`, `makerPubkey`, `createdAt` |
 | `LiquidityTake` | `takerPubkey` | `orderId`, `side`, `premiumPpm`, `amountSats`, `takerPubkey`, `takerHtlcPubkey`, `takerNodeId`, `createdAt`, `nonce`; on a **bid** also the L1 giver's terms |
 | `LiquidityTakeAccept` | `makerPubkey` | `orderId`, `takeId`, `makerPubkey`, `makerHtlcPubkey`, `createdAt`; on an **ask** also the L1 giver's terms and, when `prepaySats > 0`, `prepayInvoice` |
@@ -94,7 +94,11 @@ taker                                   maker
 
 `LiquiditySwap` states:
 `new → proposed → accepted → prepaid? → l1Funded → l2Paid → l1Claimed | refunded | aborted`.
-`abort` is allowed only before L1 moves. Illegal transitions throw.
+`abort` is allowed only before L1 moves. Illegal transitions throw. `fund`
+records the escrow before it sends and runs at most once; once the send
+returns the swap is `l1Funded` (refundable after the lock) even if no funding
+notice could be built. A Bitcoin adapter's `fundAddress` must reject only when
+nothing was sent.
 `toJSON({ includeSecrets })` / `fromJSON` persist a swap (the preimage is
 written only with `includeSecrets`).
 
@@ -127,6 +131,12 @@ invoiceExpiresAt + marginSeconds ≤ now + (refundLockHeight − tip) × seconds
   swaps across nodes; `LiquidityBook#forgetMaker` is a local tool.
 - **Order spam.** Books are bounded (`maxOrders`, `maxCancelled`, oldest
   evicted), and orders expire, but nothing prices posting an order.
+- **Cancels.** A cancel is remembered with its signer and blocks an order only
+  from that maker, so a third party cannot cancel an order in flight. Cancels
+  for orders the book has not seen are capped per key
+  (`maxPendingCancelsPerMaker`) and evicted before cancels of held orders, which
+  are kept until the order expires. A flood can still evict a real maker's
+  cancel that arrived before its order.
 
 ## Adapters
 `LiquiditySwap` never talks to nodes directly. Pass `adapters: { bitcoin, lightning }`:

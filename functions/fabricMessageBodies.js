@@ -21,6 +21,8 @@ const { fabricCanonicalJson, jsonSafe } = require('./fabricCanonicalJson');
 const SIDECHAIN_PATCH_KIND = 'SidechainStatePatch';
 /** @private */
 const ZERO_DIGEST_HEX = '0'.repeat(64);
+/** @private */
+const MAX_UINT32 = (2 ** 32) - 1;
 
 /**
  * Wire names this module maps.
@@ -73,7 +75,7 @@ function str (value) {
  */
 function port (value) {
   const n = Number(value);
-  return Number.isInteger(n) && n >= 0 && n <= 0xffffffff ? n : 0;
+  return Number.isInteger(n) && n >= 0 && n <= MAX_UINT32 ? n : 0;
 }
 
 /**
@@ -270,6 +272,8 @@ function decodeToLegacyBody (type, fields) {
     case 'SIDECHAIN_STATE_PATCH': {
       const digestHex = Buffer.isBuffer(f.basisDigest) ? f.basisDigest.toString('hex') : str(f.basisDigest);
       let patches = parseJsonOrUndefined(f.patchesCanonical);
+      // A malformed patch list is rejected, never replaced by the catalog.
+      if (f.patchesCanonical && !Array.isArray(patches)) return null;
       if (!Array.isArray(patches) || !patches.length) {
         const catalog = parseJsonOrUndefined(f.catalogCanonical);
         patches = catalog !== undefined ? [{ op: 'add', path: '/registry', value: catalog }] : null;
@@ -307,14 +311,14 @@ function buildMessage (type, body, opts = {}) {
 /**
  * Parse a message body into its legacy JSON shape, from either encoding.
  * @param {Message} message
- * @returns {{ ok: true, value: object, encoding: 'json'|'fields' }|{ ok: false, error: string }}
+ * @returns {{ ok: true, value: object, encoding: 'json'|'fields' }|{ ok: false, error: Error }}
  */
 function tryParseLegacyBody (message) {
   const parsed = Message.tryParseMessageBody(message);
   if (!parsed.ok) return parsed;
   if (parsed.encoding !== 'fields') return parsed;
   const value = decodeToLegacyBody(message.type, parsed.value);
-  if (!value) return { ok: false, error: `unusable ${message.type} field body` };
+  if (!value) return { ok: false, error: new TypeError(`unusable ${message.type} field body`) };
   return { ok: true, value, encoding: 'fields' };
 }
 

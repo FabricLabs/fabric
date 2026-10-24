@@ -1741,21 +1741,29 @@ class Market extends Service {
   _onDocumentReceived (ev) {
     if (!ev || !ev.documentId) return;
     const from = originName(ev.origin);
+    // Who delivered: the origin, or the session whose key we are opening.
+    const attributed = from != null || this._opening != null;
     for (const s of this._sessionsFor(ev.documentId, null)) {
       if (s.fraud) continue;
-      const mine = from == null || String(from) === String(s.seller) || String(from) === String(s.sellerId);
-      // A purchase still holding an HTLC completes only on its own seller's
-      // delivery, and only before it timed out: another seller's delivery did
-      // not pay it, and a timed-out one settles by refund or the seller's
-      // on-chain claim. Per-blob purchases complete on their own blob's open.
-      if (this._bucketOf(s) === 'locked' && (s.blobIndex != null || !mine || s.status === 'refund_pending')) {
-        if (s.status === 'delivery_pending' && s.rail !== 'channel') {
-          s.status = 'refund_pending';
-          s.error = 'document delivered by another seller';
-        }
+      if (this._bucketOf(s) !== 'locked') {
+        this._complete(s, ev);
         continue;
       }
-      this._complete(s, ev);
+      // A purchase still holding an HTLC completes only on its own seller's
+      // delivery, and only before it timed out: a timed-out one settles by
+      // refund or the seller's on-chain claim. Per-blob purchases complete on
+      // their own blob's open. A delivery we cannot attribute pays no one.
+      const mine = this._opening === s.settlementId ||
+        (from != null && (String(from) === String(s.seller) || String(from) === String(s.sellerId)));
+      if (mine) {
+        if (s.blobIndex == null && s.status !== 'refund_pending') this._complete(s, ev);
+        continue;
+      }
+      // Another seller's delivery did not pay this one.
+      if (attributed && s.status === 'delivery_pending' && s.rail !== 'channel') {
+        s.status = 'refund_pending';
+        s.error = 'document delivered by another seller';
+      }
     }
     for (const s of Object.values(this._state.content.sessions)) {
       if (s.documentId !== ev.documentId || !PREPAY_STATUSES.includes(s.status)) continue;

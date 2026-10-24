@@ -7714,6 +7714,7 @@ Parse an Object into a corresponding Fabric state.
 | [settings.network] | <code>string</code> | <code>&quot;&#x27;regtest&#x27;&quot;</code> | only orders for this network are held |
 | [settings.maxOrders] | <code>number</code> | <code>10000</code> |  |
 | [settings.maxCancelled] | <code>number</code> | <code>10000</code> |  |
+| [settings.maxPendingCancelsPerMaker] | <code>number</code> | <code>100</code> | cancels per key for orders not held |
 | [settings.now] | <code>function</code> |  | clock in ms (tests) |
 
 <a name="LiquidityBook+size"></a>
@@ -7735,8 +7736,9 @@ Verify and hold a signed `LiquidityOrder` body.
 <a name="LiquidityBook+cancel"></a>
 
 ### liquidityBook.cancel(body) ⇒ <code>Object</code>
-Apply a signed `LiquidityOrderCancel` from the order's maker. The id is
-remembered even when the order is not held, so it cannot arrive later.
+Apply a signed `LiquidityOrderCancel` from the order's maker. A cancel
+for an order not held yet is remembered with its signer, so the order
+cannot arrive later from that maker; another key's cancel never blocks it.
 
 **Kind**: instance method of [<code>LiquidityBook</code>](#LiquidityBook)  
 
@@ -7821,8 +7823,9 @@ The market's view of L1 vs. L2 liquidity.
 ### liquidityBook.fill(side, amountSats, [opts]) ⇒ <code>Object</code>
 Walk one side of the book for `amountSats` of L1, best price first, then
 earliest order. Each fill respects the order's `minSats` / `maxSats`; an
-order whose minimum exceeds what is left is skipped. Nothing is reserved
-— the taker settles each fill with its maker.
+order whose minimum exceeds what is left, or whose fee leaves nothing to
+pay on L2 for that amount, is skipped. Nothing is reserved — the taker
+settles each fill with its maker.
 
 **Kind**: instance method of [<code>LiquidityBook</code>](#LiquidityBook)  
 
@@ -7976,7 +7979,10 @@ L2 giver: pay the maker's prepay invoice (orders with `prepaySats`).
 
 ### liquiditySwap.fund() ⇒ <code>Promise.&lt;Object&gt;</code>
 L1 giver: fund the HTLC. A maker that asked for a prepay funds only once
-its node reports the prepay invoice paid.
+its node reports the prepay invoice paid. Funding happens at most once:
+the escrow is recorded before the send, and once the send returns the
+swap is `l1Funded` (refundable, no longer abortable) even if the funding
+notice cannot be built — that error is thrown after the transition.
 
 **Kind**: instance method of [<code>LiquiditySwap</code>](#LiquiditySwap)  
 **Returns**: <code>Promise.&lt;Object&gt;</code> - signed `LiquiditySwapFunded` body to send  
@@ -8076,7 +8082,9 @@ after a restart). Private keys are never included.
 <a name="LiquiditySwap.fromJSON"></a>
 
 ### LiquiditySwap.fromJSON(json, settings) ⇒ [<code>LiquiditySwap</code>](#LiquiditySwap)
-Restore a swap saved with [toJSON](#LiquiditySwap+toJSON).
+Restore a swap saved with [toJSON](#LiquiditySwap+toJSON). The keys must be
+the ones the saved take / accept were made with, or the swap could not
+fund, claim, or refund its HTLC.
 
 **Kind**: static method of [<code>LiquiditySwap</code>](#LiquiditySwap)  
 

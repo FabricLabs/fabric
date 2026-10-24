@@ -28,15 +28,24 @@ const SIDES = Object.freeze(['bid', 'ask']);
 const PPM = 1000000;
 /** Largest premium (either sign) an order may quote: ±50%. */
 const MAX_PREMIUM_PPM = 500000;
-/** Shortest refund lock an order may ask for. */
-const MIN_REFUND_LOCK_BLOCKS = 12;
-/** Longest refund lock an order may ask for (about two weeks of blocks). */
-const MAX_REFUND_LOCK_BLOCKS = 2016;
 /** Blocks the L2 giver needs left on the HTLC to claim after paying. */
 const DEFAULT_MIN_CLAIM_BLOCKS = 6;
+/** HTLC confirmations before the L2 giver pays. */
+const DEFAULT_MIN_CONFIRMATIONS = 1;
 /** Invoice must expire at least this long before the refund lock opens. */
 const DEFAULT_INVOICE_MARGIN_SECONDS = 3600;
 const DEFAULT_SECONDS_PER_BLOCK = 600;
+/** Shortest expiry a swap invoice may carry. */
+const MIN_INVOICE_EXPIRY_SECONDS = 60;
+/**
+ * Shortest refund lock an order may ask for: room for the claim, the funding
+ * confirmations, one block of slack, the invoice margin, and the shortest
+ * invoice, at the default block time.
+ */
+const MIN_REFUND_LOCK_BLOCKS = DEFAULT_MIN_CLAIM_BLOCKS + DEFAULT_MIN_CONFIRMATIONS + 1 +
+  Math.ceil((DEFAULT_INVOICE_MARGIN_SECONDS + MIN_INVOICE_EXPIRY_SECONDS) / DEFAULT_SECONDS_PER_BLOCK);
+/** Longest refund lock an order may ask for (about two weeks of blocks). */
+const MAX_REFUND_LOCK_BLOCKS = 2016;
 /** BOLT11 default expiry when the invoice names none. */
 const DEFAULT_INVOICE_EXPIRY_SECONDS = 3600;
 
@@ -254,13 +263,14 @@ function normalizeFunded (input = {}) {
   return withSignature(body, input.signature);
 }
 
-const NORMALIZERS = Object.freeze({
-  [BODY_TYPES.ORDER]: normalizeOrder,
-  [BODY_TYPES.CANCEL]: normalizeCancel,
-  [BODY_TYPES.TAKE]: normalizeTake,
-  [BODY_TYPES.TAKE_ACCEPT]: normalizeTakeAccept,
-  [BODY_TYPES.FUNDED]: normalizeFunded
-});
+// A Map, so a remote `type` such as `toString` never reaches an inherited method.
+const NORMALIZERS = new Map([
+  [BODY_TYPES.ORDER, normalizeOrder],
+  [BODY_TYPES.CANCEL, normalizeCancel],
+  [BODY_TYPES.TAKE, normalizeTake],
+  [BODY_TYPES.TAKE_ACCEPT, normalizeTakeAccept],
+  [BODY_TYPES.FUNDED, normalizeFunded]
+]);
 
 /**
  * Build a normalized body of the given type (unsigned unless `fields.signature`).
@@ -269,7 +279,7 @@ const NORMALIZERS = Object.freeze({
  * @returns {Object}
  */
 function toBody (type, fields = {}) {
-  const normalize = NORMALIZERS[type];
+  const normalize = NORMALIZERS.get(type);
   if (!normalize) fail(`unknown body type ${type}`);
   return normalize(fields);
 }
@@ -280,10 +290,11 @@ function toBody (type, fields = {}) {
  * @returns {Object|null}
  */
 function fromBody (body) {
-  if (!body || typeof body !== 'object' || !NORMALIZERS[body.type]) return null;
+  const normalize = body && typeof body === 'object' ? NORMALIZERS.get(body.type) : null;
+  if (!normalize) return null;
   if (body.version != null && Number(body.version) !== BODY_VERSION) return null;
   try {
-    return NORMALIZERS[body.type](body);
+    return normalize(body);
   } catch {
     return null;
   }
@@ -634,8 +645,10 @@ module.exports = {
   MIN_REFUND_LOCK_BLOCKS,
   MAX_REFUND_LOCK_BLOCKS,
   DEFAULT_MIN_CLAIM_BLOCKS,
+  DEFAULT_MIN_CONFIRMATIONS,
   DEFAULT_INVOICE_MARGIN_SECONDS,
   DEFAULT_SECONDS_PER_BLOCK,
+  MIN_INVOICE_EXPIRY_SECONDS,
   SIGNER_FIELD,
   randomNonce,
   normalizeOrder,

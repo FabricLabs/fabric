@@ -288,14 +288,19 @@ class Contract extends Service {
     const changes = monitor.generate(this.observer);
 
     if (changes.length) {
-      const message = buildMessage('CONTRACT_MESSAGE', {
-        contract: this.id,
-        type: LOG_TYPES.ContractMessage,
-        ops: changes
-      });
-
+      // The monitor has already consumed these changes: listeners get them
+      // even when the diff is too large for one message.
       this.emit('changes', changes);
-      this.emit('message', message);
+      try {
+        const message = buildMessage('CONTRACT_MESSAGE', {
+          contract: this.id,
+          type: LOG_TYPES.ContractMessage,
+          ops: changes
+        });
+        this.emit('message', message);
+      } catch (err) {
+        this.emit('warning', `[CONTRACT] commit message not built: ${err && err.message ? err.message : err}`);
+      }
     }
 
     this.emit('commit', {
