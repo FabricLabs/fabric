@@ -10,15 +10,14 @@ const Actor = require('./actor');
 const HEX_PATTERN = /^(0x)?[0-9A-Fa-f]*$/;
 
 /**
+ * Sort and comparison key: the hex of the leaf's Merkle bytes, so spellings
+ * of the same leaf (`'a'`, `'0a'`, `'0x0A'`, a Buffer) are one key.
  * @param {*} leaf
  * @returns {string}
  * @private
  */
 function leafKey (leaf) {
-  if (Buffer.isBuffer(leaf) || leaf instanceof Uint8Array) {
-    return Buffer.from(leaf).toString('hex');
-  }
-  return String(leaf);
+  return toMerkleBuffer(leaf).toString('hex');
 }
 
 /**

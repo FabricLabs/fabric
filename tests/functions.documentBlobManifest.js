@@ -198,11 +198,44 @@ describe('functions/documentBlobManifest', function () {
     it('legacy verifiers reject the mutated list', function () {
       const root = merkleRootHexFromBlobHashes([a, b, c]);
       assert.strictEqual(verifyBlobIndex({ merkleRootHex: root, total: 3 }, [a, b, c]).ok, true);
-      assert.deepStrictEqual(verifyBlobIndex({ merkleRootHex: root }, [a, b, c, c]), { ok: false, error: 'mutated merkle tree' });
+      assert.strictEqual(verifyBlobIndex({ merkleRootHex: root }, [a, b, c, c]).error, 'merkle/root mismatch');
       assert.strictEqual(verifyOfferLeaves({ merkleRootHex: root, blobTotal: 4, blobs: [a, b, c, c].map((h) => ({ blobHashHex: h })) }).ok, false);
       const parts = ['x', 'y', 'z', 'z'].map((s) => Buffer.from(s));
       const legacyRoot = merkleRootHexFromBlobHashes(parts.slice(0, 3).map((p) => sha(p)));
-      assert.strictEqual(reassemble(parts, 4, legacyRoot).error, 'mutated merkle tree');
+      assert.strictEqual(reassemble(parts, 4, legacyRoot).error, 'merkle/root mismatch');
+    });
+
+    it('a plain mutated list is committed with the count-bound v2 root, end to end', function () {
+      const { splitBlobs, plainBlobRoot, documentMerkleRootHex, DocumentBlobTransferBook, parseFileSendObject } = require('../functions/documentBlobManifest');
+      const twin = [a, b, c, c];
+      const v2 = documentMerkleRootHex(twin.map((h) => ({ blobHashHex: h })));
+      assert.deepStrictEqual(plainBlobRoot(twin), { merkleRootHex: v2, treeVersion: 2 });
+      assert.deepStrictEqual(plainBlobRoot([a, b, c]), { merkleRootHex: merkleRootHexFromBlobHashes([a, b, c]), treeVersion: 1 });
+      assert.strictEqual(verifyBlobIndex({ merkleRootHex: v2, total: 4 }, twin).ok, true);
+      // A zero-filled file: four identical chunks.
+      const zeros = Buffer.alloc(4 * 1024);
+      const split = splitBlobs(zeros, 1024, 'zeros');
+      assert.strictEqual(split.treeVersion, 2);
+      assert.strictEqual(split.index.treeVersion, 2);
+      assert.strictEqual(verifyBlobIndex(split.index).ok, true);
+      const book = new DocumentBlobTransferBook();
+      book.expectTransfer({ documentId: 'zeros', merkleRootHex: split.merkleRootHex, total: 4 });
+      let done = null;
+      for (const blob of split.blobs) {
+        const res = book.ingest(parseFileSendObject({
+          name: 'zeros',
+          body: blob.bytes.toString('base64'),
+          blobIndex: blob.index,
+          blobTotal: blob.total,
+          blobHashHex: blob.blobHashHex,
+          merkleRootHex: split.merkleRootHex,
+          contentSha256: split.contentSha256,
+          chunkBytes: split.chunkBytes
+        }));
+        assert.notStrictEqual(res.status, 'reject', res.error);
+        if (res.status === 'complete') done = res;
+      }
+      assert.ok(done && done.buffer.equals(zeros), 'the buyer reassembles the zero-filled file');
     });
 
     it('v2 roots bind the blob count, so the padded list has a different root', function () {
@@ -314,6 +347,10 @@ describe('functions/documentBlobManifest', function () {
       assert.strictEqual(verifySealedBlobFrame(forged, expected).error, 'inclusion proof does not open to merkleRootHex');
       const noProof = Object.assign({}, frames[0], { proof: undefined });
       assert.strictEqual(verifySealedBlobFrame(noProof, expected).error, 'missing inclusion proof');
+      // The frame cannot downgrade a v2 root to v1 to skip its proof (and plant an uncommitted payment hash).
+      const downgraded = Object.assign({}, frames[0], { treeVersion: 1, proof: undefined, paymentHashHex: sha('attacker') });
+      const pinned = Object.assign({ blobHashHex: frames[0].blobHashHex }, expected);
+      assert.strictEqual(verifySealedBlobFrame(downgraded, pinned).error, 'missing inclusion proof');
       assert.strictEqual(verifySealedBlobFrame(frames[0], Object.assign({}, expected, { blobTotal: doc.blobTotal + 1 })).error, 'blobTotal mismatch');
       assert.strictEqual(verifySealedBlobFrame(frames[1], Object.assign({}, expected, { blobIndex: 0 })).error, 'blobIndex mismatch');
       const tampered = Object.assign({}, frames[0], { body: Buffer.from('nope').toString('base64') });

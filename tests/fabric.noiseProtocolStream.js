@@ -135,6 +135,20 @@ describe('@fabric/core/functions/noiseProtocolStream', function () {
     assert.ok(Date.now() - started < 5000);
   });
 
+  it('keeps the deadline while options.verify has not accepted the peer', async function () {
+    if (!noise.supported) this.skip();
+    const a = noise({ initiator: true, prologue: Buffer.from('FABRIC'), handshakeTimeout: 5000 });
+    let asked = false;
+    // Never calls back: the split session must still time out.
+    const b = noise({ initiator: false, prologue: Buffer.from('FABRIC'), handshakeTimeout: 300, verify: () => { asked = true; } });
+    a.encrypt.pipe(b.decrypt);
+    b.encrypt.pipe(a.decrypt);
+    const err = await closedWithError(b);
+    assert.ok(asked, 'the handshake reached verify');
+    assert.ok(err && /noise_handshake_timeout/.test(err.message), `expected timeout, got ${err && err.message}`);
+    for (const d of [a.encrypt, a.decrypt]) d.destroy();
+  });
+
   it('completes a handshake under the limits and carries a full-size AMP frame', async function () {
     if (!noise.supported) this.skip();
     const { MAX_FRAME_BYTES } = require('../constants');

@@ -131,9 +131,25 @@ describe('@fabric/core/types/tree', function () {
       const tree = new Tree({ leaves: ['b', 'a', 'a', 'c'], sortLeaves: true });
       assert.strictEqual(tree.leafCount, 4);
       assert.strictEqual(tree.rootHex.length, 64);
+      // Hex-looking strings are their bytes: 'bb' is 0xbb, after 0x0c.
       const doc = tree.proveNonInclusion('bb');
-      assert.strictEqual(doc.side, 'between');
+      assert.strictEqual(doc.side, 'after');
       assert.strictEqual(tree.verifyNonInclusion(doc), true);
+      const between = tree.proveNonInclusion('0b01');
+      assert.strictEqual(between.side, 'between');
+      assert.strictEqual(tree.verifyNonInclusion(between), true);
+    });
+
+    it('compares leaves by their Merkle bytes, not their spelling', function () {
+      const tree = new Tree({ leaves: ['0a', '0c'], sortLeaves: true });
+      for (const spelling of ['a', '0a', '0x0A', Buffer.from([0x0a])]) {
+        const doc = tree.proveNonInclusion(spelling);
+        assert.strictEqual(doc.side, 'included', String(spelling));
+        assert.strictEqual(tree.verifyNonInclusion(Object.assign({}, doc, { included: false, side: 'between' })), false);
+      }
+      // A forged gap around a differently spelled member does not verify.
+      const forged = { included: false, empty: false, side: 'after', target: 'a', root: tree.rootHex, leafCount: 2, left: tree.proveInclusion('0c'), right: null };
+      assert.strictEqual(tree.verifyNonInclusion(forged), false);
     });
 
     it('returns an unincluded proof for a leaf outside the tree', function () {

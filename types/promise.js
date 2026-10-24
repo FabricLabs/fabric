@@ -133,7 +133,7 @@ class EncryptedPromise {
   }
 
   /**
-   * Seal the current plaintext, then drop it from memory.
+   * Seal the current plaintext, then drop it (and the settings it came from) from memory.
    * @param {string} password At least 8 characters.
    * @returns {Object} The sealed envelope.
    */
@@ -141,6 +141,8 @@ class EncryptedPromise {
     if (this._state.data === null) throw new Error('Nothing to encrypt; decrypt the sealed envelope first.');
     this._state.seal = sealJson(this._state.data, password, { type: 'EncryptedPromise' });
     this._state.data = null;
+    // The settings are the plaintext too (`value`, or the settings themselves as JSON).
+    this.settings = {};
     this._state.state = 'ENCRYPTED';
     return this._state.seal;
   }
@@ -153,7 +155,7 @@ class EncryptedPromise {
   decrypt (password) {
     if (!this._state.seal) throw new Error('Nothing to decrypt; this promise has not been sealed.');
     _checkIterations(this._state.seal);
-    this._state.data = openSealedJson(this._state.seal, password);
+    this._setData(openSealedJson(this._state.seal, password));
     this._state.state = 'DECRYPTED';
     return this._state.data;
   }

@@ -159,6 +159,24 @@ function blobHashesMutated (blobHashHexes = []) {
 }
 
 /**
+ * Root of a plain (unsealed) blob list: the legacy blob-hash Tree root, or —
+ * when the list is a CVE-2012-2459 twin that legacy root can't tell apart —
+ * the count-bound v2 root over plain leaves. The form follows from the hashes
+ * alone, so producer and buyer agree without trusting a version field.
+ * @param {string[]} blobHashHexes in index order
+ * @returns {{ merkleRootHex: string, treeVersion: number }}
+ */
+function plainBlobRoot (blobHashHexes = []) {
+  if (blobHashesMutated(blobHashHexes) && _validTotal(blobHashHexes.length)) {
+    return {
+      merkleRootHex: documentMerkleRootHex(blobHashHexes.map((blobHashHex) => ({ blobHashHex }))),
+      treeVersion: DOCUMENT_TREE_VERSION
+    };
+  }
+  return { merkleRootHex: merkleRootHexFromBlobHashes(blobHashHexes), treeVersion: DOCUMENT_TREE_VERSION_LEGACY };
+}
+
+/**
  * @param {*} buf
  * @returns {Buffer}
  * @private
@@ -389,7 +407,9 @@ function normalizeChunkBytes (chunkBytes) {
 }
 
 /**
- * Split content into wire-sized blobs and commit them with a Tree merkle root.
+ * Split content into wire-sized blobs and commit them with a Merkle root
+ * ({@link plainBlobRoot}: the legacy Tree root, or v2 for a mutated list;
+ * `tree` holds the legacy leaves).
  * Always returns at least one blob (empty buffer → one empty blob).
  *
  * @param {Buffer|string} buffer
@@ -398,6 +418,7 @@ function normalizeChunkBytes (chunkBytes) {
  * @returns {{
  *   blobs: object[],
  *   merkleRootHex: string,
+ *   treeVersion: number,
  *   contentSha256: string,
  *   chunkBytes: number,
  *   documentId?: string,
@@ -424,11 +445,12 @@ function splitBlobs (buffer, chunkBytes = DEFAULT_BLOB_CHUNK_BYTES, documentId =
     blobs.push({ index, total, bytes, blobHashHex, size: bytes.length });
   }
 
-  const merkleRootHex = merkleRootHexFromBlobHashes(blobHashHexes);
+  const { merkleRootHex, treeVersion } = plainBlobRoot(blobHashHexes);
   const contentSha256 = crypto.createHash('sha256').update(buf).digest('hex');
   const index = buildBlobIndex({
     documentId,
     merkleRootHex,
+    treeVersion,
     contentSha256,
     chunkBytes: size,
     blobs: blobs.map((b) => ({
@@ -442,6 +464,7 @@ function splitBlobs (buffer, chunkBytes = DEFAULT_BLOB_CHUNK_BYTES, documentId =
   return {
     blobs,
     merkleRootHex,
+    treeVersion,
     contentSha256,
     chunkBytes: size,
     tree,
@@ -487,6 +510,7 @@ function buildBlobIndex (opts = {}) {
     leavesInline,
     blobs: leavesInline ? blobs : []
   };
+  if (Number(opts.treeVersion) === DOCUMENT_TREE_VERSION) out.treeVersion = DOCUMENT_TREE_VERSION;
   if (opts.documentId != null) out.documentId = String(opts.documentId);
   return out;
 }
@@ -546,6 +570,7 @@ function advertiseDocumentBlobs (buffer, opts = {}) {
   let index = buildBlobIndex({
     documentId,
     merkleRootHex: split.merkleRootHex,
+    treeVersion: split.treeVersion,
     contentSha256: split.contentSha256,
     chunkBytes: split.chunkBytes,
     blobs: itemBlobs
@@ -585,8 +610,7 @@ function verifyBlobIndex (index, blobHashHexes = null) {
   if (index.total != null && Number(index.total) > 0 && Number(index.total) !== leaves.length) {
     return { ok: false, error: 'blob count does not match index total' };
   }
-  if (blobHashesMutated(leaves)) return { ok: false, error: 'mutated merkle tree' };
-  const got = merkleRootHexFromBlobHashes(leaves);
+  const got = plainBlobRoot(leaves).merkleRootHex;
   if (want && got !== want) return { ok: false, error: 'merkle/root mismatch', merkleRootHex: got };
   return { ok: true, merkleRootHex: got };
 }
@@ -646,8 +670,7 @@ function reassemble (blobsByIndex, total, merkleRootHex = null) {
     hashes.push(crypto.createHash('sha256').update(buf).digest('hex'));
   }
   const buffer = Buffer.concat(parts);
-  if (blobHashesMutated(hashes)) return { ok: false, error: 'mutated merkle tree' };
-  const gotRoot = merkleRootHexFromBlobHashes(hashes);
+  const gotRoot = plainBlobRoot(hashes).merkleRootHex;
   if (merkleRootHex) {
     const want = String(merkleRootHex).toLowerCase();
     if (gotRoot !== want) {
@@ -868,7 +891,8 @@ function verifySealedBlobFrame (obj, expected = {}) {
   if (expected.iv != null && expected.iv !== '' && !sameIv(expected.iv, iv)) {
     return { ok: false, error: 'iv is not the advertised leaf', blobIndex: frame.blobIndex };
   }
-  const version = Number(expected.treeVersion || obj.treeVersion || DOCUMENT_TREE_VERSION);
+  // Never the frame's own `treeVersion`: a sender could downgrade to v1 and skip the proof.
+  const version = Number(expected.treeVersion || DOCUMENT_TREE_VERSION);
   const out = { ok: true, blobIndex: frame.blobIndex, blobHashHex: frame.blobHashHex, paymentHashHex, iv, bytes: frame.bytes, treeVersion: version };
   if (version === DOCUMENT_TREE_VERSION_LEGACY) {
     if (!wantBlob) return { ok: false, error: 'a legacy root needs the verified blob hash for this index', blobIndex: frame.blobIndex };
@@ -1404,6 +1428,7 @@ module.exports = {
   createBlobMerkleTree,
   merkleRootHexFromBlobHashes,
   blobHashesMutated,
+  plainBlobRoot,
   ivBytes,
   sameIv,
   documentLeafHex,

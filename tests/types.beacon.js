@@ -772,6 +772,14 @@ describe('@fabric/core/types/beacon', function () {
     }
     assert.deepStrictEqual(epochs(), [[1, chain[0]], [2, chain[1]], [3, chain[2]]]);
 
+    // A late notification for an older block still on the best chain prunes
+    // nothing, including through the public entry point (no follower guard).
+    bitcoin.emit('block', { tip: chain[1], height: 2 });
+    await beacon._blockQueue;
+    assert.strictEqual(await beacon.recordEpochFromBlock({ tip: chain[1], height: 2 }), null);
+    assert.deepStrictEqual(epochs(), [[1, chain[0]], [2, chain[1]], [3, chain[2]]]);
+    assert.strictEqual(reorgs.length, 0);
+
     failHash = true;
     bitcoin.emit('block', { tip: chain[0], height: 1 });
     await beacon._blockQueue;

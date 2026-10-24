@@ -308,6 +308,9 @@ class CliDocumentExchange {
     if (!Number.isFinite(rate) || rate < 0) {
       return { ok: false, error: 'rateSats must be a non-negative number' };
     }
+    if (rate > 0 && rate < HTLC_MINIMUM_SATS) {
+      return { ok: false, error: `rateSats must be 0 (free) or at least the ${HTLC_MINIMUM_SATS}-sat HTLC minimum; buyers cannot pay less` };
+    }
     const peer = this._peer();
     if (!peer || typeof peer._publishDocument !== 'function') {
       return { ok: false, error: 'Peer not ready.' };

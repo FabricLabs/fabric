@@ -10,9 +10,10 @@
  * and — when the plan fits `perPlanMaxSats` and the remaining budget — opens
  * one purchase session per blob (`createDocumentPurchaseSession`, one HTLC per
  * seller per blob). Paid sealed blobs are verified before paying: the seller's
- * free ciphertext must be held and committed by the root, and a per-buyer
- * `DocumentBlobQuote` (when the seller sends one) replaces the static payment
- * hash. The session is then funded on a payment channel or through the
+ * free ciphertext must be held and committed by the root. With `quotes`, a
+ * per-buyer `DocumentBlobQuote` replaces the static payment hash; that is not
+ * atomic (the wrapped key can only be checked once the seller claims), so it
+ * is opt-in. The session is then funded on a payment channel or through the
  * injected `pay` callback (L1 HTLC), confirmed with `verify`, and the paid
  * `DocumentRequest` goes out. Delivery, refund, and fraud outcomes feed back
  * into the offer book's local telemetry.
@@ -111,7 +112,7 @@ class Market extends Service {
    * @param {number} [settings.deliveryTimeoutMs=600000] Paid sessions without delivery time out after this (0 = never); funded L1 HTLCs then wait for refund.
    * @param {number} [settings.prepayTimeoutMs=60000] Verify-before-pay: wait this long for the seller's free ciphertext (and quote).
    * @param {boolean} [settings.verifyBeforePay=true] Pay a sealed blob only once its ciphertext is held and committed by the root.
-   * @param {boolean} [settings.quotes=true] Ask sellers for a per-buyer `DocumentBlobQuote` before paying.
+   * @param {boolean} [settings.quotes=false] Ask sellers for a per-buyer `DocumentBlobQuote` and pay its hash. Not atomic: a seller can quote a wrapped key that does not unwrap, claim the HTLC, and leave only a fraud proof (`documentBlobQuoteFraud`). Static hashes are atomic.
    * @param {number} [settings.fundingSafetyMs=3600000] A funding whose outcome is unknown is released only after the address is reported unfunded this long after the last pay attempt.
    * @param {number} [settings.minHtlcLockBlocks=24] Refuse L1 HTLCs whose refund locktime is closer than this to the tip (or past).
    * @param {number} [settings.maxHtlcLockBlocks=4032] Refuse L1 HTLCs that lock funds longer than this (0 = no cap).
@@ -138,7 +139,7 @@ class Market extends Service {
       deliveryTimeoutMs: 10 * 60 * 1000,
       prepayTimeoutMs: 60 * 1000,
       verifyBeforePay: true,
-      quotes: true,
+      quotes: false,
       fundingSafetyMs: 60 * 60 * 1000,
       minHtlcLockBlocks: 24,
       maxHtlcLockBlocks: 4032,
@@ -1234,7 +1235,7 @@ class Market extends Service {
     const reqOpts = { maxSats: session.amountSats, blobIndex: session.blobIndex };
     if (session.blobTotal != null) reqOpts.blobTotal = session.blobTotal;
     if (session.contentHashHex) reqOpts.contentHashHex = session.contentHashHex;
-    if (this.settings.quotes !== false) reqOpts.quote = true;
+    if (this.settings.quotes === true) reqOpts.quote = true;
     session.status = 'quote_pending';
     session.prepayAt = this._now();
     let sent = false;
@@ -1294,6 +1295,7 @@ class Market extends Service {
    * @private
    */
   _onBlobQuote (ev) {
+    if (this.settings.quotes !== true) return;
     const q = ev && ev.quote;
     if (!q || !q.documentId) return;
     const from = originName(ev.origin);

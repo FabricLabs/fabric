@@ -44,6 +44,23 @@ describe('@fabric/core/types/promise', function () {
       assert.strictEqual(p.decrypt(PASSWORD), 'drop me');
     });
 
+    it('drops the settings the plaintext came from when sealing', function () {
+      const p = new EncryptedPromise({ value: 'drop me too' });
+      p.encrypt(PASSWORD);
+      assert.ok(!JSON.stringify(p.settings).includes('drop me too'));
+      const q = new EncryptedPromise({ secret: 'implicit plaintext', password: PASSWORD });
+      assert.ok(!JSON.stringify(q.settings).includes('implicit plaintext'));
+      assert.match(q.decrypt(PASSWORD), /implicit plaintext/);
+    });
+
+    it('applies the size limit to a restored plaintext', function () {
+      const { sealJson } = require('../functions/sealedBlob');
+      const seal = sealJson('x'.repeat(Math.pow(2, 21) + (64 * 1000) + 1), PASSWORD, { type: 'EncryptedPromise' });
+      const restored = new EncryptedPromise({ seal });
+      assert.throws(() => restored.decrypt(PASSWORD), /input too large/);
+      assert.strictEqual(restored._state.data, null);
+    });
+
     it('rejects envelopes over the PBKDF2 iteration cap', function () {
       const p = new EncryptedPromise({ value: 'x', password: PASSWORD });
       const kdf = Object.assign({}, p.state.seal.kdf, { iterations: EncryptedPromise.MAX_PBKDF2_ITERATIONS + 1 });

@@ -9,6 +9,7 @@ const Peer = require('../types/peer');
 const Message = require('../types/message');
 const { Book } = require('../types/book');
 const { HTLC_MINIMUM_SATS } = require('../constants');
+const { createBlobQuote } = require('../functions/documentSealedExchange');
 
 // Smallest per-blob price that settles with an enforceable HTLC.
 const P = HTLC_MINIMUM_SATS;
@@ -46,15 +47,19 @@ function buildMarket (opts = {}) {
   // `quote` (verify-before-pay) request gets the per-buyer quote when the
   // seller quotes, then ciphertext only; a paid request also gets the key.
   // `ctl` lets a test make the seller silent, withhold keys on paid requests,
-  // or rewrite what it sends (lying quotes, bad key reveals).
-  const ctl = { silent: false, reveal: true, mutateQuote: null, mutateReveal: null };
+  // or rewrite what it sends (lying quotes, bad key reveals). With
+  // `ctl.market` set, a request for a blob whose session has not paid yet is
+  // a verify-before-pay request and gets ciphertext only.
+  const ctl = { silent: false, reveal: true, mutateQuote: null, mutateReveal: null, market: null };
+  const prepay = (seller, id, reqOpts) => reqOpts.quote === true || (!!ctl.market && ctl.market.listSessions().some((x) =>
+    x.documentId === id && x.seller === seller && Number(x.blobIndex) === Number(reqOpts.blobIndex) && ['open', 'quote_pending'].includes(x.status)));
   buyer.requestDocument = (id, seller, reqOpts = {}) => {
     const s = sellers[seller];
     if (!s) return false;
     deliveries.push({ seller, blobIndex: reqOpts.blobIndex, quote: reqOpts.quote === true });
     if (typeof ctl.silent === 'function' ? ctl.silent(seller) : ctl.silent) return true;
     const reveal = typeof ctl.reveal === 'function' ? ctl.reveal(seller) : ctl.reveal;
-    deliver(s, seller, id, reqOpts, { revealKey: reqOpts.quote !== true && reveal });
+    deliver(s, seller, id, reqOpts, { revealKey: !prepay(seller, id, reqOpts) && reveal });
     return true;
   };
 
@@ -225,6 +230,7 @@ describe('services/market (Phase 4 channel rail)', function () {
       }
     };
     const market = new Market({ budgetSats: 10 * P, perPlanMaxSats: 10 * P, tickMs: 0, book: m.book, proximityWeight: 1 });
+    m.ctl.market = market;
     market.attach({ peer: m.buyer, channels });
     market.want(m.documentId, { blobTotal: m.doc.blobTotal, merkleRootHex: m.doc.merkleRootHex });
 
@@ -402,6 +408,7 @@ describe('services/market (Phase 5 hardening)', function () {
       now: () => clock.t,
       refundAddress
     }, opts.market));
+    m.ctl.market = market;
     return Object.assign(m, { book, chain, clock, market, refundAddress });
   }
 
@@ -751,7 +758,7 @@ describe('services/market (Phase 5 hardening)', function () {
 
   it('per-buyer quotes: pays the quoted hash after verifying ciphertext; the claim preimage opens the blob, a lying quote is bad-key fraud', async function () {
     for (const lie of [false, true]) {
-      const m = buildL1();
+      const m = buildL1({ market: { quotes: true } });
       m.sellers.alpha.settings.sealedBlobPaymentMode = 'perBuyer';
       m.ctl.reveal = false;
       if (lie) m.ctl.mutateQuote = (q) => Object.assign({}, q, { wrappedKeyHex: crypto.randomBytes(32).toString('hex') });
@@ -802,6 +809,29 @@ describe('services/market (Phase 5 hardening)', function () {
       }
       assert.ok(m.market.audit().ok);
     }
+  });
+
+  it('per-buyer quotes are opt-in: a default market pays only the committed static hash', async function () {
+    const m = buildL1();
+    m.sellers.alpha.settings.sealedBlobPaymentMode = 'perBuyer';
+    m.ctl.reveal = false;
+    const paid = [];
+    const quoted = [];
+    m.market.on('sessionQuoted', (ev) => quoted.push(ev.quote));
+    m.market.attach({
+      peer: m.buyer,
+      pay: async (s) => { paid.push(s.htlc.paymentHashHex); return payer(m, [])(s); },
+      verify: async () => true
+    });
+    want(m);
+    await m.market.tick();
+    assert.strictEqual(m.market.settings.quotes, false);
+    assert.strictEqual(quoted.length, 0, 'no quote requested');
+    const forged = createBlobQuote({ documentId: m.documentId, blobIndex: 0, keyHex: crypto.randomBytes(32).toString('hex'), amountSats: P }).quote;
+    m.market._onBlobQuote({ quote: Object.assign({}, forged, { keyHashHex: m.doc.paymentHashFor(0) }), origin: 'alpha' });
+    assert.strictEqual(quoted.length, 0, 'an unsolicited quote is ignored');
+    for (const s of m.market.listSessions()) assert.strictEqual(s.paymentHashHex, m.doc.paymentHashFor(s.blobIndex));
+    assert.ok(paid.every((h, i) => h === m.doc.paymentHashFor(i)));
   });
 
   describe('channel rail', function () {

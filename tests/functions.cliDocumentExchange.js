@@ -87,7 +87,23 @@ describe('functions/cliDocumentExchange (headless CLI surface)', function () {
     assert.ok(!exchange.publish('missing-id', null).ok);
     exchange.documents['doc1'] = Buffer.from('x');
     assert.ok(!exchange.publish('doc1', -1).ok);
-    assert.ok(!exchange.publish('doc1', 1).ok); // peer not ready
+    assert.ok(!exchange.publish('doc1', 1).ok);
+    assert.ok(!exchange.publish('doc1', 1000).ok); // peer not ready
+  });
+
+  it('publish refuses a paid rate under the HTLC minimum', function () {
+    const { HTLC_MINIMUM_SATS } = require('../constants');
+    const published = [];
+    const exchange = new CliDocumentExchange({
+      getPeer: () => ({ _state: { content: {} }, _publishDocument: (id, body, rate) => published.push(rate) })
+    });
+    exchange.documents.doc1 = Buffer.from('x');
+    const low = exchange.publish('doc1', HTLC_MINIMUM_SATS - 1);
+    assert.strictEqual(low.ok, false);
+    assert.match(low.error, /HTLC minimum/);
+    assert.ok(exchange.publish('doc1', 0).ok);
+    assert.ok(exchange.publish('doc1', HTLC_MINIMUM_SATS).ok);
+    assert.deepStrictEqual(published, [0, HTLC_MINIMUM_SATS]);
   });
 
   it('buy opens a session from the offer book without double-pay', function () {

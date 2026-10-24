@@ -82,8 +82,8 @@ GoonCitizen, Passport): looks a channel up by counterparty, routes inbound
 multi-hop HTLCs, ticks sessions on new chain tips, and returns the bodies
 the host must publish back. Shape expected by the market agent&#39;s
 <code>attach({ channels })</code>.</p>
-<p><strong>Seller-fulfils (Lightning shape):</strong> when the host supplies
-<code>preimageFor(paymentHashHex)</code> the book fulfils every received HTLC whose
+<p><strong>Seller-fulfills (Lightning shape):</strong> when the host supplies
+<code>preimageFor(paymentHashHex)</code> the book fulfills every received HTLC whose
 preimage the host knows as soon as the round that committed it completes;
 the payer learns the preimage from the resulting <code>ChannelHtlcFulfill</code>.</p>
 <p>Events: <code>htlcCommitted</code> (a received HTLC is irrevocably committed),
@@ -370,7 +370,7 @@ dedicated opcode is a separate, later protocol decision.</p>
 <dd><p>Channel defaults (Lightning-derived). Policy fields are negotiated at
 <code>ChannelOpen</code> — the stricter value wins. HTLCs are never trimmed: every one
 carries at least <code>HTLC_MINIMUM_SATS</code>, so it has a commitment output its
-receiver can claim on chain.</p>
+receiver can claim on-chain.</p>
 </dd>
 <dt><a href="#GCM_TAG_BYTES">GCM_TAG_BYTES</a></dt>
 <dd><p>AES-GCM tag appended to each sealed blob.</p>
@@ -3777,8 +3777,8 @@ multi-hop HTLCs, ticks sessions on new chain tips, and returns the bodies
 the host must publish back. Shape expected by the market agent's
 `attach({ channels })`.
 
-**Seller-fulfils (Lightning shape):** when the host supplies
-`preimageFor(paymentHashHex)` the book fulfils every received HTLC whose
+**Seller-fulfills (Lightning shape):** when the host supplies
+`preimageFor(paymentHashHex)` the book fulfills every received HTLC whose
 preimage the host knows as soon as the round that committed it completes;
 the payer learns the preimage from the resulting `ChannelHtlcFulfill`.
 
@@ -3873,7 +3873,7 @@ transactions the host hands over (mempool / block bodies).
 <a name="ChannelBook+preimageFor"></a>
 
 ### channelBook.preimageFor(paymentHashHex) ⇒ <code>string</code> \| <code>null</code>
-Host-side preimage lookup (seller-fulfils). Falls back to preimages any
+Host-side preimage lookup (seller-fulfills). Falls back to preimages any
 session on this book has already learned.
 
 **Kind**: instance method of [<code>ChannelBook</code>](#ChannelBook)  
@@ -4089,7 +4089,7 @@ transactions the host hands over (mempool / block bodies).
 <a name="ChannelBook+preimageFor"></a>
 
 ### channelBook.preimageFor(paymentHashHex) ⇒ <code>string</code> \| <code>null</code>
-Host-side preimage lookup (seller-fulfils). Falls back to preimages any
+Host-side preimage lookup (seller-fulfills). Falls back to preimages any
 session on this book has already learned.
 
 **Kind**: instance method of [<code>ChannelBook</code>](#ChannelBook)  
@@ -10533,7 +10533,7 @@ settle one HTLC per blob plan and receive one key reveal per blob.
 Seller side: the content key `K_i` whose SHA256 is `paymentHashHex`, from
 this node's published sealed-blob registry. Channel hosts hand this to
 `Channel.Book` as `preimageFor` so a committed HTLC for a blob we sell is
-fulfilled with the key (seller-fulfils; the buyer learns `K_i` from the
+fulfilled with the key (seller-fulfills; the buyer learns `K_i` from the
 `ChannelHtlcFulfill`).
 
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
@@ -10600,7 +10600,7 @@ channel `ChannelHtlcFulfill` preimage back onto the blob it unlocks.
 <a name="Peer+openSealedBlobWithKey"></a>
 
 ### peer.openSealedBlobWithKey(opts) ⇒ <code>Object</code>
-Open a held sealed blob with a key learned out of band (seller-fulfils
+Open a held sealed blob with a key learned out of band (seller-fulfills
 channel rail: the HTLC preimage **is** `K_i`). Same verification as a
 wire `DocumentContentKeyReveal`: SHA256(key) must equal the part's payment
 hash and the plaintext must hash to its advertised digest.
@@ -12326,7 +12326,7 @@ settle one HTLC per blob plan and receive one key reveal per blob.
 Seller side: the content key `K_i` whose SHA256 is `paymentHashHex`, from
 this node's published sealed-blob registry. Channel hosts hand this to
 `Channel.Book` as `preimageFor` so a committed HTLC for a blob we sell is
-fulfilled with the key (seller-fulfils; the buyer learns `K_i` from the
+fulfilled with the key (seller-fulfills; the buyer learns `K_i` from the
 `ChannelHtlcFulfill`).
 
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
@@ -12393,7 +12393,7 @@ channel `ChannelHtlcFulfill` preimage back onto the blob it unlocks.
 <a name="Peer+openSealedBlobWithKey"></a>
 
 ### peer.openSealedBlobWithKey(opts) ⇒ <code>Object</code>
-Open a held sealed blob with a key learned out of band (seller-fulfils
+Open a held sealed blob with a key learned out of band (seller-fulfills
 channel rail: the HTLC preimage **is** `K_i`). Same verification as a
 wire `DocumentContentKeyReveal`: SHA256(key) must equal the part's payment
 hash and the plaintext must hash to its advertised digest.
@@ -19845,7 +19845,7 @@ dedicated opcode is a separate, later protocol decision.
 Channel defaults (Lightning-derived). Policy fields are negotiated at
 `ChannelOpen` — the stricter value wins. HTLCs are never trimmed: every one
 carries at least `HTLC_MINIMUM_SATS`, so it has a commitment output its
-receiver can claim on chain.
+receiver can claim on-chain.
 
 **Kind**: global constant  
 <a name="GCM_TAG_BYTES"></a>

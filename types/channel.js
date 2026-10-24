@@ -71,7 +71,7 @@ const CHANNEL_BODY_TYPES = Object.freeze({
  * Channel defaults (Lightning-derived). Policy fields are negotiated at
  * `ChannelOpen` — the stricter value wins. HTLCs are never trimmed: every one
  * carries at least `HTLC_MINIMUM_SATS`, so it has a commitment output its
- * receiver can claim on chain.
+ * receiver can claim on-chain.
  *
  * `htlcClaimWindowBlocks` is part of the HTLC script (not negotiated): on the
  * receiver's own commitment the sender's timeout waits `toSelfDelay +
@@ -1507,7 +1507,7 @@ class ChannelSession {
   /**
    * A received HTLC may be fulfilled off-chain only while the funding is
    * confirmed and `expireAfter − tip > toSelfDelay + htlcSafetyBlocks`;
-   * otherwise the receiver must claim on chain. Offered HTLCs (the sender
+   * otherwise the receiver must claim on-chain. Offered HTLCs (the sender
    * settling with a preimage it learned) are always allowed.
    * @param {object} row HTLC row
    * @param {number} [tip]
@@ -1521,7 +1521,7 @@ class ChannelSession {
 
   /**
    * Remember a preimage for one of this channel's HTLCs (e.g. learned
-   * downstream) so the watchdog can claim it on chain.
+   * downstream) so the watchdog can claim it on-chain.
    * @param {string} paymentHashHex
    * @param {string} preimageHex
    * @returns {boolean} stored
@@ -1861,7 +1861,7 @@ class ChannelSession {
 
   /**
    * Replay the first intent abandoned in a simultaneous-proposal tie-break
-   * (offer / fulfil / fail / fee / close). Intents that no longer apply are
+   * (offer / fulfill / fail / fee / close). Intents that no longer apply are
    * dropped into `state.droppedIntents`.
    * @returns {object|null} new proposal body, or `null`
    */
@@ -2214,12 +2214,12 @@ class ChannelSession {
    *
    * The receiver reveals only while {@link ChannelSession#canFulfil}: once
    * the preimage is out, a sender that withholds its countersignature forces
-   * the receiver on chain, where the receiver's claim is CSV-delayed by
+   * the receiver on-chain, where the receiver's claim is CSV-delayed by
    * `toSelfDelay` on its own commitment. The sender's timeout there waits
    * `toSelfDelay + htlcClaimWindowBlocks`, and on the sender's commitment the
-   * receiver claims immediately, so a fulfil with that margin cannot be
+   * receiver claims immediately, so a fulfill with that margin cannot be
    * raced. Too close to expiry the preimage is only remembered and the
-   * watchdog ({@link ChannelSession#tick}) asks the host to claim on chain.
+   * watchdog ({@link ChannelSession#tick}) asks the host to claim on-chain.
    * @param {string} id
    * @param {string} preimageHex
    * @returns {object} `ChannelHtlcFulfill` body (+ the new commitment via `commitment`)
@@ -2233,7 +2233,7 @@ class ChannelSession {
     if (row.direction === 'received') {
       this._preimages.set(row.paymentHashHex, pre);
       if (!s.fundingConfirmed) throw new Error('fulfillHtlc: funding not confirmed');
-      if (!this.canFulfil(row)) throw new Error(`fulfillHtlc: HTLC ${row.id} expires too soon to settle off-chain (needs expireAfter − tip > toSelfDelay + htlcSafetyBlocks) — claim it on chain`);
+      if (!this.canFulfil(row)) throw new Error(`fulfillHtlc: HTLC ${row.id} expires too soon to settle off-chain (needs expireAfter − tip > toSelfDelay + htlcSafetyBlocks) — claim it on-chain`);
     }
     if (this.busy) throw new Error('fulfillHtlc: channel busy');
     this._preimages.set(row.paymentHashHex, pre);
@@ -2361,7 +2361,7 @@ class ChannelSession {
 
   /**
    * Chain-time watchdog. Polls funding confirmations, settles what it can
-   * off-chain (fulfil received HTLCs whose preimage is known while the margin
+   * off-chain (fulfill received HTLCs whose preimage is known while the margin
    * allows; fail expired received HTLCs without one; fail expired offered
    * HTLCs) and returns the on-chain **actions** the host must take:
    *
@@ -2633,8 +2633,8 @@ Channel.exchange = function exchange (from, to, body) {
  * and on-chain actions the host must handle. Shape expected by the market
  * agent's `attach({ channels })`.
  *
- * **Seller-fulfils (Lightning shape):** when the host supplies
- * `preimageFor(paymentHashHex, htlc)` the book fulfils every received HTLC
+ * **Seller-fulfills (Lightning shape):** when the host supplies
+ * `preimageFor(paymentHashHex, htlc)` the book fulfills every received HTLC
  * the host releases a preimage for as soon as the round that committed it
  * completes; the payer learns the preimage from the resulting
  * `ChannelHtlcFulfill`. The host sees the HTLC (amount, expiry, blob hash) and
@@ -2757,7 +2757,7 @@ class ChannelBook extends EventEmitter {
   }
 
   /**
-   * Host-side preimage lookup (seller-fulfils). The host function receives
+   * Host-side preimage lookup (seller-fulfills). The host function receives
    * `(paymentHashHex, htlc)` and may return the preimage hex or an object with
    * `keyHex` / `preimageHex`. With an `htlc` the host is authoritative (it
    * decides whether that HTLC pays enough); without one, preimages any session
@@ -2800,8 +2800,8 @@ class ChannelBook extends EventEmitter {
   }
 
   /**
-   * @private fulfil the first committed received HTLC whose preimage we may
-   * release (one per call — each fulfil opens a new round). Too close to
+   * @private fulfill the first committed received HTLC whose preimage we may
+   * release (one per call — each fulfill opens a new round). Too close to
    * expiry the preimage is only handed to the session, whose watchdog then
    * asks for an on-chain claim.
    */
@@ -3066,7 +3066,7 @@ class ChannelBook extends EventEmitter {
     for (const session of this.sessions.values()) {
       const settledBefore = session.state.settled.length;
       // Released preimages reach the session before its watchdog runs, so a
-      // fulfil without margin becomes a claim action this tick.
+      // fulfill without margin becomes a claim action this tick.
       const early = this._autoFulfil(session);
       if (early) published.push(early);
       const r = session.tick(tip || 0);

@@ -1309,6 +1309,8 @@ class Beacon extends Actor {
     }
 
     if (height < s.height) {
+      // A late notification for an older best-chain block: nothing reorged.
+      if (await this._blockOnBestChain(s.height, s.lastBlockHash)) return null;
       const pruned = this._pruneEpochChain(height);
       // The prune keeps the epoch (or pending round) at `height`: either this
       // block, or the losing branch's block at that height (handled below).

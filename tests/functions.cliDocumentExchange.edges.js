@@ -85,9 +85,10 @@ describe('functions/cliDocumentExchange path & publish edges', function () {
     for (const bad of [NaN, Infinity, -Infinity, -1, 'nope']) {
       assert.strictEqual(exchange.publish('docA', bad).ok, false, String(bad));
     }
-    // Current policy: Number.isFinite only — fractional sats are accepted.
-    assert.strictEqual(exchange.publish('docA', 1.5).ok, true);
-    assert.deepStrictEqual(published, [1.5]);
+    // Paid rates start at the HTLC minimum; above it, finite fractions are accepted.
+    assert.strictEqual(exchange.publish('docA', 1.5).ok, false);
+    assert.strictEqual(exchange.publish('docA', 716.5).ok, true);
+    assert.deepStrictEqual(published, [716.5]);
   });
 
   it('publish propagates host getPeer errors (not swallowed)', function () {

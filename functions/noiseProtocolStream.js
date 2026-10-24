@@ -18,7 +18,8 @@
  * announcing 512 MiB allocates 512 MiB before any authentication. This copy
  * caps every length-prefixed message (`maxMessageBytes`, default 65535), caps
  * bytes received before the handshake completes (`handshakeMaxBytes`), and
- * destroys both duplexes when the handshake is not done in `handshakeTimeout` ms.
+ * destroys both duplexes when the handshake is not done (and accepted by
+ * `options.verify`) in `handshakeTimeout` ms.
  */
 
 const util = require('util');
@@ -356,6 +357,8 @@ function createNoiseStream (options) {
   let listenersDropped = false;
   let nativeFreed = false;
   let handshakeTimer = null;
+  // The deadline covers `options.verify` too: a split session is not accepted yet.
+  let accepted = false;
   const decrypt = new DecryptStream(options);
   const encrypt = new EncryptStream(options);
 
@@ -480,6 +483,7 @@ function createNoiseStream (options) {
         // that is no longer ours.
         if (sessionTornDown() || ptr !== streamPtr) return;
         if (!err && accept === true) {
+          accepted = true;
           decrypt._splitHandshake(ptr, macSize);
           encrypt._splitHandshake(ptr, macSize);
           dropHandshakeListeners();
@@ -525,7 +529,7 @@ function createNoiseStream (options) {
   if (handshakeTimeout > 0) {
     handshakeTimer = setTimeout(function () {
       handshakeTimer = null;
-      if (decrypt._handshakeDone || sessionTornDown()) return;
+      if (accepted || sessionTornDown()) return;
       destroy('noise_handshake_timeout', '(' + handshakeTimeout + 'ms)');
     }, handshakeTimeout);
     if (typeof handshakeTimer.unref === 'function') handshakeTimer.unref();
