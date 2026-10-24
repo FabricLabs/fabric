@@ -11,6 +11,7 @@
  */
 
 const crypto = require('crypto');
+const { MAX_MESSAGE_SIZE } = require('../constants');
 
 const DEFAULT_PLAYNET_PEERS = Object.freeze([
   'hub.fabric.pub:7777',
@@ -50,7 +51,7 @@ function listPlaynetChaosConditions () {
       id: 'oversized-chat-burst',
       description: 'Large UTF-8 P2P_CHAT_MESSAGE bodies to stress chat ingest',
       types: ['P2P_CHAT_MESSAGE'],
-      chatBytes: 4096,
+      chatBytes: MAX_MESSAGE_SIZE,
       rawAmp: false,
       reconnect: false
     },
@@ -322,9 +323,14 @@ function classifyChaosPeerError (msg) {
  */
 function chaosMessageBody (condition, type, i) {
   if (type === 'P2P_CHAT_MESSAGE') {
-    const n = Math.max(16, Number(condition.chatBytes) || 48);
-    const pad = crypto.randomBytes(Math.min(n, 8192)).toString('base64').slice(0, n);
-    return `playnet-chaos-${condition.id}-${i}-${pad}`;
+    // `chatBytes` is the total UTF-8 body size (prefix included), capped at the
+    // AMP body limit so `oversized-chat-burst` lands exactly on MAX_MESSAGE_SIZE.
+    const n = Math.min(MAX_MESSAGE_SIZE, Math.max(16, Number(condition.chatBytes) || 48));
+    const prefix = `playnet-chaos-${condition.id}-${i}-`;
+    const padLen = Math.max(0, n - Buffer.byteLength(prefix, 'utf8'));
+    // base64 yields 4 ASCII bytes per 3 random bytes; over-generate then trim.
+    const pad = crypto.randomBytes(Math.ceil(padLen * 3 / 4) + 3).toString('base64').slice(0, padLen);
+    return `${prefix}${pad}`;
   }
   if (type === 'P2P_PEER_ALIAS') {
     return `chaos-${i}`.slice(0, 24);

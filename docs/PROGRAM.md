@@ -89,7 +89,9 @@ when preparing a PSBT.
 (`hashlockFromProgramRun`, `composePolicyWithRunHashlock`) attaches a hashlock
 whose `commitmentHex` is the Machine `runCommitmentHex`. That **changes** the
 P2TR address and L1-enforces the commitment without co-signers on the hashlock
-path — intentional threat model only.
+path. The leaf requires a Schnorr signature from `run.pubkeyHex` as well as the
+preimage; a preimage-only leaf needs an explicit `allowPreimageOnly: true` —
+intentional threat model only.
 
 **Validator recompute:** federation members SHOULD refuse to sign until
 `functions/federationValidatorVerify.evaluateValidatorSignGate` passes (epoch

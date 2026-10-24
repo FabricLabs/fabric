@@ -8,6 +8,7 @@ const {
   applyPegInCredit,
   applyPegOutBurn,
   settlePegOutPayout,
+  unsettlePegOutPayout,
   patchesForReserve,
   validateLedgerPatch,
   defaultFederationSidechainPolicy,
@@ -97,11 +98,189 @@ describe('federationReserveLedger', function () {
     });
     assert.strictEqual(again.ok, false);
 
-    const settled = settlePegOutPayout(burn.content, '22'.repeat(32));
-    assert.strictEqual(settled.ok, true);
+    const settled = settlePegOutPayout(burn.content, '22'.repeat(32), {
+      payout: {
+        txid: '77'.repeat(32),
+        vout: 0,
+        amountSats: 20000,
+        destinationAddress: 'bcrt1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh',
+        confirmations: 6
+      }
+    });
+    assert.strictEqual(settled.ok, true, settled.error);
     assert.strictEqual(settled.reserve.pendingBurnsSats, 0);
     assert.strictEqual(settled.reserve.vaultConfirmedSats, 30000);
     assert.strictEqual(settled.reserve.withdrawals[0].status, 'settled');
+    assert.deepStrictEqual(settled.reserve.withdrawals[0].payout, {
+      txid: '77'.repeat(32),
+      vout: 0,
+      confirmations: 6
+    });
+  });
+
+  it('settlePegOutPayout requires a payout output matching the withdrawal', function () {
+    const dest = 'bcrt1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh';
+    const credited = applyPegInCredit({}, {
+      txid: '88'.repeat(32),
+      vout: 0,
+      amountSats: 60000,
+      confirmations: 200
+    }, { vaultConfirmedSats: 60000 });
+    assert.ok(credited.ok);
+    const first = applyPegOutBurn(credited.content, {
+      requestId: '99'.repeat(32),
+      amountSats: 20000,
+      destinationAddress: dest
+    });
+    assert.ok(first.ok);
+    const burns = applyPegOutBurn(first.content, {
+      requestId: 'aa'.repeat(32),
+      amountSats: 20000,
+      destinationAddress: dest
+    });
+    assert.ok(burns.ok);
+
+    const payout = {
+      txid: 'bb'.repeat(32),
+      vout: 1,
+      amountSats: 20000,
+      destinationAddress: dest,
+      confirmations: 6
+    };
+    const settle = (requestId, overrides, extra = {}) => settlePegOutPayout(
+      burns.content,
+      requestId,
+      Object.assign({ payout: overrides === null ? undefined : Object.assign({}, payout, overrides) }, extra)
+    );
+
+    assert.match(settle('99'.repeat(32), null).error, /payout required/);
+    assert.match(settle('99'.repeat(32), { txid: 'xyz' }).error, /payout\.txid/);
+    assert.match(settle('99'.repeat(32), { vout: -1 }).error, /payout\.vout/);
+    assert.match(settle('99'.repeat(32), { amountSats: 19999 }).error, /must equal withdrawal amountSats/);
+    assert.match(settle('99'.repeat(32), { destinationAddress: 'bcrt1qother' }).error, /destinationAddress/);
+    assert.match(settle('99'.repeat(32), { confirmations: 0 }).error, /not confirmed/);
+    assert.match(settle('99'.repeat(32), { confirmations: 5 }).error, /need >= 6 confirmations/);
+    assert.match(
+      settle('99'.repeat(32), {}, { payoutMinConfirmations: 10 }).error,
+      /need >= 10 confirmations/
+    );
+    assert.strictEqual(settle('99'.repeat(32), { confirmations: 1 }, { payoutMinConfirmations: 1 }).ok, true);
+
+    const settled = settle('99'.repeat(32), {});
+    assert.strictEqual(settled.ok, true, settled.error);
+    const reused = settlePegOutPayout(settled.content, 'aa'.repeat(32), { payout });
+    assert.strictEqual(reused.ok, false);
+    assert.match(reused.error, /already settled another withdrawal/);
+    const own = settlePegOutPayout(settled.content, 'aa'.repeat(32), {
+      payout: Object.assign({}, payout, { vout: 2 })
+    });
+    assert.strictEqual(own.ok, true, own.error);
+  });
+
+  it('settlePegOutPayout matches the destination by scriptPubKey, not address spelling', function () {
+    const bitcoin = require('bitcoinjs-lib');
+    const hash = Buffer.alloc(20, 7);
+    const segwit = bitcoin.payments.p2wpkh({ hash, network: bitcoin.networks.regtest });
+    const legacy = bitcoin.payments.p2pkh({ hash, network: bitcoin.networks.regtest }).address;
+    const credited = applyPegInCredit({}, {
+      txid: '12'.repeat(32), vout: 0, amountSats: 60000, confirmations: 200
+    }, { vaultConfirmedSats: 60000 });
+    const burn = (content, requestId, destinationAddress) => applyPegOutBurn(content, {
+      requestId, amountSats: 20000, destinationAddress
+    });
+    const a = burn(credited.content, '13'.repeat(32), segwit.address.toUpperCase());
+    const b = burn(a.content, '14'.repeat(32), legacy);
+    assert.ok(a.ok && b.ok);
+    const payout = (vout, extra) => Object.assign({
+      txid: '15'.repeat(32), vout, amountSats: 20000, confirmations: 6
+    }, extra);
+
+    const lower = settlePegOutPayout(b.content, '13'.repeat(32), {
+      payout: payout(0, { destinationAddress: segwit.address })
+    });
+    assert.strictEqual(lower.ok, true, lower.error);
+    const byScript = settlePegOutPayout(b.content, '13'.repeat(32), {
+      payout: payout(0, { scriptPubKey: Buffer.from(segwit.output).toString('hex').toUpperCase() })
+    });
+    assert.strictEqual(byScript.ok, true, byScript.error);
+    const wrongType = settlePegOutPayout(b.content, '14'.repeat(32), {
+      payout: payout(1, { destinationAddress: segwit.address })
+    });
+    assert.match(wrongType.error, /destinationAddress/);
+    const base58 = settlePegOutPayout(b.content, '14'.repeat(32), {
+      payout: payout(1, { destinationAddress: legacy })
+    });
+    assert.strictEqual(base58.ok, true, base58.error);
+    const changedCase = settlePegOutPayout(b.content, '14'.repeat(32), {
+      payout: payout(1, { destinationAddress: legacy.toLowerCase() })
+    });
+    assert.strictEqual(changedCase.ok, false);
+  });
+
+  it('unsettlePegOutPayout reopens a withdrawal whose payout was reorged out', function () {
+    const dest = 'bcrt1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh';
+    const credited = applyPegInCredit({}, {
+      txid: '21'.repeat(32), vout: 0, amountSats: 50000, confirmations: 200
+    }, { vaultConfirmedSats: 50000 });
+    const burn = applyPegOutBurn(credited.content, {
+      requestId: '23'.repeat(32), amountSats: 20000, destinationAddress: dest
+    });
+    const payout = { txid: '24'.repeat(32), vout: 0, amountSats: 20000, destinationAddress: dest, confirmations: 6 };
+    const settled = settlePegOutPayout(burn.content, '23'.repeat(32), { payout });
+    assert.ok(settled.ok, settled.error);
+
+    assert.match(unsettlePegOutPayout(burn.content, '23'.repeat(32), { payout }).error, /not settled/);
+    assert.match(unsettlePegOutPayout(settled.content, '23'.repeat(32), {}).error, /payout required/);
+    assert.match(
+      unsettlePegOutPayout(settled.content, '23'.repeat(32), { payout: { txid: '24'.repeat(32), vout: 1 } }).error,
+      /does not match/
+    );
+
+    const reopened = unsettlePegOutPayout(settled.content, '23'.repeat(32), { payout });
+    assert.strictEqual(reopened.ok, true, reopened.error);
+    assert.strictEqual(reopened.reserve.pendingBurnsSats, 20000);
+    assert.strictEqual(reopened.reserve.vaultConfirmedSats, 50000);
+    assert.strictEqual(reopened.reserve.withdrawals[0].status, 'pending');
+    assert.strictEqual(reopened.reserve.withdrawals[0].payout, undefined);
+    assert.strictEqual(settled.reserve.withdrawals[0].status, 'settled');
+    assert.strictEqual(validateLedgerPatch(patchesForReserve(reopened.reserve)).ok, true);
+
+    const resettled = settlePegOutPayout(reopened.content, '23'.repeat(32), {
+      payout: Object.assign({}, payout, { txid: '25'.repeat(32) })
+    });
+    assert.strictEqual(resettled.ok, true, resettled.error);
+    assert.strictEqual(resettled.reserve.vaultConfirmedSats, 30000);
+  });
+
+  it('validateLedgerPatch rejects a settled withdrawal without a payout', function () {
+    const credited = applyPegInCredit({}, {
+      txid: 'cc'.repeat(32),
+      vout: 0,
+      amountSats: 50000,
+      confirmations: 200
+    }, { vaultConfirmedSats: 50000 });
+    const burn = applyPegOutBurn(credited.content, {
+      requestId: 'dd'.repeat(32),
+      amountSats: 20000,
+      destinationAddress: 'bcrt1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh'
+    });
+    const settled = settlePegOutPayout(burn.content, 'dd'.repeat(32), {
+      payout: {
+        txid: 'ee'.repeat(32),
+        vout: 0,
+        amountSats: 20000,
+        destinationAddress: 'bcrt1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh',
+        confirmations: 6
+      }
+    });
+    assert.ok(settled.ok, settled.error);
+    assert.strictEqual(validateLedgerPatch(patchesForReserve(settled.reserve)).ok, true);
+
+    const stripped = JSON.parse(JSON.stringify(settled.reserve));
+    delete stripped.withdrawals[0].payout;
+    const bad = validateLedgerPatch(patchesForReserve(stripped));
+    assert.strictEqual(bad.ok, false);
+    assert.match(bad.error, /payout\.txid/);
   });
 
   it('settlePegOutPayout does not mutate caller withdrawal when conservation fails', function () {
@@ -122,8 +301,16 @@ describe('federationReserveLedger', function () {
     assert.strictEqual(originalRow.status, 'pending');
 
     const failed = settlePegOutPayout(burn.content, '66'.repeat(32), {
-      vaultConfirmedSats: 0
+      vaultConfirmedSats: 0,
+      payout: {
+        txid: '67'.repeat(32),
+        vout: 0,
+        amountSats: 20000,
+        destinationAddress: 'bcrt1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh',
+        confirmations: 6
+      }
     });
+    assert.match(failed.error, /conservation violated/);
     assert.strictEqual(failed.ok, false);
     assert.strictEqual(originalRow.status, 'pending');
     assert.ok(!originalRow.settledAt);

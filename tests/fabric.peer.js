@@ -1196,6 +1196,13 @@ describe('@fabric/core/types/peer', function () {
         assert.ok(opened && opened.opened && opened.verified);
         assert.strictEqual(opened.buffer.toString('utf8'), secret);
 
+        // A refused write (closed stream, legacy frame cap) is not a send, and no key follows it.
+        let revealed = 0;
+        seller.on('documentContentKeyRevealed', () => { revealed += 1; });
+        seller.connections['buyer:legacy'] = { _writeFabric: () => false };
+        assert.strictEqual(seller._sendP2pFileSendToPeer('doc-seal', 'buyer:legacy', { revealKey: true }), false);
+        assert.strictEqual(revealed, 0);
+
         // DocumentRequest echoing public paymentHash alone must not unlock.
         const buyer2 = new Peer({ listen: false, peersDb: null });
         let opened2 = null;

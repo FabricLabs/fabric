@@ -101,7 +101,7 @@ Before tagging or publishing, use [`docs/PRODUCTION.md`](docs/PRODUCTION.md) (pr
 ## Native Dependencies
 **npm install does not build the C addon** — JavaScript is the canonical protocol for 0.1.0.
 Optional `fabric.node`: `npm run build:c` or `FABRIC_BUILD_NATIVE=1` (see [BUILD.md](BUILD.md)).
-Typical toolchain for an optional native build: **Node 24.15.x**, **Python 3**, **secp256k1**,
+Typical toolchain for an optional native build: **Node 26.12.1**, **Python 3**, **secp256k1**,
 **libwally-core**, and **noise**.
 
 JS tests do not require `fabric.node`.  Separately, **`level`** and **`zeromq`**

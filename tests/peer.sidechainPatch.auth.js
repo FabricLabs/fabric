@@ -168,6 +168,7 @@ describe('Peer SIDECHAIN_STATE_PATCH authorization', function () {
 
   it('reads FABRIC_DISTRIBUTED_FEDERATION_THRESHOLD when validators come from settings', function () {
     const key = new Key({ private: '4444444444444444444444444444444444444444444444444444444444444444' });
+    const other = new Key({ private: '5555555555555555555555555555555555555555555555555555555555555555' });
     const prevT = process.env.FABRIC_DISTRIBUTED_FEDERATION_THRESHOLD;
     const prevV = process.env.FABRIC_DISTRIBUTED_FEDERATION_VALIDATORS;
     delete process.env.FABRIC_DISTRIBUTED_FEDERATION_VALIDATORS;
@@ -176,10 +177,29 @@ describe('Peer SIDECHAIN_STATE_PATCH authorization', function () {
       const peer = new Peer(Object.assign(offlinePeerSettings(), {
         distributed: {
           federation: {
-            validators: [key.pubkey],
+            validators: [key.pubkey, other.pubkey],
             threshold: 1
           }
         }
+      }));
+      assert.strictEqual(peer._distributedFederationThresholdFromSettings(), 2);
+    } finally {
+      if (prevV == null) delete process.env.FABRIC_DISTRIBUTED_FEDERATION_VALIDATORS;
+      else process.env.FABRIC_DISTRIBUTED_FEDERATION_VALIDATORS = prevV;
+      if (prevT == null) delete process.env.FABRIC_DISTRIBUTED_FEDERATION_THRESHOLD;
+      else process.env.FABRIC_DISTRIBUTED_FEDERATION_THRESHOLD = prevT;
+    }
+  });
+
+  it('defaults the threshold to a strict majority when none is configured', function () {
+    const prevT = process.env.FABRIC_DISTRIBUTED_FEDERATION_THRESHOLD;
+    const prevV = process.env.FABRIC_DISTRIBUTED_FEDERATION_VALIDATORS;
+    delete process.env.FABRIC_DISTRIBUTED_FEDERATION_VALIDATORS;
+    delete process.env.FABRIC_DISTRIBUTED_FEDERATION_THRESHOLD;
+    try {
+      const validators = ['11', '22', '33'].map((b) => new Key({ private: b.repeat(32) }).pubkey);
+      const peer = new Peer(Object.assign(offlinePeerSettings(), {
+        distributed: { federation: { validators } }
       }));
       assert.strictEqual(peer._distributedFederationThresholdFromSettings(), 2);
     } finally {

@@ -13,10 +13,15 @@
  *
  * Federation members keep their secp256k1 validator identity. A BLS key is
  * derived from that Fabric private key (HKDF-SHA256). A portable witness
- * bundle is a BLS signature over the federation message, a Schnorr link from
- * the secp256k1 key over the BLS public key, and a BLS proof of possession
+ * bundle (`v: 2`) is a BLS signature over the federation message, a Schnorr
+ * link from the secp256k1 key over `LINK_PREFIX` + the BLS public key (hex),
+ * and a BLS proof of possession
  * over the secp256k1 pubkey. Threshold checks count those bundles. They do
  * not aggregate public keys, so a rogue-key sum cannot satisfy k-of-n.
+ *
+ * Legacy `v: 1` bundles linked the raw BLS public key bytes without a domain
+ * tag. Verifiers accept them by default so witnesses sealed before v2 still
+ * verify; paths that take new signatures pass `allowLegacy: false`.
  *
  * `aggregateSignatures` / `verifyAggregate` are the n-of-n algebraic helpers.
  * Callers that aggregate must already trust the public-key set.
@@ -30,6 +35,11 @@
 
 const crypto = require('crypto');
 const Key = require('../types/key');
+const {
+  federationValidatorId,
+  uniqueValidatorPubkeys,
+  witnessSignatureFor
+} = require('./federationValidators');
 
 const SCHEME_SCHNORR = 'schnorr';
 const SCHEME_BLS = 'bls';
@@ -39,6 +49,9 @@ const SIGNATURE_BYTES = 96;
 const SECRET_KEY_BYTES = 32;
 const SCHNORR_SIGNATURE_BYTES = 64;
 const POP_PREFIX = 'Fabric/BLS/PoP/v1:';
+const LINK_PREFIX = 'Fabric/BLS/Link/v1:';
+const BUNDLE_VERSION = 2;
+const LEGACY_BUNDLE_VERSION = 1;
 const HKDF_SALT = Buffer.from('Fabric-BLS-v1', 'utf8');
 const HKDF_INFO = Buffer.from('federation-signer', 'utf8');
 
@@ -235,6 +248,12 @@ function aggregatePublicKeys (publicKeys) {
 
 /**
  * Verify one aggregate signature against the sum of public keys (same message).
+ *
+ * Not safe against rogue-key attacks on its own: a signer who picks its public
+ * key as a function of the others can make the sum verify alone. Only pass
+ * public keys whose proofs of possession were checked (as
+ * {@link verifyFederationBlsBundle} does); federation witnesses use
+ * {@link verifyFederationBlsWitness}, which never sums keys.
  * @param {Buffer|Uint8Array|string} signature
  * @param {Buffer|Uint8Array|string|object} message
  * @param {Array<Buffer|Uint8Array|string>} publicKeys
@@ -247,6 +266,18 @@ function verifyAggregate (signature, message, publicKeys) {
   } catch (_) {
     return false;
   }
+}
+
+/**
+ * Bytes the secp256k1 validator key Schnorr-signs to claim a BLS public key.
+ * @param {string} blsPublicKeyHex
+ * @param {number} [version=BUNDLE_VERSION] legacy v1 signed the raw key bytes
+ * @returns {Buffer}
+ * @private
+ */
+function linkMessage (blsPublicKeyHex, version = BUNDLE_VERSION) {
+  if (version === LEGACY_BUNDLE_VERSION) return Buffer.from(blsPublicKeyHex, 'hex');
+  return Buffer.from(LINK_PREFIX + blsPublicKeyHex, 'utf8');
 }
 
 /**
@@ -267,9 +298,9 @@ function createFederationBlsBundle (message, fabricKey) {
   const blsPublicKey = derived.publicKey.toString('hex');
   const pop = sign(Buffer.from(POP_PREFIX + secpPubkey, 'utf8'), derived.secretKey);
   const signature = sign(message, derived.secretKey);
-  const link = fabricKey.signSchnorr(derived.publicKey);
+  const link = fabricKey.signSchnorr(linkMessage(blsPublicKey));
   return {
-    v: 1,
+    v: BUNDLE_VERSION,
     blsPublicKey,
     signature: signature.toString('hex'),
     pop: pop.toString('hex'),
@@ -299,16 +330,27 @@ function parseBundle (entry) {
 }
 
 /**
+ * Verify one validator's bundle. The validator id may be compressed or x-only;
+ * the proof of possession is checked against either parity of that x.
  * @param {Buffer|Uint8Array|string|object} message
- * @param {string} secpPubkey compressed secp256k1 hex
+ * @param {string} secpPubkey secp256k1 validator id (compressed or x-only hex)
  * @param {object|string} bundle
+ * @param {Object} [opts]
+ * @param {boolean} [opts.allowLegacy=true] accept `v: 1` bundles (untagged link) for history
  * @returns {boolean}
  */
-function verifyFederationBlsBundle (message, secpPubkey, bundle) {
+function verifyFederationBlsBundle (message, secpPubkey, bundle, opts = {}) {
   const parsed = parseBundle(bundle);
-  if (!parsed || Number(parsed.v) !== 1) return false;
-  const pk = String(secpPubkey || '').trim().toLowerCase();
-  if (!/^0[23][0-9a-f]{64}$/.test(pk)) return false;
+  if (!parsed) return false;
+  const version = Number(parsed.v);
+  const allowLegacy = !opts || opts.allowLegacy !== false;
+  if (version !== BUNDLE_VERSION && !(allowLegacy && version === LEGACY_BUNDLE_VERSION)) return false;
+  const x = federationValidatorId(secpPubkey);
+  if (!x) return false;
+  const given = String(secpPubkey).trim().toLowerCase().replace(/^0x/, '');
+  const popCandidates = /^0[23][0-9a-f]{64}$/.test(given)
+    ? [given, (given.startsWith('02') ? '03' : '02') + x]
+    : ['02' + x, '03' + x];
   const blsPk = String(parsed.blsPublicKey || '').trim().toLowerCase();
   const sig = String(parsed.signature || '').trim().toLowerCase();
   const pop = String(parsed.pop || '').trim().toLowerCase();
@@ -318,9 +360,10 @@ function verifyFederationBlsBundle (message, secpPubkey, bundle) {
   if (pop.length !== SIGNATURE_BYTES * 2) return false;
   if (link.length !== SCHNORR_SIGNATURE_BYTES * 2) return false;
   try {
-    const key = new Key({ pubkey: pk });
-    if (!key.verifySchnorr(Buffer.from(blsPk, 'hex'), Buffer.from(link, 'hex'))) return false;
-    if (!verify(pop, Buffer.from(POP_PREFIX + pk, 'utf8'), blsPk)) return false;
+    // BIP340 verifies over x only, so either parity checks the link.
+    const key = new Key({ pubkey: '02' + x });
+    if (!key.verifySchnorr(linkMessage(blsPk, version), Buffer.from(link, 'hex'))) return false;
+    if (!popCandidates.some((pk) => verify(pop, Buffer.from(POP_PREFIX + pk, 'utf8'), blsPk))) return false;
     if (!verify(sig, message, blsPk)) return false;
     return true;
   } catch (_) {
@@ -329,26 +372,26 @@ function verifyFederationBlsBundle (message, secpPubkey, bundle) {
 }
 
 /**
- * k-of-n over secp256k1 validator ids. Each `witness.signatures[pubkey]` is a bundle.
- * Duplicate validator ids count once.
+ * k-of-n over secp256k1 validator ids. Each witness signature is a bundle,
+ * found under the validator's id however the witness spelled it. Each signing
+ * key counts once, however its id is spelled.
  * @param {Buffer|Uint8Array|string|object} message
  * @param {object} witness
  * @param {string[]} validatorPubkeys
  * @param {number} [threshold=1]
+ * @param {Object} [opts]
+ * @param {boolean} [opts.allowLegacy=true] accept `v: 1` bundles (see {@link verifyFederationBlsBundle})
  * @returns {boolean}
  */
-function verifyFederationBlsWitness (message, witness, validatorPubkeys, threshold = 1) {
+function verifyFederationBlsWitness (message, witness, validatorPubkeys, threshold = 1, opts = {}) {
   if (!witness || !witness.signatures || typeof witness.signatures !== 'object') return false;
-  const pubkeys = Array.from(new Set(
-    (Array.isArray(validatorPubkeys) ? validatorPubkeys : [])
-      .filter((p) => typeof p === 'string' && p)
-  ));
+  const pubkeys = uniqueValidatorPubkeys(validatorPubkeys);
   const thr = Number(threshold);
   if (!Number.isInteger(thr) || thr < 1) return false;
   let valid = 0;
   for (const pubkey of pubkeys) {
-    const entry = witness.signatures[pubkey];
-    if (!verifyFederationBlsBundle(message, pubkey, entry)) continue;
+    const entry = witnessSignatureFor(witness.signatures, pubkey);
+    if (!verifyFederationBlsBundle(message, pubkey, entry, opts)) continue;
     valid++;
     if (valid >= thr) return true;
   }
@@ -363,6 +406,9 @@ module.exports = {
   SIGNATURE_BYTES,
   SECRET_KEY_BYTES,
   POP_PREFIX,
+  LINK_PREFIX,
+  BUNDLE_VERSION,
+  LEGACY_BUNDLE_VERSION,
   normalizeSignatureScheme,
   keygen,
   deriveFederationSigner,

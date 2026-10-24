@@ -15,7 +15,7 @@
 #include "noise.h"
 
 #define PEER_MAX_CONNECTIONS 100
-#define PEER_BUFFER_SIZE 4096
+#define PEER_BUFFER_SIZE FABRIC_MAX_FRAME_BYTES
 #define PEER_MAX_EVENTS 50
 
 // Peer connection mode

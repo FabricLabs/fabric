@@ -9,6 +9,7 @@ const {
 /**
  * Fair-share byte budget for one Fabric peer in the L1 window.
  * Default: 1 MiB / 10 min / {@link MAX_PEERS} (32) = 32768 bytes per peer.
+ * Reporting only: Peer flags `overBudget` but does not throttle or drop a peer.
  * @param {number} [windowBytes] node-wide window (default Bitcoin L1 1 MiB)
  * @param {number} [maxPeers] slot count (default {@link MAX_PEERS})
  * @returns {number}

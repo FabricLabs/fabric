@@ -6,8 +6,13 @@
 
 // Message/version constants
 #define FABRIC_MESSAGE_VERSION 1
-/* Max payload bytes (4096 byte frame − 208-byte on-wire header: magic…signature) */
-#define FABRIC_MAX_MESSAGE_BODY 3888
+/* Max payload bytes (32 KiB body; 208-byte on-wire header: magic…signature → 32976-byte frame).
+ * Keep in sync with `MAX_MESSAGE_SIZE` in `constants.js`. */
+#define FABRIC_MAX_MESSAGE_BODY 32768
+/* Header bytes (magic, version, parent, author, type, size, hash, preimage, signature) */
+#define FABRIC_MESSAGE_HEADER_BYTES 208
+/* Max bytes of one AMP frame on the wire (header + body) */
+#define FABRIC_MAX_FRAME_BYTES (FABRIC_MESSAGE_HEADER_BYTES + FABRIC_MAX_MESSAGE_BODY)
 
 /** Max ciphertext bytes per Noise transport frame (matches `noise-protocol-stream` MESSAGE_SIZE). */
 #define FABRIC_NOISE_MAX_FRAME_BYTES 65535

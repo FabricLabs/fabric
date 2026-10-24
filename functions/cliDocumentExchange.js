@@ -15,9 +15,10 @@
 
 const fs = require('fs');
 const path = require('path');
+const { HTLC_MINIMUM_SATS } = require('../constants');
 const Actor = require('../types/actor');
 const {
-  DocumentOfferBook,
+  Book,
   createDocumentPurchaseSession,
   findSession,
   isDuplicateSettlement,
@@ -25,6 +26,7 @@ const {
   listRefundCandidates
 } = require('./documentMarket');
 const inventoryHtlc = require('./inventoryHtlc');
+const { DEFAULT_CHUNK_BYTES } = require('./documentBlobManifest');
 const { contentHashHexFromObject } = require('./documentPaymentHash');
 const {
   extractPreimageFromClaimTx,
@@ -119,6 +121,22 @@ function readResolvedImportFile (absolutePath) {
  */
 
 /**
+ * Blobs the Peer will advertise for a priced document of `plainBytes`:
+ * sealed as AES-256-GCM (16-byte tag) unless `sealPricedDocuments` is off,
+ * cut at `inventoryBlobChunkBytes`.
+ * @private
+ * @param {object} peer
+ * @param {number} plainBytes
+ * @returns {number}
+ */
+function advertisedBlobCount (peer, plainBytes) {
+  const settings = (peer && peer.settings) || {};
+  const bytes = plainBytes + (settings.sealPricedDocuments !== false ? 16 : 0);
+  const chunk = Math.max(1, Number(settings.inventoryBlobChunkBytes) || DEFAULT_CHUNK_BYTES);
+  return Math.max(1, Math.ceil(bytes / chunk));
+}
+
+/**
  * Structured result for CLI / headless callers.
  * @typedef {Object} ExchangeResult
  * @property {boolean} ok
@@ -138,7 +156,7 @@ class CliDocumentExchange {
   constructor (host = {}) {
     this.host = host;
     this.documents = host.documents || {};
-    this.offerBook = host.offerBook || new DocumentOfferBook();
+    this.offerBook = host.offerBook || new Book();
     this.purchaseSessions = host.purchaseSessions || new Map();
     this.paidSettlements = host.paidSettlements || new Set();
     this.remoteInventories = host.remoteInventories || {};
@@ -312,6 +330,13 @@ class CliDocumentExchange {
       return { ok: false, error: 'Peer not ready.' };
     }
     const body = this.documents[id].toString('utf8');
+    if (rate > 0) {
+      // The Peer advertises `ceil(rate / blobs)` per blob; buyers skip blobs under the minimum.
+      const blobs = advertisedBlobCount(peer, Buffer.byteLength(body, 'utf8'));
+      if (Math.ceil(rate / blobs) < HTLC_MINIMUM_SATS) {
+        return { ok: false, error: `rateSats must be 0 (free) or at least ${HTLC_MINIMUM_SATS * blobs} (${blobs} blob${blobs === 1 ? '' : 's'} × the ${HTLC_MINIMUM_SATS}-sat HTLC minimum); buyers cannot pay less per blob` };
+      }
+    }
     const filesystem = this._fs();
     if (filesystem && typeof filesystem.touchDir === 'function') {
       filesystem.touchDir('documents');
@@ -416,6 +441,9 @@ class CliDocumentExchange {
     const amountSats = amountArg != null && Number.isFinite(amountArg)
       ? amountArg
       : (Number(offer.rateSats) || 0);
+    if (amountSats > 0 && amountSats < HTLC_MINIMUM_SATS) {
+      return { error: `Cannot open paid buy: ${amountSats} sats is below the ${HTLC_MINIMUM_SATS}-sat HTLC minimum (the claim could not leave a non-dust output)` };
+    }
     // Never fund a seller-supplied address without rebuilding a buyer-bound HTLC tree.
     let paymentAddress = null;
     let bitcoinUri = null;
@@ -489,6 +517,7 @@ class CliDocumentExchange {
       merkleRootHex: offer.merkleRootHex,
       htlc
     });
+    session.iv = offer.iv || null;
     if (isDuplicateSettlement(this.paidSettlements, session)) {
       return { error: `Already settled ${session.dedupeKey} — refusing double-pay` };
     }
@@ -532,7 +561,7 @@ class CliDocumentExchange {
     const sample = this.offerBook.listOffers({ documentId: id })[0];
     const blobTotal = sample && sample.blobTotal != null ? Number(sample.blobTotal) : 0;
     if (seller === 'auto' && blobTotal > 1) {
-      const plan = this.offerBook.pickBlobPlan(id, blobTotal);
+      const plan = this.offerBook.pickBlobPlan(id, blobTotal, { minPaidSats: HTLC_MINIMUM_SATS });
       if (!plan.size) {
         return { ok: false, error: `No blob plan for ${id}. Run /inventory <peer> btc then /offers.` };
       }
@@ -558,7 +587,9 @@ class CliDocumentExchange {
 
     let offer = null;
     if (seller === 'auto') {
-      offer = this.offerBook.pickBest(id, amount != null ? { maxSats: amount } : {});
+      const pick = { minPaidSats: HTLC_MINIMUM_SATS };
+      if (amount != null) pick.maxSats = amount;
+      offer = this.offerBook.pickBest(id, pick);
     } else {
       const offers = this.offerBook.listOffers({ documentId: id }).filter((o) => {
         return o.sellerAddress === seller || o.sellerId === seller;
@@ -710,11 +741,24 @@ class CliDocumentExchange {
     if (fundedHex) session.fundedTxHex = fundedHex;
     const peer = this._peer();
     if (session.merkleRootHex && peer && peer.blobTransfers) {
+      const index = Math.max(0, Math.floor(Number(session.blobIndex) || 0));
+      const blobHashHexes = session.blobHashHex ? [] : null;
+      const paymentHashHexes = session.contentHashHex ? [] : null;
+      if (blobHashHexes) blobHashHexes[index] = session.blobHashHex;
+      if (paymentHashHexes) paymentHashHexes[index] = session.contentHashHex;
+      const ivs = session.iv ? [] : null;
+      if (ivs) ivs[index] = session.iv;
+      const origins = session.seller ? [] : null;
+      if (origins) origins[index] = String(session.seller);
       peer.blobTransfers.expectTransfer({
         documentId: session.documentId,
         merkleRootHex: session.merkleRootHex,
         total: session.blobTotal,
-        blobHashHexes: session.blobHashHex ? [session.blobHashHex] : null
+        blobHashHexes,
+        paymentHashHexes,
+        ivs,
+        origins,
+        merge: true
       });
     }
     session.status = 'delivery_pending';
@@ -1020,7 +1064,7 @@ class CliDocumentExchange {
 
 module.exports = {
   CliDocumentExchange,
-  DocumentOfferBook,
+  Book,
   createDocumentPurchaseSession,
   findSession,
   isDuplicateSettlement,

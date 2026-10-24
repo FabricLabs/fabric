@@ -33,7 +33,8 @@ describe('programTaprootBind', function () {
       network: 'regtest',
       run: {
         programHash: '11'.repeat(32),
-        runCommitmentHex: '22'.repeat(32)
+        runCommitmentHex: '22'.repeat(32),
+        pubkeyHex: a.pubkey
       }
     });
     assert.ok(withRun.address && withRun.address.startsWith('bcrt1'));
@@ -56,7 +57,8 @@ describe('programTaprootBind', function () {
       run: {
         programHash: '11'.repeat(32),
         runCommitmentHex: '22'.repeat(32),
-        commitmentHex: '33'.repeat(32)
+        commitmentHex: '33'.repeat(32),
+        pubkeyHex: a.pubkey
       }
     });
     const { programRunId } = require('../functions/contractProgramBind');
@@ -80,7 +82,7 @@ describe('programTaprootBind', function () {
     };
     assert.throws(() => composePolicyWithRunHashlock({
       policy,
-      run: { runCommitmentHex: 'bb'.repeat(32) }
+      run: { runCommitmentHex: 'bb'.repeat(32), pubkeyHex: a.pubkey }
     }), /policy\.hashlock/);
 
     const clean = {
@@ -94,8 +96,39 @@ describe('programTaprootBind', function () {
     assert.throws(() => composePolicyWithRunHashlock({
       policy: ladderPolicy,
       network: 'testnet',
-      run: { runCommitmentHex: 'bb'.repeat(32) }
+      run: { runCommitmentHex: 'bb'.repeat(32), pubkeyHex: a.pubkey }
     }), /conflicts with policy\.network/);
+  });
+
+  it('requires a signer key unless allowPreimageOnly is set', function () {
+    const a = new Key();
+    const ladder = {
+      validators: [a.pubkey],
+      threshold: 1,
+      publisher: a.pubkey,
+      network: 'regtest',
+      csvBlocks: 144
+    };
+    assert.throws(() => composePolicyWithRunHashlock({
+      ladder,
+      run: { runCommitmentHex: 'bb'.repeat(32) }
+    }), /run\.pubkeyHex required/);
+
+    const signed = composePolicyWithRunHashlock({
+      ladder,
+      run: { runCommitmentHex: 'bb'.repeat(32), pubkeyHex: a.pubkey }
+    });
+    const signedLeaf = signed.leaves.find((l) => l.kind === 'hashlock');
+    assert.strictEqual(signedLeaf.witnessShape, 'preimage+sig');
+
+    const open = composePolicyWithRunHashlock({
+      ladder,
+      allowPreimageOnly: true,
+      run: { runCommitmentHex: 'bb'.repeat(32) }
+    });
+    const openLeaf = open.leaves.find((l) => l.kind === 'hashlock');
+    assert.strictEqual(openLeaf.witnessShape, 'preimage');
+    assert.notStrictEqual(open.address, signed.address);
   });
 
   it('honors policy.networkName when policy.network is omitted', function () {
@@ -109,7 +142,7 @@ describe('programTaprootBind', function () {
     };
     const withRun = composePolicyWithRunHashlock({
       policy,
-      run: { runCommitmentHex: 'bb'.repeat(32) }
+      run: { runCommitmentHex: 'bb'.repeat(32), pubkeyHex: a.pubkey }
     });
     assert.ok(withRun.address.startsWith('tb1'));
     assert.strictEqual(withRun.network, 'testnet');
@@ -117,7 +150,7 @@ describe('programTaprootBind', function () {
     assert.throws(() => composePolicyWithRunHashlock({
       policy,
       network: 'regtest',
-      run: { runCommitmentHex: 'bb'.repeat(32) }
+      run: { runCommitmentHex: 'bb'.repeat(32), pubkeyHex: a.pubkey }
     }), /conflicts with policy\.network/);
   });
 });

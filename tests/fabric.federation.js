@@ -228,5 +228,29 @@ describe('@fabric/core/types/federation', function () {
       assert.strictEqual(federation.verify(message, signature), true);
       assert.strictEqual(federation.verify(message, Buffer.alloc(96, 1)), false);
     });
+
+    it('rejects a supplied blsPublicKey that does not match the member private key', function () {
+      const blsMod = require('../functions/bls');
+      const federation = new Federation({ signatureScheme: 'bls' });
+      const member = new Key({ private: '6666666666666666666666666666666666666666666666666666666666666666' });
+      const other = blsMod.deriveFederationSigner(Buffer.from('77'.repeat(32), 'hex'));
+      assert.throws(() => federation.addMember({
+        private: member.private.toString('hex'),
+        public: member.public.encodeCompressed('hex'),
+        blsPublicKey: other.publicKey.toString('hex')
+      }), /does not match/);
+      assert.deepStrictEqual(federation._state.content.validators, []);
+      assert.deepStrictEqual(Object.keys(federation._state.content.keys || {}), []);
+
+      const own = blsMod.deriveFederationSigner(member.private);
+      federation.addMember({
+        private: member.private.toString('hex'),
+        public: member.public.encodeCompressed('hex'),
+        blsPublicKey: own.publicKey.toString('hex')
+      });
+      assert.strictEqual(federation._state.content.validators.length, 1);
+      const signature = federation.sign('matching member key');
+      assert.strictEqual(federation.verify('matching member key', signature), true);
+    });
   });
 });

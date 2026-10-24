@@ -14,7 +14,7 @@
 |----------|---------|
 | **Protocol / research** | “Reference client for Fabric P2P and document-settlement experiments.” |
 | **Application teams** | “Import leaf APIs from PUBLIC_API.md; add HTTP via @fabric/http or Hub as the operator appliance.” |
-| **Infrastructure** | “Node 24.15, `npm run ci` before you pin a release.” |
+| **Infrastructure** | “Node 26.12, `npm run ci` before you pin a release.” |
 
 ## Release status
 **0.1.0-RC1** — **experimental reference**; scoped claim in [PUBLIC_API.md](../PUBLIC_API.md). Run **`npm run ci`** before tagging releases consumed by Hub. Do not market as production-hardened sandbox execution.

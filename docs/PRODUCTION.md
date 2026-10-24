@@ -6,7 +6,7 @@
 ## Pre-flight
 | Step | Command |
 |------|---------|
-| Node | **24.15.0** (see `package.json` `engines` / `.nvmrc`). |
+| Node | **26.12.1** (see `package.json` `engines` / `.nvmrc`). |
 | Install | `npm ci` |
 | Release gate | **`npm run ci`** — full recursive **`mocha`** test suite (`NODE_ENV=test`). |
 
@@ -27,7 +27,7 @@
 Use before tagging **v0.1.0**:
 
 - [ ] Clean tree on the agreed branch.
-- [ ] `npm ci` on **Node 24.15.x**.
+- [ ] `npm ci` on **Node 26.12.1**.
 - [ ] **`npm run ci`** (full test suite).
 - [ ] Confirm **native** modules build on a fresh Linux image if you ship to production servers.
 - [ ] Update **CHANGELOG.md** with version, date, breaking vs additive notes.

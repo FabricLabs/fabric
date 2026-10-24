@@ -1,17 +1,11 @@
 $ npm i
-npm warn deprecated crypto-js@4.2.0: Active development of CryptoJS has been discontinued. This library is no longer maintained.
-npm notice run @fabric/core@0.1.0-RC1 install
+npm notice run @fabric/core@0.1.0 install
 npm notice run node scripts/install-native.js
 [@fabric/core] Skipping native addon build (JS is the canonical protocol). Optional: FABRIC_BUILD_NATIVE=1 or npm run build:c
 
-added 354 packages, and audited 355 packages in 5s
+added 307 packages, and audited 308 packages in 12s
 
-58 packages are looking for funding
+54 packages are looking for funding
   run `npm fund` for details
 
-7 high severity vulnerabilities
-
-To address all issues (including breaking changes), run:
-  npm audit fix --force
-
-Run `npm audit` for details.
+found 0 vulnerabilities

@@ -17,6 +17,14 @@ const crypto = require('crypto');
 const Key = require('../types/key');
 const fabricCanonicalJson = require('./fabricCanonicalJson');
 const bls = require('./bls');
+const {
+  federationValidatorId,
+  uniqueValidatorPubkeys,
+  normalizeFederationValidators,
+  findValidatorEntry,
+  witnessSignatureFor,
+  resolveFederationThreshold
+} = require('./federationValidators');
 const { jsonSafe } = fabricCanonicalJson;
 
 const BEACON_EPOCH_SIGNING_KIND = 'BeaconEpoch';
@@ -96,31 +104,31 @@ function epochCommitmentDigestHex (epochPayload) {
  * @param {string[]} validatorPubkeys
  * @param {number} [threshold=1]
  * @param {string} [scheme] overrides `witness.scheme` when set
+ * @param {Object} [opts]
+ * @param {boolean} [opts.allowLegacy=true] BLS: accept legacy `v: 1` bundles (history only)
  * @returns {boolean}
  */
-function verifyFederationWitnessOnMessage (messageBuffer, witness, validatorPubkeys, threshold = 1, scheme) {
+function verifyFederationWitnessOnMessage (messageBuffer, witness, validatorPubkeys, threshold = 1, scheme, opts = {}) {
   const resolved = bls.normalizeSignatureScheme(
     scheme != null ? scheme : (witness && witness.scheme)
   );
   if (resolved === bls.SCHEME_BLS) {
     if (!Buffer.isBuffer(messageBuffer)) return false;
-    return bls.verifyFederationBlsWitness(messageBuffer, witness, validatorPubkeys, threshold);
+    return bls.verifyFederationBlsWitness(messageBuffer, witness, validatorPubkeys, threshold, opts);
   }
   if (!witness || !witness.signatures || typeof witness.signatures !== 'object') return false;
   if (!Buffer.isBuffer(messageBuffer)) return false;
-  // Deduplicate so a repeated pubkey cannot satisfy k-of-n with one signature.
-  const pubkeys = Array.from(new Set(
-    (Array.isArray(validatorPubkeys) ? validatorPubkeys : [])
-      .filter((p) => typeof p === 'string' && p)
-  ));
+  // One count per signing key, so a repeated or respelled pubkey cannot satisfy k-of-n with one signature.
+  const pubkeys = uniqueValidatorPubkeys(validatorPubkeys);
   const thr = Number(threshold);
   if (!Number.isInteger(thr) || thr < 1) return false;
   let valid = 0;
   for (const pubkey of pubkeys) {
-    const sigHex = witness.signatures[pubkey];
+    const sigHex = witnessSignatureFor(witness.signatures, pubkey);
     if (!sigHex || typeof sigHex !== 'string') continue;
     try {
-      const k = new Key({ pubkey });
+      // BIP340 verifies over x only, so x-only validator ids verify too.
+      const k = new Key({ pubkey: '02' + federationValidatorId(pubkey) });
       const sig = Buffer.from(sigHex, 'hex');
       if (k.verifySchnorr(messageBuffer, sig)) valid++;
       if (valid >= thr) return true;
@@ -149,6 +157,13 @@ function loadPendingDoc (fs) {
   }
 }
 
+/**
+ * Persist pending rounds to `PENDING_STORE_PATH`; no-op without a Filesystem.
+ * @private
+ * @param {Object} fs Fabric Filesystem
+ * @param {Object} doc `{ rounds }` keyed by commitment digest
+ * @returns {Promise<void>}
+ */
 async function persistPendingDoc (fs, doc) {
   if (!fs || typeof fs.publish !== 'function') return;
   await fs.publish(PENDING_STORE_PATH, {
@@ -158,23 +173,29 @@ async function persistPendingDoc (fs, doc) {
 }
 
 /**
+ * Open a pending federation signing round for one epoch.
  * @param {object} epochPayload full epoch incl. sidechain / contracts heads
- * @param {{ validators?: string[], threshold?: number }} [policy]
- * @param {{ version?: number, signatures?: object }|null} [initialWitness]
+ * @param {Object} [policy]
+ * @param {string[]} [policy.validators] validator pubkeys (compressed or x-only hex);
+ * stored normalized ({@link module:functions/federationValidators.normalizeFederationValidators})
+ * @param {number} [policy.threshold] k (clamped to the distinct validators);
+ * omitted = strict majority of the distinct validators
+ * @param {string} [policy.signatureScheme] `schnorr` (default) or `bls`
+ * @param {Object|null} [initialWitness] signatures already collected (`version`, `signatures`)
  * @returns {object} pending round
  */
 function createRound (epochPayload, policy = {}, initialWitness = null) {
   const pol = policy && typeof policy === 'object' ? policy : {};
   const canonical = canonicalEpochForFederation(epochPayload);
   const commitmentDigest = epochCommitmentDigestHex(canonical);
-  const validators = (pol.validators || []).map((v) => String(v).trim()).filter(Boolean);
-  const threshold = Math.max(1, Number(pol.threshold) || 1);
+  const validators = normalizeFederationValidators(pol.validators || []);
+  const threshold = resolveFederationThreshold(pol.threshold, validators);
   const signatureScheme = bls.normalizeSignatureScheme(pol.signatureScheme);
   const round = {
     commitmentDigest,
     payload: canonical,
     validators,
-    threshold: Math.min(threshold, validators.length || threshold),
+    threshold,
     signatureScheme,
     witness: {
       version: 1,
@@ -194,6 +215,8 @@ function messageBufferForPayload (payload) {
 }
 
 /**
+ * Whether the round's witness meets its threshold. Rounds hold new signatures,
+ * so legacy BLS bundles do not count.
  * @param {object} round
  * @returns {boolean}
  */
@@ -204,7 +227,9 @@ function roundMeetsThreshold (round) {
     messageBufferForPayload(round.payload),
     round.witness,
     round.validators,
-    round.threshold
+    round.threshold,
+    undefined,
+    { allowLegacy: false }
   );
 }
 
@@ -241,23 +266,30 @@ function addSignature (round, pubkey, signatureHex) {
     if (!pk || !sig) return { ok: false, error: 'pubkey and signature required' };
     stored = sig;
   }
-  if (!round.validators.includes(pk)) {
+  const member = findValidatorEntry(round.validators, pk);
+  if (!member) {
     return { ok: false, error: 'pubkey not in federation validators' };
   }
   const msg = messageBufferForPayload(round.payload);
   const probe = {
     version: 1,
     ...(scheme === bls.SCHEME_BLS ? { scheme: bls.SCHEME_BLS } : {}),
-    signatures: { [pk]: stored }
+    signatures: { [member]: stored }
   };
-  if (!verifyFederationWitnessOnMessage(msg, probe, [pk], 1)) {
+  if (!verifyFederationWitnessOnMessage(msg, probe, [member], 1, undefined, { allowLegacy: false })) {
     return {
       ok: false,
       error: scheme === bls.SCHEME_BLS ? 'invalid BLS signature' : 'invalid Schnorr signature'
     };
   }
   if (scheme === bls.SCHEME_BLS) round.witness.scheme = bls.SCHEME_BLS;
-  round.witness.signatures[pk] = stored;
+  // One entry per signing key, under the listed spelling.
+  for (const k of Object.keys(round.witness.signatures)) {
+    if (k !== member && federationValidatorId(k) === federationValidatorId(member)) {
+      delete round.witness.signatures[k];
+    }
+  }
+  round.witness.signatures[member] = stored;
   round.updatedAt = new Date().toISOString();
   const sealed = roundMeetsThreshold(round);
   if (sealed) round.status = 'ready';

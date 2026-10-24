@@ -4,9 +4,15 @@
  * Bind a Fabric Program run into a Taproot hashlock leaf (L1-enforced commitment).
  *
  * Machine digests stay off-chain integrity; attaching a hashlock leaf **changes**
- * the P2TR address and lets anyone who knows the preimage (often the run
- * commitment bytes or a derived preimage) spend without k-of-n — use only when
- * that threat model is intentional.
+ * the P2TR address and lets the preimage holder spend without k-of-n. The
+ * composed leaf requires a Schnorr signature from `run.pubkeyHex` as well as the
+ * preimage; a preimage-only leaf (anyone who learns the preimage can spend)
+ * needs an explicit `allowPreimageOnly: true`.
+ *
+ * That guard lives here only. Passing `hashlockFromProgramRun(run)` (or any
+ * `{ hashlock }` without `pubkeyHex`) straight to
+ * `contractTaproot.composeTaprootTree` still builds a preimage-only leaf unless
+ * the caller also sets `hashlock.requirePubkey: true`.
  *
  * @fileoverview Program run → Taproot hashlock composition.
  * @module functions/programTaprootBind
@@ -60,13 +66,20 @@ function hashlockFromProgramRun (run = {}) {
  * @param {object} opts
  * @param {object} [opts.policy] Existing spend policy
  * @param {object} [opts.ladder] Args for synthesizeDefaultLadder when policy omitted
- * @param {object} opts.run `{ programHash?, runCommitmentHex, id?, pubkeyHex? }`
+ * @param {object} opts.run `{ programHash?, runCommitmentHex, id?, pubkeyHex }`
+ * @param {boolean} [opts.allowPreimageOnly=false] Compose without `run.pubkeyHex` (preimage alone spends)
  * @param {string} [opts.network]
  * @param {object[]} [opts.extraLeaves]
  * @returns {object} `composeTaprootTree` result (+ `programRunId`)
  */
 function composePolicyWithRunHashlock (opts = {}) {
   const hashlock = hashlockFromProgramRun(opts.run || {});
+  const requirePubkey = opts.allowPreimageOnly !== true;
+  if (requirePubkey && !hashlock.pubkeyHex) {
+    throw new Error(
+      'composePolicyWithRunHashlock: run.pubkeyHex required (pass allowPreimageOnly: true for a preimage-only leaf)'
+    );
+  }
   let policy = opts.policy || null;
   if (!policy && opts.ladder && typeof opts.ladder === 'object') {
     policy = contractTaproot.synthesizeDefaultLadder(opts.ladder);
@@ -91,7 +104,8 @@ function composePolicyWithRunHashlock (opts = {}) {
     hashlock: {
       commitmentHex: hashlock.commitmentHex,
       id: hashlock.id,
-      pubkeyHex: hashlock.pubkeyHex
+      pubkeyHex: hashlock.pubkeyHex,
+      requirePubkey
     },
     extraLeaves: Array.isArray(opts.extraLeaves) ? opts.extraLeaves : []
   });

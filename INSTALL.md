@@ -1,7 +1,7 @@
 # Installing Fabric
 ## Prerequisites
-- Node.js 24.15.0
-- npm 12+ (`npm -v`); Node 24.15.0 may ship npm 11.x — upgrade with `npm install -g npm@12`. `@fabric/core` keeps npm’s default `allow-git=none` (no git deps).
+- Node.js 26.12.1
+- npm 12+ (`npm -v`); Node 26.12.1 ships npm 11.x — upgrade with `npm install -g npm@12`. `@fabric/core` keeps npm’s default `allow-git=none` (no git deps).
 
 ## Quick Start
 ```
@@ -18,8 +18,8 @@ By default, the Fabric CLI connects to `playnet` for an initial set of peers.  Y
 ## Notes
 If you don't have Node.js, or an incorrect version, we recommend [installing NVM][installing-nvm].  Once complete, you can install and set the default node version:
 ```
-nvm install 24.15.0
-nvm alias default 24.15.0 # optional
+nvm install 26.12.1
+nvm alias default 26.12.1 # optional
 ```
 
 [installing-nvm]: https://nvm.sh
