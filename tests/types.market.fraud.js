@@ -404,8 +404,8 @@ describe('Market fraud proofs — adversarial regressions', function () {
         { index: 1, total: 2, blobHashHex: H('c1'), rateSats: 5, contentHash: H('d1') }
       ];
       const book = new DocumentBook();
-      assert.strictEqual(book.ingestInventoryResponse({ origin: 'liar', items: [{ id: 'doc', merkleRootHex: H('ee'), blobs }] }).length, 0);
-      const good = book.ingestInventoryResponse({ origin: 'honest', items: [{ id: 'doc', merkleRootHex: documentMerkleRootHex(blobs.map((b) => ({ blobHashHex: b.blobHashHex, paymentHashHex: b.contentHash }))), blobs }] });
+      assert.strictEqual(book.ingestInventoryResponse({ origin: 'liar', items: [{ id: 'doc', sealed: true, merkleRootHex: H('ee'), blobs }] }).length, 0);
+      const good = book.ingestInventoryResponse({ origin: 'honest', items: [{ id: 'doc', sealed: true, merkleRootHex: documentMerkleRootHex(blobs.map((b) => ({ blobHashHex: b.blobHashHex, paymentHashHex: b.contentHash }))), blobs }] });
       assert.deepStrictEqual(good.map((r) => r.rootVerified), [true, true]);
       // A real sealed document: swapping one blob's payment hash breaks the root.
       const real = Document.seal(crypto.randomBytes(5000), { chunkBytes: 2048 });
@@ -417,7 +417,7 @@ describe('Market fraud proofs — adversarial regressions', function () {
       // The leaf check is swappable.
       const calls = [];
       const hooked = new DocumentBook({ verifyOfferLeaves: (opts) => { calls.push(opts); return false; } });
-      assert.strictEqual(hooked.ingestInventoryResponse({ origin: 'x', items: [{ id: 'doc', merkleRootHex: H('ee'), blobs }] }).length, 0);
+      assert.strictEqual(hooked.ingestInventoryResponse({ origin: 'x', items: [{ id: 'doc', sealed: true, merkleRootHex: H('ee'), blobs }] }).length, 0);
       assert.strictEqual(calls[0].blobTotal, 2);
       assert.strictEqual(calls[0].merkleRootHex, H('ee'));
     });

@@ -74,6 +74,46 @@ describe('functions/documentBlobTransfer', function () {
     assert.ok(last.buffer.equals(data));
   });
 
+  it('reassembles sealed transfers from each blob\'s own leaf', function () {
+    const Document = require('../types/document');
+    const doc = Document.seal(crypto.randomBytes(5000), { chunkBytes: 2048 });
+    const frames = doc.fileSendObjects();
+    assert.ok(frames.length > 1);
+    assert.notStrictEqual(frames[0].paymentHashHex, frames[1].paymentHashHex);
+    const ingestAll = (objs) => {
+      const book = new DocumentBlobTransferBook();
+      let last = null;
+      for (const obj of objs) {
+        last = book.ingest(parseFileSendObject(obj));
+        if (last.status === 'reject') break;
+      }
+      return last;
+    };
+    const perBlob = ingestAll(frames);
+    assert.strictEqual(perBlob.status, 'complete', perBlob.error);
+    assert.strictEqual(perBlob.merkleRootHex, doc.merkleRootHex);
+
+    // A whole-document sale: one payment hash on every leaf, IV outside the tree.
+    const pay = crypto.createHash('sha256').update('K').digest('hex');
+    const split = splitBlobs(crypto.randomBytes(5000), 2048, 'whole');
+    const root = merkleRootHexFromBlobHashes(split.blobs.map((b) => b.blobHashHex), { paymentHashHex: pay });
+    const whole = split.blobs.map((b) => ({
+      name: 'whole',
+      body: b.bytes.toString('base64'),
+      blobIndex: b.index,
+      blobTotal: b.total,
+      blobHashHex: b.blobHashHex,
+      merkleRootHex: root,
+      sealed: true,
+      paymentHashHex: pay,
+      iv: crypto.randomBytes(12).toString('base64')
+    }));
+    assert.strictEqual(ingestAll(whole).status, 'complete');
+
+    const swapped = frames.map((f, i) => (i === 1 ? Object.assign({}, f, { paymentHashHex: frames[0].paymentHashHex }) : f));
+    assert.strictEqual(ingestAll(swapped).error, 'merkle/root mismatch');
+  });
+
   it('offer book binds payment hash not raw blob hash', function () {
     const blobHashHex = 'ab'.repeat(32);
     const pay = blobPaymentHashHex({ documentId: 'd', blobIndex: 0, blobHashHex });
@@ -84,7 +124,7 @@ describe('functions/documentBlobTransfer', function () {
         id: 'd',
         rateSats: 50,
         contentHash: 'cd'.repeat(32),
-        merkleRootHex: merkleRootHexFromBlobHashes([blobHashHex], { paymentHashHex: pay }),
+        merkleRootHex: merkleRootHexFromBlobHashes([blobHashHex]),
         blobs: [{
           index: 0,
           total: 1,
@@ -249,7 +289,7 @@ describe('functions/documentBlobTransfer', function () {
     const crypto = require('crypto');
     assert.strictEqual(MAX_DOCUMENT_BLOBS, require('../constants').MAX_DOCUMENT_BLOBS);
     assert.strictEqual(MAX_DOCUMENT_BYTES, MAX_DOCUMENT_BLOBS * DEFAULT_BLOB_CHUNK_BYTES);
-    assert.strictEqual(MAX_DOCUMENT_BYTES, 98697216);
+    assert.strictEqual(MAX_DOCUMENT_BYTES, 197394432);
 
     const bytes = Buffer.alloc(100, 3);
     const blobHashHex = crypto.createHash('sha256').update(bytes).digest('hex');

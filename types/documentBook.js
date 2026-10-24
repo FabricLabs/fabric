@@ -687,13 +687,24 @@ class DocumentBook extends Book {
           : (first ? first.total : blobs.length))
     );
     if (!Number.isSafeInteger(blobTotal) || blobTotal < 1) return false;
+    const sealed = it.sealed === true;
+    const documentId = String(it.id || it.documentId || '').trim();
     const leaves = [];
     for (const b of blobs) {
       if (!b || typeof b !== 'object') return false;
+      const pay = contentHashHexFromObject(b);
+      // Unsealed roots commit zero payment hashes, so the tagged hash is checked by recomputing it.
+      if (!sealed && pay) {
+        try {
+          if (pay !== manifest.blobPaymentHashHex({ documentId, blobIndex: Number(b.index), blobHashHex: b.blobHashHex })) return false;
+        } catch (_) {
+          return false;
+        }
+      }
       leaves.push({
         index: Number(b.index),
         blobHashHex: b.blobHashHex,
-        paymentHashHex: contentHashHexFromObject(b),
+        paymentHashHex: sealed ? pay : null,
         iv: b.iv,
         proof: b.proof
       });

@@ -175,7 +175,7 @@ class Htlc {
   }
 
   /**
-   * @param {import('bitcoinjs-lib').Transaction} tx
+   * @param {Transaction} tx bitcoinjs-lib transaction
    * @returns {number} the output paying this HTLC, or -1
    */
   findVout (tx) {
@@ -306,7 +306,7 @@ class Htlc {
 
   /**
    * Find the vout paying exactly `paymentAddress`.
-   * @param {import('bitcoinjs-lib').Transaction} tx
+   * @param {Transaction} tx bitcoinjs-lib transaction
    * @param {string} paymentAddress
    * @param {Object} network bitcoinjs network
    * @returns {number} -1 when absent
@@ -482,7 +482,7 @@ class Htlc {
 
   /**
    * Scan a claim transaction for the preimage (the content key for sealed sales).
-   * @param {string|import('bitcoinjs-lib').Transaction} txHexOrTx
+   * @param {(string|Transaction)} txHexOrTx Raw hex, or a bitcoinjs-lib transaction
    * @param {string|Buffer} paymentHashHex
    * @returns {{ ok: boolean, preimage32: (Buffer|undefined), preimageHex: (string|undefined), vin: (number|undefined), error: (string|undefined) }}
    */

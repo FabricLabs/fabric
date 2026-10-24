@@ -82,7 +82,9 @@ const TIER_WHEN_OPS = Object.freeze(Object.assign(Object.create(null), {
 
 /**
  * @param {object|null|undefined} when
- * @param {{ tipClock?: number, contractState?: object }} ctx
+ * @param {Object} [ctx]
+ * @param {number} [ctx.tipClock]
+ * @param {Object} [ctx.contractState]
  * @returns {boolean}
  */
 function evaluateTierWhen (when, ctx = {}) {
@@ -688,7 +690,9 @@ function normalizeExtraLeafSpecs (list) {
 
 /**
  * Hashlock tapscript: SHA256(preimage) == commitment [+ optional CHECKSIG].
- * @param {{ commitmentHex: string, pubkeyHex?: string|null }} opts
+ * @param {Object} opts
+ * @param {string} opts.commitmentHex
+ * @param {(string|null)} [opts.pubkeyHex]
  * @returns {Buffer}
  */
 function buildHashlockTapscript (opts = {}) {
@@ -952,7 +956,7 @@ function compileLeaves (policy) {
 
 /**
  * bitcoinjs-lib Taptree is a binary tree of leaves (not a flat list of >2).
- * @param {{ script: Buffer }[]} leaves
+ * @param {Array<{ script: Buffer }>} leaves
  * @returns {object}
  */
 function scriptTreeFromLeaves (leaves) {
@@ -1097,7 +1101,12 @@ function toAddress (policy) {
 
 /**
  * @param {object} policy
- * @param {{ tipHeight?: number, medianTime?: number, utxoAgeBlocks?: number, tipClock?: number, contractState?: object }} ctx
+ * @param {Object} [ctx]
+ * @param {number} [ctx.tipHeight]
+ * @param {number} [ctx.medianTime]
+ * @param {number} [ctx.utxoAgeBlocks]
+ * @param {number} [ctx.tipClock]
+ * @param {Object} [ctx.contractState]
  */
 function selectActiveTiers (policy, ctx = {}) {
   const p = normalizeContractSpendPolicy(policy);
@@ -1805,7 +1814,7 @@ function prepareVaultWithdrawalPsbt (opts = {}) {
  * @param {string} [run.commitmentHex] Override commitment
  * @param {string} [run.id='hashlock-run']
  * @param {string} [run.pubkeyHex] Optional Schnorr key for preimage+sig path
- * @returns {{ id: string, commitmentHex: string, runCommitmentHex: string|null, programHash: string|null, pubkeyHex?: string }}
+ * @returns {{ id: string, commitmentHex: string, runCommitmentHex: (string|null), programHash: (string|null), pubkeyHex: (string|undefined) }}
  */
 function hashlockFromProgramRun (run = {}) {
   const runCommitmentHex = String(run.runCommitmentHex || run.runCommitment || '')

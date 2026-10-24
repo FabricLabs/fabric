@@ -100,7 +100,7 @@ A buyer selects the commitment from the offer: `sealed` (encryption scheme `aes-
 ### Chunking
 
 - **Chunk size.** `chunk_bytes = floor((MAX_MESSAGE_SIZE − overhead) × 3/4)` so the base64 body plus JSON fields fits one message. Fabric uses `MAX_MESSAGE_SIZE = 32768` with `overhead = 640` for unsealed chunks (24,096 bytes) and `overhead = 2048` for sealed chunks, which also carry an IV, payment hash, and inclusion proof (23,040 bytes). The chunk size is fixed per document; only the last chunk may be shorter. An empty file is one empty chunk.
-- **Limits.** At most `MAX_DOCUMENT_BLOBS = 4096` chunks per document, so about 94.1 MiB at the unsealed chunk size. Receivers SHOULD bound incomplete transfers (Fabric: 64 at once, 8 per origin, 256 MiB total, expired after 10 minutes).
+- **Limits.** At most `MAX_DOCUMENT_BLOBS = 8192` chunks per document, so about 188.3 MiB at the unsealed chunk size. Receivers SHOULD bound incomplete transfers (Fabric: 64 at once, 8 per origin, 256 MiB total, expired after 10 minutes).
 - **`file_send` fields.** `documentId`, `name`, `body` (base64 chunk bytes), `blobIndex` (0-based), `blobTotal`, `blobHashHex` (chunk id), `merkleRootHex` (document id); sealed chunks add `iv`, `scheme`, `paymentHashHex`, and `proof` (the inclusion proof, a hex list). Receivers MUST check `SHA256(body) = blobHashHex` and the proof against `merkleRootHex` before storing a chunk.
 - **Resume.** Each chunk is independently addressed, verified, and (when priced) paid. A buyer resumes by sending `document_request` again for the indices it lacks; a seller MUST serve any listed index on its own. No session state is required.
 
@@ -112,7 +112,7 @@ Every document, sealed or not, has one tree, domain-separated and bound to its c
 leaf_i = SHA256(0x00 ‖ chunk_id_i ‖ payment_hash_i ‖ iv_i)     // 32 + 32 + 12 bytes
 node   = SHA256(0x01 ‖ left ‖ right)
 // an odd last node is promoted unchanged to the next layer
-root   = SHA256(0x02 ‖ uint32_be(n) ‖ top)                    // n = chunk count, 1..4096
+root   = SHA256(0x02 ‖ uint32_be(n) ‖ top)                    // n = chunk count, 1..8192
 ```
 
 For an unsealed chunk, `payment_hash_i` is 32 zero bytes and `iv_i` 12 zero bytes. When one key seals the whole document, every leaf carries that key's `payment_hash`.

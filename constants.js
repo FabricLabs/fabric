@@ -386,8 +386,8 @@ const HTLC_CLAIM_VBYTES = 170;
  * CPFP the claim output.
  */
 const HTLC_MINIMUM_SATS = BITCOIN_DUST_SATS + HTLC_CLAIM_VBYTES;
-/** Max blobs in one document transfer (`blobTotal` cap). 4096 × ~24 KiB blobs ≈ 94 MiB per document. */
-const MAX_DOCUMENT_BLOBS = 4096;
+/** Max blobs in one document transfer (`blobTotal` cap). 8192 × ~24 KiB blobs ≈ 188 MiB per document. */
+const MAX_DOCUMENT_BLOBS = 8192;
 /** Max blobs (parts) accepted for one per-blob sealed tree (`blobTotal` cap). */
 const PEER_MAX_SEALED_BLOB_PARTS = MAX_DOCUMENT_BLOBS;
 /** Alternate frames kept per held sealed blob (same ciphertext, another payment hash or IV). Bounds memory only: purchase pins (payment hash, advertised IV, seller origin) are what keep poisoned frames from blocking the paid delivery. */

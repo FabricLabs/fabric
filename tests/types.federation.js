@@ -592,7 +592,7 @@ describe('Federation reserve ledger', function () {
 
 describe('Federation named federations', function () {
   const crypto = require('crypto');
-  const { Transaction, address, networks } = require('bitcoinjs-lib');
+  const { Psbt, Transaction, address, networks } = require('bitcoinjs-lib');
   const ecc = require('../types/ecc');
 
   function members (n) {
@@ -702,6 +702,29 @@ describe('Federation named federations', function () {
       assert.throws(() => Federation.signWithdrawal({ psbtBase64: req.psbtBase64, privateKey: other.privs[0] }));
       const outside = good.map((s) => ({ ...s, pubkey: other.pubs[0].slice(2) }));
       assert.throws(() => Federation.addWithdrawalSignatures({ descriptor, psbtBase64: req.psbtBase64, signatures: outside }), /outside/);
+    });
+
+    it('ignores bad signatures already in a shared PSBT', function () {
+      const tx = fundingTx(vault.address, 100000);
+      const req = Federation.prepareWithdrawal({ descriptor, fundedTxHex: tx.toHex(), destinationAddress: dest, amountSats: 50000, feeSats: 500 });
+      const sigs = privs.map((k) => Federation.signWithdrawal({ psbtBase64: req.psbtBase64, privateKey: k }).signatures);
+      const plant = (base64, s) => {
+        const psbt = Psbt.fromBase64(base64);
+        const bad = Buffer.from(s.signature, 'hex');
+        bad[0] ^= 1;
+        psbt.updateInput(0, { tapScriptSig: [{ pubkey: Buffer.from(s.pubkey, 'hex'), leafHash: Buffer.from(s.leafHash, 'hex'), signature: bad }] });
+        return psbt.toBase64();
+      };
+      // A member's forged entry no longer blocks that member's real signature.
+      const shared = plant(req.psbtBase64, sigs[1][0]);
+      const acc = Federation.addWithdrawalSignatures({ descriptor, psbtBase64: shared, signatures: sigs[1] });
+      assert.deepStrictEqual(acc.signers, [sigs[1][0].pubkey]);
+      // More than threshold entries with one invalid: finalize picks the two that verify.
+      let three = Federation.addWithdrawalSignatures({ descriptor, psbtBase64: req.psbtBase64, signatures: [...sigs[1], ...sigs[2]] }).psbtBase64;
+      three = plant(three, sigs[0][0]);
+      const done = Federation.finalizeWithdrawal({ descriptor, psbtBase64: three });
+      assert.ok(/^[0-9a-f]{64}$/.test(done.txid));
+      assert.throws(() => Federation.finalizeWithdrawal({ descriptor, psbtBase64: plant(req.psbtBase64, sigs[0][0]) }), /0 of 2/);
     });
   });
 

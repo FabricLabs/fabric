@@ -316,10 +316,10 @@ describe('functions/documentBlobManifest', function () {
 
     it('a worst-case sealed frame fits one AMP message', function () {
       const Document = require('../types/document');
-      const doc = Document.seal(crypto.randomBytes(SEALED_BLOB_CHUNK_BYTES * 3000 + 1), { documentId: 'x'.repeat(200) });
-      assert.ok(doc.blobTotal > 2048, 'needs a 12-node proof');
+      const doc = Document.seal(crypto.randomBytes(SEALED_BLOB_CHUNK_BYTES * 4100 + 1), { documentId: 'x'.repeat(200) });
+      assert.ok(doc.blobTotal > 4096, 'needs a 13-node proof');
       const frame = doc.fileSendObjects({ indexes: [0] })[0];
-      assert.strictEqual(frame.proof.length, 12);
+      assert.strictEqual(frame.proof.length, 13);
       const bytes = Buffer.byteLength(JSON.stringify(frame));
       assert.ok(bytes <= MAX_MESSAGE_SIZE, `${bytes} > ${MAX_MESSAGE_SIZE}`);
       assert.ok(Math.ceil(SEALED_BLOB_CHUNK_BYTES / 3) * 4 + SEALED_FRAME_JSON_OVERHEAD <= MAX_MESSAGE_SIZE);

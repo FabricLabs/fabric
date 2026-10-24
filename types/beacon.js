@@ -541,7 +541,7 @@ class Beacon extends Actor {
    * Whether `round` may seal now: directly above the sealed tip, or the
    * lowest pending clock on an empty chain.
    * @param {object} round
-   * @returns {{ ok: boolean, reason?: string }}
+   * @returns {{ ok: boolean, reason: (string|undefined) }}
    * @private
    */
   _roundSealable (round) {
@@ -564,7 +564,7 @@ class Beacon extends Actor {
    * Find a pending round in memory or the pending store, cancelling it when it
    * can no longer seal.
    * @param {string} digest
-   * @returns {{ round?: object|null, cancelled?: string }}
+   * @returns {{ round: (object|null|undefined), cancelled: (string|undefined) }}
    * @private
    */
   _lookupPendingRound (digest) {

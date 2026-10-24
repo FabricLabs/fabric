@@ -203,6 +203,28 @@ function hex (bytes) {
 }
 
 /**
+ * Input 0's authority-leaf signatures that come from a validator and verify
+ * against the transaction, each checked on its own.
+ * @param {bitcoin.Psbt} psbt
+ * @param {Object} descriptor Canonical descriptor
+ * @returns {Object[]} `tapScriptSig` entries
+ * @private
+ */
+function _verifiedWithdrawalSignatures (psbt, descriptor) {
+  const verifier = (pubkey, msghash, signature) => ecc.verifySchnorr(msghash, pubkey, signature);
+  return (psbt.data.inputs[0].tapScriptSig || []).filter((s) => {
+    if (!Federation.isValidator(descriptor, hex(s.pubkey))) return false;
+    const probe = psbt.clone();
+    probe.data.inputs[0].tapScriptSig = [s];
+    try {
+      return probe.validateSignaturesOfInput(0, verifier, s.pubkey);
+    } catch (_) {
+      return false;
+    }
+  });
+}
+
+/**
  * Create and manage sets of {Signer} instances with the Federation class.
  */
 class Federation extends Contract {
@@ -755,9 +777,10 @@ class Federation extends Contract {
 
   /**
    * Recompute reserve conservation on sidechain content (typed peg ledger).
-   * No-op success when `/federationReserve` is absent.
+   * No-op success when `/federationReserve` is absent; otherwise the success
+   * result also carries the checked `reserve`.
    * @param {object} [content]
-   * @returns {{ ok: true, reserve?: object }|{ ok: false, error: string }}
+   * @returns {{ ok: boolean, reserve: (object|undefined), error: (string|undefined) }}
    */
   static verifyReserveConservation (content) {
     if (!content || typeof content !== 'object') return { ok: true };
@@ -1556,7 +1579,9 @@ class Federation extends Contract {
     const descriptor = Federation.canonicalDescriptor(opts.descriptor);
     const psbt = bitcoin.Psbt.fromBase64(String(opts.psbtBase64 || ''));
     const input = psbt.data.inputs[0];
-    const have = new Set((input.tapScriptSig || []).map((s) => hex(s.pubkey)));
+    // The PSBT may come from another member: keep only entries that verify.
+    input.tapScriptSig = _verifiedWithdrawalSignatures(psbt, descriptor);
+    const have = new Set(input.tapScriptSig.map((s) => hex(s.pubkey)));
     const add = [];
     for (const s of Array.isArray(opts.signatures) ? opts.signatures : []) {
       const x = pubkeyXOnly(s && s.pubkey);
@@ -1588,7 +1613,7 @@ class Federation extends Contract {
     const descriptor = Federation.canonicalDescriptor(opts.descriptor);
     const psbt = bitcoin.Psbt.fromBase64(String(opts.psbtBase64 || ''));
     const input = psbt.data.inputs[0];
-    const sigs = (input.tapScriptSig || []).filter((s) => Federation.isValidator(descriptor, hex(s.pubkey)));
+    const sigs = _verifiedWithdrawalSignatures(psbt, descriptor);
     if (sigs.length < descriptor.threshold) {
       throw new Error(`${sigs.length} of ${descriptor.threshold} signatures`);
     }
@@ -1611,7 +1636,7 @@ class Federation extends Contract {
    * @param {Object} opts
    * @param {Object} opts.descriptor Canonical descriptor
    * @param {string} [opts.name]
-   * @param {Array<{ pubkey: string, url?: string, alias?: string }>} [opts.members] Contact hints per validator
+   * @param {Object[]} [opts.members] Contact hints per validator: `{ pubkey, url?, alias? }`
    * @returns {Object}
    */
   static inviteMessage (opts = {}) {

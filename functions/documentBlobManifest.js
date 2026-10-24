@@ -48,7 +48,7 @@ const DEFAULT_CHUNK_BYTES = DEFAULT_BLOB_CHUNK_BYTES;
 
 /**
  * Theoretical maximum document size at the default blob size:
- * `MAX_DOCUMENT_BLOBS × DEFAULT_BLOB_CHUNK_BYTES` (98,697,216 bytes ≈ 94.1 MiB).
+ * `MAX_DOCUMENT_BLOBS × DEFAULT_BLOB_CHUNK_BYTES` (197,394,432 bytes ≈ 188.3 MiB).
  * Callers with a larger metadata reserve use smaller blobs and a lower ceiling.
  */
 const MAX_DOCUMENT_BYTES = MAX_DOCUMENT_BLOBS * DEFAULT_BLOB_CHUNK_BYTES;
@@ -73,7 +73,7 @@ const DOCUMENT_TREE_IV_BYTES = 12;
 
 /**
  * JSON envelope reserve for a sealed per-blob frame: the inclusion proof
- * (up to log2(MAX_DOCUMENT_BLOBS) = 12 hex siblings) rides every frame.
+ * (up to log2(MAX_DOCUMENT_BLOBS) = 13 hex siblings) rides every frame.
  */
 const SEALED_FRAME_JSON_OVERHEAD = 2048;
 /** Max ciphertext bytes per sealed blob so frame + proof stay ≤ MAX_MESSAGE_SIZE. */
@@ -560,23 +560,35 @@ function verifyBlob (bytes, expectedHashHex) {
  * @param {number} total
  * @param {string} [merkleRootHex]
  * @param {Object} [opts]
- * @param {string} [opts.paymentHashHex] whole-document payment hash on every leaf
+ * @param {Map<number, Object>|Object[]} [opts.leaves] `{ paymentHashHex?, iv? }`
+ * per blob index; a whole-document sale repeats one payment hash
  * @returns {{ ok: boolean, buffer?: Buffer, error?: string, merkleRootHex?: string }}
  */
 function reassemble (blobsByIndex, total, merkleRootHex = null, opts = {}) {
   const n = Math.round(Number(total));
   if (!Number.isFinite(n) || n < 1) return { ok: false, error: 'invalid total' };
+  const leaves = opts.leaves || [];
   const parts = [];
-  const hashes = [];
+  const blobs = [];
   for (let i = 0; i < n; i++) {
     const b = blobsByIndex instanceof Map ? blobsByIndex.get(i) : blobsByIndex[i];
     if (b == null) return { ok: false, error: `missing blob ${i}` };
     const buf = Buffer.isBuffer(b) ? b : Buffer.from(b);
     parts.push(buf);
-    hashes.push(crypto.createHash('sha256').update(buf).digest('hex'));
+    const leaf = (leaves instanceof Map ? leaves.get(i) : leaves[i]) || {};
+    blobs.push({
+      blobHashHex: crypto.createHash('sha256').update(buf).digest('hex'),
+      paymentHashHex: leaf.paymentHashHex || null,
+      iv: leaf.iv || null
+    });
   }
   const buffer = Buffer.concat(parts);
-  const gotRoot = merkleRootHexFromBlobHashes(hashes, opts);
+  let gotRoot;
+  try {
+    gotRoot = documentMerkleRootHex(blobs);
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
   if (merkleRootHex) {
     const want = String(merkleRootHex).toLowerCase();
     if (gotRoot !== want) {
@@ -655,6 +667,8 @@ function parseFileSendObject (obj) {
       ? String(obj.contentSha256).trim().toLowerCase()
       : null,
     paymentHashHex: _hex64OrNull(obj.paymentHashHex),
+    // Only per-blob leaves commit their IV; a whole-document sale's IV is not in the tree.
+    leafIv: obj.perBlob === true && obj.iv != null && obj.iv !== '' ? String(obj.iv) : null,
     chunkBytes: obj.chunkBytes != null ? Number(obj.chunkBytes) : null
   };
 }
@@ -982,6 +996,7 @@ class DocumentBlobTransferBook {
       const pin = exp.expectedHashes[index];
       if (pin && !verifyBlob(bytes, pin)) {
         row.parts.delete(index);
+        row.leaves.delete(index);
         row.bytes -= bytes.length;
         this._pendingBytes -= bytes.length;
       }
@@ -1160,11 +1175,10 @@ class DocumentBlobTransferBook {
         merkleRootHex: frame.merkleRootHex,
         total: exp && exp.total != null ? exp.total : frame.blobTotal,
         contentSha256: frame.contentSha256,
-        // Whole-document sealed sale: every leaf commits this payment hash.
-        paymentHashHex: frame.paymentHashHex || null,
         origin,
         pinned: !!exp,
         parts: new Map(),
+        leaves: new Map(),
         bytes: 0,
         created: Date.now(),
         updated: Date.now()
@@ -1184,7 +1198,6 @@ class DocumentBlobTransferBook {
     if (!row.merkleRootHex && frame.merkleRootHex) {
       row.merkleRootHex = frame.merkleRootHex;
     }
-    if ((frame.paymentHashHex || null) !== row.paymentHashHex) return reject('paymentHashHex mismatch');
 
     if (!row.parts.has(frame.blobIndex)) {
       const need = frame.bytes.length;
@@ -1195,6 +1208,7 @@ class DocumentBlobTransferBook {
         return reject('pending blob bytes exceeded');
       }
       row.parts.set(frame.blobIndex, frame.bytes);
+      row.leaves.set(frame.blobIndex, { paymentHashHex: frame.paymentHashHex || null, iv: frame.leafIv || null });
       row.bytes += need;
       this._pendingBytes += need;
       this._countOriginBytes(row, need);
@@ -1211,7 +1225,7 @@ class DocumentBlobTransferBook {
       };
     }
 
-    const assembled = reassemble(row.parts, row.total, row.merkleRootHex, { paymentHashHex: row.paymentHashHex });
+    const assembled = reassemble(row.parts, row.total, row.merkleRootHex, { leaves: row.leaves });
     this._drop(key);
     if (!assembled.ok) {
       return {
