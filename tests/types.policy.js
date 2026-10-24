@@ -5,15 +5,13 @@ const bitcoin = require('bitcoinjs-lib');
 const Key = require('../types/key');
 const Contract = require('../types/contract');
 const Federation = require('../types/federation');
+const Policy = require('../types/policy');
 const {
   synthesizeDefaultLadder,
-  normalizeContractSpendPolicy,
   normalizeLock,
-  buildContractTaproot,
   buildKOfNTapscript,
   toAddress,
   selectActiveTiers,
-  policyAfterDecay,
   timelockMature,
   networkForFabricName,
   buildFederationVaultFromPolicy,
@@ -29,9 +27,9 @@ const {
   finalizeHashlockPsbt,
   prepareLeafPsbt,
   prepareDecayMigrationPsbt
-} = require('../functions/contractTaproot');
+} = Policy;
 
-describe('contractTaproot', function () {
+describe('Policy', function () {
   const keys = [];
   before(function () {
     for (let i = 0; i < 12; i++) keys.push(new Key());
@@ -71,11 +69,11 @@ describe('contractTaproot', function () {
       csvBlocks: 144
     });
     assert.strictEqual(policy.internalKeyMode, 'musig2');
-    const built = buildContractTaproot(policy);
+    const built = Policy.compile(policy);
     const expected = aggregateXonly(vals).toString('hex');
     assert.strictEqual(built.internalPubkeyHex, expected);
     const spend = built.leafScripts.find((l) => l.kind === 'spend');
-    const cb = require('../functions/contractTaproot').buildControlBlockForLeaf(
+    const cb = require('../types/policy').buildControlBlockForLeaf(
       built.leafScripts,
       spend.script,
       Buffer.from(built.internalPubkeyHex, 'hex')
@@ -90,7 +88,7 @@ describe('contractTaproot', function () {
       internalKeyMode: 'nums'
     });
     assert.notStrictEqual(toAddress(nums), built.address);
-    assert.strictEqual(buildContractTaproot(nums).internalPubkeyHex, TAPROOT_INTERNAL_NUMS.toString('hex'));
+    assert.strictEqual(Policy.compile(nums).internalPubkeyHex, TAPROOT_INTERNAL_NUMS.toString('hex'));
   });
 
   it('buildFederationVaultFromPolicy forwards internalKeyMode nums', function () {
@@ -137,7 +135,7 @@ describe('contractTaproot', function () {
   });
 
   it('builds multi-tier failover with until; expired tiers leave active set', function () {
-    const policy = normalizeContractSpendPolicy({
+    const policy = Policy.normalize({
       network: 'regtest',
       publisher: pk(0),
       decay: { mode: 'both', migrateKeys: [pk(0), pk(1), pk(2)], migrateThreshold: 2 },
@@ -152,7 +150,7 @@ describe('contractTaproot', function () {
         { id: 't2', threshold: 2, keys: 'emergency', after: { type: 'csv', blocks: 200 }, until: null }
       ]
     });
-    const built = buildContractTaproot(policy);
+    const built = Policy.compile(policy);
     assert.ok(built.address);
     assert.ok(built.leaves.some((l) => l.kind === 'migrate'));
 
@@ -163,9 +161,61 @@ describe('contractTaproot', function () {
     assert.ok(!mid.find((t) => t.id === 't0'));
     assert.strictEqual(mid[0].id, 't1');
 
-    const child = policyAfterDecay(policy, { type: 'csv', blocks: 100 });
+    const child = Policy.afterDecay(policy, { type: 'csv', blocks: 100 });
     assert.ok(!child.tiers.find((t) => t.id === 't0'));
     assert.notStrictEqual(toAddress(child), built.address);
+  });
+
+  it('a Policy instance is the normalized policy, with address and tier selection', function () {
+    const ladder = synthesizeDefaultLadder({
+      validators: [pk(0), pk(1), pk(2)],
+      threshold: 2,
+      publisher: pk(0),
+      network: 'regtest',
+      csvBlocks: 144
+    });
+    const policy = new Policy(ladder);
+    assert.ok(policy instanceof Policy);
+    assert.deepStrictEqual(policy.toJSON(), Policy.normalize(ladder));
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(policy)), JSON.parse(JSON.stringify(Policy.normalize(ladder))));
+    assert.strictEqual(policy.address, toAddress(ladder));
+    assert.strictEqual(policy.compile().address, Policy.compile(ladder).address);
+    assert.strictEqual(policy.leaves().length, compileLeaves(ladder).length);
+    assert.strictEqual(toAddress(policy), policy.address);
+    assert.strictEqual(new Policy(policy).address, policy.address);
+    assert.deepStrictEqual(
+      policy.activeTiers({ utxoAgeBlocks: 200 }).map((t) => t.id),
+      selectActiveTiers(ladder, { utxoAgeBlocks: 200 }).map((t) => t.id)
+    );
+
+    const fromValidators = new Policy({ validators: [pk(2), pk(0), pk(1)], threshold: 2, publisher: pk(0), network: 'regtest', csvBlocks: 144 });
+    assert.strictEqual(fromValidators.address, policy.address);
+  });
+
+  it('Policy#afterDecay and #migrateTarget return Policy instances', function () {
+    const policy = new Policy({
+      network: 'regtest',
+      publisher: pk(0),
+      decay: { mode: 'both', migrateKeys: [pk(0), pk(1), pk(2)], migrateThreshold: 2 },
+      keySets: {
+        mid: keys.slice(0, 7).map((k) => k.pubkey),
+        emergency: keys.slice(0, 3).map((k) => k.pubkey)
+      },
+      tiers: [
+        { id: 't0', threshold: 4, keys: 'mid', after: null, until: { type: 'csv', blocks: 100 } },
+        { id: 't1', threshold: 2, keys: 'emergency', after: { type: 'csv', blocks: 100 }, until: null }
+      ]
+    });
+    const child = policy.afterDecay({ type: 'csv', blocks: 100 });
+    assert.ok(child instanceof Policy);
+    assert.deepStrictEqual(child.tiers.map((t) => t.id), ['t1']);
+    assert.strictEqual(child.address, toAddress(Policy.afterDecay(policy, { type: 'csv', blocks: 100 })));
+
+    assert.strictEqual(policy.migrateTarget({ utxoAgeBlocks: 10 }), null);
+    const target = policy.migrateTarget({ utxoAgeBlocks: 150 });
+    assert.ok(target.childPolicy instanceof Policy);
+    assert.strictEqual(target.childAddress, target.childPolicy.address);
+    assert.strictEqual(target.childAddress, Policy.selectMigrateTarget(policy, { utxoAgeBlocks: 150 }).childAddress);
   });
 
   it('legacy Hub single-leaf vault address is stable (opt-in)', function () {
@@ -473,7 +523,7 @@ describe('contractTaproot', function () {
     assert.ok(unixOk);
     assert.strictEqual(unixOk.value, 500000000);
     assert.strictEqual(unixOk.unix, 500000000);
-    const { CLTV_TIMESTAMP_THRESHOLD, MAX_LOCKTIME } = require('../functions/contractTaproot');
+    const { CLTV_TIMESTAMP_THRESHOLD, MAX_LOCKTIME } = require('../types/policy');
     assert.strictEqual(CLTV_TIMESTAMP_THRESHOLD, 500000000);
     assert.strictEqual(MAX_LOCKTIME, (2 ** 32) - 1);
     assert.strictEqual(unixOk.height, undefined);
@@ -486,7 +536,7 @@ describe('contractTaproot', function () {
       () => buildKOfNTapscript(pks, 3),
       /exceeds unique key count/
     );
-    assert.throws(() => normalizeContractSpendPolicy({
+    assert.throws(() => Policy.normalize({
       network: 'regtest',
       publisher: pk(0),
       keySets: { full: [pk(0), pk(1)] },
@@ -512,7 +562,7 @@ describe('contractTaproot', function () {
   });
 
   it('rejects mixed csv/cltv lock ladders', function () {
-    assert.throws(() => normalizeContractSpendPolicy({
+    assert.throws(() => Policy.normalize({
       network: 'regtest',
       publisher: pk(0),
       keySets: { full: [pk(0), pk(1)] },
@@ -531,7 +581,7 @@ describe('contractTaproot', function () {
   });
 
   it('selectActiveTiers honors when predicates', function () {
-    const policy = normalizeContractSpendPolicy({
+    const policy = Policy.normalize({
       network: 'regtest',
       publisher: pk(0),
       decay: { mode: 'policy' },
@@ -549,7 +599,7 @@ describe('contractTaproot', function () {
   });
 
   it('prepareTierWithdrawalPsbt sets locktime for CLTV leaves', function () {
-    const policy = normalizeContractSpendPolicy({
+    const policy = Policy.normalize({
       network: 'regtest',
       publisher: pk(0),
       decay: { mode: 'policy' },
@@ -561,7 +611,7 @@ describe('contractTaproot', function () {
         after: { type: 'cltv', height: 250 }
       }]
     });
-    const built = buildContractTaproot(policy);
+    const built = Policy.compile(policy);
     const network = bitcoin.networks.regtest;
     const funding = new bitcoin.Transaction();
     funding.version = 2;
@@ -588,7 +638,7 @@ describe('contractTaproot', function () {
   it('prepareLeafPsbt encodes BIP68 block-based CSV in low 16 bits (no TYPE_FLAG)', function () {
     // BIP68: bit 22 (0x00400000) selects *seconds*; block-based CSV uses the raw
     // block count in bits 0–15 with bit 31 clear. Do not OR TYPE_FLAG for blocks.
-    const policy = normalizeContractSpendPolicy({
+    const policy = Policy.normalize({
       version: 1,
       network: 'regtest',
       keySets: {
@@ -602,7 +652,7 @@ describe('contractTaproot', function () {
         after: { type: 'csv', blocks: 144 }
       }]
     });
-    const built = buildContractTaproot(policy);
+    const built = Policy.compile(policy);
     const network = bitcoin.networks.regtest;
     const funding = new bitcoin.Transaction();
     funding.version = 2;
@@ -627,14 +677,14 @@ describe('contractTaproot', function () {
   });
 
   it('prepareLeafPsbt rejects supplied invalid amountSats (no silent full sweep)', function () {
-    const policy = normalizeContractSpendPolicy({
+    const policy = Policy.normalize({
       version: 1,
       network: 'regtest',
       keySets: { full: [pk(1)] },
       decay: { mode: 'none' },
       tiers: [{ id: 'now', threshold: 1, keys: 'full' }]
     });
-    const built = buildContractTaproot(policy);
+    const built = Policy.compile(policy);
     const network = bitcoin.networks.regtest;
     const funding = new bitcoin.Transaction();
     funding.version = 2;
@@ -660,7 +710,7 @@ describe('contractTaproot', function () {
   });
 
   it('prepareDecayMigrationPsbt rejects partial amountSats', function () {
-    const policy = normalizeContractSpendPolicy({
+    const policy = Policy.normalize({
       network: 'regtest',
       publisher: pk(0),
       decay: { mode: 'both', migrateKeys: [pk(0), pk(1)], migrateThreshold: 1 },
@@ -673,7 +723,7 @@ describe('contractTaproot', function () {
         { id: 't1', threshold: 1, keys: 'mid', after: { type: 'csv', blocks: 100 }, until: null }
       ]
     });
-    const built = buildContractTaproot(policy);
+    const built = Policy.compile(policy);
     const network = bitcoin.networks.regtest;
     const funding = new bitcoin.Transaction();
     funding.version = 2;
@@ -706,7 +756,7 @@ describe('contractTaproot', function () {
       buildWithdrawalRequest,
       prepareWithdrawalFromRequest
     } = require('../functions/contractSpend');
-    const policy = normalizeContractSpendPolicy({
+    const policy = Policy.normalize({
       network: 'regtest',
       publisher: pk(0),
       decay: { mode: 'both', migrateKeys: [pk(0), pk(1)], migrateThreshold: 1 },
@@ -719,7 +769,7 @@ describe('contractTaproot', function () {
         { id: 't1', threshold: 1, keys: 'mid', after: { type: 'csv', blocks: 100 }, until: null }
       ]
     });
-    const built = buildContractTaproot(policy);
+    const built = Policy.compile(policy);
     const network = bitcoin.networks.regtest;
     const funding = new bitcoin.Transaction();
     funding.version = 2;
@@ -779,7 +829,7 @@ describe('contractTaproot', function () {
 
 const crypto = require('crypto');
 
-describe('contractTaproot composable trees + hashlock', function () {
+describe('Policy composable trees + hashlock', function () {
   const keys = [];
   before(function () {
     for (let i = 0; i < 4; i++) keys.push(new Key());
@@ -806,7 +856,7 @@ describe('contractTaproot composable trees + hashlock', function () {
     const a = toAddress(ladder);
     const b = toAddress(withLock);
     assert.notStrictEqual(a, b);
-    const built = buildContractTaproot(withLock);
+    const built = Policy.compile(withLock);
     assert.ok(built.leaves.some((l) => l.kind === 'hashlock' && l.id === 'hashlock-run'));
     assert.strictEqual(built.leaves.find((l) => l.kind === 'hashlock').commitmentHex, commitmentHex);
   });
@@ -844,7 +894,7 @@ describe('contractTaproot composable trees + hashlock', function () {
       network: 'regtest',
       hashlock: { commitmentHex }
     });
-    const built = buildContractTaproot(policy);
+    const built = Policy.compile(policy);
     const value = 100000n;
     const fund = new bitcoin.Transaction();
     fund.version = 2;

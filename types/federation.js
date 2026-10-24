@@ -372,7 +372,7 @@ class Federation extends Contract {
    * @returns {object}
    */
   _taprootPolicyInputs (overrides = {}) {
-    const tap = require('../functions/contractTaproot');
+    const Policy = require('./policy');
     const validators = overrides.validators
       || (this._state.content.validators || []).slice();
     if (!validators.length) {
@@ -387,7 +387,7 @@ class Federation extends Contract {
     // Do not treat settings.timeout as a block count (units differ).
     const csvBlocks = overrides.csvBlocks != null
       ? Number(overrides.csvBlocks)
-      : (this.settings.csvBlocks != null ? Number(this.settings.csvBlocks) : tap.DEFAULT_CSV_BLOCKS);
+      : (this.settings.csvBlocks != null ? Number(this.settings.csvBlocks) : Policy.DEFAULT_CSV_BLOCKS);
     const network = overrides.network || this.settings.network || null;
     if (!network) {
       throw new Error(

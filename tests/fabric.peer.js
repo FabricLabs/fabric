@@ -2399,18 +2399,6 @@ describe('@fabric/core/types/peer', function () {
       });
     });
 
-    describe('_pingConnection', function () {
-      it('emits error when sendToSocket fails', function (done) {
-        const peer = new Peer({ listen: false, peersDb: null });
-        peer.connections['addr'] = {};
-        peer.once('error', (m) => {
-          assert.ok(/Couldn't deliver message/.test(m));
-          done();
-        });
-        peer._pingConnection('addr');
-      });
-    });
-
     describe('stop', function () {
       it('handles server with address() null', async function () {
         const peer = new Peer({ listen: false, peersDb: null });

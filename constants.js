@@ -397,6 +397,8 @@ const PEER_MAX_SEALED_BLOB_PARTS = MAX_DOCUMENT_BLOBS;
 const PEER_MAX_SEALED_BLOB_ALTERNATES = 4;
 /** Global byte budget across every pending sealed row (ciphertext + retained frames); fits one full-size tree. */
 const PEER_MAX_PENDING_SEALED_BYTES = 256 * 1024 * 1024;
+/** Byte budget for opened convergent chunks a Peer keeps so a chunk another document shares is not bought again. */
+const PEER_MAX_HELD_CHUNK_BYTES = 64 * 1024 * 1024;
 /** Pending sealed rows that never complete are dropped this long after their first frame. */
 const PEER_PENDING_SEALED_TTL_MS = 60 * 60 * 1000;
 /** Max private DocumentRequest reverse-route entries. */
@@ -451,6 +453,16 @@ const P2P_MUSIG_RECEIVE_COUNTER = 0x4222;
 const P2P_MUSIG_SEND_PROPOSAL = 0x4223;
 const P2P_MUSIG_REPLY_TO_PROPOSAL = 0x4224;
 const P2P_MUSIG_ACCEPT_PROPOSAL = 0x4225;
+/**
+ * Cross-boundary sign-in frames, carried as `fabric:<frame>` strings between a
+ * page, a browser extension, and a desktop app — never relayed on the mesh.
+ * See `functions/fabricSiteLogin.js`.
+ */
+const SITE_LOGIN_REQUEST = 0x4230;
+const SITE_LOGIN_RESPONSE = 0x4231;
+const FABRIC_SIGN_REQUEST = 0x4232;
+/** Longest lifetime a site-login or sign request may ask for. */
+const SITE_LOGIN_MAX_TTL_MS = 5 * 60 * 1000;
 
 // Message Types
 const PEER_CANDIDATE = 0x09;
@@ -650,6 +662,7 @@ module.exports = {
   CHAT_MAX_RELAYS_PER_ORIGIN_PER_MINUTE,
   PEER_MAX_PENDING_SEALED_DELIVERIES,
   PEER_MAX_PENDING_SEALED_BYTES,
+  PEER_MAX_HELD_CHUNK_BYTES,
   PEER_PENDING_SEALED_TTL_MS,
   BITCOIN_DUST_SATS,
   HTLC_CLAIM_VBYTES,
@@ -699,6 +712,10 @@ module.exports = {
   P2P_MUSIG_SEND_PROPOSAL,
   P2P_MUSIG_REPLY_TO_PROPOSAL,
   P2P_MUSIG_ACCEPT_PROPOSAL,
+  SITE_LOGIN_REQUEST,
+  SITE_LOGIN_RESPONSE,
+  FABRIC_SIGN_REQUEST,
+  SITE_LOGIN_MAX_TTL_MS,
   PEER_CANDIDATE,
   SIDECHAIN_STATE_PATCH_TYPE,
   DOCUMENT_PUBLISH_TYPE,

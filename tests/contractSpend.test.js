@@ -148,7 +148,7 @@ describe('contractSpend / ARC resolveSpend', function () {
     const vals = [a.pubkey, b.pubkey];
     const {
       buildFederationVaultFromPolicy
-    } = require('../functions/contractTaproot');
+    } = require('../types/policy');
     const vault = buildFederationVaultFromPolicy({
       validatorPubkeysHex: vals,
       threshold: 2,
@@ -183,7 +183,7 @@ describe('contractSpend / ARC resolveSpend', function () {
     const vals = [a.pubkey, b.pubkey];
     const {
       buildFederationVaultFromPolicy
-    } = require('../functions/contractTaproot');
+    } = require('../types/policy');
     const vault = buildFederationVaultFromPolicy({
       validatorPubkeysHex: vals,
       threshold: 2,
@@ -224,7 +224,7 @@ describe('contractSpend / ARC resolveSpend', function () {
     const {
       TAPROOT_INTERNAL_NUMS,
       buildFederationVaultFromPolicy
-    } = require('../functions/contractTaproot');
+    } = require('../types/policy');
     const vault = buildFederationVaultFromPolicy({
       validatorPubkeysHex: vals,
       threshold: 1,

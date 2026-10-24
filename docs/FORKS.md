@@ -54,7 +54,7 @@ Example: a soft mesh opcode that carries a new Taproot policy can still **hard-f
 4. **Beacon signing string / epoch digests** — [beaconFederationSigning.js](../functions/beaconFederationSigning.js); threshold never meets or wrong seals.
 5. **Sidechain digest / clock formula** — [sidechainState.js](../functions/sidechainState.js); Beacon observers diverge.
 6. **Chain tip rules** — `consensus: 'federation'|'gossip'|'pow'` mismatch on merge; federation `parent === tip` ([types/chain.js](../types/chain.js), [CHAIN.md](CHAIN.md)).
-7. **Taproot address identity** — `internalKeyMode` (`nums` vs `musig2`), program-run hashlock leaves ([contractTaproot.js](../functions/contractTaproot.js), [programTaprootBind.js](../functions/programTaprootBind.js)). Overlay Hub Accept; do **not** freeze mode into Beacon genesis.
+7. **Taproot address identity** — `internalKeyMode` (`nums` vs `musig2`), program-run hashlock leaves ([policy.js](../types/policy.js): `Policy.compile`, `Policy.withRunHashlock`). Overlay Hub Accept; do **not** freeze mode into Beacon genesis.
 8. **ARC genesis → `Actor(definition).id`** — republishing a different genesis creates a **new namespace** ([CONTRACTS.md](CONTRACTS.md)).
 9. **Operator identity collapse** — changing xprv / seed / mnemonic precedence ([fabricOperatorIdentity.js](../functions/fabricOperatorIdentity.js)) changes who can sign as the node.
 
@@ -87,8 +87,8 @@ Example: a soft mesh opcode that carries a new Taproot policy can still **hard-f
 |--------|--------------|--------------|
 | Inner `CONTRACT_MESSAGE` types | Ignore-unknown apps | Freezing genesis `messageTypes` that exclude prior traffic |
 | `CONTRACT_PUBLISH` authority | Empty authority = open publish | Non-empty list + missing signer fail-closed (stricter; coordinate apps) |
-| `functions/contractTaproot.js` | — | Internal key / leaf set → address |
-| `functions/programTaprootBind.js` | Not composing a hashlock | Composing hashlock → new P2TR |
+| `types/policy.js` (`Policy.compile`) | — | Internal key / leaf set → address |
+| `types/policy.js` (`Policy.withRunHashlock`) | Not composing a hashlock | Composing hashlock → new P2TR |
 | `functions/fabricOperatorIdentity.js` | — | Key bag precedence / derivation |
 
 ---

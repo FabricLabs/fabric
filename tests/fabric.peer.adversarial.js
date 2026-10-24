@@ -27,7 +27,7 @@ const {
   resolveFabricIdentityCoinType
 } = require('../constants');
 const { DocumentBlobTransferBook } = require('../functions/documentBlobManifest');
-const inventoryHtlc = require('../functions/inventoryHtlc');
+const Htlc = require('../types/htlc');
 
 bitcoin.initEccLib(ecc);
 
@@ -248,26 +248,26 @@ describe('@fabric/core Peer adversarial hardening', function () {
     assert.strictEqual(book.pendingCount, 2);
   });
 
-  it('validateInventoryHtlcOffer refuses mismatched seller address', function () {
+  it('Htlc.validateOffer refuses mismatched seller address', function () {
     const sk = new Key();
     const bk = new Key();
     const sellerPk = Buffer.from(sk.public.encodeCompressed('hex'), 'hex');
     const buyerPk = Buffer.from(bk.public.encodeCompressed('hex'), 'hex');
     const hash = crypto.randomBytes(32);
-    const ok = inventoryHtlc.validateInventoryHtlcOffer({
-      networkName: 'regtest',
-      sellerPubkeyCompressed: sellerPk,
-      buyerRefundPubkeyCompressed: buyerPk,
-      paymentHash32: hash,
-      refundLocktimeHeight: 100
+    const ok = Htlc.validateOffer({
+      network: 'regtest',
+      claimPubkey: sellerPk,
+      refundPubkey: buyerPk,
+      paymentHash: hash,
+      refundLocktime: 100
     });
     assert.strictEqual(ok.ok, true);
-    const bad = inventoryHtlc.validateInventoryHtlcOffer({
-      networkName: 'regtest',
-      sellerPubkeyCompressed: sellerPk,
-      buyerRefundPubkeyCompressed: buyerPk,
-      paymentHash32: hash,
-      refundLocktimeHeight: 100,
+    const bad = Htlc.validateOffer({
+      network: 'regtest',
+      claimPubkey: sellerPk,
+      refundPubkey: buyerPk,
+      paymentHash: hash,
+      refundLocktime: 100,
       paymentAddress: 'bcrt1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq3l8y7v'
     });
     assert.strictEqual(bad.ok, false);
@@ -477,10 +477,10 @@ describe('@fabric/core Peer adversarial hardening', function () {
     const seller = new Key();
     const other = new Key();
     const sellerHex = seller.public.encodeCompressed('hex');
-    assert.strictEqual(inventoryHtlc.pubkeysMatchXOnly(sellerHex, seller.pubkey), true);
-    assert.strictEqual(inventoryHtlc.pubkeysMatchXOnly(sellerHex, other.pubkey), false);
+    assert.strictEqual(Htlc.pubkeysMatchXOnly(sellerHex, seller.pubkey), true);
+    assert.strictEqual(Htlc.pubkeysMatchXOnly(sellerHex, other.pubkey), false);
     assert.strictEqual(
-      inventoryHtlc.pubkeysMatchXOnly(seller.public.encodeCompressed('hex').slice(2), sellerHex),
+      Htlc.pubkeysMatchXOnly(seller.public.encodeCompressed('hex').slice(2), sellerHex),
       true,
       'x-only form matches compressed seller'
     );

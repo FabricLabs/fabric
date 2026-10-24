@@ -9,13 +9,13 @@
 
 const crypto = require('crypto');
 const Key = require('../types/key');
+const Policy = require('../types/policy');
 const {
   TAPROOT_INTERNAL_NUMS,
-  buildContractTaproot,
   synthesizeDefaultLadder,
   prepareVaultWithdrawalPsbt,
   prepareDecayMigrationPsbt
-} = require('./contractTaproot');
+} = Policy;
 const { pubkeyXOnly, pubkeyCompressed } = require('./groupChatSeal');
 const { sortPubkeysBip67 } = require('./bip67');
 const { CONTRACT_BODY_TYPES } = require('./applicationNamespaces');
@@ -274,7 +274,7 @@ function canonicalSpendPolicy (opts = {}) {
     publisher = p[0] || null;
   }
   if (!publisher) publisher = validators[0];
-  const csvBlocks = Math.max(1, Number(opts.csvBlocks) || require('./contractTaproot').DEFAULT_CSV_BLOCKS);
+  const csvBlocks = Math.max(1, Number(opts.csvBlocks) || Policy.DEFAULT_CSV_BLOCKS);
   const softMode = String(opts.softMode || 'publisher').toLowerCase() === 'reduced'
     ? 'reduced'
     : 'publisher';
@@ -383,11 +383,11 @@ function resolveSpend (opts = {}) {
 
   const csvBlocks = policyInput.csvBlocks != null
     ? Number(policyInput.csvBlocks)
-    : require('./contractTaproot').DEFAULT_CSV_BLOCKS;
+    : Policy.DEFAULT_CSV_BLOCKS;
 
   const built = policyInput.tiers && policyInput.tiers.length
-    ? buildContractTaproot(policyInput)
-    : buildContractTaproot(synthesizeDefaultLadder({
+    ? Policy.compile(policyInput)
+    : Policy.compile(synthesizeDefaultLadder({
       validators,
       threshold,
       network,

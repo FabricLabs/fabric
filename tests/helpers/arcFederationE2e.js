@@ -19,7 +19,7 @@ const {
 } = require('../../functions/groupChatSeal');
 const {
   finalizeSpendPsbt
-} = require('../../functions/contractTaproot');
+} = require('../../types/policy');
 const {
   createCollection,
   ingest

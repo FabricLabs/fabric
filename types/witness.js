@@ -5,15 +5,15 @@ const { secp256k1, schnorr } = require('@noble/curves/secp256k1.js');
 const { stableStringify } = require('../functions/fabricCanonicalJson');
 const { verifyBlob } = require('../functions/documentBlobManifest');
 const { verifyInclusion } = require('../functions/bitcoinTxInclusion');
-const { verifyFrameAuthor } = require('../functions/fabricFrameAuthor');
+const Message = require('./message');
 const { P2P_FILE_SEND } = require('../constants');
 
 const HEX64 = /^[0-9a-f]{64}$/;
 /** @private lazily loaded bitcoinjs (fraud proofs that carry transactions) */
 function bitcoinjs () { return require('bitcoinjs-lib'); }
-/** @private BIP341 helpers; `contractTaproot` initialises the ECC library they need */
+/** @private BIP341 helpers; `Policy` initialises the ECC library they need */
 function bip341 () {
-  require('../functions/contractTaproot');
+  require('./policy');
   return require('bitcoinjs-lib/src/payments/bip341');
 }
 
@@ -888,7 +888,7 @@ class FraudProof {
     const provider = hex64(xOnlyHex(providerPubkey));
     const answerHash = hex64(answerHashHex);
     if (!provider || !answerHash) return null;
-    const { buildHashlockLeaf } = require('../functions/contractTaproot');
+    const { buildHashlockLeaf } = require('./policy');
     try {
       return buildHashlockLeaf({ id: 'answer', commitmentHex: answerHash, pubkeyHex: `02${provider}` }).script;
     } catch (_) {
@@ -1151,7 +1151,7 @@ class FraudProof {
    * @returns {Buffer[]}
    */
   static _penaltyLeafScripts (publisherPubkey, providerPubkey) {
-    const { buildSpendLeaf } = require('../functions/contractTaproot');
+    const { buildSpendLeaf } = require('./policy');
     const a = xOnlyHex(publisherPubkey);
     const b = xOnlyHex(providerPubkey);
     if (!HEX64.test(String(a || '')) || !HEX64.test(String(b || '')) || a === b) return [];
@@ -1348,7 +1348,7 @@ class FraudProof {
     if (sha256Hex(Buffer.from(preimage, 'hex')) !== offeredHash) return no('claim preimage does not match the offered payment hash');
     const frameHex = delivery && (delivery.frameHex || delivery.frame);
     if (!frameHex) return no('delivery frame missing — needs the seller-signed P2P_FILE_SEND frame');
-    const frame = verifyFrameAuthor(frameHex);
+    const frame = Message.verifyFrameAuthor(frameHex);
     if (!frame.ok) return no(`delivery frame: ${frame.reason}`);
     if (frame.type !== P2P_FILE_SEND) return no('delivery frame is not a P2P_FILE_SEND');
     if (frame.author !== seller) return no('delivery frame was not signed by the offer signer');

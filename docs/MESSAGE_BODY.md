@@ -87,6 +87,56 @@ API: `types/message.js` body codec helpers (`Message.encodeBody` /
   body bytes as the UTF-8 text / nickname itself (no field schema, no JSON).
   Build with `Message.fromVector(['P2P_CHAT_MESSAGE', text])` (string body).
 
+## Legacy JSON objects ↔ fields
+
+`Message` statics in [`types/message.js`](../types/message.js) map
+the JSON objects apps already build onto the field schemas of eight opcodes,
+and back:
+
+- `Message.fromLegacyBody(type, body)` — field-encoded `Message` from the legacy object.
+  Replaces `Message.fromVector([type, JSON.stringify(body)])` one for one.
+- `Message.encodeLegacyBody(type, body)` / `Message.decodeLegacyBody(type, fields)` — the
+  two halves of that mapping.
+- `Message.tryParseLegacyBody(message)` — the legacy object from either encoding.
+
+Peer runs `decodeLegacyBody` on every field body of these types before its
+checks and before `contract:publish`, `contract:message`, `peeringGossip`,
+`peeringOffer`, `peerAnnounce` and `sidechain:patch` are emitted, so handlers
+see the same object whichever encoding the sender used.
+
+| Opcode | Fields | Legacy object |
+|--------|--------|---------------|
+| `P2P_PING` / `P2P_PONG` | `nonce` | `{ nonce }` (a pong echoes its ping's nonce) |
+| `P2P_PEER_ANNOUNCE` | `host`, `port`, `pubkey`?, `nonce`? | same keys |
+| `P2P_PEER_GOSSIP` | `host`, `port`, `gossipHop`, `nonce`, `pubkey`? | same keys; a missing hop encodes as `GOSSIP_MAX_HOPS` |
+| `P2P_PEERING_OFFER` | `transport`, `host`, `port`, `peeringHop`, `pubkey`?, `slots`?, `peering`?, `nonce`? | same keys; a missing hop encodes as `PEERING_OFFER_MAX_HOPS` |
+| `CONTRACT_PUBLISH` | `definition` | the definition: `JSON.stringify` of the object, key order kept, so `Actor(definition).id` is unchanged |
+| `CONTRACT_MESSAGE` | `contract`, `payload` | `{ contract, ...payload }`; `payload` is `JSON.stringify` of the body without `contract` |
+| `SIDECHAIN_STATE_PATCH` | `basisClock`, `basisDigest`, `catalogCanonical`, `patchesCanonical`?, `federationWitnessCanonical`? | `{ type, version, kind, basisClock, basisDigest, patches, federationWitness }` |
+
+`?` marks optional trailing fields. Old decoders ignore trailing bytes, so
+these appends are forward compatible under `0x01`.
+
+Notes:
+
+- An encoded hop of 0 makes receivers drop gossip and offers, which is why a
+  missing hop encodes as the maximum.
+- `basisDigest` must be 64 lowercase hex or empty (empty encodes as 32 zero
+  bytes and decodes back to `''`). The sidechain signing string compares the
+  digest case-sensitively, so upper-case hex is refused instead of silently
+  lower-cased.
+- Keys outside a schema are dropped. An offer's nested `object` envelope is
+  flattened, and non-string values such as GoonCitizen's `rendezvous` are not
+  carried.
+- Gossip and offer dedup keys and the announce registration key hash a
+  canonical object (`canonicalPeeringObject`), so JSON and field copies of one
+  message collapse to one key even though their frame hashes differ.
+
+Core's own senders use fields: keepalive ping/pong, `Contract#deploy` /
+`Contract#commit`, and `buildSignedSidechainPatchMessage`. Everything else
+still sends JSON, and JSON bodies of all eight types are still accepted. The
+remaining phases are in [MESSAGE_BODY_MIGRATION.md](./MESSAGE_BODY_MIGRATION.md).
+
 ## `sensitive` is not encryption
 
 `Message` constructor option / property `sensitive: true`:

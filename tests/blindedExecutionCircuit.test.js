@@ -19,7 +19,7 @@ const {
   HASHLOCK_LEAF_ID,
   DECISION_SIGNING_VERSION
 } = require('../functions/blindedExecutionCircuit');
-const { toAddress, synthesizeDefaultLadder } = require('../functions/contractTaproot');
+const { toAddress, synthesizeDefaultLadder } = require('../types/policy');
 
 describe('functions/blindedExecutionCircuit', function () {
   const keys = [];

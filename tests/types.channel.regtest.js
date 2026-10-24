@@ -5,8 +5,8 @@ const crypto = require('crypto');
 const bitcoin = require('bitcoinjs-lib');
 const Bitcoin = require('../services/bitcoin');
 const Channel = require('../types/channel');
-const { signerFromPriv32 } = require('../functions/inventoryHtlc');
-const { finalizeSpendPsbt } = require('../functions/contractTaproot');
+const { signerFromPriv32 } = require('../types/htlc');
+const { finalizeSpendPsbt } = require('../types/policy');
 const { isolatedManagedRegtestSettings } = require('./helpers/bitcoinRegtest');
 
 const NET = bitcoin.networks.regtest;

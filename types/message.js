@@ -41,6 +41,9 @@ const {
   P2P_MUSIG_SEND_PROPOSAL,
   P2P_MUSIG_REPLY_TO_PROPOSAL,
   P2P_MUSIG_ACCEPT_PROPOSAL,
+  SITE_LOGIN_REQUEST,
+  SITE_LOGIN_RESPONSE,
+  FABRIC_SIGN_REQUEST,
   P2P_CONTRACT_PUBLISH,
   P2P_CONTRACT_MESSAGE,
   P2P_STATE_ROOT,
@@ -83,10 +86,13 @@ const {
   LIGHTNING_REVOKE_AND_ACK,
   LIGHTNING_CHANNEL_ANNOUNCEMENT,
   LIGHTNING_NODE_ANNOUNCEMENT,
-  LIGHTNING_CHANNEL_UPDATE
+  LIGHTNING_CHANNEL_UPDATE,
+  GOSSIP_MAX_HOPS,
+  PEERING_OFFER_MAX_HOPS
 } = require('../constants');
 
 const { tryParseWireJson } = require('../functions/wireJson');
+const { fabricCanonicalJson, jsonSafe } = require('../functions/fabricCanonicalJson');
 
 /**
  * @private
@@ -106,9 +112,188 @@ const Actor = require('./actor');
 const Hash256 = require('./hash256');
 
 // Function Definitions
-const padDigits = require('../functions/padDigits');
+const { schnorr } = require('@noble/curves/secp256k1.js');
 const taggedHash = require('../functions/taggedHash');
-const fabricMessageParent = require('../functions/fabricMessageParent');
+
+/**
+ * Byte ranges `[start, end)` of each AMP header field.
+ * @private
+ */
+const HEADER_OFFSETS = Object.freeze({
+  magic: Object.freeze([0, 4]),
+  version: Object.freeze([4, 8]),
+  parent: Object.freeze([8, 40]),
+  author: Object.freeze([40, 72]),
+  type: Object.freeze([72, 76]),
+  size: Object.freeze([76, 80]),
+  hash: Object.freeze([80, 112]),
+  preimage: Object.freeze([112, 144]),
+  signature: Object.freeze([144, HEADER_SIZE])
+});
+
+/**
+ * 32 zero bytes as hex: the genesis parent (no predecessor).
+ * @private
+ */
+const ZERO_PARENT = '00'.repeat(32);
+
+/**
+ * Left-pad `number` with zeros to `digits` characters.
+ * @private
+ * @param {number|string} number
+ * @param {number} digits
+ * @returns {string}
+ */
+function padDigits (number, digits) {
+  return Array(Math.max(digits - String(number).length + 1, 0)).join(0) + number;
+}
+
+/**
+ * Normalize a parent pointer to lowercase 64-hex. `null` / `undefined` / `''`
+ * is genesis. A Message-like object uses its `id` (sign it first for a stable id).
+ * @private
+ * @param {*} value hex, Buffer, Message, or `{ id: hex64 }`
+ * @returns {string}
+ */
+function normalizeParent (value) {
+  if (value == null || value === '') return ZERO_PARENT;
+  if (typeof value === 'object' && !Buffer.isBuffer(value) && !(value instanceof Uint8Array)) {
+    if (typeof value.id === 'string' && /^[0-9a-f]{64}$/i.test(value.id)) {
+      return String(value.id).toLowerCase();
+    }
+    if (value.raw && Buffer.isBuffer(value.raw.parent) && value.raw.parent.length === 32) {
+      return value.raw.parent.toString('hex');
+    }
+  }
+  if (Buffer.isBuffer(value) || value instanceof Uint8Array) {
+    if (value.length !== 32) throw new Error('Message parent must be 32 bytes');
+    return Buffer.from(value).toString('hex');
+  }
+  const s = String(value).trim().toLowerCase().replace(/^0x/, '');
+  if (!/^[0-9a-f]{64}$/.test(s)) throw new Error('Message parent must be 32-byte hex');
+  return s;
+}
+
+/**
+ * @private
+ * @param {*} value
+ * @returns {boolean}
+ */
+function isZeroParent (value) {
+  try {
+    return normalizeParent(value) === ZERO_PARENT;
+  } catch (_) {
+    return false;
+  }
+}
+
+/**
+ * Header parent hex on a Message or record; genesis when missing.
+ * @private
+ * @param {Object} [message]
+ * @returns {string}
+ */
+function parentHexOf (message) {
+  if (!message) return ZERO_PARENT;
+  if (typeof message.parent === 'string' && /^[0-9a-f]{64}$/i.test(message.parent)) {
+    return String(message.parent).toLowerCase();
+  }
+  const raw = message.raw && message.raw.parent;
+  if (Buffer.isBuffer(raw) && raw.length === 32) return raw.toString('hex');
+  return ZERO_PARENT;
+}
+
+/**
+ * SHA-256 of the complete AMP frame (same as {@link Message#id}).
+ * @private
+ * @param {Object|Buffer} messageOrBuffer
+ * @returns {string|null}
+ */
+function frameIdOf (messageOrBuffer) {
+  if (!messageOrBuffer) return null;
+  if (Buffer.isBuffer(messageOrBuffer)) return Hash256.digest(messageOrBuffer);
+  if (typeof messageOrBuffer.toBuffer === 'function') {
+    try {
+      return Hash256.digest(messageOrBuffer.toBuffer());
+    } catch (_) {
+      return null;
+    }
+  }
+  if (typeof messageOrBuffer.id === 'string' && /^[0-9a-f]{64}$/i.test(messageOrBuffer.id)) {
+    return String(messageOrBuffer.id).toLowerCase();
+  }
+  return null;
+}
+
+/**
+ * Write a 32-byte parent onto `message.raw.parent`.
+ * @private
+ * @param {Object} message
+ * @param {*} parent
+ * @returns {Object} message
+ */
+function setMessageParent (message, parent) {
+  if (!message || !message.raw) throw new Error('Message required');
+  const hex = normalizeParent(parent);
+  if (!Buffer.isBuffer(message.raw.parent) || message.raw.parent.length !== 32) {
+    message.raw.parent = Buffer.alloc(32);
+  }
+  Buffer.from(hex, 'hex').copy(message.raw.parent);
+  return message;
+}
+
+/**
+ * Parse and verify a raw AMP frame without a {@link Key}: who signed it, and
+ * what the body was. Fraud proofs carry the exact bytes a counterparty sent.
+ * @private
+ * @param {Buffer|string} frame raw bytes or hex
+ * @returns {{ ok: boolean, reason: string, author: string, type: number, body: Buffer, hash: string, parent: string }} `reason` on failure; the rest on success (`author` is the x-only hex pubkey)
+ */
+function verifyFrameAuthor (frame) {
+  let buffer;
+  try {
+    buffer = Buffer.isBuffer(frame) ? frame : Buffer.from(String(frame || '').trim(), 'hex');
+  } catch (_) {
+    return { ok: false, reason: 'frame is not hex' };
+  }
+  if (buffer.length < HEADER_SIZE) return { ok: false, reason: 'frame shorter than an AMP header' };
+  const magic = buffer.readUInt32BE(HEADER_OFFSETS.magic[0]);
+  if (magic !== MAGIC_BYTES) return { ok: false, reason: 'bad magic' };
+  const size = buffer.readUInt32BE(HEADER_OFFSETS.size[0]);
+  const body = buffer.subarray(HEADER_SIZE);
+  if (body.length !== size) return { ok: false, reason: 'body length does not match header size' };
+  const author = buffer.subarray(...HEADER_OFFSETS.author);
+  const signature = buffer.subarray(...HEADER_OFFSETS.signature);
+  if (author.equals(Buffer.alloc(32))) return { ok: false, reason: 'frame is unsigned (zero author)' };
+  const headerForHash = Buffer.concat([
+    buffer.subarray(HEADER_OFFSETS.magic[0], HEADER_OFFSETS.signature[0]),
+    Buffer.alloc(64)
+  ]);
+  const digest = taggedHash('Fabric/Message', Buffer.concat([headerForHash, body]));
+  let ok = false;
+  try { ok = schnorr.verify(signature, digest, author); } catch (_) { ok = false; }
+  if (!ok) return { ok: false, reason: 'frame signature invalid' };
+  return {
+    ok: true,
+    author: author.toString('hex'),
+    type: buffer.readUInt32BE(HEADER_OFFSETS.type[0]),
+    body,
+    hash: buffer.subarray(...HEADER_OFFSETS.hash).toString('hex'),
+    parent: buffer.subarray(...HEADER_OFFSETS.parent).toString('hex')
+  };
+}
+
+/**
+ * Header fields of `buffer` as views (no copies).
+ * @private
+ * @param {Buffer} buffer
+ * @returns {Object}
+ */
+function headerFields (buffer) {
+  const out = {};
+  for (const [name, range] of Object.entries(HEADER_OFFSETS)) out[name] = buffer.subarray(...range);
+  return out;
+}
 
 /**
  * **Two parallel type names:**
@@ -160,6 +345,9 @@ const WIRE_TYPE_DECODE_ORDER = Object.freeze([
   [P2P_MUSIG_SEND_PROPOSAL, 'P2P_MUSIG_SEND_PROPOSAL'],
   [P2P_MUSIG_REPLY_TO_PROPOSAL, 'P2P_MUSIG_REPLY_TO_PROPOSAL'],
   [P2P_MUSIG_ACCEPT_PROPOSAL, 'P2P_MUSIG_ACCEPT_PROPOSAL'],
+  [SITE_LOGIN_REQUEST, 'SITE_LOGIN_REQUEST'],
+  [SITE_LOGIN_RESPONSE, 'SITE_LOGIN_RESPONSE'],
+  [FABRIC_SIGN_REQUEST, 'FABRIC_SIGN_REQUEST'],
   [P2P_CONTRACT_PUBLISH, 'CONTRACT_PUBLISH'],
   [P2P_CONTRACT_MESSAGE, 'CONTRACT_MESSAGE'],
   [P2P_IDENT_REQUEST, 'P2P_IDENT_REQUEST'],
@@ -263,6 +451,9 @@ const LEGACY_MESSAGE_TYPE_ALIASES = Object.freeze({
   MusigSendProposal: P2P_MUSIG_SEND_PROPOSAL,
   MusigReplyToProposal: P2P_MUSIG_REPLY_TO_PROPOSAL,
   MusigAcceptProposal: P2P_MUSIG_ACCEPT_PROPOSAL,
+  SiteLoginRequest: SITE_LOGIN_REQUEST,
+  SiteLoginResponse: SITE_LOGIN_RESPONSE,
+  FabricSignRequest: FABRIC_SIGN_REQUEST,
   FileSend: P2P_FILE_SEND,
   DocumentPricingPublish: P2P_DOCUMENT_PUBLISH,
   Ping: P2P_PING,
@@ -566,7 +757,7 @@ class Message extends Actor {
   }
 
   set parent (value) {
-    fabricMessageParent.setMessageParent(this, value);
+    setMessageParent(this, value);
   }
 
   get body () {
@@ -894,17 +1085,7 @@ class Message extends Actor {
   }
 
   static parseRawMessage (buffer) {
-    const message = {
-      magic: buffer.slice(0, 4),
-      version: buffer.slice(4, 8),
-      parent: buffer.slice(8, 40),
-      author: buffer.slice(40, 72),
-      type: buffer.slice(72, 76),
-      size: buffer.slice(76, 80),
-      hash: buffer.slice(80, 112),
-      preimage: buffer.slice(112, 144),
-      signature: buffer.slice(144, HEADER_SIZE)
-    };
+    const message = headerFields(buffer);
 
     if (buffer.length >= HEADER_SIZE) {
       message.data = buffer.slice(HEADER_SIZE, buffer.length);
@@ -933,18 +1114,7 @@ class Message extends Actor {
 
     const message = new Message();
     const payload = buffer.subarray(HEADER_SIZE);
-    message.raw = {
-      magic: buffer.subarray(0, 4),
-      version: buffer.subarray(4, 8),
-      parent: buffer.subarray(8, 40),
-      author: buffer.subarray(40, 72),
-      type: buffer.subarray(72, 76),
-      size: buffer.subarray(76, 80),
-      hash: buffer.subarray(80, 112),
-      preimage: buffer.subarray(112, 144),
-      signature: buffer.subarray(144, HEADER_SIZE),
-      data: payload
-    };
+    message.raw = Object.assign(headerFields(buffer), { data: payload });
 
     // Do not assign `message.data` here: the `data` setter recomputes `raw.hash`
     // (double-SHA256 of the body), which would replace the on-wire hash and break
@@ -1376,22 +1546,43 @@ const SCHEMA_P2P_FORWARD = Object.freeze([
   { name: 'ttl', type: 'u8' },
   { name: 'inner', type: 'message' }
 ]);
-/** @private Discovery / peering field layouts (Phase B); JSON bodies remain accepted. */
+/**
+ * @private Discovery / peering field layouts; JSON bodies remain accepted.
+ * Optional fields are appended only — older decoders ignore trailing bytes.
+ */
 const SCHEMA_P2P_PEER_GOSSIP = Object.freeze([
   { name: 'host', type: 'string' },
   { name: 'port', type: 'u32' },
   { name: 'gossipHop', type: 'u8' },
-  { name: 'nonce', type: 'string' }
+  { name: 'nonce', type: 'string' },
+  { name: 'pubkey', type: 'string', optional: true }
 ]);
 const SCHEMA_P2P_PEERING_OFFER = Object.freeze([
   { name: 'transport', type: 'string' },
   { name: 'host', type: 'string' },
   { name: 'port', type: 'u32' },
-  { name: 'peeringHop', type: 'u8' }
+  { name: 'peeringHop', type: 'u8' },
+  { name: 'pubkey', type: 'string', optional: true },
+  { name: 'slots', type: 'u32', optional: true },
+  { name: 'peering', type: 'string', optional: true },
+  { name: 'nonce', type: 'string', optional: true }
 ]);
 const SCHEMA_P2P_PEER_ANNOUNCE = Object.freeze([
   { name: 'host', type: 'string' },
-  { name: 'port', type: 'u32' }
+  { name: 'port', type: 'u32' },
+  { name: 'pubkey', type: 'string', optional: true },
+  { name: 'nonce', type: 'string', optional: true }
+]);
+/**
+ * @private Statechain patch proposal. `catalogCanonical` is the document-registry
+ * shorthand; `patchesCanonical` (RFC6902 JSON array) wins when non-empty.
+ */
+const SCHEMA_SIDECHAIN_STATE_PATCH = Object.freeze([
+  { name: 'basisClock', type: 'u32' },
+  { name: 'basisDigest', type: 'bytes32' },
+  { name: 'catalogCanonical', type: 'string' },
+  { name: 'patchesCanonical', type: 'string', optional: true },
+  { name: 'federationWitnessCanonical', type: 'string', optional: true }
 ]);
 /** @private BIP-327 directed MuSig2 session (JSON bodies still accepted). */
 const SCHEMA_P2P_MUSIG_START = Object.freeze([
@@ -1416,6 +1607,37 @@ const SCHEMA_P2P_MUSIG_PSIG = Object.freeze([
 const SCHEMA_P2P_MUSIG_SIGNATURE = Object.freeze([
   { name: 'sessionId', type: 'bytes32' },
   { name: 'signature', type: 'bytes' }
+]);
+/**
+ * @private Cross-boundary sign-in (`functions/fabricSiteLogin.js`). Times are
+ * Unix milliseconds. A request may be unsigned (zero author).
+ */
+const SCHEMA_SITE_LOGIN_REQUEST = Object.freeze([
+  { name: 'origin', type: 'string' },
+  { name: 'nonce', type: 'string' },
+  { name: 'issuedAt', type: 'u64' },
+  { name: 'expiresAt', type: 'u64' },
+  { name: 'purpose', type: 'string', optional: true }
+]);
+/** @private Signed by the identity that signs in; `pubkey` is compressed hex and must match the author. */
+const SCHEMA_SITE_LOGIN_RESPONSE = Object.freeze([
+  { name: 'origin', type: 'string' },
+  { name: 'nonce', type: 'string' },
+  { name: 'issuedAt', type: 'u64' },
+  { name: 'expiresAt', type: 'u64' },
+  { name: 'identityId', type: 'string' },
+  { name: 'pubkey', type: 'string' },
+  { name: 'signer', type: 'string' },
+  { name: 'xpub', type: 'string', optional: true },
+  { name: 'crossSign', type: 'string', optional: true }
+]);
+/** @private A linked device asks a desktop app to answer `inner` (a SITE_LOGIN_REQUEST frame) for `origin`. */
+const SCHEMA_FABRIC_SIGN_REQUEST = Object.freeze([
+  { name: 'origin', type: 'string' },
+  { name: 'nonce', type: 'string' },
+  { name: 'issuedAt', type: 'u64' },
+  { name: 'expiresAt', type: 'u64' },
+  { name: 'inner', type: 'message' }
 ]);
 
 /**
@@ -1481,6 +1703,9 @@ function tryParseMessageBody (message) {
   registerBodySchema(P2P_PEER_ANNOUNCE, SCHEMA_P2P_PEER_ANNOUNCE);
   registerBodySchema('P2P_PEER_ANNOUNCE', SCHEMA_P2P_PEER_ANNOUNCE);
   registerBodySchema('PeerAnnounce', SCHEMA_P2P_PEER_ANNOUNCE);
+  registerBodySchema(SIDECHAIN_STATE_PATCH_TYPE, SCHEMA_SIDECHAIN_STATE_PATCH);
+  registerBodySchema('SIDECHAIN_STATE_PATCH', SCHEMA_SIDECHAIN_STATE_PATCH);
+  registerBodySchema('SidechainStatePatch', SCHEMA_SIDECHAIN_STATE_PATCH);
   registerBodySchema(P2P_MUSIG_START, SCHEMA_P2P_MUSIG_START);
   registerBodySchema('P2P_MUSIG_START', SCHEMA_P2P_MUSIG_START);
   registerBodySchema('MusigStart', SCHEMA_P2P_MUSIG_START);
@@ -1499,17 +1724,389 @@ function tryParseMessageBody (message) {
   registerBodySchema(P2P_MUSIG_ACCEPT_PROPOSAL, SCHEMA_P2P_MUSIG_SIGNATURE);
   registerBodySchema('P2P_MUSIG_ACCEPT_PROPOSAL', SCHEMA_P2P_MUSIG_SIGNATURE);
   registerBodySchema('MusigAcceptProposal', SCHEMA_P2P_MUSIG_SIGNATURE);
+  registerBodySchema(SITE_LOGIN_REQUEST, SCHEMA_SITE_LOGIN_REQUEST);
+  registerBodySchema('SITE_LOGIN_REQUEST', SCHEMA_SITE_LOGIN_REQUEST);
+  registerBodySchema('SiteLoginRequest', SCHEMA_SITE_LOGIN_REQUEST);
+  registerBodySchema(SITE_LOGIN_RESPONSE, SCHEMA_SITE_LOGIN_RESPONSE);
+  registerBodySchema('SITE_LOGIN_RESPONSE', SCHEMA_SITE_LOGIN_RESPONSE);
+  registerBodySchema('SiteLoginResponse', SCHEMA_SITE_LOGIN_RESPONSE);
+  registerBodySchema(FABRIC_SIGN_REQUEST, SCHEMA_FABRIC_SIGN_REQUEST);
+  registerBodySchema('FABRIC_SIGN_REQUEST', SCHEMA_FABRIC_SIGN_REQUEST);
+  registerBodySchema('FabricSignRequest', SCHEMA_FABRIC_SIGN_REQUEST);
 })();
+
+// Legacy JSON bodies <-> typed field bodies, for the protocol opcodes whose
+// field schemas are registered above. Senders use `Message.fromLegacyBody`;
+// receivers use `Message.tryParseLegacyBody` so handlers keep seeing the JSON
+// shape whichever encoding the peer sent (docs/MESSAGE_BODY_MIGRATION.md).
+/** @private */
+const SIDECHAIN_PATCH_KIND = 'SidechainStatePatch';
+/** @private */
+const ZERO_DIGEST_HEX = '0'.repeat(64);
+/** @private */
+const MAX_UINT32 = (2 ** 32) - 1;
+/** @private */
+const MAX_PORT = 65535;
+
+/**
+ * Wire names whose legacy JSON bodies map onto field schemas.
+ * @private
+ */
+const LEGACY_BODY_TYPES = Object.freeze([
+  'P2P_PING',
+  'P2P_PONG',
+  'P2P_PEER_ANNOUNCE',
+  'P2P_PEER_GOSSIP',
+  'P2P_PEERING_OFFER',
+  'CONTRACT_PUBLISH',
+  'CONTRACT_MESSAGE',
+  'SIDECHAIN_STATE_PATCH'
+]);
+
+/**
+ * @private
+ * @param {string|number} type
+ * @returns {string|null}
+ */
+function legacyWireName (type) {
+  const name = Message.canonicalTypeName(type);
+  return name && LEGACY_BODY_TYPES.includes(name) ? name : null;
+}
+
+/**
+ * @private
+ * @param {*} value
+ * @returns {boolean}
+ */
+function isPlainObject (value) {
+  return value != null && typeof value === 'object' && !Array.isArray(value) && !Buffer.isBuffer(value);
+}
+
+/**
+ * @private
+ * @param {*} value
+ * @returns {string}
+ */
+function bodyString (value) {
+  if (value == null || typeof value === 'object') return '';
+  return String(value);
+}
+
+/**
+ * Socket port; anything outside 0–65535 is 0 (the wire field is u32, but a
+ * larger port cannot be dialed).
+ * @private
+ * @param {*} value
+ * @returns {number}
+ */
+function bodyPort (value) {
+  const n = Number(value);
+  return Number.isInteger(n) && n >= 0 && n <= MAX_PORT ? n : 0;
+}
+
+/**
+ * @private
+ * @param {*} value
+ * @returns {number}
+ */
+function bodyUint32 (value) {
+  const n = Number(value);
+  return Number.isInteger(n) && n >= 0 && n <= MAX_UINT32 ? n : 0;
+}
+
+/**
+ * Hop budget for a forwarded gossip / offer. A missing or invalid hop means
+ * "full budget" (legacy JSON receivers treat a missing hop as their max); an
+ * explicit 0 would make field receivers drop the frame.
+ * @private
+ * @param {*} value
+ * @param {number} max
+ * @returns {number}
+ */
+function bodyHop (value, max) {
+  if (value == null || value === '') return max;
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0) return max;
+  return Math.min(Math.floor(n), 0xff);
+}
+
+/**
+ * Gossip / offer bodies may arrive flat (`{ host, port, … }`) or as a
+ * Hub-style envelope (`{ type, object: { host, port, … } }`).
+ * @private
+ * @param {object} body
+ * @returns {object}
+ */
+function peeringObject (body) {
+  if (!isPlainObject(body)) return {};
+  return isPlainObject(body.object) ? body.object : body;
+}
+
+/**
+ * Drop empty optional fields so a decoded body matches what a JSON sender
+ * would have written (absent keys rather than `''`).
+ * @private
+ * @param {object} obj
+ * @param {string[]} [zeroIsAbsent]
+ * @returns {object}
+ */
+function compactBody (obj, zeroIsAbsent = []) {
+  const out = {};
+  for (const [k, v] of Object.entries(obj)) {
+    if (v === '' || v == null) continue;
+    if (v === 0 && zeroIsAbsent.includes(k)) continue;
+    out[k] = v;
+  }
+  return out;
+}
+
+/**
+ * @private
+ * @param {*} value
+ * @returns {string}
+ */
+function digestFieldHex (value) {
+  if (value == null || value === '') return ZERO_DIGEST_HEX;
+  const s = String(value);
+  if (!/^[0-9a-f]{64}$/.test(s)) {
+    throw new TypeError('SIDECHAIN_STATE_PATCH basisDigest must be 64 lowercase hex characters');
+  }
+  return s;
+}
+
+/**
+ * @private
+ * @param {string} text
+ * @returns {*}
+ */
+function parseJsonOrUndefined (text) {
+  if (typeof text !== 'string' || !text) return undefined;
+  try {
+    return JSON.parse(text);
+  } catch (_) {
+    return undefined;
+  }
+}
+
+/**
+ * Map a legacy JSON body to the typed field object for `type`.
+ * @private
+ * @param {string|number} type Wire name, friendly alias, or opcode.
+ * @param {object} body Legacy JSON body.
+ * @returns {object} Field object for `Message.fromFields`.
+ */
+function encodeLegacyBody (type, body) {
+  const name = legacyWireName(type);
+  if (!name) throw new TypeError(`encodeLegacyBody: no field mapping for ${type}`);
+  const b = isPlainObject(body) ? body : {};
+
+  switch (name) {
+    case 'P2P_PING':
+    case 'P2P_PONG':
+      return { nonce: bodyString(b.nonce != null ? b.nonce : b.created) };
+    case 'P2P_PEER_ANNOUNCE': {
+      const o = peeringObject(b);
+      return { host: bodyString(o.host), port: bodyPort(o.port), pubkey: bodyString(o.pubkey), nonce: bodyString(o.nonce) };
+    }
+    case 'P2P_PEER_GOSSIP': {
+      const o = peeringObject(b);
+      return {
+        host: bodyString(o.host),
+        port: bodyPort(o.port),
+        gossipHop: bodyHop(o.gossipHop, GOSSIP_MAX_HOPS),
+        nonce: bodyString(o.nonce),
+        pubkey: bodyString(o.pubkey)
+      };
+    }
+    case 'P2P_PEERING_OFFER': {
+      const o = peeringObject(b);
+      return {
+        transport: bodyString(o.transport),
+        host: bodyString(o.host),
+        port: bodyPort(o.port),
+        peeringHop: bodyHop(o.peeringHop, PEERING_OFFER_MAX_HOPS),
+        pubkey: bodyString(o.pubkey),
+        slots: bodyUint32(o.slots),
+        peering: bodyString(o.peering),
+        nonce: bodyString(o.nonce)
+      };
+    }
+    // Key order is kept (not sorted): `Actor` ids hash insertion-ordered JSON,
+    // so the namespace id must match a JSON publish of the same object.
+    case 'CONTRACT_PUBLISH':
+      if (!isPlainObject(body)) throw new TypeError('CONTRACT_PUBLISH body must be an object');
+      return { definition: JSON.stringify(body) };
+    case 'CONTRACT_MESSAGE': {
+      const contract = bodyString(b.contract).trim();
+      if (!contract) throw new TypeError('CONTRACT_MESSAGE body requires contract');
+      const rest = Object.assign({}, b);
+      delete rest.contract;
+      return { contract, payload: JSON.stringify(rest) };
+    }
+    case 'SIDECHAIN_STATE_PATCH': {
+      if (!Array.isArray(b.patches) || !b.patches.length) {
+        throw new TypeError('SIDECHAIN_STATE_PATCH body requires patches');
+      }
+      const basisClock = Number(b.basisClock);
+      if (!Number.isInteger(basisClock) || basisClock < 0) {
+        throw new TypeError('SIDECHAIN_STATE_PATCH body requires a non-negative integer basisClock');
+      }
+      return {
+        basisClock,
+        basisDigest: digestFieldHex(b.basisDigest),
+        catalogCanonical: '',
+        patchesCanonical: fabricCanonicalJson(jsonSafe(b.patches)),
+        federationWitnessCanonical: b.federationWitness ? fabricCanonicalJson(jsonSafe(b.federationWitness)) : ''
+      };
+    }
+  }
+  /* istanbul ignore next */
+  throw new TypeError(`encodeLegacyBody: no field mapping for ${type}`);
+}
+
+/**
+ * Rebuild the legacy JSON body from decoded typed fields.
+ * @private
+ * @param {string|number} type Wire name, friendly alias, or opcode.
+ * @param {object} fields Output of `decodeBody` / `message.toFields()`.
+ * @returns {object|null} Legacy body, or `null` when the fields are unusable.
+ */
+function decodeLegacyBody (type, fields) {
+  const name = legacyWireName(type);
+  if (!name || !isPlainObject(fields)) return null;
+  const f = fields;
+
+  switch (name) {
+    case 'P2P_PING':
+    case 'P2P_PONG':
+      return compactBody({ nonce: f.nonce });
+    case 'P2P_PEER_ANNOUNCE':
+      return compactBody({ host: f.host, port: bodyPort(f.port), pubkey: f.pubkey, nonce: f.nonce });
+    case 'P2P_PEER_GOSSIP':
+      return compactBody({ host: f.host, port: bodyPort(f.port), gossipHop: f.gossipHop, nonce: f.nonce, pubkey: f.pubkey });
+    case 'P2P_PEERING_OFFER':
+      return compactBody({
+        transport: f.transport,
+        host: f.host,
+        port: bodyPort(f.port),
+        peeringHop: f.peeringHop,
+        pubkey: f.pubkey,
+        slots: f.slots,
+        peering: f.peering,
+        nonce: f.nonce
+      }, ['slots']);
+    case 'CONTRACT_PUBLISH': {
+      const definition = parseJsonOrUndefined(f.definition);
+      return isPlainObject(definition) ? definition : null;
+    }
+    case 'CONTRACT_MESSAGE': {
+      const contract = bodyString(f.contract).trim();
+      if (!contract) return null;
+      const payload = f.payload ? parseJsonOrUndefined(f.payload) : {};
+      if (!isPlainObject(payload)) return null;
+      // `contract` first, as JSON senders write it; the field value always wins.
+      return Object.assign({ contract }, payload, { contract });
+    }
+    case 'SIDECHAIN_STATE_PATCH': {
+      const digestHex = Buffer.isBuffer(f.basisDigest) ? f.basisDigest.toString('hex') : bodyString(f.basisDigest);
+      let patches = parseJsonOrUndefined(f.patchesCanonical);
+      // A malformed patch list is rejected, never replaced by the catalog.
+      if (f.patchesCanonical && !Array.isArray(patches)) return null;
+      if (!Array.isArray(patches) || !patches.length) {
+        const catalog = parseJsonOrUndefined(f.catalogCanonical);
+        patches = catalog !== undefined ? [{ op: 'add', path: '/registry', value: catalog }] : null;
+      }
+      if (!patches) return null;
+      const witness = parseJsonOrUndefined(f.federationWitnessCanonical);
+      return {
+        type: 'SIDECHAIN_STATE_PATCH',
+        version: 1,
+        kind: SIDECHAIN_PATCH_KIND,
+        basisClock: Number(f.basisClock),
+        basisDigest: digestHex === ZERO_DIGEST_HEX ? '' : digestHex,
+        patches,
+        federationWitness: isPlainObject(witness) ? witness : null
+      };
+    }
+  }
+  /* istanbul ignore next */
+  return null;
+}
+
+/**
+ * Build an unsigned typed-field `Message` from a legacy JSON body.
+ * @private
+ * @param {string|number} type
+ * @param {object} body Legacy JSON body.
+ * @param {object} [opts] Extra `Message` constructor settings.
+ * @returns {Message}
+ */
+function fromLegacyBody (type, body, opts = {}) {
+  const name = legacyWireName(type);
+  if (!name) throw new TypeError(`fromLegacyBody: no field mapping for ${type}`);
+  return Message.fromFields(name, encodeLegacyBody(name, body), opts);
+}
+
+/**
+ * Parse a message body into its legacy JSON shape, from either encoding.
+ * @private
+ * @param {Message} message
+ * @returns {{ ok: true, value: object, encoding: 'json'|'fields' }|{ ok: false, error: Error }}
+ */
+function tryParseLegacyBody (message) {
+  const parsed = Message.tryParseMessageBody(message);
+  if (!parsed.ok) return parsed;
+  if (parsed.encoding !== 'fields') return parsed;
+  const value = decodeLegacyBody(message.type, parsed.value);
+  if (!value) return { ok: false, error: new TypeError(`unusable ${message.type} field body`) };
+  return { ok: true, value, encoding: 'fields' };
+}
+
+/**
+ * Encoding-independent object for dedup and registration keys of peering
+ * bodies (gossip / offer / announce): sorted keys, empty values dropped,
+ * numeric `port`, and the hop counters removed.
+ * @private
+ * @param {object} obj Flat peering object (not the envelope).
+ * @param {string[]} [omit] Extra keys to drop.
+ * @returns {object}
+ */
+function canonicalPeeringObject (obj, omit = []) {
+  const src = isPlainObject(obj) ? obj : {};
+  const drop = new Set(['gossipHop', 'peeringHop'].concat(omit));
+  const out = {};
+  for (const key of Object.keys(src).sort()) {
+    if (drop.has(key)) continue;
+    let v = src[key];
+    if (v === '' || v == null) continue;
+    if (key === 'port') v = bodyPort(v);
+    if (key === 'slots') {
+      v = bodyUint32(v);
+      if (v === 0) continue;
+    }
+    out[key] = v;
+  }
+  return out;
+}
 
 Message.FIELD_TYPES = BODY_FIELD_TYPES;
 Message.MAX_MESSAGE_SIZE = MAX_MESSAGE_SIZE;
 Message.MAX_FRAME_BYTES = MAX_FRAME_BYTES;
-Message.ZERO_PARENT = fabricMessageParent.ZERO_PARENT;
-Message.isZeroParent = fabricMessageParent.isZeroParent;
-Message.normalizeParent = fabricMessageParent.normalizeParentHex;
-Message.parentHexOf = fabricMessageParent.parentHexOf;
-Message.frameIdOf = fabricMessageParent.frameIdOf;
-Message.setMessageParent = fabricMessageParent.setMessageParent;
+Message.HEADER_OFFSETS = HEADER_OFFSETS;
+Message.ZERO_PARENT = ZERO_PARENT;
+Message.isZeroParent = isZeroParent;
+Message.normalizeParent = normalizeParent;
+Message.parentHexOf = parentHexOf;
+Message.frameIdOf = frameIdOf;
+Message.setMessageParent = setMessageParent;
+Message.padDigits = padDigits;
+Message.verifyFrameAuthor = verifyFrameAuthor;
+Message.LEGACY_BODY_TYPES = LEGACY_BODY_TYPES;
+Message.encodeLegacyBody = encodeLegacyBody;
+Message.decodeLegacyBody = decodeLegacyBody;
+Message.fromLegacyBody = fromLegacyBody;
+Message.tryParseLegacyBody = tryParseLegacyBody;
+Message.canonicalPeeringObject = canonicalPeeringObject;
 Message.registerBodySchema = registerBodySchema;
 Message.getBodySchema = getBodySchema;
 Message.encodeBody = encodeBody;
@@ -1524,7 +2121,11 @@ Message.SCHEMA_P2P_FORWARD = SCHEMA_P2P_FORWARD;
 Message.SCHEMA_P2P_PEER_GOSSIP = SCHEMA_P2P_PEER_GOSSIP;
 Message.SCHEMA_P2P_PEERING_OFFER = SCHEMA_P2P_PEERING_OFFER;
 Message.SCHEMA_P2P_PEER_ANNOUNCE = SCHEMA_P2P_PEER_ANNOUNCE;
+Message.SCHEMA_SIDECHAIN_STATE_PATCH = SCHEMA_SIDECHAIN_STATE_PATCH;
 Message.SCHEMA_P2P_MUSIG_START = SCHEMA_P2P_MUSIG_START;
+Message.SCHEMA_SITE_LOGIN_REQUEST = SCHEMA_SITE_LOGIN_REQUEST;
+Message.SCHEMA_SITE_LOGIN_RESPONSE = SCHEMA_SITE_LOGIN_RESPONSE;
+Message.SCHEMA_FABRIC_SIGN_REQUEST = SCHEMA_FABRIC_SIGN_REQUEST;
 
 const fs = require('fs');
 const path = require('path');
@@ -1565,6 +2166,8 @@ function wireCatalogFamilyOf (name, code) {
     name.indexOf('P2P_SESSION_') === 0 ||
     name.indexOf('P2P_IDENT_') === 0 ||
     name.indexOf('P2P_MUSIG_') === 0 ||
+    name.indexOf('SITE_LOGIN_') === 0 ||
+    name === 'FABRIC_SIGN_REQUEST' ||
     name === 'P2P_INSTRUCTION'
   ) {
     return 'session';

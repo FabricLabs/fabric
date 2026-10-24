@@ -217,6 +217,27 @@ describe('@fabric/core/services/lightning (unit)', function () {
       assert.strictEqual(out.paymentHash, 'hash');
       assert.strictEqual(out.expiresAt, 123);
     });
+
+    it('keeps positional params without options', async function () {
+      const ln = new Lightning();
+      ln._makeRPCRequest = async (method, params) => {
+        assert.deepStrictEqual(params, [1000, 'lbl', 'desc']);
+        return { bolt11: 'lnbc1', payment_hash: 'h', expires_at: 1 };
+      };
+      await ln.createInvoice(1000, 'lbl', 'desc', {});
+    });
+
+    it('passes preimage and expiry as keyword params', async function () {
+      const ln = new Lightning();
+      const preimage = 'ab'.repeat(32);
+      ln._makeRPCRequest = async (method, params) => {
+        assert.strictEqual(method, 'invoice');
+        assert.deepStrictEqual(params, { amount_msat: 5000, label: 'swap', description: 'd', preimage, expiry: 600 });
+        return { bolt11: 'lnbc5', payment_hash: 'h', expires_at: 2 };
+      };
+      const out = await ln.createInvoice(5000, 'swap', 'd', { preimage, expiry: 600 });
+      assert.strictEqual(out.bolt11, 'lnbc5');
+    });
   });
 
   describe('JSON-RPC extension & BOLT12 helpers', function () {
@@ -322,6 +343,14 @@ describe('@fabric/core/services/lightning (unit)', function () {
       };
       await ln.pay('lnbc1', 8000);
       await ln.pay({ bolt11: 'lnbc1', maxfeepercent: 0.5 }, 8000);
+    });
+
+    it('pay exposes payment_preimage as paymentPreimage', async function () {
+      const ln = new Lightning();
+      ln._makeRPCRequest = async () => ({ status: 'complete', payment_preimage: 'cd'.repeat(32) });
+      const out = await ln.pay('lnbc1');
+      assert.strictEqual(out.paymentPreimage, 'cd'.repeat(32));
+      assert.strictEqual(out.payment_preimage, 'cd'.repeat(32));
     });
 
     it('listOffers with no filter, object, or offer_id string', async function () {

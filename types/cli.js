@@ -34,10 +34,8 @@ const Key = require('./key');
 const truncateMiddle = require('../functions/truncateMiddle');
 const { chatTextOf, chatActorIdOf, formatChatLogLine } = require('../functions/fabricChatText');
 const { tryParsePersistedJson, tryParseWireJson, messageDataToString } = require('../functions/wireJson');
-const {
-  CliDocumentExchange,
-  listRefundCandidates
-} = require('../functions/cliDocumentExchange');
+const { CliDocumentExchange } = require('../functions/cliDocumentExchange');
+const { findSession, listRefundCandidates } = require('./documentBook');
 const {
   CLI_CONTRACTS,
   resolveEnabledContracts,

@@ -15,10 +15,12 @@
 const LEAF_VERSION_TAPSCRIPT = 0xc0;
 
 /**
+ * Coerce Buffer / Uint8Array / hex string to Buffer (bitcoinjs-lib 7 yields
+ * Uint8Array). Hex may carry a `0x` prefix; odd-length or non-hex strings
+ * give `null` instead of a silently truncated buffer.
  * @param {Buffer|Uint8Array|string} value
  * @param {string} [encoding]
  * @returns {Buffer|null}
- * @private
  */
 function asBuffer (value, encoding = 'hex') {
   if (Buffer.isBuffer(value)) return value;
@@ -102,6 +104,7 @@ function taprootPsbtInputFields (opts = {}) {
 
 module.exports = {
   LEAF_VERSION_TAPSCRIPT,
+  asBuffer,
   tapLeafScriptEntry,
   taprootPsbtInputFields
 };

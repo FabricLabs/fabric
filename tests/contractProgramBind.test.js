@@ -22,7 +22,7 @@ const {
   observePaymentToAddress,
   applyPaymentObservationToTip
 } = require('../functions/contractPaymentObserve');
-const { buildFederationVaultFromPolicy } = require('../functions/contractTaproot');
+const { buildFederationVaultFromPolicy } = require('../types/policy');
 
 describe('contractProgramBind / Machine ↔ redeemable withdrawals', function () {
   const blockHash = 'ab'.repeat(32);

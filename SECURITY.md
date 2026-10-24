@@ -101,8 +101,15 @@ Adversarial Peer coverage under the assumption that **NOISE payloads are raw, we
 
 **Typed bodies:** registered field schemas (`Message.fromFields` / `tryParseMessageBody`) cover
 `P2P_PING` / `P2P_PONG` / `P2P_FORWARD` / `P2P_PEER_GOSSIP` / `P2P_PEERING_OFFER` /
-`P2P_PEER_ANNOUNCE`. Peer typed handlers accept **JSON or field-layout forms**. Chat/alias remain
-raw UTF-8. Coverage: `tests/fabric.peer.adversarial.js` plus `tests/fabric.message.js`.
+`P2P_PEER_ANNOUNCE` / `CONTRACT_PUBLISH` / `CONTRACT_MESSAGE` / `SIDECHAIN_STATE_PATCH`. Peer typed
+handlers accept **JSON or field-layout forms**: field bodies of all of these except `P2P_FORWARD` are turned back into
+the legacy JSON object (`Message.decodeLegacyBody`) before any check or app event, so
+contract ids, signer gates and sidechain witness checks run on the same object either way. Gossip
+and offer dedup keys and the announce registration key hash a canonical object, so a JSON copy and
+a field copy of one message are deduped together even though their frame hashes differ. Core's own
+keepalive pings carry a fresh nonce: signatures are deterministic, so identical pings would be
+dropped by frame-hash dedup. Chat/alias remain raw UTF-8. Coverage: `tests/fabric.peer.adversarial.js`,
+`tests/fabric.message.js` and `tests/types.message.legacyBody.js`.
 
 ## Application Resource Contract accumulate
 `functions/contractMessageAccumulate.ingestMessageBuffer` folds signed `CONTRACT_MESSAGE` frames into a tip. **Signer mutations** (`GroupChange`, `GroupChangeProposal` / `GroupChangeVote`, federation invite (+ response), capability grants, withdrawal request/witness, journal request/batch/state) require the AMP author to be in **genesis.signers** (when tip members are empty) or the **current tip member set**, or to present a **verified** `OP_CONTRACT_SIGN` Token (`meta.capabilityToken`) issued by a current signer. **`GroupChat`** and other non-mutation body types (including custom genesis `primitives.messageTypes`) require author ∈ tip/genesis **reader ∪ signer** set (or verified `OP_CONTRACT_READ` / `OP_CONTRACT_SIGN`). **`ContractWithdrawalWitness`** must bind `signer` to the AMP author, carry BIP340 `signature` over `fabric:contract-withdrawal-witness:1:…`, and match the pending request’s tip fields. AMP signature alone is not sufficient. Body `type` must appear in genesis `primitives.messageTypes` when declared (**empty declared list = deny-all**); otherwise only known core `CONTRACT_BODY_TYPES` are accepted. **Withdrawals** must bind `stateDigest` + `bitcoinBlockHash` to the tip at request time (`functions/contractSpend`). See [`docs/CONTRACTS.md`](docs/CONTRACTS.md).
@@ -122,7 +129,7 @@ raw UTF-8. Coverage: `tests/fabric.peer.adversarial.js` plus `tests/fabric.messa
 ~~**Beacon/ARC publish authority fail-open**~~ — `Peer.collectContractAuthorityPubkeys` includes nested `members.signers` / `spendPolicy.validators` so Beacon genesis front-runs by non-validators are rejected.
 
 ## Inventory HTLC binding
-Buyers must rebuild the buyer-bound P2TR (`validateInventoryHtlcOffer`) and must not fund a seller-advertised `paymentAddress` that does not match. When an AMP signer is known (`inventoryResponse.signerPubkeyHex` / offer `ampSignerPubkey` / HTLC `sellerPublicKeyHex`), it must match the resolved seller x-only key before funding.
+Buyers must rebuild the buyer-bound P2TR (`Htlc.validateOffer`) and must not fund a seller-advertised `paymentAddress` that does not match. When an AMP signer is known (`inventoryResponse.signerPubkeyHex` / offer `ampSignerPubkey` / HTLC `sellerPublicKeyHex`), it must match the resolved seller x-only key before funding.
 
 Paid CLI `/confirm` fails closed without Hub confirmation or successful local L1 amount verify. `authorizeDocumentKeyReveal` requires a `settlementId` or `txid`. Private DocumentRequest rewrite is directed (never mesh-broadcast). Sealed multi-blob purchase plans stay on a single seller.
 

@@ -11,7 +11,7 @@ const {
   normalizeValidatorPubkeys
 } = require('../functions/beaconContractDefinition');
 const { normalizeArcGenesis, resolveSpend } = require('../functions/contractSpend');
-const { buildFederationVaultFromPolicy, DEFAULT_CSV_BLOCKS } = require('../functions/contractTaproot');
+const { buildFederationVaultFromPolicy, DEFAULT_CSV_BLOCKS } = require('../types/policy');
 
 describe('beaconContractDefinition', function () {
   it('builds network-agnostic ARC genesis with stable Actor id', function () {

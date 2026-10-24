@@ -166,6 +166,10 @@ IDENTITY.md). The HD <strong>master</strong> remains available as <a href="#Iden
 <dt><a href="#Ledger">Ledger</a> ⇐ <code><a href="#State">State</a></code></dt>
 <dd><p>An ordered stack of pages.</p>
 </dd>
+<dt><a href="#LiquidityBook">LiquidityBook</a></dt>
+<dd></dd>
+<dt><a href="#LiquiditySwap">LiquiditySwap</a></dt>
+<dd></dd>
 <dt><a href="#Logger">Logger</a> ⇐ <code><a href="#Actor">Actor</a></code></dt>
 <dd><p>A basic logger that writes logs to the local file system</p>
 </dd>
@@ -7679,6 +7683,443 @@ Parse an Object into a corresponding Fabric state.
 | Param | Type | Description |
 | --- | --- | --- |
 | input | <code>Object</code> | Object to read as input. |
+
+<a name="LiquidityBook"></a>
+
+## LiquidityBook
+**Kind**: global class  
+
+* [LiquidityBook](#LiquidityBook)
+    * [new LiquidityBook([settings])](#new_LiquidityBook_new)
+    * [.size](#LiquidityBook+size) ⇒ <code>number</code>
+    * [.ingestOrder(body)](#LiquidityBook+ingestOrder) ⇒ <code>Object</code>
+    * [.cancel(body)](#LiquidityBook+cancel) ⇒ <code>Object</code>
+    * [.prune()](#LiquidityBook+prune) ⇒ <code>number</code>
+    * [.forgetMaker(makerPubkey)](#LiquidityBook+forgetMaker) ⇒ <code>number</code>
+    * [.get(id)](#LiquidityBook+get) ⇒ <code>Object</code> \| <code>null</code>
+    * [.listOrders([filter])](#LiquidityBook+listOrders) ⇒ <code>Array.&lt;Object&gt;</code>
+    * [.bestBid()](#LiquidityBook+bestBid) ⇒ <code>Object</code> \| <code>null</code>
+    * [.bestAsk()](#LiquidityBook+bestAsk) ⇒ <code>Object</code> \| <code>null</code>
+    * [.depth(side)](#LiquidityBook+depth) ⇒ <code>Array.&lt;Object&gt;</code>
+    * [.index()](#LiquidityBook+index) ⇒ <code>Object</code>
+    * [.fill(side, amountSats, [opts])](#LiquidityBook+fill) ⇒ <code>Object</code>
+
+<a name="new_LiquidityBook_new"></a>
+
+### new LiquidityBook([settings])
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [settings] | <code>Object</code> |  |  |
+| [settings.network] | <code>string</code> | <code>&quot;&#x27;regtest&#x27;&quot;</code> | only orders for this network are held |
+| [settings.maxOrders] | <code>number</code> | <code>10000</code> |  |
+| [settings.maxCancelled] | <code>number</code> | <code>10000</code> |  |
+| [settings.maxPendingCancelsPerMaker] | <code>number</code> | <code>100</code> | cancels per key for orders not held |
+| [settings.now] | <code>function</code> |  | clock in ms (tests) |
+
+<a name="LiquidityBook+size"></a>
+
+### liquidityBook.size ⇒ <code>number</code>
+**Kind**: instance property of [<code>LiquidityBook</code>](#LiquidityBook)  
+**Returns**: <code>number</code> - orders held  
+<a name="LiquidityBook+ingestOrder"></a>
+
+### liquidityBook.ingestOrder(body) ⇒ <code>Object</code>
+Verify and hold a signed `LiquidityOrder` body.
+
+**Kind**: instance method of [<code>LiquidityBook</code>](#LiquidityBook)  
+
+| Param | Type |
+| --- | --- |
+| body | <code>Object</code> | 
+
+<a name="LiquidityBook+cancel"></a>
+
+### liquidityBook.cancel(body) ⇒ <code>Object</code>
+Apply a signed `LiquidityOrderCancel` from the order's maker. A cancel
+for an order not held yet is remembered with its signer, so the order
+cannot arrive later from that maker; another key's cancel never blocks it.
+
+**Kind**: instance method of [<code>LiquidityBook</code>](#LiquidityBook)  
+
+| Param | Type |
+| --- | --- |
+| body | <code>Object</code> | 
+
+<a name="LiquidityBook+prune"></a>
+
+### liquidityBook.prune() ⇒ <code>number</code>
+Drop expired orders.
+
+**Kind**: instance method of [<code>LiquidityBook</code>](#LiquidityBook)  
+**Returns**: <code>number</code> - orders removed  
+<a name="LiquidityBook+forgetMaker"></a>
+
+### liquidityBook.forgetMaker(makerPubkey) ⇒ <code>number</code>
+Drop every order from one maker (disconnect, fraud, failed settlement).
+
+**Kind**: instance method of [<code>LiquidityBook</code>](#LiquidityBook)  
+**Returns**: <code>number</code> - orders removed  
+
+| Param | Type |
+| --- | --- |
+| makerPubkey | <code>string</code> | 
+
+<a name="LiquidityBook+get"></a>
+
+### liquidityBook.get(id) ⇒ <code>Object</code> \| <code>null</code>
+**Kind**: instance method of [<code>LiquidityBook</code>](#LiquidityBook)  
+**Returns**: <code>Object</code> \| <code>null</code> - the order body  
+
+| Param | Type |
+| --- | --- |
+| id | <code>string</code> | 
+
+<a name="LiquidityBook+listOrders"></a>
+
+### liquidityBook.listOrders([filter]) ⇒ <code>Array.&lt;Object&gt;</code>
+Live orders, best first within each side (bids by highest premium, asks
+by lowest; ties by arrival).
+
+**Kind**: instance method of [<code>LiquidityBook</code>](#LiquidityBook)  
+**Returns**: <code>Array.&lt;Object&gt;</code> - `{ id, ...order }`  
+
+| Param | Type |
+| --- | --- |
+| [filter] | <code>Object</code> | 
+| [filter.side] | <code>string</code> | 
+| [filter.makerPubkey] | <code>string</code> | 
+
+<a name="LiquidityBook+bestBid"></a>
+
+### liquidityBook.bestBid() ⇒ <code>Object</code> \| <code>null</code>
+**Kind**: instance method of [<code>LiquidityBook</code>](#LiquidityBook)  
+**Returns**: <code>Object</code> \| <code>null</code> - highest-premium live bid  
+<a name="LiquidityBook+bestAsk"></a>
+
+### liquidityBook.bestAsk() ⇒ <code>Object</code> \| <code>null</code>
+**Kind**: instance method of [<code>LiquidityBook</code>](#LiquidityBook)  
+**Returns**: <code>Object</code> \| <code>null</code> - lowest-premium live ask  
+<a name="LiquidityBook+depth"></a>
+
+### liquidityBook.depth(side) ⇒ <code>Array.&lt;Object&gt;</code>
+Price levels for one side, best first.
+
+**Kind**: instance method of [<code>LiquidityBook</code>](#LiquidityBook)  
+**Returns**: <code>Array.&lt;Object&gt;</code> - `{ premiumPpm, sats, orders }` (`sats` sums `maxSats`)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| side | <code>string</code> | `bid` or `ask` |
+
+<a name="LiquidityBook+index"></a>
+
+### liquidityBook.index() ⇒ <code>Object</code>
+The market's view of L1 vs. L2 liquidity.
+
+**Kind**: instance method of [<code>LiquidityBook</code>](#LiquidityBook)  
+<a name="LiquidityBook+fill"></a>
+
+### liquidityBook.fill(side, amountSats, [opts]) ⇒ <code>Object</code>
+Walk one side of the book for `amountSats` of L1, best price first, then
+earliest order. Each fill respects the order's `minSats` / `maxSats`; an
+order whose minimum exceeds what is left, or whose fee leaves nothing to
+pay on L2 for that amount, is skipped. Nothing is reserved — the taker
+settles each fill with its maker.
+
+**Kind**: instance method of [<code>LiquidityBook</code>](#LiquidityBook)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| side | <code>string</code> | the side being taken: `ask` buys L1, `bid` sells it |
+| amountSats | <code>number</code> |  |
+| [opts] | <code>Object</code> |  |
+| [opts.excludeMakers] | <code>Array.&lt;string&gt;</code> |  |
+| [opts.limitPpm] | <code>number</code> | worst premium accepted (max for asks, min for bids) |
+
+<a name="LiquiditySwap"></a>
+
+## LiquiditySwap
+**Kind**: global class  
+
+* [LiquiditySwap](#LiquiditySwap)
+    * [new LiquiditySwap(settings)](#new_LiquiditySwap_new)
+    * _instance_
+        * [.status](#LiquiditySwap+status) ⇒ <code>string</code>
+        * [.isL1Giver](#LiquiditySwap+isL1Giver) ⇒ <code>boolean</code>
+        * [.take](#LiquiditySwap+take) ⇒ <code>Object</code> \| <code>null</code>
+        * [.takeId](#LiquiditySwap+takeId) ⇒ <code>string</code> \| <code>null</code>
+        * [.accept](#LiquiditySwap+accept) ⇒ <code>Object</code> \| <code>null</code>
+        * [.funded](#LiquiditySwap+funded) ⇒ <code>Object</code> \| <code>null</code>
+        * [.quote](#LiquiditySwap+quote) ⇒ <code>Object</code> \| <code>null</code>
+        * [.terms](#LiquiditySwap+terms) ⇒ <code>Object</code> \| <code>null</code>
+        * [.escrow](#LiquiditySwap+escrow) ⇒ <code>Object</code> \| <code>null</code>
+        * [.createTake(opts)](#LiquiditySwap+createTake) ⇒ <code>Promise.&lt;Object&gt;</code>
+        * [.acceptTake(takeBody)](#LiquiditySwap+acceptTake) ⇒ <code>Promise.&lt;Object&gt;</code>
+        * [.applyAccept(acceptBody)](#LiquiditySwap+applyAccept) ⇒ [<code>Promise.&lt;LiquiditySwap&gt;</code>](#LiquiditySwap)
+        * [.prepay()](#LiquiditySwap+prepay) ⇒ <code>Promise.&lt;Object&gt;</code>
+        * [.fund()](#LiquiditySwap+fund) ⇒ <code>Promise.&lt;Object&gt;</code>
+        * [.applyFunded(fundedBody)](#LiquiditySwap+applyFunded) ⇒ <code>Promise.&lt;{ok: boolean, pending: (boolean\|undefined), confirmations: number}&gt;</code>
+        * [.payInvoice()](#LiquiditySwap+payInvoice) ⇒ <code>Promise.&lt;string&gt;</code>
+        * [.claim([opts])](#LiquiditySwap+claim) ⇒ <code>Promise.&lt;string&gt;</code>
+        * [.checkPaid()](#LiquiditySwap+checkPaid) ⇒ <code>Promise.&lt;boolean&gt;</code>
+        * [.observeClaim(txHex)](#LiquiditySwap+observeClaim) ⇒ <code>boolean</code>
+        * [.refund([opts])](#LiquiditySwap+refund) ⇒ <code>Promise.&lt;string&gt;</code>
+        * [.abort([reason])](#LiquiditySwap+abort)
+        * [.toJSON([opts])](#LiquiditySwap+toJSON) ⇒ <code>Object</code>
+    * _static_
+        * [.fromJSON(json, settings)](#LiquiditySwap.fromJSON) ⇒ [<code>LiquiditySwap</code>](#LiquiditySwap)
+        * [.lightningAdapter(lightning)](#LiquiditySwap.lightningAdapter) ⇒ <code>Object</code>
+        * [.bitcoinAdapter(service, [options])](#LiquiditySwap.bitcoinAdapter) ⇒ <code>Object</code>
+
+<a name="new_LiquiditySwap_new"></a>
+
+### new LiquiditySwap(settings)
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| settings | <code>Object</code> |  |  |
+| settings.order | <code>Object</code> |  | signed `LiquidityOrder` body |
+| settings.role | <code>string</code> |  | `maker` or `taker` |
+| settings.identityKey | <code>Buffer</code> \| <code>string</code> |  | private key that signs this side's bodies (maker: the order's `makerPubkey`) |
+| settings.htlcKey | <code>Buffer</code> \| <code>string</code> |  | private key for this side's HTLC leaf |
+| [settings.lightningNodeId] | <code>string</code> |  | this side's node id (required for takers) |
+| settings.adapters | <code>Object</code> |  | `{ bitcoin, lightning }` |
+| [settings.secondsPerBlock] | <code>number</code> | <code>600</code> |  |
+| [settings.marginSeconds] | <code>number</code> | <code>3600</code> | invoice must expire this long before the refund lock opens |
+| [settings.minClaimBlocks] | <code>number</code> | <code>6</code> |  |
+| [settings.minConfirmations] | <code>number</code> | <code>1</code> | HTLC confirmations before the L2 giver pays |
+| [settings.invoiceExpirySeconds] | <code>number</code> | <code>3600</code> | upper bound on the swap invoice's expiry |
+| [settings.now] | <code>function</code> |  | clock in ms (tests) |
+
+<a name="LiquiditySwap+status"></a>
+
+### liquiditySwap.status ⇒ <code>string</code>
+**Kind**: instance property of [<code>LiquiditySwap</code>](#LiquiditySwap)  
+**Returns**: <code>string</code> - current state  
+<a name="LiquiditySwap+isL1Giver"></a>
+
+### liquiditySwap.isL1Giver ⇒ <code>boolean</code>
+**Kind**: instance property of [<code>LiquiditySwap</code>](#LiquiditySwap)  
+<a name="LiquiditySwap+take"></a>
+
+### liquiditySwap.take ⇒ <code>Object</code> \| <code>null</code>
+**Kind**: instance property of [<code>LiquiditySwap</code>](#LiquiditySwap)  
+<a name="LiquiditySwap+takeId"></a>
+
+### liquiditySwap.takeId ⇒ <code>string</code> \| <code>null</code>
+**Kind**: instance property of [<code>LiquiditySwap</code>](#LiquiditySwap)  
+<a name="LiquiditySwap+accept"></a>
+
+### liquiditySwap.accept ⇒ <code>Object</code> \| <code>null</code>
+**Kind**: instance property of [<code>LiquiditySwap</code>](#LiquiditySwap)  
+<a name="LiquiditySwap+funded"></a>
+
+### liquiditySwap.funded ⇒ <code>Object</code> \| <code>null</code>
+**Kind**: instance property of [<code>LiquiditySwap</code>](#LiquiditySwap)  
+<a name="LiquiditySwap+quote"></a>
+
+### liquiditySwap.quote ⇒ <code>Object</code> \| <code>null</code>
+**Kind**: instance property of [<code>LiquiditySwap</code>](#LiquiditySwap)  
+**Returns**: <code>Object</code> \| <code>null</code> - amounts for this fill  
+<a name="LiquiditySwap+terms"></a>
+
+### liquiditySwap.terms ⇒ <code>Object</code> \| <code>null</code>
+**Kind**: instance property of [<code>LiquiditySwap</code>](#LiquiditySwap)  
+**Returns**: <code>Object</code> \| <code>null</code> - L1 giver's `{ paymentHashHex, invoice, refundLockHeight, prepayInvoice? }`  
+<a name="LiquiditySwap+escrow"></a>
+
+### liquiditySwap.escrow ⇒ <code>Object</code> \| <code>null</code>
+**Kind**: instance property of [<code>LiquiditySwap</code>](#LiquiditySwap)  
+**Returns**: <code>Object</code> \| <code>null</code> - swap HTLC (`buildSwapEscrow`)  
+<a name="LiquiditySwap+createTake"></a>
+
+### liquiditySwap.createTake(opts) ⇒ <code>Promise.&lt;Object&gt;</code>
+Taker: propose filling `amountSats` of the order.
+
+**Kind**: instance method of [<code>LiquiditySwap</code>](#LiquiditySwap)  
+**Returns**: <code>Promise.&lt;Object&gt;</code> - signed `LiquidityTake` body to send to the maker  
+
+| Param | Type |
+| --- | --- |
+| opts | <code>Object</code> | 
+| opts.amountSats | <code>number</code> | 
+
+<a name="LiquiditySwap+acceptTake"></a>
+
+### liquiditySwap.acceptTake(takeBody) ⇒ <code>Promise.&lt;Object&gt;</code>
+Maker: accept a taker's signed take.
+
+**Kind**: instance method of [<code>LiquiditySwap</code>](#LiquiditySwap)  
+**Returns**: <code>Promise.&lt;Object&gt;</code> - signed `LiquidityTakeAccept` body to send back  
+
+| Param | Type |
+| --- | --- |
+| takeBody | <code>Object</code> | 
+
+<a name="LiquiditySwap+applyAccept"></a>
+
+### liquiditySwap.applyAccept(acceptBody) ⇒ [<code>Promise.&lt;LiquiditySwap&gt;</code>](#LiquiditySwap)
+Taker: apply the maker's signed acceptance.
+
+**Kind**: instance method of [<code>LiquiditySwap</code>](#LiquiditySwap)  
+
+| Param | Type |
+| --- | --- |
+| acceptBody | <code>Object</code> | 
+
+<a name="LiquiditySwap+prepay"></a>
+
+### liquiditySwap.prepay() ⇒ <code>Promise.&lt;Object&gt;</code>
+L2 giver: pay the maker's prepay invoice (orders with `prepaySats`).
+
+**Kind**: instance method of [<code>LiquiditySwap</code>](#LiquiditySwap)  
+**Returns**: <code>Promise.&lt;Object&gt;</code> - payment result  
+<a name="LiquiditySwap+fund"></a>
+
+### liquiditySwap.fund() ⇒ <code>Promise.&lt;Object&gt;</code>
+L1 giver: fund the HTLC. A maker that asked for a prepay funds only once
+its node reports the prepay invoice paid. Funding happens at most once:
+the escrow is recorded before the send, and once the send returns the
+swap is `l1Funded` (refundable, no longer abortable) even if the funding
+notice cannot be built — that error is thrown after the transition.
+
+**Kind**: instance method of [<code>LiquiditySwap</code>](#LiquiditySwap)  
+**Returns**: <code>Promise.&lt;Object&gt;</code> - signed `LiquiditySwapFunded` body to send  
+<a name="LiquiditySwap+applyFunded"></a>
+
+### liquiditySwap.applyFunded(fundedBody) ⇒ <code>Promise.&lt;{ok: boolean, pending: (boolean\|undefined), confirmations: number}&gt;</code>
+L2 giver: check the L1 giver's funding notice against the chain. Returns
+`{ ok: false, pending: true }` until the HTLC has `minConfirmations`
+(call again later); throws when the funding is wrong.
+
+**Kind**: instance method of [<code>LiquiditySwap</code>](#LiquiditySwap)  
+
+| Param | Type |
+| --- | --- |
+| fundedBody | <code>Object</code> | 
+
+<a name="LiquiditySwap+payInvoice"></a>
+
+### liquiditySwap.payInvoice() ⇒ <code>Promise.&lt;string&gt;</code>
+L2 giver: pay the swap invoice and keep the revealed preimage.
+
+**Kind**: instance method of [<code>LiquiditySwap</code>](#LiquiditySwap)  
+**Returns**: <code>Promise.&lt;string&gt;</code> - preimage hex  
+<a name="LiquiditySwap+claim"></a>
+
+### liquiditySwap.claim([opts]) ⇒ <code>Promise.&lt;string&gt;</code>
+L2 giver: claim the HTLC with the preimage.
+
+**Kind**: instance method of [<code>LiquiditySwap</code>](#LiquiditySwap)  
+**Returns**: <code>Promise.&lt;string&gt;</code> - claim txid  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [opts] | <code>Object</code> |  |  |
+| [opts.destinationAddress] | <code>string</code> |  | defaults to `bitcoin.getNewAddress()` |
+| [opts.feeSats] | <code>number</code> | <code>1000</code> |  |
+
+<a name="LiquiditySwap+checkPaid"></a>
+
+### liquiditySwap.checkPaid() ⇒ <code>Promise.&lt;boolean&gt;</code>
+L1 giver: ask the node whether the swap invoice was paid.
+
+**Kind**: instance method of [<code>LiquiditySwap</code>](#LiquiditySwap)  
+<a name="LiquiditySwap+observeClaim"></a>
+
+### liquiditySwap.observeClaim(txHex) ⇒ <code>boolean</code>
+L1 giver: note the counterparty's claim transaction (it carries the
+preimage) and finish.
+
+**Kind**: instance method of [<code>LiquiditySwap</code>](#LiquiditySwap)  
+**Returns**: <code>boolean</code> - whether the transaction claims this swap's HTLC  
+
+| Param | Type |
+| --- | --- |
+| txHex | <code>string</code> | 
+
+<a name="LiquiditySwap+refund"></a>
+
+### liquiditySwap.refund([opts]) ⇒ <code>Promise.&lt;string&gt;</code>
+L1 giver: take the HTLC back after the refund lock when the invoice was
+never paid.
+
+**Kind**: instance method of [<code>LiquiditySwap</code>](#LiquiditySwap)  
+**Returns**: <code>Promise.&lt;string&gt;</code> - refund txid  
+
+| Param | Type | Default |
+| --- | --- | --- |
+| [opts] | <code>Object</code> |  | 
+| [opts.destinationAddress] | <code>string</code> |  | 
+| [opts.feeSats] | <code>number</code> | <code>1000</code> | 
+
+<a name="LiquiditySwap+abort"></a>
+
+### liquiditySwap.abort([reason])
+Walk away before any L1 funds move.
+
+**Kind**: instance method of [<code>LiquiditySwap</code>](#LiquiditySwap)  
+
+| Param | Type | Default |
+| --- | --- | --- |
+| [reason] | <code>string</code> | <code>&quot;aborted&quot;</code> | 
+
+<a name="LiquiditySwap+toJSON"></a>
+
+### liquiditySwap.toJSON([opts]) ⇒ <code>Object</code>
+JSON for persistence. The preimage is a secret until the invoice is paid;
+it is included only with `includeSecrets` (the L1 giver needs it back
+after a restart). Private keys are never included.
+
+**Kind**: instance method of [<code>LiquiditySwap</code>](#LiquiditySwap)  
+
+| Param | Type | Default |
+| --- | --- | --- |
+| [opts] | <code>Object</code> |  | 
+| [opts.includeSecrets] | <code>boolean</code> | <code>false</code> | 
+
+<a name="LiquiditySwap.fromJSON"></a>
+
+### LiquiditySwap.fromJSON(json, settings) ⇒ [<code>LiquiditySwap</code>](#LiquiditySwap)
+Restore a swap saved with [toJSON](#LiquiditySwap+toJSON). The keys must be
+the ones the saved take / accept were made with, or the swap could not
+fund, claim, or refund its HTLC.
+
+**Kind**: static method of [<code>LiquiditySwap</code>](#LiquiditySwap)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| json | <code>Object</code> |  |
+| settings | <code>Object</code> | constructor settings (keys, adapters, …) without `order` / `role` |
+
+<a name="LiquiditySwap.lightningAdapter"></a>
+
+### LiquiditySwap.lightningAdapter(lightning) ⇒ <code>Object</code>
+Lightning adapter over `services/lightning` (Core Lightning).
+
+**Kind**: static method of [<code>LiquiditySwap</code>](#LiquiditySwap)  
+**Returns**: <code>Object</code> - `{ createInvoice, decodeInvoice, pay, isInvoicePaid }`  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| lightning | <code>Object</code> | a `Lightning` service instance |
+
+<a name="LiquiditySwap.bitcoinAdapter"></a>
+
+### LiquiditySwap.bitcoinAdapter(service, [options]) ⇒ <code>Object</code>
+Bitcoin adapter over `services/bitcoin` (bitcoind JSON-RPC, wallet
+loaded). Reading the counterparty's funding transaction needs it in the
+mempool or `txindex=1`.
+
+**Kind**: static method of [<code>LiquiditySwap</code>](#LiquiditySwap)  
+**Returns**: <code>Object</code> - `{ getTipHeight, fundAddress, getTransaction, broadcast, getNewAddress }`  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| service | <code>Object</code> | a `Bitcoin` service instance |
+| [options] | <code>Object</code> |  |
+| [options.wallet] | <code>String</code> | named bitcoind wallet for funding and addresses (default: the node's default wallet) |
 
 <a name="Logger"></a>
 
@@ -18768,7 +19209,7 @@ BOLT checklist: `docs/BOLT_COMPATIBILITY.md`. RPC map: `docs/LIGHTNING_COMPAT.md
     * _instance_
         * [.rpc](#Lightning+rpc)
         * [.createChannel(peer, amount, [pushMsat], [options])](#Lightning+createChannel)
-        * [.createInvoice(amount)](#Lightning+createInvoice)
+        * [.createInvoice(amount, [label], [description], [options])](#Lightning+createInvoice)
         * [.callRpc(method, [params], [timeoutMs])](#Lightning+callRpc) ⇒ <code>Promise.&lt;\*&gt;</code>
         * [.decodeLightning(boltString)](#Lightning+decodeLightning) ⇒ <code>Promise.&lt;Object&gt;</code>
         * [.decodePay(bolt11)](#Lightning+decodePay) ⇒ <code>Promise.&lt;Object&gt;</code>
@@ -18821,14 +19262,19 @@ Creates a new Lightning channel.
 
 <a name="Lightning+createInvoice"></a>
 
-### lightning.createInvoice(amount)
+### lightning.createInvoice(amount, [label], [description], [options])
 Create a new Lightning invoice.
 
 **Kind**: instance method of [<code>Lightning</code>](#Lightning)  
 
-| Param | Type | Description |
-| --- | --- | --- |
-| amount | <code>String</code> | Amount in millisatoshi (msat). |
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| amount | <code>String</code> |  | Amount in millisatoshi (msat). |
+| [label] | <code>String</code> | <code>Generic Invoice</code> |  |
+| [description] | <code>String</code> | <code>Generic description.</code> |  |
+| [options] | <code>Object</code> |  |  |
+| [options.preimage] | <code>String</code> |  | 32-byte hex preimage to lock the invoice to (swaps: the HTLC hash must match) |
+| [options.expiry] | <code>Number</code> |  | seconds until the invoice expires |
 
 <a name="Lightning+callRpc"></a>
 
@@ -18905,7 +19351,7 @@ Call either:
 Pay a BOLT11 invoice or BOLT12-fetched bolt11 string (Core Lightning `pay`).
 
 **Kind**: instance method of [<code>Lightning</code>](#Lightning)  
-**Returns**: <code>Promise.&lt;Object&gt;</code> - Payment result.  
+**Returns**: <code>Promise.&lt;Object&gt;</code> - Payment result; `paymentPreimage` mirrors CLN `payment_preimage`.  
 
 | Param | Type | Default | Description |
 | --- | --- | --- | --- |

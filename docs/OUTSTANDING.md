@@ -44,11 +44,11 @@ in-range leaf, target outside the claimed gap, stray/missing neighbours) plus
 fail-closed behaviour when a verifier or proof builder throws. Detail:
 [PRODUCTION_MARCH.md](PRODUCTION_MARCH.md) progress log.
 
-`functions/fabricMessageParent.js` landed in **`8e756f2`**, exporting
-`ZERO_PARENT` / `isZeroParent` / `normalizeParentHex` / `parentHexOf` /
-`frameIdOf` / `setMessageParent`. Remaining work is the HTTP Bridge originate
+The parent helpers are `Message` statics (`ZERO_PARENT` / `isZeroParent` /
+`normalizeParent` / `parentHexOf` / `frameIdOf` / `setMessageParent`); they
+first landed as `functions/fabricMessageParent.js` in **`8e756f2`**. Remaining work is the HTTP Bridge originate
 path and lockfile bumps in consuming packages — not another core helper.
-`npm run smoke` already requires this leaf so a broken export fails CI.
+`npm run smoke` loads `types/message`, so a broken export fails CI.
 
 **Prior review:** 2026-08-20 (production Hub host scan **10:39Z**). [#186](https://github.com/FabricLabs/fabric/pull/186) on `feature/rsi` (tip **`88f766c28`**, includes review follow-ups after **`aab3c98`** / **`9c6ade0`**). Live Hub **`6bf825d`** / core pin **`f63a33f`**: named retainers flat; RSS **~1.7 GiB** driven by **`external`/`arrayBuffers` (~984 MiB in ~61 m)**; **NOISE MaxListeners 65>64** on **4** consecutive Hub PIDs. `Peer#countNoiseHandshakeListeners` is **not** on `f63a33f` (this tip / #186 only — suite lockfiles already resolve here).
 
@@ -223,7 +223,7 @@ Blockers above (Machine isolate, third-party review, `contractIdentifier` rename
 - `contract:message` `messageHex` is lazy (getter). `Reader` is `@deprecated` (fold into Peer/Message ingest).
 - Blinded-execution `at` bind; Beacon `ready` finalize; peering self-suppress via verified AMP signer; empty `signers: []` spend-key widen; Beacon ARC authority walk.
 - Gossip-network `P2P_PEERING_OFFER` candidate expect includes AMP `verifiedPubkey` (`tests/fabric.peer.gossip-network.js`).
-- Codacy `no-loss-of-precision` on `functions/contractTaproot.js` `CLTV_TIMESTAMP_THRESHOLD` — use `Number('500000000')` (decimal and `5e8` both trip the PR check).
+- Codacy `no-loss-of-precision` on `types/policy.js` `CLTV_TIMESTAMP_THRESHOLD` — use `Number('500000000')` (decimal and `5e8` both trip the PR check).
 - `setWallet` restores in-memory state and unlinks a placeholder `wallet.json` after a failed first save; CLI `--password` stops at `--`, accepts `-secret`, and does not env-fallback when the flag is present.
 - Genesis `primitives.maxJournalEntries` wins over peer-local `meta.maxJournalEntries`; `CONTRACT_PUBLISH` rejects a non-64-hex author.
 - `printGeneratedWallet` never prints the master xprv (`FABRIC_DEBUG` included). Plaintext restore validates encryption password before `setWallet`.

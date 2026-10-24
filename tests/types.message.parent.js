@@ -7,13 +7,13 @@ const Key = require('../types/key');
 const {
   ZERO_PARENT,
   isZeroParent,
-  normalizeParentHex,
+  normalizeParent,
   parentHexOf,
   frameIdOf,
   setMessageParent
-} = require('../functions/fabricMessageParent');
+} = Message;
 
-describe('@fabric/core/functions/fabricMessageParent', function () {
+describe('@fabric/core/types/message parent chain', function () {
   it('treats null / empty / missing as genesis zeros', function () {
     assert.strictEqual(ZERO_PARENT, '00'.repeat(32));
     assert.strictEqual(ZERO_PARENT.length, 64);
@@ -23,26 +23,26 @@ describe('@fabric/core/functions/fabricMessageParent', function () {
     assert.ok(isZeroParent(ZERO_PARENT));
     assert.ok(isZeroParent(Buffer.alloc(32)));
     assert.ok(isZeroParent({ id: ZERO_PARENT }));
-    assert.strictEqual(normalizeParentHex(null), ZERO_PARENT);
+    assert.strictEqual(normalizeParent(null), ZERO_PARENT);
     assert.strictEqual(parentHexOf(null), ZERO_PARENT);
     assert.strictEqual(parentHexOf({}), ZERO_PARENT);
   });
 
   it('normalizes hex, 0x prefix, Buffer, and signed Message.id', function () {
     const id = 'ab'.repeat(32);
-    assert.strictEqual(normalizeParentHex(id.toUpperCase()), id);
-    assert.strictEqual(normalizeParentHex('0x' + id), id);
-    assert.strictEqual(normalizeParentHex(Buffer.from(id, 'hex')), id);
-    assert.strictEqual(normalizeParentHex({ id }), id);
+    assert.strictEqual(normalizeParent(id.toUpperCase()), id);
+    assert.strictEqual(normalizeParent('0x' + id), id);
+    assert.strictEqual(normalizeParent(Buffer.from(id, 'hex')), id);
+    assert.strictEqual(normalizeParent({ id }), id);
     const signed = Message.fromVector(['P2P_CHAT_MESSAGE', 'parent-id']).signWithKey(new Key());
-    assert.strictEqual(normalizeParentHex(signed), signed.id);
+    assert.strictEqual(normalizeParent(signed), signed.id);
     assert.strictEqual(parentHexOf({ parent: id }), id);
   });
 
   it('rejects malformed parent pointers', function () {
-    assert.throws(() => normalizeParentHex('zz'), /32-byte hex/);
-    assert.throws(() => normalizeParentHex('aa'), /32-byte hex/);
-    assert.throws(() => normalizeParentHex(Buffer.alloc(31)), /32 bytes/);
+    assert.throws(() => normalizeParent('zz'), /32-byte hex/);
+    assert.throws(() => normalizeParent('aa'), /32-byte hex/);
+    assert.throws(() => normalizeParent(Buffer.alloc(31)), /32 bytes/);
     assert.strictEqual(isZeroParent('not-hex'), false);
   });
 
@@ -95,7 +95,7 @@ describe('@fabric/core/functions/fabricMessageParent', function () {
     it('re-exports the parent helpers as statics', function () {
       assert.strictEqual(Message.ZERO_PARENT, ZERO_PARENT);
       assert.strictEqual(Message.isZeroParent, isZeroParent);
-      assert.strictEqual(Message.normalizeParent, normalizeParentHex);
+      assert.strictEqual(Message.normalizeParent, normalizeParent);
       assert.strictEqual(Message.parentHexOf, parentHexOf);
       assert.strictEqual(Message.frameIdOf, frameIdOf);
       assert.strictEqual(Message.setMessageParent, setMessageParent);

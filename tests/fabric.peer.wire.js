@@ -14,7 +14,7 @@ const {
   MAX_DOCUMENT_ID_LENGTH,
   INVENTORY_RESPONSE_PAGE_BYTES
 } = require('../constants');
-const { paginateInventoryItems } = require('../functions/inventoryPages');
+const { paginateInventoryItems } = require('../types/documentBook');
 const {
   NODEB,
   offlinePeerSettings,
@@ -77,7 +77,7 @@ function socketClosed (socket, timeoutMs) {
 describe('@fabric/core Peer wire limits', function () {
   this.timeout(60000);
 
-  describe('functions/inventoryPages', function () {
+  describe('DocumentBook.paginateInventoryItems', function () {
     it('packs small items into pages under the byte budget', function () {
       const items = smallItems(200);
       const { pages, skipped } = paginateInventoryItems(items, { pageBytes: 8192 });

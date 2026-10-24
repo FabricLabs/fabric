@@ -10,8 +10,7 @@ const {
   listDocumentExchangeCliContracts,
   listDocumentExchangeCommands
 } = require('../functions/cliDocumentExchange');
-const { Book } = require('../functions/documentMarket');
-const { createDocumentPurchaseSession } = require('../functions/documentMarket');
+const { DocumentBook, createDocumentPurchaseSession } = require('../types/documentBook');
 const { HTLC_MINIMUM_SATS } = require('../constants');
 
 describe('functions/cliDocumentExchange (headless CLI surface)', function () {
@@ -130,19 +129,19 @@ describe('functions/cliDocumentExchange (headless CLI surface)', function () {
 
   it('buy opens a session from the offer book without double-pay', function () {
     const Key = require('../types/key');
-    const inventoryHtlc = require('../functions/inventoryHtlc');
+    const Htlc = require('../types/htlc');
     const seller = new Key();
     const buyer = new Key();
     const contentHash = 'aa'.repeat(32);
     const lock = 900_000;
-    const built = inventoryHtlc.buildInventoryHtlcP2tr({
-      networkName: 'regtest',
-      sellerPubkeyCompressed: Buffer.from(String(seller.pubkey), 'hex'),
-      buyerRefundPubkeyCompressed: Buffer.from(String(buyer.pubkey), 'hex'),
-      paymentHash32: Buffer.from(contentHash, 'hex'),
-      refundLocktimeHeight: lock
+    const built = new Htlc({
+      network: 'regtest',
+      claimPubkey: Buffer.from(String(seller.pubkey), 'hex'),
+      refundPubkey: Buffer.from(String(buyer.pubkey), 'hex'),
+      paymentHash: Buffer.from(contentHash, 'hex'),
+      refundLocktime: lock
     });
-    const book = new Book();
+    const book = new DocumentBook();
     book.ingestInventoryResponse({
       origin: 'seller1',
       sellerPubkey: String(seller.pubkey).toLowerCase(),
@@ -211,7 +210,7 @@ describe('functions/cliDocumentExchange (headless CLI surface)', function () {
     const Key = require('../types/key');
     const seller = new Key();
     const buyer = new Key();
-    const book = new Book();
+    const book = new DocumentBook();
     book.ingestInventoryResponse({
       origin: 'seller1',
       sellerPubkey: String(seller.pubkey).toLowerCase(),
@@ -245,7 +244,7 @@ describe('functions/cliDocumentExchange (headless CLI surface)', function () {
   });
 
   it('listOffers ranks ingested inventory rows', function () {
-    const book = new Book();
+    const book = new DocumentBook();
     book.ingestInventoryResponse({
       origin: 'a',
       peerScore: 2,
@@ -520,19 +519,19 @@ describe('functions/cliDocumentExchange (headless CLI surface)', function () {
 
   it('buy auto opens a multi-blob plan when blobTotal > 1', function () {
     const Key = require('../types/key');
-    const inventoryHtlc = require('../functions/inventoryHtlc');
+    const Htlc = require('../types/htlc');
     const seller = new Key();
     const buyer = new Key();
     const contentHash = 'ee'.repeat(32);
     const lock = 900_000;
-    const built = inventoryHtlc.buildInventoryHtlcP2tr({
-      networkName: 'regtest',
-      sellerPubkeyCompressed: Buffer.from(String(seller.pubkey), 'hex'),
-      buyerRefundPubkeyCompressed: Buffer.from(String(buyer.pubkey), 'hex'),
-      paymentHash32: Buffer.from(contentHash, 'hex'),
-      refundLocktimeHeight: lock
+    const built = new Htlc({
+      network: 'regtest',
+      claimPubkey: Buffer.from(String(seller.pubkey), 'hex'),
+      refundPubkey: Buffer.from(String(buyer.pubkey), 'hex'),
+      paymentHash: Buffer.from(contentHash, 'hex'),
+      refundLocktime: lock
     });
-    const book = new Book();
+    const book = new DocumentBook();
     book.ingestInventoryResponse({
       origin: 'seller-blobs',
       sellerPubkey: String(seller.pubkey).toLowerCase(),

@@ -11,7 +11,7 @@
  */
 
 const bitcoin = require('bitcoinjs-lib');
-const { networkForFabricName } = require('./contractTaproot');
+const { networkForFabricName } = require('../types/policy');
 
 /**
  * @param {string|object|Buffer} txInput raw hex, Transaction, or decoded RPC-like tx

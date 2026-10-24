@@ -1,20 +1,21 @@
 'use strict';
 
 const assert = require('assert');
-const { evaluateTierWhen, getPath } = require('../functions/contractTierWhen');
+const Policy = require('../types/policy');
+const { evaluateTierWhen } = Policy;
 
-describe('contractTierWhen', function () {
-  it('getPath reads own properties only', function () {
+describe('Policy tier when', function () {
+  it('tierWhenPath reads own properties only', function () {
     const state = { a: { b: 1 } };
-    assert.strictEqual(getPath(state, '/a/b'), 1);
-    assert.strictEqual(getPath(state, '/__proto__'), undefined);
-    assert.strictEqual(getPath(state, '/constructor'), undefined);
+    assert.strictEqual(Policy.tierWhenPath(state, '/a/b'), 1);
+    assert.strictEqual(Policy.tierWhenPath(state, '/__proto__'), undefined);
+    assert.strictEqual(Policy.tierWhenPath(state, '/constructor'), undefined);
     const polluted = {};
     Object.defineProperty(polluted, '__proto__', { value: { pwned: true }, enumerable: true });
-    assert.strictEqual(getPath(polluted, '/__proto__'), undefined);
-    assert.strictEqual(getPath(polluted, '/__proto__/pwned'), undefined);
-    assert.strictEqual(getPath(state, '/a/missing'), undefined);
-    assert.strictEqual(getPath(null, '/a'), undefined);
+    assert.strictEqual(Policy.tierWhenPath(polluted, '/__proto__'), undefined);
+    assert.strictEqual(Policy.tierWhenPath(polluted, '/__proto__/pwned'), undefined);
+    assert.strictEqual(Policy.tierWhenPath(state, '/a/missing'), undefined);
+    assert.strictEqual(Policy.tierWhenPath(null, '/a'), undefined);
   });
 
   it('evaluateTierWhen fails closed on empty or malformed when', function () {

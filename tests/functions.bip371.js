@@ -2,7 +2,7 @@
 
 const assert = require('assert');
 const { LEAF_VERSION_TAPSCRIPT, tapLeafScriptEntry, taprootPsbtInputFields } = require('../functions/bip371');
-const inventoryHtlc = require('../functions/inventoryHtlc');
+const { TAPROOT_INTERNAL_NUMS } = require('../types/policy');
 
 describe('@fabric/core/functions/bip371', function () {
   const internal = Buffer.from(
@@ -82,7 +82,7 @@ describe('@fabric/core/functions/bip371', function () {
     );
   });
 
-  it('is the bag shape used by inventory HTLC NUMS internal key', function () {
-    assert.ok(inventoryHtlc.TAPROOT_INTERNAL_NUMS.equals(internal));
+  it('is the bag shape used by the Htlc NUMS internal key', function () {
+    assert.ok(TAPROOT_INTERNAL_NUMS.equals(internal));
   });
 });

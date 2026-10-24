@@ -2,12 +2,12 @@
 
 const assert = require('assert');
 const Key = require('../types/key');
+const Policy = require('../types/policy');
 const {
-  hashlockFromProgramRun,
-  composePolicyWithRunHashlock
-} = require('../functions/programTaprootBind');
+  hashlockFromProgramRun
+} = Policy;
 
-describe('programTaprootBind', function () {
+describe('Policy program-run hashlock', function () {
   it('hashlockFromProgramRun requires 64-hex commitment', function () {
     assert.throws(() => hashlockFromProgramRun({}), /runCommitmentHex/);
     const h = hashlockFromProgramRun({
@@ -18,7 +18,7 @@ describe('programTaprootBind', function () {
     assert.strictEqual(h.id, 'hashlock-run');
   });
 
-  it('composePolicyWithRunHashlock changes address vs ladder-only', function () {
+  it('withRunHashlock changes address vs ladder-only', function () {
     const a = new Key();
     const b = new Key();
     const ladder = {
@@ -28,7 +28,7 @@ describe('programTaprootBind', function () {
       network: 'regtest',
       csvBlocks: 144
     };
-    const withRun = composePolicyWithRunHashlock({
+    const withRun = Policy.withRunHashlock({
       ladder,
       network: 'regtest',
       run: {
@@ -42,11 +42,21 @@ describe('programTaprootBind', function () {
     assert.ok(withRun.programRunId);
     assert.strictEqual(withRun.hashlock.commitmentHex, '22'.repeat(32));
     assert.strictEqual(withRun.hashlock.runCommitmentHex, '22'.repeat(32));
+
+    const policy = new Policy(ladder);
+    const fromInstance = policy.withRunHashlock({
+      programHash: '11'.repeat(32),
+      runCommitmentHex: '22'.repeat(32),
+      pubkeyHex: a.pubkey
+    });
+    assert.strictEqual(fromInstance.address, withRun.address);
+    assert.notStrictEqual(fromInstance.address, policy.address);
+    assert.throws(() => policy.withRunHashlock({ runCommitmentHex: '22'.repeat(32) }), /Policy\.withRunHashlock: run\.pubkeyHex required/);
   });
 
   it('programRunId uses runCommitmentHex not leaf commitment override', function () {
     const a = new Key();
-    const withRun = composePolicyWithRunHashlock({
+    const withRun = Policy.withRunHashlock({
       ladder: {
         validators: [a.pubkey],
         threshold: 1,
@@ -80,7 +90,7 @@ describe('programTaprootBind', function () {
       leaves: [],
       hashlock: { commitmentHex: 'aa'.repeat(32), id: 'pre' }
     };
-    assert.throws(() => composePolicyWithRunHashlock({
+    assert.throws(() => Policy.withRunHashlock({
       policy,
       run: { runCommitmentHex: 'bb'.repeat(32), pubkeyHex: a.pubkey }
     }), /policy\.hashlock/);
@@ -92,8 +102,8 @@ describe('programTaprootBind', function () {
       publisher: a.pubkey,
       csvBlocks: 144
     };
-    const ladderPolicy = require('../functions/contractTaproot').synthesizeDefaultLadder(clean);
-    assert.throws(() => composePolicyWithRunHashlock({
+    const ladderPolicy = require('../types/policy').synthesizeDefaultLadder(clean);
+    assert.throws(() => Policy.withRunHashlock({
       policy: ladderPolicy,
       network: 'testnet',
       run: { runCommitmentHex: 'bb'.repeat(32), pubkeyHex: a.pubkey }
@@ -109,19 +119,19 @@ describe('programTaprootBind', function () {
       network: 'regtest',
       csvBlocks: 144
     };
-    assert.throws(() => composePolicyWithRunHashlock({
+    assert.throws(() => Policy.withRunHashlock({
       ladder,
       run: { runCommitmentHex: 'bb'.repeat(32) }
     }), /run\.pubkeyHex required/);
 
-    const signed = composePolicyWithRunHashlock({
+    const signed = Policy.withRunHashlock({
       ladder,
       run: { runCommitmentHex: 'bb'.repeat(32), pubkeyHex: a.pubkey }
     });
     const signedLeaf = signed.leaves.find((l) => l.kind === 'hashlock');
     assert.strictEqual(signedLeaf.witnessShape, 'preimage+sig');
 
-    const open = composePolicyWithRunHashlock({
+    const open = Policy.withRunHashlock({
       ladder,
       allowPreimageOnly: true,
       run: { runCommitmentHex: 'bb'.repeat(32) }
@@ -140,14 +150,14 @@ describe('programTaprootBind', function () {
       networkName: 'testnet',
       csvBlocks: 144
     };
-    const withRun = composePolicyWithRunHashlock({
+    const withRun = Policy.withRunHashlock({
       policy,
       run: { runCommitmentHex: 'bb'.repeat(32), pubkeyHex: a.pubkey }
     });
     assert.ok(withRun.address.startsWith('tb1'));
     assert.strictEqual(withRun.network, 'testnet');
 
-    assert.throws(() => composePolicyWithRunHashlock({
+    assert.throws(() => Policy.withRunHashlock({
       policy,
       network: 'regtest',
       run: { runCommitmentHex: 'bb'.repeat(32), pubkeyHex: a.pubkey }

@@ -8,7 +8,8 @@ const { getBodySchema } = require('../types/message');
 describe('functions/documentRegistrySidechain', function () {
   it('registers SIDECHAIN_STATE_PATCH body schema', function () {
     assert.ok(getBodySchema(registry.SIDECHAIN_STATE_PATCH_TYPE));
-    assert.strictEqual(getBodySchema(registry.SIDECHAIN_STATE_PATCH_TYPE).length, 4);
+    assert.deepStrictEqual(getBodySchema(registry.SIDECHAIN_STATE_PATCH_TYPE), registry.SCHEMA_SIDECHAIN_STATE_PATCH);
+    assert.strictEqual(getBodySchema(registry.SIDECHAIN_STATE_PATCH_TYPE).length, 5);
   });
 
   it('field round-trip encode/decode', function () {

@@ -380,7 +380,7 @@ describe('@fabric/core/functions/bip69', function () {
 });
 
 const { sortPubkeysBip67, comparePubkeysBip67 } = require('../functions/bip67');
-const { parseCompressedPubkeysSorted } = require('../functions/contractTaproot');
+const { parseCompressedPubkeysSorted } = require('../types/policy');
 
 const KEY_LOW = '02' + '11'.repeat(32);
 const KEY_HIGH = '03' + '11'.repeat(32);

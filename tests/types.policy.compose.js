@@ -4,9 +4,9 @@ const assert = require('assert');
 const crypto = require('crypto');
 const bitcoin = require('bitcoinjs-lib');
 const Key = require('../types/key');
+const Policy = require('../types/policy');
 const {
   synthesizeDefaultLadder,
-  buildContractTaproot,
   composeTaprootTree,
   buildHashlockLeaf,
   buildSpendLeaf,
@@ -17,12 +17,12 @@ const {
   prepareTierWithdrawalPsbt,
   finalizeSpendPsbt,
   toAddress
-} = require('../functions/contractTaproot');
+} = Policy;
 const {
   schnorrSignerFromKey
 } = require('./helpers/arcFederationE2e');
 
-describe('contractTaproot composable trees + hashlock', function () {
+describe('Policy composable trees + hashlock', function () {
   const keys = [];
   before(function () {
     for (let i = 0; i < 4; i++) keys.push(new Key());
@@ -49,7 +49,7 @@ describe('contractTaproot composable trees + hashlock', function () {
     const a = toAddress(ladder);
     const b = toAddress(withLock);
     assert.notStrictEqual(a, b);
-    const built = buildContractTaproot(withLock);
+    const built = Policy.compile(withLock);
     assert.ok(built.leaves.some((l) => l.kind === 'hashlock' && l.id === 'hashlock-run'));
     assert.strictEqual(built.leaves.find((l) => l.kind === 'hashlock').commitmentHex, commitmentHex);
   });
@@ -87,7 +87,7 @@ describe('contractTaproot composable trees + hashlock', function () {
       network: 'regtest',
       hashlock: { commitmentHex }
     });
-    const built = buildContractTaproot(policy);
+    const built = Policy.compile(policy);
     const value = 100000n;
     const fund = new bitcoin.Transaction();
     fund.version = 2;
@@ -128,7 +128,7 @@ describe('contractTaproot composable trees + hashlock', function () {
       network: 'regtest',
       csvBlocks: 3
     });
-    const built = buildContractTaproot(policy);
+    const built = Policy.compile(policy);
     const fund = new bitcoin.Transaction();
     fund.version = 2;
     fund.addInput(Buffer.alloc(32), 0);
@@ -196,7 +196,7 @@ describe('contractTaproot composable trees + hashlock', function () {
       network: 'regtest',
       csvBlocks: 3
     });
-    const built = buildContractTaproot(policy);
+    const built = Policy.compile(policy);
     const fund = new bitcoin.Transaction();
     fund.version = 2;
     fund.addInput(Buffer.alloc(32), 0);

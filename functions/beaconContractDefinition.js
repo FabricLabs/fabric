@@ -17,7 +17,7 @@ const Actor = require('../types/actor');
 const { pubkeyCompressed } = require('./groupChatSeal');
 const { sortPubkeysBip67 } = require('./bip67');
 const { canonicalSpendPolicy } = require('./contractSpend');
-const { DEFAULT_CSV_BLOCKS } = require('./contractTaproot');
+const { DEFAULT_CSV_BLOCKS } = require('../types/policy');
 
 const BEACON_CONTRACT_NAME = 'fabric-beacon';
 const BEACON_CONTRACT_VERSION = 1;

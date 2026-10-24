@@ -15,6 +15,7 @@ const Actor = require('./actor');
 const Key = require('./key');
 const Message = require('./message');
 const Resolutions = require('./resolutions');
+const { LOG_TYPES } = require('../functions/applicationNamespaces');
 const Service = require('./service');
 
 /**
@@ -227,7 +228,7 @@ class Contract extends Service {
       created: now,
       genesis: hash,
       history: [ hash ], // most recent first
-      messages: this.messages,
+      messages: Object.assign({}, this.messages),
       name: this.settings.name,
       signature: '',
       state: input,
@@ -238,11 +239,9 @@ class Contract extends Service {
     this.actor = new Actor(template);
     this.emit('log', `Deploying Contract [0x${this.actor.id}] (${PACKET_CONTRACT_GENESIS.byteLength} bytes): ${this.messages[hash]}`);
 
-    // Network publish message (contract)
-    const PACKET_CONTRACT_PUBLISH = Message.fromVector(['CONTRACT_PUBLISH', JSON.stringify({
-      type: 'CONTRACT_PUBLISH',
-      object: template
-    })]).signWithKey(this.key);
+    // Network publish message: the body is the definition itself, so peers
+    // derive the same namespace id (`Actor(template).id`).
+    const PACKET_CONTRACT_PUBLISH = Message.fromLegacyBody('CONTRACT_PUBLISH', template).signWithKey(this.key);
 
     const signed = PACKET_CONTRACT_PUBLISH.signWithKey(this.key);
     const pubhash = crypto.createHash('sha256').update(signed.toBuffer()).digest('hex');
@@ -288,16 +287,19 @@ class Contract extends Service {
     const changes = monitor.generate(this.observer);
 
     if (changes.length) {
-      const message = Message.fromVector(['CONTRACT_MESSAGE', {
-        type: 'CONTRACT_MESSAGE',
-        object: {
-          contract: this.id,
-          ops: changes
-        }
-      }]);
-
+      // The monitor has already consumed these changes: listeners get them
+      // even when the diff is too large for one message.
       this.emit('changes', changes);
-      this.emit('message', message);
+      try {
+        const message = Message.fromLegacyBody('CONTRACT_MESSAGE', {
+          contract: this.id,
+          type: LOG_TYPES.ContractMessage,
+          ops: changes
+        });
+        this.emit('message', message);
+      } catch (err) {
+        this.emit('warning', `[CONTRACT] commit message not built: ${err && err.message ? err.message : err}`);
+      }
     }
 
     this.emit('commit', {
@@ -434,7 +436,7 @@ class Contract extends Service {
    * @returns {object}
    */
   _taprootPolicyInputs (overrides = {}) {
-    const tap = require('../functions/contractTaproot');
+    const Policy = require('./policy');
     const validators = overrides.validators
       || (this.settings.proposedPolicy && this.settings.proposedPolicy.validators)
       || (this.settings.consensus && this.settings.consensus.validators)
@@ -459,7 +461,7 @@ class Contract extends Service {
     }
     const csvBlocks = overrides.csvBlocks != null
       ? overrides.csvBlocks
-      : (this.settings.csvBlocks != null ? this.settings.csvBlocks : tap.DEFAULT_CSV_BLOCKS);
+      : (this.settings.csvBlocks != null ? this.settings.csvBlocks : Policy.DEFAULT_CSV_BLOCKS);
     return { validators, threshold, publisher, network, csvBlocks };
   }
 
@@ -467,10 +469,10 @@ class Contract extends Service {
    * Build deterministic P2TR spend tree from settings.spendLadder or synthesized
    * validators / publisher policy.
    * @param {object} [overrides]
-   * @returns {object} {@link module:functions/contractTaproot.buildContractTaproot}
+   * @returns {object} {@link Policy.compile}
    */
   toTaprootContract (overrides = {}) {
-    const tap = require('../functions/contractTaproot');
+    const Policy = require('./policy');
     const ladder = overrides.spendLadder || this.settings.spendLadder || null;
     if (ladder) {
       const network = overrides.network || this.settings.network || ladder.network;
@@ -479,12 +481,12 @@ class Contract extends Service {
           'Contract Bitcoin network required (set settings.network, ladder.network, or overrides.network)'
         );
       }
-      return tap.buildContractTaproot({ ...ladder, ...overrides, network });
+      return Policy.compile({ ...ladder, ...overrides, network });
     }
     const inputs = this._taprootPolicyInputs(overrides);
     // Do not re-spread overrides after inputs — falsy override fields must not
     // undo resolved validators / threshold / csvBlocks / network.
-    return tap.buildContractTaproot(tap.synthesizeDefaultLadder(inputs));
+    return Policy.compile(Policy.synthesizeDefaultLadder(inputs));
   }
 
   /**

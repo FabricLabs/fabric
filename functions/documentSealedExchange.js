@@ -26,20 +26,95 @@
  * committed `SHA256(K_i)`. Unlike the static hash this is not atomic: a
  * seller can quote a `wrappedKey` that does not unwrap. The signed quote plus
  * the public `s` is then a self-contained fraud proof (`checkBlobQuote`).
+ *
+ * **Convergent sealing** (`CONVERGENT_SCHEME`). The key is derived from the
+ * plaintext — `K = taggedHash(CONVERGENT_KEY_TAG, mode || secret? || plaintext)`
+ * — and the IV from the key, so the same plaintext seals to the same
+ * ciphertext, blob hash, and payment hash for every seller. Identical chunks
+ * de-duplicate by construction. An optional convergence secret scopes that
+ * to whoever holds it (a community), which blunts confirmation-of-file
+ * guesses. Random keys (`SCHEME`) remain the private mode.
  */
 
 const crypto = require('crypto');
+const taggedHash = require('./taggedHash');
 
 const SCHEME = 'aes-256-gcm-content-v1';
+const CONVERGENT_SCHEME = 'aes-256-gcm-convergent-v1';
+const CONVERGENT_KEY_TAG = 'Fabric/DocumentConvergentKey/v1';
+const CONVERGENT_IV_TAG = 'Fabric/DocumentConvergentIv/v1';
+const SEALED_SCHEMES = Object.freeze([SCHEME, CONVERGENT_SCHEME]);
+
+/**
+ * Normalize a convergence secret to 32 bytes (`SHA256` of whatever was given).
+ * @param {Buffer|string|null|undefined} secret
+ * @returns {Buffer|null}
+ * @private
+ */
+function _convergenceSecret (secret) {
+  if (secret == null || secret === '') return null;
+  const buf = Buffer.isBuffer(secret) ? secret : Buffer.from(String(secret), 'utf8');
+  if (!buf.length) return null;
+  return crypto.createHash('sha256').update(buf).digest();
+}
+
+/**
+ * Content-derived key for one chunk. A leading mode byte keeps the public
+ * and secret-scoped namespaces disjoint.
+ * @param {Buffer|string} plaintext
+ * @param {Buffer|string} [secret] convergence secret (community scope)
+ * @returns {Buffer} 32-byte key
+ */
+function convergentKey (plaintext, secret) {
+  const plain = Buffer.isBuffer(plaintext) ? plaintext : Buffer.from(plaintext == null ? '' : plaintext);
+  const scope = _convergenceSecret(secret);
+  const head = scope ? Buffer.concat([Buffer.from([1]), scope]) : Buffer.from([0]);
+  return taggedHash(CONVERGENT_KEY_TAG, Buffer.concat([head, plain]));
+}
+
+/**
+ * IV for a convergent key (a key is only ever used for one plaintext).
+ * @param {Buffer|string} key32
+ * @returns {Buffer} 12-byte IV
+ */
+function convergentIv (key32) {
+  const key = Buffer.isBuffer(key32) ? key32 : Buffer.from(String(key32), 'hex');
+  if (key.length !== 32) throw new Error('content key must be 32 bytes');
+  return taggedHash(CONVERGENT_IV_TAG, key).subarray(0, 12);
+}
+
+/**
+ * True when `keyHex` (and `iv`, when given) are the convergent derivation of
+ * `plaintext` — the chunk is the canonical one for its content.
+ * @param {Buffer} plaintext
+ * @param {Buffer|string} keyHex
+ * @param {Object} [opts]
+ * @param {Buffer|string} [opts.iv] base64 or Buffer
+ * @param {Buffer|string} [opts.secret]
+ * @returns {boolean}
+ */
+function isConvergentKey (plaintext, keyHex, opts = {}) {
+  const key = Buffer.isBuffer(keyHex) ? keyHex : Buffer.from(String(keyHex || ''), 'hex');
+  if (key.length !== 32) return false;
+  const derived = convergentKey(plaintext, opts.secret);
+  if (!crypto.timingSafeEqual(derived, key)) return false;
+  if (opts.iv == null) return true;
+  const iv = Buffer.isBuffer(opts.iv) ? opts.iv : Buffer.from(String(opts.iv), 'base64');
+  return iv.length === 12 && iv.equals(convergentIv(key));
+}
 
 /**
  * @param {Buffer} plaintext
+ * @param {Object} [opts]
+ * @param {boolean} [opts.convergent] derive key and IV from the content
+ * @param {Buffer|string} [opts.secret] convergence secret (with `convergent`)
  * @returns {{ key: Buffer, iv: Buffer, ciphertext: Buffer, contentSha256: string, encryption: object }}
  */
-function sealPlaintext (plaintext) {
+function sealPlaintext (plaintext, opts = {}) {
   const buf = Buffer.isBuffer(plaintext) ? plaintext : Buffer.from(plaintext);
-  const key = crypto.randomBytes(32);
-  const iv = crypto.randomBytes(12);
+  const convergent = opts.convergent === true;
+  const key = convergent ? convergentKey(buf, opts.secret) : crypto.randomBytes(32);
+  const iv = convergent ? convergentIv(key) : crypto.randomBytes(12);
   const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
   const enc = Buffer.concat([cipher.update(buf), cipher.final()]);
   const tag = cipher.getAuthTag();
@@ -51,7 +126,7 @@ function sealPlaintext (plaintext) {
     ciphertext,
     contentSha256,
     encryption: {
-      scheme: SCHEME,
+      scheme: convergent ? CONVERGENT_SCHEME : SCHEME,
       iv: iv.toString('base64'),
       contentSha256
     }
@@ -92,7 +167,7 @@ function paymentHashHexFromKey (key32) {
  * @returns {boolean}
  */
 function isSealedDocument (doc) {
-  return !!(doc && doc.encryption && doc.encryption.scheme === SCHEME);
+  return !!(doc && doc.encryption && SEALED_SCHEMES.includes(doc.encryption.scheme));
 }
 
 /**
@@ -516,6 +591,11 @@ module.exports = {
   KEY_REVEAL_TYPE,
   BLOB_QUOTE_TYPE,
   SCHEME,
+  CONVERGENT_SCHEME,
+  SEALED_SCHEMES,
+  convergentKey,
+  convergentIv,
+  isConvergentKey,
   wrapBlobKey,
   unwrapBlobKey,
   createBlobQuote,

@@ -6,7 +6,7 @@
  * A `Market` holds a sats budget and a list of wanted documents (by id,
  * optionally Tree root + blob total). On each `tick()` it refreshes peer
  * inventories (filtered by `merkleRootHex` / `maxSats`), asks the local
- * `Book` for the cheapest / fastest / most reliable blob plan,
+ * `DocumentBook` for the cheapest / fastest / most reliable blob plan,
  * and — when the plan fits `perPlanMaxSats` and the remaining budget — opens
  * one purchase session per blob (`createDocumentPurchaseSession`, one HTLC per
  * seller per blob). Paid sealed blobs are verified before paying: the seller's
@@ -29,21 +29,19 @@
  *
  * Follows the Fabric Agent contract: `start()` / `stop()` / `tick()`, state
  * under `_state.content`, `debug` / `error` events. No wire changes: it only
- * drives existing `Peer` / `Channel.Book` methods and existing message types.
+ * drives existing `Peer` / `ChannelBook` methods and existing message types.
  */
 
 const crypto = require('crypto');
 const bitcoin = require('bitcoinjs-lib');
 const { HTLC_MINIMUM_SATS } = require('../constants');
 const Service = require('../types/service');
-const Book = require('../types/book');
-const inventoryHtlc = require('../functions/inventoryHtlc');
+const DocumentBook = require('../types/documentBook');
+const Htlc = require('../types/htlc');
+const { networkForFabricName } = require('../types/policy');
 const { assertTestNetwork } = require('../functions/bitcoinNetworkAllowlist');
 const { contentHashHexFromObject } = require('../functions/documentPaymentHash');
-const {
-  createDocumentPurchaseSession,
-  settlementDedupeKey
-} = require('../functions/documentMarket');
+const { settlementDedupeKey } = require('../functions/documentBlobManifest');
 
 /** @private */
 const HEX64 = /^[0-9a-f]{64}$/i;
@@ -113,6 +111,8 @@ class Market extends Service {
    * @param {number} [settings.prepayTimeoutMs=60000] Verify-before-pay: wait this long for the seller's free ciphertext (and quote).
    * @param {boolean} [settings.verifyBeforePay=true] Pay a sealed blob only once its ciphertext is held and committed by the root.
    * @param {boolean} [settings.quotes=false] Ask sellers for a per-buyer `DocumentBlobQuote` and pay its hash. Not atomic: a seller can quote a wrapped key that does not unwrap, claim the HTLC, and leave only a fraud proof (`documentBlobQuoteFraud`). Static hashes are atomic.
+   * @param {boolean} [settings.credit=true] Take a seller's credit offer (`creditRateSats`) when a channel with it can pay: the key comes first, and the blob is paid with a channel transfer only once it opens. A blob that does not open is never paid.
+   * @param {Object|boolean} [settings.seed] Seed after download: sell every received convergent document again as the same tree, on these `Peer#publishSealedDocument` terms (`{ rateSats, creditRateSats, creditLimitSats }`; `true` = free).
    * @param {number} [settings.fundingSafetyMs=3600000] A funding whose outcome is unknown is released only after the address is reported unfunded this long after the last pay attempt.
    * @param {number} [settings.minHtlcLockBlocks=24] Refuse L1 HTLCs whose refund locktime is closer than this to the tip (or past).
    * @param {number} [settings.maxHtlcLockBlocks=4032] Refuse L1 HTLCs that lock funds longer than this (0 = no cap).
@@ -124,7 +124,7 @@ class Market extends Service {
    * @param {Function} [settings.tipHeight] `() => number` chain tip (else `attach({ tipHeight })`, the channel book, or `onBlock`).
    * @param {Function} [settings.now] clock override (`() => ms`), for tests.
    * @param {string} [settings.network='regtest'] Bitcoin test network (mainnet refused).
-   * @param {Object} [settings.book] `Book` settings.
+   * @param {Object} [settings.book] `DocumentBook` settings.
    */
   constructor (settings = {}) {
     super(settings);
@@ -140,6 +140,7 @@ class Market extends Service {
       prepayTimeoutMs: 60 * 1000,
       verifyBeforePay: true,
       quotes: false,
+      credit: true,
       fundingSafetyMs: 60 * 60 * 1000,
       minHtlcLockBlocks: 24,
       maxHtlcLockBlocks: 4032,
@@ -152,7 +153,7 @@ class Market extends Service {
     this.settings.network = assertTestNetwork(this.settings.network, 'Market');
 
     this.peer = null;
-    this.book = (settings.book instanceof Book) ? settings.book : new Book(this.settings.book || {});
+    this.book = (settings.book instanceof DocumentBook) ? settings.book : new DocumentBook(this.settings.book || {});
     this._pay = null;
     this._verify = null;
     this._addressFunded = null;
@@ -191,7 +192,7 @@ class Market extends Service {
   /**
    * @param {Object} deps
    * @param {Object} deps.peer `@fabric/core` Peer (inventory, requests, delivery events).
-   * @param {Book} [deps.book] shared offer book (defaults to the agent's own).
+   * @param {DocumentBook} [deps.book] shared offer book (defaults to the agent's own).
    * @param {Function} [deps.pay] `async (session) => txid | { txid, txHex }` — funds the session HTLC address.
    * @param {Function} [deps.verify] `async (session, txid) => boolean` — L1 / Hub payment proof.
    * @param {Function} [deps.addressFunded] `async (address, session) => boolean | { funded, txid?, txHex? } | null` — `null` = unknown.
@@ -199,11 +200,11 @@ class Market extends Service {
    * @param {Function} [deps.broadcast] `async (txHex, session) => txid` — broadcast a signed refund.
    * @param {Function} [deps.confirmations] `async (txid) => number` — refund confirmation depth.
    * @param {Function} [deps.tipHeight] `() => number` chain tip.
-   * @param {Object} [deps.channels] `Channel.Book` (or `{ sessionFor, tipHeight, publish }`).
+   * @param {Object} [deps.channels] `ChannelBook` (`types/channelBook`, or `{ sessionFor, tipHeight, publish }`).
    * @returns {Market}
    */
   attach (deps = {}) {
-    if (deps.book instanceof Book) this.book = deps.book;
+    if (deps.book instanceof DocumentBook) this.book = deps.book;
     if (typeof deps.pay === 'function') this._pay = deps.pay;
     if (typeof deps.verify === 'function') this._verify = deps.verify;
     if (typeof deps.addressFunded === 'function') this._addressFunded = deps.addressFunded;
@@ -279,11 +280,46 @@ class Market extends Service {
     return channel;
   }
 
+  /**
+   * Credit rail: the seller offers the blob on credit (`creditRateSats`) and
+   * an open channel with it can pay that on top of every credit purchase
+   * not yet paid on it, above the channel reserve.
+   * @private
+   * @param {Object} offer
+   * @returns {{ channel: Object, rateSats: number }|null}
+   */
+  _creditFor (offer) {
+    if (this.settings.credit === false || !this._channels || !offer || offer.sealed !== true) return null;
+    const rateSats = Math.floor(Number(offer.creditRateSats) || 0);
+    if (!(rateSats > 0)) return null;
+    if (Array.isArray(offer.paymentModes) && !offer.paymentModes.includes('credit')) return null;
+    const sellerId = String(offer.sellerId || offer.sellerAddress || '');
+    const channel = this._channels.sessionFor(sellerId, this._resolveSellerPubkeyHex(offer));
+    if (!channel || channel.status !== 'open' || typeof channel.transfer !== 'function') return null;
+    const reserve = channel.state && channel.state.policy ? Math.max(0, Number(channel.state.policy.channelReserveSats) || 0) : 0;
+    const owed = Object.values(this._state.content.sessions)
+      .filter((s) => s.rail === 'credit' && !s.creditPaid && String(s.channelId) === String(channel.channelId) && BLOCKING_STATUSES.includes(s.status))
+      .reduce((n, s) => n + s.amountSats, 0);
+    if (channel.balances.localSats - reserve - owed < rateSats) return null;
+    return { channel, rateSats };
+  }
+
+  /**
+   * What a blob from this offer costs us: its credit price when that rail is
+   * usable and no dearer than the HTLC ask, else the HTLC ask.
+   * @private
+   */
+  _priceOf (offer) {
+    const rate = Math.max(0, Math.floor(Number(offer.rateSats) || 0));
+    const credit = this._creditFor(offer);
+    return credit && (rate === 0 || credit.rateSats <= rate) ? credit.rateSats : rate;
+  }
+
   /** @private the channel session a purchase was offered on */
   _channelOf (session) {
     if (!this._channels) return null;
-    const byId = this._channels.sessions && typeof this._channels.sessions.get === 'function'
-      ? this._channels.sessions.get(String(session.channelId))
+    const byId = typeof this._channels.get === 'function'
+      ? this._channels.get(String(session.channelId))
       : null;
     if (byId) return byId;
     const ch = this._channels.sessionFor(session.sellerId, session.sellerPubkeyHex || null);
@@ -808,8 +844,10 @@ class Market extends Service {
     if (roots.size > 1) return { ok: false, error: 'plan mixes merkle roots', plan, blobTotal };
     let costSats = 0;
     for (const [i, o] of plan.entries()) {
-      if (this._blobCovered(id, blobTotal > 1 || o.blobIndex != null ? i : undefined, contentHashHexFromObject(o))) continue;
-      costSats += Math.max(0, Math.floor(Number(o.rateSats) || 0));
+      const hash = contentHashHexFromObject(o);
+      if (this._blobCovered(id, blobTotal > 1 || o.blobIndex != null ? i : undefined, hash, o.blobHashHex)) continue;
+      if (this._holds(id, i, o, hash)) continue;
+      costSats += this._priceOf(o);
     }
     return { ok: true, plan, costSats, blobTotal, merkleRootHex: roots.size ? [...roots][0] : (want.merkleRootHex || null) };
   }
@@ -827,18 +865,38 @@ class Market extends Service {
 
   /**
    * True when a blob is already bought or a live purchase is working on it
-   * (from any seller).
+   * (from any seller). The same chunk (blob hash and payment hash) in flight
+   * at another index or under another document covers it too: once that
+   * opens, this blob is taken from the Peer's held chunks.
    * @private
    */
-  _blobCovered (documentId, blobIndex, contentHashHex) {
+  _blobCovered (documentId, blobIndex, contentHashHex, blobHashHex = null) {
     const idx = blobIndex != null ? Number(blobIndex) : null;
     const hash = contentHashHex ? String(contentHashHex).toLowerCase() : null;
+    const blob = blobHashHex ? String(blobHashHex).toLowerCase() : null;
     return Object.values(this._state.content.sessions).some((s) => {
-      if (s.documentId !== documentId) return false;
-      if ((s.blobIndex != null ? Number(s.blobIndex) : null) !== idx) return false;
-      if (hash && s.contentHashHex && s.contentHashHex !== hash) return false;
-      return s.status === 'complete' || s.status === 'claimed' || BLOCKING_STATUSES.includes(s.status);
+      if (s.documentId === documentId && (s.blobIndex != null ? Number(s.blobIndex) : null) === idx) {
+        if (hash && s.contentHashHex && s.contentHashHex !== hash) return false;
+        return s.status === 'complete' || s.status === 'claimed' || BLOCKING_STATUSES.includes(s.status);
+      }
+      return !!(blob && hash && !s.held && s.blobHashHex === blob && s.contentHashHex === hash && BLOCKING_STATUSES.includes(s.status));
     });
+  }
+
+  /**
+   * The Peer already holds this sealed chunk (opened before, or one it
+   * sells), so it opens without buying. A held open that failed for this blob
+   * is not tried again: the blob is bought instead.
+   * @private
+   */
+  _holds (documentId, blobIndex, offer, contentHashHex) {
+    const peer = this.peer;
+    if (!peer || typeof peer.heldChunk !== 'function' || typeof peer.adoptHeldChunk !== 'function') return false;
+    if (!offer || offer.sealed !== true || !offer.blobHashHex || !contentHashHex || !offer.merkleRootHex) return false;
+    const failed = Object.values(this._state.content.sessions).some((s) => s.held && s.status === 'failed' &&
+      s.documentId === documentId && Number(s.blobIndex) === Number(blobIndex));
+    if (failed) return false;
+    try { return !!peer.heldChunk(offer.blobHashHex, contentHashHex); } catch (_) { return false; }
   }
 
   // ---------------------------------------------------------------------
@@ -908,6 +966,9 @@ class Market extends Service {
       }
     }
     for (const want of Object.values(this._state.content.wants)) {
+      // Blobs left to a shared chunk in flight elsewhere: once nothing here
+      // is working, plan again (they open from the held chunks or are bought).
+      if (want.status === 'buying' && !this._wantLive(want.documentId)) want.status = 'wanted';
       if (want.status !== 'wanted') continue;
       this._refreshInventory(want);
       const planned = this.planFor(want);
@@ -998,8 +1059,16 @@ class Market extends Service {
    * @returns {Object|null}
    */
   openSession (want, offer, blobIndex, blobTotal) {
-    const amountSats = Math.max(0, Math.floor(Number(offer.rateSats) || 0));
-    if (amountSats > 0 && amountSats < HTLC_MINIMUM_SATS) {
+    const contentHashHex = contentHashHexFromObject(offer);
+    const indexed = blobTotal > 1 || offer.blobIndex != null;
+    // A held chunk is opened locally: nothing to pay, nobody to pay.
+    const held = indexed && this._holds(want.documentId, blobIndex, offer, contentHashHex);
+    const rate = Math.max(0, Math.floor(Number(offer.rateSats) || 0));
+    // Credit (pay after the blob opens) needs a payment hash to ask for and a blob to open.
+    const credit = !held && indexed && contentHashHex ? this._creditFor(offer) : null;
+    const onCredit = !!credit && (rate === 0 || credit.rateSats <= rate);
+    const amountSats = held ? 0 : (onCredit ? credit.rateSats : rate);
+    if (!onCredit && amountSats > 0 && amountSats < HTLC_MINIMUM_SATS) {
       want.lastError = `offer of ${amountSats} sats is below the ${HTLC_MINIMUM_SATS}-sat HTLC minimum`;
       return null;
     }
@@ -1007,19 +1076,17 @@ class Market extends Service {
       want.lastError = `offer of ${amountSats} sats exceeds the ${this.remainingSats} sats left in the budget`;
       return null;
     }
-    const contentHashHex = contentHashHexFromObject(offer);
-    const indexed = blobTotal > 1 || offer.blobIndex != null;
-    if (this._blobCovered(want.documentId, indexed ? blobIndex : undefined, contentHashHex)) return null;
+    if (this._blobCovered(want.documentId, indexed ? blobIndex : undefined, contentHashHex, offer.blobHashHex)) return null;
     const sellerId = String(offer.sellerId || offer.sellerAddress || '');
     const probe = { documentId: want.documentId, blobIndex: indexed ? blobIndex : undefined, contentHashHex, sellerId };
-    if (this._dedupeOwner(sellerDedupeKey(probe))) {
+    if (!held && this._dedupeOwner(sellerDedupeKey(probe))) {
       want.lastError = `already paid ${sellerId} for this blob`;
       return null;
     }
     let htlc = null;
     let paymentAddress = '';
-    const channel = amountSats > 0 && contentHashHex ? this._channelFor(offer, amountSats) : null;
-    if (amountSats > 0 && contentHashHex && !channel) {
+    const channel = !onCredit && amountSats > 0 && contentHashHex ? this._channelFor(offer, amountSats) : null;
+    if (!onCredit && amountSats > 0 && contentHashHex && !channel) {
       const built = this._buildHtlc(offer, contentHashHex, amountSats, want.documentId);
       if (built.error) {
         want.lastError = built.error;
@@ -1029,7 +1096,7 @@ class Market extends Service {
       htlc = built.htlc;
       paymentAddress = built.htlc ? built.htlc.paymentAddress : '';
     }
-    const session = createDocumentPurchaseSession({
+    const session = DocumentBook.createDocumentPurchaseSession({
       documentId: want.documentId,
       seller: offer.sellerAddress || offer.sellerId,
       contentHashHex,
@@ -1050,9 +1117,13 @@ class Market extends Service {
     session.sealed = offer.sealed === true;
     session.rootVerified = offer.rootVerified === true;
     if (offer.treeVersion != null) session.treeVersion = Number(offer.treeVersion);
+    if (held) session.held = true;
     if (channel) {
       session.rail = 'channel';
       session.channelId = channel.channelId;
+    } else if (onCredit) {
+      session.rail = 'credit';
+      session.channelId = credit.channel.channelId;
     }
     session.openedAt = this._now();
     session.created = session.openedAt;
@@ -1112,7 +1183,7 @@ class Market extends Service {
     }
     const ampSigner = offer.ampSignerPubkey || offer.wireSignerPubkey ||
       (offer.htlc && (offer.htlc.ampSignerPubkey || offer.htlc.sellerPublicKeyHex)) || null;
-    if (ampSigner && !inventoryHtlc.pubkeysMatchXOnly(ampSigner, sellerHex)) {
+    if (ampSigner && !Htlc.pubkeysMatchXOnly(ampSigner, sellerHex)) {
       return { error: 'offer AMP signer does not match resolved seller pubkey — refusing to fund' };
     }
     const lockError = this._lockError(lock);
@@ -1124,18 +1195,17 @@ class Market extends Service {
   /** @private buyer-bound HTLC for one payment hash */
   _htlcFor (opts) {
     try {
-      const verdict = inventoryHtlc.validateInventoryHtlcOffer({
-        networkName: this._htlcNetwork(),
-        sellerPubkeyCompressed: opts.sellerHex,
-        buyerRefundPubkeyCompressed: opts.buyerHex,
-        paymentHash32: opts.paymentHashHex,
-        refundLocktimeHeight: opts.lock,
+      const verdict = Htlc.validateOffer({
+        network: this._htlcNetwork(),
+        claimPubkey: opts.sellerHex,
+        refundPubkey: opts.buyerHex,
+        paymentHash: opts.paymentHashHex,
+        refundLocktime: opts.lock,
         paymentAddress: opts.offerAddress
       });
       if (!verdict.ok) return { error: verdict.error || 'HTLC offer validation failed' };
-      const built = verdict.built;
-      const hints = inventoryHtlc.buildHtlcFundingHints({
-        paymentAddress: built.address,
+      const built = verdict.htlc;
+      const hints = built.fundingHints({
         amountSats: opts.amountSats,
         label: String(opts.documentId).slice(0, 32)
       });
@@ -1180,8 +1250,114 @@ class Market extends Service {
    * @private
    */
   async _settle (session) {
+    if (session.held) return this._openHeld(session);
+    if (session.rail === 'credit') return this._requestCredit(session);
     if (session.status === 'open' && this._needsPrepay(session)) return this._requestPrepay(session);
     return this._fund(session);
+  }
+
+  /**
+   * Credit rail: ask the seller for the blob and its key on credit, naming
+   * this session as the `creditRef`. Nothing moves yet, so the amount stays
+   * reserved; it is paid (`_payCredit`) only once the blob opens. Seller
+   * scoped like a paid purchase: this seller is not asked for the blob again.
+   * @private
+   */
+  _requestCredit (session) {
+    const owner = this._dedupeOwner(session.dedupeKey);
+    if (owner && owner !== session.settlementId) return this._fail(session, 'another session already asked this seller for this blob', { penalize: false });
+    this.paidSettlements.set(session.dedupeKey, session.settlementId);
+    session.status = 'delivery_pending';
+    session.confirmedAt = this._now();
+    this._expect(session);
+    const reqOpts = { maxSats: session.amountSats, blobIndex: session.blobIndex, credit: true, creditRef: session.settlementId };
+    if (session.blobTotal != null) reqOpts.blobTotal = session.blobTotal;
+    if (session.contentHashHex) reqOpts.contentHashHex = session.contentHashHex;
+    let sent = false;
+    try { sent = this.peer ? this.peer.requestDocument(session.documentId, session.seller, reqOpts) : false; } catch (_) { sent = false; }
+    if (!sent) this.emit('debug', `[MARKET] could not send credit DocumentRequest for ${session.settlementId}`);
+    this.emit('sessionConfirmed', session);
+    this.commit();
+    return session;
+  }
+
+  /**
+   * Pay a credit purchase whose blob opened: a channel transfer naming the
+   * session (`ChannelBook#transfer`, else the channel's own `transfer` +
+   * `publish`). False when it cannot go out now (channel busy or gone); the
+   * session then waits in `settling` and the tick retries.
+   * @private
+   * @returns {boolean} paid
+   */
+  _payCredit (session) {
+    const channel = this._channelOf(session);
+    if (!channel || channel.status !== 'open') {
+      session.lastError = 'channel not open';
+      return false;
+    }
+    if (channel.busy) {
+      session.lastError = 'channel round in flight';
+      return false;
+    }
+    let body = null;
+    try {
+      if (typeof this._channels.transfer === 'function') {
+        body = this._channels.transfer(channel.channelId, session.amountSats, session.settlementId);
+      } else {
+        body = channel.transfer({ amountSats: session.amountSats, ref: session.settlementId });
+        if (typeof this._channels.publish === 'function') this._channels.publish(body, channel);
+      }
+    } catch (e) {
+      const msg = errorMessage(e);
+      // Sent before a restart lost the session's flag.
+      if (!/already paid/.test(msg)) {
+        session.lastError = msg;
+        return false;
+      }
+    }
+    session.creditPaid = true;
+    session.creditPaidAt = this._now();
+    session.lastError = null;
+    this.emit('creditTransferred', { session, body });
+    return true;
+  }
+
+  /**
+   * Open a held chunk into this tree (`Peer#adoptHeldChunk`): no payment and
+   * no seller. If the chunk is gone or does not fit, the session fails and
+   * the next plan buys the blob.
+   * @private
+   */
+  _openHeld (session) {
+    const peer = this.peer;
+    session.status = 'delivery_pending';
+    session.confirmedAt = this._now();
+    this._expect(session);
+    let res = null;
+    const outer = this._opening;
+    this._opening = session.settlementId;
+    try {
+      res = peer.adoptHeldChunk({
+        documentId: session.documentId,
+        merkleRootHex: session.merkleRootHex,
+        blobTotal: session.blobTotal,
+        blobIndex: session.blobIndex,
+        blobHashHex: session.blobHashHex,
+        paymentHashHex: session.contentHashHex,
+        iv: session.iv || undefined,
+        treeVersion: session.treeVersion
+      });
+    } catch (e) {
+      res = { ok: false, error: errorMessage(e) };
+    } finally {
+      this._opening = outer;
+    }
+    if (res && res.ok) {
+      if (session.status === 'delivery_pending') this._complete(session, {});
+      this.commit();
+      return session;
+    }
+    return this._fail(session, `held chunk did not open: ${(res && res.error) || 'unknown'}`, { penalize: false });
   }
 
   /** @private */
@@ -1569,9 +1745,13 @@ class Market extends Service {
   _wantBack (session, reason) {
     const want = this._state.content.wants[session.documentId];
     if (!want || want.status !== 'buying') return;
-    const live = Object.values(this._state.content.sessions).some((s) => s.documentId === session.documentId && s !== session && BLOCKING_STATUSES.includes(s.status));
-    if (!live) want.status = 'wanted';
+    if (!this._wantLive(session.documentId, session)) want.status = 'wanted';
     want.lastError = reason;
+  }
+
+  /** @private a session other than `except` is still working on the document */
+  _wantLive (documentId, except = null) {
+    return Object.values(this._state.content.sessions).some((s) => s.documentId === documentId && s !== except && BLOCKING_STATUSES.includes(s.status));
   }
 
   /** @private terminal state with its budget outcome already applied */
@@ -1579,12 +1759,15 @@ class Market extends Service {
     session.status = status;
     session.completedAt = this._now();
     if (status === 'complete') {
-      const latencyMs = session.confirmedAt ? this._now() - session.confirmedAt : null;
-      this.book.recordDelivery(session.sellerId, {
-        ok: true,
-        latencyMs,
-        bytes: ev.buffer ? ev.buffer.length : (ev.bytes || 0)
-      });
+      // A held chunk opened locally: no seller delivered it.
+      if (!session.held) {
+        const latencyMs = session.confirmedAt ? this._now() - session.confirmedAt : null;
+        this.book.recordDelivery(session.sellerId, {
+          ok: true,
+          latencyMs,
+          bytes: ev.buffer ? ev.buffer.length : (ev.bytes || 0)
+        });
+      }
       this.emit('sessionComplete', session);
     }
   }
@@ -1592,6 +1775,24 @@ class Market extends Service {
   /** @private */
   _complete (session, ev = {}) {
     if (session.status === 'complete' || session.status === 'fraud') return;
+    if (session.rail === 'credit' && !session.creditPaid) {
+      // Pay only for a blob this seller's key opened; otherwise we owe nothing.
+      if (!session.creditOpened) {
+        this._moveBudget(session, 'released');
+        session.status = 'cancelled';
+        session.error = 'blob opened without this seller';
+        this._wantBack(session, session.error);
+        return;
+      }
+      if (!this._payCredit(session)) {
+        session.status = 'settling';
+        this.emit('sessionSettling', session);
+        return;
+      }
+      this._moveBudget(session, 'spent');
+      this._finish(session, 'complete', ev);
+      return;
+    }
     if (session.rail === 'channel' && session.channelHtlcId && !session.channelSettled && this._channels) {
       // Seller-fulfils is the normal path (`htlcSettled`). If the seller
       // revealed the key out of band instead, honour the deal by settling the
@@ -1694,9 +1895,11 @@ class Market extends Service {
     const from = originName(ev.origin);
     for (const s of this._sessionsFor(ev.documentId, ev.blobIndex)) {
       if (s.fraud) continue;
-      const mine = this._opening === s.settlementId ||
-        (from != null && (String(from) === String(s.seller) || String(from) === String(s.sellerId)));
+      const mine = this._opening != null
+        ? this._opening === s.settlementId
+        : (from != null && (String(from) === String(s.seller) || String(from) === String(s.sellerId)));
       if (mine || (from == null && this._opening == null)) {
+        if (s.rail === 'credit' && mine) s.creditOpened = true;
         this._complete(s, ev);
         continue;
       }
@@ -1740,18 +1943,33 @@ class Market extends Service {
   /** @private */
   _onDocumentReceived (ev) {
     if (!ev || !ev.documentId) return;
+    const from = originName(ev.origin);
+    // Who delivered: the origin, or the session whose key we are opening.
+    const attributed = from != null || this._opening != null;
     for (const s of this._sessionsFor(ev.documentId, null)) {
       if (s.fraud) continue;
-      // Per-blob purchases complete on their own blob's open; one still
-      // holding an HTLC was not paid by this delivery and resolves on its own.
-      if (s.blobIndex != null && this._bucketOf(s) === 'locked') {
-        if (s.status === 'delivery_pending' && s.rail !== 'channel') {
-          s.status = 'refund_pending';
-          s.error = 'document delivered by another seller';
-        }
+      if (this._bucketOf(s) !== 'locked') {
+        this._complete(s, ev);
         continue;
       }
-      this._complete(s, ev);
+      // A purchase still holding an HTLC completes only on its own seller's
+      // delivery, and only before it timed out: a timed-out one settles by
+      // refund or the seller's on-chain claim. Per-blob purchases complete on
+      // their own blob's open. A delivery we cannot attribute pays no one.
+      // The session whose key we are opening wins over the event's origin, so
+      // one delivery never pays two sellers.
+      const mine = this._opening != null
+        ? this._opening === s.settlementId
+        : (from != null && (String(from) === String(s.seller) || String(from) === String(s.sellerId)));
+      if (mine) {
+        if (s.blobIndex == null && s.status !== 'refund_pending') this._complete(s, ev);
+        continue;
+      }
+      // Another seller's delivery did not pay this one.
+      if (attributed && s.status === 'delivery_pending' && s.rail !== 'channel') {
+        s.status = 'refund_pending';
+        s.error = 'document delivered by another seller';
+      }
     }
     for (const s of Object.values(this._state.content.sessions)) {
       if (s.documentId !== ev.documentId || !PREPAY_STATUSES.includes(s.status)) continue;
@@ -1764,7 +1982,21 @@ class Market extends Service {
       want.status = 'complete';
       this._state.content.completed[ev.documentId] = { at: this._now(), merkleRootHex: ev.merkleRootHex || want.merkleRootHex || null };
     }
+    this._seed(ev);
     this.commit();
+  }
+
+  /**
+   * Seed after download (`settings.seed`): sell a received convergent tree
+   * again as the same tree, so later buyers of the same chunks may buy them here.
+   * @private
+   */
+  _seed (ev) {
+    const terms = this.settings.seed;
+    if (!terms || !ev.seedable || !this.peer || typeof this.peer.seedDocument !== 'function') return;
+    const out = this.peer.seedDocument(ev.documentId, terms === true ? {} : terms);
+    if (out.ok) this.emit('seeded', { documentId: out.documentId });
+    else this.emit('warning', `[MARKET] seeding ${ev.documentId} failed: ${out.error}`);
   }
 
   /**
@@ -1820,7 +2052,7 @@ class Market extends Service {
     }
     if (session.refund) return session;
     const tip = this.tipHeight();
-    if (tip == null || !inventoryHtlc.refundLocktimeMature(tip, session.htlc.refundLocktimeHeight)) return session;
+    if (tip == null || !Htlc.refundMature(tip, session.htlc.refundLocktimeHeight)) return session;
     const built = await this.buildRefund(session.settlementId);
     if (!built.ok) {
       if (session.refundError !== built.error) this.emit('warning', `[MARKET] refund for ${session.settlementId} not ready: ${built.error}`);
@@ -1860,7 +2092,7 @@ class Market extends Service {
     if (!dest) return { ok: false, error: 'settings.refundAddress required' };
     let bundle;
     try {
-      bundle = inventoryHtlc.prepareInventoryHtlcBuyerRefundPsbt({
+      bundle = Htlc.prepareRefundPsbt({
         networkName: this._htlcNetwork(),
         fundedTxHex,
         paymentAddress: session.htlc.paymentAddress,
@@ -1879,7 +2111,7 @@ class Market extends Service {
     const priv = this._refundKeyFor(session);
     if (priv) {
       try {
-        const signed = inventoryHtlc.signAndExtractInventoryHtlcBuyerRefund(bundle, priv);
+        const signed = Htlc.signRefund(bundle, priv);
         txHex = signed.txHex;
         txid = signed.txid;
       } catch (e) {
@@ -1902,7 +2134,7 @@ class Market extends Service {
       const priv = Buffer.isBuffer(c) ? c : (/^[0-9a-f]{64}$/i.test(String(c)) ? Buffer.from(String(c), 'hex') : null);
       if (!priv || priv.length !== 32) continue;
       try {
-        const pub = Buffer.from(inventoryHtlc.signerFromPriv32(priv).publicKey).toString('hex');
+        const pub = Buffer.from(Htlc.signerFromPriv32(priv).publicKey).toString('hex');
         if (!want || pub === want) return priv;
       } catch (_) { /* not a key */ }
     }
@@ -1971,7 +2203,7 @@ class Market extends Service {
     let tx;
     try { tx = bitcoin.Transaction.fromHex(String(txHex).trim()); } catch (_) { return []; }
     const txid = tx.getId();
-    const network = inventoryHtlc.networkForFabricName(this._htlcNetwork());
+    const network = networkForFabricName(this._htlcNetwork());
     const out = [];
     const sessions = Object.values(this._state.content.sessions).filter((s) => s.rail !== 'channel' && s.paymentAddress && s.htlc);
     // A funding output belongs to one session: the live one for that address,
@@ -1979,7 +2211,7 @@ class Market extends Service {
     // Several sessions share an address when the same seller/blob/lock repeats.
     const claimed = new Set();
     for (const s of sessions) {
-      const vout = inventoryHtlc.findP2trVoutForAddress(tx, s.paymentAddress, network);
+      const vout = Htlc.findVout(tx, s.paymentAddress, network);
       if (vout < 0) continue;
       if (s.txid === txid && !s.fundedTxHex) s.fundedTxHex = String(txHex).trim();
       if (claimed.has(s.paymentAddress)) continue;
@@ -1999,7 +2231,7 @@ class Market extends Service {
       if (!s.txid || s.txid === txid || this._bucketOf(s) !== 'locked') continue;
       const spends = tx.ins.some((i) => Buffer.from(i.hash).reverse().toString('hex') === s.txid && (s.fundingVout == null || i.index === Number(s.fundingVout)));
       if (!spends) continue;
-      const hit = inventoryHtlc.extractPreimageFromClaimTx(tx, s.paymentHashHex || s.contentHashHex);
+      const hit = Htlc.extractPreimage(tx, s.paymentHashHex || s.contentHashHex);
       if (hit.ok) {
         this.claimObserved(s.settlementId, { preimageHex: hit.preimageHex, txid });
         out.push({ settlementId: s.settlementId, kind: 'claim' });

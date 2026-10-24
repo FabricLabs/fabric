@@ -24,8 +24,7 @@ Hub’s longer narrative (Beacon, delegation, signing rounds): hub.fabric.pub
 | `beaconFederationSigning` | Epoch commitment strings + federation witness verify (Schnorr, or BLS when `signatureScheme` is `bls`) |
 | `bls` | BLS12-381 sign / verify / aggregate and federation bundles |
 | `contractStateSigning` | Contract-namespace tip Schnorr (`ContractStateTip`); same witness shape as Beacon |
-| `contractTaproot` | Failover ladder → P2TR (`toAddress` / `toTaprootContract`); `after`/`until` decay + migrate |
-| `contractTierWhen` | Off-chain `when` predicates for tier activation |
+| `Policy` (`types/policy`) | Failover ladder → P2TR (`policy.address` / `toTaprootContract`); `after`/`until` decay + migrate; off-chain `when` predicates for tier activation |
 | `contractCapability` | Token issue/verify for `OP_CONTRACT_READ` / `OP_CONTRACT_SIGN` |
 | `fabricProgramManifest` | Manifest v1 (`programId` / `programHash` / allowed types / optional `sidechainPolicy`) |
 | **`sidechainState`** | Sealed JSON document: digests, RFC6902 patches, path policy, journal, snapshots, Beacon tip restore, contract namespace seals |

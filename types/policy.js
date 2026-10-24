@@ -1,29 +1,107 @@
 'use strict';
 
 /**
- * Deterministic Contract → P2TR spend policy (failover ladder) + composable trees.
+ * @fileoverview Spend policies: how coins locked to a Fabric contract can be
+ * spent, compiled to one P2TR (BIP 341) output.
  *
- * Tiers compile to tapscript leaves (k-of-n + optional CSV/CLTV `after`).
- * `until` expires tiers off-chain (and schedules decay migration leaves).
- * Optional hashlock / arbitrary script leaves compose via {@link composeTaprootTree}.
+ * A policy is a failover ladder of tiers. Each tier is k-of-n keys
+ * (tapscript leaves), optionally behind a CSV / CLTV `after` lock; `until`
+ * expires a tier off-chain and, in `migrate` / `both` decay modes, schedules
+ * a migration leaf to the child policy. A tier may also carry an off-chain
+ * `when` predicate (`tipClockGte`, `statePathEq`; unknown ops fail closed, so
+ * PSBT preparation stops). Hashlock leaves (a Program run commitment, an HTLC
+ * claim) and arbitrary script leaves compose into the same tree
+ * ({@link Policy.composeTaprootTree}); adding a leaf changes the address.
  *
- * @see docs/DISTRIBUTED_EXECUTION.md
+ * A Program-run hashlock ({@link Policy.withRunHashlock}) also requires a
+ * Schnorr signature from `run.pubkeyHex`; a preimage-only leaf (anyone who
+ * learns the preimage can spend) needs an explicit `allowPreimageOnly: true`.
+ * That guard lives in `withRunHashlock` only: a `{ hashlock }` without
+ * `pubkeyHex` passed straight to `composeTaprootTree` still builds a
+ * preimage-only leaf unless it sets `hashlock.requirePubkey: true`.
+ *
+ * {@link Policy} holds one normalized policy, with its address and tier
+ * selection as instance methods; the leaf builders, PSBT preparation and
+ * finalization, the federation vault, and the lock helpers are statics, used
+ * by {@link Contract}, {@link Federation}, {@link Bond}, {@link Htlc},
+ * {@link Channel}, and {@link Resolutions}.
+ *
  * @see docs/CONTRACTS.md
- * @see functions/contractTierWhen.js
+ * @see docs/DISTRIBUTED_EXECUTION.md
+ * @see docs/PROGRAM.md
  */
 
 const bitcoin = require('bitcoinjs-lib');
-const ecc = require('../types/ecc');
+const ecc = require('./ecc');
 const bip341 = require('bitcoinjs-lib/src/payments/bip341');
 const { payments, networks, script, Psbt } = bitcoin;
 const psbtutils = require('bitcoinjs-lib/src/psbt/psbtutils');
-const { evaluateTierWhen } = require('./contractTierWhen');
-const { sortPubkeysBip67 } = require('./bip67');
-const { taprootPsbtInputFields } = require('./inventoryHtlc');
-const { aggregateXonly } = require('./musig2');
+const { sortPubkeysBip67 } = require('../functions/bip67');
+const { taprootPsbtInputFields } = require('../functions/bip371');
+const { aggregateXonly } = require('../functions/musig2');
+const contractProgramBind = require('../functions/contractProgramBind');
 
 bitcoin.initEccLib(ecc);
 
+// Off-chain `when` predicates for spend tiers
+/**
+ * @param {object} state Contract / tip state bag
+ * @param {string} path JSON-pointer-ish `/a/b`
+ * @returns {*}
+ */
+function tierWhenPath (state, path) {
+  if (!path || typeof path !== 'string') return undefined;
+  const parts = path.replace(/^\//, '').split('/').filter(Boolean);
+  let cur = state;
+  for (const p of parts) {
+    if (cur == null || typeof cur !== 'object') return undefined;
+    // Refuse prototype-walk keys even if they exist as own properties.
+    if (p === '__proto__' || p === 'constructor' || p === 'prototype') return undefined;
+    const desc = Object.getOwnPropertyDescriptor(cur, p);
+    if (!desc) return undefined;
+    cur = desc.value;
+  }
+  return cur;
+}
+
+const TIER_WHEN_OPS = Object.freeze(Object.assign(Object.create(null), {
+  tipClockGte (pred, ctx) {
+    const tip = Number(ctx && ctx.tipClock);
+    const need = Number(pred && pred.value);
+    return Number.isFinite(tip) && Number.isFinite(need) && tip >= need;
+  },
+  statePathEq (pred, ctx) {
+    if (!pred || pred.path == null || pred.path === '' || !Object.prototype.hasOwnProperty.call(pred, 'value')) {
+      return false;
+    }
+    const actual = tierWhenPath(ctx && ctx.contractState, pred.path);
+    return actual === pred.value;
+  }
+}));
+
+/**
+ * @param {object|null|undefined} when
+ * @param {{ tipClock?: number, contractState?: object }} ctx
+ * @returns {boolean}
+ */
+function evaluateTierWhen (when, ctx = {}) {
+  if (when == null) return true;
+  if (typeof when !== 'object') return false;
+  const allOf = Array.isArray(when.allOf) ? when.allOf : null;
+  if (!allOf || !allOf.length) return false;
+  for (const pred of allOf) {
+    if (!pred || typeof pred !== 'object') return false;
+    const op = String(pred.op || '');
+    // Own keys only — never inherit Object.prototype (constructor, toString, …).
+    if (!Object.prototype.hasOwnProperty.call(TIER_WHEN_OPS, op)) return false;
+    const fn = TIER_WHEN_OPS[op];
+    if (typeof fn !== 'function') return false;
+    if (!fn(pred, ctx)) return false;
+  }
+  return true;
+}
+
+// Ladder, leaves, trees, PSBTs
 /** BIP341-style NUMS x-only internal key (script-path spend only). */
 const TAPROOT_INTERNAL_NUMS = Buffer.from(
   '50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0',
@@ -464,7 +542,7 @@ function policyAfterDecay (policy, atLock) {
     index: i
   }));
   if (!remaining.length) {
-    throw new Error('policyAfterDecay would leave no spend tiers');
+    throw new Error('Policy.afterDecay would leave no spend tiers');
   }
   // Child policy: no migrate until it has its own until windows
   const childHasUntil = remaining.some((t) => t.until);
@@ -1299,7 +1377,7 @@ function prepareDecayMigrationPsbt (opts = {}) {
     childPolicy: target.childPolicy,
     address: built.address,
     leaves: built.leaves,
-    signingNotes: 'Decay migration: output is constrained to child toAddress(policyAfterDecay).'
+    signingNotes: 'Decay migration: output is constrained to child toAddress(Policy.afterDecay).'
   };
 }
 
@@ -1716,7 +1794,192 @@ function prepareVaultWithdrawalPsbt (opts = {}) {
   throw new Error('prepareVaultWithdrawalPsbt: policy or multisigScript required');
 }
 
-module.exports = {
+// Program-run hashlock leaves
+/**
+ * Build hashlock leaf options from a sealed Program run.
+ * Commitment defaults to `runCommitmentHex` (32-byte hex).
+ *
+ * @param {object} run
+ * @param {string} run.runCommitmentHex
+ * @param {string} [run.programHash]
+ * @param {string} [run.commitmentHex] Override commitment
+ * @param {string} [run.id='hashlock-run']
+ * @param {string} [run.pubkeyHex] Optional Schnorr key for preimage+sig path
+ * @returns {{ id: string, commitmentHex: string, runCommitmentHex: string|null, programHash: string|null, pubkeyHex?: string }}
+ */
+function hashlockFromProgramRun (run = {}) {
+  const runCommitmentHex = String(run.runCommitmentHex || run.runCommitment || '')
+    .trim()
+    .toLowerCase();
+  const commitmentHex = String(run.commitmentHex || runCommitmentHex).trim().toLowerCase();
+  if (!/^[0-9a-f]{64}$/.test(commitmentHex)) {
+    throw new Error('hashlockFromProgramRun: runCommitmentHex / commitmentHex required (64-hex)');
+  }
+  const programHash = run.programHash
+    ? String(run.programHash).trim().toLowerCase()
+    : null;
+  if (programHash && !/^[0-9a-f]{64}$/.test(programHash)) {
+    throw new Error('hashlockFromProgramRun: programHash must be 64-hex when set');
+  }
+  const out = {
+    id: run.id ? String(run.id) : 'hashlock-run',
+    commitmentHex,
+    // Keep Program-run id material separate from an optional leaf commitment override.
+    runCommitmentHex: /^[0-9a-f]{64}$/.test(runCommitmentHex) ? runCommitmentHex : null,
+    programHash
+  };
+  if (run.pubkeyHex) out.pubkeyHex = String(run.pubkeyHex).trim().toLowerCase();
+  return out;
+}
+
+/**
+ * Compose an authority ladder (or policy) with a Program-run hashlock leaf.
+ *
+ * @param {object} opts
+ * @param {object} [opts.policy] Existing spend policy
+ * @param {object} [opts.ladder] Args for synthesizeDefaultLadder when policy omitted
+ * @param {object} opts.run `{ programHash?, runCommitmentHex, id?, pubkeyHex }`
+ * @param {boolean} [opts.allowPreimageOnly=false] Compose without `run.pubkeyHex` (preimage alone spends)
+ * @param {string} [opts.network]
+ * @param {object[]} [opts.extraLeaves]
+ * @returns {object} `composeTaprootTree` result (+ `programRunId`)
+ */
+function composePolicyWithRunHashlock (opts = {}) {
+  const hashlock = hashlockFromProgramRun(opts.run || {});
+  const requirePubkey = opts.allowPreimageOnly !== true;
+  if (requirePubkey && !hashlock.pubkeyHex) {
+    throw new Error(
+      'Policy.withRunHashlock: run.pubkeyHex required (pass allowPreimageOnly: true for a preimage-only leaf)'
+    );
+  }
+  let policy = opts.policy || null;
+  if (!policy && opts.ladder && typeof opts.ladder === 'object') {
+    policy = synthesizeDefaultLadder(opts.ladder);
+  }
+  if (!policy) {
+    throw new Error('Policy.withRunHashlock: policy or ladder required');
+  }
+  if (policy.hashlock) {
+    throw new Error(
+      'Policy.withRunHashlock: policy.hashlock already set; omit it so the Program-run hashlock is composed'
+    );
+  }
+  const policyNetwork = policy.network || policy.networkName || null;
+  if (opts.network && policyNetwork && String(opts.network) !== String(policyNetwork)) {
+    throw new Error('Policy.withRunHashlock: opts.network conflicts with policy.network');
+  }
+  const network = opts.network || policyNetwork || 'regtest';
+  const policyForTree = Object.assign({}, policy, { network });
+  const tree = composeTaprootTree({
+    network,
+    policy: policyForTree,
+    hashlock: {
+      commitmentHex: hashlock.commitmentHex,
+      id: hashlock.id,
+      pubkeyHex: hashlock.pubkeyHex,
+      requirePubkey
+    },
+    extraLeaves: Array.isArray(opts.extraLeaves) ? opts.extraLeaves : []
+  });
+  const programRunId = (hashlock.programHash && hashlock.runCommitmentHex)
+    ? contractProgramBind.programRunId(hashlock.programHash, hashlock.runCommitmentHex)
+    : null;
+  return Object.assign({}, tree, {
+    hashlock,
+    programRunId
+  });
+}
+
+/**
+ * One normalized spend policy: tiers, key sets, decay mode, optional hashlock
+ * and extra leaves, Taproot internal key mode. Its fields are the normalized
+ * policy itself, so a `Policy` can be passed anywhere a policy object is
+ * accepted, and `JSON.stringify` gives the normalized form.
+ *
+ * Statics take and return plain policy objects (`Policy.normalize`,
+ * `Policy.compile`, `Policy.afterDecay`, `Policy.selectActiveTiers`, …);
+ * instance methods return `Policy` instances where they return a policy.
+ *
+ * @example
+ * const policy = new Policy({ validators, threshold: 2, network: 'regtest' });
+ * policy.address; // bcrt1p…
+ * policy.activeTiers({ utxoAgeBlocks: 200 }); // authority + soft tier
+ */
+class Policy {
+  /**
+   * @param {Object} [settings] a spend policy (`tiers[]`, `keySets`, `decay`,
+   *   …) or ladder inputs (`validators`, `threshold`, `publisher`, `network`,
+   *   `csvBlocks`) — anything {@link Policy.normalize} accepts, including a Policy
+   */
+  constructor (settings = {}) {
+    Object.assign(this, normalizeContractSpendPolicy(settings));
+  }
+
+  /** @returns {string} bech32m P2TR address */
+  get address () {
+    return this.compile().address;
+  }
+
+  /**
+   * Compile to a P2TR output: address, output script, leaves, internal key,
+   * merkle root (see {@link Policy.compile}).
+   * @returns {Object}
+   */
+  compile () {
+    return buildContractTaproot(this);
+  }
+
+  /** @returns {Object[]} leaf descriptors with their scripts */
+  leaves () {
+    return compileLeaves(this);
+  }
+
+  /**
+   * Tiers that may spend now.
+   * @param {Object} [ctx] `{ tipHeight, medianTime, utxoAgeBlocks, tipClock, contractState }`
+   * @returns {Object[]}
+   */
+  activeTiers (ctx = {}) {
+    return selectActiveTiers(this, ctx);
+  }
+
+  /**
+   * The decay migration due at `ctx`, if any.
+   * @param {Object} [ctx] as {@link Policy#activeTiers}
+   * @returns {Object|null} `{ decayAt, childPolicy, childAddress }`, `childPolicy` a Policy
+   */
+  migrateTarget (ctx = {}) {
+    const target = selectMigrateTarget(this, ctx);
+    if (!target) return null;
+    return Object.assign({}, target, { childPolicy: new Policy(target.childPolicy) });
+  }
+
+  /**
+   * The child policy once tiers whose `until` is at or before `atLock` expire.
+   * @param {Object|number} atLock decay trigger lock
+   * @returns {Policy}
+   */
+  afterDecay (atLock) {
+    return new Policy(policyAfterDecay(this, atLock));
+  }
+
+  /**
+   * This policy plus a Program-run hashlock leaf (see {@link Policy.withRunHashlock}).
+   * @param {Object} run `{ runCommitmentHex, programHash?, id?, pubkeyHex }`
+   * @param {Object} [opts] `{ allowPreimageOnly, network, extraLeaves }`
+   * @returns {Object} composed tree plus `hashlock` and `programRunId`
+   */
+  withRunHashlock (run, opts = {}) {
+    return composePolicyWithRunHashlock(Object.assign({}, opts, { policy: this.toJSON(), run }));
+  }
+
+  /** @returns {Object} the normalized policy */
+  toJSON () {
+    return Object.assign({}, this);
+  }
+}
+
+Object.assign(Policy, {
   TAPROOT_INTERNAL_NUMS,
   DEFAULT_CSV_BLOCKS,
   CLTV_TIMESTAMP_THRESHOLD,
@@ -1728,8 +1991,8 @@ module.exports = {
   timelockMature,
   lockValue,
   synthesizeDefaultLadder,
-  normalizeContractSpendPolicy,
-  policyAfterDecay,
+  normalize: normalizeContractSpendPolicy,
+  afterDecay: policyAfterDecay,
   compileLeaves,
   scriptTreeFromLeaves,
   composeTaprootTree,
@@ -1739,7 +2002,7 @@ module.exports = {
   buildHashlockLeaf,
   buildSpendLeaf,
   buildScriptLeaf,
-  buildContractTaproot,
+  compile: buildContractTaproot,
   toAddress,
   selectActiveTiers,
   selectMigrateTarget,
@@ -1753,5 +2016,13 @@ module.exports = {
   buildFederationVaultFromPolicy,
   prepareVaultWithdrawalPsbt,
   buildVaultControlBlock,
-  buildControlBlockForLeaf
-};
+  buildControlBlockForLeaf,
+  evaluateTierWhen,
+  tierWhenPath,
+  TIER_WHEN_OPS,
+  hashlockFromProgramRun,
+  withRunHashlock: composePolicyWithRunHashlock
+});
+
+module.exports = Policy;
+module.exports.Policy = Policy;

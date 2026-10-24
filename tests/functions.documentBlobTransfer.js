@@ -12,12 +12,12 @@ const {
   DocumentBlobTransferBook,
   settlementDedupeKey
 } = require('../functions/documentBlobManifest');
-const { Book } = require('../functions/documentMarket');
+const { DocumentBook } = require('../types/documentBook');
 const {
   createDocumentPurchaseSession,
   isDuplicateSettlement,
   rememberSettlement
-} = require('../functions/documentMarket');
+} = require('../types/documentBook');
 
 describe('functions/documentBlobTransfer', function () {
   it('rejects tampered blob bytes', function () {
@@ -77,7 +77,7 @@ describe('functions/documentBlobTransfer', function () {
   it('offer book binds payment hash not raw blob hash', function () {
     const blobHashHex = 'ab'.repeat(32);
     const pay = blobPaymentHashHex({ documentId: 'd', blobIndex: 0, blobHashHex });
-    const book = new Book();
+    const book = new DocumentBook();
     book.ingestInventoryResponse({
       origin: 'seller:1',
       items: [{

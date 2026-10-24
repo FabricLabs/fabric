@@ -65,8 +65,8 @@ that advertise the **CLI shell** interface (`@type: FabricCliContract`,
 it does not cancel on-chain HTLCs, open sessions, or Hub-registry publishes.
 
 ## Related modules
-- HTLC builders — [`functions/inventoryHtlc.js`](../functions/inventoryHtlc.js)
-- Purchase sessions / offer book — [`functions/documentMarket.js`](../functions/documentMarket.js)
+- HTLC — [`types/htlc.js`](../types/htlc.js)
+- Purchase sessions / offer book — [`types/documentBook.js`](../types/documentBook.js)
 - Sealed document sale — [`functions/documentSealedExchange.js`](../functions/documentSealedExchange.js)
 - L1 binding — [L1_DOCUMENT_EXCHANGE.md](L1_DOCUMENT_EXCHANGE.md), [PAYMENTS_DOCUMENT_BINDING.md](PAYMENTS_DOCUMENT_BINDING.md)
 - Namespaces — [APPLICATION_NAMESPACES.md](APPLICATION_NAMESPACES.md)
@@ -153,7 +153,7 @@ Minimum fields for a 0.1 ARC genesis (extensible; unknown fields ignored by core
 - **`primitives.deliverySync`**: optional synchronization filter for which body types open per-reader `MessageReceived` / `MessageReceipt` 2PC rows (`mode`: `all` | `none` | `include` | `exclude`). Delivery ACK types never open a new pending row.
 - **`primitives.opcodes`**: Machine / Program opcode allow-list when the ARC exposes a program interface. Enforced by `Machine.setAllowedOpcodes` / `applyGenesisOpcodes` / `loadProgram({ genesis })` (fail closed when non-empty).
 - **`members`**: initial tip roster. Later changes only via authorized `GroupChange` / grant messages (see §4).
-- **`spendPolicy`**: input to `contractTaproot` / `Contract#toTaprootContract`. Fail closed on invalid threshold, CSV range, CLTV BIP65 boundary (see PR #183).
+- **`spendPolicy`**: input to `Policy` / `Contract#toTaprootContract`. Fail closed on invalid threshold, CSV range, CLTV BIP65 boundary (see PR #183).
 - **`bitcoinAnchor.blockHash`**: **required** for public-network ARCs; MUST be a known Bitcoin best-block hash at publish time (or last accepted tip when re-anchoring).
 
 ---
@@ -216,7 +216,7 @@ Product apps MAY add types **only** if listed in that contract’s `primitives.m
 ### 6. Tip → UTXO / spending contract
 ```text
 resolveSpend({ genesis, tip }) =
-  buildContractTaproot(
+  Policy.compile(
     spendPolicy from normalizeArcGenesis(genesis),
     keys := tip.content.signers (else tip.content.members, else genesis signers/validators),
     threshold := tip or genesis threshold
@@ -247,7 +247,7 @@ Implementation: [`functions/contractSpend.js`](../functions/contractSpend.js) (`
 | Accumulate / fold | `functions/contractMessageAccumulate.js` (signer authz + primitives + withdrawal fold) |
 | Token grants | `functions/contractCapability.js`, `types/token.js` |
 | Tip Schnorr | `functions/contractStateSigning.js` |
-| P2TR ladder | `functions/contractTaproot.js` |
+| P2TR ladder | `types/policy.js` (`Policy`) |
 | Sidechain doc | `functions/sidechainState.js`, `contractStatechains.js` |
 | Hub tracked accept | Hub `functions/trackedApplicationContracts.js` (`normalizeArcGenesis` + `resolveSpend`) |
 

@@ -3,8 +3,9 @@
 const assert = require('assert');
 const bitcoin = require('bitcoinjs-lib');
 const { TEST_NETWORKS, normalizeNetworkName, isTestNetwork, assertTestNetwork } = require('../functions/bitcoinNetworkAllowlist');
-const { networkForFabricName } = require('../functions/contractTaproot');
+const { networkForFabricName } = require('../types/policy');
 const Channel = require('../types/channel');
+const ChannelBook = require('../types/channelBook');
 
 describe('@fabric/core/functions/bitcoinNetworkAllowlist', function () {
   it('allows only regtest / signet / testnet / testnet4 (trimmed, case-insensitive)', function () {
@@ -31,7 +32,7 @@ describe('@fabric/core/functions/bitcoinNetworkAllowlist', function () {
     for (const network of ['mainnet', 'bitcoin', 'main', ' Mainnet ', 'nonsense']) {
       assert.throws(() => Channel.buildFunding({ network, localPubkey: pub, remotePubkey: other, expireAfter: 10 }), /refused/, network);
     }
-    assert.throws(() => new Channel.Book({ localPrivateKey: Buffer.alloc(32, 1), network: 'bitcoin' }), /refused/);
-    assert.strictEqual(new Channel.Book({ localPrivateKey: Buffer.alloc(32, 1), network: ' RegTest ' }).network, 'regtest');
+    assert.throws(() => new ChannelBook({ localPrivateKey: Buffer.alloc(32, 1), network: 'bitcoin' }), /refused/);
+    assert.strictEqual(new ChannelBook({ localPrivateKey: Buffer.alloc(32, 1), network: ' RegTest ' }).network, 'regtest');
   });
 });
