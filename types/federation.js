@@ -28,12 +28,12 @@ const ecc = require('./ecc');
 
 // Fabric Functions
 const { stableStringify } = require('../functions/fabricCanonicalJson');
-const { pubkeyXOnly } = require('../functions/pubkey');
-const { normalizePeerPubkeyHex } = require('../functions/contractPublishAuthority');
+const { pubkeyXOnly, normalizePeerPubkeyHex } = require('../functions/pubkey');
 
 // Fabric Types
 const Contract = require('./contract');
 const Key = require('./key');
+const Program = require('./program');
 const Wallet = require('./wallet');
 
 // A linked @fabric/core resolves its own bitcoinjs-lib, which leaves this copy without ECC.
@@ -818,7 +818,7 @@ class Federation extends Contract {
    * @returns {{ ok: true, programHash: string, runCommitmentHex: string }|{ ok: false, error: string }}
    */
   static verifyProgramRunRecompute (opts = {}) {
-    return require('../functions/contractProgramBind').assertMachineRunMatches(opts);
+    return Program.verifyMachineRun(opts);
   }
 
   /**

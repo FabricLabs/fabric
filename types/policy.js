@@ -40,7 +40,7 @@ const { sortPubkeysBip67 } = require('../functions/bip67');
 const { taprootPsbtInputFields } = require('../functions/bip371');
 const { BIP125_SEQUENCE_FINAL, BIP125_SEQUENCE_LOCKTIME_ONLY } = require('../functions/bip125');
 const { aggregateXonly } = require('../functions/musig2');
-const contractProgramBind = require('../functions/contractProgramBind');
+const Program = require('./program');
 
 bitcoin.initEccLib(ecc);
 
@@ -1622,7 +1622,7 @@ function finalizeSpendPsbt (opts = {}) {
  *
  * **Default (RC):** 2-tier ladder — k-of-n authority now; softer rule after
  * `csvBlocks` (default 144) CSV. Same tree as {@link synthesizeDefaultLadder} /
- * {@link module:functions/contractSpend.resolveSpend} when inputs match.
+ * {@link Contract.resolveSpend} when inputs match.
  *
  * **Legacy:** pass `{ legacySingleLeaf: true }` for the pre-ladder single k-of-n
  * leaf address (opt-in only; not used by Hub vault summary).
@@ -1891,7 +1891,7 @@ function composePolicyWithRunHashlock (opts = {}) {
     extraLeaves: Array.isArray(opts.extraLeaves) ? opts.extraLeaves : []
   });
   const programRunId = (hashlock.programHash && hashlock.runCommitmentHex)
-    ? contractProgramBind.programRunId(hashlock.programHash, hashlock.runCommitmentHex)
+    ? Program.runId(hashlock.programHash, hashlock.runCommitmentHex)
     : null;
   return Object.assign({}, tree, {
     hashlock,

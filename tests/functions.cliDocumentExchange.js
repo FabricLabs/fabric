@@ -12,6 +12,7 @@ const {
 } = require('../functions/cliDocumentExchange');
 const { DocumentBook, createDocumentPurchaseSession } = require('../types/documentBook');
 const { HTLC_MINIMUM_SATS } = require('../constants');
+const Document = require('../types/document');
 
 describe('functions/cliDocumentExchange (headless CLI surface)', function () {
   it('catalog exposes documents + documents-market packs and commands', function () {
@@ -94,11 +95,10 @@ describe('functions/cliDocumentExchange (headless CLI surface)', function () {
     const { HTLC_MINIMUM_SATS } = require('../constants');
     const Peer = require('../types/peer');
     const Message = require('../types/message');
-    const { DEFAULT_CHUNK_BYTES } = require('../functions/documentBlobManifest');
     const peer = new Peer({ listen: false });
     const exchange = new CliDocumentExchange({ getPeer: () => peer, getFilesystem: () => null });
     // One chunk of plaintext, two once sealed (the 16-byte GCM tag spills over).
-    exchange.documents.d = Buffer.alloc(DEFAULT_CHUNK_BYTES - 8, 0x61);
+    exchange.documents.d = Buffer.alloc(Document.CHUNK_BYTES - 8, 0x61);
     const low = exchange.publish('d', HTLC_MINIMUM_SATS);
     assert.strictEqual(low.ok, false);
     assert.match(low.error, new RegExp(`at least ${2 * HTLC_MINIMUM_SATS}`));
@@ -564,7 +564,7 @@ describe('functions/cliDocumentExchange (headless CLI surface)', function () {
           { index: 0, total: 2, blobHashHex: 'f1'.repeat(32), rateSats: 1000 },
           { index: 1, total: 2, blobHashHex: 'f2'.repeat(32), rateSats: 1000 }
         ],
-        merkleRootHex: require('../functions/documentBlobManifest').merkleRootHexFromBlobHashes(['f1'.repeat(32), 'f2'.repeat(32)]),
+        merkleRootHex: Document.rootHexFromBlobHashes(['f1'.repeat(32), 'f2'.repeat(32)]),
         htlc: { paymentAddress: built.address, paymentHashHex: contentHash }
       }]
     });

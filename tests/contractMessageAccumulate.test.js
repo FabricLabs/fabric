@@ -21,8 +21,8 @@ const {
 } = require('../functions/groupChangeGovernance');
 const {
   OP_CONTRACT_SIGN,
-  issueContractCapability
-} = require('../functions/contractCapability');
+  issueCapability
+} = require('../types/contract');
 const {
   createPending,
   markReceived,
@@ -256,7 +256,7 @@ describe('@fabric/core contractMessageAccumulate', function () {
     const delegate = new Key();
     const store = createMemoryStore();
     const genesis = { signers: [owner.pubkey] };
-    const tok = issueContractCapability({
+    const tok = issueCapability({
       issuerKey: owner,
       subject: delegate.pubkey,
       contractId,

@@ -20,8 +20,8 @@ const Key = require('../types/key');
 const Machine = require('../types/machine');
 const Program = require('../types/program');
 const {
-  assertMachineRunMatches
-} = require('../functions/contractProgramBind');
+  verifyMachineRun
+} = require('../types/program');
 const {
   createMemoryStore,
   ingestContractPublishBuffer,
@@ -36,8 +36,8 @@ const {
   buildWithdrawalWitness,
   validateWithdrawalRequest,
   prepareWithdrawalFromRequest
-} = require('../functions/contractSpend');
-const { bindProgramRunToTip } = require('../functions/contractProgramBind');
+} = require('../types/contract');
+const { bindRun } = require('../types/program');
 const Policy = require('../types/policy');
 const {
   buildFederationVaultFromPolicy,
@@ -49,9 +49,9 @@ const {
   toAddress
 } = Policy;
 const {
-  observePaymentToAddress,
-  applyPaymentObservationToTip
-} = require('../functions/contractPaymentObserve');
+  observePayment,
+  applyPaymentObservation
+} = require('../types/contract');
 const {
   createRound,
   addSignature,
@@ -514,7 +514,7 @@ describe('ARC / Federation network E2E', function () {
       machine.define('OP_TRUE', () => true);
       const run = await machine.runProgram(prog);
       assert.strictEqual(run.ok, true);
-      const match = assertMachineRunMatches({ program: prog, run });
+      const match = verifyMachineRun({ program: prog, run });
       assert.strictEqual(match.ok, true, match.error);
 
       const tip0 = {
@@ -524,7 +524,7 @@ describe('ARC / Federation network E2E', function () {
         bitcoinBlockHash: BLOCK_HASH,
         content: { signers: [compressedPubkey(keys[0])], threshold: 1 }
       };
-      const tip1 = bindProgramRunToTip(tip0, {
+      const tip1 = bindRun(tip0, {
         programHash: match.programHash,
         runCommitmentHex: match.runCommitmentHex
       });
@@ -836,7 +836,7 @@ describe('ARC / Federation L1 regtest withdrawals', function () {
     const txid = await fundAddress(spend.address, 0.01);
     await confirm(1);
     const hex = await rawTx(txid);
-    const obs = observePaymentToAddress({
+    const obs = observePayment({
       tx: hex,
       address: spend.address,
       network: 'regtest',
@@ -851,7 +851,7 @@ describe('ARC / Federation L1 regtest withdrawals', function () {
       content: {},
       bitcoinBlockHash: BLOCK_HASH
     };
-    const tip1 = applyPaymentObservationToTip(tip0, obs);
+    const tip1 = applyPaymentObservation(tip0, obs);
     assert.strictEqual(tip1.content.balances[spend.address].sats, obs.matchedSats);
   });
 
@@ -1216,7 +1216,7 @@ describe('ARC / Federation L1 regtest withdrawals', function () {
     const fundTxid = await fundAddress(spend.address, 0.01);
     const fundBlock = (await rpc('generatetoaddress', [1, miner]))[0];
     const fundedHex = await rawTx(fundTxid);
-    const obs = observePaymentToAddress({
+    const obs = observePayment({
       tx: fundedHex,
       address: spend.address,
       network: 'regtest'

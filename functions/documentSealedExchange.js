@@ -231,7 +231,6 @@ async function writeContentKey (fs, documentId, key32) {
     created: new Date().toISOString()
   });
 }
-const { splitBlobs, advertiseDocumentBlobs, merkleRootHexFromBlobHashes } = require('./documentBlobManifest');
 
 const KEY_REVEAL_TYPE = 'DocumentContentKeyReveal';
 
@@ -268,7 +267,9 @@ function advertiseSealedDocument (sale, opts = {}) {
   const documentId = opts.documentId != null ? String(opts.documentId) : undefined;
   const rateSats = Number(opts.rateSats) || 0;
   const pay = String(sale.paymentHashHex).toLowerCase();
-  const advertised = advertiseDocumentBlobs(sale.ciphertext, {
+  // Required here: types/document requires this module.
+  const Document = require('../types/document');
+  const advertised = Document.advertise(sale.ciphertext, {
     documentId,
     chunkBytes: opts.chunkBytes,
     rateSats,
@@ -276,7 +277,7 @@ function advertiseSealedDocument (sale, opts = {}) {
     includePaymentHashes: false
   });
   // Every leaf commits SHA256(K): the root binds the ciphertext to the key sold.
-  const merkleRootHex = merkleRootHexFromBlobHashes(
+  const merkleRootHex = Document.rootHexFromBlobHashes(
     (advertised.blobs || []).map((b) => b.blobHashHex),
     { paymentHashHex: pay }
   );
@@ -622,6 +623,5 @@ module.exports = {
   openSealedDelivery,
   openWithClaimPreimage,
   requestMatchesPaymentHash,
-  requestUnlocksContentKey,
-  splitBlobs
+  requestUnlocksContentKey
 };

@@ -43,7 +43,6 @@ const Htlc = require('../types/htlc');
 const { networkForFabricName } = require('../types/policy');
 const { assertTestNetwork } = require('../functions/bitcoinNetworkAllowlist');
 const { contentHashHexFromObject } = require('../functions/documentPaymentHash');
-const { settlementDedupeKey } = require('../functions/documentBlobManifest');
 
 /** @private */
 const HEX64 = /^[0-9a-f]{64}$/i;
@@ -81,7 +80,7 @@ function weightsForProximity (proximityWeight) {
  * @returns {string}
  */
 function sellerDedupeKey (session = {}) {
-  return `${settlementDedupeKey(session)}|${String(session.sellerId || session.seller || '')}`;
+  return `${DocumentBook.settlementDedupeKey(session)}|${String(session.sellerId || session.seller || '')}`;
 }
 
 /** @private a budget in whole sats: anything that is not a finite, safe amount is 0 */
@@ -1476,7 +1475,7 @@ class Market extends Service {
    * The blob's ciphertext is held by the Peer under this purchase's pins:
    * the frame hashes to the committed blob hash and carries the committed
    * (static) payment hash, proven by an inclusion proof against the root
-   * (`verifySealedBlobFrame` rules, applied at ingest).
+   * (`DocumentBlobTransferBook.verifySealedFrame` rules, applied at ingest).
    * @private
    * @returns {boolean}
    */
@@ -2349,7 +2348,6 @@ class Market extends Service {
 }
 
 Market.weightsForProximity = weightsForProximity;
-Market.settlementDedupeKey = settlementDedupeKey;
 Market.sellerDedupeKey = sellerDedupeKey;
 Market.randomId = () => crypto.randomBytes(8).toString('hex');
 Market.STATUSES = Object.freeze({ reserved: RESERVED_STATUSES, locked: LOCKED_STATUSES });

@@ -26,8 +26,8 @@ const {
   fabricIdentityDerivationPath,
   resolveFabricIdentityCoinType
 } = require('../constants');
-const { DocumentBlobTransferBook } = require('../functions/documentBlobManifest');
 const Htlc = require('../types/htlc');
+const DocumentBlobTransferBook = require('../types/documentBlobTransferBook');
 
 bitcoin.initEccLib(ecc);
 

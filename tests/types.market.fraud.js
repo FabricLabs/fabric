@@ -18,7 +18,6 @@ const DocumentBook = require('../types/documentBook');
 const Message = require('../types/message');
 const Key = require('../types/key');
 const { signerFromPriv32 } = require('../types/htlc');
-const { documentMerkleRootHex } = require('../functions/documentBlobManifest');
 const { createBlobMerkleTree } = require('../types/challenge');
 const { buildInclusion, merkleRootFromTxids, headerMeetsTarget } = require('../functions/bitcoinTxInclusion');
 
@@ -405,7 +404,7 @@ describe('Market fraud proofs — adversarial regressions', function () {
       ];
       const book = new DocumentBook();
       assert.strictEqual(book.ingestInventoryResponse({ origin: 'liar', items: [{ id: 'doc', sealed: true, merkleRootHex: H('ee'), blobs }] }).length, 0);
-      const good = book.ingestInventoryResponse({ origin: 'honest', items: [{ id: 'doc', sealed: true, merkleRootHex: documentMerkleRootHex(blobs.map((b) => ({ blobHashHex: b.blobHashHex, paymentHashHex: b.contentHash }))), blobs }] });
+      const good = book.ingestInventoryResponse({ origin: 'honest', items: [{ id: 'doc', sealed: true, merkleRootHex: Document.rootHex(blobs.map((b) => ({ blobHashHex: b.blobHashHex, paymentHashHex: b.contentHash }))), blobs }] });
       assert.deepStrictEqual(good.map((r) => r.rootVerified), [true, true]);
       // A real sealed document: swapping one blob's payment hash breaks the root.
       const real = Document.seal(crypto.randomBytes(5000), { chunkBytes: 2048 });

@@ -8,18 +8,13 @@ const {
   paymentHashHexFromKey
 } = require('../functions/documentSealedExchange');
 const {
-  documentLeafHex,
-  documentMerkleRootHex,
-  merkleRootHexFromBlobHashes,
-  blobPaymentHashHex
-} = require('../functions/documentBlobManifest');
-const {
   documentPublishEnvelopeBuffer,
   inventoryHtlcPreimage32,
   purchaseContentHashHex
 } = require('../functions/publishedDocumentEnvelope');
 const Htlc = require('../types/htlc');
 const VECTORS = require('./vectors/bip-fabric-file-exchange.json');
+const Document = require('../types/document');
 
 function sha256 (buf) {
   return crypto.createHash('sha256').update(buf).digest();
@@ -85,16 +80,16 @@ describe('BIP: content-addressed file exchange (test vectors)', function () {
           paymentHashHex: b.paymentHashHex,
           iv: Buffer.from(b.ivHex, 'hex').toString('base64')
         }));
-        assert.deepStrictEqual(blobs.map(documentLeafHex), v.leavesHex);
-        assert.strictEqual(documentMerkleRootHex(blobs), v.rootHex);
+        assert.deepStrictEqual(blobs.map((b) => Document.leafHex(b)), v.leavesHex);
+        assert.strictEqual(Document.rootHex(blobs), v.rootHex);
       });
     }
 
     it('a blob list without payment hashes or IVs uses zero fields', function () {
       const v = VECTORS.tree[2];
       const hashes = v.blobs.map((b) => b.blobHashHex);
-      assert.strictEqual(merkleRootHexFromBlobHashes(hashes), documentMerkleRootHex(hashes.map((blobHashHex) => ({ blobHashHex }))));
-      assert.notStrictEqual(merkleRootHexFromBlobHashes(hashes), v.rootHex);
+      assert.strictEqual(Document.rootHexFromBlobHashes(hashes), Document.rootHex(hashes.map((blobHashHex) => ({ blobHashHex }))));
+      assert.notStrictEqual(Document.rootHexFromBlobHashes(hashes), v.rootHex);
     });
   });
 
@@ -123,7 +118,7 @@ describe('BIP: content-addressed file exchange (test vectors)', function () {
           Buffer.from(v.blobHashHex, 'utf8')
         ]);
         assert.strictEqual(sha256(payload).toString('hex'), v.contentHashHex);
-        assert.strictEqual(blobPaymentHashHex(v), v.contentHashHex);
+        assert.strictEqual(Document.blobPaymentHash(v), v.contentHashHex);
       });
     }
   });

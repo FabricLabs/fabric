@@ -2,28 +2,21 @@
 
 const assert = require('assert');
 const crypto = require('crypto');
-const {
-  splitBlobs,
-  blobPaymentHashHex,
-  merkleRootHexFromBlobHashes
-} = require('../functions/documentBlobManifest');
-const {
-  parseFileSendObject,
-  DocumentBlobTransferBook,
-  settlementDedupeKey
-} = require('../functions/documentBlobManifest');
 const { DocumentBook } = require('../types/documentBook');
 const {
   createDocumentPurchaseSession,
   isDuplicateSettlement,
   rememberSettlement
 } = require('../types/documentBook');
+const Document = require('../types/document');
+const DocumentBlobTransferBook = require('../types/documentBlobTransferBook');
+const { MAX_DOCUMENT_BLOBS } = require('../constants');
 
-describe('functions/documentBlobTransfer', function () {
+describe('DocumentBlobTransferBook', function () {
   it('rejects tampered blob bytes', function () {
-    const split = splitBlobs(Buffer.alloc(3000, 1), 1000, 'doc');
+    const split = Document.split(Buffer.alloc(3000, 1), 1000, 'doc');
     const book = new DocumentBlobTransferBook();
-    const good = parseFileSendObject({
+    const good = DocumentBlobTransferBook.parseFrame({
       name: 'doc',
       body: split.blobs[0].bytes.toString('base64'),
       blobIndex: 0,
@@ -33,7 +26,7 @@ describe('functions/documentBlobTransfer', function () {
     });
     assert.strictEqual(book.ingest(good).status, 'need_more');
 
-    const bad = parseFileSendObject({
+    const bad = DocumentBlobTransferBook.parseFrame({
       name: 'doc',
       body: Buffer.alloc(1000, 9).toString('base64'),
       blobIndex: 1,
@@ -47,7 +40,7 @@ describe('functions/documentBlobTransfer', function () {
 
   it('reassembles multi-blob transfer only when Tree root matches', function () {
     const data = Buffer.alloc(4500, 0x42);
-    const split = splitBlobs(data, 1200, 'big');
+    const split = Document.split(data, 1200, 'big');
     const book = new DocumentBlobTransferBook();
     book.expectTransfer({
       documentId: 'big',
@@ -58,7 +51,7 @@ describe('functions/documentBlobTransfer', function () {
     });
     let last = null;
     for (const b of split.blobs) {
-      const frame = parseFileSendObject({
+      const frame = DocumentBlobTransferBook.parseFrame({
         name: 'big',
         body: b.bytes.toString('base64'),
         blobIndex: b.index,
@@ -84,7 +77,7 @@ describe('functions/documentBlobTransfer', function () {
       const book = new DocumentBlobTransferBook();
       let last = null;
       for (const obj of objs) {
-        last = book.ingest(parseFileSendObject(obj));
+        last = book.ingest(DocumentBlobTransferBook.parseFrame(obj));
         if (last.status === 'reject') break;
       }
       return last;
@@ -95,8 +88,8 @@ describe('functions/documentBlobTransfer', function () {
 
     // A whole-document sale: one payment hash on every leaf, IV outside the tree.
     const pay = crypto.createHash('sha256').update('K').digest('hex');
-    const split = splitBlobs(crypto.randomBytes(5000), 2048, 'whole');
-    const root = merkleRootHexFromBlobHashes(split.blobs.map((b) => b.blobHashHex), { paymentHashHex: pay });
+    const split = Document.split(crypto.randomBytes(5000), 2048, 'whole');
+    const root = Document.rootHexFromBlobHashes(split.blobs.map((b) => b.blobHashHex), { paymentHashHex: pay });
     const whole = split.blobs.map((b) => ({
       name: 'whole',
       body: b.bytes.toString('base64'),
@@ -116,7 +109,7 @@ describe('functions/documentBlobTransfer', function () {
 
   it('offer book binds payment hash not raw blob hash', function () {
     const blobHashHex = 'ab'.repeat(32);
-    const pay = blobPaymentHashHex({ documentId: 'd', blobIndex: 0, blobHashHex });
+    const pay = Document.blobPaymentHash({ documentId: 'd', blobIndex: 0, blobHashHex });
     const book = new DocumentBook();
     book.ingestInventoryResponse({
       origin: 'seller:1',
@@ -124,7 +117,7 @@ describe('functions/documentBlobTransfer', function () {
         id: 'd',
         rateSats: 50,
         contentHash: 'cd'.repeat(32),
-        merkleRootHex: merkleRootHexFromBlobHashes([blobHashHex]),
+        merkleRootHex: Document.rootHexFromBlobHashes([blobHashHex]),
         blobs: [{
           index: 0,
           total: 1,
@@ -155,12 +148,12 @@ describe('functions/documentBlobTransfer', function () {
     assert.strictEqual(isDuplicateSettlement(paid, s1), false);
     rememberSettlement(paid, s1);
     assert.strictEqual(isDuplicateSettlement(paid, s1), true);
-    assert.strictEqual(settlementDedupeKey(s1), s1.dedupeKey);
+    assert.strictEqual(DocumentBook.settlementDedupeKey(s1), s1.dedupeKey);
   });
 
   it('completes unindexed whole-body frames without pending state', function () {
     const book = new DocumentBlobTransferBook();
-    const frame = parseFileSendObject({
+    const frame = DocumentBlobTransferBook.parseFrame({
       name: 'unindexed-doc',
       body: Buffer.from('whole-file').toString('base64')
     });
@@ -180,7 +173,7 @@ describe('functions/documentBlobTransfer', function () {
       'nope'
     );
 
-    const split = splitBlobs(Buffer.alloc(2400, 2), 800, 'mismatch');
+    const split = Document.split(Buffer.alloc(2400, 2), 800, 'mismatch');
     const totals = new DocumentBlobTransferBook();
     totals.expectTransfer({
       documentId: 'mismatch',
@@ -188,7 +181,7 @@ describe('functions/documentBlobTransfer', function () {
       total: split.blobs.length,
       blobHashHexes: split.blobs.map((b) => b.blobHashHex)
     });
-    const wrongTotal = parseFileSendObject({
+    const wrongTotal = DocumentBlobTransferBook.parseFrame({
       name: 'mismatch',
       body: split.blobs[0].bytes.toString('base64'),
       blobIndex: 0,
@@ -224,7 +217,7 @@ describe('functions/documentBlobTransfer', function () {
   });
 
   it('rejects a frame whose payment hash is not the one bought at that index', function () {
-    const split = splitBlobs(Buffer.alloc(2000, 5), 1000, 'pay');
+    const split = Document.split(Buffer.alloc(2000, 5), 1000, 'pay');
     const paid = ['aa'.repeat(32), 'bb'.repeat(32)];
     const book = new DocumentBlobTransferBook();
     book.expectTransfer({
@@ -234,7 +227,7 @@ describe('functions/documentBlobTransfer', function () {
       blobHashHexes: split.blobs.map((b) => b.blobHashHex),
       paymentHashHexes: paid
     });
-    const frame = (index, paymentHashHex) => parseFileSendObject({
+    const frame = (index, paymentHashHex) => DocumentBlobTransferBook.parseFrame({
       name: 'pay',
       body: split.blobs[index].bytes.toString('base64'),
       blobIndex: index,
@@ -251,7 +244,7 @@ describe('functions/documentBlobTransfer', function () {
 
   it('rejects contentSha256 mismatch after full reassemble', function () {
     const data = Buffer.alloc(2000, 7);
-    const split = splitBlobs(data, 1000, 'sha');
+    const split = Document.split(data, 1000, 'sha');
     const book = new DocumentBlobTransferBook();
     book.expectTransfer({
       documentId: 'sha',
@@ -262,7 +255,7 @@ describe('functions/documentBlobTransfer', function () {
     });
     let last = null;
     for (const b of split.blobs) {
-      last = book.ingest(parseFileSendObject({
+      last = book.ingest(DocumentBlobTransferBook.parseFrame({
         name: 'sha',
         body: b.bytes.toString('base64'),
         blobIndex: b.index,
@@ -307,15 +300,9 @@ describe('functions/documentBlobTransfer', function () {
   });
 
   it('caps one transfer at MAX_DOCUMENT_BLOBS and bounds pending bytes', function () {
-    const {
-      MAX_DOCUMENT_BLOBS,
-      MAX_DOCUMENT_BYTES,
-      DEFAULT_BLOB_CHUNK_BYTES
-    } = require('../functions/documentBlobManifest');
     const crypto = require('crypto');
-    assert.strictEqual(MAX_DOCUMENT_BLOBS, require('../constants').MAX_DOCUMENT_BLOBS);
-    assert.strictEqual(MAX_DOCUMENT_BYTES, MAX_DOCUMENT_BLOBS * DEFAULT_BLOB_CHUNK_BYTES);
-    assert.strictEqual(MAX_DOCUMENT_BYTES, 197394432);
+    assert.strictEqual(Document.MAX_BYTES, MAX_DOCUMENT_BLOBS * Document.CHUNK_BYTES);
+    assert.strictEqual(Document.MAX_BYTES, 197394432);
 
     const bytes = Buffer.alloc(100, 3);
     const blobHashHex = crypto.createHash('sha256').update(bytes).digest('hex');
@@ -361,7 +348,7 @@ describe('functions/documentBlobTransfer', function () {
   describe('purchase pins', function () {
     const bytes = Buffer.alloc(100, 3);
     const blobHashHex = crypto.createHash('sha256').update(bytes).digest('hex');
-    const root = merkleRootHexFromBlobHashes([blobHashHex, blobHashHex]);
+    const root = Document.rootHexFromBlobHashes([blobHashHex, blobHashHex]);
     const frame = (over) => Object.assign({
       ok: true,
       unindexed: false,

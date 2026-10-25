@@ -48,7 +48,7 @@ Goal: a Program compute result can authorize spending an L1 Bitcoin output.
 |-------|------|
 | **`Machine` + `Program`** | Deterministic off-chain runner; content-addressed `programHash` + `runCommitmentHex` (`FabricProgramRun`) |
 | **ARC Taproot** (`resolveSpend` / authority ladder) | Redeemable P2TR k-of-n (+ CSV soft tier); tip-bound by `stateDigest` + `bitcoinBlockHash` |
-| **Binding** (`functions/contractProgramBind`) | Seal run digests onto `tip.content.program`; withdrawals MUST carry matching digests when the tip (or genesis `fabric.program` / `primitives.opcodes` / `spendPolicy.requireProgramRun`) requires it |
+| **Binding** (`Program.bindRun` / `Program.validateBinding`) | Seal run digests onto `tip.content.program`; withdrawals MUST carry matching digests when the tip (or genesis `fabric.program` / `primitives.opcodes` / `spendPolicy.requireProgramRun`) requires it |
 
 Binding a run **does not** change the P2TR address by itself — co-signers refuse
 stale/forged runs via withdrawal validation. An **optional hashlock leaf**
@@ -95,24 +95,25 @@ intentional threat model only.
 
 **Validator recompute:** federation members SHOULD refuse to sign until
 `Federation.evaluateValidatorSignGate` (`types/federation`) passes (epoch
-digests + reserve conservation + optional `assertMachineRunMatches`). Hub
+digests + reserve conservation + optional `Program.verifyMachineRun`). Hub
 Beacon auto-sign and vault PSBT prep call this gate when validators are set.
 
-1. **1-round (today)** — run Program on Machine → `bindProgramRunToTip` → `buildWithdrawalRequest` copies digests → threshold witnesses + PSBT.
+1. **1-round (today)** — run Program on Machine → `Program.bindRun` → `Contract.buildWithdrawalRequest` copies digests → threshold witnesses + PSBT.
 2. **2–3 round** — federation / challenge–response before the witness is final (Beacon / Federation helpers).
 3. **Scaffold** — `bitcoin-script` `toRedeemScript()` / `OP_CHECKREDEEM` compile stub (not yet a Machine opcode).
 4. **Optional hashlock** — attach leaf at publish/compose time; `prepareHashlockWithdrawalPsbt` + `finalizeHashlockPsbt({ preimage32 })` (pure) or preimage+sig.
 5. **Blinded execution scaffold** — [`functions/blindedExecutionCircuit.js`](../functions/blindedExecutionCircuit.js) composes garbler `CONTRACT_PUBLISH` → ContractProposal accept/reject → content-addressed `circuitCommitment` → optional hashlock Taproot / PSBT bind. This is **composition + digests**, not Yao gate garbling/OT (still a future backend behind the same commitments). Signed `at` on accept/reject binds the decision timestamp; that does **not** make the scaffold a real GC/OT protocol. Do not market it as Yao/GC.
 
 ```js
-const { bindProgramRunToTip, buildWithdrawalRequest } = require('@fabric/core/functions/contractSpend');
+const Contract = require('@fabric/core/types/contract');
+const Program = require('@fabric/core/types/program');
 
 const { ok, tip: stackTip, stack, runCommitmentHex } = await machine.runProgram(prog);
-const tip = bindProgramRunToTip(arcTip, {
+const tip = Program.bindRun(arcTip, {
   programHash: prog.programHash,
   runCommitmentHex
 });
-const withdrawal = buildWithdrawalRequest({
+const withdrawal = Contract.buildWithdrawalRequest({
   tip,
   contractId,
   destinationAddress,

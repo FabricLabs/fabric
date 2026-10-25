@@ -16,6 +16,7 @@ const Circuit = require('./circuit');
 const Script = require('./script');
 const Hash256 = require('./hash256');
 const fabricCanonicalJson = require('../functions/fabricCanonicalJson');
+const { FABRIC_PROGRAM_RUN_KIND } = require('../functions/executionRunBridge');
 const { jsonSafe } = fabricCanonicalJson;
 
 const LANGUAGES = Object.freeze([
@@ -71,6 +72,204 @@ class Program extends Circuit {
    */
   static from (opts = {}) {
     return new Program(opts);
+  }
+
+  /**
+   * Program run sealed on a contract tip (`content.program`, `content.meta.program`, or `tip.program`).
+   * @param {object} [tip]
+   * @returns {({programHash: (string|null), runCommitmentHex: (string|null), programId: (string|null), clock: (number|null)}|null)}
+   */
+  static runFromTip (tip = {}) {
+    const content = tip && tip.content && typeof tip.content === 'object' ? tip.content : {};
+    const bag = content.program
+      || (content.meta && content.meta.program)
+      || tip.program
+      || null;
+    if (!bag || typeof bag !== 'object') return null;
+    const programHash = bag.programHash ? String(bag.programHash).trim().toLowerCase() : null;
+    const runCommitmentHex = bag.runCommitmentHex
+      ? String(bag.runCommitmentHex).trim().toLowerCase()
+      : (bag.runCommitment ? String(bag.runCommitment).trim().toLowerCase() : null);
+    if (!programHash && !runCommitmentHex) return null;
+    return {
+      programHash: programHash && /^[0-9a-f]{64}$/.test(programHash) ? programHash : null,
+      runCommitmentHex: runCommitmentHex && /^[0-9a-f]{64}$/.test(runCommitmentHex)
+        ? runCommitmentHex
+        : null,
+      programId: bag.programId != null ? String(bag.programId) : null,
+      clock: bag.clock != null ? Number(bag.clock) : (tip.clock != null ? Number(tip.clock) : null)
+    };
+  }
+
+  /**
+   * True when a contract genesis declares a Program / opcode surface that withdrawals must bind.
+   * @param {object} [genesis] raw or {@link Contract.normalizeGenesis} output
+   * @returns {boolean}
+   */
+  static requiresBinding (genesis = {}) {
+    const g = genesis && typeof genesis === 'object' ? genesis : {};
+    const spend = g.spendPolicy && typeof g.spendPolicy === 'object' ? g.spendPolicy : {};
+    if (spend.requireProgramRun === true || g.requireProgramRun === true) return true;
+    const interfaces = Array.isArray(g.interfaces) ? g.interfaces.map(String) : [];
+    if (interfaces.some((i) => /^(arc\.)?program$|^fabric\.program$/i.test(i))) return true;
+    const opcodes = (g.primitives && Array.isArray(g.primitives.opcodes))
+      ? g.primitives.opcodes
+      : (Array.isArray(g.opcodes) ? g.opcodes : []);
+    return opcodes.length > 0;
+  }
+
+  /**
+   * Fold a Machine/Program run onto tip content without touching P2TR keys.
+   * Returns a shallow-cloned tip; the caller persists / digests it.
+   * @param {object} tip contract tip
+   * @param {Object} run
+   * @param {string} run.programHash
+   * @param {string} run.runCommitmentHex
+   * @param {string} [run.programId]
+   * @param {number} [run.clock]
+   * @returns {object} tip with `content.program`
+   */
+  static bindRun (tip = {}, run = {}) {
+    const programHash = String(run.programHash || '').trim().toLowerCase();
+    const runCommitmentHex = String(run.runCommitmentHex || run.runCommitment || '').trim().toLowerCase();
+    if (!/^[0-9a-f]{64}$/.test(programHash)) {
+      throw new Error('Program.bindRun: programHash required (64-hex)');
+    }
+    if (!/^[0-9a-f]{64}$/.test(runCommitmentHex)) {
+      throw new Error('Program.bindRun: runCommitmentHex required (64-hex)');
+    }
+    const prev = tip && typeof tip === 'object' ? tip : {};
+    const content = Object.assign({}, prev.content && typeof prev.content === 'object' ? prev.content : {});
+    content.program = {
+      kind: FABRIC_PROGRAM_RUN_KIND,
+      programHash,
+      runCommitmentHex,
+      programId: run.programId != null ? String(run.programId) : null,
+      clock: run.clock != null ? Number(run.clock) : (prev.clock != null ? Number(prev.clock) : null),
+      boundAt: run.boundAt || new Date().toISOString()
+    };
+    return Object.assign({}, prev, { content });
+  }
+
+  /**
+   * Check a withdrawal's (or any object's) program digests against tip / genesis policy.
+   * @param {Object} opts
+   * @param {Object} [opts.object] withdrawal body
+   * @param {Object} [opts.tip]
+   * @param {Object} [opts.genesis]
+   * @returns {{ok: boolean, error: (string|undefined)}}
+   */
+  static validateBinding (opts = {}) {
+    const object = opts.object && typeof opts.object === 'object' ? opts.object : {};
+    const tip = opts.tip && typeof opts.tip === 'object' ? opts.tip : {};
+    const genesis = opts.genesis && typeof opts.genesis === 'object' ? opts.genesis : {};
+    const tipProgram = Program.runFromTip(tip);
+    const required = Program.requiresBinding(genesis);
+
+    const reqHash = object.programHash
+      ? String(object.programHash).trim().toLowerCase()
+      : null;
+    const reqRun = object.runCommitmentHex
+      ? String(object.runCommitmentHex).trim().toLowerCase()
+      : (object.runCommitment ? String(object.runCommitment).trim().toLowerCase() : null);
+
+    if (required) {
+      if (!tipProgram || !tipProgram.programHash || !tipProgram.runCommitmentHex) {
+        return {
+          ok: false,
+          error: 'tip.content.program (programHash + runCommitmentHex) required for program-bound contract'
+        };
+      }
+      if (!reqHash || !reqRun) {
+        return {
+          ok: false,
+          error: 'withdrawal programHash + runCommitmentHex required when tip seals a Program run'
+        };
+      }
+    }
+
+    // If either side carries program digests, they must agree.
+    if (reqHash || reqRun || tipProgram) {
+      if (!tipProgram || !tipProgram.programHash || !tipProgram.runCommitmentHex) {
+        if (reqHash || reqRun) {
+          return { ok: false, error: 'withdrawal carries program digests but tip has no sealed Program run' };
+        }
+        return { ok: true };
+      }
+      if (!reqHash || !reqRun) {
+        if (required || tipProgram.programHash) {
+          return {
+            ok: false,
+            error: 'withdrawal must include programHash + runCommitmentHex matching tip.content.program'
+          };
+        }
+        return { ok: true };
+      }
+      if (!/^[0-9a-f]{64}$/.test(reqHash) || !/^[0-9a-f]{64}$/.test(reqRun)) {
+        return { ok: false, error: 'programHash and runCommitmentHex must be 64-hex' };
+      }
+      if (reqHash !== tipProgram.programHash) {
+        return { ok: false, error: 'programHash does not match tip.content.program' };
+      }
+      if (reqRun !== tipProgram.runCommitmentHex) {
+        return { ok: false, error: 'runCommitmentHex does not match tip.content.program (stale or forged run)' };
+      }
+    }
+
+    return { ok: true };
+  }
+
+  /**
+   * Check a `Machine.runProgram` result against `program.runCommitmentHex`.
+   * @param {Object} opts
+   * @param {Program} opts.program needs `programHash` + `runCommitmentHex`
+   * @param {Object} opts.run `{ tip, trace | stack, runCommitmentHex }`
+   * @returns {{ok: boolean, error: (string|undefined), programHash: (string|undefined), runCommitmentHex: (string|undefined), kind: (string|undefined)}}
+   */
+  static verifyMachineRun (opts = {}) {
+    const program = opts.program;
+    const run = opts.run && typeof opts.run === 'object' ? opts.run : {};
+    if (!program || typeof program.runCommitmentHex !== 'function') {
+      return { ok: false, error: 'program with runCommitmentHex required' };
+    }
+    const programHash = String(program.programHash || program.hash && program.hash() || '')
+      .trim()
+      .toLowerCase();
+    if (!/^[0-9a-f]{64}$/.test(programHash)) {
+      return { ok: false, error: 'program.programHash unavailable' };
+    }
+    const expected = String(program.runCommitmentHex({
+      tip: run.tip,
+      // Machine commits to the trace delta, not the full stack.
+      stack: run.trace || run.stack || []
+    })).toLowerCase();
+    const got = run.runCommitmentHex != null
+      ? String(run.runCommitmentHex).trim().toLowerCase()
+      : null;
+    if (got && got !== expected) {
+      return {
+        ok: false,
+        error: 'Machine runCommitmentHex does not match Program.runCommitmentHex({ tip, stack })'
+      };
+    }
+    return {
+      ok: true,
+      programHash,
+      runCommitmentHex: expected,
+      kind: FABRIC_PROGRAM_RUN_KIND
+    };
+  }
+
+  /**
+   * Stable id for a program run (tests / logging; not a wire type).
+   * @param {string} programHash
+   * @param {string} runCommitmentHex
+   * @returns {string}
+   */
+  static runId (programHash, runCommitmentHex) {
+    return crypto.createHash('sha256')
+      .update(String(programHash || '').toLowerCase() + ':' + String(runCommitmentHex || '').toLowerCase())
+      .digest('hex');
   }
 
   get language () {

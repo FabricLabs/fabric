@@ -60,7 +60,7 @@ Application mesh (chat, Groups, mission gossip) does **not** wait on F1–F5.
 | Piece | Where |
 |-------|--------|
 | Reserve conservation | `types/federation.js` (`Federation.applyPegInCredit`, `applyPegOutBurn`, `assertConservation`, …) |
-| Withdrawal request / witnesses | `functions/contractSpend.js` |
+| Withdrawal request / witnesses | `types/contract.js` (`Contract.buildWithdrawalRequest`, witness statics) |
 | Partial vault PSBT | `types/policy.js` `Policy.prepareLeafPsbt` |
 | Pre-sign gate | `types/federation.js` (`Federation.evaluateValidatorSignGate`) |
 | Program → hashlock leaf | `types/policy.js` `Policy.withRunHashlock` |

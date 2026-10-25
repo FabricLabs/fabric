@@ -56,7 +56,7 @@ path and lockfile bumps in consuming packages — not another core helper.
 1. **Third-party review** of `types/peer.js`, inventory HTLC, sealed exchange, `publishedDocumentEnvelope` ([AUDIT.md](../AUDIT.md) recommendations).
 2. **Do not claim** a hardened contract VM — `Machine.define` still binds host JS ([PUBLIC_API.md](../PUBLIC_API.md)). Doc language locked; this blocker stays until an isolate exists.
 3. Downstream **site-login / device-link redeem** — write paths use `pollSecret`; **GET pending/linked** still Origin-gated for the QR responder ([`@fabric/http` OUTSTANDING](https://github.com/FabricLabs/fabric-http/blob/feature/rsi/docs/OUTSTANDING.md)). Not a core bug.
-4. **Coordinated `contractId` → `contractIdentifier` rename** across Hub / `@fabric/http` / apps. Prep helper: `functions/contractIdentifier.js` (`resolve` / `stamp` dual-read). Do not merge a breaking rename until consumers land.
+4. **Coordinated `contractId` → `contractIdentifier` rename** across Hub / `@fabric/http` / apps. Prep helpers: `Contract.resolveIdentifier` / `Contract.stampIdentifier` (dual-read). Do not merge a breaking rename until consumers land.
 
 ## Next slices (this repo)
 
