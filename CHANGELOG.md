@@ -1,6 +1,9 @@
 # `@fabric/core` Changelog
 Recent changes to Fabric Core.
 
+## 2026-10-25
+- **`Market` never pays for an unsealed blob (behavior change).** An unsealed sale is not atomic: the seller can claim the HTLC (L1 or channel) without delivering, because nothing the buyer needs is behind the preimage. `Market` now plans and opens only free unsealed offers; paid offers must be sealed (`openSession` refuses the rest). `DocumentBook` drops paid unsealed offers whenever a sealed offer is listed, and always with the new `paidSealedOnly` option of `pickBest` / `pickBlobPlan`.
+
 ## 2026-10-24
 Books and HTLCs move into types, and helpers move onto `Message`. **Breaking:** the old modules are removed rather than kept as shims; importers must move to the new paths below.
 

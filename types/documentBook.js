@@ -820,6 +820,11 @@ class DocumentBook extends Book {
       const ex = new Set(opts.excludeSellers.map(String));
       out = out.filter((o) => !ex.has(String(o.sellerId)) && !ex.has(String(o.sellerAddress)));
     }
+    // Only a sealed sale makes payment release the chunk: an unsealed seller can
+    // claim without delivering, so a paid unsealed offer never beats a sealed one.
+    if (opts.paidSealedOnly === true || out.some((o) => o.sealed === true)) {
+      out = out.filter((o) => o.sealed === true || !(Number(o.rateSats) > 0));
+    }
     return out;
   }
 
@@ -888,6 +893,8 @@ class DocumentBook extends Book {
    * @param {boolean} [opts.singleKey] legacy whole-document key: lock one seller
    * @param {number} [opts.maxSats] per-blob ceiling
    * @param {number} [opts.minPaidSats] drop paid offers below this (free offers stay)
+   * @param {boolean} [opts.paidSealedOnly] drop every paid unsealed offer (paid
+   *   unsealed offers always go while a sealed one is listed)
    * @param {string[]} [opts.excludeSellers]
    * @param {string} [opts.merkleRootHex] only offers for this tree root; when
    *   omitted the plan still stays on **one** root (the first pick's), so

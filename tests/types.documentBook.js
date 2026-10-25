@@ -179,4 +179,29 @@ describe('types/documentBook (chunk index + local telemetry)', function () {
       assert.strictEqual(r.contentHashHex, blobPaymentHashHex({ documentId: 'doc', blobIndex: r.blobIndex, blobHashHex: r.blobHashHex }));
     }
   });
+
+  it('never picks a paid unsealed offer while a sealed one is listed', function () {
+    const { advertiseDocumentBlobs } = require('../functions/documentBlobManifest');
+    const ad = advertiseDocumentBlobs(Buffer.alloc(3000, 7), { documentId: 'doc', chunkBytes: 1024, rateSats: 1 });
+    const sealed = [0, 1, 2].map((i) => ({ index: i, total: 3, blobHashHex: H(`c${i}`), paymentHashHex: H(`d${i}`), iv: Buffer.alloc(12, i + 1).toString('base64') }));
+    const root = documentMerkleRootHex(sealed);
+    const book = new DocumentBook();
+    book.ingestInventoryResponse({ origin: 'publisher', latencyMs: 400, items: [{ id: 'doc', sealed: true, merkleRootHex: root, blobs: sealed.map((b) => Object.assign({ rateSats: 900 }, b)) }] });
+    book.ingestInventoryResponse({ origin: 'cheap', latencyMs: 5, items: [{ id: 'doc', rateSats: 1, merkleRootHex: ad.merkleRootHex, blobs: ad.itemBlobs }] });
+    assert.strictEqual(book.pickBest('doc', { blobIndex: 0 }).sellerAddress, 'publisher');
+    assert.ok(Array.from(book.pickBlobPlan('doc', 3).values()).every((o) => o.sellerAddress === 'publisher'));
+
+    // A free unsealed copy costs the buyer nothing, so it may still win.
+    const free = new DocumentBook();
+    free.ingestInventoryResponse({ origin: 'publisher', latencyMs: 400, items: [{ id: 'doc', sealed: true, merkleRootHex: root, blobs: sealed.map((b) => Object.assign({ rateSats: 900 }, b)) }] });
+    free.ingestInventoryResponse({ origin: 'mirror', latencyMs: 5, items: [{ id: 'doc', rateSats: 0, merkleRootHex: ad.merkleRootHex, blobs: ad.itemBlobs.map((b) => Object.assign({}, b, { rateSats: 0 })) }] });
+    assert.strictEqual(free.pickBest('doc', { blobIndex: 0 }).sellerAddress, 'mirror');
+
+    // paidSealedOnly drops paid unsealed offers even with no sealed one listed.
+    const alone = new DocumentBook();
+    alone.ingestInventoryResponse({ origin: 'cheap', latencyMs: 5, items: [{ id: 'doc', rateSats: 1, merkleRootHex: ad.merkleRootHex, blobs: ad.itemBlobs }] });
+    assert.strictEqual(alone.pickBest('doc', { blobIndex: 0 }).sellerAddress, 'cheap');
+    assert.strictEqual(alone.pickBest('doc', { blobIndex: 0, paidSealedOnly: true }), null);
+    assert.strictEqual(alone.pickBlobPlan('doc', 3, { paidSealedOnly: true }).size, 0);
+  });
 });

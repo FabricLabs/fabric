@@ -9,7 +9,9 @@
  * `DocumentBook` for the cheapest / fastest / most reliable blob plan,
  * and — when the plan fits `perPlanMaxSats` and the remaining budget — opens
  * one purchase session per blob (`createDocumentPurchaseSession`, one HTLC per
- * seller per blob). Paid sealed blobs are verified before paying: the seller's
+ * seller per blob). Only sealed blobs are bought for sats: an unsealed seller
+ * could claim the payment without delivering, so unsealed blobs are taken only
+ * when free. Paid sealed blobs are verified before paying: the seller's
  * free ciphertext must be held and committed by the root. With `quotes`, a
  * per-buyer `DocumentBlobQuote` replaces the static payment hash; that is not
  * atomic (the wrapped key can only be checked once the seller claims), so it
@@ -814,8 +816,9 @@ class Market extends Service {
     if (!offers.length) return { ok: false, error: 'no offers' };
     const blobTotal = want.blobTotal || Number(offers.find((o) => o.blobTotal != null && o.blobTotal > 0)?.blobTotal) || 1;
     const weights = this.weights();
-    // Paid offers below the HTLC minimum can't be settled enforceably on either rail.
-    const pick = { weights, merkleRootHex: want.merkleRootHex || undefined, minPaidSats: HTLC_MINIMUM_SATS };
+    // Paid offers below the HTLC minimum can't be settled enforceably on either
+    // rail, and a paid unsealed one can be claimed without delivering.
+    const pick = { weights, merkleRootHex: want.merkleRootHex || undefined, minPaidSats: HTLC_MINIMUM_SATS, paidSealedOnly: true };
     const plan = new Map();
     if (blobTotal > 1) {
       const picked = this.book.pickBlobPlan(id, blobTotal, pick);
@@ -834,7 +837,7 @@ class Market extends Service {
       const alternatives = this.book.listOffers({ documentId: id, blobIndex: o.blobIndex != null ? o.blobIndex : undefined, merkleRootHex: o.merkleRootHex || want.merkleRootHex || undefined })
         .filter((x) => {
           const rate = Math.max(0, Math.floor(Number(x.rateSats) || 0));
-          return (rate === 0 || rate >= HTLC_MINIMUM_SATS) && !this._sellerPaidFor(id, indexed ? i : undefined, x);
+          return (rate === 0 || (rate >= HTLC_MINIMUM_SATS && x.sealed === true)) && !this._sellerPaidFor(id, indexed ? i : undefined, x);
         });
       const next = alternatives.length ? this.book.rankOffers(alternatives, weights)[0] : null;
       if (next) plan.set(i, next);
@@ -1068,6 +1071,10 @@ class Market extends Service {
     const credit = !held && indexed && contentHashHex ? this._creditFor(offer) : null;
     const onCredit = !!credit && (rate === 0 || credit.rateSats <= rate);
     const amountSats = held ? 0 : (onCredit ? credit.rateSats : rate);
+    if (!onCredit && amountSats > 0 && offer.sealed !== true) {
+      want.lastError = 'paid unsealed offer: the seller could claim the payment without delivering';
+      return null;
+    }
     if (!onCredit && amountSats > 0 && amountSats < HTLC_MINIMUM_SATS) {
       want.lastError = `offer of ${amountSats} sats is below the ${HTLC_MINIMUM_SATS}-sat HTLC minimum`;
       return null;

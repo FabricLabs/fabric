@@ -159,6 +159,26 @@ describe('services/market (consumer budget agent)', function () {
     assert.strictEqual(market.openSession(want, Object.assign({}, planned.plan.get(0), { rateSats: P - 1 }), 0, doc.blobTotal), null);
   });
 
+  it('never pays for an unsealed blob (the seller could claim without delivering)', function () {
+    const { advertiseDocumentBlobs } = require('../functions/documentBlobManifest');
+    const ad = advertiseDocumentBlobs(crypto.randomBytes(4000), { documentId: 'plain', chunkBytes: 2048, rateSats: P });
+    const book = new DocumentBook();
+    const item = (rateSats) => ({ id: 'plain', rateSats, merkleRootHex: ad.merkleRootHex, blobs: ad.itemBlobs.map((b) => Object.assign({}, b, { rateSats })) });
+    book.ingestInventoryResponse({ origin: 'paid', sellerPubkey: '02' + 'ab'.repeat(32), items: [item(P)] });
+    const market = new Market({ budgetSats: 10 * P, tickMs: 0, book });
+    const want = { documentId: 'plain', blobTotal: ad.itemBlobs.length, merkleRootHex: ad.merkleRootHex };
+    assert.strictEqual(market.planFor(want).ok, false);
+    const offer = book.listOffers({ documentId: 'plain', blobIndex: 0 })[0];
+    assert.strictEqual(market.openSession(want, offer, 0, want.blobTotal), null);
+    assert.ok(/unsealed/.test(want.lastError));
+
+    book.ingestInventoryResponse({ origin: 'mirror', items: [item(0)] });
+    const planned = market.planFor(want);
+    assert.ok(planned.ok, planned.error);
+    assert.ok([...planned.plan.values()].every((o) => o.sellerAddress === 'mirror'));
+    assert.strictEqual(planned.costSats, 0);
+  });
+
   it('exports and imports agent state with telemetry', async function () {
     const m = buildMarket({ rateSats: 0 });
     const market = new Market({ budgetSats: 42, tickMs: 0, book: m.book });
