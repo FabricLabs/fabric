@@ -223,6 +223,32 @@ describe('functions/documentBlobTransfer', function () {
     assert.strictEqual(drift.error, 'blob hash not in advertised index');
   });
 
+  it('rejects a frame whose payment hash is not the one bought at that index', function () {
+    const split = splitBlobs(Buffer.alloc(2000, 5), 1000, 'pay');
+    const paid = ['aa'.repeat(32), 'bb'.repeat(32)];
+    const book = new DocumentBlobTransferBook();
+    book.expectTransfer({
+      documentId: 'pay',
+      merkleRootHex: split.merkleRootHex,
+      total: split.blobs.length,
+      blobHashHexes: split.blobs.map((b) => b.blobHashHex),
+      paymentHashHexes: paid
+    });
+    const frame = (index, paymentHashHex) => parseFileSendObject({
+      name: 'pay',
+      body: split.blobs[index].bytes.toString('base64'),
+      blobIndex: index,
+      blobTotal: split.blobs.length,
+      blobHashHex: split.blobs[index].blobHashHex,
+      merkleRootHex: split.merkleRootHex,
+      paymentHashHex
+    });
+    const planted = book.ingest(frame(0, 'cc'.repeat(32)));
+    assert.strictEqual(planted.status, 'reject');
+    assert.strictEqual(planted.error, 'payment hash not in advertised index');
+    assert.strictEqual(book.ingest(frame(0, paid[0])).status, 'need_more');
+  });
+
   it('rejects contentSha256 mismatch after full reassemble', function () {
     const data = Buffer.alloc(2000, 7);
     const split = splitBlobs(data, 1000, 'sha');

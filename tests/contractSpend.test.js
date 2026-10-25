@@ -12,7 +12,8 @@ const {
   buildWithdrawalWitness,
   validateWithdrawalRequest,
   prepareWithdrawalFromRequest,
-  verifyWithdrawalWitnessSignature
+  verifyWithdrawalWitnessSignature,
+  computeWithdrawalRequestId
 } = require('../functions/contractSpend');
 const { pubkeyXOnly } = require('../functions/pubkey');
 const {
@@ -23,6 +24,14 @@ const {
 } = require('../functions/contractMessageAccumulate');
 
 describe('contractSpend / ARC resolveSpend', function () {
+  it('computeWithdrawalRequestId hashes after as the wire carries it', function () {
+    const base = { contractId: 'aa'.repeat(32), stateDigest: 'bb'.repeat(32), amountSats: 1000 };
+    const local = { ...base, after: { height: 10, note: undefined } };
+    const received = JSON.parse(JSON.stringify(local));
+    assert.strictEqual(computeWithdrawalRequestId(local), computeWithdrawalRequestId(received));
+    assert.strictEqual(computeWithdrawalRequestId({ ...base, after: { height: 10 } }), computeWithdrawalRequestId(received));
+  });
+
   it('normalizeArcGenesis maps proposedPolicy + messageTypes', function () {
     const a = new Key();
     const arc = normalizeArcGenesis({

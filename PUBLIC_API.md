@@ -82,9 +82,10 @@ Programmatic surface: `CliDocumentExchange` from
 `@fabric/core/functions/cliDocumentExchange`.
 
 `Document.seal` is **convergent** by default: the same bytes seal to the same
-chunks and root for every seller, and `Peer#publishSealedDocument` lists such a
-document under its `merkleRootHex` (a custom `documentId` is a local label).
-Pass `{ private: true }` for random keys. Sellers may also sell convergent
+chunks and root for every seller that uses no `convergenceSecret` (or the same
+one), and `Peer#publishSealedDocument` lists such a document under its
+`merkleRootHex` (a custom `documentId` is a local label). Different secrets
+give different chunks and roots. Pass `{ private: true }` for random keys. Sellers may also sell convergent
 chunks on credit (`creditRateSats`, `settings.sealedBlobCredit`), paid by a
 channel balance transfer after the buyer opens the chunk (`Channel.Session#transfer`,
 `ChannelBook#transfer` / `extendCredit`); buyers may sell a received tree again

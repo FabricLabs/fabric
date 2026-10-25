@@ -112,6 +112,24 @@ describe('functions/cliDocumentExchange (headless CLI surface)', function () {
     assert.ok(blobs.every((b) => Number(b.rateSats) >= HTLC_MINIMUM_SATS), JSON.stringify(blobs.map((b) => b.rateSats)));
   });
 
+  it('inventory skips a document too large to advertise and serves the rest', function () {
+    const Peer = require('../types/peer');
+    const Message = require('../types/message');
+    const { MAX_DOCUMENT_BLOBS } = require('../constants');
+    const peer = new Peer({ listen: false });
+    peer.settings.inventoryBlobChunkBytes = 1;
+    peer._publishDocument('huge', Buffer.alloc(MAX_DOCUMENT_BLOBS + 1, 0x61).toString('base64'), 0);
+    peer._publishDocument('small', Buffer.from('ok').toString('base64'), 0);
+    const warnings = [];
+    peer.on('warning', (w) => warnings.push(String(w)));
+    const written = [];
+    peer.connections.b = { _writeFabric: (buf) => { written.push(buf); return true; } };
+    peer._respondInventoryFromLocalDocuments({ object: { offerBtc: true } }, { name: 'b' });
+    const ids = JSON.parse(Message.fromBuffer(written[0]).body).items.map((i) => i.id);
+    assert.deepStrictEqual(ids, ['small']);
+    assert.ok(warnings.some((w) => w.includes('inventory skipped huge')), warnings.join('\n'));
+  });
+
   it('publish refuses a paid rate under the HTLC minimum', function () {
     const { HTLC_MINIMUM_SATS } = require('../constants');
     const published = [];

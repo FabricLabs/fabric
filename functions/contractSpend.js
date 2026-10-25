@@ -488,7 +488,8 @@ function withdrawalRequestCommitmentFields (object = {}) {
     amountSats: Number.isFinite(amountRaw) ? Math.max(0, Math.round(amountRaw)) : 0,
     feeSats: Math.max(0, Number(object.feeSats) || 0),
     action: object.action === 'migrate' ? 'migrate' : 'spend',
-    after: object.after || null,
+    // Hash what the wire carries: JSON drops undefined properties.
+    after: object.after ? JSON.parse(JSON.stringify(object.after)) : null,
     tierId: object.tierId ? String(object.tierId) : null,
     vaultAddress: object.vaultAddress ? String(object.vaultAddress) : null,
     clock: object.clock != null ? Number(object.clock) : 0,

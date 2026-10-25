@@ -1161,6 +1161,8 @@ class DocumentBlobTransferBook {
           exp.expectedHashes[frame.blobIndex] !== frame.blobHashHex) {
         return reject('blob hash not in advertised index');
       }
+      const wantPay = exp.expectedPaymentHashes && exp.expectedPaymentHashes[frame.blobIndex];
+      if (wantPay && frame.paymentHashHex !== wantPay) return reject('payment hash not in advertised index');
     }
     let row = this._pending.get(key);
     if (row && exp) this._reconcileRow(exp);

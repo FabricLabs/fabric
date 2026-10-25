@@ -4828,23 +4828,29 @@ class Peer extends Service {
           size: sealedMeta ? sealedMeta.ciphertext.length : bodyBuf.length
         };
         // Always advertise a DocumentBlobIndex (one blob when small; many when large).
-        const advertised = sealedMeta
-          ? advertiseSealedDocument({
-            ciphertext: sealedMeta.ciphertext,
-            paymentHashHex: sealedMeta.paymentHashHex,
-            encryption: sealedMeta.encryption,
-            plaintextSha256: sealedMeta.plaintextSha256
-          }, {
-            documentId: docId,
-            chunkBytes,
-            rateSats
-          })
-          : advertiseDocumentBlobs(advertiseBuf, {
-            documentId: docId,
-            chunkBytes,
-            rateSats,
-            includePaymentHashes: true
-          });
+        let advertised;
+        try {
+          advertised = sealedMeta
+            ? advertiseSealedDocument({
+              ciphertext: sealedMeta.ciphertext,
+              paymentHashHex: sealedMeta.paymentHashHex,
+              encryption: sealedMeta.encryption,
+              plaintextSha256: sealedMeta.plaintextSha256
+            }, {
+              documentId: docId,
+              chunkBytes,
+              rateSats
+            })
+            : advertiseDocumentBlobs(advertiseBuf, {
+              documentId: docId,
+              chunkBytes,
+              rateSats,
+              includePaymentHashes: true
+            });
+        } catch (e) {
+          this.emit('warning', `[FABRIC:PEER] inventory skipped ${docId}: ${e.message}`);
+          continue;
+        }
         if (sealedMeta) {
           item.sealed = true;
           item.encryption = sealedMeta.encryption;

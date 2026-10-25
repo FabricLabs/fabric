@@ -35,7 +35,6 @@
 
 const crypto = require('crypto');
 const Key = require('../types/key');
-const Federation = require('../types/federation');
 
 const SCHEME_SCHNORR = 'schnorr';
 const SCHEME_BLS = 'bls';
@@ -52,6 +51,15 @@ const HKDF_SALT = Buffer.from('Fabric-BLS-v1', 'utf8');
 const HKDF_INFO = Buffer.from('federation-signer', 'utf8');
 
 let suiteCache = null;
+
+/**
+ * `types/federation` reaches this module through `types/peer`, so it loads on first use.
+ * @returns {Object}
+ * @private
+ */
+function federation () {
+  return require('../types/federation');
+}
 
 /**
  * @returns {object} noble longSignatures (G1 public keys, G2 signatures)
@@ -341,7 +349,7 @@ function verifyFederationBlsBundle (message, secpPubkey, bundle, opts = {}) {
   const version = Number(parsed.v);
   const allowLegacy = !opts || opts.allowLegacy !== false;
   if (version !== BUNDLE_VERSION && !(allowLegacy && version === LEGACY_BUNDLE_VERSION)) return false;
-  const x = Federation.validatorId(secpPubkey);
+  const x = federation().validatorId(secpPubkey);
   if (!x) return false;
   const given = String(secpPubkey).trim().toLowerCase().replace(/^0x/, '');
   const popCandidates = /^0[23][0-9a-f]{64}$/.test(given)
@@ -381,6 +389,7 @@ function verifyFederationBlsBundle (message, secpPubkey, bundle, opts = {}) {
  */
 function verifyFederationBlsWitness (message, witness, validatorPubkeys, threshold = 1, opts = {}) {
   if (!witness || !witness.signatures || typeof witness.signatures !== 'object') return false;
+  const Federation = federation();
   const pubkeys = Federation.uniqueValidatorPubkeys(validatorPubkeys);
   const thr = Number(threshold);
   if (!Number.isInteger(thr) || thr < 1) return false;
