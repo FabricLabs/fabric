@@ -35,6 +35,17 @@ function cancelKey (entryId, makerPubkey) {
   return `${entryId}:${makerPubkey}`;
 }
 
+/** @private */
+function makerOf (key) {
+  return key.slice(key.indexOf(':') + 1);
+}
+
+/** @private a non-negative count setting, else `fallback` */
+function limitOf (value, fallback) {
+  const n = Number(value);
+  return value == null || Number.isNaN(n) || n < 0 ? fallback : n;
+}
+
 /**
  * Canonical signing bytes: the body without `signature`.
  * @param {Object} body
@@ -200,11 +211,15 @@ class SignedBook extends Book {
       maxPendingCancelsPerMaker: MAX_PENDING_CANCELS_PER_MAKER
     }, settings));
     this.settings.network = String(this.settings.network).toLowerCase();
+    this.settings.maxCancelled = limitOf(this.settings.maxCancelled, MAX_CANCELLED);
+    this.settings.maxPendingCancelsPerMaker = limitOf(this.settings.maxPendingCancelsPerMaker, MAX_PENDING_CANCELS_PER_MAKER);
     this._spec = Object.freeze(Object.assign({ capacitySetting: 'maxEntries' }, spec));
     // `entryId:makerPubkey` → the cancelled entry's `expiresAt`, or null while it is not held
     this._cancelled = new Map();
     // maker → keys of its cancels for entries not held
     this._pendingCancels = new Map();
+    // maker → keys of all its remembered cancels, oldest first
+    this._makerCancels = new Map();
     this._seq = 0;
   }
 
@@ -290,6 +305,8 @@ class SignedBook extends Book {
     }
     if (this._cancelled.size >= this.settings.maxCancelled) this._evictCancel();
     this._cancelled.set(key, expiresAt);
+    if (!this._makerCancels.has(makerPubkey)) this._makerCancels.set(makerPubkey, new Set());
+    this._makerCancels.get(makerPubkey).add(key);
     if (expiresAt == null) {
       if (!this._pendingCancels.has(makerPubkey)) this._pendingCancels.set(makerPubkey, new Set());
       this._pendingCancels.get(makerPubkey).add(key);
@@ -309,29 +326,42 @@ class SignedBook extends Book {
   _forgetCancel (key) {
     this._cancelled.delete(key);
     this._dropPending(key);
+    const maker = makerOf(key);
+    const keys = this._makerCancels.get(maker);
+    if (keys && keys.delete(key) && !keys.size) this._makerCancels.delete(maker);
   }
 
   /** @private */
   _dropPending (key) {
-    const maker = key.slice(key.indexOf(':') + 1);
+    const maker = makerOf(key);
     const pending = this._pendingCancels.get(maker);
     if (pending && pending.delete(key) && !pending.size) this._pendingCancels.delete(maker);
   }
 
   /**
    * Make room for one cancel: drop cancels whose entry expired, else the
-   * oldest cancel for an entry never held, else the oldest cancel.
+   * oldest cancel for an entry never held, else the oldest cancel of the
+   * signer holding the most (the latest such signer on a tie). Anyone can
+   * post and cancel their own entries, so evicting the oldest cancel would
+   * let one key flush another maker's cancel and replay its entry; this way
+   * a flood evicts the flooder's own cancels, and a Sybil flood needs one
+   * key per remembered cancel.
    * @private
    */
   _evictCancel () {
     const now = this.now();
     for (const [key, expiresAt] of this._cancelled) {
-      if (expiresAt != null && expiresAt <= now) this._cancelled.delete(key);
+      if (expiresAt != null && expiresAt <= now) this._forgetCancel(key);
     }
     if (this._cancelled.size < this.settings.maxCancelled) return;
     for (const [key, expiresAt] of this._cancelled) {
       if (expiresAt == null) return this._forgetCancel(key);
     }
+    let victim = null;
+    for (const keys of this._makerCancels.values()) {
+      if (!victim || keys.size >= victim.size) victim = keys;
+    }
+    if (victim) return this._forgetCancel(victim.values().next().value);
     this._cancelled.delete(this._cancelled.keys().next().value);
   }
 

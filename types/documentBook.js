@@ -19,7 +19,7 @@ const crypto = require('crypto');
 const { contentHashHexFromObject } = require('../functions/documentPaymentHash');
 const { stableStringify, jsonSafe } = require('../functions/fabricCanonicalJson');
 const manifest = require('../functions/documentBlobManifest');
-const { INVENTORY_RESPONSE_PAGE_BYTES } = require('../constants');
+const { INVENTORY_RESPONSE_PAGE_BYTES, MAX_DOCUMENT_BLOBS } = require('../constants');
 const Book = require('./book');
 const Htlc = require('./htlc');
 
@@ -99,6 +99,32 @@ function xOnlyKey (v) {
 function count (v) {
   const n = Number(v);
   return Number.isSafeInteger(n) && n > 0 ? n : 0;
+}
+
+/**
+ * An advertised price in whole sats: missing is free; anything that is not a
+ * finite amount from 0 to `Number.MAX_SAFE_INTEGER` is NaN, and the row is
+ * refused (a price of `1e999` or `-1e15` would otherwise skew every ranking).
+ * @private
+ */
+function priceOf (v) {
+  if (v == null) return 0;
+  const n = Number(v);
+  return Number.isFinite(n) && n >= 0 && n <= Number.MAX_SAFE_INTEGER ? Math.floor(n) : NaN;
+}
+
+/** @private an advertised blob total in [1, MAX_DOCUMENT_BLOBS], else null */
+function blobTotalOf (v) {
+  if (v == null) return null;
+  const n = Number(v);
+  return Number.isSafeInteger(n) && n >= 1 && n <= MAX_DOCUMENT_BLOBS ? n : null;
+}
+
+/** @private a ranking input clamped to [0, MAX_SAFE_INTEGER] (NaN is 0) */
+function rankInput (v) {
+  const n = Number(v);
+  if (Number.isNaN(n) || n <= 0) return 0;
+  return Math.min(n, Number.MAX_SAFE_INTEGER);
 }
 
 /**
@@ -589,7 +615,8 @@ class DocumentBook extends Book {
       if (!it || typeof it !== 'object') continue;
       const documentId = String(it.id || it.documentId || '').trim();
       if (!documentId) continue;
-      const rateSats = Number(it.rateSats != null ? it.rateSats : it.purchasePriceSats) || 0;
+      const rateSats = priceOf(it.rateSats != null ? it.rateSats : it.purchasePriceSats);
+      if (Number.isNaN(rateSats)) continue;
       const contentHashHex = contentHashHexFromObject(it);
       const sealed = it.sealed === true;
       const blobs = Array.isArray(it.blobs) ? it.blobs : null;
@@ -640,10 +667,12 @@ class DocumentBook extends Book {
             }
           }
           if (!paymentHash && !rootVerified) paymentHash = contentHashHex;
+          const blobRate = b.rateSats != null ? priceOf(b.rateSats) : rateSats;
+          if (Number.isNaN(blobRate)) continue;
           const row = Object.assign({}, base, {
             blobIndex: Number(b.index),
-            blobTotal: Number(b.total != null ? b.total : blobs.length),
-            rateSats: Number(b.rateSats != null ? b.rateSats : rateSats) || 0,
+            blobTotal: blobTotalOf(b.total != null ? b.total : blobs.length),
+            rateSats: blobRate,
             contentHashHex: paymentHash,
             blobHashHex: hex64(b.blobHashHex),
             iv: typeof b.iv === 'string' && /^[A-Za-z0-9+/]{16,64}={0,2}$/.test(b.iv) ? b.iv : null,
@@ -658,7 +687,7 @@ class DocumentBook extends Book {
       } else {
         const row = Object.assign({}, base, {
           blobIndex: it.blobIndex != null ? Number(it.blobIndex) : null,
-          blobTotal: it.blobTotal != null ? Number(it.blobTotal) : null,
+          blobTotal: blobTotalOf(it.blobTotal),
           rateSats,
           contentHashHex,
           blobHashHex: hex64(it.blobHashHex),
@@ -697,7 +726,7 @@ class DocumentBook extends Book {
         : (indexObj && indexObj.blobTotal != null ? indexObj.blobTotal
           : (first ? first.total : blobs.length))
     );
-    if (!Number.isSafeInteger(blobTotal) || blobTotal < 1) return false;
+    if (!Number.isSafeInteger(blobTotal) || blobTotal < 1 || blobTotal > MAX_DOCUMENT_BLOBS) return false;
     const sealed = it.sealed === true;
     const documentId = String(it.id || it.documentId || '').trim();
     const leaves = [];
@@ -838,9 +867,11 @@ class DocumentBook extends Book {
     if (!list.length) return list;
     const w = Object.assign({}, DEFAULT_WEIGHTS, this.settings.weights || {}, weights || {});
     const hopMs = this.settings.hopPenaltyMs;
-    const prices = list.map((o) => Number(o.rateSats) || 0);
-    const lats = list.map((o) => (Number(o.latencyMs) || 0) + ((Number(o.hops) || 0) * hopMs));
-    const scores = list.map((o) => Number(o.peerScore) || 0);
+    // Clamped so a hand-built offer (negative, Infinity, NaN) cannot turn the
+    // min/max normalization into NaN and leave the list in arrival order.
+    const prices = list.map((o) => rankInput(o.rateSats));
+    const lats = list.map((o) => rankInput(rankInput(o.latencyMs) + (rankInput(o.hops) * hopMs)));
+    const scores = list.map((o) => rankInput(o.peerScore));
     const comps = list.map((o) => {
       const c = Number(o.completeness);
       return Number.isFinite(c) ? Math.min(1, Math.max(0, c)) : 1;
@@ -860,8 +891,8 @@ class DocumentBook extends Book {
       const scoreN = normHighBetter(scores[i], minS, maxS);
       const compN = comps[i];
       const rankScore = (w.price * priceN) + (w.latency * latN) + (w.peerScore * scoreN) + (w.completeness * compN);
-      return Object.assign({}, o, { rankScore });
-    }).sort((a, b) => b.rankScore - a.rankScore);
+      return Object.assign({}, o, { rankScore: Number.isFinite(rankScore) ? rankScore : -Infinity });
+    }).sort((a, b) => (b.rankScore - a.rankScore) || 0);
   }
 
   /**
@@ -904,7 +935,7 @@ class DocumentBook extends Book {
   pickBlobPlan (documentId, blobTotal, opts = {}) {
     const n = Math.round(Number(blobTotal));
     const plan = new Map();
-    if (!Number.isFinite(n) || n < 1) return plan;
+    if (!Number.isFinite(n) || n < 1 || n > MAX_DOCUMENT_BLOBS) return plan;
     const all = this._applyFilters(this.listOffers({ documentId, merkleRootHex: opts.merkleRootHex }), opts);
     const lockToOne = opts.singleKey === true || this._usesSingleKey(all, opts);
     const used = [];

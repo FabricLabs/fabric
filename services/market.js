@@ -36,7 +36,7 @@
 
 const crypto = require('crypto');
 const bitcoin = require('bitcoinjs-lib');
-const { HTLC_MINIMUM_SATS } = require('../constants');
+const { HTLC_MINIMUM_SATS, MAX_DOCUMENT_BLOBS } = require('../constants');
 const Service = require('../types/service');
 const DocumentBook = require('../types/documentBook');
 const Htlc = require('../types/htlc');
@@ -82,6 +82,26 @@ function weightsForProximity (proximityWeight) {
  */
 function sellerDedupeKey (session = {}) {
   return `${settlementDedupeKey(session)}|${String(session.sellerId || session.seller || '')}`;
+}
+
+/** @private a budget in whole sats: anything that is not a finite, safe amount is 0 */
+function budgetOf (sats) {
+  const n = Math.floor(Number(sats));
+  return Number.isSafeInteger(n) && n > 0 ? n : 0;
+}
+
+/**
+ * Own-property read of a document-keyed record, so peer-supplied ids such as
+ * `constructor` or `__proto__` are ordinary ids, never `Object.prototype`.
+ * @private
+ */
+function ownRecord (map, key) {
+  return Object.prototype.hasOwnProperty.call(map, key) ? map[key] : undefined;
+}
+
+/** @private own-property write (`map['__proto__'] = v` would set the prototype) */
+function setRecord (map, key, value) {
+  Object.defineProperty(map, key, { value, enumerable: true, writable: true, configurable: true });
 }
 
 /** @private */
@@ -174,7 +194,7 @@ class Market extends Service {
 
     this._state.content = {
       status: 'idle',
-      budgetSats: Math.max(0, Math.floor(Number(this.settings.budgetSats) || 0)),
+      budgetSats: budgetOf(this.settings.budgetSats),
       spentSats: 0,
       reservedSats: 0,
       lockedSats: 0,
@@ -586,7 +606,7 @@ class Market extends Service {
    * @returns {Market}
    */
   setBudget (sats) {
-    let n = Math.max(0, Math.floor(Number(sats) || 0));
+    let n = budgetOf(sats);
     if (n < this.committedSats) {
       this.emit('warning', `[MARKET] budget ${n} is below the ${this.committedSats} sats already committed; holding at ${this.committedSats}`);
       n = this.committedSats;
@@ -698,7 +718,7 @@ class Market extends Service {
       sessions: [],
       lastError: null
     };
-    this._state.content.wants[id] = record;
+    setRecord(this._state.content.wants, id, record);
     this.commit();
     this.emit('debug', `[MARKET] want ${id}${root ? ' root=' + root.slice(0, 8) : ''}`);
     return record;
@@ -715,7 +735,7 @@ class Market extends Service {
    */
   forget (documentId) {
     const id = String(documentId || '').trim();
-    const w = this._state.content.wants[id];
+    const w = ownRecord(this._state.content.wants, id);
     if (!w) return false;
     for (const sid of w.sessions) {
       const s = this._state.content.sessions[sid];
@@ -814,7 +834,11 @@ class Market extends Service {
     const id = want.documentId;
     const offers = this.book.listOffers(want.merkleRootHex ? { documentId: id, merkleRootHex: want.merkleRootHex } : { documentId: id });
     if (!offers.length) return { ok: false, error: 'no offers' };
-    const blobTotal = want.blobTotal || Number(offers.find((o) => o.blobTotal != null && o.blobTotal > 0)?.blobTotal) || 1;
+    const advertised = offers.map((o) => Number(o.blobTotal)).find((n) => Number.isSafeInteger(n) && n > 0);
+    const blobTotal = want.blobTotal || advertised || 1;
+    if (!Number.isSafeInteger(blobTotal) || blobTotal > MAX_DOCUMENT_BLOBS) {
+      return { ok: false, error: `blob total ${blobTotal} exceeds ${MAX_DOCUMENT_BLOBS}` };
+    }
     const weights = this.weights();
     // Paid offers below the HTLC minimum can't be settled enforceably on either
     // rail, and a paid unsealed one can be claimed without delivering.
@@ -1746,7 +1770,7 @@ class Market extends Service {
 
   /** @private hand the want back to the scheduler when nothing else works on it */
   _wantBack (session, reason) {
-    const want = this._state.content.wants[session.documentId];
+    const want = ownRecord(this._state.content.wants, session.documentId);
     if (!want || want.status !== 'buying') return;
     if (!this._wantLive(session.documentId, session)) want.status = 'wanted';
     want.lastError = reason;
@@ -1980,10 +2004,10 @@ class Market extends Service {
       s.error = 'document already received';
       this._moveBudget(s, 'released');
     }
-    const want = this._state.content.wants[ev.documentId];
+    const want = ownRecord(this._state.content.wants, ev.documentId);
     if (want) {
       want.status = 'complete';
-      this._state.content.completed[ev.documentId] = { at: this._now(), merkleRootHex: ev.merkleRootHex || want.merkleRootHex || null };
+      setRecord(this._state.content.completed, ev.documentId, { at: this._now(), merkleRootHex: ev.merkleRootHex || want.merkleRootHex || null });
     }
     this._seed(ev);
     this.commit();
@@ -2292,7 +2316,7 @@ class Market extends Service {
   import (snapshot) {
     if (!snapshot || typeof snapshot !== 'object') return this;
     const c = this._state.content;
-    if (snapshot.budgetSats != null) c.budgetSats = Math.max(0, Math.floor(Number(snapshot.budgetSats) || 0));
+    if (snapshot.budgetSats != null) c.budgetSats = budgetOf(snapshot.budgetSats);
     if (snapshot.wants && typeof snapshot.wants === 'object') c.wants = snapshot.wants;
     if (snapshot.sessions && typeof snapshot.sessions === 'object') c.sessions = snapshot.sessions;
     if (snapshot.completed && typeof snapshot.completed === 'object') c.completed = snapshot.completed;
