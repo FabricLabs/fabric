@@ -18,7 +18,8 @@ const DocumentBook = require('../types/documentBook');
 const Message = require('../types/message');
 const Key = require('../types/key');
 const { signerFromPriv32 } = require('../types/htlc');
-const { createBlobMerkleTree, merkleRootHexFromBlobHashes } = require('../functions/documentBlobManifest');
+const { documentMerkleRootHex } = require('../functions/documentBlobManifest');
+const { createBlobMerkleTree } = require('../types/challenge');
 const { buildInclusion, merkleRootFromTxids, headerMeetsTarget } = require('../functions/bitcoinTxInclusion');
 
 const { FraudProof } = Witness;
@@ -403,20 +404,20 @@ describe('Market fraud proofs — adversarial regressions', function () {
         { index: 1, total: 2, blobHashHex: H('c1'), rateSats: 5, contentHash: H('d1') }
       ];
       const book = new DocumentBook();
-      assert.strictEqual(book.ingestInventoryResponse({ origin: 'liar', items: [{ id: 'doc', merkleRootHex: H('ee'), blobs }] }).length, 0);
-      const good = book.ingestInventoryResponse({ origin: 'honest', items: [{ id: 'doc', merkleRootHex: merkleRootHexFromBlobHashes([H('c0'), H('c1')]), blobs }] });
+      assert.strictEqual(book.ingestInventoryResponse({ origin: 'liar', items: [{ id: 'doc', sealed: true, merkleRootHex: H('ee'), blobs }] }).length, 0);
+      const good = book.ingestInventoryResponse({ origin: 'honest', items: [{ id: 'doc', sealed: true, merkleRootHex: documentMerkleRootHex(blobs.map((b) => ({ blobHashHex: b.blobHashHex, paymentHashHex: b.contentHash }))), blobs }] });
       assert.deepStrictEqual(good.map((r) => r.rootVerified), [true, true]);
-      // A real v2 document: swapping one blob's payment hash breaks the root.
+      // A real sealed document: swapping one blob's payment hash breaks the root.
       const real = Document.seal(crypto.randomBytes(5000), { chunkBytes: 2048 });
-      const item = real.inventoryItem({ rateSats: 1000, documentId: 'v2' });
-      assert.strictEqual(book.ingestInventoryResponse({ origin: 'v2', items: [item] }).length, real.blobTotal);
+      const item = real.inventoryItem({ rateSats: 1000, documentId: 'sealed' });
+      assert.strictEqual(book.ingestInventoryResponse({ origin: 'sealed', items: [item] }).length, real.blobTotal);
       const swapped = JSON.parse(JSON.stringify(item));
       swapped.blobs[0].contentHash = swapped.blobs[0].contentHashHex = H('ab');
-      assert.strictEqual(book.ingestInventoryResponse({ origin: 'v2-liar', items: [swapped] }).length, 0);
+      assert.strictEqual(book.ingestInventoryResponse({ origin: 'sealed-liar', items: [swapped] }).length, 0);
       // The leaf check is swappable.
       const calls = [];
       const hooked = new DocumentBook({ verifyOfferLeaves: (opts) => { calls.push(opts); return false; } });
-      assert.strictEqual(hooked.ingestInventoryResponse({ origin: 'x', items: [{ id: 'doc', merkleRootHex: H('ee'), blobs }] }).length, 0);
+      assert.strictEqual(hooked.ingestInventoryResponse({ origin: 'x', items: [{ id: 'doc', sealed: true, merkleRootHex: H('ee'), blobs }] }).length, 0);
       assert.strictEqual(calls[0].blobTotal, 2);
       assert.strictEqual(calls[0].merkleRootHex, H('ee'));
     });

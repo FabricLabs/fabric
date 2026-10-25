@@ -3,7 +3,16 @@
 const crypto = require('crypto');
 const Witness = require('./witness');
 const Tree = require('./tree');
-const { createBlobMerkleTree, verifyBlob } = require('../functions/documentBlobManifest');
+const { verifyBlob } = require('../functions/documentBlobManifest');
+
+/**
+ * Storage tree over raw 32-byte blob hashes (its proofs are {@link Tree} proofs).
+ * @param {string[]} hashes
+ * @returns {Tree}
+ */
+function createBlobMerkleTree (hashes) {
+  return new Tree({ leaves: hashes.map((h) => Buffer.from(h, 'hex')) });
+}
 
 const HEX64 = /^[0-9a-f]{64}$/;
 
@@ -460,5 +469,7 @@ class Challenge {
     });
   }
 }
+
+Challenge.createBlobMerkleTree = createBlobMerkleTree;
 
 module.exports = Challenge;

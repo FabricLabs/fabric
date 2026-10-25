@@ -14,9 +14,7 @@ const Message = require('../../types/message');
 const {
   CONTRACT_BODY_TYPES
 } = require('../../functions/applicationNamespaces');
-const {
-  pubkeyXOnly
-} = require('../../functions/groupChatSeal');
+const { pubkeyXOnly } = require('../../functions/pubkey');
 const {
   finalizeSpendPsbt
 } = require('../../types/policy');

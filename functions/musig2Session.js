@@ -25,6 +25,7 @@ const {
   partialSigAgg,
   verifyAggregatedSchnorr
 } = require('./musig2');
+const { toBuffer } = require('./bytes');
 
 const MUSIG_MAX_SIGNERS = 16;
 const MUSIG_MAX_MSG_BYTES = 4096;
@@ -34,23 +35,6 @@ const MUSIG_SIG_BYTES = 64;
 const MUSIG_PK_BYTES = 33;
 
 /**
- * @param {Buffer|Uint8Array|string} input
- * @returns {Buffer}
- * @private
- */
-function asBuf (input) {
-  if (Buffer.isBuffer(input)) return input;
-  if (input instanceof Uint8Array) return Buffer.from(input);
-  if (typeof input === 'string') {
-    const hex = String(input).trim().replace(/^0x/i, '');
-    if (hex.length % 2) throw new TypeError('odd hex length');
-    if (!/^[0-9a-f]*$/i.test(hex)) throw new TypeError('expected hex');
-    return Buffer.from(hex, 'hex');
-  }
-  throw new TypeError('expected Buffer, Uint8Array, or hex');
-}
-
-/**
  * @param {*} input
  * @param {number} len
  * @returns {Buffer|null}
@@ -58,7 +42,7 @@ function asBuf (input) {
  */
 function exactBuf (input, len) {
   try {
-    const b = asBuf(input);
+    const b = toBuffer(input);
     return b.length === len ? b : null;
   } catch {
     return null;
@@ -94,7 +78,7 @@ function challengeMessage (msg) {
  * @returns {string} 64-char x-only hex
  */
 function xOnlyHex (pk) {
-  const b = asBuf(pk);
+  const b = toBuffer(pk);
   if (b.length === 32) return b.toString('hex');
   if (b.length === 33) return b.subarray(1, 33).toString('hex');
   throw new TypeError('pubkey must be 32 or 33 bytes');
@@ -114,7 +98,7 @@ function packPubkeys (pubkeys) {
  * @returns {Buffer[]}
  */
 function unpackPubkeys (packed) {
-  const buf = asBuf(packed);
+  const buf = toBuffer(packed);
   if (!buf.length || buf.length % MUSIG_PK_BYTES !== 0) {
     throw new TypeError('packed pubkeys must be n×33 bytes');
   }
@@ -136,7 +120,7 @@ function normalizePubkeys (pubkeys) {
     list = unpackPubkeys(pubkeys);
   } else if (Array.isArray(pubkeys)) {
     list = pubkeys.map((pk) => {
-      const b = asBuf(pk);
+      const b = toBuffer(pk);
       if (b.length !== MUSIG_PK_BYTES) throw new TypeError('each pubkey must be 33 bytes');
       return Buffer.from(b);
     });
@@ -235,7 +219,7 @@ function localPk (sk) {
  * @returns {object}
  */
 function createLocalSession (opts = {}) {
-  const sk = asBuf(opts.sk);
+  const sk = toBuffer(opts.sk);
   if (sk.length !== 32) throw new TypeError('sk must be 32 bytes');
   const pubkeys = normalizePubkeys(opts.pubkeys);
   const pk = localPk(sk);
@@ -305,7 +289,7 @@ function createFromStart (body, opts = {}) {
   if (authorIndex < 0) return { ok: false, reason: 'signer-not-participant' };
   let sk;
   try {
-    sk = asBuf(opts.sk);
+    sk = toBuffer(opts.sk);
   } catch {
     return { ok: false, reason: 'missing-sk' };
   }
@@ -411,7 +395,7 @@ function createPartial (session, sk) {
     return { ok: false, reason: 'no-secnonce' };
   }
   try {
-    const psig = sign(session.secnonce, asBuf(sk), sessionCtxFor(session));
+    const psig = sign(session.secnonce, toBuffer(sk), sessionCtxFor(session));
     session.psigs[session.localIndex] = Buffer.from(psig);
     wipeSession(session);
     return { ok: true, psig };

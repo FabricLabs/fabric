@@ -130,6 +130,7 @@ class LiquidityBook extends OrderBook {
     if (!Number.isSafeInteger(want) || want <= 0) throw new Error('liquidityBook: amountSats must be a positive integer');
     const exclude = new Set((opts.excludeMakers || []).map((k) => String(k).toLowerCase()));
     const limit = opts.limitPpm != null ? Number(opts.limitPpm) : null;
+    if (limit != null && !Number.isFinite(limit)) throw new Error('liquidityBook: limitPpm must be a number');
     const fills = [];
     let remaining = want;
     let weighted = 0;
@@ -146,6 +147,8 @@ class LiquidityBook extends OrderBook {
       } catch {
         continue;
       }
+      // the summed L2 amount is settled, so it must stay exact
+      if (l2Msat + q.l2Msat > Number.MAX_SAFE_INTEGER) break;
       fills.push({ orderId: order.id, order, amountSats: chunk, quote: q });
       remaining -= chunk;
       weighted += chunk * order.premiumPpm;

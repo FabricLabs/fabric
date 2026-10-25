@@ -19,19 +19,7 @@ const {
   buildCrossSignObject,
   buildRevokeObject
 } = require('./identityCrossSign');
-
-function pubkeyXOnly (hex) {
-  const s = String(hex || '').toLowerCase().replace(/^0x/, '');
-  if (/^0[23][0-9a-f]{64}$/.test(s)) return s.slice(2);
-  if (/^[0-9a-f]{64}$/.test(s)) return s;
-  return null;
-}
-
-function pubkeysMatch (a, b) {
-  const xa = pubkeyXOnly(a);
-  const xb = pubkeyXOnly(b);
-  return !!(xa && xb && xa === xb);
-}
+const { pubkeysMatch } = require('./pubkey');
 
 function _messageFor (kind, rec) {
   if (kind === REVOKE_TYPE) {
@@ -120,6 +108,5 @@ function verifyCrossSignObject (object, _signerPubkey) {
 
 module.exports = {
   signCrossSign,
-  verifyCrossSignObject,
-  pubkeysMatch
+  verifyCrossSignObject
 };

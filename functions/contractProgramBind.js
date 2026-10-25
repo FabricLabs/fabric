@@ -15,8 +15,7 @@
  */
 
 const crypto = require('crypto');
-
-const FABRIC_PROGRAM_RUN_KIND = 'FabricProgramRun';
+const { FABRIC_PROGRAM_RUN_KIND } = require('./executionRunBridge');
 
 /**
  * @param {object} [tip]
@@ -214,7 +213,6 @@ function programRunId (programHash, runCommitmentHex) {
 }
 
 module.exports = {
-  FABRIC_PROGRAM_RUN_KIND,
   programMetaFromTip,
   requiresProgramBind,
   bindProgramRunToTip,

@@ -16,8 +16,8 @@
 
 const crypto = require('crypto');
 const Message = require('../types/message');
+const { normalizeContractId } = require('./sidechainState');
 const {
-  normalizeContractId,
   bufferFromPaste,
   messageHashHex,
   authorXOnlyHex,
@@ -260,7 +260,5 @@ module.exports = {
   markDelivered,
   entryHexList,
   fallbackContentHash,
-  createMemoryStore,
-  normalizeContractId,
-  bufferFromPaste
+  createMemoryStore
 };

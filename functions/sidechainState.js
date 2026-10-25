@@ -82,10 +82,11 @@ function createInitialState () {
  * @returns {string}
  */
 function stateDigest (state) {
+  const doc = state || {};
   const s = stableStringify({
-    version: state.version != null ? Number(state.version) : 1,
-    clock: Number(state.clock) || 0,
-    content: jsonSafe(state.content || {})
+    version: doc.version != null ? Number(doc.version) : 1,
+    clock: Number(doc.clock) || 0,
+    content: jsonSafe(doc.content || {})
   });
   return crypto.createHash('sha256').update(Buffer.from(s, 'utf8')).digest('hex');
 }

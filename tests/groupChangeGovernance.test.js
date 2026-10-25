@@ -9,7 +9,7 @@ const {
   applyGroupChangeAction,
   foldProposals
 } = require('../functions/groupChangeGovernance');
-const { pubkeyXOnly } = require('../functions/groupChatSeal');
+const { pubkeyXOnly } = require('../functions/pubkey');
 
 describe('@fabric/core groupChangeGovernance', function () {
   it('signs and verifies a proposal vote (canonical application string)', function () {

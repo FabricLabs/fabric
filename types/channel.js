@@ -24,6 +24,7 @@ const Resolutions = require('./resolutions');
 
 // Functions
 const { taprootPsbtInputFields } = require('../functions/bip371');
+const { BIP125_SEQUENCE_LOCKTIME_ONLY } = require('../functions/bip125');
 const Htlc = require('./htlc');
 const { buildInclusion } = require('../functions/bitcoinTxInclusion');
 const ecc = require('./ecc');
@@ -47,7 +48,6 @@ const SIG64 = /^[0-9a-f]{128}$/i;
 const COMPRESSED = /^(02|03)[0-9a-f]{64}$/;
 const HTLC_ID = /^[A-Za-z0-9_.:-]{1,128}$/;
 const DUST = BITCOIN_DUST_SATS;
-const SEQUENCE_NONFINAL = (2 ** 32) - 2; // 0xfffffffe: enables nLockTime, opts out of RBF signalling
 const ECPoint = secp256k1.Point || secp256k1.ProjectivePoint;
 const CURVE_N = (ECPoint.Fn && ECPoint.Fn.ORDER) || (secp256k1.CURVE && secp256k1.CURVE.n);
 
@@ -812,7 +812,7 @@ Channel.buildCommitment = function buildCommitment (funding, state = {}, opts = 
   psbt.addInput(Object.assign({
     hash: tx.getId(),
     index: vout,
-    sequence: SEQUENCE_NONFINAL,
+    sequence: BIP125_SEQUENCE_LOCKTIME_ONLY,
     witnessUtxo: { script: Uint8Array.from(script), value: BigInt(inputSats) }
   }, taprootPsbtInputFields({
     tapInternalKey: internal,
@@ -1142,7 +1142,7 @@ Channel.prepareJusticeSpend = function prepareJusticeSpend (opts = {}) {
     psbt.addInput(Object.assign({
       hash: stale.getId(),
       index: row.vout,
-      sequence: SEQUENCE_NONFINAL,
+      sequence: BIP125_SEQUENCE_LOCKTIME_ONLY,
       witnessUtxo: { script: Uint8Array.from(out.script), value: BigInt(out.value) }
     }, taprootPsbtInputFields({ tapInternalKey: internal, script: leaf.script, controlBlock: control, leafVersion: bip341.LEAF_VERSION_TAPSCRIPT })));
     inputs.push({ vout: row.vout, kind: row.kind, id: row.id || null, amountSats: Number(out.value) });

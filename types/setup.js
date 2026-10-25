@@ -12,6 +12,7 @@
  */
 
 const fabricSetup = require('../functions/fabricSetup');
+const { PASSWORD_MIN_LENGTH } = require('../functions/sealedBlob');
 
 const MENU = [
   { id: 'generate', label: 'Generate / regenerate wallet…' },
@@ -341,8 +342,8 @@ class SetupTui {
       }
       return '';
     }
-    if (String(password).length < fabricSetup.PASSWORD_MIN_LENGTH) {
-      this._setStatus(`Password must be at least ${fabricSetup.PASSWORD_MIN_LENGTH} characters.`, true);
+    if (String(password).length < PASSWORD_MIN_LENGTH) {
+      this._setStatus(`Password must be at least ${PASSWORD_MIN_LENGTH} characters.`, true);
       return null;
     }
     if (confirm) {

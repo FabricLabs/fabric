@@ -262,7 +262,7 @@ class ChannelBook extends Book {
     const existing = this._row(session.channelId);
     if (existing && existing !== session) throw new Error(`ChannelBook: channel ${session.channelId} already registered`);
     if (!existing) {
-      if (this.size >= this.capacity) throw new Error(`ChannelBook: full (${this.capacity} channels)`);
+      if (this.size >= this._limit()) throw new Error(`ChannelBook: full (${this._limit()} channels)`);
       this._insert(session.channelId, session);
     }
     this.peers.set(session.funding.remotePubkey, session.channelId);
@@ -453,7 +453,7 @@ class ChannelBook extends Book {
     if (!session) return 0;
     let owed = 0;
     for (const c of this.credits.values()) {
-      if (c.channelId === session.channelId && !c.settledAt) owed += c.amountSats - c.paidSats;
+      if (c.channelId === session.channelId && !c.settledAt) owed += Math.max(0, c.amountSats - c.paidSats);
     }
     return owed;
   }
@@ -696,14 +696,18 @@ class ChannelBook extends Book {
 
   /** @param {object} snapshot @returns {ChannelBook} */
   import (snapshot = {}) {
-    for (const snap of snapshot.sessions || []) {
+    // A damaged snapshot imports what it can: each field is taken only in its own shape.
+    const list = (v) => (Array.isArray(v) ? v : []);
+    const record = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? v : {});
+    const data = record(snapshot);
+    for (const snap of list(data.sessions)) {
       try { this.add(ChannelSession.import(snap, this.localPrivateKey, this._sessionDeps())); } catch (_) { /* skip foreign / duplicate */ }
     }
-    for (const [alias, id] of Object.entries(snapshot.peers || {})) if (this.has(id)) this.peers.set(alias, id);
-    for (const [k, v] of Object.entries(snapshot.forwards || {})) this.forwards.set(k, v);
-    for (const k of snapshot.announced || []) this._announced.add(String(k));
-    for (const p of snapshot.pendingPropagation || []) if (p && p.link && p.body) this.pendingPropagation.push({ link: p.link, body: p.body });
-    for (const c of snapshot.credits || []) {
+    for (const [alias, id] of Object.entries(record(data.peers))) if (this.has(id)) this.peers.set(alias, id);
+    for (const [k, v] of Object.entries(record(data.forwards))) this.forwards.set(k, v);
+    for (const k of list(data.announced)) this._announced.add(String(k));
+    for (const p of list(data.pendingPropagation)) if (p && p.link && p.body) this.pendingPropagation.push({ link: p.link, body: p.body });
+    for (const c of list(data.credits)) {
       const ref = c && creditRef(c.ref);
       const amountSats = Number(c && c.amountSats);
       if (!ref || !this.has(c.channelId) || !Number.isSafeInteger(amountSats) || amountSats < 1) continue;
@@ -711,7 +715,8 @@ class ChannelBook extends Book {
         channelId: String(c.channelId),
         ref,
         amountSats,
-        paidSats: Math.max(0, Math.floor(Number(c.paidSats) || 0)),
+        // never more than the credit: an overpaid row would lower what is owed below zero
+        paidSats: Math.min(amountSats, Math.max(0, Math.floor(Number(c.paidSats) || 0))),
         extendedAt: Number(c.extendedAt) || 0,
         settledAt: c.settledAt ? Number(c.settledAt) : null
       });

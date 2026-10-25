@@ -8,28 +8,22 @@
  * - Small files → one content blob listed in `blobs[]`
  * - Large files → many content blobs listed in `blobs[]`
  *
- * Merkle commitment uses Fabric {@link Tree} over per-blob SHA-256 leaves so
- * roots can be accumulated (`Tree#addLeaf`) for any total size. When the full
- * leaf list will not fit in one AMP body, the index carries only the Tree root
- * (`leavesInline: false`); leaves are still recoverable from verified blobs.
+ * When the full leaf list will not fit in one AMP body, the index carries only
+ * the root (`leavesInline: false`); leaves are still recoverable from verified
+ * blobs.
  *
- * **Document tree versions.**
- * - `1` (legacy, plaintext / whole-document blob indexes): Bitcoin-style
- *   {@link Tree} over raw blob hashes. Its root does not commit the leaf count
- *   (`[a, b, c]` and `[a, b, c, c]` share a root, CVE-2012-2459), so every
- *   verifier here refuses {@link Tree#mutated} leaf lists.
- * - `2` (sealed per-blob {@link Document}): domain-separated SHA-256 tree.
- *   `leaf_i = H(0x00 || blobHash_i || paymentHash_i || iv_i)` (32 + 32 + 12
- *   bytes; zeros when unsealed), `node = H(0x01 || left || right)`, an odd
- *   last node is promoted unchanged, and the published root is
- *   `H(0x02 || uint32be(blobTotal) || treeRoot)`. The root therefore commits
- *   the blob count, every blob's payment hash `SHA256(K_i)` (the AES key
- *   commitment that closes AES-GCM's non-key-committing gap), and its IV.
+ * **Document tree** (every document): domain-separated SHA-256 tree.
+ * `leaf_i = H(0x00 || blobHash_i || paymentHash_i || iv_i)` (32 + 32 + 12
+ * bytes; zeros when unsealed), `node = H(0x01 || left || right)`, an odd last
+ * node is promoted unchanged, and the published root is
+ * `H(0x02 || uint32be(blobTotal) || treeRoot)`. The root therefore commits the
+ * blob count (no CVE-2012-2459 twins), every blob's payment hash `SHA256(K_i)`
+ * (the AES key commitment that closes AES-GCM's non-key-committing gap), and
+ * its IV.
  */
 
 const crypto = require('crypto');
 const { MAX_MESSAGE_SIZE, MAX_DOCUMENT_BLOBS } = require('../constants');
-const Tree = require('../types/tree');
 
 /** @deprecated Prefer {@link DEFAULT_BLOB_CHUNK_BYTES}; kept for Hub 1 MiB file-chunk callers. */
 const LEGACY_HUB_CHUNK_BYTES = 1024 * 1024;
@@ -54,7 +48,7 @@ const DEFAULT_CHUNK_BYTES = DEFAULT_BLOB_CHUNK_BYTES;
 
 /**
  * Theoretical maximum document size at the default blob size:
- * `MAX_DOCUMENT_BLOBS × DEFAULT_BLOB_CHUNK_BYTES` (98,697,216 bytes ≈ 94.1 MiB).
+ * `MAX_DOCUMENT_BLOBS × DEFAULT_BLOB_CHUNK_BYTES` (197,394,432 bytes ≈ 188.3 MiB).
  * Callers with a larger metadata reserve use smaller blobs and a lower ceiling.
  */
 const MAX_DOCUMENT_BYTES = MAX_DOCUMENT_BLOBS * DEFAULT_BLOB_CHUNK_BYTES;
@@ -70,21 +64,16 @@ const MAX_PENDING_BLOB_TRANSFERS_PER_ORIGIN = 8;
 const MAX_PENDING_BLOB_BYTES = 256 * 1024 * 1024;
 
 const BLOB_INDEX_TYPE = 'DocumentBlobIndex';
-const BLOB_INDEX_SCHEMA_VERSION = 2;
-const BLOB_MERKLE_ALGO = 'Tree';
+const BLOB_MERKLE_ALGO = 'DocumentTree';
 
-/** Legacy document tree: Bitcoin-style {@link Tree} over blob hashes. */
-const DOCUMENT_TREE_VERSION_LEGACY = 1;
-/** Domain-separated, count-bound document tree (sealed per-blob documents). */
-const DOCUMENT_TREE_VERSION = 2;
 const DOCUMENT_TREE_LEAF = 0x00;
 const DOCUMENT_TREE_NODE = 0x01;
 const DOCUMENT_TREE_ROOT = 0x02;
 const DOCUMENT_TREE_IV_BYTES = 12;
 
 /**
- * JSON envelope reserve for a sealed per-blob frame: the v2 inclusion proof
- * (up to log2(MAX_DOCUMENT_BLOBS) = 12 hex siblings) rides every frame.
+ * JSON envelope reserve for a sealed per-blob frame: the inclusion proof
+ * (up to log2(MAX_DOCUMENT_BLOBS) = 13 hex siblings) rides every frame.
  */
 const SEALED_FRAME_JSON_OVERHEAD = 2048;
 /** Max ciphertext bytes per sealed blob so frame + proof stay ≤ MAX_MESSAGE_SIZE. */
@@ -94,86 +83,18 @@ const SEALED_BLOB_CHUNK_BYTES = Math.max(
 );
 
 /**
- * @param {string} hex
- * @returns {Buffer}
- */
-function _hashLeafBuffer (hex) {
-  const h = String(hex || '').trim().toLowerCase();
-  if (!/^[0-9a-f]{64}$/.test(h)) {
-    throw new Error('blob leaf must be 64 hex chars');
-  }
-  return Buffer.from(h, 'hex');
-}
-
-/**
- * Build a Fabric Tree whose leaves are raw 32-byte blob hashes.
- * @param {string[]} blobHashHexes
- * @returns {import('../types/tree')}
- */
-function createBlobMerkleTree (blobHashHexes = []) {
-  const leaves = (Array.isArray(blobHashHexes) ? blobHashHexes : [])
-    .map((h) => _hashLeafBuffer(h));
-  return new Tree({ leaves });
-}
-
-/**
- * @param {string[]} blobHashHexes
- * @returns {string} 64 hex chars (Tree root); empty-input → SHA256(empty)
- */
-function merkleRootHexFromBlobHashes (blobHashHexes = []) {
-  const list = Array.isArray(blobHashHexes) ? blobHashHexes : [];
-  if (!list.length) {
-    return crypto.createHash('sha256').update(Buffer.alloc(0)).digest('hex');
-  }
-  const tree = createBlobMerkleTree(list);
-  const hex = tree.rootHex;
-  if (!hex) {
-    return crypto.createHash('sha256').update(Buffer.alloc(0)).digest('hex');
-  }
-  return hex;
-}
-
-/**
- * Accumulate one verified blob hash into a Tree (any document size).
- * @param {import('../types/tree')|null} tree
- * @param {string} blobHashHex
- * @returns {import('../types/tree')}
- */
-function accumulateBlobLeaf (tree, blobHashHex) {
-  const t = tree instanceof Tree ? tree : new Tree({ leaves: [] });
-  t.addLeaf(_hashLeafBuffer(blobHashHex));
-  return t;
-}
-
-/**
- * True when a legacy (v1) blob-hash list is {@link Tree#mutated}: it pads a
- * shorter list with the same root, so it must not be accepted. Refusing the
- * padded form leaves exactly one accepted leaf list per v1 root.
- * @param {string[]} blobHashHexes
- * @returns {boolean}
- */
-function blobHashesMutated (blobHashHexes = []) {
-  const list = Array.isArray(blobHashHexes) ? blobHashHexes : [];
-  if (list.length < 2) return false;
-  return Tree.isMutated(list.map((h) => _hashLeafBuffer(h)));
-}
-
-/**
- * Root of a plain (unsealed) blob list: the legacy blob-hash Tree root, or —
- * when the list is a CVE-2012-2459 twin that legacy root can't tell apart —
- * the count-bound v2 root over plain leaves. The form follows from the hashes
- * alone, so producer and buyer agree without trusting a version field.
+ * Document root over blob hashes alone (unsealed blobs: zero payment hash
+ * and IV), or with one payment hash on every leaf (a whole-document sale
+ * under a single key).
  * @param {string[]} blobHashHexes in index order
- * @returns {{ merkleRootHex: string, treeVersion: number }}
+ * @param {Object} [opts]
+ * @param {string} [opts.paymentHashHex] payment hash committed by every leaf
+ * @returns {string} 64 hex chars
  */
-function plainBlobRoot (blobHashHexes = []) {
-  if (blobHashesMutated(blobHashHexes) && _validTotal(blobHashHexes.length)) {
-    return {
-      merkleRootHex: documentMerkleRootHex(blobHashHexes.map((blobHashHex) => ({ blobHashHex }))),
-      treeVersion: DOCUMENT_TREE_VERSION
-    };
-  }
-  return { merkleRootHex: merkleRootHexFromBlobHashes(blobHashHexes), treeVersion: DOCUMENT_TREE_VERSION_LEGACY };
+function merkleRootHexFromBlobHashes (blobHashHexes = [], opts = {}) {
+  const list = Array.isArray(blobHashHexes) ? blobHashHexes : [];
+  const paymentHashHex = opts.paymentHashHex || null;
+  return documentMerkleRootHex(list.map((blobHashHex) => ({ blobHashHex, paymentHashHex })));
 }
 
 /**
@@ -229,7 +150,7 @@ function sameIv (a, b) {
 }
 
 /**
- * v2 leaf for one blob: `H(0x00 || blobHash || paymentHash || iv)`.
+ * Leaf for one blob: `H(0x00 || blobHash || paymentHash || iv)`.
  * Unsealed blobs use 32 / 12 zero bytes for the payment hash / IV.
  * @param {Object} blob
  * @param {string} blob.blobHashHex SHA256(ciphertext) (64 hex)
@@ -249,7 +170,7 @@ function documentLeafHex (blob = {}) {
 }
 
 /**
- * v2 layers over leaf hashes (leaves first); odd last nodes are promoted.
+ * Layers over leaf hashes (leaves first); odd last nodes are promoted.
  * @param {Buffer[]} leaves
  * @returns {Buffer[][]}
  * @private
@@ -294,17 +215,10 @@ function _validTotal (total) {
 /**
  * Document root for blob leaves in index order.
  * @param {Object[]} blobs `{ blobHashHex, paymentHashHex?, iv? }` per index
- * @param {Object} [opts]
- * @param {number} [opts.treeVersion=2] `1` = legacy blob-hash Tree root
  * @returns {string} 64 hex chars
  */
-function documentMerkleRootHex (blobs = [], opts = {}) {
+function documentMerkleRootHex (blobs = []) {
   const list = Array.isArray(blobs) ? blobs : [];
-  const version = Number(opts.treeVersion || DOCUMENT_TREE_VERSION);
-  if (version === DOCUMENT_TREE_VERSION_LEGACY) {
-    return merkleRootHexFromBlobHashes(list.map((b) => b && b.blobHashHex));
-  }
-  if (version !== DOCUMENT_TREE_VERSION) throw new Error(`unknown document tree version ${version}`);
   if (!_validTotal(list.length)) throw new Error(`document must have 1..${MAX_DOCUMENT_BLOBS} blobs`);
   const leaves = list.map((b) => Buffer.from(documentLeafHex(b), 'hex'));
   const layers = _documentLayers(leaves);
@@ -312,7 +226,7 @@ function documentMerkleRootHex (blobs = [], opts = {}) {
 }
 
 /**
- * v2 inclusion proof for blob `index`: sibling hashes leaf to root, skipping
+ * Inclusion proof for blob `index`: sibling hashes leaf to root, skipping
  * levels where the node is promoted. Positions follow from `index` and the
  * blob count, so the proof is a bare hex list.
  * @param {Object[]} blobs `{ blobHashHex, paymentHashHex?, iv? }` per index
@@ -345,7 +259,7 @@ function _proofFromLayers (layers, idx) {
 }
 
 /**
- * Every blob's v2 inclusion proof from one tree build.
+ * Every blob's inclusion proof from one tree build.
  * @param {Object[]} blobs `{ blobHashHex, paymentHashHex?, iv? }` per index
  * @returns {string[][]}
  */
@@ -357,9 +271,9 @@ function documentInclusionProofs (blobs = []) {
 }
 
 /**
- * Check one blob's v2 leaf against a document root with its inclusion proof.
+ * Check one blob's leaf against a document root with its inclusion proof.
  * @param {Object} opts
- * @param {string} opts.merkleRootHex v2 document root
+ * @param {string} opts.merkleRootHex document root
  * @param {number} opts.blobTotal blob count the root commits
  * @param {number} opts.blobIndex
  * @param {string} opts.blobHashHex
@@ -407,9 +321,7 @@ function normalizeChunkBytes (chunkBytes) {
 }
 
 /**
- * Split content into wire-sized blobs and commit them with a Merkle root
- * ({@link plainBlobRoot}: the legacy Tree root, or v2 for a mutated list;
- * `tree` holds the legacy leaves).
+ * Split content into wire-sized blobs and commit them with the document root.
  * Always returns at least one blob (empty buffer → one empty blob).
  *
  * @param {Buffer|string} buffer
@@ -418,12 +330,10 @@ function normalizeChunkBytes (chunkBytes) {
  * @returns {{
  *   blobs: object[],
  *   merkleRootHex: string,
- *   treeVersion: number,
  *   contentSha256: string,
  *   chunkBytes: number,
  *   documentId?: string,
- *   index: object,
- *   tree: import('../types/tree')
+ *   index: object
  * }}
  */
 function splitBlobs (buffer, chunkBytes = DEFAULT_BLOB_CHUNK_BYTES, documentId = undefined) {
@@ -432,7 +342,6 @@ function splitBlobs (buffer, chunkBytes = DEFAULT_BLOB_CHUNK_BYTES, documentId =
   const total = Math.max(1, Math.ceil(buf.length / size) || 1);
   const blobs = [];
   const blobHashHexes = [];
-  const tree = new Tree({ leaves: [] });
 
   for (let index = 0; index < total; index++) {
     const start = index * size;
@@ -441,16 +350,14 @@ function splitBlobs (buffer, chunkBytes = DEFAULT_BLOB_CHUNK_BYTES, documentId =
       : buf.subarray(start, Math.min(buf.length, start + size));
     const blobHashHex = crypto.createHash('sha256').update(bytes).digest('hex');
     blobHashHexes.push(blobHashHex);
-    tree.addLeaf(_hashLeafBuffer(blobHashHex));
     blobs.push({ index, total, bytes, blobHashHex, size: bytes.length });
   }
 
-  const { merkleRootHex, treeVersion } = plainBlobRoot(blobHashHexes);
+  const merkleRootHex = merkleRootHexFromBlobHashes(blobHashHexes);
   const contentSha256 = crypto.createHash('sha256').update(buf).digest('hex');
   const index = buildBlobIndex({
     documentId,
     merkleRootHex,
-    treeVersion,
     contentSha256,
     chunkBytes: size,
     blobs: blobs.map((b) => ({
@@ -464,10 +371,8 @@ function splitBlobs (buffer, chunkBytes = DEFAULT_BLOB_CHUNK_BYTES, documentId =
   return {
     blobs,
     merkleRootHex,
-    treeVersion,
     contentSha256,
     chunkBytes: size,
-    tree,
     index,
     ...(documentId != null ? { documentId: String(documentId) } : {})
   };
@@ -501,7 +406,6 @@ function buildBlobIndex (opts = {}) {
   const leavesInline = opts.leavesInline !== false;
   const out = {
     '@type': BLOB_INDEX_TYPE,
-    schemaVersion: BLOB_INDEX_SCHEMA_VERSION,
     merkle: BLOB_MERKLE_ALGO,
     merkleRootHex: String(opts.merkleRootHex || '').toLowerCase(),
     contentSha256: opts.contentSha256 != null ? String(opts.contentSha256).toLowerCase() : null,
@@ -510,7 +414,6 @@ function buildBlobIndex (opts = {}) {
     leavesInline,
     blobs: leavesInline ? blobs : []
   };
-  if (Number(opts.treeVersion) === DOCUMENT_TREE_VERSION) out.treeVersion = DOCUMENT_TREE_VERSION;
   if (opts.documentId != null) out.documentId = String(opts.documentId);
   return out;
 }
@@ -570,7 +473,6 @@ function advertiseDocumentBlobs (buffer, opts = {}) {
   let index = buildBlobIndex({
     documentId,
     merkleRootHex: split.merkleRootHex,
-    treeVersion: split.treeVersion,
     contentSha256: split.contentSha256,
     chunkBytes: split.chunkBytes,
     blobs: itemBlobs
@@ -587,12 +489,14 @@ function advertiseDocumentBlobs (buffer, opts = {}) {
 }
 
 /**
- * Verify an index's Tree root against listed (or supplied) blob hashes.
+ * Verify an index's root against listed (or supplied) blob hashes.
  * @param {object} index
  * @param {string[]} [blobHashHexes] override leaves when `leavesInline` is false
+ * @param {Object} [opts]
+ * @param {string} [opts.paymentHashHex] whole-document payment hash on every leaf
  * @returns {{ ok: boolean, error?: string, merkleRootHex?: string }}
  */
-function verifyBlobIndex (index, blobHashHexes = null) {
+function verifyBlobIndex (index, blobHashHexes = null, opts = {}) {
   if (!index || typeof index !== 'object') return { ok: false, error: 'missing index' };
   const want = String(index.merkleRootHex || '').toLowerCase();
   if (!/^[0-9a-f]{64}$/.test(want) && want !== '') {
@@ -610,7 +514,7 @@ function verifyBlobIndex (index, blobHashHexes = null) {
   if (index.total != null && Number(index.total) > 0 && Number(index.total) !== leaves.length) {
     return { ok: false, error: 'blob count does not match index total' };
   }
-  const got = plainBlobRoot(leaves).merkleRootHex;
+  const got = merkleRootHexFromBlobHashes(leaves, opts);
   if (want && got !== want) return { ok: false, error: 'merkle/root mismatch', merkleRootHex: got };
   return { ok: true, merkleRootHex: got };
 }
@@ -626,7 +530,7 @@ function blobPaymentHashHex (opts = {}) {
   const blobHashHex = String(opts.blobHashHex || '').trim().toLowerCase();
   if (!/^[0-9a-f]{64}$/.test(blobHashHex)) throw new Error('blobHashHex must be 64 hex chars');
   if (!Number.isFinite(blobIndex) || blobIndex < 0) throw new Error('blobIndex must be >= 0');
-  const tag = Buffer.from('Fabric/DocumentBlob/v1', 'utf8');
+  const tag = Buffer.from('Fabric/DocumentBlob', 'utf8');
   const payload = Buffer.concat([
     tag,
     Buffer.from(documentId, 'utf8'),
@@ -655,25 +559,41 @@ function verifyBlob (bytes, expectedHashHex) {
  * @param {Map<number, Buffer>|object} blobsByIndex
  * @param {number} total
  * @param {string} [merkleRootHex]
+ * @param {Object} [opts]
+ * @param {Map<number, Object>|Object[]} [opts.leaves] `{ paymentHashHex?, iv? }`
+ * per blob index; a whole-document sale repeats one payment hash
  * @returns {{ ok: boolean, buffer?: Buffer, error?: string, merkleRootHex?: string }}
  */
-function reassemble (blobsByIndex, total, merkleRootHex = null) {
+function reassemble (blobsByIndex, total, merkleRootHex = null, opts = {}) {
   const n = Math.round(Number(total));
   if (!Number.isFinite(n) || n < 1) return { ok: false, error: 'invalid total' };
+  const leaves = opts.leaves || [];
   const parts = [];
-  const hashes = [];
+  const blobs = [];
   for (let i = 0; i < n; i++) {
     const b = blobsByIndex instanceof Map ? blobsByIndex.get(i) : blobsByIndex[i];
     if (b == null) return { ok: false, error: `missing blob ${i}` };
     const buf = Buffer.isBuffer(b) ? b : Buffer.from(b);
     parts.push(buf);
-    hashes.push(crypto.createHash('sha256').update(buf).digest('hex'));
+    const leaf = (leaves instanceof Map ? leaves.get(i) : leaves[i]) || {};
+    blobs.push({
+      blobHashHex: crypto.createHash('sha256').update(buf).digest('hex'),
+      paymentHashHex: leaf.paymentHashHex || null,
+      iv: leaf.iv || null
+    });
   }
   const buffer = Buffer.concat(parts);
-  const gotRoot = plainBlobRoot(hashes).merkleRootHex;
+  let gotRoot;
+  try {
+    gotRoot = documentMerkleRootHex(blobs);
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
   if (merkleRootHex) {
     const want = String(merkleRootHex).toLowerCase();
     if (gotRoot !== want) {
+      // With leaf metadata the root must commit it; the whole-content hash proves nothing about the leaves.
+      if (opts.leaves != null) return { ok: false, error: 'merkle/root mismatch', merkleRootHex: gotRoot };
       const full = crypto.createHash('sha256').update(buffer).digest('hex');
       if (full !== want) {
         return { ok: false, error: 'merkle/root mismatch', merkleRootHex: gotRoot };
@@ -689,7 +609,7 @@ function reassemble (blobsByIndex, total, merkleRootHex = null) {
 
 /**
  * @param {object} obj P2P_FILE_SEND JSON object
- * @returns {{ ok: boolean, error?: string, legacy?: boolean, documentId?: string, bytes?: Buffer, blobIndex?: number, blobTotal?: number, blobHashHex?: string, merkleRootHex?: string, contentSha256?: string }}
+ * @returns {{ ok: boolean, error?: string, unindexed?: boolean, documentId?: string, bytes?: Buffer, blobIndex?: number, blobTotal?: number, blobHashHex?: string, merkleRootHex?: string, contentSha256?: string }}
  */
 function parseFileSendObject (obj) {
   if (!obj || typeof obj !== 'object') return { ok: false, error: 'missing object' };
@@ -707,7 +627,7 @@ function parseFileSendObject (obj) {
   if (!hasIndex) {
     return {
       ok: true,
-      legacy: true,
+      unindexed: true,
       documentId,
       bytes,
       blobIndex: 0,
@@ -738,7 +658,7 @@ function parseFileSendObject (obj) {
   }
   return {
     ok: true,
-    legacy: false,
+    unindexed: false,
     documentId,
     bytes,
     blobIndex,
@@ -748,6 +668,9 @@ function parseFileSendObject (obj) {
     contentSha256: obj.contentSha256 != null
       ? String(obj.contentSha256).trim().toLowerCase()
       : null,
+    paymentHashHex: _hex64OrNull(obj.paymentHashHex),
+    // Only per-blob leaves commit their IV; a whole-document sale's IV is not in the tree.
+    leafIv: obj.perBlob === true && obj.iv != null && obj.iv !== '' ? String(obj.iv) : null,
     chunkBytes: obj.chunkBytes != null ? Number(obj.chunkBytes) : null
   };
 }
@@ -767,21 +690,17 @@ function _hex64OrNull (v) {
  * before trusting any of its payment hashes or IVs.
  *
  * - Every blob listed → the root is recomputed from the list.
- * - A subset → each listed blob must carry a v2 inclusion `proof`.
- * - v2 roots commit `blobTotal`, each blob's payment hash and IV, so a
+ * - A subset → each listed blob must carry an inclusion `proof`.
+ * - The root commits `blobTotal`, each blob's payment hash and IV, so a
  *   reseller cannot advertise a payment hash (or IV) the publisher did not
- *   seal under; `committed: true`.
- * - Legacy (v1) roots commit blob hashes only: the full list is required,
- *   padded ({@link Tree#mutated}) lists are refused, and `committed: false`
- *   says the payment hashes / IVs are unverified claims.
+ *   seal under.
  *
  * @param {Object} opts
  * @param {string} opts.merkleRootHex advertised document root
  * @param {Object[]} opts.blobs `{ index?, blobHashHex, paymentHashHex?, iv?, proof? }`
  * (`contentHashHex` is read when `paymentHashHex` is absent; `index` defaults to the position)
  * @param {number} opts.blobTotal blob count of the document
- * @param {number} [opts.treeVersion] `2` or `1`; when absent v2 is tried, then v1 (full list only)
- * @returns {{ ok: boolean, error: (string|undefined), index: (number|undefined), treeVersion: (number|undefined), committed: (boolean|undefined), indexes: (number[]|undefined) }}
+ * @returns {{ ok: boolean, error: (string|undefined), index: (number|undefined), indexes: (number[]|undefined) }}
  */
 function verifyOfferLeaves (opts = {}) {
   const root = _hex64OrNull(opts.merkleRootHex);
@@ -808,56 +727,31 @@ function verifyOfferLeaves (opts = {}) {
   }
   const indexes = Array.from(byIndex.keys()).sort((a, b) => a - b);
   const full = byIndex.size === total;
-  const version = opts.treeVersion != null ? Number(opts.treeVersion) : null;
-  if (version != null && version !== DOCUMENT_TREE_VERSION && version !== DOCUMENT_TREE_VERSION_LEGACY) {
-    return { ok: false, error: `unknown document tree version ${version}` };
-  }
-
-  if (version !== DOCUMENT_TREE_VERSION_LEGACY) {
-    let error = null;
-    try {
-      if (full) {
-        if (documentMerkleRootHex(indexes.map((i) => byIndex.get(i))) === root) {
-          return { ok: true, treeVersion: DOCUMENT_TREE_VERSION, committed: true, indexes };
-        }
-        error = 'merkle/root mismatch';
-      } else {
-        for (const i of indexes) {
-          const b = byIndex.get(i);
-          if (!Array.isArray(b.proof)) {
-            error = 'a partial offer needs an inclusion proof per blob';
-            break;
-          }
-          if (!verifyDocumentInclusion(Object.assign({}, b, { merkleRootHex: root, blobTotal: total, blobIndex: i }))) {
-            return { ok: false, error: 'inclusion proof does not open to merkleRootHex', index: i, treeVersion: DOCUMENT_TREE_VERSION };
-          }
-        }
-        if (!error) return { ok: true, treeVersion: DOCUMENT_TREE_VERSION, committed: true, indexes };
-      }
-    } catch (err) {
-      error = err && err.message ? err.message : String(err);
+  try {
+    if (full) {
+      if (documentMerkleRootHex(indexes.map((i) => byIndex.get(i))) === root) return { ok: true, indexes };
+      return { ok: false, error: 'merkle/root mismatch' };
     }
-    if (version === DOCUMENT_TREE_VERSION || !full) return { ok: false, error, treeVersion: DOCUMENT_TREE_VERSION };
+    for (const i of indexes) {
+      const b = byIndex.get(i);
+      if (!Array.isArray(b.proof)) return { ok: false, error: 'a partial offer needs an inclusion proof per blob', index: i };
+      if (!verifyDocumentInclusion(Object.assign({}, b, { merkleRootHex: root, blobTotal: total, blobIndex: i }))) {
+        return { ok: false, error: 'inclusion proof does not open to merkleRootHex', index: i };
+      }
+    }
+    return { ok: true, indexes };
+  } catch (err) {
+    return { ok: false, error: err && err.message ? err.message : String(err) };
   }
-
-  if (!full) return { ok: false, error: 'a legacy offer must list every blob', treeVersion: DOCUMENT_TREE_VERSION_LEGACY };
-  const hashes = indexes.map((i) => byIndex.get(i).blobHashHex);
-  if (blobHashesMutated(hashes)) return { ok: false, error: 'mutated merkle tree', treeVersion: DOCUMENT_TREE_VERSION_LEGACY };
-  if (merkleRootHexFromBlobHashes(hashes) !== root) {
-    return { ok: false, error: 'merkle/root mismatch', treeVersion: DOCUMENT_TREE_VERSION_LEGACY };
-  }
-  return { ok: true, treeVersion: DOCUMENT_TREE_VERSION_LEGACY, committed: false, indexes };
 }
 
 /**
  * Verify-before-pay: check one free sealed per-blob `P2P_FILE_SEND` body
  * (ciphertext of blob `i`) against the document root **before** funding the
- * HTLC for `K_i`. The ciphertext must hash to its `blobHashHex` and, for v2
- * documents, the leaf `(blobHash, paymentHash, iv)` must open to the root with
- * the frame's inclusion proof (or `expected.proof`). Pins from verified offer
- * leaves ({@link verifyOfferLeaves}) are enforced when given. A v1 root
- * cannot prove inclusion: there `expected.blobHashHex` (from a verified full
- * leaf list) is required.
+ * HTLC for `K_i`. The ciphertext must hash to its `blobHashHex` and the leaf
+ * `(blobHash, paymentHash, iv)` must open to the root with the frame's
+ * inclusion proof (or `expected.proof`). Pins from verified offer leaves
+ * ({@link verifyOfferLeaves}) are enforced when given.
  * @param {Object} obj raw `P2P_FILE_SEND` body (`sealed`, `perBlob`)
  * @param {Object} expected
  * @param {string} expected.merkleRootHex
@@ -867,13 +761,12 @@ function verifyOfferLeaves (opts = {}) {
  * @param {string} [expected.paymentHashHex]
  * @param {string} [expected.iv]
  * @param {string[]} [expected.proof]
- * @param {number} [expected.treeVersion=2]
- * @returns {{ ok: boolean, error: (string|undefined), blobIndex: (number|undefined), blobHashHex: (string|undefined), paymentHashHex: (string|null|undefined), iv: (string|null|undefined), bytes: (Buffer|undefined), treeVersion: (number|undefined) }}
+ * @returns {{ ok: boolean, error: (string|undefined), blobIndex: (number|undefined), blobHashHex: (string|undefined), paymentHashHex: (string|null|undefined), iv: (string|null|undefined), bytes: (Buffer|undefined) }}
  */
 function verifySealedBlobFrame (obj, expected = {}) {
   const frame = parseFileSendObject(obj);
   if (!frame.ok) return { ok: false, error: frame.error };
-  if (frame.legacy) return { ok: false, error: 'not an indexed blob frame' };
+  if (frame.unindexed) return { ok: false, error: 'not an indexed blob frame' };
   const root = _hex64OrNull(expected.merkleRootHex);
   if (!root) return { ok: false, error: 'expected merkleRootHex required' };
   if (frame.merkleRootHex !== root) return { ok: false, error: 'merkleRootHex mismatch', blobIndex: frame.blobIndex };
@@ -891,30 +784,24 @@ function verifySealedBlobFrame (obj, expected = {}) {
   if (expected.iv != null && expected.iv !== '' && !sameIv(expected.iv, iv)) {
     return { ok: false, error: 'iv is not the advertised leaf', blobIndex: frame.blobIndex };
   }
-  // Never the frame's own `treeVersion`: a sender could downgrade to v1 and skip the proof.
-  const version = Number(expected.treeVersion || DOCUMENT_TREE_VERSION);
-  const out = { ok: true, blobIndex: frame.blobIndex, blobHashHex: frame.blobHashHex, paymentHashHex, iv, bytes: frame.bytes, treeVersion: version };
-  if (version === DOCUMENT_TREE_VERSION_LEGACY) {
-    if (!wantBlob) return { ok: false, error: 'a legacy root needs the verified blob hash for this index', blobIndex: frame.blobIndex };
-    return out;
-  }
+  const out = { ok: true, blobIndex: frame.blobIndex, blobHashHex: frame.blobHashHex, paymentHashHex, iv, bytes: frame.bytes };
   const proof = Array.isArray(obj.proof) ? obj.proof : expected.proof;
   if (!Array.isArray(proof)) return { ok: false, error: 'missing inclusion proof', blobIndex: frame.blobIndex };
-  if (!verifyDocumentInclusion({ merkleRootHex: root, blobTotal: total, blobIndex: frame.blobIndex, blobHashHex: frame.blobHashHex, paymentHashHex, iv, proof })) {
+  if (!verifyDocumentInclusion({ merkleRootHex: root, blobTotal: total, blobIndex: frame.blobIndex, blobHashHex: frame.blobHashHex, paymentHashHex, iv: frame.leafIv, proof })) {
     return { ok: false, error: 'inclusion proof does not open to merkleRootHex', blobIndex: frame.blobIndex };
   }
   return out;
 }
 
 /**
- * Pending-transfer map key: document id + Merkle root (`legacy` when rootless).
+ * Pending-transfer map key: document id + Merkle root (`unindexed` when rootless).
  * @param {string} documentId
  * @param {string|null} merkleRootHex
  * @returns {string}
  * @private
  */
 function transferKey (documentId, merkleRootHex) {
-  return `${documentId}|${merkleRootHex || 'legacy'}`;
+  return `${documentId}|${merkleRootHex || 'unindexed'}`;
 }
 
 /**
@@ -1019,7 +906,6 @@ class DocumentBlobTransferBook {
    * document and root (same `total`) instead of replacing it, so buying blob j keeps blob i pinned
    * @param {number} [opts.expiresAt] epoch ms the expectation lapses (session lifetime)
    * @param {number} [opts.ttlMs] lifetime from now (and refresh step) when `expiresAt` is not given
-   * @param {number} [opts.treeVersion] 2 when the offer's root is a v2 document root (frames then need a proof)
    * @returns {Object|null} the expectation row
    */
   expectTransfer (opts = {}) {
@@ -1057,7 +943,6 @@ class DocumentBlobTransferBook {
       prior.expectedPaymentHashes = merge(prior.expectedPaymentHashes, expectedPaymentHashes);
       prior.expectedIvs = merge(prior.expectedIvs, expectedIvs);
       prior.expectedOrigins = merge(prior.expectedOrigins, expectedOrigins);
-      if (Number(opts.treeVersion) === DOCUMENT_TREE_VERSION) prior.treeVersion = DOCUMENT_TREE_VERSION;
       if (!prior.total && total > 0) prior.total = total;
       prior.ttlMs = Math.max(prior.ttlMs || 0, ttlMs);
       prior.expiresAt = Math.max(prior.expiresAt || 0, expiresAt);
@@ -1075,8 +960,6 @@ class DocumentBlobTransferBook {
       expectedPaymentHashes,
       expectedIvs,
       expectedOrigins,
-      // 2 = frames must carry a v2 inclusion proof against `merkleRootHex`.
-      treeVersion: Number(opts.treeVersion) === DOCUMENT_TREE_VERSION ? DOCUMENT_TREE_VERSION : null,
       contentSha256: opts.contentSha256
         ? String(opts.contentSha256).toLowerCase()
         : null,
@@ -1115,6 +998,7 @@ class DocumentBlobTransferBook {
       const pin = exp.expectedHashes[index];
       if (pin && !verifyBlob(bytes, pin)) {
         row.parts.delete(index);
+        row.leaves.delete(index);
         row.bytes -= bytes.length;
         this._pendingBytes -= bytes.length;
       }
@@ -1220,7 +1104,7 @@ class DocumentBlobTransferBook {
    * @param {object} frame from {@link parseFileSendObject}
    * @param {Object} [opts]
    * @param {string} [opts.origin] sending peer (per-origin quotas for unsolicited rows)
-   * @returns {{ status: 'reject'|'need_more'|'complete', error?: string, documentId?: string, buffer?: Buffer, merkleRootHex?: string, verified?: boolean, legacy?: boolean, blobIndex?: number, received?: number, total?: number }}
+   * @returns {{ status: 'reject'|'need_more'|'complete', error?: string, documentId?: string, buffer?: Buffer, merkleRootHex?: string, verified?: boolean, unindexed?: boolean, blobIndex?: number, received?: number, total?: number }}
    */
   ingest (frame, opts = {}) {
     this._purgeExpired();
@@ -1229,15 +1113,15 @@ class DocumentBlobTransferBook {
       return { status: 'reject', error: (frame && frame.error) || 'bad frame' };
     }
 
-    // Legacy whole-body frame: accept as a single verified document (compat).
-    if (frame.legacy) {
+    // Unindexed whole-body frame: accept as a single verified document.
+    if (frame.unindexed) {
       return {
         status: 'complete',
         documentId: frame.documentId,
         buffer: frame.bytes,
         merkleRootHex: merkleRootHexFromBlobHashes([frame.blobHashHex]),
         verified: true,
-        legacy: true,
+        unindexed: true,
         blobIndex: 0,
         received: 1,
         total: 1
@@ -1277,6 +1161,8 @@ class DocumentBlobTransferBook {
           exp.expectedHashes[frame.blobIndex] !== frame.blobHashHex) {
         return reject('blob hash not in advertised index');
       }
+      const wantPay = exp.expectedPaymentHashes && exp.expectedPaymentHashes[frame.blobIndex];
+      if (wantPay && frame.paymentHashHex !== wantPay) return reject('payment hash not in advertised index');
     }
     let row = this._pending.get(key);
     if (row && exp) this._reconcileRow(exp);
@@ -1296,6 +1182,7 @@ class DocumentBlobTransferBook {
         origin,
         pinned: !!exp,
         parts: new Map(),
+        leaves: new Map(),
         bytes: 0,
         created: Date.now(),
         updated: Date.now()
@@ -1325,6 +1212,7 @@ class DocumentBlobTransferBook {
         return reject('pending blob bytes exceeded');
       }
       row.parts.set(frame.blobIndex, frame.bytes);
+      row.leaves.set(frame.blobIndex, { paymentHashHex: frame.paymentHashHex || null, iv: frame.leafIv || null });
       row.bytes += need;
       this._pendingBytes += need;
       this._countOriginBytes(row, need);
@@ -1341,7 +1229,7 @@ class DocumentBlobTransferBook {
       };
     }
 
-    const assembled = reassemble(row.parts, row.total, row.merkleRootHex);
+    const assembled = reassemble(row.parts, row.total, row.merkleRootHex, { leaves: row.leaves });
     this._drop(key);
     if (!assembled.ok) {
       return {
@@ -1368,7 +1256,7 @@ class DocumentBlobTransferBook {
       buffer: assembled.buffer,
       merkleRootHex: assembled.merkleRootHex || row.merkleRootHex,
       verified: true,
-      legacy: false,
+      unindexed: false,
       received: row.total,
       total: row.total
     };
@@ -1407,7 +1295,6 @@ function settlementDedupeKey (session = {}) {
 
 module.exports = {
   BLOB_INDEX_TYPE,
-  BLOB_INDEX_SCHEMA_VERSION,
   BLOB_MERKLE_ALGO,
   DEFAULT_BLOB_CHUNK_BYTES,
   DEFAULT_CHUNK_BYTES,
@@ -1421,14 +1308,9 @@ module.exports = {
   MAX_PENDING_BLOB_TRANSFERS_PER_ORIGIN,
   MAX_PENDING_BLOB_BYTES,
   MAX_MESSAGE_SIZE,
-  DOCUMENT_TREE_VERSION,
-  DOCUMENT_TREE_VERSION_LEGACY,
   SEALED_FRAME_JSON_OVERHEAD,
   SEALED_BLOB_CHUNK_BYTES,
-  createBlobMerkleTree,
   merkleRootHexFromBlobHashes,
-  blobHashesMutated,
-  plainBlobRoot,
   ivBytes,
   sameIv,
   documentLeafHex,
@@ -1438,7 +1320,6 @@ module.exports = {
   verifyDocumentInclusion,
   verifyOfferLeaves,
   verifySealedBlobFrame,
-  accumulateBlobLeaf,
   normalizeChunkBytes,
   splitBlobs,
   buildBlobIndex,

@@ -19,7 +19,7 @@ const crypto = require('crypto');
 const { contentHashHexFromObject } = require('../functions/documentPaymentHash');
 const { stableStringify, jsonSafe } = require('../functions/fabricCanonicalJson');
 const manifest = require('../functions/documentBlobManifest');
-const { INVENTORY_RESPONSE_PAGE_BYTES } = require('../constants');
+const { INVENTORY_RESPONSE_PAGE_BYTES, MAX_DOCUMENT_BLOBS } = require('../constants');
 const Book = require('./book');
 const Htlc = require('./htlc');
 
@@ -102,6 +102,32 @@ function count (v) {
 }
 
 /**
+ * An advertised price in whole sats: missing is free; anything that is not a
+ * finite amount from 0 to `Number.MAX_SAFE_INTEGER` is NaN, and the row is
+ * refused (a price of `1e999` or `-1e15` would otherwise skew every ranking).
+ * @private
+ */
+function priceOf (v) {
+  if (v == null) return 0;
+  const n = Number(v);
+  return Number.isFinite(n) && n >= 0 && n <= Number.MAX_SAFE_INTEGER ? Math.floor(n) : NaN;
+}
+
+/** @private an advertised blob total in [1, MAX_DOCUMENT_BLOBS], else null */
+function blobTotalOf (v) {
+  if (v == null) return null;
+  const n = Number(v);
+  return Number.isSafeInteger(n) && n >= 1 && n <= MAX_DOCUMENT_BLOBS ? n : null;
+}
+
+/** @private a ranking input clamped to [0, MAX_SAFE_INTEGER] (NaN is 0) */
+function rankInput (v) {
+  const n = Number(v);
+  if (Number.isNaN(n) || n <= 0) return 0;
+  return Math.min(n, Number.MAX_SAFE_INTEGER);
+}
+
+/**
  * @private
  * @param {object} record telemetry record (its `hash` field is ignored)
  * @returns {string}
@@ -114,8 +140,7 @@ function telemetryHash (record) {
 
 /**
  * Leaf check for an advertised blob list: `functions/documentBlobManifest`
- * `verifyOfferLeaves` (v2 and v1 trees), else a v1 blob-hash root over a
- * complete list. Returns the `verifyOfferLeaves` result (or `true` / `false`),
+ * `verifyOfferLeaves`, else the document root over a complete list. Returns the `verifyOfferLeaves` result (or `true` / `false`),
  * or `null` when the list cannot be checked (a subset without inclusion proofs).
  * @private
  */
@@ -124,7 +149,7 @@ function defaultVerifyOfferLeaves (opts) {
   const hashes = [];
   for (const b of opts.blobs) hashes[Number(b.index)] = b.blobHashHex;
   if (hashes.length !== opts.blobTotal || hashes.some((h) => !h)) return null;
-  return manifest.createBlobMerkleTree(hashes).rootHex === opts.merkleRootHex;
+  return manifest.merkleRootHexFromBlobHashes(hashes) === opts.merkleRootHex;
 }
 
 class DocumentBook extends Book {
@@ -136,7 +161,7 @@ class DocumentBook extends Book {
    * @param {number} [settings.maxProviders=10000] tracked providers (LRU over unpenalized ones)
    * @param {number} [settings.maxOffers=100000] offer rows (oldest evicted)
    * @param {string} [settings.nodeId] stamped on exported telemetry; imports from another node are refused
-   * @param {Function} [settings.verifyOfferLeaves] `({ merkleRootHex, blobs, blobTotal, treeVersion }) → boolean|null|{ ok }`
+   * @param {Function} [settings.verifyOfferLeaves] `({ merkleRootHex, blobs, blobTotal }) → boolean|null|{ ok }`
    */
   constructor (settings = {}) {
     super(Object.assign({
@@ -590,7 +615,8 @@ class DocumentBook extends Book {
       if (!it || typeof it !== 'object') continue;
       const documentId = String(it.id || it.documentId || '').trim();
       if (!documentId) continue;
-      const rateSats = Number(it.rateSats != null ? it.rateSats : it.purchasePriceSats) || 0;
+      const rateSats = priceOf(it.rateSats != null ? it.rateSats : it.purchasePriceSats);
+      if (Number.isNaN(rateSats)) continue;
       const contentHashHex = contentHashHexFromObject(it);
       const sealed = it.sealed === true;
       const blobs = Array.isArray(it.blobs) ? it.blobs : null;
@@ -598,15 +624,11 @@ class DocumentBook extends Book {
         ? it.documentBlobIndex
         : null;
       const merkleRootHex = hex64(it.merkleRootHex || (indexObj && indexObj.merkleRootHex));
-      const rawTreeVersion = it.treeVersion != null ? it.treeVersion : (indexObj && indexObj.treeVersion);
-      const treeVersion = Number.isSafeInteger(Number(rawTreeVersion)) && Number(rawTreeVersion) > 0 ? Number(rawTreeVersion) : null;
       let rootVerified = false;
-      let leavesCommitted = null;
       if (blobs && blobs.length && merkleRootHex) {
         const leaves = this._verifyLeaves(it, merkleRootHex, blobs, indexObj);
         if (leaves === false) continue;
         rootVerified = leaves != null;
-        leavesCommitted = leaves ? leaves.committed : null;
       }
       const base = {
         documentId,
@@ -616,8 +638,6 @@ class DocumentBook extends Book {
         ampSignerPubkey: ampSignerPubkey || null,
         merkleRootHex,
         rootVerified,
-        leavesCommitted,
-        treeVersion,
         mime: it.mime || null,
         sealed,
         // Sealed only: the convergence scope, and a pay-after-verify price
@@ -634,12 +654,25 @@ class DocumentBook extends Book {
         for (const b of blobs) {
           if (!b || typeof b !== 'object') continue;
           // Per-blob payment hash when present (sealed K_i or unsealed tagged
-          // hash); fall back to the item-level hash. Never bind to blobHashHex.
-          const paymentHash = contentHashHexFromObject(b) || contentHashHex;
+          // hash). Never bind to blobHashHex. On a verified root the paid hash
+          // must be one the root commits: an unsealed leaf's tagged hash is
+          // derived from its committed blobHashHex, and the item-level hash is
+          // only a fallback for unverified rows.
+          let paymentHash = contentHashHexFromObject(b);
+          if (!paymentHash && rootVerified && !sealed) {
+            try {
+              paymentHash = manifest.blobPaymentHashHex({ documentId, blobIndex: Number(b.index), blobHashHex: b.blobHashHex });
+            } catch (_) {
+              paymentHash = null;
+            }
+          }
+          if (!paymentHash && !rootVerified) paymentHash = contentHashHex;
+          const blobRate = b.rateSats != null ? priceOf(b.rateSats) : rateSats;
+          if (Number.isNaN(blobRate)) continue;
           const row = Object.assign({}, base, {
             blobIndex: Number(b.index),
-            blobTotal: Number(b.total != null ? b.total : blobs.length),
-            rateSats: Number(b.rateSats != null ? b.rateSats : rateSats) || 0,
+            blobTotal: blobTotalOf(b.total != null ? b.total : blobs.length),
+            rateSats: blobRate,
             contentHashHex: paymentHash,
             blobHashHex: hex64(b.blobHashHex),
             iv: typeof b.iv === 'string' && /^[A-Za-z0-9+/]{16,64}={0,2}$/.test(b.iv) ? b.iv : null,
@@ -654,7 +687,7 @@ class DocumentBook extends Book {
       } else {
         const row = Object.assign({}, base, {
           blobIndex: it.blobIndex != null ? Number(it.blobIndex) : null,
-          blobTotal: it.blobTotal != null ? Number(it.blobTotal) : null,
+          blobTotal: blobTotalOf(it.blobTotal),
           rateSats,
           contentHashHex,
           blobHashHex: hex64(it.blobHashHex),
@@ -682,10 +715,9 @@ class DocumentBook extends Book {
    * Check an item's inline blob leaves against its `merkleRootHex`
    * (`settings.verifyOfferLeaves`, else `documentBlobManifest.verifyOfferLeaves`).
    * @private
-   * @returns {Object|boolean|null} `false` = reject the item; `null` = a subset
+   * @returns {boolean|null} `false` = reject the item; `null` = a subset
    *   without inclusion proofs (rows kept with `rootVerified: false`); else
-   *   `{ committed }` — `true` when the root commits the payment hashes and
-   *   IVs (v2), `false` for a v1 root, `null` when the verifier does not say
+   *   `true` when the root checks out
    */
   _verifyLeaves (it, merkleRootHex, blobs, indexObj) {
     const first = blobs.find((b) => b && b.total != null);
@@ -694,14 +726,25 @@ class DocumentBook extends Book {
         : (indexObj && indexObj.blobTotal != null ? indexObj.blobTotal
           : (first ? first.total : blobs.length))
     );
-    if (!Number.isSafeInteger(blobTotal) || blobTotal < 1) return false;
+    if (!Number.isSafeInteger(blobTotal) || blobTotal < 1 || blobTotal > MAX_DOCUMENT_BLOBS) return false;
+    const sealed = it.sealed === true;
+    const documentId = String(it.id || it.documentId || '').trim();
     const leaves = [];
     for (const b of blobs) {
       if (!b || typeof b !== 'object') return false;
+      const pay = contentHashHexFromObject(b);
+      // Unsealed roots commit zero payment hashes, so the tagged hash is checked by recomputing it.
+      if (!sealed && pay) {
+        try {
+          if (pay !== manifest.blobPaymentHashHex({ documentId, blobIndex: Number(b.index), blobHashHex: b.blobHashHex })) return false;
+        } catch (_) {
+          return false;
+        }
+      }
       leaves.push({
         index: Number(b.index),
         blobHashHex: b.blobHashHex,
-        paymentHashHex: contentHashHexFromObject(b),
+        paymentHashHex: sealed ? pay : null,
         iv: b.iv,
         proof: b.proof
       });
@@ -712,14 +755,10 @@ class DocumentBook extends Book {
     const verify = typeof this.settings.verifyOfferLeaves === 'function'
       ? this.settings.verifyOfferLeaves
       : defaultVerifyOfferLeaves;
-    const treeVersion = it.treeVersion != null ? it.treeVersion : (indexObj && indexObj.treeVersion);
     try {
-      const out = verify({ merkleRootHex, blobs: leaves, blobTotal, treeVersion: treeVersion != null ? Number(treeVersion) : undefined });
+      const out = verify({ merkleRootHex, blobs: leaves, blobTotal });
       if (out === null) return null;
-      if (out === true) return { committed: null };
-      if (out != null && typeof out === 'object' && out.ok === true) {
-        return { committed: typeof out.committed === 'boolean' ? out.committed : null };
-      }
+      if (out === true || (out != null && typeof out === 'object' && out.ok === true)) return true;
       return false;
     } catch (err) {
       return false;
@@ -810,10 +849,11 @@ class DocumentBook extends Book {
       const ex = new Set(opts.excludeSellers.map(String));
       out = out.filter((o) => !ex.has(String(o.sellerId)) && !ex.has(String(o.sellerAddress)));
     }
-    // A v1 root over the same blobs commits no payment hashes, so a reseller
-    // could pair real ciphertext with keys it doesn't hold: never pick one
-    // while an offer whose root commits them is listed.
-    if (out.some((o) => o.leavesCommitted === true)) out = out.filter((o) => o.leavesCommitted !== false);
+    // Only a sealed sale makes payment release the chunk: an unsealed seller can
+    // claim without delivering, so a paid unsealed offer never beats a sealed one.
+    if (opts.paidSealedOnly === true || out.some((o) => o.sealed === true)) {
+      out = out.filter((o) => o.sealed === true || !(Number(o.rateSats) > 0));
+    }
     return out;
   }
 
@@ -827,9 +867,11 @@ class DocumentBook extends Book {
     if (!list.length) return list;
     const w = Object.assign({}, DEFAULT_WEIGHTS, this.settings.weights || {}, weights || {});
     const hopMs = this.settings.hopPenaltyMs;
-    const prices = list.map((o) => Number(o.rateSats) || 0);
-    const lats = list.map((o) => (Number(o.latencyMs) || 0) + ((Number(o.hops) || 0) * hopMs));
-    const scores = list.map((o) => Number(o.peerScore) || 0);
+    // Clamped so a hand-built offer (negative, Infinity, NaN) cannot turn the
+    // min/max normalization into NaN and leave the list in arrival order.
+    const prices = list.map((o) => rankInput(o.rateSats));
+    const lats = list.map((o) => rankInput(rankInput(o.latencyMs) + (rankInput(o.hops) * hopMs)));
+    const scores = list.map((o) => rankInput(o.peerScore));
     const comps = list.map((o) => {
       const c = Number(o.completeness);
       return Number.isFinite(c) ? Math.min(1, Math.max(0, c)) : 1;
@@ -849,8 +891,8 @@ class DocumentBook extends Book {
       const scoreN = normHighBetter(scores[i], minS, maxS);
       const compN = comps[i];
       const rankScore = (w.price * priceN) + (w.latency * latN) + (w.peerScore * scoreN) + (w.completeness * compN);
-      return Object.assign({}, o, { rankScore });
-    }).sort((a, b) => b.rankScore - a.rankScore);
+      return Object.assign({}, o, { rankScore: Number.isFinite(rankScore) ? rankScore : -Infinity });
+    }).sort((a, b) => (b.rankScore - a.rankScore) || 0);
   }
 
   /**
@@ -882,6 +924,8 @@ class DocumentBook extends Book {
    * @param {boolean} [opts.singleKey] legacy whole-document key: lock one seller
    * @param {number} [opts.maxSats] per-blob ceiling
    * @param {number} [opts.minPaidSats] drop paid offers below this (free offers stay)
+   * @param {boolean} [opts.paidSealedOnly] drop every paid unsealed offer (paid
+   *   unsealed offers always go while a sealed one is listed)
    * @param {string[]} [opts.excludeSellers]
    * @param {string} [opts.merkleRootHex] only offers for this tree root; when
    *   omitted the plan still stays on **one** root (the first pick's), so
@@ -891,7 +935,7 @@ class DocumentBook extends Book {
   pickBlobPlan (documentId, blobTotal, opts = {}) {
     const n = Math.round(Number(blobTotal));
     const plan = new Map();
-    if (!Number.isFinite(n) || n < 1) return plan;
+    if (!Number.isFinite(n) || n < 1 || n > MAX_DOCUMENT_BLOBS) return plan;
     const all = this._applyFilters(this.listOffers({ documentId, merkleRootHex: opts.merkleRootHex }), opts);
     const lockToOne = opts.singleKey === true || this._usesSingleKey(all, opts);
     const used = [];

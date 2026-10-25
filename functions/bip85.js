@@ -14,7 +14,7 @@ const { hmac } = require('@noble/hashes/hmac.js');
 const { sha512 } = require('@noble/hashes/sha2.js');
 const { secp256k1 } = require('@noble/curves/secp256k1.js');
 const { fromBase58, HDNode, DEFAULT_NETWORK } = require('./bip32');
-const { entropyToMnemonic } = require('./bip39');
+const { entropyToMnemonic, MNEMONIC_WORD_COUNTS } = require('./bip39');
 const { encodeCheck } = require('./base58');
 const { toUint8Strict } = require('./bytes');
 
@@ -29,8 +29,6 @@ const APP_BIP39 = 39;
 const APP_HDSEED_WIF = 2;
 const APP_XPRV = 32;
 const APP_HEX = 128169;
-
-const MNEMONIC_WORD_COUNTS = Object.freeze([12, 15, 18, 21, 24]);
 
 /**
  * @param {HDNode|string} root

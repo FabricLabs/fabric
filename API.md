@@ -31,19 +31,30 @@ arbitrary app string hash. <strong>Wire traffic</strong> — see <a href="#Messa
 <dd></dd>
 <dt><a href="#Bond">Bond</a> ⇐ <code><a href="#Contract">Contract</a></code></dt>
 <dd></dd>
+<dt><a href="#FidelityVerifier">FidelityVerifier</a></dt>
+<dd><p>Caches bond checks per (outpoint, maker, certificate) until the tip moves.</p>
+</dd>
+<dt><a href="#Book">Book</a></dt>
+<dd></dd>
 <dt><a href="#Chain">Chain</a></dt>
 <dd><p>Chain.</p>
 </dd>
 <dt><a href="#Challenge">Challenge</a></dt>
 <dd><p>Merkle-leaf availability challenge for a sealed blob tree.</p>
-<p>A <strong>commitment</strong> is the provider&#39;s signed promise to hold a tree until an
-epoch (optionally naming the deposit output that backs it). A <strong>challenge</strong>
-is the publisher&#39;s signed, Beacon-epoch stamped request for one leaf; the
-leaf index is derived from the challenge nonce so neither party picks it.
-A <strong>response</strong> is the provider&#39;s signed inclusion proof plus a nonce-bound
-digest of the blob bytes (proof of possession for a verifier holding the
-bytes). All three are plain JSON artifacts carried as <code>CONTRACT_MESSAGE</code>
-bodies — no new opcodes — and feed <a href="Witness.FraudProof">Witness.FraudProof</a>.</p>
+<p>A <strong>commitment</strong> is the provider&#39;s signed promise to hold a tree (root,
+<code>blobTotal</code>, publisher) until an epoch, optionally naming the deposit that
+backs it. A <strong>challenge</strong> is the publisher&#39;s signed, Beacon-epoch stamped
+request for one leaf; the leaf index is derived from the challenge nonce
+so neither party picks it. A challenge may commit an <strong>answer hash</strong>
+<code>SHA256(SHA256(nonce || blob bytes))</code>, also committed in that round&#39;s
+deposit output as the provider&#39;s unilateral <code>answer</code> leaf (see
+<code>Bond.buildDeposit</code>), so the provider can always answer on-chain. A
+<strong>response</strong> is the provider&#39;s signed inclusion proof plus the nonce-bound
+possession digest. A <strong>receipt</strong> is the counterparty&#39;s signed
+acknowledgement of a challenge (and response) at an epoch; an <strong>epoch
+attestation</strong> is a Beacon / federation key&#39;s signature that a digest
+existed at an epoch. All are plain JSON artifacts carried as
+<code>CONTRACT_MESSAGE</code> bodies and feed <a href="Witness.FraudProof">Witness.FraudProof</a>.</p>
 <p>Response deadlines are expressed in <strong>epochs</strong> (default two) so a lagging
 Hub view cannot make an honest provider provably late.</p>
 </dd>
@@ -72,6 +83,11 @@ commitment <code>n</code>, inline <code>revoke</code> of its own state <code>n-1
 holder only after <code>toSelfDelay</code>. Open is three messages (<code>ChannelOpen</code>,
 reply, ack) because the funder cannot sign the counterparty&#39;s commitment
 before learning its first per-commitment point.</p>
+<p>Both parties proposing state <code>n</code> at once is resolved deterministically:
+the funder&#39;s proposal wins, the non-funder rolls its own back and replays
+it (<a href="#ChannelSession+repropose">repropose</a>) once the round completes. After a
+reconnect, <a href="#ChannelSession+reestablish">reestablish</a> tells the peer which states we
+hold signed and revoked; the answer resends whatever we missed.</p>
 </dd>
 <dt><a href="#ChannelSession">ChannelSession</a></dt>
 <dd></dd>
@@ -80,16 +96,25 @@ before learning its first per-commitment point.</p>
 GoonCitizen, Passport): looks a channel up by counterparty, routes inbound
 <code>Channel*</code> <code>CONTRACT_MESSAGE</code> bodies to the right session, forwards
 multi-hop HTLCs, ticks sessions on new chain tips, and returns the bodies
-the host must publish back. Shape expected by the market agent&#39;s
-<code>attach({ channels })</code>.</p>
+and on-chain actions the host must handle. Shape expected by the market
+agent&#39;s <code>attach({ channels })</code>.</p>
 <p><strong>Seller-fulfills (Lightning shape):</strong> when the host supplies
-<code>preimageFor(paymentHashHex)</code> the book fulfills every received HTLC whose
-preimage the host knows as soon as the round that committed it completes;
-the payer learns the preimage from the resulting <code>ChannelHtlcFulfill</code>.</p>
+<code>preimageFor(paymentHashHex, htlc)</code> the book fulfills every received HTLC
+the host releases a preimage for as soon as the round that committed it
+completes; the payer learns the preimage from the resulting
+<code>ChannelHtlcFulfill</code>. The host sees the HTLC (amount, expiry, blob hash) and
+must refuse underpaid ones.</p>
+<p><strong>Pay-after-verify credit:</strong> a seller may serve a chunk before payment,
+up to <code>creditLimitSats</code> outstanding per channel (<a href="#ChannelBook+extendCredit">extendCredit</a>);
+the buyer pays with a balance transfer (<a href="#ChannelBook+transfer">transfer</a>) whose
+<code>ref</code> names the credit. No HTLC, so no HTLC minimum.</p>
 <p>Events: <code>htlcCommitted</code> (a received HTLC is irrevocably committed),
-<code>htlcFulfilled</code> (a counterparty revealed a preimage to us), and
-<code>htlcSettled</code> (any HTLC left the channel; <code>outcome</code> is <code>fulfilled</code> or
-<code>failed</code>). Payloads are <code>{ channelId, session, htlcId, paymentHashHex, blobHashHex, amountSats, direction, preimageHex?, outcome?, reason? }</code>.</p>
+<code>htlcFulfilled</code> (a counterparty revealed a preimage to us), <code>htlcSettled</code>
+(any HTLC left the channel; <code>outcome</code> is <code>fulfilled</code> or <code>failed</code>),
+<code>transferReceived</code> (a balance transfer to us is final: the payer revoked
+the state before it), <code>creditExtended</code> / <code>creditSettled</code>, and
+<code>channelAction</code> (a new watchdog action, see <a href="#ChannelSession+tick">tick</a>).
+HTLC payloads are <code>{ channelId, session, htlcId, paymentHashHex, blobHashHex, amountSats, direction, preimageHex?, outcome?, reason? }</code>.</p>
 </dd>
 <dt><a href="#ChannelBook">ChannelBook</a></dt>
 <dd></dd>
@@ -99,6 +124,24 @@ operates, a computable directed graph describing a network of
 <a href="#Peer">Peer</a> components and their interactions (side effects).
 See also <a href="Swarm">Swarm</a> for deeper inspection of <a href="#Machine">Machine</a>
 mechanics.</p>
+</dd>
+<dt><a href="#PodleBlacklist">PodleBlacklist</a></dt>
+<dd><p>A maker&#39;s bounded memory of commitments already seen. A commitment is
+used once; the oldest is forgotten first.</p>
+</dd>
+<dt><a href="#Coinjoin">Coinjoin</a> ⇐ <code>EventEmitter</code></dt>
+<dd><p>One coinjoin round: the state machine shared by <a href="#CoinjoinTakerRound">CoinjoinTakerRound</a>
+and <a href="#CoinjoinMakerRound">CoinjoinMakerRound</a> (<code>types/coinjoinRound</code>). Its statics are the
+market itself: signed bodies and sealed round messages, fees and plans,
+PSBT build and checks, key-path signing, ownership proofs, and PoDLE.</p>
+</dd>
+<dt><a href="#CoinjoinBook">CoinjoinBook</a></dt>
+<dd></dd>
+<dt><a href="#CoinjoinTakerRound">CoinjoinTakerRound</a></dt>
+<dd><p>The taker&#39;s side of a round.</p>
+</dd>
+<dt><a href="#CoinjoinMakerRound">CoinjoinMakerRound</a></dt>
+<dd><p>The maker&#39;s side of one fill.</p>
 </dd>
 <dt><a href="#Collection">Collection</a></dt>
 <dd><p>The <a href="#Collection">Collection</a> type maintains an ordered list of <a href="#State">State</a> items.</p>
@@ -112,6 +155,8 @@ mechanics.</p>
 <dt><a href="#Disk">Disk</a></dt>
 <dd></dd>
 <dt><a href="#Document">Document</a></dt>
+<dd></dd>
+<dt><a href="#DocumentBook">DocumentBook</a></dt>
 <dd></dd>
 <dt><a href="#Entity">Entity</a> ⇐ <code>EventEmitter</code></dt>
 <dd><p><strong>Structured document</strong> type: extends <a href="EventEmitter">EventEmitter</a> (not <a href="#Actor">Actor</a>) with
@@ -141,6 +186,8 @@ types for experiments and apps. Prefer importing <strong>leaf</strong> types in 
 <dd><p>Provides an HMAC-based Extract-and-Expand Key Derivation Function (HKDF), compatible with
 RFC 5869.  Defaults to 32 byte output, matching Bitcoin&#39;s implementaton.</p>
 </dd>
+<dt><a href="#Htlc">Htlc</a></dt>
+<dd></dd>
 <dt><a href="#Identity">Identity</a> ⇐ <code><a href="#Actor">Actor</a></code></dt>
 <dd><p><strong>BIP32/BIP39 identity</strong> wrapping <a href="#Key">Key</a>: mnemonic / xprv / passphrase.
 Protocol identity (pubkey / Schnorr sign / Bech32 id) uses the Fabric derivation path
@@ -167,8 +214,6 @@ IDENTITY.md). The HD <strong>master</strong> remains available as <a href="#Iden
 <dd><p>An ordered stack of pages.</p>
 </dd>
 <dt><a href="#LiquidityBook">LiquidityBook</a></dt>
-<dd></dd>
-<dt><a href="#LiquiditySwap">LiquiditySwap</a></dt>
 <dd></dd>
 <dt><a href="#Logger">Logger</a> ⇐ <code><a href="#Actor">Actor</a></code></dt>
 <dd><p>A basic logger that writes logs to the local file system</p>
@@ -205,8 +250,11 @@ JSON bridging is <strong>@fabric/http</strong>. See <code>docs/MESSAGE_BODY.md</
 <code>types/message.js</code>.</p></dd>
 <dt><a href="#Message">Message</a></dt>
 <dd></dd>
-<dt><a href="#Book">Book</a></dt>
-<dd></dd>
+<dt><a href="#OrderBook">OrderBook</a></dt>
+<dd><p>Constructed like <a href="#SignedBook">SignedBook</a>; its <code>spec</code> may also name
+<code>perMakerSetting</code>, the setting holding how many live entries one maker may
+hold (its oldest is dropped).</p>
+</dd>
 <dt><a href="#Peer">Peer</a> ⇐ <code><a href="#Service">Service</a></code></dt>
 <dd><p>P2P node: TCP/NOISE sessions, gossip, and relay of <a href="#Message">Message</a> (AMP) frames. Extends <a href="#Service">Service</a>
 (hence <a href="#Actor">Actor</a>). Opcode and receipt semantics must stay aligned with <strong>@fabric/http</strong> and Hub when you add types —
@@ -214,13 +262,23 @@ see <a href="#Message">Message</a> wire vs friendly names and <code>constants</c
 </dd>
 <dt><a href="#Peer">Peer</a></dt>
 <dd></dd>
+<dt><a href="#Policy">Policy</a></dt>
+<dd><p>One normalized spend policy: tiers, key sets, decay mode, optional hashlock
+and extra leaves, Taproot internal key mode. Its fields are the normalized
+policy itself, so a <code>Policy</code> can be passed anywhere a policy object is
+accepted, and <code>JSON.stringify</code> gives the normalized form.</p>
+<p>Statics take and return plain policy objects (<code>Policy.normalize</code>,
+<code>Policy.compile</code>, <code>Policy.afterDecay</code>, <code>Policy.selectActiveTiers</code>, …);
+instance methods return <code>Policy</code> instances where they return a policy.</p>
+</dd>
 <dt><a href="#Program">Program</a></dt>
 <dd></dd>
 <dt><a href="#EncryptedPromise">EncryptedPromise</a></dt>
 <dd><p>A value that can be sealed with a password.  Sealing uses
 <code>functions/sealedBlob</code> (AES-256-GCM, PBKDF2-SHA256, random salt and IV);
 <a href="#EncryptedPromise+state">state</a> and <a href="#EncryptedPromise+toString">toString</a> only
-ever expose the sealed envelope, never the plaintext or the password.</p>
+ever expose the sealed envelope, never the plaintext or the password.
+Sealing drops the plaintext from memory; <code>decrypt</code> brings it back.</p>
 </dd>
 <dt><del><a href="#Reader">Reader</a></del></dt>
 <dd></dd>
@@ -260,6 +318,8 @@ resources, and lifecycle (<code>start</code>/<code>stop</code> patterns — see 
 </dd>
 <dt><a href="#SetupTui">SetupTui</a></dt>
 <dd></dd>
+<dt><a href="#SignedBook">SignedBook</a></dt>
+<dd></dd>
 <dt><a href="#State">State</a> ⇐ <code><a href="#Actor">Actor</a></code></dt>
 <dd><p><strong>Named snapshot</strong> of application data extending <a href="#Actor">Actor</a> — <code>@type</code>,
 <code>@data</code>, <code>@id</code>, JSON Patch
@@ -277,6 +337,8 @@ encrypted values; <a href="#Store.openEncrypted">openEncrypted</a> matches Hub/s
 </dd>
 <dt><a href="#Store">Store</a></dt>
 <dd></dd>
+<dt><a href="#Swap">Swap</a></dt>
+<dd></dd>
 <dt><a href="#Token">Token</a></dt>
 <dd><p>Implements a capability-based security token.</p>
 </dd>
@@ -289,6 +351,10 @@ Leaf encoding, proofs, and verification match <code>merkletreejs</code>
 <code>isBitcoinTree</code> (which this replaced), so earlier roots are unchanged.
 Optional <code>sortLeaves</code> makes the leaf order lexicographic so adjacent-leaf
 <strong>non-inclusion</strong> proofs are well-defined (inclusion proofs work either way).</p>
+<p>Like Bitcoin&#39;s, the root does not commit the leaf count: <code>[a, b, c]</code> and
+<code>[a, b, c, c]</code> share a root. <a href="#Tree+mutated">mutated</a> flags such leaf lists and
+<code>rejectMutated: true</code> refuses them; callers that accept leaves from the
+network must check one or the other and bind the count separately.</p>
 </dd>
 <dt><a href="#Vector">Vector</a> ⇐ <code>EventEmitter</code></dt>
 <dd><p>Lightweight <strong>event sink</strong> for instruction-stream and VM-adjacent signals.
@@ -304,34 +370,58 @@ live on <a href="#Machine">Machine</a> and <a href="#State">State</a> / <a href=
 <dd><p>Self-contained proof that a market counterparty broke a signed obligation.
 Shape: <code>{ type: &#39;FraudProof&#39;, kind, artifacts, claim }</code>. <code>verify()</code> is pure
 over the artifacts; the few kinds that assert an <strong>on-chain fact</strong> (a
-broadcast happened, an outpoint is still unspent, the tip passed a height)
-take that fact from <code>ctx</code> — the verifier&#39;s own chain view — and refuse to
-conclude without it. No kind ever infers fraud from a <em>missing</em> message
-alone: absence is always anchored to a timelock (decision 6).</p>
+broadcast happened, an outpoint is unspent, the tip passed a height) take
+that fact from <code>ctx</code> — the verifier&#39;s own chain view, which must describe
+<strong>confirmed</strong> state at least <code>ctx.minConfirmations</code> (default 6) deep — and
+refuse to conclude without it. No kind infers fraud from a <em>missing</em>
+message alone, and no kind trusts a time its accused party could backdate.</p>
+<p>Every challenge-based kind binds the challenge to the provider&#39;s signed
+<code>AvailabilityCommitment</code> (root, <code>blobTotal</code>, publisher) and recomputes the
+challenged index from the nonce. A verdict carries <code>reputational: true</code>
+only when it may move a reputation score.</p>
 <p>Kinds:</p>
 <ul>
-<li><code>wrong-leaf</code>: signed challenge + provider-signed response whose leaf does
-not belong to the committed root (or names the wrong blob hash).</li>
-<li><code>non-response</code>: signed challenge + provider&#39;s signed availability
-commitment and either (a) a response signed after the deadline epoch, or
-(b) <strong>timelock evidence</strong>: the challenge names <code>deadlineHeight</code> + the
-deposit outpoint, the provider&#39;s <code>DepositPenaltyPreSig</code> on a penalty
-transaction with <code>nLockTime = deadlineHeight</code>, and the verifier&#39;s chain
-view shows the tip past the deadline with the outpoint <strong>unspent</strong> (no
-check-in). The pre-signed penalty is itself the enforcement.</li>
-<li><code>wrong-bytes</code>: seller-signed offer row (with <code>paymentHashHex</code>) + the
-claim preimage that opens that payment hash + the seller-signed AMP
-<code>P2P_FILE_SEND</code> frame whose delivered bytes miss the offered
-<code>blobHashHex</code>. The frame author must be the offer signer.</li>
-<li><code>wrongful-penalty</code>: publisher-signed challenge + the provider&#39;s valid,
-Merkle-proven, in-time response + the penalty transaction that spent
-the deposit outpoint anyway — publisher fraud. The penalty&#39;s spent
-outputs (<code>prevouts</code>) let the verifier check that the penalty leaf is
-committed to the deposit output and signed by both parties.</li>
-<li><code>stale-commitment</code>: a payment-channel party&#39;s own signed <code>ChannelRevoke</code>
-(naming the commitment txid it revoked) plus that very transaction and
-evidence it was broadcast: an SPV <code>inclusion</code> artifact
-(<code>functions/bitcoinTxInclusion.js</code>) or <code>ctx.txConfirmed(txid)</code>.</li>
+<li><code>wrong-leaf</code>: challenge + commitment + provider-signed response whose
+leaf is not at the challenged index of the committed tree, or (with a
+Merkle proof of the publisher&#39;s pin) names another blob hash.</li>
+<li><code>non-response</code>: challenge + commitment and either
+(a) a provider-signed response after <code>deadlineEpoch</code> <strong>plus</strong> an anchor
+showing the challenge reached the provider in time — a provider-signed
+<code>AvailabilityReceipt</code> or trusted <code>EpochAttestation</code>s (<code>ctx.beaconPubkeys</code>)
+— or (b) <strong>timelock evidence</strong>: the provider&#39;s <code>DepositPenaltyPreSig</code>
+for the deadline, past <code>deadlineHeight + confirmations</code>, with the deposit
+outpoint neither checked in nor answered. (b) names the provider as
+offender only when the provider had a unilateral way to answer: the
+pre-signature acknowledges this challenge (<code>challengeHash</code>), the
+challenge commits <code>answerHashHex</code>, and <code>artifacts.answerPath</code> proves the
+deposit output carries the provider&#39;s <code>answer</code> hashlock leaf for it.
+Otherwise the publisher could manufacture the silence (by refusing to
+co-sign check-in), so the verdict is <code>offender: null</code>,
+<code>reputational: false</code> — the pre-signed penalty is enforceable, but it is
+<strong>not</strong> proof of non-response.</li>
+<li><code>wrong-answer-hash</code>: challenge + commitment + the challenged blob&#39;s bytes
+and branch; the answer hash the publisher committed cannot be opened by
+those bytes — publisher fraud (it would make an honest answer impossible).</li>
+<li><code>wrong-bytes</code>: seller-signed <code>DocumentOffer</code> (documentId, root, blob
+index, blob hash, payment hash) + the claim preimage + the seller-signed
+AMP <code>P2P_FILE_SEND</code> frame for the same document / root / index / payment
+whose bytes miss the offered <code>blobHashHex</code>.</li>
+<li><code>bad-key</code>: same artifacts for a sealed offer, but the bytes <strong>match</strong>
+<code>blobHashHex</code> and the revealed key K (the claim preimage) does not open
+them: AES-GCM authentication fails, or the plaintext misses the offered
+<code>plaintextSha256</code>.</li>
+<li><code>wrongful-penalty</code>: challenge + the provider&#39;s valid, Merkle-proven
+response + an un-backdatable anchor that it existed by the deadline (a
+publisher-signed <code>AvailabilityReceipt</code>, or trusted <code>EpochAttestation</code>s
+over the response hash) + the penalty transaction that spent the deposit
+outpoint anyway — publisher fraud. The provider&#39;s own <code>epoch</code> / <code>height</code>
+fields are never trusted. (An on-chain answer spend needs no such proof:
+it consumes the outpoint, so no penalty can follow it.)</li>
+<li><code>stale-commitment</code>: a payment-channel party&#39;s signed <code>ChannelRevoke</code>
+(channel, number, <code>perCommitmentSecret</code> opening <code>perCommitmentPoint</code>,
+revoked txid) plus that transaction and evidence it confirmed. Assumes
+asymmetric commitments: each party holds only its own commitment, so a
+broadcast of the revoked txid can only have come from the revoker.</li>
 </ul>
 </dd>
 <dt><a href="#Worker">Worker</a></dt>
@@ -361,9 +451,32 @@ contract&#39;s lifetime as &quot;fulfillment conditions&quot; for its closure.</
 </dd>
 </dl>
 
+## Members
+
+<dl>
+<dt><a href="#leafScripts">leafScripts</a></dt>
+<dd><p>Buffer-backed leaves for control-block / PSBT helpers.</p>
+</dd>
+<dt><a href="#spendAddress">spendAddress</a></dt>
+<dd><p>Alias aligned with ARC / tracked summaries.</p>
+</dd>
+</dl>
+
 ## Constants
 
 <dl>
+<dt><a href="#YEAR_BLOCKS">YEAR_BLOCKS</a></dt>
+<dd><p>Blocks in a year (10-minute blocks).</p>
+</dd>
+<dt><a href="#FIDELITY_LOCKTIME_GRID">FIDELITY_LOCKTIME_GRID</a></dt>
+<dd><p>Mainnet bond locktimes are multiples of this height.</p>
+</dd>
+<dt><a href="#FIDELITY_MAX_CERT_BLOCKS">FIDELITY_MAX_CERT_BLOCKS</a></dt>
+<dd><p>Furthest ahead a certificate may expire: about a year.</p>
+</dd>
+<dt><a href="#LEAF_VERSION">LEAF_VERSION</a></dt>
+<dd><p>Leaf version for BIP342 tapscript.</p>
+</dd>
 <dt><a href="#CHANNEL_BODY_TYPES">CHANNEL_BODY_TYPES</a></dt>
 <dd><p>CONTRACT_MESSAGE body types for the Fabric payment channel flow. These ride
 the existing <code>CONTRACT_MESSAGE</code> opcode as signed artifacts
@@ -375,6 +488,78 @@ dedicated opcode is a separate, later protocol decision.</p>
 <code>ChannelOpen</code> — the stricter value wins. HTLCs are never trimmed: every one
 carries at least <code>HTLC_MINIMUM_SATS</code>, so it has a commitment output its
 receiver can claim on-chain.</p>
+<p><code>htlcClaimWindowBlocks</code> is part of the HTLC script (not negotiated): on the
+receiver&#39;s own commitment the sender&#39;s timeout waits <code>toSelfDelay + htlcClaimWindowBlocks</code> after confirmation, so the receiver&#39;s CSV-delayed
+claim always has that many blocks to itself, whatever the CLTV.
+<code>minToSelfDelay</code> / <code>maxToSelfDelay</code> / <code>minChannelLifetimeBlocks</code> are local
+(non-funder) acceptance limits, never negotiated.</p>
+</dd>
+<dt><a href="#MAX_TRANSFERS">MAX_TRANSFERS</a></dt>
+<dd><p>Balance transfers remembered per session (newest kept).</p>
+</dd>
+<dt><a href="#MAX_SETTLED_CREDITS">MAX_SETTLED_CREDITS</a></dt>
+<dd><p>Settled credit rows kept (open rows are bounded by the credit limit).</p>
+</dd>
+<dt><a href="#MAX_FEE_PPM">MAX_FEE_PPM</a></dt>
+<dd><p>Highest proportional maker fee an offer may ask: 5%.</p>
+</dd>
+<dt><a href="#MIN_COINJOIN_SATS">MIN_COINJOIN_SATS</a></dt>
+<dd><p>Smallest coinjoin amount.</p>
+</dd>
+<dt><a href="#DUST_SATS">DUST_SATS</a></dt>
+<dd><p>P2TR dust limit: change below this is dropped (it goes to miners).</p>
+</dd>
+<dt><a href="#MAX_MAKERS">MAX_MAKERS</a></dt>
+<dd><p>Most makers in one round.</p>
+</dd>
+<dt><a href="#MAX_MAKER_INPUTS">MAX_MAKER_INPUTS</a></dt>
+<dd><p>Most inputs one maker may contribute.</p>
+</dd>
+<dt><a href="#DEFAULT_MIN_EQUAL_OUTPUTS">DEFAULT_MIN_EQUAL_OUTPUTS</a></dt>
+<dd><p>Fewest equal outputs a maker accepts as a coinjoin (taker + one maker).</p>
+</dd>
+<dt><a href="#MAX_PSBT_CHARS">MAX_PSBT_CHARS</a></dt>
+<dd><p>Largest PSBT (base64 characters) a round message may carry: sealed, it must
+still fit one <code>CONTRACT_MESSAGE</code> under <code>MAX_MESSAGE_SIZE</code> (32 KiB).</p>
+</dd>
+<dt><a href="#SEAL_NAMESPACE">SEAL_NAMESPACE</a></dt>
+<dd><p>Contract namespace for sealed round messages and <code>CONTRACT_MESSAGE</code> bodies.</p>
+</dd>
+<dt><a href="#SEALED_TYPE">SEALED_TYPE</a></dt>
+<dd><p>Body type of a sealed round message.</p>
+</dd>
+<dt><a href="#WEIGHT_OVERHEAD">WEIGHT_OVERHEAD</a></dt>
+<dd><p>Transaction weight, in weight units: overhead, P2TR key-path input, P2TR output.</p>
+</dd>
+<dt><a href="#SIGNER_FIELD">SIGNER_FIELD</a></dt>
+<dd><p>Which field carries each body&#39;s author key.</p>
+</dd>
+<dt><a href="#ROUND_TYPES">ROUND_TYPES</a></dt>
+<dd><p>Round messages: sealed between taker and maker, never gossiped.</p>
+</dd>
+<dt><a href="#PODLE_MAX_INDEX">PODLE_MAX_INDEX</a></dt>
+<dd><p>Distinct commitments one UTXO can produce (indices <code>0 … PODLE_MAX_INDEX − 1</code>).</p>
+</dd>
+<dt><a href="#PODLE_TAG">PODLE_TAG</a></dt>
+<dd><p>Domain tag mixed into the DLEQ challenge.</p>
+</dd>
+<dt><a href="#PODLE_MIN_AGE_CONFS">PODLE_MIN_AGE_CONFS</a></dt>
+<dd><p>Default: the commitment UTXO must be this many blocks deep.</p>
+</dd>
+<dt><a href="#PODLE_MIN_VALUE_PCT">PODLE_MIN_VALUE_PCT</a></dt>
+<dd><p>Default: the commitment UTXO must be worth this percent of the coinjoin amount.</p>
+</dd>
+<dt><a href="#PODLE_BLACKLIST_SIZE">PODLE_BLACKLIST_SIZE</a></dt>
+<dd><p>Default size of a maker&#39;s used-commitment memory.</p>
+</dd>
+<dt><a href="#DEFAULT_MAX_SIGNS">DEFAULT_MAX_SIGNS</a></dt>
+<dd><p>Times a maker will sign a rebuilt transaction in one round.</p>
+</dd>
+<dt><a href="#LOCKTIME_SLACK_BLOCKS">LOCKTIME_SLACK_BLOCKS</a></dt>
+<dd><p>Blocks the transaction&#39;s <code>nLockTime</code> may run ahead of the maker&#39;s tip.</p>
+</dd>
+<dt><a href="#INPUT_HEADROOM">INPUT_HEADROOM</a></dt>
+<dd><p>Extra inputs budgeted when the taker selects coins.</p>
 </dd>
 <dt><a href="#GCM_TAG_BYTES">GCM_TAG_BYTES</a></dt>
 <dd><p>AES-GCM tag appended to each sealed blob.</p>
@@ -389,19 +574,78 @@ receiver can claim on-chain.</p>
 <dd><p>Canonical <code>type</code> for an exported telemetry record.</p>
 </dd>
 <dt><a href="#SCORE_UNKNOWN">SCORE_UNKNOWN</a></dt>
-<dd><p>Neutral score for a provider with no observations.</p>
+<dd><p>Score for a provider with no observations.</p>
 </dd>
 <dt><a href="#SCORE_MAX">SCORE_MAX</a></dt>
 <dd><p>Maximum provider score.</p>
 </dd>
+<dt><a href="#SCORE_INVENTORY_ONLY">SCORE_INVENTORY_ONLY</a></dt>
+<dd><p>A provider seen only in inventories ranks below a neutral record (500).</p>
+</dd>
+<dt><a href="#MAX_PROVIDERS">MAX_PROVIDERS</a></dt>
+<dd><p>Providers tracked before the least recently updated unpenalized one is evicted.</p>
+</dd>
+<dt><a href="#MAX_OFFERS">MAX_OFFERS</a></dt>
+<dd><p>Offer rows held before the oldest is evicted.</p>
+</dd>
+<dt><a href="#MAX_EVIDENCE">MAX_EVIDENCE</a></dt>
+<dd><p>Fraud-proof evidence ids remembered for dedupe.</p>
+</dd>
 <dt><a href="#HOP_PENALTY_MS">HOP_PENALTY_MS</a></dt>
 <dd><p>Each extra gossip hop counts as this many milliseconds of latency.</p>
+</dd>
+<dt><a href="#DUST_SATS">DUST_SATS</a></dt>
+<dd><p>Smallest output the claim / refund transaction may pay.</p>
+</dd>
+<dt><a href="#DEFAULT_FEE_SATS">DEFAULT_FEE_SATS</a></dt>
+<dd><p>Fee used when a spend names none.</p>
+</dd>
+<dt><a href="#LOCKTIME_THRESHOLD">LOCKTIME_THRESHOLD</a></dt>
+<dd><p>BIP65: lock values at or above this are unix times, not heights.</p>
+</dd>
+<dt><a href="#TAPROOT_INTERNAL_NUMS">TAPROOT_INTERNAL_NUMS</a></dt>
+<dd><p>BIP341-style NUMS x-only internal key (script-path spend only).</p>
+</dd>
+<dt><a href="#CLTV_TIMESTAMP_THRESHOLD">CLTV_TIMESTAMP_THRESHOLD</a></dt>
+<dd><p>BIP65 LOCKTIME_THRESHOLD: nLockTime / CLTV values ≥ this are unix timestamps.</p>
+</dd>
+<dt><a href="#MAX_LOCKTIME">MAX_LOCKTIME</a></dt>
+<dd><p>nLockTime / nSequence max (2^32 − 1). Avoid a 32-bit hex literal.</p>
 </dd>
 <dt><a href="#EXIT_KINDS">EXIT_KINDS</a></dt>
 <dd><p>Exit kinds.</p>
 </dd>
 <dt><a href="#EXIT_SIGNATURE_TYPE">EXIT_SIGNATURE_TYPE</a></dt>
 <dd><p><code>CONTRACT_MESSAGE</code> body carrying one exit signature.</p>
+</dd>
+<dt><a href="#MAX_PREMIUM_PPM">MAX_PREMIUM_PPM</a></dt>
+<dd><p>Largest premium (either sign) an order may quote: ±50%.</p>
+</dd>
+<dt><a href="#DEFAULT_MIN_CLAIM_BLOCKS">DEFAULT_MIN_CLAIM_BLOCKS</a></dt>
+<dd><p>Blocks the L2 giver needs left on the HTLC to claim after paying.</p>
+</dd>
+<dt><a href="#DEFAULT_MIN_CONFIRMATIONS">DEFAULT_MIN_CONFIRMATIONS</a></dt>
+<dd><p>HTLC confirmations before the L2 giver pays.</p>
+</dd>
+<dt><a href="#DEFAULT_INVOICE_MARGIN_SECONDS">DEFAULT_INVOICE_MARGIN_SECONDS</a></dt>
+<dd><p>Invoice must expire at least this long before the refund lock opens.</p>
+</dd>
+<dt><a href="#MIN_INVOICE_EXPIRY_SECONDS">MIN_INVOICE_EXPIRY_SECONDS</a></dt>
+<dd><p>Shortest expiry a swap invoice may carry.</p>
+</dd>
+<dt><a href="#MIN_REFUND_LOCK_BLOCKS">MIN_REFUND_LOCK_BLOCKS</a></dt>
+<dd><p>Shortest refund lock an order may ask for: room for the claim, the funding
+confirmations, one block of slack, the invoice margin, and the shortest
+invoice, at the default block time.</p>
+</dd>
+<dt><a href="#MAX_REFUND_LOCK_BLOCKS">MAX_REFUND_LOCK_BLOCKS</a></dt>
+<dd><p>Longest refund lock an order may ask for (about two weeks of blocks).</p>
+</dd>
+<dt><a href="#DEFAULT_INVOICE_EXPIRY_SECONDS">DEFAULT_INVOICE_EXPIRY_SECONDS</a></dt>
+<dd><p>BOLT11 default expiry when the invoice names none.</p>
+</dd>
+<dt><a href="#SIGNER_FIELD">SIGNER_FIELD</a></dt>
+<dd><p>Which field carries each body&#39;s author key.</p>
 </dd>
 <dt><del><a href="#Text">Text</a></del></dt>
 <dd></dd>
@@ -413,8 +657,417 @@ receiver can claim on-chain.</p>
 <dt><a href="#lockFrom">lockFrom()</a></dt>
 <dd><p>Accept a block height, a <code>{ type, height|unix|blocks }</code> lock, or a normalized lock. @private</p>
 </dd>
+<dt><a href="#fidelityPath">fidelityPath(index, [networkName])</a> ⇒ <code>string</code></dt>
+<dd><p>BIP-32 path of the <code>index</code>th bond key: <code>m/86&#39;/coin&#39;/0&#39;/2/index</code>
+(chain 2 beside the BIP-86 receive and change chains).</p>
+</dd>
+<dt><a href="#isValidFidelityLocktime">isValidFidelityLocktime(locktime, [networkName])</a> ⇒ <code>boolean</code></dt>
+<dd><p>Whether a bond may lock until <code>locktime</code> on this network: a block height,
+on the mainnet grid.</p>
+</dd>
+<dt><a href="#fidelityLocktimes">fidelityLocktimes(opts)</a> ⇒ <code>Array.&lt;number&gt;</code></dt>
+<dd><p>The next <code>count</code> locktimes a new bond may use, after <code>tipHeight</code>.</p>
+</dd>
+<dt><a href="#buildFidelity">buildFidelity(opts)</a> ⇒ <code>Object</code></dt>
+<dd><p>The bond output: NUMS internal key, one CLTV leaf.</p>
+</dd>
+<dt><a href="#prepareFidelityRedeem">prepareFidelityRedeem(opts)</a> ⇒ <code>string</code></dt>
+<dd><p>Unsigned PSBT spending a bond after its locktime (<code>nLockTime</code> = locktime,
+sequence <code>0xfffffffe</code> so CLTV applies).</p>
+</dd>
+<dt><a href="#signFidelityRedeem">signFidelityRedeem(psbtBase64, bondPriv32)</a> ⇒ <code>Object</code></dt>
+<dd><p>Sign a bond redeem PSBT with the bond key and extract the transaction.</p>
+</dd>
+<dt><a href="#signFidelityCertificate">signFidelityCertificate(opts)</a> ⇒ <code>Object</code></dt>
+<dd><p>Sign a certificate letting <code>makerPubkey</code> advertise this bond until block
+<code>certExpiresAt</code>.</p>
+</dd>
+<dt><a href="#normalizeFidelity">normalizeFidelity(input)</a> ⇒ <code>Object</code></dt>
+<dd><p>Shape of <code>CoinjoinOffer.fidelityBond</code>.</p>
+</dd>
+<dt><a href="#verifyFidelityCertificate">verifyFidelityCertificate(bond, opts)</a> ⇒ <code>boolean</code></dt>
+<dd><p>Check the bond key signed this certificate for <code>makerPubkey</code> on <code>network</code>.</p>
+</dd>
+<dt><a href="#fidelityValue">fidelityValue(opts)</a> ⇒ <code>number</code></dt>
+<dd><p>Value of a bond (JoinMarket&#39;s formula, heights in place of times):
+<code>T = (locktime − confirmHeight) / year</code>, <code>L = max(0, tip − locktime) / year</code>,
+<code>a = max(0, min(1, e^(rT) − 1) − min(1, e^(rL) − 1))</code>,
+<code>value = (valueSats × a)^exponent</code>.</p>
+</dd>
+<dt><a href="#verifyFidelity">verifyFidelity(bond, opts)</a> ⇒ <code>Promise.&lt;{ok: boolean, reason: (string|null), valueSats: number, confirmHeight: (number|null), value: number}&gt;</code></dt>
+<dd><p>Verify a bond on chain for one maker. <code>bitcoin.getTxOut(txid, vout)</code> must
+resolve to <code>{ valueSats, scriptPubKeyHex, confirmations }</code> for an unspent
+output, else <code>null</code>.</p>
+</dd>
+<dt><a href="#createBlobMerkleTree">createBlobMerkleTree(hashes)</a> ⇒ <code><a href="#Tree">Tree</a></code></dt>
+<dd><p>Storage tree over raw 32-byte blob hashes (its proofs are <a href="#Tree">Tree</a> proofs).</p>
+</dd>
+<dt><a href="#expireHeight">expireHeight(h)</a> ⇒ <code>number</code></dt>
+<dd></dd>
+<dt><a href="#randomRoundId">randomRoundId()</a> ⇒ <code>string</code></dt>
+<dd></dd>
+<dt><a href="#normalizeOffer">normalizeOffer(input)</a> ⇒ <code>Object</code></dt>
+<dd></dd>
+<dt><a href="#normalizeCancel">normalizeCancel(input)</a> ⇒ <code>Object</code></dt>
+<dd></dd>
+<dt><a href="#normalizeFill">normalizeFill(input)</a> ⇒ <code>Object</code></dt>
+<dd><p>Taker → maker: fill <code>amountSats</code> of an offer. <code>takerPubkey</code> is a fresh key
+for this round only (it signs the taker&#39;s bodies and receives sealed
+replies), so makers never learn the taker&#39;s identity.</p>
+</dd>
+<dt><a href="#normalizeFillAck">normalizeFillAck(input)</a> ⇒ <code>Object</code></dt>
+<dd><p>Maker → taker: the fill is accepted; <code>sealPubkey</code> receives the rest of the
+round.</p>
+</dd>
+<dt><a href="#normalizeAuth">normalizeAuth(input)</a> ⇒ <code>Object</code></dt>
+<dd><p>Taker → maker: open the PoDLE commitment named in the fill.</p>
+</dd>
+<dt><a href="#normalizeIoAuth">normalizeIoAuth(input)</a> ⇒ <code>Object</code></dt>
+<dd><p>Maker → taker: the maker&#39;s inputs and where it wants its coinjoin output
+and change. Inputs may carry an <code>ownershipSig</code> (<a href="#signOwnership">signOwnership</a>).</p>
+</dd>
+<dt><a href="#normalizeTx">normalizeTx(input)</a> ⇒ <code>Object</code></dt>
+<dd><p>Taker → maker: the unsigned transaction.</p>
+</dd>
+<dt><a href="#normalizeSig">normalizeSig(input)</a> ⇒ <code>Object</code></dt>
+<dd><p>Maker → taker: the transaction with the maker&#39;s inputs signed.</p>
+</dd>
+<dt><a href="#randomPrivateKey">randomPrivateKey()</a> ⇒ <code>Buffer</code></dt>
+<dd></dd>
+<dt><a href="#sealRoundMessage">sealRoundMessage(body, recipientPubkey)</a> ⇒ <code>Object</code></dt>
+<dd><p>Seal a signed round message to its recipient (participant ECDH seal).</p>
+</dd>
+<dt><a href="#toContractMessage">toContractMessage(value)</a> ⇒ <code>Object</code></dt>
+<dd><p>Wrap a public body (offer, cancel) or a sealed round envelope as a
+<code>CONTRACT_MESSAGE</code> body: <code>buildMessage(&#39;CONTRACT_MESSAGE&#39;, toContractMessage(x))</code>.
+Round bodies must be sealed first.</p>
+</dd>
+<dt><a href="#fromContractMessage">fromContractMessage(value)</a> ⇒ <code>Object</code> | <code>Object</code> | <code>null</code></dt>
+<dd><p>Read a coinjoin <code>CONTRACT_MESSAGE</code> body (the parsed legacy JSON). Public
+bodies are verified; sealed envelopes are returned for
+<a href="#openRoundMessage">openRoundMessage</a> (or for relaying when <code>to</code> is not ours).
+Unsealed round bodies and other contracts return <code>null</code>.</p>
+</dd>
+<dt><a href="#openRoundMessage">openRoundMessage(envelope, privateKey)</a> ⇒ <code>Object</code></dt>
+<dd><p>Open a sealed round message with the recipient&#39;s private key and verify
+the body inside.</p>
+</dd>
+<dt><a href="#makerFee">makerFee(offer, amountSats)</a> ⇒ <code>number</code></dt>
+<dd><p>The maker&#39;s fee for a coinjoin of <code>amountSats</code>: <code>feeSats + ⌊amount × feePpm / 1e6⌋</code>.</p>
+</dd>
+<dt><a href="#makerChange">makerChange(opts)</a> ⇒ <code>number</code></dt>
+<dd><p>Change owed to a maker: its inputs, less the coinjoin output, plus its
+fee, less its miner-fee contribution. Change under <a href="#DUST_SATS">DUST_SATS</a> is
+not paid (0).</p>
+</dd>
+<dt><a href="#estimateVsize">estimateVsize(inputs, outputs)</a> ⇒ <code>number</code></dt>
+<dd><p>Virtual size of a transaction with only P2TR key-path inputs and P2TR outputs.</p>
+</dd>
+<dt><a href="#planCoinjoin">planCoinjoin(opts)</a> ⇒ <code>Object</code></dt>
+<dd><p>Outputs and fees for a round. Makers are paid exactly their offer&#39;s fee;
+the taker pays the miner fee less the makers&#39; contributions, and takes
+what is left as change (dropped below dust).</p>
+</dd>
+<dt><a href="#buildPsbt">buildPsbt(opts)</a> ⇒ <code>Object</code></dt>
+<dd><p>Build the unsigned coinjoin PSBT (version 2, BIP-69, <code>nLockTime</code> = tip,
+sequence <code>0xfffffffe</code>, witness UTXOs on every input).</p>
+</dd>
+<dt><a href="#unsignedTxid">unsignedTxid(psbtBase64)</a> ⇒ <code>string</code></dt>
+<dd><p>The id the transaction will have (key-path spends do not change it).</p>
+</dd>
+<dt><a href="#describePsbt">describePsbt(psbtBase64)</a> ⇒ <code>Object</code></dt>
+<dd><p>Inputs and outputs of a PSBT as plain rows.</p>
+</dd>
+<dt><a href="#validateForMaker">validateForMaker(opts)</a> ⇒ <code>Object</code></dt>
+<dd><p>Everything a maker must see before signing. It refuses unless its inputs
+are present with the values it named, its coinjoin output pays exactly
+<code>amountSats</code>, its change is at least what its offer earns, at least
+<code>minEqualOutputs</code> outputs share the coinjoin amount, every input and output
+is P2TR, and nothing else pays the maker&#39;s scripts.</p>
+</dd>
+<dt><a href="#validateForTaker">validateForTaker(opts)</a> ⇒ <code>Object</code></dt>
+<dd><p>The taker&#39;s check of the final transaction: exactly the planned outputs
+(each maker paid its offer, no more), every planned input, and a feerate
+within bounds.</p>
+</dd>
+<dt><a href="#taprootOutputPrivateKey">taprootOutputPrivateKey(internalPriv32)</a> ⇒ <code>Buffer</code></dt>
+<dd><p>BIP-341 output private key for a BIP-86 key-path-only P2TR (internal key, no scripts).</p>
+</dd>
+<dt><a href="#taprootKeyPath">taprootKeyPath(internalPriv32, [networkName])</a> ⇒ <code>Object</code></dt>
+<dd><p>Key-path-only P2TR for an internal private key.</p>
+</dd>
+<dt><a href="#signKeyPathInputs">signKeyPathInputs(psbtBase64, internalPrivateKeys)</a> ⇒ <code>Object</code></dt>
+<dd><p>Sign the PSBT inputs spent by the given key-path keys (SIGHASH_DEFAULT).
+Inputs owned by other keys are left untouched.</p>
+</dd>
+<dt><a href="#mergeMakerSignatures">mergeMakerSignatures(basePsbtBase64, makerPsbtBase64, makerInputs)</a> ⇒ <code>string</code></dt>
+<dd><p>Copy a maker&#39;s signatures for its own inputs into the taker&#39;s PSBT. Refuses
+a PSBT for another transaction, a missing or invalid signature on any of the
+maker&#39;s inputs; nothing else is taken from the maker&#39;s copy.</p>
+</dd>
+<dt><a href="#finalize">finalize(psbtBase64)</a> ⇒ <code>Object</code></dt>
+<dd><p>Finalize every input and extract the transaction.</p>
+</dd>
+<dt><a href="#signOwnership">signOwnership(opts)</a> ⇒ <code>string</code></dt>
+<dd><p>Prove control of a key-path UTXO for one round: a BIP340 signature by the
+output key over <code>SHA256(tag ‖ roundId ‖ txid ‖ vout)</code>.</p>
+</dd>
+<dt><a href="#verifyOwnership">verifyOwnership(opts)</a> ⇒ <code>boolean</code></dt>
+<dd></dd>
+<dt><a href="#validateFill">validateFill(offer, fill, [opts])</a> ⇒ <code>Object</code></dt>
+<dd><p>Check a fill against the offer it names.</p>
+</dd>
+<dt><a href="#podleGenerator">podleGenerator(index)</a> ⇒ <code>Object</code></dt>
+<dd><p>Nothing-up-my-sleeve generator <code>J_index</code>: the first <code>SHA256(G ‖ index ‖ counter)</code>
+that is a valid x coordinate, lifted to even y. Nobody knows <code>log_G(J)</code>.</p>
+</dd>
+<dt><a href="#podleCommitment">podleCommitment(p2Hex)</a> ⇒ <code>string</code></dt>
+<dd><p>The commitment for a <code>P2</code> point.</p>
+</dd>
+<dt><a href="#generatePodle">generatePodle(opts)</a> ⇒ <code>Object</code></dt>
+<dd><p>Taker: commit to a UTXO it owns.</p>
+</dd>
+<dt><a href="#verifyPodle">verifyPodle(opts)</a> ⇒ <code>Object</code></dt>
+<dd><p>Maker: check a reveal against the commitment it was promised.</p>
+</dd>
+<dt><a href="#checkPodleUtxo">checkPodleUtxo(opts)</a> ⇒ <code>Object</code></dt>
+<dd><p>Maker: check the revealed UTXO itself, as read from the chain. The output
+must be P2TR to <code>P</code>&#39;s x coordinate, old enough, and large enough for the
+coinjoin it is used for.</p>
+</dd>
+<dt><a href="#nextPodleIndex">nextPodleIndex(used)</a> ⇒ <code>number</code> | <code>null</code></dt>
+<dd><p>Lowest commitment index the taker has not used for a UTXO.</p>
+</dd>
+<dt><a href="#descriptorPrivateKey">descriptorPrivateKey(info, descriptors)</a> ⇒ <code>Buffer</code></dt>
+<dd><p>Internal private key for a wallet address, from bitcoind <code>getaddressinfo</code>
+and <code>listdescriptors true</code> output (<code>tr(…/*)</code> descriptors only).</p>
+</dd>
+<dt><a href="#envelopeRecipient">envelopeRecipient(envelope)</a> ⇒ <code>string</code> | <code>null</code></dt>
+<dd><p>Whose round an envelope belongs to: the x-only key it is sealed to.</p>
+</dd>
+<dt><a href="#memoryWallet">memoryWallet(opts)</a> ⇒ <code>Object</code></dt>
+<dd><p>Test helper: a wallet adapter over in-memory P2TR coins and their keys.</p>
+</dd>
+<dt><a href="#memoryChain">memoryChain(opts)</a> ⇒ <code>Object</code></dt>
+<dd><p>Test helper: a chain adapter over a map of unspent outputs.</p>
+</dd>
 <dt><a href="#offerKey">offerKey(row)</a> ⇒ <code>string</code></dt>
 <dd><p>Stable key for one offer row.</p>
+</dd>
+<dt><a href="#createDocumentPurchaseSession">createDocumentPurchaseSession(opts)</a> ⇒ <code>Object</code></dt>
+<dd><p>A buyer/seller document purchase session record (whole document or one blob).</p>
+</dd>
+<dt><a href="#isDuplicateSettlement">isDuplicateSettlement(paidKeys, session)</a> ⇒ <code>boolean</code></dt>
+<dd><p>True when this (documentId, blobIndex, contentHash) was already settled.</p>
+</dd>
+<dt><a href="#rememberSettlement">rememberSettlement(paidKeys, session)</a></dt>
+<dd></dd>
+<dt><a href="#findSession">findSession(store, key)</a> ⇒ <code>Object</code> | <code>null</code></dt>
+<dd></dd>
+<dt><a href="#listRefundCandidates">listRefundCandidates(store, tipHeight, [opts])</a> ⇒ <code>Array.&lt;Object&gt;</code></dt>
+<dd><p>Classify purchase sessions for refund listing.</p>
+</dd>
+<dt><a href="#computeRelayFee">computeRelayFee(policy, maxSatsIn)</a> ⇒ <code>Object</code></dt>
+<dd><p>Fee a private <code>DocumentRequest</code> relay skims from the buyer&#39;s budget.</p>
+</dd>
+<dt><a href="#buildForwardedDocumentRequest">buildForwardedDocumentRequest(inbound, policy)</a> ⇒ <code>Object</code></dt>
+<dd><p>Rewrite an inbound <code>DocumentRequest</code> for the next hop: a fresh route id, one
+hop fewer, and the budget less this relay&#39;s fee.</p>
+</dd>
+<dt><a href="#assertMonotoneBudget">assertMonotoneBudget(maxSatsIn, maxSatsOut)</a> ⇒ <code>boolean</code></dt>
+<dd></dd>
+<dt><a href="#paginateInventoryItems">paginateInventoryItems(items, [opts])</a> ⇒ <code>Object</code></dt>
+<dd><p>Split <code>P2P_INVENTORY_RESPONSE</code> items into pages whose JSON fits one AMP
+frame. Items that fit are packed greedily. An item larger than a page (e.g.
+a sealed document with ~130 per-blob rows) is repeated with consecutive
+slices of its <code>blobs</code> (<code>blobsPartial: true</code>) and its <code>documentBlobIndex</code>
+leaves dropped (<code>leavesInline: false</code>); every slice still carries the item
+id, root, and blob total, so a receiving <a href="#DocumentBook">DocumentBook</a> upserts the
+pages per blob without further work. Items that cannot be made to fit are
+returned in <code>skipped</code>.</p>
+</dd>
+<dt><a href="#tierWhenPath">tierWhenPath(state, path)</a> ⇒ <code>*</code></dt>
+<dd></dd>
+<dt><a href="#evaluateTierWhen">evaluateTierWhen(when, [ctx])</a> ⇒ <code>boolean</code></dt>
+<dd></dd>
+<dt><a href="#normalizeLock">normalizeLock()</a> ⇒ <code>Object</code> | <code>null</code></dt>
+<dd><p>Normalize a lock descriptor <code>{ type: &#39;csv&#39;|&#39;cltv&#39;, blocks?|height?|unix? }</code>.</p>
+</dd>
+<dt><a href="#timelockMature">timelockMature()</a></dt>
+<dd><p>Whether a relative/absolute lock is mature given chain tip context.
+CSV uses <code>utxoAgeBlocks</code> (confirmations / age of the UTXO).
+CLTV uses tip height or median time.</p>
+</dd>
+<dt><a href="#synthesizeDefaultLadder">synthesizeDefaultLadder(opts)</a> ⇒ <code>object</code></dt>
+<dd><p>Synthesize the canonical 2-tier authority spend ladder:
+  t0-authority — k-of-n validators/signers (immediate)
+  t1-soft      — after ~csvBlocks (default 144) CSV, a softer rule
+                 (default: 1-of-publisher; optional reduced threshold)</p>
+<p>This is the single P2TR surface for Hub Beacon Federation vaults and ARC
+contract spend addresses when keys + network + csvBlocks match.</p>
+</dd>
+<dt><a href="#normalizeContractSpendPolicy">normalizeContractSpendPolicy(raw)</a> ⇒ <code>object</code></dt>
+<dd></dd>
+<dt><a href="#policyAfterDecay">policyAfterDecay()</a></dt>
+<dd><p>Drop tiers whose until &lt;= trigger lock; clear migrate leaf schedule for child.</p>
+</dd>
+<dt><a href="#normalizeHashlockSpec">normalizeHashlockSpec(raw)</a> ⇒ <code>Object</code> | <code>null</code></dt>
+<dd><p>Normalize optional hashlock leaf options (JSON-safe).
+<code>commitmentHex</code> MAY be Machine <code>runCommitmentHex</code> or SHA256(preimage).</p>
+</dd>
+<dt><a href="#normalizeExtraLeafSpecs">normalizeExtraLeafSpecs(list)</a> ⇒ <code>Array.&lt;object&gt;</code></dt>
+<dd></dd>
+<dt><a href="#buildHashlockTapscript">buildHashlockTapscript(opts)</a> ⇒ <code>Buffer</code></dt>
+<dd><p>Hashlock tapscript: SHA256(preimage) == commitment [+ optional CHECKSIG].</p>
+</dd>
+<dt><a href="#buildHashlockLeaf">buildHashlockLeaf(opts)</a> ⇒ <code>object</code></dt>
+<dd><p>First-class hashlock leaf (optional on authority trees).</p>
+</dd>
+<dt><a href="#buildSpendLeaf">buildSpendLeaf(opts)</a> ⇒ <code>object</code></dt>
+<dd><p>First-class k-of-n spend leaf (composable outside policy tiers).</p>
+</dd>
+<dt><a href="#buildScriptLeaf">buildScriptLeaf(opts)</a> ⇒ <code>object</code></dt>
+<dd><p>Arbitrary tapscript leaf from hex / ASM / Buffer (wallet UI composition).</p>
+</dd>
+<dt><a href="#normalizeLeaf">normalizeLeaf(raw)</a> ⇒ <code>object</code></dt>
+<dd><p>Normalize a leaf descriptor into a Buffer-backed leaf.</p>
+</dd>
+<dt><a href="#compileLeaves">compileLeaves()</a> ⇒ <code>Array.&lt;object&gt;</code></dt>
+<dd><p>Build leaf descriptors for a normalized policy (+ optional hashlock / extras).</p>
+</dd>
+<dt><a href="#scriptTreeFromLeaves">scriptTreeFromLeaves(leaves)</a> ⇒ <code>object</code></dt>
+<dd><p>bitcoinjs-lib Taptree is a binary tree of leaves (not a flat list of &gt;2).</p>
+</dd>
+<dt><a href="#composeTaprootTree">composeTaprootTree(opts)</a> ⇒ <code>object</code></dt>
+<dd><p>Compose an arbitrary Taproot tree for wallet UIs / custom scripts.
+Policy ladder leaves come first; <code>hashlock</code> / <code>extraLeaves</code> append.
+Adding optional leaves <strong>changes</strong> the address vs ladder-only.</p>
+</dd>
+<dt><a href="#buildContractTaproot">buildContractTaproot(policy)</a> ⇒ <code>object</code></dt>
+<dd></dd>
+<dt><a href="#selectActiveTiers">selectActiveTiers(policy, [ctx])</a></dt>
+<dd></dd>
+<dt><a href="#prepareTierWithdrawalPsbt">prepareTierWithdrawalPsbt()</a></dt>
+<dd><p>Prepare withdrawal via a spend tier leaf.</p>
+</dd>
+<dt><a href="#prepareDecayMigrationPsbt">prepareDecayMigrationPsbt()</a></dt>
+<dd><p>Prepare decay migration PSBT (output must be child policy address).</p>
+</dd>
+<dt><a href="#prepareHashlockWithdrawalPsbt">prepareHashlockWithdrawalPsbt(opts)</a> ⇒ <code>object</code></dt>
+<dd><p>Prepare hashlock-path PSBT. Pure hashlock needs only a preimage at finalize;
+hashlock+pubkey needs a Schnorr sig then preimage (inventory-style).</p>
+</dd>
+<dt><a href="#finalizeHashlockPsbt">finalizeHashlockPsbt(opts)</a> ⇒ <code>Object</code></dt>
+<dd><p>Finalize a hashlock script-path PSBT (pure preimage or preimage+sig).</p>
+</dd>
+<dt><a href="#parseXOnlyPubkeysFromSpendScript">parseXOnlyPubkeysFromSpendScript(scriptBuf)</a> ⇒ <code>Array.&lt;Buffer&gt;</code></dt>
+<dd><p>Collect x-only pubkeys from a k-of-n spend tapscript (<code>CHECKSIG</code> /
+<code>CHECKSIGADD</code>), skipping a leading CSV/CLTV prefix when present.</p>
+</dd>
+<dt><a href="#finalizeSpendPsbt">finalizeSpendPsbt(opts)</a> ⇒ <code>Object</code></dt>
+<dd><p>Finalize a k-of-n (CHECKSIG / CHECKSIGADD) script-path PSBT after co-signers
+have called <code>signInput</code>. Unused keys become empty witness elements (BIP342).</p>
+<p>Witness stack (before script + control block) is signatures in <strong>reverse</strong>
+script-pubkey order so the first <code>CHECKSIG</code> pops the last stack item.</p>
+</dd>
+<dt><a href="#buildFederationVaultFromPolicy">buildFederationVaultFromPolicy(opts)</a> ⇒ <code>object</code></dt>
+<dd><p>Authority P2TR vault from validator/signer set.</p>
+<p><strong>Default (RC):</strong> 2-tier ladder — k-of-n authority now; softer rule after
+<code>csvBlocks</code> (default 144) CSV. Same tree as <a href="#synthesizeDefaultLadder">synthesizeDefaultLadder</a> /
+<a href="module:functions/contractSpend.resolveSpend">module:functions/contractSpend.resolveSpend</a> when inputs match.</p>
+<p><strong>Legacy:</strong> pass <code>{ legacySingleLeaf: true }</code> for the pre-ladder single k-of-n
+leaf address (opt-in only; not used by Hub vault summary).</p>
+<p><strong>Internal key:</strong> default n≥2 uses the MuSig2 aggregate (<code>internalKeyMode: &#39;musig2&#39;</code>) — a <strong>new address</strong> vs historical NUMS. Pass <code>internalKeyMode: &#39;nums&#39;</code> to keep coins at the old script-path-only vault. Rebuilds do not
+migrate UTXOs.</p>
+</dd>
+<dt><a href="#hashlockFromProgramRun">hashlockFromProgramRun(run)</a> ⇒ <code>Object</code></dt>
+<dd><p>Build hashlock leaf options from a sealed Program run.
+Commitment defaults to <code>runCommitmentHex</code> (32-byte hex).</p>
+</dd>
+<dt><a href="#composePolicyWithRunHashlock">composePolicyWithRunHashlock(opts)</a> ⇒ <code>object</code></dt>
+<dd><p>Compose an authority ladder (or policy) with a Program-run hashlock leaf.</p>
+</dd>
+<dt><a href="#signingString">signingString(body)</a> ⇒ <code>string</code></dt>
+<dd><p>Canonical signing bytes: the body without <code>signature</code>.</p>
+</dd>
+<dt><a href="#bodyId">bodyId(body)</a> ⇒ <code>string</code></dt>
+<dd><p>Stable id of a body: SHA-256 hex of <a href="#signingString">signingString</a>. Entries, takes,
+and accepts are referenced by it.</p>
+</dd>
+<dt><a href="#randomNonce">randomNonce()</a> ⇒ <code>string</code></dt>
+<dd></dd>
+<dt><a href="#codec">codec(spec)</a> ⇒ <code>Object</code></dt>
+<dd><p>Body codec for one signed market: every body is a JSON object with a
+<code>type</code>, normalized by that type&#39;s normalizer and BIP340-signed by the key
+named by <code>signerField</code> over <a href="#signingString">signingString</a>.</p>
+</dd>
+<dt><a href="#normalizeOrder">normalizeOrder(input)</a> ⇒ <code>Object</code></dt>
+<dd></dd>
+<dt><a href="#normalizeCancel">normalizeCancel(input)</a> ⇒ <code>Object</code></dt>
+<dd></dd>
+<dt><a href="#normalizeTake">normalizeTake(input)</a> ⇒ <code>Object</code></dt>
+<dd><p>A taker&#39;s request to fill part of an order. When the taker gives L1 (a
+take on a bid) it carries the L1 giver&#39;s terms.</p>
+</dd>
+<dt><a href="#normalizeTakeAccept">normalizeTakeAccept(input)</a> ⇒ <code>Object</code></dt>
+<dd><p>The maker&#39;s acceptance of a take. When the maker gives L1 (a take on an
+ask) it carries the L1 giver&#39;s terms and, for orders with <code>prepaySats</code>, a
+prepay invoice the taker pays before the maker funds.</p>
+</dd>
+<dt><a href="#normalizeFunded">normalizeFunded(input)</a> ⇒ <code>Object</code></dt>
+<dd><p>The L1 giver&#39;s notice that the HTLC is funded.</p>
+</dd>
+<dt><a href="#roles">roles(opts)</a> ⇒ <code>Object</code></dt>
+<dd><p>Settlement roles. The L1 giver owns the preimage and funds the HTLC; the
+L2 giver pays the invoice and claims. An ask&#39;s maker sells L1; a bid&#39;s
+maker buys it.</p>
+</dd>
+<dt><a href="#roleFor">roleFor(opts)</a> ⇒ <code>&#x27;l1Giver&#x27;</code> | <code>&#x27;l2Giver&#x27;</code></dt>
+<dd></dd>
+<dt><a href="#quote">quote(opts)</a> ⇒ <code>Object</code></dt>
+<dd><p>Amounts for filling <code>amountSats</code> of L1 against an order. The L1 giver
+funds the HTLC with <code>l1Sats</code>; the L2 giver pays an invoice of <code>l2Msat</code>:
+<code>amountSats × (1 + premiumPpm / 1e6)</code> sats, plus the maker&#39;s <code>feeSats</code>
+when the taker pays L2 (asks) or minus it when the maker does (bids), so
+the fee always reaches the maker.</p>
+</dd>
+<dt><a href="#buildEscrow">buildEscrow(opts)</a> ⇒ <code>Object</code></dt>
+<dd><p>Taproot HTLC for a swap: the L2 giver claims with the preimage, the L1
+giver refunds after <code>refundLockHeight</code>. A plain <a href="#Htlc">Htlc</a> (claim =
+seller leaf, refund = buyer leaf), so its claim / refund PSBT helpers spend
+it unchanged.</p>
+</dd>
+<dt><a href="#validateEscrow">validateEscrow(opts)</a> ⇒ <code>Object</code></dt>
+<dd><p>Rebuild the swap HTLC and compare with an advertised address. Never fund
+or pay against an address that does not match.</p>
+</dd>
+<dt><a href="#invoiceAmountMsat">invoiceAmountMsat(decoded)</a> ⇒ <code>number</code> | <code>null</code></dt>
+<dd><p>Millisatoshi amount from a decoded invoice (<code>amount_msat</code> as a number,
+numeric string, or legacy <code>&quot;123msat&quot;</code> string).</p>
+</dd>
+<dt><a href="#validateInvoice">validateInvoice(opts)</a> ⇒ <code>Object</code></dt>
+<dd><p>Check a decoded BOLT11 invoice (Core Lightning <code>decodepay</code>) before paying
+it for a swap: it must lock to the swap&#39;s payment hash, ask exactly the
+quoted amount, come from the expected node, and expire — plus a margin —
+before the HTLC&#39;s refund lock opens, with at least <code>minClaimBlocks</code> left
+for the claim.</p>
+</dd>
+<dt><a href="#validateTake">validateTake(order, take, [opts])</a> ⇒ <code>Object</code></dt>
+<dd><p>Check a take against the order it fills.</p>
+</dd>
+<dt><a href="#validateTakeAccept">validateTakeAccept(order, take, accept)</a> ⇒ <code>Object</code></dt>
+<dd><p>Check an acceptance against its order and take.</p>
+</dd>
+<dt><a href="#l1GiverTerms">l1GiverTerms(order, take, [accept])</a> ⇒ <code>Object</code> | <code>null</code></dt>
+<dd><p>The L1 giver&#39;s terms for a take, from whichever body carries them.</p>
+</dd>
+<dt><a href="#verifyBlobPath">verifyBlobPath(opts)</a> ⇒ <code>boolean</code></dt>
+<dd><p>Strict blob-tree inclusion check. Every left/right choice comes from
+<code>index</code> (not from the prover&#39;s <code>position</code> labels, which must agree), the
+branch must be exactly as deep as a tree of <code>leafCount</code> leaves, and a
+self-paired step is accepted only for the odd last node of a level. With
+<code>leafCount</code> pinned by a signed commitment, an inner node cannot pass as a
+leaf and a padded (CVE-2012-2459) tree cannot stand in for the real one.</p>
 </dd>
 <dt><a href="#toIntegerSats">toIntegerSats(value)</a> ⇒ <code>bigint</code></dt>
 <dd><p>PSBT output values are integer satoshis. Reject float BTC leftovers.</p>
@@ -422,6 +1075,11 @@ receiver can claim on-chain.</p>
 <dt><a href="#weightsForProximity">weightsForProximity(proximityWeight)</a> ⇒ <code>Object</code></dt>
 <dd><p>Translate <code>proximityWeight</code> (0..1) into offer-book ranking weights: higher
 proximity shifts weight from price toward measured latency + hops.</p>
+</dd>
+<dt><a href="#sellerDedupeKey">sellerDedupeKey(session)</a> ⇒ <code>string</code></dt>
+<dd><p>Seller-scoped settlement key: one purchase of a blob per seller. A failed
+or refunded purchase from one seller never blocks buying the blob from
+another.</p>
 </dd>
 </dl>
 
@@ -924,6 +1582,8 @@ Get a number of random bytes from the runtime environment.
         * [.listPendingFederationEpochRounds()](#Beacon+listPendingFederationEpochRounds) ⇒ <code>Array.&lt;Object&gt;</code>
         * [.adoptFederationSignRequest(signRequest)](#Beacon+adoptFederationSignRequest) ⇒ [<code>Promise.&lt;FederationRoundAdoption&gt;</code>](#Beacon.FederationRoundAdoption)
         * [.signPendingFederationRoundAsLocalValidator(commitmentDigest)](#Beacon+signPendingFederationRoundAsLocalValidator) ⇒ [<code>Promise.&lt;FederationRoundSignature&gt;</code>](#Beacon.FederationRoundSignature)
+        * [.createEpoch()](#Beacon+createEpoch) ⇒ <code>Promise.&lt;(Object\|null)&gt;</code>
+        * [.recordEpochFromBlock([payload])](#Beacon+recordEpochFromBlock) ⇒ <code>Promise.&lt;(Object\|null)&gt;</code>
         * [.start()](#Beacon+start) ⇒ [<code>Promise.&lt;Beacon&gt;</code>](#Beacon)
         * [.stop()](#Beacon+stop) ⇒ [<code>Promise.&lt;Beacon&gt;</code>](#Beacon)
     * _static_
@@ -940,16 +1600,19 @@ Get a number of random bytes from the runtime environment.
 | [settings.interval] | <code>number</code> | <code>60000</code> | regtest epoch interval in ms (0 = none) |
 | [settings.regtest] | <code>boolean</code> | <code>true</code> | mine epochs; false follows L1 tips only |
 | [settings.mineOnStart] | <code>boolean</code> | <code>true</code> | mine one epoch on start (regtest) |
-| [settings.federationValidators] | <code>Array.&lt;string&gt;</code> |  | x-only hex pubkeys that witness epochs |
-| [settings.federationThreshold] | <code>number</code> \| <code>null</code> | <code></code> | k; null = strict majority of validators |
+| [settings.federationValidators] | <code>Array.&lt;string&gt;</code> |  | pubkeys (compressed or x-only hex) that witness epochs; stored lowercase compressed, one per signing key |
+| [settings.federationThreshold] | <code>number</code> \| <code>null</code> | <code></code> | k (clamped to the distinct validators, with a `warning`); null = strict majority of validators |
 | [settings.federationSignatureScheme] | <code>string</code> | <code>&quot;&#x27;schnorr&#x27;&quot;</code> | `schnorr` or `bls` |
 | [settings.federationWitnessFailClosed] | <code>boolean</code> | <code>true</code> | truncate the stored chain at the first epoch without k valid witnesses |
+| [settings.federationRoundTtlMs] | <code>number</code> | <code>3600000</code> | cancel a pending round (and the rounds above it) this long after it opened; 0 = never |
+| [settings.maxReorgDepth] | <code>number</code> | <code>100</code> | most epochs walked back looking for the fork point |
 | [settings.followBlocks] | <code>boolean</code> | <code>false</code> | follow bitcoind `block` events on regtest |
 
 <a name="Beacon+state"></a>
 
 ### beacon.state : <code>Object</code>
 Live epoch state: `clock`, `status`, `lastBlockHash`, `height`, `balance`, `balanceSats`.
+Tracks the newest epoch recorded, which may still be a pending federation round.
 
 **Kind**: instance property of [<code>Beacon</code>](#Beacon)  
 <a name="Beacon+attach"></a>
@@ -964,7 +1627,7 @@ Live epoch state: `clock`, `status`, `lastBlockHash`, `height`, `balance`, `bala
 | [deps.fs] | <code>Object</code> |  |
 | [deps.key] | <code>Object</code> |  |
 | [deps.federationValidators] | <code>Array.&lt;string&gt;</code> |  |
-| [deps.federationThreshold] | <code>number</code> |  |
+| [deps.federationThreshold] | <code>number</code> \| <code>null</code> | `null` resets to the strict-majority default |
 | [deps.federationSignatureScheme] | <code>string</code> | `schnorr` (default) or `bls` |
 | [deps.getSidechainSnapshotForEpoch] | <code>function</code> |  |
 | [deps.getContractsSnapshotForEpoch] | <code>function</code> |  |
@@ -981,7 +1644,7 @@ Live epoch state: `clock`, `status`, `lastBlockHash`, `height`, `balance`, `bala
 Summaries of the epoch rounds still collecting witnesses.
 
 **Kind**: instance method of [<code>Beacon</code>](#Beacon)  
-**Returns**: <code>Array.&lt;Object&gt;</code> - `commitmentDigest`, `clock`, `blockHash`, `signatureCount`,
+**Returns**: <code>Array.&lt;Object&gt;</code> - `commitmentDigest`, `clock`, `height`, `blockHash`, `signatureCount`,
 `threshold`, `validators`, `status`, `createdAt` per round  
 <a name="Beacon+adoptFederationSignRequest"></a>
 
@@ -989,6 +1652,7 @@ Summaries of the epoch rounds still collecting witnesses.
 Adopt a peer [FederationSignRequest](FederationSignRequest) into the pending map when the
 commitment digest matches the epoch body. Validators use this so each node
 can accumulate BIP340 signatures over the same deterministic payload.
+Refuses rounds this node cancelled and epochs at or below its sealed tip.
 
 **Kind**: instance method of [<code>Beacon</code>](#Beacon)  
 
@@ -1008,10 +1672,35 @@ Returns a [FederationSignResponse](FederationSignResponse) body ready to gossip.
 | --- | --- |
 | commitmentDigest | <code>string</code> | 
 
+<a name="Beacon+createEpoch"></a>
+
+### beacon.createEpoch() ⇒ <code>Promise.&lt;(Object\|null)&gt;</code>
+Regtest only: mine one block and record its epoch through the same queue
+(and duplicate checks) as followed blocks, so a block seen both here and
+via `block` events gets one epoch.
+
+**Kind**: instance method of [<code>Beacon</code>](#Beacon)  
+**Returns**: <code>Promise.&lt;(Object\|null)&gt;</code> - committed payload, pending result, or null when not recorded  
+<a name="Beacon+recordEpochFromBlock"></a>
+
+### beacon.recordEpochFromBlock([payload]) ⇒ <code>Promise.&lt;(Object\|null)&gt;</code>
+Record the epoch for one L1 block. Serialized with followed blocks and
+`createEpoch`, so a block delivered twice gets one epoch.
+
+**Kind**: instance method of [<code>Beacon</code>](#Beacon)  
+**Returns**: <code>Promise.&lt;(Object\|null)&gt;</code> - committed payload, pending result, or null when not recorded  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| [payload] | <code>Object</code> |  |
+| [payload.tip] | <code>string</code> | block hash (looked up from `height` when omitted) |
+| [payload.height] | <code>number</code> | block height (best height when omitted) |
+
 <a name="Beacon+start"></a>
 
 ### beacon.start() ⇒ [<code>Promise.&lt;Beacon&gt;</code>](#Beacon)
-Restore the epoch chain, then mine on the interval (regtest) and/or follow L1 tips.
+Restore the epoch chain and pending rounds, prune epochs whose blocks left
+the best chain, then mine on the interval (regtest) and/or follow L1 tips.
 Idempotent while running.
 
 **Kind**: instance method of [<code>Beacon</code>](#Beacon)  
@@ -1188,12 +1877,16 @@ Author Schnorr over signingString (gossip).
         * [.toRecord(bond)](#Bond.toRecord) ⇒ <code>object</code>
         * [.fromRecord(record)](#Bond.fromRecord) ⇒ <code>object</code>
         * [.buildDeposit(opts)](#Bond.buildDeposit) ⇒ <code>object</code>
+        * [.answerPath(deposit)](#Bond.answerPath) ⇒ <code>Object</code>
+        * [.classifySpend(deposit, txHex, [outpoint])](#Bond.classifySpend) ⇒ <code>Object</code> \| <code>null</code>
         * [.prepareBountyClaim(bounty, opts)](#Bond.prepareBountyClaim) ⇒ <code>object</code>
         * [.prepareBountyRefund(bounty, opts)](#Bond.prepareBountyRefund) ⇒ <code>object</code>
         * [.prepareDepositPenalty(deposit, opts)](#Bond.prepareDepositPenalty) ⇒ <code>object</code>
-        * [.signPenaltyAsProvider(deposit, penalty, providerPrivateKey)](#Bond.signPenaltyAsProvider) ⇒ <code>object</code>
+        * [.signPenaltyAsProvider(deposit, penalty, providerPrivateKey, [opts])](#Bond.signPenaltyAsProvider) ⇒ <code>object</code>
         * [.finalizePreSignedPenalty(deposit, preSig, publisherPrivateKey, [ctx])](#Bond.finalizePreSignedPenalty) ⇒ <code>Object</code>
         * [.prepareDepositCheckIn(deposit, opts)](#Bond.prepareDepositCheckIn) ⇒ <code>object</code>
+        * [.verifyCheckIn(previous, psbtBase64, next, [opts])](#Bond.verifyCheckIn) ⇒ <code>Object</code>
+        * [.prepareDepositAnswer(deposit, opts)](#Bond.prepareDepositAnswer) ⇒ <code>object</code>
         * [.preparePenaltySpend(deposit, opts)](#Bond.preparePenaltySpend) ⇒ <code>object</code>
         * [.prepareDepositWithdraw(deposit, opts)](#Bond.prepareDepositWithdraw) ⇒ <code>object</code>
         * [.finalizeClaim()](#Bond.finalizeClaim)
@@ -1203,7 +1896,7 @@ Author Schnorr over signingString (gossip).
 
 ### new Bond()
 Publisher bounty and provider deposit terms as Taproot outputs
-(`functions/contractTaproot.js` leaves) layered on [Contract](#Contract).
+([Policy](#Policy) leaves) layered on [Contract](#Contract).
 
 **Bounty** (decision 1): one P2TR output per epoch. Leaves: for every
 eligible provider a hashlock `SHA256(R_{epoch,provider})` + `CHECKSIG
@@ -1212,12 +1905,39 @@ The publisher reveals `R_{epoch,provider}` only to a provider that passed
 that epoch's [Challenge](#Challenge); the preimage is derived from a publisher
 seed so nothing per-epoch has to be stored. No custodian.
 
-**Deposit** (decision 2): one P2TR output per provider commitment. Leaves:
-a 2-of-2 `{ publisher, provider }` penalty leaf and a provider-only
-withdraw after `withdrawAfter`. The provider pre-signs the penalty spend
-(LN-justice style) alongside its availability commitment; the publisher can
-complete it only with a verifying [Witness.FraudProof](Witness.FraudProof) attached —
-`Bond.preparePenaltySpend` refuses otherwise (decision 6).
+**Deposit** (decision 2): one P2TR output per provider commitment round.
+Leaves: a 2-of-2 `{ publisher, provider }` penalty leaf, a 2-of-2 check-in
+leaf (CSV 1), a provider-only withdraw after `withdrawAfter`, and — when the
+round commits an answer hash — the provider-only **answer** leaf
+`OP_SHA256 <answerHash> OP_EQUALVERIFY <provider> OP_CHECKSIG`, opened by
+the possession digest `SHA256(nonce || blob)`.
+
+Rounds: the publisher plans round `n` (`Challenge.planRound`), builds
+deposit `D_n` with that answer hash, and issues challenge `n` naming
+`D_n`'s outpoint. The provider checks the answer hash against its blob and
+pre-signs the timelocked penalty `P_n` acknowledging the challenge
+([signPenaltyAsProvider](#Bond.signPenaltyAsProvider)). Only then does the publisher co-sign
+check-in `C_{n-1}` (`D_{n-1}` → `D_n`). If the publisher withholds the
+check-in, the provider answers on-chain through `D_n`'s answer leaf before
+the deadline, which consumes the outpoint `P_n` spends — so the publisher
+cannot manufacture a non-response. Funds move only through those
+pre-signed / co-signed paths: [preparePenaltySpend](#Bond.preparePenaltySpend) builds an
+unsigned 2-of-2 spend that still needs the provider's signature
+(adjudicated or cooperative settlement), never a unilateral seizure.
+
+**Fidelity** (coinjoin market): A maker locks coins in a P2TR output that
+only its bond key can spend, and only after a block height (`<locktime>
+OP_CHECKLOCKTIMEVERIFY OP_DROP <bondXOnly> OP_CHECKSIG` under the NUMS
+internal key, so there is no key path). Locked capital is costly to fake,
+so takers weight makers by bond value and a Sybil attacker must lock coins
+for every identity it runs. The bond key signs a certificate binding the
+bond to the maker's offer key until `certExpiresAt` (a block height), so
+the bond key itself can stay cold. Takers check the certificate, then the
+UTXO on chain: unspent, the expected script, confirmed. Value follows
+JoinMarket's formula (interest on the locked amount over the lock period,
+decaying once the lock has expired, raised to an exponent so splitting a
+bond across identities loses value). Mainnet locktimes sit on a 4320-block
+grid (about a month) so bonds are not fingerprinted by odd heights.
 
 <a name="Contract+resolutions"></a>
 
@@ -1229,18 +1949,21 @@ A state may only be treated as live once `resolutions.resolvable(stateId)`.
 <a name="Bond+recordRound"></a>
 
 ### bond.recordRound(round, opts) ⇒ <code>Object</code>
-Record one check-in round in this bond's [Contract.Resolutions](Contract.Resolutions):
-round `n` is **resolvable** only when the provider's pre-signed penalty
-for round `n + 1` (spending the post-check-in outpoint) is held. The
-publisher must call this (and see `resolvable`) before co-signing the
-round-`n` check-in — `P_{n+1}` before `C_n`.
+Record one round in this bond's [Contract.Resolutions](Contract.Resolutions). Round `n`
+is **resolvable** only when the provider's pre-signed penalty for round
+`n` is held, verifies, and pays the publisher's destination, and — when
+the check-in into round `n` is supplied — that check-in verifies and
+carries the provider's signature. The publisher must call this (and see
+`resolvable`) before co-signing that check-in — `P_n` before `C_{n-1}`.
+The deposit's withdraw height must clear the round deadline by
+`withdrawMarginBlocks` (default 144).
 
 **Kind**: instance method of [<code>Bond</code>](#Bond)  
 
 | Param | Type | Description |
 | --- | --- | --- |
 | round | <code>number</code> |  |
-| opts | <code>object</code> | `{ penaltyPreSig, checkInPsbtBase64?, deposit, penaltyAddress?, minPenaltySats? }` — the pre-signed penalty must pay `penaltyAddress` (else `deposit.penaltyAddress`) |
+| opts | <code>object</code> | `{ deposit, penaltyPreSig, challenge?, previousDeposit?, checkInPsbtBase64?, penaltyAddress?, minPenaltySats?, maxFeeSats?, withdrawMarginBlocks? }` |
 
 <a name="Contract+advance"></a>
 
@@ -1298,7 +2021,7 @@ Build deterministic P2TR spend tree from settings.spendLadder or synthesized
 validators / publisher policy.
 
 **Kind**: instance method of [<code>Bond</code>](#Bond)  
-**Returns**: <code>object</code> - [module:functions/contractTaproot.buildContractTaproot](module:functions/contractTaproot.buildContractTaproot)  
+**Returns**: <code>object</code> - [Policy.compile](Policy.compile)  
 
 | Param | Type |
 | --- | --- |
@@ -1611,7 +2334,8 @@ Sends a message.
 <a name="Bond.leafIdClaim"></a>
 
 ### Bond.leafIdClaim(epoch, providerPubkey) ⇒ <code>string</code>
-Deterministic leaf id for a provider's bounty claim at an epoch.
+Deterministic leaf id for a provider's bounty claim at an epoch (the full
+compressed key, so two providers can never share an id).
 
 **Kind**: static method of [<code>Bond</code>](#Bond)  
 
@@ -1664,7 +2388,7 @@ Rebuild Buffer-backed leaves from a stored record (deterministic).
 <a name="Bond.buildDeposit"></a>
 
 ### Bond.buildDeposit(opts) ⇒ <code>object</code>
-Provider deposit output.
+Provider deposit output for one round.
 
 **Kind**: static method of [<code>Bond</code>](#Bond)  
 **Returns**: <code>object</code> - `DepositBond`  
@@ -1675,9 +2399,42 @@ Provider deposit output.
 | opts.network | <code>string</code> |  |
 | opts.providerPubkey | <code>string</code> | compressed hex |
 | opts.publisherPubkey | <code>string</code> | compressed hex (penalty co-signer / adjudicator) |
-| opts.withdrawAfter | <code>object</code> \| <code>number</code> | lock for the provider's unilateral exit |
+| opts.withdrawAfter | <code>object</code> \| <code>number</code> | lock for the provider's unilateral exit (a block height; must clear every round deadline by the withdraw margin) |
 | [opts.amountSats] | <code>number</code> |  |
 | [opts.merkleRootHex] | <code>string</code> |  |
+| [opts.round] | <code>number</code> | check-in round this output backs |
+| [opts.answerHashHex] | <code>string</code> | round answer hash (`Challenge.planRound`); adds the provider's `answer` leaf |
+| [opts.penaltyAddress] | <code>string</code> | publisher's penalty destination |
+| [opts.minPenaltySats] | <code>number</code> |  |
+
+<a name="Bond.answerPath"></a>
+
+### Bond.answerPath(deposit) ⇒ <code>Object</code>
+The deposit's `answer` leaf and its control block — the artifact a
+timelocked non-response proof carries (`answerPath`) to show the provider
+could have answered on-chain.
+
+**Kind**: static method of [<code>Bond</code>](#Bond)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| deposit | <code>object</code> | with `answerHashHex` |
+
+<a name="Bond.classifySpend"></a>
+
+### Bond.classifySpend(deposit, txHex, [outpoint]) ⇒ <code>Object</code> \| <code>null</code>
+Which deposit leaf a spending transaction used (`penalty`, `checkin`,
+`withdraw`, `answer`), from the revealed tapscript — what a verifier's
+`ctx.outpointSpend` reports for a confirmed spend.
+
+**Kind**: static method of [<code>Bond</code>](#Bond)  
+**Returns**: <code>Object</code> \| <code>null</code> - `null` when the tx does not spend the outpoint  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| deposit | <code>object</code> |  |  |
+| txHex | <code>string</code> |  | spending transaction |
+| [outpoint] | <code>object</code> | <code></code> | `{ txid, vout }` of the deposit (first input otherwise) |
 
 <a name="Bond.prepareBountyClaim"></a>
 
@@ -1709,10 +2466,9 @@ Publisher refund after the bounty locktime.
 ### Bond.prepareDepositPenalty(deposit, opts) ⇒ <code>object</code>
 Unsigned, **timelocked** penalty spend of a provider deposit for one
 challenge round: `nLockTime = deadlineHeight`. The provider pre-signs it
-([signPenaltyAsProvider](#Bond.signPenaltyAsProvider)) before the publisher co-signs that
-round's check-in; if the provider never checks in, the publisher adds its
-own signature after the deadline and broadcasts. No fraud proof is needed
-to *build* it — the timelock is the evidence (decision 6, timelock form).
+([signPenaltyAsProvider](#Bond.signPenaltyAsProvider)) before the publisher co-signs the
+check-in into this round; if the provider neither checks in nor answers,
+the publisher adds its own signature after the deadline and broadcasts.
 
 **Kind**: static method of [<code>Bond</code>](#Bond)  
 **Returns**: <code>object</code> - `{ psbtBase64, txid, deadlineHeight, deposit: { txid, vout }, leafId: 'penalty' }`  
@@ -1724,9 +2480,17 @@ to *build* it — the timelock is the evidence (decision 6, timelock form).
 
 <a name="Bond.signPenaltyAsProvider"></a>
 
-### Bond.signPenaltyAsProvider(deposit, penalty, providerPrivateKey) ⇒ <code>object</code>
+### Bond.signPenaltyAsProvider(deposit, penalty, providerPrivateKey, [opts]) ⇒ <code>object</code>
 Provider pre-signs a [prepareDepositPenalty](#Bond.prepareDepositPenalty) PSBT and wraps it
 as a signed `DepositPenaltyPreSig` artifact (a `CONTRACT_MESSAGE` body).
+Before signing it checks the PSBT ([Witness.checkPenaltyPsbt](Witness.checkPenaltyPsbt): one
+input on this deposit, non-final sequence, height locktime, destination,
+fee cap) and that it spends only this deposit's penalty leaf. With
+`opts.challenge` it also checks the challenge (publisher-signed, for this
+provider, deadline and outpoint as in the PSBT) and, when the challenge
+commits an answer hash, that this deposit carries the matching `answer`
+leaf and — given `opts.bytes` — that the provider's blob opens it; the
+artifact then names `challengeHash`, acknowledging the challenge.
 Verifiers use [Witness.verifyPenaltyPreSig](Witness.verifyPenaltyPreSig).
 
 **Kind**: static method of [<code>Bond</code>](#Bond)  
@@ -1737,12 +2501,15 @@ Verifiers use [Witness.verifyPenaltyPreSig](Witness.verifyPenaltyPreSig).
 | deposit | <code>object</code> |  |
 | penalty | <code>object</code> | from [prepareDepositPenalty](#Bond.prepareDepositPenalty) |
 | providerPrivateKey | <code>Buffer</code> \| <code>string</code> | 32 bytes |
+| [opts] | <code>object</code> | `{ challenge?, bytes?, destinationAddress?, minPenaltySats?, maxFeeSats? }` |
 
 <a name="Bond.finalizePreSignedPenalty"></a>
 
 ### Bond.finalizePreSignedPenalty(deposit, preSig, publisherPrivateKey, [ctx]) ⇒ <code>Object</code>
 Publisher completes a pre-signed penalty after the deadline: verifies the
-provider's artifact, adds the publisher signature, finalizes.
+provider's artifact, adds the publisher signature, finalizes. Refuses a
+penalty that names no publisher destination — the provider would have
+chosen where it pays, so it is not enforceable.
 
 **Kind**: static method of [<code>Bond</code>](#Bond)  
 
@@ -1751,39 +2518,79 @@ provider's artifact, adds the publisher signature, finalizes.
 | deposit | <code>object</code> |  |
 | preSig | <code>object</code> | `DepositPenaltyPreSig` |
 | publisherPrivateKey | <code>Buffer</code> \| <code>string</code> |  |
-| [ctx] | <code>object</code> | `{ tipHeight, penaltyAddress?, minPenaltySats? }` — refuses before `deadlineHeight` when supplied; the destination (else `deposit.penaltyAddress`) must be paid |
+| [ctx] | <code>object</code> | `{ tipHeight, penaltyAddress?, minPenaltySats?, maxFeeSats? }` — refuses before `deadlineHeight` when supplied; the destination (else `deposit.penaltyAddress`) must be paid |
 
 <a name="Bond.prepareDepositCheckIn"></a>
 
 ### Bond.prepareDepositCheckIn(deposit, opts) ⇒ <code>object</code>
-Check-in transaction for one round: re-deposits the output to the same
-deposit address through the `checkin` leaf, which invalidates every
-pre-signed penalty on the old outpoint. Both parties sign (publisher only
-after holding the provider's pre-signature for the **next** round).
+Check-in transaction: moves the deposit through the `checkin` leaf to the
+next round's output, which invalidates every pre-signed penalty on the
+old outpoint. Both parties sign (the publisher only after holding the
+provider's pre-signature for the **next** round). A deposit that commits
+a round answer hash must move to `opts.nextDeposit` (the next round's
+answer hash); one without may re-deposit to its own address.
 
 **Kind**: static method of [<code>Bond</code>](#Bond)  
-**Returns**: <code>object</code> - `{ psbtBase64, txid, leafId: 'checkin', nextDeposit: { txid, vout } }`  
+**Returns**: <code>object</code> - `{ psbtBase64, txid, leafId: 'checkin', nextDeposit: { txid, vout, address }, nextFundedTxHex }`  
 
 | Param | Type | Description |
 | --- | --- | --- |
 | deposit | <code>object</code> |  |
-| opts | <code>object</code> | `{ fundedTxHex, feeSats }` |
+| opts | <code>object</code> | `{ fundedTxHex, feeSats, nextDeposit? }` |
+
+<a name="Bond.verifyCheckIn"></a>
+
+### Bond.verifyCheckIn(previous, psbtBase64, next, [opts]) ⇒ <code>Object</code>
+Check a check-in PSBT before co-signing or recording it: one input on
+`previous`'s output through its `checkin` leaf, one output paying
+`next.address` (which becomes `nextOutpoint` when given), fee within
+`maxFeeSats`.
+
+**Kind**: static method of [<code>Bond</code>](#Bond)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| previous | <code>object</code> | deposit being spent |
+| psbtBase64 | <code>string</code> |  |
+| next | <code>object</code> | deposit receiving the funds |
+| [opts] | <code>object</code> | `{ nextOutpoint?: { txid, vout }, maxFeeSats? }` |
+
+<a name="Bond.prepareDepositAnswer"></a>
+
+### Bond.prepareDepositAnswer(deposit, opts) ⇒ <code>object</code>
+Provider answers a round on-chain through the deposit's `answer` leaf —
+what it does when the publisher withholds the check-in co-signature. The
+spend consumes the outpoint the round's pre-signed penalty needs.
+Finalize with [finalizeClaim](#Bond.finalizeClaim)`(psbt, possessionHex)`.
+
+**Kind**: static method of [<code>Bond</code>](#Bond)  
+**Returns**: <code>object</code> - `{ psbtBase64, leafId: 'answer', witnessShape: 'preimage+sig', … }`  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| deposit | <code>object</code> | with `answerHashHex` |
+| opts | <code>object</code> | `{ fundedTxHex, destinationAddress, feeSats, possessionHex? }` — `possessionHex` is checked against the answer hash |
 
 <a name="Bond.preparePenaltySpend"></a>
 
 ### Bond.preparePenaltySpend(deposit, opts) ⇒ <code>object</code>
-Penalty spend of a provider deposit. **Requires a verifying fraud proof**
-naming this provider as offender; the proof hash is recorded on the result
-so the spend always travels with its evidence. `ctx` is the verifier's
-chain view (`tipHeight`, `outpointUnspent`, `txConfirmed`) — kinds that
-assert on-chain facts refuse to verify without it.
+Unsigned 2-of-2 penalty spend of a provider deposit, for adjudicated or
+cooperative settlement: it still needs the **provider's** signature, so
+it never moves funds on the publisher's word alone (the timelocked path
+is [finalizePreSignedPenalty](#Bond.finalizePreSignedPenalty)). **Requires a verifying,
+reputational fraud proof** of an accepted kind (`wrong-leaf`, late
+`non-response`) naming this provider, bound to this deposit: the
+challenge's root equals `deposit.merkleRootHex`, the commitment names
+`deposit.address`, and the challenge's deposit outpoint is the funded
+output being spent. Each evidence id (see `FraudProof#evidenceIds`) is
+spent once — in `opts.consumed` when given, else a process-wide set.
 
 **Kind**: static method of [<code>Bond</code>](#Bond)  
 
 | Param | Type | Description |
 | --- | --- | --- |
 | deposit | <code>object</code> | from [buildDeposit](#Bond.buildDeposit) |
-| opts | <code>object</code> | `{ fraudProof, fundedTxHex, destinationAddress, feeSats, ctx? }` |
+| opts | <code>object</code> | `{ fraudProof, fundedTxHex, destinationAddress, feeSats, ctx?, consumed? }` |
 
 <a name="Bond.prepareDepositWithdraw"></a>
 
@@ -1800,7 +2607,7 @@ Provider's unilateral deposit exit after `withdrawAfter`.
 <a name="Bond.finalizeClaim"></a>
 
 ### Bond.finalizeClaim()
-Finalize a signed hashlock (claim) PSBT.
+Finalize a signed hashlock (claim / answer) PSBT.
 
 **Kind**: static method of [<code>Bond</code>](#Bond)  
 <a name="Bond.finalizeSpend"></a>
@@ -1809,6 +2616,90 @@ Finalize a signed hashlock (claim) PSBT.
 Finalize a signed spend (refund / penalty / withdraw) PSBT.
 
 **Kind**: static method of [<code>Bond</code>](#Bond)  
+<a name="FidelityVerifier"></a>
+
+## FidelityVerifier
+Caches bond checks per (outpoint, maker, certificate) until the tip moves.
+
+**Kind**: global class  
+
+* [FidelityVerifier](#FidelityVerifier)
+    * [new FidelityVerifier(settings)](#new_FidelityVerifier_new)
+    * [.verify(bond, makerPubkey)](#FidelityVerifier+verify) ⇒ <code>Promise.&lt;Object&gt;</code>
+
+<a name="new_FidelityVerifier_new"></a>
+
+### new FidelityVerifier(settings)
+
+| Param | Type | Description |
+| --- | --- | --- |
+| settings | <code>Object</code> |  |
+| settings.bitcoin | <code>Object</code> | `{ getTipHeight(), getTxOut(txid, vout) }` |
+| settings.network | <code>string</code> |  |
+| [settings.minConfs] | <code>number</code> |  |
+| [settings.maxCertBlocks] | <code>number</code> |  |
+| [settings.interestRate] | <code>number</code> |  |
+| [settings.exponent] | <code>number</code> |  |
+
+<a name="FidelityVerifier+verify"></a>
+
+### fidelityVerifier.verify(bond, makerPubkey) ⇒ <code>Promise.&lt;Object&gt;</code>
+**Kind**: instance method of [<code>FidelityVerifier</code>](#FidelityVerifier)  
+**Returns**: <code>Promise.&lt;Object&gt;</code> - [verifyFidelity](#verifyFidelity) result  
+
+| Param | Type |
+| --- | --- |
+| bond | <code>Object</code> | 
+| makerPubkey | <code>string</code> | 
+
+<a name="Book"></a>
+
+## Book
+**Kind**: global class  
+
+* [Book](#Book)
+    * [new Book([settings])](#new_Book_new)
+    * [.capacity](#Book+capacity) ⇒ <code>number</code>
+    * [.size](#Book+size) ⇒ <code>number</code>
+    * [.now()](#Book+now) ⇒ <code>number</code>
+    * [.has(key)](#Book+has) ⇒ <code>boolean</code>
+
+<a name="new_Book_new"></a>
+
+### new Book([settings])
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [settings] | <code>Object</code> |  |  |
+| [settings.maxEntries] | <code>number</code> | <code>10000</code> | rows held (oldest evicted) |
+| [settings.now] | <code>function</code> |  | clock in ms (tests) |
+
+<a name="Book+capacity"></a>
+
+### book.capacity ⇒ <code>number</code>
+Rows held before the oldest is evicted. Subclasses with their own
+setting name (`maxOffers`, `maxOrders`) override this.
+
+**Kind**: instance property of [<code>Book</code>](#Book)  
+<a name="Book+size"></a>
+
+### book.size ⇒ <code>number</code>
+**Kind**: instance property of [<code>Book</code>](#Book)  
+**Returns**: <code>number</code> - rows held  
+<a name="Book+now"></a>
+
+### book.now() ⇒ <code>number</code>
+**Kind**: instance method of [<code>Book</code>](#Book)  
+**Returns**: <code>number</code> - the book's clock, in ms  
+<a name="Book+has"></a>
+
+### book.has(key) ⇒ <code>boolean</code>
+**Kind**: instance method of [<code>Book</code>](#Book)  
+
+| Param | Type |
+| --- | --- |
+| key | <code>string</code> | 
+
 <a name="Chain"></a>
 
 ## Chain
@@ -1888,14 +2779,20 @@ Policy chains return the tip view synchronously; pow returns a Promise.
 ## Challenge
 Merkle-leaf availability challenge for a sealed blob tree.
 
-A **commitment** is the provider's signed promise to hold a tree until an
-epoch (optionally naming the deposit output that backs it). A **challenge**
-is the publisher's signed, Beacon-epoch stamped request for one leaf; the
-leaf index is derived from the challenge nonce so neither party picks it.
-A **response** is the provider's signed inclusion proof plus a nonce-bound
-digest of the blob bytes (proof of possession for a verifier holding the
-bytes). All three are plain JSON artifacts carried as `CONTRACT_MESSAGE`
-bodies — no new opcodes — and feed [Witness.FraudProof](Witness.FraudProof).
+A **commitment** is the provider's signed promise to hold a tree (root,
+`blobTotal`, publisher) until an epoch, optionally naming the deposit that
+backs it. A **challenge** is the publisher's signed, Beacon-epoch stamped
+request for one leaf; the leaf index is derived from the challenge nonce
+so neither party picks it. A challenge may commit an **answer hash**
+`SHA256(SHA256(nonce || blob bytes))`, also committed in that round's
+deposit output as the provider's unilateral `answer` leaf (see
+`Bond.buildDeposit`), so the provider can always answer on-chain. A
+**response** is the provider's signed inclusion proof plus the nonce-bound
+possession digest. A **receipt** is the counterparty's signed
+acknowledgement of a challenge (and response) at an epoch; an **epoch
+attestation** is a Beacon / federation key's signature that a digest
+existed at an epoch. All are plain JSON artifacts carried as
+`CONTRACT_MESSAGE` bodies and feed [Witness.FraudProof](Witness.FraudProof).
 
 Response deadlines are expressed in **epochs** (default two) so a lagging
 Hub view cannot make an honest provider provably late.
@@ -1911,8 +2808,13 @@ Hub view cannot make an honest provider provably late.
     * _static_
         * [.TYPES](#Challenge.TYPES) : <code>Object</code>
         * [.leafIndexFor(merkleRootHex, epoch, nonceHex, blobTotal)](#Challenge.leafIndexFor) ⇒ <code>number</code>
+        * [.possessionHex(nonceHex, bytes)](#Challenge.possessionHex) ⇒ <code>string</code>
+        * [.answerHashFor(possessionHex)](#Challenge.answerHashFor) ⇒ <code>string</code>
+        * [.planRound(opts)](#Challenge.planRound) ⇒ <code>Object</code>
         * [.commit(opts)](#Challenge.commit) ⇒ <code>object</code>
-        * [.wrongfulPenaltyProof(challenge, response, [penalty])](#Challenge.wrongfulPenaltyProof) ⇒ [<code>FraudProof</code>](#FraudProof)
+        * [.receipt(opts)](#Challenge.receipt) ⇒ <code>object</code>
+        * [.attestEpoch(opts)](#Challenge.attestEpoch) ⇒ <code>object</code>
+        * [.wrongfulPenaltyProof(challenge, response, [penalty], [extra])](#Challenge.wrongfulPenaltyProof) ⇒ [<code>FraudProof</code>](#FraudProof)
 
 <a name="Challenge+issue"></a>
 
@@ -1929,19 +2831,24 @@ Publisher issues one leaf challenge for `epoch`.
 | opts.blobTotal | <code>number</code> |  |
 | opts.epoch | <code>number</code> | Beacon epoch (clock) the challenge is issued in |
 | opts.providerPubkey | <code>string</code> | x-only hex the challenge is addressed to |
-| [opts.blobHashes] | <code>Array.&lt;string&gt;</code> | leaf hashes (pins `blobHashHex` for the chosen index) |
-| [opts.nonceHex] | <code>string</code> | 32-byte hex (random when omitted) |
+| [opts.blobHashes] | <code>Array.&lt;string&gt;</code> | leaf hashes: pins `blobHashHex` for the chosen index with a Merkle `pinProof` |
+| [opts.nonceHex] | <code>string</code> | 32-byte hex (random when omitted; use [planRound](#Challenge.planRound)'s) |
+| [opts.answerHashHex] | <code>string</code> | the round's answer hash (from [planRound](#Challenge.planRound)) |
+| [opts.bytesFor] | <code>function</code> | `(blobIndex) → Buffer` computes `answerHashHex` instead |
 | [opts.deadlineEpochs] | <code>number</code> |  |
 | [opts.deadlineHeight] | <code>number</code> | block height after which silence is enforceable (timelocked non-response); or derive from `tipHeight` + `deadlineBlocks` |
 | [opts.tipHeight] | <code>number</code> | current block height (with `deadlineBlocks`) |
 | [opts.deadlineBlocks] | <code>number</code> | blocks after `tipHeight` for the deadline |
-| [opts.deposit] | <code>object</code> | `{ txid, vout, penaltyAddress?, minPenaltySats? }` the provider's deposit outpoint the pre-signed penalty must spend, and where / how much it must pay the publisher |
+| [opts.deposit] | <code>object</code> | `{ txid, vout, address?, penaltyAddress?, minPenaltySats?, withdrawAfter? }` the provider's deposit outpoint the pre-signed penalty must spend, and where / how much it must pay the publisher; `withdrawAfter` (the deposit's withdraw height) must clear the deadline by `withdrawMarginBlocks` |
+| [opts.withdrawMarginBlocks] | <code>number</code> | default 144 |
 | opts.publisherPrivateKey | <code>Buffer</code> \| <code>string</code> |  |
 
 <a name="Challenge+respond"></a>
 
 ### challenge.respond(challenge, source) ⇒ <code>object</code>
-Provider answers a challenge from its local tree.
+Provider answers a challenge from its local tree. Refuses challenges that
+do not match its tree (root, leaf count, nonce-derived index, pinned
+leaf), its commitment when given, or whose deadline epoch has passed.
 
 **Kind**: instance method of [<code>Challenge</code>](#Challenge)  
 **Returns**: <code>object</code> - signed artifact  
@@ -1951,8 +2858,10 @@ Provider answers a challenge from its local tree.
 | challenge | <code>object</code> | signed artifact from [issue](#Challenge+issue) |
 | source | <code>object</code> |  |
 | source.blobHashes | <code>Array.&lt;string&gt;</code> | every leaf hash of the tree, in order |
-| [source.bytes] | <code>Buffer</code> | the challenged blob's bytes (enables possession digest) |
+| [source.bytes] | <code>Buffer</code> | the challenged blob's bytes (enables the possession digest; required when the challenge commits an answer hash) |
 | source.epoch | <code>number</code> | epoch the response is signed in |
+| [source.commitment] | <code>object</code> | the provider's own signed commitment |
+| [source.allowLate] | <code>boolean</code> | sign even after the deadline epoch |
 | source.providerPrivateKey | <code>Buffer</code> \| <code>string</code> |  |
 
 <a name="Challenge+validate"></a>
@@ -1969,11 +2878,14 @@ Publisher / third party validates a response. Pure.
 | [ctx] | <code>object</code> |  |
 | [ctx.bytes] | <code>Buffer</code> | blob bytes to check the possession digest against |
 | [ctx.epoch] | <code>number</code> | current epoch (absence check) |
+| [ctx.tipHeight] | <code>number</code> | current block height (absence check) |
+| [ctx.minConfirmations] | <code>number</code> | blocks past `deadlineHeight` before silence counts (default 6) |
 
 <a name="Challenge+proofFor"></a>
 
 ### challenge.proofFor(challenge, response, [extra]) ⇒ [<code>FraudProof</code>](#FraudProof) \| <code>null</code>
-Build the matching [Witness.FraudProof](Witness.FraudProof) for a failed validation.
+Build the matching [Witness.FraudProof](Witness.FraudProof) for a failed validation, or
+`null` when the evidence a verifier needs is not at hand.
 
 **Kind**: instance method of [<code>Challenge</code>](#Challenge)  
 
@@ -1981,7 +2893,7 @@ Build the matching [Witness.FraudProof](Witness.FraudProof) for a failed validat
 | --- | --- | --- |
 | challenge | <code>object</code> |  |
 | response | <code>object</code> \| <code>null</code> |  |
-| [extra] | <code>object</code> | `{ commitment }` for non-response |
+| [extra] | <code>object</code> | `{ commitment }` always; `{ anchor }` (receipt / attestations) for a late response; `{ penaltyPreSig, answerPath }` for silence; validation ctx fields |
 
 <a name="Challenge.TYPES"></a>
 
@@ -2003,10 +2915,55 @@ Deterministic leaf selection: `SHA256(root || epoch || nonce) mod blobTotal`.
 | nonceHex | <code>string</code> | 
 | blobTotal | <code>number</code> | 
 
+<a name="Challenge.possessionHex"></a>
+
+### Challenge.possessionHex(nonceHex, bytes) ⇒ <code>string</code>
+Nonce-bound possession digest `SHA256(nonce || bytes)` hex.
+
+**Kind**: static method of [<code>Challenge</code>](#Challenge)  
+
+| Param | Type |
+| --- | --- |
+| nonceHex | <code>string</code> | 
+| bytes | <code>Buffer</code> | 
+
+<a name="Challenge.answerHashFor"></a>
+
+### Challenge.answerHashFor(possessionHex) ⇒ <code>string</code>
+Answer hash for a possession digest: `SHA256(possession)` hex.
+
+**Kind**: static method of [<code>Challenge</code>](#Challenge)  
+
+| Param | Type |
+| --- | --- |
+| possessionHex | <code>string</code> | 
+
+<a name="Challenge.planRound"></a>
+
+### Challenge.planRound(opts) ⇒ <code>Object</code>
+Publisher plans round `epoch` before building that round's deposit: picks
+the nonce, derives the challenged index, and computes the answer hash
+from its own copy of the blob. The deposit for the round commits the
+answer hash (`Bond.buildDeposit({ answerHashHex })`) and the challenge
+is issued with the same nonce and hash.
+
+**Kind**: static method of [<code>Challenge</code>](#Challenge)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| opts | <code>object</code> |  |
+| opts.merkleRootHex | <code>string</code> |  |
+| opts.blobTotal | <code>number</code> |  |
+| opts.epoch | <code>number</code> |  |
+| [opts.nonceHex] | <code>string</code> | 32-byte hex (random when omitted) |
+| opts.bytesFor | <code>function</code> | `(blobIndex) → Buffer` the publisher's blob bytes |
+| [opts.blobHashes] | <code>Array.&lt;string&gt;</code> | leaf hashes, to check the bytes |
+
 <a name="Challenge.commit"></a>
 
 ### Challenge.commit(opts) ⇒ <code>object</code>
-Provider's signed availability commitment.
+Provider's signed availability commitment. `blobTotal` and the
+publisher's key are required: fraud proofs bind every challenge to them.
 
 **Kind**: static method of [<code>Challenge</code>](#Challenge)  
 **Returns**: <code>object</code> - signed artifact  
@@ -2015,20 +2972,58 @@ Provider's signed availability commitment.
 | --- | --- | --- |
 | opts | <code>object</code> |  |
 | opts.merkleRootHex | <code>string</code> |  |
-| [opts.blobTotal] | <code>number</code> |  |
+| opts.blobTotal | <code>number</code> | leaves in the committed tree |
+| opts.publisherPubkey | <code>string</code> | the only key whose challenges count |
 | opts.fromEpoch | <code>number</code> |  |
 | opts.untilEpoch | <code>number</code> |  |
 | [opts.depositAddress] | <code>string</code> | deposit Bond address backing this promise |
 | [opts.depositTxid] | <code>string</code> |  |
-| [opts.publisherPubkey] | <code>string</code> | penalty co-signer |
 | opts.providerPrivateKey | <code>Buffer</code> \| <code>string</code> |  |
+
+<a name="Challenge.receipt"></a>
+
+### Challenge.receipt(opts) ⇒ <code>object</code>
+Counterparty's signed acknowledgement that it held `challenge` (and
+`response`, when given) at `epoch`. The provider signs one for each
+challenge it receives; the publisher signs one for each response. Each
+anchors the *other* side's claims in [Witness.FraudProof](Witness.FraudProof).
+
+**Kind**: static method of [<code>Challenge</code>](#Challenge)  
+**Returns**: <code>object</code> - signed `AvailabilityReceipt`  
+
+| Param | Type |
+| --- | --- |
+| opts | <code>object</code> | 
+| opts.challenge | <code>object</code> | 
+| [opts.response] | <code>object</code> | 
+| opts.epoch | <code>number</code> | 
+| [opts.height] | <code>number</code> | 
+| opts.privateKey | <code>Buffer</code> \| <code>string</code> | 
+
+<a name="Challenge.attestEpoch"></a>
+
+### Challenge.attestEpoch(opts) ⇒ <code>object</code>
+Beacon / federation attestation that `digestHex` (a challenge or response
+artifact hash) existed at `epoch`.
+
+**Kind**: static method of [<code>Challenge</code>](#Challenge)  
+**Returns**: <code>object</code> - signed `EpochAttestation`  
+
+| Param | Type |
+| --- | --- |
+| opts | <code>object</code> | 
+| opts.digestHex | <code>string</code> | 
+| opts.epoch | <code>number</code> | 
+| [opts.height] | <code>number</code> | 
+| opts.privateKey | <code>Buffer</code> \| <code>string</code> | 
 
 <a name="Challenge.wrongfulPenaltyProof"></a>
 
-### Challenge.wrongfulPenaltyProof(challenge, response, [penalty]) ⇒ [<code>FraudProof</code>](#FraudProof)
+### Challenge.wrongfulPenaltyProof(challenge, response, [penalty], [extra]) ⇒ [<code>FraudProof</code>](#FraudProof)
 Provider's counter-proof when penalized despite a valid response. The
-penalty transaction that spent the deposit outpoint **is** the evidence;
-without it the proof does not verify.
+penalty transaction that spent the deposit outpoint **is** the evidence,
+and an anchor (publisher receipt or attestations) must show the response
+existed by the deadline; without both the proof does not verify.
 
 **Kind**: static method of [<code>Challenge</code>](#Challenge)  
 
@@ -2036,7 +3031,8 @@ without it the proof does not verify.
 | --- | --- | --- | --- |
 | challenge | <code>object</code> |  |  |
 | response | <code>object</code> |  |  |
-| [penalty] | <code>object</code> | <code></code> | `{ txHex, txid?, prevouts? }` the penalty spend as seen on-chain; `prevouts` are its spent outputs `[{ scriptHex, valueSats }]` in input order |
+| [penalty] | <code>object</code> | <code></code> | `{ txHex, txid?, prevouts?, inclusion? }` the penalty spend as seen on-chain; `prevouts` are its spent outputs `[{ scriptHex, valueSats }]` in input order |
+| [extra] | <code>object</code> |  | `{ anchor }` |
 
 <a name="Channel"></a>
 
@@ -2083,7 +3079,12 @@ wire safety still depends on the Lightning/Bitcoin services you attach, not this
         * [.revocationPubkey(basepointHex, perCommitmentPointHex)](#Channel.revocationPubkey) ⇒ <code>string</code>
         * [.revocationPrivkey(basepointSecret32, perCommitmentSecretHex)](#Channel.revocationPrivkey) ⇒ <code>Buffer</code>
         * [.negotiatePolicy([a], [b], [capacitySats])](#Channel.negotiatePolicy) ⇒ <code>object</code>
+        * [.minHtlcExpiryDelta(source)](#Channel.minHtlcExpiryDelta) ⇒ <code>number</code>
+        * [.minForwardCltvDelta(source)](#Channel.minForwardCltvDelta) ⇒ <code>number</code>
+        * [.estimateCommitmentVsize(htlcCount)](#Channel.estimateCommitmentVsize) ⇒ <code>number</code>
+        * [.commitmentFeeSats(feerate, htlcCount)](#Channel.commitmentFeeSats) ⇒ <code>number</code>
         * [.idFor(funding)](#Channel.idFor) ⇒ <code>string</code>
+        * [.fundingOutpoint(funding, fundedTxHex)](#Channel.fundingOutpoint) ⇒ <code>Object</code>
         * [.buildFunding(opts)](#Channel.buildFunding) ⇒ <code>object</code>
         * [.fundingFromRecord(record)](#Channel.fundingFromRecord) ⇒ <code>object</code>
         * [.buildToLocalOutput(opts)](#Channel.buildToLocalOutput) ⇒ <code>object</code>
@@ -2091,12 +3092,14 @@ wire safety still depends on the Lightning/Bitcoin services you attach, not this
         * [.buildHtlcOutput(opts)](#Channel.buildHtlcOutput) ⇒ <code>object</code>
         * [.buildCommitment(funding, state, opts)](#Channel.buildCommitment) ⇒ <code>object</code>
         * [.signCommitment(psbtBase64, priv32, network)](#Channel.signCommitment) ⇒ <code>string</code>
-        * [.verifyCommitmentSignature(commitmentPsbtBase64, signedPsbtBase64, signerPubkeyHex, network)](#Channel.verifyCommitmentSignature) ⇒ <code>Object</code>
+        * [.verifyCommitmentSignature(commitmentPsbtBase64, signature, signerPubkeyHex, network)](#Channel.verifyCommitmentSignature) ⇒ <code>Object</code>
+        * [.withCommitmentSignature(commitmentPsbtBase64, signatureHex, signerPubkeyHex, network)](#Channel.withCommitmentSignature) ⇒ <code>string</code>
         * [.finalizeCommitment(psbtA, psbtB, network)](#Channel.finalizeCommitment) ⇒ <code>object</code>
         * [.prepareHtlcClaim(commitment, opts)](#Channel.prepareHtlcClaim) ⇒ <code>object</code>
         * [.prepareHtlcTimeout(commitment, opts)](#Channel.prepareHtlcTimeout) ⇒ <code>object</code>
         * [.finalizeHtlcClaim(psbtBase64)](#Channel.finalizeHtlcClaim)
         * [.prepareJusticeSpend(opts)](#Channel.prepareJusticeSpend) ⇒ <code>object</code>
+        * [.prepareJusticeSpends(opts)](#Channel.prepareJusticeSpends) ⇒ <code>Array.&lt;Object&gt;</code>
         * [.planRoute(opts)](#Channel.planRoute) ⇒ <code>object</code>
         * [.checkForward(upstream, downstream, policy)](#Channel.checkForward) ⇒ <code>Object</code>
         * [.harvestPreimages(txHexOrTx, paymentHashes)](#Channel.harvestPreimages) ⇒ <code>Array.&lt;{paymentHashHex: string, preimageHex: string, vin: number}&gt;</code>
@@ -2421,17 +3424,88 @@ Negotiate two channel policies: the stricter value wins on every field.
 | [b] | <code>object</code> |  |
 | [capacitySats] | <code>number</code> | for the default reserve (1 % of capacity, min dust) |
 
+<a name="Channel.minHtlcExpiryDelta"></a>
+
+### Channel.minHtlcExpiryDelta(source) ⇒ <code>number</code>
+Smallest `expireAfter − tip` an HTLC may be offered or accepted with:
+`toSelfDelay + closeMarginBlocks + htlcSafetyBlocks` (never below
+`minCltvDelta`). Hosts pricing HTLCs (the market) should add a few blocks
+of slack for tip skew between peers.
+
+**Kind**: static method of [<code>Channel</code>](#Channel)  
+**Returns**: <code>number</code> - blocks  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| source | <code>object</code> | a [ChannelSession](#ChannelSession), `{ funding, policy }`, or a funding record |
+
+<a name="Channel.minForwardCltvDelta"></a>
+
+### Channel.minForwardCltvDelta(source) ⇒ <code>number</code>
+Smallest CLTV delta a forwarding node must keep between the HTLC it receives
+and the one it offers downstream: the downstream receiver may claim as late
+as `expire + toSelfDelay + htlcClaimWindowBlocks` (on its own commitment),
+after which we still need `htlcSafetyBlocks` to claim upstream.
+
+**Kind**: static method of [<code>Channel</code>](#Channel)  
+**Returns**: <code>number</code> - blocks  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| source | <code>object</code> | downstream [ChannelSession](#ChannelSession) or funding record |
+
+<a name="Channel.estimateCommitmentVsize"></a>
+
+### Channel.estimateCommitmentVsize(htlcCount) ⇒ <code>number</code>
+Estimated vsize of a commitment transaction: one 2-of-2 tapscript input,
+`toLocal` + `toRemote` + two anchors + one output per HTLC (P2TR sizes).
+
+**Kind**: static method of [<code>Channel</code>](#Channel)  
+**Returns**: <code>number</code> - vbytes  
+
+| Param | Type |
+| --- | --- |
+| htlcCount | <code>number</code> | 
+
+<a name="Channel.commitmentFeeSats"></a>
+
+### Channel.commitmentFeeSats(feerate, htlcCount) ⇒ <code>number</code>
+Commitment fee for a feerate (sat/vB) and HTLC count.
+
+**Kind**: static method of [<code>Channel</code>](#Channel)  
+**Returns**: <code>number</code> - sats  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| feerate | <code>number</code> | sat/vB (integer ≥ 1) |
+| htlcCount | <code>number</code> |  |
+
 <a name="Channel.idFor"></a>
 
 ### Channel.idFor(funding) ⇒ <code>string</code>
-Deterministic channel id over the funding address, both keys and the
-negotiated `toSelfDelay` (so neither party can re-interpret the delay).
+Deterministic channel id over the funding address, both keys, the
+negotiated `toSelfDelay` (so neither party can re-interpret the delay) and,
+once known, the funding outpoint (so two fundings of one address never share
+an id).
 
 **Kind**: static method of [<code>Channel</code>](#Channel)  
 
 | Param | Type |
 | --- | --- |
 | funding | <code>object</code> | 
+
+<a name="Channel.fundingOutpoint"></a>
+
+### Channel.fundingOutpoint(funding, fundedTxHex) ⇒ <code>Object</code>
+Locate the funding output in a funding transaction: the declared vout when
+given (must pay the channel address), else the single output that does.
+
+**Kind**: static method of [<code>Channel</code>](#Channel)  
+
+| Param | Type |
+| --- | --- |
+| funding | <code>object</code> | 
+| fundedTxHex | <code>string</code> | 
 
 <a name="Channel.buildFunding"></a>
 
@@ -2445,7 +3519,7 @@ after `expireAfter` (block height) so funds never strand.
 
 | Param | Type | Description |
 | --- | --- | --- |
-| opts | <code>object</code> | `{ network, localPubkey, remotePubkey, expireAfter, capacitySats, funder?, toSelfDelay? }` |
+| opts | <code>object</code> | `{ network, localPubkey, remotePubkey, expireAfter, capacitySats, funder?, toSelfDelay?, fundingTxid?, fundingVout? }` |
 
 <a name="Channel.fundingFromRecord"></a>
 
@@ -2487,11 +3561,18 @@ Anchor output (CPFP handle) for one party: single-key leaf, no delay.
 Per-HTLC P2TR output on a commitment. Symmetric form (no `revocationPubkey`):
 `claim` hashlock leaf for the receiver and `timeout` leaf for the sender
 after `expireAfter`. Holder-aware form adds a `revocation` leaf and a
-`toSelfDelay` CSV on whichever leaf pays the commitment *holder* (BOLT 3):
-the holder is punished for a stale broadcast and must wait on their own tx,
-the counterparty spends immediately.
+`toSelfDelay` CSV on whichever leaf pays the commitment *holder*: the
+holder is punished for a stale broadcast and must wait on their own tx.
+
+On the **receiver's** commitment the sender's timeout additionally waits
+`toSelfDelay + htlcClaimWindowBlocks` (CSV) after confirmation, so the
+receiver's CSV-delayed claim can never be raced by a CLTV-only timeout —
+this replaces BOLT 3's second-stage HTLC-success transaction. On the
+sender's commitment the receiver claims immediately and the sender's
+timeout waits `toSelfDelay`.
 
 **Kind**: static method of [<code>Channel</code>](#Channel)  
+**Returns**: <code>object</code> - includes `claimCsv` / `timeoutCsv` (relative locks, `null` when none)  
 
 | Param | Type | Description |
 | --- | --- | --- |
@@ -2533,15 +3614,34 @@ Sign the cooperative input of a commitment / close PSBT.
 
 <a name="Channel.verifyCommitmentSignature"></a>
 
-### Channel.verifyCommitmentSignature(commitmentPsbtBase64, signedPsbtBase64, signerPubkeyHex, network) ⇒ <code>Object</code>
-Verify a counterparty's tapscript signature on *our* commitment.
+### Channel.verifyCommitmentSignature(commitmentPsbtBase64, signature, signerPubkeyHex, network) ⇒ <code>Object</code>
+Verify a counterparty's tapscript signature on *our* commitment. Only a
+64-byte SIGHASH_DEFAULT signature by `signerPubkeyHex` over the commitment's
+own leaf is accepted; it is checked against a fresh copy of our PSBT, never
+merged with untrusted PSBT fields.
 
 **Kind**: static method of [<code>Channel</code>](#Channel)  
 
 | Param | Type | Description |
 | --- | --- | --- |
 | commitmentPsbtBase64 | <code>string</code> | unsigned (ours) |
-| signedPsbtBase64 | <code>string</code> | counterparty partial |
+| signature | <code>string</code> | counterparty signature: 64-byte hex, or partial PSBT base64 |
+| signerPubkeyHex | <code>string</code> | compressed |
+| network | <code>string</code> |  |
+
+<a name="Channel.withCommitmentSignature"></a>
+
+### Channel.withCommitmentSignature(commitmentPsbtBase64, signatureHex, signerPubkeyHex, network) ⇒ <code>string</code>
+Add a verified 64-byte counterparty signature to a copy of our commitment
+PSBT (local rebuild; nothing else is taken from the counterparty).
+
+**Kind**: static method of [<code>Channel</code>](#Channel)  
+**Returns**: <code>string</code> - psbt base64  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| commitmentPsbtBase64 | <code>string</code> |  |
+| signatureHex | <code>string</code> | 64-byte hex |
 | signerPubkeyHex | <code>string</code> | compressed |
 | network | <code>string</code> |  |
 
@@ -2549,14 +3649,16 @@ Verify a counterparty's tapscript signature on *our* commitment.
 
 ### Channel.finalizeCommitment(psbtA, psbtB, network) ⇒ <code>object</code>
 Merge both parties' partial signatures and extract the broadcastable tx.
+Only 64-byte signatures for the input's own leaf by the funding keys are
+copied from `psbtB`; nothing else of it is used.
 
 **Kind**: static method of [<code>Channel</code>](#Channel)  
 **Returns**: <code>object</code> - `{ txHex, txid }`  
 
 | Param | Type | Description |
 | --- | --- | --- |
-| psbtA | <code>string</code> | base64 |
-| psbtB | <code>string</code> | base64 |
+| psbtA | <code>string</code> | base64 (ours, signed or unsigned) |
+| psbtB | <code>string</code> | base64 (counterparty partial) — optional |
 | network | <code>string</code> |  |
 
 <a name="Channel.prepareHtlcClaim"></a>
@@ -2577,8 +3679,9 @@ is set accordingly).
 <a name="Channel.prepareHtlcTimeout"></a>
 
 ### Channel.prepareHtlcTimeout(commitment, opts) ⇒ <code>object</code>
-Sender reclaims an expired HTLC output of a broadcast commitment. On the
-sender's own commitment the timeout leaf is additionally CSV-delayed.
+Sender reclaims an expired HTLC output of a broadcast commitment. The
+timeout leaf is CSV-delayed on both commitments: `toSelfDelay` on the
+sender's own, `toSelfDelay + htlcClaimWindowBlocks` on the receiver's.
 
 **Kind**: static method of [<code>Channel</code>](#Channel)  
 
@@ -2603,13 +3706,31 @@ Justice transaction: sweep every revocable output of a counterparty's
 **stale** commitment (their `toLocal` plus every HTLC output) through the
 `revocation` leaves, signed with the revocation key derived from the
 secret they revealed when revoking that state.
+`vouts` limits the sweep to those outputs and `excludeVouts` skips outputs
+already spent (e.g. an HTLC the cheater claimed or timed out — sweep that
+second-stage output separately), so one spent output cannot invalidate the
+whole justice transaction.
 
 **Kind**: static method of [<code>Channel</code>](#Channel)  
 **Returns**: <code>object</code> - `{ txHex, txid, sweptSats, inputs:[{ vout, kind, amountSats }] }`  
 
 | Param | Type | Description |
 | --- | --- | --- |
-| opts | <code>object</code> | `{ funding, state, holderPoint, perCommitmentSecretHex, staleTxHex, localPrivateKey, destinationAddress, feeSats, network? }` — `state` is the revoked state (local view) |
+| opts | <code>object</code> | `{ funding, state, holderPoint, perCommitmentSecretHex, staleTxHex, localPrivateKey, destinationAddress, feeSats, network?, vouts?, excludeVouts? }` — `state` is the revoked state (local view) |
+
+<a name="Channel.prepareJusticeSpends"></a>
+
+### Channel.prepareJusticeSpends(opts) ⇒ <code>Array.&lt;Object&gt;</code>
+One justice transaction **per** revocable output of a stale commitment, so
+each confirms (or fails because already spent) independently. Outputs whose
+value cannot cover `feeSats` above dust are skipped.
+
+**Kind**: static method of [<code>Channel</code>](#Channel)  
+**Returns**: <code>Array.&lt;Object&gt;</code> - `[{ vout, kind, txHex, txid, sweptSats }]`  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| opts | <code>object</code> | same as [prepareJusticeSpend](#Channel.prepareJusticeSpend) |
 
 <a name="Channel.planRoute"></a>
 
@@ -2706,7 +3827,12 @@ proposal → reply → revoke.
         * [.revocationPubkey(basepointHex, perCommitmentPointHex)](#Channel.revocationPubkey) ⇒ <code>string</code>
         * [.revocationPrivkey(basepointSecret32, perCommitmentSecretHex)](#Channel.revocationPrivkey) ⇒ <code>Buffer</code>
         * [.negotiatePolicy([a], [b], [capacitySats])](#Channel.negotiatePolicy) ⇒ <code>object</code>
+        * [.minHtlcExpiryDelta(source)](#Channel.minHtlcExpiryDelta) ⇒ <code>number</code>
+        * [.minForwardCltvDelta(source)](#Channel.minForwardCltvDelta) ⇒ <code>number</code>
+        * [.estimateCommitmentVsize(htlcCount)](#Channel.estimateCommitmentVsize) ⇒ <code>number</code>
+        * [.commitmentFeeSats(feerate, htlcCount)](#Channel.commitmentFeeSats) ⇒ <code>number</code>
         * [.idFor(funding)](#Channel.idFor) ⇒ <code>string</code>
+        * [.fundingOutpoint(funding, fundedTxHex)](#Channel.fundingOutpoint) ⇒ <code>Object</code>
         * [.buildFunding(opts)](#Channel.buildFunding) ⇒ <code>object</code>
         * [.fundingFromRecord(record)](#Channel.fundingFromRecord) ⇒ <code>object</code>
         * [.buildToLocalOutput(opts)](#Channel.buildToLocalOutput) ⇒ <code>object</code>
@@ -2714,12 +3840,14 @@ proposal → reply → revoke.
         * [.buildHtlcOutput(opts)](#Channel.buildHtlcOutput) ⇒ <code>object</code>
         * [.buildCommitment(funding, state, opts)](#Channel.buildCommitment) ⇒ <code>object</code>
         * [.signCommitment(psbtBase64, priv32, network)](#Channel.signCommitment) ⇒ <code>string</code>
-        * [.verifyCommitmentSignature(commitmentPsbtBase64, signedPsbtBase64, signerPubkeyHex, network)](#Channel.verifyCommitmentSignature) ⇒ <code>Object</code>
+        * [.verifyCommitmentSignature(commitmentPsbtBase64, signature, signerPubkeyHex, network)](#Channel.verifyCommitmentSignature) ⇒ <code>Object</code>
+        * [.withCommitmentSignature(commitmentPsbtBase64, signatureHex, signerPubkeyHex, network)](#Channel.withCommitmentSignature) ⇒ <code>string</code>
         * [.finalizeCommitment(psbtA, psbtB, network)](#Channel.finalizeCommitment) ⇒ <code>object</code>
         * [.prepareHtlcClaim(commitment, opts)](#Channel.prepareHtlcClaim) ⇒ <code>object</code>
         * [.prepareHtlcTimeout(commitment, opts)](#Channel.prepareHtlcTimeout) ⇒ <code>object</code>
         * [.finalizeHtlcClaim(psbtBase64)](#Channel.finalizeHtlcClaim)
         * [.prepareJusticeSpend(opts)](#Channel.prepareJusticeSpend) ⇒ <code>object</code>
+        * [.prepareJusticeSpends(opts)](#Channel.prepareJusticeSpends) ⇒ <code>Array.&lt;Object&gt;</code>
         * [.planRoute(opts)](#Channel.planRoute) ⇒ <code>object</code>
         * [.checkForward(upstream, downstream, policy)](#Channel.checkForward) ⇒ <code>Object</code>
         * [.harvestPreimages(txHexOrTx, paymentHashes)](#Channel.harvestPreimages) ⇒ <code>Array.&lt;{paymentHashHex: string, preimageHex: string, vin: number}&gt;</code>
@@ -3044,17 +4172,88 @@ Negotiate two channel policies: the stricter value wins on every field.
 | [b] | <code>object</code> |  |
 | [capacitySats] | <code>number</code> | for the default reserve (1 % of capacity, min dust) |
 
+<a name="Channel.minHtlcExpiryDelta"></a>
+
+### Channel.minHtlcExpiryDelta(source) ⇒ <code>number</code>
+Smallest `expireAfter − tip` an HTLC may be offered or accepted with:
+`toSelfDelay + closeMarginBlocks + htlcSafetyBlocks` (never below
+`minCltvDelta`). Hosts pricing HTLCs (the market) should add a few blocks
+of slack for tip skew between peers.
+
+**Kind**: static method of [<code>Channel</code>](#Channel)  
+**Returns**: <code>number</code> - blocks  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| source | <code>object</code> | a [ChannelSession](#ChannelSession), `{ funding, policy }`, or a funding record |
+
+<a name="Channel.minForwardCltvDelta"></a>
+
+### Channel.minForwardCltvDelta(source) ⇒ <code>number</code>
+Smallest CLTV delta a forwarding node must keep between the HTLC it receives
+and the one it offers downstream: the downstream receiver may claim as late
+as `expire + toSelfDelay + htlcClaimWindowBlocks` (on its own commitment),
+after which we still need `htlcSafetyBlocks` to claim upstream.
+
+**Kind**: static method of [<code>Channel</code>](#Channel)  
+**Returns**: <code>number</code> - blocks  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| source | <code>object</code> | downstream [ChannelSession](#ChannelSession) or funding record |
+
+<a name="Channel.estimateCommitmentVsize"></a>
+
+### Channel.estimateCommitmentVsize(htlcCount) ⇒ <code>number</code>
+Estimated vsize of a commitment transaction: one 2-of-2 tapscript input,
+`toLocal` + `toRemote` + two anchors + one output per HTLC (P2TR sizes).
+
+**Kind**: static method of [<code>Channel</code>](#Channel)  
+**Returns**: <code>number</code> - vbytes  
+
+| Param | Type |
+| --- | --- |
+| htlcCount | <code>number</code> | 
+
+<a name="Channel.commitmentFeeSats"></a>
+
+### Channel.commitmentFeeSats(feerate, htlcCount) ⇒ <code>number</code>
+Commitment fee for a feerate (sat/vB) and HTLC count.
+
+**Kind**: static method of [<code>Channel</code>](#Channel)  
+**Returns**: <code>number</code> - sats  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| feerate | <code>number</code> | sat/vB (integer ≥ 1) |
+| htlcCount | <code>number</code> |  |
+
 <a name="Channel.idFor"></a>
 
 ### Channel.idFor(funding) ⇒ <code>string</code>
-Deterministic channel id over the funding address, both keys and the
-negotiated `toSelfDelay` (so neither party can re-interpret the delay).
+Deterministic channel id over the funding address, both keys, the
+negotiated `toSelfDelay` (so neither party can re-interpret the delay) and,
+once known, the funding outpoint (so two fundings of one address never share
+an id).
 
 **Kind**: static method of [<code>Channel</code>](#Channel)  
 
 | Param | Type |
 | --- | --- |
 | funding | <code>object</code> | 
+
+<a name="Channel.fundingOutpoint"></a>
+
+### Channel.fundingOutpoint(funding, fundedTxHex) ⇒ <code>Object</code>
+Locate the funding output in a funding transaction: the declared vout when
+given (must pay the channel address), else the single output that does.
+
+**Kind**: static method of [<code>Channel</code>](#Channel)  
+
+| Param | Type |
+| --- | --- |
+| funding | <code>object</code> | 
+| fundedTxHex | <code>string</code> | 
 
 <a name="Channel.buildFunding"></a>
 
@@ -3068,7 +4267,7 @@ after `expireAfter` (block height) so funds never strand.
 
 | Param | Type | Description |
 | --- | --- | --- |
-| opts | <code>object</code> | `{ network, localPubkey, remotePubkey, expireAfter, capacitySats, funder?, toSelfDelay? }` |
+| opts | <code>object</code> | `{ network, localPubkey, remotePubkey, expireAfter, capacitySats, funder?, toSelfDelay?, fundingTxid?, fundingVout? }` |
 
 <a name="Channel.fundingFromRecord"></a>
 
@@ -3110,11 +4309,18 @@ Anchor output (CPFP handle) for one party: single-key leaf, no delay.
 Per-HTLC P2TR output on a commitment. Symmetric form (no `revocationPubkey`):
 `claim` hashlock leaf for the receiver and `timeout` leaf for the sender
 after `expireAfter`. Holder-aware form adds a `revocation` leaf and a
-`toSelfDelay` CSV on whichever leaf pays the commitment *holder* (BOLT 3):
-the holder is punished for a stale broadcast and must wait on their own tx,
-the counterparty spends immediately.
+`toSelfDelay` CSV on whichever leaf pays the commitment *holder*: the
+holder is punished for a stale broadcast and must wait on their own tx.
+
+On the **receiver's** commitment the sender's timeout additionally waits
+`toSelfDelay + htlcClaimWindowBlocks` (CSV) after confirmation, so the
+receiver's CSV-delayed claim can never be raced by a CLTV-only timeout —
+this replaces BOLT 3's second-stage HTLC-success transaction. On the
+sender's commitment the receiver claims immediately and the sender's
+timeout waits `toSelfDelay`.
 
 **Kind**: static method of [<code>Channel</code>](#Channel)  
+**Returns**: <code>object</code> - includes `claimCsv` / `timeoutCsv` (relative locks, `null` when none)  
 
 | Param | Type | Description |
 | --- | --- | --- |
@@ -3156,15 +4362,34 @@ Sign the cooperative input of a commitment / close PSBT.
 
 <a name="Channel.verifyCommitmentSignature"></a>
 
-### Channel.verifyCommitmentSignature(commitmentPsbtBase64, signedPsbtBase64, signerPubkeyHex, network) ⇒ <code>Object</code>
-Verify a counterparty's tapscript signature on *our* commitment.
+### Channel.verifyCommitmentSignature(commitmentPsbtBase64, signature, signerPubkeyHex, network) ⇒ <code>Object</code>
+Verify a counterparty's tapscript signature on *our* commitment. Only a
+64-byte SIGHASH_DEFAULT signature by `signerPubkeyHex` over the commitment's
+own leaf is accepted; it is checked against a fresh copy of our PSBT, never
+merged with untrusted PSBT fields.
 
 **Kind**: static method of [<code>Channel</code>](#Channel)  
 
 | Param | Type | Description |
 | --- | --- | --- |
 | commitmentPsbtBase64 | <code>string</code> | unsigned (ours) |
-| signedPsbtBase64 | <code>string</code> | counterparty partial |
+| signature | <code>string</code> | counterparty signature: 64-byte hex, or partial PSBT base64 |
+| signerPubkeyHex | <code>string</code> | compressed |
+| network | <code>string</code> |  |
+
+<a name="Channel.withCommitmentSignature"></a>
+
+### Channel.withCommitmentSignature(commitmentPsbtBase64, signatureHex, signerPubkeyHex, network) ⇒ <code>string</code>
+Add a verified 64-byte counterparty signature to a copy of our commitment
+PSBT (local rebuild; nothing else is taken from the counterparty).
+
+**Kind**: static method of [<code>Channel</code>](#Channel)  
+**Returns**: <code>string</code> - psbt base64  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| commitmentPsbtBase64 | <code>string</code> |  |
+| signatureHex | <code>string</code> | 64-byte hex |
 | signerPubkeyHex | <code>string</code> | compressed |
 | network | <code>string</code> |  |
 
@@ -3172,14 +4397,16 @@ Verify a counterparty's tapscript signature on *our* commitment.
 
 ### Channel.finalizeCommitment(psbtA, psbtB, network) ⇒ <code>object</code>
 Merge both parties' partial signatures and extract the broadcastable tx.
+Only 64-byte signatures for the input's own leaf by the funding keys are
+copied from `psbtB`; nothing else of it is used.
 
 **Kind**: static method of [<code>Channel</code>](#Channel)  
 **Returns**: <code>object</code> - `{ txHex, txid }`  
 
 | Param | Type | Description |
 | --- | --- | --- |
-| psbtA | <code>string</code> | base64 |
-| psbtB | <code>string</code> | base64 |
+| psbtA | <code>string</code> | base64 (ours, signed or unsigned) |
+| psbtB | <code>string</code> | base64 (counterparty partial) — optional |
 | network | <code>string</code> |  |
 
 <a name="Channel.prepareHtlcClaim"></a>
@@ -3200,8 +4427,9 @@ is set accordingly).
 <a name="Channel.prepareHtlcTimeout"></a>
 
 ### Channel.prepareHtlcTimeout(commitment, opts) ⇒ <code>object</code>
-Sender reclaims an expired HTLC output of a broadcast commitment. On the
-sender's own commitment the timeout leaf is additionally CSV-delayed.
+Sender reclaims an expired HTLC output of a broadcast commitment. The
+timeout leaf is CSV-delayed on both commitments: `toSelfDelay` on the
+sender's own, `toSelfDelay + htlcClaimWindowBlocks` on the receiver's.
 
 **Kind**: static method of [<code>Channel</code>](#Channel)  
 
@@ -3226,13 +4454,31 @@ Justice transaction: sweep every revocable output of a counterparty's
 **stale** commitment (their `toLocal` plus every HTLC output) through the
 `revocation` leaves, signed with the revocation key derived from the
 secret they revealed when revoking that state.
+`vouts` limits the sweep to those outputs and `excludeVouts` skips outputs
+already spent (e.g. an HTLC the cheater claimed or timed out — sweep that
+second-stage output separately), so one spent output cannot invalidate the
+whole justice transaction.
 
 **Kind**: static method of [<code>Channel</code>](#Channel)  
 **Returns**: <code>object</code> - `{ txHex, txid, sweptSats, inputs:[{ vout, kind, amountSats }] }`  
 
 | Param | Type | Description |
 | --- | --- | --- |
-| opts | <code>object</code> | `{ funding, state, holderPoint, perCommitmentSecretHex, staleTxHex, localPrivateKey, destinationAddress, feeSats, network? }` — `state` is the revoked state (local view) |
+| opts | <code>object</code> | `{ funding, state, holderPoint, perCommitmentSecretHex, staleTxHex, localPrivateKey, destinationAddress, feeSats, network?, vouts?, excludeVouts? }` — `state` is the revoked state (local view) |
+
+<a name="Channel.prepareJusticeSpends"></a>
+
+### Channel.prepareJusticeSpends(opts) ⇒ <code>Array.&lt;Object&gt;</code>
+One justice transaction **per** revocable output of a stale commitment, so
+each confirms (or fails because already spent) independently. Outputs whose
+value cannot cover `feeSats` above dust are skipped.
+
+**Kind**: static method of [<code>Channel</code>](#Channel)  
+**Returns**: <code>Array.&lt;Object&gt;</code> - `[{ vout, kind, txHex, txid, sweptSats }]`  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| opts | <code>object</code> | same as [prepareJusticeSpend](#Channel.prepareJusticeSpend) |
 
 <a name="Channel.planRoute"></a>
 
@@ -3310,24 +4556,40 @@ holder only after `toSelfDelay`. Open is three messages (`ChannelOpen`,
 reply, ack) because the funder cannot sign the counterparty's commitment
 before learning its first per-commitment point.
 
+Both parties proposing state `n` at once is resolved deterministically:
+the funder's proposal wins, the non-funder rolls its own back and replays
+it ([repropose](#ChannelSession+repropose)) once the round completes. After a
+reconnect, [reestablish](#ChannelSession+reestablish) tells the peer which states we
+hold signed and revoked; the answer resends whatever we missed.
+
 **Kind**: global class  
 
 * [ChannelSession](#ChannelSession)
     * [new ChannelSession(opts)](#new_ChannelSession_new)
     * _instance_
         * [.resolvable](#ChannelSession+resolvable) ⇒ <code>boolean</code>
+        * [.transfers](#ChannelSession+transfers)
         * [.commitment](#ChannelSession+commitment) ⇒ <code>object</code> \| <code>null</code>
+        * [.lastSignedCommitment](#ChannelSession+lastSignedCommitment) ⇒ <code>object</code> \| <code>null</code>
         * [.fullySigned](#ChannelSession+fullySigned) ⇒ <code>boolean</code>
         * [.busy](#ChannelSession+busy) ⇒ <code>boolean</code>
+        * [.htlcExpiryBounds([tip])](#ChannelSession+htlcExpiryBounds) ⇒ <code>Object</code> \| <code>null</code>
+        * [.canFulfil(row, [tip])](#ChannelSession+canFulfil) ⇒ <code>boolean</code>
+        * [.learnPreimage(paymentHashHex, preimageHex)](#ChannelSession+learnPreimage) ⇒ <code>boolean</code>
         * [.open()](#ChannelSession+open) ⇒ <code>object</code>
         * [.offerHtlc(htlc)](#ChannelSession+offerHtlc) ⇒ <code>object</code>
+        * [.transfer(opts)](#ChannelSession+transfer) ⇒ <code>object</code>
         * [.updateFee(feeSats)](#ChannelSession+updateFee) ⇒ <code>object</code>
-        * [.receive(body, [ctx])](#ChannelSession+receive) ⇒ <code>object</code> \| <code>null</code>
+        * [.updateFeerate(satPerVb)](#ChannelSession+updateFeerate) ⇒ <code>object</code>
+        * [.repropose()](#ChannelSession+repropose) ⇒ <code>object</code> \| <code>null</code>
+        * [.receive(body, [ctx])](#ChannelSession+receive) ⇒ <code>object</code> \| <code>Array.&lt;object&gt;</code> \| <code>null</code>
         * [.fulfillHtlc(id, preimageHex)](#ChannelSession+fulfillHtlc) ⇒ <code>object</code>
         * [.failHtlc(id, [reason])](#ChannelSession+failHtlc) ⇒ <code>object</code>
         * [.receiveSettlement(body)](#ChannelSession+receiveSettlement) ⇒ <code>object</code> \| <code>null</code>
-        * [.ingest(body, [ctx])](#ChannelSession+ingest) ⇒ <code>object</code> \| <code>null</code>
-        * [.tick(tipHeight)](#ChannelSession+tick) ⇒ <code>Object</code>
+        * [.ingest(body, [ctx])](#ChannelSession+ingest) ⇒ <code>object</code> \| <code>Array.&lt;object&gt;</code> \| <code>null</code>
+        * [.reestablish()](#ChannelSession+reestablish) ⇒ <code>object</code>
+        * [.handleReestablish(body)](#ChannelSession+handleReestablish) ⇒ <code>Array.&lt;object&gt;</code>
+        * [.tick([tipHeight])](#ChannelSession+tick) ⇒ <code>Object</code>
         * [.observe(txHex, [opts])](#ChannelSession+observe) ⇒ <code>object</code>
         * [.preimageFor(paymentHashHex)](#ChannelSession+preimageFor)
         * [.finalize()](#ChannelSession+finalize) ⇒ <code>object</code>
@@ -3342,18 +4604,29 @@ before learning its first per-commitment point.
 
 | Param | Type | Description |
 | --- | --- | --- |
-| opts | <code>object</code> | `{ funding, fundedTxHex, localPrivateKey, localSats, remoteSats, localAddress, remoteAddress, feeSats, policy?, tipHeight?, confirmations?, minFundingConfirmations? }` |
+| opts | <code>object</code> | `{ funding, fundedTxHex, localPrivateKey, localSats, remoteSats, localAddress, remoteAddress, feeSats?, feerate?, policy?, tipHeight?, confirmations?, fundingConfirmed?, minFundingConfirmations? }`   `confirmations(txid)` gates the channel on the funding depth; without it   only the funder (or `fundingConfirmed: true`, explicit trust) treats the   funding as confirmed. `feerate` (sat/vB) derives the commitment fee from   the HTLC count instead of a fixed `feeSats`. |
 
 <a name="ChannelSession+resolvable"></a>
 
 ### channelSession.resolvable ⇒ <code>boolean</code>
 **Kind**: instance property of [<code>ChannelSession</code>](#ChannelSession)  
-**Returns**: <code>boolean</code> - the current state has a counterparty-signed unilateral exit  
+**Returns**: <code>boolean</code> - the last countersigned state has a unilateral exit  
+<a name="ChannelSession+transfers"></a>
+
+### channelSession.transfers
+Balance transfers sent and received (`{ amountSats, ref, direction, number }`), newest last.
+
+**Kind**: instance property of [<code>ChannelSession</code>](#ChannelSession)  
 <a name="ChannelSession+commitment"></a>
 
 ### channelSession.commitment ⇒ <code>object</code> \| <code>null</code>
 **Kind**: instance property of [<code>ChannelSession</code>](#ChannelSession)  
 **Returns**: <code>object</code> \| <code>null</code> - our latest commitment (holder = local)  
+<a name="ChannelSession+lastSignedCommitment"></a>
+
+### channelSession.lastSignedCommitment ⇒ <code>object</code> \| <code>null</code>
+**Kind**: instance property of [<code>ChannelSession</code>](#ChannelSession)  
+**Returns**: <code>object</code> \| <code>null</code> - `{ number, txid, sig, htlcs, localSats, remoteSats, feeSats }` — newest of our commitments the counterparty signed  
 <a name="ChannelSession+fullySigned"></a>
 
 ### channelSession.fullySigned ⇒ <code>boolean</code>
@@ -3364,12 +4637,54 @@ before learning its first per-commitment point.
 ### channelSession.busy ⇒ <code>boolean</code>
 **Kind**: instance property of [<code>ChannelSession</code>](#ChannelSession)  
 **Returns**: <code>boolean</code> - an update round is mid-flight (proposal unanswered or revocation outstanding)  
+<a name="ChannelSession+htlcExpiryBounds"></a>
+
+### channelSession.htlcExpiryBounds([tip]) ⇒ <code>Object</code> \| <code>null</code>
+Valid `expireAfter` heights for a new HTLC at a tip.
+
+**Kind**: instance method of [<code>ChannelSession</code>](#ChannelSession)  
+**Returns**: <code>Object</code> \| <code>null</code> - `null` when the tip is unknown  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| [tip] | <code>number</code> | defaults to the session tip |
+
+<a name="ChannelSession+canFulfil"></a>
+
+### channelSession.canFulfil(row, [tip]) ⇒ <code>boolean</code>
+A received HTLC may be fulfilled off-chain only while the funding is
+confirmed and `expireAfter − tip > toSelfDelay + htlcSafetyBlocks`;
+otherwise the receiver must claim on-chain. Offered HTLCs (the sender
+settling with a preimage it learned) are always allowed.
+
+**Kind**: instance method of [<code>ChannelSession</code>](#ChannelSession)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| row | <code>object</code> | HTLC row |
+| [tip] | <code>number</code> |  |
+
+<a name="ChannelSession+learnPreimage"></a>
+
+### channelSession.learnPreimage(paymentHashHex, preimageHex) ⇒ <code>boolean</code>
+Remember a preimage for one of this channel's HTLCs (e.g. learned
+downstream) so the watchdog can claim it on-chain.
+
+**Kind**: instance method of [<code>ChannelSession</code>](#ChannelSession)  
+**Returns**: <code>boolean</code> - stored  
+
+| Param | Type |
+| --- | --- |
+| paymentHashHex | <code>string</code> | 
+| preimageHex | <code>string</code> | 
+
 <a name="ChannelSession+open"></a>
 
 ### channelSession.open() ⇒ <code>object</code>
-Initial `ChannelOpen` body (funder): the funding record (public fields),
-balances, our policy proposal and first two per-commitment points. No
-commitment signature yet — see the class description.
+Initial `ChannelOpen` body (funder): the funding record (public fields,
+funding outpoint included), balances, our policy proposal and first two
+per-commitment points. No commitment signature yet — see the class
+description.
 
 **Kind**: instance method of [<code>ChannelSession</code>](#ChannelSession)  
 <a name="ChannelSession+offerHtlc"></a>
@@ -3377,6 +4692,7 @@ commitment signature yet — see the class description.
 ### channelSession.offerHtlc(htlc) ⇒ <code>object</code>
 Offer an HTLC (pay for one chunk): moves `amountSats` from our balance
 into a pending HTLC and returns the `ChannelCommitment` proposal.
+`expireAfter − tip` must be at least [minHtlcExpiryDelta](#Channel.minHtlcExpiryDelta).
 
 **Kind**: instance method of [<code>ChannelSession</code>](#ChannelSession)  
 
@@ -3384,11 +4700,27 @@ into a pending HTLC and returns the `ChannelCommitment` proposal.
 | --- | --- | --- |
 | htlc | <code>object</code> | `{ id?, amountSats, paymentHashHex, blobHashHex?, expireAfter, forwardOf? }` |
 
+<a name="ChannelSession+transfer"></a>
+
+### channelSession.transfer(opts) ⇒ <code>object</code>
+Pay the counterparty from our balance with no HTLC: the next commitment
+just moves `amountSats` to them (pay-after-verify credit — nothing to
+claim, refund, or settle on chain, so no HTLC minimum). No HTLC or fee
+change rides along, and our balance must stay above the reserve.
+
+**Kind**: instance method of [<code>ChannelSession</code>](#ChannelSession)  
+**Returns**: <code>object</code> - `ChannelCommitment` proposal carrying `transfer`  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| opts | <code>object</code> | `{ amountSats, ref? }` — `ref` names what is paid for and reaches the receiver; a `ref` already sent is refused. |
+
 <a name="ChannelSession+updateFee"></a>
 
 ### channelSession.updateFee(feeSats) ⇒ <code>object</code>
-Propose a new commitment fee (bounded by the negotiated policy; the
-funder's balance absorbs the difference).
+Propose a new fixed commitment fee (funder only; bounded by the
+negotiated policy and never below `minFeerate` for the HTLC count; the
+funder's balance absorbs the difference and must stay above the reserve).
 
 **Kind**: instance method of [<code>ChannelSession</code>](#ChannelSession)  
 **Returns**: <code>object</code> - `ChannelCommitment` proposal  
@@ -3397,12 +4729,35 @@ funder's balance absorbs the difference).
 | --- | --- |
 | feeSats | <code>number</code> | 
 
+<a name="ChannelSession+updateFeerate"></a>
+
+### channelSession.updateFeerate(satPerVb) ⇒ <code>object</code>
+Switch to / change a commitment feerate (funder only): the fee becomes
+`feerate × estimated vsize` (HTLC outputs included) on every later state.
+
+**Kind**: instance method of [<code>ChannelSession</code>](#ChannelSession)  
+**Returns**: <code>object</code> - `ChannelCommitment` proposal  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| satPerVb | <code>number</code> | integer ≥ policy `minFeerate` |
+
+<a name="ChannelSession+repropose"></a>
+
+### channelSession.repropose() ⇒ <code>object</code> \| <code>null</code>
+Replay the first intent abandoned in a simultaneous-proposal tie-break
+(offer / fulfill / fail / fee / transfer / close). Intents that no longer apply are
+dropped into `state.droppedIntents`.
+
+**Kind**: instance method of [<code>ChannelSession</code>](#ChannelSession)  
+**Returns**: <code>object</code> \| <code>null</code> - new proposal body, or `null`  
 <a name="ChannelSession+receive"></a>
 
-### channelSession.receive(body, [ctx]) ⇒ <code>object</code> \| <code>null</code>
+### channelSession.receive(body, [ctx]) ⇒ <code>object</code> \| <code>Array.&lt;object&gt;</code> \| <code>null</code>
 Ingest a counterparty `ChannelOpen` / `ChannelCommitment` / `ChannelClose`
-/ `ChannelRevoke`. Returns the body we must send back (countersignature
-with inline revoke, `ChannelRevoke`, or `null`).
+/ `ChannelRevoke` / `ChannelReestablish`. Returns the body we must send
+back (countersignature with inline revoke, `ChannelRevoke`, or `null`) —
+an array of bodies for `ChannelReestablish`.
 
 **Kind**: instance method of [<code>ChannelSession</code>](#ChannelSession)  
 
@@ -3420,10 +4775,14 @@ reveals; the sender may also settle an HTLC it offered once it learned
 the preimage elsewhere (e.g. the seller's public key reveal) — that only
 ever pays the counterparty.
 
-Revealing the preimage before the peer countersigns is safe because no
-HTLC is trimmed: each one carries at least `HTLC_MINIMUM_SATS` and has a
-commitment output the receiver can claim with the preimage
-([prepareHtlcClaim](#Channel.prepareHtlcClaim)) if the peer stalls.
+The receiver reveals only while [canFulfil](#ChannelSession+canFulfil): once
+the preimage is out, a sender that withholds its countersignature forces
+the receiver on-chain, where the receiver's claim is CSV-delayed by
+`toSelfDelay` on its own commitment. The sender's timeout there waits
+`toSelfDelay + htlcClaimWindowBlocks`, and on the sender's commitment the
+receiver claims immediately, so a fulfill with that margin cannot be
+raced. Too close to expiry the preimage is only remembered and the
+watchdog ([tick](#ChannelSession+tick)) asks the host to claim on-chain.
 
 **Kind**: instance method of [<code>ChannelSession</code>](#ChannelSession)  
 **Returns**: <code>object</code> - `ChannelHtlcFulfill` body (+ the new commitment via `commitment`)  
@@ -3461,28 +4820,64 @@ Apply a counterparty `ChannelHtlcFulfill` / `ChannelHtlcFail` body.
 
 <a name="ChannelSession+ingest"></a>
 
-### channelSession.ingest(body, [ctx]) ⇒ <code>object</code> \| <code>null</code>
+### channelSession.ingest(body, [ctx]) ⇒ <code>object</code> \| <code>Array.&lt;object&gt;</code> \| <code>null</code>
 Dispatch any inbound `Channel*` body to the right handler.
 
 **Kind**: instance method of [<code>ChannelSession</code>](#ChannelSession)  
-**Returns**: <code>object</code> \| <code>null</code> - reply body  
+**Returns**: <code>object</code> \| <code>Array.&lt;object&gt;</code> \| <code>null</code> - reply body (array for `ChannelReestablish`)  
 
 | Param | Type |
 | --- | --- |
 | body | <code>object</code> | 
 | [ctx] | <code>object</code> | 
 
+<a name="ChannelSession+reestablish"></a>
+
+### channelSession.reestablish() ⇒ <code>object</code>
+`ChannelReestablish` body for a reconnect: our state number, the newest
+of our commitments the peer has signed, and how far each side's states
+are revoked. The peer answers with [handleReestablish](#ChannelSession+handleReestablish).
+
+**Kind**: instance method of [<code>ChannelSession</code>](#ChannelSession)  
+<a name="ChannelSession+handleReestablish"></a>
+
+### channelSession.handleReestablish(body) ⇒ <code>Array.&lt;object&gt;</code>
+Answer a peer's `ChannelReestablish`: resend the revocations it has not
+seen and, when it lacks a signature on our current state number, our last
+update (proposal, countersignature, or settlement) for that state.
+
+**Kind**: instance method of [<code>ChannelSession</code>](#ChannelSession)  
+**Returns**: <code>Array.&lt;object&gt;</code> - bodies to send, in order  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| body | <code>object</code> | verified `ChannelReestablish` |
+
 <a name="ChannelSession+tick"></a>
 
-### channelSession.tick(tipHeight) ⇒ <code>Object</code>
-Chain-time housekeeping: funding confirmation gating, auto-fail of expired
-received HTLCs, and timeout flags on expired offered HTLCs.
+### channelSession.tick([tipHeight]) ⇒ <code>Object</code>
+Chain-time watchdog. Polls funding confirmations, settles what it can
+off-chain (fulfill received HTLCs whose preimage is known while the margin
+allows; fail expired received HTLCs without one; fail expired offered
+HTLCs) and returns the on-chain **actions** the host must take:
+
+- `{ type: 'forceClose', channelId, reason: 'channel-expiry'|'htlc-claim'|'htlc-timeout', deadline, tip }`
+  — at `expireAfter − toSelfDelay − closeMarginBlocks` for the channel, when
+  a received HTLC with a known preimage can no longer be fulfilled
+  off-chain, or `htlcSafetyBlocks` after an offered HTLC expired unresolved;
+- `{ type: 'claimHtlc', channelId, htlcId, paymentHashHex, preimageHex, amountSats, expireAfter, deadline }`
+  ([prepareHtlcClaim](#Channel.prepareHtlcClaim));
+- `{ type: 'timeoutHtlc', channelId, htlcId, paymentHashHex, amountSats, expireAfter }`
+  ([prepareHtlcTimeout](#Channel.prepareHtlcTimeout)).
+
+HTLCs are taken from the current state and the last countersigned one, so
+an HTLC removed by a round still in flight is watched until it completes.
 
 **Kind**: instance method of [<code>ChannelSession</code>](#ChannelSession)  
 
-| Param | Type |
-| --- | --- |
-| tipHeight | <code>number</code> | 
+| Param | Type | Description |
+| --- | --- | --- |
+| [tipHeight] | <code>number</code> | defaults to the session tip |
 
 <a name="ChannelSession+observe"></a>
 
@@ -3493,12 +4888,12 @@ justice transaction and a `FraudProof` — or an HTLC spend whose witness
 reveals preimages we are owed.
 
 **Kind**: instance method of [<code>ChannelSession</code>](#ChannelSession)  
-**Returns**: <code>object</code> - `{ kind, txid, justice?, fraudProof?, preimages? }`  
+**Returns**: <code>object</code> - `{ kind, txid, justice?, justiceSpends?, fraudProof?, preimages? }`  
 
 | Param | Type | Description |
 | --- | --- | --- |
 | txHex | <code>string</code> |  |
-| [opts] | <code>object</code> | `{ destinationAddress?, feeSats?, inclusion?: { blockHeaderHex, txids } }` — `inclusion` lets a stale-commitment proof carry an SPV branch binding the broadcast to a block header |
+| [opts] | <code>object</code> | `{ destinationAddress?, feeSats?, excludeVouts?, perOutput?, inclusion?: { blockHeaderHex, txids } }` — `excludeVouts` skips stale outputs already spent; `perOutput` also returns one justice tx per output (`justiceSpends`); `inclusion` lets a stale-commitment proof carry an SPV branch binding the broadcast to a block header |
 
 <a name="ChannelSession+preimageFor"></a>
 
@@ -3512,10 +4907,11 @@ reveals preimages we are owed.
 <a name="ChannelSession+finalize"></a>
 
 ### channelSession.finalize() ⇒ <code>object</code>
-Broadcastable latest commitment (ours; requires the counterparty's signature).
+Broadcastable commitment: the current state when countersigned, else the
+last countersigned one (mid-round, while our proposal is unanswered).
 
 **Kind**: instance method of [<code>ChannelSession</code>](#ChannelSession)  
-**Returns**: <code>object</code> - `{ txHex, txid }`  
+**Returns**: <code>object</code> - `{ txHex, txid, number, commitment }`  
 <a name="ChannelSession+close"></a>
 
 ### channelSession.close() ⇒ <code>object</code>
@@ -3548,18 +4944,28 @@ Cooperative close: no HTLCs pending, latest balances. Returns a
     * [new ChannelSession(opts)](#new_ChannelSession_new)
     * _instance_
         * [.resolvable](#ChannelSession+resolvable) ⇒ <code>boolean</code>
+        * [.transfers](#ChannelSession+transfers)
         * [.commitment](#ChannelSession+commitment) ⇒ <code>object</code> \| <code>null</code>
+        * [.lastSignedCommitment](#ChannelSession+lastSignedCommitment) ⇒ <code>object</code> \| <code>null</code>
         * [.fullySigned](#ChannelSession+fullySigned) ⇒ <code>boolean</code>
         * [.busy](#ChannelSession+busy) ⇒ <code>boolean</code>
+        * [.htlcExpiryBounds([tip])](#ChannelSession+htlcExpiryBounds) ⇒ <code>Object</code> \| <code>null</code>
+        * [.canFulfil(row, [tip])](#ChannelSession+canFulfil) ⇒ <code>boolean</code>
+        * [.learnPreimage(paymentHashHex, preimageHex)](#ChannelSession+learnPreimage) ⇒ <code>boolean</code>
         * [.open()](#ChannelSession+open) ⇒ <code>object</code>
         * [.offerHtlc(htlc)](#ChannelSession+offerHtlc) ⇒ <code>object</code>
+        * [.transfer(opts)](#ChannelSession+transfer) ⇒ <code>object</code>
         * [.updateFee(feeSats)](#ChannelSession+updateFee) ⇒ <code>object</code>
-        * [.receive(body, [ctx])](#ChannelSession+receive) ⇒ <code>object</code> \| <code>null</code>
+        * [.updateFeerate(satPerVb)](#ChannelSession+updateFeerate) ⇒ <code>object</code>
+        * [.repropose()](#ChannelSession+repropose) ⇒ <code>object</code> \| <code>null</code>
+        * [.receive(body, [ctx])](#ChannelSession+receive) ⇒ <code>object</code> \| <code>Array.&lt;object&gt;</code> \| <code>null</code>
         * [.fulfillHtlc(id, preimageHex)](#ChannelSession+fulfillHtlc) ⇒ <code>object</code>
         * [.failHtlc(id, [reason])](#ChannelSession+failHtlc) ⇒ <code>object</code>
         * [.receiveSettlement(body)](#ChannelSession+receiveSettlement) ⇒ <code>object</code> \| <code>null</code>
-        * [.ingest(body, [ctx])](#ChannelSession+ingest) ⇒ <code>object</code> \| <code>null</code>
-        * [.tick(tipHeight)](#ChannelSession+tick) ⇒ <code>Object</code>
+        * [.ingest(body, [ctx])](#ChannelSession+ingest) ⇒ <code>object</code> \| <code>Array.&lt;object&gt;</code> \| <code>null</code>
+        * [.reestablish()](#ChannelSession+reestablish) ⇒ <code>object</code>
+        * [.handleReestablish(body)](#ChannelSession+handleReestablish) ⇒ <code>Array.&lt;object&gt;</code>
+        * [.tick([tipHeight])](#ChannelSession+tick) ⇒ <code>Object</code>
         * [.observe(txHex, [opts])](#ChannelSession+observe) ⇒ <code>object</code>
         * [.preimageFor(paymentHashHex)](#ChannelSession+preimageFor)
         * [.finalize()](#ChannelSession+finalize) ⇒ <code>object</code>
@@ -3574,18 +4980,29 @@ Cooperative close: no HTLCs pending, latest balances. Returns a
 
 | Param | Type | Description |
 | --- | --- | --- |
-| opts | <code>object</code> | `{ funding, fundedTxHex, localPrivateKey, localSats, remoteSats, localAddress, remoteAddress, feeSats, policy?, tipHeight?, confirmations?, minFundingConfirmations? }` |
+| opts | <code>object</code> | `{ funding, fundedTxHex, localPrivateKey, localSats, remoteSats, localAddress, remoteAddress, feeSats?, feerate?, policy?, tipHeight?, confirmations?, fundingConfirmed?, minFundingConfirmations? }`   `confirmations(txid)` gates the channel on the funding depth; without it   only the funder (or `fundingConfirmed: true`, explicit trust) treats the   funding as confirmed. `feerate` (sat/vB) derives the commitment fee from   the HTLC count instead of a fixed `feeSats`. |
 
 <a name="ChannelSession+resolvable"></a>
 
 ### channelSession.resolvable ⇒ <code>boolean</code>
 **Kind**: instance property of [<code>ChannelSession</code>](#ChannelSession)  
-**Returns**: <code>boolean</code> - the current state has a counterparty-signed unilateral exit  
+**Returns**: <code>boolean</code> - the last countersigned state has a unilateral exit  
+<a name="ChannelSession+transfers"></a>
+
+### channelSession.transfers
+Balance transfers sent and received (`{ amountSats, ref, direction, number }`), newest last.
+
+**Kind**: instance property of [<code>ChannelSession</code>](#ChannelSession)  
 <a name="ChannelSession+commitment"></a>
 
 ### channelSession.commitment ⇒ <code>object</code> \| <code>null</code>
 **Kind**: instance property of [<code>ChannelSession</code>](#ChannelSession)  
 **Returns**: <code>object</code> \| <code>null</code> - our latest commitment (holder = local)  
+<a name="ChannelSession+lastSignedCommitment"></a>
+
+### channelSession.lastSignedCommitment ⇒ <code>object</code> \| <code>null</code>
+**Kind**: instance property of [<code>ChannelSession</code>](#ChannelSession)  
+**Returns**: <code>object</code> \| <code>null</code> - `{ number, txid, sig, htlcs, localSats, remoteSats, feeSats }` — newest of our commitments the counterparty signed  
 <a name="ChannelSession+fullySigned"></a>
 
 ### channelSession.fullySigned ⇒ <code>boolean</code>
@@ -3596,12 +5013,54 @@ Cooperative close: no HTLCs pending, latest balances. Returns a
 ### channelSession.busy ⇒ <code>boolean</code>
 **Kind**: instance property of [<code>ChannelSession</code>](#ChannelSession)  
 **Returns**: <code>boolean</code> - an update round is mid-flight (proposal unanswered or revocation outstanding)  
+<a name="ChannelSession+htlcExpiryBounds"></a>
+
+### channelSession.htlcExpiryBounds([tip]) ⇒ <code>Object</code> \| <code>null</code>
+Valid `expireAfter` heights for a new HTLC at a tip.
+
+**Kind**: instance method of [<code>ChannelSession</code>](#ChannelSession)  
+**Returns**: <code>Object</code> \| <code>null</code> - `null` when the tip is unknown  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| [tip] | <code>number</code> | defaults to the session tip |
+
+<a name="ChannelSession+canFulfil"></a>
+
+### channelSession.canFulfil(row, [tip]) ⇒ <code>boolean</code>
+A received HTLC may be fulfilled off-chain only while the funding is
+confirmed and `expireAfter − tip > toSelfDelay + htlcSafetyBlocks`;
+otherwise the receiver must claim on-chain. Offered HTLCs (the sender
+settling with a preimage it learned) are always allowed.
+
+**Kind**: instance method of [<code>ChannelSession</code>](#ChannelSession)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| row | <code>object</code> | HTLC row |
+| [tip] | <code>number</code> |  |
+
+<a name="ChannelSession+learnPreimage"></a>
+
+### channelSession.learnPreimage(paymentHashHex, preimageHex) ⇒ <code>boolean</code>
+Remember a preimage for one of this channel's HTLCs (e.g. learned
+downstream) so the watchdog can claim it on-chain.
+
+**Kind**: instance method of [<code>ChannelSession</code>](#ChannelSession)  
+**Returns**: <code>boolean</code> - stored  
+
+| Param | Type |
+| --- | --- |
+| paymentHashHex | <code>string</code> | 
+| preimageHex | <code>string</code> | 
+
 <a name="ChannelSession+open"></a>
 
 ### channelSession.open() ⇒ <code>object</code>
-Initial `ChannelOpen` body (funder): the funding record (public fields),
-balances, our policy proposal and first two per-commitment points. No
-commitment signature yet — see the class description.
+Initial `ChannelOpen` body (funder): the funding record (public fields,
+funding outpoint included), balances, our policy proposal and first two
+per-commitment points. No commitment signature yet — see the class
+description.
 
 **Kind**: instance method of [<code>ChannelSession</code>](#ChannelSession)  
 <a name="ChannelSession+offerHtlc"></a>
@@ -3609,6 +5068,7 @@ commitment signature yet — see the class description.
 ### channelSession.offerHtlc(htlc) ⇒ <code>object</code>
 Offer an HTLC (pay for one chunk): moves `amountSats` from our balance
 into a pending HTLC and returns the `ChannelCommitment` proposal.
+`expireAfter − tip` must be at least [minHtlcExpiryDelta](#Channel.minHtlcExpiryDelta).
 
 **Kind**: instance method of [<code>ChannelSession</code>](#ChannelSession)  
 
@@ -3616,11 +5076,27 @@ into a pending HTLC and returns the `ChannelCommitment` proposal.
 | --- | --- | --- |
 | htlc | <code>object</code> | `{ id?, amountSats, paymentHashHex, blobHashHex?, expireAfter, forwardOf? }` |
 
+<a name="ChannelSession+transfer"></a>
+
+### channelSession.transfer(opts) ⇒ <code>object</code>
+Pay the counterparty from our balance with no HTLC: the next commitment
+just moves `amountSats` to them (pay-after-verify credit — nothing to
+claim, refund, or settle on chain, so no HTLC minimum). No HTLC or fee
+change rides along, and our balance must stay above the reserve.
+
+**Kind**: instance method of [<code>ChannelSession</code>](#ChannelSession)  
+**Returns**: <code>object</code> - `ChannelCommitment` proposal carrying `transfer`  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| opts | <code>object</code> | `{ amountSats, ref? }` — `ref` names what is paid for and reaches the receiver; a `ref` already sent is refused. |
+
 <a name="ChannelSession+updateFee"></a>
 
 ### channelSession.updateFee(feeSats) ⇒ <code>object</code>
-Propose a new commitment fee (bounded by the negotiated policy; the
-funder's balance absorbs the difference).
+Propose a new fixed commitment fee (funder only; bounded by the
+negotiated policy and never below `minFeerate` for the HTLC count; the
+funder's balance absorbs the difference and must stay above the reserve).
 
 **Kind**: instance method of [<code>ChannelSession</code>](#ChannelSession)  
 **Returns**: <code>object</code> - `ChannelCommitment` proposal  
@@ -3629,12 +5105,35 @@ funder's balance absorbs the difference).
 | --- | --- |
 | feeSats | <code>number</code> | 
 
+<a name="ChannelSession+updateFeerate"></a>
+
+### channelSession.updateFeerate(satPerVb) ⇒ <code>object</code>
+Switch to / change a commitment feerate (funder only): the fee becomes
+`feerate × estimated vsize` (HTLC outputs included) on every later state.
+
+**Kind**: instance method of [<code>ChannelSession</code>](#ChannelSession)  
+**Returns**: <code>object</code> - `ChannelCommitment` proposal  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| satPerVb | <code>number</code> | integer ≥ policy `minFeerate` |
+
+<a name="ChannelSession+repropose"></a>
+
+### channelSession.repropose() ⇒ <code>object</code> \| <code>null</code>
+Replay the first intent abandoned in a simultaneous-proposal tie-break
+(offer / fulfill / fail / fee / transfer / close). Intents that no longer apply are
+dropped into `state.droppedIntents`.
+
+**Kind**: instance method of [<code>ChannelSession</code>](#ChannelSession)  
+**Returns**: <code>object</code> \| <code>null</code> - new proposal body, or `null`  
 <a name="ChannelSession+receive"></a>
 
-### channelSession.receive(body, [ctx]) ⇒ <code>object</code> \| <code>null</code>
+### channelSession.receive(body, [ctx]) ⇒ <code>object</code> \| <code>Array.&lt;object&gt;</code> \| <code>null</code>
 Ingest a counterparty `ChannelOpen` / `ChannelCommitment` / `ChannelClose`
-/ `ChannelRevoke`. Returns the body we must send back (countersignature
-with inline revoke, `ChannelRevoke`, or `null`).
+/ `ChannelRevoke` / `ChannelReestablish`. Returns the body we must send
+back (countersignature with inline revoke, `ChannelRevoke`, or `null`) —
+an array of bodies for `ChannelReestablish`.
 
 **Kind**: instance method of [<code>ChannelSession</code>](#ChannelSession)  
 
@@ -3652,10 +5151,14 @@ reveals; the sender may also settle an HTLC it offered once it learned
 the preimage elsewhere (e.g. the seller's public key reveal) — that only
 ever pays the counterparty.
 
-Revealing the preimage before the peer countersigns is safe because no
-HTLC is trimmed: each one carries at least `HTLC_MINIMUM_SATS` and has a
-commitment output the receiver can claim with the preimage
-([prepareHtlcClaim](#Channel.prepareHtlcClaim)) if the peer stalls.
+The receiver reveals only while [canFulfil](#ChannelSession+canFulfil): once
+the preimage is out, a sender that withholds its countersignature forces
+the receiver on-chain, where the receiver's claim is CSV-delayed by
+`toSelfDelay` on its own commitment. The sender's timeout there waits
+`toSelfDelay + htlcClaimWindowBlocks`, and on the sender's commitment the
+receiver claims immediately, so a fulfill with that margin cannot be
+raced. Too close to expiry the preimage is only remembered and the
+watchdog ([tick](#ChannelSession+tick)) asks the host to claim on-chain.
 
 **Kind**: instance method of [<code>ChannelSession</code>](#ChannelSession)  
 **Returns**: <code>object</code> - `ChannelHtlcFulfill` body (+ the new commitment via `commitment`)  
@@ -3693,28 +5196,64 @@ Apply a counterparty `ChannelHtlcFulfill` / `ChannelHtlcFail` body.
 
 <a name="ChannelSession+ingest"></a>
 
-### channelSession.ingest(body, [ctx]) ⇒ <code>object</code> \| <code>null</code>
+### channelSession.ingest(body, [ctx]) ⇒ <code>object</code> \| <code>Array.&lt;object&gt;</code> \| <code>null</code>
 Dispatch any inbound `Channel*` body to the right handler.
 
 **Kind**: instance method of [<code>ChannelSession</code>](#ChannelSession)  
-**Returns**: <code>object</code> \| <code>null</code> - reply body  
+**Returns**: <code>object</code> \| <code>Array.&lt;object&gt;</code> \| <code>null</code> - reply body (array for `ChannelReestablish`)  
 
 | Param | Type |
 | --- | --- |
 | body | <code>object</code> | 
 | [ctx] | <code>object</code> | 
 
+<a name="ChannelSession+reestablish"></a>
+
+### channelSession.reestablish() ⇒ <code>object</code>
+`ChannelReestablish` body for a reconnect: our state number, the newest
+of our commitments the peer has signed, and how far each side's states
+are revoked. The peer answers with [handleReestablish](#ChannelSession+handleReestablish).
+
+**Kind**: instance method of [<code>ChannelSession</code>](#ChannelSession)  
+<a name="ChannelSession+handleReestablish"></a>
+
+### channelSession.handleReestablish(body) ⇒ <code>Array.&lt;object&gt;</code>
+Answer a peer's `ChannelReestablish`: resend the revocations it has not
+seen and, when it lacks a signature on our current state number, our last
+update (proposal, countersignature, or settlement) for that state.
+
+**Kind**: instance method of [<code>ChannelSession</code>](#ChannelSession)  
+**Returns**: <code>Array.&lt;object&gt;</code> - bodies to send, in order  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| body | <code>object</code> | verified `ChannelReestablish` |
+
 <a name="ChannelSession+tick"></a>
 
-### channelSession.tick(tipHeight) ⇒ <code>Object</code>
-Chain-time housekeeping: funding confirmation gating, auto-fail of expired
-received HTLCs, and timeout flags on expired offered HTLCs.
+### channelSession.tick([tipHeight]) ⇒ <code>Object</code>
+Chain-time watchdog. Polls funding confirmations, settles what it can
+off-chain (fulfill received HTLCs whose preimage is known while the margin
+allows; fail expired received HTLCs without one; fail expired offered
+HTLCs) and returns the on-chain **actions** the host must take:
+
+- `{ type: 'forceClose', channelId, reason: 'channel-expiry'|'htlc-claim'|'htlc-timeout', deadline, tip }`
+  — at `expireAfter − toSelfDelay − closeMarginBlocks` for the channel, when
+  a received HTLC with a known preimage can no longer be fulfilled
+  off-chain, or `htlcSafetyBlocks` after an offered HTLC expired unresolved;
+- `{ type: 'claimHtlc', channelId, htlcId, paymentHashHex, preimageHex, amountSats, expireAfter, deadline }`
+  ([prepareHtlcClaim](#Channel.prepareHtlcClaim));
+- `{ type: 'timeoutHtlc', channelId, htlcId, paymentHashHex, amountSats, expireAfter }`
+  ([prepareHtlcTimeout](#Channel.prepareHtlcTimeout)).
+
+HTLCs are taken from the current state and the last countersigned one, so
+an HTLC removed by a round still in flight is watched until it completes.
 
 **Kind**: instance method of [<code>ChannelSession</code>](#ChannelSession)  
 
-| Param | Type |
-| --- | --- |
-| tipHeight | <code>number</code> | 
+| Param | Type | Description |
+| --- | --- | --- |
+| [tipHeight] | <code>number</code> | defaults to the session tip |
 
 <a name="ChannelSession+observe"></a>
 
@@ -3725,12 +5264,12 @@ justice transaction and a `FraudProof` — or an HTLC spend whose witness
 reveals preimages we are owed.
 
 **Kind**: instance method of [<code>ChannelSession</code>](#ChannelSession)  
-**Returns**: <code>object</code> - `{ kind, txid, justice?, fraudProof?, preimages? }`  
+**Returns**: <code>object</code> - `{ kind, txid, justice?, justiceSpends?, fraudProof?, preimages? }`  
 
 | Param | Type | Description |
 | --- | --- | --- |
 | txHex | <code>string</code> |  |
-| [opts] | <code>object</code> | `{ destinationAddress?, feeSats?, inclusion?: { blockHeaderHex, txids } }` — `inclusion` lets a stale-commitment proof carry an SPV branch binding the broadcast to a block header |
+| [opts] | <code>object</code> | `{ destinationAddress?, feeSats?, excludeVouts?, perOutput?, inclusion?: { blockHeaderHex, txids } }` — `excludeVouts` skips stale outputs already spent; `perOutput` also returns one justice tx per output (`justiceSpends`); `inclusion` lets a stale-commitment proof carry an SPV branch binding the broadcast to a block header |
 
 <a name="ChannelSession+preimageFor"></a>
 
@@ -3744,10 +5283,11 @@ reveals preimages we are owed.
 <a name="ChannelSession+finalize"></a>
 
 ### channelSession.finalize() ⇒ <code>object</code>
-Broadcastable latest commitment (ours; requires the counterparty's signature).
+Broadcastable commitment: the current state when countersigned, else the
+last countersigned one (mid-round, while our proposal is unanswered).
 
 **Kind**: instance method of [<code>ChannelSession</code>](#ChannelSession)  
-**Returns**: <code>object</code> - `{ txHex, txid }`  
+**Returns**: <code>object</code> - `{ txHex, txid, number, commitment }`  
 <a name="ChannelSession+close"></a>
 
 ### channelSession.close() ⇒ <code>object</code>
@@ -3778,18 +5318,28 @@ Local registry of [ChannelSession](#ChannelSession)s for a host (Hub,
 GoonCitizen, Passport): looks a channel up by counterparty, routes inbound
 `Channel*` `CONTRACT_MESSAGE` bodies to the right session, forwards
 multi-hop HTLCs, ticks sessions on new chain tips, and returns the bodies
-the host must publish back. Shape expected by the market agent's
-`attach({ channels })`.
+and on-chain actions the host must handle. Shape expected by the market
+agent's `attach({ channels })`.
 
 **Seller-fulfills (Lightning shape):** when the host supplies
-`preimageFor(paymentHashHex)` the book fulfills every received HTLC whose
-preimage the host knows as soon as the round that committed it completes;
-the payer learns the preimage from the resulting `ChannelHtlcFulfill`.
+`preimageFor(paymentHashHex, htlc)` the book fulfills every received HTLC
+the host releases a preimage for as soon as the round that committed it
+completes; the payer learns the preimage from the resulting
+`ChannelHtlcFulfill`. The host sees the HTLC (amount, expiry, blob hash) and
+must refuse underpaid ones.
+
+**Pay-after-verify credit:** a seller may serve a chunk before payment,
+up to `creditLimitSats` outstanding per channel ([extendCredit](#ChannelBook+extendCredit));
+the buyer pays with a balance transfer ([transfer](#ChannelBook+transfer)) whose
+`ref` names the credit. No HTLC, so no HTLC minimum.
 
 Events: `htlcCommitted` (a received HTLC is irrevocably committed),
-`htlcFulfilled` (a counterparty revealed a preimage to us), and
-`htlcSettled` (any HTLC left the channel; `outcome` is `fulfilled` or
-`failed`). Payloads are `{ channelId, session, htlcId, paymentHashHex,
+`htlcFulfilled` (a counterparty revealed a preimage to us), `htlcSettled`
+(any HTLC left the channel; `outcome` is `fulfilled` or `failed`),
+`transferReceived` (a balance transfer to us is final: the payer revoked
+the state before it), `creditExtended` / `creditSettled`, and
+`channelAction` (a new watchdog action, see [tick](#ChannelSession+tick)).
+HTLC payloads are `{ channelId, session, htlcId, paymentHashHex,
 blobHashHex, amountSats, direction, preimageHex?, outcome?, reason? }`.
 
 **Kind**: global class  
@@ -3797,19 +5347,25 @@ blobHashHex, amountSats, direction, preimageHex?, outcome?, reason? }`.
 * [ChannelBook](#ChannelBook)
     * [new ChannelBook(opts)](#new_ChannelBook_new)
     * [.tipFresh](#ChannelBook+tipFresh) ⇒ <code>boolean</code>
-    * [.setTip(height)](#ChannelBook+setTip) ⇒ <code>Array.&lt;object&gt;</code>
+    * [.setTip(height)](#ChannelBook+setTip) ⇒ <code>Object</code>
     * [.setConfirmations(txid, confirmations)](#ChannelBook+setConfirmations)
     * [.pendingFundingTxids()](#ChannelBook+pendingFundingTxids) ⇒ <code>Array.&lt;string&gt;</code>
     * [.onBlock(opts)](#ChannelBook+onBlock) ⇒ <code>Object</code>
     * [.tipHeight()](#ChannelBook+tipHeight) ⇒ <code>number</code> \| <code>null</code>
-    * [.preimageFor(paymentHashHex)](#ChannelBook+preimageFor) ⇒ <code>string</code> \| <code>null</code>
+    * [.preimageFor(paymentHashHex, [htlc])](#ChannelBook+preimageFor) ⇒ <code>string</code> \| <code>null</code>
     * [.add(session, [aliases])](#ChannelBook+add) ⇒ [<code>ChannelSession</code>](#ChannelSession)
+    * [.get(channelId)](#ChannelBook+get) ⇒ [<code>ChannelSession</code>](#ChannelSession) \| <code>null</code>
     * [.sessionFor(sellerId, [pubkeyHex])](#ChannelBook+sessionFor) ⇒ [<code>ChannelSession</code>](#ChannelSession) \| <code>null</code>
     * [.publish(body, [session])](#ChannelBook+publish)
     * [.open(opts)](#ChannelBook+open) ⇒ <code>Object</code>
-    * [.ingest(body, [meta])](#ChannelBook+ingest) ⇒ <code>object</code> \| <code>null</code>
+    * [.ingest(body, [meta])](#ChannelBook+ingest) ⇒ <code>object</code> \| <code>Array.&lt;object&gt;</code> \| <code>null</code>
+    * [.outstanding(counterparty, [pubkeyHex])](#ChannelBook+outstanding) ⇒ <code>number</code>
+    * [.extendCredit(opts)](#ChannelBook+extendCredit) ⇒ <code>Object</code>
+    * [.listCredits([channelId])](#ChannelBook+listCredits) ⇒ <code>Array.&lt;object&gt;</code>
+    * [.transfer(counterparty, amountSats, [ref], [pubkeyHex])](#ChannelBook+transfer) ⇒ <code>object</code>
     * [.forward(upstream, upstreamHtlcId, downstream, [policy])](#ChannelBook+forward) ⇒ <code>object</code>
-    * [.tick()](#ChannelBook+tick) ⇒ <code>Array.&lt;object&gt;</code>
+    * [.tick()](#ChannelBook+tick) ⇒ <code>Object</code>
+    * [.reestablish([channelId])](#ChannelBook+reestablish) ⇒ <code>Array.&lt;object&gt;</code>
     * [.observe(txHex, [opts])](#ChannelBook+observe) ⇒ <code>Array.&lt;object&gt;</code>
     * [.export()](#ChannelBook+export) ⇒ <code>object</code>
     * [.import(snapshot)](#ChannelBook+import)
@@ -3821,7 +5377,7 @@ blobHashHex, amountSats, direction, preimageHex?, outcome?, reason? }`.
 
 | Param | Type | Description |
 | --- | --- | --- |
-| opts | <code>object</code> | `{ localPrivateKey, network, tipHeight?: function, confirmations?: function(txid), publish?: function(body), preimageFor?: function(paymentHashHex), policy?, staleTipMs?, forwardPolicy?: { feeSats, cltvDelta } }` |
+| opts | <code>object</code> | `{ localPrivateKey, network, tipHeight?: function, confirmations?: function(txid)|true, publish?: function(body, session), persist?: function(session, body), preimageFor?: function(paymentHashHex, htlc), policy?, feerate?, staleTipMs?, forwardPolicy?: { feeSats, cltvDelta }, creditLimitSats?, maxEntries?, now? }`   `persist(session, body)` runs before every publish (a returned promise   delays the publish; a throw cancels it). Inbound `ChannelOpen` needs   `confirmations`. `maxEntries` caps the channels held (default no cap).   `creditLimitSats` (default 0: no credit) caps what one channel may owe. |
 
 <a name="ChannelBook+tipFresh"></a>
 
@@ -3830,11 +5386,10 @@ blobHashHex, amountSats, direction, preimageHex?, outcome?, reason? }`.
 **Returns**: <code>boolean</code> - chain view is usable for expiry decisions  
 <a name="ChannelBook+setTip"></a>
 
-### channelBook.setTip(height) ⇒ <code>Array.&lt;object&gt;</code>
+### channelBook.setTip(height) ⇒ <code>Object</code>
 Record a fresh chain tip (hosts call on every block) and tick sessions.
 
 **Kind**: instance method of [<code>ChannelBook</code>](#ChannelBook)  
-**Returns**: <code>Array.&lt;object&gt;</code> - bodies published by the tick  
 
 | Param | Type |
 | --- | --- |
@@ -3876,21 +5431,27 @@ transactions the host hands over (mempool / block bodies).
 **Returns**: <code>number</code> \| <code>null</code> - tip height, or `null` when unknown / stale (refuses new HTLCs)  
 <a name="ChannelBook+preimageFor"></a>
 
-### channelBook.preimageFor(paymentHashHex) ⇒ <code>string</code> \| <code>null</code>
-Host-side preimage lookup (seller-fulfills). Falls back to preimages any
-session on this book has already learned.
+### channelBook.preimageFor(paymentHashHex, [htlc]) ⇒ <code>string</code> \| <code>null</code>
+Host-side preimage lookup (seller-fulfills). The host function receives
+`(paymentHashHex, htlc)` and may return the preimage hex or an object with
+`keyHex` / `preimageHex`. With an `htlc` the host is authoritative (it
+decides whether that HTLC pays enough); without one, preimages any session
+on this book has learned are a fallback.
 
 **Kind**: instance method of [<code>ChannelBook</code>](#ChannelBook)  
 
-| Param | Type |
-| --- | --- |
-| paymentHashHex | <code>string</code> | 
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| paymentHashHex | <code>string</code> |  |  |
+| [htlc] | <code>object</code> | <code></code> | the received HTLC row asking for it |
 
 <a name="ChannelBook+add"></a>
 
 ### channelBook.add(session, [aliases]) ⇒ [<code>ChannelSession</code>](#ChannelSession)
 Register a session under a channel id plus any peer aliases (Fabric id,
-`pubkey@host:port`, connection name) used by offers.
+`pubkey@host:port`, connection name) used by offers. Refuses to replace
+a different session already registered under that channel id, and a new
+channel when the book is full (a session holds funds: never evicted).
 
 **Kind**: instance method of [<code>ChannelBook</code>](#ChannelBook)  
 
@@ -3898,6 +5459,15 @@ Register a session under a channel id plus any peer aliases (Fabric id,
 | --- | --- |
 | session | [<code>ChannelSession</code>](#ChannelSession) | 
 | [aliases] | <code>Array.&lt;string&gt;</code> | 
+
+<a name="ChannelBook+get"></a>
+
+### channelBook.get(channelId) ⇒ [<code>ChannelSession</code>](#ChannelSession) \| <code>null</code>
+**Kind**: instance method of [<code>ChannelBook</code>](#ChannelBook)  
+
+| Param | Type |
+| --- | --- |
+| channelId | <code>string</code> | 
 
 <a name="ChannelBook+sessionFor"></a>
 
@@ -3913,48 +5483,111 @@ Register a session under a channel id plus any peer aliases (Fabric id,
 
 ### channelBook.publish(body, [session])
 Publish hook used by the market agent (`channels.publish(body, session)`).
+Runs `persist(session, body)` first: a sync throw cancels the publish and
+propagates; a returned promise delays it (rejection → `error` event).
 
 **Kind**: instance method of [<code>ChannelBook</code>](#ChannelBook)  
 
 | Param | Type | Default |
 | --- | --- | --- |
-| body | <code>object</code> |  | 
+| body | <code>object</code> \| <code>Array.&lt;object&gt;</code> |  | 
 | [session] | [<code>ChannelSession</code>](#ChannelSession) | <code></code> | 
 
 <a name="ChannelBook+open"></a>
 
 ### channelBook.open(opts) ⇒ <code>Object</code>
 Open a channel toward a counterparty as the funder. The funder's opening
-balance is `capacity − fee − anchors`.
+balance is `capacity − fee − anchors`. Without `feeSats` the commitment
+fee follows `feerate` (default the book's, 1 sat/vB) and the HTLC count.
 
 **Kind**: instance method of [<code>ChannelBook</code>](#ChannelBook)  
 **Returns**: <code>Object</code> - `ChannelOpen` body to publish  
 
 | Param | Type | Description |
 | --- | --- | --- |
-| opts | <code>object</code> | `{ remotePubkey, fundedTxHex, capacitySats, expireAfter, localAddress, remoteAddress, feeSats?, toSelfDelay?, policy?, aliases? }` |
+| opts | <code>object</code> | `{ remotePubkey, fundedTxHex, capacitySats, expireAfter, localAddress, remoteAddress, feeSats?, feerate?, toSelfDelay?, fundingVout?, policy?, aliases? }` |
 
 <a name="ChannelBook+ingest"></a>
 
-### channelBook.ingest(body, [meta]) ⇒ <code>object</code> \| <code>null</code>
+### channelBook.ingest(body, [meta]) ⇒ <code>object</code> \| <code>Array.&lt;object&gt;</code> \| <code>null</code>
 Route an inbound `Channel*` body. Unknown channels are accepted only on
-`ChannelOpen` addressed to our key (we become the non-funding side).
-Settlements on a forwarded downstream HTLC propagate upstream.
+`ChannelOpen` addressed to our key (we become the non-funding side), and
+only when the book has a `confirmations` source. Settlements on a
+forwarded downstream HTLC propagate upstream.
 
 **Kind**: instance method of [<code>ChannelBook</code>](#ChannelBook)  
-**Returns**: <code>object</code> \| <code>null</code> - reply body (already published through the hook)  
+**Returns**: <code>object</code> \| <code>Array.&lt;object&gt;</code> \| <code>null</code> - reply body (already published through the hook)  
 
 | Param | Type | Description |
 | --- | --- | --- |
 | body | <code>object</code> | signed artifact |
 | [meta] | <code>object</code> | `{ sellerId? }` alias for the counterparty |
 
+<a name="ChannelBook+outstanding"></a>
+
+### channelBook.outstanding(counterparty, [pubkeyHex]) ⇒ <code>number</code>
+Sats a channel still owes on credit we extended.
+
+**Kind**: instance method of [<code>ChannelBook</code>](#ChannelBook)  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| counterparty | <code>string</code> |  | channel id, or a counterparty alias / key |
+| [pubkeyHex] | <code>string</code> \| <code>null</code> | <code>null</code> |  |
+
+<a name="ChannelBook+extendCredit"></a>
+
+### channelBook.extendCredit(opts) ⇒ <code>Object</code>
+Seller side of pay-after-verify: serve first, record that the buyer owes
+`amountSats` for `ref` over its channel with us. Refused without an open
+channel, for a `ref` already used, past the credit limit, or when the
+buyer's channel balance (above its reserve) could not pay everything it
+would then owe. Paid by a transfer carrying the same `ref`. Also takes
+the request `Peer` passes to `settings.sealedBlobCredit` (`buyer`,
+`buyerPubkey`, `priceSats`), so hosts wire
+`sealedBlobCredit: (r) => book.extendCredit(r)`.
+
+**Kind**: instance method of [<code>ChannelBook</code>](#ChannelBook)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| opts | <code>object</code> | `{ counterparty, pubkeyHex?, ref, amountSats, limitSats? }` |
+
+<a name="ChannelBook+listCredits"></a>
+
+### channelBook.listCredits([channelId]) ⇒ <code>Array.&lt;object&gt;</code>
+**Kind**: instance method of [<code>ChannelBook</code>](#ChannelBook)  
+**Returns**: <code>Array.&lt;object&gt;</code> - credit rows (`settledAt` null while owed)  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [channelId] | <code>string</code> | <code>null</code> | only this channel |
+
+<a name="ChannelBook+transfer"></a>
+
+### channelBook.transfer(counterparty, amountSats, [ref], [pubkeyHex]) ⇒ <code>object</code>
+Buyer side: pay a counterparty `amountSats` from our channel balance
+(no HTLC; see [transfer](#ChannelSession+transfer)) and publish it.
+
+**Kind**: instance method of [<code>ChannelBook</code>](#ChannelBook)  
+**Returns**: <code>object</code> - `ChannelCommitment` body (published)  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| counterparty | <code>string</code> |  | seller id / alias, key, or channel id |
+| amountSats | <code>number</code> |  |  |
+| [ref] | <code>string</code> | <code>null</code> | the credit being paid |
+| [pubkeyHex] | <code>string</code> \| <code>null</code> | <code>null</code> |  |
+
 <a name="ChannelBook+forward"></a>
 
 ### channelBook.forward(upstream, upstreamHtlcId, downstream, [policy]) ⇒ <code>object</code>
-Forward a received HTLC onto another channel (multi-hop): enforces
-[checkForward](#Channel.checkForward) with this node's policy, offers the
-downstream HTLC with `forwardOf`, and links the two for settlement.
+Forward a received HTLC onto another channel (multi-hop): the upstream
+HTLC must be irrevocably committed (in the last countersigned state, no
+round in flight); enforces [checkForward](#Channel.checkForward) with this node's
+policy, with a CLTV delta of at least [minForwardCltvDelta](#Channel.minForwardCltvDelta)
+for the downstream channel; offers the downstream HTLC with `forwardOf`,
+and links the two for settlement.
 
 **Kind**: instance method of [<code>ChannelBook</code>](#ChannelBook)  
 **Returns**: <code>object</code> - downstream `ChannelCommitment` body (published)  
@@ -3968,11 +5601,27 @@ downstream HTLC with `forwardOf`, and links the two for settlement.
 
 <a name="ChannelBook+tick"></a>
 
-### channelBook.tick() ⇒ <code>Array.&lt;object&gt;</code>
-Tick every session with the current tip; publishes auto-fail bodies.
+### channelBook.tick() ⇒ <code>Object</code>
+Tick every session with the current tip: publishes auto-fail / fulfil
+bodies, retries pending upstream settlements and rolled-back proposals,
+and collects the watchdog actions ([tick](#ChannelSession+tick)). New
+actions are also emitted as `channelAction`.
+
+**Kind**: instance method of [<code>ChannelBook</code>](#ChannelBook)  
+<a name="ChannelBook+reestablish"></a>
+
+### channelBook.reestablish([channelId]) ⇒ <code>Array.&lt;object&gt;</code>
+Resend state after a reconnect: a `ChannelReestablish` per session (the
+peer answers with what we missed), or the `ChannelOpen` itself while the
+peer never answered it.
 
 **Kind**: instance method of [<code>ChannelBook</code>](#ChannelBook)  
 **Returns**: <code>Array.&lt;object&gt;</code> - bodies published  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [channelId] | <code>string</code> | <code>null</code> | one channel, default all |
+
 <a name="ChannelBook+observe"></a>
 
 ### channelBook.observe(txHex, [opts]) ⇒ <code>Array.&lt;object&gt;</code>
@@ -3984,7 +5633,7 @@ Hand an observed transaction to every session (mempool / block hook).
 | Param | Type | Description |
 | --- | --- | --- |
 | txHex | <code>string</code> |  |
-| [opts] | <code>object</code> | `{ destinationAddress?, feeSats? }` |
+| [opts] | <code>object</code> | `{ destinationAddress?, feeSats?, excludeVouts?, perOutput? }` |
 
 <a name="ChannelBook+export"></a>
 
@@ -4013,19 +5662,25 @@ Hand an observed transaction to every session (mempool / block hook).
 * [ChannelBook](#ChannelBook)
     * [new ChannelBook(opts)](#new_ChannelBook_new)
     * [.tipFresh](#ChannelBook+tipFresh) ⇒ <code>boolean</code>
-    * [.setTip(height)](#ChannelBook+setTip) ⇒ <code>Array.&lt;object&gt;</code>
+    * [.setTip(height)](#ChannelBook+setTip) ⇒ <code>Object</code>
     * [.setConfirmations(txid, confirmations)](#ChannelBook+setConfirmations)
     * [.pendingFundingTxids()](#ChannelBook+pendingFundingTxids) ⇒ <code>Array.&lt;string&gt;</code>
     * [.onBlock(opts)](#ChannelBook+onBlock) ⇒ <code>Object</code>
     * [.tipHeight()](#ChannelBook+tipHeight) ⇒ <code>number</code> \| <code>null</code>
-    * [.preimageFor(paymentHashHex)](#ChannelBook+preimageFor) ⇒ <code>string</code> \| <code>null</code>
+    * [.preimageFor(paymentHashHex, [htlc])](#ChannelBook+preimageFor) ⇒ <code>string</code> \| <code>null</code>
     * [.add(session, [aliases])](#ChannelBook+add) ⇒ [<code>ChannelSession</code>](#ChannelSession)
+    * [.get(channelId)](#ChannelBook+get) ⇒ [<code>ChannelSession</code>](#ChannelSession) \| <code>null</code>
     * [.sessionFor(sellerId, [pubkeyHex])](#ChannelBook+sessionFor) ⇒ [<code>ChannelSession</code>](#ChannelSession) \| <code>null</code>
     * [.publish(body, [session])](#ChannelBook+publish)
     * [.open(opts)](#ChannelBook+open) ⇒ <code>Object</code>
-    * [.ingest(body, [meta])](#ChannelBook+ingest) ⇒ <code>object</code> \| <code>null</code>
+    * [.ingest(body, [meta])](#ChannelBook+ingest) ⇒ <code>object</code> \| <code>Array.&lt;object&gt;</code> \| <code>null</code>
+    * [.outstanding(counterparty, [pubkeyHex])](#ChannelBook+outstanding) ⇒ <code>number</code>
+    * [.extendCredit(opts)](#ChannelBook+extendCredit) ⇒ <code>Object</code>
+    * [.listCredits([channelId])](#ChannelBook+listCredits) ⇒ <code>Array.&lt;object&gt;</code>
+    * [.transfer(counterparty, amountSats, [ref], [pubkeyHex])](#ChannelBook+transfer) ⇒ <code>object</code>
     * [.forward(upstream, upstreamHtlcId, downstream, [policy])](#ChannelBook+forward) ⇒ <code>object</code>
-    * [.tick()](#ChannelBook+tick) ⇒ <code>Array.&lt;object&gt;</code>
+    * [.tick()](#ChannelBook+tick) ⇒ <code>Object</code>
+    * [.reestablish([channelId])](#ChannelBook+reestablish) ⇒ <code>Array.&lt;object&gt;</code>
     * [.observe(txHex, [opts])](#ChannelBook+observe) ⇒ <code>Array.&lt;object&gt;</code>
     * [.export()](#ChannelBook+export) ⇒ <code>object</code>
     * [.import(snapshot)](#ChannelBook+import)
@@ -4037,7 +5692,7 @@ Hand an observed transaction to every session (mempool / block hook).
 
 | Param | Type | Description |
 | --- | --- | --- |
-| opts | <code>object</code> | `{ localPrivateKey, network, tipHeight?: function, confirmations?: function(txid), publish?: function(body), preimageFor?: function(paymentHashHex), policy?, staleTipMs?, forwardPolicy?: { feeSats, cltvDelta } }` |
+| opts | <code>object</code> | `{ localPrivateKey, network, tipHeight?: function, confirmations?: function(txid)|true, publish?: function(body, session), persist?: function(session, body), preimageFor?: function(paymentHashHex, htlc), policy?, feerate?, staleTipMs?, forwardPolicy?: { feeSats, cltvDelta }, creditLimitSats?, maxEntries?, now? }`   `persist(session, body)` runs before every publish (a returned promise   delays the publish; a throw cancels it). Inbound `ChannelOpen` needs   `confirmations`. `maxEntries` caps the channels held (default no cap).   `creditLimitSats` (default 0: no credit) caps what one channel may owe. |
 
 <a name="ChannelBook+tipFresh"></a>
 
@@ -4046,11 +5701,10 @@ Hand an observed transaction to every session (mempool / block hook).
 **Returns**: <code>boolean</code> - chain view is usable for expiry decisions  
 <a name="ChannelBook+setTip"></a>
 
-### channelBook.setTip(height) ⇒ <code>Array.&lt;object&gt;</code>
+### channelBook.setTip(height) ⇒ <code>Object</code>
 Record a fresh chain tip (hosts call on every block) and tick sessions.
 
 **Kind**: instance method of [<code>ChannelBook</code>](#ChannelBook)  
-**Returns**: <code>Array.&lt;object&gt;</code> - bodies published by the tick  
 
 | Param | Type |
 | --- | --- |
@@ -4092,21 +5746,27 @@ transactions the host hands over (mempool / block bodies).
 **Returns**: <code>number</code> \| <code>null</code> - tip height, or `null` when unknown / stale (refuses new HTLCs)  
 <a name="ChannelBook+preimageFor"></a>
 
-### channelBook.preimageFor(paymentHashHex) ⇒ <code>string</code> \| <code>null</code>
-Host-side preimage lookup (seller-fulfills). Falls back to preimages any
-session on this book has already learned.
+### channelBook.preimageFor(paymentHashHex, [htlc]) ⇒ <code>string</code> \| <code>null</code>
+Host-side preimage lookup (seller-fulfills). The host function receives
+`(paymentHashHex, htlc)` and may return the preimage hex or an object with
+`keyHex` / `preimageHex`. With an `htlc` the host is authoritative (it
+decides whether that HTLC pays enough); without one, preimages any session
+on this book has learned are a fallback.
 
 **Kind**: instance method of [<code>ChannelBook</code>](#ChannelBook)  
 
-| Param | Type |
-| --- | --- |
-| paymentHashHex | <code>string</code> | 
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| paymentHashHex | <code>string</code> |  |  |
+| [htlc] | <code>object</code> | <code></code> | the received HTLC row asking for it |
 
 <a name="ChannelBook+add"></a>
 
 ### channelBook.add(session, [aliases]) ⇒ [<code>ChannelSession</code>](#ChannelSession)
 Register a session under a channel id plus any peer aliases (Fabric id,
-`pubkey@host:port`, connection name) used by offers.
+`pubkey@host:port`, connection name) used by offers. Refuses to replace
+a different session already registered under that channel id, and a new
+channel when the book is full (a session holds funds: never evicted).
 
 **Kind**: instance method of [<code>ChannelBook</code>](#ChannelBook)  
 
@@ -4114,6 +5774,15 @@ Register a session under a channel id plus any peer aliases (Fabric id,
 | --- | --- |
 | session | [<code>ChannelSession</code>](#ChannelSession) | 
 | [aliases] | <code>Array.&lt;string&gt;</code> | 
+
+<a name="ChannelBook+get"></a>
+
+### channelBook.get(channelId) ⇒ [<code>ChannelSession</code>](#ChannelSession) \| <code>null</code>
+**Kind**: instance method of [<code>ChannelBook</code>](#ChannelBook)  
+
+| Param | Type |
+| --- | --- |
+| channelId | <code>string</code> | 
 
 <a name="ChannelBook+sessionFor"></a>
 
@@ -4129,48 +5798,111 @@ Register a session under a channel id plus any peer aliases (Fabric id,
 
 ### channelBook.publish(body, [session])
 Publish hook used by the market agent (`channels.publish(body, session)`).
+Runs `persist(session, body)` first: a sync throw cancels the publish and
+propagates; a returned promise delays it (rejection → `error` event).
 
 **Kind**: instance method of [<code>ChannelBook</code>](#ChannelBook)  
 
 | Param | Type | Default |
 | --- | --- | --- |
-| body | <code>object</code> |  | 
+| body | <code>object</code> \| <code>Array.&lt;object&gt;</code> |  | 
 | [session] | [<code>ChannelSession</code>](#ChannelSession) | <code></code> | 
 
 <a name="ChannelBook+open"></a>
 
 ### channelBook.open(opts) ⇒ <code>Object</code>
 Open a channel toward a counterparty as the funder. The funder's opening
-balance is `capacity − fee − anchors`.
+balance is `capacity − fee − anchors`. Without `feeSats` the commitment
+fee follows `feerate` (default the book's, 1 sat/vB) and the HTLC count.
 
 **Kind**: instance method of [<code>ChannelBook</code>](#ChannelBook)  
 **Returns**: <code>Object</code> - `ChannelOpen` body to publish  
 
 | Param | Type | Description |
 | --- | --- | --- |
-| opts | <code>object</code> | `{ remotePubkey, fundedTxHex, capacitySats, expireAfter, localAddress, remoteAddress, feeSats?, toSelfDelay?, policy?, aliases? }` |
+| opts | <code>object</code> | `{ remotePubkey, fundedTxHex, capacitySats, expireAfter, localAddress, remoteAddress, feeSats?, feerate?, toSelfDelay?, fundingVout?, policy?, aliases? }` |
 
 <a name="ChannelBook+ingest"></a>
 
-### channelBook.ingest(body, [meta]) ⇒ <code>object</code> \| <code>null</code>
+### channelBook.ingest(body, [meta]) ⇒ <code>object</code> \| <code>Array.&lt;object&gt;</code> \| <code>null</code>
 Route an inbound `Channel*` body. Unknown channels are accepted only on
-`ChannelOpen` addressed to our key (we become the non-funding side).
-Settlements on a forwarded downstream HTLC propagate upstream.
+`ChannelOpen` addressed to our key (we become the non-funding side), and
+only when the book has a `confirmations` source. Settlements on a
+forwarded downstream HTLC propagate upstream.
 
 **Kind**: instance method of [<code>ChannelBook</code>](#ChannelBook)  
-**Returns**: <code>object</code> \| <code>null</code> - reply body (already published through the hook)  
+**Returns**: <code>object</code> \| <code>Array.&lt;object&gt;</code> \| <code>null</code> - reply body (already published through the hook)  
 
 | Param | Type | Description |
 | --- | --- | --- |
 | body | <code>object</code> | signed artifact |
 | [meta] | <code>object</code> | `{ sellerId? }` alias for the counterparty |
 
+<a name="ChannelBook+outstanding"></a>
+
+### channelBook.outstanding(counterparty, [pubkeyHex]) ⇒ <code>number</code>
+Sats a channel still owes on credit we extended.
+
+**Kind**: instance method of [<code>ChannelBook</code>](#ChannelBook)  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| counterparty | <code>string</code> |  | channel id, or a counterparty alias / key |
+| [pubkeyHex] | <code>string</code> \| <code>null</code> | <code>null</code> |  |
+
+<a name="ChannelBook+extendCredit"></a>
+
+### channelBook.extendCredit(opts) ⇒ <code>Object</code>
+Seller side of pay-after-verify: serve first, record that the buyer owes
+`amountSats` for `ref` over its channel with us. Refused without an open
+channel, for a `ref` already used, past the credit limit, or when the
+buyer's channel balance (above its reserve) could not pay everything it
+would then owe. Paid by a transfer carrying the same `ref`. Also takes
+the request `Peer` passes to `settings.sealedBlobCredit` (`buyer`,
+`buyerPubkey`, `priceSats`), so hosts wire
+`sealedBlobCredit: (r) => book.extendCredit(r)`.
+
+**Kind**: instance method of [<code>ChannelBook</code>](#ChannelBook)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| opts | <code>object</code> | `{ counterparty, pubkeyHex?, ref, amountSats, limitSats? }` |
+
+<a name="ChannelBook+listCredits"></a>
+
+### channelBook.listCredits([channelId]) ⇒ <code>Array.&lt;object&gt;</code>
+**Kind**: instance method of [<code>ChannelBook</code>](#ChannelBook)  
+**Returns**: <code>Array.&lt;object&gt;</code> - credit rows (`settledAt` null while owed)  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [channelId] | <code>string</code> | <code>null</code> | only this channel |
+
+<a name="ChannelBook+transfer"></a>
+
+### channelBook.transfer(counterparty, amountSats, [ref], [pubkeyHex]) ⇒ <code>object</code>
+Buyer side: pay a counterparty `amountSats` from our channel balance
+(no HTLC; see [transfer](#ChannelSession+transfer)) and publish it.
+
+**Kind**: instance method of [<code>ChannelBook</code>](#ChannelBook)  
+**Returns**: <code>object</code> - `ChannelCommitment` body (published)  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| counterparty | <code>string</code> |  | seller id / alias, key, or channel id |
+| amountSats | <code>number</code> |  |  |
+| [ref] | <code>string</code> | <code>null</code> | the credit being paid |
+| [pubkeyHex] | <code>string</code> \| <code>null</code> | <code>null</code> |  |
+
 <a name="ChannelBook+forward"></a>
 
 ### channelBook.forward(upstream, upstreamHtlcId, downstream, [policy]) ⇒ <code>object</code>
-Forward a received HTLC onto another channel (multi-hop): enforces
-[checkForward](#Channel.checkForward) with this node's policy, offers the
-downstream HTLC with `forwardOf`, and links the two for settlement.
+Forward a received HTLC onto another channel (multi-hop): the upstream
+HTLC must be irrevocably committed (in the last countersigned state, no
+round in flight); enforces [checkForward](#Channel.checkForward) with this node's
+policy, with a CLTV delta of at least [minForwardCltvDelta](#Channel.minForwardCltvDelta)
+for the downstream channel; offers the downstream HTLC with `forwardOf`,
+and links the two for settlement.
 
 **Kind**: instance method of [<code>ChannelBook</code>](#ChannelBook)  
 **Returns**: <code>object</code> - downstream `ChannelCommitment` body (published)  
@@ -4184,11 +5916,27 @@ downstream HTLC with `forwardOf`, and links the two for settlement.
 
 <a name="ChannelBook+tick"></a>
 
-### channelBook.tick() ⇒ <code>Array.&lt;object&gt;</code>
-Tick every session with the current tip; publishes auto-fail bodies.
+### channelBook.tick() ⇒ <code>Object</code>
+Tick every session with the current tip: publishes auto-fail / fulfil
+bodies, retries pending upstream settlements and rolled-back proposals,
+and collects the watchdog actions ([tick](#ChannelSession+tick)). New
+actions are also emitted as `channelAction`.
+
+**Kind**: instance method of [<code>ChannelBook</code>](#ChannelBook)  
+<a name="ChannelBook+reestablish"></a>
+
+### channelBook.reestablish([channelId]) ⇒ <code>Array.&lt;object&gt;</code>
+Resend state after a reconnect: a `ChannelReestablish` per session (the
+peer answers with what we missed), or the `ChannelOpen` itself while the
+peer never answered it.
 
 **Kind**: instance method of [<code>ChannelBook</code>](#ChannelBook)  
 **Returns**: <code>Array.&lt;object&gt;</code> - bodies published  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [channelId] | <code>string</code> | <code>null</code> | one channel, default all |
+
 <a name="ChannelBook+observe"></a>
 
 ### channelBook.observe(txHex, [opts]) ⇒ <code>Array.&lt;object&gt;</code>
@@ -4200,7 +5948,7 @@ Hand an observed transaction to every session (mempool / block hook).
 | Param | Type | Description |
 | --- | --- | --- |
 | txHex | <code>string</code> |  |
-| [opts] | <code>object</code> | `{ destinationAddress?, feeSats? }` |
+| [opts] | <code>object</code> | `{ destinationAddress?, feeSats?, excludeVouts?, perOutput? }` |
 
 <a name="ChannelBook+export"></a>
 
@@ -4231,6 +5979,528 @@ See also [Swarm](Swarm) for deeper inspection of [Machine](#Machine)
 mechanics.
 
 **Kind**: global class  
+<a name="PodleBlacklist"></a>
+
+## PodleBlacklist
+A maker's bounded memory of commitments already seen. A commitment is
+used once; the oldest is forgotten first.
+
+**Kind**: global class  
+
+* [PodleBlacklist](#PodleBlacklist)
+    * [new PodleBlacklist([settings])](#new_PodleBlacklist_new)
+    * [.size](#PodleBlacklist+size) ⇒ <code>number</code>
+    * [.has(commitment)](#PodleBlacklist+has) ⇒ <code>boolean</code>
+    * [.add(commitment)](#PodleBlacklist+add) ⇒ <code>boolean</code>
+    * [.toJSON()](#PodleBlacklist+toJSON) ⇒ <code>Array.&lt;string&gt;</code>
+
+<a name="new_PodleBlacklist_new"></a>
+
+### new PodleBlacklist([settings])
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [settings] | <code>Object</code> |  |  |
+| [settings.max] | <code>number</code> | <code>100000</code> |  |
+| [settings.commitments] | <code>Array.&lt;string&gt;</code> |  | restore |
+
+<a name="PodleBlacklist+size"></a>
+
+### podleBlacklist.size ⇒ <code>number</code>
+**Kind**: instance property of [<code>PodleBlacklist</code>](#PodleBlacklist)  
+<a name="PodleBlacklist+has"></a>
+
+### podleBlacklist.has(commitment) ⇒ <code>boolean</code>
+**Kind**: instance method of [<code>PodleBlacklist</code>](#PodleBlacklist)  
+
+| Param | Type |
+| --- | --- |
+| commitment | <code>string</code> | 
+
+<a name="PodleBlacklist+add"></a>
+
+### podleBlacklist.add(commitment) ⇒ <code>boolean</code>
+Remember a commitment.
+
+**Kind**: instance method of [<code>PodleBlacklist</code>](#PodleBlacklist)  
+**Returns**: <code>boolean</code> - false when it was already known  
+
+| Param | Type |
+| --- | --- |
+| commitment | <code>string</code> | 
+
+<a name="PodleBlacklist+toJSON"></a>
+
+### podleBlacklist.toJSON() ⇒ <code>Array.&lt;string&gt;</code>
+**Kind**: instance method of [<code>PodleBlacklist</code>](#PodleBlacklist)  
+**Returns**: <code>Array.&lt;string&gt;</code> - oldest first  
+<a name="Coinjoin"></a>
+
+## Coinjoin ⇐ <code>EventEmitter</code>
+One coinjoin round: the state machine shared by [CoinjoinTakerRound](#CoinjoinTakerRound)
+and [CoinjoinMakerRound](#CoinjoinMakerRound) (`types/coinjoinRound`). Its statics are the
+market itself: signed bodies and sealed round messages, fees and plans,
+PSBT build and checks, key-path signing, ownership proofs, and PoDLE.
+
+**Kind**: global class  
+**Extends**: <code>EventEmitter</code>  
+<a name="new_Coinjoin_new"></a>
+
+### new Coinjoin(name, transitions, settings)
+
+| Param | Type | Description |
+| --- | --- | --- |
+| name | <code>string</code> | subclass name, used in errors and debug lines |
+| transitions | <code>Object</code> | `status → allowed next statuses` |
+| settings | <code>Object</code> |  |
+| [settings.now] | <code>function</code> | clock in ms (tests) |
+| [settings.adapters] | <code>Object</code> | chain and wallet adapters |
+
+<a name="CoinjoinBook"></a>
+
+## CoinjoinBook
+**Kind**: global class  
+
+* [CoinjoinBook](#CoinjoinBook)
+    * [new CoinjoinBook([settings])](#new_CoinjoinBook_new)
+    * [._afterPrune()](#CoinjoinBook+_afterPrune)
+    * [._afterForget()](#CoinjoinBook+_afterForget)
+    * [.bondOf(makerPubkey)](#CoinjoinBook+bondOf) ⇒ <code>Object</code> \| <code>null</code>
+    * [._matches()](#CoinjoinBook+_matches)
+    * [._view()](#CoinjoinBook+_view)
+    * [.refreshBonds(verifier)](#CoinjoinBook+refreshBonds) ⇒ <code>Promise.&lt;{checked: number, valid: number, shared: number}&gt;</code>
+    * [.choose(amountSats, count, [opts])](#CoinjoinBook+choose) ⇒ <code>Array.&lt;Object&gt;</code>
+    * [.index([amountSats])](#CoinjoinBook+index) ⇒ <code>Object</code>
+
+<a name="new_CoinjoinBook_new"></a>
+
+### new CoinjoinBook([settings])
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [settings] | <code>Object</code> |  |  |
+| [settings.network] | <code>string</code> | <code>&quot;&#x27;regtest&#x27;&quot;</code> | only offers for this network are held |
+| [settings.maxOffers] | <code>number</code> | <code>10000</code> |  |
+| [settings.maxOffersPerMaker] | <code>number</code> | <code>10</code> |  |
+| [settings.maxCancelled] | <code>number</code> | <code>10000</code> |  |
+| [settings.maxPendingCancelsPerMaker] | <code>number</code> | <code>100</code> |  |
+| [settings.noBondShare] | <code>number</code> | <code>0.1</code> | unbonded weight as a share of the mean bond value |
+| [settings.now] | <code>function</code> |  | clock in ms (tests) |
+
+<a name="CoinjoinBook+_afterPrune"></a>
+
+### coinjoinBook.\_afterPrune()
+Bond results go with a maker's last offer.
+
+**Kind**: instance method of [<code>CoinjoinBook</code>](#CoinjoinBook)  
+**Access**: protected  
+<a name="CoinjoinBook+_afterForget"></a>
+
+### coinjoinBook.\_afterForget()
+**Kind**: instance method of [<code>CoinjoinBook</code>](#CoinjoinBook)  
+**Access**: protected  
+<a name="CoinjoinBook+bondOf"></a>
+
+### coinjoinBook.bondOf(makerPubkey) ⇒ <code>Object</code> \| <code>null</code>
+Bond standing of one maker after [refreshBonds](#CoinjoinBook+refreshBonds).
+
+**Kind**: instance method of [<code>CoinjoinBook</code>](#CoinjoinBook)  
+
+| Param | Type |
+| --- | --- |
+| makerPubkey | <code>string</code> | 
+
+<a name="CoinjoinBook+_matches"></a>
+
+### coinjoinBook.\_matches()
+Live offers in arrival order ([list](#OrderBook+list)), each `{ id, bondValue, ...offer }`.
+`filter.amountSats` keeps only offers whose range covers it.
+
+**Kind**: instance method of [<code>CoinjoinBook</code>](#CoinjoinBook)  
+**Access**: protected  
+<a name="CoinjoinBook+_view"></a>
+
+### coinjoinBook.\_view()
+**Kind**: instance method of [<code>CoinjoinBook</code>](#CoinjoinBook)  
+**Access**: protected  
+<a name="CoinjoinBook+refreshBonds"></a>
+
+### coinjoinBook.refreshBonds(verifier) ⇒ <code>Promise.&lt;{checked: number, valid: number, shared: number}&gt;</code>
+Check every advertised bond on chain. A maker's value is its best valid
+bond; an outpoint whose bond key certified more than one maker counts for
+none. Bond descriptors are public, so only a claim that verifies on chain
+(certificate, output script, unspent) can share an outpoint: a copy, or a
+certificate from a key that does not lock the output, leaves the owner's
+bond standing.
+
+**Kind**: instance method of [<code>CoinjoinBook</code>](#CoinjoinBook)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| verifier | <code>Object</code> | `{ verify(bond, makerPubkey) }` (e.g. `Bond.FidelityVerifier`) |
+
+<a name="CoinjoinBook+choose"></a>
+
+### coinjoinBook.choose(amountSats, count, [opts]) ⇒ <code>Array.&lt;Object&gt;</code>
+Draw up to `count` distinct makers for a coinjoin of `amountSats`, at
+random without replacement, weighted by bond value. Unbonded makers weigh
+`noBondShare` × the mean bond value (or all weigh 1 when nobody is
+bonded). Fees above `maxFeeSats` are excluded, never ranked.
+
+**Kind**: instance method of [<code>CoinjoinBook</code>](#CoinjoinBook)  
+**Returns**: <code>Array.&lt;Object&gt;</code> - offers `{ id, cjfeeSats, bondValue, ...offer }`  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| amountSats | <code>number</code> |  |  |
+| count | <code>number</code> |  |  |
+| [opts] | <code>Object</code> |  |  |
+| [opts.maxFeeSats] | <code>number</code> |  | most any one maker may charge |
+| [opts.exclude] | <code>Array.&lt;string&gt;</code> |  | maker keys to skip (stalled, refused) |
+| [opts.requireBond] | <code>boolean</code> | <code>false</code> |  |
+| [opts.random] | <code>function</code> |  | `() => [0, 1)` (tests) |
+
+<a name="CoinjoinBook+index"></a>
+
+### coinjoinBook.index([amountSats]) ⇒ <code>Object</code>
+Summary of the market.
+
+**Kind**: instance method of [<code>CoinjoinBook</code>](#CoinjoinBook)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| [amountSats] | <code>number</code> | also report makers and fees for this amount |
+
+<a name="CoinjoinTakerRound"></a>
+
+## CoinjoinTakerRound
+The taker's side of a round.
+
+**Kind**: global class  
+
+* [CoinjoinTakerRound](#CoinjoinTakerRound)
+    * [new CoinjoinTakerRound(settings)](#new_CoinjoinTakerRound_new)
+    * _instance_
+        * [.roundId](#CoinjoinTakerRound+roundId) ⇒ <code>string</code>
+        * [.amountSats](#CoinjoinTakerRound+amountSats) ⇒ <code>number</code>
+        * [.sealXOnly](#CoinjoinTakerRound+sealXOnly) ⇒ <code>string</code>
+        * [.plan](#CoinjoinTakerRound+plan) ⇒ <code>Object</code> \| <code>null</code>
+        * [.psbt](#CoinjoinTakerRound+psbt) ⇒ <code>string</code> \| <code>null</code>
+        * [.txid](#CoinjoinTakerRound+txid) ⇒ <code>string</code> \| <code>null</code>
+        * [.dropped](#CoinjoinTakerRound+dropped) ⇒ <code>Array.&lt;string&gt;</code>
+        * [.makers()](#CoinjoinTakerRound+makers) ⇒ <code>Array.&lt;Object&gt;</code>
+        * [.start(offers)](#CoinjoinTakerRound+start) ⇒ <code>Promise.&lt;Array.&lt;Object&gt;&gt;</code>
+        * [.receive(envelope)](#CoinjoinTakerRound+receive) ⇒ <code>Promise.&lt;Array.&lt;Object&gt;&gt;</code>
+        * [.buildTx([opts])](#CoinjoinTakerRound+buildTx) ⇒ <code>Promise.&lt;Array.&lt;Object&gt;&gt;</code>
+        * [.timedOut()](#CoinjoinTakerRound+timedOut) ⇒ <code>Array.&lt;Object&gt;</code>
+        * [.rebuild([opts])](#CoinjoinTakerRound+rebuild) ⇒ <code>Promise.&lt;Array.&lt;Object&gt;&gt;</code>
+        * [.finalize()](#CoinjoinTakerRound+finalize) ⇒ <code>Promise.&lt;{txid: string, txHex: string, feeSats: number, vsize: number}&gt;</code>
+        * [.abort([reason])](#CoinjoinTakerRound+abort)
+        * [.toJSON([opts])](#CoinjoinTakerRound+toJSON) ⇒ <code>Object</code>
+    * _static_
+        * [.fromJSON(json, settings)](#CoinjoinTakerRound.fromJSON) ⇒ [<code>CoinjoinTakerRound</code>](#CoinjoinTakerRound)
+        * [.bitcoinAdapter(service)](#CoinjoinTakerRound.bitcoinAdapter) ⇒ <code>Object</code>
+        * [.walletAdapter(service, [options])](#CoinjoinTakerRound.walletAdapter) ⇒ <code>Object</code>
+
+<a name="new_CoinjoinTakerRound_new"></a>
+
+### new CoinjoinTakerRound(settings)
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| settings | <code>Object</code> |  |  |
+| [settings.network] | <code>string</code> | <code>&quot;&#x27;regtest&#x27;&quot;</code> |  |
+| settings.amountSats | <code>number</code> |  | size of every coinjoin output |
+| settings.adapters | <code>Object</code> |  | `{ bitcoin, wallet }` |
+| [settings.roundKey] | <code>Buffer</code> \| <code>string</code> |  | fresh per round (generated when omitted) |
+| [settings.roundId] | <code>string</code> |  | (generated when omitted) |
+| [settings.minMakers] | <code>number</code> | <code>2</code> |  |
+| [settings.feeRateSatVb] | <code>number</code> | <code>2</code> |  |
+| [settings.minFeeRateSatVb] | <code>number</code> | <code>1</code> |  |
+| [settings.maxFeeRateSatVb] | <code>number</code> | <code>500</code> |  |
+| [settings.maxFeeSats] | <code>number</code> |  | most any one maker may charge |
+| [settings.minMakerConfs] | <code>number</code> | <code>1</code> | confirmations on maker inputs |
+| [settings.requireOwnership] | <code>boolean</code> | <code>false</code> | makers must sign for their inputs |
+| [settings.podleMinAgeConfs] | <code>number</code> | <code>5</code> |  |
+| [settings.podleMinValuePct] | <code>number</code> | <code>20</code> |  |
+| [settings.ackTimeoutMs] | <code>number</code> | <code>30000</code> |  |
+| [settings.sigTimeoutMs] | <code>number</code> | <code>60000</code> |  |
+| [settings.maxRebuilds] | <code>number</code> | <code>3</code> |  |
+| [settings.now] | <code>function</code> |  |  |
+
+<a name="CoinjoinTakerRound+roundId"></a>
+
+### coinjoinTakerRound.roundId ⇒ <code>string</code>
+**Kind**: instance property of [<code>CoinjoinTakerRound</code>](#CoinjoinTakerRound)  
+<a name="CoinjoinTakerRound+amountSats"></a>
+
+### coinjoinTakerRound.amountSats ⇒ <code>number</code>
+**Kind**: instance property of [<code>CoinjoinTakerRound</code>](#CoinjoinTakerRound)  
+<a name="CoinjoinTakerRound+sealXOnly"></a>
+
+### coinjoinTakerRound.sealXOnly ⇒ <code>string</code>
+**Kind**: instance property of [<code>CoinjoinTakerRound</code>](#CoinjoinTakerRound)  
+**Returns**: <code>string</code> - x-only key round messages to this taker are sealed to  
+<a name="CoinjoinTakerRound+plan"></a>
+
+### coinjoinTakerRound.plan ⇒ <code>Object</code> \| <code>null</code>
+**Kind**: instance property of [<code>CoinjoinTakerRound</code>](#CoinjoinTakerRound)  
+**Returns**: <code>Object</code> \| <code>null</code> - [Coinjoin.plan](Coinjoin.plan) result of the current transaction  
+<a name="CoinjoinTakerRound+psbt"></a>
+
+### coinjoinTakerRound.psbt ⇒ <code>string</code> \| <code>null</code>
+**Kind**: instance property of [<code>CoinjoinTakerRound</code>](#CoinjoinTakerRound)  
+**Returns**: <code>string</code> \| <code>null</code> - current PSBT  
+<a name="CoinjoinTakerRound+txid"></a>
+
+### coinjoinTakerRound.txid ⇒ <code>string</code> \| <code>null</code>
+**Kind**: instance property of [<code>CoinjoinTakerRound</code>](#CoinjoinTakerRound)  
+**Returns**: <code>string</code> \| <code>null</code> - broadcast txid  
+<a name="CoinjoinTakerRound+dropped"></a>
+
+### coinjoinTakerRound.dropped ⇒ <code>Array.&lt;string&gt;</code>
+**Kind**: instance property of [<code>CoinjoinTakerRound</code>](#CoinjoinTakerRound)  
+**Returns**: <code>Array.&lt;string&gt;</code> - maker keys dropped from this round (exclude them next time)  
+<a name="CoinjoinTakerRound+makers"></a>
+
+### coinjoinTakerRound.makers() ⇒ <code>Array.&lt;Object&gt;</code>
+Makers in this round, with their stage.
+
+**Kind**: instance method of [<code>CoinjoinTakerRound</code>](#CoinjoinTakerRound)  
+**Returns**: <code>Array.&lt;Object&gt;</code> - `{ makerPubkey, offerId, fillId, stage, dropped, reason }`  
+<a name="CoinjoinTakerRound+start"></a>
+
+### coinjoinTakerRound.start(offers) ⇒ <code>Promise.&lt;Array.&lt;Object&gt;&gt;</code>
+Fill the chosen offers. Each must be valid, for this network and amount,
+and from a distinct maker.
+
+**Kind**: instance method of [<code>CoinjoinTakerRound</code>](#CoinjoinTakerRound)  
+**Returns**: <code>Promise.&lt;Array.&lt;Object&gt;&gt;</code> - `{ to, fillId, envelope }` to send  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| offers | <code>Array.&lt;Object&gt;</code> | signed `CoinjoinOffer` bodies (e.g. `CoinjoinBook#choose`) |
+
+<a name="CoinjoinTakerRound+receive"></a>
+
+### coinjoinTakerRound.receive(envelope) ⇒ <code>Promise.&lt;Array.&lt;Object&gt;&gt;</code>
+Open and apply a sealed message from a maker.
+
+**Kind**: instance method of [<code>CoinjoinTakerRound</code>](#CoinjoinTakerRound)  
+**Returns**: <code>Promise.&lt;Array.&lt;Object&gt;&gt;</code> - replies `{ to, fillId, envelope }`  
+
+| Param | Type |
+| --- | --- |
+| envelope | <code>Object</code> | 
+
+<a name="CoinjoinTakerRound+buildTx"></a>
+
+### coinjoinTakerRound.buildTx([opts]) ⇒ <code>Promise.&lt;Array.&lt;Object&gt;&gt;</code>
+Build the transaction from the makers that have sent their inputs; the
+rest are dropped.
+
+**Kind**: instance method of [<code>CoinjoinTakerRound</code>](#CoinjoinTakerRound)  
+**Returns**: <code>Promise.&lt;Array.&lt;Object&gt;&gt;</code> - `CoinjoinTx` envelopes  
+
+| Param | Type |
+| --- | --- |
+| [opts] | <code>Object</code> | 
+| [opts.feeRateSatVb] | <code>number</code> | 
+
+<a name="CoinjoinTakerRound+timedOut"></a>
+
+### coinjoinTakerRound.timedOut() ⇒ <code>Array.&lt;Object&gt;</code>
+Makers that have not answered in time at their current stage.
+
+**Kind**: instance method of [<code>CoinjoinTakerRound</code>](#CoinjoinTakerRound)  
+**Returns**: <code>Array.&lt;Object&gt;</code> - `{ makerPubkey, fillId, stage }`  
+<a name="CoinjoinTakerRound+rebuild"></a>
+
+### coinjoinTakerRound.rebuild([opts]) ⇒ <code>Promise.&lt;Array.&lt;Object&gt;&gt;</code>
+Drop makers and send a new transaction to the rest. Without `drop`,
+the makers whose signature is overdue are dropped.
+
+**Kind**: instance method of [<code>CoinjoinTakerRound</code>](#CoinjoinTakerRound)  
+**Returns**: <code>Promise.&lt;Array.&lt;Object&gt;&gt;</code> - `CoinjoinTx` envelopes  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| [opts] | <code>Object</code> |  |
+| [opts.drop] | <code>Array.&lt;string&gt;</code> | maker keys or fill ids |
+| [opts.feeRateSatVb] | <code>number</code> |  |
+
+<a name="CoinjoinTakerRound+finalize"></a>
+
+### coinjoinTakerRound.finalize() ⇒ <code>Promise.&lt;{txid: string, txHex: string, feeSats: number, vsize: number}&gt;</code>
+Check the transaction against the plan, sign the taker's inputs, and broadcast.
+
+**Kind**: instance method of [<code>CoinjoinTakerRound</code>](#CoinjoinTakerRound)  
+<a name="CoinjoinTakerRound+abort"></a>
+
+### coinjoinTakerRound.abort([reason])
+Give up on the round and release the taker's coins.
+
+**Kind**: instance method of [<code>CoinjoinTakerRound</code>](#CoinjoinTakerRound)  
+
+| Param | Type | Default |
+| --- | --- | --- |
+| [reason] | <code>string</code> | <code>&quot;aborted&quot;</code> | 
+
+<a name="CoinjoinTakerRound+toJSON"></a>
+
+### coinjoinTakerRound.toJSON([opts]) ⇒ <code>Object</code>
+JSON for persistence. The round key is included only with `includeSecrets`.
+
+**Kind**: instance method of [<code>CoinjoinTakerRound</code>](#CoinjoinTakerRound)  
+
+| Param | Type | Default |
+| --- | --- | --- |
+| [opts] | <code>Object</code> |  | 
+| [opts.includeSecrets] | <code>boolean</code> | <code>false</code> | 
+
+<a name="CoinjoinTakerRound.fromJSON"></a>
+
+### CoinjoinTakerRound.fromJSON(json, settings) ⇒ [<code>CoinjoinTakerRound</code>](#CoinjoinTakerRound)
+**Kind**: static method of [<code>CoinjoinTakerRound</code>](#CoinjoinTakerRound)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| json | <code>Object</code> | [toJSON](#CoinjoinTakerRound+toJSON) with secrets |
+| settings | <code>Object</code> | constructor settings (adapters, …) |
+
+<a name="CoinjoinTakerRound.bitcoinAdapter"></a>
+
+### CoinjoinTakerRound.bitcoinAdapter(service) ⇒ <code>Object</code>
+Chain adapter over `services/bitcoin` (bitcoind JSON-RPC).
+
+**Kind**: static method of [<code>CoinjoinTakerRound</code>](#CoinjoinTakerRound)  
+**Returns**: <code>Object</code> - `{ getTipHeight, getTxOut, broadcast }`  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| service | <code>Object</code> | a `Bitcoin` service instance |
+
+<a name="CoinjoinTakerRound.walletAdapter"></a>
+
+### CoinjoinTakerRound.walletAdapter(service, [options]) ⇒ <code>Object</code>
+Wallet adapter over a bitcoind descriptor wallet holding `tr()` coins.
+Coins are locked while a round holds them. PoDLE keys are derived from
+the wallet's private descriptors, so the wallet must not be watch-only.
+
+**Kind**: static method of [<code>CoinjoinTakerRound</code>](#CoinjoinTakerRound)  
+**Returns**: <code>Object</code> - `{ selectInputs, releaseInputs, getNewScript, signPsbt, podleCandidates, privateKeyFor }`  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| service | <code>Object</code> | a `Bitcoin` service instance |
+| [options] | <code>Object</code> |  |
+| [options.wallet] | <code>string</code> | named wallet (default: the node's default wallet) |
+| [options.usedIndexes] | <code>function</code> | `(txid, vout) => number[]` PoDLE indexes already used |
+
+<a name="CoinjoinMakerRound"></a>
+
+## CoinjoinMakerRound
+The maker's side of one fill.
+
+**Kind**: global class  
+
+* [CoinjoinMakerRound](#CoinjoinMakerRound)
+    * [new CoinjoinMakerRound(settings)](#new_CoinjoinMakerRound_new)
+    * _instance_
+        * [.roundId](#CoinjoinMakerRound+roundId) ⇒ <code>string</code> \| <code>null</code>
+        * [.fillId](#CoinjoinMakerRound+fillId) ⇒ <code>string</code> \| <code>null</code>
+        * [.sealXOnly](#CoinjoinMakerRound+sealXOnly) ⇒ <code>string</code>
+        * [.inputs](#CoinjoinMakerRound+inputs) ⇒ <code>Array.&lt;Object&gt;</code> \| <code>null</code>
+        * [.receive(envelope)](#CoinjoinMakerRound+receive) ⇒ <code>Promise.&lt;(Object\|null)&gt;</code>
+        * [.abort([reason])](#CoinjoinMakerRound+abort)
+        * [.toJSON([opts])](#CoinjoinMakerRound+toJSON) ⇒ <code>Object</code>
+    * _static_
+        * [.fromJSON(json, settings)](#CoinjoinMakerRound.fromJSON) ⇒ [<code>CoinjoinMakerRound</code>](#CoinjoinMakerRound)
+
+<a name="new_CoinjoinMakerRound_new"></a>
+
+### new CoinjoinMakerRound(settings)
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| settings | <code>Object</code> |  |  |
+| settings.offer | <code>Object</code> |  | the maker's signed `CoinjoinOffer` |
+| settings.identityKey | <code>Buffer</code> \| <code>string</code> |  | private key of `offer.makerPubkey` |
+| settings.adapters | <code>Object</code> |  | `{ bitcoin, wallet }` |
+| [settings.blacklist] | <code>Object</code> |  | shared `PodleBlacklist` (commitments already used) |
+| [settings.sealKey] | <code>Buffer</code> \| <code>string</code> |  | (generated when omitted) |
+| [settings.podleMinAgeConfs] | <code>number</code> | <code>5</code> |  |
+| [settings.podleMinValuePct] | <code>number</code> | <code>20</code> |  |
+| [settings.minEqualOutputs] | <code>number</code> | <code>2</code> |  |
+| [settings.maxSigns] | <code>number</code> | <code>4</code> | signatures for rebuilt transactions in one round |
+| [settings.now] | <code>function</code> |  |  |
+
+<a name="CoinjoinMakerRound+roundId"></a>
+
+### coinjoinMakerRound.roundId ⇒ <code>string</code> \| <code>null</code>
+**Kind**: instance property of [<code>CoinjoinMakerRound</code>](#CoinjoinMakerRound)  
+<a name="CoinjoinMakerRound+fillId"></a>
+
+### coinjoinMakerRound.fillId ⇒ <code>string</code> \| <code>null</code>
+**Kind**: instance property of [<code>CoinjoinMakerRound</code>](#CoinjoinMakerRound)  
+<a name="CoinjoinMakerRound+sealXOnly"></a>
+
+### coinjoinMakerRound.sealXOnly ⇒ <code>string</code>
+**Kind**: instance property of [<code>CoinjoinMakerRound</code>](#CoinjoinMakerRound)  
+**Returns**: <code>string</code> - x-only key later round messages are sealed to  
+<a name="CoinjoinMakerRound+inputs"></a>
+
+### coinjoinMakerRound.inputs ⇒ <code>Array.&lt;Object&gt;</code> \| <code>null</code>
+**Kind**: instance property of [<code>CoinjoinMakerRound</code>](#CoinjoinMakerRound)  
+**Returns**: <code>Array.&lt;Object&gt;</code> \| <code>null</code> - the maker's inputs in this round  
+<a name="CoinjoinMakerRound+receive"></a>
+
+### coinjoinMakerRound.receive(envelope) ⇒ <code>Promise.&lt;(Object\|null)&gt;</code>
+Open and apply a sealed message from the taker.
+
+**Kind**: instance method of [<code>CoinjoinMakerRound</code>](#CoinjoinMakerRound)  
+**Returns**: <code>Promise.&lt;(Object\|null)&gt;</code> - the reply envelope  
+
+| Param | Type |
+| --- | --- |
+| envelope | <code>Object</code> | 
+
+<a name="CoinjoinMakerRound+abort"></a>
+
+### coinjoinMakerRound.abort([reason])
+Leave the round and release the maker's coins. After signing, a coin can
+still be spent by the signed transaction; the wallet keeps it locked
+until it is spent elsewhere or the caller unlocks it.
+
+**Kind**: instance method of [<code>CoinjoinMakerRound</code>](#CoinjoinMakerRound)  
+
+| Param | Type | Default |
+| --- | --- | --- |
+| [reason] | <code>string</code> | <code>&quot;aborted&quot;</code> | 
+
+<a name="CoinjoinMakerRound+toJSON"></a>
+
+### coinjoinMakerRound.toJSON([opts]) ⇒ <code>Object</code>
+JSON for persistence. The seal key is included only with `includeSecrets`;
+the identity key never is.
+
+**Kind**: instance method of [<code>CoinjoinMakerRound</code>](#CoinjoinMakerRound)  
+
+| Param | Type | Default |
+| --- | --- | --- |
+| [opts] | <code>Object</code> |  | 
+| [opts.includeSecrets] | <code>boolean</code> | <code>false</code> | 
+
+<a name="CoinjoinMakerRound.fromJSON"></a>
+
+### CoinjoinMakerRound.fromJSON(json, settings) ⇒ [<code>CoinjoinMakerRound</code>](#CoinjoinMakerRound)
+**Kind**: static method of [<code>CoinjoinMakerRound</code>](#CoinjoinMakerRound)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| json | <code>Object</code> | [toJSON](#CoinjoinMakerRound+toJSON) with secrets |
+| settings | <code>Object</code> | constructor settings (identityKey, adapters, blacklist, …) |
+
 <a name="Collection"></a>
 
 ## Collection
@@ -4566,7 +6836,7 @@ Build deterministic P2TR spend tree from settings.spendLadder or synthesized
 validators / publisher policy.
 
 **Kind**: instance method of [<code>Contract</code>](#Contract)  
-**Returns**: <code>object</code> - [module:functions/contractTaproot.buildContractTaproot](module:functions/contractTaproot.buildContractTaproot)  
+**Returns**: <code>object</code> - [Policy.compile](Policy.compile)  
 
 | Param | Type |
 | --- | --- |
@@ -4874,6 +7144,8 @@ change here until then.
     * [new Document([doc])](#new_Document_new)
     * _instance_
         * [.hash](#Document+hash)
+        * [.convergence](#Document+convergence) : <code>string</code> \| <code>null</code>
+        * [.convergent](#Document+convergent)
         * [.contentSize](#Document+contentSize) : <code>number</code> \| <code>null</code>
         * [.blobs](#Document+blobs)
         * [.complete](#Document+complete)
@@ -4881,6 +7153,9 @@ change here until then.
         * [.blob(index)](#Document+blob) ⇒ <code>Object</code> \| <code>null</code>
         * [.paymentHashFor(index)](#Document+paymentHashFor) ⇒ <code>string</code> \| <code>null</code>
         * [.keyFor(index)](#Document+keyFor) ⇒ <code>string</code> \| <code>null</code>
+        * [.setKey(index, keyHex)](#Document+setKey) ⇒ <code>boolean</code>
+        * [.setConvergenceSecret(secret)](#Document+setConvergenceSecret) ⇒ [<code>Document</code>](#Document)
+        * [.proofFor(index)](#Document+proofFor) ⇒ <code>Array.&lt;string&gt;</code> \| <code>null</code>
         * [.bytesFor(index)](#Document+bytesFor) ⇒ <code>Buffer</code> \| <code>null</code>
         * [.verify(blob)](#Document+verify) ⇒ <code>boolean</code>
         * [.acceptBytes(index, bytes)](#Document+acceptBytes) ⇒ <code>boolean</code>
@@ -4913,6 +7188,19 @@ or [fromPlain](#Document.fromPlain) to build one from content.
 
 ### document.hash
 Tree root over blob hashes (hex) — the document's identity.
+
+**Kind**: instance property of [<code>Document</code>](#Document)  
+<a name="Document+convergence"></a>
+
+### document.convergence : <code>string</code> \| <code>null</code>
+`'public'` (content-derived keys anyone can check), `'scoped'` (derived
+under a convergence secret), or `null` (private random keys / unsealed).
+
+**Kind**: instance property of [<code>Document</code>](#Document)  
+<a name="Document+convergent"></a>
+
+### document.convergent
+True when blob keys are derived from content (cross-seller de-duplication).
 
 **Kind**: instance property of [<code>Document</code>](#Document)  
 <a name="Document+contentSize"></a>
@@ -4970,6 +7258,42 @@ Payment hash for one blob: `SHA256(K_i)` when sealed, the blob hash when not.
 | --- | --- |
 | index | <code>number</code> | 
 
+<a name="Document+setKey"></a>
+
+### document.setKey(index, keyHex) ⇒ <code>boolean</code>
+Hold `K_i` without opening the blob (seller rehydrating from storage).
+
+**Kind**: instance method of [<code>Document</code>](#Document)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| index | <code>number</code> |  |
+| keyHex | <code>string</code> \| <code>Buffer</code> | must hash to the blob's payment hash |
+
+<a name="Document+setConvergenceSecret"></a>
+
+### document.setConvergenceSecret(secret) ⇒ [<code>Document</code>](#Document)
+Hold the convergence secret of a `'scoped'` document so opened blobs can
+be checked against their content-derived keys. Never part of `record()`.
+
+**Kind**: instance method of [<code>Document</code>](#Document)  
+
+| Param | Type |
+| --- | --- |
+| secret | <code>Buffer</code> \| <code>string</code> \| <code>null</code> | 
+
+<a name="Document+proofFor"></a>
+
+### document.proofFor(index) ⇒ <code>Array.&lt;string&gt;</code> \| <code>null</code>
+Inclusion proof for one blob (`[]` for a one-blob tree).
+
+**Kind**: instance method of [<code>Document</code>](#Document)  
+**Returns**: <code>Array.&lt;string&gt;</code> \| <code>null</code> - null when the leaves do not build a root  
+
+| Param | Type |
+| --- | --- |
+| index | <code>number</code> | 
+
 <a name="Document+bytesFor"></a>
 
 ### document.bytesFor(index) ⇒ <code>Buffer</code> \| <code>null</code>
@@ -5006,7 +7330,7 @@ Accept verified wire bytes for one blob (ciphertext when sealed).
 <a name="Document+openBlob"></a>
 
 ### document.openBlob(index, keyHex, [ciphertext]) ⇒ <code>Object</code>
-Open one sealed blob with its key (checks `SHA256(K_i)` and the plaintext hash).
+Open one sealed blob with its key (checks `SHA256(K_i)`; GCM authenticates the plaintext).
 
 **Kind**: instance method of [<code>Document</code>](#Document)  
 
@@ -5028,6 +7352,8 @@ Reassembled plaintext when every blob has been opened.
 `P2P_INVENTORY_RESPONSE` item — hash-only. `contentHashHex` on each blob is
 the per-blob payment hash so one HTLC per blob (and multi-seller plans) work
 with the existing `Book`.
+A full list lets the buyer recompute the root (`verifyOfferLeaves`); a
+subset (`indexes`) carries an inclusion proof per blob instead.
 
 **Kind**: instance method of [<code>Document</code>](#Document)  
 
@@ -5036,6 +7362,9 @@ with the existing `Book`.
 | [opts] | <code>Object</code> |  |
 | [opts.rateSats] | <code>number</code> | Per-blob ask. |
 | [opts.documentId] | <code>string</code> |  |
+| [opts.indexes] | <code>Array.&lt;number&gt;</code> | Subset of blob indexes. |
+| [opts.proofs] | <code>boolean</code> | Attach proofs even to a full list. |
+| [opts.creditRateSats] | <code>number</code> | Per-blob price on the credit rail   (pay after verify over a channel); advertised with `paymentModes`. |
 
 <a name="Document+fileSendObjects"></a>
 
@@ -5083,7 +7412,8 @@ UI provides the name of the desired component
 <a name="Document.seal"></a>
 
 ### Document.seal(plaintext, [opts]) ⇒ [<code>Document</code>](#Document)
-Seal plaintext as a blob tree with one key per blob.
+Seal plaintext as a blob tree with one key per blob. Keys are derived
+from each blob's content (convergent) unless `private` is set.
 
 **Kind**: static method of [<code>Document</code>](#Document)  
 
@@ -5091,14 +7421,16 @@ Seal plaintext as a blob tree with one key per blob.
 | --- | --- | --- |
 | plaintext | <code>Buffer</code> \| <code>string</code> |  |
 | [opts] | <code>Object</code> |  |
-| [opts.chunkBytes] | <code>number</code> | Ciphertext blob size (default AMP-sized); plaintext chunks are 16 bytes smaller. |
-| [opts.documentId] | <code>string</code> | Catalog id (defaults to the Tree root). |
+| [opts.chunkBytes] | <code>number</code> | Ciphertext blob size (default AMP-sized, leaving room for the inclusion proof); plaintext chunks are 16 bytes smaller. |
+| [opts.documentId] | <code>string</code> | Catalog label (defaults to the Tree root). Offers from different sellers meet on the root, whatever label each uses. |
 | [opts.publisher] | <code>string</code> | Publisher public key (hex). |
+| [opts.private] | <code>boolean</code> | random per-blob keys (no cross-seller de-duplication) |
+| [opts.convergenceSecret] | <code>Buffer</code> \| <code>string</code> | scope convergent keys to holders of this secret |
 
 <a name="Document.fromPlain"></a>
 
 ### Document.fromPlain(content, [opts]) ⇒ [<code>Document</code>](#Document)
-Unsealed blob tree over raw content (same leaves as `splitBlobs`).
+Unsealed blob tree over raw content (same leaves and root as `splitBlobs`).
 
 **Kind**: static method of [<code>Document</code>](#Document)  
 
@@ -5142,6 +7474,363 @@ metadata lives. Seal it as its own one-blob Document.
 | Param | Type |
 | --- | --- |
 | bytes | <code>Buffer</code> \| <code>string</code> | 
+
+<a name="DocumentBook"></a>
+
+## DocumentBook
+**Kind**: global class  
+
+* [DocumentBook](#DocumentBook)
+    * [new DocumentBook([settings])](#new_DocumentBook_new)
+    * [._providers](#DocumentBook+_providers) : <code>Map.&lt;string, object&gt;</code>
+    * [._keyPenalties](#DocumentBook+_keyPenalties) : <code>Map.&lt;string, object&gt;</code>
+    * [._sellerKeys](#DocumentBook+_sellerKeys) : <code>Map.&lt;string, Set.&lt;string&gt;&gt;</code>
+    * [._evidence](#DocumentBook+_evidence) : <code>Set.&lt;string&gt;</code>
+    * [.capacity](#DocumentBook+capacity) ⇒ <code>number</code>
+    * [.recordInventoryLatency(sellerId, latencyMs, [opts])](#DocumentBook+recordInventoryLatency)
+    * [.recordDelivery(sellerId, outcome)](#DocumentBook+recordDelivery)
+    * [.recordRefund(sellerId)](#DocumentBook+recordRefund)
+    * [.recordPenalty(sellerId, [proof])](#DocumentBook+recordPenalty)
+    * [.ingestFraudProof(body, [ctx])](#DocumentBook+ingestFraudProof) ⇒ <code>Object</code>
+    * [.keyPenalties(pubkey)](#DocumentBook+keyPenalties) ⇒ <code>number</code>
+    * [.scoreFor(sellerId)](#DocumentBook+scoreFor) ⇒ <code>number</code>
+    * [.latencyFor(sellerId)](#DocumentBook+latencyFor) ⇒ <code>number</code>
+    * [.providerStats(sellerId)](#DocumentBook+providerStats) ⇒ <code>object</code> \| <code>null</code>
+    * [.listProviders()](#DocumentBook+listProviders) ⇒ <code>Array.&lt;object&gt;</code>
+    * [.exportTelemetry()](#DocumentBook+exportTelemetry) ⇒ <code>Object</code>
+    * [.importTelemetry(record, [opts])](#DocumentBook+importTelemetry) ⇒ <code>number</code>
+    * [.ingestInventoryResponse(opts)](#DocumentBook+ingestInventoryResponse)
+    * [.forgetSeller(sellerId)](#DocumentBook+forgetSeller) ⇒ <code>number</code>
+    * [.listOffers([filter])](#DocumentBook+listOffers) ⇒ <code>Array.&lt;object&gt;</code>
+    * [.providersForBlob(blobHashHex, [opts])](#DocumentBook+providersForBlob) ⇒ <code>Array.&lt;object&gt;</code>
+    * [.indexByBlobHash([filter])](#DocumentBook+indexByBlobHash) ⇒ <code>Map.&lt;string, Array.&lt;object&gt;&gt;</code>
+    * [.rankOffers(offers, [weights])](#DocumentBook+rankOffers) ⇒ <code>Array.&lt;object&gt;</code>
+    * [.pickBest(documentId, [opts])](#DocumentBook+pickBest) ⇒ <code>object</code> \| <code>null</code>
+    * [.pickBlobPlan(documentId, blobTotal, [opts])](#DocumentBook+pickBlobPlan) ⇒ <code>Map.&lt;number, object&gt;</code>
+    * [.groupPlanBySeller(plan)](#DocumentBook+groupPlanBySeller) ⇒ <code>Array.&lt;object&gt;</code>
+
+<a name="new_DocumentBook_new"></a>
+
+### new DocumentBook([settings])
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [settings] | <code>Object</code> |  |  |
+| [settings.alpha] | <code>number</code> | <code>0.3</code> | EWMA smoothing for latencies |
+| [settings.hopPenaltyMs] | <code>number</code> | <code>50</code> | latency added per gossip hop |
+| [settings.weights] | <code>Object</code> |  | ranking weight overrides |
+| [settings.maxProviders] | <code>number</code> | <code>10000</code> | tracked providers (LRU over unpenalized ones) |
+| [settings.maxOffers] | <code>number</code> | <code>100000</code> | offer rows (oldest evicted) |
+| [settings.nodeId] | <code>string</code> |  | stamped on exported telemetry; imports from another node are refused |
+| [settings.verifyOfferLeaves] | <code>function</code> |  | `({ merkleRootHex, blobs, blobTotal }) → boolean|null|{ ok }` |
+
+<a name="DocumentBook+_providers"></a>
+
+### documentBook.\_providers : <code>Map.&lt;string, object&gt;</code>
+sellerId → provider telemetry
+
+**Kind**: instance property of [<code>DocumentBook</code>](#DocumentBook)  
+<a name="DocumentBook+_keyPenalties"></a>
+
+### documentBook.\_keyPenalties : <code>Map.&lt;string, object&gt;</code>
+x-only key → `{ penalties, lastPenaltyKind }` (never cleared)
+
+**Kind**: instance property of [<code>DocumentBook</code>](#DocumentBook)  
+<a name="DocumentBook+_sellerKeys"></a>
+
+### documentBook.\_sellerKeys : <code>Map.&lt;string, Set.&lt;string&gt;&gt;</code>
+sellerId → x-only AMP signer keys seen on its offers
+
+**Kind**: instance property of [<code>DocumentBook</code>](#DocumentBook)  
+<a name="DocumentBook+_evidence"></a>
+
+### documentBook.\_evidence : <code>Set.&lt;string&gt;</code>
+fraud-proof evidence ids already counted
+
+**Kind**: instance property of [<code>DocumentBook</code>](#DocumentBook)  
+<a name="DocumentBook+capacity"></a>
+
+### documentBook.capacity ⇒ <code>number</code>
+**Kind**: instance property of [<code>DocumentBook</code>](#DocumentBook)  
+**Returns**: <code>number</code> - offer rows held before the oldest is evicted  
+<a name="DocumentBook+recordInventoryLatency"></a>
+
+### documentBook.recordInventoryLatency(sellerId, latencyMs, [opts])
+Record an inventory round trip for a provider.
+
+**Kind**: instance method of [<code>DocumentBook</code>](#DocumentBook)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| sellerId | <code>string</code> |  |
+| latencyMs | <code>number</code> |  |
+| [opts] | <code>Object</code> |  |
+| [opts.hops] | <code>number</code> | gossip hops the response travelled |
+
+<a name="DocumentBook+recordDelivery"></a>
+
+### documentBook.recordDelivery(sellerId, outcome)
+Record a delivery outcome (a blob plan or a single blob).
+
+**Kind**: instance method of [<code>DocumentBook</code>](#DocumentBook)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| sellerId | <code>string</code> |  |
+| outcome | <code>Object</code> |  |
+| outcome.ok | <code>boolean</code> | bytes verified against the advertised hash |
+| [outcome.latencyMs] | <code>number</code> |  |
+| [outcome.bytes] | <code>number</code> |  |
+
+<a name="DocumentBook+recordRefund"></a>
+
+### documentBook.recordRefund(sellerId)
+Record that a purchase from this provider ended in an HTLC refund.
+
+**Kind**: instance method of [<code>DocumentBook</code>](#DocumentBook)  
+
+| Param | Type |
+| --- | --- |
+| sellerId | <code>string</code> | 
+
+<a name="DocumentBook+recordPenalty"></a>
+
+### documentBook.recordPenalty(sellerId, [proof])
+Record a verified fraud proof against this provider.
+
+**Kind**: instance method of [<code>DocumentBook</code>](#DocumentBook)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| sellerId | <code>string</code> |  |
+| [proof] | <code>Object</code> | `{ kind }` from `types/witness` FraudProof |
+
+<a name="DocumentBook+ingestFraudProof"></a>
+
+### documentBook.ingestFraudProof(body, [ctx]) ⇒ <code>Object</code>
+Verify a `FraudProof` body (`types/witness`) and penalize the offender
+locally. The penalty lands on the offender's x-only key and sticks: every
+seller whose offers carry that key as their verified AMP signer
+(`ampSignerPubkey`, from `signerPubkeyHex` at ingest) scores with it, now
+and on later ingests. Self-asserted `sellerPubkey` / `sellerId` never
+route a penalty. Each evidence id counts once; verdicts that name no
+offender (`reputational: false`) penalize nobody. Reputation stays local
+(decision 4).
+
+**Kind**: instance method of [<code>DocumentBook</code>](#DocumentBook)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| body | <code>Object</code> | `CONTRACT_MESSAGE` body |
+| [ctx] | <code>Object</code> | chain view / epoch for the proof kind |
+
+<a name="DocumentBook+keyPenalties"></a>
+
+### documentBook.keyPenalties(pubkey) ⇒ <code>number</code>
+Penalty count recorded against an AMP signer key.
+
+**Kind**: instance method of [<code>DocumentBook</code>](#DocumentBook)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| pubkey | <code>string</code> | compressed or x-only |
+
+<a name="DocumentBook+scoreFor"></a>
+
+### documentBook.scoreFor(sellerId) ⇒ <code>number</code>
+Derived 0..1000 score. Unknown providers score [SCORE_UNKNOWN](#SCORE_UNKNOWN),
+inventory-only ones [SCORE_INVENTORY_ONLY](#SCORE_INVENTORY_ONLY) (below a neutral
+record); a verified penalty — direct or on any AMP signer key the seller
+used — is weighted as ten failed deliveries.
+
+**Kind**: instance method of [<code>DocumentBook</code>](#DocumentBook)  
+
+| Param | Type |
+| --- | --- |
+| sellerId | <code>string</code> | 
+
+<a name="DocumentBook+latencyFor"></a>
+
+### documentBook.latencyFor(sellerId) ⇒ <code>number</code>
+Effective latency for ranking: measured RTT plus a per-hop penalty.
+
+**Kind**: instance method of [<code>DocumentBook</code>](#DocumentBook)  
+
+| Param | Type |
+| --- | --- |
+| sellerId | <code>string</code> | 
+
+<a name="DocumentBook+providerStats"></a>
+
+### documentBook.providerStats(sellerId) ⇒ <code>object</code> \| <code>null</code>
+**Kind**: instance method of [<code>DocumentBook</code>](#DocumentBook)  
+
+| Param | Type |
+| --- | --- |
+| sellerId | <code>string</code> | 
+
+<a name="DocumentBook+listProviders"></a>
+
+### documentBook.listProviders() ⇒ <code>Array.&lt;object&gt;</code>
+All known providers with derived score, best first.
+
+**Kind**: instance method of [<code>DocumentBook</code>](#DocumentBook)  
+<a name="DocumentBook+exportTelemetry"></a>
+
+### documentBook.exportTelemetry() ⇒ <code>Object</code>
+Signable, versioned telemetry record (local persistence; future gossip).
+`hash` is SHA-256 over the canonical JSON (`stableStringify`) of every
+other field, so it survives a JSON round trip.
+
+**Kind**: instance method of [<code>DocumentBook</code>](#DocumentBook)  
+<a name="DocumentBook+importTelemetry"></a>
+
+### documentBook.importTelemetry(record, [opts]) ⇒ <code>number</code>
+Merge a telemetry record exported earlier by this node. The hash must
+match; a record stamped with another `nodeId` is refused unless
+`opts.allowForeign`. Counters merge by maximum (re-importing is
+idempotent and cannot inflate a provider), penalties are never reduced,
+and latencies take the newer sample.
+
+**Kind**: instance method of [<code>DocumentBook</code>](#DocumentBook)  
+**Returns**: <code>number</code> - providers merged  
+
+| Param | Type |
+| --- | --- |
+| record | <code>object</code> | 
+| [opts] | <code>Object</code> | 
+| [opts.allowForeign] | <code>boolean</code> | 
+
+<a name="DocumentBook+ingestInventoryResponse"></a>
+
+### documentBook.ingestInventoryResponse(opts)
+Ingest an `INVENTORY_RESPONSE`. Caller-supplied `peerScore` / `latencyMs`
+win; otherwise local telemetry for the seller is applied.
+
+**Kind**: instance method of [<code>DocumentBook</code>](#DocumentBook)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| opts | <code>object</code> |  |
+| opts.origin | <code>string</code> | seller address / peer key |
+| opts.items | <code>Array.&lt;object&gt;</code> | inventory items |
+| [opts.peerScore] | <code>number</code> |  |
+| [opts.latencyMs] | <code>number</code> | measured round trip for this response |
+| [opts.hops] | <code>number</code> | gossip hops travelled |
+| [opts.sellerId] | <code>string</code> |  |
+| [opts.sellerPubkey] | <code>string</code> |  |
+| [opts.signerPubkeyHex] | <code>string</code> | AMP signer (preferred identity) |
+
+<a name="DocumentBook+forgetSeller"></a>
+
+### documentBook.forgetSeller(sellerId) ⇒ <code>number</code>
+Drop every offer from one seller (disconnect, fraud, expiry).
+
+**Kind**: instance method of [<code>DocumentBook</code>](#DocumentBook)  
+**Returns**: <code>number</code> - rows removed  
+
+| Param | Type |
+| --- | --- |
+| sellerId | <code>string</code> | 
+
+<a name="DocumentBook+listOffers"></a>
+
+### documentBook.listOffers([filter]) ⇒ <code>Array.&lt;object&gt;</code>
+**Kind**: instance method of [<code>DocumentBook</code>](#DocumentBook)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| [filter] | <code>Object</code> |  |
+| [filter.documentId] | <code>string</code> |  |
+| [filter.blobIndex] | <code>number</code> |  |
+| [filter.blobHashHex] | <code>string</code> | chunk selector |
+| [filter.merkleRootHex] | <code>string</code> | tree selector |
+| [filter.sellerId] | <code>string</code> |  |
+
+<a name="DocumentBook+providersForBlob"></a>
+
+### documentBook.providersForBlob(blobHashHex, [opts]) ⇒ <code>Array.&lt;object&gt;</code>
+Chunk index: ranked providers for one blob hash.
+
+**Kind**: instance method of [<code>DocumentBook</code>](#DocumentBook)  
+**Returns**: <code>Array.&lt;object&gt;</code> - ranked offers, best first  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| blobHashHex | <code>string</code> |  |
+| [opts] | <code>Object</code> | see [pickBest](#DocumentBook+pickBest) |
+
+<a name="DocumentBook+indexByBlobHash"></a>
+
+### documentBook.indexByBlobHash([filter]) ⇒ <code>Map.&lt;string, Array.&lt;object&gt;&gt;</code>
+Full chunk index: blob hash → ranked offers.
+
+**Kind**: instance method of [<code>DocumentBook</code>](#DocumentBook)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| [filter] | <code>Object</code> | `{ merkleRootHex, documentId }` |
+
+<a name="DocumentBook+rankOffers"></a>
+
+### documentBook.rankOffers(offers, [weights]) ⇒ <code>Array.&lt;object&gt;</code>
+**Kind**: instance method of [<code>DocumentBook</code>](#DocumentBook)  
+**Returns**: <code>Array.&lt;object&gt;</code> - offers with `rankScore`, best first  
+
+| Param | Type |
+| --- | --- |
+| offers | <code>Array.&lt;object&gt;</code> | 
+| [weights] | <code>Object</code> | 
+
+<a name="DocumentBook+pickBest"></a>
+
+### documentBook.pickBest(documentId, [opts]) ⇒ <code>object</code> \| <code>null</code>
+**Kind**: instance method of [<code>DocumentBook</code>](#DocumentBook)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| documentId | <code>string</code> |  |
+| [opts] | <code>Object</code> |  |
+| [opts.blobIndex] | <code>number</code> |  |
+| [opts.maxSats] | <code>number</code> |  |
+| [opts.minPaidSats] | <code>number</code> | drop paid offers below this (free offers stay) |
+| [opts.excludeSellers] | <code>Array.&lt;string&gt;</code> |  |
+| [opts.merkleRootHex] | <code>string</code> | only offers for this tree root |
+| [opts.weights] | <code>Object</code> |  |
+
+<a name="DocumentBook+pickBlobPlan"></a>
+
+### documentBook.pickBlobPlan(documentId, blobTotal, [opts]) ⇒ <code>Map.&lt;number, object&gt;</code>
+One offer per blob index. Prefers seller diversity when rank scores are
+within 10%. With per-blob sealing (every blob has its own `K_i` and
+payment hash) sealed trees split across sellers exactly like unsealed
+ones; a legacy document-level seal (`opts.singleKey`) stays on one seller.
+
+**Kind**: instance method of [<code>DocumentBook</code>](#DocumentBook)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| documentId | <code>string</code> |  |
+| blobTotal | <code>number</code> |  |
+| [opts] | <code>Object</code> |  |
+| [opts.singleKey] | <code>boolean</code> | legacy whole-document key: lock one seller |
+| [opts.maxSats] | <code>number</code> | per-blob ceiling |
+| [opts.minPaidSats] | <code>number</code> | drop paid offers below this (free offers stay) |
+| [opts.excludeSellers] | <code>Array.&lt;string&gt;</code> |  |
+| [opts.merkleRootHex] | <code>string</code> | only offers for this tree root; when   omitted the plan still stays on **one** root (the first pick's), so   blobs from different trees are never mixed into a single document |
+
+<a name="DocumentBook+groupPlanBySeller"></a>
+
+### documentBook.groupPlanBySeller(plan) ⇒ <code>Array.&lt;object&gt;</code>
+Group a blob plan by seller: the MVP economic unit (one L1 HTLC per
+seller covering every blob picked from them).
+
+**Kind**: instance method of [<code>DocumentBook</code>](#DocumentBook)  
+**Returns**: <code>Array.&lt;object&gt;</code> - `[{ sellerId, sellerAddress, blobIndexes, totalSats, offers }]`  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| plan | <code>Map.&lt;number, object&gt;</code> | from [pickBlobPlan](#DocumentBook+pickBlobPlan) |
 
 <a name="Entity"></a>
 
@@ -6419,13 +9108,58 @@ Create and manage sets of {Signer} instances with the Federation class.
 
 * [Federation](#Federation)
     * [new Federation([settings])](#new_Federation_new)
-    * [.signatureScheme](#Federation+signatureScheme) ⇒ <code>&#x27;schnorr&#x27;</code> \| <code>&#x27;bls&#x27;</code>
-    * [.start()](#Federation+start) ⇒ [<code>Federation</code>](#Federation)
-    * [.sign(msg, [pubkey])](#Federation+sign) ⇒ <code>Buffer</code>
-    * [.verify(msg, sig)](#Federation+verify) ⇒ <code>Boolean</code>
-    * [.createMultiSignature(msg)](#Federation+createMultiSignature) ⇒ <code>Object</code>
-    * [.verifyMultiSignature(multiSig, threshold)](#Federation+verifyMultiSignature) ⇒ <code>Boolean</code>
-    * [._taprootPolicyInputs([overrides])](#Federation+_taprootPolicyInputs) ⇒ <code>object</code>
+    * _instance_
+        * [.signatureScheme](#Federation+signatureScheme) ⇒ <code>&#x27;schnorr&#x27;</code> \| <code>&#x27;bls&#x27;</code>
+        * [.start()](#Federation+start) ⇒ [<code>Federation</code>](#Federation)
+        * [.sign(msg, [pubkey])](#Federation+sign) ⇒ <code>Buffer</code>
+        * [.verify(msg, sig)](#Federation+verify) ⇒ <code>Boolean</code>
+        * [.createMultiSignature(msg)](#Federation+createMultiSignature) ⇒ <code>Object</code>
+        * [.verifyMultiSignature(multiSig, threshold)](#Federation+verifyMultiSignature) ⇒ <code>Boolean</code>
+        * [._taprootPolicyInputs([overrides])](#Federation+_taprootPolicyInputs) ⇒ <code>object</code>
+    * _static_
+        * [.validatorId(pubkey)](#Federation.validatorId) ⇒ <code>string</code> \| <code>null</code>
+        * [.uniqueValidatorPubkeys(validatorPubkeys)](#Federation.uniqueValidatorPubkeys) ⇒ <code>Array.&lt;string&gt;</code>
+        * [.normalizeValidators(validatorPubkeys)](#Federation.normalizeValidators) ⇒ <code>Array.&lt;string&gt;</code>
+        * [.findValidatorEntry(validatorPubkeys, pubkey)](#Federation.findValidatorEntry) ⇒ <code>string</code> \| <code>null</code>
+        * [.witnessSignatureFor(signatures, pubkey)](#Federation.witnessSignatureFor) ⇒ <code>\*</code>
+        * [.resolveThreshold(threshold, validatorPubkeys)](#Federation.resolveThreshold) ⇒ <code>number</code>
+        * [.thresholdExceedsValidators(threshold, validatorPubkeys)](#Federation.thresholdExceedsValidators) ⇒ <code>boolean</code>
+        * [.verifyLocalEpochDigests(epoch, localSidechain, localContracts, [opts])](#Federation.verifyLocalEpochDigests) ⇒ <code>Object</code> \| <code>Object</code>
+        * [.verifyReserveConservation([content])](#Federation.verifyReserveConservation) ⇒ <code>Object</code>
+        * [.verifyProgramRunRecompute(opts)](#Federation.verifyProgramRunRecompute) ⇒ <code>Object</code> \| <code>Object</code>
+        * [.evaluateValidatorSignGate(opts)](#Federation.evaluateValidatorSignGate) ⇒ <code>Object</code> \| <code>Object</code>
+        * [.emptyReserve()](#Federation.emptyReserve) ⇒ <code>Object</code>
+        * [.readReserve(content)](#Federation.readReserve) ⇒ <code>Object</code>
+        * [.assertConservation(reserve)](#Federation.assertConservation) ⇒ <code>Object</code> \| <code>Object</code>
+        * [.depositKey(txid, vout)](#Federation.depositKey) ⇒ <code>string</code>
+        * [.applyPegInCredit(content, proof, [opts])](#Federation.applyPegInCredit) ⇒ <code>Object</code> \| <code>Object</code>
+        * [.applyPegOutBurn(content, withdrawal, [opts])](#Federation.applyPegOutBurn) ⇒ <code>Object</code> \| <code>Object</code>
+        * [.settlePegOutPayout(content, requestId, opts)](#Federation.settlePegOutPayout) ⇒ <code>Object</code> \| <code>Object</code>
+        * [.unsettlePegOutPayout(content, requestId, opts)](#Federation.unsettlePegOutPayout) ⇒ <code>Object</code> \| <code>Object</code>
+        * [.patchesForReserve(reserve)](#Federation.patchesForReserve) ⇒ <code>Array.&lt;object&gt;</code>
+        * [.validateReserveObjectSchema(value)](#Federation.validateReserveObjectSchema) ⇒ <code>Object</code> \| <code>Object</code>
+        * [.validateLedgerPatch(patches)](#Federation.validateLedgerPatch) ⇒ <code>Object</code> \| <code>Object</code>
+        * [.defaultSidechainPolicy()](#Federation.defaultSidechainPolicy) ⇒ <code>object</code>
+        * [.buildDescriptor(opts)](#Federation.buildDescriptor) ⇒ <code>Object</code>
+        * [.canonicalDescriptor(descriptor)](#Federation.canonicalDescriptor) ⇒ <code>Object</code>
+        * [.descriptorId(descriptor)](#Federation.descriptorId) ⇒ <code>string</code>
+        * [.vaultForDescriptor(descriptor)](#Federation.vaultForDescriptor) ⇒ <code>Object</code>
+        * [.isValidator(descriptor, pubkey)](#Federation.isValidator) ⇒ <code>boolean</code>
+        * [.withdrawalRequestId(psbtBase64)](#Federation.withdrawalRequestId) ⇒ <code>string</code>
+        * [.prepareWithdrawal(opts)](#Federation.prepareWithdrawal) ⇒ <code>Object</code>
+        * [.signWithdrawal(opts)](#Federation.signWithdrawal) ⇒ <code>Object</code>
+        * [.addWithdrawalSignatures(opts)](#Federation.addWithdrawalSignatures) ⇒ <code>Object</code>
+        * [.finalizeWithdrawal(opts)](#Federation.finalizeWithdrawal) ⇒ <code>Object</code>
+        * [.isMessage(body)](#Federation.isMessage) ⇒ <code>boolean</code>
+        * [.inviteMessage(opts)](#Federation.inviteMessage) ⇒ <code>Object</code>
+        * [.responseMessage(federationId, accept)](#Federation.responseMessage) ⇒ <code>Object</code>
+        * [.syncMessage(federationId)](#Federation.syncMessage) ⇒ <code>Object</code>
+        * [.withdrawalMessage(federationId, w)](#Federation.withdrawalMessage) ⇒ <code>Object</code>
+        * [.signatureMessage(federationId, requestId, signatures)](#Federation.signatureMessage) ⇒ <code>Object</code>
+        * [.broadcastMessage(federationId, requestId, txid)](#Federation.broadcastMessage) ⇒ <code>Object</code>
+        * [.verifyInvite(body, signer)](#Federation.verifyInvite) ⇒ <code>Object</code>
+        * [.verifySender(descriptor, body, signer)](#Federation.verifySender) ⇒ <code>string</code>
+        * [.verifyWithdrawalRequest(descriptor, body)](#Federation.verifyWithdrawalRequest) ⇒ <code>Object</code>
 
 <a name="new_Federation_new"></a>
 
@@ -6512,6 +9246,594 @@ Federation validators live on consensus state, not only constructor settings.
 | Param | Type |
 | --- | --- |
 | [overrides] | <code>object</code> | 
+
+<a name="Federation.validatorId"></a>
+
+### Federation.validatorId(pubkey) ⇒ <code>string</code> \| <code>null</code>
+Spelling-independent id for one signing key: lowercase x-only hex. BIP340
+verifies over the x coordinate only, so `02…` / `03…` / x-only / mixed-case
+spellings of one key share an id.
+
+**Kind**: static method of [<code>Federation</code>](#Federation)  
+**Returns**: <code>string</code> \| <code>null</code> - 64-hex id, or null when the input is not a key encoding  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| pubkey | <code>\*</code> | compressed (33-byte) or x-only (32-byte) hex, or a Buffer |
+
+<a name="Federation.uniqueValidatorPubkeys"></a>
+
+### Federation.uniqueValidatorPubkeys(validatorPubkeys) ⇒ <code>Array.&lt;string&gt;</code>
+First entry per signing key; entries that are not keys on the curve are dropped.
+
+**Kind**: static method of [<code>Federation</code>](#Federation)  
+**Returns**: <code>Array.&lt;string&gt;</code> - entries as given, minus repeats and malformed entries  
+
+| Param | Type |
+| --- | --- |
+| validatorPubkeys | <code>Array.&lt;string&gt;</code> | 
+
+<a name="Federation.normalizeValidators"></a>
+
+### Federation.normalizeValidators(validatorPubkeys) ⇒ <code>Array.&lt;string&gt;</code>
+Canonical validator list: lowercase compressed hex, one entry per signing key,
+invalid points dropped, x-only keys lifted to `02…`. Compare members with
+[validatorId](#Federation.validatorId), not string equality.
+
+**Kind**: static method of [<code>Federation</code>](#Federation)  
+
+| Param | Type |
+| --- | --- |
+| validatorPubkeys | <code>Array.&lt;string&gt;</code> | 
+
+<a name="Federation.findValidatorEntry"></a>
+
+### Federation.findValidatorEntry(validatorPubkeys, pubkey) ⇒ <code>string</code> \| <code>null</code>
+The listed entry for `pubkey`, matched by signing key rather than spelling.
+
+**Kind**: static method of [<code>Federation</code>](#Federation)  
+
+| Param | Type |
+| --- | --- |
+| validatorPubkeys | <code>Array.&lt;string&gt;</code> | 
+| pubkey | <code>\*</code> | 
+
+<a name="Federation.witnessSignatureFor"></a>
+
+### Federation.witnessSignatureFor(signatures, pubkey) ⇒ <code>\*</code>
+The witness entry signed by `pubkey`, wherever the witness spelled its id.
+
+**Kind**: static method of [<code>Federation</code>](#Federation)  
+**Returns**: <code>\*</code> - the entry, or undefined  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| signatures | <code>Object</code> | witness `signatures` map keyed by validator id |
+| pubkey | <code>\*</code> |  |
+
+<a name="Federation.resolveThreshold"></a>
+
+### Federation.resolveThreshold(threshold, validatorPubkeys) ⇒ <code>number</code>
+k for a k-of-n federation. An explicit threshold wins (rounded up) but is
+clamped to the number of distinct validators, so an unsatisfiable k never
+stalls sealing; when none is set, a strict majority of the distinct
+validators (1 when empty). Use [thresholdExceedsValidators](#Federation.thresholdExceedsValidators)
+to warn about a clamp.
+
+**Kind**: static method of [<code>Federation</code>](#Federation)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| threshold | <code>\*</code> | configured value (`null` / `''` / non-positive = unset) |
+| validatorPubkeys | <code>Array.&lt;string&gt;</code> |  |
+
+<a name="Federation.thresholdExceedsValidators"></a>
+
+### Federation.thresholdExceedsValidators(threshold, validatorPubkeys) ⇒ <code>boolean</code>
+Whether an explicit threshold asks for more signatures than there are
+distinct validators (and so is clamped by [resolveThreshold](#Federation.resolveThreshold)).
+
+**Kind**: static method of [<code>Federation</code>](#Federation)  
+
+| Param | Type |
+| --- | --- |
+| threshold | <code>\*</code> | 
+| validatorPubkeys | <code>Array.&lt;string&gt;</code> | 
+
+<a name="Federation.verifyLocalEpochDigests"></a>
+
+### Federation.verifyLocalEpochDigests(epoch, localSidechain, localContracts, [opts]) ⇒ <code>Object</code> \| <code>Object</code>
+Fail-closed digest equality for epoch vs local snapshots.
+When failClosed is true (validators configured), missing either side fails.
+
+**Kind**: static method of [<code>Federation</code>](#Federation)  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| epoch | <code>object</code> |  |  |
+| localSidechain | <code>object</code> |  | `{ stateDigest }` |
+| localContracts | <code>object</code> |  | `{ merkleRoot|stateDigest }` |
+| [opts] | <code>Object</code> |  |  |
+| [opts.failClosed] | <code>boolean</code> | <code>true</code> |  |
+
+<a name="Federation.verifyReserveConservation"></a>
+
+### Federation.verifyReserveConservation([content]) ⇒ <code>Object</code>
+Recompute reserve conservation on sidechain content (typed peg ledger).
+No-op success when `/federationReserve` is absent; otherwise the success
+result also carries the checked `reserve`.
+
+**Kind**: static method of [<code>Federation</code>](#Federation)  
+
+| Param | Type |
+| --- | --- |
+| [content] | <code>object</code> | 
+
+<a name="Federation.verifyProgramRunRecompute"></a>
+
+### Federation.verifyProgramRunRecompute(opts) ⇒ <code>Object</code> \| <code>Object</code>
+Re-verify a Machine/Program run commitment (independent recomputation gate).
+
+**Kind**: static method of [<code>Federation</code>](#Federation)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| opts | <code>object</code> |  |
+| opts.program | <code>object</code> | Program with runCommitmentHex() |
+| opts.run | <code>object</code> | Machine run result (`tip`/`stack`/`runCommitmentHex`) |
+
+<a name="Federation.evaluateValidatorSignGate"></a>
+
+### Federation.evaluateValidatorSignGate(opts) ⇒ <code>Object</code> \| <code>Object</code>
+Aggregate pre-sign gate for Beacon epoch auto-sign / vault prep.
+
+**Kind**: static method of [<code>Federation</code>](#Federation)  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| opts | <code>object</code> |  |  |
+| [opts.epoch] | <code>object</code> |  | Peer epoch payload |
+| [opts.localSidechain] | <code>object</code> |  | `{ stateDigest, clock? }` |
+| [opts.localContracts] | <code>object</code> |  | `{ merkleRoot|stateDigest }` |
+| [opts.sidechainContent] | <code>object</code> |  | Full sidechain content for reserve check |
+| [opts.failClosed] | <code>boolean</code> | <code>true</code> |  |
+| [opts.program] | <code>object</code> |  | Optional Program for recompute |
+| [opts.run] | <code>object</code> |  | Optional Machine run |
+
+<a name="Federation.emptyReserve"></a>
+
+### Federation.emptyReserve() ⇒ <code>Object</code>
+**Kind**: static method of [<code>Federation</code>](#Federation)  
+**Returns**: <code>Object</code> - reserve with every total at zero  
+<a name="Federation.readReserve"></a>
+
+### Federation.readReserve(content) ⇒ <code>Object</code>
+**Kind**: static method of [<code>Federation</code>](#Federation)  
+**Returns**: <code>Object</code> - `{ outstandingSats, creditedSats, burnedSats, pendingBurnsSats, vaultConfirmedSats, deposits, withdrawals }`  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| content | <code>object</code> | Sidechain content object |
+
+<a name="Federation.assertConservation"></a>
+
+### Federation.assertConservation(reserve) ⇒ <code>Object</code> \| <code>Object</code>
+**Kind**: static method of [<code>Federation</code>](#Federation)  
+
+| Param | Type |
+| --- | --- |
+| reserve | <code>Object</code> | 
+
+<a name="Federation.depositKey"></a>
+
+### Federation.depositKey(txid, vout) ⇒ <code>string</code>
+Deposit outpoint key.
+
+**Kind**: static method of [<code>Federation</code>](#Federation)  
+
+| Param | Type |
+| --- | --- |
+| txid | <code>string</code> | 
+| vout | <code>number</code> | 
+
+<a name="Federation.applyPegInCredit"></a>
+
+### Federation.applyPegInCredit(content, proof, [opts]) ⇒ <code>Object</code> \| <code>Object</code>
+Credit peg-in after L1 maturity.
+
+**Kind**: static method of [<code>Federation</code>](#Federation)  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| content | <code>object</code> |  |  |
+| proof | <code>object</code> |  |  |
+| proof.txid | <code>string</code> |  |  |
+| proof.vout | <code>number</code> |  |  |
+| proof.amountSats | <code>number</code> |  |  |
+| proof.confirmations | <code>number</code> |  |  |
+| [opts] | <code>Object</code> |  |  |
+| [opts.depositMaturityBlocks] | <code>number</code> | <code>144</code> |  |
+| opts.vaultConfirmedSats | <code>number</code> |  | Verified L1 vault total (required — never invent from proof) |
+
+<a name="Federation.applyPegOutBurn"></a>
+
+### Federation.applyPegOutBurn(content, withdrawal, [opts]) ⇒ <code>Object</code> \| <code>Object</code>
+Burn peg-out claims before L1 vault payout (binds to withdrawal requestId).
+
+**Kind**: static method of [<code>Federation</code>](#Federation)  
+
+| Param | Type |
+| --- | --- |
+| content | <code>object</code> | 
+| withdrawal | <code>object</code> | 
+| withdrawal.requestId | <code>string</code> | 
+| withdrawal.amountSats | <code>number</code> | 
+| withdrawal.destinationAddress | <code>string</code> | 
+| [opts] | <code>Object</code> | 
+| [opts.vaultConfirmedSats] | <code>number</code> | 
+
+<a name="Federation.settlePegOutPayout"></a>
+
+### Federation.settlePegOutPayout(content, requestId, opts) ⇒ <code>Object</code> \| <code>Object</code>
+After L1 vault payout confirms, settle a pending burn: drop pendingBurns and
+vaultConfirmed by the same amountSats (request-scoped).
+
+The caller verifies the payout on L1; this helper only settles against a
+named payout output that matches the burned withdrawal exactly, and never
+lets one output settle two withdrawals.
+
+Fees: the payout output must carry the full withdrawal `amountSats`; the
+federation pays the L1 fee from vault funds above `outstandingSats +
+pendingBurnsSats`. Without `opts.vaultConfirmedSats` the vault only drops
+by `amountSats`, so the fee stays counted in it until the caller passes the
+verified vault total (which fails conservation when there was no surplus to
+pay the fee from).
+
+A settled payout that later leaves the best chain is undone with
+[unsettlePegOutPayout](#Federation.unsettlePegOutPayout); wait for `payoutMinConfirmations`
+to make that rare.
+
+**Kind**: static method of [<code>Federation</code>](#Federation)  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| content | <code>object</code> |  |  |
+| requestId | <code>string</code> |  |  |
+| opts | <code>Object</code> |  |  |
+| opts.payout | <code>Object</code> |  | Verified L1 payout output |
+| opts.payout.txid | <code>string</code> |  |  |
+| opts.payout.vout | <code>number</code> |  |  |
+| opts.payout.amountSats | <code>number</code> |  | Must equal the withdrawal amountSats |
+| opts.payout.destinationAddress | <code>string</code> |  | Must pay the withdrawal destination (compared by scriptPubKey) |
+| [opts.payout.scriptPubKey] | <code>string</code> |  | output script hex; preferred over destinationAddress |
+| opts.payout.confirmations | <code>number</code> |  |  |
+| [opts.payoutMinConfirmations] | <code>number</code> | <code>6</code> |  |
+| [opts.vaultConfirmedSats] | <code>number</code> |  | optional verified vault total after payout |
+
+<a name="Federation.unsettlePegOutPayout"></a>
+
+### Federation.unsettlePegOutPayout(content, requestId, opts) ⇒ <code>Object</code> \| <code>Object</code>
+Undo [settlePegOutPayout](#Federation.settlePegOutPayout) after the payout transaction left
+the best chain: the withdrawal is pending again and its amount returns to
+`pendingBurnsSats` and the vault, so it can settle against a new payout.
+
+**Kind**: static method of [<code>Federation</code>](#Federation)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| content | <code>object</code> |  |
+| requestId | <code>string</code> |  |
+| opts | <code>Object</code> |  |
+| opts.payout | <code>Object</code> | the reorged payout outpoint (must match the settled one) |
+| opts.payout.txid | <code>string</code> |  |
+| opts.payout.vout | <code>number</code> |  |
+| [opts.vaultConfirmedSats] | <code>number</code> | verified vault total after the reorg (default: the settled total plus `amountSats`) |
+
+<a name="Federation.patchesForReserve"></a>
+
+### Federation.patchesForReserve(reserve) ⇒ <code>Array.&lt;object&gt;</code>
+RFC6902 replace/add patch that writes the full reserve object (typed path only).
+
+**Kind**: static method of [<code>Federation</code>](#Federation)  
+
+| Param | Type |
+| --- | --- |
+| reserve | <code>Object</code> | 
+
+<a name="Federation.validateReserveObjectSchema"></a>
+
+### Federation.validateReserveObjectSchema(value) ⇒ <code>Object</code> \| <code>Object</code>
+Schema-check a full /federationReserve object (array elements included).
+
+**Kind**: static method of [<code>Federation</code>](#Federation)  
+
+| Param | Type |
+| --- | --- |
+| value | <code>object</code> | 
+
+<a name="Federation.validateLedgerPatch"></a>
+
+### Federation.validateLedgerPatch(patches) ⇒ <code>Object</code> \| <code>Object</code>
+Reject raw RFC6902 that mutates reserve fields without going through ledger helpers.
+Call before applyPatchesToState when patches touch /federationReserve*.
+Full-object replace/add must pass schema + conservation (provenance still requires
+helper-generated patches in production — see docs/PEG_OPERATIONS.md).
+
+**Kind**: static method of [<code>Federation</code>](#Federation)  
+
+| Param | Type |
+| --- | --- |
+| patches | <code>Array.&lt;object&gt;</code> | 
+
+<a name="Federation.defaultSidechainPolicy"></a>
+
+### Federation.defaultSidechainPolicy() ⇒ <code>object</code>
+Default path policy denying free-form balance invent outside typed reserve writes.
+
+**Kind**: static method of [<code>Federation</code>](#Federation)  
+<a name="Federation.buildDescriptor"></a>
+
+### Federation.buildDescriptor(opts) ⇒ <code>Object</code>
+Build a canonical descriptor. The soft tier needs the full threshold after the
+CSV delay (never a single key), and the internal key is NUMS so no key-path spend exists.
+
+**Kind**: static method of [<code>Federation</code>](#Federation)  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| opts | <code>Object</code> |  |  |
+| opts.validators | <code>Array.&lt;string&gt;</code> |  | Compressed pubkeys (any order, deduplicated) |
+| opts.threshold | <code>number</code> |  | Signatures required |
+| opts.network | <code>string</code> |  | Bitcoin network name |
+| opts.publisher | <code>string</code> |  | Creator pubkey (must be a validator) |
+| [opts.csvBlocks] | <code>number</code> | <code>144</code> | Soft-tier CSV delay |
+
+<a name="Federation.canonicalDescriptor"></a>
+
+### Federation.canonicalDescriptor(descriptor) ⇒ <code>Object</code>
+Re-derive a descriptor from untrusted input; throws when it is not canonical.
+
+**Kind**: static method of [<code>Federation</code>](#Federation)  
+**Returns**: <code>Object</code> - canonical descriptor  
+
+| Param | Type |
+| --- | --- |
+| descriptor | <code>Object</code> | 
+
+<a name="Federation.descriptorId"></a>
+
+### Federation.descriptorId(descriptor) ⇒ <code>string</code>
+Federation id: SHA-256 of the canonical descriptor.
+
+**Kind**: static method of [<code>Federation</code>](#Federation)  
+**Returns**: <code>string</code> - 64 hex  
+
+| Param | Type |
+| --- | --- |
+| descriptor | <code>Object</code> | 
+
+<a name="Federation.vaultForDescriptor"></a>
+
+### Federation.vaultForDescriptor(descriptor) ⇒ <code>Object</code>
+Taproot vault for a descriptor (the same address for every member).
+
+**Kind**: static method of [<code>Federation</code>](#Federation)  
+**Returns**: <code>Object</code> - `Policy.buildFederationVaultFromPolicy` result (address, output, policy, leaves, …)  
+
+| Param | Type |
+| --- | --- |
+| descriptor | <code>Object</code> | 
+
+<a name="Federation.isValidator"></a>
+
+### Federation.isValidator(descriptor, pubkey) ⇒ <code>boolean</code>
+Is `pubkey` (compressed or x-only) one of the descriptor's validators?
+
+**Kind**: static method of [<code>Federation</code>](#Federation)  
+
+| Param | Type |
+| --- | --- |
+| descriptor | <code>Object</code> | 
+| pubkey | <code>string</code> | 
+
+<a name="Federation.withdrawalRequestId"></a>
+
+### Federation.withdrawalRequestId(psbtBase64) ⇒ <code>string</code>
+Withdrawal request id: SHA-256 of the unsigned PSBT.
+
+**Kind**: static method of [<code>Federation</code>](#Federation)  
+**Returns**: <code>string</code> - 64 hex  
+
+| Param | Type |
+| --- | --- |
+| psbtBase64 | <code>string</code> | 
+
+<a name="Federation.prepareWithdrawal"></a>
+
+### Federation.prepareWithdrawal(opts) ⇒ <code>Object</code>
+Build the unsigned withdrawal PSBT for a descriptor. Every member rebuilds
+the same PSBT from the same request (the input txid commits to the funding
+transaction), so a member signs only what it would have built itself.
+
+**Kind**: static method of [<code>Federation</code>](#Federation)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| opts | <code>Object</code> |  |
+| opts.descriptor | <code>Object</code> | Canonical federation descriptor |
+| opts.fundedTxHex | <code>string</code> | Raw transaction paying the vault |
+| [opts.vout] | <code>number</code> | Expected vault output index (checked) |
+| opts.destinationAddress | <code>string</code> |  |
+| opts.amountSats | <code>number</code> |  |
+| opts.feeSats | <code>number</code> |  |
+
+<a name="Federation.signWithdrawal"></a>
+
+### Federation.signWithdrawal(opts) ⇒ <code>Object</code>
+Sign the authority leaf with one member key.
+
+**Kind**: static method of [<code>Federation</code>](#Federation)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| opts | <code>Object</code> |  |
+| opts.psbtBase64 | <code>string</code> | Unsigned (or partially signed) PSBT |
+| opts.privateKey | <code>Buffer</code> \| <code>Uint8Array</code> | 32-byte member private key |
+
+<a name="Federation.addWithdrawalSignatures"></a>
+
+### Federation.addWithdrawalSignatures(opts) ⇒ <code>Object</code>
+Add member signatures after checking each one against the transaction.
+
+**Kind**: static method of [<code>Federation</code>](#Federation)  
+**Returns**: <code>Object</code> - x-only pubkeys that have signed  
+
+| Param | Type |
+| --- | --- |
+| opts | <code>Object</code> | 
+| opts.descriptor | <code>Object</code> | 
+| opts.psbtBase64 | <code>string</code> | 
+| opts.signatures | <code>Array.&lt;{pubkey: string, leafHash: string, signature: string}&gt;</code> | 
+
+<a name="Federation.finalizeWithdrawal"></a>
+
+### Federation.finalizeWithdrawal(opts) ⇒ <code>Object</code>
+Finalize with exactly `threshold` signatures (CHECKSIGADD … NUMEQUAL fails with more).
+
+**Kind**: static method of [<code>Federation</code>](#Federation)  
+
+| Param | Type |
+| --- | --- |
+| opts | <code>Object</code> | 
+| opts.descriptor | <code>Object</code> | 
+| opts.psbtBase64 | <code>string</code> | 
+
+<a name="Federation.isMessage"></a>
+
+### Federation.isMessage(body) ⇒ <code>boolean</code>
+Whether a `CONTRACT_MESSAGE` body is one of the federation messages.
+
+**Kind**: static method of [<code>Federation</code>](#Federation)  
+
+| Param | Type |
+| --- | --- |
+| body | <code>Object</code> | 
+
+<a name="Federation.inviteMessage"></a>
+
+### Federation.inviteMessage(opts) ⇒ <code>Object</code>
+Invite body, sent by the publisher (namespace = federation id).
+
+**Kind**: static method of [<code>Federation</code>](#Federation)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| opts | <code>Object</code> |  |
+| opts.descriptor | <code>Object</code> | Canonical descriptor |
+| [opts.name] | <code>string</code> |  |
+| [opts.members] | <code>Array.&lt;Object&gt;</code> | Contact hints per validator: `{ pubkey, url?, alias? }` |
+
+<a name="Federation.responseMessage"></a>
+
+### Federation.responseMessage(federationId, accept) ⇒ <code>Object</code>
+Accept or decline an invite.
+
+**Kind**: static method of [<code>Federation</code>](#Federation)  
+
+| Param | Type |
+| --- | --- |
+| federationId | <code>string</code> | 
+| accept | <code>boolean</code> | 
+
+<a name="Federation.syncMessage"></a>
+
+### Federation.syncMessage(federationId) ⇒ <code>Object</code>
+Ask the other members to re-send their invite, answers, and pending withdrawals.
+
+**Kind**: static method of [<code>Federation</code>](#Federation)  
+
+| Param | Type |
+| --- | --- |
+| federationId | <code>string</code> | 
+
+<a name="Federation.withdrawalMessage"></a>
+
+### Federation.withdrawalMessage(federationId, w) ⇒ <code>Object</code>
+Withdrawal request: what to pay and from which funding transaction, so every
+member can rebuild the PSBT ([verifyWithdrawalRequest](#Federation.verifyWithdrawalRequest)).
+
+**Kind**: static method of [<code>Federation</code>](#Federation)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| federationId | <code>string</code> |  |
+| w | <code>Object</code> | `{ requestId, fundedTxHex, vout, destinationAddress, amountSats, feeSats }` |
+
+<a name="Federation.signatureMessage"></a>
+
+### Federation.signatureMessage(federationId, requestId, signatures) ⇒ <code>Object</code>
+One member's signatures for a withdrawal.
+
+**Kind**: static method of [<code>Federation</code>](#Federation)  
+
+| Param | Type |
+| --- | --- |
+| federationId | <code>string</code> | 
+| requestId | <code>string</code> | 
+| signatures | <code>Array.&lt;{pubkey: string, leafHash: string, signature: string}&gt;</code> | 
+
+<a name="Federation.broadcastMessage"></a>
+
+### Federation.broadcastMessage(federationId, requestId, txid) ⇒ <code>Object</code>
+Notice that a withdrawal reached the chain.
+
+**Kind**: static method of [<code>Federation</code>](#Federation)  
+
+| Param | Type |
+| --- | --- |
+| federationId | <code>string</code> | 
+| requestId | <code>string</code> | 
+| txid | <code>string</code> | 
+
+<a name="Federation.verifyInvite"></a>
+
+### Federation.verifyInvite(body, signer) ⇒ <code>Object</code>
+Check an invite: the id is its descriptor's hash and the publisher signed it.
+
+**Kind**: static method of [<code>Federation</code>](#Federation)  
+**Returns**: <code>Object</code> - canonical descriptor  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| body | <code>Object</code> |  |
+| signer | <code>string</code> | verified author pubkey (compressed or x-only) |
+
+<a name="Federation.verifySender"></a>
+
+### Federation.verifySender(descriptor, body, signer) ⇒ <code>string</code>
+Check a message for a known federation: right namespace, signed by a member.
+
+**Kind**: static method of [<code>Federation</code>](#Federation)  
+**Returns**: <code>string</code> - x-only signer  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| descriptor | <code>Object</code> |  |
+| body | <code>Object</code> |  |
+| signer | <code>string</code> | verified author pubkey |
+
+<a name="Federation.verifyWithdrawalRequest"></a>
+
+### Federation.verifyWithdrawalRequest(descriptor, body) ⇒ <code>Object</code>
+Rebuild a withdrawal request's PSBT and check it matches its request id.
+
+**Kind**: static method of [<code>Federation</code>](#Federation)  
+**Returns**: <code>Object</code> - [prepareWithdrawal](#Federation.prepareWithdrawal) result  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| descriptor | <code>Object</code> |  |
+| body | <code>Object</code> | withdrawal message body |
 
 <a name="Filesystem"></a>
 
@@ -6701,6 +10023,306 @@ Derive a new output.
 | --- | --- | --- | --- |
 | [info] | <code>Buffer</code> |  | Context and application specific information. |
 | [size] | <code>Number</code> | <code>32</code> | Length of output. |
+
+<a name="Htlc"></a>
+
+## Htlc
+**Kind**: global class  
+
+* [Htlc](#Htlc)
+    * [new Htlc(settings)](#new_Htlc_new)
+    * _instance_
+        * [.paymentHashHex](#Htlc+paymentHashHex) ⇒ <code>string</code>
+        * [.controlBlock(leaf)](#Htlc+controlBlock) ⇒ <code>Buffer</code>
+        * [.findVout(tx)](#Htlc+findVout) ⇒ <code>number</code>
+        * [.fundingHints([opts])](#Htlc+fundingHints) ⇒ <code>Object</code>
+        * [.prepareClaim(opts)](#Htlc+prepareClaim) ⇒ <code>Object</code>
+        * [.prepareRefund(opts)](#Htlc+prepareRefund) ⇒ <code>Object</code>
+        * [.toJSON()](#Htlc+toJSON) ⇒ <code>Object</code>
+    * _static_
+        * [.signerFromPriv32(priv32)](#Htlc.signerFromPriv32) ⇒ <code>Object</code>
+        * [.randomPreimage()](#Htlc.randomPreimage) ⇒ <code>Buffer</code>
+        * [.sha256(buf)](#Htlc.sha256) ⇒ <code>Buffer</code>
+        * [.toXOnly(pk)](#Htlc.toXOnly) ⇒ <code>string</code> \| <code>null</code>
+        * [.pubkeysMatchXOnly(a, b)](#Htlc.pubkeysMatchXOnly) ⇒ <code>boolean</code>
+        * [.findVout(tx, paymentAddress, network)](#Htlc.findVout) ⇒ <code>number</code>
+        * [.controlBlockFor(claimScript, refundScript, leafScript)](#Htlc.controlBlockFor) ⇒ <code>Buffer</code>
+        * [.fundingHints(opts)](#Htlc.fundingHints) ⇒ <code>Object</code>
+        * [.prepareClaimPsbt(opts)](#Htlc.prepareClaimPsbt) ⇒ <code>Object</code>
+        * [.signClaim(bundle, priv32)](#Htlc.signClaim) ⇒ <code>Object</code>
+        * [.prepareRefundPsbt(opts)](#Htlc.prepareRefundPsbt) ⇒ <code>Object</code>
+        * [.signRefund(bundle, priv32)](#Htlc.signRefund) ⇒ <code>Object</code>
+        * [.extractPreimageFromWitness(witness, paymentHash32)](#Htlc.extractPreimageFromWitness) ⇒ <code>Buffer</code> \| <code>null</code>
+        * [.extractPreimage(txHexOrTx, paymentHashHex)](#Htlc.extractPreimage) ⇒ <code>Object</code>
+        * [.refundMature(tipHeight, refundLocktimeHeight)](#Htlc.refundMature) ⇒ <code>boolean</code>
+        * [.validateOffer(opts)](#Htlc.validateOffer) ⇒ <code>Object</code>
+
+<a name="new_Htlc_new"></a>
+
+### new Htlc(settings)
+
+| Param | Type | Description |
+| --- | --- | --- |
+| settings | <code>Object</code> |  |
+| [settings.network] | <code>string</code> | Fabric network name (`regtest`, `signet`, `testnet`, `mainnet`) |
+| settings.claimPubkey | <code>Buffer</code> \| <code>string</code> | 33-byte compressed key of the claimer (seller / deliverer) |
+| settings.refundPubkey | <code>Buffer</code> \| <code>string</code> | 33-byte compressed key of the refunder (buyer / initiator) |
+| settings.paymentHash | <code>Buffer</code> \| <code>string</code> | SHA256(preimage), 32 bytes |
+| settings.refundLocktime | <code>number</code> | CLTV block height for the refund leaf |
+
+<a name="Htlc+paymentHashHex"></a>
+
+### htlc.paymentHashHex ⇒ <code>string</code>
+**Kind**: instance property of [<code>Htlc</code>](#Htlc)  
+<a name="Htlc+controlBlock"></a>
+
+### htlc.controlBlock(leaf) ⇒ <code>Buffer</code>
+BIP-341 control block for one leaf.
+
+**Kind**: instance method of [<code>Htlc</code>](#Htlc)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| leaf | <code>string</code> | `claim` or `refund` |
+
+<a name="Htlc+findVout"></a>
+
+### htlc.findVout(tx) ⇒ <code>number</code>
+**Kind**: instance method of [<code>Htlc</code>](#Htlc)  
+**Returns**: <code>number</code> - the output paying this HTLC, or -1  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| tx | <code>Transaction</code> | bitcoinjs-lib transaction |
+
+<a name="Htlc+fundingHints"></a>
+
+### htlc.fundingHints([opts]) ⇒ <code>Object</code>
+BIP21 URI and display amount for funding this HTLC.
+
+**Kind**: instance method of [<code>Htlc</code>](#Htlc)  
+
+| Param | Type |
+| --- | --- |
+| [opts] | <code>Object</code> | 
+| [opts.amountSats] | <code>number</code> | 
+| [opts.label] | <code>string</code> | 
+
+<a name="Htlc+prepareClaim"></a>
+
+### htlc.prepareClaim(opts) ⇒ <code>Object</code>
+Unsigned claim PSBT (see [prepareClaimPsbt](#Htlc.prepareClaimPsbt)).
+
+**Kind**: instance method of [<code>Htlc</code>](#Htlc)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| opts | <code>Object</code> | `{ fundedTxHex, preimage, destinationAddress, feeSats }` |
+
+<a name="Htlc+prepareRefund"></a>
+
+### htlc.prepareRefund(opts) ⇒ <code>Object</code>
+Unsigned refund PSBT (see [prepareRefundPsbt](#Htlc.prepareRefundPsbt)).
+
+**Kind**: instance method of [<code>Htlc</code>](#Htlc)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| opts | <code>Object</code> | `{ fundedTxHex, destinationAddress, feeSats }` |
+
+<a name="Htlc+toJSON"></a>
+
+### htlc.toJSON() ⇒ <code>Object</code>
+**Kind**: instance method of [<code>Htlc</code>](#Htlc)  
+**Returns**: <code>Object</code> - public description (no secrets)  
+<a name="Htlc.signerFromPriv32"></a>
+
+### Htlc.signerFromPriv32(priv32) ⇒ <code>Object</code>
+bitcoinjs-lib Signer for taproot script-path (publicKey + sign + signSchnorr).
+
+**Kind**: static method of [<code>Htlc</code>](#Htlc)  
+
+| Param | Type |
+| --- | --- |
+| priv32 | <code>Buffer</code> \| <code>string</code> | 
+
+<a name="Htlc.randomPreimage"></a>
+
+### Htlc.randomPreimage() ⇒ <code>Buffer</code>
+**Kind**: static method of [<code>Htlc</code>](#Htlc)  
+**Returns**: <code>Buffer</code> - a fresh 32-byte preimage  
+<a name="Htlc.sha256"></a>
+
+### Htlc.sha256(buf) ⇒ <code>Buffer</code>
+Single SHA-256 (the HTLC hashlock).
+
+**Kind**: static method of [<code>Htlc</code>](#Htlc)  
+
+| Param | Type |
+| --- | --- |
+| buf | <code>Buffer</code> | 
+
+<a name="Htlc.toXOnly"></a>
+
+### Htlc.toXOnly(pk) ⇒ <code>string</code> \| <code>null</code>
+Normalize compressed (66 hex) or x-only (64 hex) pubkey to lowercase x-only hex.
+
+**Kind**: static method of [<code>Htlc</code>](#Htlc)  
+
+| Param | Type |
+| --- | --- |
+| pk | <code>string</code> \| <code>Buffer</code> \| <code>null</code> \| <code>undefined</code> | 
+
+<a name="Htlc.pubkeysMatchXOnly"></a>
+
+### Htlc.pubkeysMatchXOnly(a, b) ⇒ <code>boolean</code>
+**Kind**: static method of [<code>Htlc</code>](#Htlc)  
+**Returns**: <code>boolean</code> - same x-only key  
+
+| Param | Type |
+| --- | --- |
+| a | <code>string</code> \| <code>Buffer</code> \| <code>null</code> \| <code>undefined</code> | 
+| b | <code>string</code> \| <code>Buffer</code> \| <code>null</code> \| <code>undefined</code> | 
+
+<a name="Htlc.findVout"></a>
+
+### Htlc.findVout(tx, paymentAddress, network) ⇒ <code>number</code>
+Find the vout paying exactly `paymentAddress`.
+
+**Kind**: static method of [<code>Htlc</code>](#Htlc)  
+**Returns**: <code>number</code> - -1 when absent  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| tx | <code>Transaction</code> | bitcoinjs-lib transaction |
+| paymentAddress | <code>string</code> |  |
+| network | <code>Object</code> | bitcoinjs network |
+
+<a name="Htlc.controlBlockFor"></a>
+
+### Htlc.controlBlockFor(claimScript, refundScript, leafScript) ⇒ <code>Buffer</code>
+Control block for one leaf of the two-leaf tree `[claimScript, refundScript]`.
+
+**Kind**: static method of [<code>Htlc</code>](#Htlc)  
+
+| Param | Type |
+| --- | --- |
+| claimScript | <code>Buffer</code> \| <code>string</code> | 
+| refundScript | <code>Buffer</code> \| <code>string</code> | 
+| leafScript | <code>Buffer</code> \| <code>string</code> | 
+
+<a name="Htlc.fundingHints"></a>
+
+### Htlc.fundingHints(opts) ⇒ <code>Object</code>
+BIP21 `bitcoin:` URI and display amounts so wallets can pre-fill the funding send.
+
+**Kind**: static method of [<code>Htlc</code>](#Htlc)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| opts | <code>Object</code> |  |
+| opts.paymentAddress | <code>string</code> | Bech32m P2TR address |
+| opts.amountSats | <code>number</code> |  |
+| [opts.label] | <code>string</code> | shortened for the URI |
+
+<a name="Htlc.prepareClaimPsbt"></a>
+
+### Htlc.prepareClaimPsbt(opts) ⇒ <code>Object</code>
+Unsigned PSBT spending the funded HTLC through the claim leaf.
+
+**Kind**: static method of [<code>Htlc</code>](#Htlc)  
+**Returns**: <code>Object</code> - bundle for [signClaim](#Htlc.signClaim)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| opts | <code>Object</code> | `{ networkName, fundedTxHex, paymentAddress, claimScript, refundScript, preimage32, destinationAddress, feeSats }` |
+
+<a name="Htlc.signClaim"></a>
+
+### Htlc.signClaim(bundle, priv32) ⇒ <code>Object</code>
+Sign a claim bundle with the claimer's key; witness
+`[schnorr_sig, preimage, script, control_block]`.
+
+**Kind**: static method of [<code>Htlc</code>](#Htlc)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| bundle | <code>Object</code> | from [prepareClaimPsbt](#Htlc.prepareClaimPsbt) |
+| priv32 | <code>Buffer</code> \| <code>string</code> |  |
+
+<a name="Htlc.prepareRefundPsbt"></a>
+
+### Htlc.prepareRefundPsbt(opts) ⇒ <code>Object</code>
+Unsigned PSBT spending the funded HTLC through the refund leaf: nLockTime
+is the lock height and the input sequence enables it.
+
+**Kind**: static method of [<code>Htlc</code>](#Htlc)  
+**Returns**: <code>Object</code> - bundle for [signRefund](#Htlc.signRefund)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| opts | <code>Object</code> | `{ networkName, fundedTxHex, paymentAddress, claimScript, refundScript, refundLocktimeHeight, destinationAddress, feeSats }` |
+
+<a name="Htlc.signRefund"></a>
+
+### Htlc.signRefund(bundle, priv32) ⇒ <code>Object</code>
+Sign a refund bundle with the refunder's key; witness `[schnorr_sig, script, control_block]`.
+
+**Kind**: static method of [<code>Htlc</code>](#Htlc)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| bundle | <code>Object</code> | from [prepareRefundPsbt](#Htlc.prepareRefundPsbt) |
+| priv32 | <code>Buffer</code> \| <code>string</code> |  |
+
+<a name="Htlc.extractPreimageFromWitness"></a>
+
+### Htlc.extractPreimageFromWitness(witness, paymentHash32) ⇒ <code>Buffer</code> \| <code>null</code>
+The 32-byte witness item whose SHA256 is `paymentHash`.
+
+**Kind**: static method of [<code>Htlc</code>](#Htlc)  
+
+| Param | Type |
+| --- | --- |
+| witness | <code>Array.&lt;(Buffer\|string)&gt;</code> \| <code>undefined</code> | 
+| paymentHash32 | <code>Buffer</code> \| <code>string</code> | 
+
+<a name="Htlc.extractPreimage"></a>
+
+### Htlc.extractPreimage(txHexOrTx, paymentHashHex) ⇒ <code>Object</code>
+Scan a claim transaction for the preimage (the content key for sealed sales).
+
+**Kind**: static method of [<code>Htlc</code>](#Htlc)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| txHexOrTx | <code>string</code> \| <code>Transaction</code> | Raw hex, or a bitcoinjs-lib transaction |
+| paymentHashHex | <code>string</code> \| <code>Buffer</code> |  |
+
+<a name="Htlc.refundMature"></a>
+
+### Htlc.refundMature(tipHeight, refundLocktimeHeight) ⇒ <code>boolean</code>
+**Kind**: static method of [<code>Htlc</code>](#Htlc)  
+**Returns**: <code>boolean</code> - the refund leaf is spendable at `tipHeight`  
+
+| Param | Type |
+| --- | --- |
+| tipHeight | <code>number</code> | 
+| refundLocktimeHeight | <code>number</code> | 
+
+<a name="Htlc.validateOffer"></a>
+
+### Htlc.validateOffer(opts) ⇒ <code>Object</code>
+Rebuild a buyer-bound HTLC and check a seller-advertised address against
+it. A seller-supplied address is never authoritative without a match.
+
+**Kind**: static method of [<code>Htlc</code>](#Htlc)  
+**Returns**: <code>Object</code> - `{ ok: true, htlc }` or `{ ok: false, error, expectedAddress, htlc }`  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| opts | <code>Object</code> | constructor settings, plus: |
+| [opts.paymentAddress] | <code>string</code> | seller-advertised address |
 
 <a name="Identity"></a>
 
@@ -7691,13 +11313,8 @@ Parse an Object into a corresponding Fabric state.
 
 * [LiquidityBook](#LiquidityBook)
     * [new LiquidityBook([settings])](#new_LiquidityBook_new)
-    * [.size](#LiquidityBook+size) ⇒ <code>number</code>
-    * [.ingestOrder(body)](#LiquidityBook+ingestOrder) ⇒ <code>Object</code>
-    * [.cancel(body)](#LiquidityBook+cancel) ⇒ <code>Object</code>
-    * [.prune()](#LiquidityBook+prune) ⇒ <code>number</code>
-    * [.forgetMaker(makerPubkey)](#LiquidityBook+forgetMaker) ⇒ <code>number</code>
-    * [.get(id)](#LiquidityBook+get) ⇒ <code>Object</code> \| <code>null</code>
-    * [.listOrders([filter])](#LiquidityBook+listOrders) ⇒ <code>Array.&lt;Object&gt;</code>
+    * [._matches()](#LiquidityBook+_matches)
+    * [._compare()](#LiquidityBook+_compare)
     * [.bestBid()](#LiquidityBook+bestBid) ⇒ <code>Object</code> \| <code>null</code>
     * [.bestAsk()](#LiquidityBook+bestAsk) ⇒ <code>Object</code> \| <code>null</code>
     * [.depth(side)](#LiquidityBook+depth) ⇒ <code>Array.&lt;Object&gt;</code>
@@ -7717,79 +11334,20 @@ Parse an Object into a corresponding Fabric state.
 | [settings.maxPendingCancelsPerMaker] | <code>number</code> | <code>100</code> | cancels per key for orders not held |
 | [settings.now] | <code>function</code> |  | clock in ms (tests) |
 
-<a name="LiquidityBook+size"></a>
+<a name="LiquidityBook+_matches"></a>
 
-### liquidityBook.size ⇒ <code>number</code>
-**Kind**: instance property of [<code>LiquidityBook</code>](#LiquidityBook)  
-**Returns**: <code>number</code> - orders held  
-<a name="LiquidityBook+ingestOrder"></a>
-
-### liquidityBook.ingestOrder(body) ⇒ <code>Object</code>
-Verify and hold a signed `LiquidityOrder` body.
+### liquidityBook.\_matches()
+[list](#OrderBook+list) lists bids, then asks, best first within each side
+(bids by highest premium, asks by lowest; ties by arrival).
+`filter.side` keeps one side.
 
 **Kind**: instance method of [<code>LiquidityBook</code>](#LiquidityBook)  
+**Access**: protected  
+<a name="LiquidityBook+_compare"></a>
 
-| Param | Type |
-| --- | --- |
-| body | <code>Object</code> | 
-
-<a name="LiquidityBook+cancel"></a>
-
-### liquidityBook.cancel(body) ⇒ <code>Object</code>
-Apply a signed `LiquidityOrderCancel` from the order's maker. A cancel
-for an order not held yet is remembered with its signer, so the order
-cannot arrive later from that maker; another key's cancel never blocks it.
-
+### liquidityBook.\_compare()
 **Kind**: instance method of [<code>LiquidityBook</code>](#LiquidityBook)  
-
-| Param | Type |
-| --- | --- |
-| body | <code>Object</code> | 
-
-<a name="LiquidityBook+prune"></a>
-
-### liquidityBook.prune() ⇒ <code>number</code>
-Drop expired orders.
-
-**Kind**: instance method of [<code>LiquidityBook</code>](#LiquidityBook)  
-**Returns**: <code>number</code> - orders removed  
-<a name="LiquidityBook+forgetMaker"></a>
-
-### liquidityBook.forgetMaker(makerPubkey) ⇒ <code>number</code>
-Drop every order from one maker (disconnect, fraud, failed settlement).
-
-**Kind**: instance method of [<code>LiquidityBook</code>](#LiquidityBook)  
-**Returns**: <code>number</code> - orders removed  
-
-| Param | Type |
-| --- | --- |
-| makerPubkey | <code>string</code> | 
-
-<a name="LiquidityBook+get"></a>
-
-### liquidityBook.get(id) ⇒ <code>Object</code> \| <code>null</code>
-**Kind**: instance method of [<code>LiquidityBook</code>](#LiquidityBook)  
-**Returns**: <code>Object</code> \| <code>null</code> - the order body  
-
-| Param | Type |
-| --- | --- |
-| id | <code>string</code> | 
-
-<a name="LiquidityBook+listOrders"></a>
-
-### liquidityBook.listOrders([filter]) ⇒ <code>Array.&lt;Object&gt;</code>
-Live orders, best first within each side (bids by highest premium, asks
-by lowest; ties by arrival).
-
-**Kind**: instance method of [<code>LiquidityBook</code>](#LiquidityBook)  
-**Returns**: <code>Array.&lt;Object&gt;</code> - `{ id, ...order }`  
-
-| Param | Type |
-| --- | --- |
-| [filter] | <code>Object</code> | 
-| [filter.side] | <code>string</code> | 
-| [filter.makerPubkey] | <code>string</code> | 
-
+**Access**: protected  
 <a name="LiquidityBook+bestBid"></a>
 
 ### liquidityBook.bestBid() ⇒ <code>Object</code> \| <code>null</code>
@@ -7836,290 +11394,6 @@ settles each fill with its maker.
 | [opts] | <code>Object</code> |  |
 | [opts.excludeMakers] | <code>Array.&lt;string&gt;</code> |  |
 | [opts.limitPpm] | <code>number</code> | worst premium accepted (max for asks, min for bids) |
-
-<a name="LiquiditySwap"></a>
-
-## LiquiditySwap
-**Kind**: global class  
-
-* [LiquiditySwap](#LiquiditySwap)
-    * [new LiquiditySwap(settings)](#new_LiquiditySwap_new)
-    * _instance_
-        * [.status](#LiquiditySwap+status) ⇒ <code>string</code>
-        * [.isL1Giver](#LiquiditySwap+isL1Giver) ⇒ <code>boolean</code>
-        * [.take](#LiquiditySwap+take) ⇒ <code>Object</code> \| <code>null</code>
-        * [.takeId](#LiquiditySwap+takeId) ⇒ <code>string</code> \| <code>null</code>
-        * [.accept](#LiquiditySwap+accept) ⇒ <code>Object</code> \| <code>null</code>
-        * [.funded](#LiquiditySwap+funded) ⇒ <code>Object</code> \| <code>null</code>
-        * [.quote](#LiquiditySwap+quote) ⇒ <code>Object</code> \| <code>null</code>
-        * [.terms](#LiquiditySwap+terms) ⇒ <code>Object</code> \| <code>null</code>
-        * [.escrow](#LiquiditySwap+escrow) ⇒ <code>Object</code> \| <code>null</code>
-        * [.createTake(opts)](#LiquiditySwap+createTake) ⇒ <code>Promise.&lt;Object&gt;</code>
-        * [.acceptTake(takeBody)](#LiquiditySwap+acceptTake) ⇒ <code>Promise.&lt;Object&gt;</code>
-        * [.applyAccept(acceptBody)](#LiquiditySwap+applyAccept) ⇒ [<code>Promise.&lt;LiquiditySwap&gt;</code>](#LiquiditySwap)
-        * [.prepay()](#LiquiditySwap+prepay) ⇒ <code>Promise.&lt;Object&gt;</code>
-        * [.fund()](#LiquiditySwap+fund) ⇒ <code>Promise.&lt;Object&gt;</code>
-        * [.applyFunded(fundedBody)](#LiquiditySwap+applyFunded) ⇒ <code>Promise.&lt;{ok: boolean, pending: (boolean\|undefined), confirmations: number}&gt;</code>
-        * [.payInvoice()](#LiquiditySwap+payInvoice) ⇒ <code>Promise.&lt;string&gt;</code>
-        * [.claim([opts])](#LiquiditySwap+claim) ⇒ <code>Promise.&lt;string&gt;</code>
-        * [.checkPaid()](#LiquiditySwap+checkPaid) ⇒ <code>Promise.&lt;boolean&gt;</code>
-        * [.observeClaim(txHex)](#LiquiditySwap+observeClaim) ⇒ <code>boolean</code>
-        * [.refund([opts])](#LiquiditySwap+refund) ⇒ <code>Promise.&lt;string&gt;</code>
-        * [.abort([reason])](#LiquiditySwap+abort)
-        * [.toJSON([opts])](#LiquiditySwap+toJSON) ⇒ <code>Object</code>
-    * _static_
-        * [.fromJSON(json, settings)](#LiquiditySwap.fromJSON) ⇒ [<code>LiquiditySwap</code>](#LiquiditySwap)
-        * [.lightningAdapter(lightning)](#LiquiditySwap.lightningAdapter) ⇒ <code>Object</code>
-        * [.bitcoinAdapter(service, [options])](#LiquiditySwap.bitcoinAdapter) ⇒ <code>Object</code>
-
-<a name="new_LiquiditySwap_new"></a>
-
-### new LiquiditySwap(settings)
-
-| Param | Type | Default | Description |
-| --- | --- | --- | --- |
-| settings | <code>Object</code> |  |  |
-| settings.order | <code>Object</code> |  | signed `LiquidityOrder` body |
-| settings.role | <code>string</code> |  | `maker` or `taker` |
-| settings.identityKey | <code>Buffer</code> \| <code>string</code> |  | private key that signs this side's bodies (maker: the order's `makerPubkey`) |
-| settings.htlcKey | <code>Buffer</code> \| <code>string</code> |  | private key for this side's HTLC leaf |
-| [settings.lightningNodeId] | <code>string</code> |  | this side's node id (required for takers) |
-| settings.adapters | <code>Object</code> |  | `{ bitcoin, lightning }` |
-| [settings.secondsPerBlock] | <code>number</code> | <code>600</code> |  |
-| [settings.marginSeconds] | <code>number</code> | <code>3600</code> | invoice must expire this long before the refund lock opens |
-| [settings.minClaimBlocks] | <code>number</code> | <code>6</code> |  |
-| [settings.minConfirmations] | <code>number</code> | <code>1</code> | HTLC confirmations before the L2 giver pays |
-| [settings.invoiceExpirySeconds] | <code>number</code> | <code>3600</code> | upper bound on the swap invoice's expiry |
-| [settings.now] | <code>function</code> |  | clock in ms (tests) |
-
-<a name="LiquiditySwap+status"></a>
-
-### liquiditySwap.status ⇒ <code>string</code>
-**Kind**: instance property of [<code>LiquiditySwap</code>](#LiquiditySwap)  
-**Returns**: <code>string</code> - current state  
-<a name="LiquiditySwap+isL1Giver"></a>
-
-### liquiditySwap.isL1Giver ⇒ <code>boolean</code>
-**Kind**: instance property of [<code>LiquiditySwap</code>](#LiquiditySwap)  
-<a name="LiquiditySwap+take"></a>
-
-### liquiditySwap.take ⇒ <code>Object</code> \| <code>null</code>
-**Kind**: instance property of [<code>LiquiditySwap</code>](#LiquiditySwap)  
-<a name="LiquiditySwap+takeId"></a>
-
-### liquiditySwap.takeId ⇒ <code>string</code> \| <code>null</code>
-**Kind**: instance property of [<code>LiquiditySwap</code>](#LiquiditySwap)  
-<a name="LiquiditySwap+accept"></a>
-
-### liquiditySwap.accept ⇒ <code>Object</code> \| <code>null</code>
-**Kind**: instance property of [<code>LiquiditySwap</code>](#LiquiditySwap)  
-<a name="LiquiditySwap+funded"></a>
-
-### liquiditySwap.funded ⇒ <code>Object</code> \| <code>null</code>
-**Kind**: instance property of [<code>LiquiditySwap</code>](#LiquiditySwap)  
-<a name="LiquiditySwap+quote"></a>
-
-### liquiditySwap.quote ⇒ <code>Object</code> \| <code>null</code>
-**Kind**: instance property of [<code>LiquiditySwap</code>](#LiquiditySwap)  
-**Returns**: <code>Object</code> \| <code>null</code> - amounts for this fill  
-<a name="LiquiditySwap+terms"></a>
-
-### liquiditySwap.terms ⇒ <code>Object</code> \| <code>null</code>
-**Kind**: instance property of [<code>LiquiditySwap</code>](#LiquiditySwap)  
-**Returns**: <code>Object</code> \| <code>null</code> - L1 giver's `{ paymentHashHex, invoice, refundLockHeight, prepayInvoice? }`  
-<a name="LiquiditySwap+escrow"></a>
-
-### liquiditySwap.escrow ⇒ <code>Object</code> \| <code>null</code>
-**Kind**: instance property of [<code>LiquiditySwap</code>](#LiquiditySwap)  
-**Returns**: <code>Object</code> \| <code>null</code> - swap HTLC (`buildSwapEscrow`)  
-<a name="LiquiditySwap+createTake"></a>
-
-### liquiditySwap.createTake(opts) ⇒ <code>Promise.&lt;Object&gt;</code>
-Taker: propose filling `amountSats` of the order.
-
-**Kind**: instance method of [<code>LiquiditySwap</code>](#LiquiditySwap)  
-**Returns**: <code>Promise.&lt;Object&gt;</code> - signed `LiquidityTake` body to send to the maker  
-
-| Param | Type |
-| --- | --- |
-| opts | <code>Object</code> | 
-| opts.amountSats | <code>number</code> | 
-
-<a name="LiquiditySwap+acceptTake"></a>
-
-### liquiditySwap.acceptTake(takeBody) ⇒ <code>Promise.&lt;Object&gt;</code>
-Maker: accept a taker's signed take.
-
-**Kind**: instance method of [<code>LiquiditySwap</code>](#LiquiditySwap)  
-**Returns**: <code>Promise.&lt;Object&gt;</code> - signed `LiquidityTakeAccept` body to send back  
-
-| Param | Type |
-| --- | --- |
-| takeBody | <code>Object</code> | 
-
-<a name="LiquiditySwap+applyAccept"></a>
-
-### liquiditySwap.applyAccept(acceptBody) ⇒ [<code>Promise.&lt;LiquiditySwap&gt;</code>](#LiquiditySwap)
-Taker: apply the maker's signed acceptance.
-
-**Kind**: instance method of [<code>LiquiditySwap</code>](#LiquiditySwap)  
-
-| Param | Type |
-| --- | --- |
-| acceptBody | <code>Object</code> | 
-
-<a name="LiquiditySwap+prepay"></a>
-
-### liquiditySwap.prepay() ⇒ <code>Promise.&lt;Object&gt;</code>
-L2 giver: pay the maker's prepay invoice (orders with `prepaySats`).
-
-**Kind**: instance method of [<code>LiquiditySwap</code>](#LiquiditySwap)  
-**Returns**: <code>Promise.&lt;Object&gt;</code> - payment result  
-<a name="LiquiditySwap+fund"></a>
-
-### liquiditySwap.fund() ⇒ <code>Promise.&lt;Object&gt;</code>
-L1 giver: fund the HTLC. A maker that asked for a prepay funds only once
-its node reports the prepay invoice paid. Funding happens at most once:
-the escrow is recorded before the send, and once the send returns the
-swap is `l1Funded` (refundable, no longer abortable) even if the funding
-notice cannot be built — that error is thrown after the transition.
-
-**Kind**: instance method of [<code>LiquiditySwap</code>](#LiquiditySwap)  
-**Returns**: <code>Promise.&lt;Object&gt;</code> - signed `LiquiditySwapFunded` body to send  
-<a name="LiquiditySwap+applyFunded"></a>
-
-### liquiditySwap.applyFunded(fundedBody) ⇒ <code>Promise.&lt;{ok: boolean, pending: (boolean\|undefined), confirmations: number}&gt;</code>
-L2 giver: check the L1 giver's funding notice against the chain. Returns
-`{ ok: false, pending: true }` until the HTLC has `minConfirmations`
-(call again later); throws when the funding is wrong.
-
-**Kind**: instance method of [<code>LiquiditySwap</code>](#LiquiditySwap)  
-
-| Param | Type |
-| --- | --- |
-| fundedBody | <code>Object</code> | 
-
-<a name="LiquiditySwap+payInvoice"></a>
-
-### liquiditySwap.payInvoice() ⇒ <code>Promise.&lt;string&gt;</code>
-L2 giver: pay the swap invoice and keep the revealed preimage.
-
-**Kind**: instance method of [<code>LiquiditySwap</code>](#LiquiditySwap)  
-**Returns**: <code>Promise.&lt;string&gt;</code> - preimage hex  
-<a name="LiquiditySwap+claim"></a>
-
-### liquiditySwap.claim([opts]) ⇒ <code>Promise.&lt;string&gt;</code>
-L2 giver: claim the HTLC with the preimage.
-
-**Kind**: instance method of [<code>LiquiditySwap</code>](#LiquiditySwap)  
-**Returns**: <code>Promise.&lt;string&gt;</code> - claim txid  
-
-| Param | Type | Default | Description |
-| --- | --- | --- | --- |
-| [opts] | <code>Object</code> |  |  |
-| [opts.destinationAddress] | <code>string</code> |  | defaults to `bitcoin.getNewAddress()` |
-| [opts.feeSats] | <code>number</code> | <code>1000</code> |  |
-
-<a name="LiquiditySwap+checkPaid"></a>
-
-### liquiditySwap.checkPaid() ⇒ <code>Promise.&lt;boolean&gt;</code>
-L1 giver: ask the node whether the swap invoice was paid.
-
-**Kind**: instance method of [<code>LiquiditySwap</code>](#LiquiditySwap)  
-<a name="LiquiditySwap+observeClaim"></a>
-
-### liquiditySwap.observeClaim(txHex) ⇒ <code>boolean</code>
-L1 giver: note the counterparty's claim transaction (it carries the
-preimage) and finish.
-
-**Kind**: instance method of [<code>LiquiditySwap</code>](#LiquiditySwap)  
-**Returns**: <code>boolean</code> - whether the transaction claims this swap's HTLC  
-
-| Param | Type |
-| --- | --- |
-| txHex | <code>string</code> | 
-
-<a name="LiquiditySwap+refund"></a>
-
-### liquiditySwap.refund([opts]) ⇒ <code>Promise.&lt;string&gt;</code>
-L1 giver: take the HTLC back after the refund lock when the invoice was
-never paid.
-
-**Kind**: instance method of [<code>LiquiditySwap</code>](#LiquiditySwap)  
-**Returns**: <code>Promise.&lt;string&gt;</code> - refund txid  
-
-| Param | Type | Default |
-| --- | --- | --- |
-| [opts] | <code>Object</code> |  | 
-| [opts.destinationAddress] | <code>string</code> |  | 
-| [opts.feeSats] | <code>number</code> | <code>1000</code> | 
-
-<a name="LiquiditySwap+abort"></a>
-
-### liquiditySwap.abort([reason])
-Walk away before any L1 funds move.
-
-**Kind**: instance method of [<code>LiquiditySwap</code>](#LiquiditySwap)  
-
-| Param | Type | Default |
-| --- | --- | --- |
-| [reason] | <code>string</code> | <code>&quot;aborted&quot;</code> | 
-
-<a name="LiquiditySwap+toJSON"></a>
-
-### liquiditySwap.toJSON([opts]) ⇒ <code>Object</code>
-JSON for persistence. The preimage is a secret until the invoice is paid;
-it is included only with `includeSecrets` (the L1 giver needs it back
-after a restart). Private keys are never included.
-
-**Kind**: instance method of [<code>LiquiditySwap</code>](#LiquiditySwap)  
-
-| Param | Type | Default |
-| --- | --- | --- |
-| [opts] | <code>Object</code> |  | 
-| [opts.includeSecrets] | <code>boolean</code> | <code>false</code> | 
-
-<a name="LiquiditySwap.fromJSON"></a>
-
-### LiquiditySwap.fromJSON(json, settings) ⇒ [<code>LiquiditySwap</code>](#LiquiditySwap)
-Restore a swap saved with [toJSON](#LiquiditySwap+toJSON). The keys must be
-the ones the saved take / accept were made with, or the swap could not
-fund, claim, or refund its HTLC.
-
-**Kind**: static method of [<code>LiquiditySwap</code>](#LiquiditySwap)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| json | <code>Object</code> |  |
-| settings | <code>Object</code> | constructor settings (keys, adapters, …) without `order` / `role` |
-
-<a name="LiquiditySwap.lightningAdapter"></a>
-
-### LiquiditySwap.lightningAdapter(lightning) ⇒ <code>Object</code>
-Lightning adapter over `services/lightning` (Core Lightning).
-
-**Kind**: static method of [<code>LiquiditySwap</code>](#LiquiditySwap)  
-**Returns**: <code>Object</code> - `{ createInvoice, decodeInvoice, pay, isInvoicePaid }`  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| lightning | <code>Object</code> | a `Lightning` service instance |
-
-<a name="LiquiditySwap.bitcoinAdapter"></a>
-
-### LiquiditySwap.bitcoinAdapter(service, [options]) ⇒ <code>Object</code>
-Bitcoin adapter over `services/bitcoin` (bitcoind JSON-RPC, wallet
-loaded). Reading the counterparty's funding transaction needs it in the
-mempool or `txindex=1`.
-
-**Kind**: static method of [<code>LiquiditySwap</code>](#LiquiditySwap)  
-**Returns**: <code>Object</code> - `{ getTipHeight, fundAddress, getTransaction, broadcast, getNewAddress }`  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| service | <code>Object</code> | a `Bitcoin` service instance |
-| [options] | <code>Object</code> |  |
-| [options.wallet] | <code>String</code> | named bitcoind wallet for funding and addresses (default: the node's default wallet) |
 
 <a name="Logger"></a>
 
@@ -8360,6 +11634,7 @@ instruction entries from [push](#Fabric+push) — not the same as P2P [Message](
 * [Machine](#Machine) ⇐ [<code>Actor</code>](#Actor)
     * [new Machine(settings)](#new_Machine_new)
     * _instance_
+        * [.memory](#Machine+memory) : <code>Buffer</code>
         * [.allowedOpcodes](#Machine+allowedOpcodes) ⇒ <code>Array.&lt;string&gt;</code>
         * [.setAllowedOpcodes(list)](#Machine+setAllowedOpcodes) ⇒ [<code>Machine</code>](#Machine)
         * [.applyGenesisOpcodes([genesis])](#Machine+applyGenesisOpcodes) ⇒ [<code>Machine</code>](#Machine)
@@ -8397,6 +11672,12 @@ Create a Machine.
 | --- | --- | --- |
 | settings | <code>Object</code> | Run-time configuration. |
 
+<a name="Machine+memory"></a>
+
+### machine.memory : <code>Buffer</code>
+VM memory (`MACHINE_MAX_MEMORY` bytes), allocated on first access.
+
+**Kind**: instance property of [<code>Machine</code>](#Machine)  
 <a name="Machine+allowedOpcodes"></a>
 
 ### machine.allowedOpcodes ⇒ <code>Array.&lt;string&gt;</code>
@@ -8674,6 +11955,7 @@ Parse a JSON object of Buffer-like entries into an array of [Buffer](Buffer)s (l
 * [Machine](#Machine)
     * [new Machine(settings)](#new_Machine_new)
     * _instance_
+        * [.memory](#Machine+memory) : <code>Buffer</code>
         * [.allowedOpcodes](#Machine+allowedOpcodes) ⇒ <code>Array.&lt;string&gt;</code>
         * [.setAllowedOpcodes(list)](#Machine+setAllowedOpcodes) ⇒ [<code>Machine</code>](#Machine)
         * [.applyGenesisOpcodes([genesis])](#Machine+applyGenesisOpcodes) ⇒ [<code>Machine</code>](#Machine)
@@ -8711,6 +11993,12 @@ Create a Machine.
 | --- | --- | --- |
 | settings | <code>Object</code> | Run-time configuration. |
 
+<a name="Machine+memory"></a>
+
+### machine.memory : <code>Buffer</code>
+VM memory (`MACHINE_MAX_MEMORY` bytes), allocated on first access.
+
+**Kind**: instance property of [<code>Machine</code>](#Machine)  
 <a name="Machine+allowedOpcodes"></a>
 
 ### machine.allowedOpcodes ⇒ <code>Array.&lt;string&gt;</code>
@@ -9020,6 +12308,7 @@ JSON bridging is <strong>@fabric/http</strong>. See <code>docs/MESSAGE_BODY.md</
         * [.id](#Message+id) ⇒ <code>string</code>
         * [.wireType](#Message+wireType)
         * [.friendlyType](#Message+friendlyType)
+        * [.toBuffer()](#Message+toBuffer) ⇒ <code>Buffer</code>
         * [.asRaw()](#Message+asRaw) ⇒ <code>Buffer</code>
         * [.signWithKey(key)](#Message+signWithKey) ⇒ [<code>Message</code>](#Message)
         * [.verify()](#Message+verify) ⇒ <code>Boolean</code>
@@ -9032,7 +12321,6 @@ JSON bridging is <strong>@fabric/http</strong>. See <code>docs/MESSAGE_BODY.md</
         * [.get(path)](#Actor+get) ⇒ <code>Object</code>
         * [.set(path, value)](#Actor+set) ⇒ <code>Object</code>
         * [.stream([pipe])](#Actor+stream) ⇒ <code>TransformStream</code>
-        * [.toBuffer()](#Actor+toBuffer) ⇒ <code>Buffer</code>
         * [.toGenericMessage([type])](#Actor+toGenericMessage) ⇒ <code>Object</code>
         * [.toObject()](#Actor+toObject) ⇒ <code>Object</code>
         * [.pause()](#Actor+pause) ⇒ [<code>Actor</code>](#Actor)
@@ -9115,6 +12403,17 @@ AMP wire type string (SCREAMING_SNAKE_CASE / opcode-canonical). Same as [Message
 JSON-oriented type label (historical PascalCase aliases). Use in APIs and `toObject().type`.
 
 **Kind**: instance property of [<code>Message</code>](#Message)  
+<a name="Message+toBuffer"></a>
+
+### message.toBuffer() ⇒ <code>Buffer</code>
+Wire bytes of the message.
+
+**Kind**: instance method of [<code>Message</code>](#Message)  
+**Overrides**: [<code>toBuffer</code>](#Actor+toBuffer)  
+**Throws**:
+
+- <code>RangeError</code> When the frame exceeds `MAX_FRAME_BYTES` (no peer would accept it).
+
 <a name="Message+asRaw"></a>
 
 ### message.asRaw() ⇒ <code>Buffer</code>
@@ -9249,13 +12548,6 @@ Returns a new output stream for the Actor.
 | --- | --- | --- |
 | [pipe] | <code>TransformStream</code> | Pipe to stream to. |
 
-<a name="Actor+toBuffer"></a>
-
-### message.toBuffer() ⇒ <code>Buffer</code>
-Casts the Actor to a normalized Buffer.
-
-**Kind**: instance method of [<code>Message</code>](#Message)  
-**Overrides**: [<code>toBuffer</code>](#Actor+toBuffer)  
 <a name="Actor+toGenericMessage"></a>
 
 ### message.toGenericMessage([type]) ⇒ <code>Object</code>
@@ -9364,6 +12656,7 @@ Build a Message whose body is encoded from a registered field schema (V1).
         * [.id](#Message+id) ⇒ <code>string</code>
         * [.wireType](#Message+wireType)
         * [.friendlyType](#Message+friendlyType)
+        * [.toBuffer()](#Message+toBuffer) ⇒ <code>Buffer</code>
         * [.asRaw()](#Message+asRaw) ⇒ <code>Buffer</code>
         * [.signWithKey(key)](#Message+signWithKey) ⇒ [<code>Message</code>](#Message)
         * [.verify()](#Message+verify) ⇒ <code>Boolean</code>
@@ -9376,7 +12669,6 @@ Build a Message whose body is encoded from a registered field schema (V1).
         * [.get(path)](#Actor+get) ⇒ <code>Object</code>
         * [.set(path, value)](#Actor+set) ⇒ <code>Object</code>
         * [.stream([pipe])](#Actor+stream) ⇒ <code>TransformStream</code>
-        * [.toBuffer()](#Actor+toBuffer) ⇒ <code>Buffer</code>
         * [.toGenericMessage([type])](#Actor+toGenericMessage) ⇒ <code>Object</code>
         * [.toObject()](#Actor+toObject) ⇒ <code>Object</code>
         * [.pause()](#Actor+pause) ⇒ [<code>Actor</code>](#Actor)
@@ -9459,6 +12751,17 @@ AMP wire type string (SCREAMING_SNAKE_CASE / opcode-canonical). Same as [Message
 JSON-oriented type label (historical PascalCase aliases). Use in APIs and `toObject().type`.
 
 **Kind**: instance property of [<code>Message</code>](#Message)  
+<a name="Message+toBuffer"></a>
+
+### message.toBuffer() ⇒ <code>Buffer</code>
+Wire bytes of the message.
+
+**Kind**: instance method of [<code>Message</code>](#Message)  
+**Overrides**: [<code>toBuffer</code>](#Actor+toBuffer)  
+**Throws**:
+
+- <code>RangeError</code> When the frame exceeds `MAX_FRAME_BYTES` (no peer would accept it).
+
 <a name="Message+asRaw"></a>
 
 ### message.asRaw() ⇒ <code>Buffer</code>
@@ -9593,13 +12896,6 @@ Returns a new output stream for the Actor.
 | --- | --- | --- |
 | [pipe] | <code>TransformStream</code> | Pipe to stream to. |
 
-<a name="Actor+toBuffer"></a>
-
-### message.toBuffer() ⇒ <code>Buffer</code>
-Casts the Actor to a normalized Buffer.
-
-**Kind**: instance method of [<code>Message</code>](#Message)  
-**Overrides**: [<code>toBuffer</code>](#Actor+toBuffer)  
 <a name="Actor+toGenericMessage"></a>
 
 ### message.toGenericMessage([type]) ⇒ <code>Object</code>
@@ -9692,313 +12988,96 @@ Build a Message whose body is encoded from a registered field schema (V1).
 | [fields] | <code>object</code> | <code>{}</code> | Named fields matching the schema. |
 | [opts] | <code>object</code> | <code>{}</code> | Extra Message constructor options (`signer`, `sensitive`, …). |
 
-<a name="Book"></a>
+<a name="OrderBook"></a>
 
-## Book
+## OrderBook
+Constructed like [SignedBook](#SignedBook); its `spec` may also name
+`perMakerSetting`, the setting holding how many live entries one maker may
+hold (its oldest is dropped).
+
 **Kind**: global class  
 
-* [Book](#Book)
-    * [new Book([settings])](#new_DocumentOfferBook_new)
-    * [._offers](#Book+_offers) : <code>Map.&lt;string, object&gt;</code>
-    * [._providers](#Book+_providers) : <code>Map.&lt;string, object&gt;</code>
-    * [.recordInventoryLatency(sellerId, latencyMs, [opts])](#Book+recordInventoryLatency)
-    * [.recordDelivery(sellerId, outcome)](#Book+recordDelivery)
-    * [.recordRefund(sellerId)](#Book+recordRefund)
-    * [.recordPenalty(sellerId, [proof])](#Book+recordPenalty)
-    * [.ingestFraudProof(body, [ctx])](#Book+ingestFraudProof) ⇒ <code>Object</code>
-    * [.scoreFor(sellerId)](#Book+scoreFor) ⇒ <code>number</code>
-    * [.latencyFor(sellerId)](#Book+latencyFor) ⇒ <code>number</code>
-    * [.providerStats(sellerId)](#Book+providerStats) ⇒ <code>object</code> \| <code>null</code>
-    * [.listProviders()](#Book+listProviders) ⇒ <code>Array.&lt;object&gt;</code>
-    * [.exportTelemetry()](#Book+exportTelemetry) ⇒ <code>Object</code>
-    * [.importTelemetry(record)](#Book+importTelemetry) ⇒ <code>number</code>
-    * [.ingestInventoryResponse(opts)](#Book+ingestInventoryResponse)
-    * [.forgetSeller(sellerId)](#Book+forgetSeller) ⇒ <code>number</code>
-    * [.listOffers([filter])](#Book+listOffers) ⇒ <code>Array.&lt;object&gt;</code>
-    * [.providersForBlob(blobHashHex, [opts])](#Book+providersForBlob) ⇒ <code>Array.&lt;object&gt;</code>
-    * [.indexByBlobHash([filter])](#Book+indexByBlobHash) ⇒ <code>Map.&lt;string, Array.&lt;object&gt;&gt;</code>
-    * [.rankOffers(offers, [weights])](#Book+rankOffers) ⇒ <code>Array.&lt;object&gt;</code>
-    * [.pickBest(documentId, [opts])](#Book+pickBest) ⇒ <code>object</code> \| <code>null</code>
-    * [.pickBlobPlan(documentId, blobTotal, [opts])](#Book+pickBlobPlan) ⇒ <code>Map.&lt;number, object&gt;</code>
-    * [.groupPlanBySeller(plan)](#Book+groupPlanBySeller) ⇒ <code>Array.&lt;object&gt;</code>
+* [OrderBook](#OrderBook)
+    * [.ingest(body)](#OrderBook+ingest) ⇒ <code>Object</code>
+    * [._beforeInsert(entry)](#OrderBook+_beforeInsert)
+    * [.makers()](#OrderBook+makers) ⇒ <code>Set.&lt;string&gt;</code>
+    * [.list([filter])](#OrderBook+list) ⇒ <code>Array.&lt;Object&gt;</code>
+    * [._matches(_entry, _filter)](#OrderBook+_matches) ⇒ <code>boolean</code>
+    * [._compare()](#OrderBook+_compare) ⇒ <code>number</code>
+    * [._view(row)](#OrderBook+_view) ⇒ <code>Object</code>
 
-<a name="new_DocumentOfferBook_new"></a>
+<a name="OrderBook+ingest"></a>
 
-### new Book([settings])
+### orderBook.ingest(body) ⇒ <code>Object</code>
+Verify and hold a signed entry body.
 
-| Param | Type | Default | Description |
-| --- | --- | --- | --- |
-| [settings] | <code>Object</code> |  |  |
-| [settings.alpha] | <code>number</code> | <code>0.3</code> | EWMA smoothing for latencies |
-| [settings.hopPenaltyMs] | <code>number</code> | <code>50</code> | latency added per gossip hop |
-| [settings.weights] | <code>Object</code> |  | ranking weight overrides |
-
-<a name="Book+_offers"></a>
-
-### documentOfferBook.\_offers : <code>Map.&lt;string, object&gt;</code>
-offerKey → offer row
-
-**Kind**: instance property of [<code>Book</code>](#Book)  
-<a name="Book+_providers"></a>
-
-### documentOfferBook.\_providers : <code>Map.&lt;string, object&gt;</code>
-sellerId → provider telemetry
-
-**Kind**: instance property of [<code>Book</code>](#Book)  
-<a name="Book+recordInventoryLatency"></a>
-
-### documentOfferBook.recordInventoryLatency(sellerId, latencyMs, [opts])
-Record an inventory round trip for a provider.
-
-**Kind**: instance method of [<code>Book</code>](#Book)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| sellerId | <code>string</code> |  |
-| latencyMs | <code>number</code> |  |
-| [opts] | <code>Object</code> |  |
-| [opts.hops] | <code>number</code> | gossip hops the response travelled |
-
-<a name="Book+recordDelivery"></a>
-
-### documentOfferBook.recordDelivery(sellerId, outcome)
-Record a delivery outcome (a blob plan or a single blob).
-
-**Kind**: instance method of [<code>Book</code>](#Book)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| sellerId | <code>string</code> |  |
-| outcome | <code>Object</code> |  |
-| outcome.ok | <code>boolean</code> | bytes verified against the advertised hash |
-| [outcome.latencyMs] | <code>number</code> |  |
-| [outcome.bytes] | <code>number</code> |  |
-
-<a name="Book+recordRefund"></a>
-
-### documentOfferBook.recordRefund(sellerId)
-Record that a purchase from this provider ended in an HTLC refund.
-
-**Kind**: instance method of [<code>Book</code>](#Book)  
+**Kind**: instance method of [<code>OrderBook</code>](#OrderBook)  
 
 | Param | Type |
 | --- | --- |
-| sellerId | <code>string</code> | 
+| body | <code>Object</code> | 
 
-<a name="Book+recordPenalty"></a>
+<a name="OrderBook+_beforeInsert"></a>
 
-### documentOfferBook.recordPenalty(sellerId, [proof])
-Record a verified fraud proof against this provider.
+### orderBook.\_beforeInsert(entry)
+A maker at its entry limit loses its oldest entry.
 
-**Kind**: instance method of [<code>Book</code>](#Book)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| sellerId | <code>string</code> |  |
-| [proof] | <code>Object</code> | `{ kind }` from `types/witness` FraudProof |
-
-<a name="Book+ingestFraudProof"></a>
-
-### documentOfferBook.ingestFraudProof(body, [ctx]) ⇒ <code>Object</code>
-Verify a `FraudProof` body (`types/witness`) and penalize the offender
-locally. The offender is an x-only pubkey; every seller whose offer rows
-were signed by that key (33-byte `sellerPubkey` / `ampSignerPubkey`, or an
-x-only `sellerId`) takes the penalty. Reputation stays local (decision 4).
-
-**Kind**: instance method of [<code>Book</code>](#Book)  
+**Kind**: instance method of [<code>OrderBook</code>](#OrderBook)  
+**Access**: protected  
 
 | Param | Type | Description |
 | --- | --- | --- |
-| body | <code>Object</code> | `CONTRACT_MESSAGE` body |
-| [ctx] | <code>Object</code> | `{ epoch }` for non-response proofs |
+| entry | <code>Object</code> | verified body |
 
-<a name="Book+scoreFor"></a>
+<a name="OrderBook+makers"></a>
 
-### documentOfferBook.scoreFor(sellerId) ⇒ <code>number</code>
-Derived 0..1000 score. Unknown providers score [SCORE_UNKNOWN](#SCORE_UNKNOWN); a
-verified penalty is weighted as ten failed deliveries.
+### orderBook.makers() ⇒ <code>Set.&lt;string&gt;</code>
+**Kind**: instance method of [<code>OrderBook</code>](#OrderBook)  
+**Returns**: <code>Set.&lt;string&gt;</code> - makers with a live entry  
+<a name="OrderBook+list"></a>
 
-**Kind**: instance method of [<code>Book</code>](#Book)  
+### orderBook.list([filter]) ⇒ <code>Array.&lt;Object&gt;</code>
+Live entries, ordered by [_compare](#OrderBook+_compare) (arrival by default).
 
-| Param | Type |
-| --- | --- |
-| sellerId | <code>string</code> | 
-
-<a name="Book+latencyFor"></a>
-
-### documentOfferBook.latencyFor(sellerId) ⇒ <code>number</code>
-Effective latency for ranking: measured RTT plus a per-hop penalty.
-
-**Kind**: instance method of [<code>Book</code>](#Book)  
-
-| Param | Type |
-| --- | --- |
-| sellerId | <code>string</code> | 
-
-<a name="Book+providerStats"></a>
-
-### documentOfferBook.providerStats(sellerId) ⇒ <code>object</code> \| <code>null</code>
-**Kind**: instance method of [<code>Book</code>](#Book)  
-
-| Param | Type |
-| --- | --- |
-| sellerId | <code>string</code> | 
-
-<a name="Book+listProviders"></a>
-
-### documentOfferBook.listProviders() ⇒ <code>Array.&lt;object&gt;</code>
-All known providers with derived score, best first.
-
-**Kind**: instance method of [<code>Book</code>](#Book)  
-<a name="Book+exportTelemetry"></a>
-
-### documentOfferBook.exportTelemetry() ⇒ <code>Object</code>
-Signable, versioned telemetry record (local persistence; future gossip).
-
-**Kind**: instance method of [<code>Book</code>](#Book)  
-<a name="Book+importTelemetry"></a>
-
-### documentOfferBook.importTelemetry(record) ⇒ <code>number</code>
-Merge a telemetry record exported earlier (same node). Counters add;
-latencies take the newer sample.
-
-**Kind**: instance method of [<code>Book</code>](#Book)  
-**Returns**: <code>number</code> - providers merged  
-
-| Param | Type |
-| --- | --- |
-| record | <code>object</code> | 
-
-<a name="Book+ingestInventoryResponse"></a>
-
-### documentOfferBook.ingestInventoryResponse(opts)
-Ingest an `INVENTORY_RESPONSE`. Caller-supplied `peerScore` / `latencyMs`
-win; otherwise local telemetry for the seller is applied.
-
-**Kind**: instance method of [<code>Book</code>](#Book)  
+**Kind**: instance method of [<code>OrderBook</code>](#OrderBook)  
+**Returns**: <code>Array.&lt;Object&gt;</code> - rows shaped by [_view](#OrderBook+_view) (`{ id, ...entry }`)  
 
 | Param | Type | Description |
 | --- | --- | --- |
-| opts | <code>object</code> |  |
-| opts.origin | <code>string</code> | seller address / peer key |
-| opts.items | <code>Array.&lt;object&gt;</code> | inventory items |
-| [opts.peerScore] | <code>number</code> |  |
-| [opts.latencyMs] | <code>number</code> | measured round trip for this response |
-| [opts.hops] | <code>number</code> | gossip hops travelled |
-| [opts.sellerId] | <code>string</code> |  |
-| [opts.sellerPubkey] | <code>string</code> |  |
-| [opts.signerPubkeyHex] | <code>string</code> | AMP signer (preferred identity) |
+| [filter] | <code>Object</code> | passed to [_matches](#OrderBook+_matches) |
+| [filter.makerPubkey] | <code>string</code> |  |
 
-<a name="Book+forgetSeller"></a>
+<a name="OrderBook+_matches"></a>
 
-### documentOfferBook.forgetSeller(sellerId) ⇒ <code>number</code>
-Drop every offer from one seller (disconnect, fraud, expiry).
+### orderBook.\_matches(_entry, _filter) ⇒ <code>boolean</code>
+Market-specific listing filter.
 
-**Kind**: instance method of [<code>Book</code>](#Book)  
-**Returns**: <code>number</code> - rows removed  
-
-| Param | Type |
-| --- | --- |
-| sellerId | <code>string</code> | 
-
-<a name="Book+listOffers"></a>
-
-### documentOfferBook.listOffers([filter]) ⇒ <code>Array.&lt;object&gt;</code>
-**Kind**: instance method of [<code>Book</code>](#Book)  
+**Kind**: instance method of [<code>OrderBook</code>](#OrderBook)  
+**Access**: protected  
 
 | Param | Type | Description |
 | --- | --- | --- |
-| [filter] | <code>Object</code> |  |
-| [filter.documentId] | <code>string</code> |  |
-| [filter.blobIndex] | <code>number</code> |  |
-| [filter.blobHashHex] | <code>string</code> | chunk selector |
-| [filter.merkleRootHex] | <code>string</code> | tree selector |
-| [filter.sellerId] | <code>string</code> |  |
+| _entry | <code>Object</code> | verified body |
+| _filter | <code>Object</code> |  |
 
-<a name="Book+providersForBlob"></a>
+<a name="OrderBook+_compare"></a>
 
-### documentOfferBook.providersForBlob(blobHashHex, [opts]) ⇒ <code>Array.&lt;object&gt;</code>
-Chunk index: ranked providers for one blob hash.
+### orderBook.\_compare() ⇒ <code>number</code>
+Listing order of two rows `{ id, [field], seq }`.
 
-**Kind**: instance method of [<code>Book</code>](#Book)  
-**Returns**: <code>Array.&lt;object&gt;</code> - ranked offers, best first  
+**Kind**: instance method of [<code>OrderBook</code>](#OrderBook)  
+**Access**: protected  
+<a name="OrderBook+_view"></a>
 
-| Param | Type | Description |
-| --- | --- | --- |
-| blobHashHex | <code>string</code> |  |
-| [opts] | <code>Object</code> | see [pickBest](#Book+pickBest) |
+### orderBook.\_view(row) ⇒ <code>Object</code>
+Public shape of one listed row.
 
-<a name="Book+indexByBlobHash"></a>
-
-### documentOfferBook.indexByBlobHash([filter]) ⇒ <code>Map.&lt;string, Array.&lt;object&gt;&gt;</code>
-Full chunk index: blob hash → ranked offers.
-
-**Kind**: instance method of [<code>Book</code>](#Book)  
+**Kind**: instance method of [<code>OrderBook</code>](#OrderBook)  
+**Access**: protected  
 
 | Param | Type | Description |
 | --- | --- | --- |
-| [filter] | <code>Object</code> | `{ merkleRootHex, documentId }` |
-
-<a name="Book+rankOffers"></a>
-
-### documentOfferBook.rankOffers(offers, [weights]) ⇒ <code>Array.&lt;object&gt;</code>
-**Kind**: instance method of [<code>Book</code>](#Book)  
-**Returns**: <code>Array.&lt;object&gt;</code> - offers with `rankScore`, best first  
-
-| Param | Type |
-| --- | --- |
-| offers | <code>Array.&lt;object&gt;</code> | 
-| [weights] | <code>Object</code> | 
-
-<a name="Book+pickBest"></a>
-
-### documentOfferBook.pickBest(documentId, [opts]) ⇒ <code>object</code> \| <code>null</code>
-**Kind**: instance method of [<code>Book</code>](#Book)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| documentId | <code>string</code> |  |
-| [opts] | <code>Object</code> |  |
-| [opts.blobIndex] | <code>number</code> |  |
-| [opts.maxSats] | <code>number</code> |  |
-| [opts.minPaidSats] | <code>number</code> | drop paid offers below this (free offers stay) |
-| [opts.excludeSellers] | <code>Array.&lt;string&gt;</code> |  |
-| [opts.merkleRootHex] | <code>string</code> | only offers for this tree root |
-| [opts.weights] | <code>Object</code> |  |
-
-<a name="Book+pickBlobPlan"></a>
-
-### documentOfferBook.pickBlobPlan(documentId, blobTotal, [opts]) ⇒ <code>Map.&lt;number, object&gt;</code>
-One offer per blob index. Prefers seller diversity when rank scores are
-within 10%. With per-blob sealing (every blob has its own `K_i` and
-payment hash) sealed trees split across sellers exactly like unsealed
-ones; a legacy document-level seal (`opts.singleKey`) stays on one seller.
-
-**Kind**: instance method of [<code>Book</code>](#Book)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| documentId | <code>string</code> |  |
-| blobTotal | <code>number</code> |  |
-| [opts] | <code>Object</code> |  |
-| [opts.singleKey] | <code>boolean</code> | legacy whole-document key: lock one seller |
-| [opts.maxSats] | <code>number</code> | per-blob ceiling |
-| [opts.minPaidSats] | <code>number</code> | drop paid offers below this (free offers stay) |
-| [opts.excludeSellers] | <code>Array.&lt;string&gt;</code> |  |
-| [opts.merkleRootHex] | <code>string</code> | only offers for this tree root; when   omitted the plan still stays on **one** root (the first pick's), so   blobs from different trees are never mixed into a single document |
-
-<a name="Book+groupPlanBySeller"></a>
-
-### documentOfferBook.groupPlanBySeller(plan) ⇒ <code>Array.&lt;object&gt;</code>
-Group a blob plan by seller: the MVP economic unit (one L1 HTLC per
-seller covering every blob picked from them).
-
-**Kind**: instance method of [<code>Book</code>](#Book)  
-**Returns**: <code>Array.&lt;object&gt;</code> - `[{ sellerId, sellerAddress, blobIndexes, totalSats, offers }]`  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| plan | <code>Map.&lt;number, object&gt;</code> | from [pickBlobPlan](#Book+pickBlobPlan) |
+| row | <code>Object</code> | `{ id, [field], seq }` |
 
 <a name="Peer"></a>
 
@@ -10020,6 +13099,13 @@ see [Message](#Message) wire vs friendly names and <code>constants</code> opcode
     * [.blobTransfers](#Peer+blobTransfers)
     * [.pendingSealedDeliveries](#Peer+pendingSealedDeliveries)
     * [.pendingSealedBlobs](#Peer+pendingSealedBlobs)
+    * [._pendingSealedBytes](#Peer+_pendingSealedBytes)
+    * [._sealedBlobSecrets](#Peer+_sealedBlobSecrets)
+    * [._sealedBlobByPaymentHash](#Peer+_sealedBlobByPaymentHash)
+    * [._sealedBlobQuotes](#Peer+_sealedBlobQuotes)
+    * [._receivedBlobQuotes](#Peer+_receivedBlobQuotes)
+    * [._heldChunks](#Peer+_heldChunks)
+    * [._seedRecords](#Peer+_seedRecords)
     * [._documentRelayRoutes](#Peer+_documentRelayRoutes)
     * [._inboundNoiseStaticPubkeyByAddress](#Peer+_inboundNoiseStaticPubkeyByAddress)
     * [.messages](#Peer+messages)
@@ -10085,6 +13171,10 @@ see [Message](#Message) wire vs friendly names and <code>constants</code> opcode
     * [._relayWirePayload()](#Peer+_relayWirePayload)
     * [._relayGenericPayload()](#Peer+_relayGenericPayload)
     * [._isTransientSocketError(error)](#Peer+_isTransientSocketError) ⇒ <code>boolean</code>
+    * [._noiseTransportOptions()](#Peer+_noiseTransportOptions) ⇒ <code>Object</code>
+    * [._bindNoiseTransportToSocket(noiseStream, socket)](#Peer+_bindNoiseTransportToSocket) ⇒ <code>void</code>
+    * [._localMaxFrameBytes()](#Peer+_localMaxFrameBytes) ⇒ <code>number</code>
+    * [._recordRemoteFrameCap(connAddress, sessionObject)](#Peer+_recordRemoteFrameCap) ⇒ <code>number</code>
     * [._attachNoiseStreamErrorHandlers(noiseStream, [label])](#Peer+_attachNoiseStreamErrorHandlers)
     * [._detachNoiseStreamErrorHandlers(noiseStream)](#Peer+_detachNoiseStreamErrorHandlers) ⇒ <code>void</code>
     * [._teardownNoiseClient(socket)](#Peer+_teardownNoiseClient) ⇒ <code>void</code>
@@ -10093,10 +13183,15 @@ see [Message](#Message) wire vs friendly names and <code>constants</code> opcode
     * [._sendLocalInventoryDocumentsWireResponse(originName, items, [opts])](#Peer+_sendLocalInventoryDocumentsWireResponse) ⇒ <code>boolean</code>
     * [._respondInventoryFromLocalDocuments(message, origin)](#Peer+_respondInventoryFromLocalDocuments) ⇒ <code>boolean</code>
     * [.publishSealedDocument(doc, [opts])](#Peer+publishSealedDocument) ⇒ <code>Object</code>
-    * [.sealedBlobPreimageForPaymentHash(paymentHashHex)](#Peer+sealedBlobPreimageForPaymentHash) ⇒ <code>Object</code> \| <code>null</code>
+    * [.sealedBlobPreimageForPaymentHash(paymentHashHex, [htlc])](#Peer+sealedBlobPreimageForPaymentHash) ⇒ <code>Object</code> \| <code>null</code>
+    * [.quoteSealedBlob(opts)](#Peer+quoteSealedBlob) ⇒ <code>Object</code>
     * [._getSealedBlobDocument(documentId)](#Peer+_getSealedBlobDocument) ⇒ [<code>Document</code>](#Document) \| <code>null</code>
+    * [.getDocumentBuffer(documentId)](#Peer+getDocumentBuffer) ⇒ <code>Buffer</code> \| <code>null</code>
     * [._sendP2pFileSendToPeer(documentId, peerAddress, [opts])](#Peer+_sendP2pFileSendToPeer) ⇒ <code>boolean</code>
     * [._sendDocumentContentKeyReveal(documentId, peerAddress, [opts])](#Peer+_sendDocumentContentKeyReveal) ⇒ <code>boolean</code>
+    * [.seedableDocument(documentId)](#Peer+seedableDocument) ⇒ <code>boolean</code>
+    * [.seedDocument(documentId, [opts])](#Peer+seedDocument) ⇒ <code>Object</code>
+    * [.adoptHeldChunk(opts)](#Peer+adoptHeldChunk) ⇒ <code>Object</code>
     * [.sealedBlobKeyForPaymentHash(paymentHashHex)](#Peer+sealedBlobKeyForPaymentHash) ⇒ <code>Object</code> \| <code>null</code>
     * [.openSealedBlobWithKey(opts)](#Peer+openSealedBlobWithKey) ⇒ <code>Object</code>
     * [._ingestP2pFileSend(message, origin, [wireMessage])](#Peer+_ingestP2pFileSend) ⇒ <code>Object</code>
@@ -10109,6 +13204,7 @@ see [Message](#Message) wire vs friendly names and <code>constants</code> opcode
     * [.listPendingDocumentRequests()](#Peer+listPendingDocumentRequests) ⇒ <code>Array.&lt;object&gt;</code>
     * [.approveDocumentRequest(requestKey)](#Peer+approveDocumentRequest) ⇒ <code>Object</code>
     * [.authorizeDocumentKeyReveal(opts)](#Peer+authorizeDocumentKeyReveal) ⇒ <code>Object</code>
+    * [._ingestSealedBlobQuote(quote, [origin], [wireMessage])](#Peer+_ingestSealedBlobQuote) ⇒ <code>Object</code>
     * [.denyDocumentRequest(requestKey)](#Peer+denyDocumentRequest) ⇒ <code>Object</code>
     * [._buildPublishDocumentWireBuffers(documentId, body, rateSats)](#Peer+_buildPublishDocumentWireBuffers) ⇒ <code>Array.&lt;Buffer&gt;</code>
     * [._announceLocalDocumentsToPeer(peerAddress)](#Peer+_announceLocalDocumentsToPeer)
@@ -10225,6 +13321,55 @@ Ciphertext awaiting content-key reveal: documentId → meta.
 
 ### peer.pendingSealedBlobs
 Per-blob sealed trees awaiting one `DocumentContentKeyReveal` per blob (types/document.js).
+
+**Kind**: instance property of [<code>Peer</code>](#Peer)  
+<a name="Peer+_pendingSealedBytes"></a>
+
+### peer.\_pendingSealedBytes
+Running byte total of `pendingSealedBlobs`, and of unpinned rows per origin.
+
+**Kind**: instance property of [<code>Peer</code>](#Peer)  
+<a name="Peer+_sealedBlobSecrets"></a>
+
+### peer.\_sealedBlobSecrets
+Seller-private material for published sealed documents: documentId →
+`{ keys: Map<index, K_i hex>, ciphertexts: Map<index, Buffer>, doc: Document|null }`.
+Kept out of `_state` so keys and bytes never reach commits or observers.
+
+**Kind**: instance property of [<code>Peer</code>](#Peer)  
+<a name="Peer+_sealedBlobByPaymentHash"></a>
+
+### peer.\_sealedBlobByPaymentHash
+Seller: static payment hash `SHA256(K_i)` → `{ documentId, blobIndex }`.
+
+**Kind**: instance property of [<code>Peer</code>](#Peer)  
+<a name="Peer+_sealedBlobQuotes"></a>
+
+### peer.\_sealedBlobQuotes
+Seller per-buyer quotes: paymentHashHex → `{ documentId, blobIndex, secretHex, priceSats, expiresAt, keyHashHex }`.
+
+**Kind**: instance property of [<code>Peer</code>](#Peer)  
+<a name="Peer+_receivedBlobQuotes"></a>
+
+### peer.\_receivedBlobQuotes
+Buyer: quotes received, paymentHashHex → `{ quote, origin, frameHex, received }`.
+
+**Kind**: instance property of [<code>Peer</code>](#Peer)  
+<a name="Peer+_heldChunks"></a>
+
+### peer.\_heldChunks
+Opened convergent chunks, `"blobHashHex|paymentHashHex"` →
+`{ keyHex, iv, scheme, convergence, ciphertext }`. A chunk another
+document shares is opened from here instead of bought again. Bounded by
+`maxHeldChunkBytes`, oldest first.
+
+**Kind**: instance property of [<code>Peer</code>](#Peer)  
+<a name="Peer+_seedRecords"></a>
+
+### peer.\_seedRecords
+Leaf records of convergent trees received here (`documentId` → hash-only
+Document record, newest last, at most 256), so [seedDocument](#Peer+seedDocument)
+can sell the same tree again from the held chunks.
 
 **Kind**: instance property of [<code>Peer</code>](#Peer)  
 <a name="Peer+_documentRelayRoutes"></a>
@@ -10862,6 +14007,46 @@ Node sometimes omits `error.code` and only puts `ECONNREFUSED` in the message.
 | --- | --- |
 | error | <code>\*</code> | 
 
+<a name="Peer+_noiseTransportOptions"></a>
+
+### peer.\_noiseTransportOptions() ⇒ <code>Object</code>
+NOISE transport limits from settings (absolute handshake deadline + pre-handshake byte budget).
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+<a name="Peer+_bindNoiseTransportToSocket"></a>
+
+### peer.\_bindNoiseTransportToSocket(noiseStream, socket) ⇒ <code>void</code>
+Tie a NOISE pair to its TCP socket: a destroyed decrypt side (limit broken, handshake
+timeout, decrypt failure) destroys the socket. The remote frame cap starts at the
+legacy 4096 bytes until its session message advertises `maxFrameBytes`.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| noiseStream | <code>Object</code> | noise-protocol-stream duplex pair |
+| socket | <code>Object</code> |  |
+
+<a name="Peer+_localMaxFrameBytes"></a>
+
+### peer.\_localMaxFrameBytes() ⇒ <code>number</code>
+Local AMP frame cap (header + `maxMessageSize` body) — what this node accepts and advertises.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+<a name="Peer+_recordRemoteFrameCap"></a>
+
+### peer.\_recordRemoteFrameCap(connAddress, sessionObject) ⇒ <code>number</code>
+Record the frame cap a remote advertised in `P2P_SESSION_OFFER` / `P2P_SESSION_OPEN`
+(`object.maxFrameBytes`). Absent or invalid = legacy 4096-byte peer.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+**Returns**: <code>number</code> - Cap now used for frames sent to that connection  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| connAddress | <code>string</code> |  |
+| sessionObject | <code>Object</code> | Session message `object` |
+
 <a name="Peer+_attachNoiseStreamErrorHandlers"></a>
 
 ### peer.\_attachNoiseStreamErrorHandlers(noiseStream, [label])
@@ -10929,8 +14114,11 @@ Items for Hub-style `kind: 'documents'` inventory (Fabric UI / `@fabric/hub` mer
 ### peer.\_sendLocalInventoryDocumentsWireResponse(originName, items, [opts]) ⇒ <code>boolean</code>
 Write [INVENTORY_RESPONSE](INVENTORY_RESPONSE) (`P2P_INVENTORY_RESPONSE`) compatible with `@fabric/hub` Bridge merging
 (body includes `kind: 'documents'` so the browser can merge `object.items`).
+Items are split across as many responses as needed so each frame fits the
+requester's frame cap; every page carries `inventoryId`, `page` (1-based), and `pages`.
 
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
+**Returns**: <code>boolean</code> - true when at least one page was written  
 
 | Param | Type | Description |
 | --- | --- | --- |
@@ -10966,28 +14154,72 @@ settle one HTLC per blob plan and receive one key reveal per blob.
 | doc | [<code>Document</code>](#Document) |  | Sealed document that holds its blob keys. |
 | [opts] | <code>Object</code> |  |  |
 | [opts.rateSats] | <code>number</code> | <code>0</code> | Per-blob ask: 0 (free) or at least `HTLC_MINIMUM_SATS`, since each blob settles with its own HTLC. |
-| [opts.documentId] | <code>string</code> |  | Catalog id (default: the Document's). |
+| [opts.creditRateSats] | <code>number</code> |  | Per-blob price on the credit rail: the key is revealed first and the buyer pays afterwards with a channel transfer, so any positive price works (no HTLC minimum). Convergent documents only — random-key documents never reveal before payment. Each credit request goes through `settings.sealedBlobCredit`. |
+| [opts.creditLimitSats] | <code>number</code> |  | Most a buyer may owe this seller at once (passed to `settings.sealedBlobCredit` as `limitSats`). |
+| [opts.documentId] | <code>string</code> |  | Catalog id (default: the Document's). A convergent document is always published under its tree root, so every seller's offers line up; a different id is kept only as a local `label`. |
 
 <a name="Peer+sealedBlobPreimageForPaymentHash"></a>
 
-### peer.sealedBlobPreimageForPaymentHash(paymentHashHex) ⇒ <code>Object</code> \| <code>null</code>
-Seller side: the content key `K_i` whose SHA256 is `paymentHashHex`, from
-this node's published sealed-blob registry. Channel hosts hand this to
-`Channel.Book` as `preimageFor` so a committed HTLC for a blob we sell is
-fulfilled with the key (seller-fulfills; the buyer learns `K_i` from the
+### peer.sealedBlobPreimageForPaymentHash(paymentHashHex, [htlc]) ⇒ <code>Object</code> \| <code>null</code>
+Seller side: the HTLC preimage for `paymentHashHex` — `K_i` for a static
+blob hash (`SHA256(K_i)`), or the per-buyer secret `s` of a live
+[quoteSealedBlob](#Peer+quoteSealedBlob) quote. Channel hosts hand this to
+`ChannelBook` as `preimageFor` so a committed HTLC for a blob we sell is
+fulfilled (seller-fulfils; the buyer learns the preimage from the
 `ChannelHtlcFulfill`).
+
+Pass the HTLC being fulfilled: one paying less than the blob's price
+(`documentRates`, or the quote's `priceSats`) gets `null`. Without `htlc`
+no amount check is possible; settlement code must always pass it. With
+`sealedBlobPaymentMode: 'perBuyer'` static hashes are never fulfilled
+(that would publish `K_i`).
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+**Returns**: <code>Object</code> \| <code>null</code> - `keyHex` is the preimage (kept for callers written against static hashes).  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| paymentHashHex | <code>string</code> |  |  |
+| [htlc] | <code>Object</code> | <code></code> | `{ amountSats, expireAfter?, expireHeight? }` |
+
+<a name="Peer+quoteSealedBlob"></a>
+
+### peer.quoteSealedBlob(opts) ⇒ <code>Object</code>
+Seller: issue a per-buyer quote for one blob (see
+`functions/documentSealedExchange.js` `createBlobQuote`). The buyer funds
+an HTLC to `quote.paymentHashHex`; fulfilling it reveals `s`, which
+unwraps `K_i` only for the holder of `quote.wrappedKeyHex`. Quotes live
+in a bounded private map until `expiresAt`.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| opts | <code>Object</code> |  |
+| opts.documentId | <code>string</code> |  |
+| opts.blobIndex | <code>number</code> |  |
+| [opts.ttlMs] | <code>number</code> | default `sealedBlobQuoteTtlMs` (1 h) |
+
+<a name="Peer+_getSealedBlobDocument"></a>
+
+### peer.\_getSealedBlobDocument(documentId) ⇒ [<code>Document</code>](#Document) \| <code>null</code>
+Seller copy of a published per-blob sealed document: ciphertext and keys,
+never plaintext. Cached (no per-request decrypt). Rows written into
+`_state` by older versions (`keys` / `ciphertextsBase64`) move to the
+private map on first use.
 
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
 
 | Param | Type |
 | --- | --- |
-| paymentHashHex | <code>string</code> | 
+| documentId | <code>string</code> | 
 
-<a name="Peer+_getSealedBlobDocument"></a>
+<a name="Peer+getDocumentBuffer"></a>
 
-### peer.\_getSealedBlobDocument(documentId) ⇒ [<code>Document</code>](#Document) \| <code>null</code>
+### peer.getDocumentBuffer(documentId) ⇒ <code>Buffer</code> \| <code>null</code>
+Bytes of a locally held document (decodes base64-stored binary documents).
+
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
-**Returns**: [<code>Document</code>](#Document) \| <code>null</code> - rehydrated per-blob sealed document (with keys) or null  
 
 | Param | Type |
 | --- | --- |
@@ -11026,6 +14258,55 @@ Reveal the AES content key to a peer (only after payment-hash match).
 | [opts] | <code>Object</code> | 
 | [opts.settlementId] | <code>string</code> | 
 
+<a name="Peer+seedableDocument"></a>
+
+### peer.seedableDocument(documentId) ⇒ <code>boolean</code>
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+**Returns**: <code>boolean</code> - a convergent tree received here that [seedDocument](#Peer+seedDocument) may sell  
+
+| Param | Type |
+| --- | --- |
+| documentId | <code>string</code> | 
+
+<a name="Peer+seedDocument"></a>
+
+### peer.seedDocument(documentId, [opts]) ⇒ <code>Object</code>
+Seed after download: sell a convergent tree this Peer received, as the
+same tree (same root, chunks, and keys), rebuilt from the held chunks —
+nothing is resealed. Fails when a chunk was evicted from the held store
+(`maxHeldChunkBytes`); reseal the plaintext then, which gives the same
+tree for public convergence. Seller terms as [publishSealedDocument](#Peer+publishSealedDocument).
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| documentId | <code>string</code> |  |
+| [opts] | <code>Object</code> | `{ rateSats, creditRateSats, creditLimitSats, convergenceSecret }` |
+
+<a name="Peer+adoptHeldChunk"></a>
+
+### peer.adoptHeldChunk(opts) ⇒ <code>Object</code>
+Fill one blob of a sealed tree from a held chunk (see [Peer#heldChunk](Peer#heldChunk))
+and open it, as a paid key reveal would. The offer's leaf names the chunk;
+the IV must match, an inclusion proof is checked when given, and the whole tree is
+still checked against its root once every blob is open.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+**Returns**: <code>Object</code> - same shape as the key-reveal handler  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| opts | <code>Object</code> |  |
+| opts.documentId | <code>string</code> |  |
+| opts.merkleRootHex | <code>string</code> |  |
+| opts.blobTotal | <code>number</code> |  |
+| opts.blobIndex | <code>number</code> |  |
+| opts.blobHashHex | <code>string</code> |  |
+| opts.paymentHashHex | <code>string</code> |  |
+| [opts.iv] | <code>string</code> | advertised IV |
+| [opts.proof] | <code>Array.&lt;string&gt;</code> | inclusion proof |
+
 <a name="Peer+sealedBlobKeyForPaymentHash"></a>
 
 ### peer.sealedBlobKeyForPaymentHash(paymentHashHex) ⇒ <code>Object</code> \| <code>null</code>
@@ -11041,10 +14322,13 @@ channel `ChannelHtlcFulfill` preimage back onto the blob it unlocks.
 <a name="Peer+openSealedBlobWithKey"></a>
 
 ### peer.openSealedBlobWithKey(opts) ⇒ <code>Object</code>
-Open a held sealed blob with a key learned out of band (seller-fulfills
-channel rail: the HTLC preimage **is** `K_i`). Same verification as a
-wire `DocumentContentKeyReveal`: SHA256(key) must equal the part's payment
-hash and the plaintext must hash to its advertised digest.
+Open a held sealed blob with an HTLC preimage learned out of band
+(seller-fulfils channel rail). For a static payment hash the preimage
+**is** `K_i`; for a per-buyer `DocumentBlobQuote` it is `s`, which
+unwraps `K_i` from the quote (a quote that does not unwrap to the
+committed key hash emits `documentBlobQuoteFraud` with the signed quote
+frame). Same verification as a wire `DocumentContentKeyReveal`:
+SHA256(K_i) must equal the part's payment hash and GCM must authenticate.
 
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
 **Returns**: <code>Object</code> - same shape as the key-reveal handler  
@@ -11052,8 +14336,8 @@ hash and the plaintext must hash to its advertised digest.
 | Param | Type | Description |
 | --- | --- | --- |
 | opts | <code>Object</code> |  |
-| opts.documentId | <code>string</code> |  |
-| opts.keyHex | <code>string</code> | 32-byte key (hex) |
+| [opts.documentId] | <code>string</code> |  |
+| opts.keyHex | <code>string</code> | 32-byte preimage (hex) |
 | [opts.blobIndex] | <code>number</code> | resolved from `paymentHashHex` when omitted |
 | [opts.paymentHashHex] | <code>string</code> | SHA256(key); defaults to the hash of `keyHex` |
 | [opts.merkleRootHex] | <code>string</code> | disambiguates when two roots are pending |
@@ -11137,16 +14421,18 @@ Send a signed `DocumentRequest` to one peer (or broadcast when peerAddress is om
 
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
 
-| Param | Type | Default |
-| --- | --- | --- |
-| documentId | <code>string</code> |  | 
-| [peerAddress] | <code>string</code> | <code>null</code> | 
-| [opts] | <code>object</code> |  | 
-| [opts.maxSats] | <code>number</code> |  | 
-| [opts.relayHop] | <code>number</code> |  | 
-| [opts.blobIndex] | <code>number</code> |  | 
-| [opts.blobTotal] | <code>number</code> |  | 
-| [opts.contentHashHex] | <code>string</code> |  | 
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| documentId | <code>string</code> |  |  |
+| [peerAddress] | <code>string</code> | <code>null</code> |  |
+| [opts] | <code>object</code> |  |  |
+| [opts.maxSats] | <code>number</code> |  |  |
+| [opts.relayHop] | <code>number</code> |  |  |
+| [opts.blobIndex] | <code>number</code> |  |  |
+| [opts.blobTotal] | <code>number</code> |  |  |
+| [opts.contentHashHex] | <code>string</code> |  |  |
+| [opts.credit] | <code>boolean</code> |  | Ask for the blob key on credit (pay after verify with a channel transfer naming `creditRef`). |
+| [opts.creditRef] | <code>string</code> |  |  |
 
 <a name="Peer+_attachHtlcOfferToItem"></a>
 
@@ -11192,6 +14478,21 @@ DocumentRequest may receive the AES content key (not merely the ciphertext).
 | opts.contentHashHex | <code>string</code> | payment hash SHA256(K) |
 | [opts.settlementId] | <code>string</code> |  |
 | [opts.txid] | <code>string</code> |  |
+
+<a name="Peer+_ingestSealedBlobQuote"></a>
+
+### peer.\_ingestSealedBlobQuote(quote, [origin], [wireMessage]) ⇒ <code>Object</code>
+Buyer: keep a seller's `DocumentBlobQuote` so the HTLC preimage it
+settles with (`s`) can be unwrapped to `K_i` ([openSealedBlobWithKey](#Peer+openSealedBlobWithKey)).
+The signed frame is kept as fraud evidence.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Default |
+| --- | --- | --- |
+| quote | <code>Object</code> |  | 
+| [origin] | <code>Object</code> \| <code>string</code> | <code></code> | 
+| [wireMessage] | [<code>Message</code>](#Message) \| <code>null</code> | <code></code> | 
 
 <a name="Peer+denyDocumentRequest"></a>
 
@@ -11813,6 +15114,13 @@ Parse an Object into a corresponding Fabric state.
     * [.blobTransfers](#Peer+blobTransfers)
     * [.pendingSealedDeliveries](#Peer+pendingSealedDeliveries)
     * [.pendingSealedBlobs](#Peer+pendingSealedBlobs)
+    * [._pendingSealedBytes](#Peer+_pendingSealedBytes)
+    * [._sealedBlobSecrets](#Peer+_sealedBlobSecrets)
+    * [._sealedBlobByPaymentHash](#Peer+_sealedBlobByPaymentHash)
+    * [._sealedBlobQuotes](#Peer+_sealedBlobQuotes)
+    * [._receivedBlobQuotes](#Peer+_receivedBlobQuotes)
+    * [._heldChunks](#Peer+_heldChunks)
+    * [._seedRecords](#Peer+_seedRecords)
     * [._documentRelayRoutes](#Peer+_documentRelayRoutes)
     * [._inboundNoiseStaticPubkeyByAddress](#Peer+_inboundNoiseStaticPubkeyByAddress)
     * [.messages](#Peer+messages)
@@ -11878,6 +15186,10 @@ Parse an Object into a corresponding Fabric state.
     * [._relayWirePayload()](#Peer+_relayWirePayload)
     * [._relayGenericPayload()](#Peer+_relayGenericPayload)
     * [._isTransientSocketError(error)](#Peer+_isTransientSocketError) ⇒ <code>boolean</code>
+    * [._noiseTransportOptions()](#Peer+_noiseTransportOptions) ⇒ <code>Object</code>
+    * [._bindNoiseTransportToSocket(noiseStream, socket)](#Peer+_bindNoiseTransportToSocket) ⇒ <code>void</code>
+    * [._localMaxFrameBytes()](#Peer+_localMaxFrameBytes) ⇒ <code>number</code>
+    * [._recordRemoteFrameCap(connAddress, sessionObject)](#Peer+_recordRemoteFrameCap) ⇒ <code>number</code>
     * [._attachNoiseStreamErrorHandlers(noiseStream, [label])](#Peer+_attachNoiseStreamErrorHandlers)
     * [._detachNoiseStreamErrorHandlers(noiseStream)](#Peer+_detachNoiseStreamErrorHandlers) ⇒ <code>void</code>
     * [._teardownNoiseClient(socket)](#Peer+_teardownNoiseClient) ⇒ <code>void</code>
@@ -11886,10 +15198,15 @@ Parse an Object into a corresponding Fabric state.
     * [._sendLocalInventoryDocumentsWireResponse(originName, items, [opts])](#Peer+_sendLocalInventoryDocumentsWireResponse) ⇒ <code>boolean</code>
     * [._respondInventoryFromLocalDocuments(message, origin)](#Peer+_respondInventoryFromLocalDocuments) ⇒ <code>boolean</code>
     * [.publishSealedDocument(doc, [opts])](#Peer+publishSealedDocument) ⇒ <code>Object</code>
-    * [.sealedBlobPreimageForPaymentHash(paymentHashHex)](#Peer+sealedBlobPreimageForPaymentHash) ⇒ <code>Object</code> \| <code>null</code>
+    * [.sealedBlobPreimageForPaymentHash(paymentHashHex, [htlc])](#Peer+sealedBlobPreimageForPaymentHash) ⇒ <code>Object</code> \| <code>null</code>
+    * [.quoteSealedBlob(opts)](#Peer+quoteSealedBlob) ⇒ <code>Object</code>
     * [._getSealedBlobDocument(documentId)](#Peer+_getSealedBlobDocument) ⇒ [<code>Document</code>](#Document) \| <code>null</code>
+    * [.getDocumentBuffer(documentId)](#Peer+getDocumentBuffer) ⇒ <code>Buffer</code> \| <code>null</code>
     * [._sendP2pFileSendToPeer(documentId, peerAddress, [opts])](#Peer+_sendP2pFileSendToPeer) ⇒ <code>boolean</code>
     * [._sendDocumentContentKeyReveal(documentId, peerAddress, [opts])](#Peer+_sendDocumentContentKeyReveal) ⇒ <code>boolean</code>
+    * [.seedableDocument(documentId)](#Peer+seedableDocument) ⇒ <code>boolean</code>
+    * [.seedDocument(documentId, [opts])](#Peer+seedDocument) ⇒ <code>Object</code>
+    * [.adoptHeldChunk(opts)](#Peer+adoptHeldChunk) ⇒ <code>Object</code>
     * [.sealedBlobKeyForPaymentHash(paymentHashHex)](#Peer+sealedBlobKeyForPaymentHash) ⇒ <code>Object</code> \| <code>null</code>
     * [.openSealedBlobWithKey(opts)](#Peer+openSealedBlobWithKey) ⇒ <code>Object</code>
     * [._ingestP2pFileSend(message, origin, [wireMessage])](#Peer+_ingestP2pFileSend) ⇒ <code>Object</code>
@@ -11902,6 +15219,7 @@ Parse an Object into a corresponding Fabric state.
     * [.listPendingDocumentRequests()](#Peer+listPendingDocumentRequests) ⇒ <code>Array.&lt;object&gt;</code>
     * [.approveDocumentRequest(requestKey)](#Peer+approveDocumentRequest) ⇒ <code>Object</code>
     * [.authorizeDocumentKeyReveal(opts)](#Peer+authorizeDocumentKeyReveal) ⇒ <code>Object</code>
+    * [._ingestSealedBlobQuote(quote, [origin], [wireMessage])](#Peer+_ingestSealedBlobQuote) ⇒ <code>Object</code>
     * [.denyDocumentRequest(requestKey)](#Peer+denyDocumentRequest) ⇒ <code>Object</code>
     * [._buildPublishDocumentWireBuffers(documentId, body, rateSats)](#Peer+_buildPublishDocumentWireBuffers) ⇒ <code>Array.&lt;Buffer&gt;</code>
     * [._announceLocalDocumentsToPeer(peerAddress)](#Peer+_announceLocalDocumentsToPeer)
@@ -12018,6 +15336,55 @@ Ciphertext awaiting content-key reveal: documentId → meta.
 
 ### peer.pendingSealedBlobs
 Per-blob sealed trees awaiting one `DocumentContentKeyReveal` per blob (types/document.js).
+
+**Kind**: instance property of [<code>Peer</code>](#Peer)  
+<a name="Peer+_pendingSealedBytes"></a>
+
+### peer.\_pendingSealedBytes
+Running byte total of `pendingSealedBlobs`, and of unpinned rows per origin.
+
+**Kind**: instance property of [<code>Peer</code>](#Peer)  
+<a name="Peer+_sealedBlobSecrets"></a>
+
+### peer.\_sealedBlobSecrets
+Seller-private material for published sealed documents: documentId →
+`{ keys: Map<index, K_i hex>, ciphertexts: Map<index, Buffer>, doc: Document|null }`.
+Kept out of `_state` so keys and bytes never reach commits or observers.
+
+**Kind**: instance property of [<code>Peer</code>](#Peer)  
+<a name="Peer+_sealedBlobByPaymentHash"></a>
+
+### peer.\_sealedBlobByPaymentHash
+Seller: static payment hash `SHA256(K_i)` → `{ documentId, blobIndex }`.
+
+**Kind**: instance property of [<code>Peer</code>](#Peer)  
+<a name="Peer+_sealedBlobQuotes"></a>
+
+### peer.\_sealedBlobQuotes
+Seller per-buyer quotes: paymentHashHex → `{ documentId, blobIndex, secretHex, priceSats, expiresAt, keyHashHex }`.
+
+**Kind**: instance property of [<code>Peer</code>](#Peer)  
+<a name="Peer+_receivedBlobQuotes"></a>
+
+### peer.\_receivedBlobQuotes
+Buyer: quotes received, paymentHashHex → `{ quote, origin, frameHex, received }`.
+
+**Kind**: instance property of [<code>Peer</code>](#Peer)  
+<a name="Peer+_heldChunks"></a>
+
+### peer.\_heldChunks
+Opened convergent chunks, `"blobHashHex|paymentHashHex"` →
+`{ keyHex, iv, scheme, convergence, ciphertext }`. A chunk another
+document shares is opened from here instead of bought again. Bounded by
+`maxHeldChunkBytes`, oldest first.
+
+**Kind**: instance property of [<code>Peer</code>](#Peer)  
+<a name="Peer+_seedRecords"></a>
+
+### peer.\_seedRecords
+Leaf records of convergent trees received here (`documentId` → hash-only
+Document record, newest last, at most 256), so [seedDocument](#Peer+seedDocument)
+can sell the same tree again from the held chunks.
 
 **Kind**: instance property of [<code>Peer</code>](#Peer)  
 <a name="Peer+_documentRelayRoutes"></a>
@@ -12655,6 +16022,46 @@ Node sometimes omits `error.code` and only puts `ECONNREFUSED` in the message.
 | --- | --- |
 | error | <code>\*</code> | 
 
+<a name="Peer+_noiseTransportOptions"></a>
+
+### peer.\_noiseTransportOptions() ⇒ <code>Object</code>
+NOISE transport limits from settings (absolute handshake deadline + pre-handshake byte budget).
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+<a name="Peer+_bindNoiseTransportToSocket"></a>
+
+### peer.\_bindNoiseTransportToSocket(noiseStream, socket) ⇒ <code>void</code>
+Tie a NOISE pair to its TCP socket: a destroyed decrypt side (limit broken, handshake
+timeout, decrypt failure) destroys the socket. The remote frame cap starts at the
+legacy 4096 bytes until its session message advertises `maxFrameBytes`.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| noiseStream | <code>Object</code> | noise-protocol-stream duplex pair |
+| socket | <code>Object</code> |  |
+
+<a name="Peer+_localMaxFrameBytes"></a>
+
+### peer.\_localMaxFrameBytes() ⇒ <code>number</code>
+Local AMP frame cap (header + `maxMessageSize` body) — what this node accepts and advertises.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+<a name="Peer+_recordRemoteFrameCap"></a>
+
+### peer.\_recordRemoteFrameCap(connAddress, sessionObject) ⇒ <code>number</code>
+Record the frame cap a remote advertised in `P2P_SESSION_OFFER` / `P2P_SESSION_OPEN`
+(`object.maxFrameBytes`). Absent or invalid = legacy 4096-byte peer.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+**Returns**: <code>number</code> - Cap now used for frames sent to that connection  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| connAddress | <code>string</code> |  |
+| sessionObject | <code>Object</code> | Session message `object` |
+
 <a name="Peer+_attachNoiseStreamErrorHandlers"></a>
 
 ### peer.\_attachNoiseStreamErrorHandlers(noiseStream, [label])
@@ -12722,8 +16129,11 @@ Items for Hub-style `kind: 'documents'` inventory (Fabric UI / `@fabric/hub` mer
 ### peer.\_sendLocalInventoryDocumentsWireResponse(originName, items, [opts]) ⇒ <code>boolean</code>
 Write [INVENTORY_RESPONSE](INVENTORY_RESPONSE) (`P2P_INVENTORY_RESPONSE`) compatible with `@fabric/hub` Bridge merging
 (body includes `kind: 'documents'` so the browser can merge `object.items`).
+Items are split across as many responses as needed so each frame fits the
+requester's frame cap; every page carries `inventoryId`, `page` (1-based), and `pages`.
 
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
+**Returns**: <code>boolean</code> - true when at least one page was written  
 
 | Param | Type | Description |
 | --- | --- | --- |
@@ -12759,28 +16169,72 @@ settle one HTLC per blob plan and receive one key reveal per blob.
 | doc | [<code>Document</code>](#Document) |  | Sealed document that holds its blob keys. |
 | [opts] | <code>Object</code> |  |  |
 | [opts.rateSats] | <code>number</code> | <code>0</code> | Per-blob ask: 0 (free) or at least `HTLC_MINIMUM_SATS`, since each blob settles with its own HTLC. |
-| [opts.documentId] | <code>string</code> |  | Catalog id (default: the Document's). |
+| [opts.creditRateSats] | <code>number</code> |  | Per-blob price on the credit rail: the key is revealed first and the buyer pays afterwards with a channel transfer, so any positive price works (no HTLC minimum). Convergent documents only — random-key documents never reveal before payment. Each credit request goes through `settings.sealedBlobCredit`. |
+| [opts.creditLimitSats] | <code>number</code> |  | Most a buyer may owe this seller at once (passed to `settings.sealedBlobCredit` as `limitSats`). |
+| [opts.documentId] | <code>string</code> |  | Catalog id (default: the Document's). A convergent document is always published under its tree root, so every seller's offers line up; a different id is kept only as a local `label`. |
 
 <a name="Peer+sealedBlobPreimageForPaymentHash"></a>
 
-### peer.sealedBlobPreimageForPaymentHash(paymentHashHex) ⇒ <code>Object</code> \| <code>null</code>
-Seller side: the content key `K_i` whose SHA256 is `paymentHashHex`, from
-this node's published sealed-blob registry. Channel hosts hand this to
-`Channel.Book` as `preimageFor` so a committed HTLC for a blob we sell is
-fulfilled with the key (seller-fulfills; the buyer learns `K_i` from the
+### peer.sealedBlobPreimageForPaymentHash(paymentHashHex, [htlc]) ⇒ <code>Object</code> \| <code>null</code>
+Seller side: the HTLC preimage for `paymentHashHex` — `K_i` for a static
+blob hash (`SHA256(K_i)`), or the per-buyer secret `s` of a live
+[quoteSealedBlob](#Peer+quoteSealedBlob) quote. Channel hosts hand this to
+`ChannelBook` as `preimageFor` so a committed HTLC for a blob we sell is
+fulfilled (seller-fulfils; the buyer learns the preimage from the
 `ChannelHtlcFulfill`).
+
+Pass the HTLC being fulfilled: one paying less than the blob's price
+(`documentRates`, or the quote's `priceSats`) gets `null`. Without `htlc`
+no amount check is possible; settlement code must always pass it. With
+`sealedBlobPaymentMode: 'perBuyer'` static hashes are never fulfilled
+(that would publish `K_i`).
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+**Returns**: <code>Object</code> \| <code>null</code> - `keyHex` is the preimage (kept for callers written against static hashes).  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| paymentHashHex | <code>string</code> |  |  |
+| [htlc] | <code>Object</code> | <code></code> | `{ amountSats, expireAfter?, expireHeight? }` |
+
+<a name="Peer+quoteSealedBlob"></a>
+
+### peer.quoteSealedBlob(opts) ⇒ <code>Object</code>
+Seller: issue a per-buyer quote for one blob (see
+`functions/documentSealedExchange.js` `createBlobQuote`). The buyer funds
+an HTLC to `quote.paymentHashHex`; fulfilling it reveals `s`, which
+unwraps `K_i` only for the holder of `quote.wrappedKeyHex`. Quotes live
+in a bounded private map until `expiresAt`.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| opts | <code>Object</code> |  |
+| opts.documentId | <code>string</code> |  |
+| opts.blobIndex | <code>number</code> |  |
+| [opts.ttlMs] | <code>number</code> | default `sealedBlobQuoteTtlMs` (1 h) |
+
+<a name="Peer+_getSealedBlobDocument"></a>
+
+### peer.\_getSealedBlobDocument(documentId) ⇒ [<code>Document</code>](#Document) \| <code>null</code>
+Seller copy of a published per-blob sealed document: ciphertext and keys,
+never plaintext. Cached (no per-request decrypt). Rows written into
+`_state` by older versions (`keys` / `ciphertextsBase64`) move to the
+private map on first use.
 
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
 
 | Param | Type |
 | --- | --- |
-| paymentHashHex | <code>string</code> | 
+| documentId | <code>string</code> | 
 
-<a name="Peer+_getSealedBlobDocument"></a>
+<a name="Peer+getDocumentBuffer"></a>
 
-### peer.\_getSealedBlobDocument(documentId) ⇒ [<code>Document</code>](#Document) \| <code>null</code>
+### peer.getDocumentBuffer(documentId) ⇒ <code>Buffer</code> \| <code>null</code>
+Bytes of a locally held document (decodes base64-stored binary documents).
+
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
-**Returns**: [<code>Document</code>](#Document) \| <code>null</code> - rehydrated per-blob sealed document (with keys) or null  
 
 | Param | Type |
 | --- | --- |
@@ -12819,6 +16273,55 @@ Reveal the AES content key to a peer (only after payment-hash match).
 | [opts] | <code>Object</code> | 
 | [opts.settlementId] | <code>string</code> | 
 
+<a name="Peer+seedableDocument"></a>
+
+### peer.seedableDocument(documentId) ⇒ <code>boolean</code>
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+**Returns**: <code>boolean</code> - a convergent tree received here that [seedDocument](#Peer+seedDocument) may sell  
+
+| Param | Type |
+| --- | --- |
+| documentId | <code>string</code> | 
+
+<a name="Peer+seedDocument"></a>
+
+### peer.seedDocument(documentId, [opts]) ⇒ <code>Object</code>
+Seed after download: sell a convergent tree this Peer received, as the
+same tree (same root, chunks, and keys), rebuilt from the held chunks —
+nothing is resealed. Fails when a chunk was evicted from the held store
+(`maxHeldChunkBytes`); reseal the plaintext then, which gives the same
+tree for public convergence. Seller terms as [publishSealedDocument](#Peer+publishSealedDocument).
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| documentId | <code>string</code> |  |
+| [opts] | <code>Object</code> | `{ rateSats, creditRateSats, creditLimitSats, convergenceSecret }` |
+
+<a name="Peer+adoptHeldChunk"></a>
+
+### peer.adoptHeldChunk(opts) ⇒ <code>Object</code>
+Fill one blob of a sealed tree from a held chunk (see [Peer#heldChunk](Peer#heldChunk))
+and open it, as a paid key reveal would. The offer's leaf names the chunk;
+the IV must match, an inclusion proof is checked when given, and the whole tree is
+still checked against its root once every blob is open.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+**Returns**: <code>Object</code> - same shape as the key-reveal handler  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| opts | <code>Object</code> |  |
+| opts.documentId | <code>string</code> |  |
+| opts.merkleRootHex | <code>string</code> |  |
+| opts.blobTotal | <code>number</code> |  |
+| opts.blobIndex | <code>number</code> |  |
+| opts.blobHashHex | <code>string</code> |  |
+| opts.paymentHashHex | <code>string</code> |  |
+| [opts.iv] | <code>string</code> | advertised IV |
+| [opts.proof] | <code>Array.&lt;string&gt;</code> | inclusion proof |
+
 <a name="Peer+sealedBlobKeyForPaymentHash"></a>
 
 ### peer.sealedBlobKeyForPaymentHash(paymentHashHex) ⇒ <code>Object</code> \| <code>null</code>
@@ -12834,10 +16337,13 @@ channel `ChannelHtlcFulfill` preimage back onto the blob it unlocks.
 <a name="Peer+openSealedBlobWithKey"></a>
 
 ### peer.openSealedBlobWithKey(opts) ⇒ <code>Object</code>
-Open a held sealed blob with a key learned out of band (seller-fulfills
-channel rail: the HTLC preimage **is** `K_i`). Same verification as a
-wire `DocumentContentKeyReveal`: SHA256(key) must equal the part's payment
-hash and the plaintext must hash to its advertised digest.
+Open a held sealed blob with an HTLC preimage learned out of band
+(seller-fulfils channel rail). For a static payment hash the preimage
+**is** `K_i`; for a per-buyer `DocumentBlobQuote` it is `s`, which
+unwraps `K_i` from the quote (a quote that does not unwrap to the
+committed key hash emits `documentBlobQuoteFraud` with the signed quote
+frame). Same verification as a wire `DocumentContentKeyReveal`:
+SHA256(K_i) must equal the part's payment hash and GCM must authenticate.
 
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
 **Returns**: <code>Object</code> - same shape as the key-reveal handler  
@@ -12845,8 +16351,8 @@ hash and the plaintext must hash to its advertised digest.
 | Param | Type | Description |
 | --- | --- | --- |
 | opts | <code>Object</code> |  |
-| opts.documentId | <code>string</code> |  |
-| opts.keyHex | <code>string</code> | 32-byte key (hex) |
+| [opts.documentId] | <code>string</code> |  |
+| opts.keyHex | <code>string</code> | 32-byte preimage (hex) |
 | [opts.blobIndex] | <code>number</code> | resolved from `paymentHashHex` when omitted |
 | [opts.paymentHashHex] | <code>string</code> | SHA256(key); defaults to the hash of `keyHex` |
 | [opts.merkleRootHex] | <code>string</code> | disambiguates when two roots are pending |
@@ -12930,16 +16436,18 @@ Send a signed `DocumentRequest` to one peer (or broadcast when peerAddress is om
 
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
 
-| Param | Type | Default |
-| --- | --- | --- |
-| documentId | <code>string</code> |  | 
-| [peerAddress] | <code>string</code> | <code>null</code> | 
-| [opts] | <code>object</code> |  | 
-| [opts.maxSats] | <code>number</code> |  | 
-| [opts.relayHop] | <code>number</code> |  | 
-| [opts.blobIndex] | <code>number</code> |  | 
-| [opts.blobTotal] | <code>number</code> |  | 
-| [opts.contentHashHex] | <code>string</code> |  | 
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| documentId | <code>string</code> |  |  |
+| [peerAddress] | <code>string</code> | <code>null</code> |  |
+| [opts] | <code>object</code> |  |  |
+| [opts.maxSats] | <code>number</code> |  |  |
+| [opts.relayHop] | <code>number</code> |  |  |
+| [opts.blobIndex] | <code>number</code> |  |  |
+| [opts.blobTotal] | <code>number</code> |  |  |
+| [opts.contentHashHex] | <code>string</code> |  |  |
+| [opts.credit] | <code>boolean</code> |  | Ask for the blob key on credit (pay after verify with a channel transfer naming `creditRef`). |
+| [opts.creditRef] | <code>string</code> |  |  |
 
 <a name="Peer+_attachHtlcOfferToItem"></a>
 
@@ -12985,6 +16493,21 @@ DocumentRequest may receive the AES content key (not merely the ciphertext).
 | opts.contentHashHex | <code>string</code> | payment hash SHA256(K) |
 | [opts.settlementId] | <code>string</code> |  |
 | [opts.txid] | <code>string</code> |  |
+
+<a name="Peer+_ingestSealedBlobQuote"></a>
+
+### peer.\_ingestSealedBlobQuote(quote, [origin], [wireMessage]) ⇒ <code>Object</code>
+Buyer: keep a seller's `DocumentBlobQuote` so the HTLC preimage it
+settles with (`s`) can be unwrapped to `K_i` ([openSealedBlobWithKey](#Peer+openSealedBlobWithKey)).
+The signed frame is kept as fraud evidence.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Default |
+| --- | --- | --- |
+| quote | <code>Object</code> |  | 
+| [origin] | <code>Object</code> \| <code>string</code> | <code></code> | 
+| [wireMessage] | [<code>Message</code>](#Message) \| <code>null</code> | <code></code> | 
 
 <a name="Peer+denyDocumentRequest"></a>
 
@@ -13591,6 +17114,114 @@ Parse an Object into a corresponding Fabric state.
 | --- | --- | --- |
 | input | <code>Object</code> | Object to read as input. |
 
+<a name="Policy"></a>
+
+## Policy
+One normalized spend policy: tiers, key sets, decay mode, optional hashlock
+and extra leaves, Taproot internal key mode. Its fields are the normalized
+policy itself, so a `Policy` can be passed anywhere a policy object is
+accepted, and `JSON.stringify` gives the normalized form.
+
+Statics take and return plain policy objects (`Policy.normalize`,
+`Policy.compile`, `Policy.afterDecay`, `Policy.selectActiveTiers`, …);
+instance methods return `Policy` instances where they return a policy.
+
+**Kind**: global class  
+
+* [Policy](#Policy)
+    * [new Policy([settings])](#new_Policy_new)
+    * [.address](#Policy+address) ⇒ <code>string</code>
+    * [.compile()](#Policy+compile) ⇒ <code>Object</code>
+    * [.leaves()](#Policy+leaves) ⇒ <code>Array.&lt;Object&gt;</code>
+    * [.activeTiers([ctx])](#Policy+activeTiers) ⇒ <code>Array.&lt;Object&gt;</code>
+    * [.migrateTarget([ctx])](#Policy+migrateTarget) ⇒ <code>Object</code> \| <code>null</code>
+    * [.afterDecay(atLock)](#Policy+afterDecay) ⇒ [<code>Policy</code>](#Policy)
+    * [.withRunHashlock(run, [opts])](#Policy+withRunHashlock) ⇒ <code>Object</code>
+    * [.toJSON()](#Policy+toJSON) ⇒ <code>Object</code>
+
+<a name="new_Policy_new"></a>
+
+### new Policy([settings])
+
+| Param | Type | Description |
+| --- | --- | --- |
+| [settings] | <code>Object</code> | a spend policy (`tiers[]`, `keySets`, `decay`,   …) or ladder inputs (`validators`, `threshold`, `publisher`, `network`,   `csvBlocks`) — anything [Policy.normalize](Policy.normalize) accepts, including a Policy |
+
+**Example**  
+```js
+const policy = new Policy({ validators, threshold: 2, network: 'regtest' });
+policy.address; // bcrt1p…
+policy.activeTiers({ utxoAgeBlocks: 200 }); // authority + soft tier
+```
+<a name="Policy+address"></a>
+
+### policy.address ⇒ <code>string</code>
+**Kind**: instance property of [<code>Policy</code>](#Policy)  
+**Returns**: <code>string</code> - bech32m P2TR address  
+<a name="Policy+compile"></a>
+
+### policy.compile() ⇒ <code>Object</code>
+Compile to a P2TR output: address, output script, leaves, internal key,
+merkle root (see [Policy.compile](Policy.compile)).
+
+**Kind**: instance method of [<code>Policy</code>](#Policy)  
+<a name="Policy+leaves"></a>
+
+### policy.leaves() ⇒ <code>Array.&lt;Object&gt;</code>
+**Kind**: instance method of [<code>Policy</code>](#Policy)  
+**Returns**: <code>Array.&lt;Object&gt;</code> - leaf descriptors with their scripts  
+<a name="Policy+activeTiers"></a>
+
+### policy.activeTiers([ctx]) ⇒ <code>Array.&lt;Object&gt;</code>
+Tiers that may spend now.
+
+**Kind**: instance method of [<code>Policy</code>](#Policy)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| [ctx] | <code>Object</code> | `{ tipHeight, medianTime, utxoAgeBlocks, tipClock, contractState }` |
+
+<a name="Policy+migrateTarget"></a>
+
+### policy.migrateTarget([ctx]) ⇒ <code>Object</code> \| <code>null</code>
+The decay migration due at `ctx`, if any.
+
+**Kind**: instance method of [<code>Policy</code>](#Policy)  
+**Returns**: <code>Object</code> \| <code>null</code> - `{ decayAt, childPolicy, childAddress }`, `childPolicy` a Policy  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| [ctx] | <code>Object</code> | as [activeTiers](#Policy+activeTiers) |
+
+<a name="Policy+afterDecay"></a>
+
+### policy.afterDecay(atLock) ⇒ [<code>Policy</code>](#Policy)
+The child policy once tiers whose `until` is at or before `atLock` expire.
+
+**Kind**: instance method of [<code>Policy</code>](#Policy)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| atLock | <code>Object</code> \| <code>number</code> | decay trigger lock |
+
+<a name="Policy+withRunHashlock"></a>
+
+### policy.withRunHashlock(run, [opts]) ⇒ <code>Object</code>
+This policy plus a Program-run hashlock leaf (see [Policy.withRunHashlock](Policy.withRunHashlock)).
+
+**Kind**: instance method of [<code>Policy</code>](#Policy)  
+**Returns**: <code>Object</code> - composed tree plus `hashlock` and `programRunId`  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| run | <code>Object</code> | `{ runCommitmentHex, programHash?, id?, pubkeyHex }` |
+| [opts] | <code>Object</code> | `{ allowPreimageOnly, network, extraLeaves }` |
+
+<a name="Policy+toJSON"></a>
+
+### policy.toJSON() ⇒ <code>Object</code>
+**Kind**: instance method of [<code>Policy</code>](#Policy)  
+**Returns**: <code>Object</code> - the normalized policy  
 <a name="Program"></a>
 
 ## Program
@@ -13671,6 +17302,7 @@ A value that can be sealed with a password.  Sealing uses
 `functions/sealedBlob` (AES-256-GCM, PBKDF2-SHA256, random salt and IV);
 [state](#EncryptedPromise+state) and [toString](#EncryptedPromise+toString) only
 ever expose the sealed envelope, never the plaintext or the password.
+Sealing drops the plaintext from memory; `decrypt` brings it back.
 
 **Kind**: global class  
 
@@ -13694,13 +17326,14 @@ ever expose the sealed envelope, never the plaintext or the password.
 | [settings] | <code>Object</code> |  |
 | [settings.value] | <code>string</code> \| <code>Object</code> | Plaintext to hold; objects are JSON-encoded.  Defaults to the other settings as JSON. |
 | [settings.password] | <code>string</code> | Seal immediately with this password (at least 8 characters). |
-| [settings.seal] | <code>Object</code> | Restore from a sealed envelope (see [state](#EncryptedPromise+state)); call `decrypt` to read it. |
+| [settings.seal] | <code>Object</code> | Restore from a sealed envelope (see [state](#EncryptedPromise+state)); call `decrypt` to read it.  At most `MAX_PBKDF2_ITERATIONS` PBKDF2 iterations. |
 
 <a name="EncryptedPromise+id"></a>
 
 ### encryptedPromise.id : <code>string</code>
-SHA-256 of the plaintext, or of the sealed ciphertext while only the
-envelope is known.
+SHA-256 of the sealed ciphertext.  Before the first seal (or after
+`_assignState`), a random per-instance id, so the id never reveals a
+guessable plaintext.
 
 **Kind**: instance property of [<code>EncryptedPromise</code>](#EncryptedPromise)  
 <a name="EncryptedPromise+state"></a>
@@ -13729,7 +17362,7 @@ Not implemented; use [encrypt](#EncryptedPromise+encrypt).
 <a name="EncryptedPromise+encrypt"></a>
 
 ### encryptedPromise.encrypt(password) ⇒ <code>Object</code>
-Seal the current plaintext.
+Seal the current plaintext, then drop it (and the settings it came from) from memory.
 
 **Kind**: instance method of [<code>EncryptedPromise</code>](#EncryptedPromise)  
 **Returns**: <code>Object</code> - The sealed envelope.  
@@ -14583,6 +18216,9 @@ Bitcoin-style Merkle tree over `SHA256(stateId|exitId|txid)` for audit.
 <a name="Resolutions+import"></a>
 
 ### resolutions.import(snapshot) ⇒ [<code>Resolutions</code>](#Resolutions)
+Load a snapshot. Every held signature is re-verified against its PSBT;
+ones that do not verify are dropped (the exit then reports them missing).
+
 **Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
 
 | Param | Type | Description |
@@ -14950,6 +18586,9 @@ Bitcoin-style Merkle tree over `SHA256(stateId|exitId|txid)` for audit.
 <a name="Resolutions+import"></a>
 
 ### resolutions.import(snapshot) ⇒ [<code>Resolutions</code>](#Resolutions)
+Load a snapshot. Every held signature is re-verified against its PSBT;
+ones that do not verify are dropped (the exit then reports them missing).
+
 **Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
 
 | Param | Type | Description |
@@ -16428,6 +20067,146 @@ Closes the [Session](#Session), preventing further interaction.
 ### setupTui.start() ⇒ <code>Promise.&lt;object&gt;</code>
 **Kind**: instance method of [<code>SetupTui</code>](#SetupTui)  
 **Returns**: <code>Promise.&lt;object&gt;</code> - Public snapshot after the session ends.  
+<a name="SignedBook"></a>
+
+## SignedBook
+**Kind**: global class  
+
+* [SignedBook](#SignedBook)
+    * [new SignedBook([settings], spec)](#new_SignedBook_new)
+    * [.capacity](#SignedBook+capacity) ⇒ <code>number</code>
+    * [._ingestSigned(body)](#SignedBook+_ingestSigned) ⇒ <code>Object</code>
+    * [._beforeInsert(_entry)](#SignedBook+_beforeInsert)
+    * [.cancel(body)](#SignedBook+cancel) ⇒ <code>Object</code>
+    * [.prune()](#SignedBook+prune) ⇒ <code>number</code>
+    * [._afterPrune()](#SignedBook+_afterPrune)
+    * [.forgetMaker(makerPubkey)](#SignedBook+forgetMaker) ⇒ <code>number</code>
+    * [._afterForget(_makerPubkey)](#SignedBook+_afterForget)
+    * [.get(id)](#SignedBook+get) ⇒ <code>Object</code> \| <code>null</code>
+    * [._liveRows([predicate])](#SignedBook+_liveRows) ⇒ <code>Array.&lt;Object&gt;</code>
+
+<a name="new_SignedBook_new"></a>
+
+### new SignedBook([settings], spec)
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [settings] | <code>Object</code> |  |  |
+| [settings.network] | <code>string</code> | <code>&quot;&#x27;regtest&#x27;&quot;</code> | only entries for this network are held |
+| [settings.maxCancelled] | <code>number</code> | <code>10000</code> |  |
+| [settings.maxPendingCancelsPerMaker] | <code>number</code> | <code>100</code> | cancels per key for entries not held |
+| [settings.now] | <code>function</code> |  | clock in ms (tests) |
+| spec | <code>Object</code> |  | what the subclass trades |
+| spec.codec | <code>Object</code> |  | the market's [SignedBook.codec](SignedBook.codec) |
+| spec.entryType | <code>string</code> |  | body type of an entry (e.g. `CoinjoinOffer`) |
+| spec.cancelType | <code>string</code> |  | body type of a cancel |
+| spec.field | <code>string</code> |  | row field holding the verified body (`offer`, `order`) |
+| spec.idField | <code>string</code> |  | cancel body field naming the entry (`offerId`, `orderId`) |
+| spec.noun | <code>string</code> |  | used in reasons (`offer expired`, `duplicate order`) |
+| [spec.capacitySetting] | <code>string</code> | <code>&quot;&#x27;maxEntries&#x27;&quot;</code> | setting holding the row cap |
+
+<a name="SignedBook+capacity"></a>
+
+### signedBook.capacity ⇒ <code>number</code>
+**Kind**: instance property of [<code>SignedBook</code>](#SignedBook)  
+<a name="SignedBook+_ingestSigned"></a>
+
+### signedBook.\_ingestSigned(body) ⇒ <code>Object</code>
+Verify and hold a signed entry body.
+
+**Kind**: instance method of [<code>SignedBook</code>](#SignedBook)  
+**Access**: protected  
+
+| Param | Type |
+| --- | --- |
+| body | <code>Object</code> | 
+
+<a name="SignedBook+_beforeInsert"></a>
+
+### signedBook.\_beforeInsert(_entry)
+Hook run before a verified entry is inserted (e.g. per-maker caps).
+
+**Kind**: instance method of [<code>SignedBook</code>](#SignedBook)  
+**Access**: protected  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| _entry | <code>Object</code> | verified body |
+
+<a name="SignedBook+cancel"></a>
+
+### signedBook.cancel(body) ⇒ <code>Object</code>
+Apply a signed cancel from the entry's maker. A cancel for an entry not
+held yet is remembered with its signer, so the entry cannot arrive later
+from that maker; another key's cancel never blocks it.
+
+**Kind**: instance method of [<code>SignedBook</code>](#SignedBook)  
+
+| Param | Type |
+| --- | --- |
+| body | <code>Object</code> | 
+
+<a name="SignedBook+prune"></a>
+
+### signedBook.prune() ⇒ <code>number</code>
+Drop expired entries.
+
+**Kind**: instance method of [<code>SignedBook</code>](#SignedBook)  
+**Returns**: <code>number</code> - entries removed  
+<a name="SignedBook+_afterPrune"></a>
+
+### signedBook.\_afterPrune()
+Hook run after [prune](#SignedBook+prune) removed entries.
+
+**Kind**: instance method of [<code>SignedBook</code>](#SignedBook)  
+**Access**: protected  
+<a name="SignedBook+forgetMaker"></a>
+
+### signedBook.forgetMaker(makerPubkey) ⇒ <code>number</code>
+Drop every entry from one maker (disconnect, fraud, failed settlement).
+
+**Kind**: instance method of [<code>SignedBook</code>](#SignedBook)  
+**Returns**: <code>number</code> - entries removed  
+
+| Param | Type |
+| --- | --- |
+| makerPubkey | <code>string</code> | 
+
+<a name="SignedBook+_afterForget"></a>
+
+### signedBook.\_afterForget(_makerPubkey)
+Hook run after [forgetMaker](#SignedBook+forgetMaker).
+
+**Kind**: instance method of [<code>SignedBook</code>](#SignedBook)  
+**Access**: protected  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| _makerPubkey | <code>string</code> | lowercased |
+
+<a name="SignedBook+get"></a>
+
+### signedBook.get(id) ⇒ <code>Object</code> \| <code>null</code>
+**Kind**: instance method of [<code>SignedBook</code>](#SignedBook)  
+**Returns**: <code>Object</code> \| <code>null</code> - a copy of the entry body  
+
+| Param | Type |
+| --- | --- |
+| id | <code>string</code> | 
+
+<a name="SignedBook+_liveRows"></a>
+
+### signedBook.\_liveRows([predicate]) ⇒ <code>Array.&lt;Object&gt;</code>
+Unexpired rows matching `predicate`, in arrival order.
+
+**Kind**: instance method of [<code>SignedBook</code>](#SignedBook)  
+**Returns**: <code>Array.&lt;Object&gt;</code> - rows `{ id, [field], seq }`  
+**Access**: protected  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| [predicate] | <code>function</code> | `(entry, row) → boolean` |
+
 <a name="State"></a>
 
 ## State ⇐ [<code>Actor</code>](#Actor)
@@ -17568,6 +21347,293 @@ Settings object for a [Store](#Store) with [Codec](Codec) at-rest encryption
 | --- | --- | --- |
 | [settings] | <code>Object</code> | <code>{}</code> | 
 
+<a name="Swap"></a>
+
+## Swap
+**Kind**: global class  
+
+* [Swap](#Swap)
+    * [new Swap(settings)](#new_Swap_new)
+    * _instance_
+        * [.status](#Swap+status) ⇒ <code>string</code>
+        * [.isL1Giver](#Swap+isL1Giver) ⇒ <code>boolean</code>
+        * [.take](#Swap+take) ⇒ <code>Object</code> \| <code>null</code>
+        * [.takeId](#Swap+takeId) ⇒ <code>string</code> \| <code>null</code>
+        * [.accept](#Swap+accept) ⇒ <code>Object</code> \| <code>null</code>
+        * [.funded](#Swap+funded) ⇒ <code>Object</code> \| <code>null</code>
+        * [.quote](#Swap+quote) ⇒ <code>Object</code> \| <code>null</code>
+        * [.terms](#Swap+terms) ⇒ <code>Object</code> \| <code>null</code>
+        * [.escrow](#Swap+escrow) ⇒ <code>Object</code> \| <code>null</code>
+        * [.createTake(opts)](#Swap+createTake) ⇒ <code>Promise.&lt;Object&gt;</code>
+        * [.acceptTake(takeBody)](#Swap+acceptTake) ⇒ <code>Promise.&lt;Object&gt;</code>
+        * [.applyAccept(acceptBody)](#Swap+applyAccept) ⇒ [<code>Promise.&lt;Swap&gt;</code>](#Swap)
+        * [.prepay()](#Swap+prepay) ⇒ <code>Promise.&lt;Object&gt;</code>
+        * [.fund()](#Swap+fund) ⇒ <code>Promise.&lt;Object&gt;</code>
+        * [.applyFunded(fundedBody)](#Swap+applyFunded) ⇒ <code>Promise.&lt;{ok: boolean, pending: (boolean\|undefined), confirmations: number}&gt;</code>
+        * [.payInvoice()](#Swap+payInvoice) ⇒ <code>Promise.&lt;string&gt;</code>
+        * [.claim([opts])](#Swap+claim) ⇒ <code>Promise.&lt;string&gt;</code>
+        * [.checkPaid()](#Swap+checkPaid) ⇒ <code>Promise.&lt;boolean&gt;</code>
+        * [.observeClaim(txHex)](#Swap+observeClaim) ⇒ <code>boolean</code>
+        * [.refund([opts])](#Swap+refund) ⇒ <code>Promise.&lt;string&gt;</code>
+        * [.abort([reason])](#Swap+abort)
+        * [.toJSON([opts])](#Swap+toJSON) ⇒ <code>Object</code>
+    * _static_
+        * [.fromJSON(json, settings)](#Swap.fromJSON) ⇒ [<code>Swap</code>](#Swap)
+        * [.lightningAdapter(lightning)](#Swap.lightningAdapter) ⇒ <code>Object</code>
+        * [.bitcoinAdapter(service, [options])](#Swap.bitcoinAdapter) ⇒ <code>Object</code>
+
+<a name="new_Swap_new"></a>
+
+### new Swap(settings)
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| settings | <code>Object</code> |  |  |
+| settings.order | <code>Object</code> |  | signed `LiquidityOrder` body |
+| settings.role | <code>string</code> |  | `maker` or `taker` |
+| settings.identityKey | <code>Buffer</code> \| <code>string</code> |  | private key that signs this side's bodies (maker: the order's `makerPubkey`) |
+| settings.htlcKey | <code>Buffer</code> \| <code>string</code> |  | private key for this side's HTLC leaf |
+| [settings.lightningNodeId] | <code>string</code> |  | this side's node id (required for takers) |
+| settings.adapters | <code>Object</code> |  | `{ bitcoin, lightning }` |
+| [settings.secondsPerBlock] | <code>number</code> | <code>600</code> |  |
+| [settings.marginSeconds] | <code>number</code> | <code>3600</code> | invoice must expire this long before the refund lock opens |
+| [settings.minClaimBlocks] | <code>number</code> | <code>6</code> |  |
+| [settings.minConfirmations] | <code>number</code> | <code>1</code> | HTLC confirmations before the L2 giver pays |
+| [settings.invoiceExpirySeconds] | <code>number</code> | <code>3600</code> | upper bound on the swap invoice's expiry |
+| [settings.now] | <code>function</code> |  | clock in ms (tests) |
+
+<a name="Swap+status"></a>
+
+### swap.status ⇒ <code>string</code>
+**Kind**: instance property of [<code>Swap</code>](#Swap)  
+**Returns**: <code>string</code> - current state  
+<a name="Swap+isL1Giver"></a>
+
+### swap.isL1Giver ⇒ <code>boolean</code>
+**Kind**: instance property of [<code>Swap</code>](#Swap)  
+<a name="Swap+take"></a>
+
+### swap.take ⇒ <code>Object</code> \| <code>null</code>
+**Kind**: instance property of [<code>Swap</code>](#Swap)  
+<a name="Swap+takeId"></a>
+
+### swap.takeId ⇒ <code>string</code> \| <code>null</code>
+**Kind**: instance property of [<code>Swap</code>](#Swap)  
+<a name="Swap+accept"></a>
+
+### swap.accept ⇒ <code>Object</code> \| <code>null</code>
+**Kind**: instance property of [<code>Swap</code>](#Swap)  
+<a name="Swap+funded"></a>
+
+### swap.funded ⇒ <code>Object</code> \| <code>null</code>
+**Kind**: instance property of [<code>Swap</code>](#Swap)  
+<a name="Swap+quote"></a>
+
+### swap.quote ⇒ <code>Object</code> \| <code>null</code>
+**Kind**: instance property of [<code>Swap</code>](#Swap)  
+**Returns**: <code>Object</code> \| <code>null</code> - amounts for this fill  
+<a name="Swap+terms"></a>
+
+### swap.terms ⇒ <code>Object</code> \| <code>null</code>
+**Kind**: instance property of [<code>Swap</code>](#Swap)  
+**Returns**: <code>Object</code> \| <code>null</code> - L1 giver's `{ paymentHashHex, invoice, refundLockHeight, prepayInvoice? }`  
+<a name="Swap+escrow"></a>
+
+### swap.escrow ⇒ <code>Object</code> \| <code>null</code>
+**Kind**: instance property of [<code>Swap</code>](#Swap)  
+**Returns**: <code>Object</code> \| <code>null</code> - swap HTLC (`buildEscrow`)  
+<a name="Swap+createTake"></a>
+
+### swap.createTake(opts) ⇒ <code>Promise.&lt;Object&gt;</code>
+Taker: propose filling `amountSats` of the order.
+
+**Kind**: instance method of [<code>Swap</code>](#Swap)  
+**Returns**: <code>Promise.&lt;Object&gt;</code> - signed `LiquidityTake` body to send to the maker  
+
+| Param | Type |
+| --- | --- |
+| opts | <code>Object</code> | 
+| opts.amountSats | <code>number</code> | 
+
+<a name="Swap+acceptTake"></a>
+
+### swap.acceptTake(takeBody) ⇒ <code>Promise.&lt;Object&gt;</code>
+Maker: accept a taker's signed take.
+
+**Kind**: instance method of [<code>Swap</code>](#Swap)  
+**Returns**: <code>Promise.&lt;Object&gt;</code> - signed `LiquidityTakeAccept` body to send back  
+
+| Param | Type |
+| --- | --- |
+| takeBody | <code>Object</code> | 
+
+<a name="Swap+applyAccept"></a>
+
+### swap.applyAccept(acceptBody) ⇒ [<code>Promise.&lt;Swap&gt;</code>](#Swap)
+Taker: apply the maker's signed acceptance.
+
+**Kind**: instance method of [<code>Swap</code>](#Swap)  
+
+| Param | Type |
+| --- | --- |
+| acceptBody | <code>Object</code> | 
+
+<a name="Swap+prepay"></a>
+
+### swap.prepay() ⇒ <code>Promise.&lt;Object&gt;</code>
+L2 giver: pay the maker's prepay invoice (orders with `prepaySats`).
+
+**Kind**: instance method of [<code>Swap</code>](#Swap)  
+**Returns**: <code>Promise.&lt;Object&gt;</code> - payment result  
+<a name="Swap+fund"></a>
+
+### swap.fund() ⇒ <code>Promise.&lt;Object&gt;</code>
+L1 giver: fund the HTLC. A maker that asked for a prepay funds only once
+its node reports the prepay invoice paid. Funding happens at most once:
+the escrow is recorded before the send, and once the send returns the
+swap is `l1Funded` (refundable, no longer abortable) even if the funding
+notice cannot be built — that error is thrown after the transition.
+
+**Kind**: instance method of [<code>Swap</code>](#Swap)  
+**Returns**: <code>Promise.&lt;Object&gt;</code> - signed `LiquiditySwapFunded` body to send  
+<a name="Swap+applyFunded"></a>
+
+### swap.applyFunded(fundedBody) ⇒ <code>Promise.&lt;{ok: boolean, pending: (boolean\|undefined), confirmations: number}&gt;</code>
+L2 giver: check the L1 giver's funding notice against the chain. Returns
+`{ ok: false, pending: true }` until the HTLC has `minConfirmations`
+(call again later); throws when the funding is wrong.
+
+**Kind**: instance method of [<code>Swap</code>](#Swap)  
+
+| Param | Type |
+| --- | --- |
+| fundedBody | <code>Object</code> | 
+
+<a name="Swap+payInvoice"></a>
+
+### swap.payInvoice() ⇒ <code>Promise.&lt;string&gt;</code>
+L2 giver: pay the swap invoice and keep the revealed preimage.
+
+**Kind**: instance method of [<code>Swap</code>](#Swap)  
+**Returns**: <code>Promise.&lt;string&gt;</code> - preimage hex  
+<a name="Swap+claim"></a>
+
+### swap.claim([opts]) ⇒ <code>Promise.&lt;string&gt;</code>
+L2 giver: claim the HTLC with the preimage.
+
+**Kind**: instance method of [<code>Swap</code>](#Swap)  
+**Returns**: <code>Promise.&lt;string&gt;</code> - claim txid  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [opts] | <code>Object</code> |  |  |
+| [opts.destinationAddress] | <code>string</code> |  | defaults to `bitcoin.getNewAddress()` |
+| [opts.feeSats] | <code>number</code> | <code>1000</code> |  |
+
+<a name="Swap+checkPaid"></a>
+
+### swap.checkPaid() ⇒ <code>Promise.&lt;boolean&gt;</code>
+L1 giver: ask the node whether the swap invoice was paid.
+
+**Kind**: instance method of [<code>Swap</code>](#Swap)  
+<a name="Swap+observeClaim"></a>
+
+### swap.observeClaim(txHex) ⇒ <code>boolean</code>
+L1 giver: note the counterparty's claim transaction (it carries the
+preimage) and finish.
+
+**Kind**: instance method of [<code>Swap</code>](#Swap)  
+**Returns**: <code>boolean</code> - whether the transaction claims this swap's HTLC  
+
+| Param | Type |
+| --- | --- |
+| txHex | <code>string</code> | 
+
+<a name="Swap+refund"></a>
+
+### swap.refund([opts]) ⇒ <code>Promise.&lt;string&gt;</code>
+L1 giver: take the HTLC back after the refund lock when the invoice was
+never paid.
+
+**Kind**: instance method of [<code>Swap</code>](#Swap)  
+**Returns**: <code>Promise.&lt;string&gt;</code> - refund txid  
+
+| Param | Type | Default |
+| --- | --- | --- |
+| [opts] | <code>Object</code> |  | 
+| [opts.destinationAddress] | <code>string</code> |  | 
+| [opts.feeSats] | <code>number</code> | <code>1000</code> | 
+
+<a name="Swap+abort"></a>
+
+### swap.abort([reason])
+Walk away before any L1 funds move.
+
+**Kind**: instance method of [<code>Swap</code>](#Swap)  
+
+| Param | Type | Default |
+| --- | --- | --- |
+| [reason] | <code>string</code> | <code>&quot;aborted&quot;</code> | 
+
+<a name="Swap+toJSON"></a>
+
+### swap.toJSON([opts]) ⇒ <code>Object</code>
+JSON for persistence. The preimage is a secret until the invoice is paid;
+it is included only with `includeSecrets` (the L1 giver needs it back
+after a restart). Private keys are never included.
+
+**Kind**: instance method of [<code>Swap</code>](#Swap)  
+
+| Param | Type | Default |
+| --- | --- | --- |
+| [opts] | <code>Object</code> |  | 
+| [opts.includeSecrets] | <code>boolean</code> | <code>false</code> | 
+
+<a name="Swap.fromJSON"></a>
+
+### Swap.fromJSON(json, settings) ⇒ [<code>Swap</code>](#Swap)
+Restore a swap saved with [toJSON](#Swap+toJSON). The keys must be
+the ones the saved take / accept were made with, or the swap could not
+fund, claim, or refund its HTLC.
+
+**Kind**: static method of [<code>Swap</code>](#Swap)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| json | <code>Object</code> |  |
+| settings | <code>Object</code> | constructor settings (keys, adapters, …) without `order` / `role` |
+
+<a name="Swap.lightningAdapter"></a>
+
+### Swap.lightningAdapter(lightning) ⇒ <code>Object</code>
+Lightning adapter over `services/lightning` (Core Lightning).
+
+**Kind**: static method of [<code>Swap</code>](#Swap)  
+**Returns**: <code>Object</code> - `{ createInvoice, decodeInvoice, pay, isInvoicePaid }`  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| lightning | <code>Object</code> | a `Lightning` service instance |
+
+<a name="Swap.bitcoinAdapter"></a>
+
+### Swap.bitcoinAdapter(service, [options]) ⇒ <code>Object</code>
+Bitcoin adapter over `services/bitcoin` (bitcoind JSON-RPC, wallet
+loaded). Reading the counterparty's funding transaction needs it in the
+mempool or `txindex=1`. `fundAddress` rejects only when `sendtoaddress`
+fails; once it returns a txid, a failed transaction lookup yields
+`{ txid, txHex: null }` and the swap reads the transaction by txid later.
+A timeout on `sendtoaddress` itself still leaves the outcome unknown.
+
+**Kind**: static method of [<code>Swap</code>](#Swap)  
+**Returns**: <code>Object</code> - `{ getTipHeight, fundAddress, getTransaction, broadcast, getNewAddress }`  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| service | <code>Object</code> | a `Bitcoin` service instance |
+| [options] | <code>Object</code> |  |
+| [options.wallet] | <code>String</code> | named bitcoind wallet for funding and addresses (default: the node's default wallet) |
+
 <a name="Token"></a>
 
 ## Token
@@ -17654,11 +21720,17 @@ Leaf encoding, proofs, and verification match `merkletreejs`
 Optional `sortLeaves` makes the leaf order lexicographic so adjacent-leaf
 **non-inclusion** proofs are well-defined (inclusion proofs work either way).
 
+Like Bitcoin's, the root does not commit the leaf count: `[a, b, c]` and
+`[a, b, c, c]` share a root. [mutated](#Tree+mutated) flags such leaf lists and
+`rejectMutated: true` refuses them; callers that accept leaves from the
+network must check one or the other and bind the count separately.
+
 **Kind**: global class  
 
 * [Tree](#Tree)
     * [new Tree([settings])](#new_Tree_new)
     * _instance_
+        * [.mutated](#Tree+mutated) : <code>boolean</code>
         * [.root](#Tree+root) ⇒ <code>Buffer</code>
         * [.rootHex](#Tree+rootHex) ⇒ <code>string</code>
         * [.addLeaf(leaf)](#Tree+addLeaf) ⇒ [<code>Tree</code>](#Tree)
@@ -17672,6 +21744,7 @@ Optional `sortLeaves` makes the leaf order lexicographic so adjacent-leaf
         * [.proveNonInclusion(leaf)](#Tree+proveNonInclusion) ⇒ <code>object</code>
         * [.verifyNonInclusion(doc, [opts])](#Tree+verifyNonInclusion) ⇒ <code>boolean</code>
     * _static_
+        * [.isMutated(leaves)](#Tree.isMutated) ⇒ <code>boolean</code>
         * [.verifyProof(proof, leaf, root)](#Tree.verifyProof) ⇒ <code>boolean</code>
 
 <a name="new_Tree_new"></a>
@@ -17686,7 +21759,15 @@ Create an instance of a Tree.
 | [settings] | <code>Object</code> \| <code>Array</code> | Configuration, or an array of leaves. |
 | [settings.leaves] | <code>Array</code> |  |
 | [settings.sortLeaves] | <code>boolean</code> | When true, leaves are sorted before merkling (required for [proveNonInclusion](#Tree+proveNonInclusion)). |
+| [settings.rejectMutated] | <code>boolean</code> | When true, building (or adding a leaf to) a [mutated](#Tree+mutated) tree throws. |
 
+<a name="Tree+mutated"></a>
+
+### tree.mutated : <code>boolean</code>
+True when a shorter leaf list has the same root: these leaves are the
+self-paired padding of it (CVE-2012-2459).
+
+**Kind**: instance property of [<code>Tree</code>](#Tree)  
 <a name="Tree+root"></a>
 
 ### tree.root ⇒ <code>Buffer</code>
@@ -17811,6 +21892,17 @@ without the leaf set is not supported.
 | [opts.leafCount] | <code>number</code> | committed leaf count |
 | [opts.leaves] | <code>Array</code> | ordered or unordered leaf set (sorted here) |
 
+<a name="Tree.isMutated"></a>
+
+### Tree.isMutated(leaves) ⇒ <code>boolean</code>
+[mutated](#Tree+mutated) for a leaf list without keeping the tree.
+
+**Kind**: static method of [<code>Tree</code>](#Tree)  
+
+| Param | Type |
+| --- | --- |
+| leaves | <code>Array</code> | 
+
 <a name="Tree.verifyProof"></a>
 
 ### Tree.verifyProof(proof, leaf, root) ⇒ <code>boolean</code>
@@ -17897,8 +21989,6 @@ Manage keys and track their balances.
         * [.fromSeed(seed)](#Wallet.fromSeed) ⇒ [<code>Wallet</code>](#Wallet)
         * [.purchaseContentHashHex(documentId, parsed)](#Wallet.purchaseContentHashHex) ⇒ <code>string</code>
         * [.resolveDocumentContentHashHex(opts)](#Wallet.resolveDocumentContentHashHex) ⇒ <code>Object</code>
-        * [.buildInventoryHtlcP2tr()](#Wallet.buildInventoryHtlcP2tr)
-        * [.buildHtlcFundingHints()](#Wallet.buildHtlcFundingHints)
 
 <a name="new_Wallet_new"></a>
 
@@ -18060,7 +22150,7 @@ Generate a [BitcoinAddress](BitcoinAddress) for the supplied [BitcoinScript](Bit
 
 ### ~~wallet.createHTLC()~~
 ***Legacy bcoin-style HTLC for channels — not the document-market P2TR profile.
-Use [buildInventoryHtlcP2tr](#Wallet.buildInventoryHtlcP2tr) / `@fabric/core/functions/inventoryHtlc` instead.***
+Use `@fabric/core/types/htlc` instead.***
 
 **Kind**: instance method of [<code>Wallet</code>](#Wallet)  
 <a name="Wallet+_sign"></a>
@@ -18088,7 +22178,7 @@ Create a crowdfunding transaction.
 <a name="Wallet+_getSwapInputScript"></a>
 
 ### wallet.\_getSwapInputScript(redeemScript, secret)
-Generate [Script](#Script) for claiming a [Swap](Swap).
+Generate [Script](#Script) for claiming a [Swap](#Swap).
 
 **Kind**: instance method of [<code>Wallet</code>](#Wallet)  
 
@@ -18100,7 +22190,7 @@ Generate [Script](#Script) for claiming a [Swap](Swap).
 <a name="Wallet+_getRefundInputScript"></a>
 
 ### wallet.\_getRefundInputScript(redeemScript)
-Generate [Script](#Script) for reclaiming funds commited to a [Swap](Swap).
+Generate [Script](#Script) for reclaiming funds commited to a [Swap](#Swap).
 
 **Kind**: instance method of [<code>Wallet</code>](#Wallet)  
 
@@ -18167,50 +22257,65 @@ Single path for buy / HTLC `contentHashHex` (sealed | envelope | blob).
 | --- | --- | --- |
 | opts | <code>object</code> | see [module:functions/documentPaymentHash.resolveDocumentContentHashHex](module:functions/documentPaymentHash.resolveDocumentContentHashHex) |
 
-<a name="Wallet.buildInventoryHtlcP2tr"></a>
-
-### Wallet.buildInventoryHtlcP2tr()
-**Kind**: static method of [<code>Wallet</code>](#Wallet)  
-**See**: [module:functions/inventoryHtlc.buildInventoryHtlcP2tr](module:functions/inventoryHtlc.buildInventoryHtlcP2tr)  
-<a name="Wallet.buildHtlcFundingHints"></a>
-
-### Wallet.buildHtlcFundingHints()
-**Kind**: static method of [<code>Wallet</code>](#Wallet)  
-**See**: [module:functions/inventoryHtlc.buildHtlcFundingHints](module:functions/inventoryHtlc.buildHtlcFundingHints)  
 <a name="FraudProof"></a>
 
 ## FraudProof
 Self-contained proof that a market counterparty broke a signed obligation.
 Shape: `{ type: 'FraudProof', kind, artifacts, claim }`. `verify()` is pure
 over the artifacts; the few kinds that assert an **on-chain fact** (a
-broadcast happened, an outpoint is still unspent, the tip passed a height)
-take that fact from `ctx` — the verifier's own chain view — and refuse to
-conclude without it. No kind ever infers fraud from a *missing* message
-alone: absence is always anchored to a timelock (decision 6).
+broadcast happened, an outpoint is unspent, the tip passed a height) take
+that fact from `ctx` — the verifier's own chain view, which must describe
+**confirmed** state at least `ctx.minConfirmations` (default 6) deep — and
+refuse to conclude without it. No kind infers fraud from a *missing*
+message alone, and no kind trusts a time its accused party could backdate.
+
+Every challenge-based kind binds the challenge to the provider's signed
+`AvailabilityCommitment` (root, `blobTotal`, publisher) and recomputes the
+challenged index from the nonce. A verdict carries `reputational: true`
+only when it may move a reputation score.
 
 Kinds:
-- `wrong-leaf`: signed challenge + provider-signed response whose leaf does
-  not belong to the committed root (or names the wrong blob hash).
-- `non-response`: signed challenge + provider's signed availability
-  commitment and either (a) a response signed after the deadline epoch, or
-  (b) **timelock evidence**: the challenge names `deadlineHeight` + the
-  deposit outpoint, the provider's `DepositPenaltyPreSig` on a penalty
-  transaction with `nLockTime = deadlineHeight`, and the verifier's chain
-  view shows the tip past the deadline with the outpoint **unspent** (no
-  check-in). The pre-signed penalty is itself the enforcement.
-- `wrong-bytes`: seller-signed offer row (with `paymentHashHex`) + the
-  claim preimage that opens that payment hash + the seller-signed AMP
-  `P2P_FILE_SEND` frame whose delivered bytes miss the offered
-  `blobHashHex`. The frame author must be the offer signer.
-- `wrongful-penalty`: publisher-signed challenge + the provider's valid,
-  Merkle-proven, in-time response + the penalty transaction that spent
-  the deposit outpoint anyway — publisher fraud. The penalty's spent
-  outputs (`prevouts`) let the verifier check that the penalty leaf is
-  committed to the deposit output and signed by both parties.
-- `stale-commitment`: a payment-channel party's own signed `ChannelRevoke`
-  (naming the commitment txid it revoked) plus that very transaction and
-  evidence it was broadcast: an SPV `inclusion` artifact
-  (`functions/bitcoinTxInclusion.js`) or `ctx.txConfirmed(txid)`.
+- `wrong-leaf`: challenge + commitment + provider-signed response whose
+  leaf is not at the challenged index of the committed tree, or (with a
+  Merkle proof of the publisher's pin) names another blob hash.
+- `non-response`: challenge + commitment and either
+  (a) a provider-signed response after `deadlineEpoch` **plus** an anchor
+  showing the challenge reached the provider in time — a provider-signed
+  `AvailabilityReceipt` or trusted `EpochAttestation`s (`ctx.beaconPubkeys`)
+  — or (b) **timelock evidence**: the provider's `DepositPenaltyPreSig`
+  for the deadline, past `deadlineHeight + confirmations`, with the deposit
+  outpoint neither checked in nor answered. (b) names the provider as
+  offender only when the provider had a unilateral way to answer: the
+  pre-signature acknowledges this challenge (`challengeHash`), the
+  challenge commits `answerHashHex`, and `artifacts.answerPath` proves the
+  deposit output carries the provider's `answer` hashlock leaf for it.
+  Otherwise the publisher could manufacture the silence (by refusing to
+  co-sign check-in), so the verdict is `offender: null`,
+  `reputational: false` — the pre-signed penalty is enforceable, but it is
+  **not** proof of non-response.
+- `wrong-answer-hash`: challenge + commitment + the challenged blob's bytes
+  and branch; the answer hash the publisher committed cannot be opened by
+  those bytes — publisher fraud (it would make an honest answer impossible).
+- `wrong-bytes`: seller-signed `DocumentOffer` (documentId, root, blob
+  index, blob hash, payment hash) + the claim preimage + the seller-signed
+  AMP `P2P_FILE_SEND` frame for the same document / root / index / payment
+  whose bytes miss the offered `blobHashHex`.
+- `bad-key`: same artifacts for a sealed offer, but the bytes **match**
+  `blobHashHex` and the revealed key K (the claim preimage) does not open
+  them: AES-GCM authentication fails, or the plaintext misses the offered
+  `plaintextSha256`.
+- `wrongful-penalty`: challenge + the provider's valid, Merkle-proven
+  response + an un-backdatable anchor that it existed by the deadline (a
+  publisher-signed `AvailabilityReceipt`, or trusted `EpochAttestation`s
+  over the response hash) + the penalty transaction that spent the deposit
+  outpoint anyway — publisher fraud. The provider's own `epoch` / `height`
+  fields are never trusted. (An on-chain answer spend needs no such proof:
+  it consumes the outpoint, so no penalty can follow it.)
+- `stale-commitment`: a payment-channel party's signed `ChannelRevoke`
+  (channel, number, `perCommitmentSecret` opening `perCommitmentPoint`,
+  revoked txid) plus that transaction and evidence it confirmed. Assumes
+  asymmetric commitments: each party holds only its own commitment, so a
+  broadcast of the revoked txid can only have come from the revoker.
 
 **Kind**: global class  
 
@@ -18218,9 +22323,16 @@ Kinds:
     * _instance_
         * [.hash](#FraudProof+hash) ⇒ <code>string</code>
         * [.toBody()](#FraudProof+toBody) ⇒ <code>object</code>
+        * [.evidenceIds()](#FraudProof+evidenceIds) ⇒ <code>Array.&lt;string&gt;</code>
         * [.verify([ctx])](#FraudProof+verify) ⇒ <code>Object</code>
     * _static_
         * [.fromBody(body)](#FraudProof.fromBody) ⇒ [<code>FraudProof</code>](#FraudProof) \| <code>null</code>
+        * [.bindChallenge(challenge, commitment)](#FraudProof.bindChallenge) ⇒ <code>Object</code>
+        * [.anchorEpoch(anchor, want, [ctx])](#FraudProof.anchorEpoch) ⇒ <code>Object</code>
+        * [.possessionHex(nonceHex, bytes)](#FraudProof.possessionHex) ⇒ <code>string</code>
+        * [.answerHashFor(possessionHex)](#FraudProof.answerHashFor) ⇒ <code>string</code>
+        * [.answerLeafScript(providerPubkey, answerHashHex)](#FraudProof.answerLeafScript) ⇒ <code>Buffer</code> \| <code>null</code>
+        * [.checkPenaltyPsbt(psbt, expect)](#FraudProof.checkPenaltyPsbt) ⇒ <code>Object</code>
         * [.verifyPenaltyPreSig(preSig, expect)](#FraudProof.verifyPenaltyPreSig) ⇒ <code>Object</code>
 
 <a name="FraudProof+hash"></a>
@@ -18233,6 +22345,21 @@ Kinds:
 ### fraudProof.toBody() ⇒ <code>object</code>
 **Kind**: instance method of [<code>FraudProof</code>](#FraudProof)  
 **Returns**: <code>object</code> - `CONTRACT_MESSAGE` body (JSON-safe).  
+<a name="FraudProof+evidenceIds"></a>
+
+### fraudProof.evidenceIds() ⇒ <code>Array.&lt;string&gt;</code>
+Stable ids of the evidence this proof rests on. Unlike
+[hash](#FraudProof+hash) (which covers `observedAt` and the free-form
+`claim`) they do not change when the same evidence is re-wrapped, so
+ledgers dedupe and refuse replays on them: two proofs sharing any id are
+the same offence.
+- `challenge:<hash>` wrong-leaf, non-response
+- `answer:<challenge hash>` wrong-answer-hash
+- `payment:<seller x-only>:<payment hash>` and `frame:<sha256 of frame>` wrong-bytes, bad-key
+- `penalty-tx:<txid>` wrongful-penalty
+- `stale-tx:<txid>` stale-commitment
+
+**Kind**: instance method of [<code>FraudProof</code>](#FraudProof)  
 <a name="FraudProof+verify"></a>
 
 ### fraudProof.verify([ctx]) ⇒ <code>Object</code>
@@ -18240,11 +22367,20 @@ Kinds:
 
 | Param | Type | Description |
 | --- | --- | --- |
-| [ctx] | <code>object</code> | verifier's chain view |
+| [ctx] | <code>object</code> | verifier's chain view and trust roots |
 | [ctx.tipHeight] | <code>number</code> | current block height (timelocked non-response) |
-| [ctx.outpointUnspent] | <code>function</code> | `(txid, vout) → boolean` (timelocked non-response) |
-| [ctx.txConfirmed] | <code>function</code> | `(txid) → boolean` (stale-commitment / wrongful-penalty broadcast evidence) |
-| [ctx.headerKnown] | <code>function</code> | `(blockHash) → boolean` — whether an inclusion artifact's block is in the verifier's header chain |
+| [ctx.minConfirmations] | <code>number</code> | depth every on-chain fact needs (default 6) |
+| [ctx.outpointSpend] | <code>function</code> | `(txid, vout) → null | { leafId, height }` confirmed spend of the deposit (preferred: tells check-in / answer from withdraw) |
+| [ctx.outpointUnspent] | <code>function</code> | `(txid, vout) → boolean` confirmed-unspent fallback |
+| [ctx.headerKnown] | <code>function</code> | `(blockHash) → boolean` block is in the verifier's best chain |
+| [ctx.confirmations] | <code>function</code> | `(blockHash) → number` depth of that block |
+| [ctx.txCount] | <code>function</code> | `(blockHash) → number` transactions in that block (pins the branch depth) |
+| [ctx.txConfirmations] | <code>function</code> | `(txid) → number` depth of a transaction |
+| [ctx.txConfirmed] | <code>function</code> | `(txid, depth) → boolean` legacy: the transaction is at least `depth` (`minConfirmations`) deep; prefer `ctx.txConfirmations` |
+| [ctx.beaconPubkeys] | <code>Array.&lt;string&gt;</code> | keys whose `EpochAttestation`s anchor times |
+| [ctx.beaconThreshold] | <code>number</code> | distinct attestations needed (default 1) |
+| [ctx.minResponseEpochs] | <code>number</code> | epochs a provider must have had to answer (default 1) |
+| [ctx.channelId] | <code>string</code> | channel the verifier is judging (stale-commitment) |
 
 <a name="FraudProof.fromBody"></a>
 
@@ -18257,21 +22393,111 @@ Rehydrate a `FraudProof` from a `CONTRACT_MESSAGE` body (or `null` for other typ
 | --- | --- |
 | body | <code>Object</code> | 
 
-<a name="FraudProof.verifyPenaltyPreSig"></a>
+<a name="FraudProof.bindChallenge"></a>
 
-### FraudProof.verifyPenaltyPreSig(preSig, expect) ⇒ <code>Object</code>
-Verify a provider's `DepositPenaltyPreSig`: a signed artifact wrapping a
-penalty PSBT that spends the deposit outpoint with `nLockTime` equal to
-the challenge deadline height and carries the provider's valid tapscript
-signature on the canonical publisher + provider penalty leaf, whose
-control block commits to the spent deposit output. Pure.
+### FraudProof.bindChallenge(challenge, commitment) ⇒ <code>Object</code>
+Bind a challenge to the provider's signed `AvailabilityCommitment`: the
+commitment fixes root, leaf count, and publisher, and the challenged
+index is recomputed from the nonce. Pure.
 
 **Kind**: static method of [<code>FraudProof</code>](#FraudProof)  
 
 | Param | Type | Description |
 | --- | --- | --- |
-| preSig | <code>object</code> | artifact `{ type: 'DepositPenaltyPreSig', psbtBase64, deposit: { txid, vout }, deadlineHeight, txid, pubkey, signature }` |
-| expect | <code>object</code> | `{ providerPubkey (x-only), publisherPubkey, deposit: { txid, vout, penaltyAddress?, minPenaltySats? }, deadlineHeight, depositAddress?, destinationAddress?, destinationScriptHex?, minValueSats? }` — a destination (top-level or from the challenge's signed `deposit`) is mandatory when named; `depositAddress` binds the spent output |
+| challenge | <code>object</code> | signed `AvailabilityChallenge` |
+| commitment | <code>object</code> | signed `AvailabilityCommitment` |
+
+<a name="FraudProof.anchorEpoch"></a>
+
+### FraudProof.anchorEpoch(anchor, want, [ctx]) ⇒ <code>Object</code>
+Earliest epoch at which `want.digest` provably existed, from an anchor
+its author cannot backdate:
+- an `AvailabilityReceipt` `{ challengeHash, responseHash?, epoch, height? }`
+  signed by `want.receiptSigner` (the counterparty, who gains nothing by
+  dating it early);
+- `EpochAttestation`s `{ digestHex, epoch, height? }` from distinct keys in
+  `ctx.beaconPubkeys`, at least `ctx.beaconThreshold` (default 1) of them;
+  the anchored epoch is the latest one that threshold agrees on.
+
+**Kind**: static method of [<code>FraudProof</code>](#FraudProof)  
+
+| Param | Type |
+| --- | --- |
+| anchor | <code>object</code> \| <code>Array.&lt;object&gt;</code> | 
+| want | <code>Object</code> | 
+| [ctx] | <code>object</code> | 
+
+<a name="FraudProof.possessionHex"></a>
+
+### FraudProof.possessionHex(nonceHex, bytes) ⇒ <code>string</code>
+Nonce-bound proof of possession: `SHA256(nonce || blob bytes)` hex.
+
+**Kind**: static method of [<code>FraudProof</code>](#FraudProof)  
+
+| Param | Type |
+| --- | --- |
+| nonceHex | <code>string</code> | 
+| bytes | <code>Buffer</code> | 
+
+<a name="FraudProof.answerHashFor"></a>
+
+### FraudProof.answerHashFor(possessionHex) ⇒ <code>string</code>
+Answer hash committed per round: `SHA256(possession digest bytes)`, so
+revealing the possession digest on-chain opens the `answer` leaf.
+
+**Kind**: static method of [<code>FraudProof</code>](#FraudProof)  
+
+| Param | Type |
+| --- | --- |
+| possessionHex | <code>string</code> | 
+
+<a name="FraudProof.answerLeafScript"></a>
+
+### FraudProof.answerLeafScript(providerPubkey, answerHashHex) ⇒ <code>Buffer</code> \| <code>null</code>
+The deposit's provider-unilateral `answer` leaf for `answerHashHex`
+(`OP_SHA256 <answerHash> OP_EQUALVERIFY <provider> OP_CHECKSIG`).
+
+**Kind**: static method of [<code>FraudProof</code>](#FraudProof)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| providerPubkey | <code>string</code> | x-only or compressed hex |
+| answerHashHex | <code>string</code> |  |
+
+<a name="FraudProof.checkPenaltyPsbt"></a>
+
+### FraudProof.checkPenaltyPsbt(psbt, expect) ⇒ <code>Object</code>
+Structural checks every penalty PSBT must pass before anyone signs it and
+whenever a pre-signature is verified: exactly one input, on the challenged
+deposit outpoint; a non-final nSequence (else nLockTime is ignored);
+`nLockTime` equal to the deadline, which must be a block height; every
+output paying the publisher-named destination (at least `minValueSats`);
+and a fee no larger than `maxFeeSats` (default 20000). Without a named
+destination the result is `enforceable: false` — the provider, who signs
+first, would choose where the penalty pays.
+
+**Kind**: static method of [<code>FraudProof</code>](#FraudProof)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| psbt | <code>object</code> | bitcoinjs Psbt |
+| expect | <code>object</code> | `{ deposit: { txid, vout, penaltyAddress?, minPenaltySats? }, deadlineHeight, depositAddress?, destinationAddress?, destinationScriptHex?, minValueSats?, maxFeeSats? }` |
+
+<a name="FraudProof.verifyPenaltyPreSig"></a>
+
+### FraudProof.verifyPenaltyPreSig(preSig, expect) ⇒ <code>Object</code>
+Verify a provider's `DepositPenaltyPreSig`: a signed artifact wrapping a
+penalty PSBT that passes [checkPenaltyPsbt](#FraudProof.checkPenaltyPsbt) and carries
+the provider's valid tapscript signature on the canonical publisher +
+provider penalty leaf, whose control block commits to the spent deposit
+output. Pure.
+
+**Kind**: static method of [<code>FraudProof</code>](#FraudProof)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| preSig | <code>object</code> | artifact `{ type: 'DepositPenaltyPreSig', psbtBase64, deposit: { txid, vout }, deadlineHeight, txid, challengeHash?, pubkey, signature }` |
+| expect | <code>object</code> | as [checkPenaltyPsbt](#FraudProof.checkPenaltyPsbt), plus `providerPubkey`, `publisherPubkey`, and optional `challengeHash` the pre-signature must acknowledge |
 
 <a name="Worker"></a>
 
@@ -19493,25 +23719,36 @@ Default TCP port lightningd listens on when [settings.port](settings.port) is om
 
 * [Market](#Market)
     * [new Market([settings])](#new_Market_new)
-    * [.attach(deps)](#Market+attach) ⇒ [<code>Market</code>](#Market)
-    * [.setBudget(sats)](#Market+setBudget) ⇒ [<code>Market</code>](#Market)
-    * [.want(documentId, [opts])](#Market+want) ⇒ <code>Object</code>
-    * [.forget(documentId)](#Market+forget) ⇒ <code>boolean</code>
-    * [.listWants()](#Market+listWants) ⇒ <code>Array.&lt;Object&gt;</code>
-    * [.listSessions()](#Market+listSessions) ⇒ <code>Array.&lt;Object&gt;</code>
-    * [.status()](#Market+status) ⇒ <code>Object</code>
-    * [.weights()](#Market+weights) ⇒ <code>Object</code>
-    * [.planCap(want)](#Market+planCap) ⇒ <code>number</code>
-    * [.planFor(want)](#Market+planFor) ⇒ <code>Object</code>
-    * [.start()](#Market+start) ⇒ [<code>Promise.&lt;Market&gt;</code>](#Market)
-    * [.stop()](#Market+stop) ⇒ [<code>Promise.&lt;Market&gt;</code>](#Market)
-    * [.tick()](#Market+tick) ⇒ <code>Promise.&lt;Object&gt;</code>
-    * [.buyerRefundPubkeyHex()](#Market+buyerRefundPubkeyHex) ⇒ <code>string</code> \| <code>null</code>
-    * [.purchasePlan(want, planned)](#Market+purchasePlan) ⇒ <code>Promise.&lt;Array.&lt;Object&gt;&gt;</code>
-    * [.openSession(want, offer, blobIndex, blobTotal)](#Market+openSession) ⇒ <code>Object</code> \| <code>null</code>
-    * [.confirm(settlementId, [txid])](#Market+confirm) ⇒ <code>Object</code>
-    * [.export()](#Market+export) ⇒ <code>Object</code>
-    * [.import(snapshot)](#Market+import) ⇒ [<code>Market</code>](#Market)
+    * _instance_
+        * [.attach(deps)](#Market+attach) ⇒ [<code>Market</code>](#Market)
+        * [.tipHeight()](#Market+tipHeight) ⇒ <code>number</code> \| <code>null</code>
+        * [.onChannelHtlcSettled(ev)](#Market+onChannelHtlcSettled) ⇒ <code>Object</code> \| <code>null</code>
+        * [.setBudget(sats)](#Market+setBudget) ⇒ [<code>Market</code>](#Market)
+        * [.audit()](#Market+audit) ⇒ <code>Object</code>
+        * [.want(documentId, [opts])](#Market+want) ⇒ <code>Object</code>
+        * [.forget(documentId)](#Market+forget) ⇒ <code>boolean</code>
+        * [.listWants()](#Market+listWants) ⇒ <code>Array.&lt;Object&gt;</code>
+        * [.listSessions()](#Market+listSessions) ⇒ <code>Array.&lt;Object&gt;</code>
+        * [.status()](#Market+status) ⇒ <code>Object</code>
+        * [.weights()](#Market+weights) ⇒ <code>Object</code>
+        * [.planCap(want)](#Market+planCap) ⇒ <code>number</code>
+        * [.planFor(want)](#Market+planFor) ⇒ <code>Object</code>
+        * [.start()](#Market+start) ⇒ [<code>Promise.&lt;Market&gt;</code>](#Market)
+        * [.stop()](#Market+stop) ⇒ [<code>Promise.&lt;Market&gt;</code>](#Market)
+        * [.tick()](#Market+tick) ⇒ <code>Promise.&lt;Object&gt;</code>
+        * [.buyerRefundPubkeyHex()](#Market+buyerRefundPubkeyHex) ⇒ <code>string</code> \| <code>null</code>
+        * [.purchasePlan(want, planned)](#Market+purchasePlan) ⇒ <code>Promise.&lt;Array.&lt;Object&gt;&gt;</code>
+        * [.openSession(want, offer, blobIndex, blobTotal)](#Market+openSession) ⇒ <code>Object</code> \| <code>null</code>
+        * [.confirm(settlementId, [txid])](#Market+confirm) ⇒ <code>Object</code>
+        * [.buildRefund(settlementId)](#Market+buildRefund) ⇒ <code>Promise.&lt;{ok: boolean, error: (string\|undefined), psbtBase64: (string\|undefined), txHex: (string\|null\|undefined), txid: (string\|null\|undefined)}&gt;</code>
+        * [.refundConfirmed(settlementId, [opts])](#Market+refundConfirmed) ⇒ <code>Object</code> \| <code>null</code>
+        * [.claimObserved(settlementId, opts)](#Market+claimObserved) ⇒ <code>Object</code> \| <code>null</code>
+        * [.observeTransaction(txHex, [opts])](#Market+observeTransaction) ⇒ <code>Array.&lt;Object&gt;</code>
+        * [.onBlock(opts)](#Market+onBlock) ⇒ <code>Array.&lt;Object&gt;</code>
+        * [.export()](#Market+export) ⇒ <code>Object</code>
+        * [.import(snapshot)](#Market+import) ⇒ [<code>Market</code>](#Market)
+    * _static_
+        * [.normalizePayResult(res)](#Market.normalizePayResult) ⇒ <code>Object</code> \| <code>null</code>
 
 <a name="new_Market_new"></a>
 
@@ -19520,14 +23757,29 @@ Default TCP port lightningd listens on when [settings.port](settings.port) is om
 | Param | Type | Default | Description |
 | --- | --- | --- | --- |
 | [settings] | <code>Object</code> |  |  |
-| [settings.budgetSats] | <code>number</code> | <code>0</code> | Total sats this agent may spend. |
+| [settings.budgetSats] | <code>number</code> | <code>0</code> | Total sats this agent may commit. |
 | [settings.perPlanMaxSats] | <code>number</code> | <code>0</code> | Cap per document plan (0 = only the budget caps). |
 | [settings.proximityWeight] | <code>number</code> | <code>0.5</code> | 0 = cheapest wins, 1 = nearest / fastest wins. |
 | [settings.tickMs] | <code>number</code> | <code>15000</code> | Scheduler interval (0 = manual `tick()` only). |
 | [settings.inventoryEveryMs] | <code>number</code> | <code>30000</code> | Minimum spacing between inventory refreshes per want. |
-| [settings.deliveryTimeoutMs] | <code>number</code> | <code>600000</code> | Confirmed sessions without delivery fail after this (0 = never). |
-| [settings.network] | <code>string</code> | <code>&quot;&#x27;regtest&#x27;&quot;</code> | Bitcoin network for HTLC construction (mainnet refused). |
-| [settings.book] | <code>Object</code> |  | `Book` settings. |
+| [settings.deliveryTimeoutMs] | <code>number</code> | <code>600000</code> | Paid sessions without delivery time out after this (0 = never); funded L1 HTLCs then wait for refund. |
+| [settings.prepayTimeoutMs] | <code>number</code> | <code>60000</code> | Verify-before-pay: wait this long for the seller's free ciphertext (and quote). |
+| [settings.verifyBeforePay] | <code>boolean</code> | <code>true</code> | Pay a sealed blob only once its ciphertext is held and committed by the root. |
+| [settings.quotes] | <code>boolean</code> | <code>false</code> | Ask sellers for a per-buyer `DocumentBlobQuote` and pay its hash. Not atomic: a seller can quote a wrapped key that does not unwrap, claim the HTLC, and leave only a fraud proof (`documentBlobQuoteFraud`). Static hashes are atomic. |
+| [settings.credit] | <code>boolean</code> | <code>true</code> | Take a seller's credit offer (`creditRateSats`) when a channel with it can pay: the key comes first, and the blob is paid with a channel transfer only once it opens. A blob that does not open is never paid. |
+| [settings.seed] | <code>Object</code> \| <code>boolean</code> |  | Seed after download: sell every received convergent document again as the same tree, on these `Peer#publishSealedDocument` terms (`{ rateSats, creditRateSats, creditLimitSats }`; `true` = free). |
+| [settings.fundingSafetyMs] | <code>number</code> | <code>3600000</code> | A funding whose outcome is unknown is released only after the address is reported unfunded this long after the last pay attempt. |
+| [settings.minHtlcLockBlocks] | <code>number</code> | <code>24</code> | Refuse L1 HTLCs whose refund locktime is closer than this to the tip (or past). |
+| [settings.maxHtlcLockBlocks] | <code>number</code> | <code>4032</code> | Refuse L1 HTLCs that lock funds longer than this (0 = no cap). |
+| [settings.channelExpirySlackBlocks] | <code>number</code> | <code>6</code> | Blocks added to the channel's minimum HTLC expiry delta (tip skew). |
+| [settings.refundAddress] | <code>string</code> \| <code>function</code> |  | Destination for buyer refunds (`(session) => address` allowed). |
+| [settings.refundFeeSats] | <code>number</code> | <code>150</code> | Fee for the buyer refund transaction. |
+| [settings.refundConfirmations] | <code>number</code> | <code>1</code> | Confirmations before a refund releases its budget. |
+| [settings.refundPrivateKey] | <code>string</code> \| <code>Buffer</code> |  | Buyer refund key (defaults to the Peer key when it matches). |
+| [settings.tipHeight] | <code>function</code> |  | `() => number` chain tip (else `attach({ tipHeight })`, the channel book, or `onBlock`). |
+| [settings.now] | <code>function</code> |  | clock override (`() => ms`), for tests. |
+| [settings.network] | <code>string</code> | <code>&quot;&#x27;regtest&#x27;&quot;</code> | Bitcoin test network (mainnet refused). |
+| [settings.book] | <code>Object</code> |  | `DocumentBook` settings. |
 
 <a name="Market+attach"></a>
 
@@ -19538,19 +23790,57 @@ Default TCP port lightningd listens on when [settings.port](settings.port) is om
 | --- | --- | --- |
 | deps | <code>Object</code> |  |
 | deps.peer | <code>Object</code> | `@fabric/core` Peer (inventory, requests, delivery events). |
-| [deps.book] | [<code>Book</code>](#Book) | shared offer book (defaults to the agent's own). |
-| [deps.pay] | <code>function</code> | `async (session) => txid|null` — funds the session HTLC address. |
+| [deps.book] | [<code>DocumentBook</code>](#DocumentBook) | shared offer book (defaults to the agent's own). |
+| [deps.pay] | <code>function</code> | `async (session) => txid | { txid, txHex }` — funds the session HTLC address. |
 | [deps.verify] | <code>function</code> | `async (session, txid) => boolean` — L1 / Hub payment proof. |
+| [deps.addressFunded] | <code>function</code> | `async (address, session) => boolean | { funded, txid?, txHex? } | null` — `null` = unknown. |
+| [deps.getTransaction] | <code>function</code> | `async (txid) => txHex` — funding tx for refunds. |
+| [deps.broadcast] | <code>function</code> | `async (txHex, session) => txid` — broadcast a signed refund. |
+| [deps.confirmations] | <code>function</code> | `async (txid) => number` — refund confirmation depth. |
+| [deps.tipHeight] | <code>function</code> | `() => number` chain tip. |
+| [deps.channels] | <code>Object</code> | `ChannelBook` (`types/channelBook`, or `{ sessionFor, tipHeight, publish }`). |
+
+<a name="Market+tipHeight"></a>
+
+### market.tipHeight() ⇒ <code>number</code> \| <code>null</code>
+Current chain tip: `settings.tipHeight`, then `attach({ tipHeight })`,
+the channel book, then the last `onBlock` height.
+
+**Kind**: instance method of [<code>Market</code>](#Market)  
+<a name="Market+onChannelHtlcSettled"></a>
+
+### market.onChannelHtlcSettled(ev) ⇒ <code>Object</code> \| <code>null</code>
+Channel-book settlement events (seller-fulfils), also used by the tick
+reconcile and by hosts resolving an HTLC on chain. A fulfilled HTLC hands
+the buyer the preimage and is spent; a failed one returns the sats to the
+budget without blaming the seller for our own channel trouble. Each HTLC
+outcome is applied once.
+
+**Kind**: instance method of [<code>Market</code>](#Market)  
+**Returns**: <code>Object</code> \| <code>null</code> - the session  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| ev | <code>Object</code> | `{ channelId, htlcId, outcome: 'fulfilled'|'failed', preimageHex?, reason? }` |
 
 <a name="Market+setBudget"></a>
 
 ### market.setBudget(sats) ⇒ [<code>Market</code>](#Market)
+Set the budget. It never drops below what is already committed
+(`spent + reserved + locked`): lowering it that far just stops new buys.
+
 **Kind**: instance method of [<code>Market</code>](#Market)  
 
 | Param | Type |
 | --- | --- |
 | sats | <code>number</code> | 
 
+<a name="Market+audit"></a>
+
+### market.audit() ⇒ <code>Object</code>
+Recompute the buckets from the sessions and compare with the counters.
+
+**Kind**: instance method of [<code>Market</code>](#Market)  
 <a name="Market+want"></a>
 
 ### market.want(documentId, [opts]) ⇒ <code>Object</code>
@@ -19570,6 +23860,12 @@ Register a document to acquire.
 <a name="Market+forget"></a>
 
 ### market.forget(documentId) ⇒ <code>boolean</code>
+Stop wanting a document. Sessions that never paid (`open`,
+`quote_pending`, `channel_pending`) are cancelled and their reservations
+released; sessions whose sats may already have moved (funding in flight
+or unknown, awaiting host funding, HTLC unresolved) keep their budget and
+still resolve through funding checks, refunds, or claims.
+
 **Kind**: instance method of [<code>Market</code>](#Market)  
 
 | Param | Type |
@@ -19608,7 +23904,9 @@ Cap for one document plan: min(perPlanMaxSats, want.maxSats, remaining budget).
 <a name="Market+planFor"></a>
 
 ### market.planFor(want) ⇒ <code>Object</code>
-Build the blob plan for a want without spending anything.
+Build the blob plan for a want without spending anything. Blobs this
+agent already bought (or is buying) for the want are left out of the
+cost.
 
 **Kind**: instance method of [<code>Market</code>](#Market)  
 
@@ -19631,10 +23929,13 @@ Stop the agent: clear the tick timer and detach peer / channel listeners.
 <a name="Market+tick"></a>
 
 ### market.tick() ⇒ <code>Promise.&lt;Object&gt;</code>
-One scheduler pass: refresh inventories, plan, purchase within budget.
+One scheduler pass: time out stale sessions, advance in-flight ones
+(verify-before-pay, deferred channel rounds, unknown fundings, refunds,
+channel reconcile), then refresh inventories, plan, and purchase within
+budget.
 
 **Kind**: instance method of [<code>Market</code>](#Market)  
-**Returns**: <code>Promise.&lt;Object&gt;</code> - summary `{ planned, opened, skipped }`  
+**Returns**: <code>Promise.&lt;Object&gt;</code> - summary `{ planned, opened, skipped, retried }`  
 <a name="Market+buyerRefundPubkeyHex"></a>
 
 ### market.buyerRefundPubkeyHex() ⇒ <code>string</code> \| <code>null</code>
@@ -19643,7 +23944,7 @@ One scheduler pass: refresh inventories, plan, purchase within budget.
 <a name="Market+purchasePlan"></a>
 
 ### market.purchasePlan(want, planned) ⇒ <code>Promise.&lt;Array.&lt;Object&gt;&gt;</code>
-Open, fund, confirm, and request every blob in a plan.
+Open, verify, fund, confirm, and request every blob in a plan.
 
 **Kind**: instance method of [<code>Market</code>](#Market)  
 **Returns**: <code>Promise.&lt;Array.&lt;Object&gt;&gt;</code> - opened sessions  
@@ -19656,7 +23957,10 @@ Open, fund, confirm, and request every blob in a plan.
 <a name="Market+openSession"></a>
 
 ### market.openSession(want, offer, blobIndex, blobTotal) ⇒ <code>Object</code> \| <code>null</code>
-One purchase session for one blob (one HTLC per seller per blob).
+One purchase session for one blob (one HTLC per seller per blob). The
+amount is reserved here; refused when it does not fit the remaining
+budget, when the blob is already bought or being bought, or when this
+seller was already paid (or may have been) for it.
 
 **Kind**: instance method of [<code>Market</code>](#Market)  
 
@@ -19670,7 +23974,8 @@ One purchase session for one blob (one HTLC per seller per blob).
 <a name="Market+confirm"></a>
 
 ### market.confirm(settlementId, [txid]) ⇒ <code>Object</code>
-Mark a session funded and request delivery.
+Mark a session funded (sats now locked in its HTLC) and send the paid
+`DocumentRequest`.
 
 **Kind**: instance method of [<code>Market</code>](#Market)  
 **Returns**: <code>Object</code> - session  
@@ -19680,6 +23985,77 @@ Mark a session funded and request delivery.
 | settlementId | <code>string</code> |  | 
 | [txid] | <code>string</code> \| <code>null</code> | <code>null</code> | 
 
+<a name="Market+buildRefund"></a>
+
+### market.buildRefund(settlementId) ⇒ <code>Promise.&lt;{ok: boolean, error: (string\|undefined), psbtBase64: (string\|undefined), txHex: (string\|null\|undefined), txid: (string\|null\|undefined)}&gt;</code>
+Build the buyer refund for a funded L1 session (refund leaf, after the
+locktime). Signs with `settings.refundPrivateKey`, or the Peer key when
+it is the HTLC's buyer refund key; otherwise returns the PSBT only.
+Emits `refundReady` `{ session, psbtBase64, txHex, txid }`.
+
+**Kind**: instance method of [<code>Market</code>](#Market)  
+
+| Param | Type |
+| --- | --- |
+| settlementId | <code>string</code> | 
+
+<a name="Market+refundConfirmed"></a>
+
+### market.refundConfirmed(settlementId, [opts]) ⇒ <code>Object</code> \| <code>null</code>
+The buyer refund confirmed: the HTLC can no longer pay the seller, so its
+sats go back to the budget. The seller is charged a refund in the book.
+
+**Kind**: instance method of [<code>Market</code>](#Market)  
+**Returns**: <code>Object</code> \| <code>null</code> - session  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| settlementId | <code>string</code> |  |
+| [opts] | <code>Object</code> | `{ txid }` |
+
+<a name="Market+claimObserved"></a>
+
+### market.claimObserved(settlementId, opts) ⇒ <code>Object</code> \| <code>null</code>
+The seller claimed the L1 HTLC (the preimage is public in the claim
+witness): the sats are spent. The preimage opens the blob when its
+ciphertext is held.
+
+**Kind**: instance method of [<code>Market</code>](#Market)  
+**Returns**: <code>Object</code> \| <code>null</code> - session  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| settlementId | <code>string</code> |  |
+| opts | <code>Object</code> | `{ preimageHex, txid? }` |
+
+<a name="Market+observeTransaction"></a>
+
+### market.observeTransaction(txHex, [opts]) ⇒ <code>Array.&lt;Object&gt;</code>
+Classify a transaction against our L1 HTLCs: an output paying a session's
+HTLC address is its funding; an input spending a funded HTLC is the
+seller's claim (its witness carries the preimage) or our refund.
+
+**Kind**: instance method of [<code>Market</code>](#Market)  
+**Returns**: <code>Array.&lt;Object&gt;</code> - `{ settlementId, kind: ('funding'|'claim'|'refund') }`  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| txHex | <code>string</code> |  |
+| [opts] | <code>Object</code> | `{ confirmed: boolean }` — a refund releases budget only once confirmed |
+
+<a name="Market+onBlock"></a>
+
+### market.onBlock(opts) ⇒ <code>Array.&lt;Object&gt;</code>
+New-block hook: record the tip and observe the block's transactions as
+confirmed.
+
+**Kind**: instance method of [<code>Market</code>](#Market)  
+**Returns**: <code>Array.&lt;Object&gt;</code> - observations  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| opts | <code>Object</code> | `{ height, txHexes? }` |
+
 <a name="Market+export"></a>
 
 ### market.export() ⇒ <code>Object</code>
@@ -19688,11 +24064,26 @@ Mark a session funded and request delivery.
 <a name="Market+import"></a>
 
 ### market.import(snapshot) ⇒ [<code>Market</code>](#Market)
+Restore a snapshot. Reserved and locked sats are recomputed from the
+sessions; a session caught mid-`pay` becomes `funding_unknown` (it may
+have paid). Channel purchases are reconciled against the attached book.
+
 **Kind**: instance method of [<code>Market</code>](#Market)  
 
 | Param | Type | Description |
 | --- | --- | --- |
 | snapshot | <code>Object</code> | output of `export()` |
+
+<a name="Market.normalizePayResult"></a>
+
+### Market.normalizePayResult(res) ⇒ <code>Object</code> \| <code>null</code>
+`pay` result → `{ txid, txHex }`.
+
+**Kind**: static method of [<code>Market</code>](#Market)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| res | <code>\*</code> | `txid` string or `{ txid, txHex|hex }` |
 
 <a name="Redis"></a>
 
@@ -20276,6 +24667,42 @@ Closes the connection to the ZMQ publisher.
 Deprecated 2021-11-06 — use [FabricState](FabricState) (<code>types/state</code>). <code>Scribe</code> was merged into <code>State</code>.
 
 **Kind**: global class  
+<a name="leafScripts"></a>
+
+## leafScripts
+Buffer-backed leaves for control-block / PSBT helpers.
+
+**Kind**: global variable  
+<a name="spendAddress"></a>
+
+## spendAddress
+Alias aligned with ARC / tracked summaries.
+
+**Kind**: global variable  
+<a name="YEAR_BLOCKS"></a>
+
+## YEAR\_BLOCKS
+Blocks in a year (10-minute blocks).
+
+**Kind**: global constant  
+<a name="FIDELITY_LOCKTIME_GRID"></a>
+
+## FIDELITY\_LOCKTIME\_GRID
+Mainnet bond locktimes are multiples of this height.
+
+**Kind**: global constant  
+<a name="FIDELITY_MAX_CERT_BLOCKS"></a>
+
+## FIDELITY\_MAX\_CERT\_BLOCKS
+Furthest ahead a certificate may expire: about a year.
+
+**Kind**: global constant  
+<a name="LEAF_VERSION"></a>
+
+## LEAF\_VERSION
+Leaf version for BIP342 tapscript.
+
+**Kind**: global constant  
 <a name="CHANNEL_BODY_TYPES"></a>
 
 ## CHANNEL\_BODY\_TYPES
@@ -20292,6 +24719,146 @@ Channel defaults (Lightning-derived). Policy fields are negotiated at
 `ChannelOpen` — the stricter value wins. HTLCs are never trimmed: every one
 carries at least `HTLC_MINIMUM_SATS`, so it has a commitment output its
 receiver can claim on-chain.
+
+`htlcClaimWindowBlocks` is part of the HTLC script (not negotiated): on the
+receiver's own commitment the sender's timeout waits `toSelfDelay +
+htlcClaimWindowBlocks` after confirmation, so the receiver's CSV-delayed
+claim always has that many blocks to itself, whatever the CLTV.
+`minToSelfDelay` / `maxToSelfDelay` / `minChannelLifetimeBlocks` are local
+(non-funder) acceptance limits, never negotiated.
+
+**Kind**: global constant  
+<a name="MAX_TRANSFERS"></a>
+
+## MAX\_TRANSFERS
+Balance transfers remembered per session (newest kept).
+
+**Kind**: global constant  
+<a name="MAX_SETTLED_CREDITS"></a>
+
+## MAX\_SETTLED\_CREDITS
+Settled credit rows kept (open rows are bounded by the credit limit).
+
+**Kind**: global constant  
+<a name="MAX_FEE_PPM"></a>
+
+## MAX\_FEE\_PPM
+Highest proportional maker fee an offer may ask: 5%.
+
+**Kind**: global constant  
+<a name="MIN_COINJOIN_SATS"></a>
+
+## MIN\_COINJOIN\_SATS
+Smallest coinjoin amount.
+
+**Kind**: global constant  
+<a name="DUST_SATS"></a>
+
+## DUST\_SATS
+P2TR dust limit: change below this is dropped (it goes to miners).
+
+**Kind**: global constant  
+<a name="MAX_MAKERS"></a>
+
+## MAX\_MAKERS
+Most makers in one round.
+
+**Kind**: global constant  
+<a name="MAX_MAKER_INPUTS"></a>
+
+## MAX\_MAKER\_INPUTS
+Most inputs one maker may contribute.
+
+**Kind**: global constant  
+<a name="DEFAULT_MIN_EQUAL_OUTPUTS"></a>
+
+## DEFAULT\_MIN\_EQUAL\_OUTPUTS
+Fewest equal outputs a maker accepts as a coinjoin (taker + one maker).
+
+**Kind**: global constant  
+<a name="MAX_PSBT_CHARS"></a>
+
+## MAX\_PSBT\_CHARS
+Largest PSBT (base64 characters) a round message may carry: sealed, it must
+still fit one `CONTRACT_MESSAGE` under `MAX_MESSAGE_SIZE` (32 KiB).
+
+**Kind**: global constant  
+<a name="SEAL_NAMESPACE"></a>
+
+## SEAL\_NAMESPACE
+Contract namespace for sealed round messages and `CONTRACT_MESSAGE` bodies.
+
+**Kind**: global constant  
+<a name="SEALED_TYPE"></a>
+
+## SEALED\_TYPE
+Body type of a sealed round message.
+
+**Kind**: global constant  
+<a name="WEIGHT_OVERHEAD"></a>
+
+## WEIGHT\_OVERHEAD
+Transaction weight, in weight units: overhead, P2TR key-path input, P2TR output.
+
+**Kind**: global constant  
+<a name="SIGNER_FIELD"></a>
+
+## SIGNER\_FIELD
+Which field carries each body's author key.
+
+**Kind**: global constant  
+<a name="ROUND_TYPES"></a>
+
+## ROUND\_TYPES
+Round messages: sealed between taker and maker, never gossiped.
+
+**Kind**: global constant  
+<a name="PODLE_MAX_INDEX"></a>
+
+## PODLE\_MAX\_INDEX
+Distinct commitments one UTXO can produce (indices `0 … PODLE_MAX_INDEX − 1`).
+
+**Kind**: global constant  
+<a name="PODLE_TAG"></a>
+
+## PODLE\_TAG
+Domain tag mixed into the DLEQ challenge.
+
+**Kind**: global constant  
+<a name="PODLE_MIN_AGE_CONFS"></a>
+
+## PODLE\_MIN\_AGE\_CONFS
+Default: the commitment UTXO must be this many blocks deep.
+
+**Kind**: global constant  
+<a name="PODLE_MIN_VALUE_PCT"></a>
+
+## PODLE\_MIN\_VALUE\_PCT
+Default: the commitment UTXO must be worth this percent of the coinjoin amount.
+
+**Kind**: global constant  
+<a name="PODLE_BLACKLIST_SIZE"></a>
+
+## PODLE\_BLACKLIST\_SIZE
+Default size of a maker's used-commitment memory.
+
+**Kind**: global constant  
+<a name="DEFAULT_MAX_SIGNS"></a>
+
+## DEFAULT\_MAX\_SIGNS
+Times a maker will sign a rebuilt transaction in one round.
+
+**Kind**: global constant  
+<a name="LOCKTIME_SLACK_BLOCKS"></a>
+
+## LOCKTIME\_SLACK\_BLOCKS
+Blocks the transaction's `nLockTime` may run ahead of the maker's tip.
+
+**Kind**: global constant  
+<a name="INPUT_HEADROOM"></a>
+
+## INPUT\_HEADROOM
+Extra inputs budgeted when the taker selects coins.
 
 **Kind**: global constant  
 <a name="GCM_TAG_BYTES"></a>
@@ -20321,7 +24888,7 @@ Canonical `type` for an exported telemetry record.
 <a name="SCORE_UNKNOWN"></a>
 
 ## SCORE\_UNKNOWN
-Neutral score for a provider with no observations.
+Score for a provider with no observations.
 
 **Kind**: global constant  
 <a name="SCORE_MAX"></a>
@@ -20330,10 +24897,70 @@ Neutral score for a provider with no observations.
 Maximum provider score.
 
 **Kind**: global constant  
+<a name="SCORE_INVENTORY_ONLY"></a>
+
+## SCORE\_INVENTORY\_ONLY
+A provider seen only in inventories ranks below a neutral record (500).
+
+**Kind**: global constant  
+<a name="MAX_PROVIDERS"></a>
+
+## MAX\_PROVIDERS
+Providers tracked before the least recently updated unpenalized one is evicted.
+
+**Kind**: global constant  
+<a name="MAX_OFFERS"></a>
+
+## MAX\_OFFERS
+Offer rows held before the oldest is evicted.
+
+**Kind**: global constant  
+<a name="MAX_EVIDENCE"></a>
+
+## MAX\_EVIDENCE
+Fraud-proof evidence ids remembered for dedupe.
+
+**Kind**: global constant  
 <a name="HOP_PENALTY_MS"></a>
 
 ## HOP\_PENALTY\_MS
 Each extra gossip hop counts as this many milliseconds of latency.
+
+**Kind**: global constant  
+<a name="DUST_SATS"></a>
+
+## DUST\_SATS
+Smallest output the claim / refund transaction may pay.
+
+**Kind**: global constant  
+<a name="DEFAULT_FEE_SATS"></a>
+
+## DEFAULT\_FEE\_SATS
+Fee used when a spend names none.
+
+**Kind**: global constant  
+<a name="LOCKTIME_THRESHOLD"></a>
+
+## LOCKTIME\_THRESHOLD
+BIP65: lock values at or above this are unix times, not heights.
+
+**Kind**: global constant  
+<a name="TAPROOT_INTERNAL_NUMS"></a>
+
+## TAPROOT\_INTERNAL\_NUMS
+BIP341-style NUMS x-only internal key (script-path spend only).
+
+**Kind**: global constant  
+<a name="CLTV_TIMESTAMP_THRESHOLD"></a>
+
+## CLTV\_TIMESTAMP\_THRESHOLD
+BIP65 LOCKTIME_THRESHOLD: nLockTime / CLTV values ≥ this are unix timestamps.
+
+**Kind**: global constant  
+<a name="MAX_LOCKTIME"></a>
+
+## MAX\_LOCKTIME
+nLockTime / nSequence max (2^32 − 1). Avoid a 32-bit hex literal.
 
 **Kind**: global constant  
 <a name="EXIT_KINDS"></a>
@@ -20346,6 +24973,62 @@ Exit kinds.
 
 ## EXIT\_SIGNATURE\_TYPE
 `CONTRACT_MESSAGE` body carrying one exit signature.
+
+**Kind**: global constant  
+<a name="MAX_PREMIUM_PPM"></a>
+
+## MAX\_PREMIUM\_PPM
+Largest premium (either sign) an order may quote: ±50%.
+
+**Kind**: global constant  
+<a name="DEFAULT_MIN_CLAIM_BLOCKS"></a>
+
+## DEFAULT\_MIN\_CLAIM\_BLOCKS
+Blocks the L2 giver needs left on the HTLC to claim after paying.
+
+**Kind**: global constant  
+<a name="DEFAULT_MIN_CONFIRMATIONS"></a>
+
+## DEFAULT\_MIN\_CONFIRMATIONS
+HTLC confirmations before the L2 giver pays.
+
+**Kind**: global constant  
+<a name="DEFAULT_INVOICE_MARGIN_SECONDS"></a>
+
+## DEFAULT\_INVOICE\_MARGIN\_SECONDS
+Invoice must expire at least this long before the refund lock opens.
+
+**Kind**: global constant  
+<a name="MIN_INVOICE_EXPIRY_SECONDS"></a>
+
+## MIN\_INVOICE\_EXPIRY\_SECONDS
+Shortest expiry a swap invoice may carry.
+
+**Kind**: global constant  
+<a name="MIN_REFUND_LOCK_BLOCKS"></a>
+
+## MIN\_REFUND\_LOCK\_BLOCKS
+Shortest refund lock an order may ask for: room for the claim, the funding
+confirmations, one block of slack, the invoice margin, and the shortest
+invoice, at the default block time.
+
+**Kind**: global constant  
+<a name="MAX_REFUND_LOCK_BLOCKS"></a>
+
+## MAX\_REFUND\_LOCK\_BLOCKS
+Longest refund lock an order may ask for (about two weeks of blocks).
+
+**Kind**: global constant  
+<a name="DEFAULT_INVOICE_EXPIRY_SECONDS"></a>
+
+## DEFAULT\_INVOICE\_EXPIRY\_SECONDS
+BOLT11 default expiry when the invoice names none.
+
+**Kind**: global constant  
+<a name="SIGNER_FIELD"></a>
+
+## SIGNER\_FIELD
+Which field carries each body's author key.
 
 **Kind**: global constant  
 <a name="Text"></a>
@@ -20835,6 +25518,732 @@ Join a list with an Oxford comma (delegates to [module:functions/oxfordJoin](mod
 Accept a block height, a `{ type, height|unix|blocks }` lock, or a normalized lock. @private
 
 **Kind**: global function  
+<a name="fidelityPath"></a>
+
+## fidelityPath(index, [networkName]) ⇒ <code>string</code>
+BIP-32 path of the `index`th bond key: `m/86'/coin'/0'/2/index`
+(chain 2 beside the BIP-86 receive and change chains).
+
+**Kind**: global function  
+
+| Param | Type | Default |
+| --- | --- | --- |
+| index | <code>number</code> |  | 
+| [networkName] | <code>string</code> | <code>&quot;&#x27;regtest&#x27;&quot;</code> | 
+
+<a name="isValidFidelityLocktime"></a>
+
+## isValidFidelityLocktime(locktime, [networkName]) ⇒ <code>boolean</code>
+Whether a bond may lock until `locktime` on this network: a block height,
+on the mainnet grid.
+
+**Kind**: global function  
+
+| Param | Type | Default |
+| --- | --- | --- |
+| locktime | <code>number</code> |  | 
+| [networkName] | <code>string</code> | <code>&quot;&#x27;regtest&#x27;&quot;</code> | 
+
+<a name="fidelityLocktimes"></a>
+
+## fidelityLocktimes(opts) ⇒ <code>Array.&lt;number&gt;</code>
+The next `count` locktimes a new bond may use, after `tipHeight`.
+
+**Kind**: global function  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| opts | <code>Object</code> |  |  |
+| opts.tipHeight | <code>number</code> |  |  |
+| [opts.networkName] | <code>string</code> | <code>&quot;&#x27;regtest&#x27;&quot;</code> |  |
+| [opts.count] | <code>number</code> | <code>12</code> |  |
+| [opts.step] | <code>number</code> |  | blocks between choices (mainnet: the grid) |
+
+<a name="buildFidelity"></a>
+
+## buildFidelity(opts) ⇒ <code>Object</code>
+The bond output: NUMS internal key, one CLTV leaf.
+
+**Kind**: global function  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| opts | <code>Object</code> |  |  |
+| [opts.networkName] | <code>string</code> | <code>&quot;&#x27;regtest&#x27;&quot;</code> |  |
+| opts.bondPubkey | <code>string</code> |  | compressed or x-only |
+| opts.locktime | <code>number</code> |  | block height |
+
+<a name="prepareFidelityRedeem"></a>
+
+## prepareFidelityRedeem(opts) ⇒ <code>string</code>
+Unsigned PSBT spending a bond after its locktime (`nLockTime` = locktime,
+sequence `0xfffffffe` so CLTV applies).
+
+**Kind**: global function  
+**Returns**: <code>string</code> - PSBT base64  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| opts | <code>Object</code> |  |  |
+| [opts.networkName] | <code>string</code> | <code>&quot;&#x27;regtest&#x27;&quot;</code> |  |
+| opts.bond | <code>Object</code> |  | `{ txid, vout, valueSats, locktime, bondXOnly }` |
+| opts.destinationAddress | <code>string</code> |  |  |
+| [opts.feeSats] | <code>number</code> | <code>500</code> |  |
+
+<a name="signFidelityRedeem"></a>
+
+## signFidelityRedeem(psbtBase64, bondPriv32) ⇒ <code>Object</code>
+Sign a bond redeem PSBT with the bond key and extract the transaction.
+
+**Kind**: global function  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| psbtBase64 | <code>string</code> | [prepareFidelityRedeem](#prepareFidelityRedeem) output |
+| bondPriv32 | <code>Buffer</code> \| <code>string</code> |  |
+
+<a name="signFidelityCertificate"></a>
+
+## signFidelityCertificate(opts) ⇒ <code>Object</code>
+Sign a certificate letting `makerPubkey` advertise this bond until block
+`certExpiresAt`.
+
+**Kind**: global function  
+**Returns**: <code>Object</code> - bond descriptor for `CoinjoinOffer.fidelityBond`  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| opts | <code>Object</code> |  |
+| opts.network | <code>string</code> |  |
+| opts.txid | <code>string</code> |  |
+| opts.vout | <code>number</code> |  |
+| opts.locktime | <code>number</code> |  |
+| opts.makerPubkey | <code>string</code> | compressed offer key |
+| opts.certExpiresAt | <code>number</code> | block height |
+| opts.bondPrivateKey | <code>Buffer</code> \| <code>string</code> |  |
+
+<a name="normalizeFidelity"></a>
+
+## normalizeFidelity(input) ⇒ <code>Object</code>
+Shape of `CoinjoinOffer.fidelityBond`.
+
+**Kind**: global function  
+
+| Param | Type |
+| --- | --- |
+| input | <code>Object</code> | 
+
+<a name="verifyFidelityCertificate"></a>
+
+## verifyFidelityCertificate(bond, opts) ⇒ <code>boolean</code>
+Check the bond key signed this certificate for `makerPubkey` on `network`.
+
+**Kind**: global function  
+
+| Param | Type |
+| --- | --- |
+| bond | <code>Object</code> | 
+| opts | <code>Object</code> | 
+| opts.makerPubkey | <code>string</code> | 
+| opts.network | <code>string</code> | 
+
+<a name="fidelityValue"></a>
+
+## fidelityValue(opts) ⇒ <code>number</code>
+Value of a bond (JoinMarket's formula, heights in place of times):
+`T = (locktime − confirmHeight) / year`, `L = max(0, tip − locktime) / year`,
+`a = max(0, min(1, e^(rT) − 1) − min(1, e^(rL) − 1))`,
+`value = (valueSats × a)^exponent`.
+
+**Kind**: global function  
+
+| Param | Type | Default |
+| --- | --- | --- |
+| opts | <code>Object</code> |  | 
+| opts.valueSats | <code>number</code> |  | 
+| opts.locktime | <code>number</code> |  | 
+| opts.confirmHeight | <code>number</code> |  | 
+| opts.tipHeight | <code>number</code> |  | 
+| [opts.interestRate] | <code>number</code> | <code>0.015</code> | 
+| [opts.exponent] | <code>number</code> | <code>1.3</code> | 
+
+<a name="verifyFidelity"></a>
+
+## verifyFidelity(bond, opts) ⇒ <code>Promise.&lt;{ok: boolean, reason: (string\|null), valueSats: number, confirmHeight: (number\|null), value: number}&gt;</code>
+Verify a bond on chain for one maker. `bitcoin.getTxOut(txid, vout)` must
+resolve to `{ valueSats, scriptPubKeyHex, confirmations }` for an unspent
+output, else `null`.
+
+**Kind**: global function  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| bond | <code>Object</code> |  | `CoinjoinOffer.fidelityBond` |
+| opts | <code>Object</code> |  |  |
+| opts.makerPubkey | <code>string</code> |  |  |
+| opts.network | <code>string</code> |  |  |
+| opts.bitcoin | <code>Object</code> |  | `{ getTipHeight(), getTxOut(txid, vout) }` |
+| [opts.tipHeight] | <code>number</code> |  | skip `getTipHeight` |
+| [opts.minConfs] | <code>number</code> | <code>6</code> |  |
+| [opts.maxCertBlocks] | <code>number</code> |  |  |
+
+<a name="createBlobMerkleTree"></a>
+
+## createBlobMerkleTree(hashes) ⇒ [<code>Tree</code>](#Tree)
+Storage tree over raw 32-byte blob hashes (its proofs are [Tree](#Tree) proofs).
+
+**Kind**: global function  
+
+| Param | Type |
+| --- | --- |
+| hashes | <code>Array.&lt;string&gt;</code> | 
+
+<a name="expireHeight"></a>
+
+## expireHeight(h) ⇒ <code>number</code>
+**Kind**: global function  
+**Returns**: <code>number</code> - CLTV expiry height (0 when none)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| h | <code>Object</code> | HTLC row |
+
+<a name="randomRoundId"></a>
+
+## randomRoundId() ⇒ <code>string</code>
+**Kind**: global function  
+**Returns**: <code>string</code> - 32 random bytes as hex  
+<a name="normalizeOffer"></a>
+
+## normalizeOffer(input) ⇒ <code>Object</code>
+**Kind**: global function  
+**Returns**: <code>Object</code> - normalized `CoinjoinOffer` body (keeps `signature`)  
+
+| Param | Type |
+| --- | --- |
+| input | <code>Object</code> | 
+
+<a name="normalizeCancel"></a>
+
+## normalizeCancel(input) ⇒ <code>Object</code>
+**Kind**: global function  
+**Returns**: <code>Object</code> - normalized `CoinjoinOfferCancel` body  
+
+| Param | Type |
+| --- | --- |
+| input | <code>Object</code> | 
+
+<a name="normalizeFill"></a>
+
+## normalizeFill(input) ⇒ <code>Object</code>
+Taker → maker: fill `amountSats` of an offer. `takerPubkey` is a fresh key
+for this round only (it signs the taker's bodies and receives sealed
+replies), so makers never learn the taker's identity.
+
+**Kind**: global function  
+**Returns**: <code>Object</code> - normalized `CoinjoinFill` body  
+
+| Param | Type |
+| --- | --- |
+| input | <code>Object</code> | 
+
+<a name="normalizeFillAck"></a>
+
+## normalizeFillAck(input) ⇒ <code>Object</code>
+Maker → taker: the fill is accepted; `sealPubkey` receives the rest of the
+round.
+
+**Kind**: global function  
+**Returns**: <code>Object</code> - normalized `CoinjoinFillAck` body  
+
+| Param | Type |
+| --- | --- |
+| input | <code>Object</code> | 
+
+<a name="normalizeAuth"></a>
+
+## normalizeAuth(input) ⇒ <code>Object</code>
+Taker → maker: open the PoDLE commitment named in the fill.
+
+**Kind**: global function  
+**Returns**: <code>Object</code> - normalized `CoinjoinAuth` body  
+
+| Param | Type |
+| --- | --- |
+| input | <code>Object</code> | 
+
+<a name="normalizeIoAuth"></a>
+
+## normalizeIoAuth(input) ⇒ <code>Object</code>
+Maker → taker: the maker's inputs and where it wants its coinjoin output
+and change. Inputs may carry an `ownershipSig` ([signOwnership](#signOwnership)).
+
+**Kind**: global function  
+**Returns**: <code>Object</code> - normalized `CoinjoinIoAuth` body  
+
+| Param | Type |
+| --- | --- |
+| input | <code>Object</code> | 
+
+<a name="normalizeTx"></a>
+
+## normalizeTx(input) ⇒ <code>Object</code>
+Taker → maker: the unsigned transaction.
+
+**Kind**: global function  
+**Returns**: <code>Object</code> - normalized `CoinjoinTx` body  
+
+| Param | Type |
+| --- | --- |
+| input | <code>Object</code> | 
+
+<a name="normalizeSig"></a>
+
+## normalizeSig(input) ⇒ <code>Object</code>
+Maker → taker: the transaction with the maker's inputs signed.
+
+**Kind**: global function  
+**Returns**: <code>Object</code> - normalized `CoinjoinSig` body  
+
+| Param | Type |
+| --- | --- |
+| input | <code>Object</code> | 
+
+<a name="randomPrivateKey"></a>
+
+## randomPrivateKey() ⇒ <code>Buffer</code>
+**Kind**: global function  
+**Returns**: <code>Buffer</code> - a random valid private key  
+<a name="sealRoundMessage"></a>
+
+## sealRoundMessage(body, recipientPubkey) ⇒ <code>Object</code>
+Seal a signed round message to its recipient (participant ECDH seal).
+
+**Kind**: global function  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| body | <code>Object</code> | signed round body |
+| recipientPubkey | <code>string</code> | compressed or x-only |
+
+<a name="toContractMessage"></a>
+
+## toContractMessage(value) ⇒ <code>Object</code>
+Wrap a public body (offer, cancel) or a sealed round envelope as a
+`CONTRACT_MESSAGE` body: `buildMessage('CONTRACT_MESSAGE', toContractMessage(x))`.
+Round bodies must be sealed first.
+
+**Kind**: global function  
+**Returns**: <code>Object</code> - `{ contract: SEAL_NAMESPACE, ...value }`  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| value | <code>Object</code> | signed offer / cancel, or [sealRoundMessage](#sealRoundMessage) output |
+
+<a name="fromContractMessage"></a>
+
+## fromContractMessage(value) ⇒ <code>Object</code> \| <code>Object</code> \| <code>null</code>
+Read a coinjoin `CONTRACT_MESSAGE` body (the parsed legacy JSON). Public
+bodies are verified; sealed envelopes are returned for
+[openRoundMessage](#openRoundMessage) (or for relaying when `to` is not ours).
+Unsealed round bodies and other contracts return `null`.
+
+**Kind**: global function  
+
+| Param | Type |
+| --- | --- |
+| value | <code>Object</code> | 
+
+<a name="openRoundMessage"></a>
+
+## openRoundMessage(envelope, privateKey) ⇒ <code>Object</code>
+Open a sealed round message with the recipient's private key and verify
+the body inside.
+
+**Kind**: global function  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| envelope | <code>Object</code> | [sealRoundMessage](#sealRoundMessage) output |
+| privateKey | <code>Buffer</code> \| <code>string</code> |  |
+
+<a name="makerFee"></a>
+
+## makerFee(offer, amountSats) ⇒ <code>number</code>
+The maker's fee for a coinjoin of `amountSats`: `feeSats + ⌊amount × feePpm / 1e6⌋`.
+
+**Kind**: global function  
+
+| Param | Type |
+| --- | --- |
+| offer | <code>Object</code> | 
+| amountSats | <code>number</code> | 
+
+<a name="makerChange"></a>
+
+## makerChange(opts) ⇒ <code>number</code>
+Change owed to a maker: its inputs, less the coinjoin output, plus its
+fee, less its miner-fee contribution. Change under [DUST_SATS](#DUST_SATS) is
+not paid (0).
+
+**Kind**: global function  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| opts | <code>Object</code> |  |  |
+| opts.inputSats | <code>number</code> |  | sum of the maker's inputs |
+| opts.amountSats | <code>number</code> |  |  |
+| opts.cjfeeSats | <code>number</code> |  |  |
+| [opts.txFeeContributionSats] | <code>number</code> | <code>0</code> |  |
+
+<a name="estimateVsize"></a>
+
+## estimateVsize(inputs, outputs) ⇒ <code>number</code>
+Virtual size of a transaction with only P2TR key-path inputs and P2TR outputs.
+
+**Kind**: global function  
+
+| Param | Type |
+| --- | --- |
+| inputs | <code>number</code> | 
+| outputs | <code>number</code> | 
+
+<a name="planCoinjoin"></a>
+
+## planCoinjoin(opts) ⇒ <code>Object</code>
+Outputs and fees for a round. Makers are paid exactly their offer's fee;
+the taker pays the miner fee less the makers' contributions, and takes
+what is left as change (dropped below dust).
+
+**Kind**: global function  
+**Returns**: <code>Object</code> - plan `{ amountSats, inputs, outputs, minerFeeSats, vsize, feeRateSatVb, takerChangeSats, totalMakerFeesSats, makers }`  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| opts | <code>Object</code> |  |  |
+| opts.amountSats | <code>number</code> |  |  |
+| opts.feeRateSatVb | <code>number</code> |  |  |
+| opts.taker | <code>Object</code> |  | `{ inputs, coinjoinScriptHex, changeScriptHex }` |
+| opts.makers | <code>Array.&lt;Object&gt;</code> |  | `{ id, offer, inputs, coinjoinScriptHex, changeScriptHex }` |
+| [opts.minMakers] | <code>number</code> | <code>2</code> |  |
+
+<a name="buildPsbt"></a>
+
+## buildPsbt(opts) ⇒ <code>Object</code>
+Build the unsigned coinjoin PSBT (version 2, BIP-69, `nLockTime` = tip,
+sequence `0xfffffffe`, witness UTXOs on every input).
+
+**Kind**: global function  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| opts | <code>Object</code> |  | [planCoinjoin](#planCoinjoin) options plus: |
+| [opts.networkName] | <code>string</code> | <code>&quot;&#x27;regtest&#x27;&quot;</code> |  |
+| opts.lockTime | <code>number</code> |  | current tip height (anti fee sniping) |
+
+<a name="unsignedTxid"></a>
+
+## unsignedTxid(psbtBase64) ⇒ <code>string</code>
+The id the transaction will have (key-path spends do not change it).
+
+**Kind**: global function  
+
+| Param | Type |
+| --- | --- |
+| psbtBase64 | <code>string</code> | 
+
+<a name="describePsbt"></a>
+
+## describePsbt(psbtBase64) ⇒ <code>Object</code>
+Inputs and outputs of a PSBT as plain rows.
+
+**Kind**: global function  
+
+| Param | Type |
+| --- | --- |
+| psbtBase64 | <code>string</code> | 
+
+<a name="validateForMaker"></a>
+
+## validateForMaker(opts) ⇒ <code>Object</code>
+Everything a maker must see before signing. It refuses unless its inputs
+are present with the values it named, its coinjoin output pays exactly
+`amountSats`, its change is at least what its offer earns, at least
+`minEqualOutputs` outputs share the coinjoin amount, every input and output
+is P2TR, and nothing else pays the maker's scripts.
+
+**Kind**: global function  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| opts | <code>Object</code> |  |  |
+| opts.psbtBase64 | <code>string</code> |  |  |
+| opts.amountSats | <code>number</code> |  |  |
+| opts.offer | <code>Object</code> |  | the maker's offer |
+| opts.inputs | <code>Array.&lt;Object&gt;</code> |  | the maker's inputs (`CoinjoinIoAuth.inputs`) |
+| opts.coinjoinScriptHex | <code>string</code> |  |  |
+| opts.changeScriptHex | <code>string</code> |  |  |
+| [opts.minEqualOutputs] | <code>number</code> | <code>2</code> |  |
+| [opts.lockTimeMax] | <code>number</code> |  | refuse an `nLockTime` above this height |
+
+<a name="validateForTaker"></a>
+
+## validateForTaker(opts) ⇒ <code>Object</code>
+The taker's check of the final transaction: exactly the planned outputs
+(each maker paid its offer, no more), every planned input, and a feerate
+within bounds.
+
+**Kind**: global function  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| opts | <code>Object</code> |  |  |
+| opts.psbtBase64 | <code>string</code> |  |  |
+| opts.plan | <code>Object</code> |  | [planCoinjoin](#planCoinjoin) output |
+| [opts.minFeeRateSatVb] | <code>number</code> | <code>1</code> |  |
+| [opts.maxFeeRateSatVb] | <code>number</code> | <code>500</code> |  |
+
+<a name="taprootOutputPrivateKey"></a>
+
+## taprootOutputPrivateKey(internalPriv32) ⇒ <code>Buffer</code>
+BIP-341 output private key for a BIP-86 key-path-only P2TR (internal key, no scripts).
+
+**Kind**: global function  
+**Returns**: <code>Buffer</code> - tweaked private key  
+
+| Param | Type |
+| --- | --- |
+| internalPriv32 | <code>Buffer</code> \| <code>string</code> | 
+
+<a name="taprootKeyPath"></a>
+
+## taprootKeyPath(internalPriv32, [networkName]) ⇒ <code>Object</code>
+Key-path-only P2TR for an internal private key.
+
+**Kind**: global function  
+
+| Param | Type | Default |
+| --- | --- | --- |
+| internalPriv32 | <code>Buffer</code> \| <code>string</code> |  | 
+| [networkName] | <code>string</code> | <code>&quot;&#x27;regtest&#x27;&quot;</code> | 
+
+<a name="signKeyPathInputs"></a>
+
+## signKeyPathInputs(psbtBase64, internalPrivateKeys) ⇒ <code>Object</code>
+Sign the PSBT inputs spent by the given key-path keys (SIGHASH_DEFAULT).
+Inputs owned by other keys are left untouched.
+
+**Kind**: global function  
+**Returns**: <code>Object</code> - indexes signed  
+
+| Param | Type |
+| --- | --- |
+| psbtBase64 | <code>string</code> | 
+| internalPrivateKeys | <code>Array.&lt;(Buffer\|string)&gt;</code> | 
+
+<a name="mergeMakerSignatures"></a>
+
+## mergeMakerSignatures(basePsbtBase64, makerPsbtBase64, makerInputs) ⇒ <code>string</code>
+Copy a maker's signatures for its own inputs into the taker's PSBT. Refuses
+a PSBT for another transaction, a missing or invalid signature on any of the
+maker's inputs; nothing else is taken from the maker's copy.
+
+**Kind**: global function  
+**Returns**: <code>string</code> - merged PSBT (base64)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| basePsbtBase64 | <code>string</code> | the taker's copy |
+| makerPsbtBase64 | <code>string</code> | the maker's signed copy |
+| makerInputs | <code>Array.&lt;Object&gt;</code> | `{ txid, vout }` rows of that maker |
+
+<a name="finalize"></a>
+
+## finalize(psbtBase64) ⇒ <code>Object</code>
+Finalize every input and extract the transaction.
+
+**Kind**: global function  
+
+| Param | Type |
+| --- | --- |
+| psbtBase64 | <code>string</code> | 
+
+<a name="signOwnership"></a>
+
+## signOwnership(opts) ⇒ <code>string</code>
+Prove control of a key-path UTXO for one round: a BIP340 signature by the
+output key over `SHA256(tag ‖ roundId ‖ txid ‖ vout)`.
+
+**Kind**: global function  
+**Returns**: <code>string</code> - 64-byte signature hex  
+
+| Param | Type |
+| --- | --- |
+| opts | <code>Object</code> | 
+| opts.roundId | <code>string</code> | 
+| opts.txid | <code>string</code> | 
+| opts.vout | <code>number</code> | 
+| opts.internalPrivateKey | <code>Buffer</code> \| <code>string</code> | 
+
+<a name="verifyOwnership"></a>
+
+## verifyOwnership(opts) ⇒ <code>boolean</code>
+**Kind**: global function  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| opts | <code>Object</code> |  |
+| opts.roundId | <code>string</code> |  |
+| opts.input | <code>Object</code> | `{ txid, vout, scriptPubKeyHex, ownershipSig }` |
+
+<a name="validateFill"></a>
+
+## validateFill(offer, fill, [opts]) ⇒ <code>Object</code>
+Check a fill against the offer it names.
+
+**Kind**: global function  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| offer | <code>Object</code> | normalized offer |
+| fill | <code>Object</code> | normalized fill |
+| [opts] | <code>Object</code> |  |
+| [opts.now] | <code>number</code> | ms |
+
+<a name="podleGenerator"></a>
+
+## podleGenerator(index) ⇒ <code>Object</code>
+Nothing-up-my-sleeve generator `J_index`: the first `SHA256(G ‖ index ‖ counter)`
+that is a valid x coordinate, lifted to even y. Nobody knows `log_G(J)`.
+
+**Kind**: global function  
+**Returns**: <code>Object</code> - noble `Point`  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| index | <code>number</code> | 0 … [PODLE_MAX_INDEX](#PODLE_MAX_INDEX) − 1 |
+
+<a name="podleCommitment"></a>
+
+## podleCommitment(p2Hex) ⇒ <code>string</code>
+The commitment for a `P2` point.
+
+**Kind**: global function  
+**Returns**: <code>string</code> - 64 hex characters  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| p2Hex | <code>string</code> | compressed point |
+
+<a name="generatePodle"></a>
+
+## generatePodle(opts) ⇒ <code>Object</code>
+Taker: commit to a UTXO it owns.
+
+**Kind**: global function  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| opts | <code>Object</code> |  |  |
+| opts.privateKey | <code>Buffer</code> \| <code>string</code> |  | 32-byte private key of the UTXO's P2TR output key |
+| opts.utxo | <code>Object</code> |  | `{ txid, vout }` |
+| [opts.index] | <code>number</code> | <code>0</code> | which of the UTXO's commitments to use |
+
+<a name="verifyPodle"></a>
+
+## verifyPodle(opts) ⇒ <code>Object</code>
+Maker: check a reveal against the commitment it was promised.
+
+**Kind**: global function  
+
+| Param | Type |
+| --- | --- |
+| opts | <code>Object</code> | 
+| opts.commitment | <code>string</code> | 
+| opts.reveal | <code>Object</code> | 
+
+<a name="checkPodleUtxo"></a>
+
+## checkPodleUtxo(opts) ⇒ <code>Object</code>
+Maker: check the revealed UTXO itself, as read from the chain. The output
+must be P2TR to `P`'s x coordinate, old enough, and large enough for the
+coinjoin it is used for.
+
+**Kind**: global function  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| opts | <code>Object</code> |  |  |
+| opts.reveal | <code>Object</code> |  |  |
+| opts.utxo | <code>Object</code> \| <code>null</code> |  | `{ scriptPubKeyHex, valueSats, confirmations }` (`null` = spent / unknown) |
+| opts.amountSats | <code>number</code> |  | coinjoin amount |
+| [opts.minAgeConfs] | <code>number</code> | <code>5</code> |  |
+| [opts.minValuePct] | <code>number</code> | <code>20</code> |  |
+
+<a name="nextPodleIndex"></a>
+
+## nextPodleIndex(used) ⇒ <code>number</code> \| <code>null</code>
+Lowest commitment index the taker has not used for a UTXO.
+
+**Kind**: global function  
+**Returns**: <code>number</code> \| <code>null</code> - `null` once the UTXO is exhausted  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| used | <code>Array.&lt;number&gt;</code> | indices already spent on rounds |
+
+<a name="descriptorPrivateKey"></a>
+
+## descriptorPrivateKey(info, descriptors) ⇒ <code>Buffer</code>
+Internal private key for a wallet address, from bitcoind `getaddressinfo`
+and `listdescriptors true` output (`tr(…/*)` descriptors only).
+
+**Kind**: global function  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| info | <code>Object</code> | `getaddressinfo` result |
+| descriptors | <code>Array.&lt;Object&gt;</code> | `listdescriptors true` `descriptors` |
+
+<a name="envelopeRecipient"></a>
+
+## envelopeRecipient(envelope) ⇒ <code>string</code> \| <code>null</code>
+Whose round an envelope belongs to: the x-only key it is sealed to.
+
+**Kind**: global function  
+
+| Param | Type |
+| --- | --- |
+| envelope | <code>Object</code> | 
+
+<a name="memoryWallet"></a>
+
+## memoryWallet(opts) ⇒ <code>Object</code>
+Test helper: a wallet adapter over in-memory P2TR coins and their keys.
+
+**Kind**: global function  
+**Returns**: <code>Object</code> - wallet adapter (plus `coins`, `locked`)  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| opts | <code>Object</code> |  |  |
+| opts.coins | <code>Array.&lt;Object&gt;</code> |  | `{ txid, vout, valueSats, internalPrivateKey, confirmations }` |
+| [opts.network] | <code>string</code> | <code>&quot;&#x27;regtest&#x27;&quot;</code> |  |
+
+<a name="memoryChain"></a>
+
+## memoryChain(opts) ⇒ <code>Object</code>
+Test helper: a chain adapter over a map of unspent outputs.
+
+**Kind**: global function  
+**Returns**: <code>Object</code> - chain adapter (plus `broadcasts`)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| opts | <code>Object</code> |  |
+| opts.utxos | <code>Map</code> | `txid:vout` → `{ valueSats, scriptPubKeyHex, confirmations }` |
+| opts.tip | <code>Object</code> | `{ height }` |
+
 <a name="offerKey"></a>
 
 ## offerKey(row) ⇒ <code>string</code>
@@ -20845,6 +26254,827 @@ Stable key for one offer row.
 | Param | Type |
 | --- | --- |
 | row | <code>object</code> | 
+
+<a name="createDocumentPurchaseSession"></a>
+
+## createDocumentPurchaseSession(opts) ⇒ <code>Object</code>
+A buyer/seller document purchase session record (whole document or one blob).
+
+**Kind**: global function  
+
+| Param | Type |
+| --- | --- |
+| opts | <code>Object</code> | 
+| opts.documentId | <code>string</code> | 
+| opts.seller | <code>string</code> | 
+| opts.contentHashHex | <code>string</code> | 
+| opts.amountSats | <code>number</code> | 
+| opts.paymentAddress | <code>string</code> | 
+| [opts.bitcoinUri] | <code>string</code> | 
+| [opts.network] | <code>string</code> | 
+| [opts.blobIndex] | <code>number</code> | 
+| [opts.blobTotal] | <code>number</code> | 
+| [opts.htlc] | <code>Object</code> | 
+
+<a name="isDuplicateSettlement"></a>
+
+## isDuplicateSettlement(paidKeys, session) ⇒ <code>boolean</code>
+True when this (documentId, blobIndex, contentHash) was already settled.
+
+**Kind**: global function  
+
+| Param | Type |
+| --- | --- |
+| paidKeys | <code>Set</code> \| <code>Map</code> \| <code>Object</code> | 
+| session | <code>Object</code> | 
+
+<a name="rememberSettlement"></a>
+
+## rememberSettlement(paidKeys, session)
+**Kind**: global function  
+
+| Param | Type |
+| --- | --- |
+| paidKeys | <code>Set</code> \| <code>Map</code> \| <code>Object</code> | 
+| session | <code>Object</code> | 
+
+<a name="findSession"></a>
+
+## findSession(store, key) ⇒ <code>Object</code> \| <code>null</code>
+**Kind**: global function  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| store | <code>Map</code> \| <code>Object</code> |  |
+| key | <code>string</code> | settlementId or documentId |
+
+<a name="listRefundCandidates"></a>
+
+## listRefundCandidates(store, tipHeight, [opts]) ⇒ <code>Array.&lt;Object&gt;</code>
+Classify purchase sessions for refund listing.
+
+**Kind**: global function  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| store | <code>Map</code> \| <code>Iterable</code> \| <code>Object</code> |  | purchase sessions |
+| tipHeight | <code>number</code> \| <code>null</code> |  |  |
+| [opts] | <code>Object</code> |  |  |
+| [opts.filter] | <code>string</code> | <code>&quot;&#x27;outstanding&#x27;&quot;</code> | outstanding|mature|failed|pending|refunded|all |
+
+<a name="computeRelayFee"></a>
+
+## computeRelayFee(policy, maxSatsIn) ⇒ <code>Object</code>
+Fee a private `DocumentRequest` relay skims from the buyer's budget.
+
+**Kind**: global function  
+
+| Param | Type |
+| --- | --- |
+| policy | <code>Object</code> | 
+| maxSatsIn | <code>number</code> | 
+
+<a name="buildForwardedDocumentRequest"></a>
+
+## buildForwardedDocumentRequest(inbound, policy) ⇒ <code>Object</code>
+Rewrite an inbound `DocumentRequest` for the next hop: a fresh route id, one
+hop fewer, and the budget less this relay's fee.
+
+**Kind**: global function  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| inbound | <code>Object</code> | parsed DocumentRequest body |
+| policy | <code>Object</code> |  |
+
+<a name="assertMonotoneBudget"></a>
+
+## assertMonotoneBudget(maxSatsIn, maxSatsOut) ⇒ <code>boolean</code>
+**Kind**: global function  
+**Returns**: <code>boolean</code> - the forwarded budget is smaller and still at least 1 sat  
+
+| Param | Type |
+| --- | --- |
+| maxSatsIn | <code>number</code> | 
+| maxSatsOut | <code>number</code> | 
+
+<a name="paginateInventoryItems"></a>
+
+## paginateInventoryItems(items, [opts]) ⇒ <code>Object</code>
+Split `P2P_INVENTORY_RESPONSE` items into pages whose JSON fits one AMP
+frame. Items that fit are packed greedily. An item larger than a page (e.g.
+a sealed document with ~130 per-blob rows) is repeated with consecutive
+slices of its `blobs` (`blobsPartial: true`) and its `documentBlobIndex`
+leaves dropped (`leavesInline: false`); every slice still carries the item
+id, root, and blob total, so a receiving [DocumentBook](#DocumentBook) upserts the
+pages per blob without further work. Items that cannot be made to fit are
+returned in `skipped`.
+
+**Kind**: global function  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| items | <code>Array.&lt;Object&gt;</code> |  |  |
+| [opts] | <code>Object</code> |  |  |
+| [opts.pageBytes] | <code>number</code> | <code>INVENTORY_RESPONSE_PAGE_BYTES</code> | Max JSON bytes of one page's `items` array. |
+
+<a name="tierWhenPath"></a>
+
+## tierWhenPath(state, path) ⇒ <code>\*</code>
+**Kind**: global function  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| state | <code>object</code> | Contract / tip state bag |
+| path | <code>string</code> | JSON-pointer-ish `/a/b` |
+
+<a name="evaluateTierWhen"></a>
+
+## evaluateTierWhen(when, [ctx]) ⇒ <code>boolean</code>
+**Kind**: global function  
+
+| Param | Type |
+| --- | --- |
+| when | <code>object</code> \| <code>null</code> \| <code>undefined</code> | 
+| [ctx] | <code>Object</code> | 
+| [ctx.tipClock] | <code>number</code> | 
+| [ctx.contractState] | <code>Object</code> | 
+
+<a name="normalizeLock"></a>
+
+## normalizeLock() ⇒ <code>Object</code> \| <code>null</code>
+Normalize a lock descriptor `{ type: 'csv'|'cltv', blocks?|height?|unix? }`.
+
+**Kind**: global function  
+<a name="timelockMature"></a>
+
+## timelockMature()
+Whether a relative/absolute lock is mature given chain tip context.
+CSV uses `utxoAgeBlocks` (confirmations / age of the UTXO).
+CLTV uses tip height or median time.
+
+**Kind**: global function  
+<a name="synthesizeDefaultLadder"></a>
+
+## synthesizeDefaultLadder(opts) ⇒ <code>object</code>
+Synthesize the canonical 2-tier authority spend ladder:
+  t0-authority — k-of-n validators/signers (immediate)
+  t1-soft      — after ~csvBlocks (default 144) CSV, a softer rule
+                 (default: 1-of-publisher; optional reduced threshold)
+
+This is the single P2TR surface for Hub Beacon Federation vaults and ARC
+contract spend addresses when keys + network + csvBlocks match.
+
+**Kind**: global function  
+**Returns**: <code>object</code> - normalized spend policy  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| opts | <code>object</code> |  |  |
+| [opts.validators] | <code>Array.&lt;string&gt;</code> |  |  |
+| [opts.validatorPubkeysHex] | <code>Array.&lt;string&gt;</code> |  |  |
+| [opts.threshold] | <code>number</code> |  |  |
+| [opts.publisher] | <code>string</code> |  | soft-tier key when softMode=publisher |
+| [opts.csvBlocks] | <code>number</code> | <code>144</code> | degradation window (BIP68 relative) |
+| [opts.network] | <code>string</code> |  |  |
+| [opts.softMode] | <code>string</code> | <code>&quot;&#x27;publisher&#x27;&quot;</code> | `publisher` | `reduced` |
+| [opts.softThreshold] | <code>number</code> |  | when softMode=reduced (default ceil(k/2)) |
+| [opts.hashlock] | <code>object</code> |  | optional L1 hashlock leaf (`commitmentHex` / `runCommitmentHex`) |
+| [opts.extraLeaves] | <code>Array.&lt;object&gt;</code> |  | additional composable leaves (script / spend / hashlock) |
+| [opts.internalKeyMode] | <code>string</code> |  | `musig2` (default when n≥2) | `nums` (legacy script-path-only).   Historical NUMS vaults MUST pass `nums` — a rebuild does not migrate UTXOs. |
+
+<a name="normalizeContractSpendPolicy"></a>
+
+## normalizeContractSpendPolicy(raw) ⇒ <code>object</code>
+**Kind**: global function  
+**Returns**: <code>object</code> - normalized policy  
+
+| Param | Type |
+| --- | --- |
+| raw | <code>object</code> | 
+
+<a name="policyAfterDecay"></a>
+
+## policyAfterDecay()
+Drop tiers whose until <= trigger lock; clear migrate leaf schedule for child.
+
+**Kind**: global function  
+<a name="normalizeHashlockSpec"></a>
+
+## normalizeHashlockSpec(raw) ⇒ <code>Object</code> \| <code>null</code>
+Normalize optional hashlock leaf options (JSON-safe).
+`commitmentHex` MAY be Machine `runCommitmentHex` or SHA256(preimage).
+
+**Kind**: global function  
+
+| Param | Type |
+| --- | --- |
+| raw | <code>object</code> | 
+
+<a name="normalizeExtraLeafSpecs"></a>
+
+## normalizeExtraLeafSpecs(list) ⇒ <code>Array.&lt;object&gt;</code>
+**Kind**: global function  
+
+| Param | Type |
+| --- | --- |
+| list | <code>unknown</code> | 
+
+<a name="buildHashlockTapscript"></a>
+
+## buildHashlockTapscript(opts) ⇒ <code>Buffer</code>
+Hashlock tapscript: SHA256(preimage) == commitment [+ optional CHECKSIG].
+
+**Kind**: global function  
+
+| Param | Type |
+| --- | --- |
+| opts | <code>Object</code> | 
+| opts.commitmentHex | <code>string</code> | 
+| [opts.pubkeyHex] | <code>string</code> \| <code>null</code> | 
+
+<a name="buildHashlockLeaf"></a>
+
+## buildHashlockLeaf(opts) ⇒ <code>object</code>
+First-class hashlock leaf (optional on authority trees).
+
+**Kind**: global function  
+
+| Param | Type |
+| --- | --- |
+| opts | <code>object</code> | 
+
+<a name="buildSpendLeaf"></a>
+
+## buildSpendLeaf(opts) ⇒ <code>object</code>
+First-class k-of-n spend leaf (composable outside policy tiers).
+
+**Kind**: global function  
+
+| Param | Type |
+| --- | --- |
+| opts | <code>object</code> | 
+
+<a name="buildScriptLeaf"></a>
+
+## buildScriptLeaf(opts) ⇒ <code>object</code>
+Arbitrary tapscript leaf from hex / ASM / Buffer (wallet UI composition).
+
+**Kind**: global function  
+
+| Param | Type |
+| --- | --- |
+| opts | <code>object</code> | 
+
+<a name="normalizeLeaf"></a>
+
+## normalizeLeaf(raw) ⇒ <code>object</code>
+Normalize a leaf descriptor into a Buffer-backed leaf.
+
+**Kind**: global function  
+
+| Param | Type |
+| --- | --- |
+| raw | <code>object</code> | 
+
+<a name="compileLeaves"></a>
+
+## compileLeaves() ⇒ <code>Array.&lt;object&gt;</code>
+Build leaf descriptors for a normalized policy (+ optional hashlock / extras).
+
+**Kind**: global function  
+<a name="scriptTreeFromLeaves"></a>
+
+## scriptTreeFromLeaves(leaves) ⇒ <code>object</code>
+bitcoinjs-lib Taptree is a binary tree of leaves (not a flat list of >2).
+
+**Kind**: global function  
+
+| Param | Type |
+| --- | --- |
+| leaves | <code>Array.&lt;{script: Buffer}&gt;</code> | 
+
+<a name="composeTaprootTree"></a>
+
+## composeTaprootTree(opts) ⇒ <code>object</code>
+Compose an arbitrary Taproot tree for wallet UIs / custom scripts.
+Policy ladder leaves come first; `hashlock` / `extraLeaves` append.
+Adding optional leaves **changes** the address vs ladder-only.
+
+**Kind**: global function  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| opts | <code>object</code> |  |
+| opts.network | <code>string</code> |  |
+| [opts.policy] | <code>object</code> | spend policy (tiers / validators) |
+| [opts.leaves] | <code>Array.&lt;object&gt;</code> | full leaf list (skips policy compile when set alone) |
+| [opts.hashlock] | <code>object</code> | optional hashlock sugar |
+| [opts.extraLeaves] | <code>Array.&lt;object&gt;</code> | additional leaves |
+| [opts.internalPubkeyHex] | <code>string</code> | x-only; default NUMS or MuSig2 from policy |
+| [opts.internalKeyMode] | <code>string</code> | `nums` | `musig2` |
+
+<a name="buildContractTaproot"></a>
+
+## buildContractTaproot(policy) ⇒ <code>object</code>
+**Kind**: global function  
+
+| Param | Type |
+| --- | --- |
+| policy | <code>object</code> | 
+
+<a name="selectActiveTiers"></a>
+
+## selectActiveTiers(policy, [ctx])
+**Kind**: global function  
+
+| Param | Type |
+| --- | --- |
+| policy | <code>object</code> | 
+| [ctx] | <code>Object</code> | 
+| [ctx.tipHeight] | <code>number</code> | 
+| [ctx.medianTime] | <code>number</code> | 
+| [ctx.utxoAgeBlocks] | <code>number</code> | 
+| [ctx.tipClock] | <code>number</code> | 
+| [ctx.contractState] | <code>Object</code> | 
+
+<a name="prepareTierWithdrawalPsbt"></a>
+
+## prepareTierWithdrawalPsbt()
+Prepare withdrawal via a spend tier leaf.
+
+**Kind**: global function  
+<a name="prepareDecayMigrationPsbt"></a>
+
+## prepareDecayMigrationPsbt()
+Prepare decay migration PSBT (output must be child policy address).
+
+**Kind**: global function  
+<a name="prepareHashlockWithdrawalPsbt"></a>
+
+## prepareHashlockWithdrawalPsbt(opts) ⇒ <code>object</code>
+Prepare hashlock-path PSBT. Pure hashlock needs only a preimage at finalize;
+hashlock+pubkey needs a Schnorr sig then preimage (inventory-style).
+
+**Kind**: global function  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| opts | <code>object</code> |  |
+| [opts.policy] | <code>object</code> |  |
+| [opts.leaves] | <code>Array.&lt;object&gt;</code> | Buffer-backed or public leaves (+ tapscriptHex) |
+| [opts.preimage32] | <code>string</code> \| <code>Buffer</code> |  |
+
+<a name="finalizeHashlockPsbt"></a>
+
+## finalizeHashlockPsbt(opts) ⇒ <code>Object</code>
+Finalize a hashlock script-path PSBT (pure preimage or preimage+sig).
+
+**Kind**: global function  
+
+| Param | Type | Default |
+| --- | --- | --- |
+| opts | <code>object</code> |  | 
+| opts.psbtBase64 | <code>string</code> |  | 
+| opts.preimage32 | <code>string</code> \| <code>Buffer</code> |  | 
+| [opts.witnessShape] | <code>string</code> | <code>&quot;&#x27;preimage&#x27;&quot;</code> | 
+
+<a name="parseXOnlyPubkeysFromSpendScript"></a>
+
+## parseXOnlyPubkeysFromSpendScript(scriptBuf) ⇒ <code>Array.&lt;Buffer&gt;</code>
+Collect x-only pubkeys from a k-of-n spend tapscript (`CHECKSIG` /
+`CHECKSIGADD`), skipping a leading CSV/CLTV prefix when present.
+
+**Kind**: global function  
+
+| Param | Type |
+| --- | --- |
+| scriptBuf | <code>Buffer</code> \| <code>Uint8Array</code> | 
+
+<a name="finalizeSpendPsbt"></a>
+
+## finalizeSpendPsbt(opts) ⇒ <code>Object</code>
+Finalize a k-of-n (CHECKSIG / CHECKSIGADD) script-path PSBT after co-signers
+have called `signInput`. Unused keys become empty witness elements (BIP342).
+
+Witness stack (before script + control block) is signatures in **reverse**
+script-pubkey order so the first `CHECKSIG` pops the last stack item.
+
+**Kind**: global function  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| opts | <code>object</code> |  |
+| [opts.psbtBase64] | <code>string</code> |  |
+| [opts.psbt] | <code>object</code> | bitcoinjs-lib `Psbt` |
+
+<a name="buildFederationVaultFromPolicy"></a>
+
+## buildFederationVaultFromPolicy(opts) ⇒ <code>object</code>
+Authority P2TR vault from validator/signer set.
+
+**Default (RC):** 2-tier ladder — k-of-n authority now; softer rule after
+`csvBlocks` (default 144) CSV. Same tree as [synthesizeDefaultLadder](#synthesizeDefaultLadder) /
+[module:functions/contractSpend.resolveSpend](module:functions/contractSpend.resolveSpend) when inputs match.
+
+**Legacy:** pass `{ legacySingleLeaf: true }` for the pre-ladder single k-of-n
+leaf address (opt-in only; not used by Hub vault summary).
+
+**Internal key:** default n≥2 uses the MuSig2 aggregate (`internalKeyMode:
+'musig2'`) — a **new address** vs historical NUMS. Pass `internalKeyMode:
+'nums'` to keep coins at the old script-path-only vault. Rebuilds do not
+migrate UTXOs.
+
+**Kind**: global function  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| opts | <code>object</code> |  |
+| [opts.internalKeyMode] | <code>string</code> | `musig2` | `nums` |
+
+<a name="hashlockFromProgramRun"></a>
+
+## hashlockFromProgramRun(run) ⇒ <code>Object</code>
+Build hashlock leaf options from a sealed Program run.
+Commitment defaults to `runCommitmentHex` (32-byte hex).
+
+**Kind**: global function  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| run | <code>object</code> |  |  |
+| run.runCommitmentHex | <code>string</code> |  |  |
+| [run.programHash] | <code>string</code> |  |  |
+| [run.commitmentHex] | <code>string</code> |  | Override commitment |
+| [run.id] | <code>string</code> | <code>&quot;&#x27;hashlock-run&#x27;&quot;</code> |  |
+| [run.pubkeyHex] | <code>string</code> |  | Optional Schnorr key for preimage+sig path |
+
+<a name="composePolicyWithRunHashlock"></a>
+
+## composePolicyWithRunHashlock(opts) ⇒ <code>object</code>
+Compose an authority ladder (or policy) with a Program-run hashlock leaf.
+
+**Kind**: global function  
+**Returns**: <code>object</code> - `composeTaprootTree` result (+ `programRunId`)  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| opts | <code>object</code> |  |  |
+| [opts.policy] | <code>object</code> |  | Existing spend policy |
+| [opts.ladder] | <code>object</code> |  | Args for synthesizeDefaultLadder when policy omitted |
+| opts.run | <code>object</code> |  | `{ programHash?, runCommitmentHex, id?, pubkeyHex }` |
+| [opts.allowPreimageOnly] | <code>boolean</code> | <code>false</code> | Compose without `run.pubkeyHex` (preimage alone spends) |
+| [opts.network] | <code>string</code> |  |  |
+| [opts.extraLeaves] | <code>Array.&lt;object&gt;</code> |  |  |
+
+<a name="signingString"></a>
+
+## signingString(body) ⇒ <code>string</code>
+Canonical signing bytes: the body without `signature`.
+
+**Kind**: global function  
+
+| Param | Type |
+| --- | --- |
+| body | <code>Object</code> | 
+
+<a name="bodyId"></a>
+
+## bodyId(body) ⇒ <code>string</code>
+Stable id of a body: SHA-256 hex of [signingString](#signingString). Entries, takes,
+and accepts are referenced by it.
+
+**Kind**: global function  
+
+| Param | Type |
+| --- | --- |
+| body | <code>Object</code> | 
+
+<a name="randomNonce"></a>
+
+## randomNonce() ⇒ <code>string</code>
+**Kind**: global function  
+**Returns**: <code>string</code> - 16 random bytes as hex  
+<a name="codec"></a>
+
+## codec(spec) ⇒ <code>Object</code>
+Body codec for one signed market: every body is a JSON object with a
+`type`, normalized by that type's normalizer and BIP340-signed by the key
+named by `signerField` over [signingString](#signingString).
+
+**Kind**: global function  
+**Returns**: <code>Object</code> - `{ toBody, fromBody, signingString, bodyId, pubkeyFromPrivate, signBody, verifyBody, randomNonce }`  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| spec | <code>Object</code> |  |
+| spec.name | <code>string</code> | prefix of thrown messages (`coinjoin`) |
+| spec.version | <code>number</code> | accepted `version` of incoming bodies |
+| spec.normalizers | <code>Map.&lt;string, function()&gt;</code> | body type → `(fields) → body` (throws on bad input) |
+| spec.signerField | <code>Object</code> | body type → field holding the author's compressed key |
+
+
+* [codec(spec)](#codec) ⇒ <code>Object</code>
+    * [~toBody(type, fields)](#codec..toBody) ⇒ <code>Object</code>
+    * [~fromBody(body)](#codec..fromBody) ⇒ <code>Object</code> \| <code>null</code>
+    * [~pubkeyFromPrivate(priv32)](#codec..pubkeyFromPrivate) ⇒ <code>string</code>
+    * [~signBody(body, priv32)](#codec..signBody) ⇒ <code>Object</code>
+    * [~verifyBody(body)](#codec..verifyBody) ⇒ <code>Object</code>
+
+<a name="codec..toBody"></a>
+
+### codec~toBody(type, fields) ⇒ <code>Object</code>
+Build a normalized body of the given type (unsigned unless `fields.signature`).
+
+**Kind**: inner method of [<code>codec</code>](#codec)  
+
+| Param | Type |
+| --- | --- |
+| type | <code>string</code> | 
+| fields | <code>Object</code> | 
+
+<a name="codec..fromBody"></a>
+
+### codec~fromBody(body) ⇒ <code>Object</code> \| <code>null</code>
+Rehydrate a `CONTRACT_MESSAGE` body; `null` for other types or malformed bodies.
+
+**Kind**: inner method of [<code>codec</code>](#codec)  
+
+| Param | Type |
+| --- | --- |
+| body | <code>Object</code> | 
+
+<a name="codec..pubkeyFromPrivate"></a>
+
+### codec~pubkeyFromPrivate(priv32) ⇒ <code>string</code>
+Compressed public key for a 32-byte private key.
+
+**Kind**: inner method of [<code>codec</code>](#codec)  
+**Returns**: <code>string</code> - 66 hex characters  
+
+| Param | Type |
+| --- | --- |
+| priv32 | <code>Buffer</code> \| <code>string</code> | 
+
+<a name="codec..signBody"></a>
+
+### codec~signBody(body, priv32) ⇒ <code>Object</code>
+Normalize and BIP340-sign a body. The signer must own the body's author key.
+
+**Kind**: inner method of [<code>codec</code>](#codec)  
+**Returns**: <code>Object</code> - normalized body with `signature`  
+
+| Param | Type |
+| --- | --- |
+| body | <code>Object</code> | 
+| priv32 | <code>Buffer</code> \| <code>string</code> | 
+
+<a name="codec..verifyBody"></a>
+
+### codec~verifyBody(body) ⇒ <code>Object</code>
+Check a body's shape and its author's BIP340 signature.
+
+**Kind**: inner method of [<code>codec</code>](#codec)  
+
+| Param | Type |
+| --- | --- |
+| body | <code>Object</code> | 
+
+<a name="normalizeOrder"></a>
+
+## normalizeOrder(input) ⇒ <code>Object</code>
+**Kind**: global function  
+**Returns**: <code>Object</code> - normalized `LiquidityOrder` body (keeps `signature`)  
+
+| Param | Type |
+| --- | --- |
+| input | <code>Object</code> | 
+
+<a name="normalizeCancel"></a>
+
+## normalizeCancel(input) ⇒ <code>Object</code>
+**Kind**: global function  
+**Returns**: <code>Object</code> - normalized `LiquidityOrderCancel` body  
+
+| Param | Type |
+| --- | --- |
+| input | <code>Object</code> | 
+
+<a name="normalizeTake"></a>
+
+## normalizeTake(input) ⇒ <code>Object</code>
+A taker's request to fill part of an order. When the taker gives L1 (a
+take on a bid) it carries the L1 giver's terms.
+
+**Kind**: global function  
+**Returns**: <code>Object</code> - normalized `LiquidityTake` body  
+
+| Param | Type |
+| --- | --- |
+| input | <code>Object</code> | 
+
+<a name="normalizeTakeAccept"></a>
+
+## normalizeTakeAccept(input) ⇒ <code>Object</code>
+The maker's acceptance of a take. When the maker gives L1 (a take on an
+ask) it carries the L1 giver's terms and, for orders with `prepaySats`, a
+prepay invoice the taker pays before the maker funds.
+
+**Kind**: global function  
+**Returns**: <code>Object</code> - normalized `LiquidityTakeAccept` body  
+
+| Param | Type |
+| --- | --- |
+| input | <code>Object</code> | 
+
+<a name="normalizeFunded"></a>
+
+## normalizeFunded(input) ⇒ <code>Object</code>
+The L1 giver's notice that the HTLC is funded.
+
+**Kind**: global function  
+**Returns**: <code>Object</code> - normalized `LiquiditySwapFunded` body  
+
+| Param | Type |
+| --- | --- |
+| input | <code>Object</code> | 
+
+<a name="roles"></a>
+
+## roles(opts) ⇒ <code>Object</code>
+Settlement roles. The L1 giver owns the preimage and funds the HTLC; the
+L2 giver pays the invoice and claims. An ask's maker sells L1; a bid's
+maker buys it.
+
+**Kind**: global function  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| opts | <code>Object</code> |  |
+| opts.side | <code>string</code> | order side |
+| opts.maker | <code>\*</code> | maker identifier (pubkey, record, …) |
+| opts.taker | <code>\*</code> | taker identifier |
+
+<a name="roleFor"></a>
+
+## roleFor(opts) ⇒ <code>&#x27;l1Giver&#x27;</code> \| <code>&#x27;l2Giver&#x27;</code>
+**Kind**: global function  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| opts | <code>Object</code> |  |
+| opts.side | <code>string</code> | order side |
+| opts.isMaker | <code>boolean</code> |  |
+
+<a name="quote"></a>
+
+## quote(opts) ⇒ <code>Object</code>
+Amounts for filling `amountSats` of L1 against an order. The L1 giver
+funds the HTLC with `l1Sats`; the L2 giver pays an invoice of `l2Msat`:
+`amountSats × (1 + premiumPpm / 1e6)` sats, plus the maker's `feeSats`
+when the taker pays L2 (asks) or minus it when the maker does (bids), so
+the fee always reaches the maker.
+
+**Kind**: global function  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| opts | <code>Object</code> |  |  |
+| opts.side | <code>string</code> |  |  |
+| opts.premiumPpm | <code>number</code> |  |  |
+| [opts.feeSats] | <code>number</code> | <code>0</code> |  |
+| opts.amountSats | <code>number</code> |  | L1 sats |
+
+<a name="buildEscrow"></a>
+
+## buildEscrow(opts) ⇒ <code>Object</code>
+Taproot HTLC for a swap: the L2 giver claims with the preimage, the L1
+giver refunds after `refundLockHeight`. A plain [Htlc](#Htlc) (claim =
+seller leaf, refund = buyer leaf), so its claim / refund PSBT helpers spend
+it unchanged.
+
+**Kind**: global function  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| opts | <code>Object</code> |  |
+| opts.networkName | <code>string</code> |  |
+| opts.l2GiverPubkeyHex | <code>string</code> | claim key (compressed) |
+| opts.l1GiverPubkeyHex | <code>string</code> | refund key (compressed) |
+| opts.paymentHashHex | <code>string</code> | SHA256(preimage) |
+| opts.refundLockHeight | <code>number</code> | absolute block height |
+| [opts.amountSats] | <code>number</code> |  |
+
+<a name="validateEscrow"></a>
+
+## validateEscrow(opts) ⇒ <code>Object</code>
+Rebuild the swap HTLC and compare with an advertised address. Never fund
+or pay against an address that does not match.
+
+**Kind**: global function  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| opts | <code>Object</code> | [buildEscrow](#buildEscrow) options plus `paymentAddress` |
+
+<a name="invoiceAmountMsat"></a>
+
+## invoiceAmountMsat(decoded) ⇒ <code>number</code> \| <code>null</code>
+Millisatoshi amount from a decoded invoice (`amount_msat` as a number,
+numeric string, or legacy `"123msat"` string).
+
+**Kind**: global function  
+
+| Param | Type |
+| --- | --- |
+| decoded | <code>Object</code> | 
+
+<a name="validateInvoice"></a>
+
+## validateInvoice(opts) ⇒ <code>Object</code>
+Check a decoded BOLT11 invoice (Core Lightning `decodepay`) before paying
+it for a swap: it must lock to the swap's payment hash, ask exactly the
+quoted amount, come from the expected node, and expire — plus a margin —
+before the HTLC's refund lock opens, with at least `minClaimBlocks` left
+for the claim.
+
+**Kind**: global function  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| opts | <code>Object</code> |  |  |
+| opts.decoded | <code>Object</code> |  | `decodepay` output |
+| opts.paymentHashHex | <code>string</code> |  |  |
+| opts.expectedMsat | <code>number</code> |  |  |
+| [opts.payee] | <code>string</code> |  | expected node id |
+| opts.refundLockHeight | <code>number</code> |  |  |
+| opts.tipHeight | <code>number</code> |  |  |
+| [opts.nowSeconds] | <code>number</code> |  |  |
+| [opts.secondsPerBlock] | <code>number</code> | <code>600</code> |  |
+| [opts.marginSeconds] | <code>number</code> | <code>3600</code> |  |
+| [opts.minClaimBlocks] | <code>number</code> | <code>6</code> |  |
+
+<a name="validateTake"></a>
+
+## validateTake(order, take, [opts]) ⇒ <code>Object</code>
+Check a take against the order it fills.
+
+**Kind**: global function  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| order | <code>Object</code> | normalized order |
+| take | <code>Object</code> | normalized take |
+| [opts] | <code>Object</code> |  |
+| [opts.now] | <code>number</code> | ms |
+
+<a name="validateTakeAccept"></a>
+
+## validateTakeAccept(order, take, accept) ⇒ <code>Object</code>
+Check an acceptance against its order and take.
+
+**Kind**: global function  
+
+| Param | Type |
+| --- | --- |
+| order | <code>Object</code> | 
+| take | <code>Object</code> | 
+| accept | <code>Object</code> | 
+
+<a name="l1GiverTerms"></a>
+
+## l1GiverTerms(order, take, [accept]) ⇒ <code>Object</code> \| <code>null</code>
+The L1 giver's terms for a take, from whichever body carries them.
+
+**Kind**: global function  
+**Returns**: <code>Object</code> \| <code>null</code> - `{ paymentHashHex, invoice, refundLockHeight, prepayInvoice? }`  
+
+| Param | Type |
+| --- | --- |
+| order | <code>Object</code> | 
+| take | <code>Object</code> | 
+| [accept] | <code>Object</code> | 
+
+<a name="verifyBlobPath"></a>
+
+## verifyBlobPath(opts) ⇒ <code>boolean</code>
+Strict blob-tree inclusion check. Every left/right choice comes from
+`index` (not from the prover's `position` labels, which must agree), the
+branch must be exactly as deep as a tree of `leafCount` leaves, and a
+self-paired step is accepted only for the odd last node of a level. With
+`leafCount` pinned by a signed commitment, an inner node cannot pass as a
+leaf and a padded (CVE-2012-2459) tree cannot stand in for the real one.
+
+**Kind**: global function  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| opts | <code>object</code> |  |
+| opts.merkleRootHex | <code>string</code> |  |
+| opts.leafHex | <code>string</code> | 32-byte blob hash |
+| opts.index | <code>number</code> | leaf position |
+| opts.leafCount | <code>number</code> | committed number of leaves |
+| opts.proof | <code>Array</code> \| <code>object</code> | `[{ position, data }]` or `{ proof: [...], leafCount }` (as `Challenge#respond` emits) |
 
 <a name="toIntegerSats"></a>
 
@@ -20868,6 +27098,19 @@ proximity shifts weight from price toward measured latency + hops.
 | Param | Type |
 | --- | --- |
 | proximityWeight | <code>number</code> | 
+
+<a name="sellerDedupeKey"></a>
+
+## sellerDedupeKey(session) ⇒ <code>string</code>
+Seller-scoped settlement key: one purchase of a blob per seller. A failed
+or refunded purchase from one seller never blocks buying the blob from
+another.
+
+**Kind**: global function  
+
+| Param | Type |
+| --- | --- |
+| session | <code>Object</code> | 
 
 <a name="BitcoinCookieProbeConstraints"></a>
 

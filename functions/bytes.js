@@ -110,6 +110,27 @@ function toUint8Flexible (bytes, maxLength) {
   throw new TypeError('toUint8Flexible: expected Buffer, Uint8Array, array-like, or iterable of bytes');
 }
 
+/**
+ * Buffer from a Buffer, Uint8Array (bitcoinjs-lib 7 yields these), or hex string
+ * (optional `0x`). Odd-length and non-hex strings throw instead of being silently
+ * truncated the way `Buffer.from(hex, 'hex')` truncates them.
+ * @param {Buffer|Uint8Array|string} input
+ * @param {string} [label] — prefixed to error messages
+ * @returns {Buffer}
+ */
+function toBuffer (input, label) {
+  const fail = (message) => new TypeError(label ? `${label}: ${message}` : message);
+  if (Buffer.isBuffer(input)) return input;
+  if (input instanceof Uint8Array) return Buffer.from(input);
+  if (typeof input === 'string') {
+    const hex = input.trim().replace(/^0x/i, '');
+    if (hex.length % 2) throw fail('odd hex length');
+    if (!/^[0-9a-f]*$/i.test(hex)) throw fail('expected hex');
+    return Buffer.from(hex, 'hex');
+  }
+  throw fail('expected Buffer, Uint8Array, or hex');
+}
+
 /** Divisor for a 32-bit draw. Spelled `2 ** 32` rather than `0x100000000` because
  *  static analysis flags hex literals above `0x7FFFFFFF` (they truncate in a
  *  *bitwise* context). This is a division, so the value is exact either way —
@@ -127,6 +148,7 @@ function randomUnit () {
 module.exports = {
   toUint8Strict,
   toUint8Flexible,
+  toBuffer,
   u32be,
   randomUnit
 };

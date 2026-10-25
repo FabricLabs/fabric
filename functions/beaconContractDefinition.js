@@ -14,7 +14,7 @@
  */
 
 const Actor = require('../types/actor');
-const { pubkeyCompressed } = require('./groupChatSeal');
+const { pubkeyCompressed } = require('./pubkey');
 const { sortPubkeysBip67 } = require('./bip67');
 const { canonicalSpendPolicy } = require('./contractSpend');
 const { DEFAULT_CSV_BLOCKS } = require('../types/policy');

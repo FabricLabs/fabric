@@ -11,7 +11,7 @@
  */
 
 const Key = require('../types/key');
-const { pubkeyXOnly } = require('./groupChatSeal');
+const { pubkeyXOnly } = require('./pubkey');
 
 const GOVERNANCE_ACTIONS = Object.freeze(['member.add', 'member.remove', 'members.set', 'signers.set', 'update']);
 

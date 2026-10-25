@@ -16,25 +16,17 @@ const {
   prepareVaultWithdrawalPsbt,
   prepareDecayMigrationPsbt
 } = Policy;
-const { pubkeyXOnly, pubkeyCompressed } = require('./groupChatSeal');
+const { fabricCanonicalJson } = require('./fabricCanonicalJson');
+const { pubkeyXOnly, pubkeyCompressed } = require('./pubkey');
 const { sortPubkeysBip67 } = require('./bip67');
 const { CONTRACT_BODY_TYPES } = require('./applicationNamespaces');
 const {
   programMetaFromTip,
-  requiresProgramBind,
-  validateProgramRunBinding,
-  bindProgramRunToTip
+  validateProgramRunBinding
 } = require('./contractProgramBind');
 
 const WITHDRAWAL_REQUEST = CONTRACT_BODY_TYPES.ContractWithdrawalRequest;
 const WITHDRAWAL_WITNESS = CONTRACT_BODY_TYPES.ContractWithdrawalWitness;
-
-function _canonicalStringify (value) {
-  if (value === null || typeof value !== 'object') return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map(_canonicalStringify).join(',')}]`;
-  const keys = Object.keys(value).sort();
-  return `{${keys.map((k) => `${JSON.stringify(k)}:${_canonicalStringify(value[k])}`).join(',')}}`;
-}
 
 function sha256hex (s) {
   return crypto.createHash('sha256').update(String(s)).digest('hex');
@@ -496,7 +488,8 @@ function withdrawalRequestCommitmentFields (object = {}) {
     amountSats: Number.isFinite(amountRaw) ? Math.max(0, Math.round(amountRaw)) : 0,
     feeSats: Math.max(0, Number(object.feeSats) || 0),
     action: object.action === 'migrate' ? 'migrate' : 'spend',
-    after: object.after || null,
+    // Hash what the wire carries: JSON drops undefined properties.
+    after: object.after ? JSON.parse(JSON.stringify(object.after)) : null,
     tierId: object.tierId ? String(object.tierId) : null,
     vaultAddress: object.vaultAddress ? String(object.vaultAddress) : null,
     clock: object.clock != null ? Number(object.clock) : 0,
@@ -514,7 +507,7 @@ function withdrawalRequestCommitmentFields (object = {}) {
  * @returns {string} 64-hex sha256 of canonical commitment JSON
  */
 function computeWithdrawalRequestId (object) {
-  return sha256hex(_canonicalStringify(withdrawalRequestCommitmentFields(object)));
+  return sha256hex(fabricCanonicalJson(withdrawalRequestCommitmentFields(object)));
 }
 
 /**
@@ -846,9 +839,5 @@ module.exports = {
   countValidWithdrawalWitnesses,
   meetWithdrawalWitnessThreshold,
   prepareWithdrawalFromRequest,
-  toCompressedPubkeys,
-  programMetaFromTip,
-  requiresProgramBind,
-  bindProgramRunToTip,
-  validateProgramRunBinding
+  toCompressedPubkeys
 };

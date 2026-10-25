@@ -12,9 +12,11 @@
 const BEACON_NETWORK_PATH = 'beacon/NETWORK';
 const BEACON_CHAIN_PATH = 'beacon/CHAIN';
 const PENDING_EPOCH_ROUNDS_PATH = 'beacon/PENDING_EPOCH_ROUNDS';
-const SIDECHAIN_STATE_PATH = 'sidechain/STATE';
-const SIDECHAIN_SNAPSHOTS_PATH = 'sidechain/SNAPSHOTS';
-const SIDECHAIN_JOURNAL_PATH = 'sidechain/JOURNAL';
+const {
+  SIDECHAIN_STATE_PATH,
+  SIDECHAIN_SNAPSHOTS_PATH,
+  SIDECHAIN_JOURNAL_PATH
+} = require('./sidechainState');
 
 const KNOWN_NETWORKS = Object.freeze([
   'regtest',
@@ -302,9 +304,6 @@ module.exports = {
   BEACON_NETWORK_PATH,
   BEACON_CHAIN_PATH,
   PENDING_EPOCH_ROUNDS_PATH,
-  SIDECHAIN_STATE_PATH,
-  SIDECHAIN_SNAPSHOTS_PATH,
-  SIDECHAIN_JOURNAL_PATH,
   normalizeBitcoinNetwork,
   isKnownBitcoinNetwork,
   readNetworkBinding,

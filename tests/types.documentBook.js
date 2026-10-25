@@ -58,10 +58,10 @@ describe('types/documentBook (chunk index + local telemetry)', function () {
       { index: 0, total: 2, blobHashHex: H('c0'), rateSats: 5, contentHash: H('d0') },
       { index: 1, total: 2, blobHashHex: H('c1'), rateSats: 5, contentHash: H('d1') }
     ];
-    const root = merkleRootHexFromBlobHashes([H('c0'), H('c1')]);
-    book.ingestInventoryResponse({ origin: 'a', latencyMs: 5, items: [{ id: 'doc', merkleRootHex: root, blobs }] });
+    const root = documentMerkleRootHex(blobs.map((b) => ({ blobHashHex: b.blobHashHex, paymentHashHex: b.contentHash })));
+    book.ingestInventoryResponse({ origin: 'a', latencyMs: 5, items: [{ id: 'doc', sealed: true, merkleRootHex: root, blobs }] });
     // A subset without inclusion proofs cannot be checked: kept, unverified.
-    const partial = book.ingestInventoryResponse({ origin: 'b', latencyMs: 500, items: [{ id: 'doc', merkleRootHex: root, blobs: [blobs[1]] }] });
+    const partial = book.ingestInventoryResponse({ origin: 'b', latencyMs: 500, items: [{ id: 'doc', sealed: true, merkleRootHex: root, blobs: [blobs[1]] }] });
     assert.strictEqual(partial[0].rootVerified, false);
     const idx = book.indexByBlobHash({ merkleRootHex: root });
     assert.strictEqual(idx.size, 2);
@@ -75,7 +75,21 @@ describe('types/documentBook (chunk index + local telemetry)', function () {
     assert.strictEqual(book.listOffers({ blobHashHex: H('c1') }).length, 1);
   });
 
-  it('splits per-blob sealed trees across sellers but locks legacy single-key seals', function () {
+  it('verifies an unsealed advertisement against its root (tagged hashes stay outside the tree)', function () {
+    const { advertiseDocumentBlobs } = require('../functions/documentBlobManifest');
+    const advertised = advertiseDocumentBlobs(Buffer.alloc(5000, 3), { documentId: 'plain', chunkBytes: 2048, rateSats: 30 });
+    assert.ok(advertised.itemBlobs.every((b) => /^[0-9a-f]{64}$/.test(b.contentHash)));
+    const book = new DocumentBook();
+    const rows = book.ingestInventoryResponse({
+      origin: 'seller',
+      items: [{ id: 'plain', rateSats: 30, merkleRootHex: advertised.merkleRootHex, blobs: advertised.itemBlobs }]
+    });
+    assert.strictEqual(rows.length, advertised.itemBlobs.length);
+    assert.ok(rows.every((r) => r.rootVerified === true));
+    assert.strictEqual(rows[1].contentHashHex, advertised.itemBlobs[1].contentHash);
+  });
+
+  it('splits per-blob sealed trees across sellers but locks whole-document seals', function () {
     const perBlob = new DocumentBook();
     const mk = (origin, price) => perBlob.ingestInventoryResponse({
       origin,
@@ -94,18 +108,18 @@ describe('types/documentBook (chunk index + local telemetry)', function () {
     assert.strictEqual(groups.length, 2);
     assert.strictEqual(groups[0].totalSats, 10);
 
-    const legacy = new DocumentBook();
-    const mkLegacy = (origin) => legacy.ingestInventoryResponse({
+    const whole = new DocumentBook();
+    const mkWhole = (origin) => whole.ingestInventoryResponse({
       origin,
       latencyMs: 10,
-      items: [{ id: 'legacy', sealed: true, rateSats: 20, contentHash: H('dd'), blobs: [
+      items: [{ id: 'whole', sealed: true, rateSats: 20, contentHash: H('dd'), blobs: [
         { index: 0, total: 2, blobHashHex: H('e0'), rateSats: 10 },
         { index: 1, total: 2, blobHashHex: H('e1'), rateSats: 10 }
       ] }]
     });
-    mkLegacy('l1');
-    mkLegacy('l2');
-    const lp = legacy.pickBlobPlan('legacy', 2);
+    mkWhole('w1');
+    mkWhole('w2');
+    const lp = whole.pickBlobPlan('whole', 2);
     assert.strictEqual(lp.get(0).sellerAddress, lp.get(1).sellerAddress);
   });
 
@@ -126,7 +140,7 @@ describe('types/documentBook (chunk index + local telemetry)', function () {
     assert.strictEqual(b.importTelemetry({ type: 'nope' }), 0);
   });
 
-  it('never picks a v1-root resale of a document whose v2 root commits its payment hashes', function () {
+  it('rejects a resale whose root does not commit the payment hashes it lists', function () {
     const leaves = [0, 1].map((i) => ({
       index: i,
       total: 2,
@@ -134,18 +148,60 @@ describe('types/documentBook (chunk index + local telemetry)', function () {
       paymentHashHex: H(`d${i}`),
       iv: Buffer.alloc(12, i + 1).toString('base64')
     }));
-    const v2Root = documentMerkleRootHex(leaves);
-    const v1Root = merkleRootHexFromBlobHashes(leaves.map((l) => l.blobHashHex));
+    const root = documentMerkleRootHex(leaves);
+    const bare = merkleRootHexFromBlobHashes(leaves.map((l) => l.blobHashHex));
     const forged = leaves.map((l, i) => Object.assign({}, l, { paymentHashHex: H(`e${i}`), rateSats: 1 }));
     const book = new DocumentBook();
-    book.ingestInventoryResponse({ origin: 'publisher', latencyMs: 400, items: [{ id: 'doc', merkleRootHex: v2Root, treeVersion: 2, blobs: leaves.map((l) => Object.assign({ rateSats: 900 }, l)) }] });
-    const resale = book.ingestInventoryResponse({ origin: 'reseller', latencyMs: 5, items: [{ id: 'doc', merkleRootHex: v1Root, blobs: forged }] });
-    assert.ok(resale.length, 'the v1 root verifies on its own (legacy documents stay buyable)');
-    assert.strictEqual(resale[0].rootVerified, true);
-    assert.strictEqual(resale[0].leavesCommitted, false);
+    book.ingestInventoryResponse({ origin: 'publisher', latencyMs: 400, items: [{ id: 'doc', sealed: true, merkleRootHex: root, blobs: leaves.map((l) => Object.assign({ rateSats: 900 }, l)) }] });
+    // Claiming the bare (unsealed) root still needs the tagged per-blob hashes.
+    assert.strictEqual(book.ingestInventoryResponse({ origin: 'reseller', latencyMs: 5, items: [{ id: 'doc', merkleRootHex: bare, blobs: forged }] }).length, 0);
+    assert.strictEqual(book.ingestInventoryResponse({ origin: 'reseller', latencyMs: 5, items: [{ id: 'doc', merkleRootHex: root, blobs: forged }] }).length, 0);
+    assert.strictEqual(book.ingestInventoryResponse({ origin: 'reseller', latencyMs: 5, items: [{ id: 'doc', sealed: true, merkleRootHex: root, blobs: forged }] }).length, 0);
     assert.strictEqual(book.pickBest('doc').sellerAddress, 'publisher');
     assert.ok(Array.from(book.pickBlobPlan('doc', 2).values()).every((o) => o.sellerAddress === 'publisher'));
-    book.forgetSeller('publisher');
-    assert.strictEqual(book.pickBest('doc').sellerAddress, 'reseller');
+  });
+
+  it('ingests a producer advertisement and pays only hashes its root commits', function () {
+    const { advertiseDocumentBlobs, blobPaymentHashHex } = require('../functions/documentBlobManifest');
+    const ad = advertiseDocumentBlobs(Buffer.alloc(3000, 7), { documentId: 'doc', chunkBytes: 1024, rateSats: 30 });
+    const book = new DocumentBook();
+    const rows = book.ingestInventoryResponse({ origin: 'publisher', items: [{ id: 'doc', merkleRootHex: ad.merkleRootHex, blobs: ad.itemBlobs }] });
+    assert.strictEqual(rows.length, ad.itemBlobs.length);
+    assert.ok(rows.every((r) => r.rootVerified === true));
+
+    // Leaves without their own payment hash, plus a stray item-level hash:
+    // the rows must carry the tagged hash of each committed leaf.
+    const bare = ad.itemBlobs.map((b) => ({ index: b.index, total: b.total, blobHashHex: b.blobHashHex, size: b.size }));
+    const relisted = new DocumentBook().ingestInventoryResponse({ origin: 'reseller', items: [{ id: 'doc', contentHash: H('ee'), merkleRootHex: ad.merkleRootHex, blobs: bare }] });
+    assert.strictEqual(relisted.length, bare.length);
+    for (const r of relisted) {
+      assert.strictEqual(r.rootVerified, true);
+      assert.strictEqual(r.contentHashHex, blobPaymentHashHex({ documentId: 'doc', blobIndex: r.blobIndex, blobHashHex: r.blobHashHex }));
+    }
+  });
+
+  it('never picks a paid unsealed offer while a sealed one is listed', function () {
+    const { advertiseDocumentBlobs } = require('../functions/documentBlobManifest');
+    const ad = advertiseDocumentBlobs(Buffer.alloc(3000, 7), { documentId: 'doc', chunkBytes: 1024, rateSats: 1 });
+    const sealed = [0, 1, 2].map((i) => ({ index: i, total: 3, blobHashHex: H(`c${i}`), paymentHashHex: H(`d${i}`), iv: Buffer.alloc(12, i + 1).toString('base64') }));
+    const root = documentMerkleRootHex(sealed);
+    const book = new DocumentBook();
+    book.ingestInventoryResponse({ origin: 'publisher', latencyMs: 400, items: [{ id: 'doc', sealed: true, merkleRootHex: root, blobs: sealed.map((b) => Object.assign({ rateSats: 900 }, b)) }] });
+    book.ingestInventoryResponse({ origin: 'cheap', latencyMs: 5, items: [{ id: 'doc', rateSats: 1, merkleRootHex: ad.merkleRootHex, blobs: ad.itemBlobs }] });
+    assert.strictEqual(book.pickBest('doc', { blobIndex: 0 }).sellerAddress, 'publisher');
+    assert.ok(Array.from(book.pickBlobPlan('doc', 3).values()).every((o) => o.sellerAddress === 'publisher'));
+
+    // A free unsealed copy costs the buyer nothing, so it may still win.
+    const free = new DocumentBook();
+    free.ingestInventoryResponse({ origin: 'publisher', latencyMs: 400, items: [{ id: 'doc', sealed: true, merkleRootHex: root, blobs: sealed.map((b) => Object.assign({ rateSats: 900 }, b)) }] });
+    free.ingestInventoryResponse({ origin: 'mirror', latencyMs: 5, items: [{ id: 'doc', rateSats: 0, merkleRootHex: ad.merkleRootHex, blobs: ad.itemBlobs.map((b) => Object.assign({}, b, { rateSats: 0 })) }] });
+    assert.strictEqual(free.pickBest('doc', { blobIndex: 0 }).sellerAddress, 'mirror');
+
+    // paidSealedOnly drops paid unsealed offers even with no sealed one listed.
+    const alone = new DocumentBook();
+    alone.ingestInventoryResponse({ origin: 'cheap', latencyMs: 5, items: [{ id: 'doc', rateSats: 1, merkleRootHex: ad.merkleRootHex, blobs: ad.itemBlobs }] });
+    assert.strictEqual(alone.pickBest('doc', { blobIndex: 0 }).sellerAddress, 'cheap');
+    assert.strictEqual(alone.pickBest('doc', { blobIndex: 0, paidSealedOnly: true }), null);
+    assert.strictEqual(alone.pickBlobPlan('doc', 3, { paidSealedOnly: true }).size, 0);
   });
 });

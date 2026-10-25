@@ -35,9 +35,9 @@ const {
   buildWithdrawalRequest,
   buildWithdrawalWitness,
   validateWithdrawalRequest,
-  prepareWithdrawalFromRequest,
-  bindProgramRunToTip
+  prepareWithdrawalFromRequest
 } = require('../functions/contractSpend');
+const { bindProgramRunToTip } = require('../functions/contractProgramBind');
 const Policy = require('../types/policy');
 const {
   buildFederationVaultFromPolicy,

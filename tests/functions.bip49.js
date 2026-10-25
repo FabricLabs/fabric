@@ -46,6 +46,16 @@ describe('@fabric/core/functions/bip49', function () {
       network: networks.testnet
     });
     assert.strictEqual(addr, '2Mww8dCYPUpKHofjgcXcBCEGmniw9CoaiD2');
+    const pay = p2shP2wpkhPayment({ pubkey, network: networks.testnet });
+    assert.strictEqual(
+      Buffer.from(pay.redeem.output).toString('hex'),
+      '001438971f73930f6c141d977ac4fd4a727c854935b3'
+    );
+    assert.strictEqual(Buffer.from(pay.hash).toString('hex'), '336caa13e08b96080a32b5d818d59b4ab3b36742');
+    assert.strictEqual(
+      Buffer.from(child.privateKey).toString('hex'),
+      'c9bdb49cfbaedca21c4b1f3a7803c34636b1d7dc55a717132443fc3f4c5867e8'
+    );
     assert.strictEqual(
       p2shP2wpkhAddress({
         pubkey: '03a1af804ac108a8a51782198c2d034b28bf90c8803f5a53f76276fa69a4eae77f',

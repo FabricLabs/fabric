@@ -72,4 +72,4 @@ implicit consensus multi-asset vin/vout.
 ## Related
 - [APPLICATION_NAMESPACES.md](APPLICATION_NAMESPACES.md)
 - Hub ADR-001 contract sidechains
-- `functions/federationReserveLedger.js` (pattern for `btc` only)
+- `types/federation.js` reserve ledger (pattern for `btc` only)

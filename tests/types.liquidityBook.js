@@ -190,17 +190,27 @@ describe('types/liquidityBook', function () {
     assert.strictEqual(r.filledSats, 20000);
   });
 
-  it('evicts the oldest order when full and forgets makers', function () {
+  it('when full, evicts the oldest order of the maker holding the most, and forgets makers', function () {
     const small = new LiquidityBook({ now: () => clock, maxOrders: 2 });
     const a = randomPriv();
     const b = randomPriv();
+    const c = randomPriv();
     const first = makeOrder(a);
     small.ingest(first);
-    small.ingest(makeOrder(b));
-    small.ingest(makeOrder(b));
+    const bFirst = makeOrder(b);
+    small.ingest(bFirst);
+    // one order each: the oldest goes
+    small.ingest(makeOrder(c));
     assert.strictEqual(small.size, 2);
     assert.strictEqual(small.get(Swap.bodyId(first)), null);
-    assert.strictEqual(small.forgetMaker(Swap.pubkeyFromPrivate(b)), 2);
+    // c posting again pays with its own order, not b's
+    const cSecond = makeOrder(c);
+    small.ingest(cSecond);
+    assert.strictEqual(small.size, 2);
+    assert.ok(small.get(Swap.bodyId(bFirst)));
+    assert.ok(small.get(Swap.bodyId(cSecond)));
+    assert.strictEqual(small.forgetMaker(Swap.pubkeyFromPrivate(c)), 1);
+    assert.strictEqual(small.forgetMaker(Swap.pubkeyFromPrivate(b)), 1);
     assert.strictEqual(small.size, 0);
   });
 });

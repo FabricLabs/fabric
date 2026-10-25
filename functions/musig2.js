@@ -15,7 +15,7 @@
 const crypto = require('crypto');
 const { secp256k1, schnorr: schnorrModule } = require('@noble/curves/secp256k1.js');
 const taggedHash = require('./taggedHash');
-const { toUint8Flexible } = require('./bytes');
+const { toUint8Flexible, toBuffer } = require('./bytes');
 
 const SecpPoint = secp256k1.ProjectivePoint || secp256k1.Point;
 const N = (secp256k1.CURVE && secp256k1.CURVE.n) ||
@@ -106,23 +106,6 @@ function musig2IsNOfN (threshold, n) {
   const t = Number(threshold);
   const count = Number(n);
   return Number.isInteger(t) && Number.isInteger(count) && count >= 2 && t === count;
-}
-
-/**
- * @param {Buffer|Uint8Array|string} input
- * @returns {Buffer}
- * @private
- */
-function asBuf (input) {
-  if (Buffer.isBuffer(input)) return input;
-  if (input instanceof Uint8Array) return Buffer.from(input);
-  if (typeof input === 'string') {
-    const hex = String(input).trim().replace(/^0x/i, '');
-    if (hex.length % 2) throw new TypeError('odd hex length');
-    if (!/^[0-9a-f]*$/i.test(hex)) throw new TypeError('expected hex');
-    return Buffer.from(hex, 'hex');
-  }
-  throw new TypeError('expected Buffer, Uint8Array, or hex');
 }
 
 /**
@@ -254,7 +237,7 @@ function pointAdd (P1, P2) {
  * @private
  */
 function cpoint (x) {
-  const buf = asBuf(x);
+  const buf = toBuffer(x);
   if (buf.length !== 33) {
     throw new ValueError('x is not a valid compressed point.');
   }
@@ -274,7 +257,7 @@ function cpoint (x) {
  * @private
  */
 function cpointExt (x) {
-  const buf = asBuf(x);
+  const buf = toBuffer(x);
   if (buf.equals(ZERO33)) return null;
   return cpoint(buf);
 }
@@ -284,7 +267,7 @@ function cpointExt (x) {
  * @returns {Buffer}
  */
 function individualPk (seckey) {
-  const d0 = intFromBytes(asBuf(seckey));
+  const d0 = intFromBytes(toBuffer(seckey));
   if (!(d0 >= 1n && d0 <= N - 1n)) {
     throw new ValueError('The secret key must be an integer in the range 1..n-1.');
   }
@@ -301,7 +284,7 @@ function individualPk (seckey) {
  */
 function keySort (pubkeys) {
   if (!Array.isArray(pubkeys)) throw new TypeError('pubkeys must be an array');
-  return pubkeys.map((pk) => Buffer.from(asBuf(pk))).sort(Buffer.compare);
+  return pubkeys.map((pk) => Buffer.from(toBuffer(pk))).sort(Buffer.compare);
 }
 
 /**
@@ -310,7 +293,7 @@ function keySort (pubkeys) {
  * @private
  */
 function hashKeys (pubkeys) {
-  return taggedHash('KeyAgg list', Buffer.concat(pubkeys.map((pk) => asBuf(pk))));
+  return taggedHash('KeyAgg list', Buffer.concat(pubkeys.map((pk) => toBuffer(pk))));
 }
 
 /**
@@ -319,9 +302,9 @@ function hashKeys (pubkeys) {
  * @private
  */
 function getSecondKey (pubkeys) {
-  const first = asBuf(pubkeys[0]);
+  const first = toBuffer(pubkeys[0]);
   for (let j = 1; j < pubkeys.length; j++) {
-    const pk = asBuf(pubkeys[j]);
+    const pk = toBuffer(pubkeys[j]);
     if (!pk.equals(first)) return pk;
   }
   return Buffer.alloc(33);
@@ -336,8 +319,8 @@ function getSecondKey (pubkeys) {
  */
 function keyAggCoeffInternal (pubkeys, pk_, pk2) {
   const L = hashKeys(pubkeys);
-  const pk = asBuf(pk_);
-  if (pk.equals(asBuf(pk2))) return 1n;
+  const pk = toBuffer(pk_);
+  if (pk.equals(toBuffer(pk2))) return 1n;
   return intFromBytes(taggedHash('KeyAgg coefficient', Buffer.concat([L, pk]))) % N;
 }
 
@@ -358,7 +341,7 @@ function keyAgg (pubkeys) {
   if (!Array.isArray(pubkeys) || !pubkeys.length) {
     throw new TypeError('keyAgg requires a non-empty pubkey list');
   }
-  const keys = pubkeys.map((pk) => Buffer.from(asBuf(pk)));
+  const keys = pubkeys.map((pk) => Buffer.from(toBuffer(pk)));
   const pk2 = getSecondKey(keys);
   let Q = null;
   for (let i = 0; i < keys.length; i++) {
@@ -393,7 +376,7 @@ function getXonlyPk (keyaggCtx) {
  * @returns {{ Q: object, gacc: bigint, tacc: bigint }}
  */
 function applyTweak (keyaggCtx, tweak, isXonly) {
-  const tBuf = asBuf(tweak);
+  const tBuf = toBuffer(tweak);
   if (tBuf.length !== 32) {
     throw new ValueError('The tweak must be a 32-byte array.');
   }
@@ -472,22 +455,22 @@ function nonceHash (rand, pk, aggpk, i, msgPrefixed, extraIn) {
  * @returns {{ secnonce: Buffer, pubnonce: Buffer }}
  */
 function nonceGenInternal (rand_, sk, pk, aggpk, msg, extraIn) {
-  const pkBuf = asBuf(pk);
-  let rand = asBuf(rand_);
+  const pkBuf = toBuffer(pk);
+  let rand = toBuffer(rand_);
   if (sk != null) {
-    rand = bytesXor(asBuf(sk), taggedHash('MuSig/aux', rand));
+    rand = bytesXor(toBuffer(sk), taggedHash('MuSig/aux', rand));
   }
-  const agg = aggpk == null ? Buffer.alloc(0) : asBuf(aggpk);
+  const agg = aggpk == null ? Buffer.alloc(0) : toBuffer(aggpk);
   let msgPrefixed;
   if (msg == null) {
     msgPrefixed = Buffer.from([0x00]);
   } else {
-    const m = asBuf(msg);
+    const m = toBuffer(msg);
     const len = Buffer.alloc(8);
     len.writeBigUInt64BE(BigInt(m.length));
     msgPrefixed = Buffer.concat([Buffer.from([0x01]), len, m]);
   }
-  const extra = extraIn == null ? Buffer.alloc(0) : asBuf(extraIn);
+  const extra = extraIn == null ? Buffer.alloc(0) : toBuffer(extraIn);
   const k1 = nonceHash(rand, pkBuf, agg, 0, msgPrefixed, extra) % N;
   const k2 = nonceHash(rand, pkBuf, agg, 1, msgPrefixed, extra) % N;
   if (k1 === 0n || k2 === 0n) throw new Error('nonceGen: zero nonce scalar');
@@ -508,10 +491,10 @@ function nonceGenInternal (rand_, sk, pk, aggpk, msg, extraIn) {
  * @returns {{ secnonce: Buffer, pubnonce: Buffer }}
  */
 function nonceGen (sk, pk, aggpk, msg, extraIn) {
-  if (sk != null && asBuf(sk).length !== 32) {
+  if (sk != null && toBuffer(sk).length !== 32) {
     throw new ValueError('The optional byte array sk must have length 32.');
   }
-  if (aggpk != null && asBuf(aggpk).length !== 32) {
+  if (aggpk != null && toBuffer(aggpk).length !== 32) {
     throw new ValueError('The optional byte array aggpk must have length 32.');
   }
   return nonceGenInternal(crypto.randomBytes(32), sk, pk, aggpk, msg, extraIn);
@@ -529,7 +512,7 @@ function nonceAgg (pubnonces) {
   for (let j = 0; j < 2; j++) {
     let Rj = null;
     for (let i = 0; i < pubnonces.length; i++) {
-      const pn = asBuf(pubnonces[i]);
+      const pn = toBuffer(pubnonces[i]);
       let Rij;
       try {
         Rij = cpoint(pn.subarray(j * 33, (j + 1) * 33));
@@ -554,11 +537,11 @@ function nonceAgg (pubnonces) {
  */
 function sessionContext (aggnonce, pubkeys, tweaks, isXonly, msg) {
   return {
-    aggnonce: asBuf(aggnonce),
-    pubkeys: pubkeys.map((pk) => Buffer.from(asBuf(pk))),
-    tweaks: (tweaks || []).map((t) => Buffer.from(asBuf(t))),
+    aggnonce: toBuffer(aggnonce),
+    pubkeys: pubkeys.map((pk) => Buffer.from(toBuffer(pk))),
+    tweaks: (tweaks || []).map((t) => Buffer.from(toBuffer(t))),
     isXonly: (isXonly || []).map((v) => !!v),
-    msg: asBuf(msg)
+    msg: toBuffer(msg)
   };
 }
 
@@ -599,7 +582,7 @@ function getSessionValues (sessionCtx) {
  */
 function getSessionKeyAggCoeff (sessionCtx, P) {
   const pk = cbytes(P);
-  const found = sessionCtx.pubkeys.some((p) => asBuf(p).equals(pk));
+  const found = sessionCtx.pubkeys.some((p) => toBuffer(p).equals(pk));
   if (!found) {
     throw new ValueError('The signer\'s pubkey must be included in the list of pubkeys.');
   }
@@ -615,7 +598,7 @@ function getSessionKeyAggCoeff (sessionCtx, P) {
  * @returns {Buffer} 32-byte partial signature
  */
 function sign (secnonce, sk, sessionCtx) {
-  const sn = asBuf(secnonce);
+  const sn = toBuffer(secnonce);
   const k1_ = intFromBytes(sn.subarray(0, 32));
   const k2_ = intFromBytes(sn.subarray(32, 64));
   const pkPart = Buffer.from(sn.subarray(64, 97));
@@ -631,7 +614,7 @@ function sign (secnonce, sk, sessionCtx) {
   }
   const k1 = hasEvenY(R) ? k1_ : (N - k1_);
   const k2 = hasEvenY(R) ? k2_ : (N - k2_);
-  const d_ = intFromBytes(asBuf(sk));
+  const d_ = intFromBytes(toBuffer(sk));
   if (!(d_ > 0n && d_ < N)) {
     throw new ValueError('secret key value is out of range.');
   }
@@ -663,9 +646,9 @@ function sign (secnonce, sk, sessionCtx) {
  */
 function partialSigVerifyInternal (psig, pubnonce, pk, sessionCtx) {
   const { Q, gacc, b, R, e } = getSessionValues(sessionCtx);
-  const s = intFromBytes(asBuf(psig));
+  const s = intFromBytes(toBuffer(psig));
   if (!(s > 0n && s < N)) return false;
-  const pn = asBuf(pubnonce);
+  const pn = toBuffer(pubnonce);
   const Rs1 = cpoint(pn.subarray(0, 33));
   const Rs2 = cpoint(pn.subarray(33, 66));
   const ReS_ = pointAdd(Rs1, pointMul(Rs2, b));
@@ -708,7 +691,7 @@ function partialSigAgg (psigs, sessionCtx) {
   const { Q, tacc, R, e } = getSessionValues(sessionCtx);
   let s = 0n;
   for (let i = 0; i < psigs.length; i++) {
-    const si = intFromBytes(asBuf(psigs[i]));
+    const si = intFromBytes(toBuffer(psigs[i]));
     if (si >= N) throw new InvalidContributionError(i, 'psig');
     s = (s + si) % N;
   }
@@ -751,13 +734,13 @@ function detNonceHash (sk_, aggothernonce, aggpk, msg, i) {
  * @returns {{ pubnonce: Buffer, psig: Buffer }}
  */
 function deterministicSign (sk, aggothernonce, pubkeys, tweaks, isXonly, msg, rand) {
-  const skBuf = asBuf(sk);
+  const skBuf = toBuffer(sk);
   const sk_ = rand != null
-    ? bytesXor(skBuf, taggedHash('MuSig/aux', asBuf(rand)))
+    ? bytesXor(skBuf, taggedHash('MuSig/aux', toBuffer(rand)))
     : skBuf;
   const aggpk = getXonlyPk(keyAggAndTweak(pubkeys, tweaks, isXonly));
-  const m = asBuf(msg);
-  const other = asBuf(aggothernonce);
+  const m = toBuffer(msg);
+  const other = toBuffer(aggothernonce);
   const k1 = detNonceHash(sk_, other, aggpk, m, 0) % N;
   const k2 = detNonceHash(sk_, other, aggpk, m, 1) % N;
   if (k1 === 0n || k2 === 0n) throw new Error('deterministicSign: zero nonce');
@@ -805,18 +788,18 @@ function verifyAggregatedSchnorr (message, signature, pubkeys, claimedAggregate)
   if (!Array.isArray(pubkeys) || pubkeys.length < 1) return false;
   const xonly = aggregateXonly(pubkeys);
   if (claimedAggregate != null) {
-    const claimed = asBuf(claimedAggregate);
+    const claimed = toBuffer(claimedAggregate);
     let claimedX;
     if (claimed.length === 32) claimedX = claimed;
     else if (claimed.length === 33) claimedX = claimed.subarray(1, 33);
     else return false;
     if (!claimedX.equals(xonly)) return false;
   }
-  let msg = asBuf(message);
+  let msg = toBuffer(message);
   if (msg.length !== 32) {
     msg = crypto.createHash('sha256').update(msg).digest();
   }
-  const sig = asBuf(signature);
+  const sig = toBuffer(signature);
   if (sig.length !== 64) return false;
   try {
     return nobleSchnorr.verify(sig, msg, xonly);
