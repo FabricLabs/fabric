@@ -10,7 +10,7 @@ const {
   FIXTURE_SEED
 } = require('../constants');
 const { encodeFabricUri } = require('../functions/fabricUri');
-const { importSeed, deriveAccount } = require('../functions/accountKeys');
+const { importSeed, deriveAccount, extendedKeyForNetwork } = require('../functions/accountKeys');
 const { classifyGossipWireType, isPublicGossipFloodType, isRelayAsIsWireType } = require('../functions/gossipNetwork');
 const {
   normalizeOrigin,
@@ -216,7 +216,7 @@ describe('@fabric/core/functions/passport', function () {
     assert.strictEqual(v.wallet.receive, 'segwit');
     assert.strictEqual(v.wallet.segwit.xpub, ACCOUNT.wallet.segwit.xpub);
     assert.strictEqual(v.wallet.standard.xpub, ACCOUNT.wallet.standard.xpub);
-    assert.strictEqual(v.wallet.descriptors.watch.length, 6);
+    assert.strictEqual(v.wallet.descriptors.watch.length, 4);
     for (const d of v.wallet.descriptors.watch) assert.ok(!d.includes('['));
 
     // The site asked for nothing: a wallet in the frame is refused.
@@ -232,7 +232,18 @@ describe('@fabric/core/functions/passport', function () {
       challengeHash: Buffer.from(asked.hash, 'hex'),
       wallet: JSON.stringify({ segwit: { xpub: mainnet.segwit.xpub }, standard: { xpub: mainnet.standard.xpub }, receive: 'segwit', descriptors: {} })
     });
-    assert.match(verifyAssertion(bad, expected(asked)).error, /not for the assertion network/);
+    assert.match(verifyAssertion(bad, expected(asked)).error, /shareable account xpubs for the assertion network/);
+
+    // Right network, but the xpub still names its depth, parent, and index.
+    const unshared = extendedKeyForNetwork(ACCOUNT.wallet.segwit.key.xpub, 'regtest');
+    assert.match(unshared, /^tpub/);
+    assert.notStrictEqual(unshared, ACCOUNT.wallet.segwit.xpub);
+    const withOrigin = forge({
+      nonce: asked.nonce,
+      challengeHash: Buffer.from(asked.hash, 'hex'),
+      wallet: JSON.stringify({ segwit: { xpub: unshared }, standard: { xpub: ACCOUNT.wallet.standard.xpub }, receive: 'segwit', descriptors: {} })
+    });
+    assert.match(verifyAssertion(withOrigin, expected(asked)).error, /shareable account xpubs for the assertion network/);
 
     const good = JSON.parse(assertion(asked, { disclose: ['wallet'], wallet: ACCOUNT.wallet }).message.toFields().wallet);
     good.descriptors.watch.push(`wpkh(${OTHER.wallet.segwit.xpub}/0/*)`);

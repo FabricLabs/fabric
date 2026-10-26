@@ -6,6 +6,7 @@ const {
   WALLET_GAP_LIMIT,
   normalizeAccountNetwork,
   extendedKeyForNetwork,
+  shareableAccountXpub,
   generateMnemonic,
   importSeed,
   deriveAccount,
@@ -18,6 +19,8 @@ const {
   sealMaster,
   unsealMaster,
   createAccountVault,
+  verifyVaultAccounts,
+  openAccountVault,
   selectVaultAccount,
   currentVaultAccount
 } = require('../functions/accountKeys');
@@ -53,7 +56,9 @@ describe('@fabric/core/functions/accountKeys', function () {
     assert.strictEqual(a.wallet.standard.path, "m/44'/0'/0'");
     assert.strictEqual(a.cosigner.path, "m/87'/0'/0'/0/0");
     assert.strictEqual(a.wallet.receive, 'segwit');
-    assert.strictEqual(a.wallet.segwit.xpub, 'xpub6CatWdiZiodmUeTDp8LT5or8nmbKNcuyvz7WyksVFkKB4RHwCD3XyuvPEbvqAQY3rAPshWcMLoP2fMFMKHPJ4ZeZXYVUhLv1VMrjPC7PW6V');
+    // BIP84 account xpub (xpub6CatWdiZ…) with depth, parent fingerprint, and child number zeroed.
+    assert.strictEqual(a.wallet.segwit.xpub, 'xpub661MyMwAqRbcFHMVYpCiBTXd2Caj7vZhNFHJSgE59Aue2yYkXSrz5q9GaQ4rRjJVhHZTsCiHWSzgMS5beaaTHWVmhpGC7SMdqMXHRXZi8as');
+    assert.strictEqual(shareableAccountXpub('xpub6CatWdiZiodmUeTDp8LT5or8nmbKNcuyvz7WyksVFkKB4RHwCD3XyuvPEbvqAQY3rAPshWcMLoP2fMFMKHPJ4ZeZXYVUhLv1VMrjPC7PW6V', 'mainnet'), a.wallet.segwit.xpub);
     assert.strictEqual(walletReceiveAddress(a.wallet, 'mainnet', 0), 'bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu');
     assert.strictEqual(walletChangeAddress(a.wallet, 'mainnet', 0), 'bc1q8c6fshw2dlwun7ekn9qwf37cu2rn755upcp6el');
     assert.strictEqual(
@@ -100,11 +105,27 @@ describe('@fabric/core/functions/accountKeys', function () {
     assert.strictEqual(d.change, `wpkh(${s}/1/*)`);
     assert.deepStrictEqual(d.watch, [
       `wpkh(${s}/0/*)`, `wpkh(${s}/1/*)`,
-      `pkh(${l}/0/*)`, `pkh(${l}/1/*)`,
-      `wpkh(${l}/0/*)`, `wpkh(${l}/1/*)`
+      `pkh(${l}/0/*)`, `pkh(${l}/1/*)`
     ]);
     for (const descriptor of d.watch) assert.ok(!descriptor.includes('['), 'no key origin / fingerprint');
     assert.strictEqual(WALLET_GAP_LIMIT, 20);
+  });
+
+  it('shares account xpubs that point to no parent', function () {
+    const header = (xpub) => {
+      const bs58check = require('bs58check');
+      const raw = (bs58check.default || bs58check).decode(xpub);
+      return { depth: raw[4], fingerprint: Buffer.from(raw.subarray(5, 9)).toString('hex'), child: Buffer.from(raw.subarray(9, 13)).toString('hex') };
+    };
+    for (const network of ['mainnet', 'regtest']) {
+      for (const account of [0, 1]) {
+        const w = deriveAccount(MASTER, { account, network }).wallet;
+        for (const xpub of [w.segwit.xpub, w.standard.xpub]) {
+          assert.deepStrictEqual(header(xpub), { depth: 0, fingerprint: '00000000', child: '00000000' });
+        }
+      }
+    }
+    assert.throws(() => shareableAccountXpub(MASTER, 'mainnet'), /only public/);
   });
 
   it('swaps extended key versions between networks', function () {
@@ -162,5 +183,25 @@ describe('@fabric/core/functions/accountKeys', function () {
     assert.strictEqual(currentVaultAccount(switched).label, 'Alt');
     const back = selectVaultAccount(switched, { account: 0, network: 'regtest' });
     assert.strictEqual(currentVaultAccount(back).identity.pubkey, view.identity.pubkey);
+  });
+
+  it('opens a vault only when its cached accounts match the master', function () {
+    const master = unsealMaster(createAccountVault({ master: MASTER, lockPassword: LOCK }).seal, LOCK);
+    const vault = selectVaultAccount(createAccountVault({ master: MASTER, lockPassword: LOCK, network: 'regtest' }), { account: 1, network: 'signet', master });
+    assert.strictEqual(openAccountVault(vault, LOCK), MASTER);
+    assert.throws(() => openAccountVault(vault, 'wrong password'));
+
+    const other = deriveAccount(importSeed(FIXTURE_SEED, 'TREZOR'), { network: 'regtest' });
+    const swapped = JSON.parse(JSON.stringify(vault));
+    swapped.accounts['regtest:0'].wallet.segwit.xpub = other.wallet.segwit.xpub;
+    assert.throws(() => openAccountVault(swapped, LOCK), (err) => err.code === 'FABRIC_ACCOUNT_VAULT_MISMATCH');
+
+    const moved = JSON.parse(JSON.stringify(vault));
+    moved.accounts['regtest:5'] = moved.accounts['regtest:0'];
+    assert.throws(() => verifyVaultAccounts(moved, MASTER), (err) => err.code === 'FABRIC_ACCOUNT_VAULT_MISMATCH');
+
+    const lost = JSON.parse(JSON.stringify(vault));
+    lost.current = { account: 9, network: 'regtest' };
+    assert.throws(() => verifyVaultAccounts(lost, MASTER), (err) => err.code === 'FABRIC_ACCOUNT_VAULT_MISMATCH');
   });
 });

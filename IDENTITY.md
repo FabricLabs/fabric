@@ -34,7 +34,7 @@ Funds are never tied to the identity. From one master xprv, each account index
 |---|---|---|
 | Fabric identity | `m/7777'/F'/n'/0/0` | Sign-in, Fabric messages, chat, groups, device links |
 | Bitcoin wallet, SegWit (default) | `m/84'/B'/n'` (receive `/0/i`, change `/1/i`, `wpkh`) | Every new receive and change address |
-| Bitcoin wallet, standard | `m/44'/B'/n'` (receive `/0/i`, change `/1/i`, watched as `pkh` and `wpkh`) | Watched and spendable; never hands out new addresses |
+| Bitcoin wallet, standard | `m/44'/B'/n'` (receive `/0/i`, change `/1/i`, `pkh`) | Watched and spendable; never hands out new addresses |
 | Multisig cosigner | `m/87'/B'/n'/0/0` (BIP87) | Group wallets, escrow, federation withdrawals |
 
 - `F` is 7777 on mainnet and 7778 elsewhere. `B` is 0 on mainnet and 1
@@ -42,14 +42,19 @@ Funds are never tied to the identity. From one master xprv, each account index
 - The same index on two networks gives unrelated keys: regtest account 0 and
   mainnet account 0 share nothing but the seed.
 - A wallet watches both accounts (`walletDescriptors`: `wpkh` on 84', `pkh`
-  and `wpkh` on 44', because earlier Fabric clients put SegWit addresses on
-  `m/44'`). The gap limit is 20 on each chain of each account. Child xpubs use
-  the network's version bytes (`tpub` off mainnet) and carry no master
-  fingerprint or key origin, so what a user shares from two accounts can't be
-  linked to one seed.
-- A cosigner key proves which identity it belongs to with `cosignerProof`
-  (BIP340 under `Fabric/PassportCosigner`), always within a scope such as one
-  Passport sign-in or one group contract.
+  on 44'), receive and change. The gap limit is 20 on each chain of each
+  account. `BITCOIN_KEY_DERIVATION_PATH`, `bitcoinReceiveDerivationPath`, and
+  `bitcoinChangeDerivationPath` name BIP84 paths; `Wallet` derives and
+  watches on its own network's coin type.
+- Account xpubs are shared (`shareableAccountXpub`) with the network's version
+  bytes (`tpub` off mainnet), depth, parent fingerprint, and child number
+  zeroed, and no key origin in descriptors, so xpubs a user shares from two
+  accounts can't be linked to one seed. Addresses are unchanged.
+- `cosignerProof` is a claim signed by the cosigner key (BIP340 under
+  `Fabric/PassportCosigner`) that it acts for an identity, within a scope such
+  as one Passport sign-in or one group contract. An identity pubkey is public,
+  so the proof alone doesn't show the identity agreed: accept it only inside a
+  message the identity key signed, as a `PASSPORT_ASSERTION` is.
 
 ## Storage: two passwords
 - **Derivation password** (optional). The BIP39 passphrase. With the mnemonic
@@ -63,10 +68,20 @@ The stored record (`createAccountVault`, type `FabricAccountVault`, `v: 2`)
 holds the sealed master xprv, the current `{ account, network }`, and a public
 cache per pair (label, identity pubkey and id, both wallet xpubs, cosigner
 pubkey), so a locked client can still show its identities and watch-only
-balances. Unlocked, the master lives in memory only. Switching account or
-network re-derives all three keys; while locked, only cached pairs can be
-selected (`selectVaultAccount`). Backups hold the sealed master xprv only;
-there is no plaintext key export, and a client holds one seed at a time.
+balances. The cache sits beside the seal unauthenticated: unlock with
+`openAccountVault`, which refuses a vault whose cache doesn't match what the
+master derives (`FABRIC_ACCOUNT_VAULT_MISMATCH`), and hand out no receive
+address from the cache before that. Unlocked, the master lives in memory only.
+Switching account or network re-derives all three keys; while locked, only
+cached pairs can be selected (`selectVaultAccount`). A client holds one seed
+at a time.
+
+Backups never hold the mnemonic or the passphrase. A vault backup holds the
+sealed master xprv. An operator wallet backup (`backupWallet`) copies
+`~/.fabric/wallet.json` as stored, sealed when the file is; with no wallet
+file it writes the unlocked in-memory wallet, xprv in plaintext (a 0600
+file). `revealSecrets` returns the xprv, and the mnemonic when the loaded key
+still holds one, in plaintext for the user to see.
 
 Signing in to websites with these keys is [docs/PASSPORT.md](docs/PASSPORT.md).
 

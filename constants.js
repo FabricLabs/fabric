@@ -41,8 +41,8 @@ const FABRIC_KEY_DERIVATION_PATH_MAINNET = `m/${FABRIC_IDENTITY_PURPOSE}'/${FABR
 const BITCOIN_COIN_TYPE = 0;
 /** BIP44 coin type for Bitcoin funds on testnet, signet, and regtest. */
 const BITCOIN_COIN_TYPE_TESTNET = 1;
-/** Default Bitcoin receive path account 0 / index 0 (funds — never Fabric identity). */
-const BITCOIN_KEY_DERIVATION_PATH = "m/44'/0'/0'/0/0";
+/** First mainnet SegWit receive key, account 0 (funds — never Fabric identity). */
+const BITCOIN_KEY_DERIVATION_PATH = "m/84'/0'/0'/0/0";
 
 /**
  * Resolve Fabric identity coin type for a Bitcoin / Fabric network name.
@@ -75,7 +75,7 @@ function bitcoinCoinTypeForNetwork (network) {
 
 /**
  * Resolve a Bitcoin coin type from a network name or explicit integer.
- * Omit / empty → 0 (mainnet), for callers that predate network-aware paths.
+ * Omit / empty → 0 (mainnet, the default network).
  * @param {string|number} [networkOrCoinType]
  * @returns {number}
  * @private
@@ -133,23 +133,25 @@ function fabricIdentityAccountPath (account = 0, networkOrCoinType) {
 }
 
 /**
- * Bitcoin BIP44 receive path (external chain): m/44'/0'/account'/0/index
+ * Bitcoin SegWit receive path (BIP84 external chain): m/84'/{coin}'/account'/0/index
  * @param {number} [account=0]
  * @param {number} [index=0]
+ * @param {string|number} [networkOrCoinType] Network name or explicit coin type; omit for mainnet.
  * @returns {string}
  */
-function bitcoinReceiveDerivationPath (account = 0, index = 0) {
-  return bitcoinPurposeDerivationPath(44, account, 0, index);
+function bitcoinReceiveDerivationPath (account = 0, index = 0, networkOrCoinType) {
+  return bitcoinPurposeDerivationPath(84, account, 0, index, networkOrCoinType);
 }
 
 /**
- * Bitcoin BIP44 change path (internal chain): m/44'/0'/account'/1/index
+ * Bitcoin SegWit change path (BIP84 internal chain): m/84'/{coin}'/account'/1/index
  * @param {number} [account=0]
  * @param {number} [index=0]
+ * @param {string|number} [networkOrCoinType] Network name or explicit coin type; omit for mainnet.
  * @returns {string}
  */
-function bitcoinChangeDerivationPath (account = 0, index = 0) {
-  return bitcoinPurposeDerivationPath(44, account, 1, index);
+function bitcoinChangeDerivationPath (account = 0, index = 0, networkOrCoinType) {
+  return bitcoinPurposeDerivationPath(84, account, 1, index, networkOrCoinType);
 }
 
 /**

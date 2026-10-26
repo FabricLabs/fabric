@@ -10,13 +10,14 @@
  * - a Fabric identity key `m/7777'/F'/n'/0/0` (F = 7777 on mainnet, 7778 elsewhere),
  *   the only key a sign-in proves;
  * - a Bitcoin wallet: `m/84'/B'/n'` (SegWit, every new receive and change
- *   address) and `m/44'/B'/n'` (watched as `pkh` and `wpkh`, spendable, never
+ *   address) and `m/44'/B'/n'` (standard `pkh`, watched and spendable, never
  *   hands out addresses), B = 0 on mainnet and 1 elsewhere;
  * - a multisig cosigner key `m/87'/B'/n'/0/0` for group wallets, escrow, and
  *   federations — never the identity key.
  *
- * Shared xpubs carry no master fingerprint or key origin, so what a user
- * shares from two accounts can't be linked to one seed.
+ * Wallet xpubs are shared with depth, parent fingerprint, and child number
+ * zeroed and no key origin, so xpubs from two accounts can't be linked to
+ * one seed.
  *
  * @module functions/accountKeys
  */
@@ -114,6 +115,26 @@ function extendedKeyForNetwork (base58, network) {
 }
 
 /**
+ * Serialize an account xpub for sharing: the network's version bytes, with
+ * depth, parent fingerprint, and child number zeroed. Those header fields
+ * would otherwise tie every account of one seed to the same parent; child
+ * derivation doesn't use them, so addresses are unchanged.
+ * @param {string} base58 Account xpub / tpub.
+ * @param {string} network
+ * @returns {string}
+ */
+function shareableAccountXpub (base58, network) {
+  const { payload, isPrivate } = decodeExtendedKey(base58);
+  if (isPrivate) throw new Error('only public extended keys are shared');
+  const out = Buffer.from(payload);
+  out.writeUInt32BE(versionsFor(network).public, 0);
+  out[4] = 0;
+  out.writeUInt32BE(0, 5);
+  out.writeUInt32BE(0, 9);
+  return encodeCheck(out);
+}
+
+/**
  * Generate a new mnemonic. Show it once for backup; it is never stored.
  * @param {number} [strength=256] Entropy bits (128 → 12 words, 256 → 24 words).
  * @returns {string}
@@ -173,8 +194,8 @@ function deriveAccount (master, options = {}) {
   const standardPath = bitcoinAccountDerivationPath(44, account, network);
   const standardKey = root.derive(standardPath);
   const wallet = {
-    segwit: { path: segwitPath, xpub: extendedKeyForNetwork(segwitKey.xpub, network), key: segwitKey },
-    standard: { path: standardPath, xpub: extendedKeyForNetwork(standardKey.xpub, network), key: standardKey },
+    segwit: { path: segwitPath, xpub: shareableAccountXpub(segwitKey.xpub, network), key: segwitKey },
+    standard: { path: standardPath, xpub: shareableAccountXpub(standardKey.xpub, network), key: standardKey },
     receive: 'segwit'
   };
   wallet.descriptors = walletDescriptors(wallet);
@@ -202,8 +223,7 @@ function deriveAccount (master, options = {}) {
 
 /**
  * The watch set of a wallet: SegWit receive and change, plus the standard
- * account as `pkh` and `wpkh` (earlier Fabric clients put SegWit addresses on
- * `m/44'`). No key origins, so the master fingerprint is never shared.
+ * account's `pkh` receive and change. No key origins.
  * @param {{ segwit: { xpub: string }, standard: { xpub: string } }} wallet
  * @returns {{ receive: string, change: string, watch: string[] }}
  */
@@ -218,9 +238,7 @@ function walletDescriptors (wallet) {
       `wpkh(${s}/0/*)`,
       `wpkh(${s}/1/*)`,
       `pkh(${l}/0/*)`,
-      `pkh(${l}/1/*)`,
-      `wpkh(${l}/0/*)`,
-      `wpkh(${l}/1/*)`
+      `pkh(${l}/1/*)`
     ]
   };
 }
@@ -287,8 +305,12 @@ function cosignerProofMessage (params) {
 }
 
 /**
- * Sign a proof that `cosignerKey` belongs to `identityPubkey`, within `scope`
- * (e.g. `passport:<origin>:<challengeHash>`, `group:<contractId>`).
+ * Sign a claim, by the holder of `cosignerKey`, that it acts for
+ * `identityPubkey` within `scope` (e.g. `passport:<origin>:<challengeHash>`,
+ * `group:<contractId>`). Only the cosigner key signs, and an identity pubkey
+ * is public, so the proof alone does not show that the identity authorized
+ * the cosigner: carry it inside a message the identity key signs, as a
+ * `PASSPORT_ASSERTION` does.
  * @param {Key} cosignerKey
  * @param {{ identityPubkey: string, scope: string }} params
  * @returns {string} BIP340 signature hex.
@@ -304,7 +326,8 @@ function cosignerProof (cosignerKey, params = {}) {
 }
 
 /**
- * Check a cosigner proof.
+ * Check a cosigner proof: the cosigner key signed this claim. Accept it only
+ * from inside a message the identity key signed (see {@link cosignerProof}).
  * @param {{ cosigner: string, identityPubkey: string, scope: string, proof: string }} params
  * @returns {boolean}
  */
@@ -347,7 +370,10 @@ function unsealMaster (blob, lockPassword) {
 }
 
 /**
- * Public data of a derived account (safe to cache unsealed).
+ * Public data of a derived account, cached unsealed in a vault. Nothing
+ * authenticates the cache until {@link openAccountVault} checks it against
+ * the master: a locked client may show it, but must not hand out a receive
+ * address from it before the vault was opened.
  * @param {ReturnType<typeof deriveAccount>} derived
  * @param {string} [label]
  * @returns {object}
@@ -400,6 +426,54 @@ function createAccountVault (params = {}) {
   return vault;
 }
 
+/** @private */
+function assertAccountVault (vault) {
+  if (!vault || vault.type !== ACCOUNT_VAULT_TYPE || vault.v !== ACCOUNT_VAULT_VERSION) {
+    throw new TypeError('account vault v2 required');
+  }
+}
+
+/**
+ * Check every cached pair of a vault against what `master` derives. The cache
+ * sits beside the seal unauthenticated, so anyone able to edit the record
+ * could swap in their own xpub; this refuses such a vault.
+ * @param {object} vault
+ * @param {string|Key} master
+ * @returns {object} The vault, unchanged.
+ */
+function verifyVaultAccounts (vault, master) {
+  assertAccountVault(vault);
+  const tampered = (why) => {
+    const err = new Error(`account vault cache does not match its master: ${why}`);
+    err.code = 'FABRIC_ACCOUNT_VAULT_MISMATCH';
+    return err;
+  };
+  const accounts = vault.accounts || {};
+  for (const [key, cached] of Object.entries(accounts)) {
+    if (!cached || vaultAccountKey(cached.account, cached.network) !== key) throw tampered(key);
+    const fresh = accountPublicView(deriveAccount(master, { account: cached.account, network: cached.network }), cached.label);
+    if (JSON.stringify(fresh) !== JSON.stringify(cached)) throw tampered(key);
+  }
+  if (!vault.current || !accounts[vaultAccountKey(vault.current.account, vault.current.network)]) {
+    throw tampered('current account is not cached');
+  }
+  return vault;
+}
+
+/**
+ * Unlock a vault: open the sealed master with the lock password and check the
+ * public cache against it ({@link verifyVaultAccounts}).
+ * @param {object} vault
+ * @param {string} lockPassword
+ * @returns {string} Master xprv.
+ */
+function openAccountVault (vault, lockPassword) {
+  assertAccountVault(vault);
+  const master = unsealMaster(vault.seal, lockPassword);
+  verifyVaultAccounts(vault, master);
+  return master;
+}
+
 /**
  * Switch a vault to another pair. Derives (and caches) it when the master is
  * given; without it only cached pairs can be selected.
@@ -408,9 +482,7 @@ function createAccountVault (params = {}) {
  * @returns {object} New vault record.
  */
 function selectVaultAccount (vault, params = {}) {
-  if (!vault || vault.type !== ACCOUNT_VAULT_TYPE || vault.v !== ACCOUNT_VAULT_VERSION) {
-    throw new TypeError('account vault v2 required');
-  }
+  assertAccountVault(vault);
   const network = normalizeAccountNetwork(params.network);
   const account = assertBip32ChildIndex(params.account, 'account');
   const key = vaultAccountKey(account, network);
@@ -446,6 +518,7 @@ module.exports = {
   WALLET_GAP_LIMIT,
   normalizeAccountNetwork,
   extendedKeyForNetwork,
+  shareableAccountXpub,
   generateMnemonic,
   importSeed,
   normalizeMasterXprv,
@@ -461,6 +534,8 @@ module.exports = {
   accountPublicView,
   vaultAccountKey,
   createAccountVault,
+  verifyVaultAccounts,
+  openAccountVault,
   selectVaultAccount,
   currentVaultAccount
 };

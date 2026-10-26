@@ -60,7 +60,7 @@ describe('@fabric/core/types/identity', function () {
       const fund = identity.master.derive(fundPath);
       assert.ok(fund.pubkey);
       assert.notEqual(fund.pubkey, identity.pubkey);
-      assert.match(fundPath, /^m\/44'\/0'\//);
+      assert.match(fundPath, /^m\/84'\/0'\//);
     });
 
     it('uses coin type 7778 by default and 7777 on mainnet', function () {

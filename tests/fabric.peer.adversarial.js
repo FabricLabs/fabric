@@ -930,11 +930,11 @@ describe('@fabric/core RC1 first-tier contract', function () {
       assert.strictEqual(resolveFabricIdentityCoinType(7777), FABRIC_COIN_TYPE_MAINNET);
     });
 
-    it('Bitcoin fund paths stay on coin type 0 and never equal the Fabric identity key', function () {
+    it('mainnet Bitcoin fund paths use BIP84 coin type 0 and never equal the Fabric identity key', function () {
       const identity = new Identity({ seed: SAMPLE_SEED, network: 'mainnet' });
       const fundPath = bitcoinReceiveDerivationPath(0, 0);
       const fund = identity.master.derive(fundPath);
-      assert.match(fundPath, /^m\/44'\/0'\//);
+      assert.match(fundPath, /^m\/84'\/0'\//);
       assert.notEqual(fund.pubkey, identity.pubkey);
       assert.strictEqual(identity.derivation, "m/7777'/7777'/0'/0/0");
       assert.notEqual(identity.pubkey, identity.master.pubkey);

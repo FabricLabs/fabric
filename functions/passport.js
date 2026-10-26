@@ -32,6 +32,7 @@ const { fabricIdentityIdFromPubkeyHex } = require('./fabricIdentitySchnorr');
 const {
   normalizeAccountNetwork,
   extendedKeyForNetwork,
+  shareableAccountXpub,
   walletDescriptors,
   cosignerProof,
   verifyCosignerProof
@@ -284,8 +285,9 @@ function readChallenge (input, options = {}) {
 }
 
 /**
- * Wallet disclosure for an assertion: both account xpubs for `network` and
- * their watch descriptors, without key origins.
+ * Wallet disclosure for an assertion: both account xpubs for `network`
+ * (depth, parent fingerprint, and child number zeroed) and their watch
+ * descriptors, without key origins.
  * @private
  * @param {{ segwit: { xpub: string }, standard: { xpub: string } }} wallet
  * @param {string} network
@@ -293,8 +295,8 @@ function readChallenge (input, options = {}) {
  */
 function walletDisclosure (wallet, network) {
   if (!wallet || !wallet.segwit || !wallet.standard) throw new TypeError('wallet with segwit and standard accounts required');
-  const segwit = { xpub: extendedKeyForNetwork(wallet.segwit.xpub, network) };
-  const standard = { xpub: extendedKeyForNetwork(wallet.standard.xpub, network) };
+  const segwit = { xpub: shareableAccountXpub(wallet.segwit.xpub, network) };
+  const standard = { xpub: shareableAccountXpub(wallet.standard.xpub, network) };
   return { segwit, standard, receive: 'segwit', descriptors: walletDescriptors({ segwit, standard }) };
 }
 
@@ -522,7 +524,7 @@ function readWalletDisclosure (text, network) {
     return { ok: false, error: 'invalid wallet xpub' };
   }
   if (wallet.segwit.xpub !== parsed.segwit.xpub || wallet.standard.xpub !== parsed.standard.xpub) {
-    return { ok: false, error: 'wallet xpubs are not for the assertion network' };
+    return { ok: false, error: 'wallet xpubs must be shareable account xpubs for the assertion network' };
   }
   if (JSON.stringify(wallet.descriptors) !== JSON.stringify(parsed.descriptors)) {
     return { ok: false, error: 'wallet descriptors do not match the xpubs' };

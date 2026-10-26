@@ -41,8 +41,8 @@ derives three unrelated keys (`functions/accountKeys` `deriveAccount`):
 |---|---|---|---|
 | Identity | `m/7777'/F'/n'/0/0` | Sign-in, Fabric messages | Every site you sign in to (pubkey only) |
 | Wallet, SegWit | `m/84'/B'/n'` | Every new receive and change address | Only a site you agree to share your wallet with |
-| Wallet, standard | `m/44'/B'/n'` (watched as `pkh` and `wpkh`) | Watched and spendable; never hands out addresses | Same |
-| Cosigner | `m/87'/B'/n'/0/0` (BIP87) | Group wallets, escrow, federations | Only a site you agree to share your escrow key with, with a proof tying it to your identity |
+| Wallet, standard | `m/44'/B'/n'` (watched as `pkh`) | Watched and spendable; never hands out addresses | Same |
+| Cosigner | `m/87'/B'/n'/0/0` (BIP87) | Group wallets, escrow, federations | Only a site you agree to share your escrow key with, in an assertion your identity signs |
 
 `F` is 7777 on mainnet and 7778 elsewhere; `B` is 0 on mainnet and 1
 elsewhere. The same index on two networks gives unrelated keys. See
@@ -90,15 +90,18 @@ Signed by the identity key.
 | `identityId` | Fabric id of `pubkey` |
 | `signer` | `passport`, `hub`, or `gooncitizen` |
 | `device` | When a desktop signs: the pubkey of the Passport device that asked |
-| `wallet` | Only when requested and agreed to: both account xpubs for the network and their watch descriptors, no key origins, `receive: 'segwit'` |
+| `wallet` | Only when requested and agreed to: both account xpubs for the network (depth, parent fingerprint, and child number zeroed) and their watch descriptors, no key origins, `receive: 'segwit'` |
 | `cosigner` | Only when requested and agreed to: `{ pubkey, proof }` |
 
 The cosigner proof is a cosigner-key BIP340 signature under the
 `Fabric/PassportCosigner` tag over
 `fabric-cosigner:1\n<scope>\n<identity pubkey>\n<cosigner pubkey>`, with scope
 `passport:<origin>:<challengeHash>`. It can't be replayed to another site or
-another sign-in. Applications use the same proof with their own scope (for
-example `group:<contractId>` for GoonCitizen group wallets).
+another sign-in. Only the cosigner key signs it, so on its own it is just the
+cosigner's claim; the identity's signature over the assertion is what ties
+the two. Applications use the same proof with their own scope (for example
+`group:<contractId>` for GoonCitizen group wallets), always inside a message
+the identity key signs.
 
 ### `PASSPORT_SIGN_REQUEST` (`0x4242`), from Passport to a desktop app
 Signed by the Passport device key.
@@ -245,7 +248,8 @@ own routes (goon.vc) use it too.
   not the page, names the origin.
 - **Cross-site tracking through keys**: the identity xpub is never sent, and
   wallet or cosigner keys go only where the user agreed. Shared xpubs carry no
-  master fingerprint, so two accounts can't be linked to one seed.
+  depth, parent fingerprint, child number, or key origin, so two accounts
+  can't be linked to one seed through them.
 - **A desktop signing for a stranger**: only paired devices in its identity
   cluster, from Passport origins, on loopback, after a native prompt.
 - **Server-held signing power**: there is no delegation. A login is a session
