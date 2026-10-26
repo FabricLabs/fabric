@@ -22,8 +22,10 @@ const FABRIC_USER_AGENT = 'Fabric Core 0.1.0 (@fabric/core#v0.1.0-RC1)';
 const BITCOIN_NETWORK = 'mainnet';
 const BITCOIN_GENESIS = '000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f';
 const BITCOIN_GENESIS_ROOT = '4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b';
+/** Purpose level of Fabric identity paths (`m/7777'/…`), apart from BIP44 funds. */
+const FABRIC_IDENTITY_PURPOSE = 7777;
 /**
- * Fabric protocol identity coin types (BIP44 `coin_type'`, not Bitcoin funds).
+ * Fabric protocol identity coin types (the `F'` level, not Bitcoin funds).
  * - **7777** — Bitcoin **mainnet** identities
  * - **7778** — all other networks (testnet, signet, regtest, and unspecified)
  */
@@ -31,12 +33,14 @@ const FABRIC_COIN_TYPE_MAINNET = 7777;
 const FABRIC_COIN_TYPE_TESTNET = 7778;
 /** Default Fabric coin type (non-mainnet / development). Alias of {@link FABRIC_COIN_TYPE_TESTNET}. */
 const FABRIC_COIN_TYPE = FABRIC_COIN_TYPE_TESTNET;
-/** Default Fabric identity path (non-mainnet): m/44'/7778'/0'/0/0 */
-const FABRIC_KEY_DERIVATION_PATH = `m/44'/${FABRIC_COIN_TYPE_TESTNET}'/0'/0/0`;
-/** Mainnet Fabric identity path: m/44'/7777'/0'/0/0 */
-const FABRIC_KEY_DERIVATION_PATH_MAINNET = `m/44'/${FABRIC_COIN_TYPE_MAINNET}'/0'/0/0`;
-/** BIP44 coin type for Bitcoin funds (receive / change). */
+/** Default Fabric identity path (non-mainnet): m/7777'/7778'/0'/0/0 */
+const FABRIC_KEY_DERIVATION_PATH = `m/${FABRIC_IDENTITY_PURPOSE}'/${FABRIC_COIN_TYPE_TESTNET}'/0'/0/0`;
+/** Mainnet Fabric identity path: m/7777'/7777'/0'/0/0 */
+const FABRIC_KEY_DERIVATION_PATH_MAINNET = `m/${FABRIC_IDENTITY_PURPOSE}'/${FABRIC_COIN_TYPE_MAINNET}'/0'/0/0`;
+/** BIP44 coin type for Bitcoin funds on mainnet (receive / change). */
 const BITCOIN_COIN_TYPE = 0;
+/** BIP44 coin type for Bitcoin funds on testnet, signet, and regtest. */
+const BITCOIN_COIN_TYPE_TESTNET = 1;
 /** Default Bitcoin receive path account 0 / index 0 (funds — never Fabric identity). */
 const BITCOIN_KEY_DERIVATION_PATH = "m/44'/0'/0'/0/0";
 
@@ -47,11 +51,43 @@ const BITCOIN_KEY_DERIVATION_PATH = "m/44'/0'/0'/0/0";
  * @returns {number}
  */
 function fabricCoinTypeForNetwork (network) {
+  return isMainnetNetwork(network) ? FABRIC_COIN_TYPE_MAINNET : FABRIC_COIN_TYPE_TESTNET;
+}
+
+/**
+ * True for the names Bitcoin mainnet goes by (`main`, `mainnet`, `bitcoin`, `livenet`).
+ * @param {string|null|undefined} network
+ * @returns {boolean}
+ */
+function isMainnetNetwork (network) {
   const n = String(network == null ? '' : network).trim().toLowerCase();
-  if (n === 'main' || n === 'mainnet' || n === 'bitcoin' || n === 'livenet') {
-    return FABRIC_COIN_TYPE_MAINNET;
+  return n === 'main' || n === 'mainnet' || n === 'bitcoin' || n === 'livenet';
+}
+
+/**
+ * BIP44 coin type for Bitcoin funds on a network: 0 on mainnet, 1 elsewhere.
+ * @param {string|null|undefined} network
+ * @returns {number}
+ */
+function bitcoinCoinTypeForNetwork (network) {
+  return isMainnetNetwork(network) ? BITCOIN_COIN_TYPE : BITCOIN_COIN_TYPE_TESTNET;
+}
+
+/**
+ * Resolve a Bitcoin coin type from a network name or explicit integer.
+ * Omit / empty → 0 (mainnet), for callers that predate network-aware paths.
+ * @param {string|number} [networkOrCoinType]
+ * @returns {number}
+ * @private
+ */
+function resolveBitcoinCoinType (networkOrCoinType) {
+  if (typeof networkOrCoinType === 'number') {
+    return assertBip32ChildIndex(networkOrCoinType, 'coinType');
   }
-  return FABRIC_COIN_TYPE_TESTNET;
+  if (networkOrCoinType != null && String(networkOrCoinType).trim() !== '') {
+    return bitcoinCoinTypeForNetwork(networkOrCoinType);
+  }
+  return BITCOIN_COIN_TYPE;
 }
 
 /**
@@ -72,7 +108,7 @@ function resolveFabricIdentityCoinType (networkOrCoinType) {
 }
 
 /**
- * Fabric identity path: m/44'/{7777|7778}'/account'/0/index
+ * Fabric identity path: m/7777'/{7777|7778}'/account'/0/index
  * @param {number} [account=0]
  * @param {number} [index=0]
  * @param {string|number} [networkOrCoinType] Network name (`mainnet` / `regtest` / …)
@@ -85,7 +121,7 @@ function fabricIdentityDerivationPath (account = 0, index = 0, networkOrCoinType
 }
 
 /**
- * Fabric identity account node: m/44'/{7777|7778}'/account'
+ * Fabric identity account node: m/7777'/{7777|7778}'/account'
  * @param {number} [account=0]
  * @param {string|number} [networkOrCoinType] Network name or explicit coin type.
  * @returns {string}
@@ -93,7 +129,7 @@ function fabricIdentityDerivationPath (account = 0, index = 0, networkOrCoinType
 function fabricIdentityAccountPath (account = 0, networkOrCoinType) {
   const a = assertBip32ChildIndex(account, 'account');
   const coin = resolveFabricIdentityCoinType(networkOrCoinType);
-  return `m/44'/${coin}'/${a}'`;
+  return `m/${FABRIC_IDENTITY_PURPOSE}'/${coin}'/${a}'`;
 }
 
 /**
@@ -117,26 +153,50 @@ function bitcoinChangeDerivationPath (account = 0, index = 0) {
 }
 
 /**
- * BIP-43 purpose path for Bitcoin funds: m/{purpose}'/0'/account'/{0|1}/index
- * Default receive remains BIP-44 (`bitcoinReceiveDerivationPath`); these helpers
- * name BIP-49 / BIP-84 / BIP-86 trees without changing that default.
+ * BIP-43 purpose path for Bitcoin funds: m/{purpose}'/{coin}'/account'/{0|1}/index
+ * Wallets hand out addresses from BIP-84 and watch BIP-44 too (see
+ * `functions/accountKeys.js`); BIP-87 names the multisig cosigner key.
  *
- * @param {number} purpose 44 (p2pkh), 49 (p2sh-p2wpkh), 84 (p2wpkh), or 86 (p2tr)
+ * @param {number} purpose 44 (p2pkh), 49 (p2sh-p2wpkh), 84 (p2wpkh), 86 (p2tr), or 87 (multisig)
  * @param {number} [account=0]
  * @param {number} [change=0] 0 = receive, 1 = change
  * @param {number} [index=0]
+ * @param {string|number} [networkOrCoinType] Network name (coin 0 on mainnet, 1 elsewhere)
+ *   or an explicit coin type. Omit for coin 0.
  * @returns {string}
  * @private
  */
-function bitcoinPurposeDerivationPath (purpose, account = 0, change = 0, index = 0) {
-  const p = assertBip32ChildIndex(purpose, 'purpose');
-  const a = assertBip32ChildIndex(account, 'account');
+function bitcoinPurposeDerivationPath (purpose, account = 0, change = 0, index = 0, networkOrCoinType) {
   const c = assertBip32ChildIndex(change, 'change');
   const i = assertBip32ChildIndex(index, 'index');
   if (c !== 0 && c !== 1) {
     throw new RangeError('BIP32 change chain must be 0 (receive) or 1 (change)');
   }
-  return `m/${p}'/${BITCOIN_COIN_TYPE}'/${a}'/${c}/${i}`;
+  return `${bitcoinAccountDerivationPath(purpose, account, networkOrCoinType)}/${c}/${i}`;
+}
+
+/**
+ * BIP-43 account node for Bitcoin funds: m/{purpose}'/{coin}'/account'
+ * @param {number} purpose
+ * @param {number} [account=0]
+ * @param {string|number} [networkOrCoinType] Network name or explicit coin type; omit for coin 0.
+ * @returns {string}
+ */
+function bitcoinAccountDerivationPath (purpose, account = 0, networkOrCoinType) {
+  const p = assertBip32ChildIndex(purpose, 'purpose');
+  const a = assertBip32ChildIndex(account, 'account');
+  const coin = resolveBitcoinCoinType(networkOrCoinType);
+  return `m/${p}'/${coin}'/${a}'`;
+}
+
+/**
+ * BIP-87 multisig cosigner key for an account: m/87'/{coin}'/account'/0/0
+ * @param {number} [account=0]
+ * @param {string|number} [networkOrCoinType]
+ * @returns {string}
+ */
+function bitcoinCosignerDerivationPath (account = 0, networkOrCoinType) {
+  return bitcoinPurposeDerivationPath(87, account, 0, 0, networkOrCoinType);
 }
 
 /** BIP-49 wrapped SegWit receive: m/49'/0'/account'/0/index */
@@ -451,15 +511,15 @@ const P2P_MUSIG_SEND_PROPOSAL = 0x4223;
 const P2P_MUSIG_REPLY_TO_PROPOSAL = 0x4224;
 const P2P_MUSIG_ACCEPT_PROPOSAL = 0x4225;
 /**
- * Cross-boundary sign-in frames, carried as `fabric:<frame>` strings between a
+ * Passport v2 sign-in frames, carried as `fabric:<frame>` strings between a
  * page, a browser extension, and a desktop app — never relayed on the mesh.
- * See `functions/fabricSiteLogin.js`.
+ * See `functions/passport.js` and `docs/PASSPORT.md`.
  */
-const SITE_LOGIN_REQUEST = 0x4230;
-const SITE_LOGIN_RESPONSE = 0x4231;
-const FABRIC_SIGN_REQUEST = 0x4232;
-/** Longest lifetime a site-login or sign request may ask for. */
-const SITE_LOGIN_MAX_TTL_MS = 5 * 60 * 1000;
+const PASSPORT_CHALLENGE = 0x4240;
+const PASSPORT_ASSERTION = 0x4241;
+const PASSPORT_SIGN_REQUEST = 0x4242;
+/** Longest lifetime any Passport frame may ask for. */
+const PASSPORT_MAX_TTL_MS = 3 * 60 * 1000;
 
 // Message Types
 const PEER_CANDIDATE = 0x09;
@@ -527,11 +587,18 @@ module.exports = {
   BITCOIN_GENESIS_ROOT,
   FABRIC_KEY_DERIVATION_PATH,
   FABRIC_KEY_DERIVATION_PATH_MAINNET,
+  FABRIC_IDENTITY_PURPOSE,
   FABRIC_COIN_TYPE,
   FABRIC_COIN_TYPE_MAINNET,
   FABRIC_COIN_TYPE_TESTNET,
   BITCOIN_COIN_TYPE,
+  BITCOIN_COIN_TYPE_TESTNET,
   BITCOIN_KEY_DERIVATION_PATH,
+  isMainnetNetwork,
+  bitcoinCoinTypeForNetwork,
+  bitcoinAccountDerivationPath,
+  bitcoinPurposeDerivationPath,
+  bitcoinCosignerDerivationPath,
   fabricCoinTypeForNetwork,
   resolveFabricIdentityCoinType,
   fabricIdentityDerivationPath,
@@ -708,10 +775,10 @@ module.exports = {
   P2P_MUSIG_SEND_PROPOSAL,
   P2P_MUSIG_REPLY_TO_PROPOSAL,
   P2P_MUSIG_ACCEPT_PROPOSAL,
-  SITE_LOGIN_REQUEST,
-  SITE_LOGIN_RESPONSE,
-  FABRIC_SIGN_REQUEST,
-  SITE_LOGIN_MAX_TTL_MS,
+  PASSPORT_CHALLENGE,
+  PASSPORT_ASSERTION,
+  PASSPORT_SIGN_REQUEST,
+  PASSPORT_MAX_TTL_MS,
   PEER_CANDIDATE,
   SIDECHAIN_STATE_PATCH_TYPE,
   DOCUMENT_PUBLISH_TYPE,

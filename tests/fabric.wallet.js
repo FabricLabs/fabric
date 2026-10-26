@@ -65,8 +65,8 @@ describe('@fabric/core/types/wallet', function () {
       assert.ok(exported);
       assert.equal(exported.type, 'FabricWallet');
       assert.ok(exported.object);
-      assert.ok(exported.object.master);
-      assert.ok(exported.object.seed);
+      assert.strictEqual(exported.object.master, undefined);
+      assert.strictEqual(exported.object.seed, undefined);
       assert.ok(exported.object.xprv);
       assert.match(String(exported.object.xprv), /^xprv/);
     });
@@ -76,7 +76,7 @@ describe('@fabric/core/types/wallet', function () {
       const exported = wallet.export();
       const json = JSON.stringify(exported.object);
       assert.ok(json.includes('xprv'));
-      assert.ok(exported.object.seed);
+      assert.ok(!json.includes('abandon'), 'mnemonic is never exported');
       assert.strictEqual(exported.passwordProtected, undefined);
       assert.strictEqual(exported.seal, undefined);
     });

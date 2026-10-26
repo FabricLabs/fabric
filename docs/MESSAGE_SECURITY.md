@@ -19,8 +19,8 @@ follows them cannot be made to sign something a site chose for it.
    call without a `Fabric/…` tag throws. A signature for one purpose never
    verifies for another, nor as a plain-SHA256 signature from another protocol
    (Nostr events, Bitcoin signed messages, other apps' raw Schnorr).
-3. **Every signature names its audience and session.** Login responses carry
-   the site origin and the request nonce; device links and identity cross-signs
+3. **Every signature names its audience and session.** Passport assertions
+   carry the site origin, the challenge nonce, and the challenge hash; device links and identity cross-signs
    carry the origin, a 48-hex session id, and a 64-hex nonce. A signature for
    one site or session is useless at another.
 4. **The key signed for must derive from what the user was shown.** A device
@@ -51,18 +51,21 @@ follows them cannot be made to sign something a site chose for it.
 | `Fabric/IdentityCrossSignRevoke` | `fabric:identity-cross-sign-revoke:2:<session>:<nonce>:<local>:<peer>:<revokedAt>:<origin>` |
 | `Fabric/DeviceLinkOffer` | Device-link offer (`@fabric/http`) |
 | `Fabric/DeviceLink` | Device-link countersign (`@fabric/http`) |
-| `Fabric/Delegation` | Hub delegation signatures |
+| `Fabric/PassportCosigner` | `fabric-cosigner:1\n<scope>\n<identity>\n<cosigner>` — a cosigner key vouching for its identity within one scope (a Passport sign-in, a group contract) |
 | `Fabric/OracleAttestation` | Oracle attestations (peering capability, price quotes) |
 | `Fabric/FederationInvite` | Signed federation contract invites |
 
 Add a tag there for every new purpose; do not reuse one whose strings could be
 confused with yours.
 
-## Site login
-A site asks for a login with a signed `SITE_LOGIN_REQUEST` frame
-(`functions/fabricSiteLogin`: `createSiteLoginRequest`). The wallet reads it,
-takes the origin from the browser (never from the frame), shows it, and on
-approval answers with its own `SITE_LOGIN_RESPONSE` frame. The site checks it
-with `verifySiteLoginResponse(fabric, { origin, nonce })` (type, origin, nonce,
-age, and that the author key is the claimed identity) and redeems the nonce
-once. No server signs on the user's behalf and nothing else is signed.
+## Passport sign-in
+A site asks for a sign-in with a `PASSPORT_CHALLENGE` frame for its own pinned
+origin (`functions/passport`: `createChallenge`). The signer reads it, takes
+the origin from the browser (never from the frame), shows it, and on approval
+answers with a `PASSPORT_ASSERTION` signed by the identity key. The assertion
+names the origin, the nonce, the sha256 of the challenge, and the network, and
+carries wallet or cosigner keys only when the challenge asked and the user
+agreed. The site checks it with `verifyAssertion` and redeems the challenge
+once, bound to an HttpOnly cookie in the browser that asked. No server signs
+on the user's behalf and there is no delegation. Full spec:
+[PASSPORT.md](PASSPORT.md).

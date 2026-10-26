@@ -1528,7 +1528,7 @@ describe('@fabric/core/types/peer', function () {
       });
       it('derived-key debug summary uses Key.pubkey not settings.public', function () {
         const peer = new Peer({ listen: false, peersDb: null });
-        const derived = peer.identity.key.derive("m/44'/7778'/0'/0/0");
+        const derived = peer.identity.key.derive("m/7777'/7778'/0'/0/0");
         assert.ok(derived.pubkey && derived.pubkey.length >= 66);
         assert.ok(derived.settings.public == null || derived.settings.public === '');
         const summary = Peer.debugDerivedPublicSummary(derived);

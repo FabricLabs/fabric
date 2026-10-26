@@ -428,7 +428,7 @@ Core never `require`s `@fabric/http` or `@fabric/hub`.
 ### Success pattern
 Shared *behavior* that is not a protocol class belongs in **`@fabric/http/functions/*`** (browser-safe when possible) or **`@fabric/core/functions/*`** (crypto / AMP / contract). Downstream packages **re-export** the same function object.
 
-Hub already guards this with `tests/liftedApis.exports.test.js` (allowlist, `httpSharedMode`, device-link Origin helpers, oracle attestation, pubkey, chat normalize). GoonCitizen does the same for several http helpers (`functions/httpSharedMode.js`, `fabricSiteLoginVerify.js`, `fabricDeviceLinkProtocol.js`, …).
+Hub already guards this with `tests/liftedApis.exports.test.js` (allowlist, `httpSharedMode`, device-link Origin helpers, oracle attestation, pubkey, chat normalize). GoonCitizen does the same for several http helpers (`functions/httpSharedMode.js`, `passportRelyingParty.js`, `fabricDeviceLinkProtocol.js`, …).
 
 **Do this:**
 ```js
@@ -507,7 +507,7 @@ No top-level `types/` or `services/`. Treat as a **client** of core Key/Message 
 | `src/types/identity.ts` | UI `IIdentity` / chain allowlist — not core Identity. Keep local. |
 | `src/background/encryptedDatastore.ts` | chrome.storage AES-GCM — parallel to `Store.openEncrypted`, not a merge candidate. |
 | `src/utils/identityCrossSign.ts` | **Re-export** of `@fabric/core/functions/identityCrossSign`. |
-| `src/utils/fabricSiteLoginSign.ts`, `fabricDeviceLinkSign.ts` | Clients of http — keep as clients. |
+| `src/utils/fabricSiteMessage.ts`, `fabricDeviceLinkSign.ts` | Clients of http — keep as clients. |
 | `src/fabric/bitcoinService.ts` | Hub HTTP Bitcoin client — keep. |
 
 #### GoonCitizen — application

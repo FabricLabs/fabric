@@ -923,9 +923,9 @@ describe('@fabric/core RC1 first-tier contract', function () {
       assert.strictEqual(fabricCoinTypeForNetwork('not-a-network'), FABRIC_COIN_TYPE_TESTNET);
       assert.strictEqual(fabricCoinTypeForNetwork(''), FABRIC_COIN_TYPE_TESTNET);
       assert.strictEqual(fabricCoinTypeForNetwork(null), FABRIC_COIN_TYPE_TESTNET);
-      assert.strictEqual(fabricIdentityDerivationPath(0, 0, 7777), "m/44'/7777'/0'/0/0");
-      assert.strictEqual(fabricIdentityAccountPath(0, 'not-a-network'), "m/44'/7778'/0'");
-      assert.strictEqual(fabricIdentityAccountPath(0, 'mainnet'), "m/44'/7777'/0'");
+      assert.strictEqual(fabricIdentityDerivationPath(0, 0, 7777), "m/7777'/7777'/0'/0/0");
+      assert.strictEqual(fabricIdentityAccountPath(0, 'not-a-network'), "m/7777'/7778'/0'");
+      assert.strictEqual(fabricIdentityAccountPath(0, 'mainnet'), "m/7777'/7777'/0'");
       assert.strictEqual(resolveFabricIdentityCoinType('not-a-network'), FABRIC_COIN_TYPE_TESTNET);
       assert.strictEqual(resolveFabricIdentityCoinType(7777), FABRIC_COIN_TYPE_MAINNET);
     });
@@ -936,7 +936,7 @@ describe('@fabric/core RC1 first-tier contract', function () {
       const fund = identity.master.derive(fundPath);
       assert.match(fundPath, /^m\/44'\/0'\//);
       assert.notEqual(fund.pubkey, identity.pubkey);
-      assert.strictEqual(identity.derivation, "m/44'/7777'/0'/0/0");
+      assert.strictEqual(identity.derivation, "m/7777'/7777'/0'/0/0");
       assert.notEqual(identity.pubkey, identity.master.pubkey);
     });
 

@@ -27,7 +27,9 @@ module.exports = Object.freeze({
   IDENTITY_CROSS_SIGN_REVOKE: 'Fabric/IdentityCrossSignRevoke',
   DEVICE_LINK_OFFER: 'Fabric/DeviceLinkOffer',
   DEVICE_LINK: 'Fabric/DeviceLink',
-  DELEGATION: 'Fabric/Delegation',
+  // A cosigner key vouches for the identity it belongs to, within one scope
+  // (a Passport sign-in, a group contract).
+  PASSPORT_COSIGNER: 'Fabric/PassportCosigner',
   ORACLE_ATTESTATION: 'Fabric/OracleAttestation',
   FEDERATION_INVITE: 'Fabric/FederationInvite'
 });

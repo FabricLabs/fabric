@@ -216,7 +216,15 @@ class Wallet extends Service {
     });
   }
 
-  derive (path = require('../constants').BITCOIN_KEY_DERIVATION_PATH) {
+  /**
+   * Derive a key; the default is the first SegWit receive key of account 0
+   * on the wallet's network (`m/84'/{0|1}'/0'/0/0`).
+   * @param {string} [path]
+   */
+  derive (path) {
+    if (path == null) {
+      path = require('../constants').bitcoinPurposeDerivationPath(84, 0, 0, 0, this.settings.network);
+    }
     const derived = this.key.derive(path);
     return {
       privateKey: derived.private,
@@ -249,11 +257,7 @@ class Wallet extends Service {
             ]
           }
         ],
-        master: {
-          private: this.key.master.privateKey.toString('hex'),
-          public: this.key.master.publicKey.toString('hex')
-        },
-        seed: this.key.seed,
+        // Only the master xprv: the mnemonic and raw private hex are never written.
         xprv: this.key.master.toBase58()
       },
       version: this.version
