@@ -8,7 +8,7 @@
 'use strict';
 
 // Constants
-const { FABRIC_KEY_DERIVATION_PATH } = require('../constants');
+const { FABRIC_KEY_DERIVATION_PATH, bitcoinCoinTypeForNetwork } = require('../constants');
 
 // Node Modules
 const crypto = require('crypto');
@@ -574,7 +574,8 @@ class Key extends EventEmitter {
   }
 
   deriveKeyPair (addressID = 0, change = 0) {
-    const path = `m/${this.purpose}'/0'/${this.account}'/${change}/${addressID}`;
+    const coin = bitcoinCoinTypeForNetwork(this.settings.network);
+    const path = `m/${this.purpose}'/${coin}'/${this.account}'/${change}/${addressID}`;
     const derived = this.master.derivePath(path);
     const pubBytes = secp256k1.getPublicKey(derived.privateKey, true);
     return {

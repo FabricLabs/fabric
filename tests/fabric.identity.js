@@ -60,7 +60,7 @@ describe('@fabric/core/types/identity', function () {
       const fund = identity.master.derive(fundPath);
       assert.ok(fund.pubkey);
       assert.notEqual(fund.pubkey, identity.pubkey);
-      assert.match(fundPath, /^m\/44'\/0'\//);
+      assert.match(fundPath, /^m\/84'\/0'\//);
     });
 
     it('uses coin type 7778 by default and 7777 on mainnet', function () {
@@ -73,9 +73,9 @@ describe('@fabric/core/types/identity', function () {
       assert.strictEqual(resolveFabricIdentityCoinType(7777), FABRIC_COIN_TYPE_MAINNET);
       assert.strictEqual(resolveFabricIdentityCoinType(), FABRIC_COIN_TYPE_TESTNET);
       assert.strictEqual(fabricIdentityDerivationPath(0, 0), FABRIC_KEY_DERIVATION_PATH);
-      assert.strictEqual(fabricIdentityDerivationPath(0, 0, 'mainnet'), "m/44'/7777'/0'/0/0");
-      assert.strictEqual(fabricIdentityAccountPath(0), "m/44'/7778'/0'");
-      assert.strictEqual(fabricIdentityAccountPath(0, 'mainnet'), "m/44'/7777'/0'");
+      assert.strictEqual(fabricIdentityDerivationPath(0, 0, 'mainnet'), "m/7777'/7777'/0'/0/0");
+      assert.strictEqual(fabricIdentityAccountPath(0), "m/7777'/7778'/0'");
+      assert.strictEqual(fabricIdentityAccountPath(0, 'mainnet'), "m/7777'/7777'/0'");
       assert.strictEqual(
         fabricIdentityDerivationPath(2, 3, 'regtest'),
         fabricIdentityAccountPath(2, 'regtest') + '/0/3'
@@ -83,8 +83,8 @@ describe('@fabric/core/types/identity', function () {
 
       const reg = new Identity({ seed: SAMPLE.seed, network: 'regtest' });
       const main = new Identity({ seed: SAMPLE.seed, network: 'mainnet' });
-      assert.strictEqual(reg.derivation, "m/44'/7778'/0'/0/0");
-      assert.strictEqual(main.derivation, "m/44'/7777'/0'/0/0");
+      assert.strictEqual(reg.derivation, "m/7777'/7778'/0'/0/0");
+      assert.strictEqual(main.derivation, "m/7777'/7777'/0'/0/0");
       assert.notEqual(reg.pubkey, main.pubkey);
     });
 

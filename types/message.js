@@ -41,9 +41,9 @@ const {
   P2P_MUSIG_SEND_PROPOSAL,
   P2P_MUSIG_REPLY_TO_PROPOSAL,
   P2P_MUSIG_ACCEPT_PROPOSAL,
-  SITE_LOGIN_REQUEST,
-  SITE_LOGIN_RESPONSE,
-  FABRIC_SIGN_REQUEST,
+  PASSPORT_CHALLENGE,
+  PASSPORT_ASSERTION,
+  PASSPORT_SIGN_REQUEST,
   P2P_CONTRACT_PUBLISH,
   P2P_CONTRACT_MESSAGE,
   P2P_STATE_ROOT,
@@ -345,9 +345,9 @@ const WIRE_TYPE_DECODE_ORDER = Object.freeze([
   [P2P_MUSIG_SEND_PROPOSAL, 'P2P_MUSIG_SEND_PROPOSAL'],
   [P2P_MUSIG_REPLY_TO_PROPOSAL, 'P2P_MUSIG_REPLY_TO_PROPOSAL'],
   [P2P_MUSIG_ACCEPT_PROPOSAL, 'P2P_MUSIG_ACCEPT_PROPOSAL'],
-  [SITE_LOGIN_REQUEST, 'SITE_LOGIN_REQUEST'],
-  [SITE_LOGIN_RESPONSE, 'SITE_LOGIN_RESPONSE'],
-  [FABRIC_SIGN_REQUEST, 'FABRIC_SIGN_REQUEST'],
+  [PASSPORT_CHALLENGE, 'PASSPORT_CHALLENGE'],
+  [PASSPORT_ASSERTION, 'PASSPORT_ASSERTION'],
+  [PASSPORT_SIGN_REQUEST, 'PASSPORT_SIGN_REQUEST'],
   [P2P_CONTRACT_PUBLISH, 'CONTRACT_PUBLISH'],
   [P2P_CONTRACT_MESSAGE, 'CONTRACT_MESSAGE'],
   [P2P_IDENT_REQUEST, 'P2P_IDENT_REQUEST'],
@@ -451,9 +451,9 @@ const LEGACY_MESSAGE_TYPE_ALIASES = Object.freeze({
   MusigSendProposal: P2P_MUSIG_SEND_PROPOSAL,
   MusigReplyToProposal: P2P_MUSIG_REPLY_TO_PROPOSAL,
   MusigAcceptProposal: P2P_MUSIG_ACCEPT_PROPOSAL,
-  SiteLoginRequest: SITE_LOGIN_REQUEST,
-  SiteLoginResponse: SITE_LOGIN_RESPONSE,
-  FabricSignRequest: FABRIC_SIGN_REQUEST,
+  PassportChallenge: PASSPORT_CHALLENGE,
+  PassportAssertion: PASSPORT_ASSERTION,
+  PassportSignRequest: PASSPORT_SIGN_REQUEST,
   FileSend: P2P_FILE_SEND,
   DocumentPricingPublish: P2P_DOCUMENT_PUBLISH,
   Ping: P2P_PING,
@@ -1609,35 +1609,49 @@ const SCHEMA_P2P_MUSIG_SIGNATURE = Object.freeze([
   { name: 'signature', type: 'bytes' }
 ]);
 /**
- * @private Cross-boundary sign-in (`functions/fabricSiteLogin.js`). Times are
- * Unix milliseconds. A request may be unsigned (zero author).
+ * @private Passport v2 sign-in (`functions/passport.js`). Times are Unix
+ * milliseconds; `request` / `disclose` are comma lists of `wallet`, `cosigner`.
+ * A challenge may be unsigned (zero author).
  */
-const SCHEMA_SITE_LOGIN_REQUEST = Object.freeze([
+const SCHEMA_PASSPORT_CHALLENGE = Object.freeze([
+  { name: 'v', type: 'u8' },
   { name: 'origin', type: 'string' },
   { name: 'nonce', type: 'string' },
   { name: 'issuedAt', type: 'u64' },
   { name: 'expiresAt', type: 'u64' },
-  { name: 'purpose', type: 'string', optional: true }
+  { name: 'purpose', type: 'string', optional: true },
+  { name: 'network', type: 'string', optional: true },
+  { name: 'request', type: 'string', optional: true }
 ]);
-/** @private Signed by the identity that signs in; `pubkey` is compressed hex and must match the author. */
-const SCHEMA_SITE_LOGIN_RESPONSE = Object.freeze([
+/**
+ * @private Signed by the identity; `pubkey` is compressed hex and must match
+ * the author. `wallet` / `cosigner` are JSON, present only when requested.
+ */
+const SCHEMA_PASSPORT_ASSERTION = Object.freeze([
+  { name: 'v', type: 'u8' },
   { name: 'origin', type: 'string' },
   { name: 'nonce', type: 'string' },
+  { name: 'challengeHash', type: 'bytes32' },
   { name: 'issuedAt', type: 'u64' },
   { name: 'expiresAt', type: 'u64' },
-  { name: 'identityId', type: 'string' },
+  { name: 'network', type: 'string' },
   { name: 'pubkey', type: 'string' },
+  { name: 'identityId', type: 'string' },
   { name: 'signer', type: 'string' },
-  { name: 'xpub', type: 'string', optional: true },
-  { name: 'crossSign', type: 'string', optional: true }
+  { name: 'device', type: 'string', optional: true },
+  { name: 'wallet', type: 'string', optional: true },
+  { name: 'cosigner', type: 'string', optional: true }
 ]);
-/** @private A linked device asks a desktop app to answer `inner` (a SITE_LOGIN_REQUEST frame) for `origin`. */
-const SCHEMA_FABRIC_SIGN_REQUEST = Object.freeze([
+/** @private A Passport device asks a paired desktop app to answer `challenge` (a PASSPORT_CHALLENGE frame). */
+const SCHEMA_PASSPORT_SIGN_REQUEST = Object.freeze([
+  { name: 'v', type: 'u8' },
   { name: 'origin', type: 'string' },
   { name: 'nonce', type: 'string' },
   { name: 'issuedAt', type: 'u64' },
   { name: 'expiresAt', type: 'u64' },
-  { name: 'inner', type: 'message' }
+  { name: 'challenge', type: 'message' },
+  { name: 'account', type: 'u32' },
+  { name: 'disclose', type: 'string', optional: true }
 ]);
 
 /**
@@ -1724,15 +1738,15 @@ function tryParseMessageBody (message) {
   registerBodySchema(P2P_MUSIG_ACCEPT_PROPOSAL, SCHEMA_P2P_MUSIG_SIGNATURE);
   registerBodySchema('P2P_MUSIG_ACCEPT_PROPOSAL', SCHEMA_P2P_MUSIG_SIGNATURE);
   registerBodySchema('MusigAcceptProposal', SCHEMA_P2P_MUSIG_SIGNATURE);
-  registerBodySchema(SITE_LOGIN_REQUEST, SCHEMA_SITE_LOGIN_REQUEST);
-  registerBodySchema('SITE_LOGIN_REQUEST', SCHEMA_SITE_LOGIN_REQUEST);
-  registerBodySchema('SiteLoginRequest', SCHEMA_SITE_LOGIN_REQUEST);
-  registerBodySchema(SITE_LOGIN_RESPONSE, SCHEMA_SITE_LOGIN_RESPONSE);
-  registerBodySchema('SITE_LOGIN_RESPONSE', SCHEMA_SITE_LOGIN_RESPONSE);
-  registerBodySchema('SiteLoginResponse', SCHEMA_SITE_LOGIN_RESPONSE);
-  registerBodySchema(FABRIC_SIGN_REQUEST, SCHEMA_FABRIC_SIGN_REQUEST);
-  registerBodySchema('FABRIC_SIGN_REQUEST', SCHEMA_FABRIC_SIGN_REQUEST);
-  registerBodySchema('FabricSignRequest', SCHEMA_FABRIC_SIGN_REQUEST);
+  registerBodySchema(PASSPORT_CHALLENGE, SCHEMA_PASSPORT_CHALLENGE);
+  registerBodySchema('PASSPORT_CHALLENGE', SCHEMA_PASSPORT_CHALLENGE);
+  registerBodySchema('PassportChallenge', SCHEMA_PASSPORT_CHALLENGE);
+  registerBodySchema(PASSPORT_ASSERTION, SCHEMA_PASSPORT_ASSERTION);
+  registerBodySchema('PASSPORT_ASSERTION', SCHEMA_PASSPORT_ASSERTION);
+  registerBodySchema('PassportAssertion', SCHEMA_PASSPORT_ASSERTION);
+  registerBodySchema(PASSPORT_SIGN_REQUEST, SCHEMA_PASSPORT_SIGN_REQUEST);
+  registerBodySchema('PASSPORT_SIGN_REQUEST', SCHEMA_PASSPORT_SIGN_REQUEST);
+  registerBodySchema('PassportSignRequest', SCHEMA_PASSPORT_SIGN_REQUEST);
 })();
 
 // Legacy JSON bodies <-> typed field bodies, for the protocol opcodes whose
@@ -2123,9 +2137,9 @@ Message.SCHEMA_P2P_PEERING_OFFER = SCHEMA_P2P_PEERING_OFFER;
 Message.SCHEMA_P2P_PEER_ANNOUNCE = SCHEMA_P2P_PEER_ANNOUNCE;
 Message.SCHEMA_SIDECHAIN_STATE_PATCH = SCHEMA_SIDECHAIN_STATE_PATCH;
 Message.SCHEMA_P2P_MUSIG_START = SCHEMA_P2P_MUSIG_START;
-Message.SCHEMA_SITE_LOGIN_REQUEST = SCHEMA_SITE_LOGIN_REQUEST;
-Message.SCHEMA_SITE_LOGIN_RESPONSE = SCHEMA_SITE_LOGIN_RESPONSE;
-Message.SCHEMA_FABRIC_SIGN_REQUEST = SCHEMA_FABRIC_SIGN_REQUEST;
+Message.SCHEMA_PASSPORT_CHALLENGE = SCHEMA_PASSPORT_CHALLENGE;
+Message.SCHEMA_PASSPORT_ASSERTION = SCHEMA_PASSPORT_ASSERTION;
+Message.SCHEMA_PASSPORT_SIGN_REQUEST = SCHEMA_PASSPORT_SIGN_REQUEST;
 
 const fs = require('fs');
 const path = require('path');
@@ -2166,8 +2180,7 @@ function wireCatalogFamilyOf (name, code) {
     name.indexOf('P2P_SESSION_') === 0 ||
     name.indexOf('P2P_IDENT_') === 0 ||
     name.indexOf('P2P_MUSIG_') === 0 ||
-    name.indexOf('SITE_LOGIN_') === 0 ||
-    name === 'FABRIC_SIGN_REQUEST' ||
+    name.indexOf('PASSPORT_') === 0 ||
     name === 'P2P_INSTRUCTION'
   ) {
     return 'session';

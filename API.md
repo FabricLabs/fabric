@@ -209,7 +209,7 @@ RFC 5869.  Defaults to 32 byte output, matching Bitcoin&#39;s implementaton.</p>
 <dt><a href="#Identity">Identity</a> ⇐ <code><a href="#Actor">Actor</a></code></dt>
 <dd><p><strong>BIP32/BIP39 identity</strong> wrapping <a href="#Key">Key</a>: mnemonic / xprv / passphrase.
 Protocol identity (pubkey / Schnorr sign / Bech32 id) uses the Fabric derivation path
-<code>m/44'/{7777|7778}'/account'/0/index</code> — coin type <strong>7777</strong> on Bitcoin
+<code>m/7777'/{7777|7778}'/account'/0/index</code> — coin type <strong>7777</strong> on Bitcoin
 mainnet, <strong>7778</strong> on all other networks (see <a href="Identity#derivation">Identity#derivation</a> and
 IDENTITY.md). The HD <strong>master</strong> remains available as <a href="#Identity+master">master</a> /
 <a href="Identity#key">Identity#key</a> so Bitcoin funds can derive under BIP44 coin type <code>0</code> (see
@@ -11164,7 +11164,7 @@ it. A seller-supplied address is never authoritative without a match.
 ## Identity ⇐ [<code>Actor</code>](#Actor)
 <strong>BIP32/BIP39 identity</strong> wrapping [Key](#Key): mnemonic / xprv / passphrase.
 Protocol identity (pubkey / Schnorr sign / Bech32 id) uses the Fabric derivation path
-<code>m/44'/{7777|7778}'/account'/0/index</code> — coin type <strong>7777</strong> on Bitcoin
+<code>m/7777'/{7777|7778}'/account'/0/index</code> — coin type <strong>7777</strong> on Bitcoin
 mainnet, <strong>7778</strong> on all other networks (see [Identity#derivation](Identity#derivation) and
 IDENTITY.md). The HD <strong>master</strong> remains available as [master](#Identity+master) /
 [Identity#key](Identity#key) so Bitcoin funds can derive under BIP44 coin type <code>0</code> (see

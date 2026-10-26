@@ -19,9 +19,9 @@ We've designed Fabric to extend the existing Bitcoin ecosystem, deriving all spe
 #### BIP32 Extensions
 ```text
 mainnet Master: m
-mainnet Identity #0: m/44'/7777'/0'/0/0
-mainnet Identity #0, address 1: m/44'/7777'/0'/0/1
-regtest / testnet / signet Identity #0: m/44'/7778'/0'/0/0
+mainnet Identity #0: m/7777'/7777'/0'/0/0
+mainnet Identity #0, address 1: m/7777'/7777'/0'/0/1
+regtest / testnet / signet Identity #0: m/7777'/7778'/0'/0/0
 Bitcoin funds (any network): m/44'/0'/account'/change/index
 ```
 

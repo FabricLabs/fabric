@@ -65,10 +65,26 @@ describe('@fabric/core/types/wallet', function () {
       assert.ok(exported);
       assert.equal(exported.type, 'FabricWallet');
       assert.ok(exported.object);
-      assert.ok(exported.object.master);
-      assert.ok(exported.object.seed);
+      assert.strictEqual(exported.object.master, undefined);
+      assert.strictEqual(exported.object.seed, undefined);
       assert.ok(exported.object.xprv);
-      assert.match(String(exported.object.xprv), /^xprv/);
+      assert.match(String(exported.object.xprv), /^tprv/, 'a regtest wallet exports a regtest master');
+    });
+
+    it('watches and derives the same addresses as its account keys', function () {
+      const { deriveAccount, importSeed, walletReceiveAddress, walletChangeAddress, walletAddress } = require('../functions/accountKeys');
+      const { FIXTURE_SEED, bitcoinReceiveDerivationPath } = require('../constants');
+      const wallet = new Wallet({ network: 'regtest', gapLimit: 2, key: { seed: FIXTURE_SEED } });
+      const account = deriveAccount(importSeed(FIXTURE_SEED), { network: 'regtest' }).wallet;
+      const watched = new Set(wallet.getWatchSet().addresses.keys());
+      for (const i of [0, 1]) {
+        assert.ok(watched.has(walletReceiveAddress(account, 'regtest', i)), `receive ${i}`);
+        assert.ok(watched.has(walletChangeAddress(account, 'regtest', i)), `change ${i}`);
+        assert.ok(watched.has(walletAddress({ xpub: account.standard.xpub, network: 'regtest', script: 'pkh', index: i })), `standard ${i}`);
+      }
+      for (const address of watched) assert.ok(!/^(bc1|tb1)/.test(address), `regtest only: ${address}`);
+      assert.strictEqual(wallet.derive().publicKey.encodeCompressed('hex'), wallet.derive(bitcoinReceiveDerivationPath(0, 0, 'regtest')).publicKey.encodeCompressed('hex'));
+      assert.notStrictEqual(wallet.derive().publicKey.encodeCompressed('hex'), wallet.derive(bitcoinReceiveDerivationPath(0, 0, 'mainnet')).publicKey.encodeCompressed('hex'));
     });
 
     it('export() is the plaintext payload Environment seals (secrets stay in object)', function () {
@@ -76,7 +92,7 @@ describe('@fabric/core/types/wallet', function () {
       const exported = wallet.export();
       const json = JSON.stringify(exported.object);
       assert.ok(json.includes('xprv'));
-      assert.ok(exported.object.seed);
+      assert.ok(!json.includes('abandon'), 'mnemonic is never exported');
       assert.strictEqual(exported.passwordProtected, undefined);
       assert.strictEqual(exported.seal, undefined);
     });
@@ -377,10 +393,11 @@ const {
 } = require('../constants');
 
 describe('@fabric/core Bitcoin derivation path templates', function () {
-  it('keeps default funds path on BIP-44', function () {
-    assert.strictEqual(BITCOIN_KEY_DERIVATION_PATH, "m/44'/0'/0'/0/0");
-    assert.strictEqual(bitcoinReceiveDerivationPath(0, 0), "m/44'/0'/0'/0/0");
-    assert.strictEqual(bitcoinChangeDerivationPath(1, 7), "m/44'/0'/1'/1/7");
+  it('puts default funds on BIP-84', function () {
+    assert.strictEqual(BITCOIN_KEY_DERIVATION_PATH, "m/84'/0'/0'/0/0");
+    assert.strictEqual(bitcoinReceiveDerivationPath(0, 0), "m/84'/0'/0'/0/0");
+    assert.strictEqual(bitcoinChangeDerivationPath(1, 7), "m/84'/0'/1'/1/7");
+    assert.strictEqual(bitcoinReceiveDerivationPath(0, 3, 'regtest'), "m/84'/1'/0'/0/3");
   });
 
   it('names BIP-49 wrapped-SegWit paths without making them the default', function () {

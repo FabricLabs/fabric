@@ -2,9 +2,7 @@
 
 // External Dependencies
 const merge = require('lodash.merge');
-const { networks: bitcoinNetworks } = require('bitcoinjs-lib');
-/** @private Fabric settings use `mainnet`; bitcoinjs-lib 7 names that network `bitcoin`. */
-const networks = Object.assign({ mainnet: bitcoinNetworks.bitcoin }, bitcoinNetworks);
+const { networks: bitcoinNetworks, payments } = require('bitcoinjs-lib');
 
 // Mnemonics
 const ecc = require('./ecc');
@@ -28,6 +26,31 @@ const {
   classifyWalletTransaction,
   BITCOIN_MESSAGE_TYPES
 } = require('../functions/walletTransactionWatch');
+const {
+  isMainnetNetwork,
+  bitcoinPurposeDerivationPath,
+  bitcoinReceiveDerivationPath
+} = require('../constants');
+
+/**
+ * bitcoinjs-lib parameters for a Fabric network name (signet and testnet4 share testnet's).
+ * @private
+ * @param {string} network
+ */
+function bitcoinNetworkFor (network) {
+  if (network === 'regtest') return bitcoinNetworks.regtest;
+  return isMainnetNetwork(network) ? bitcoinNetworks.bitcoin : bitcoinNetworks.testnet;
+}
+
+/**
+ * {@link Key} network name for a Fabric network name.
+ * @private
+ * @param {string} network
+ */
+function keyNetworkFor (network) {
+  if (network === 'regtest') return 'regtest';
+  return isMainnetNetwork(network) ? 'main' : 'testnet';
+}
 
 /**
  * Manage keys and track their balances.
@@ -70,7 +93,7 @@ class Wallet extends Service {
     }, settings);
 
     // Get network configuration
-    this.network = networks[this.settings.network] || networks.mainnet;
+    this.network = bitcoinNetworkFor(this.settings.network);
 
     this.database = null;
     this.account = null;
@@ -81,7 +104,7 @@ class Wallet extends Service {
     this.seed = null;
 
     // Initialize key management
-    this.key = new Key(this.settings.key);
+    this.key = new Key(Object.assign({}, this.settings.key, { network: keyNetworkFor(this.settings.network) }));
     this.seed = this.key.seed;
 
     this.wallet = {
@@ -216,7 +239,13 @@ class Wallet extends Service {
     });
   }
 
-  derive (path = require('../constants').BITCOIN_KEY_DERIVATION_PATH) {
+  /**
+   * Derive a key; the default is the first SegWit receive key of account 0
+   * on the wallet's network (`m/84'/{0|1}'/0'/0/0`).
+   * @param {string} [path]
+   */
+  derive (path) {
+    if (path == null) path = bitcoinReceiveDerivationPath(0, 0, this.settings.network);
     const derived = this.key.derive(path);
     return {
       privateKey: derived.private,
@@ -249,11 +278,7 @@ class Wallet extends Service {
             ]
           }
         ],
-        master: {
-          private: this.key.master.privateKey.toString('hex'),
-          public: this.key.master.publicKey.toString('hex')
-        },
-        seed: this.key.seed,
+        // Only the master xprv: the mnemonic and raw private hex are never written.
         xprv: this.key.master.toBase58()
       },
       version: this.version
@@ -346,7 +371,7 @@ class Wallet extends Service {
     }
     const key = new Key({
       seed: trimmed,
-      network: this.settings.network,
+      network: keyNetworkFor(this.settings.network),
       passphrase: opts.passphrase || ''
     });
     const xpub = key.xpub || key.pubkey;
@@ -453,25 +478,30 @@ class Wallet extends Service {
   }
 
   /**
-   * Derive and watch a window of addresses for a key (all common script types).
+   * Derive and watch a window of addresses for a key on the wallet's network:
+   * SegWit on `m/84'/{coin}'/0'` and standard on `m/44'/{coin}'/0'`, receive
+   * and change chains — the same set as `walletDescriptors` in
+   * `functions/accountKeys`.
    * @param {Key} key
    * @param {object} [opts]
    */
   _registerDerivedAddresses (key, opts = {}) {
-    if (!key || typeof key.deriveAddress !== 'function') return;
+    if (!key || !key.master || typeof key.master.derivePath !== 'function') return;
     const count = Math.max(1, Math.round(Number(opts.count != null ? opts.count : this.settings.gapLimit) || 20));
     const seedId = opts.seedId || null;
     const labels = opts.labels || [];
-    const types = ['p2pkh', 'p2wpkh', 'p2tr'];
-    for (let i = 0; i < count; i++) {
-      for (const type of types) {
-        try {
-          const der = key.deriveAddress(i, 0, type);
-          const addr = der && (der.address || (typeof der === 'string' ? der : null));
-          if (addr) {
-            this.watchAddress(addr, { seedId, index: i, type, labels, change: 0 });
-          }
-        } catch (_) { /* script type may be unsupported on this network */ }
+    const scripts = [
+      { purpose: 84, type: 'p2wpkh', pay: payments.p2wpkh },
+      { purpose: 44, type: 'p2pkh', pay: payments.p2pkh }
+    ];
+    for (const { purpose, type, pay } of scripts) {
+      for (const change of [0, 1]) {
+        for (let i = 0; i < count; i++) {
+          const path = bitcoinPurposeDerivationPath(purpose, 0, change, i, this.settings.network);
+          const pubkey = Buffer.from(key.master.derivePath(path).publicKey);
+          const { address } = pay({ pubkey, network: this.network });
+          this.watchAddress(address, { seedId, index: i, type, labels, change });
+        }
       }
     }
   }
@@ -1208,9 +1238,8 @@ class Wallet extends Service {
     const index = typeof this.index === 'number' ? this.index : 0;
     this.index = index + 1;
 
-    // Use BIP44 Bitcoin receive path (coin type 0) — not Fabric identity (7777/7778).
-    const { bitcoinReceiveDerivationPath } = require('../constants');
-    const path = bitcoinReceiveDerivationPath(0, index);
+    // SegWit receive path on the wallet's network — never the Fabric identity.
+    const path = bitcoinReceiveDerivationPath(0, index, this.settings.network);
     const pair = this.key.derive(path);
 
     const keypair = {
@@ -1268,7 +1297,7 @@ class Wallet extends Service {
       await this._load();
     } else {
       // Legacy fallback for runtimes that initialize directly from key settings.
-      this.key = new Key({ seed: phrase });
+      this.key = new Key({ seed: phrase, network: keyNetworkFor(this.settings.network) });
       this.seed = this.key.seed;
     }
     return this.seed;

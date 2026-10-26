@@ -148,12 +148,12 @@ Several application types use codes **outside** this range (see [`constants.js`]
 | `0x4223` | 16931 | `P2P_MUSIG_SEND_PROPOSAL` † | Coordinator aggnonce | ❌ No |
 | `0x4224` | 16932 | `P2P_MUSIG_REPLY_TO_PROPOSAL` † | Partial signature | ❌ No |
 | `0x4225` | 16933 | `P2P_MUSIG_ACCEPT_PROPOSAL` † | Aggregated BIP-340 signature | ❌ No |
-| `0x4230` | 16944 | `SITE_LOGIN_REQUEST` † | Site asks for a login to its own origin (`fabric:` frame; site signature optional) | ❌ No |
-| `0x4231` | 16945 | `SITE_LOGIN_RESPONSE` † | Login signed by the identity, bound to origin + nonce + expiry | ❌ No |
-| `0x4232` | 16946 | `FABRIC_SIGN_REQUEST` † | Linked device asks a desktop signer to answer a site login | ❌ No |
+| `0x4240` | 16960 | `PASSPORT_CHALLENGE` † | Site asks for a sign-in to its own origin, optionally naming its network and asking for wallet / cosigner keys (`fabric:` frame; site signature optional) | ❌ No |
+| `0x4241` | 16961 | `PASSPORT_ASSERTION` † | Sign-in signed by the identity, bound to origin + nonce + challenge hash + network + expiry | ❌ No |
+| `0x4242` | 16962 | `PASSPORT_SIGN_REQUEST` † | Paired Passport device asks a desktop signer to answer a challenge | ❌ No |
 | `0x81`-`0x8F` (legacy draft) | … | CHAT / ACCEPT / REJECT / PAYMENT_* | Not all registered in `constants.js` — see Remaining work | ⚠️ Varies |
 
-The site-login types travel as `fabric:<frame>` strings between a page, Passport, and a desktop app (`functions/fabricUri`, `functions/fabricSiteLogin`), not over the mesh: `Peer` has no handler for them and does not relay them. Like the MuSig rows they are JS-only for now — `src/constants.h` does not list them.
+The Passport types travel as `fabric:<frame>` strings between a page, Passport, and a desktop app (`functions/fabricUri`, `functions/passport`; spec in [docs/PASSPORT.md](docs/PASSPORT.md)), not over the mesh: `Peer` has no handler for them and does not relay them. They replace the earlier site-login types `0x4230`–`0x4232`, which are no longer known and are refused. Like the MuSig rows they are JS-only for now — `src/constants.h` does not list them.
 
 ### Bitcoin Integration Types
 
