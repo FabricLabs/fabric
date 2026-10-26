@@ -20,11 +20,52 @@ caller passes one (validated); it does not rewrite that integer to 7778. Helpers
 (`account path` + `/0/index`) in `constants.js`. Default development / Peer identity
 (when `network` is omitted or a non-mainnet name) stays on **7778** so playnet fixtures remain stable.
 
-**Funds vs identity:** Bitcoin receive / change keys use BIP44 coin type **`0`** from the
-**same master** (`m/44'/0'/account'/change/index`). Never reuse the Fabric `7777`/`7778` identity
-node for spendable UTXOs — `@fabric/core` `Identity` signs on the Fabric coin type;
-`Wallet` funds on `0`.
+## Accounts: three keys each
+Funds are never tied to the identity. From one master xprv, each account index
+`n` on each network derives three unrelated keys (`functions/accountKeys`
+`deriveAccount(master, { account, network })`):
 
+| Key | Path | Used for |
+|---|---|---|
+| Fabric identity | `m/44'/F'/n'/0/0` | Sign-in, Fabric messages, chat, groups, device links |
+| Bitcoin wallet, SegWit (default) | `m/84'/B'/n'` (receive `/0/i`, change `/1/i`, `wpkh`) | Every new receive and change address |
+| Bitcoin wallet, standard | `m/44'/B'/n'` (receive `/0/i`, change `/1/i`, watched as `pkh` and `wpkh`) | Watched and spendable; never hands out new addresses |
+| Multisig cosigner | `m/87'/B'/n'/0/0` (BIP87) | Group wallets, escrow, federation withdrawals |
+
+- `F` is 7777 on mainnet and 7778 elsewhere. `B` is 0 on mainnet and 1
+  elsewhere (`bitcoinCoinTypeForNetwork`).
+- The same index on two networks gives unrelated keys: regtest account 0 and
+  mainnet account 0 share nothing but the seed.
+- A wallet watches both accounts (`walletDescriptors`: `wpkh` on 84', `pkh`
+  and `wpkh` on 44', because earlier Fabric clients put SegWit addresses on
+  `m/44'`). The gap limit is 20 on each chain of each account. Child xpubs use
+  the network's version bytes (`tpub` off mainnet) and carry no master
+  fingerprint or key origin, so what a user shares from two accounts can't be
+  linked to one seed.
+- A cosigner key proves which identity it belongs to with `cosignerProof`
+  (BIP340 under `Fabric/PassportCosigner`), always within a scope such as one
+  Passport sign-in or one group contract.
+
+## Storage: two passwords
+- **Derivation password** (optional). The BIP39 passphrase. With the mnemonic
+  it gives the master xprv, once, at import (`importSeed`). Then the mnemonic,
+  passphrase, and seed are dropped.
+- **Lock password.** Seals the master xprv at rest (`sealMaster`:
+  PBKDF2-SHA256 at 210k iterations, AES-256-GCM). Changing it never changes a
+  key.
+
+The stored record (`createAccountVault`, type `FabricAccountVault`, `v: 2`)
+holds the sealed master xprv, the current `{ account, network }`, and a public
+cache per pair (label, identity pubkey and id, both wallet xpubs, cosigner
+pubkey), so a locked client can still show its identities and watch-only
+balances. Unlocked, the master lives in memory only. Switching account or
+network re-derives all three keys; while locked, only cached pairs can be
+selected (`selectVaultAccount`). Backups hold the sealed master xprv only;
+there is no plaintext key export, and a client holds one seed at a time.
+
+Signing in to websites with these keys is [docs/PASSPORT.md](docs/PASSPORT.md).
+
+## Identity paths
 Additional identities may be loaded by modifying the account index in the derivation path:
 
 ```text

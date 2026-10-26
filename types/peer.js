@@ -1533,8 +1533,7 @@ class Peer extends Service {
   }
 
   get pubkeyhash () {
-    // TODO: switch to child pubkey
-    // path: m/7777'/0'/0/0
+    // `this.key` is the Fabric identity key (m/44'/{7777|7778}'/0'/0/0), not the master.
     return this.key.pubkeyhash;
   }
 

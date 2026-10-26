@@ -73,9 +73,9 @@ This catalog: **79** decode names, **79** unique opcodes, **18** with a register
 | `P2P_MUSIG_SEND_PROPOSAL` | 16931 | `0x4223` | `MusigSendProposal` | yes | session |
 | `P2P_MUSIG_REPLY_TO_PROPOSAL` | 16932 | `0x4224` | `MusigReplyToProposal` | yes | session |
 | `P2P_MUSIG_ACCEPT_PROPOSAL` | 16933 | `0x4225` | `MusigAcceptProposal` | yes | session |
-| `SITE_LOGIN_REQUEST` | 16944 | `0x4230` | `SiteLoginRequest` | yes | session |
-| `SITE_LOGIN_RESPONSE` | 16945 | `0x4231` | `SiteLoginResponse` | yes | session |
-| `FABRIC_SIGN_REQUEST` | 16946 | `0x4232` | `FabricSignRequest` | yes | session |
+| `PASSPORT_CHALLENGE` | 16960 | `0x4240` | `PassportChallenge` | yes | session |
+| `PASSPORT_ASSERTION` | 16961 | `0x4241` | `PassportAssertion` | yes | session |
+| `PASSPORT_SIGN_REQUEST` | 16962 | `0x4242` | `PassportSignRequest` | yes | session |
 | `CONTRACT_PUBLISH` | 95 | `0x005f` | `P2P_CONTRACT_PUBLISH` | yes | contracts |
 | `CONTRACT_MESSAGE` | 96 | `0x0060` | `P2P_CONTRACT_MESSAGE` | yes | contracts |
 | `P2P_IDENT_REQUEST` | 1 | `0x0001` | `IdentityRequest` | no | session |

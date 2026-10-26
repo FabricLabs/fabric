@@ -15,7 +15,7 @@
  * A valid frame proves who wrote it and that the body is intact. It does not
  * say who it is for, when it expires, or whether it was seen before: message
  * types that cross a boundary carry those in their body (see
- * {@link module:@fabric/core/functions/fabricSiteLogin}).
+ * {@link module:@fabric/core/functions/passport}).
  *
  * @module functions/fabricUri
  */
