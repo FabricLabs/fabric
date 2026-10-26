@@ -303,7 +303,7 @@ class SignedBook extends Book {
         this._forgetCancel(pending.values().next().value);
       }
     }
-    if (this._cancelled.size >= this.settings.maxCancelled) this._evictCancel();
+    if (this._cancelled.size >= this.settings.maxCancelled) this._evictCancel(makerPubkey);
     this._cancelled.set(key, expiresAt);
     if (!this._makerCancels.has(makerPubkey)) this._makerCancels.set(makerPubkey, new Set());
     this._makerCancels.get(makerPubkey).add(key);
@@ -341,14 +341,16 @@ class SignedBook extends Book {
   /**
    * Make room for one cancel: drop cancels whose entry expired, else the
    * oldest cancel for an entry never held, else the oldest cancel of the
-   * signer holding the most (the latest such signer on a tie). Anyone can
-   * post and cancel their own entries, so evicting the oldest cancel would
-   * let one key flush another maker's cancel and replay its entry; this way
-   * a flood evicts the flooder's own cancels, and a Sybil flood needs one
-   * key per remembered cancel.
+   * signer holding the most, counting the cancel being added (on a tie, the
+   * incoming signer, else the latest such signer). Anyone can post and
+   * cancel their own entries, so evicting the oldest cancel would let one
+   * key flush another maker's cancel and replay its entry; this way a flood
+   * evicts the flooder's own cancels, and a Sybil flood needs one key per
+   * remembered cancel.
    * @private
+   * @param {string} [incoming] signer of the cancel being added
    */
-  _evictCancel () {
+  _evictCancel (incoming = null) {
     const now = this.now();
     for (const [key, expiresAt] of this._cancelled) {
       if (expiresAt != null && expiresAt <= now) this._forgetCancel(key);
@@ -358,8 +360,15 @@ class SignedBook extends Book {
       if (expiresAt == null) return this._forgetCancel(key);
     }
     let victim = null;
-    for (const keys of this._makerCancels.values()) {
-      if (!victim || keys.size >= victim.size) victim = keys;
+    let victimMaker = null;
+    let most = -1;
+    for (const [maker, keys] of this._makerCancels) {
+      const count = keys.size + (maker === incoming ? 1 : 0);
+      if (count > most || (count === most && victimMaker !== incoming)) {
+        victim = keys;
+        victimMaker = maker;
+        most = count;
+      }
     }
     if (victim) return this._forgetCancel(victim.values().next().value);
     this._cancelled.delete(this._cancelled.keys().next().value);

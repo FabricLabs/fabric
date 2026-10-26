@@ -7296,7 +7296,7 @@ Verify a contract-scoped Token capability.
 
 | Param | Type | Description |
 | --- | --- | --- |
-| role | <code>string</code> | `signer` | `sign` | anything else (reader) |
+| role | <code>string</code> | `signer` or `sign`; anything else is a reader |
 
 <a name="Contract.capabilityToRole"></a>
 
@@ -7415,7 +7415,7 @@ Resolve current tip (+ genesis) to the public P2TR spend surface.
 | --- | --- | --- |
 | opts | <code>Object</code> |  |
 | [opts.genesis] | <code>Object</code> | CONTRACT_PUBLISH definition or [normalizeGenesis](#Contract.normalizeGenesis) output |
-| [opts.tip] | <code>Object</code> | `{ content.signers|members, stateDigest, bitcoinBlockHash, … }` |
+| [opts.tip] | <code>Object</code> | `{ content, stateDigest, bitcoinBlockHash, … }` (`content.signers` or `content.members`) |
 | [opts.overrides] | <code>Object</code> | network / spendPolicy overrides |
 
 <a name="Contract.withdrawalRequestCommitmentFields"></a>
@@ -18204,7 +18204,7 @@ Check a `Machine.runProgram` result against `program.runCommitmentHex`.
 | --- | --- | --- |
 | opts | <code>Object</code> |  |
 | opts.program | [<code>Program</code>](#Program) | needs `programHash` + `runCommitmentHex` |
-| opts.run | <code>Object</code> | `{ tip, trace | stack, runCommitmentHex }` |
+| opts.run | <code>Object</code> | `{ tip, trace, runCommitmentHex }` (`stack` in place of `trace` also works) |
 
 <a name="Program.runId"></a>
 

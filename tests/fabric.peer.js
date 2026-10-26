@@ -1162,6 +1162,19 @@ describe('@fabric/core/types/peer', function () {
         buyer._handleFabricMessage(badMsg.toBuffer(), { name: 'seller:1' }, null);
         assert.ok(rejected && /hash mismatch|rejected/i.test(String(rejected.error || 'rejected')));
       });
+      it('P2P_FILE_SEND of a document over MAX_DOCUMENT_BLOBS blobs warns and sends nothing', function () {
+        const { MAX_DOCUMENT_BLOBS } = require('../constants');
+        const seller = new Peer({ listen: false, peersDb: null, sealPricedDocuments: false });
+        seller._state.content.documents = { 'doc-huge': 'x'.repeat(MAX_DOCUMENT_BLOBS + 1) };
+        seller.settings.inventoryBlobChunkBytes = 1;
+        const frames = [];
+        const warnings = [];
+        seller.connections['buyer:3'] = { _writeFabric: (buf) => frames.push(buf) };
+        seller.on('warning', (w) => warnings.push(String(w)));
+        assert.strictEqual(seller._sendP2pFileSendToPeer('doc-huge', 'buyer:3'), false);
+        assert.strictEqual(frames.length, 0);
+        assert.ok(warnings.some((w) => /Cannot send document doc-huge/.test(w)));
+      });
       it('sealed priced doc: ciphertext without key; open only after settlement authorize', function () {
         const seller = new Peer({
           listen: false,

@@ -618,6 +618,9 @@ class Document extends State {
     const buf = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer == null ? '' : buffer);
     const size = normalizeChunkBytes(chunkBytes);
     const total = Math.max(1, Math.ceil(buf.length / size) || 1);
+    if (!_validTotal(total)) {
+      throw new Error(`document would split into ${total} blobs (1..${MAX_DOCUMENT_BLOBS} allowed at ${size} bytes per blob)`);
+    }
     const blobs = [];
     const blobHashHexes = [];
 
@@ -786,13 +789,19 @@ class Document extends State {
       leaves = blobs.map((b) => String(b && b.blobHashHex || '').toLowerCase());
     }
     if (!leaves.length) return { ok: false, error: 'no blob leaves' };
+    if (!_validTotal(leaves.length)) return { ok: false, error: `document must have 1..${MAX_DOCUMENT_BLOBS} blobs` };
     for (const h of leaves) {
       if (!/^[0-9a-f]{64}$/.test(h)) return { ok: false, error: 'invalid blobHashHex leaf' };
     }
     if (index.total != null && Number(index.total) > 0 && Number(index.total) !== leaves.length) {
       return { ok: false, error: 'blob count does not match index total' };
     }
-    const got = Document.rootHexFromBlobHashes(leaves, opts);
+    let got;
+    try {
+      got = Document.rootHexFromBlobHashes(leaves, opts);
+    } catch (err) {
+      return { ok: false, error: err && err.message ? err.message : String(err) };
+    }
     if (want && got !== want) return { ok: false, error: 'merkle/root mismatch', merkleRootHex: got };
     return { ok: true, merkleRootHex: got };
   }

@@ -223,7 +223,7 @@ class Program extends Circuit {
    * Check a `Machine.runProgram` result against `program.runCommitmentHex`.
    * @param {Object} opts
    * @param {Program} opts.program needs `programHash` + `runCommitmentHex`
-   * @param {Object} opts.run `{ tip, trace | stack, runCommitmentHex }`
+   * @param {Object} opts.run `{ tip, trace, runCommitmentHex }` (`stack` in place of `trace` also works)
    * @returns {{ok: boolean, error: (string|undefined), programHash: (string|undefined), runCommitmentHex: (string|undefined), kind: (string|undefined)}}
    */
   static verifyMachineRun (opts = {}) {

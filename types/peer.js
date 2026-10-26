@@ -5299,7 +5299,13 @@ class Peer extends Service {
     const chunkBytes = Math.max(1, Number(this.settings.inventoryBlobChunkBytes) || Document.CHUNK_BYTES);
     const sealedMeta = this._getDocumentSealedMeta(documentId);
     const bodyBuf = sealedMeta ? sealedMeta.ciphertext : this.getDocumentBuffer(documentId);
-    const split = Document.split(bodyBuf, chunkBytes, documentId);
+    let split;
+    try {
+      split = Document.split(bodyBuf, chunkBytes, documentId);
+    } catch (err) {
+      this.emit('warning', `[FABRIC:PEER] Cannot send document ${documentId}: ${err && err.message ? err.message : err}`);
+      return false;
+    }
     const merkleRootHex = sealedMeta
       ? Document.rootHexFromBlobHashes(split.blobs.map((b) => b.blobHashHex), { paymentHashHex: sealedMeta.paymentHashHex })
       : split.merkleRootHex;

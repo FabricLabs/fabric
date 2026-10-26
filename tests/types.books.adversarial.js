@@ -225,6 +225,21 @@ describe('adversarial: Book family and Market', function () {
       }
       assert.strictEqual(small.ingest(order).reason, 'order cancelled', 'the honest cancelled order must stay dead');
     });
+
+    it('a maker tying another on cancels evicts its own when it adds one more', function () {
+      const small = new LiquidityBook({ now: () => clock, maxCancelled: 2 });
+      const a = randomPriv();
+      const b = randomPriv();
+      const first = makeOrder(a);
+      const honest = makeOrder(b);
+      const second = makeOrder(a);
+      for (const [priv, order] of [[a, first], [b, honest], [a, second]]) {
+        assert.strictEqual(small.ingest(order).ok, true);
+        assert.strictEqual(small.cancel(cancelOrder(priv, order)).ok, true);
+      }
+      assert.strictEqual(small.ingest(honest).reason, 'order cancelled', 'B\'s cancel was evicted for A\'s');
+      assert.strictEqual(small.ingest(second).reason, 'order cancelled');
+    });
   });
 
   describe('types/liquidityBook', function () {

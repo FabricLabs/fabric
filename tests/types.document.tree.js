@@ -58,6 +58,25 @@ describe('Document blob tree', function () {
     assert.strictEqual(Document.verifyBlobIndex(split.index).ok, true);
   });
 
+  it('refuses to split into more than MAX_DOCUMENT_BLOBS blobs before hashing any', function () {
+    const { MAX_DOCUMENT_BLOBS } = require('../constants');
+    const data = Buffer.alloc(MAX_DOCUMENT_BLOBS + 1, 1);
+    assert.throws(() => Document.split(data, 1), new RegExp(`${MAX_DOCUMENT_BLOBS + 1} blobs`));
+    assert.strictEqual(Document.split(data.subarray(0, MAX_DOCUMENT_BLOBS), 1).blobs.length, MAX_DOCUMENT_BLOBS);
+  });
+
+  it('verifyBlobIndex reports too many leaves and a malformed payment hash instead of throwing', function () {
+    const { MAX_DOCUMENT_BLOBS } = require('../constants');
+    const leaf = sha('leaf');
+    const many = new Array(MAX_DOCUMENT_BLOBS + 1).fill(leaf);
+    const tooMany = Document.verifyBlobIndex({ merkleRootHex: '' }, many);
+    assert.strictEqual(tooMany.ok, false);
+    assert.ok(/blobs/.test(tooMany.error));
+    const badHash = Document.verifyBlobIndex({ merkleRootHex: '' }, [leaf], { paymentHashHex: 'zz' });
+    assert.strictEqual(badHash.ok, false);
+    assert.ok(/paymentHashHex/.test(badHash.error));
+  });
+
   it('Document.compactBlobIndex drops leaves when over budget', function () {
     const many = [];
     // Enough leaves (~120 B each) to exceed the 32 KiB body cap.

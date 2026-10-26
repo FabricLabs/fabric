@@ -475,7 +475,7 @@ class Contract extends Service {
   }
 
   /**
-   * @param {string} role `signer` | `sign` | anything else (reader)
+   * @param {string} role `signer` or `sign`; anything else is a reader
    * @returns {string} {@link Contract.OP_CONTRACT_SIGN} or {@link Contract.OP_CONTRACT_READ}
    */
   static roleToCapability (role) {
@@ -897,7 +897,7 @@ class Contract extends Service {
    *
    * @param {Object} opts
    * @param {Object} [opts.genesis] CONTRACT_PUBLISH definition or {@link Contract.normalizeGenesis} output
-   * @param {Object} [opts.tip] `{ content.signers|members, stateDigest, bitcoinBlockHash, … }`
+   * @param {Object} [opts.tip] `{ content, stateDigest, bitcoinBlockHash, … }` (`content.signers` or `content.members`)
    * @param {Object} [opts.overrides] network / spendPolicy overrides
    * @returns {object}
    */
