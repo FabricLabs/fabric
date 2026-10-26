@@ -20,7 +20,9 @@ const {
   buildRevokeMessage,
   buildCrossSignObject,
   buildRevokeObject,
-  coerceCrossSignObject
+  coerceCrossSignObject,
+  parseCrossSignMessage,
+  parseRevokeMessage
 } = require('./identityCrossSign');
 const { pubkeysMatch } = require('./pubkey');
 
@@ -95,7 +97,11 @@ function verifyCrossSignObject (object, _signerPubkey) {
   };
   const message = _messageFor(kind, rec);
   if (!message) return { ok: false, error: 'invalid cross-sign fields' };
-  if (!pubkeysMatch(object.pubkeyHex, rec.localPubkey)) {
+  // The record is read back from the signed string, so an alias of a field
+  // (`0x`, whitespace, case) verifies as the canonical link a revoke names.
+  const signed = kind === REVOKE_TYPE ? parseRevokeMessage(message) : parseCrossSignMessage(message);
+  if (!signed) return { ok: false, error: 'invalid cross-sign fields' };
+  if (!pubkeysMatch(object.pubkeyHex, signed.localPubkey)) {
     return { ok: false, error: 'pubkey does not match localPubkey' };
   }
   const checked = verifyIdentitySchnorr(
@@ -107,14 +113,14 @@ function verifyCrossSignObject (object, _signerPubkey) {
   );
   if (!checked.ok) return { ok: false, error: checked.error || 'signature failed' };
   const record = {
-    sessionId: String(rec.sessionId).toLowerCase(),
-    nonce: String(rec.nonce).toLowerCase(),
-    localPubkey: String(rec.localPubkey).toLowerCase(),
-    peerPubkey: String(rec.peerPubkey).toLowerCase(),
-    origin: new URL(rec.origin).origin,
+    sessionId: signed.sessionId,
+    nonce: signed.nonce,
+    localPubkey: signed.localPubkey,
+    peerPubkey: signed.peerPubkey,
+    origin: signed.origin,
     createdAt: object.createdAt || null
   };
-  if (kind === REVOKE_TYPE) record.revokedAt = Number(rec.revokedAt);
+  if (kind === REVOKE_TYPE) record.revokedAt = signed.revokedAt;
   return { ok: true, kind, record };
 }
 

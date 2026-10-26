@@ -517,6 +517,25 @@ describe('@fabric/core/functions/identityCrossSignVerify', function () {
     assert.strictEqual(verifyCrossSignObject(Object.assign({}, obj, { revokedAt: obj.revokedAt + 1 })).ok, false);
   });
 
+  it('reports the canonical signed fields for an aliased body, so a revoke still names it', function () {
+    const ident = new Identity(new Key());
+    const peer = new Identity(new Key());
+    for (const kind of [SIGN_TYPE, REVOKE_TYPE]) {
+      const obj = signCrossSign(ident, linkFields(peer), kind);
+      const canonical = verifyCrossSignObject(obj);
+      assert.strictEqual(canonical.ok, true);
+      const alias = Object.assign({}, obj, {
+        sessionId: ` 0x${obj.sessionId.toUpperCase()} `,
+        nonce: `0x${obj.nonce}`,
+        localPubkey: `0x${obj.localPubkey}`,
+        peerPubkey: ` ${obj.peerPubkey.toUpperCase()}`
+      });
+      const v = verifyCrossSignObject(alias);
+      assert.strictEqual(v.ok, true, kind);
+      assert.deepStrictEqual(v.record, canonical.record, kind);
+    }
+  });
+
   it('signs a raw HD Key with fabricKey pubkey, not the master', function () {
     const master = new Key();
     const ident = new Identity(master);
