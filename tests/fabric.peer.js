@@ -10,6 +10,7 @@ const assert = require('assert');
 const net = require('net');
 const { EventEmitter } = require('events');
 const { PassThrough } = require('stream');
+const SIGNING_TAGS = require('../functions/signingTags');
 
 // Node configs may be JSON (node-a.json) or JS; resolve accordingly
 let NODEA, NODEB;
@@ -2071,7 +2072,7 @@ describe('@fabric/core/types/peer', function () {
             id: peerId,
             pubkey: server.key.pubkey,
             parentPubkey: server.key.pubkey,
-            parentSignature: server.key.signSchnorr(proof).toString('hex')
+            parentSignature: server.key.signSchnorr(proof, SIGNING_TAGS.SESSION_KEY).toString('hex')
           },
           object: { challenge: 'selfloop' }
         };
@@ -2201,7 +2202,7 @@ describe('@fabric/core/types/peer', function () {
             id: remotePeerId,
             pubkey: remoteKey.pubkey,
             parentPubkey: remoteKey.pubkey,
-            parentSignature: remoteKey.signSchnorr(remoteProof).toString('hex')
+            parentSignature: remoteKey.signSchnorr(remoteProof, SIGNING_TAGS.SESSION_KEY).toString('hex')
           },
           object: { challenge: 'cafebabe' }
         };
@@ -2256,7 +2257,7 @@ describe('@fabric/core/types/peer', function () {
             id: remotePeerId,
             pubkey: remoteKey.pubkey,
             parentPubkey: remoteKey.pubkey,
-            parentSignature: remoteKey.signSchnorr(remoteProof).toString('hex')
+            parentSignature: remoteKey.signSchnorr(remoteProof, SIGNING_TAGS.SESSION_KEY).toString('hex')
           },
           object: { challenge: 'challenge' }
         };
@@ -2290,7 +2291,7 @@ describe('@fabric/core/types/peer', function () {
             id: serverId,
             pubkey: serverKey.pubkey,
             parentPubkey: serverKey.pubkey,
-            parentSignature: serverKey.signSchnorr(serverProof).toString('hex')
+            parentSignature: serverKey.signSchnorr(serverProof, SIGNING_TAGS.SESSION_KEY).toString('hex')
           },
           object: {
             initiator: peer.identity.id,
@@ -2322,7 +2323,7 @@ describe('@fabric/core/types/peer', function () {
             id: serverId,
             pubkey: serverKey.pubkey,
             parentPubkey: serverKey.pubkey,
-            parentSignature: serverKey.signSchnorr(serverProof).toString('hex')
+            parentSignature: serverKey.signSchnorr(serverProof, SIGNING_TAGS.SESSION_KEY).toString('hex')
           },
           object: {
             initiator: peer.identity.id,

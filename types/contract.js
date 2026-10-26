@@ -26,6 +26,7 @@ const { LOG_TYPES, CONTRACT_BODY_TYPES } = require('../functions/applicationName
 const { fabricCanonicalJson } = require('../functions/fabricCanonicalJson');
 const { pubkeyXOnly, pubkeyCompressed, normalizePeerPubkeyHex } = require('../functions/pubkey');
 const { sortPubkeysBip67 } = require('../functions/bip67');
+const SIGNING_TAGS = require('../functions/signingTags');
 
 // @private
 function sha256hex (s) {
@@ -1255,7 +1256,7 @@ class Contract extends Service {
         stateDigest: witness.stateDigest,
         bitcoinBlockHash: witness.bitcoinBlockHash
       });
-      if (!key.verifySchnorr(msg, Buffer.from(sigHex, 'hex'))) {
+      if (!key.verifySchnorr(msg, Buffer.from(sigHex, 'hex'), SIGNING_TAGS.CONTRACT_WITHDRAWAL_WITNESS)) {
         return { ok: false, error: 'invalid witness signature' };
       }
       return { ok: true };
@@ -1280,7 +1281,7 @@ class Contract extends Service {
     const bitcoinBlockHash = String(opts.bitcoinBlockHash || request.bitcoinBlockHash || '').toLowerCase() || undefined;
     if (!signature && opts.signerKey && typeof opts.signerKey.signSchnorr === 'function') {
       const msg = Contract.withdrawalWitnessSigningMessage({ requestId, stateDigest, bitcoinBlockHash });
-      signature = Buffer.from(opts.signerKey.signSchnorr(msg)).toString('hex');
+      signature = Buffer.from(opts.signerKey.signSchnorr(msg, SIGNING_TAGS.CONTRACT_WITHDRAWAL_WITNESS)).toString('hex');
     }
     if (!signature) throw new Error('signature required');
     return {
@@ -1743,6 +1744,7 @@ Contract.Resolutions = Resolutions;
 // Contract body types for tip-bound withdrawals.
 Contract.WITHDRAWAL_REQUEST = CONTRACT_BODY_TYPES.ContractWithdrawalRequest;
 Contract.WITHDRAWAL_WITNESS = CONTRACT_BODY_TYPES.ContractWithdrawalWitness;
+Contract.WITHDRAWAL_WITNESS_TAG = SIGNING_TAGS.CONTRACT_WITHDRAWAL_WITNESS;
 
 // Token capabilities for contract members (see Contract.issueCapability).
 Contract.OP_CONTRACT_READ = 'OP_CONTRACT_READ';

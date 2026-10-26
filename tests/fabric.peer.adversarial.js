@@ -28,6 +28,7 @@ const {
 } = require('../constants');
 const Htlc = require('../types/htlc');
 const DocumentBlobTransferBook = require('../types/documentBlobTransferBook');
+const SIGNING_TAGS = require('../functions/signingTags');
 
 bitcoin.initEccLib(ecc);
 
@@ -372,7 +373,7 @@ describe('@fabric/core Peer adversarial hardening', function () {
         id: attackerId,
         pubkey: attacker.pubkey,
         parentPubkey: attacker.pubkey,
-        parentSignature: attacker.signSchnorr(proof).toString('hex')
+        parentSignature: attacker.signSchnorr(proof, SIGNING_TAGS.SESSION_KEY).toString('hex')
       },
       object: { challenge: 'relay-rebind' }
     })]).signWithKey(attacker);

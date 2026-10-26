@@ -118,7 +118,7 @@ describe('@fabric/core/types/identity', function () {
       const seed = bip39.mnemonicToSeedSync(SAMPLE.seed);
       const root = new BIP32(ecc).fromSeed(seed);
       const fabricNode = root.derivePath(FABRIC_KEY_DERIVATION_PATH);
-      const msgHash = crypto.createHash('sha256').update(Buffer.from(message)).digest();
+      const msgHash = require('../functions/taggedHash')('Fabric/Sign', Buffer.from(message));
       const expectedSig = nobleSchnorr.sign(msgHash, fabricNode.privateKey, Buffer.alloc(32));
       const xOnlyPubkey = Buffer.from(
         secp256k1.getPublicKey(fabricNode.privateKey, true)
@@ -132,7 +132,7 @@ describe('@fabric/core/types/identity', function () {
       assert.equal(actualVerified, true);
       assert.equal(actualVerified, expectedVerified);
       assert.ok(actualBytes.equals(Buffer.from(expectedSig)),
-        'Identity.sign must match noble BIP340 with zero auxRand');
+        'Identity.sign must match noble BIP340 over taggedHash("Fabric/Sign") with zero auxRand');
     });
   });
 });
@@ -244,6 +244,8 @@ const Key = require('../types/key');
 const {
   CROSS_SIGN_PREFIX,
   REVOKE_PREFIX,
+  CROSS_SIGN_TAG,
+  REVOKE_TAG,
   SIGN_TYPE,
   REVOKE_TYPE,
   buildCrossSignMessage,
@@ -252,6 +254,7 @@ const {
   parseRevokeMessage,
   buildCrossSignObject,
   buildRevokeObject,
+  coerceCrossSignObject,
   isCrossSignType
 } = require('../functions/identityCrossSign');
 const {
@@ -268,69 +271,136 @@ function nonce () {
   return crypto.randomBytes(32).toString('hex');
 }
 
-describe('@fabric/core/functions/identityCrossSign', function () {
-  it('round-trips the canonical cross-sign string', function () {
-    const n = 'ab'.repeat(32);
-    const a = '02' + 'aa'.repeat(32);
-    const b = '03' + 'bb'.repeat(32);
-    const msg = buildCrossSignMessage(n, a, b);
-    assert.ok(msg.startsWith(CROSS_SIGN_PREFIX));
-    const parsed = parseCrossSignMessage(msg);
-    assert.strictEqual(parsed.nonce, n);
-    assert.strictEqual(parsed.localPubkey, a.toLowerCase());
-    assert.strictEqual(parsed.peerPubkey, b.toLowerCase());
+function sessionId () {
+  return crypto.randomBytes(24).toString('hex');
+}
+
+const ORIGIN = 'https://hub.fabric.pub';
+const TEST_TAG = 'Fabric/Test';
+
+function linkFields (peer, extra = {}) {
+  return Object.assign({ peerPubkey: peer.pubkey, nonce: nonce(), sessionId: sessionId(), origin: ORIGIN }, extra);
+}
+
+describe('@fabric/core/types/key tagged Schnorr', function () {
+  it('signs and verifies only under the same tag', function () {
+    const key = new Key();
+    const sig = key.signSchnorr('hello', 'Fabric/One');
+    assert.strictEqual(key.verifySchnorr('hello', sig, 'Fabric/One'), true);
+    assert.strictEqual(key.verifySchnorr('hello', sig, 'Fabric/Two'), false);
   });
 
-  it('round-trips revoke messages and rejects a short nonce', function () {
+  it('refuses to sign or verify without a Fabric purpose tag', function () {
+    const key = new Key();
+    assert.throws(() => key.signSchnorr('hello'), /tag required/);
+    assert.throws(() => key.signSchnorr('hello', 'Nostr'), /tag required/);
+    const sig = key.signSchnorr('hello', 'Fabric/One');
+    assert.throws(() => key.verifySchnorr('hello', sig), /tag required/);
+  });
+
+  it('a signature over plain sha256 (Nostr, legacy) does not verify', function () {
+    const priv = crypto.randomBytes(32);
+    const key = new Key({ private: priv.toString('hex') });
+    const untagged = nobleSchnorr.sign(crypto.createHash('sha256').update('hello').digest(), priv, Buffer.alloc(32));
+    assert.strictEqual(key.verifySchnorr('hello', Buffer.from(untagged), 'Fabric/One'), false);
+  });
+
+  it('Key#sign uses the generic Fabric/Sign tag', function () {
+    const key = new Key();
+    const sig = key.sign('hello');
+    assert.strictEqual(key.verify('hello', sig), true);
+    assert.strictEqual(key.verifySchnorr('hello', sig, Key.SIGN_TAG), true);
+    assert.strictEqual(key.verifySchnorr('hello', sig, 'Fabric/Other'), false);
+  });
+});
+
+describe('@fabric/core/functions/identityCrossSign', function () {
+  const a = '02' + 'aa'.repeat(32);
+  const b = '03' + 'bb'.repeat(32);
+
+  it('round-trips the canonical cross-sign string with session and origin', function () {
+    const n = 'ab'.repeat(32);
+    const sid = 'cd'.repeat(24);
+    const msg = buildCrossSignMessage({ sessionId: sid, nonce: n, localPubkey: a, peerPubkey: b, origin: 'http://127.0.0.1:8080/x' });
+    assert.strictEqual(msg, `${CROSS_SIGN_PREFIX}:${sid}:${n}:${a}:${b}:http://127.0.0.1:8080`);
+    assert.ok(CROSS_SIGN_PREFIX.endsWith(':2'));
+    const parsed = parseCrossSignMessage(msg);
+    assert.deepStrictEqual(parsed, { sessionId: sid, nonce: n, localPubkey: a, peerPubkey: b, origin: 'http://127.0.0.1:8080' });
+  });
+
+  it('round-trips revoke messages, which sign their time', function () {
     const n = 'cd'.repeat(32);
-    const a = 'aa'.repeat(32);
-    const b = 'bb'.repeat(32);
-    const msg = buildRevokeMessage(n, a, b);
-    assert.ok(msg.startsWith(REVOKE_PREFIX));
+    const sid = 'ef'.repeat(24);
+    const msg = buildRevokeMessage({ sessionId: sid, nonce: n, localPubkey: a, peerPubkey: b, origin: ORIGIN, revokedAt: 1700000000000 });
+    assert.ok(msg.startsWith(REVOKE_PREFIX + ':'));
     const parsed = parseRevokeMessage(msg);
-    assert.strictEqual(parsed.nonce, n);
-    assert.strictEqual(parsed.localPubkey, a);
-    assert.strictEqual(parsed.peerPubkey, b);
-    assert.strictEqual(buildCrossSignMessage('short', a, b), null);
-    assert.strictEqual(buildRevokeMessage(n, '', b), null);
-    assert.strictEqual(buildCrossSignMessage(n, 'aa', b), null);
-    assert.strictEqual(buildCrossSignMessage(n, a + ':' + b, b), null);
-    const with0x = buildRevokeMessage('0x' + n, '0x' + a, b);
-    assert.strictEqual(with0x, msg);
+    assert.strictEqual(parsed.revokedAt, 1700000000000);
+    assert.strictEqual(parsed.origin, ORIGIN);
+    assert.strictEqual(buildRevokeMessage({ sessionId: sid, nonce: n, localPubkey: a, peerPubkey: b, origin: ORIGIN }), null);
+  });
+
+  it('refuses fields that could shift the string', function () {
+    const n = 'ab'.repeat(32);
+    const sid = 'cd'.repeat(24);
+    const base = { sessionId: sid, nonce: n, localPubkey: a, peerPubkey: b, origin: ORIGIN };
+    assert.strictEqual(buildCrossSignMessage(Object.assign({}, base, { nonce: 'short' })), null);
+    assert.strictEqual(buildCrossSignMessage(Object.assign({}, base, { sessionId: sid + ':x' })), null);
+    assert.strictEqual(buildCrossSignMessage(Object.assign({}, base, { localPubkey: a + ':' + b })), null);
+    assert.strictEqual(buildCrossSignMessage(Object.assign({}, base, { localPubkey: 'aa'.repeat(32) })), null, 'x-only keys are refused');
+    assert.strictEqual(buildCrossSignMessage(Object.assign({}, base, { origin: 'fabric:evil' })), null);
+    assert.strictEqual(buildCrossSignMessage(Object.assign({}, base, { origin: '' })), null);
+    assert.strictEqual(buildCrossSignMessage(Object.assign({}, base, { peerPubkey: a })), null, 'self link refused');
     assert.strictEqual(isCrossSignType(SIGN_TYPE), true);
     assert.strictEqual(isCrossSignType(REVOKE_TYPE), true);
     assert.strictEqual(isCrossSignType('ChatMessage'), false);
   });
 
-  it('object builders drop an invalid nonce instead of keeping the raw string', function () {
-    const a = '02' + 'aa'.repeat(32);
-    const b = '03' + 'bb'.repeat(32);
-    const sign = buildCrossSignObject({ localPubkey: a, peerPubkey: b, nonce: 'not-64-hex' });
+  it('refuses the v1 string', function () {
+    const n = 'ab'.repeat(32);
+    assert.strictEqual(parseCrossSignMessage(`fabric:identity-cross-sign:1:${n}:${a}:${b}`), null);
+    assert.strictEqual(parseRevokeMessage(`fabric:identity-cross-sign-revoke:1:${n}:${a}:${b}`), null);
+  });
+
+  it('object builders drop invalid fields instead of keeping the raw string', function () {
+    const sign = buildCrossSignObject({ localPubkey: a, peerPubkey: b, nonce: 'not-64-hex', sessionId: 'x' });
     const revoke = buildRevokeObject({ localPubkey: a, peerPubkey: b, nonce: 'bad:colon' });
     assert.strictEqual(sign.nonce, '');
+    assert.strictEqual(sign.sessionId, '');
     assert.strictEqual(revoke.nonce, '');
     assert.strictEqual(sign.type, SIGN_TYPE);
     assert.strictEqual(revoke.type, REVOKE_TYPE);
-    assert.strictEqual(buildCrossSignMessage(sign.nonce, a, b), null);
+  });
+
+  it('unwraps CONTRACT_MESSAGE bodies', function () {
+    const inner = buildCrossSignObject({ localPubkey: a, peerPubkey: b, nonce: 'ab'.repeat(32) });
+    const coerced = coerceCrossSignObject({ contract: 'c', type: SIGN_TYPE, actor: {}, object: inner });
+    assert.strictEqual(coerced.localPubkey, a);
+    assert.strictEqual(coerced.type, SIGN_TYPE);
   });
 });
 
 describe('@fabric/core/functions/fabricIdentitySchnorr', function () {
-  it('signs and verifies with Identity.fabricKey', function () {
+  it('signs and verifies with Identity.fabricKey under a tag', function () {
     const ident = new Identity(new Key());
-    const message = 'fabric:hub-login:1:test';
-    const payload = buildFabricIdentitySignedPayload(ident, message);
+    const message = 'fabric:test:1';
+    const payload = buildFabricIdentitySignedPayload(ident, message, TEST_TAG);
     assert.strictEqual(payload.pubkeyHex, ident.fabricKey.pubkey);
     assert.strictEqual(payload.identity.id, ident.id);
     const verified = verifyIdentitySchnorr(
       message,
       payload.signature,
       payload.pubkeyHex,
-      payload.identity
+      payload.identity,
+      TEST_TAG
     );
     assert.strictEqual(verified.ok, true);
     assert.strictEqual(verified.identityId, ident.id);
     assert.strictEqual(fabricIdentityIdFromPubkeyHex(payload.pubkeyHex), ident.id);
+    const otherTag = verifyIdentitySchnorr(message, payload.signature, payload.pubkeyHex, payload.identity, 'Fabric/Other');
+    assert.strictEqual(otherTag.ok, false);
+    const noTag = verifyIdentitySchnorr(message, payload.signature, payload.pubkeyHex, payload.identity);
+    assert.strictEqual(noTag.ok, false);
+    assert.throws(() => buildFabricIdentitySignedPayload(ident, message), /tag required/);
   });
 
   it('signs Passport-style leaf private + fabric-path xpub', function () {
@@ -339,31 +409,33 @@ describe('@fabric/core/functions/fabricIdentitySchnorr', function () {
     const priv = Buffer.isBuffer(fabric.private)
       ? fabric.private.toString('hex')
       : String(fabric.private);
-    const message = 'fabric:device-link:id-probe';
+    const message = 'fabric:test:leaf';
     const payload = buildFabricIdentitySignedPayload({
       privateKeyHex: priv,
       xpub: fabric.xpub
-    }, message);
+    }, message, TEST_TAG);
     assert.strictEqual(payload.pubkeyHex, fabric.pubkey);
     const verified = verifyIdentitySchnorr(
       message,
       payload.signature,
       payload.pubkeyHex,
-      payload.identity
+      payload.identity,
+      TEST_TAG
     );
     assert.strictEqual(verified.ok, true);
   });
 
   it('rejects a tampered signature', function () {
     const ident = new Identity(new Key());
-    const message = 'fabric:hub-login:1:test';
-    const payload = buildFabricIdentitySignedPayload(ident, message);
+    const message = 'fabric:test:1';
+    const payload = buildFabricIdentitySignedPayload(ident, message, TEST_TAG);
     const flipped = payload.signature.replace(/[0-9a-f]$/, (c) => (c === '0' ? '1' : '0'));
     const verified = verifyIdentitySchnorr(
       message,
       flipped,
       payload.pubkeyHex,
-      payload.identity
+      payload.identity,
+      TEST_TAG
     );
     assert.strictEqual(verified.ok, false);
   });
@@ -380,37 +452,76 @@ describe('@fabric/core/functions/identityCrossSignVerify', function () {
   it('signs and verifies with Fabric Identity.fabricKey', function () {
     const ident = new Identity(new Key());
     const peer = new Identity(new Key());
-    const obj = signCrossSign(ident, { peerPubkey: peer.pubkey, nonce: nonce() });
+    const obj = signCrossSign(ident, linkFields(peer));
     assert.strictEqual(obj.type, SIGN_TYPE);
+    assert.strictEqual(obj.origin, ORIGIN);
     const v = verifyCrossSignObject(obj, ident.fabricKey.pubkey);
     assert.strictEqual(v.ok, true);
     assert.strictEqual(v.kind, SIGN_TYPE);
+    assert.strictEqual(v.record.sessionId, obj.sessionId);
+    assert.strictEqual(v.record.origin, ORIGIN);
   });
 
-  it('rejects a tampered peer pubkey', function () {
+  it('signs over the IdentityCrossSign tag', function () {
     const ident = new Identity(new Key());
     const peer = new Identity(new Key());
-    const obj = signCrossSign(ident, { peerPubkey: peer.pubkey, nonce: nonce() });
-    obj.peerPubkey = new Identity(new Key()).pubkey;
-    const v = verifyCrossSignObject(obj);
-    assert.strictEqual(v.ok, false);
+    const obj = signCrossSign(ident, linkFields(peer));
+    const message = buildCrossSignMessage(obj);
+    const key = new Key({ xpub: obj.identity.xpub });
+    assert.strictEqual(key.verifySchnorr(message, Buffer.from(obj.signature, 'hex'), CROSS_SIGN_TAG), true);
+    assert.strictEqual(key.verifySchnorr(message, Buffer.from(obj.signature, 'hex'), REVOKE_TAG), false);
+  });
+
+  it('rejects a tampered peer pubkey, session, or origin', function () {
+    const ident = new Identity(new Key());
+    const peer = new Identity(new Key());
+    const obj = signCrossSign(ident, linkFields(peer));
+    assert.strictEqual(verifyCrossSignObject(Object.assign({}, obj, { peerPubkey: new Identity(new Key()).pubkey })).ok, false);
+    assert.strictEqual(verifyCrossSignObject(Object.assign({}, obj, { sessionId: sessionId() })).ok, false);
+    assert.strictEqual(verifyCrossSignObject(Object.assign({}, obj, { origin: 'https://evil.example' })).ok, false);
+  });
+
+  it('a cross-sign signature does not verify as a revoke', function () {
+    const ident = new Identity(new Key());
+    const peer = new Identity(new Key());
+    const obj = signCrossSign(ident, linkFields(peer));
+    const asRevoke = Object.assign({}, obj, { type: REVOKE_TYPE, '@type': REVOKE_TYPE, revokedAt: Date.now() });
+    assert.strictEqual(verifyCrossSignObject(asRevoke).ok, false);
+  });
+
+  it('refuses a v1 body', function () {
+    const ident = new Identity(new Key());
+    const peer = new Identity(new Key());
+    const obj = signCrossSign(ident, linkFields(peer));
+    const v1 = Object.assign({}, obj, { sessionId: undefined, origin: undefined });
+    assert.strictEqual(verifyCrossSignObject(v1).ok, false);
+  });
+
+  it('verifies a CONTRACT_MESSAGE-wrapped body', function () {
+    const ident = new Identity(new Key());
+    const peer = new Identity(new Key());
+    const obj = signCrossSign(ident, linkFields(peer));
+    const v = verifyCrossSignObject({ contract: 'x', type: SIGN_TYPE, actor: { publicKey: 'y' }, object: obj });
+    assert.strictEqual(v.ok, true);
   });
 
   it('signs revoke bodies', function () {
     const ident = new Identity(new Key());
     const peer = new Identity(new Key());
-    const obj = signCrossSign(ident, { peerPubkey: peer.pubkey, nonce: nonce() }, REVOKE_TYPE);
+    const obj = signCrossSign(ident, linkFields(peer), REVOKE_TYPE);
     assert.strictEqual(obj.type, REVOKE_TYPE);
+    assert.ok(obj.revokedAt > 0);
     const v = verifyCrossSignObject(obj);
     assert.strictEqual(v.ok, true);
     assert.strictEqual(v.kind, REVOKE_TYPE);
+    assert.strictEqual(verifyCrossSignObject(Object.assign({}, obj, { revokedAt: obj.revokedAt + 1 })).ok, false);
   });
 
   it('signs a raw HD Key with fabricKey pubkey, not the master', function () {
     const master = new Key();
     const ident = new Identity(master);
     const peer = new Identity(new Key());
-    const obj = signCrossSign(master, { peerPubkey: peer.pubkey, nonce: nonce() });
+    const obj = signCrossSign(master, linkFields(peer));
     assert.strictEqual(obj.localPubkey.toLowerCase(), ident.fabricKey.pubkey.toLowerCase());
     assert.notStrictEqual(obj.localPubkey.toLowerCase(), String(master.pubkey).toLowerCase());
     const v = verifyCrossSignObject(obj);
@@ -427,7 +538,7 @@ describe('@fabric/core/functions/identityCrossSignVerify', function () {
     const obj = signCrossSign({
       privateKeyHex: priv,
       xpub: fabric.xpub
-    }, { peerPubkey: peer.pubkey, nonce: nonce() });
+    }, linkFields(peer));
     assert.strictEqual(obj.localPubkey.toLowerCase(), fabric.pubkey.toLowerCase());
     const v = verifyCrossSignObject(obj);
     assert.strictEqual(v.ok, true);
@@ -436,7 +547,8 @@ describe('@fabric/core/functions/identityCrossSignVerify', function () {
   it('rejects an unknown kind and missing fields', function () {
     const ident = new Identity(new Key());
     const peer = new Identity(new Key());
-    assert.throws(() => signCrossSign(ident, { peerPubkey: peer.pubkey, nonce: nonce() }, 'ChatMessage'), /unknown cross-sign type/i);
+    assert.throws(() => signCrossSign(ident, linkFields(peer), 'ChatMessage'), /unknown cross-sign type/i);
     assert.throws(() => signCrossSign(ident, null, SIGN_TYPE), /fields required/i);
+    assert.throws(() => signCrossSign(ident, { peerPubkey: peer.pubkey, nonce: nonce() }), /invalid cross-sign fields/i);
   });
 });

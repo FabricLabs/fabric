@@ -65,6 +65,7 @@ const {
   createCollection,
   ingest
 } = require('../functions/fabricMessageCollection');
+const SIGNING_TAGS = require('../functions/signingTags');
 const {
   e2eRegtestEnabled,
   signSpendPsbt,
@@ -368,11 +369,11 @@ describe('ARC / Federation network E2E', function () {
       const msg = messageBufferForPayload(epoch);
       assert.strictEqual(roundMeetsThreshold(round), false);
       assert.strictEqual(
-        addSignature(round, validators[0], tree.keys.ops[0].signSchnorr(msg).toString('hex')).sealed,
+        addSignature(round, validators[0], tree.keys.ops[0].signSchnorr(msg, SIGNING_TAGS.FEDERATION_WITNESS).toString('hex')).sealed,
         false
       );
       assert.strictEqual(
-        addSignature(round, validators[1], tree.keys.ops[1].signSchnorr(msg).toString('hex')).sealed,
+        addSignature(round, validators[1], tree.keys.ops[1].signSchnorr(msg, SIGNING_TAGS.FEDERATION_WITNESS).toString('hex')).sealed,
         true
       );
       assert.strictEqual(roundMeetsThreshold(round), true);

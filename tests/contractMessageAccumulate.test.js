@@ -34,6 +34,7 @@ const {
   pendingForRelay
 } = require('../functions/contractMessageCommit');
 const { signContractMessage } = require('./fixtures/contractMessage');
+const SIGNING_TAGS = require('../functions/signingTags');
 
 describe('@fabric/core contractMessageAccumulate', function () {
   const contractId = 'c'.repeat(64);
@@ -441,7 +442,7 @@ describe('@fabric/core contractMessageAccumulate', function () {
     assert.ok(store.get('contractmessagecommits', chatRes.entry.hash), 'sync filter opens pending 2PC');
 
     const wireHash = chatRes.entry.hash;
-    const receiptSig = Buffer.from(b.signSchnorr(receiptSigningMessage(wireHash))).toString('hex');
+    const receiptSig = Buffer.from(b.signSchnorr(receiptSigningMessage(wireHash), SIGNING_TAGS.MESSAGE_RECEIPT)).toString('hex');
     const receipt = signContractMessage(b, contractId, 'MessageReceipt', {
       messageId: wireHash,
       receiptAt: '2026-01-01T00:00:01.000Z',
@@ -860,8 +861,8 @@ describe('@fabric/core contractMessageCommit', function () {
     assert.strictEqual(aggregatePhaseFlags(record).received, true);
     assert.strictEqual(allPhasesComplete(record), false);
     const msg = receiptSigningMessage(record.id);
-    const sigA = Buffer.from(a.signSchnorr(msg)).toString('hex');
-    const sigB = Buffer.from(b.signSchnorr(msg)).toString('hex');
+    const sigA = Buffer.from(a.signSchnorr(msg, SIGNING_TAGS.MESSAGE_RECEIPT)).toString('hex');
+    const sigB = Buffer.from(b.signSchnorr(msg, SIGNING_TAGS.MESSAGE_RECEIPT)).toString('hex');
     markReceipt(record, a.pubkey, null, sigA);
     markReceipt(record, b.pubkey, null, sigB);
     assert.strictEqual(allPhasesComplete(record), true);
@@ -890,7 +891,7 @@ describe('@fabric/core contractMessageCommit', function () {
     markReceived(record, a.pubkey);
     assert.throws(() => markReceipt(record, a.pubkey), /receiptSig required/);
     assert.throws(() => markReceipt(record, a.pubkey, null, 'ab'.repeat(32)), /invalid receiptSig/);
-    const wrong = Buffer.from(a.signSchnorr(receiptSigningMessage('other'))).toString('hex');
+    const wrong = Buffer.from(a.signSchnorr(receiptSigningMessage('other'), SIGNING_TAGS.MESSAGE_RECEIPT)).toString('hex');
     assert.throws(() => markReceipt(record, a.pubkey, null, wrong), /invalid receiptSig/);
   });
 

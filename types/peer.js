@@ -71,7 +71,7 @@ const {
 const { individualPk } = require('../functions/musig2');
 const musig2Session = require('../functions/musig2Session');
 const sidechainState = require('../functions/sidechainState');
-const { verifyFederationWitnessOnMessage, epochCommitmentDigestHex } = require('../functions/beaconFederationSigning');
+const { epochCommitmentDigestHex } = require('../functions/beaconFederationSigning');
 const Federation = require('./federation');
 const {
   aggregatePeerBandwidth,
@@ -352,6 +352,7 @@ function meshDeliveryContext (opts = {}, originName = null) {
 
 const Contract = require('./contract');
 const { normalizePeerPubkeyHex } = require('../functions/pubkey');
+const SIGNING_TAGS = require('../functions/signingTags');
 
 /**
  * Outer / generic types whose local registration side-effects are first-writer-wins.
@@ -2775,7 +2776,7 @@ class Peer extends Service {
     const childPubkey = this.key.public.encodeCompressed('hex');
     const parentPubkey = this.key.public.encodeCompressed('hex');
     const proofMsg = this._sessionKeyProofMessage(peerId, childPubkey, parentPubkey);
-    const parentSignature = this.key.signSchnorr(proofMsg).toString('hex');
+    const parentSignature = this.key.signSchnorr(proofMsg, SIGNING_TAGS.SESSION_KEY).toString('hex');
     return {
       pubkey: childPubkey,
       parentPubkey,
@@ -2820,7 +2821,7 @@ class Peer extends Service {
     let ok = false;
     try {
       const parentKey = new Key({ public: `02${claimedParent}` });
-      ok = parentKey.verifySchnorr(proofMsg, Buffer.from(parentSigHex, 'hex'));
+      ok = parentKey.verifySchnorr(proofMsg, Buffer.from(parentSigHex, 'hex'), SIGNING_TAGS.SESSION_KEY);
     } catch {
       ok = false;
     }
@@ -3814,12 +3815,8 @@ class Peer extends Service {
             '[FABRIC:PEER] SIDECHAIN_STATE_PATCH rejected: no federation validators configured');
           break;
         }
-        const msgBuf = Buffer.from(
-          sidechainState.signingStringForSidechainStatePatch(proposal),
-          'utf8'
-        );
         const witness = proposal.federationWitness || null;
-        if (!witness || !verifyFederationWitnessOnMessage(msgBuf, witness, validators, threshold, undefined, { allowLegacy: false })) {
+        if (!sidechainState.verifySidechainPatchWitness(proposal, witness, validators, threshold)) {
           this.emit('warning', '[FABRIC:PEER] SIDECHAIN_STATE_PATCH federationWitness missing or invalid');
           break;
         }

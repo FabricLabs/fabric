@@ -13,6 +13,8 @@
 const Key = require('../types/key');
 const { pubkeyXOnly } = require('./pubkey');
 
+const GROUP_CHANGE_TAG = require('./signingTags').GROUP_CHANGE;
+
 const GOVERNANCE_ACTIONS = Object.freeze(['member.add', 'member.remove', 'members.set', 'signers.set', 'update']);
 
 /**
@@ -80,7 +82,7 @@ function signProposalVote (key, proposal) {
     throw new Error('signProposalVote: Key required');
   }
   const message = signingStringForGroupChangeProposal(proposal);
-  const signature = Buffer.from(key.signSchnorr(Buffer.from(message, 'utf8'))).toString('hex');
+  const signature = Buffer.from(key.signSchnorr(Buffer.from(message, 'utf8'), GROUP_CHANGE_TAG)).toString('hex');
   return {
     pubkey: String(key.pubkey || '').toLowerCase(),
     signature,
@@ -104,7 +106,7 @@ function verifyProposalVote (proposal, pubkey, signatureHex) {
     if (!x) return false;
     const key = new Key({ public: `02${x}` });
     const message = signingStringForGroupChangeProposal(proposal);
-    return key.verifySchnorr(message, Buffer.from(sig, 'hex')) === true;
+    return key.verifySchnorr(message, Buffer.from(sig, 'hex'), GROUP_CHANGE_TAG) === true;
   } catch (_) {
     return false;
   }
@@ -287,6 +289,7 @@ function foldProposals (entries, ctx, genesisThreshold, genesisSigners) {
 }
 
 module.exports = {
+  GROUP_CHANGE_TAG,
   GOVERNANCE_ACTIONS,
   signingStringForGroupChangeProposal,
   proposalIdOf,

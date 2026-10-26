@@ -33,6 +33,7 @@ const { pubkeyXOnly, normalizePeerPubkeyHex } = require('../functions/pubkey');
 // Fabric Types
 const Contract = require('./contract');
 const Key = require('./key');
+const FEDERATION_WITNESS_TAG = require('../functions/signingTags').FEDERATION_WITNESS;
 const Program = require('./program');
 const Wallet = require('./wallet');
 
@@ -426,7 +427,7 @@ class Federation extends Contract {
         const derived = bls.deriveFederationSigner(key.private);
         return bls.sign(messageToSign, derived.secretKey);
       }
-      return key.signSchnorr(messageToSign);
+      return key.signSchnorr(messageToSign, FEDERATION_WITNESS_TAG);
     };
 
     // If pubkey is provided, use that specific key
@@ -466,7 +467,7 @@ class Federation extends Contract {
       if (this.signatureScheme === bls.SCHEME_BLS) {
         const blsPublicKey = this._state.content.blsPublicKeys && this._state.content.blsPublicKeys[pubkey];
         if (blsPublicKey && bls.verify(sig, messageToVerify, blsPublicKey)) return true;
-      } else if (key.verifySchnorr(messageToVerify, sig)) {
+      } else if (key.verifySchnorr(messageToVerify, sig, FEDERATION_WITNESS_TAG)) {
         return true;
       }
     }
@@ -489,7 +490,7 @@ class Federation extends Contract {
       if (key && key.private) {
         signatures[pubkey] = useBls
           ? bls.createFederationBlsBundle(messageToSign, key)
-          : key.signSchnorr(messageToSign);
+          : key.signSchnorr(messageToSign, FEDERATION_WITNESS_TAG);
       }
     }
     return {
@@ -544,7 +545,7 @@ class Federation extends Contract {
     }
 
     // Create message hash once for all verifications
-    const messageHash = crypto.createHash('sha256').update(messageToVerify).digest();
+    const messageHash = Key.schnorrMessageHash(messageToVerify, FEDERATION_WITNESS_TAG);
 
     for (const [pubkey, signature] of Object.entries(signatures)) {
       const key = this._state.content.keys[pubkey];
