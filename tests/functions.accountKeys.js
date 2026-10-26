@@ -204,4 +204,30 @@ describe('@fabric/core/functions/accountKeys', function () {
     lost.current = { account: 9, network: 'regtest' };
     assert.throws(() => verifyVaultAccounts(lost, MASTER), (err) => err.code === 'FABRIC_ACCOUNT_VAULT_MISMATCH');
   });
+
+  it('hands out addresses only from a vault view the master checked', function () {
+    const vault = createAccountVault({ master: MASTER, lockPassword: LOCK, network: 'mainnet' });
+    const unverified = (err) => err.code === 'FABRIC_ACCOUNT_UNVERIFIED';
+
+    const locked = currentVaultAccount(vault);
+    assert.strictEqual(locked.verified, false);
+    assert.strictEqual(locked.wallet.verified, false);
+    assert.throws(() => walletReceiveAddress(locked.wallet, 'mainnet', 0), unverified);
+    assert.throws(() => walletChangeAddress(locked.wallet, 'mainnet', 0), unverified);
+    assert.strictEqual(walletDescriptors(locked.wallet).watch.length, 4, 'watch-only display still works');
+
+    const master = openAccountVault(vault, LOCK);
+    const open = currentVaultAccount(vault, master);
+    assert.strictEqual(open.verified, true);
+    assert.strictEqual(walletReceiveAddress(open.wallet, 'mainnet', 0), 'bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu');
+    assert.strictEqual(vault.accounts['mainnet:0'].verified, undefined, 'the stored cache is not marked');
+
+    // A swapped xpub, even one stored as verified, never yields an address.
+    const other = deriveAccount(importSeed(FIXTURE_SEED, 'TREZOR'), { network: 'mainnet' });
+    const swapped = JSON.parse(JSON.stringify(vault));
+    Object.assign(swapped.accounts['mainnet:0'], { verified: true });
+    Object.assign(swapped.accounts['mainnet:0'].wallet, { verified: true, segwit: { path: other.wallet.segwit.path, xpub: other.wallet.segwit.xpub } });
+    assert.throws(() => walletReceiveAddress(currentVaultAccount(swapped).wallet, 'mainnet', 0), unverified);
+    assert.throws(() => currentVaultAccount(swapped, MASTER), (err) => err.code === 'FABRIC_ACCOUNT_VAULT_MISMATCH');
+  });
 });

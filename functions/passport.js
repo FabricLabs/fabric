@@ -397,6 +397,18 @@ function cosignerScope (origin, hash) {
 }
 
 /**
+ * Constant-time string equality.
+ * @private
+ * @param {string} a
+ * @param {string} b
+ * @returns {boolean}
+ */
+function sameString (a, b) {
+  const digest = (value) => crypto.createHash('sha256').update(String(value)).digest();
+  return crypto.timingSafeEqual(digest(a), digest(b));
+}
+
+/**
  * Verify a `PASSPORT_ASSERTION` for a site.
  * @param {string|Buffer|Message} input
  * @param {Object} expected What the site stored when it issued the challenge.
@@ -432,9 +444,9 @@ function verifyAssertion (input, expected = {}) {
   if (!fields) return { ok: false, error: 'malformed PASSPORT_ASSERTION body' };
   if (Number(fields.v) !== PASSPORT_VERSION) return { ok: false, error: `unsupported Passport version ${fields.v}` };
   if (normalizeOrigin(fields.origin) !== origin) return { ok: false, error: 'origin mismatch' };
-  if (String(fields.nonce) !== String(expected.nonce)) return { ok: false, error: 'nonce mismatch' };
+  if (!sameString(fields.nonce, expected.nonce)) return { ok: false, error: 'nonce mismatch' };
   const hash = Buffer.from(fields.challengeHash || []).toString('hex');
-  if (hash !== expectedHash) return { ok: false, error: 'challengeHash mismatch' };
+  if (!sameString(hash, expectedHash)) return { ok: false, error: 'challengeHash mismatch' };
 
   const issuedAt = toMillis(fields.issuedAt);
   const expiresAt = toMillis(fields.expiresAt);

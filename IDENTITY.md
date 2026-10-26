@@ -68,10 +68,15 @@ The stored record (`createAccountVault`, type `FabricAccountVault`, `v: 2`)
 holds the sealed master xprv, the current `{ account, network }`, and a public
 cache per pair (label, identity pubkey and id, both wallet xpubs, cosigner
 pubkey), so a locked client can still show its identities and watch-only
-balances. The cache sits beside the seal unauthenticated: unlock with
-`openAccountVault`, which refuses a vault whose cache doesn't match what the
-master derives (`FABRIC_ACCOUNT_VAULT_MISMATCH`), and hand out no receive
-address from the cache before that. Unlocked, the master lives in memory only.
+balances. Anyone able to edit the record can change the cache, and nothing
+can check it while locked, so `currentVaultAccount(vault)` returns it marked
+`verified: false`: show it as unverified, and `walletReceiveAddress` /
+`walletChangeAddress` refuse its wallet (`FABRIC_ACCOUNT_UNVERIFIED`). Unlock
+with `openAccountVault`, which re-derives every cached pair from the master
+and refuses a vault whose cache differs (`FABRIC_ACCOUNT_VAULT_MISMATCH`);
+`currentVaultAccount(vault, master)` then returns a checked view
+(`verified: true`) that hands out addresses. Unlocked, the master lives in
+memory only.
 Switching account or network re-derives all three keys; while locked, only
 cached pairs can be selected (`selectVaultAccount`). A client holds one seed
 at a time.

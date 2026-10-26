@@ -22,7 +22,7 @@
  * @module functions/accountKeys
  */
 
-const { payments } = require('bitcoinjs-lib');
+const { networks, payments } = require('bitcoinjs-lib');
 const Key = require('../types/key');
 const bip39 = require('./bip39');
 const { encodeCheck, decodeCheck } = require('./base58');
@@ -45,17 +45,17 @@ const WALLET_GAP_LIMIT = 20;
 const ACCOUNT_VAULT_TYPE = 'FabricAccountVault';
 const ACCOUNT_VAULT_VERSION = 2;
 
-/** @private BIP32 serialization versions. */
-const VERSIONS = Object.freeze({
-  mainnet: { public: 0x0488b21e, private: 0x0488ade4 },
-  testnet: { public: 0x043587cf, private: 0x04358394 }
-});
-
 /** @private bitcoinjs-lib address parameters per network. */
 const ADDRESS_NETWORKS = Object.freeze({
-  mainnet: { messagePrefix: '\x18Bitcoin Signed Message:\n', bech32: 'bc', bip32: VERSIONS.mainnet, pubKeyHash: 0x00, scriptHash: 0x05, wif: 0x80 },
-  testnet: { messagePrefix: '\x18Bitcoin Signed Message:\n', bech32: 'tb', bip32: VERSIONS.testnet, pubKeyHash: 0x6f, scriptHash: 0xc4, wif: 0xef },
-  regtest: { messagePrefix: '\x18Bitcoin Signed Message:\n', bech32: 'bcrt', bip32: VERSIONS.testnet, pubKeyHash: 0x6f, scriptHash: 0xc4, wif: 0xef }
+  mainnet: networks.bitcoin,
+  testnet: networks.testnet,
+  regtest: networks.regtest
+});
+
+/** @private BIP32 serialization versions (xprv/xpub, tprv/tpub). */
+const VERSIONS = Object.freeze({
+  mainnet: networks.bitcoin.bip32,
+  testnet: networks.testnet.bip32
 });
 
 /**
@@ -267,25 +267,38 @@ function walletAddress (params = {}) {
   throw new RangeError(`unsupported script: ${script}`);
 }
 
+/** @private */
+function assertWalletVerified (wallet) {
+  if (wallet && wallet.verified === false) {
+    const err = new Error('unlock the vault before handing out addresses');
+    err.code = 'FABRIC_ACCOUNT_UNVERIFIED';
+    throw err;
+  }
+}
+
 /**
- * Next receive address: always from the SegWit account.
+ * Next receive address: always from the SegWit account. Refuses a wallet
+ * from a locked vault view (`verified: false`, see {@link currentVaultAccount}).
  * @param {{ segwit: { xpub: string } }} wallet
  * @param {string} network
  * @param {number} index
  * @returns {string}
  */
 function walletReceiveAddress (wallet, network, index = 0) {
+  assertWalletVerified(wallet);
   return walletAddress({ xpub: wallet.segwit.xpub, network, script: 'wpkh', change: 0, index });
 }
 
 /**
- * Change address: always from the SegWit account.
+ * Change address: always from the SegWit account. Refuses a wallet from a
+ * locked vault view, like {@link walletReceiveAddress}.
  * @param {{ segwit: { xpub: string } }} wallet
  * @param {string} network
  * @param {number} index
  * @returns {string}
  */
 function walletChangeAddress (wallet, network, index = 0) {
+  assertWalletVerified(wallet);
   return walletAddress({ xpub: wallet.segwit.xpub, network, script: 'wpkh', change: 1, index });
 }
 
@@ -370,10 +383,10 @@ function unsealMaster (blob, lockPassword) {
 }
 
 /**
- * Public data of a derived account, cached unsealed in a vault. Nothing
- * authenticates the cache until {@link openAccountVault} checks it against
- * the master: a locked client may show it, but must not hand out a receive
- * address from it before the vault was opened.
+ * Public data of a derived account, cached unsealed in a vault so a locked
+ * client can show identities and watch-only balances. Anyone able to edit the
+ * record can change it, and no key is available to check it while locked, so
+ * {@link currentVaultAccount} marks it unverified until the master checks it.
  * @param {ReturnType<typeof deriveAccount>} derived
  * @param {string} [label]
  * @returns {object}
@@ -433,36 +446,47 @@ function assertAccountVault (vault) {
   }
 }
 
+/** @private */
+function vaultMismatch (why) {
+  const err = new Error(`account vault cache does not match its master: ${why}`);
+  err.code = 'FABRIC_ACCOUNT_VAULT_MISMATCH';
+  return err;
+}
+
 /**
- * Check every cached pair of a vault against what `master` derives. The cache
- * sits beside the seal unauthenticated, so anyone able to edit the record
- * could swap in their own xpub; this refuses such a vault.
+ * @private
+ * @returns {object} The fresh view of a cached pair; throws when they differ.
+ */
+function checkCachedAccount (key, cached, master) {
+  if (!cached || vaultAccountKey(cached.account, cached.network) !== key) throw vaultMismatch(key);
+  const fresh = accountPublicView(deriveAccount(master, { account: cached.account, network: cached.network }), cached.label);
+  if (JSON.stringify(fresh) !== JSON.stringify(cached)) throw vaultMismatch(key);
+  return fresh;
+}
+
+/**
+ * Check every cached pair of a vault against what `master` derives, and
+ * refuse a vault whose cache was edited (say, an xpub swapped for someone
+ * else's). Re-deriving checks more than a MAC could, and needs no key while
+ * locked, when nothing could check a MAC anyway.
  * @param {object} vault
  * @param {string|Key} master
  * @returns {object} The vault, unchanged.
  */
 function verifyVaultAccounts (vault, master) {
   assertAccountVault(vault);
-  const tampered = (why) => {
-    const err = new Error(`account vault cache does not match its master: ${why}`);
-    err.code = 'FABRIC_ACCOUNT_VAULT_MISMATCH';
-    return err;
-  };
   const accounts = vault.accounts || {};
-  for (const [key, cached] of Object.entries(accounts)) {
-    if (!cached || vaultAccountKey(cached.account, cached.network) !== key) throw tampered(key);
-    const fresh = accountPublicView(deriveAccount(master, { account: cached.account, network: cached.network }), cached.label);
-    if (JSON.stringify(fresh) !== JSON.stringify(cached)) throw tampered(key);
-  }
+  for (const [key, cached] of Object.entries(accounts)) checkCachedAccount(key, cached, master);
   if (!vault.current || !accounts[vaultAccountKey(vault.current.account, vault.current.network)]) {
-    throw tampered('current account is not cached');
+    throw vaultMismatch('current account is not cached');
   }
   return vault;
 }
 
 /**
  * Unlock a vault: open the sealed master with the lock password and check the
- * public cache against it ({@link verifyVaultAccounts}).
+ * public cache against it ({@link verifyVaultAccounts}). Pass the master to
+ * {@link currentVaultAccount} for a view that hands out addresses.
  * @param {object} vault
  * @param {string} lockPassword
  * @returns {string} Master xprv.
@@ -502,13 +526,24 @@ function selectVaultAccount (vault, params = {}) {
 }
 
 /**
- * Public view of the vault's current pair.
+ * Public view of the vault's current pair, marked `verified` on the view and
+ * its `wallet`. Without the master it is the cache as stored, `verified:
+ * false`: show it as unverified, and {@link walletReceiveAddress} /
+ * {@link walletChangeAddress} refuse its wallet. With the master the pair is
+ * re-derived and checked first (`FABRIC_ACCOUNT_VAULT_MISMATCH` when it
+ * differs), and the view is `verified: true`.
  * @param {object} vault
+ * @param {string|Key} [master]
  * @returns {object|null}
  */
-function currentVaultAccount (vault) {
+function currentVaultAccount (vault, master) {
   if (!vault || !vault.current || !vault.accounts) return null;
-  return vault.accounts[vaultAccountKey(vault.current.account, vault.current.network)] || null;
+  const key = vaultAccountKey(vault.current.account, vault.current.network);
+  const cached = vault.accounts[key];
+  if (!cached) return null;
+  const view = master ? checkCachedAccount(key, cached, master) : cached;
+  const verified = Boolean(master);
+  return Object.assign({}, view, { verified, wallet: Object.assign({}, view.wallet, { verified }) });
 }
 
 module.exports = {
