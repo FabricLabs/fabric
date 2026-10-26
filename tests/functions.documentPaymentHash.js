@@ -9,7 +9,7 @@ const {
   paymentHashHexFromKey
 } = require('../functions/documentPaymentHash');
 const { prepareSealedSale } = require('../functions/documentSealedExchange');
-const { blobPaymentHashHex } = require('../functions/documentBlobManifest');
+const Document = require('../types/document');
 
 describe('functions/documentPaymentHash', function () {
   const docId = 'pay-hash-doc';
@@ -72,7 +72,7 @@ describe('functions/documentPaymentHash', function () {
       blob: { index: 0, blobHashHex }
     });
     assert.strictEqual(resolved.binding, 'blob');
-    assert.strictEqual(resolved.contentHashHex, blobPaymentHashHex({
+    assert.strictEqual(resolved.contentHashHex, Document.blobPaymentHash({
       documentId: docId,
       blobIndex: 0,
       blobHashHex

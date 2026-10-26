@@ -9,22 +9,22 @@ const {
   resolveSpend,
   buildWithdrawalRequest,
   validateWithdrawalRequest
-} = require('../functions/contractSpend');
+} = require('../types/contract');
 const {
-  assertMachineRunMatches,
-  bindProgramRunToTip,
-  programMetaFromTip,
-  requiresProgramBind,
-  validateProgramRunBinding
-} = require('../functions/contractProgramBind');
+  verifyMachineRun,
+  bindRun,
+  runFromTip,
+  requiresBinding,
+  validateBinding
+} = require('../types/program');
 const { buildExecutionRunOutput } = require('../functions/executionRunBridge');
 const {
-  observePaymentToAddress,
-  applyPaymentObservationToTip
-} = require('../functions/contractPaymentObserve');
+  observePayment,
+  applyPaymentObservation
+} = require('../types/contract');
 const { buildFederationVaultFromPolicy } = require('../types/policy');
 
-describe('contractProgramBind / Machine ↔ redeemable withdrawals', function () {
+describe('Program run binding / Machine ↔ redeemable withdrawals', function () {
   const blockHash = 'ab'.repeat(32);
 
   before(function () {
@@ -42,13 +42,13 @@ describe('contractProgramBind / Machine ↔ redeemable withdrawals', function ()
     const run = await machine.runProgram(prog);
     assert.strictEqual(run.ok, true);
     assert.ok(run.runCommitmentHex);
-    const match = assertMachineRunMatches({ program: prog, run });
+    const match = verifyMachineRun({ program: prog, run });
     assert.strictEqual(match.ok, true);
     assert.strictEqual(match.runCommitmentHex, run.runCommitmentHex);
     return { prog, run, match };
   }
 
-  it('assertMachineRunMatches prefers run.trace when stack was pre-seeded', async function () {
+  it('verifyMachineRun prefers run.trace when stack was pre-seeded', async function () {
     const prog = Program.from({
       language: 'fabric-opcodes',
       steps: ['OP_TRUE']
@@ -60,7 +60,7 @@ describe('contractProgramBind / Machine ↔ redeemable withdrawals', function ()
     const run = await machine.runProgram(prog);
     assert.strictEqual(run.ok, true);
     assert.ok(run.stack.length > run.trace.length);
-    const match = assertMachineRunMatches({ program: prog, run });
+    const match = verifyMachineRun({ program: prog, run });
     assert.strictEqual(match.ok, true, match.error);
     assert.strictEqual(match.runCommitmentHex, run.runCommitmentHex);
   });
@@ -86,14 +86,14 @@ describe('contractProgramBind / Machine ↔ redeemable withdrawals', function ()
         threshold: 1
       }
     };
-    const tip1 = bindProgramRunToTip(tip0, {
+    const tip1 = bindRun(tip0, {
       programHash: match.programHash,
       runCommitmentHex: match.runCommitmentHex,
       programId: prog.programId,
       clock: tip0.clock
     });
     assert.ok(tip1.content.program);
-    assert.strictEqual(programMetaFromTip(tip1).programHash, match.programHash);
+    assert.strictEqual(runFromTip(tip1).programHash, match.programHash);
 
     const spend0 = resolveSpend({
       genesis: {
@@ -134,7 +134,7 @@ describe('contractProgramBind / Machine ↔ redeemable withdrawals', function ()
       bitcoinBlockHash: blockHash,
       content: { signers: [a.pubkey], threshold: 1 }
     };
-    tip = bindProgramRunToTip(tip, {
+    tip = bindRun(tip, {
       programHash: match.programHash,
       runCommitmentHex: match.runCommitmentHex
     });
@@ -195,7 +195,7 @@ describe('contractProgramBind / Machine ↔ redeemable withdrawals', function ()
       bitcoinBlockHash: blockHash,
       content: { signers: [a.pubkey], threshold: 1 }
     };
-    tip = bindProgramRunToTip(tip, {
+    tip = bindRun(tip, {
       programHash: match.programHash,
       runCommitmentHex: match.runCommitmentHex,
       programId: prog.programId
@@ -214,14 +214,14 @@ describe('contractProgramBind / Machine ↔ redeemable withdrawals', function ()
     fund.version = 2;
     fund.addInput(Buffer.alloc(32), 0);
     fund.addOutput(vault.output, BigInt(50000));
-    const obs = observePaymentToAddress({
+    const obs = observePayment({
       tx: fund.toHex(),
       address: vault.address,
       network: 'regtest',
       amountSats: 10000
     });
     assert.strictEqual(obs.ok, true);
-    const tipPaid = applyPaymentObservationToTip(tip, obs);
+    const tipPaid = applyPaymentObservation(tip, obs);
     assert.strictEqual(tipPaid.content.balances[vault.address].sats, 50000);
     assert.strictEqual(tipPaid.content.program.programHash, match.programHash);
 
@@ -243,19 +243,19 @@ describe('contractProgramBind / Machine ↔ redeemable withdrawals', function ()
   });
 
   it('genesis with fabric.program interface requires tip-sealed run', function () {
-    assert.strictEqual(requiresProgramBind({
+    assert.strictEqual(requiresBinding({
       interfaces: ['arc.core', 'fabric.program'],
       primitives: { opcodes: [] }
     }), true);
-    assert.strictEqual(requiresProgramBind({
+    assert.strictEqual(requiresBinding({
       primitives: { opcodes: ['OP_TRUE'] }
     }), true);
-    assert.strictEqual(requiresProgramBind({
+    assert.strictEqual(requiresBinding({
       spendPolicy: { requireProgramRun: true }
     }), true);
-    assert.strictEqual(requiresProgramBind({ name: 'plain' }), false);
+    assert.strictEqual(requiresBinding({ name: 'plain' }), false);
 
-    const check = validateProgramRunBinding({
+    const check = validateBinding({
       object: {
         stateDigest: '11'.repeat(32),
         bitcoinBlockHash: blockHash,

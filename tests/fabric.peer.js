@@ -10,6 +10,7 @@ const assert = require('assert');
 const net = require('net');
 const { EventEmitter } = require('events');
 const { PassThrough } = require('stream');
+const SIGNING_TAGS = require('../functions/signingTags');
 
 // Node configs may be JSON (node-a.json) or JS; resolve accordingly
 let NODEA, NODEB;
@@ -1162,6 +1163,19 @@ describe('@fabric/core/types/peer', function () {
         buyer._handleFabricMessage(badMsg.toBuffer(), { name: 'seller:1' }, null);
         assert.ok(rejected && /hash mismatch|rejected/i.test(String(rejected.error || 'rejected')));
       });
+      it('P2P_FILE_SEND of a document over MAX_DOCUMENT_BLOBS blobs warns and sends nothing', function () {
+        const { MAX_DOCUMENT_BLOBS } = require('../constants');
+        const seller = new Peer({ listen: false, peersDb: null, sealPricedDocuments: false });
+        seller._state.content.documents = { 'doc-huge': 'x'.repeat(MAX_DOCUMENT_BLOBS + 1) };
+        seller.settings.inventoryBlobChunkBytes = 1;
+        const frames = [];
+        const warnings = [];
+        seller.connections['buyer:3'] = { _writeFabric: (buf) => frames.push(buf) };
+        seller.on('warning', (w) => warnings.push(String(w)));
+        assert.strictEqual(seller._sendP2pFileSendToPeer('doc-huge', 'buyer:3'), false);
+        assert.strictEqual(frames.length, 0);
+        assert.ok(warnings.some((w) => /Cannot send document doc-huge/.test(w)));
+      });
       it('sealed priced doc: ciphertext without key; open only after settlement authorize', function () {
         const seller = new Peer({
           listen: false,
@@ -2058,7 +2072,7 @@ describe('@fabric/core/types/peer', function () {
             id: peerId,
             pubkey: server.key.pubkey,
             parentPubkey: server.key.pubkey,
-            parentSignature: server.key.signSchnorr(proof).toString('hex')
+            parentSignature: server.key.signSchnorr(proof, SIGNING_TAGS.SESSION_KEY).toString('hex')
           },
           object: { challenge: 'selfloop' }
         };
@@ -2188,7 +2202,7 @@ describe('@fabric/core/types/peer', function () {
             id: remotePeerId,
             pubkey: remoteKey.pubkey,
             parentPubkey: remoteKey.pubkey,
-            parentSignature: remoteKey.signSchnorr(remoteProof).toString('hex')
+            parentSignature: remoteKey.signSchnorr(remoteProof, SIGNING_TAGS.SESSION_KEY).toString('hex')
           },
           object: { challenge: 'cafebabe' }
         };
@@ -2243,7 +2257,7 @@ describe('@fabric/core/types/peer', function () {
             id: remotePeerId,
             pubkey: remoteKey.pubkey,
             parentPubkey: remoteKey.pubkey,
-            parentSignature: remoteKey.signSchnorr(remoteProof).toString('hex')
+            parentSignature: remoteKey.signSchnorr(remoteProof, SIGNING_TAGS.SESSION_KEY).toString('hex')
           },
           object: { challenge: 'challenge' }
         };
@@ -2277,7 +2291,7 @@ describe('@fabric/core/types/peer', function () {
             id: serverId,
             pubkey: serverKey.pubkey,
             parentPubkey: serverKey.pubkey,
-            parentSignature: serverKey.signSchnorr(serverProof).toString('hex')
+            parentSignature: serverKey.signSchnorr(serverProof, SIGNING_TAGS.SESSION_KEY).toString('hex')
           },
           object: {
             initiator: peer.identity.id,
@@ -2309,7 +2323,7 @@ describe('@fabric/core/types/peer', function () {
             id: serverId,
             pubkey: serverKey.pubkey,
             parentPubkey: serverKey.pubkey,
-            parentSignature: serverKey.signSchnorr(serverProof).toString('hex')
+            parentSignature: serverKey.signSchnorr(serverProof, SIGNING_TAGS.SESSION_KEY).toString('hex')
           },
           object: {
             initiator: peer.identity.id,

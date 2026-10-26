@@ -11,7 +11,7 @@ Wire / session / HTTP field is always **`contentHashHex`** (aliases on ingest: `
 |---------|------|------------|
 | **sealed** | priced AES-GCM docs | `SHA256(content key K)` |
 | **envelope** | legacy / unsealed | `purchaseContentHashHex` = SHA256(SHA256(DocumentPublish AMP bytes)) |
-| **blob** | unsealed multi-blob settles | `blobPaymentHashHex({ documentId, blobIndex, blobHashHex })` |
+| **blob** | unsealed multi-blob settles | `Document.blobPaymentHash({ documentId, blobIndex, blobHashHex })` |
 
 See also: [`docs/PAYMENTS_DOCUMENT_BINDING.md`](PAYMENTS_DOCUMENT_BINDING.md), [`docs/bip-fabric-file-exchange.md`](bip-fabric-file-exchange.md).
 
@@ -105,9 +105,9 @@ HTTP **402** + `X-Fabric-Payment-Request` mapping: `@fabric/http`
 Terminal notes (contracts as interfaces, Hub registry, shell packs, verbosity): [`docs/CLI.md`](CLI.md), [`docs/CONTRACTS.md`](CONTRACTS.md).
 ## Security rules
 1. Never accept blob bytes without `SHA256(bytes) === blobHashHex` (Peer `DocumentBlobTransferBook`).
-2. Deduplicate settlements per `(documentId, blobIndex, contentHash)` (`settlementDedupeKey`).
+2. Deduplicate settlements per `(documentId, blobIndex, contentHash)` (`DocumentBook.settlementDedupeKey`).
 3. Priced documents: HTLC / buy `contentHash` is **`SHA256(content key K)`**; ciphertext may ship anytime; **K is revealed only** after **verified settlement** (`Peer.authorizeDocumentKeyReveal` requires `settlementId` or `txid`) **or** when the seller claim witness exposes `K` on-chain (`/claimwatch`). Echoing the public inventory `paymentHashHex` alone must never unlock `K`.
-4. Unsealed / free docs may still use `blobPaymentHashHex` for per-blob settles.
+4. Unsealed / free docs may still use `Document.blobPaymentHash` for per-blob settles.
 5. Priced `DOCUMENT_REQUEST` must not bit-identical-relay buyer frames when `relayPrivateDocumentRequests` is on; rewritten requests are **directed** (onion `relayPath`, `nextPeer`, or fan-out excluding origin) — never mesh-broadcast.
 6. `maxSats` monotone decreasing across hops; fee skim cannot inflate budget.
 7. Preimage / content key must not ride inside unpaid file chunks.
@@ -126,7 +126,7 @@ A `Document` is a Tree over wire-sized blobs. When sealed, **every blob has its 
 | `iv_i` | convergent: `taggedHash('Fabric/DocumentConvergentIv', K_i)[0..12]`; private: random |
 | `blobHashHex_i` | `SHA256(ciphertext_i)` (AES-256-GCM, `K_i`, `iv_i`, tag appended) |
 | `paymentHashHex_i` | `SHA256(K_i)` — the HTLC hash for blob `i` |
-| `merkleRootHex` | document tree root over the leaves `(blobHashHex_i, paymentHashHex_i, iv_i)`, bound to the blob count (`documentMerkleRootHex`; see the BIP) |
+| `merkleRootHex` | document tree root over the leaves `(blobHashHex_i, paymentHashHex_i, iv_i)`, bound to the blob count (`Document.rootHex`; see the BIP) |
 | plaintext chunk | `chunkBytes - 16` so the ciphertext blob still fits one `P2P_FILE_SEND` |
 
 ### Convergent sealing and de-duplication
@@ -178,7 +178,7 @@ node tests/simulator/run.js --scenario document-swarm
 ## Shared modules (`@fabric/core/functions`)
 - `types/htlc.js` — P2TR HTLC + claim-preimage extract + refund maturity + offer validation
 - `documentSealedExchange.js` — AES-GCM content key (convergent `convergentKey` / `convergentIv`, or random) + sealed sale + `openWithClaimPreimage`
-- `documentBlobManifest.js` — split/reassemble + buyer `DocumentBlobTransferBook`
+- `types/document.js` — split / tree / reassemble statics; `types/documentBlobTransferBook.js` — buyer `DocumentBlobTransferBook`
 - `types/documentBook.js` — ranked offer book, purchase sessions, private request relay, inventory paging
 - `documentPaymentHash.js` — single `contentHashHex` resolver (sealed / envelope / blob)
 - `walletTransactionWatch.js` — classify/match wallet-associated Bitcoin txs (multi-seed watch set)

@@ -160,8 +160,7 @@ describe('services/market (consumer budget agent)', function () {
   });
 
   it('never pays for an unsealed blob (the seller could claim without delivering)', function () {
-    const { advertiseDocumentBlobs } = require('../functions/documentBlobManifest');
-    const ad = advertiseDocumentBlobs(crypto.randomBytes(4000), { documentId: 'plain', chunkBytes: 2048, rateSats: P });
+    const ad = Document.advertise(crypto.randomBytes(4000), { documentId: 'plain', chunkBytes: 2048, rateSats: P });
     const book = new DocumentBook();
     const item = (rateSats) => ({ id: 'plain', rateSats, merkleRootHex: ad.merkleRootHex, blobs: ad.itemBlobs.map((b) => Object.assign({}, b, { rateSats })) });
     book.ingestInventoryResponse({ origin: 'paid', sellerPubkey: '02' + 'ab'.repeat(32), items: [item(P)] });

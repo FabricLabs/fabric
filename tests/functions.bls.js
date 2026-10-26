@@ -4,6 +4,7 @@ const assert = require('assert');
 const Key = require('../types/key');
 const bls = require('../functions/bls');
 const bfs = require('../functions/beaconFederationSigning');
+const SIGNING_TAGS = require('../functions/signingTags');
 
 describe('@fabric/core/functions/bls', function () {
   this.timeout(30000);
@@ -58,50 +59,37 @@ describe('@fabric/core/functions/bls', function () {
     assert.strictEqual(bls.verifyFederationBlsBundle(message, other.pubkey, bundle), false);
   });
 
-  it('signs v2 bundles with a domain-tagged link', function () {
+  it('signs v3 bundles with a BLSBinding-tagged link', function () {
     const key = new Key({ private: secretA.toString('hex') });
     const message = Buffer.from('epoch signing string', 'utf8');
     const bundle = bls.createFederationBlsBundle(message, key);
-    assert.strictEqual(bls.BUNDLE_VERSION, 2);
-    assert.strictEqual(bundle.v, 2);
+    assert.strictEqual(bls.BUNDLE_VERSION, 3);
+    assert.strictEqual(bundle.v, 3);
     assert.ok(key.verifySchnorr(
       Buffer.from(bls.LINK_PREFIX + bundle.blsPublicKey, 'utf8'),
-      Buffer.from(bundle.link, 'hex')
+      Buffer.from(bundle.link, 'hex'),
+      bls.BLS_BINDING_TAG
     ));
     assert.strictEqual(bls.verifyFederationBlsBundle(message, key.pubkey, bundle), true);
-    assert.strictEqual(bls.verifyFederationBlsBundle(message, key.pubkey, bundle, { allowLegacy: false }), true);
-    const untagged = Buffer.from(key.signSchnorr(Buffer.from(bundle.blsPublicKey, 'hex'))).toString('hex');
-    assert.strictEqual(bls.verifyFederationBlsBundle(message, key.pubkey, Object.assign({}, bundle, { link: untagged })), false);
-    assert.strictEqual(bls.verifyFederationBlsBundle(message, key.pubkey, Object.assign({}, bundle, { v: 3 })), false);
+    const otherTag = Buffer.from(key.signSchnorr(
+      Buffer.from(bls.LINK_PREFIX + bundle.blsPublicKey, 'utf8'),
+      SIGNING_TAGS.FEDERATION_WITNESS
+    )).toString('hex');
+    assert.strictEqual(bls.verifyFederationBlsBundle(message, key.pubkey, Object.assign({}, bundle, { link: otherTag })), false);
+    assert.strictEqual(bls.verifyFederationBlsBundle(message, key.pubkey, Object.assign({}, bundle, { v: 2 })), false);
   });
 
-  it('verifies legacy v1 bundles (untagged link) unless allowLegacy is false', function () {
+  it('refuses v1 and v2 bundles', function () {
     const key = new Key({ private: secretA.toString('hex') });
     const message = Buffer.from('epoch signing string', 'utf8');
     const bundle = bls.createFederationBlsBundle(message, key);
-    const untagged = Buffer.from(key.signSchnorr(Buffer.from(bundle.blsPublicKey, 'hex'))).toString('hex');
-    const legacy = Object.assign({}, bundle, { v: bls.LEGACY_BUNDLE_VERSION, link: untagged });
-    assert.strictEqual(bls.verifyFederationBlsBundle(message, key.pubkey, legacy), true);
-    assert.strictEqual(bls.verifyFederationBlsBundle(message, key.pubkey, legacy, { allowLegacy: false }), false);
-    assert.strictEqual(bls.verifyFederationBlsBundle(message, key.pubkey, Object.assign({}, bundle, { v: 1 })), false);
-
-    const witness = { scheme: 'bls', signatures: { [key.pubkey]: legacy } };
-    assert.strictEqual(bls.verifyFederationBlsWitness(message, witness, [key.pubkey], 1), true);
-    assert.strictEqual(bfs.verifyFederationWitnessOnMessage(message, witness, [key.pubkey], 1), true);
-    assert.strictEqual(
-      bfs.verifyFederationWitnessOnMessage(message, witness, [key.pubkey], 1, undefined, { allowLegacy: false }),
-      false
-    );
-
-    const round = bfs.createRound({ clock: 1, height: 1, blockHash: 'ab'.repeat(32) }, {
-      validators: [key.pubkey],
-      threshold: 1,
-      signatureScheme: 'bls'
-    });
-    const roundMsg = bfs.messageBufferForPayload(round.payload);
-    const legacyForRound = Object.assign(bls.createFederationBlsBundle(roundMsg, key), { v: 1 });
-    legacyForRound.link = untagged;
-    assert.strictEqual(bfs.addSignature(round, key.pubkey, JSON.stringify(legacyForRound)).ok, false);
+    for (const v of [1, 2]) {
+      const old = Object.assign({}, bundle, { v });
+      assert.strictEqual(bls.verifyFederationBlsBundle(message, key.pubkey, old), false);
+      const witness = { scheme: 'bls', signatures: { [key.pubkey]: old } };
+      assert.strictEqual(bls.verifyFederationBlsWitness(message, witness, [key.pubkey], 1), false);
+      assert.strictEqual(bfs.verifyFederationWitnessOnMessage(message, witness, [key.pubkey], 1), false);
+    }
   });
 
   it('accepts an x-only validator id for a BLS bundle', function () {
@@ -127,7 +115,7 @@ describe('@fabric/core/functions/bls', function () {
   it('counts one Schnorr signature once when a validator id is respelled', function () {
     const key = new Key({ private: secretA.toString('hex') });
     const msg = Buffer.from('epoch signing string', 'utf8');
-    const sig = Buffer.from(key.signSchnorr(msg)).toString('hex');
+    const sig = Buffer.from(key.signSchnorr(msg, SIGNING_TAGS.FEDERATION_WITNESS)).toString('hex');
     const upper = key.pubkey.toUpperCase();
     const witness = { signatures: { [key.pubkey]: sig, [upper]: sig } };
     assert.strictEqual(bfs.verifyFederationWitnessOnMessage(msg, witness, [key.pubkey, upper], 1), true);

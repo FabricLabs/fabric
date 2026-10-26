@@ -71,7 +71,7 @@ const {
 const { individualPk } = require('../functions/musig2');
 const musig2Session = require('../functions/musig2Session');
 const sidechainState = require('../functions/sidechainState');
-const { verifyFederationWitnessOnMessage, epochCommitmentDigestHex } = require('../functions/beaconFederationSigning');
+const { epochCommitmentDigestHex } = require('../functions/beaconFederationSigning');
 const Federation = require('./federation');
 const {
   aggregatePeerBandwidth,
@@ -221,19 +221,7 @@ const {
   buildForwardedDocumentRequest,
   paginateInventoryItems
 } = require('./documentBook');
-const {
-  DEFAULT_CHUNK_BYTES,
-  advertiseDocumentBlobs,
-  splitBlobs,
-  merkleRootHexFromBlobHashes,
-  DocumentBlobTransferBook,
-  parseFileSendObject,
-  verifyBlob,
-  MAX_PENDING_BLOB_TRANSFERS_PER_ORIGIN,
-  sameIv,
-  verifyDocumentInclusion,
-  verifyOfferLeaves
-} = require('../functions/documentBlobManifest');
+const DocumentBlobTransferBook = require('./documentBlobTransferBook');
 const {
   KEY_REVEAL_TYPE,
   BLOB_QUOTE_TYPE,
@@ -362,13 +350,9 @@ function meshDeliveryContext (opts = {}, originName = null) {
   };
 }
 
-const contractPublishAuthority = require('../functions/contractPublishAuthority');
-const {
-  collectContractAuthorityPubkeys,
-  authoritySetHasPubkey,
-  contractPublishSignerAuthorized: contractPublishSignerAuthorizedFn,
-  normalizePeerPubkeyHex
-} = contractPublishAuthority;
+const Contract = require('./contract');
+const { normalizePeerPubkeyHex } = require('../functions/pubkey');
+const SIGNING_TAGS = require('../functions/signingTags');
 
 /**
  * Outer / generic types whose local registration side-effects are first-writer-wins.
@@ -482,7 +466,7 @@ class Peer extends Service {
       // Attach P2TR HTLC fields on offerBtc inventory responses.
       attachInventoryHtlc: false,
       inventoryHtlcLocktimeHeight: null,
-      inventoryBlobChunkBytes: DEFAULT_CHUNK_BYTES,
+      inventoryBlobChunkBytes: Document.CHUNK_BYTES,
       // Privacy-preserving DocumentRequest rewrite + fee skim when maxSats set.
       relayPrivateDocumentRequests: false,
       documentRelayFeeSats: null,
@@ -2792,7 +2776,7 @@ class Peer extends Service {
     const childPubkey = this.key.public.encodeCompressed('hex');
     const parentPubkey = this.key.public.encodeCompressed('hex');
     const proofMsg = this._sessionKeyProofMessage(peerId, childPubkey, parentPubkey);
-    const parentSignature = this.key.signSchnorr(proofMsg).toString('hex');
+    const parentSignature = this.key.signSchnorr(proofMsg, SIGNING_TAGS.SESSION_KEY).toString('hex');
     return {
       pubkey: childPubkey,
       parentPubkey,
@@ -2837,7 +2821,7 @@ class Peer extends Service {
     let ok = false;
     try {
       const parentKey = new Key({ public: `02${claimedParent}` });
-      ok = parentKey.verifySchnorr(proofMsg, Buffer.from(parentSigHex, 'hex'));
+      ok = parentKey.verifySchnorr(proofMsg, Buffer.from(parentSigHex, 'hex'), SIGNING_TAGS.SESSION_KEY);
     } catch {
       ok = false;
     }
@@ -3831,12 +3815,8 @@ class Peer extends Service {
             '[FABRIC:PEER] SIDECHAIN_STATE_PATCH rejected: no federation validators configured');
           break;
         }
-        const msgBuf = Buffer.from(
-          sidechainState.signingStringForSidechainStatePatch(proposal),
-          'utf8'
-        );
         const witness = proposal.federationWitness || null;
-        if (!witness || !verifyFederationWitnessOnMessage(msgBuf, witness, validators, threshold, undefined, { allowLegacy: false })) {
+        if (!sidechainState.verifySidechainPatchWitness(proposal, witness, validators, threshold)) {
           this.emit('warning', '[FABRIC:PEER] SIDECHAIN_STATE_PATCH federationWitness missing or invalid');
           break;
         }
@@ -3866,7 +3846,7 @@ class Peer extends Service {
           break;
         }
         const validatorSet = new Set(validators.map((v) => normalizePeerPubkeyHex(v)).filter(Boolean));
-        if (!signerPubkeyHex || !authoritySetHasPubkey(validatorSet, signerPubkeyHex)) {
+        if (!signerPubkeyHex || !Contract.hasAuthority(validatorSet, signerPubkeyHex)) {
           this.emit('warning',
             '[FABRIC:PEER] FederationSignRequest rejected: AMP signer is not a federation validator');
           break;
@@ -3900,14 +3880,14 @@ class Peer extends Service {
           break;
         }
         const validatorSet = new Set(validators.map((v) => normalizePeerPubkeyHex(v)).filter(Boolean));
-        if (!signerPubkeyHex || !authoritySetHasPubkey(validatorSet, signerPubkeyHex)) {
+        if (!signerPubkeyHex || !Contract.hasAuthority(validatorSet, signerPubkeyHex)) {
           this.emit('warning',
             '[FABRIC:PEER] FederationSignResponse rejected: AMP signer is not a federation validator');
           break;
         }
         const responsePubkey = body.pubkey != null ? normalizePeerPubkeyHex(body.pubkey) : '';
         if (responsePubkey && normalizePeerPubkeyHex(signerPubkeyHex) !== responsePubkey &&
-            !authoritySetHasPubkey(new Set([responsePubkey]), signerPubkeyHex)) {
+            !Contract.hasAuthority(new Set([responsePubkey]), signerPubkeyHex)) {
           this.emit('warning',
             '[FABRIC:PEER] FederationSignResponse rejected: AMP signer does not match response.pubkey');
           break;
@@ -4797,7 +4777,7 @@ class Peer extends Service {
     if (req.offerBtc === true) {
       const rates = this._state.content.documentRates || {};
       const maxSats = req.maxSats;
-      const chunkBytes = Math.max(1, Number(this.settings.inventoryBlobChunkBytes) || DEFAULT_CHUNK_BYTES);
+      const chunkBytes = Math.max(1, Number(this.settings.inventoryBlobChunkBytes) || Document.CHUNK_BYTES);
       // Chunk-index selectors (handler-side filter on existing item fields).
       const wantBlob = /^[0-9a-f]{64}$/i.test(String(req.blobHashHex || '')) ? String(req.blobHashHex).toLowerCase() : null;
       const wantRoot = /^[0-9a-f]{64}$/i.test(String(req.merkleRootHex || '')) ? String(req.merkleRootHex).toLowerCase() : null;
@@ -4841,7 +4821,7 @@ class Peer extends Service {
               chunkBytes,
               rateSats
             })
-            : advertiseDocumentBlobs(advertiseBuf, {
+            : Document.advertise(advertiseBuf, {
               documentId: docId,
               chunkBytes,
               rateSats,
@@ -5313,12 +5293,18 @@ class Peer extends Service {
     if (!docs || !Object.prototype.hasOwnProperty.call(docs, documentId)) return false;
     const conn = peerAddress && this.connections[peerAddress];
     if (!conn || !conn._writeFabric) return false;
-    const chunkBytes = Math.max(1, Number(this.settings.inventoryBlobChunkBytes) || DEFAULT_CHUNK_BYTES);
+    const chunkBytes = Math.max(1, Number(this.settings.inventoryBlobChunkBytes) || Document.CHUNK_BYTES);
     const sealedMeta = this._getDocumentSealedMeta(documentId);
     const bodyBuf = sealedMeta ? sealedMeta.ciphertext : this.getDocumentBuffer(documentId);
-    const split = splitBlobs(bodyBuf, chunkBytes, documentId);
+    let split;
+    try {
+      split = Document.split(bodyBuf, chunkBytes, documentId);
+    } catch (err) {
+      this.emit('warning', `[FABRIC:PEER] Cannot send document ${documentId}: ${err && err.message ? err.message : err}`);
+      return false;
+    }
     const merkleRootHex = sealedMeta
-      ? merkleRootHexFromBlobHashes(split.blobs.map((b) => b.blobHashHex), { paymentHashHex: sealedMeta.paymentHashHex })
+      ? Document.rootHexFromBlobHashes(split.blobs.map((b) => b.blobHashHex), { paymentHashHex: sealedMeta.paymentHashHex })
       : split.merkleRootHex;
     const only = opts.blobIndex != null ? Math.round(Number(opts.blobIndex)) : null;
     let wrote = 0;
@@ -5488,11 +5474,11 @@ class Peer extends Service {
    * @private
    */
   _ingestSealedBlobFrame (obj, origin, frameHex = null) {
-    const frame = parseFileSendObject(obj);
+    const frame = DocumentBlobTransferBook.parseFrame(obj);
     if (!frame.ok || frame.unindexed) {
       return { status: 'reject', error: (frame && frame.error) || 'bad per-blob frame' };
     }
-    if (!verifyBlob(frame.bytes, frame.blobHashHex)) {
+    if (!Document.verifyBlob(frame.bytes, frame.blobHashHex)) {
       return { status: 'reject', error: 'blob hash mismatch', documentId: frame.documentId, blobIndex: frame.blobIndex };
     }
     const root = String(frame.merkleRootHex || '').toLowerCase();
@@ -5512,7 +5498,7 @@ class Peer extends Service {
     const originName = origin && typeof origin === 'object' ? (origin.name || origin.address || origin.id || null) : (origin || null);
     // Every frame proves its leaf (blob hash, payment hash, IV) and the blob
     // count against the root, so unpaid ciphertext is checked before funding.
-    const verified = verifyDocumentInclusion({
+    const verified = Document.verifyInclusion({
       merkleRootHex: root,
       blobTotal: frame.blobTotal,
       blobIndex: frame.blobIndex,
@@ -5544,7 +5530,7 @@ class Peer extends Service {
         return { status: 'reject', error: 'per-blob frame payment hash is not the one we paid for at that index', documentId: frame.documentId, blobIndex: frame.blobIndex, merkleRootHex: root };
       }
       const wantIv = match.expectedIvs ? match.expectedIvs[frame.blobIndex] : null;
-      if (wantIv && !sameIv(wantIv, obj.iv)) {
+      if (wantIv && !Document.sameIv(wantIv, obj.iv)) {
         return { status: 'reject', error: 'per-blob frame iv is not the one advertised at that index', documentId: frame.documentId, blobIndex: frame.blobIndex, merkleRootHex: root };
       }
       this.blobTransfers.touch(frame.documentId, match.merkleRootHex);
@@ -5584,7 +5570,7 @@ class Peer extends Service {
         // Frames held from before the purchase pins existed may violate them
         // (any peer can send self-hashed junk under an advertised root); a
         // frame that satisfies the pins replaces them instead of bouncing off.
-        const fits = (c) => (!pin.payment || c.paymentHashHex === pin.payment) && (!pin.iv || sameIv(c.iv, pin.iv));
+        const fits = (c) => (!pin.payment || c.paymentHashHex === pin.payment) && (!pin.iv || Document.sameIv(c.iv, pin.iv));
         const keep = pin.hash && held.blobHashHex !== pin.hash
           ? []
           : [held, ...(held.alternates || [])].filter(fits);
@@ -5615,7 +5601,7 @@ class Peer extends Service {
           return { status: 'reject', error: 'per-blob frame would overwrite a held blob with a different hash', documentId: frame.documentId, blobIndex: frame.blobIndex, merkleRootHex: root };
         }
         const candidates = [held, ...(held.alternates || [])];
-        const known = candidates.some((c) => c.paymentHashHex === paymentHashHex && sameIv(c.iv, obj.iv));
+        const known = candidates.some((c) => c.paymentHashHex === paymentHashHex && Document.sameIv(c.iv, obj.iv));
         if (!known && verified && held.verified) {
           // Two proofs for one index under one root cannot differ.
           return { status: 'reject', error: 'per-blob frame conflicts with a proven held blob', documentId: frame.documentId, blobIndex: frame.blobIndex, merkleRootHex: root };
@@ -5841,7 +5827,7 @@ class Peer extends Service {
 
   /**
    * Per-origin row quota for unsolicited trees (`maxPendingSealedRowsPerOrigin`,
-   * default `MAX_PENDING_BLOB_TRANSFERS_PER_ORIGIN`): a peer over it loses its
+   * default `DocumentBlobTransferBook.MAX_PENDING_PER_ORIGIN`): a peer over it loses its
    * own oldest unsolicited row, never someone else's.
    * @param {string|null} originName
    * @param {string} rowKey row about to be created
@@ -5849,7 +5835,7 @@ class Peer extends Service {
    */
   _limitUnpinnedSealedRows (originName, rowKey) {
     const setting = Number(this.settings.maxPendingSealedRowsPerOrigin);
-    const limit = Number.isFinite(setting) && setting > 0 ? setting : MAX_PENDING_BLOB_TRANSFERS_PER_ORIGIN;
+    const limit = Number.isFinite(setting) && setting > 0 ? setting : DocumentBlobTransferBook.MAX_PENDING_PER_ORIGIN;
     const own = this._unpinnedSealedRowsFrom(originName, rowKey);
     for (let i = 0; i <= own.length - limit; i++) this._dropSealedRow(own[i]);
   }
@@ -6146,10 +6132,10 @@ class Peer extends Service {
     }
     const held = this.heldChunk(blobHashHex, paymentHashHex);
     if (!held) return fail('chunk not held');
-    if (opts.iv && !sameIv(opts.iv, held.iv)) return fail('held chunk iv differs from the offer');
+    if (opts.iv && !Document.sameIv(opts.iv, held.iv)) return fail('held chunk iv differs from the offer');
     let verified = false;
     if (Array.isArray(opts.proof)) {
-      verified = verifyDocumentInclusion({ merkleRootHex: root, blobTotal, blobIndex, blobHashHex, paymentHashHex, iv: held.iv, proof: opts.proof });
+      verified = Document.verifyInclusion({ merkleRootHex: root, blobTotal, blobIndex, blobHashHex, paymentHashHex, iv: held.iv, proof: opts.proof });
       if (!verified) return fail('held chunk is not committed by the document root (inclusion proof)');
     }
     const rowKey = `${documentId}|${root}`;
@@ -6402,7 +6388,7 @@ class Peer extends Service {
       plain.push(o);
     }
     if (row.merkleRootHex) {
-      const check = verifyOfferLeaves({
+      const check = Document.verifyOfferLeaves({
         merkleRootHex: row.merkleRootHex,
         blobTotal: row.total,
         blobs: leaves
@@ -6465,7 +6451,7 @@ class Peer extends Service {
       } catch (_) { /* synthetic frame — no proof material */ }
       return this._ingestSealedBlobFrame(obj, origin, frameHex);
     }
-    const frame = parseFileSendObject(obj);
+    const frame = DocumentBlobTransferBook.parseFrame(obj);
     const originName = origin && typeof origin === 'object' ? (origin.name || origin.address || origin.id || null) : (origin || null);
     const result = this.blobTransfers.ingest(frame, { origin: originName });
     if (result.status === 'complete' && result.buffer && result.documentId) {
@@ -7373,7 +7359,7 @@ class Peer extends Service {
    * @returns {boolean}
    */
   _contractPublishSignerAuthorized (object, signerPubkeyHex = null) {
-    return contractPublishSignerAuthorizedFn(object, signerPubkeyHex);
+    return Contract.publishSignerAuthorized(object, signerPubkeyHex);
   }
 
   /**
@@ -7470,7 +7456,7 @@ class Peer extends Service {
       set = new Set();
       this._contractPatchAllowList[id] = set;
     }
-    for (const hex of collectContractAuthorityPubkeys(object)) {
+    for (const hex of Contract.authorityPubkeys(object)) {
       set.add(hex);
     }
   }
@@ -7483,7 +7469,7 @@ class Peer extends Service {
   _signerMayPatchContract (contractId, signerPubkeyHex) {
     const set = this._contractPatchAllowList[String(contractId || '')];
     if (!set || !set.size) return false; // fail closed: no parties recorded
-    return authoritySetHasPubkey(set, signerPubkeyHex);
+    return Contract.hasAuthority(set, signerPubkeyHex);
   }
 
   /**

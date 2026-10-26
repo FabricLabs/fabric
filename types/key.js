@@ -136,6 +136,27 @@ const taggedHash = require('../functions/taggedHash');
 const Actor = require('./actor');
 const Hash256 = require('./hash256');
 
+/** @private Tag for the generic `Key#sign` / `Key#verify` pair. */
+const KEY_SIGN_TAG = require('../functions/signingTags').SIGN;
+const SCHNORR_TAG_PATTERN = /^Fabric\/[A-Za-z0-9/._-]{1,96}$/;
+
+/**
+ * @private
+ * BIP340 tagged hash of a message for one purpose. Fabric signs no
+ * untagged message: the tag must name a Fabric purpose (`Fabric/…`).
+ */
+function schnorrMessageHash (msg, tag) {
+  if (typeof tag !== 'string' || !SCHNORR_TAG_PATTERN.test(tag)) {
+    throw new Error('Schnorr signing tag required (e.g. "Fabric/IdentityCrossSign")');
+  }
+  let buffer;
+  if (Buffer.isBuffer(msg)) buffer = msg;
+  else if (msg instanceof Uint8Array) buffer = Buffer.from(msg);
+  else if (typeof msg === 'string') buffer = Buffer.from(msg, 'utf8');
+  else throw new Error('Message must be a Buffer or string');
+  return taggedHash(tag, buffer);
+}
+
 // NOTE: see also @fabric/passport
 // expect a bech32m identifier using prefix "id"
 
@@ -616,48 +637,39 @@ class Key extends EventEmitter {
     }
   }
 
-  _sign (msg) {
-    if (typeof msg !== 'string') msg = JSON.stringify(msg);
-    return this.signSchnorr(msg);
+  _sign (msg, tag = KEY_SIGN_TAG) {
+    if (typeof msg !== 'string' && !Buffer.isBuffer(msg)) msg = JSON.stringify(msg);
+    return this.signSchnorr(msg, tag);
   }
 
-  _verify (msg, sig) {
-    return this.verifySchnorr(msg, sig);
+  _verify (msg, sig, tag = KEY_SIGN_TAG) {
+    if (typeof msg !== 'string' && !Buffer.isBuffer(msg)) msg = JSON.stringify(msg);
+    return this.verifySchnorr(msg, sig, tag);
   }
 
   /**
    * Verify a message's signature.
    * @param {Buffer|String} msg - The message that was signed
    * @param {Buffer|String} sig - The signature to verify
+   * @param {String} [tag] Purpose tag (default `Fabric/Sign`)
    * @returns {Boolean} Whether the signature is valid
    */
-  verify (msg, sig) {
-    return this._verify(msg, sig);
+  verify (msg, sig, tag) {
+    return this._verify(msg, sig, tag);
   }
 
   /**
-   * Signs a message using Schnorr signatures (BIP340).
+   * Signs a message using Schnorr signatures (BIP340) over
+   * `taggedHash(tag, msg)`. Every purpose has its own tag, so a signature
+   * made for one purpose never verifies for another (or as a Taproot
+   * sighash, or as a Nostr event).
    * @param {Buffer|String} msg - The message to sign
+   * @param {String} tag - Purpose tag, e.g. `Fabric/IdentityCrossSign`
    * @returns {Buffer} The signature
    */
-  signSchnorr (msg) {
-    // console.debug('signing schnorr:', msg, this.settings);
+  signSchnorr (msg, tag) {
     if (!this.private) throw new Error('Cannot sign without private key');
-
-    // Convert message to Buffer if it's a string
-    const messageBuffer = Buffer.isBuffer(msg) ? msg : Buffer.from(msg);
-
-    // Create message hash
-    const messageHash = crypto.createHash('sha256').update(messageBuffer).digest();
-
-    // Get private key as 32-byte buffer
-    const privateKeyBuffer = privateKeyToBuffer(this.private);
-
-    // Sign using noble-curves Schnorr (BIP340). Zero auxRand for deterministic signatures.
-    const signature = nobleSchnorr.sign(messageHash, privateKeyBuffer, Buffer.alloc(32));
-
-    // Ensure we return a Buffer
-    return Buffer.isBuffer(signature) ? signature : Buffer.from(signature);
+    return this.signSchnorrHash(schnorrMessageHash(msg, tag));
   }
 
   /**
@@ -687,28 +699,14 @@ class Key extends EventEmitter {
   }
 
   /**
-   * Verifies a Schnorr signature (BIP340).
+   * Verifies a BIP340 Schnorr signature over `taggedHash(tag, msg)`.
    * @param {Buffer|String} msg - The message that was signed
    * @param {Buffer} sig - The signature to verify
+   * @param {String} tag - Purpose tag the signer used
    * @returns {Boolean} Whether the signature is valid
    */
-  verifySchnorr (msg, sig) {
-    // Convert message to Buffer if it's a string
-    const messageBuffer = Buffer.isBuffer(msg) ? msg : Buffer.from(msg);
-
-    // Create message hash
-    const messageHash = crypto.createHash('sha256').update(messageBuffer).digest();
-
-    // Get x-only public key (32 bytes) from compressed public key (33 bytes)
-    // For Schnorr, we only need the x coordinate (first 32 bytes after the prefix)
-    const compressedPubkey = Buffer.from(this.public.encodeCompressed('hex'), 'hex');
-    const xOnlyPubkey = compressedPubkey.slice(1); // Remove the prefix byte
-
-    // Ensure signature is a Buffer
-    const sigBuffer = Buffer.isBuffer(sig) ? sig : Buffer.from(sig);
-
-    // Verify using noble-curves Schnorr (BIP340)
-    return nobleSchnorr.verify(sigBuffer, messageHash, xOnlyPubkey);
+  verifySchnorr (msg, sig, tag) {
+    return this.verifySchnorrHash(schnorrMessageHash(msg, tag), sig);
   }
 
   /**
@@ -761,8 +759,8 @@ class Key extends EventEmitter {
    * @param {Buffer} data Buffer of data to sign.
    * @returns {Buffer} Resulting signature (64 bytes).
    */
-  sign (msg) {
-    return this._sign(msg);
+  sign (msg, tag) {
+    return this._sign(msg, tag);
   }
 
   derive (path = this.settings.derivation) {
@@ -856,5 +854,8 @@ class Key extends EventEmitter {
     return p2pkh.address;
   }
 }
+
+Key.SIGN_TAG = KEY_SIGN_TAG;
+Key.schnorrMessageHash = schnorrMessageHash;
 
 module.exports = Key;

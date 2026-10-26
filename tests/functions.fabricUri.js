@@ -34,6 +34,23 @@ describe('@fabric/core/functions/fabricUri', function () {
     assert.strictEqual(decoded.message.body, 'hello');
   });
 
+  it('encodes without the base64url Buffer encoding (browser polyfills lack it)', function () {
+    const { message } = signedChat();
+    const expected = 'fabric:' + message.toBuffer().toString('base64url');
+    const toString = Buffer.prototype.toString;
+    Buffer.prototype.toString = function (encoding, ...rest) {
+      if (encoding === 'base64url') throw new TypeError('Unknown encoding: base64url');
+      return toString.call(this, encoding, ...rest);
+    };
+    let uri;
+    try {
+      uri = encodeFabricUri(message);
+    } finally {
+      Buffer.prototype.toString = toString;
+    }
+    assert.strictEqual(uri, expected);
+  });
+
   it('accepts hex, 0x hex, standard base64, and the legacy prefixes', function () {
     const { message } = signedChat();
     const buffer = message.toBuffer();

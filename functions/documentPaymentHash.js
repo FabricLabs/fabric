@@ -9,12 +9,12 @@
  * Binding modes:
  * - **sealed** — `SHA256(content key K)` (priced AES-GCM docs)
  * - **envelope** — `purchaseContentHashHex` = SHA256(SHA256(DocumentPublish AMP bytes))
- * - **blob** — `blobPaymentHashHex` (unsealed multi-blob settles only)
+ * - **blob** — `Document.blobPaymentHash` (unsealed multi-blob settles only)
  */
 
 const { purchaseContentHashHex } = require('./publishedDocumentEnvelope');
 const { paymentHashHexFromKey } = require('./documentSealedExchange');
-const { blobPaymentHashHex } = require('./documentBlobManifest');
+const { blobPaymentHash } = require('../types/document');
 
 const HEX64 = /^[0-9a-f]{64}$/;
 
@@ -77,7 +77,7 @@ function resolveDocumentContentHashHex (opts = {}) {
   const blob = opts.blob;
   if (blob && opts.documentId != null && blob.blobHashHex != null && blob.index != null) {
     return {
-      contentHashHex: blobPaymentHashHex({
+      contentHashHex: blobPaymentHash({
         documentId: opts.documentId,
         blobIndex: blob.index,
         blobHashHex: blob.blobHashHex
@@ -103,6 +103,5 @@ module.exports = {
   resolveDocumentContentHashHex,
   // Re-exports so callers can import one module for the full chain.
   purchaseContentHashHex,
-  paymentHashHexFromKey,
-  blobPaymentHashHex
+  paymentHashHexFromKey
 };

@@ -6,6 +6,7 @@ const Beacon = require('../types/beacon');
 const Key = require('../types/key');
 const beaconFederationSigning = require('../functions/beaconFederationSigning');
 const sidechainState = require('../functions/sidechainState');
+const SIGNING_TAGS = require('../functions/signingTags');
 
 function stubBitcoin (opts = {}) {
   let height = opts.height != null ? opts.height : 0;
@@ -79,7 +80,7 @@ function federatedBeacon (hashes, settings = {}) {
 function cosign (beacon, pending, key) {
   const msg = beaconFederationSigning.messageBufferForPayload(pending.payload);
   return beacon.submitFederationEpochSignature(
-    pending.commitmentDigest, key.pubkey, key.signSchnorr(msg).toString('hex')
+    pending.commitmentDigest, key.pubkey, key.signSchnorr(msg, SIGNING_TAGS.FEDERATION_WITNESS).toString('hex')
   );
 }
 
@@ -177,7 +178,7 @@ describe('@fabric/core/types/beacon', function () {
     });
     const msg = beaconFederationSigning.messageBufferForPayload(payload);
     const added = beaconFederationSigning.addSignature(
-      round, k1.pubkey, k1.signSchnorr(msg).toString('hex')
+      round, k1.pubkey, k1.signSchnorr(msg, SIGNING_TAGS.FEDERATION_WITNESS).toString('hex')
     );
     assert.strictEqual(added.sealed, true);
     const digest = round.commitmentDigest;
@@ -259,7 +260,7 @@ describe('@fabric/core/types/beacon', function () {
       threshold: 1
     });
     const msg = beaconFederationSigning.messageBufferForPayload(payload);
-    beaconFederationSigning.addSignature(round, k1.pubkey, k1.signSchnorr(msg).toString('hex'));
+    beaconFederationSigning.addSignature(round, k1.pubkey, k1.signSchnorr(msg, SIGNING_TAGS.FEDERATION_WITNESS).toString('hex'));
     beacon._pendingEpochRounds.set(round.commitmentDigest, round);
     const result = await beacon.submitFederationEpochSignature(
       round.commitmentDigest, k1.pubkey, '00'
@@ -285,7 +286,7 @@ describe('@fabric/core/types/beacon', function () {
     const payload = { clock: 4, height: 4, blockHash: 'dd'.repeat(32) };
     const digest = beaconFederationSigning.epochCommitmentDigestHex(payload);
     const msg = beaconFederationSigning.messageBufferForPayload(payload);
-    const sig = k1.signSchnorr(msg).toString('hex');
+    const sig = k1.signSchnorr(msg, SIGNING_TAGS.FEDERATION_WITNESS).toString('hex');
     const round = {
       commitmentDigest: digest,
       payload,
@@ -1107,7 +1108,7 @@ const {
   beaconRedeploySteps,
   normalizeValidatorPubkeys
 } = require('../functions/beaconContractDefinition');
-const { normalizeArcGenesis, resolveSpend } = require('../functions/contractSpend');
+const { normalizeGenesis, resolveSpend } = require('../types/contract');
 const { buildFederationVaultFromPolicy, DEFAULT_CSV_BLOCKS } = require('../types/policy');
 
 describe('beaconContractDefinition', function () {
@@ -1154,7 +1155,7 @@ describe('beaconContractDefinition', function () {
       publisher: a.pubkey,
       csvBlocks: 144
     });
-    const arc = normalizeArcGenesis(def);
+    const arc = normalizeGenesis(def);
     for (const network of ['regtest', 'signet', 'mainnet']) {
       const spend = resolveSpend({
         genesis: arc,

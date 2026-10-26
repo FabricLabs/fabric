@@ -2,13 +2,9 @@
 
 const assert = require('assert');
 const { composeUseCases } = require('./packs');
-const { splitBlobs } = require('../../../functions/documentBlobManifest');
-const {
-  DocumentBlobTransferBook,
-  parseFileSendObject
-} = require('../../../functions/documentBlobManifest');
 const { DocumentBook } = require('../../../types/documentBook');
-const { blobPaymentHashHex } = require('../../../functions/documentBlobManifest');
+const Document = require('../../../types/document');
+const DocumentBlobTransferBook = require('../../../types/documentBlobTransferBook');
 
 const packs = composeUseCases(['document-market', 'gossip']);
 
@@ -37,7 +33,7 @@ module.exports = {
     const body = seller._state.content.documents['sim/large'];
     const chunkBytes = Math.max(256, Number(seller.settings.inventoryBlobChunkBytes) || 1000);
     // Force multi-blob even for 1200-byte seed when chunk is small.
-    const split = splitBlobs(Buffer.from(String(body), 'utf8'), Math.min(chunkBytes, 400), 'sim/large');
+    const split = Document.split(Buffer.from(String(body), 'utf8'), Math.min(chunkBytes, 400), 'sim/large');
     assert.ok(split.blobs.length >= 1);
 
     const book = new DocumentBlobTransferBook();
@@ -50,7 +46,7 @@ module.exports = {
     });
     let last = null;
     for (const b of split.blobs) {
-      last = book.ingest(parseFileSendObject({
+      last = book.ingest(DocumentBlobTransferBook.parseFrame({
         name: 'sim/large',
         body: b.bytes.toString('base64'),
         blobIndex: b.index,
@@ -67,7 +63,7 @@ module.exports = {
       throw new Error('reassembled sim/large does not match seller body');
     }
 
-    const tampered = parseFileSendObject({
+    const tampered = DocumentBlobTransferBook.parseFrame({
       name: 'sim/large',
       body: Buffer.alloc(split.blobs[0].size || 16, 0xff).toString('base64'),
       blobIndex: 0,
@@ -124,7 +120,7 @@ module.exports = {
     const blobHashHex = split.blobs[0].blobHashHex;
     const pay = sealedMeta
       ? sealedMeta.paymentHashHex
-      : blobPaymentHashHex({
+      : Document.blobPaymentHash({
         documentId: 'sim/large',
         blobIndex: 0,
         blobHashHex

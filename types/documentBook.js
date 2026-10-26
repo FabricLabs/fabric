@@ -18,7 +18,7 @@
 const crypto = require('crypto');
 const { contentHashHexFromObject } = require('../functions/documentPaymentHash');
 const { stableStringify, jsonSafe } = require('../functions/fabricCanonicalJson');
-const manifest = require('../functions/documentBlobManifest');
+const Document = require('./document');
 const { INVENTORY_RESPONSE_PAGE_BYTES, MAX_DOCUMENT_BLOBS } = require('../constants');
 const Book = require('./book');
 const Htlc = require('./htlc');
@@ -136,20 +136,6 @@ function telemetryHash (record) {
   const body = Object.assign({}, record);
   delete body.hash;
   return crypto.createHash('sha256').update(stableStringify(jsonSafe(body))).digest('hex');
-}
-
-/**
- * Leaf check for an advertised blob list: `functions/documentBlobManifest`
- * `verifyOfferLeaves`, else the document root over a complete list. Returns the `verifyOfferLeaves` result (or `true` / `false`),
- * or `null` when the list cannot be checked (a subset without inclusion proofs).
- * @private
- */
-function defaultVerifyOfferLeaves (opts) {
-  if (typeof manifest.verifyOfferLeaves === 'function') return manifest.verifyOfferLeaves(opts);
-  const hashes = [];
-  for (const b of opts.blobs) hashes[Number(b.index)] = b.blobHashHex;
-  if (hashes.length !== opts.blobTotal || hashes.some((h) => !h)) return null;
-  return manifest.merkleRootHexFromBlobHashes(hashes) === opts.merkleRootHex;
 }
 
 class DocumentBook extends Book {
@@ -661,7 +647,7 @@ class DocumentBook extends Book {
           let paymentHash = contentHashHexFromObject(b);
           if (!paymentHash && rootVerified && !sealed) {
             try {
-              paymentHash = manifest.blobPaymentHashHex({ documentId, blobIndex: Number(b.index), blobHashHex: b.blobHashHex });
+              paymentHash = Document.blobPaymentHash({ documentId, blobIndex: Number(b.index), blobHashHex: b.blobHashHex });
             } catch (_) {
               paymentHash = null;
             }
@@ -713,7 +699,7 @@ class DocumentBook extends Book {
 
   /**
    * Check an item's inline blob leaves against its `merkleRootHex`
-   * (`settings.verifyOfferLeaves`, else `documentBlobManifest.verifyOfferLeaves`).
+   * (`settings.verifyOfferLeaves`, else `Document.verifyOfferLeaves`).
    * @private
    * @returns {boolean|null} `false` = reject the item; `null` = a subset
    *   without inclusion proofs (rows kept with `rootVerified: false`); else
@@ -736,7 +722,7 @@ class DocumentBook extends Book {
       // Unsealed roots commit zero payment hashes, so the tagged hash is checked by recomputing it.
       if (!sealed && pay) {
         try {
-          if (pay !== manifest.blobPaymentHashHex({ documentId, blobIndex: Number(b.index), blobHashHex: b.blobHashHex })) return false;
+          if (pay !== Document.blobPaymentHash({ documentId, blobIndex: Number(b.index), blobHashHex: b.blobHashHex })) return false;
         } catch (_) {
           return false;
         }
@@ -754,7 +740,7 @@ class DocumentBook extends Book {
     if (!full && !leaves.every((l) => Array.isArray(l.proof))) return null;
     const verify = typeof this.settings.verifyOfferLeaves === 'function'
       ? this.settings.verifyOfferLeaves
-      : defaultVerifyOfferLeaves;
+      : Document.verifyOfferLeaves;
     try {
       const out = verify({ merkleRootHex, blobs: leaves, blobTotal });
       if (out === null) return null;
@@ -1016,6 +1002,21 @@ class DocumentBook extends Book {
 }
 
 /**
+ * Dedup key for paid settlements: (documentId, blobIndex|all, contentHash).
+ * @param {Object} session
+ * @param {string} session.documentId
+ * @param {number} [session.blobIndex]
+ * @param {string} [session.contentHashHex]
+ * @returns {string}
+ */
+function settlementDedupeKey (session = {}) {
+  const doc = String(session.documentId || '');
+  const blob = session.blobIndex != null ? String(session.blobIndex) : 'all';
+  const hash = String(session.contentHashHex || '').toLowerCase();
+  return `${doc}|${blob}|${hash}`;
+}
+
+/**
  * A buyer/seller document purchase session record (whole document or one blob).
  * @param {Object} opts
  * @param {string} opts.documentId
@@ -1072,7 +1073,7 @@ function createDocumentPurchaseSession (opts = {}) {
   }
   if (opts.blobHashHex) session.blobHashHex = String(opts.blobHashHex).toLowerCase();
   if (opts.merkleRootHex) session.merkleRootHex = String(opts.merkleRootHex).toLowerCase();
-  session.dedupeKey = manifest.settlementDedupeKey(session);
+  session.dedupeKey = settlementDedupeKey(session);
   return session;
 }
 
@@ -1084,7 +1085,7 @@ function createDocumentPurchaseSession (opts = {}) {
  */
 function isDuplicateSettlement (paidKeys, session) {
   if (!paidKeys || !session) return false;
-  const key = session.dedupeKey || manifest.settlementDedupeKey(session);
+  const key = session.dedupeKey || settlementDedupeKey(session);
   if (paidKeys instanceof Set) return paidKeys.has(key);
   if (paidKeys instanceof Map) return paidKeys.has(key);
   return !!paidKeys[key];
@@ -1096,7 +1097,7 @@ function isDuplicateSettlement (paidKeys, session) {
  */
 function rememberSettlement (paidKeys, session) {
   if (!paidKeys || !session) return;
-  const key = session.dedupeKey || manifest.settlementDedupeKey(session);
+  const key = session.dedupeKey || settlementDedupeKey(session);
   if (paidKeys instanceof Set) paidKeys.add(key);
   else if (paidKeys instanceof Map) paidKeys.set(key, session);
   else paidKeys[key] = session;
@@ -1371,6 +1372,7 @@ module.exports.offerKey = offerKey;
 module.exports.SCORE_UNKNOWN = SCORE_UNKNOWN;
 module.exports.SCORE_INVENTORY_ONLY = SCORE_INVENTORY_ONLY;
 module.exports.MAX_PROVIDERS = MAX_PROVIDERS;
+module.exports.settlementDedupeKey = settlementDedupeKey;
 module.exports.createDocumentPurchaseSession = createDocumentPurchaseSession;
 module.exports.isDuplicateSettlement = isDuplicateSettlement;
 module.exports.rememberSettlement = rememberSettlement;

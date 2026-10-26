@@ -3,7 +3,7 @@
 const crypto = require('crypto');
 const { secp256k1, schnorr } = require('@noble/curves/secp256k1.js');
 const { stableStringify } = require('../functions/fabricCanonicalJson');
-const { verifyBlob } = require('../functions/documentBlobManifest');
+const { verifyBlob } = require('./document');
 const { verifyInclusion } = require('../functions/bitcoinTxInclusion');
 const Message = require('./message');
 const { P2P_FILE_SEND } = require('../constants');

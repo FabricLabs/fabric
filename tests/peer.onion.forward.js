@@ -11,6 +11,7 @@ const {
   tryDecodeForward,
   P2P_FORWARD_MAX_HOPS
 } = require('../functions/fabricOnion');
+const SIGNING_TAGS = require('../functions/signingTags');
 
 function wireMock (writes) {
   return {
@@ -309,7 +310,7 @@ describe('Peer P2P_FORWARD onion', function () {
         id: attackerId,
         pubkey: attackerKey.pubkey,
         parentPubkey: attackerKey.pubkey,
-        parentSignature: attackerKey.signSchnorr(proof).toString('hex')
+        parentSignature: attackerKey.signSchnorr(proof, SIGNING_TAGS.SESSION_KEY).toString('hex')
       },
       object: { challenge: 'peel-rebind' }
     })]).signWithKey(attackerKey);

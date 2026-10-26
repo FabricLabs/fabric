@@ -3,7 +3,7 @@
 const crypto = require('crypto');
 const Witness = require('./witness');
 const Tree = require('./tree');
-const { verifyBlob } = require('../functions/documentBlobManifest');
+const { verifyBlob } = require('./document');
 
 /**
  * Storage tree over raw 32-byte blob hashes (its proofs are {@link Tree} proofs).

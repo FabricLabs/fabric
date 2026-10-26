@@ -162,7 +162,7 @@ A `document_request` may carry a budget `maxSats`. A relay forwarding it re-sign
 ## Reference implementation
 
 - Sealing and key reveal: `@fabric/core` `functions/documentSealedExchange.js`.
-- Chunking, document tree, inclusion proofs: `functions/documentBlobManifest.js`.
+- Chunking, document tree, inclusion proofs: `Document` statics in `types/document.js`; buyer reassembly: `types/documentBlobTransferBook.js`.
 - Commitment selection: `functions/documentPaymentHash.js`; envelope: `functions/publishedDocumentEnvelope.js`.
 - HTLC: `types/htlc.js`. Offer book and private relay: `types/documentBook.js`, `types/peer.js`.
 - Interactive CLI: `/import`, `/publish`, `/inventory`, `/offers`, `/buy`, `/confirm`, `/claimwatch`, `/refund`, `/request`, `/pending`, `/approve`, `/relayfees` (`functions/cliDocumentExchange.js`).

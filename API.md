@@ -156,6 +156,24 @@ PSBT build and checks, key-path signing, ownership proofs, and PoDLE.</p>
 <dd></dd>
 <dt><a href="#Document">Document</a></dt>
 <dd></dd>
+<dt><a href="#DocumentBlobTransferBook">DocumentBlobTransferBook</a></dt>
+<dd><p>Buyer-side reassembly of indexed blob transfers.</p>
+<p>Two tables:</p>
+<ul>
+<li><strong>Expectations</strong> (<code>expectTransfer</code>): what the buyer asked / paid for.
+Only the local caller writes them; unsolicited frames can never evict
+them. Each lives until <code>expiresAt</code> (caller-set, default an hour), is
+refreshed by matching frames
+(<a href="#DocumentBlobTransferBook+touch">touch</a>), and ends with
+<a href="#DocumentBlobTransferBook+releaseTransfer">releaseTransfer</a> or completion.</li>
+<li><strong>Assembly rows</strong> (<code>ingest</code>): bytes received so far. Rows backed by an
+expectation are <em>pinned</em>; others are unsolicited and bounded by
+<code>maxPending</code> rows overall, <code>maxPendingPerOrigin</code> rows and
+<code>maxPendingBytesPerOrigin</code> bytes per sending peer, idle <code>ttlMs</code>, and are
+evicted (oldest first) before any pinned row. A row whose <code>total</code>
+contradicts the expectation (planted before the purchase) is replaced.</li>
+</ul>
+</dd>
 <dt><a href="#DocumentBook">DocumentBook</a></dt>
 <dd></dd>
 <dt><a href="#Entity">Entity</a> ⇐ <code>EventEmitter</code></dt>
@@ -854,6 +872,9 @@ and <code>listdescriptors true</code> output (<code>tr(…/*)</code> descriptors
 <dt><a href="#offerKey">offerKey(row)</a> ⇒ <code>string</code></dt>
 <dd><p>Stable key for one offer row.</p>
 </dd>
+<dt><a href="#settlementDedupeKey">settlementDedupeKey(session)</a> ⇒ <code>string</code></dt>
+<dd><p>Dedup key for paid settlements: (documentId, blobIndex|all, contentHash).</p>
+</dd>
 <dt><a href="#createDocumentPurchaseSession">createDocumentPurchaseSession(opts)</a> ⇒ <code>Object</code></dt>
 <dd><p>A buyer/seller document purchase session record (whole document or one blob).</p>
 </dd>
@@ -974,7 +995,7 @@ script-pubkey order so the first <code>CHECKSIG</code> pops the last stack item.
 <dd><p>Authority P2TR vault from validator/signer set.</p>
 <p><strong>Default (RC):</strong> 2-tier ladder — k-of-n authority now; softer rule after
 <code>csvBlocks</code> (default 144) CSV. Same tree as <a href="#synthesizeDefaultLadder">synthesizeDefaultLadder</a> /
-<a href="module:functions/contractSpend.resolveSpend">module:functions/contractSpend.resolveSpend</a> when inputs match.</p>
+<a href="#Contract.resolveSpend">resolveSpend</a> when inputs match.</p>
 <p><strong>Legacy:</strong> pass <code>{ legacySingleLeaf: true }</code> for the pre-ladder single k-of-n
 leaf address (opt-in only; not used by Hub vault summary).</p>
 <p><strong>Internal key:</strong> default n≥2 uses the MuSig2 aggregate (<code>internalKeyMode: &#39;musig2&#39;</code>) — a <strong>new address</strong> vs historical NUMS. Pass <code>internalKeyMode: &#39;nums&#39;</code> to keep coins at the old script-path-only vault. Rebuilds do not
@@ -2003,7 +2024,7 @@ Observe an on-chain transaction for payments to this contract's spend address.
 On success (and when `apply` is not false), folds matched sats into tip balances.
 
 **Kind**: instance method of [<code>Bond</code>](#Bond)  
-**Returns**: <code>object</code> - observation from [module:functions/contractPaymentObserve.observePaymentToAddress](module:functions/contractPaymentObserve.observePaymentToAddress)  
+**Returns**: <code>object</code> - observation from [observePayment](#Contract.observePayment)  
 
 | Param | Type | Default | Description |
 | --- | --- | --- | --- |
@@ -2044,7 +2065,7 @@ Bech32m P2TR address for this contract's spend policy.
 Resolve tip + genesis spend policy to the public P2TR surface (ARC).
 
 **Kind**: instance method of [<code>Bond</code>](#Bond)  
-**Returns**: <code>object</code> - [module:functions/contractSpend.resolveSpend](module:functions/contractSpend.resolveSpend)  
+**Returns**: <code>object</code> - [resolveSpend](#Contract.resolveSpend)  
 
 | Param | Type | Description |
 | --- | --- | --- |
@@ -6734,37 +6755,67 @@ Dead stub. Page composition lives in `@fabric/http` (`types/component.js`,
 
 * [Contract](#Contract) ⇐ [<code>Service</code>](#Service)
     * [new Contract()](#new_Contract_new)
-    * [.resolutions](#Contract+resolutions) : [<code>Resolutions</code>](#Resolutions)
-    * [.advance(stateId)](#Contract+advance) ⇒ [<code>Contract</code>](#Contract)
-    * [.deploy()](#Contract+deploy) ⇒ <code>String</code>
-    * [.start()](#Contract+start) ⇒ [<code>Contract</code>](#Contract)
-    * [._handleBitcoinTransaction(txInput, [opts])](#Contract+_handleBitcoinTransaction) ⇒ <code>object</code>
-    * [.toTaprootContract([overrides])](#Contract+toTaprootContract) ⇒ <code>object</code>
-    * [.toAddress([network])](#Contract+toAddress) ⇒ <code>string</code>
-    * [.resolveSpend([opts])](#Contract+resolveSpend) ⇒ <code>object</code>
-    * [._appendWarning(msg)](#Service+_appendWarning) ⇒ [<code>Service</code>](#Service)
-    * [.init()](#Service+init)
-    * [.tick()](#Service+tick) ⇒ <code>Number</code>
-    * [.beat()](#Service+beat) ⇒ [<code>Service</code>](#Service)
-    * [.get(path)](#Service+get) ⇒ <code>Mixed</code>
-    * [.set(path)](#Service+set) ⇒ <code>Mixed</code>
-    * [.trust(source)](#Service+trust) ⇒ [<code>Service</code>](#Service)
-    * [.handler(message)](#Service+handler) ⇒ [<code>Service</code>](#Service)
-    * [.lock([duration])](#Service+lock) ⇒ <code>Boolean</code>
-    * [.when(event, method)](#Service+when) ⇒ <code>EventEmitter</code>
-    * [.defineOpcode(name, [definition])](#Service+defineOpcode) ⇒ <code>Object</code>
-    * [.defineBitcoinOpcode(name, [definition])](#Service+defineBitcoinOpcode) ⇒ <code>Object</code>
-    * [.defineFabricOpcode(name, [definition])](#Service+defineFabricOpcode) ⇒ <code>Object</code>
-    * [.defineOpcodeContract(name, body, [meta])](#Service+defineOpcodeContract) ⇒ <code>Object</code>
-    * [.listOpcodes()](#Service+listOpcodes) ⇒ <code>Array.&lt;Object&gt;</code>
-    * [.route(msg)](#Service+route) ⇒ <code>Promise</code>
-    * [._GET(path)](#Service+_GET) ⇒ <code>Promise</code>
-    * [._PUT(path, value, [commit])](#Service+_PUT) ⇒ <code>Promise</code>
-    * [.connect(notify)](#Service+connect) ⇒ <code>Promise</code>
-    * [.send(channel, message)](#Service+send) ⇒ [<code>Service</code>](#Service)
-    * [.commit()](#Service+commit) ⇒ <code>String</code>
-    * [._registerActor(actor)](#Service+_registerActor) ⇒ <code>Promise</code>
-    * [._send(message)](#Service+_send)
+    * _instance_
+        * [.resolutions](#Contract+resolutions) : [<code>Resolutions</code>](#Resolutions)
+        * [.advance(stateId)](#Contract+advance) ⇒ [<code>Contract</code>](#Contract)
+        * [.deploy()](#Contract+deploy) ⇒ <code>String</code>
+        * [.start()](#Contract+start) ⇒ [<code>Contract</code>](#Contract)
+        * [._handleBitcoinTransaction(txInput, [opts])](#Contract+_handleBitcoinTransaction) ⇒ <code>object</code>
+        * [.toTaprootContract([overrides])](#Contract+toTaprootContract) ⇒ <code>object</code>
+        * [.toAddress([network])](#Contract+toAddress) ⇒ <code>string</code>
+        * [.resolveSpend([opts])](#Contract+resolveSpend) ⇒ <code>object</code>
+        * [._appendWarning(msg)](#Service+_appendWarning) ⇒ [<code>Service</code>](#Service)
+        * [.init()](#Service+init)
+        * [.tick()](#Service+tick) ⇒ <code>Number</code>
+        * [.beat()](#Service+beat) ⇒ [<code>Service</code>](#Service)
+        * [.get(path)](#Service+get) ⇒ <code>Mixed</code>
+        * [.set(path)](#Service+set) ⇒ <code>Mixed</code>
+        * [.trust(source)](#Service+trust) ⇒ [<code>Service</code>](#Service)
+        * [.handler(message)](#Service+handler) ⇒ [<code>Service</code>](#Service)
+        * [.lock([duration])](#Service+lock) ⇒ <code>Boolean</code>
+        * [.when(event, method)](#Service+when) ⇒ <code>EventEmitter</code>
+        * [.defineOpcode(name, [definition])](#Service+defineOpcode) ⇒ <code>Object</code>
+        * [.defineBitcoinOpcode(name, [definition])](#Service+defineBitcoinOpcode) ⇒ <code>Object</code>
+        * [.defineFabricOpcode(name, [definition])](#Service+defineFabricOpcode) ⇒ <code>Object</code>
+        * [.defineOpcodeContract(name, body, [meta])](#Service+defineOpcodeContract) ⇒ <code>Object</code>
+        * [.listOpcodes()](#Service+listOpcodes) ⇒ <code>Array.&lt;Object&gt;</code>
+        * [.route(msg)](#Service+route) ⇒ <code>Promise</code>
+        * [._GET(path)](#Service+_GET) ⇒ <code>Promise</code>
+        * [._PUT(path, value, [commit])](#Service+_PUT) ⇒ <code>Promise</code>
+        * [.connect(notify)](#Service+connect) ⇒ <code>Promise</code>
+        * [.send(channel, message)](#Service+send) ⇒ [<code>Service</code>](#Service)
+        * [.commit()](#Service+commit) ⇒ <code>String</code>
+        * [._registerActor(actor)](#Service+_registerActor) ⇒ <code>Promise</code>
+        * [._send(message)](#Service+_send)
+    * _static_
+        * [.normalizeIdentifier(value)](#Contract.normalizeIdentifier) ⇒ <code>string</code> \| <code>null</code>
+        * [.resolveIdentifier(obj)](#Contract.resolveIdentifier) ⇒ <code>string</code> \| <code>null</code>
+        * [.stampIdentifier(obj, identifier)](#Contract.stampIdentifier) ⇒ <code>object</code>
+        * [.authorityPubkeys(object)](#Contract.authorityPubkeys) ⇒ <code>Set.&lt;string&gt;</code>
+        * [.hasAuthority(authorities, pubkeyHex)](#Contract.hasAuthority) ⇒ <code>boolean</code>
+        * [.publishSignerAuthorized(object, [signerPubkeyHex])](#Contract.publishSignerAuthorized) ⇒ <code>boolean</code>
+        * [.issueCapability(opts)](#Contract.issueCapability) ⇒ <code>string</code>
+        * [.verifyCapability(tokenString, expect)](#Contract.verifyCapability) ⇒ <code>Object</code> \| <code>null</code>
+        * [.roleToCapability(role)](#Contract.roleToCapability) ⇒ <code>string</code>
+        * [.capabilityToRole(cap)](#Contract.capabilityToRole) ⇒ <code>string</code> \| <code>null</code>
+        * [.observePayment(opts)](#Contract.observePayment) ⇒ <code>object</code>
+        * [.applyPaymentObservation(tip, observation)](#Contract.applyPaymentObservation) ⇒ <code>object</code>
+        * [.toCompressedPubkeys(list, [genesisList])](#Contract.toCompressedPubkeys) ⇒ <code>Array.&lt;string&gt;</code>
+        * [.normalizeGenesis(definition)](#Contract.normalizeGenesis) ⇒ <code>object</code>
+        * [.tipSpendKeys(tip)](#Contract.tipSpendKeys) ⇒ <code>Array</code>
+        * [.canonicalSpendPolicy([opts])](#Contract.canonicalSpendPolicy) ⇒ <code>object</code>
+        * [.nestBitcoinAnchor([opts])](#Contract.nestBitcoinAnchor) ⇒ <code>Object</code> \| <code>null</code>
+        * [.resolveSpend(opts)](#Contract.resolveSpend) ⇒ <code>object</code>
+        * [.withdrawalRequestCommitmentFields(object)](#Contract.withdrawalRequestCommitmentFields) ⇒ <code>object</code>
+        * [.computeWithdrawalRequestId(object)](#Contract.computeWithdrawalRequestId) ⇒ <code>string</code>
+        * [.validateWithdrawalRequest(object, tip, [opts])](#Contract.validateWithdrawalRequest) ⇒ <code>Object</code>
+        * [.buildWithdrawalRequest(opts)](#Contract.buildWithdrawalRequest) ⇒ <code>object</code>
+        * [.withdrawalWitnessSigningMessage(fields)](#Contract.withdrawalWitnessSigningMessage) ⇒ <code>string</code>
+        * [.verifyWithdrawalWitnessSignature(witness)](#Contract.verifyWithdrawalWitnessSignature) ⇒ <code>Object</code>
+        * [.buildWithdrawalWitness(opts)](#Contract.buildWithdrawalWitness) ⇒ <code>object</code>
+        * [.prepareWithdrawalFromRequest(opts)](#Contract.prepareWithdrawalFromRequest) ⇒ <code>object</code>
+        * [.countValidWithdrawalWitnesses(request, witnesses, validatorPubkeys)](#Contract.countValidWithdrawalWitnesses) ⇒ <code>number</code>
+        * [.meetWithdrawalWitnessThreshold(request, witnesses, validatorPubkeys, threshold)](#Contract.meetWithdrawalWitnessThreshold) ⇒ <code>Object</code>
 
 <a name="new_Contract_new"></a>
 
@@ -6818,7 +6869,7 @@ Observe an on-chain transaction for payments to this contract's spend address.
 On success (and when `apply` is not false), folds matched sats into tip balances.
 
 **Kind**: instance method of [<code>Contract</code>](#Contract)  
-**Returns**: <code>object</code> - observation from [module:functions/contractPaymentObserve.observePaymentToAddress](module:functions/contractPaymentObserve.observePaymentToAddress)  
+**Returns**: <code>object</code> - observation from [observePayment](#Contract.observePayment)  
 
 | Param | Type | Default | Description |
 | --- | --- | --- | --- |
@@ -6859,7 +6910,7 @@ Bech32m P2TR address for this contract's spend policy.
 Resolve tip + genesis spend policy to the public P2TR surface (ARC).
 
 **Kind**: instance method of [<code>Contract</code>](#Contract)  
-**Returns**: <code>object</code> - [module:functions/contractSpend.resolveSpend](module:functions/contractSpend.resolveSpend)  
+**Returns**: <code>object</code> - [resolveSpend](#Contract.resolveSpend)  
 
 | Param | Type | Description |
 | --- | --- | --- |
@@ -7124,6 +7175,365 @@ Sends a message.
 | --- | --- | --- |
 | message | <code>Mixed</code> | Message to send. |
 
+<a name="Contract.normalizeIdentifier"></a>
+
+### Contract.normalizeIdentifier(value) ⇒ <code>string</code> \| <code>null</code>
+Trimmed contract identifier, or `null` when empty.
+
+**Kind**: static method of [<code>Contract</code>](#Contract)  
+
+| Param | Type |
+| --- | --- |
+| value | <code>\*</code> | 
+
+<a name="Contract.resolveIdentifier"></a>
+
+### Contract.resolveIdentifier(obj) ⇒ <code>string</code> \| <code>null</code>
+Read `contractIdentifier` or legacy `contractId` from an object.
+Prefer writing `contractIdentifier`; the dual read lasts until Hub,
+`@fabric/http`, and apps finish the rename (OUTSTANDING Blocker).
+
+**Kind**: static method of [<code>Contract</code>](#Contract)  
+
+| Param | Type |
+| --- | --- |
+| obj | <code>object</code> \| <code>null</code> \| <code>undefined</code> | 
+
+<a name="Contract.stampIdentifier"></a>
+
+### Contract.stampIdentifier(obj, identifier) ⇒ <code>object</code>
+Stamp `contractIdentifier` and `contractId` with the same value so old and
+new readers converge. Deletes neither key.
+
+**Kind**: static method of [<code>Contract</code>](#Contract)  
+**Returns**: <code>object</code> - the same object  
+
+| Param | Type |
+| --- | --- |
+| obj | <code>object</code> | 
+| identifier | <code>string</code> | 
+
+<a name="Contract.authorityPubkeys"></a>
+
+### Contract.authorityPubkeys(object) ⇒ <code>Set.&lt;string&gt;</code>
+Pubkeys declared as patch authorities on a CONTRACT_PUBLISH body
+(validators, parties, owners, authorities, members, spend / proposed policy).
+
+**Kind**: static method of [<code>Contract</code>](#Contract)  
+
+| Param | Type |
+| --- | --- |
+| object | <code>object</code> | 
+
+<a name="Contract.hasAuthority"></a>
+
+### Contract.hasAuthority(authorities, pubkeyHex) ⇒ <code>boolean</code>
+Whether `pubkeyHex` is in an authority set (x-only ↔ compressed tolerant).
+
+**Kind**: static method of [<code>Contract</code>](#Contract)  
+
+| Param | Type |
+| --- | --- |
+| authorities | <code>Set.&lt;string&gt;</code> | 
+| pubkeyHex | <code>string</code> | 
+
+<a name="Contract.publishSignerAuthorized"></a>
+
+### Contract.publishSignerAuthorized(object, [signerPubkeyHex]) ⇒ <code>boolean</code>
+Whether a wire signer may publish this definition.
+
+Empty authority set → any signer (open genesis / observe-only publish).
+Non-empty authority set → the AMP wire signer **must** be present and listed
+(fail closed: unsigned frames must not register).
+
+**Kind**: static method of [<code>Contract</code>](#Contract)  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| object | <code>object</code> |  | CONTRACT_PUBLISH body |
+| [signerPubkeyHex] | <code>string</code> \| <code>null</code> | <code>null</code> |  |
+
+<a name="Contract.issueCapability"></a>
+
+### Contract.issueCapability(opts) ⇒ <code>string</code>
+Issue a contract-scoped Token capability (read-only member or signer).
+
+**Kind**: static method of [<code>Contract</code>](#Contract)  
+**Returns**: <code>string</code> - Token.toSignedString()  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| opts | <code>Object</code> |  |  |
+| opts.issuerKey | <code>object</code> \| [<code>Key</code>](#Key) |  | Fabric Key (or settings) of issuer |
+| opts.subject | <code>string</code> |  | Subject compressed pubkey |
+| opts.contractId | <code>string</code> |  | Contract / namespace id |
+| [opts.capability] | <code>string</code> | <code>&quot;Contract.OP_CONTRACT_READ&quot;</code> |  |
+| [opts.expiresInSeconds] | <code>number</code> |  |  |
+
+<a name="Contract.verifyCapability"></a>
+
+### Contract.verifyCapability(tokenString, expect) ⇒ <code>Object</code> \| <code>null</code>
+Verify a contract-scoped Token capability.
+
+**Kind**: static method of [<code>Contract</code>](#Contract)  
+**Returns**: <code>Object</code> \| <code>null</code> - token payload (`cap`, `iss`, `sub`, `iat`, `exp`, `ctx`) plus `verified`  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| tokenString | <code>string</code> |  |
+| expect | <code>Object</code> |  |
+| expect.contractId | <code>string</code> |  |
+| [expect.expectedCap] | <code>string</code> |  |
+| [expect.subject] | <code>string</code> |  |
+| [expect.issuerKey] | [<code>Key</code>](#Key) \| <code>object</code> | Verify Schnorr against this key (auth path) |
+| [expect.allowUnverified] | <code>boolean</code> | Opt-in parse-only (no sig check); result has verified:false |
+
+<a name="Contract.roleToCapability"></a>
+
+### Contract.roleToCapability(role) ⇒ <code>string</code>
+**Kind**: static method of [<code>Contract</code>](#Contract)  
+**Returns**: <code>string</code> - [Contract.OP_CONTRACT_SIGN](Contract.OP_CONTRACT_SIGN) or [Contract.OP_CONTRACT_READ](Contract.OP_CONTRACT_READ)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| role | <code>string</code> | `signer` or `sign`; anything else is a reader |
+
+<a name="Contract.capabilityToRole"></a>
+
+### Contract.capabilityToRole(cap) ⇒ <code>string</code> \| <code>null</code>
+**Kind**: static method of [<code>Contract</code>](#Contract)  
+**Returns**: <code>string</code> \| <code>null</code> - `signer`, `reader`, or `null`  
+
+| Param | Type |
+| --- | --- |
+| cap | <code>string</code> | 
+
+<a name="Contract.observePayment"></a>
+
+### Contract.observePayment(opts) ⇒ <code>object</code>
+Observe whether `tx` pays `address` at least `amountSats` (when set).
+Does not broadcast or mutate chain state.
+
+**Kind**: static method of [<code>Contract</code>](#Contract)  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| opts | <code>Object</code> |  |  |
+| opts.tx | <code>string</code> \| <code>object</code> |  | transaction hex or Transaction |
+| opts.address | <code>string</code> |  | contract spend address |
+| [opts.network] | <code>string</code> | <code>&quot;&#x27;regtest&#x27;&quot;</code> |  |
+| [opts.amountSats] | <code>number</code> |  | minimum matched sats (optional) |
+
+<a name="Contract.applyPaymentObservation"></a>
+
+### Contract.applyPaymentObservation(tip, observation) ⇒ <code>object</code>
+Fold a successful observation into tip content balances (immutable clone).
+
+**Kind**: static method of [<code>Contract</code>](#Contract)  
+**Returns**: <code>object</code> - tip  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| tip | <code>object</code> |  |
+| observation | <code>object</code> | from [observePayment](#Contract.observePayment) |
+
+<a name="Contract.toCompressedPubkeys"></a>
+
+### Contract.toCompressedPubkeys(list, [genesisList]) ⇒ <code>Array.&lt;string&gt;</code>
+Lift pubkeys to BIP67-sorted compressed hex for Taproot policy builders.
+Prefers the genesis compressed forms when the tip holds the same x-only set
+(02/03 parity drift would otherwise move the address off the Hub vault).
+
+**Kind**: static method of [<code>Contract</code>](#Contract)  
+
+| Param | Type | Default |
+| --- | --- | --- |
+| list | <code>Iterable.&lt;\*&gt;</code> |  | 
+| [genesisList] | <code>Iterable.&lt;\*&gt;</code> | <code></code> | 
+
+<a name="Contract.normalizeGenesis"></a>
+
+### Contract.normalizeGenesis(definition) ⇒ <code>object</code>
+Normalize a CONTRACT_PUBLISH definition (or Hub-stored genesis) into ARC fields.
+Accepts legacy shapes: `messageTypes`, `proposedPolicy.validators`, etc.
+
+**Kind**: static method of [<code>Contract</code>](#Contract)  
+
+| Param | Type |
+| --- | --- |
+| definition | <code>object</code> | 
+
+<a name="Contract.tipSpendKeys"></a>
+
+### Contract.tipSpendKeys(tip) ⇒ <code>Array</code>
+Tip keys used for spend authority. Prefer explicit signers over a general
+`members` roster (Groups fold applicants into members). An explicit empty
+`signers: []` (reader-only GroupChange fold) must NOT widen to members —
+[resolveSpend](#Contract.resolveSpend) then keeps genesis validators.
+
+**Kind**: static method of [<code>Contract</code>](#Contract)  
+
+| Param | Type |
+| --- | --- |
+| tip | <code>object</code> | 
+
+<a name="Contract.canonicalSpendPolicy"></a>
+
+### Contract.canonicalSpendPolicy([opts]) ⇒ <code>object</code>
+Canonical authority spendPolicy bag shared by Beacon ARC, vault, and [resolveSpend](#Contract.resolveSpend).
+
+**Kind**: static method of [<code>Contract</code>](#Contract)  
+
+| Param | Type |
+| --- | --- |
+| [opts] | <code>object</code> | 
+
+<a name="Contract.nestBitcoinAnchor"></a>
+
+### Contract.nestBitcoinAnchor([opts]) ⇒ <code>Object</code> \| <code>null</code>
+Nested tip anchor used by Hub tracked accept / summarize.
+
+**Kind**: static method of [<code>Contract</code>](#Contract)  
+**Returns**: <code>Object</code> \| <code>null</code> - `{ blockHash, height }`  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| [opts] | <code>Object</code> |  |
+| [opts.blockHash] | <code>string</code> |  |
+| [opts.height] | <code>number</code> |  |
+| [opts.bitcoinBlockHash] | <code>string</code> | alias of `blockHash` |
+| [opts.bitcoinHeight] | <code>number</code> | alias of `height` |
+
+<a name="Contract.resolveSpend"></a>
+
+### Contract.resolveSpend(opts) ⇒ <code>object</code>
+Resolve current tip (+ genesis) to the public P2TR spend surface.
+
+**Kind**: static method of [<code>Contract</code>](#Contract)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| opts | <code>Object</code> |  |
+| [opts.genesis] | <code>Object</code> | CONTRACT_PUBLISH definition or [normalizeGenesis](#Contract.normalizeGenesis) output |
+| [opts.tip] | <code>Object</code> | `{ content, stateDigest, bitcoinBlockHash, … }` (`content.signers` or `content.members`) |
+| [opts.overrides] | <code>Object</code> | network / spendPolicy overrides |
+
+<a name="Contract.withdrawalRequestCommitmentFields"></a>
+
+### Contract.withdrawalRequestCommitmentFields(object) ⇒ <code>object</code>
+Canonical fields hashed into ContractWithdrawalRequest.requestId.
+Witness BIP340 covers requestId; this preimage binds destination/fee/vault.
+
+**Kind**: static method of [<code>Contract</code>](#Contract)  
+
+| Param | Type |
+| --- | --- |
+| object | <code>object</code> | 
+
+<a name="Contract.computeWithdrawalRequestId"></a>
+
+### Contract.computeWithdrawalRequestId(object) ⇒ <code>string</code>
+**Kind**: static method of [<code>Contract</code>](#Contract)  
+**Returns**: <code>string</code> - 64-hex sha256 of canonical commitment JSON  
+
+| Param | Type |
+| --- | --- |
+| object | <code>object</code> | 
+
+<a name="Contract.validateWithdrawalRequest"></a>
+
+### Contract.validateWithdrawalRequest(object, tip, [opts]) ⇒ <code>Object</code>
+**Kind**: static method of [<code>Contract</code>](#Contract)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| object | <code>object</code> | ContractWithdrawalRequest body |
+| tip | <code>object</code> | Current tip (must include stateDigest + bitcoinBlockHash) |
+| [opts] | <code>Object</code> |  |
+| [opts.genesis] | <code>Object</code> | Optional ARC genesis for policy checks |
+
+<a name="Contract.buildWithdrawalRequest"></a>
+
+### Contract.buildWithdrawalRequest(opts) ⇒ <code>object</code>
+Build a tip-bound ContractWithdrawalRequest object.
+When the tip seals `content.program`, its digests are copied onto the request
+(Machine/Program run binding — does not alter the P2TR address).
+
+**Kind**: static method of [<code>Contract</code>](#Contract)  
+
+| Param | Type |
+| --- | --- |
+| opts | <code>object</code> | 
+
+<a name="Contract.withdrawalWitnessSigningMessage"></a>
+
+### Contract.withdrawalWitnessSigningMessage(fields) ⇒ <code>string</code>
+Canonical UTF-8 message for BIP340 withdrawal co-sign attestations.
+
+**Kind**: static method of [<code>Contract</code>](#Contract)  
+
+| Param | Type |
+| --- | --- |
+| fields | <code>object</code> | 
+
+<a name="Contract.verifyWithdrawalWitnessSignature"></a>
+
+### Contract.verifyWithdrawalWitnessSignature(witness) ⇒ <code>Object</code>
+Verify BIP340 witness signature over [withdrawalWitnessSigningMessage](#Contract.withdrawalWitnessSigningMessage).
+
+**Kind**: static method of [<code>Contract</code>](#Contract)  
+
+| Param | Type |
+| --- | --- |
+| witness | <code>object</code> | 
+
+<a name="Contract.buildWithdrawalWitness"></a>
+
+### Contract.buildWithdrawalWitness(opts) ⇒ <code>object</code>
+Build a ContractWithdrawalWitness, signing with `opts.signerKey` when no signature is given.
+
+**Kind**: static method of [<code>Contract</code>](#Contract)  
+
+| Param | Type |
+| --- | --- |
+| opts | <code>object</code> | 
+
+<a name="Contract.prepareWithdrawalFromRequest"></a>
+
+### Contract.prepareWithdrawalFromRequest(opts) ⇒ <code>object</code>
+Prepare an L1 PSBT from a validated withdrawal request + spend policy.
+
+**Kind**: static method of [<code>Contract</code>](#Contract)  
+
+| Param | Type |
+| --- | --- |
+| opts | <code>object</code> | 
+
+<a name="Contract.countValidWithdrawalWitnesses"></a>
+
+### Contract.countValidWithdrawalWitnesses(request, witnesses, validatorPubkeys) ⇒ <code>number</code>
+Count distinct validator BIP340 witnesses for a withdrawal request.
+
+**Kind**: static method of [<code>Contract</code>](#Contract)  
+
+| Param | Type |
+| --- | --- |
+| request | <code>object</code> | 
+| witnesses | <code>Array.&lt;object&gt;</code> | 
+| validatorPubkeys | <code>Array.&lt;string&gt;</code> | 
+
+<a name="Contract.meetWithdrawalWitnessThreshold"></a>
+
+### Contract.meetWithdrawalWitnessThreshold(request, witnesses, validatorPubkeys, threshold) ⇒ <code>Object</code>
+**Kind**: static method of [<code>Contract</code>](#Contract)  
+
+| Param | Type |
+| --- | --- |
+| request | <code>object</code> | 
+| witnesses | <code>Array.&lt;object&gt;</code> | 
+| validatorPubkeys | <code>Array.&lt;string&gt;</code> | 
+| threshold | <code>number</code> | 
+
 <a name="Disk"></a>
 
 ## Disk
@@ -7171,6 +7581,22 @@ change here until then.
         * [.fromRecord(record)](#Document.fromRecord) ⇒ [<code>Document</code>](#Document)
         * [.encodeManifest(meta)](#Document.encodeManifest) ⇒ <code>Buffer</code>
         * [.decodeManifest(bytes)](#Document.decodeManifest) ⇒ <code>Object</code> \| <code>null</code>
+        * [.rootHexFromBlobHashes(blobHashHexes, [opts])](#Document.rootHexFromBlobHashes) ⇒ <code>string</code>
+        * [.sameIv(a, b)](#Document.sameIv) ⇒ <code>boolean</code>
+        * [.leafHex(blob)](#Document.leafHex) ⇒ <code>string</code>
+        * [.rootHex(blobs)](#Document.rootHex) ⇒ <code>string</code>
+        * [.inclusionProof(blobs, index)](#Document.inclusionProof) ⇒ <code>Array.&lt;string&gt;</code>
+        * [.inclusionProofs(blobs)](#Document.inclusionProofs) ⇒ <code>Array.&lt;Array.&lt;string&gt;&gt;</code>
+        * [.verifyInclusion(opts)](#Document.verifyInclusion) ⇒ <code>boolean</code>
+        * [.verifyOfferLeaves(opts)](#Document.verifyOfferLeaves) ⇒ <code>Object</code>
+        * [.split(buffer, [chunkBytes], [documentId])](#Document.split) ⇒ <code>Object</code>
+        * [.blobIndex(opts)](#Document.blobIndex) ⇒ <code>object</code>
+        * [.compactBlobIndex(index, [maxBytes])](#Document.compactBlobIndex) ⇒ <code>object</code>
+        * [.advertise(buffer, [opts])](#Document.advertise) ⇒ <code>Object</code>
+        * [.verifyBlobIndex(index, [blobHashHexes], [opts])](#Document.verifyBlobIndex) ⇒ <code>Object</code>
+        * [.blobPaymentHash(opts)](#Document.blobPaymentHash) ⇒ <code>string</code>
+        * [.verifyBlob(bytes, expectedHashHex)](#Document.verifyBlob) ⇒ <code>boolean</code>
+        * [.reassemble(blobsByIndex, total, [merkleRootHex], [opts])](#Document.reassemble) ⇒ <code>Object</code>
 
 <a name="new_Document_new"></a>
 
@@ -7430,7 +7856,7 @@ from each blob's content (convergent) unless `private` is set.
 <a name="Document.fromPlain"></a>
 
 ### Document.fromPlain(content, [opts]) ⇒ [<code>Document</code>](#Document)
-Unsealed blob tree over raw content (same leaves and root as `splitBlobs`).
+Unsealed blob tree over raw content (same leaves and root as `Document.split`).
 
 **Kind**: static method of [<code>Document</code>](#Document)  
 
@@ -7474,6 +7900,414 @@ metadata lives. Seal it as its own one-blob Document.
 | Param | Type |
 | --- | --- |
 | bytes | <code>Buffer</code> \| <code>string</code> | 
+
+<a name="Document.rootHexFromBlobHashes"></a>
+
+### Document.rootHexFromBlobHashes(blobHashHexes, [opts]) ⇒ <code>string</code>
+Document root over blob hashes alone (unsealed blobs: zero payment hash
+and IV), or with one payment hash on every leaf (a whole-document sale
+under a single key).
+
+**Kind**: static method of [<code>Document</code>](#Document)  
+**Returns**: <code>string</code> - 64 hex chars  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| blobHashHexes | <code>Array.&lt;string&gt;</code> | in index order |
+| [opts] | <code>Object</code> |  |
+| [opts.paymentHashHex] | <code>string</code> | payment hash committed by every leaf |
+
+<a name="Document.sameIv"></a>
+
+### Document.sameIv(a, b) ⇒ <code>boolean</code>
+Compare two IVs by their decoded bytes (base64 spelling does not matter).
+
+**Kind**: static method of [<code>Document</code>](#Document)  
+
+| Param | Type |
+| --- | --- |
+| a | <code>\*</code> | 
+| b | <code>\*</code> | 
+
+<a name="Document.leafHex"></a>
+
+### Document.leafHex(blob) ⇒ <code>string</code>
+Leaf for one blob: `H(0x00 || blobHash || paymentHash || iv)`.
+Unsealed blobs use 32 / 12 zero bytes for the payment hash / IV.
+
+**Kind**: static method of [<code>Document</code>](#Document)  
+**Returns**: <code>string</code> - 64 hex chars  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| blob | <code>Object</code> |  |
+| blob.blobHashHex | <code>string</code> | SHA256(ciphertext) (64 hex) |
+| [blob.paymentHashHex] | <code>string</code> | SHA256(K_i) (64 hex) |
+| [blob.iv] | <code>string</code> \| <code>Buffer</code> | 12-byte AES-GCM IV (base64 or bytes) |
+
+<a name="Document.rootHex"></a>
+
+### Document.rootHex(blobs) ⇒ <code>string</code>
+Document root for blob leaves in index order.
+
+**Kind**: static method of [<code>Document</code>](#Document)  
+**Returns**: <code>string</code> - 64 hex chars  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| blobs | <code>Array.&lt;Object&gt;</code> | `{ blobHashHex, paymentHashHex?, iv? }` per index |
+
+<a name="Document.inclusionProof"></a>
+
+### Document.inclusionProof(blobs, index) ⇒ <code>Array.&lt;string&gt;</code>
+Inclusion proof for blob `index`: sibling hashes leaf to root, skipping
+levels where the node is promoted. Positions follow from `index` and the
+blob count, so the proof is a bare hex list.
+
+**Kind**: static method of [<code>Document</code>](#Document)  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| blobs | <code>Array.&lt;Object&gt;</code> |  | `{ blobHashHex, paymentHashHex?, iv? }` per index |
+| index | <code>number</code> | <code>0</code> |  |
+
+<a name="Document.inclusionProofs"></a>
+
+### Document.inclusionProofs(blobs) ⇒ <code>Array.&lt;Array.&lt;string&gt;&gt;</code>
+Every blob's inclusion proof from one tree build.
+
+**Kind**: static method of [<code>Document</code>](#Document)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| blobs | <code>Array.&lt;Object&gt;</code> | `{ blobHashHex, paymentHashHex?, iv? }` per index |
+
+<a name="Document.verifyInclusion"></a>
+
+### Document.verifyInclusion(opts) ⇒ <code>boolean</code>
+Check one blob's leaf against a document root with its inclusion proof.
+
+**Kind**: static method of [<code>Document</code>](#Document)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| opts | <code>Object</code> |  |
+| opts.merkleRootHex | <code>string</code> | document root |
+| opts.blobTotal | <code>number</code> | blob count the root commits |
+| opts.blobIndex | <code>number</code> |  |
+| opts.blobHashHex | <code>string</code> |  |
+| [opts.paymentHashHex] | <code>string</code> |  |
+| [opts.iv] | <code>string</code> \| <code>Buffer</code> |  |
+| opts.proof | <code>Array.&lt;string&gt;</code> | from [inclusionProof](#Document.inclusionProof) |
+
+<a name="Document.verifyOfferLeaves"></a>
+
+### Document.verifyOfferLeaves(opts) ⇒ <code>Object</code>
+Check the per-blob leaves an offer advertises against its document root
+before trusting any of its payment hashes or IVs.
+
+- Every blob listed → the root is recomputed from the list.
+- A subset → each listed blob must carry an inclusion `proof`.
+- The root commits `blobTotal`, each blob's payment hash and IV, so a
+  reseller cannot advertise a payment hash (or IV) the publisher did not
+  seal under.
+
+**Kind**: static method of [<code>Document</code>](#Document)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| opts | <code>Object</code> |  |
+| opts.merkleRootHex | <code>string</code> | advertised document root |
+| opts.blobs | <code>Array.&lt;Object&gt;</code> | `{ index?, blobHashHex, paymentHashHex?, iv?, proof? }` (`contentHashHex` is read when `paymentHashHex` is absent; `index` defaults to the position) |
+| opts.blobTotal | <code>number</code> | blob count of the document |
+
+<a name="Document.split"></a>
+
+### Document.split(buffer, [chunkBytes], [documentId]) ⇒ <code>Object</code>
+Split content into wire-sized blobs and commit them with the document root.
+Always returns at least one blob (empty buffer → one empty blob).
+
+**Kind**: static method of [<code>Document</code>](#Document)  
+
+| Param | Type |
+| --- | --- |
+| buffer | <code>Buffer</code> \| <code>string</code> | 
+| [chunkBytes] | <code>number</code> | 
+| [documentId] | <code>string</code> | 
+
+<a name="Document.blobIndex"></a>
+
+### Document.blobIndex(opts) ⇒ <code>object</code>
+Canonical index message (no content bytes). Always produced — even for one blob.
+
+**Kind**: static method of [<code>Document</code>](#Document)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| opts | <code>object</code> |  |
+| [opts.documentId] | <code>string</code> |  |
+| opts.merkleRootHex | <code>string</code> |  |
+| [opts.contentSha256] | <code>string</code> |  |
+| [opts.chunkBytes] | <code>number</code> |  |
+| opts.blobs | <code>Array.&lt;Object&gt;</code> | `{ index, total?, blobHashHex, size?, rateSats?, contentHash? }` per blob |
+| [opts.leavesInline] | <code>boolean</code> |  |
+
+<a name="Document.compactBlobIndex"></a>
+
+### Document.compactBlobIndex(index, [maxBytes]) ⇒ <code>object</code>
+Drop inline leaves when the JSON index would exceed AMP body size.
+
+**Kind**: static method of [<code>Document</code>](#Document)  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| index | <code>object</code> |  | from [blobIndex](#Document.blobIndex) |
+| [maxBytes] | <code>number</code> | <code>MAX_MESSAGE_SIZE</code> |  |
+
+<a name="Document.advertise"></a>
+
+### Document.advertise(buffer, [opts]) ⇒ <code>Object</code>
+Inventory / offer advertisement: index fields + optional per-blob payment hashes.
+Always includes `blobs[]` when leaves fit; otherwise root-only with `leavesInline: false`.
+
+**Kind**: static method of [<code>Document</code>](#Document)  
+
+| Param | Type |
+| --- | --- |
+| buffer | <code>Buffer</code> \| <code>string</code> | 
+| [opts] | <code>object</code> | 
+| [opts.documentId] | <code>string</code> | 
+| [opts.chunkBytes] | <code>number</code> | 
+| [opts.rateSats] | <code>number</code> | 
+| [opts.includePaymentHashes] | <code>boolean</code> | 
+
+<a name="Document.verifyBlobIndex"></a>
+
+### Document.verifyBlobIndex(index, [blobHashHexes], [opts]) ⇒ <code>Object</code>
+Verify an index's root against listed (or supplied) blob hashes.
+
+**Kind**: static method of [<code>Document</code>](#Document)  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| index | <code>object</code> |  |  |
+| [blobHashHexes] | <code>Array.&lt;string&gt;</code> | <code></code> | override leaves when `leavesInline` is false |
+| [opts] | <code>Object</code> |  |  |
+| [opts.paymentHashHex] | <code>string</code> |  | whole-document payment hash on every leaf |
+
+<a name="Document.blobPaymentHash"></a>
+
+### Document.blobPaymentHash(opts) ⇒ <code>string</code>
+Per-blob payment commitment (distinct from whole-doc purchaseContentHashHex).
+
+**Kind**: static method of [<code>Document</code>](#Document)  
+**Returns**: <code>string</code> - 64 hex chars  
+
+| Param | Type |
+| --- | --- |
+| opts | <code>Object</code> | 
+
+<a name="Document.verifyBlob"></a>
+
+### Document.verifyBlob(bytes, expectedHashHex) ⇒ <code>boolean</code>
+**Kind**: static method of [<code>Document</code>](#Document)  
+
+| Param | Type |
+| --- | --- |
+| bytes | <code>Buffer</code> \| <code>string</code> | 
+| expectedHashHex | <code>string</code> | 
+
+<a name="Document.reassemble"></a>
+
+### Document.reassemble(blobsByIndex, total, [merkleRootHex], [opts]) ⇒ <code>Object</code>
+**Kind**: static method of [<code>Document</code>](#Document)  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| blobsByIndex | <code>Map.&lt;number, Buffer&gt;</code> \| <code>object</code> |  |  |
+| total | <code>number</code> |  |  |
+| [merkleRootHex] | <code>string</code> | <code>null</code> |  |
+| [opts] | <code>Object</code> |  |  |
+| [opts.leaves] | <code>Map.&lt;number, Object&gt;</code> \| <code>Array.&lt;Object&gt;</code> |  | `{ paymentHashHex?, iv? }` per blob index; a whole-document sale repeats one payment hash |
+
+<a name="DocumentBlobTransferBook"></a>
+
+## DocumentBlobTransferBook
+Buyer-side reassembly of indexed blob transfers.
+
+Two tables:
+- **Expectations** (`expectTransfer`): what the buyer asked / paid for.
+  Only the local caller writes them; unsolicited frames can never evict
+  them. Each lives until `expiresAt` (caller-set, default an hour), is
+  refreshed by matching frames
+  ([touch](#DocumentBlobTransferBook+touch)), and ends with
+  [releaseTransfer](#DocumentBlobTransferBook+releaseTransfer) or completion.
+- **Assembly rows** (`ingest`): bytes received so far. Rows backed by an
+  expectation are *pinned*; others are unsolicited and bounded by
+  `maxPending` rows overall, `maxPendingPerOrigin` rows and
+  `maxPendingBytesPerOrigin` bytes per sending peer, idle `ttlMs`, and are
+  evicted (oldest first) before any pinned row. A row whose `total`
+  contradicts the expectation (planted before the purchase) is replaced.
+
+**Kind**: global class  
+
+* [DocumentBlobTransferBook](#DocumentBlobTransferBook)
+    * [new DocumentBlobTransferBook([opts])](#new_DocumentBlobTransferBook_new)
+    * _instance_
+        * [._pending](#DocumentBlobTransferBook+_pending) : <code>Map.&lt;string, object&gt;</code>
+        * [._expectations](#DocumentBlobTransferBook+_expectations) : <code>Map.&lt;string, object&gt;</code>
+        * [._originBytes](#DocumentBlobTransferBook+_originBytes) : <code>Map.&lt;string, number&gt;</code>
+        * [.pendingCount](#DocumentBlobTransferBook+pendingCount) : <code>number</code>
+        * [.pendingBytes](#DocumentBlobTransferBook+pendingBytes) : <code>number</code>
+        * [.expectTransfer(opts)](#DocumentBlobTransferBook+expectTransfer) ⇒ <code>Object</code> \| <code>null</code>
+        * [.expectedFor(documentId)](#DocumentBlobTransferBook+expectedFor) ⇒ <code>Array.&lt;Object&gt;</code>
+        * [.touch(documentId, [merkleRootHex])](#DocumentBlobTransferBook+touch) ⇒ <code>boolean</code>
+        * [.releaseTransfer(opts)](#DocumentBlobTransferBook+releaseTransfer) ⇒ <code>boolean</code>
+        * [.ingest(frame, [opts])](#DocumentBlobTransferBook+ingest) ⇒ <code>Object</code>
+    * _static_
+        * [.parseFrame(obj)](#DocumentBlobTransferBook.parseFrame) ⇒ <code>Object</code>
+        * [.verifySealedFrame(obj, expected)](#DocumentBlobTransferBook.verifySealedFrame) ⇒ <code>Object</code>
+
+<a name="new_DocumentBlobTransferBook_new"></a>
+
+### new DocumentBlobTransferBook([opts])
+
+| Param | Type | Description |
+| --- | --- | --- |
+| [opts] | <code>Object</code> |  |
+| [opts.ttlMs] | <code>number</code> | drop unsolicited incomplete transfers idle this long |
+| [opts.expectationTtlMs] | <code>number</code> | default expectation lifetime |
+| [opts.maxPending] | <code>number</code> | max concurrent unsolicited incomplete transfers |
+| [opts.maxExpectations] | <code>number</code> | max concurrent expectations (oldest released first; defaults to `maxPending`) |
+| [opts.maxPendingPerOrigin] | <code>number</code> | max unsolicited rows one origin may hold |
+| [opts.maxPendingBytesPerOrigin] | <code>number</code> | unsolicited byte quota per origin (default a quarter of `maxPendingBytes`) |
+| [opts.maxParts] | <code>number</code> | max `blobTotal` for one transfer |
+| [opts.maxPendingBytes] | <code>number</code> | byte budget across every incomplete transfer |
+
+<a name="DocumentBlobTransferBook+_pending"></a>
+
+### documentBlobTransferBook.\_pending : <code>Map.&lt;string, object&gt;</code>
+**Kind**: instance property of [<code>DocumentBlobTransferBook</code>](#DocumentBlobTransferBook)  
+<a name="DocumentBlobTransferBook+_expectations"></a>
+
+### documentBlobTransferBook.\_expectations : <code>Map.&lt;string, object&gt;</code>
+**Kind**: instance property of [<code>DocumentBlobTransferBook</code>](#DocumentBlobTransferBook)  
+<a name="DocumentBlobTransferBook+_originBytes"></a>
+
+### documentBlobTransferBook.\_originBytes : <code>Map.&lt;string, number&gt;</code>
+**Kind**: instance property of [<code>DocumentBlobTransferBook</code>](#DocumentBlobTransferBook)  
+<a name="DocumentBlobTransferBook+pendingCount"></a>
+
+### documentBlobTransferBook.pendingCount : <code>number</code>
+Number of in-flight transfers (expected or with bytes held).
+
+**Kind**: instance property of [<code>DocumentBlobTransferBook</code>](#DocumentBlobTransferBook)  
+<a name="DocumentBlobTransferBook+pendingBytes"></a>
+
+### documentBlobTransferBook.pendingBytes : <code>number</code>
+Bytes held across every in-flight transfer.
+
+**Kind**: instance property of [<code>DocumentBlobTransferBook</code>](#DocumentBlobTransferBook)  
+<a name="DocumentBlobTransferBook+expectTransfer"></a>
+
+### documentBlobTransferBook.expectTransfer(opts) ⇒ <code>Object</code> \| <code>null</code>
+Pre-register expected leaves (from inventory DocumentBlobIndex).
+
+**Kind**: instance method of [<code>DocumentBlobTransferBook</code>](#DocumentBlobTransferBook)  
+**Returns**: <code>Object</code> \| <code>null</code> - the expectation row  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| opts | <code>object</code> |  |
+| [opts.blobHashHexes] | <code>Array.&lt;string&gt;</code> | expected blob hash per blob index; empty or null entries leave that index unchecked here (the sealed per-blob path refuses them once any index is pinned: that blob was not bought) |
+| [opts.paymentHashHexes] | <code>Array.&lt;string&gt;</code> | expected sealed payment hash (SHA256(K_i)) per blob index |
+| [opts.ivs] | <code>Array.&lt;string&gt;</code> | advertised AES-GCM IV (base64) per blob index |
+| [opts.origins] | <code>Array.&lt;string&gt;</code> | peer the index was bought from (its frame may displace another origin's alternate when the IV is not advertised) |
+| [opts.merge] | <code>boolean</code> | add these pins to an existing expectation for the same document and root (same `total`) instead of replacing it, so buying blob j keeps blob i pinned |
+| [opts.expiresAt] | <code>number</code> | epoch ms the expectation lapses (session lifetime) |
+| [opts.ttlMs] | <code>number</code> | lifetime from now (and refresh step) when `expiresAt` is not given |
+
+<a name="DocumentBlobTransferBook+expectedFor"></a>
+
+### documentBlobTransferBook.expectedFor(documentId) ⇒ <code>Array.&lt;Object&gt;</code>
+Expectations registered for a document (any root). Lets the per-blob
+sealed path refuse frames whose root / total disagree with what the buyer
+actually asked for.
+
+**Kind**: instance method of [<code>DocumentBlobTransferBook</code>](#DocumentBlobTransferBook)  
+**Returns**: <code>Array.&lt;Object&gt;</code> - rows from [expectTransfer](#DocumentBlobTransferBook+expectTransfer)  
+
+| Param | Type |
+| --- | --- |
+| documentId | <code>string</code> | 
+
+<a name="DocumentBlobTransferBook+touch"></a>
+
+### documentBlobTransferBook.touch(documentId, [merkleRootHex]) ⇒ <code>boolean</code>
+Extend an expectation by its refresh step (a matching frame arrived).
+
+**Kind**: instance method of [<code>DocumentBlobTransferBook</code>](#DocumentBlobTransferBook)  
+**Returns**: <code>boolean</code> - true when an expectation was refreshed  
+
+| Param | Type | Default |
+| --- | --- | --- |
+| documentId | <code>string</code> |  | 
+| [merkleRootHex] | <code>string</code> \| <code>null</code> | <code>null</code> | 
+
+<a name="DocumentBlobTransferBook+releaseTransfer"></a>
+
+### documentBlobTransferBook.releaseTransfer(opts) ⇒ <code>boolean</code>
+End a purchase session: drop its expectation and any partial bytes.
+
+**Kind**: instance method of [<code>DocumentBlobTransferBook</code>](#DocumentBlobTransferBook)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| opts | <code>Object</code> \| <code>string</code> | `{ documentId, merkleRootHex }` or a transfer key |
+
+<a name="DocumentBlobTransferBook+ingest"></a>
+
+### documentBlobTransferBook.ingest(frame, [opts]) ⇒ <code>Object</code>
+**Kind**: instance method of [<code>DocumentBlobTransferBook</code>](#DocumentBlobTransferBook)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| frame | <code>object</code> | from [parseFrame](#DocumentBlobTransferBook.parseFrame) |
+| [opts] | <code>Object</code> |  |
+| [opts.origin] | <code>string</code> | sending peer (per-origin quotas for unsolicited rows) |
+
+<a name="DocumentBlobTransferBook.parseFrame"></a>
+
+### DocumentBlobTransferBook.parseFrame(obj) ⇒ <code>Object</code>
+**Kind**: static method of [<code>DocumentBlobTransferBook</code>](#DocumentBlobTransferBook)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| obj | <code>object</code> | P2P_FILE_SEND JSON object |
+
+<a name="DocumentBlobTransferBook.verifySealedFrame"></a>
+
+### DocumentBlobTransferBook.verifySealedFrame(obj, expected) ⇒ <code>Object</code>
+Verify-before-pay: check one free sealed per-blob `P2P_FILE_SEND` body
+(ciphertext of blob `i`) against the document root **before** funding the
+HTLC for `K_i`. The ciphertext must hash to its `blobHashHex` and the leaf
+`(blobHash, paymentHash, iv)` must open to the root with the frame's
+inclusion proof (or `expected.proof`). Pins from verified offer leaves
+([verifyOfferLeaves](#Document.verifyOfferLeaves)) are enforced when given.
+
+**Kind**: static method of [<code>DocumentBlobTransferBook</code>](#DocumentBlobTransferBook)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| obj | <code>Object</code> | raw `P2P_FILE_SEND` body (`sealed`, `perBlob`) |
+| expected | <code>Object</code> |  |
+| expected.merkleRootHex | <code>string</code> |  |
+| expected.blobTotal | <code>number</code> |  |
+| [expected.blobIndex] | <code>number</code> |  |
+| [expected.blobHashHex] | <code>string</code> |  |
+| [expected.paymentHashHex] | <code>string</code> |  |
+| [expected.iv] | <code>string</code> |  |
+| [expected.proof] | <code>Array.&lt;string&gt;</code> |  |
 
 <a name="DocumentBook"></a>
 
@@ -7816,6 +8650,7 @@ ones; a legacy document-level seal (`opts.singleKey`) stays on one seller.
 | [opts.singleKey] | <code>boolean</code> | legacy whole-document key: lock one seller |
 | [opts.maxSats] | <code>number</code> | per-blob ceiling |
 | [opts.minPaidSats] | <code>number</code> | drop paid offers below this (free offers stay) |
+| [opts.paidSealedOnly] | <code>boolean</code> | drop every paid unsealed offer (paid   unsealed offers always go while a sealed one is listed) |
 | [opts.excludeSellers] | <code>Array.&lt;string&gt;</code> |  |
 | [opts.merkleRootHex] | <code>string</code> | only offers for this tree root; when   omitted the plan still stays on **one** root (the first pick's), so   blobs from different trees are never mixed into a single document |
 
@@ -13020,7 +13855,10 @@ Verify and hold a signed entry body.
 <a name="OrderBook+_beforeInsert"></a>
 
 ### orderBook.\_beforeInsert(entry)
-A maker at its entry limit loses its oldest entry.
+A maker at its entry limit loses its oldest entry. In a full book the
+maker holding the most entries (counting the incoming one; the incoming
+maker on a tie) gives up its oldest, so one key cannot flush every other
+maker out; with no such maker the book's oldest row goes.
 
 **Kind**: instance method of [<code>OrderBook</code>](#OrderBook)  
 **Access**: protected  
@@ -17236,6 +18074,12 @@ This policy plus a Program-run hashlock leaf (see [Policy.withRunHashlock](Polic
         * [.runCommitmentHex(result)](#Program+runCommitmentHex) ⇒ <code>string</code>
     * _static_
         * [.from([opts])](#Program.from) ⇒ [<code>Program</code>](#Program)
+        * [.runFromTip([tip])](#Program.runFromTip) ⇒ <code>Object</code> \| <code>null</code>
+        * [.requiresBinding([genesis])](#Program.requiresBinding) ⇒ <code>boolean</code>
+        * [.bindRun(tip, run)](#Program.bindRun) ⇒ <code>object</code>
+        * [.validateBinding(opts)](#Program.validateBinding) ⇒ <code>Object</code>
+        * [.verifyMachineRun(opts)](#Program.verifyMachineRun) ⇒ <code>Object</code>
+        * [.runId(programHash, runCommitmentHex)](#Program.runId) ⇒ <code>string</code>
 
 <a name="new_Program_new"></a>
 
@@ -17294,6 +18138,85 @@ Stable digest binding program identity to a compute result (L1 / OP_RETURN / wit
 | [opts.bytecode] | <code>\*</code> | 
 | [opts.steps] | <code>Array.&lt;string&gt;</code> | 
 | [opts.programId] | <code>string</code> | 
+
+<a name="Program.runFromTip"></a>
+
+### Program.runFromTip([tip]) ⇒ <code>Object</code> \| <code>null</code>
+Program run sealed on a contract tip (`content.program`, `content.meta.program`, or `tip.program`).
+
+**Kind**: static method of [<code>Program</code>](#Program)  
+
+| Param | Type |
+| --- | --- |
+| [tip] | <code>object</code> | 
+
+<a name="Program.requiresBinding"></a>
+
+### Program.requiresBinding([genesis]) ⇒ <code>boolean</code>
+True when a contract genesis declares a Program / opcode surface that withdrawals must bind.
+
+**Kind**: static method of [<code>Program</code>](#Program)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| [genesis] | <code>object</code> | raw or [normalizeGenesis](#Contract.normalizeGenesis) output |
+
+<a name="Program.bindRun"></a>
+
+### Program.bindRun(tip, run) ⇒ <code>object</code>
+Fold a Machine/Program run onto tip content without touching P2TR keys.
+Returns a shallow-cloned tip; the caller persists / digests it.
+
+**Kind**: static method of [<code>Program</code>](#Program)  
+**Returns**: <code>object</code> - tip with `content.program`  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| tip | <code>object</code> | contract tip |
+| run | <code>Object</code> |  |
+| run.programHash | <code>string</code> |  |
+| run.runCommitmentHex | <code>string</code> |  |
+| [run.programId] | <code>string</code> |  |
+| [run.clock] | <code>number</code> |  |
+
+<a name="Program.validateBinding"></a>
+
+### Program.validateBinding(opts) ⇒ <code>Object</code>
+Check a withdrawal's (or any object's) program digests against tip / genesis policy.
+
+**Kind**: static method of [<code>Program</code>](#Program)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| opts | <code>Object</code> |  |
+| [opts.object] | <code>Object</code> | withdrawal body |
+| [opts.tip] | <code>Object</code> |  |
+| [opts.genesis] | <code>Object</code> |  |
+
+<a name="Program.verifyMachineRun"></a>
+
+### Program.verifyMachineRun(opts) ⇒ <code>Object</code>
+Check a `Machine.runProgram` result against `program.runCommitmentHex`.
+
+**Kind**: static method of [<code>Program</code>](#Program)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| opts | <code>Object</code> |  |
+| opts.program | [<code>Program</code>](#Program) | needs `programHash` + `runCommitmentHex` |
+| opts.run | <code>Object</code> | `{ tip, trace, runCommitmentHex }` (`stack` in place of `trace` also works) |
+
+<a name="Program.runId"></a>
+
+### Program.runId(programHash, runCommitmentHex) ⇒ <code>string</code>
+Stable id for a program run (tests / logging; not a wire type).
+
+**Kind**: static method of [<code>Program</code>](#Program)  
+
+| Param | Type |
+| --- | --- |
+| programHash | <code>string</code> | 
+| runCommitmentHex | <code>string</code> | 
 
 <a name="EncryptedPromise"></a>
 
@@ -26255,6 +27178,20 @@ Stable key for one offer row.
 | --- | --- |
 | row | <code>object</code> | 
 
+<a name="settlementDedupeKey"></a>
+
+## settlementDedupeKey(session) ⇒ <code>string</code>
+Dedup key for paid settlements: (documentId, blobIndex|all, contentHash).
+
+**Kind**: global function  
+
+| Param | Type |
+| --- | --- |
+| session | <code>Object</code> | 
+| session.documentId | <code>string</code> | 
+| [session.blobIndex] | <code>number</code> | 
+| [session.contentHashHex] | <code>string</code> | 
+
 <a name="createDocumentPurchaseSession"></a>
 
 ## createDocumentPurchaseSession(opts) ⇒ <code>Object</code>
@@ -26675,7 +27612,7 @@ Authority P2TR vault from validator/signer set.
 
 **Default (RC):** 2-tier ladder — k-of-n authority now; softer rule after
 `csvBlocks` (default 144) CSV. Same tree as [synthesizeDefaultLadder](#synthesizeDefaultLadder) /
-[module:functions/contractSpend.resolveSpend](module:functions/contractSpend.resolveSpend) when inputs match.
+[resolveSpend](#Contract.resolveSpend) when inputs match.
 
 **Legacy:** pass `{ legacySingleLeaf: true }` for the pre-ladder single k-of-n
 leaf address (opt-in only; not used by Hub vault summary).

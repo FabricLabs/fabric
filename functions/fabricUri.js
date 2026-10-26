@@ -63,7 +63,17 @@ function encodeFabricUri (input, options = {}) {
   const encoding = options.encoding || 'base64url';
   if (encoding === 'hex') return FABRIC_URI_SCHEME + buffer.toString('hex');
   if (encoding !== 'base64url') throw new TypeError(`unsupported fabric: encoding ${encoding}`);
-  return FABRIC_URI_SCHEME + buffer.toString('base64url');
+  return FABRIC_URI_SCHEME + encodeBase64Url(buffer);
+}
+
+/**
+ * Browser `buffer` polyfills have no `base64url` encoding, so derive it from `base64`.
+ * @private
+ * @param {Buffer} buffer
+ * @returns {string}
+ */
+function encodeBase64Url (buffer) {
+  return buffer.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
 /**

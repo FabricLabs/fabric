@@ -5,24 +5,24 @@ const Key = require('../types/key');
 const {
   OP_CONTRACT_READ,
   OP_CONTRACT_SIGN,
-  issueContractCapability,
-  verifyContractCapability,
+  issueCapability,
+  verifyCapability,
   roleToCapability,
   capabilityToRole
-} = require('../functions/contractCapability');
+} = require('../types/contract');
 
-describe('contractCapability', function () {
+describe('Contract capabilities', function () {
   it('issues and verifies a read token bound to contractId', function () {
     const issuer = new Key();
     const subject = new Key().pubkey;
     const contractId = 'ab'.repeat(32);
-    const tok = issueContractCapability({
+    const tok = issueCapability({
       issuerKey: issuer,
       subject,
       contractId,
       capability: OP_CONTRACT_READ
     });
-    const payload = verifyContractCapability(tok, {
+    const payload = verifyCapability(tok, {
       contractId,
       expectedCap: OP_CONTRACT_READ,
       subject,
@@ -37,16 +37,16 @@ describe('contractCapability', function () {
   it('rejects wrong contractId and wrong subject', function () {
     const issuer = new Key();
     const subject = new Key().pubkey;
-    const tok = issueContractCapability({
+    const tok = issueCapability({
       issuerKey: issuer,
       subject,
       contractId: 'aa'.repeat(32)
     });
-    assert.strictEqual(verifyContractCapability(tok, {
+    assert.strictEqual(verifyCapability(tok, {
       contractId: 'bb'.repeat(32),
       issuerKey: issuer
     }), null);
-    assert.strictEqual(verifyContractCapability(tok, {
+    assert.strictEqual(verifyCapability(tok, {
       contractId: 'aa'.repeat(32),
       subject: new Key().pubkey,
       issuerKey: issuer
@@ -56,13 +56,13 @@ describe('contractCapability', function () {
   it('requires issuerKey or allowUnverified; marks parse-only unverified', function () {
     const issuer = new Key();
     const contractId = 'cc'.repeat(32);
-    const tok = issueContractCapability({
+    const tok = issueCapability({
       issuerKey: issuer,
       subject: new Key().pubkey,
       contractId,
       capability: OP_CONTRACT_SIGN
     });
-    assert.strictEqual(verifyContractCapability(tok, { contractId }), null);
+    assert.strictEqual(verifyCapability(tok, { contractId }), null);
 
     const forged = Buffer.from(JSON.stringify({
       cap: OP_CONTRACT_SIGN,
@@ -73,8 +73,8 @@ describe('contractCapability', function () {
       ctx: { contractId }
     })).toString('base64url') + '.00';
 
-    assert.strictEqual(verifyContractCapability(forged, { contractId }), null);
-    const parsed = verifyContractCapability(forged, {
+    assert.strictEqual(verifyCapability(forged, { contractId }), null);
+    const parsed = verifyCapability(forged, {
       contractId,
       allowUnverified: true
     });
@@ -91,7 +91,7 @@ describe('contractCapability', function () {
   });
 
   it('rejects unsupported capability on issue', function () {
-    assert.throws(() => issueContractCapability({
+    assert.throws(() => issueCapability({
       issuerKey: new Key(),
       subject: new Key().pubkey,
       contractId: 'dd'.repeat(32),

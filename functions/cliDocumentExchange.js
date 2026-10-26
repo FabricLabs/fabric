@@ -26,7 +26,7 @@ const {
   listRefundCandidates
 } = DocumentBook;
 const Htlc = require('../types/htlc');
-const { DEFAULT_CHUNK_BYTES } = require('./documentBlobManifest');
+const Document = require('../types/document');
 const { contentHashHexFromObject } = require('./documentPaymentHash');
 const { findCliContract } = require('./cliContracts');
 
@@ -126,7 +126,7 @@ function readResolvedImportFile (absolutePath) {
 function advertisedBlobCount (peer, plainBytes) {
   const settings = (peer && peer.settings) || {};
   const bytes = plainBytes + (settings.sealPricedDocuments !== false ? 16 : 0);
-  const chunk = Math.max(1, Number(settings.inventoryBlobChunkBytes) || DEFAULT_CHUNK_BYTES);
+  const chunk = Math.max(1, Number(settings.inventoryBlobChunkBytes) || Document.CHUNK_BYTES);
   return Math.max(1, Math.ceil(bytes / chunk));
 }
 
