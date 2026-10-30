@@ -904,14 +904,24 @@ function authorize (read, grants = [], options = {}) {
   if (grant.networks.length) {
     let network = read.inner.network;
     if (!network && typeof options.networkOf === 'function') network = options.networkOf(read) || null;
-    if (!network && read.scope === 'federation') return { ok: false, error: 'the grant names networks and the federation is unknown here' };
+    // A listed network is an allowlist, not a hint. A challenge that omits
+    // network, and every message frame, would otherwise be signed for whatever
+    // network the host passes.
+    if (!network) {
+      return {
+        ok: false,
+        error: read.scope === 'federation'
+          ? 'the grant names networks and the federation is unknown here'
+          : 'the grant names networks and this request does not'
+      };
+    }
     let normalized = null;
     try {
-      normalized = network ? normalizeAccountNetwork(network) : null;
+      normalized = normalizeAccountNetwork(network);
     } catch (_) {
       return { ok: false, error: `unknown network ${network}` };
     }
-    if (normalized && !grant.networks.includes(normalized)) {
+    if (!grant.networks.includes(normalized)) {
       return { ok: false, error: `the grant does not cover ${network}` };
     }
   }

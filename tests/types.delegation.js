@@ -107,6 +107,21 @@ describe('@fabric/core/types/delegation', function () {
     assert.match((await hub.receive(stale.uri)).error, /revoked/);
   });
 
+  it('revoking a grant drops requests that were already waiting and refuses to sign them', async function () {
+    const passport = new Delegation({ key: PASSPORT.identity.key });
+    const hub = new Delegation({ key: HUB.identity.key });
+    const grant = await hub.grant({ grantee: PASSPORT.identity.pubkey, scopes: ['message'] });
+    await passport.receive(grant.uri);
+    const req = await passport.request({ target: HUB.identity.pubkey, request: Message.fromVector(['P2P_CHAT_MESSAGE', 'sign me']) });
+    await hub.receive(req.uri);
+    const [pending] = await hub.pending();
+    assert.ok(pending);
+    await hub.revoke(grant.hash);
+    assert.deepStrictEqual(await hub.pending(), []);
+    const answer = d.answerMessage(pending.read, HUB.identity.key);
+    await assert.rejects(() => hub.sign(pending.hash, answer), /revoked/);
+  });
+
   it('only the grantor revokes, and only the asked participant answers', async function () {
     const passport = new Delegation({ key: PASSPORT.identity.key });
     const hub = new Delegation({ key: HUB.identity.key });

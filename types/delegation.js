@@ -279,6 +279,9 @@ class Delegation extends EventEmitter {
       if (!state.given[hash]) throw new Error('no such grant from this participant');
       const made = delegation.createRevoke({ grant: hash, now: this._now() }, this.key);
       state.revoked[hash] = { at: this._now(), frame: made.message.toBuffer().toString('hex') };
+      for (const item of Object.values(state.inbox)) {
+        if (item && item.status === 'pending' && item.grant === hash) item.status = 'revoked';
+      }
       this._record(state, made.message.toBuffer(), 'out');
       this.emit('revoke', { grant: hash, hash: made.hash });
       return { uri: made.uri, hash: made.hash };
@@ -360,6 +363,8 @@ class Delegation extends EventEmitter {
       if (item.status !== 'pending') continue;
       const read = delegation.readRequest(Buffer.from(item.hex, 'hex'), this._opts());
       if (!read.ok) continue;
+      const auth = delegation.authorize(read, this._grants(this._state, 'given'), { revoked: this._revokedSet(this._state), networkOf: this.settings.networkOf });
+      if (!auth.ok) continue;
       out.push({ hash, read, notification: delegation.notificationFor(read, { label: this._labelFor(this._state, read.request.requester) }), receivedAt: item.at });
     }
     return out.sort((a, b) => a.receivedAt - b.receivedAt);
@@ -419,6 +424,10 @@ class Delegation extends EventEmitter {
       const item = state.inbox[hash];
       if (!item) throw new Error('unknown request');
       if (item.status !== 'pending') throw new Error(`request is already ${item.status}`);
+      const read = delegation.readRequest(Buffer.from(item.hex, 'hex'), this._opts());
+      if (!read.ok) throw new Error(read.error);
+      const auth = delegation.authorize(read, this._grants(state, 'given'), { revoked: this._revokedSet(state), networkOf: this.settings.networkOf });
+      if (!auth.ok) throw new Error(auth.error);
       const made = delegation.createResult(Object.assign({ request: hash, now: this._now() }, fields), this.key);
       if (fields.answer) {
         const read = delegation.readResult(made.message, this._opts());

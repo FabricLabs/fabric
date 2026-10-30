@@ -201,6 +201,17 @@ describe('@fabric/core/functions/accountKeys', function () {
     swapped.accounts['regtest:0'].wallet.segwit.xpub = other.wallet.segwit.xpub;
     assert.throws(() => openAccountVault(swapped, LOCK), (err) => err.code === 'FABRIC_ACCOUNT_VAULT_MISMATCH');
 
+    function sortKeys (value) {
+      if (Array.isArray(value)) return value.map(sortKeys);
+      if (value && typeof value === 'object') {
+        const out = {};
+        for (const key of Object.keys(value).sort()) out[key] = sortKeys(value[key]);
+        return out;
+      }
+      return value;
+    }
+    assert.strictEqual(openAccountVault(sortKeys(JSON.parse(JSON.stringify(vault))), LOCK), MASTER);
+
     const moved = JSON.parse(JSON.stringify(vault));
     moved.accounts['regtest:5'] = moved.accounts['regtest:0'];
     assert.throws(() => verifyVaultAccounts(moved, MASTER), (err) => err.code === 'FABRIC_ACCOUNT_VAULT_MISMATCH');

@@ -64,9 +64,9 @@ describe('document L1 batches', function () {
     assert.strictEqual(market._lockError(1008), null);
   });
 
-  it('asks for quotes on mainnet and batches consecutive blobs', function () {
+  it('batches consecutive blobs on mainnet without paying a per-buyer quote hash', function () {
     const market = new Market({ budgetSats: 1, tickMs: 0, network: 'mainnet' });
-    assert.strictEqual(market.settings.quotes, true);
+    assert.strictEqual(market.settings.quotes, false);
     assert.strictEqual(market.settings.l1Batch, true);
     const planned = {
       plan: new Map([

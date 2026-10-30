@@ -462,7 +462,7 @@ describe('services/market (Phase 5 hardening)', function () {
     assert.throws(() => new Market({ network: 'nonsense' }), /refused/);
     const market = new Market({ tickMs: 0, network: 'mainnet' });
     assert.strictEqual(market.settings.network, 'mainnet');
-    assert.strictEqual(market.settings.quotes, true);
+    assert.strictEqual(market.settings.quotes, false);
     assert.strictEqual(market.settings.l1Batch, true);
     market.settings.network = 'bitcoin';
     await market.start();
@@ -867,19 +867,17 @@ describe('services/market (Phase 5 hardening)', function () {
     assert.ok(penalties, 'penalty recorded for the seller');
   });
 
-  it('per-buyer quotes: pays the quoted hash after verifying ciphertext; the claim preimage opens the blob, a lying quote is bad-key fraud', async function () {
+  it('does not fund a per-buyer quote hash; the HTLC stays the committed key, lying wrap or not', async function () {
     for (const lie of [false, true]) {
       const m = buildL1({ market: { quotes: true } });
       m.sellers.alpha.settings.sealedBlobPaymentMode = 'perBuyer';
       m.ctl.reveal = false;
       if (lie) m.ctl.mutateQuote = (q) => Object.assign({}, q, { wrappedKeyHex: crypto.randomBytes(32).toString('hex') });
       const paid = [];
-      const quoted = [];
+      const rejected = [];
       const verified = [];
-      const frauds = [];
-      m.market.on('sessionQuoted', (ev) => quoted.push(ev.quote));
+      m.market.on('sessionQuoteRejected', (ev) => rejected.push(ev.reason));
       m.market.on('sessionVerified', (s) => verified.push(s.settlementId));
-      m.market.on('sessionFraud', (ev) => frauds.push(ev));
       m.market.attach({
         peer: m.buyer,
         pay: async (s) => {
@@ -893,31 +891,19 @@ describe('services/market (Phase 5 hardening)', function () {
       want(m);
       await m.market.tick();
       const sessions = m.market.listSessions().sort((a, b) => a.blobIndex - b.blobIndex);
-      assert.strictEqual(quoted.length, m.doc.blobTotal);
+      assert.strictEqual(rejected.length, m.doc.blobTotal);
+      assert.ok(rejected.every((r) => r === 'per-buyer quote wrap is not checked before payment'));
       assert.strictEqual(paid.length, m.doc.blobTotal);
       assert.ok(paid.every((p) => p.verified), 'ciphertext verified before pay');
       for (let i = 0; i < sessions.length; i++) {
-        assert.strictEqual(sessions[i].paymentHashHex, quoted.find((q) => q.blobIndex === i).paymentHashHex);
-        assert.notStrictEqual(sessions[i].paymentHashHex, m.doc.paymentHashFor(i), 'the HTLC pays the per-buyer hash, not the static one');
-        assert.strictEqual(paid[i].hash, sessions[i].paymentHashHex);
+        assert.strictEqual(sessions[i].paymentHashHex, m.doc.paymentHashFor(i));
+        assert.strictEqual(paid[i].hash, m.doc.paymentHashFor(i));
         assert.strictEqual(sessions[i].status, 'delivery_pending');
       }
-      // The seller claims each HTLC on chain with s; the buyer unwraps K_i.
-      for (const s of sessions) {
-        const secret = m.sellers.alpha.sealedBlobPreimageForPaymentHash(s.paymentHashHex, { amountSats: s.amountSats }).preimageHex;
-        m.market.claimObserved(s.settlementId, { preimageHex: secret });
-      }
+      for (const s of sessions) m.market.claimObserved(s.settlementId, { preimageHex: m.doc.keyFor(s.blobIndex) });
       assert.strictEqual(m.market.spentSats, m.doc.blobTotal * P);
-      if (lie) {
-        assert.strictEqual(received, null);
-        assert.strictEqual(frauds.length, m.doc.blobTotal);
-        assert.ok(frauds.every((f) => f.kind === 'bad-key'));
-        assert.ok(sessions.every((s) => s.status === 'fraud'));
-      } else {
-        assert.ok(received && received.buffer.equals(m.plain));
-        assert.ok(sessions.every((s) => s.status === 'complete'));
-        assert.strictEqual(frauds.length, 0);
-      }
+      assert.ok(received && received.buffer.equals(m.plain));
+      assert.ok(sessions.every((s) => s.status === 'complete'));
       assert.ok(m.market.audit().ok);
     }
   });
@@ -977,7 +963,7 @@ describe('services/market (Phase 5 hardening)', function () {
         await m.market.tick();
         assert.strictEqual(paid.length, m.doc.blobTotal);
         for (const s of m.market.listSessions()) {
-          assert.notStrictEqual(s.paymentHashHex, m.doc.paymentHashFor(s.blobIndex));
+          assert.strictEqual(s.paymentHashHex, m.doc.paymentHashFor(s.blobIndex));
           assert.ok(paid.includes(s.paymentHashHex));
         }
       } else {

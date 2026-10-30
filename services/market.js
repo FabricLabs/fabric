@@ -145,7 +145,7 @@ class Market extends Service {
    * @param {number} [settings.deliveryTimeoutMs=600000] Paid sessions without delivery time out after this (0 = never); funded L1 HTLCs then wait for refund.
    * @param {number} [settings.prepayTimeoutMs=60000] Verify-before-pay: wait this long for the seller's free ciphertext (and quote).
    * @param {boolean} [settings.verifyBeforePay=true] Pay a sealed blob only once its ciphertext is held and committed by the root.
-   * @param {boolean} [settings.quotes=false] Ask sellers for a per-buyer `DocumentBlobQuote` and pay its hash. Not atomic: a seller can quote a wrapped key that does not unwrap, claim the HTLC, and leave only a fraud proof (`documentBlobQuoteFraud`). Static hashes are atomic.
+   * @param {boolean} [settings.quotes=false] Ask sellers for a per-buyer `DocumentBlobQuote`. The HTLC still pays the committed content hash. A quote hash is `SHA256(s)` and the wrap cannot be checked until `s` is revealed, so paying it lets the seller claim without delivering the key.
    * @param {boolean} [settings.credit=true] Take a seller's credit offer (`creditRateSats`) when a channel with it can pay: the key comes first, and the blob is paid with a channel transfer only once it opens. A blob that does not open is never paid.
    * @param {Object|boolean} [settings.seed] Seed after download: sell every received convergent document again as the same tree, on these `Peer#publishSealedDocument` terms (`{ rateSats, creditRateSats, creditLimitSats }`; `true` = free).
    * @param {number} [settings.fundingSafetyMs=3600000] A funding whose outcome is unknown is released only after the address is reported unfunded this long after the last pay attempt.
@@ -190,7 +190,6 @@ class Market extends Service {
     }, settings);
     this.settings.network = marketNetwork(this.settings.network);
     if (this.settings.network === 'mainnet') {
-      this.settings.quotes = true;
       if (this.settings.l1Batch !== false) this.settings.l1Batch = true;
     }
 
@@ -1617,7 +1616,8 @@ class Market extends Service {
   async _advancePrepay (session) {
     if (session.status !== 'quote_pending') return session;
     const verified = this._ciphertextVerified(session);
-    const quoted = this.settings.quotes !== true || !!session.quote;
+    // A declined per-buyer quote must not stall payment: the content-hash HTLC is atomic.
+    const quoted = this.settings.quotes !== true || !!session.quote || session.quoteDeclined === true;
     if (verified && quoted) {
       session.ciphertextVerifiedAt = this._now();
       this.emit('sessionVerified', session);
@@ -1662,10 +1662,12 @@ class Market extends Service {
   }
 
   /**
-   * Seller's per-buyer `DocumentBlobQuote`: accepted for a pre-payment
-   * session from that seller when it is for the same tree / blob, wraps the
-   * committed key (`keyHashHex` = the static payment hash), and does not ask
-   * more than the offer. The HTLC then pays `quote.paymentHashHex`.
+   * Seller's per-buyer `DocumentBlobQuote`: noted for a pre-payment session
+   * from that seller when it is for the same tree / blob and does not ask
+   * more than the offer. It does not replace the HTLC hash. Paying
+   * `quote.paymentHashHex` (`SHA256(s)`) lets the seller claim with `s`
+   * while `wrappedKeyHex` unwraps to something other than the committed key,
+   * and that is only visible after the output is spent.
    * @private
    */
   _onBlobQuote (ev) {
@@ -1683,6 +1685,7 @@ class Market extends Service {
       const reason = this._quoteError(s, q);
       if (reason) {
         this.emit('sessionQuoteRejected', { session: s, quote: q, reason });
+        if (reason === 'per-buyer quote wrap is not checked before payment') s.quoteDeclined = true;
         continue;
       }
       const amount = Math.floor(Number(q.amountSats));
@@ -1694,13 +1697,12 @@ class Market extends Service {
       s.quote = {
         type: q.type || 'DocumentBlobQuote',
         blobIndex: q.blobIndex != null ? Number(q.blobIndex) : Number(s.blobIndex),
-        paymentHashHex: String(q.paymentHashHex).toLowerCase(),
+        paymentHashHex: s.paymentHashHex || s.contentHashHex,
         keyHashHex: q.keyHashHex ? String(q.keyHashHex).toLowerCase() : null,
         amountSats: amount,
         expiresAt: q.expiresAt != null ? Number(q.expiresAt) : null
       };
       if (q.type === 'DocumentBlobBatch') s.quote.blobs = q.blobs;
-      s.paymentHashHex = s.quote.paymentHashHex;
       const sellerHex = s.htlc ? s.htlc.sellerPubkey : s.sellerPubkeyHex;
       const buyerHex = s.htlc ? s.htlc.buyerRefundPubkey : this.buyerRefundPubkeyHex();
       const lock = s.htlc ? s.htlc.refundLocktimeHeight : (this.peer && this.peer.settings && this.peer.settings.inventoryHtlcLocktimeHeight);
@@ -1740,7 +1742,11 @@ class Market extends Service {
         const got = leaves.find((b) => Number(b.blobIndex) === Number(leaf.index));
         if (!got || String(got.keyHashHex).toLowerCase() !== String(leaf.contentHashHex)) return 'batch quote does not wrap the committed key';
       }
+      return 'per-buyer quote wrap is not checked before payment';
     } else if (!session.contentHashHex || String(q.keyHashHex).toLowerCase() !== session.contentHashHex) return 'quote does not wrap the committed key';
+    if (String(q.paymentHashHex).toLowerCase() !== String(session.contentHashHex).toLowerCase()) {
+      return 'per-buyer quote wrap is not checked before payment';
+    }
     const amount = Math.floor(Number(q.amountSats));
     const floor = this._l1MinimumSats();
     if (!(amount >= floor)) return `quote of ${q.amountSats} sats is below the ${floor}-sat minimum at ${this.settings.claimFeerate} sat/vB`;

@@ -514,10 +514,12 @@ const PEER_MAX_SEALED_BLOB_PARTS = MAX_DOCUMENT_BLOBS;
 const PEER_MAX_SEALED_BLOB_ALTERNATES = 4;
 /**
  * Global byte budget across every pending sealed row (ciphertext + one
- * retained frame per blob). Sized for one maximum sealed tree; nothing is
- * allocated until frames arrive.
+ * retained frame per blob). A full sealed tree can be larger than this;
+ * the cap is what stops one peer from pinning gigabytes of unsolicited
+ * frames. Nothing is allocated until frames arrive. Per origin the default
+ * is a quarter of this.
  */
-const PEER_MAX_PENDING_SEALED_BYTES = MAX_DOCUMENT_BLOBS * (DOCUMENT_SEALED_CHUNK_BYTES + MAX_FRAME_BYTES);
+const PEER_MAX_PENDING_SEALED_BYTES = 256 * 1024 * 1024;
 /** Byte budget for opened convergent chunks a Peer keeps so a chunk another document shares is not bought again. */
 const PEER_MAX_HELD_CHUNK_BYTES = 64 * 1024 * 1024;
 /** Pending sealed rows that never complete are dropped this long after their first frame. */

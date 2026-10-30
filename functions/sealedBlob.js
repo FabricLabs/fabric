@@ -17,6 +17,12 @@
 const crypto = require('crypto');
 
 const SEAL_SCHEME = 'aes-256-gcm-pbkdf2-sha256';
+const ARGON2_SCHEME = 'aes-256-gcm-argon2id';
+const ARGON2_KDF = 'argon2id';
+/** 64 MiB, two passes, one lane. Unlock of one master; not the default for every seal. */
+const ARGON2_MEMORY_KIB = 65536;
+const ARGON2_TIME = 2;
+const ARGON2_PARALLELISM = 1;
 const SEAL_TYPE = 'FabricSealedBlob';
 const SEAL_VERSION = 1;
 const KDF_NAME = 'pbkdf2';
@@ -96,7 +102,7 @@ function isSealedEnvelope (obj) {
   const env = extractEnvelope(obj);
   if (!env || !env.ciphertext || !env.kdf) return false;
   const scheme = String(env.encryption || env.format || '');
-  if (scheme && scheme !== SEAL_SCHEME) return false;
+  if (scheme && scheme !== SEAL_SCHEME && scheme !== ARGON2_SCHEME) return false;
   return true;
 }
 
@@ -109,8 +115,81 @@ function isSealedEnvelope (obj) {
 function isPasswordProtectedDocument (parsed) {
   if (!parsed || typeof parsed !== 'object') return false;
   if (parsed.passwordProtected === true && isSealedEnvelope(parsed)) return true;
-  if (parsed.format === SEAL_SCHEME && isSealedEnvelope(parsed)) return true;
+  if ((parsed.format === SEAL_SCHEME || parsed.format === ARGON2_SCHEME) && isSealedEnvelope(parsed)) return true;
   return isSealedEnvelope(parsed) && !!(parsed.object && (parsed.object.xpub || parsed.object.id));
+}
+
+/**
+ * @param {string} password
+ * @param {Buffer} salt
+ * @returns {Buffer}
+ * @private
+ */
+function argon2Key (password, salt) {
+  const { argon2id } = require('@noble/hashes/argon2.js');
+  return Buffer.from(argon2id(password, salt, {
+    t: ARGON2_TIME,
+    m: ARGON2_MEMORY_KIB,
+    p: ARGON2_PARALLELISM,
+    dkLen: KEY_BYTES
+  }));
+}
+
+/**
+ * @param {Buffer} key
+ * @param {object} env
+ * @returns {*}
+ * @private
+ */
+function decryptEnvelope (key, env) {
+  const iv = b64decode(env.iv || env.nonce);
+  const raw = b64decode(env.ciphertext);
+  if (iv.length !== IV_BYTES) throw new Error('Invalid seal IV.');
+  if (raw.length <= TAG_BYTES) throw new Error('Invalid seal ciphertext.');
+  const tag = raw.subarray(raw.length - TAG_BYTES);
+  const body = raw.subarray(0, raw.length - TAG_BYTES);
+  try {
+    const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv, { authTagLength: TAG_BYTES });
+    decipher.setAuthTag(tag);
+    const plain = Buffer.concat([decipher.update(body), decipher.final()]);
+    return JSON.parse(plain.toString('utf8'));
+  } catch (exception) {
+    const err = new Error('Decryption failed (wrong password or corrupt blob).');
+    err.code = 'FABRIC_SEAL_DECRYPT';
+    err.cause = exception;
+    throw err;
+  }
+}
+
+/**
+ * @param {*} plaintext
+ * @param {string} pwd
+ * @param {Object} opts
+ * @returns {object}
+ * @private
+ */
+function sealArgon2 (plaintext, pwd, opts) {
+  const salt = crypto.randomBytes(SALT_BYTES);
+  const iv = crypto.randomBytes(IV_BYTES);
+  const key = argon2Key(pwd, salt);
+  const plain = Buffer.from(JSON.stringify(plaintext), 'utf8');
+  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv, { authTagLength: TAG_BYTES });
+  const body = Buffer.concat([cipher.update(plain), cipher.final()]);
+  const ciphertext = Buffer.concat([body, cipher.getAuthTag()]);
+  return {
+    type: opts.type || SEAL_TYPE,
+    version: opts.version != null ? opts.version : SEAL_VERSION,
+    encryption: ARGON2_SCHEME,
+    kdf: {
+      name: ARGON2_KDF,
+      memory: ARGON2_MEMORY_KIB,
+      time: ARGON2_TIME,
+      parallelism: ARGON2_PARALLELISM,
+      salt: b64encode(salt)
+    },
+    iv: b64encode(iv),
+    ciphertext: b64encode(ciphertext)
+  };
 }
 
 /**
@@ -120,12 +199,14 @@ function isPasswordProtectedDocument (parsed) {
  * @param {string} password
  * @param {Object} [opts]
  * @param {number} [opts.iterations]
+ * @param {string} [opts.kdf] `argon2id` seals the account master; omit for PBKDF2
  * @param {string} [opts.type]
  * @param {number} [opts.version]
  * @returns {object} Envelope (safe to persist / JSON.stringify)
  */
 function sealJson (plaintext, password, opts = {}) {
   const pwd = normalizePassword(password);
+  if (opts.kdf === ARGON2_KDF) return sealArgon2(plaintext, pwd, opts);
   const iterations = Number.isFinite(opts.iterations)
     ? Math.floor(opts.iterations)
     : DEFAULT_ITERATIONS;
@@ -170,6 +251,11 @@ function openSealedJson (document, password) {
   const env = extractEnvelope(document);
   if (!env) throw new Error('Not a sealed blob.');
   const scheme = String(env.encryption || env.format || SEAL_SCHEME);
+  const kdfName = env.kdf && env.kdf.name;
+  if (scheme === ARGON2_SCHEME || kdfName === ARGON2_KDF) {
+    const salt = b64decode(env.kdf && env.kdf.salt);
+    return decryptEnvelope(argon2Key(pwd, salt), env);
+  }
   if (scheme !== SEAL_SCHEME) {
     throw new Error(`Unsupported seal scheme: ${scheme}`);
   }
@@ -179,30 +265,12 @@ function openSealedJson (document, password) {
     throw new Error('Invalid PBKDF2 iteration count.');
   }
   const salt = b64decode(env.kdf && env.kdf.salt);
-  const iv = b64decode(env.iv || env.nonce);
-  const raw = b64decode(env.ciphertext);
-  if (iv.length !== IV_BYTES) throw new Error('Invalid seal IV.');
-  if (raw.length <= TAG_BYTES) throw new Error('Invalid seal ciphertext.');
-
-  const key = deriveKey(pwd, salt, iterations);
-  const tag = raw.subarray(raw.length - TAG_BYTES);
-  const body = raw.subarray(0, raw.length - TAG_BYTES);
-  try {
-    const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv, { authTagLength: TAG_BYTES });
-    decipher.setAuthTag(tag);
-    const plain = Buffer.concat([decipher.update(body), decipher.final()]);
-    return JSON.parse(plain.toString('utf8'));
-  } catch (exception) {
-    const err = new Error('Decryption failed (wrong password or corrupt blob).');
-    err.code = 'FABRIC_SEAL_DECRYPT';
-    err.cause = exception;
-    throw err;
-  }
+  return decryptEnvelope(deriveKey(pwd, salt, iterations), env);
 }
 
 /**
- * True when an envelope was sealed with fewer PBKDF2 iterations than today's
- * default; open it and seal the plaintext again.
+ * True when a PBKDF2 envelope was sealed with fewer iterations than today's
+ * default; open it and seal the plaintext again. An Argon2id seal does not.
  *
  * @param {*} document Envelope or a document with a nested `seal`.
  * @returns {boolean}
@@ -210,12 +278,15 @@ function openSealedJson (document, password) {
 function needsReseal (document) {
   const env = extractEnvelope(document);
   if (!env) return false;
+  if (env.kdf && env.kdf.name === ARGON2_KDF) return false;
   const iterations = Number(env.kdf && env.kdf.iterations) || LEGACY_ITERATIONS;
   return iterations < DEFAULT_ITERATIONS;
 }
 
 module.exports = {
   SEAL_SCHEME,
+  ARGON2_SCHEME,
+  ARGON2_MEMORY_KIB,
   SEAL_TYPE,
   SEAL_VERSION,
   DEFAULT_ITERATIONS,

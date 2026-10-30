@@ -18,14 +18,14 @@
  * **Per-buyer payment hashes** (`DocumentBlobQuote`). Settling on the static
  * hash `SHA256(K_i)` puts `K_i` in a public claim witness (and in every hop of
  * a forwarded channel HTLC), after which anyone holding the free ciphertext
- * can decrypt blob i. A quote instead binds the HTLC to a fresh secret `s`
- * the seller draws for one buyer: `paymentHash = SHA256(s)` and the buyer is
- * handed `wrappedKey = K_i XOR HMAC-SHA256(s, tag || documentId || root ||
- * blobIndex)`. Revealing `s` (claim witness / channel fulfil) only lets the
- * holder of `wrappedKey` recover `K_i`, which is checked against the
- * committed `SHA256(K_i)`. Unlike the static hash this is not atomic: a
- * seller can quote a `wrappedKey` that does not unwrap. The signed quote plus
- * the public `s` is then a self-contained fraud proof (`checkBlobQuote`).
+ * can decrypt blob i. A quote instead names a fresh secret `s` the seller
+ * draws for one buyer: `paymentHash = SHA256(s)` and the buyer is handed
+ * `wrappedKey = K_i XOR HMAC-SHA256(s, tag || documentId || root ||
+ * blobIndex)`. Revealing `s` only lets the holder of `wrappedKey` recover
+ * `K_i`. That wrap cannot be checked before `s` is public, so a buyer must
+ * not fund `SHA256(s)`: the seller can claim and leave a fraud proof
+ * (`checkBlobQuote`) after the output is spent. Market pays the committed
+ * `SHA256(K_i)` instead.
  *
  * **Convergent sealing** (`CONVERGENT_SCHEME`). The key is derived from the
  * plaintext — `K = taggedHash(CONVERGENT_KEY_TAG, mode || secret? || plaintext)`

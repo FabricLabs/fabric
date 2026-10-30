@@ -221,6 +221,20 @@ describe('@fabric/core/functions/delegation', function () {
       assert.match(d.authorize(outOfScope, [identityOnly]).error, /does not cover passport/);
     });
 
+    it('a network-limited grant refuses a challenge or message that names no network', function () {
+      const grant = d.readGrant(hubGrant({ origins: [SITE], networks: ['regtest'] }).uri, { now: NOW });
+      const open = challenge({ network: null });
+      const read = d.readRequest(d.createRequest({ target: HUB.identity.pubkey, grant: grant.hash, request: open.uri, origin: SITE, now: NOW }, PASSPORT.identity.key).uri, { now: NOW + 1 });
+      assert.strictEqual(read.ok, true, read.error);
+      assert.strictEqual(read.inner.network, null);
+      assert.match(d.authorize(read, [grant]).error, /this request does not/);
+      const named = d.readRequest(d.createRequest({ target: HUB.identity.pubkey, grant: grant.hash, request: challenge().uri, origin: SITE, now: NOW }, PASSPORT.identity.key).uri, { now: NOW + 1 });
+      assert.strictEqual(d.authorize(named, [grant]).ok, true, d.authorize(named, [grant]).error);
+      const chat = Message.fromVector(['P2P_CHAT_MESSAGE', 'o7']);
+      const msg = d.readRequest(d.createRequest({ target: HUB.identity.pubkey, grant: grant.hash, request: chat, now: NOW }, PASSPORT.identity.key).uri, { now: NOW + 1 });
+      assert.match(d.authorize(msg, [grant]).error, /this request does not/);
+    });
+
     it('a request cannot change the origin or ask for more than the challenge did', function () {
       const c = challenge({ request: [] });
       const grant = d.readGrant(hubGrant().uri, { now: NOW });

@@ -367,13 +367,17 @@ function verifyCosignerProof (params = {}) {
 }
 
 /**
- * Seal a master xprv with the lock password (PBKDF2-SHA256, AES-256-GCM).
+ * Seal a master xprv with the lock password (Argon2id, AES-256-GCM).
  * @param {string|Key} master
  * @param {string} lockPassword
  * @returns {object}
  */
 function sealMaster (master, lockPassword) {
-  return sealJson({ xprv: normalizeMasterXprv(master) }, lockPassword, { type: 'FabricSealedMaster', version: ACCOUNT_VAULT_VERSION });
+  return sealJson({ xprv: normalizeMasterXprv(master) }, lockPassword, {
+    type: 'FabricSealedMaster',
+    version: ACCOUNT_VAULT_VERSION,
+    kdf: 'argon2id'
+  });
 }
 
 /**
@@ -461,6 +465,23 @@ function vaultMismatch (why) {
 }
 
 /**
+ * JSON text with object keys sorted. chrome.storage hands objects back with
+ * sorted keys, so a cache check cannot depend on the order they were saved in.
+ * @param {*} value
+ * @returns {string|undefined}
+ * @private
+ */
+function stableJSON (value) {
+  if (value === undefined) return undefined;
+  if (Array.isArray(value)) return `[${value.map((item) => stableJSON(item) ?? 'null').join(',')}]`;
+  if (value && typeof value === 'object') {
+    const parts = Object.keys(value).sort().filter((key) => value[key] !== undefined).map((key) => `${JSON.stringify(key)}:${stableJSON(value[key])}`);
+    return `{${parts.join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+/**
  * Check one cached account/network pair against what `master` derives.
  * @param {string} key Vault key of the pair (`vaultAccountKey`).
  * @param {object} cached The cached public view.
@@ -474,7 +495,7 @@ function checkCachedAccount (key, cached, master) {
   const compared = (cached.wallet && !cached.wallet.taproot)
     ? Object.assign({}, fresh, { wallet: withoutTaproot(fresh.wallet) })
     : fresh;
-  if (JSON.stringify(compared) !== JSON.stringify(cached)) throw vaultMismatch(key);
+  if (stableJSON(compared) !== stableJSON(cached)) throw vaultMismatch(key);
   return fresh;
 }
 
@@ -568,6 +589,8 @@ function currentVaultAccount (vault, master) {
 }
 
 module.exports = {
+  /** True when sealMaster uses Argon2id. Older cores omit this and stay on PBKDF2. */
+  ARGON2_MASTER: true,
   ACCOUNT_NETWORKS,
   ACCOUNT_VAULT_TYPE,
   ACCOUNT_VAULT_VERSION,

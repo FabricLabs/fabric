@@ -75,6 +75,17 @@ describe('@fabric/core/functions/sealedBlob', function () {
     assert.throws(() => openSealedJson(envelope, 'wrong-pass-ok!'), (err) => err.code === 'FABRIC_SEAL_DECRYPT');
   });
 
+  it('round-trips an Argon2id seal and does not ask to re-seal it', function () {
+    this.timeout(20000);
+    const envelope = sealJson(secret, password, { kdf: 'argon2id', type: 'FabricSealedMaster' });
+    assert.strictEqual(envelope.encryption, 'aes-256-gcm-argon2id');
+    assert.strictEqual(envelope.kdf.name, 'argon2id');
+    assert.strictEqual(envelope.kdf.memory, 65536);
+    assert.strictEqual(needsReseal(envelope), false);
+    assert.deepStrictEqual(openSealedJson(envelope, password), secret);
+    assert.throws(() => openSealedJson(envelope, 'wrong-pass-ok!'), (err) => err.code === 'FABRIC_SEAL_DECRYPT');
+  });
+
   it('does not treat plaintext wallets as sealed', function () {
     assert.strictEqual(PASSWORD_MIN_LENGTH, 8);
     assert.strictEqual(isPasswordProtectedDocument({
