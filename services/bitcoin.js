@@ -32,6 +32,7 @@ bitcoin.initEccLib(ecc);
 
 // Services
 const ZMQ = require('../services/zmq');
+const Watchtower = require('../services/watchtower');
 
 // Types
 const Actor = require('../types/actor');
@@ -621,6 +622,14 @@ class Bitcoin extends Service {
     }); */
 
     this.zmq = new ZMQ({ ...this.settings.zmq, key: { xprv: this._rootKey.xprv } });
+    // Every node that runs Bitcoin watches its own filings and those of
+    // clients the host admits. `settings.watchtower === false` turns it off.
+    this.watchtower = this.settings.watchtower === false
+      ? null
+      : new Watchtower({
+        localPrivateKey: this._rootKey && this._rootKey.private,
+        admit: typeof this.settings.watchtowerAdmit === 'function' ? this.settings.watchtowerAdmit : null
+      });
 
     // Define Bitcoin P2P Messages
     this.define('VersionPacket', { type: 0 });
@@ -1680,6 +1689,7 @@ class Bitcoin extends Service {
             try {
               const verbose = await this._makeRPCRequest('getrawtransaction', [txid, true]);
               if (verbose) {
+                if (verbose.hex) this.broadcastWatchtower([verbose.hex]).catch(() => {});
                 this.emit('transaction', Object.assign({}, verbose, { source: 'BitcoinTransactionHash' }));
                 if (this.wallet && typeof this.wallet.ingestBitcoinTransaction === 'function') {
                   this.wallet.ingestBitcoinTransaction(verbose, { source: 'BitcoinTransactionHash' });
@@ -1729,6 +1739,8 @@ class Bitcoin extends Service {
             tx: (verboseBlock && verboseBlock.tx) || [],
             source: 'BitcoinBlockHash'
           };
+          const watchHexes = payload.tx.map((tx) => tx && tx.hex).filter(Boolean);
+          if (watchHexes.length) this.broadcastWatchtower(watchHexes).catch(() => {});
           this.emit('block', payload);
           if (this.wallet && typeof this.wallet.ingestBitcoinBlock === 'function') {
             try {
@@ -1745,6 +1757,7 @@ class Bitcoin extends Service {
               ? content.content
               : null;
             if (rawHex) {
+              this.broadcastWatchtower([rawHex]).catch(() => {});
               const event = { hex: rawHex, source: 'BitcoinTransaction' };
               try {
                 const bitcoinjs = require('bitcoinjs-lib');
@@ -2542,6 +2555,39 @@ class Bitcoin extends Service {
 
   async _spendRawTX (raw) {
     return this._makeRPCRequest('sendrawtransaction', [ raw ]);
+  }
+
+  /**
+   * Broadcast justice transactions for any revoked commitment in `txHexes`.
+   * A filing is dropped only once every one of its transactions is accepted
+   * or already settled. A prefix that does not decrypt is ignored.
+   * @param {string[]} txHexes raw transactions (block or mempool)
+   * @returns {Promise<string[]>} justice transactions submitted
+   */
+  async broadcastWatchtower (txHexes) {
+    const tower = this.watchtower;
+    if (!tower || !txHexes || !txHexes.length) return [];
+    const hits = tower.match(txHexes);
+    const sent = [];
+    for (const hit of hits) {
+      let keep = false;
+      for (const txHex of hit.transactions) {
+        try {
+          await this._spendRawTX(txHex);
+          sent.push(txHex);
+        } catch (e) {
+          if (Watchtower.broadcastSettled(e)) {
+            sent.push(txHex);
+          } else {
+            keep = true;
+            const msg = e && e.message ? e.message : String(e);
+            this.emit('warning', `[FABRIC:BITCOIN] watchtower broadcast: ${msg}`);
+          }
+        }
+      }
+      if (!keep) tower.drop(hit.client, hit.hint);
+    }
+    return sent;
   }
 
   async _syncBestBlock () {

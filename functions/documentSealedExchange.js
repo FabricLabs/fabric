@@ -306,6 +306,7 @@ function advertiseSealedDocument (sale, opts = {}) {
 }
 
 const BLOB_QUOTE_TYPE = 'DocumentBlobQuote';
+const BLOB_BATCH_TYPE = 'DocumentBlobBatch';
 const BLOB_KEY_WRAP_TAG = 'Fabric/DocumentBlobKeyWrap';
 const HEX64 = /^[0-9a-f]{64}$/;
 
@@ -416,10 +417,109 @@ function createBlobQuote (opts = {}) {
 }
 
 /**
- * Shape check for a received quote (no secrets involved).
- * @param {Object} quote
+ * One L1 preimage `S` wraps every key in a consecutive blob range.
+ * `K_i` is recovered with {@link unwrapBlobKey} once `S` is revealed.
+ * The wraps travel only on this object, which is sent to the buyer, not
+ * placed on a public inventory item.
+ * @param {Object} opts
+ * @param {string} opts.documentId
+ * @param {string} [opts.merkleRootHex]
+ * @param {Array<{ blobIndex: number, blobHashHex: string, keyHex: string }>} opts.blobs
+ * @param {number} [opts.amountSats]
+ * @param {number} [opts.expiresAt]
+ * @param {string} [opts.secretHex]
+ * @returns {{ batch: Object, secretHex: string }}
+ */
+function createBlobBatch (opts = {}) {
+  const documentId = String(opts.documentId || '').trim();
+  if (!documentId) throw new Error('documentId required');
+  const blobs = Array.isArray(opts.blobs) ? opts.blobs : [];
+  if (!blobs.length) throw new Error('batch needs at least one blob');
+  const secret = opts.secretHex ? _key32(opts.secretHex, 'secretHex') : crypto.randomBytes(32);
+  const secretHex = secret.toString('hex');
+  const merkleRootHex = opts.merkleRootHex ? String(opts.merkleRootHex).toLowerCase() : null;
+  let start = Infinity;
+  let end = -1;
+  for (const b of blobs) {
+    const blobIndex = Math.round(Number(b.blobIndex));
+    if (blobIndex < start) start = blobIndex;
+    if (blobIndex > end) end = blobIndex;
+  }
+  const wrapped = blobs.map((b) => {
+    const blobIndex = Math.round(Number(b.blobIndex));
+    const key = _key32(b.keyHex, 'keyHex');
+    return {
+      blobIndex,
+      blobHashHex: b.blobHashHex ? String(b.blobHashHex).toLowerCase() : null,
+      keyHashHex: paymentHashHexFromKey(key),
+      wrappedKeyHex: wrapBlobKey({ keyHex: key, secretHex, documentId, merkleRootHex, blobIndex })
+    };
+  });
+  return {
+    secretHex,
+    batch: {
+      type: BLOB_BATCH_TYPE,
+      documentId,
+      merkleRootHex,
+      start,
+      end,
+      paymentHashHex: paymentHashHexFromKey(secret),
+      amountSats: Math.max(0, Math.floor(Number(opts.amountSats) || 0)),
+      expiresAt: Number(opts.expiresAt) > 0 ? Number(opts.expiresAt) : null,
+      blobs: wrapped
+    }
+  };
+}
+
+/**
+ * @param {Object} batch
  * @returns {boolean}
  */
+function isWellFormedBlobBatch (batch) {
+  if (!batch || batch.type !== BLOB_BATCH_TYPE) return false;
+  if (!String(batch.documentId || '').trim()) return false;
+  if (!HEX64.test(String(batch.paymentHashHex || '').toLowerCase())) return false;
+  if (!Number.isInteger(Number(batch.start)) || !Number.isInteger(Number(batch.end)) || Number(batch.end) < Number(batch.start)) return false;
+  if (!Array.isArray(batch.blobs) || !batch.blobs.length) return false;
+  return batch.blobs.every((b) => Number.isInteger(Number(b.blobIndex)) &&
+    HEX64.test(String(b.keyHashHex || '').toLowerCase()) &&
+    HEX64.test(String(b.wrappedKeyHex || '').toLowerCase()));
+}
+
+/**
+ * Recover one chunk key from a batch once `S` is known.
+ * @param {Object} opts
+ * @param {Object} opts.batch
+ * @param {string} opts.preimageHex
+ * @param {number} opts.blobIndex
+ * @returns {{ ok: boolean, keyHex: (string|undefined), error: (string|undefined), fraud: (boolean|undefined) }}
+ */
+function openBlobBatch (opts = {}) {
+  const batch = opts.batch;
+  if (!isWellFormedBlobBatch(batch)) return { ok: false, error: 'malformed batch' };
+  let pre;
+  try {
+    pre = _key32(opts.preimageHex, 'preimageHex');
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+  if (paymentHashHexFromKey(pre) !== String(batch.paymentHashHex).toLowerCase()) {
+    return { ok: false, error: 'preimage does not match batch paymentHashHex' };
+  }
+  const blobIndex = Math.round(Number(opts.blobIndex));
+  const leaf = batch.blobs.find((b) => Number(b.blobIndex) === blobIndex);
+  if (!leaf) return { ok: false, error: 'blob is not in this batch' };
+  const out = unwrapBlobKey({
+    wrappedKeyHex: leaf.wrappedKeyHex,
+    secretHex: pre,
+    documentId: batch.documentId,
+    merkleRootHex: batch.merkleRootHex,
+    blobIndex,
+    keyHashHex: leaf.keyHashHex
+  });
+  return out.ok ? out : Object.assign(out, { fraud: true });
+}
+
 function isWellFormedBlobQuote (quote) {
   if (!quote || typeof quote !== 'object') return false;
   if (!String(quote.documentId || '').trim()) return false;
@@ -598,6 +698,10 @@ function openWithClaimPreimage (opts = {}) {
 module.exports = {
   KEY_REVEAL_TYPE,
   BLOB_QUOTE_TYPE,
+  BLOB_BATCH_TYPE,
+  createBlobBatch,
+  isWellFormedBlobBatch,
+  openBlobBatch,
   SCHEME,
   CONVERGENT_SCHEME,
   SEALED_SCHEMES,

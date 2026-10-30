@@ -1,17 +1,32 @@
 'use strict';
 
-const Fabric = require('../');
+/**
+ * Sign one chat message and verify it with the same key.
+ * Run: node examples/fabric-basic-usage.js
+ *
+ * Leaf imports: types/key, types/message. See PUBLIC_API.md.
+ */
 
-async function main () {
-  const fabric = new Fabric();
-  const address = (fabric && typeof fabric.address !== 'undefined') ? fabric.address : '(not-set)';
+const Key = require('../types/key');
+const Message = require('../types/message');
 
-  console.log('[EXAMPLES:BASIC]', 'id:', fabric.id);
-  console.log('[EXAMPLES:BASIC]', 'address:', address);
-  console.log('[EXAMPLES:BASIC]', 'clock:', fabric.clock);
+function fail (message) {
+  console.error('[EXAMPLES:BASIC]', message);
+  process.exitCode = 1;
+  throw new Error(message);
 }
 
-main().catch((exception) => {
-  console.error('[EXAMPLES:BASIC]', 'Main Process Exception:', exception);
-  process.exitCode = 1;
-});
+function main () {
+  const key = new Key();
+  const message = Message.fromVector(['P2P_CHAT_MESSAGE', 'Hello, Fabric.']);
+  message.signWithKey(key);
+
+  if (message.verifyWithKey(key) !== true) fail('signature did not verify');
+  if (message.parent !== Message.ZERO_PARENT) fail('a new message should have a genesis parent');
+
+  console.log('[EXAMPLES:BASIC]', 'author', message.author.slice(0, 16) + '…');
+  console.log('[EXAMPLES:BASIC]', 'type', message.type);
+  console.log('[EXAMPLES:BASIC]', 'verified', true);
+}
+
+main();

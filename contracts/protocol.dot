@@ -1,0 +1,201 @@
+/**
+ * Fabric Core — first-class AMP wire messages and protocol flow.
+ *
+ * Source of truth for opcode numbers: constants.js + types/message.js
+ * (Message.WIRE_TYPE_DECODE_ORDER, first-match decode).
+ * Narrative: docs/NETWORK_STATE_PROGRAM.md, MESSAGES.md
+ *
+ * Render: dot -Tsvg contracts/protocol.dot -o contracts/protocol.svg
+ */
+digraph FabricProtocol {
+  rankdir=LR;
+  fontname="Helvetica";
+  node [shape=box, fontname="Helvetica", fontsize=10];
+  edge [fontname="Helvetica", fontsize=9];
+
+  label="Fabric Protocol — first-class wire opcodes";
+  labelloc=t;
+
+  /* —— Physical / NOISE session —— */
+  subgraph cluster_transport {
+    label="Transport (NOISE + TCP)";
+    style=rounded;
+    color="#555555";
+    PEER_NODE [label="Peer node", shape=ellipse, style=filled, fillcolor="#e8e8e8"];
+    NOISE [label="NOISE stream", shape=ellipse];
+    PEER_NODE -> NOISE [label="connect"];
+  }
+
+  /* —— Identity & session handshake —— */
+  subgraph cluster_session {
+    label="Identity & session";
+    style=rounded;
+    color="#2a6fdb";
+    P2P_IDENT_REQUEST [label="P2P_IDENT_REQUEST\n0x0001"];
+    P2P_IDENT_RESPONSE [label="P2P_IDENT_RESPONSE\n0x0011"];
+    SESSION_START [label="SESSION_START\n0x0002"];
+    P2P_SESSION_OFFER [label="P2P_SESSION_OFFER\n0x005d"];
+    P2P_SESSION_OPEN [label="P2P_SESSION_OPEN\n0x005e"];
+  }
+
+  /* —— Liveness & envelopes —— */
+  subgraph cluster_liveness {
+    label="Liveness & envelopes";
+    style=rounded;
+    color="#666666";
+    P2P_PING [label="P2P_PING\n0x0012"];
+    P2P_PONG [label="P2P_PONG\n0x0013"];
+    P2P_RELAY [label="P2P_RELAY\n0x0043"];
+    P2P_MESSAGE_RECEIPT [label="P2P_MESSAGE_RECEIPT\n0x0044"];
+    P2P_BASE_MESSAGE [label="P2P_BASE_MESSAGE\n0x0031"];
+    P2P_GENERIC [label="P2P_GENERIC\n0x0080"];
+    GENERIC_MESSAGE [label="GENERIC_MESSAGE\n0x3aff"];
+  }
+
+  /* —— Peering & discovery —— */
+  subgraph cluster_peering {
+    label="Peering & discovery";
+    style=rounded;
+    color="#0a7a3e";
+    PEER_CANDIDATE [label="PEER_CANDIDATE\n0x0009"];
+    P2P_PEER_ALIAS [label="P2P_PEER_ALIAS\n0x005b"];
+    P2P_PEER_ANNOUNCE [label="P2P_PEER_ANNOUNCE\n0x005c"];
+    P2P_PEER_GOSSIP [label="P2P_PEER_GOSSIP\n0x0061"];
+    P2P_PEERING_OFFER [label="P2P_PEERING_OFFER\n0x0062"];
+  }
+
+  /* —— Chat —— */
+  subgraph cluster_chat {
+    label="Chat";
+    style=rounded;
+    color="#8a4b08";
+    CHAT_MESSAGE [label="CHAT_MESSAGE\n0x0067\n(legacy)"];
+    P2P_CHAT_MESSAGE [label="P2P_CHAT_MESSAGE\n0x0068\n(relay as-is)", style=filled, fillcolor="#ffe6cc"];
+  }
+
+  /* —— Contracts / namespaces —— */
+  subgraph cluster_contracts {
+    label="Application namespaces";
+    style=rounded;
+    color="#6b2d8b";
+    CONTRACT_PUBLISH [label="CONTRACT_PUBLISH\n0x005f\n(relay as-is)", style=filled, fillcolor="#f0e0ff"];
+    CONTRACT_MESSAGE [label="CONTRACT_MESSAGE\n0x0060\n(relay as-is)", style=filled, fillcolor="#f0e0ff"];
+    CONTRACT_PROPOSAL [label="CONTRACT_PROPOSAL\n0x008a\n(relay as-is)", style=filled, fillcolor="#f0e0ff"];
+  }
+
+  /* —— Documents & inventory —— */
+  subgraph cluster_docs {
+    label="Documents & inventory";
+    style=rounded;
+    color="#0b6e4f";
+    DOCUMENT_PUBLISH [label="DOCUMENT_PUBLISH\n0x03e6"];
+    DOCUMENT_REQUEST [label="DOCUMENT_REQUEST\n0x03e7"];
+    P2P_DOCUMENT_PUBLISH [label="P2P_DOCUMENT_PUBLISH\n0x005a"];
+    P2P_INVENTORY_REQUEST [label="P2P_INVENTORY_REQUEST\n0x0057"];
+    P2P_INVENTORY_RESPONSE [label="P2P_INVENTORY_RESPONSE\n0x0058"];
+    P2P_FILE_SEND [label="P2P_FILE_SEND\n0x0059"];
+  }
+
+  /* —— State reduce —— */
+  subgraph cluster_state {
+    label="State frames → sidechain document";
+    style=rounded;
+    color="#b00020";
+    P2P_STATE_REQUEST [label="P2P_STATE_REQUEST\n0x0029"];
+    P2P_STATE_ROOT [label="P2P_STATE_ROOT\n0x0030"];
+    P2P_STATE_CHANGE [label="P2P_STATE_CHANGE\n0x0033"];
+    JSON_PATCH [label="JSON_PATCH\n0x0400"];
+    SIDECHAIN_DOC [label="sidechain document\n{version, clock, content}\nstateDigest", shape=folder, style=filled, fillcolor="#ffd6d6"];
+  }
+
+  /* —— Chain & Bitcoin —— */
+  subgraph cluster_chain {
+    label="Chain & Bitcoin tip";
+    style=rounded;
+    color="#c9a227";
+    BLOCK_CANDIDATE [label="BLOCK_CANDIDATE\n0x0003"];
+    P2P_START_CHAIN [label="P2P_START_CHAIN\n0x0021"];
+    P2P_CHAIN_SYNC_REQUEST [label="P2P_CHAIN_SYNC_REQUEST\n0x0055"];
+    P2P_FLUSH_CHAIN [label="P2P_FLUSH_CHAIN\n0x0056"];
+    P2P_TRANSACTION [label="P2P_TRANSACTION\n0x0039"];
+    BITCOIN_BLOCK [label="BITCOIN_BLOCK\n0x5208\n(relay as-is)", style=filled, fillcolor="#fff3cd"];
+    BITCOIN_BLOCK_HASH [label="BITCOIN_BLOCK_HASH\n0x526c"];
+    BITCOIN_TRANSACTION [label="BITCOIN_TRANSACTION\n0x55f0"];
+    BITCOIN_TRANSACTION_HASH [label="BITCOIN_TRANSACTION_HASH\n0x5654"];
+  }
+
+  /* —— RPC —— */
+  subgraph cluster_rpc {
+    label="Calls";
+    style=rounded;
+    color="#444444";
+    P2P_CALL [label="P2P_CALL\n0x0042"];
+    JSON_CALL [label="JSON_CALL\n0x3e80"];
+  }
+
+  /* —— Lightning —— */
+  subgraph cluster_ln {
+    label="Lightning (BOLT subset)";
+    style=rounded;
+    color="#1a5276";
+    LIGHTNING_INIT [label="LIGHTNING_INIT\n0x0010"];
+    LIGHTNING_OPEN_CHANNEL [label="LIGHTNING_OPEN_CHANNEL\n0x0020"];
+    LIGHTNING_FUNDING_CREATED [label="LIGHTNING_FUNDING_CREATED\n0x0022"];
+    LIGHTNING_FUNDING_SIGNED [label="LIGHTNING_FUNDING_SIGNED\n0x0023"];
+    LIGHTNING_CHANNEL_READY [label="LIGHTNING_CHANNEL_READY\n0x0024"];
+    LIGHTNING_SHUTDOWN [label="LIGHTNING_SHUTDOWN\n0x0026"];
+    LIGHTNING_CLOSING_SIGNED [label="LIGHTNING_CLOSING_SIGNED\n0x0027"];
+    LIGHTNING_UPDATE_FULFILL_HTLC [label="LIGHTNING_UPDATE_FULFILL_HTLC\n0x0082"];
+    LIGHTNING_UPDATE_FAIL_HTLC [label="LIGHTNING_UPDATE_FAIL_HTLC\n0x0083"];
+    LIGHTNING_COMMITMENT_SIGNED [label="LIGHTNING_COMMITMENT_SIGNED\n0x0084"];
+    LIGHTNING_REVOKE_AND_ACK [label="LIGHTNING_REVOKE_AND_ACK\n0x0085"];
+    LIGHTNING_CHANNEL_ANNOUNCEMENT [label="LIGHTNING_CHANNEL_ANNOUNCEMENT\n0x0100"];
+    LIGHTNING_NODE_ANNOUNCEMENT [label="LIGHTNING_NODE_ANNOUNCEMENT\n0x0101"];
+    LIGHTNING_CHANNEL_UPDATE [label="LIGHTNING_CHANNEL_UPDATE\n0x0102"];
+  }
+
+  /* —— Misc —— */
+  subgraph cluster_misc {
+    label="Misc";
+    style=rounded;
+    color="#888888";
+    LOG_MESSAGE [label="LOG_MESSAGE\n0xc0d49070"];
+    GENERIC_LIST [label="GENERIC_LIST\n0xc0d4c76e"];
+  }
+
+  /* —— Program reduce —— */
+  PROGRAM [label="Program + Machine\nfabric-network-state-v1", shape=component, style=filled, fillcolor="#d4edda"];
+  BEACON [label="Beacon / Federation seal\n{clock, stateDigest}", shape=hexagon, style=filled, fillcolor="#cce5ff"];
+
+  /* Protocol flow edges */
+  NOISE -> P2P_SESSION_OFFER -> P2P_SESSION_OPEN -> P2P_PING;
+  P2P_PING -> P2P_PONG;
+  P2P_SESSION_OPEN -> P2P_PEER_ALIAS;
+  P2P_SESSION_OPEN -> P2P_CHAT_MESSAGE;
+  P2P_SESSION_OPEN -> CONTRACT_PUBLISH;
+  CONTRACT_PUBLISH -> CONTRACT_MESSAGE;
+  CONTRACT_MESSAGE -> CONTRACT_PROPOSAL;
+  P2P_SESSION_OPEN -> P2P_PEER_GOSSIP;
+  P2P_PEER_GOSSIP -> P2P_PEERING_OFFER;
+  P2P_SESSION_OPEN -> DOCUMENT_PUBLISH;
+  DOCUMENT_PUBLISH -> P2P_DOCUMENT_PUBLISH;
+  DOCUMENT_PUBLISH -> P2P_INVENTORY_REQUEST;
+  P2P_INVENTORY_REQUEST -> P2P_INVENTORY_RESPONSE;
+  P2P_INVENTORY_RESPONSE -> P2P_FILE_SEND;
+  DOCUMENT_REQUEST -> P2P_FILE_SEND;
+  P2P_SESSION_OPEN -> BITCOIN_BLOCK;
+  P2P_STATE_ROOT -> SIDECHAIN_DOC;
+  P2P_STATE_CHANGE -> SIDECHAIN_DOC;
+  JSON_PATCH -> SIDECHAIN_DOC;
+  CONTRACT_MESSAGE -> SIDECHAIN_DOC [style=dashed, label="ops / namespace"];
+  BITCOIN_BLOCK -> SIDECHAIN_DOC [style=dashed, label="/bitcoin/tip"];
+  P2P_CHAT_MESSAGE -> SIDECHAIN_DOC [style=dashed, label="/chat/…/head"];
+  P2P_PEER_GOSSIP -> SIDECHAIN_DOC [style=dashed, label="/network/peers"];
+  SIDECHAIN_DOC -> PROGRAM -> BEACON;
+  P2P_RELAY -> P2P_CHAT_MESSAGE [style=dotted, label="unwrap"];
+  P2P_BASE_MESSAGE -> P2P_CHAT_MESSAGE [style=dotted, label="legacy body type"];
+
+  LIGHTNING_INIT -> LIGHTNING_OPEN_CHANNEL -> LIGHTNING_FUNDING_CREATED -> LIGHTNING_FUNDING_SIGNED -> LIGHTNING_CHANNEL_READY;
+  LIGHTNING_CHANNEL_READY -> LIGHTNING_UPDATE_FULFILL_HTLC;
+  LIGHTNING_CHANNEL_READY -> LIGHTNING_SHUTDOWN -> LIGHTNING_CLOSING_SIGNED;
+}

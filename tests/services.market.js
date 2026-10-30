@@ -458,14 +458,17 @@ describe('services/market (Phase 5 hardening)', function () {
     m.market.want(m.documentId, { blobTotal: m.doc.blobTotal, merkleRootHex: m.doc.merkleRootHex });
   }
 
-  it('refuses mainnet in the constructor and on start', async function () {
-    for (const network of ['mainnet', 'bitcoin', 'main', 'nonsense']) {
-      assert.throws(() => new Market({ network }), /refused/);
-    }
-    const market = new Market({ tickMs: 0, network: 'testnet' });
-    market.settings.network = 'mainnet';
-    await assert.rejects(market.start(), /refused/);
-    assert.notStrictEqual(market.status().status, 'running');
+  it('accepts mainnet document sales and still refuses an unknown network', async function () {
+    assert.throws(() => new Market({ network: 'nonsense' }), /refused/);
+    const market = new Market({ tickMs: 0, network: 'mainnet' });
+    assert.strictEqual(market.settings.network, 'mainnet');
+    assert.strictEqual(market.settings.quotes, true);
+    assert.strictEqual(market.settings.l1Batch, true);
+    market.settings.network = 'bitcoin';
+    await market.start();
+    assert.strictEqual(market.settings.network, 'mainnet');
+    assert.strictEqual(market.status().status, 'running');
+    await market.stop();
   });
 
   it('a pay that fails after broadcasting keeps the reservation and never pays the address twice (also across a restart)', async function () {

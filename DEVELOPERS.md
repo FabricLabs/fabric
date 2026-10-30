@@ -481,7 +481,7 @@ module.exports = require('@fabric/http/functions/httpSharedMode');
 
 **Services (keep):** `services/bitcoin.js`, `services/lightning.js`. Others (`zmq`, `redis`, `mqtt`, `text`/`txt`, `exchange`, `local`, `turntable`) are integrations — do not reimplement in Hub or GoonCitizen.
 
-**Message collections:** `functions/fabricMessageCollection.js` is the share/replay helper for ordered AMP hex (journals, Discord packs, catch-up). GoonCitizen re-exports it; do not fork a second JSON-as-canonical log. Hub `messages/*.json` stays an activity log.
+**Message collections:** `functions/fabricMessageCollection.js` is the share/replay helper for ordered AMP hex (journals, Discord packs, catch-up). `collectionTipId` is the parent for the next frame in that log. GoonCitizen re-exports it; do not fork a second JSON-as-canonical log. Hub `messages/*.json` stays an activity log. **Document lists:** `functions/documentList.js` is the shared compact catalog (`DocumentList`). Apps keep their own pack names and share gates.
 
 **Core stubs / low-value leaves** (do not copy downstream): `types/component.js`, `types/network.js`, `types/observer.js`, `types/transaction.js`. Class-count work: PRODUCTION_MARCH (`Scribe` is already a deprecation alias).
 

@@ -106,7 +106,7 @@ describe('functions/cliDocumentExchange (headless CLI surface)', function () {
     const written = [];
     peer.connections.b = { _writeFabric: (buf) => { written.push(buf); return true; } };
     peer._respondInventoryFromLocalDocuments({ object: { offerBtc: true } }, { name: 'b' });
-    const item = JSON.parse(Message.fromBuffer(written[0]).body).items[0];
+    const item = Message.tryParseLegacyBody(Message.fromBuffer(written[0])).value.items[0];
     const blobs = item.blobs || (item.documentBlobIndex && item.documentBlobIndex.blobs);
     assert.strictEqual(blobs.length, 2);
     assert.ok(blobs.every((b) => Number(b.rateSats) >= HTLC_MINIMUM_SATS), JSON.stringify(blobs.map((b) => b.rateSats)));
@@ -118,14 +118,17 @@ describe('functions/cliDocumentExchange (headless CLI surface)', function () {
     const { MAX_DOCUMENT_BLOBS } = require('../constants');
     const peer = new Peer({ listen: false });
     peer.settings.inventoryBlobChunkBytes = 1;
-    peer._publishDocument('huge', Buffer.alloc(MAX_DOCUMENT_BLOBS + 1, 0x61).toString('base64'), 0);
     peer._publishDocument('small', Buffer.from('ok').toString('base64'), 0);
+    // Larger than one AMP frame, so it is stored directly. Inventory still
+    // has to skip it: at one byte per blob it exceeds MAX_DOCUMENT_BLOBS.
+    peer._state.content.documents.huge = Buffer.alloc(MAX_DOCUMENT_BLOBS + 1, 0x61).toString('base64');
+    peer._state.content.documentRates.huge = 0;
     const warnings = [];
     peer.on('warning', (w) => warnings.push(String(w)));
     const written = [];
     peer.connections.b = { _writeFabric: (buf) => { written.push(buf); return true; } };
     peer._respondInventoryFromLocalDocuments({ object: { offerBtc: true } }, { name: 'b' });
-    const ids = JSON.parse(Message.fromBuffer(written[0]).body).items.map((i) => i.id);
+    const ids = Message.tryParseLegacyBody(Message.fromBuffer(written[0])).value.items.map((i) => i.id);
     assert.deepStrictEqual(ids, ['small']);
     assert.ok(warnings.some((w) => w.includes('inventory skipped huge')), warnings.join('\n'));
   });

@@ -875,6 +875,7 @@ Channel.buildCommitment = function buildCommitment (funding, state = {}, opts = 
     revocationPubkey,
     psbtBase64: psbt.toBase64(),
     txid: unsigned.getId(),
+    txHex: unsigned.toHex(),
     fundingTxid: tx.getId(),
     fundingVout: vout,
     inputSats,
@@ -2608,6 +2609,112 @@ class ChannelSession {
     const body = this._propose([], { localSats: this._state.localSats, remoteSats: this._state.remoteSats }, { type: CHANNEL_BODY_TYPES.Close, intent: { kind: 'close' } });
     this._state.status = 'closing';
     return body;
+  }
+
+  /**
+   * Per-output justice transactions for every revoked counterparty commitment,
+   * signed now so a watchtower can broadcast them without this channel key.
+   * The commitment transaction is the unsigned one rebuilt from the revoked
+   * state (its txid is already fixed). One transaction per output, so a spent
+   * output does not take the others with it.
+   * @param {object} [opts] `{ destinationAddress?, feeSats? }` — destination defaults to this session's `localAddress`
+   * @returns {object[]} `[{ commitmentTxid, transactions }]`
+   */
+  penaltyFilings (opts = {}) {
+    const dest = opts.destinationAddress || this.localAddress;
+    if (!dest) return [];
+    const fee = opts.feeSats != null ? Math.floor(Number(opts.feeSats)) : 500;
+    const out = [];
+    for (const [txid, stale] of Object.entries(this._state.revoked || {})) {
+      if (!stale || !stale.perCommitmentSecretHex || !stale.pointHex) continue;
+      const state = Object.assign({ fundedTxHex: this.fundedTxHex }, stale.state);
+      let commitment;
+      try {
+        commitment = Channel.buildCommitment(this.funding, state, { holder: 'remote', holderPoint: stale.pointHex });
+      } catch (_) { continue; }
+      if (commitment.txid !== txid || !commitment.txHex) continue;
+      let spends;
+      try {
+        spends = Channel.prepareJusticeSpends({
+          funding: this.funding,
+          state,
+          holderPoint: stale.pointHex,
+          perCommitmentSecretHex: stale.perCommitmentSecretHex,
+          staleTxHex: commitment.txHex,
+          localPrivateKey: this.localPrivateKey,
+          destinationAddress: dest,
+          feeSats: fee,
+          network: this.network
+        });
+      } catch (_) { continue; }
+      if (!spends.length) continue;
+      out.push({ commitmentTxid: txid, transactions: spends.map((spend) => spend.txHex) });
+    }
+    return out;
+  }
+
+  /**
+   * Broadcastable transactions for this session's watchdog actions: our own
+   * force-close, and an HTLC claim or timeout spent from that commitment.
+   * A remote commitment already on chain is left alone (its penalty is a
+   * watchtower filing, not one of these).
+   * @param {object[]} actions from {@link ChannelSession#tick}
+   * @param {object} [opts] `{ destinationAddress?, feeSats? }`
+   * @returns {string[]} raw transaction hex
+   */
+  actionTransactions (actions, opts = {}) {
+    const dest = opts.destinationAddress || this.localAddress;
+    if (!dest) return [];
+    const fee = opts.feeSats != null ? Math.floor(Number(opts.feeSats)) : 500;
+    const onChain = this._state.onChain;
+    const out = [];
+    let fin = null;
+    const ours = () => {
+      if (fin !== null) return fin || null;
+      try { fin = this.finalize(); } catch (_) { fin = false; }
+      return fin || null;
+    };
+    const net = networkForFabricName(this.network);
+    for (const action of actions || []) {
+      if (!action || action.channelId !== this.channelId) continue;
+      if (action.type === 'forceClose') {
+        if (onChain) continue;
+        const built = ours();
+        if (built && built.txHex) out.push(built.txHex);
+        continue;
+      }
+      if (action.type !== 'claimHtlc' && action.type !== 'timeoutHtlc') continue;
+      if (onChain && onChain.kind !== 'local-latest') continue;
+      const built = ours();
+      if (!built || !built.txHex || !built.commitment) continue;
+      try {
+        if (action.type === 'claimHtlc') {
+          const prepared = Channel.prepareHtlcClaim(built.commitment, {
+            htlcId: action.htlcId,
+            commitmentTxHex: built.txHex,
+            preimageHex: action.preimageHex,
+            destinationAddress: dest,
+            feeSats: fee,
+            network: this.network
+          });
+          const psbt = bitcoin.Psbt.fromBase64(prepared.psbtBase64, { network: net });
+          psbt.signInput(0, Htlc.signerFromPriv32(this.localPrivateKey));
+          out.push(Channel.finalizeHtlcClaim(psbt.toBase64(), action.preimageHex).txHex);
+        } else {
+          const prepared = Channel.prepareHtlcTimeout(built.commitment, {
+            htlcId: action.htlcId,
+            commitmentTxHex: built.txHex,
+            destinationAddress: dest,
+            feeSats: fee,
+            network: this.network
+          });
+          const psbt = bitcoin.Psbt.fromBase64(prepared.psbtBase64, { network: net });
+          psbt.signInput(0, Htlc.signerFromPriv32(this.localPrivateKey));
+          out.push(finalizeSpendPsbt({ psbt }).txHex);
+        }
+      } catch (_) { /* this output cannot be spent from our commitment */ }
+    }
+    return out;
   }
 
   /** @returns {object} persistence snapshot (no private key) */

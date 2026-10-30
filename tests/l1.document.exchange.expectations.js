@@ -182,7 +182,14 @@ describe('L1 document exchange expectations', function () {
   });
 
   describe('Canonical publish alignment', function () {
-    it('_publishDocument (rate 0) broadcasts payload matching documentPublishEnvelopeBuffer data', function () {
+    const unsignedCopy = (buf) => {
+      const out = Buffer.from(buf);
+      out.fill(0, 40, 72);
+      out.fill(0, 144, 208);
+      return out;
+    };
+
+    it('_publishDocument (rate 0) broadcasts the documentPublishEnvelopeBuffer frame, signed', function () {
       const peer = new Peer({ listen: false, peersDb: null });
       const docId = 'align-doc';
       const body = 'same logical content';
@@ -195,9 +202,11 @@ describe('L1 document exchange expectations', function () {
       peer._publishDocument(docId, body, 0);
 
       assert.strictEqual(captured.length, 1);
-      const wire = Message.fromBuffer(captured[0]);
-      const envMsg = Message.fromBuffer(Buffer.from(envBuf));
-      assert.strictEqual(wire.data.toString('utf8'), envMsg.data.toString('utf8'));
+      const wire = Message.tryParseLegacyBody(Message.fromBuffer(captured[0]));
+      assert.strictEqual(wire.encoding, 'fields');
+      assert.ok(!captured[0].equals(envBuf), 'gossip frame is signed');
+      assert.ok(unsignedCopy(captured[0]).equals(envBuf));
+      assert.strictEqual(purchaseContentHashHex(docId, wire.value), purchaseContentHashHex(docId, parsed));
     });
 
     it('pricing gossip is distinct from canonical envelope bytes', function () {
@@ -213,8 +222,7 @@ describe('L1 document exchange expectations', function () {
       peer._publishDocument(docId, body, 99);
 
       assert.strictEqual(captured.length, 2);
-      const firstData = Message.fromBuffer(captured[0]).data.toString('utf8');
-      assert.strictEqual(firstData, Message.fromBuffer(Buffer.from(envBuf)).data.toString('utf8'));
+      assert.ok(unsignedCopy(captured[0]).equals(envBuf));
       const second = Message.fromBuffer(captured[1]);
       assert.strictEqual(second.type, 'P2P_DOCUMENT_PUBLISH');
     });

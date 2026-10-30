@@ -12,6 +12,13 @@ const { EventEmitter } = require('events');
 const { PassThrough } = require('stream');
 const SIGNING_TAGS = require('../functions/signingTags');
 
+function sentBody (message) {
+  const parsed = Message.tryParseLegacyBody(message);
+  assert.ok(parsed.ok, parsed.ok ? '' : parsed.error.message);
+  assert.strictEqual(parsed.encoding, 'fields');
+  return parsed.value;
+}
+
 // Node configs may be JSON (node-a.json) or JS; resolve accordingly
 let NODEA, NODEB;
 try {
@@ -1370,7 +1377,7 @@ describe('@fabric/core/types/peer', function () {
         assert.strictEqual(peer.requestPeerInventory('seller:7', { kind: 'documents' }), true);
         const back = Message.fromBuffer(written);
         assert.strictEqual(back.type, 'P2P_INVENTORY_REQUEST');
-        const body = JSON.parse(back.data);
+        const body = sentBody(back);
         assert.strictEqual(body.kind, 'documents');
       });
       it('requestDocument directs DocumentRequest to one peer', function () {
@@ -1382,7 +1389,7 @@ describe('@fabric/core/types/peer', function () {
         assert.strictEqual(peer.requestDocument('abc', 'seller:3'), true);
         const back = Message.fromBuffer(written);
         assert.ok(back.type === 'DocumentRequest' || back.type === 'DOCUMENT_REQUEST');
-        assert.strictEqual(JSON.parse(back.data).document, 'abc');
+        assert.strictEqual(sentBody(back).document, 'abc');
       });
       it('private relay rewrites budgeted DocumentRequest instead of bit-identical forward', function () {
         const peer = new Peer({
@@ -1414,7 +1421,7 @@ describe('@fabric/core/types/peer', function () {
         assert.strictEqual(relayedIdentical, 0);
         assert.strictEqual(broadcastCalls, 0, 'private relay must not mesh-broadcast');
         assert.strictEqual(outs.length, 1);
-        const body = JSON.parse(Message.fromBuffer(outs[0]).data);
+        const body = sentBody(Message.fromBuffer(outs[0]));
         assert.strictEqual(body.document, 'missing-doc');
         assert.strictEqual(body.maxSats, 90);
         assert.strictEqual(body.relayHop, 2);
@@ -1584,7 +1591,7 @@ describe('@fabric/core/types/peer', function () {
         }, { name: '127.0.0.1:11' });
         assert.ok(written && written.length);
         const back = Message.fromBuffer(written);
-        const inner = JSON.parse(back.data);
+        const inner = sentBody(back);
         assert.strictEqual(back.type, 'P2P_INVENTORY_RESPONSE');
         assert.strictEqual(inner.kind, 'documents');
         assert.strictEqual(inner.items.length, 1);
@@ -1599,7 +1606,7 @@ describe('@fabric/core/types/peer', function () {
         const items = [];
         peer.connections['127.0.0.1:12'] = {
           _writeFabric: (b) => {
-            const inner = JSON.parse(Message.fromBuffer(b).data);
+            const inner = sentBody(Message.fromBuffer(b));
             items.push(...(inner.items || []));
           }
         };
@@ -1636,7 +1643,7 @@ describe('@fabric/core/types/peer', function () {
         }, { name: '127.0.0.1:14' });
         assert.ok(written && written.length);
         const back = Message.fromBuffer(written);
-        const inner = JSON.parse(back.data);
+        const inner = sentBody(back);
         assert.strictEqual(inner.kind, 'documents');
         assert.strictEqual(inner.items.length, 1);
         assert.strictEqual(inner.items[0].id, 'catdoc');
@@ -1654,7 +1661,7 @@ describe('@fabric/core/types/peer', function () {
           type: 'INVENTORY_REQUEST',
           object: { kind: 'documents', created: Date.now() }
         }, { name: '127.0.0.1:15' });
-        const inner = JSON.parse(Message.fromBuffer(written).data);
+        const inner = sentBody(Message.fromBuffer(written));
         assert.deepStrictEqual(inner.items.map((item) => item.id), ['listed']);
       });
       it('relayInventoryRequest relays offerBtc INVENTORY_REQUEST when no local items', function () {
@@ -2232,7 +2239,7 @@ describe('@fabric/core/types/peer', function () {
           setImmediate(() => {
             assert.ok(Buffer.isBuffer(replyBuffer));
             const reply = Message.fromBuffer(replyBuffer);
-            const replyContent = JSON.parse(reply.data);
+            const replyContent = sentBody(reply);
             assert.strictEqual(replyContent.type, 'P2P_SESSION_OPEN');
             assert.strictEqual(replyContent.object.initiator, remotePeerId);
             assert.strictEqual(replyContent.object.counterparty, server.identity.id);

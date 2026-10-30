@@ -1392,11 +1392,26 @@ function _readU32 (buf, offset) {
   return buf.readUInt32BE(offset);
 }
 
+/**
+ * An optional string left empty is not written when every field after it is
+ * the same. Older decoders ignore those trailing bytes, so an absent filter
+ * does not change the body they already know.
+ * @private
+ * @param {{ optional?: boolean, type: string }} def
+ * @param {*} value
+ * @returns {boolean}
+ */
+function _trailingOptionalStringEmpty (def, value) {
+  return !!(def && def.optional && def.type === 'string' && (value == null || value === ''));
+}
+
 function encodeBody (schema, fields = {}) {
   if (!Array.isArray(schema)) throw new TypeError('schema required');
+  let count = schema.length;
+  while (count > 0 && _trailingOptionalStringEmpty(schema[count - 1], fields[schema[count - 1].name])) count -= 1;
   const chunks = [];
   let total = 0;
-  for (const def of schema) {
+  for (const def of schema.slice(0, count)) {
     const value = fields[def.name];
     let part;
     switch (def.type) {
@@ -1562,7 +1577,12 @@ const SCHEMA_CONTRACT_PUBLISH = Object.freeze([
 ]);
 const SCHEMA_CONTRACT_MESSAGE = Object.freeze([
   { name: 'contract', type: 'string' },
-  { name: 'payload', type: 'string' }
+  { name: 'payload', type: 'string' },
+  // Index fields. The JSON payload is unchanged. Old decoders stop after
+  // `payload` and ignore these trailing bytes.
+  { name: 'recipient', type: 'string', optional: true },
+  { name: 'ref', type: 'string', optional: true },
+  { name: 'slot', type: 'string', optional: true }
 ]);
 const SCHEMA_PROGRAM_RUN = Object.freeze([
   { name: 'programHash', type: 'bytes32' },
@@ -1790,6 +1810,159 @@ const SCHEMA_DELEGATION_MAILBOX_FETCH = Object.freeze([
   { name: 'expiresAt', type: 'u64' }
 ]);
 
+/** @private Field type for each value kind of a keyed layout. */
+const KEYED_FIELD_TYPES = Object.freeze({
+  string: 'string',
+  u8: 'u8',
+  u32: 'u32',
+  u64: 'u64',
+  bool: 'u8',
+  // Length-prefixed, so an absent hash costs 4 bytes rather than 32.
+  hex32: 'bytes',
+  base64: 'bytes',
+  json: 'string'
+});
+
+/**
+ * @private Set in `present` when the keys were read under `object` of a
+ * `{ type, actor, object, … }` envelope (Hub-style senders).
+ */
+const KEYED_ENVELOPE_FLAG = 0x80000000;
+
+/**
+ * Field schema of a keyed layout: `present` (bit i set when key i was
+ * written, so 0, '' and false round-trip), one field per key, then `extra`
+ * (JSON of every key the layout does not name, or whose value is not of the
+ * declared kind). A body any JSON sender writes therefore maps to fields and
+ * back without loss. Append keys only; at most 31.
+ * @private
+ * @param {{ keys: Array<{ path: string, field: string, kind: string }> }} layout
+ * @returns {ReadonlyArray<{ name: string, type: string }>}
+ */
+function keyedSchema (layout) {
+  return Object.freeze([{ name: 'present', type: 'u32' }]
+    .concat(layout.keys.map((key) => ({ name: key.field, type: KEYED_FIELD_TYPES[key.kind] })))
+    .concat([{ name: 'extra', type: 'string' }]));
+}
+
+/** @private Session key-exchange claim (`Peer#_buildSessionKeyExchangeClaim`). */
+const SESSION_ACTOR_KEYS = [
+  { path: 'type', field: 'type', kind: 'string' },
+  { path: 'actor.id', field: 'actor', kind: 'string' },
+  { path: 'actor.pubkey', field: 'pubkey', kind: 'string' },
+  { path: 'actor.parentPubkey', field: 'parentPubkey', kind: 'string' },
+  { path: 'actor.parentXpub', field: 'parentXpub', kind: 'string' },
+  { path: 'actor.parentSignature', field: 'parentSignature', kind: 'string' }
+];
+
+/**
+ * @private Legacy JSON layouts of the session, inventory, and document
+ * opcodes. Paths are read under `object` when `envelope` is set and the body
+ * is an envelope.
+ */
+const KEYED_LAYOUTS = Object.freeze({
+  P2P_SESSION_OFFER: {
+    envelope: false,
+    keys: SESSION_ACTOR_KEYS.concat([
+      { path: 'object.challenge', field: 'challenge', kind: 'string' },
+      { path: 'object.maxFrameBytes', field: 'maxFrameBytes', kind: 'u32' }
+    ])
+  },
+  P2P_SESSION_OPEN: {
+    envelope: false,
+    keys: SESSION_ACTOR_KEYS.concat([
+      { path: 'object.initiator', field: 'initiator', kind: 'string' },
+      { path: 'object.counterparty', field: 'counterparty', kind: 'string' },
+      { path: 'object.solution', field: 'solution', kind: 'string' },
+      { path: 'object.maxFrameBytes', field: 'maxFrameBytes', kind: 'u32' }
+    ])
+  },
+  P2P_INVENTORY_REQUEST: {
+    envelope: true,
+    keys: [
+      { path: 'kind', field: 'kind', kind: 'string' },
+      { path: 'created', field: 'created', kind: 'u64' },
+      { path: 'offerBtc', field: 'offerBtc', kind: 'bool' },
+      { path: 'maxSats', field: 'maxSats', kind: 'u64' },
+      { path: 'buyerRefundPublicKey', field: 'buyerRefundPublicKey', kind: 'string' },
+      { path: 'blobHashHex', field: 'blobHash', kind: 'hex32' },
+      { path: 'merkleRootHex', field: 'merkleRoot', kind: 'hex32' },
+      { path: 'inventoryRelayTtl', field: 'inventoryRelayTtl', kind: 'u8' },
+      { path: 'htlcLocktimeBlocks', field: 'htlcLocktimeBlocks', kind: 'u32' },
+      { path: 'htlcAmountSats', field: 'htlcAmountSats', kind: 'u64' }
+    ]
+  },
+  // `items` stays JSON (offer rows nest proofs and leaves); pages are sized by its bytes.
+  P2P_INVENTORY_RESPONSE: {
+    envelope: true,
+    keys: [
+      { path: 'kind', field: 'kind', kind: 'string' },
+      { path: 'created', field: 'created', kind: 'u64' },
+      { path: 'inventoryId', field: 'inventoryId', kind: 'string' },
+      { path: 'page', field: 'page', kind: 'u32' },
+      { path: 'pages', field: 'pages', kind: 'u32' },
+      { path: 'items', field: 'items', kind: 'json' }
+    ]
+  },
+  // Senders write the same hash under `contentHash` and `contentHashHex`.
+  P2P_DOCUMENT_PUBLISH: {
+    envelope: true,
+    keys: [
+      { path: 'hash', field: 'hash', kind: 'string' },
+      { path: 'rate', field: 'rate', kind: 'u64' },
+      { path: 'contentHash', field: 'contentHash', kind: 'hex32' },
+      { path: 'contentHashHex', field: 'contentHashHex', kind: 'hex32' },
+      { path: 'binding', field: 'binding', kind: 'string' }
+    ]
+  },
+  // The payment binding hashes this frame unsigned, rebuilt from the decoded
+  // values (`functions/publishedDocumentEnvelope.js`), never the received bytes.
+  DOCUMENT_PUBLISH: {
+    envelope: false,
+    keys: [
+      { path: 'contentBase64', field: 'content', kind: 'base64' },
+      { path: 'id', field: 'id', kind: 'string' },
+      { path: 'mime', field: 'mime', kind: 'string' },
+      { path: 'name', field: 'name', kind: 'string' },
+      { path: 'revision', field: 'revision', kind: 'u32' },
+      { path: 'sha256', field: 'sha256', kind: 'string' },
+      { path: 'size', field: 'size', kind: 'u64' }
+    ]
+  },
+  DOCUMENT_REQUEST: {
+    envelope: false,
+    keys: [
+      { path: 'document', field: 'document', kind: 'string' },
+      { path: 'id', field: 'id', kind: 'string' },
+      { path: 'maxSats', field: 'maxSats', kind: 'u64' },
+      { path: 'relayHop', field: 'relayHop', kind: 'u8' },
+      { path: 'routeId', field: 'routeId', kind: 'string' },
+      { path: 'blobIndex', field: 'blobIndex', kind: 'u32' },
+      { path: 'batchEnd', field: 'batchEnd', kind: 'u32' },
+      { path: 'blobTotal', field: 'blobTotal', kind: 'u32' },
+      { path: 'quote', field: 'quote', kind: 'bool' },
+      { path: 'credit', field: 'credit', kind: 'bool' },
+      { path: 'creditRef', field: 'creditRef', kind: 'string' },
+      { path: 'contentHashHex', field: 'contentHash', kind: 'hex32' }
+    ]
+  }
+});
+
+/** @private Session handshake offer: the key-exchange claim plus `challenge`. */
+const SCHEMA_P2P_SESSION_OFFER = keyedSchema(KEYED_LAYOUTS.P2P_SESSION_OFFER);
+/** @private Session handshake answer: the claim plus the solved `challenge`. */
+const SCHEMA_P2P_SESSION_OPEN = keyedSchema(KEYED_LAYOUTS.P2P_SESSION_OPEN);
+/** @private Document (`kind`) or L1 offer (`offerBtc`) inventory query. */
+const SCHEMA_P2P_INVENTORY_REQUEST = keyedSchema(KEYED_LAYOUTS.P2P_INVENTORY_REQUEST);
+/** @private One page of an inventory reply. */
+const SCHEMA_P2P_INVENTORY_RESPONSE = keyedSchema(KEYED_LAYOUTS.P2P_INVENTORY_RESPONSE);
+/** @private A seller's price for one document. */
+const SCHEMA_P2P_DOCUMENT_PUBLISH = keyedSchema(KEYED_LAYOUTS.P2P_DOCUMENT_PUBLISH);
+/** @private A published document; `content` is the raw bytes of `contentBase64`. */
+const SCHEMA_DOCUMENT_PUBLISH = keyedSchema(KEYED_LAYOUTS.DOCUMENT_PUBLISH);
+/** @private A request for a document or some of its blobs. */
+const SCHEMA_DOCUMENT_REQUEST = keyedSchema(KEYED_LAYOUTS.DOCUMENT_REQUEST);
+
 /**
  * Parse an inbound AMP body: prefer JSON (legacy), else registered field schema.
  * @private
@@ -1901,6 +2074,20 @@ function tryParseMessageBody (message) {
     registerBodySchema(name, schema);
     registerBodySchema(alias, schema);
   }
+  const keyed = [
+    [P2P_SESSION_OFFER, 'P2P_SESSION_OFFER', 'SessionOffer', SCHEMA_P2P_SESSION_OFFER],
+    [P2P_SESSION_OPEN, 'P2P_SESSION_OPEN', 'SessionOpen', SCHEMA_P2P_SESSION_OPEN],
+    [P2P_INVENTORY_REQUEST, 'P2P_INVENTORY_REQUEST', 'InventoryRequest', SCHEMA_P2P_INVENTORY_REQUEST],
+    [P2P_INVENTORY_RESPONSE, 'P2P_INVENTORY_RESPONSE', 'InventoryResponse', SCHEMA_P2P_INVENTORY_RESPONSE],
+    [P2P_DOCUMENT_PUBLISH, 'P2P_DOCUMENT_PUBLISH', 'DocumentPricingPublish', SCHEMA_P2P_DOCUMENT_PUBLISH],
+    [DOCUMENT_PUBLISH_TYPE, 'DOCUMENT_PUBLISH', 'DocumentPublish', SCHEMA_DOCUMENT_PUBLISH],
+    [DOCUMENT_REQUEST_TYPE, 'DOCUMENT_REQUEST', 'DocumentRequest', SCHEMA_DOCUMENT_REQUEST]
+  ];
+  for (const [code, name, alias, schema] of keyed) {
+    registerBodySchema(code, schema);
+    registerBodySchema(name, schema);
+    registerBodySchema(alias, schema);
+  }
 })();
 
 // Legacy JSON bodies <-> typed field bodies, for the protocol opcodes whose
@@ -1928,7 +2115,14 @@ const LEGACY_BODY_TYPES = Object.freeze([
   'P2P_PEERING_OFFER',
   'CONTRACT_PUBLISH',
   'CONTRACT_MESSAGE',
-  'SIDECHAIN_STATE_PATCH'
+  'SIDECHAIN_STATE_PATCH',
+  'P2P_SESSION_OFFER',
+  'P2P_SESSION_OPEN',
+  'P2P_INVENTORY_REQUEST',
+  'P2P_INVENTORY_RESPONSE',
+  'P2P_DOCUMENT_PUBLISH',
+  'DOCUMENT_PUBLISH',
+  'DOCUMENT_REQUEST'
 ]);
 
 /**
@@ -2018,6 +2212,75 @@ function peeringObject (body) {
  * @param {string[]} [zeroIsAbsent]
  * @returns {object}
  */
+const CONTRACT_FILTER_KEYS = Object.freeze(['recipient', 'ref', 'slot']);
+const CONTRACT_FILTER_MAX = 256;
+
+/**
+ * Filter string from the contract body the sender already holds. Top-level
+ * wins; otherwise the same key on `object`. This does not parse a JSON payload.
+ * @private
+ * @param {object} body
+ * @param {string} key
+ * @returns {string}
+ */
+function filterSource (body, key) {
+  if (typeof body[key] === 'string') return body[key];
+  const obj = body.object;
+  if (isPlainObject(obj) && typeof obj[key] === 'string') return obj[key];
+  return '';
+}
+
+/**
+ * @private
+ * @param {*} value
+ * @param {string} key
+ * @returns {string}
+ */
+function contractFilterString (value, key) {
+  if (value == null || value === '') return '';
+  if (typeof value !== 'string') return '';
+  const s = value.trim();
+  if (s.length > CONTRACT_FILTER_MAX) {
+    throw new TypeError(`CONTRACT_MESSAGE ${key} exceeds ${CONTRACT_FILTER_MAX} characters`);
+  }
+  return s;
+}
+
+/**
+ * `recipient`, `ref`, and `slot` from a CONTRACT_MESSAGE field body.
+ * Does not read the JSON payload.
+ * @param {Message|object|null} messageOrFields
+ * @returns {{ recipient: string, ref: string, slot: string }}
+ */
+function contractMessageIndex (messageOrFields) {
+  const fields = messageOrFields && typeof messageOrFields.toFields === 'function'
+    ? messageOrFields.toFields()
+    : messageOrFields;
+  const src = isPlainObject(fields) ? fields : {};
+  const out = { recipient: '', ref: '', slot: '' };
+  for (const key of CONTRACT_FILTER_KEYS) {
+    out[key] = typeof src[key] === 'string' ? src[key] : '';
+  }
+  return out;
+}
+
+/**
+ * True when every non-empty query field equals the frame's index field.
+ * An empty query matches. A frame with no index does not match a query.
+ * @param {Message|object|null} messageOrFields
+ * @param {object} [query]
+ * @returns {boolean}
+ */
+function contractMessageMatches (messageOrFields, query) {
+  const index = contractMessageIndex(messageOrFields);
+  const q = isPlainObject(query) ? query : {};
+  for (const key of CONTRACT_FILTER_KEYS) {
+    if (q[key] == null || q[key] === '') continue;
+    if (index[key] !== String(q[key])) return false;
+  }
+  return true;
+}
+
 function compactBody (obj, zeroIsAbsent = []) {
   const out = {};
   for (const [k, v] of Object.entries(obj)) {
@@ -2057,6 +2320,187 @@ function parseJsonOrUndefined (text) {
 }
 
 /**
+ * @private
+ * @param {object} obj
+ * @param {string} path Dotted path.
+ * @returns {*}
+ */
+function readPath (obj, path) {
+  let node = obj;
+  for (const part of path.split('.')) {
+    if (!isPlainObject(node) || !Object.prototype.hasOwnProperty.call(node, part)) return undefined;
+    node = node[part];
+  }
+  return node;
+}
+
+/**
+ * Delete `path`, then any parent the deletion left empty.
+ * @private
+ * @param {object} obj
+ * @param {string} path
+ */
+function deletePath (obj, path) {
+  const parts = path.split('.');
+  const parents = [obj];
+  for (let i = 0; i < parts.length - 1; i++) parents.push(parents[i][parts[i]]);
+  for (let i = parts.length - 1; i >= 0; i--) {
+    delete parents[i][parts[i]];
+    if (i > 0 && Object.keys(parents[i]).length) break;
+  }
+}
+
+/**
+ * @private
+ * @param {object} obj
+ * @param {string} path
+ * @param {*} value
+ * @returns {boolean} false when a parent on the path is not an object
+ */
+function writePath (obj, path, value) {
+  const parts = path.split('.');
+  let node = obj;
+  for (const part of parts.slice(0, -1)) {
+    if (node[part] === undefined) node[part] = {};
+    if (!isPlainObject(node[part])) return false;
+    node = node[part];
+  }
+  node[parts[parts.length - 1]] = value;
+  return true;
+}
+
+/**
+ * @private
+ * @param {string} kind
+ * @param {*} value A JSON value.
+ * @returns {boolean} whether the field of `kind` holds `value` exactly
+ */
+function keyedValueFits (kind, value) {
+  switch (kind) {
+    case 'string':
+      return typeof value === 'string';
+    case 'u8':
+      return Number.isInteger(value) && value >= 0 && value <= 0xff;
+    case 'u32':
+      return Number.isInteger(value) && value >= 0 && value <= MAX_UINT32;
+    case 'u64':
+      return Number.isSafeInteger(value) && value >= 0;
+    case 'bool':
+      return typeof value === 'boolean';
+    case 'hex32':
+      return typeof value === 'string' && /^[0-9a-f]{64}$/.test(value);
+    case 'base64':
+      return typeof value === 'string' && Buffer.from(value, 'base64').toString('base64') === value;
+    case 'json':
+      return value !== undefined;
+  }
+  /* istanbul ignore next */
+  return false;
+}
+
+/**
+ * @private
+ * @param {string} kind
+ * @param {*} value
+ * @returns {*} field value for `encodeBody`
+ */
+function keyedFieldValue (kind, value) {
+  switch (kind) {
+    case 'bool':
+      return value ? 1 : 0;
+    case 'hex32':
+      return Buffer.from(value, 'hex');
+    case 'base64':
+      return Buffer.from(value, 'base64');
+    case 'json':
+      return JSON.stringify(value);
+    default:
+      return value;
+  }
+}
+
+/**
+ * @private
+ * @param {string} kind
+ * @param {*} field Decoded field.
+ * @returns {*} the JSON value, or `undefined` when the field is unusable
+ */
+function keyedJsonValue (kind, field) {
+  switch (kind) {
+    case 'string':
+      return typeof field === 'string' ? field : undefined;
+    case 'u8':
+    case 'u32':
+    case 'u64': {
+      const n = Number(field);
+      return Number.isSafeInteger(n) ? n : undefined;
+    }
+    case 'bool':
+      return field === 1 ? true : (field === 0 ? false : undefined);
+    case 'hex32':
+      return Buffer.isBuffer(field) && field.length === 32 ? field.toString('hex') : undefined;
+    case 'base64':
+      return Buffer.isBuffer(field) ? field.toString('base64') : undefined;
+    case 'json':
+      return parseJsonOrUndefined(field);
+  }
+  /* istanbul ignore next */
+  return undefined;
+}
+
+/**
+ * Legacy JSON body → fields of a keyed layout. Works on the body as a JSON
+ * sender would write it, so nothing is lost: what a field can't hold exactly
+ * stays in `extra`.
+ * @private
+ * @param {string} name
+ * @param {object} body
+ * @returns {object}
+ */
+function encodeKeyedBody (name, body) {
+  if (!isPlainObject(body)) throw new TypeError(`${name} body must be an object`);
+  const layout = KEYED_LAYOUTS[name];
+  const rest = JSON.parse(JSON.stringify(body));
+  const envelope = layout.envelope && isPlainObject(rest.object);
+  const prefix = envelope ? 'object.' : '';
+  const fields = {};
+  let present = envelope ? KEYED_ENVELOPE_FLAG : 0;
+  layout.keys.forEach((key, bit) => {
+    const value = readPath(rest, prefix + key.path);
+    if (!keyedValueFits(key.kind, value)) return;
+    fields[key.field] = keyedFieldValue(key.kind, value);
+    present |= (1 << bit);
+    deletePath(rest, prefix + key.path);
+  });
+  fields.present = present >>> 0;
+  fields.extra = Object.keys(rest).length ? JSON.stringify(rest) : '';
+  return fields;
+}
+
+/**
+ * Fields of a keyed layout → legacy JSON body.
+ * @private
+ * @param {string} name
+ * @param {object} fields
+ * @returns {object|null}
+ */
+function decodeKeyedBody (name, fields) {
+  const layout = KEYED_LAYOUTS[name];
+  const out = fields.extra ? parseJsonOrUndefined(fields.extra) : {};
+  if (!isPlainObject(out)) return null;
+  const present = Number(fields.present) >>> 0;
+  const prefix = layout.envelope && (present & KEYED_ENVELOPE_FLAG) ? 'object.' : '';
+  for (let bit = 0; bit < layout.keys.length; bit++) {
+    if (!(present & (1 << bit))) continue;
+    const key = layout.keys[bit];
+    const value = keyedJsonValue(key.kind, fields[key.field]);
+    if (value === undefined) return null;
+    if (!writePath(out, prefix + key.path, value)) return null;
+  }
+  return out;
+}
+
+/**
  * Map a legacy JSON body to the typed field object for `type`.
  * @private
  * @param {string|number} type Wire name, friendly alias, or opcode.
@@ -2066,6 +2510,7 @@ function parseJsonOrUndefined (text) {
 function encodeLegacyBody (type, body) {
   const name = legacyWireName(type);
   if (!name) throw new TypeError(`encodeLegacyBody: no field mapping for ${type}`);
+  if (KEYED_LAYOUTS[name]) return encodeKeyedBody(name, body);
   const b = isPlainObject(body) ? body : {};
 
   switch (name) {
@@ -2109,7 +2554,13 @@ function encodeLegacyBody (type, body) {
       if (!contract) throw new TypeError('CONTRACT_MESSAGE body requires contract');
       const rest = Object.assign({}, b);
       delete rest.contract;
-      return { contract, payload: JSON.stringify(rest) };
+      return {
+        contract,
+        payload: JSON.stringify(rest),
+        recipient: contractFilterString(filterSource(b, 'recipient'), 'recipient'),
+        ref: contractFilterString(filterSource(b, 'ref'), 'ref'),
+        slot: contractFilterString(filterSource(b, 'slot'), 'slot')
+      };
     }
     case 'SIDECHAIN_STATE_PATCH': {
       if (!Array.isArray(b.patches) || !b.patches.length) {
@@ -2142,6 +2593,7 @@ function encodeLegacyBody (type, body) {
 function decodeLegacyBody (type, fields) {
   const name = legacyWireName(type);
   if (!name || !isPlainObject(fields)) return null;
+  if (KEYED_LAYOUTS[name]) return decodeKeyedBody(name, fields);
   const f = fields;
 
   switch (name) {
@@ -2275,6 +2727,8 @@ Message.decodeLegacyBody = decodeLegacyBody;
 Message.fromLegacyBody = fromLegacyBody;
 Message.tryParseLegacyBody = tryParseLegacyBody;
 Message.canonicalPeeringObject = canonicalPeeringObject;
+Message.contractMessageIndex = contractMessageIndex;
+Message.contractMessageMatches = contractMessageMatches;
 Message.registerBodySchema = registerBodySchema;
 Message.getBodySchema = getBodySchema;
 Message.encodeBody = encodeBody;
@@ -2301,6 +2755,13 @@ Message.SCHEMA_DELEGATION_REVOKE = SCHEMA_DELEGATION_REVOKE;
 Message.SCHEMA_DELEGATION_REQUEST = SCHEMA_DELEGATION_REQUEST;
 Message.SCHEMA_DELEGATION_RESULT = SCHEMA_DELEGATION_RESULT;
 Message.SCHEMA_DELEGATION_MAILBOX_FETCH = SCHEMA_DELEGATION_MAILBOX_FETCH;
+Message.SCHEMA_P2P_SESSION_OFFER = SCHEMA_P2P_SESSION_OFFER;
+Message.SCHEMA_P2P_SESSION_OPEN = SCHEMA_P2P_SESSION_OPEN;
+Message.SCHEMA_P2P_INVENTORY_REQUEST = SCHEMA_P2P_INVENTORY_REQUEST;
+Message.SCHEMA_P2P_INVENTORY_RESPONSE = SCHEMA_P2P_INVENTORY_RESPONSE;
+Message.SCHEMA_P2P_DOCUMENT_PUBLISH = SCHEMA_P2P_DOCUMENT_PUBLISH;
+Message.SCHEMA_DOCUMENT_PUBLISH = SCHEMA_DOCUMENT_PUBLISH;
+Message.SCHEMA_DOCUMENT_REQUEST = SCHEMA_DOCUMENT_REQUEST;
 
 const fs = require('fs');
 const path = require('path');

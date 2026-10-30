@@ -92,7 +92,16 @@ The commitment is frozen as plain `SHA256(K_i)`. The claim leaf checks the preim
 
 Unsealed content (free, or sold without secrecy) uses one of two commitments instead of a key:
 
-- **Envelope (unsealed, single blob).** Build the whitelisted document fields `{ contentBase64, id, mime, name, revision, sha256, size }` as canonical JSON, encode as an **unsigned** AMP `DocumentPublish` message (64-byte signature field all zeros; a signed gossip frame MUST NOT be hashed), then `preimage = SHA256(envelope_bytes)` and `payment_hash = SHA256(preimage)`. The preimage is public to anyone with the document, so this path proves delivery of a known item, not secrecy.
+- **Envelope (unsealed, single blob).** The envelope is the **unsigned** AMP `DocumentPublish` frame (type `0x3e6`) of the document fields, then `preimage = SHA256(envelope_bytes)` and `payment_hash = SHA256(preimage)`. With `bytes(x) = u32(len(x)) ‖ x`, `str(s) = bytes(UTF-8(s))`, and every integer big-endian, the frame is:
+
+  ```
+  body     = u32(present) ‖ bytes(content) ‖ str(id) ‖ str(mime) ‖ str(name)
+             ‖ u32(revision) ‖ str(sha256) ‖ u64(size) ‖ str(extra)
+  envelope = c0d3f33d ‖ u32(1) ‖ 0^32 (parent) ‖ 0^32 (author) ‖ u32(0x3e6)
+             ‖ u32(len(body)) ‖ SHA256(SHA256(body)) ‖ 0^32 ‖ 0^64 (signature) ‖ body
+  ```
+
+  `content` is the file bytes. Bit *i* of `present` is set when the *i*-th of the seven fields is written in its slot (`0x7f` when all are); a value that does not fit its slot (a non-integer `revision`, say) is left out of the mask, its slot is written empty, and it goes into `extra` as a key of a JSON object (`extra` is the empty string when there is none). The seller gossips this same frame signed, which sets only the author and signature. A buyer rebuilds the envelope from the decoded fields (for a conforming seller's frame that is the received bytes with author and signature zeroed) and MUST NOT hash a signed frame. The preimage is public to anyone with the document, so this path proves delivery of a known item, not secrecy.
 - **Per-blob (unsealed, multi-blob).** `payment_hash = SHA256("Fabric/DocumentBlob" ‖ document_id ‖ 0x00 ‖ decimal(blob_index) ‖ 0x00 ‖ hex(chunk_id))`, with `document_id` and the strings in UTF-8. Note this is a prefix-tagged SHA256, not a BIP-340 tagged hash.
 
 A buyer selects the commitment from the offer: `sealed` (encryption scheme `aes-256-gcm-convergent` for convergent keys or `aes-256-gcm-content` for random keys), else per-blob when the item lists blobs with hashes, else envelope. Any other scheme MUST be refused.
@@ -100,7 +109,7 @@ A buyer selects the commitment from the offer: `sealed` (encryption scheme `aes-
 ### Chunking
 
 - **Chunk size.** `chunk_bytes = floor((MAX_MESSAGE_SIZE − overhead) × 3/4)` so the base64 body plus JSON fields fits one message. Fabric uses `MAX_MESSAGE_SIZE = 32768` with `overhead = 640` for unsealed chunks (24,096 bytes) and `overhead = 2048` for sealed chunks, which also carry an IV, payment hash, and inclusion proof (23,040 bytes). The chunk size is fixed per document; only the last chunk may be shorter. An empty file is one empty chunk.
-- **Limits.** At most `MAX_DOCUMENT_BLOBS = 8192` chunks per document, so about 188.3 MiB at the unsealed chunk size. Receivers SHOULD bound incomplete transfers (Fabric: 64 at once, 8 per origin, 256 MiB total, expired after 10 minutes).
+- **Limits.** A document is at most 2^32 − 1 bytes, the maximum file size of both FAT16 and FAT32 (each stores file size as an unsigned 32-bit count). At the sealed plaintext chunk that is `MAX_DOCUMENT_BLOBS` chunks (186,544 at the 23,040-byte sealed chunk). Receivers SHOULD bound incomplete transfers (Fabric: 64 at once, 8 per origin, a pending budget large enough for one such file, expired after 10 minutes).
 - **`file_send` fields.** `documentId`, `name`, `body` (base64 chunk bytes), `blobIndex` (0-based), `blobTotal`, `blobHashHex` (chunk id), `merkleRootHex` (document id); sealed chunks add `iv`, `scheme`, `paymentHashHex`, and `proof` (the inclusion proof, a hex list). Receivers MUST check `SHA256(body) = blobHashHex` and the proof against `merkleRootHex` before storing a chunk.
 - **Resume.** Each chunk is independently addressed, verified, and (when priced) paid. A buyer resumes by sending `document_request` again for the indices it lacks; a seller MUST serve any listed index on its own. No session state is required.
 
@@ -112,7 +121,7 @@ Every document, sealed or not, has one tree, domain-separated and bound to its c
 leaf_i = SHA256(0x00 ‖ chunk_id_i ‖ payment_hash_i ‖ iv_i)     // 32 + 32 + 12 bytes
 node   = SHA256(0x01 ‖ left ‖ right)
 // an odd last node is promoted unchanged to the next layer
-root   = SHA256(0x02 ‖ uint32_be(n) ‖ top)                    // n = chunk count, 1..8192
+root   = SHA256(0x02 ‖ uint32_be(n) ‖ top)                    // n = chunk count, 1..MAX_DOCUMENT_BLOBS
 ```
 
 For an unsealed chunk, `payment_hash_i` is 32 zero bytes and `iv_i` 12 zero bytes. When one key seals the whole document, every leaf carries that key's `payment_hash`.
@@ -133,7 +142,7 @@ One output, script-path only, BIP-341:
 
 The buyer builds the script from its own refund key and the advertised `payment_hash` and claim key, and MUST refuse to fund a seller-advertised address that does not match.
 
-**Timelines.** The seller claims only after the funding transaction has the confirmations it requires (`c`). The seller SHOULD refuse to claim when fewer than `d` blocks remain before `lock`, so its claim cannot race the refund. The buyer chooses `lock ≥ funding_height + c + d + margin`. Recommended: `c = 1` and `d = 6` (the values Fabric's swap type already uses), more confirmations on mainnet for large amounts, and `lock` about 144 blocks (one day) past funding. The Fabric document path does not yet enforce these; the lock is a node setting (`inventoryHtlcLocktimeHeight`). A buyer that sees the claim extracts `K` from the witness, even if the seller never sends a key reveal. After `lock`, an unclaimed output is refunded.
+**Timelines.** The seller claims only after the funding transaction has the confirmations it requires (`c`). The seller SHOULD refuse to claim when fewer than `d` blocks remain before `lock`, so its claim cannot race the refund. The buyer chooses `lock ≥ funding_height + c + d + margin`. Recommended: `c = 1` and `d = 6` (the values Fabric's swap type already uses), more confirmations on mainnet for large amounts, and `lock` about 144 blocks (one day) past funding. The document path enforces these: `c = 1`, `d = 6`, and one extra block on the buyer's lock (`Htlc.claimRefusal`, `Htlc.minimumLockBlocks`). `inventoryHtlcLocktimeHeight` is still the absolute lock the node publishes. A buyer that sees the claim extracts `K` from the witness, even if the seller never sends a key reveal. After `lock`, an unclaimed output is refunded.
 
 ### Pay after verify (informative)
 
@@ -176,7 +185,7 @@ Type decided: Standards Track (Applications layer).
 
 1. Specify the JSON shapes of `inventory_request`, `inventory_response`, and `document_request` field by field. A Standards Track BIP needs these for a second implementation to interoperate.
 2. Decide whether pay-after-verify and private relay stay here (as informative sections) or move to a follow-up BIP.
-3. Enforce the claim-safety window `d` and a minimum lock in the document HTLC path, as `types/swap.js` already does.
+3. Enforce the claim-safety window `d` and a minimum lock in the document HTLC path, as `types/swap.js` already does. Done: the seller claims only after 1 confirmation and only while at least 6 blocks remain before the refund lock, and the buyer lock leaves that room plus one block.
 4. Implement explicit resume in the CLI (`/request <id> --missing`); the protocol already supports it.
 5. Assign BIP number; post to bitcoin-dev with subject `BIP proposal: content-addressed file exchange`.
 
@@ -201,6 +210,15 @@ n=1  5ce271dd9a79fdc2e93e52f9a0ce7cc5d954ec7d9ff5e3c275aac887c4fea8ad
 n=2  5625e819336a37eedd6b8440e08e57c330bd52553c9ace1668d2562c30973cee
 n=3  af180242fbf323ba9e0828ced2451f62bab4af37eee8bdbfe8c0420aa43ed050
 n=5  51ff8d317deb2479c56edd101784f938091d770b34974df1229665d0438facff
+```
+
+**Envelope,** `"hello fabric"` as `hello.txt` (`text/plain`, revision 1, size 12, `id` and `sha256` both the plaintext SHA256); full bytes in `envelope[0]`:
+
+```
+body length  199 (0xc7), present 0x7f, extra ""
+body hash    e26a3c0ac07dd7d3b171ad22e271219063a20a211f7ff02287959d13d284b3de
+preimage     b3a0adde645c19cfb0e6541c09d3f3ecef25145d9d3dc0b7416275df44839805
+payment_hash 6668ca759f1d744969c3e154305c86c7f23140c32a38ca4611e8b35a854ff451
 ```
 
 **HTLC (regtest),** claim key `1·G`, refund key `2·G`, `payment_hash = SHA256(K)` for `"hello fabric"`, `lock = 500`:

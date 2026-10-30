@@ -448,6 +448,18 @@ const PEER_MAX_PENDING_SEALED_DELIVERIES = 32;
 const BITCOIN_DUST_SATS = 546;
 /** Size budget for a single-input HTLC claim or timeout spend (measured 162 vB for the tapscript claim leaf to a P2TR address). */
 const HTLC_CLAIM_VBYTES = 170;
+/** Measured virtual size of that claim. Fees use this; {@link HTLC_CLAIM_VBYTES} stays the budget. */
+const HTLC_CLAIM_MEASURED_VBYTES = 162;
+/** Taproot dust at Bitcoin Core's 3 sat/vB dust rate (43-byte output + 67-byte witness estimate). */
+const HTLC_P2TR_DUST_SATS = 330;
+/** Confirmations of the funding transaction before the seller may claim (`c`). */
+const HTLC_CLAIM_CONFIRMATIONS = 1;
+/** Blocks the seller's claim must finish before the refund lock (`d`). */
+const HTLC_CLAIM_SAFETY_BLOCKS = 6;
+/** Extra blocks the buyer leaves between funding and the refund lock. */
+const HTLC_CLAIM_LOCK_MARGIN_BLOCKS = 1;
+/** Consecutive sealed blobs one mainnet L1 HTLC pays for. */
+const DOCUMENT_L1_BATCH_BLOBS = 128;
 /**
  * Smallest payment an HTLC may carry (channel or L1): its claim pays at least
  * 1 sat/vB and still leaves a non-dust output, so the preimage holder can
@@ -455,14 +467,57 @@ const HTLC_CLAIM_VBYTES = 170;
  * CPFP the claim output.
  */
 const HTLC_MINIMUM_SATS = BITCOIN_DUST_SATS + HTLC_CLAIM_VBYTES;
-/** Max blobs in one document transfer (`blobTotal` cap). 8192 × ~24 KiB blobs ≈ 188 MiB per document. */
-const MAX_DOCUMENT_BLOBS = 8192;
+/**
+ * Bytes kept beside the base64 body of an unsealed `P2P_FILE_SEND`.
+ * Chunk size is `floor((MAX_MESSAGE_SIZE − this) × 3/4)`.
+ */
+const DOCUMENT_FILE_SEND_OVERHEAD = 640;
+/**
+ * Bytes kept beside the base64 body of a sealed `P2P_FILE_SEND`, including a
+ * full inclusion proof. At the FAT file cap that proof is 18 siblings and the
+ * JSON beside the body is 1,716 bytes, inside this reserve, so the sealed
+ * chunk stays 23,040 bytes.
+ */
+const DOCUMENT_SEALED_FRAME_OVERHEAD = 2048;
+/** AES-GCM tag appended to each sealed blob. Plaintext per sealed chunk is the ciphertext chunk minus this. */
+const DOCUMENT_GCM_TAG_BYTES = 16;
+/** Unsealed plaintext (and ciphertext) bytes in one blob. */
+const DOCUMENT_CHUNK_BYTES = Math.max(
+  256,
+  Math.floor((MAX_MESSAGE_SIZE - DOCUMENT_FILE_SEND_OVERHEAD) * 3 / 4)
+);
+/** Sealed ciphertext bytes in one blob. */
+const DOCUMENT_SEALED_CHUNK_BYTES = Math.max(
+  256,
+  Math.floor((MAX_MESSAGE_SIZE - DOCUMENT_SEALED_FRAME_OVERHEAD) * 3 / 4)
+);
+/** Sealed plaintext bytes in one blob. */
+const DOCUMENT_SEALED_PLAINTEXT_BYTES = DOCUMENT_SEALED_CHUNK_BYTES - DOCUMENT_GCM_TAG_BYTES;
+/**
+ * Maximum document size, in bytes.
+ * FAT16 and FAT32 both store file size as an unsigned 32-bit count. Microsoft
+ * documents each maximum as 2^32 − 1 bytes (4,294,967,295). The two limits
+ * are equal, so the lower one is this value exactly.
+ */
+const MAX_DOCUMENT_BYTES = 0xFFFFFFFF;
+/**
+ * Blobs one maximum-size document needs. Sealed plaintext chunks are the
+ * smaller of the two chunk sizes, so this count is
+ * `ceil(MAX_DOCUMENT_BYTES / DOCUMENT_SEALED_PLAINTEXT_BYTES)`. The last
+ * chunk is short; a file of `MAX_DOCUMENT_BYTES + 1` still fits in this many
+ * sealed chunks and is refused by the byte cap.
+ */
+const MAX_DOCUMENT_BLOBS = Math.ceil(MAX_DOCUMENT_BYTES / Math.min(DOCUMENT_CHUNK_BYTES, DOCUMENT_SEALED_PLAINTEXT_BYTES));
 /** Max blobs (parts) accepted for one per-blob sealed tree (`blobTotal` cap). */
 const PEER_MAX_SEALED_BLOB_PARTS = MAX_DOCUMENT_BLOBS;
 /** Alternate frames kept per held sealed blob (same ciphertext, another payment hash or IV). Bounds memory only: purchase pins (payment hash, advertised IV, seller origin) are what keep poisoned frames from blocking the paid delivery. */
 const PEER_MAX_SEALED_BLOB_ALTERNATES = 4;
-/** Global byte budget across every pending sealed row (ciphertext + retained frames); fits one full-size tree. */
-const PEER_MAX_PENDING_SEALED_BYTES = 256 * 1024 * 1024;
+/**
+ * Global byte budget across every pending sealed row (ciphertext + one
+ * retained frame per blob). Sized for one maximum sealed tree; nothing is
+ * allocated until frames arrive.
+ */
+const PEER_MAX_PENDING_SEALED_BYTES = MAX_DOCUMENT_BLOBS * (DOCUMENT_SEALED_CHUNK_BYTES + MAX_FRAME_BYTES);
 /** Byte budget for opened convergent chunks a Peer keeps so a chunk another document shares is not bought again. */
 const PEER_MAX_HELD_CHUNK_BYTES = 64 * 1024 * 1024;
 /** Pending sealed rows that never complete are dropped this long after their first frame. */
@@ -770,7 +825,20 @@ module.exports = {
   PEER_PENDING_SEALED_TTL_MS,
   BITCOIN_DUST_SATS,
   HTLC_CLAIM_VBYTES,
+  HTLC_CLAIM_MEASURED_VBYTES,
+  HTLC_P2TR_DUST_SATS,
+  HTLC_CLAIM_CONFIRMATIONS,
+  HTLC_CLAIM_SAFETY_BLOCKS,
+  HTLC_CLAIM_LOCK_MARGIN_BLOCKS,
+  DOCUMENT_L1_BATCH_BLOBS,
   HTLC_MINIMUM_SATS,
+  DOCUMENT_FILE_SEND_OVERHEAD,
+  DOCUMENT_SEALED_FRAME_OVERHEAD,
+  DOCUMENT_GCM_TAG_BYTES,
+  DOCUMENT_CHUNK_BYTES,
+  DOCUMENT_SEALED_CHUNK_BYTES,
+  DOCUMENT_SEALED_PLAINTEXT_BYTES,
+  MAX_DOCUMENT_BYTES,
   MAX_DOCUMENT_BLOBS,
   PEER_MAX_SEALED_BLOB_PARTS,
   PEER_MAX_SEALED_BLOB_ALTERNATES,

@@ -39,6 +39,8 @@ describe('applicationNamespaces', function () {
     assert.ok(CONTRACT_BODY_TYPES.ContractWithdrawalWitness);
     assert.ok(CONTRACT_BODY_TYPES.MessageReceived);
     assert.ok(CONTRACT_BODY_TYPES.MessageReceipt);
+    assert.ok(CONTRACT_BODY_TYPES.DocumentList);
+    assert.strictEqual(isKnownContractBodyType('DocumentList'), true);
     assert.strictEqual(isKnownContractBodyType('GroupChat'), true);
     assert.strictEqual(isKnownContractBodyType('MessageReceipt'), true);
     // Product types live in app catalogs, not core

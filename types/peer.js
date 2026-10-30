@@ -208,7 +208,7 @@ if ((EventEmitter.defaultMaxListeners || 10) < 64) {
 // L1 document binding (hub / HTLC contentHash)
 const {
   fabricCanonicalJson,
-  whitelistedDocumentFields
+  documentPublishMessage
 } = require('../functions/publishedDocumentEnvelope');
 const {
   purchaseContentHashHex,
@@ -229,9 +229,13 @@ const DocumentBlobTransferBook = require('./documentBlobTransferBook');
 const {
   KEY_REVEAL_TYPE,
   BLOB_QUOTE_TYPE,
+  BLOB_BATCH_TYPE,
   createBlobQuote,
+  createBlobBatch,
   checkBlobQuote,
   isWellFormedBlobQuote,
+  isWellFormedBlobBatch,
+  openBlobBatch,
   prepareSealedSale,
   advertiseSealedDocument,
   buildKeyRevealMessage,
@@ -2416,7 +2420,7 @@ class Peer extends Service {
   _beginFabricHandshake (client) {
     const keyClaim = this._buildSessionKeyExchangeClaim(this.identity.id);
     // Start handshake
-    const vector = ['P2P_SESSION_OFFER', JSON.stringify({
+    const body = {
       type: 'P2P_SESSION_OFFER',
       actor: {
         id: this.identity.id,
@@ -2429,10 +2433,10 @@ class Peer extends Service {
         challenge: crypto.randomBytes(8).toString('hex'),
         maxFrameBytes: this._localMaxFrameBytes()
       }
-    })];
+    };
 
     // Create offer message
-    const P2P_SESSION_OFFER = Message.fromVector(vector).signWithKey(this.key);
+    const P2P_SESSION_OFFER = Message.fromLegacyBody('P2P_SESSION_OFFER', body).signWithKey(this.key);
     const message = P2P_SESSION_OFFER.toBuffer();
     if (this.settings.debug) this.emit('debug', `session_offer ${P2P_SESSION_OFFER} ${message.toString('hex')}`);
 
@@ -3427,17 +3431,12 @@ class Peer extends Service {
       case 'DOCUMENT_PUBLISH':
       case 'DocumentPublish':
         try {
-          const rawDp = messageDataToString(message.data);
-          const prDp = tryParseWireJsonBody(rawDp);
+          const prDp = Message.tryParseLegacyBody(message);
           if (!prDp.ok) {
             this.emit('warning', `[FABRIC:PEER] DOCUMENT_PUBLISH parse failed: ${prDp.error.message}`);
             break;
           }
           const parsed = prDp.value;
-          if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
-            this.emit('warning', '[FABRIC:PEER] DOCUMENT_PUBLISH body must be a JSON object');
-            break;
-          }
           const docId = parsed.id;
           if (!docId) break;
           const claimDp = this._claimLogicalRegistrationOrPunish(
@@ -3640,13 +3639,11 @@ class Peer extends Service {
       : (payload && payload.type === 'INVENTORY_RESPONSE')
           ? 'P2P_INVENTORY_RESPONSE'
           : 'P2P_BASE_MESSAGE';
-    const innerBody = (innerType === 'P2P_BASE_MESSAGE')
-      ? JSON.stringify(payload)
-      : JSON.stringify((payload && payload.object) ? payload.object : {});
-    const innerBuffer = Message
-      .fromVector([innerType, innerBody])
-      .signWithKey(this.key)
-      .toBuffer();
+    const inner = (innerType === 'P2P_BASE_MESSAGE')
+      ? Message.fromVector([innerType, JSON.stringify(payload)])
+      : Message.fromLegacyBody(innerType,
+        (payload && payload.object && typeof payload.object === 'object' && !Array.isArray(payload.object)) ? payload.object : {});
+    const innerBuffer = inner.signWithKey(this.key).toBuffer();
     return this._relayWirePayload(originName, innerBuffer, socket);
   }
 
@@ -3725,7 +3722,7 @@ class Peer extends Service {
 
     // Send session open event
     const keyClaim = this._buildSessionKeyExchangeClaim(this.identity.id);
-    const vector = ['P2P_SESSION_OPEN', JSON.stringify({
+    const body = {
       type: 'P2P_SESSION_OPEN',
       actor: {
         id: this.identity.id,
@@ -3740,9 +3737,9 @@ class Peer extends Service {
         solution: message.object.challenge,
         maxFrameBytes: this._localMaxFrameBytes()
       }
-    })];
+    };
 
-    const PACKET_SESSION_START = Message.fromVector(vector).signWithKey(this.key);
+    const PACKET_SESSION_START = Message.fromLegacyBody('P2P_SESSION_OPEN', body).signWithKey(this.key);
     const reply = PACKET_SESSION_START.toBuffer();
     if (this.settings.debug) this.emit('debug', `session_start ${PACKET_SESSION_START} ${reply.toString('hex')}`);
     this.connections[connAddress]._writeFabric(reply, socket);
@@ -4038,6 +4035,15 @@ class Peer extends Service {
           }
         }
         this._ingestSealedBlobQuote(quote, origin, wireMessage);
+        break;
+      }
+      case BLOB_BATCH_TYPE: {
+        const batch = (msg && msg.object) ? msg.object : msg;
+        if (!isWellFormedBlobBatch(batch)) {
+          this.emit('warning', '[FABRIC:PEER] DocumentBlobBatch rejected: malformed');
+          break;
+        }
+        this._ingestSealedBlobBatch(batch, origin, wireMessage);
         break;
       }
       case 'P2P_SESSION_OFFER':
@@ -4714,7 +4720,7 @@ class Peer extends Service {
       const purchaseFromCollection = row && Number(row.purchasePriceSats) > 0 ? Math.round(Number(row.purchasePriceSats)) : null;
       const rateSats = Object.prototype.hasOwnProperty.call(rates, docId) ? rates[docId] : 0;
       const purchasePriceSats = purchaseFromCollection != null ? purchaseFromCollection : (Number(rateSats) > 0 ? Math.round(Number(rateSats)) : undefined);
-      if (row && !row.published) continue;
+      if (row && (row.retained || !row.published)) continue;
       items.push({
         id: parsed.id,
         sha256: parsed.sha256 || parsed.id,
@@ -4780,7 +4786,7 @@ class Peer extends Service {
       };
       let buf;
       try {
-        buf = Message.fromVector(['P2P_INVENTORY_RESPONSE', JSON.stringify(obj)]).signWithKey(this.key).toBuffer();
+        buf = Message.fromLegacyBody('P2P_INVENTORY_RESPONSE', obj).signWithKey(this.key).toBuffer();
       } catch (err) {
         this.emit('warning', `[FABRIC:PEER] Inventory page ${i + 1}/${pages.length} not sent: ${err && err.message ? err.message : err}`);
         continue;
@@ -4812,6 +4818,7 @@ class Peer extends Service {
       /** @type {object[]} */
       const items = [];
       for (const docId of Object.keys(docs)) {
+        if (this._documentRetained(docId)) continue;
         const body = docs[docId];
         const parsed = this._buildDocumentParsedForPublish(docId, body);
         const rateSats = Object.prototype.hasOwnProperty.call(rates, docId) ? rates[docId] : 0;
@@ -4819,25 +4826,15 @@ class Peer extends Service {
         const sealedMeta = this._getDocumentSealedMeta(docId);
         const bodyBuf = this.getDocumentBuffer(docId) || Buffer.alloc(0);
         const advertiseBuf = sealedMeta ? sealedMeta.ciphertext : bodyBuf;
-        const resolved = resolveDocumentContentHashHex({
-          documentId: docId,
-          parsed,
-          sealedMeta: sealedMeta || undefined,
-          sealed: !!sealedMeta
-        });
-        const contentHash = resolved.contentHashHex;
-        const item = {
-          id: docId,
-          rateSats,
-          contentHash,
-          contentHashHex: contentHash,
-          binding: resolved.binding,
-          network: 'bitcoin',
-          size: sealedMeta ? sealedMeta.ciphertext.length : bodyBuf.length
-        };
-        // Always advertise a DocumentBlobIndex (one blob when small; many when large).
+        let resolved;
         let advertised;
         try {
+          resolved = resolveDocumentContentHashHex({
+            documentId: docId,
+            parsed,
+            sealedMeta: sealedMeta || undefined,
+            sealed: !!sealedMeta
+          });
           advertised = sealedMeta
             ? advertiseSealedDocument({
               ciphertext: sealedMeta.ciphertext,
@@ -4859,6 +4856,16 @@ class Peer extends Service {
           this.emit('warning', `[FABRIC:PEER] inventory skipped ${docId}: ${e.message}`);
           continue;
         }
+        const contentHash = resolved.contentHashHex;
+        const item = {
+          id: docId,
+          rateSats,
+          contentHash,
+          contentHashHex: contentHash,
+          binding: resolved.binding,
+          network: 'bitcoin',
+          size: sealedMeta ? sealedMeta.ciphertext.length : bodyBuf.length
+        };
         if (sealedMeta) {
           item.sealed = true;
           item.encryption = sealedMeta.encryption;
@@ -5156,6 +5163,50 @@ class Peer extends Service {
       keyHashHex: quote.keyHashHex
     });
     return { ok: true, quote };
+  }
+
+  /**
+   * Seller: one preimage wraps every key from `start` through `end`.
+   * The wraps are returned to the caller to send to that buyer. They are
+   * not written onto the public inventory item.
+   * @param {Object} opts
+   * @param {string} opts.documentId
+   * @param {number} opts.start
+   * @param {number} opts.end
+   * @param {number} [opts.amountSats]
+   * @returns {{ ok: boolean, batch: (Object|undefined), error: (string|undefined) }}
+   */
+  quoteSealedBatch (opts = {}) {
+    const documentId = String(opts.documentId || '').trim();
+    const start = Math.round(Number(opts.start));
+    const end = Math.round(Number(opts.end));
+    const doc = documentId ? this._getSealedBlobDocument(documentId) : null;
+    if (!doc) return { ok: false, error: 'unknown sealed document' };
+    if (!Number.isInteger(start) || !Number.isInteger(end) || end < start) return { ok: false, error: 'bad batch range' };
+    const blobs = [];
+    for (let i = start; i <= end; i++) {
+      const leaf = doc.blob(i);
+      const keyHex = leaf ? doc.keyFor(i) : null;
+      if (!leaf || !keyHex) return { ok: false, error: `unknown blob index ${i}` };
+      blobs.push({ blobIndex: i, blobHashHex: leaf.blobHashHex, keyHex });
+    }
+    const price = opts.amountSats != null ? Math.floor(Number(opts.amountSats)) : this._sealedBlobPriceSats(documentId) * blobs.length;
+    const { batch, secretHex } = createBlobBatch({
+      documentId,
+      merkleRootHex: doc.merkleRootHex,
+      blobs,
+      amountSats: price
+    });
+    this._sealedBlobQuotes.set(batch.paymentHashHex, {
+      documentId,
+      blobIndex: start,
+      batchEnd: end,
+      secretHex,
+      priceSats: price,
+      expiresAt: batch.expiresAt,
+      keyHashHex: null
+    });
+    return { ok: true, batch };
   }
 
   /**
@@ -6050,7 +6101,7 @@ class Peer extends Service {
       documentId,
       merkleRootHex: row.merkleRootHex,
       blobTotal: row.total,
-      chunkBytes: Math.max(...parts.map((p) => p.ciphertext.length)),
+      chunkBytes: parts.reduce((max, p) => Math.max(max, p.ciphertext.length), 0),
       sealed: true,
       convergence: parts.some((p) => p.convergence === 'scoped') ? 'scoped' : 'public',
       size,
@@ -6272,7 +6323,28 @@ class Peer extends Service {
     let documentId = opts.documentId;
     const preimageHex = keyHex;
     const quoted = this._receivedBlobQuotes.get(paymentHashHex);
-    if (quoted) {
+    if (quoted && quoted.quote && quoted.quote.type === BLOB_BATCH_TYPE) {
+      const q = quoted.quote;
+      const idx = Number(blobIndex);
+      if (!Number.isFinite(idx)) return { ok: false, error: 'blobIndex required to open a batch', documentId: q.documentId };
+      const out = openBlobBatch({ batch: q, preimageHex: keyHex, blobIndex: idx });
+      if (!out.ok) {
+        if (out.fraud) {
+          this.emit('documentBlobQuoteFraud', {
+            quote: { type: q.type, documentId: q.documentId, paymentHashHex: q.paymentHashHex, blobIndex: idx },
+            preimageHex: keyHex,
+            origin: quoted.origin,
+            error: out.error
+          });
+        }
+        return { ok: false, error: out.error, fraud: !!out.fraud, documentId: q.documentId, blobIndex: idx };
+      }
+      keyHex = out.keyHex;
+      const leaf = q.blobs.find((b) => Number(b.blobIndex) === idx);
+      paymentHashHex = String(leaf.keyHashHex).toLowerCase();
+      if (!merkleRootHex) merkleRootHex = q.merkleRootHex || null;
+      if (!documentId) documentId = q.documentId;
+    } else if (quoted) {
       const q = quoted.quote;
       const row = this._sealedBlobRow(q.documentId, q.merkleRootHex);
       const part = row ? row.parts.get(Number(q.blobIndex)) : null;
@@ -6310,7 +6382,9 @@ class Peer extends Service {
       merkleRootHex,
       preimageHex
     }, opts.origin || null);
-    if (quoted && result && result.ok) this._receivedBlobQuotes.delete(quoted.quote.paymentHashHex.toLowerCase());
+    if (quoted && quoted.quote.type !== BLOB_BATCH_TYPE && result && result.ok) {
+      this._receivedBlobQuotes.delete(quoted.quote.paymentHashHex.toLowerCase());
+    }
     return result;
   }
 
@@ -6650,7 +6724,7 @@ class Peer extends Service {
       object.kind = String(opts.kind || 'documents');
       object.created = Date.now();
     }
-    const m = Message.fromVector(['P2P_INVENTORY_REQUEST', JSON.stringify(object)]);
+    const m = Message.fromLegacyBody('P2P_INVENTORY_REQUEST', object);
     m.signWithKey(this.key);
     // Local telemetry: time the round trip for the offer book (never gossiped).
     if (!this._inventoryRequestedAt) this._inventoryRequestedAt = {};
@@ -6690,6 +6764,7 @@ class Peer extends Service {
       body.routeId = crypto.randomBytes(8).toString('hex');
     }
     if (opts.blobIndex != null) body.blobIndex = Number(opts.blobIndex);
+    if (opts.batchEnd != null) body.batchEnd = Number(opts.batchEnd);
     if (opts.blobTotal != null) body.blobTotal = Number(opts.blobTotal);
     if (opts.quote === true) body.quote = true;
     if (opts.credit === true && opts.creditRef) {
@@ -6701,7 +6776,7 @@ class Peer extends Service {
       if (hash) body.contentHashHex = hash;
     }
 
-    const msg = Message.fromVector(['DocumentRequest', JSON.stringify(body)]);
+    const msg = Message.fromLegacyBody('DOCUMENT_REQUEST', body);
     msg.signWithKey(this.key);
     const buf = msg.toBuffer();
     if (peerAddress) {
@@ -6783,7 +6858,11 @@ class Peer extends Service {
       return { ok: false, error: 'blobIndex required for a per-blob sealed document' };
     }
     if (row.parsed && row.parsed.quote === true && this._getSealedBlobDocument(row.documentId)) {
-      this._sendSealedBlobQuote(row.documentId, Number(row.parsed.blobIndex), row.peerAddress, { routeId: row.parsed.routeId });
+      if (row.parsed.batchEnd != null) {
+        this._sendSealedBlobBatch(row.documentId, Number(row.parsed.blobIndex), Number(row.parsed.batchEnd), row.peerAddress, { routeId: row.parsed.routeId, amountSats: row.parsed.maxSats });
+      } else {
+        this._sendSealedBlobQuote(row.documentId, Number(row.parsed.blobIndex), row.peerAddress, { routeId: row.parsed.routeId });
+      }
     }
     const sendOpts = {};
     if (row.parsed && row.parsed.blobIndex != null) {
@@ -6915,6 +6994,48 @@ class Peer extends Service {
   }
 
   /**
+   * Seller: send one `DocumentBlobBatch` for `start`..`end` to the buyer.
+   * @private
+   * @returns {Object|null}
+   */
+  _sendSealedBlobBatch (documentId, start, end, peerAddress, opts = {}) {
+    const conn = peerAddress && this.connections[peerAddress];
+    if (!conn || !conn._writeFabric) return null;
+    const out = this.quoteSealedBatch({ documentId, start, end, amountSats: opts.amountSats });
+    if (!out.ok) {
+      this.emit('warning', `[FABRIC:PEER] blob batch failed for ${documentId}#${start}-${end}: ${out.error}`);
+      return null;
+    }
+    const object = Object.assign({}, out.batch);
+    if (opts.routeId) object.routeId = String(opts.routeId);
+    const msg = Message.fromVector(['GenericMessage', JSON.stringify({ type: BLOB_BATCH_TYPE, object })]);
+    msg.signWithKey(this.key);
+    conn._writeFabric(msg.toBuffer());
+    this.emit('documentBlobBatch', { documentId, start, end, peerAddress, paymentHashHex: out.batch.paymentHashHex });
+    return out.batch;
+  }
+
+  /**
+   * Buyer: keep a batch quote. Wraps stay on this quote, never on inventory.
+   * @param {Object} batch
+   * @param {Object|string} [origin]
+   * @param {Message|null} [wireMessage]
+   * @returns {{ ok: boolean, error: (string|undefined), paymentHashHex: (string|undefined) }}
+   */
+  _ingestSealedBlobBatch (batch, origin = null, wireMessage = null) {
+    if (!isWellFormedBlobBatch(batch)) return { ok: false, error: 'malformed DocumentBlobBatch' };
+    const paymentHashHex = String(batch.paymentHashHex).toLowerCase();
+    let frame = null;
+    try {
+      if (wireMessage && typeof wireMessage.toBuffer === 'function') frame = wireMessage.toBuffer();
+    } catch (_) { /* synthetic */ }
+    const originName = origin && typeof origin === 'object' ? (origin.name || origin.address || null) : (origin || null);
+    this._receivedBlobQuotes.set(paymentHashHex, { quote: Object.assign({}, batch), origin: originName, frame, received: Date.now() });
+    this.emit('documentBlobQuote', { quote: Object.assign({}, batch), origin: originName });
+    return { ok: true, paymentHashHex };
+  }
+
+  /**
    * Buyer: keep a seller's `DocumentBlobQuote` so the HTLC preimage it
    * settles with (`s`) can be unwrapped to `K_i` ({@link Peer#openSealedBlobWithKey}).
    * The signed frame is kept as fraud evidence.
@@ -7008,8 +7129,7 @@ class Peer extends Service {
    */
   _buildPublishDocumentWireBuffers (documentId, body, rateSats) {
     const parsed = this._buildDocumentParsedForPublish(documentId, body);
-    const dataStr = fabricCanonicalJson(whitelistedDocumentFields(documentId, parsed));
-    const canonical = Message.fromVector(['DocumentPublish', dataStr]);
+    const canonical = documentPublishMessage(documentId, parsed);
     canonical.signWithKey(this.key);
     const buffers = [canonical.toBuffer()];
     if (rateSats > 0) {
@@ -7021,7 +7141,7 @@ class Peer extends Service {
         sealed: !!sealedMeta
       });
       const contentHash = resolved.contentHashHex;
-      const rateMsg = Message.fromVector(['P2P_DOCUMENT_PUBLISH', JSON.stringify({
+      const rateMsg = Message.fromLegacyBody('P2P_DOCUMENT_PUBLISH', {
         type: 'P2P_DOCUMENT_PUBLISH',
         object: {
           hash: documentId,
@@ -7030,7 +7150,7 @@ class Peer extends Service {
           contentHashHex: contentHash,
           binding: resolved.binding
         }
-      })]);
+      });
       rateMsg.signWithKey(this.key);
       buffers.push(rateMsg.toBuffer());
     }
@@ -7048,6 +7168,7 @@ class Peer extends Service {
     const conn = peerAddress && this.connections[peerAddress];
     if (!conn || !conn._writeFabric) return;
     for (const docId of Object.keys(docs)) {
+      if (this._documentRetained(docId)) continue;
       const body = docs[docId];
       const rateSats = Object.prototype.hasOwnProperty.call(rates, docId) ? rates[docId] : 0;
       const buffers = this._buildPublishDocumentWireBuffers(docId, body, rateSats);
@@ -7058,8 +7179,47 @@ class Peer extends Service {
   }
 
   /**
+   * True when the catalog row was stored for a selective share and must stay
+   * out of inventory and document-publish replay.
+   * @param {string} documentId
+   * @returns {boolean}
+   * @private
+   */
+  _documentRetained (documentId) {
+    const collections = this._state.content.collections;
+    const row = collections && collections.documents && collections.documents[documentId];
+    return !!(row && row.retained);
+  }
+
+  /**
+   * Hold document bytes for a later approved `DOCUMENT_REQUEST`.
+   * Does not emit `DOCUMENT_PUBLISH`. The catalog row is unpublished, so
+   * `serveLocalDocumentInventory` still will not list it.
+   * @param {string} id Wire document id (1–128 characters).
+   * @param {Buffer|string} bytes
+   * @returns {boolean}
+   */
+  retainLocalDocument (id, bytes) {
+    if (!isWireDocumentId(id)) return false;
+    const buf = Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes == null ? '' : bytes);
+    this._storeReceivedDocument(id, buf, { overwrite: true });
+    if (!this._state.content.collections || typeof this._state.content.collections !== 'object') {
+      this._state.content.collections = {};
+    }
+    if (!this._state.content.collections.documents || typeof this._state.content.collections.documents !== 'object') {
+      this._state.content.collections.documents = {};
+    }
+    const prev = this._state.content.collections.documents[id] || {};
+    this._state.content.collections.documents[id] = Object.assign({}, prev, {
+      published: false,
+      retained: true
+    });
+    return true;
+  }
+
+  /**
    * Store a document locally and gossip to peers.
-   * 1) **Canonical** `DOCUMENT_PUBLISH` wire message (same bytes as hub `documentPublishEnvelope`) for L1 `contentHash`.
+   * 1) **Canonical** `DOCUMENT_PUBLISH` field frame (`documentPublishEnvelopeBuffer` plus this peer's author and signature) for L1 `contentHash`.
    * 2) If `rateSats > 0`, a **pricing** `GENERIC` `P2P_DOCUMENT_PUBLISH` with `rate` and `contentHash` (sat ask).
    * @param {String} documentId - Catalog key (e.g. CLI document name).
    * @param {String} [content=''] - UTF-8 body stored under {@link Peer#state}.documents.
@@ -7343,11 +7503,9 @@ class Peer extends Service {
    */
   _handleDocumentRequestWire (message, origin, socket, options = null) {
     const delivery = meshDeliveryContext(options, origin && origin.name);
-    const rawDr = messageDataToString(message.data);
-    const prDr = tryParseWireJsonBody(rawDr);
+    const prDr = Message.tryParseLegacyBody(message);
     if (!prDr.ok) return;
     let parsed = prDr.value;
-    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return;
 
     const docId = parsed.document || parsed.id;
     if (!docId) return;
@@ -7411,7 +7569,11 @@ class Peer extends Service {
       return;
     }
     if (parsed.quote === true && this._getSealedBlobDocument(docId)) {
-      this._sendSealedBlobQuote(docId, Number(parsed.blobIndex), origin.name, { routeId: parsed.routeId });
+      if (parsed.batchEnd != null) {
+        this._sendSealedBlobBatch(docId, Number(parsed.blobIndex), Number(parsed.batchEnd), origin.name, { routeId: parsed.routeId, amountSats: parsed.maxSats });
+      } else {
+        this._sendSealedBlobQuote(docId, Number(parsed.blobIndex), origin.name, { routeId: parsed.routeId });
+      }
     }
     const sendOpts = {};
     if (parsed.blobIndex != null) sendOpts.blobIndex = Number(parsed.blobIndex);
@@ -7468,7 +7630,7 @@ class Peer extends Service {
       created: Date.now()
     };
     this._capDocumentRelayRoutes();
-    const msg = Message.fromVector(['DocumentRequest', JSON.stringify(fwd.body)]);
+    const msg = Message.fromLegacyBody('DOCUMENT_REQUEST', fwd.body);
     msg.signWithKey(this.key);
     const sent = this._sendPrivateRelayedDocumentRequest(msg, origin, parsed);
     if (!sent) {

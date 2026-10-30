@@ -41,6 +41,14 @@ const { taprootPsbtInputFields } = require('../functions/bip371');
 const { toBuffer } = require('../functions/bytes');
 const { encodeBitcoinUri } = require('./wallet/bip21');
 const { BIP125_SEQUENCE_LOCKTIME_ONLY } = require('../functions/bip125');
+const {
+  HTLC_MINIMUM_SATS,
+  HTLC_CLAIM_MEASURED_VBYTES,
+  HTLC_P2TR_DUST_SATS,
+  HTLC_CLAIM_CONFIRMATIONS,
+  HTLC_CLAIM_SAFETY_BLOCKS,
+  HTLC_CLAIM_LOCK_MARGIN_BLOCKS
+} = require('../constants');
 
 bitcoin.initEccLib(ecc);
 
@@ -77,17 +85,18 @@ function xOnlyOf (pubkey33) {
  * The funded HTLC output and the destination amount after the fee.
  * @private
  */
-function fundedOutput ({ networkName, fundedTxHex, paymentAddress, feeSats }) {
-  const network = networkForFabricName(networkName);
-  const tx = bitcoin.Transaction.fromHex(String(fundedTxHex || '').trim());
-  const vout = Htlc.findVout(tx, paymentAddress, network);
+function fundedOutput (opts) {
+  const network = networkForFabricName(opts.networkName);
+  const tx = bitcoin.Transaction.fromHex(String(opts.fundedTxHex || '').trim());
+  const vout = Htlc.findVout(tx, opts.paymentAddress, network);
   if (vout < 0) throw new Error('Funding tx has no output matching paymentAddress.');
   const out = tx.outs[vout];
   const inputSats = Number(out.value);
   if (!Number.isFinite(inputSats) || inputSats <= 0) throw new Error('Invalid HTLC output value.');
-  const fee = Math.max(1, Math.round(Number(feeSats || DEFAULT_FEE_SATS)));
+  const fee = Htlc.spendFeeSats(opts);
   const destSats = inputSats - fee;
-  if (destSats < DUST_SATS) throw new Error('Amount after fee is below dust threshold; lower fee or fund more sats.');
+  const dust = Htlc.dustForAddress(opts.destinationAddress);
+  if (destSats < dust) throw new Error(`Amount after fee is below dust threshold (${dust} sats); lower fee or fund more sats.`);
   return { network, tx, vout, out, inputSats, fee, destSats };
 }
 
@@ -371,6 +380,14 @@ class Htlc {
    * @returns {Object} bundle for {@link Htlc.signClaim}
    */
   static prepareClaimPsbt (opts = {}) {
+    if (opts.tipHeight != null) {
+      const refusal = Htlc.claimRefusal({
+        tipHeight: opts.tipHeight,
+        refundLocktime: opts.refundLocktimeHeight,
+        confirmations: opts.confirmations
+      });
+      if (refusal) throw new Error(refusal);
+    }
     const { network, tx, vout, out, inputSats, fee, destSats } = fundedOutput(opts);
     const claimBuf = toBuffer(opts.claimScript, 'claimScript');
     const refundBuf = toBuffer(opts.refundScript, 'refundScript');
@@ -513,6 +530,97 @@ class Htlc {
    * @param {number} refundLocktimeHeight
    * @returns {boolean} the refund leaf is spendable at `tipHeight`
    */
+  /**
+   * Fee for a claim or refund. An explicit `feeSats` wins. Otherwise
+   * `feerate` (sat/vB) times the measured 162 vB claim. Neither falls back
+   * to {@link Htlc.DEFAULT_FEE_SATS}.
+   * @param {Object} [opts]
+   * @param {number} [opts.feeSats]
+   * @param {number} [opts.feerate]
+   * @returns {number}
+   */
+  static spendFeeSats (opts = {}) {
+    if (opts.feeSats != null && opts.feeSats !== '') {
+      const fee = Math.round(Number(opts.feeSats));
+      if (!Number.isFinite(fee) || fee < 1) throw new Error('feeSats must be a positive integer');
+      return fee;
+    }
+    if (opts.feerate != null && opts.feerate !== '') return Htlc.claimFeeSats(opts.feerate);
+    return DEFAULT_FEE_SATS;
+  }
+
+  /**
+   * Claim fee at `feerate` sat/vB on the measured claim size.
+   * @param {number} feerate
+   * @returns {number}
+   */
+  static claimFeeSats (feerate) {
+    const rate = Number(feerate);
+    if (!Number.isFinite(rate) || rate <= 0) throw new Error('feerate must be positive');
+    return Math.ceil(rate * HTLC_CLAIM_MEASURED_VBYTES);
+  }
+
+  /**
+   * Dust the claim output must leave. A taproot destination is 330 sats;
+   * anything else stays at the legacy 546.
+   * @param {string} [address]
+   * @returns {number}
+   */
+  static dustForAddress (address) {
+    const addr = String(address || '').trim();
+    if (!addr) return DUST_SATS;
+    try {
+      const decoded = bitcoin.address.fromBech32(addr);
+      if (decoded.version === 1) return HTLC_P2TR_DUST_SATS;
+    } catch (_) { /* legacy or unknown */ }
+    return DUST_SATS;
+  }
+
+  /**
+   * Smallest document HTLC at `feerate`. Never under {@link HTLC_MINIMUM_SATS}.
+   * A taproot payout needs `dust + feerate × measured vbytes`.
+   * @param {number} feerate sat/vB
+   * @param {string} [address] destination; omitted means taproot
+   * @returns {number}
+   */
+  static minimumForFeerate (feerate, address) {
+    const dust = address ? Htlc.dustForAddress(address) : HTLC_P2TR_DUST_SATS;
+    return Math.max(HTLC_MINIMUM_SATS, dust + Htlc.claimFeeSats(feerate));
+  }
+
+  /**
+   * Blocks the buyer must leave between the tip and the refund lock:
+   * confirmations + claim room + margin.
+   * @returns {number}
+   */
+  static minimumLockBlocks () {
+    return HTLC_CLAIM_CONFIRMATIONS + HTLC_CLAIM_SAFETY_BLOCKS + HTLC_CLAIM_LOCK_MARGIN_BLOCKS;
+  }
+
+  /**
+   * Why a seller claim is refused, or null when it may be built.
+   * The funding transaction needs `c` confirmations, and the tip must be at
+   * least `d` blocks before the refund lock.
+   * @param {Object} opts
+   * @param {number} opts.tipHeight
+   * @param {number} opts.refundLocktime
+   * @param {number} opts.confirmations
+   * @returns {string|null}
+   */
+  static claimRefusal (opts = {}) {
+    const tip = Math.floor(Number(opts.tipHeight));
+    const lock = Math.floor(Number(opts.refundLocktime));
+    const confirmations = Math.floor(Number(opts.confirmations));
+    if (!Number.isFinite(tip) || !Number.isFinite(lock)) return 'tip and refund lock are required to claim';
+    if (!(confirmations >= HTLC_CLAIM_CONFIRMATIONS)) {
+      return `funding needs ${HTLC_CLAIM_CONFIRMATIONS} confirmation before the seller claims`;
+    }
+    if (lock - tip < HTLC_CLAIM_SAFETY_BLOCKS) {
+      return `claim is inside ${HTLC_CLAIM_SAFETY_BLOCKS} blocks of the refund lock`;
+    }
+    return null;
+  }
+
   static refundMature (tipHeight, refundLocktimeHeight) {
     const tip = Math.round(Number(tipHeight));
     const lock = Math.round(Number(refundLocktimeHeight));
@@ -548,6 +656,11 @@ class Htlc {
 }
 
 Htlc.DUST_SATS = DUST_SATS;
+Htlc.DEFAULT_FEE_SATS = DEFAULT_FEE_SATS;
+Htlc.P2TR_DUST_SATS = HTLC_P2TR_DUST_SATS;
+Htlc.CLAIM_MEASURED_VBYTES = HTLC_CLAIM_MEASURED_VBYTES;
+Htlc.CLAIM_CONFIRMATIONS = HTLC_CLAIM_CONFIRMATIONS;
+Htlc.CLAIM_SAFETY_BLOCKS = HTLC_CLAIM_SAFETY_BLOCKS;
 
 module.exports = Htlc;
 module.exports.Htlc = Htlc;
