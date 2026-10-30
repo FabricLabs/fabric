@@ -37,6 +37,9 @@ const {
   PEER_MAX_SEALED_BLOB_ALTERNATES,
   HTLC_MINIMUM_SATS,
   PEER_MAX_DOCUMENT_RELAY_ROUTES,
+  PEER_MAX_DOCUMENT_BID_ROUTES,
+  PEER_MAX_ASKS_PER_DOCUMENT_BID,
+  DOCUMENT_BID_MAX_RELAYS_PER_ORIGIN_PER_MINUTE,
   PEER_MAX_MUSIG_SESSIONS,
   PEER_MUSIG_SESSION_TTL_MS,
   HEADER_SIZE,
@@ -68,8 +71,8 @@ const {
   isOnionChatSeal,
   tryOpenOnionChatText
 } = require('../functions/onionChatSeal');
-const { individualPk } = require('../functions/musig2');
-const musig2Session = require('../functions/musig2Session');
+const { individualPk } = require('./witness/musig2');
+const musig2Session = require('./witness/musig2Session');
 const sidechainState = require('../functions/sidechainState');
 const { epochCommitmentDigestHex } = require('../functions/beaconFederationSigning');
 const Federation = require('./federation');
@@ -217,10 +220,11 @@ const {
 } = require('../functions/publishedDocumentEnvelope');
 const Htlc = require('./htlc');
 const { resolveFabricPeerInterface } = require('../functions/fabricListenInterface');
+const DocumentBook = require('./documentBook');
 const {
   buildForwardedDocumentRequest,
   paginateInventoryItems
-} = require('./documentBook');
+} = DocumentBook;
 const DocumentBlobTransferBook = require('./documentBlobTransferBook');
 const {
   KEY_REVEAL_TYPE,
@@ -351,8 +355,8 @@ function meshDeliveryContext (opts = {}, originName = null) {
 }
 
 const Contract = require('./contract');
-const { normalizePeerPubkeyHex } = require('../functions/pubkey');
-const SIGNING_TAGS = require('../functions/signingTags');
+const { normalizePeerPubkeyHex } = require('./key/pubkey');
+const SIGNING_TAGS = require('./key/signingTags');
 
 /**
  * Outer / generic types whose local registration side-effects are first-writer-wins.
@@ -473,6 +477,10 @@ class Peer extends Service {
       documentRelayFeeBps: 100,
       documentRelayMinRemainingSats: 1,
       documentRelayMaxHops: 4,
+      // P2P_DOCUMENT_BID for a held per-blob chunk: false (default) only emits
+      // `documentBid`; true asks the document's listed rate; a function
+      // `(bid, held) => priceSats | null` prices it (null stays quiet).
+      answerDocumentBids: false,
       // Opt-in only: approveDocumentRequest({ forceReveal: true }) without settlement.
       allowForceDocumentKeyReveal: false,
       // Re-send canonical DocumentPublish + pricing to new inbound peers.
@@ -684,6 +692,12 @@ class Peer extends Service {
     /** Private reverse routes for rewritten DocumentRequests (never gossiped). */
     this._documentRelayRoutes = Object.create(null);
     this._documentRelaySeen = new Set();
+    /** This Peer's own open bids: bid id → `{ bid, sentAt, book, sellers }`. */
+    this._documentBids = new Map();
+    /** Bids relayed here: bid id → `{ bid, prevHop, asks }` (the only route state; never gossiped). */
+    this._documentBidRoutes = new Map();
+    /** `host:port` → `{ windowStart, count }` for bids flooded onward. */
+    this._documentBidRelayRate = new Map();
     // Peers: keyed by public key (id). Persistent registry in _state.peers.
     // Map connection address (IP:port) -> peer id (public key). Learned on P2P_SESSION_OFFER/OPEN.
     this._addressToId = {};
@@ -3459,6 +3473,20 @@ class Peer extends Service {
           this.emit('warning', `[FABRIC:PEER] DOCUMENT_REQUEST failed: ${exception.message}`);
         }
         break;
+      case 'P2P_DOCUMENT_BID':
+        try {
+          this._handleDocumentBidWire(message, origin, socket, opts);
+        } catch (exception) {
+          this.emit('warning', `[FABRIC:PEER] P2P_DOCUMENT_BID failed: ${exception.message}`);
+        }
+        break;
+      case 'P2P_DOCUMENT_ASK':
+        try {
+          this._handleDocumentAskWire(message, origin, opts);
+        } catch (exception) {
+          this.emit('warning', `[FABRIC:PEER] P2P_DOCUMENT_ASK failed: ${exception.message}`);
+        }
+        break;
       case 'CONTRACT_PROPOSAL':
       case 'ContractProposal': {
         const rawCp = messageDataToString(message.data);
@@ -4666,6 +4694,7 @@ class Peer extends Service {
 
   /**
    * Items for Hub-style `kind: 'documents'` inventory (Fabric UI / `@fabric/hub` merge expects `object.kind`).
+   * Documents a catalog row marks unpublished (private, bought, or unlisted) are left out.
    * @param {Object} [req] request object subset
    * @returns {object[]}
    */
@@ -4685,7 +4714,7 @@ class Peer extends Service {
       const purchaseFromCollection = row && Number(row.purchasePriceSats) > 0 ? Math.round(Number(row.purchasePriceSats)) : null;
       const rateSats = Object.prototype.hasOwnProperty.call(rates, docId) ? rates[docId] : 0;
       const purchasePriceSats = purchaseFromCollection != null ? purchaseFromCollection : (Number(rateSats) > 0 ? Math.round(Number(rateSats)) : undefined);
-      const published = row ? !!row.published : true;
+      if (row && !row.published) continue;
       items.push({
         id: parsed.id,
         sha256: parsed.sha256 || parsed.id,
@@ -4693,7 +4722,7 @@ class Peer extends Service {
         mime: parsed.mime || 'application/octet-stream',
         size: parsed.size,
         created: parsed.created || new Date().toISOString(),
-        published,
+        published: true,
         ...(purchasePriceSats != null && purchasePriceSats > 0 ? { purchasePriceSats } : {}),
         ...(row && row.bitcoinHeight != null && Number.isFinite(Number(row.bitcoinHeight))
           ? { bitcoinHeight: Math.round(Number(row.bitcoinHeight)) }
@@ -7075,6 +7104,228 @@ class Peer extends Service {
     if (this.settings.debug) {
       this.emit('debug', '[FABRIC:PEER] Published canonical DOCUMENT_PUBLISH + pricing gossip (if rate > 0)');
     }
+  }
+
+  /**
+   * Buyer: flood a signed bid to buy one chunk of a document, so peers holding
+   * it can answer with a `P2P_DOCUMENT_ASK` routed back along the bid's path.
+   * Each answer is emitted as `documentAsk` and, with `opts.book`, ranked there.
+   * @param {Object} opts see {@link DocumentBook.createBid}
+   * @param {DocumentBook} [opts.book] book that takes the asks
+   * @returns {object} the bid ({@link DocumentBook.readBid} shape; `id` names it)
+   */
+  bidForDocumentChunk (opts = {}) {
+    const { message, bid } = DocumentBook.createBid(opts);
+    this._sweepDocumentBids();
+    this._documentBids.set(bid.id, {
+      bid,
+      sentAt: Date.now(),
+      book: opts.book || null,
+      sellers: new Set()
+    });
+    this.broadcast(message.toBuffer());
+    return bid;
+  }
+
+  /**
+   * Seller: answer a bid relayed here for a chunk this Peer holds (a per-blob
+   * sealed document), at `opts.priceSats` or the document's listed rate. The
+   * ask goes only to the connection the bid came from.
+   * @param {string} bidId
+   * @param {Object} [opts]
+   * @param {number} [opts.priceSats] at most the bid's `maxSats`
+   * @param {number} [opts.expiresAt] unix seconds, no later than the bid's
+   * @returns {{ ok: boolean, ask: (object|undefined), error: (string|undefined) }}
+   */
+  askDocumentBid (bidId, opts = {}) {
+    const route = this._documentBidRoutes.get(String(bidId || '').toLowerCase());
+    if (!route) return { ok: false, error: 'unknown bid' };
+    const held = this._heldChunkForBid(route.bid);
+    if (!held) return { ok: false, error: 'chunk not held' };
+    const priceSats = opts.priceSats != null ? opts.priceSats : held.rateSats;
+    return this._sendDocumentAsk(route, held, priceSats, opts.expiresAt);
+  }
+
+  /**
+   * The chunk a bid asks for, when this Peer holds it as a per-blob sealed
+   * document matching the bid's selectors.
+   * @param {object} bid
+   * @returns {{ documentId: string, blobIndex: number, merkleRootHex: string, blobHashHex: string, rateSats: number }|null}
+   * @private
+   */
+  _heldChunkForBid (bid) {
+    const doc = this._getSealedBlobDocument(bid.documentId);
+    const root = doc && doc.merkleRootHex ? String(doc.merkleRootHex).toLowerCase() : null;
+    const leaf = root ? doc.blob(bid.blobIndex) : null;
+    if (!leaf || !leaf.blobHashHex) return null;
+    if (bid.merkleRootHex && bid.merkleRootHex !== root) return null;
+    if (bid.blobHashHex && bid.blobHashHex !== leaf.blobHashHex) return null;
+    return {
+      documentId: bid.documentId,
+      blobIndex: bid.blobIndex,
+      merkleRootHex: root,
+      blobHashHex: leaf.blobHashHex,
+      rateSats: this._sealedBlobPriceSats(bid.documentId)
+    };
+  }
+
+  /**
+   * Sign and send an ask for a routed bid back to the bid's previous hop; once per bid.
+   * @private
+   */
+  _sendDocumentAsk (route, held, priceSats, expiresAt = null) {
+    if (route.answered) return { ok: false, error: 'already answered' };
+    const conn = this.connections[route.prevHop];
+    if (!conn) return { ok: false, error: 'bid path closed' };
+    let built;
+    try {
+      built = DocumentBook.createAsk(route.bid, {
+        key: this.key,
+        merkleRootHex: held.merkleRootHex,
+        blobHashHex: held.blobHashHex,
+        priceSats: Number(priceSats),
+        expiresAt: expiresAt != null ? Number(expiresAt) : undefined
+      });
+    } catch (e) {
+      return { ok: false, error: e.message };
+    }
+    route.answered = true;
+    conn._writeFabric(built.message.toBuffer());
+    return { ok: true, ask: built.ask };
+  }
+
+  /**
+   * Seller side of an inbound bid, by `settings.answerDocumentBids`.
+   * @private
+   */
+  _maybeAnswerDocumentBid (route) {
+    const policy = this.settings.answerDocumentBids;
+    if (!policy) return null;
+    const held = this._heldChunkForBid(route.bid);
+    if (!held) return null;
+    let priceSats = held.rateSats;
+    if (typeof policy === 'function') {
+      try {
+        priceSats = policy(Object.assign({}, route.bid), Object.assign({}, held));
+      } catch (e) {
+        this.emit('warning', `[FABRIC:PEER] answerDocumentBids failed: ${e.message}`);
+        return null;
+      }
+      if (priceSats == null) return null;
+    }
+    const sent = this._sendDocumentAsk(route, held, priceSats);
+    if (!sent.ok) this.emit('debug', `[FABRIC:PEER] bid ${route.bid.id.slice(0, 12)} not answered: ${sent.error}`);
+    return sent.ok ? sent.ask : null;
+  }
+
+  /**
+   * Drop expired own bids and bid routes; past the cap, the oldest go.
+   * @private
+   */
+  _sweepDocumentBids () {
+    const now = Math.floor(Date.now() / 1000);
+    for (const map of [this._documentBids, this._documentBidRoutes]) {
+      for (const [id, entry] of map) {
+        if (entry.bid.expiresAt <= now) map.delete(id);
+      }
+      while (map.size >= PEER_MAX_DOCUMENT_BID_ROUTES) map.delete(map.keys().next().value);
+    }
+  }
+
+  /**
+   * Count one onward bid against its TCP origin; false once over the rolling minute's budget.
+   * @private
+   */
+  _takeDocumentBidRelay (originName) {
+    const now = Date.now();
+    let w = this._documentBidRelayRate.get(originName);
+    if (!w || now - w.windowStart >= 60 * 1000) {
+      if (!w && this._documentBidRelayRate.size >= MAX_PEERS * 4) {
+        for (const [k, v] of this._documentBidRelayRate) {
+          if (now - v.windowStart >= 60 * 1000) this._documentBidRelayRate.delete(k);
+        }
+        if (this._documentBidRelayRate.size >= MAX_PEERS * 4) return false;
+      }
+      w = { windowStart: now, count: 0 };
+      this._documentBidRelayRate.set(originName, w);
+    }
+    if (w.count >= DOCUMENT_BID_MAX_RELAYS_PER_ORIGIN_PER_MINUTE) return false;
+    w.count += 1;
+    return true;
+  }
+
+  /**
+   * Inbound `P2P_DOCUMENT_BID` (signature already verified): keep the route
+   * back to the previous hop, emit `documentBid`, answer per
+   * `settings.answerDocumentBids`, and flood it on bit-identical. Expired,
+   * far-future, repeated, or over-rate bids are dropped. Peeled / foreign-relay
+   * deliveries only emit, since they carry no path to answer along.
+   * @private
+   */
+  _handleDocumentBidWire (message, origin, socket, options = null) {
+    const delivery = meshDeliveryContext(options, origin && origin.name);
+    const originName = origin && origin.name ? origin.name : null;
+    const read = DocumentBook.readBid(message, { verify: false });
+    if (!read.ok) {
+      this.emit('debug', `[FABRIC:PEER] dropping bid from ${originName || 'unknown'}: ${read.error}`);
+      return;
+    }
+    const bid = read.bid;
+    if (this._documentBids.has(bid.id) || this._documentBidRoutes.has(bid.id)) return;
+    if (!delivery.allowTcpOriginSideEffects || !originName) {
+      this.emit('documentBid', { bid, origin: null, routed: false });
+      return;
+    }
+    if (!this._takeDocumentBidRelay(originName)) {
+      this.emit('debug', `[FABRIC:PEER] bid rate exceeded from ${originName}`);
+      return;
+    }
+    this._sweepDocumentBids();
+    const route = { bid, prevHop: originName, sellers: new Set(), answered: false };
+    this._documentBidRoutes.set(bid.id, route);
+    this.emit('documentBid', { bid, origin: originName, routed: true });
+    this._maybeAnswerDocumentBid(route);
+    if (delivery.allowMeshRelay) this.relayFrom(originName, message);
+  }
+
+  /**
+   * Inbound `P2P_DOCUMENT_ASK` (signature already verified). For our own bid:
+   * check it against the bid, ingest it into the bid's book, emit
+   * `documentAsk`. For a bid routed here: check it the same way and pass it to
+   * the bid's previous hop only. Anything else is dropped, never flooded. One
+   * ask per seller per bid, at most `PEER_MAX_ASKS_PER_DOCUMENT_BID`.
+   * @private
+   */
+  _handleDocumentAskWire (message, origin, options = null) {
+    const delivery = meshDeliveryContext(options, origin && origin.name);
+    const originName = origin && origin.name ? origin.name : null;
+    const pre = DocumentBook.readAsk(message, { verify: false });
+    if (!pre.ok) return;
+    const bidId = pre.ask.bidId;
+    const own = this._documentBids.get(bidId);
+    const route = own ? null : this._documentBidRoutes.get(bidId);
+    const entry = own || route;
+    if (!entry) return;
+    const read = DocumentBook.readAsk(message, { bid: entry.bid, verify: false });
+    if (!read.ok) {
+      this.emit('debug', `[FABRIC:PEER] dropping ask from ${originName || 'unknown'}: ${read.error}`);
+      return;
+    }
+    const ask = read.ask;
+    if (entry.sellers.has(ask.seller) || entry.sellers.size >= PEER_MAX_ASKS_PER_DOCUMENT_BID) return;
+    if (own) {
+      entry.sellers.add(ask.seller);
+      const row = entry.book
+        ? entry.book.ingestAsk(ask, { origin: originName, latencyMs: Date.now() - entry.sentAt })
+        : null;
+      this.emit('documentAsk', { ask, bid: entry.bid, origin: originName, row });
+      return;
+    }
+    if (!delivery.allowTcpOriginSideEffects || originName === route.prevHop) return;
+    const conn = this.connections[route.prevHop];
+    if (!conn) return;
+    entry.sellers.add(ask.seller);
+    conn._writeFabric(message.toBuffer());
   }
 
   /**

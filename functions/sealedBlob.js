@@ -4,8 +4,10 @@
  * Password-sealed JSON blobs (AES-256-GCM + PBKDF2-SHA256).
  *
  * Generic at-rest encryption used by `fabric setup` wallets, and the same
- * scheme as Hub identity backup v2 (`aes-256-gcm-pbkdf2-sha256`, 210000
- * iterations, 12-byte IV, tag appended to ciphertext). Callers keep public
+ * scheme as Hub identity backup v2 (`aes-256-gcm-pbkdf2-sha256`, 600000
+ * iterations, 12-byte IV, tag appended to ciphertext). Envelopes sealed before
+ * that name their own count (older ones may omit it: 210000); `needsReseal`
+ * tells callers to seal again once the password is known. Callers keep public
  * fields outside the seal; only secret material goes in the blob.
  *
  * @fileoverview Generic password-sealed JSON (AES-GCM / PBKDF2).
@@ -19,7 +21,8 @@ const SEAL_TYPE = 'FabricSealedBlob';
 const SEAL_VERSION = 1;
 const KDF_NAME = 'pbkdf2';
 const KDF_HASH = 'sha256';
-const DEFAULT_ITERATIONS = 210000;
+const DEFAULT_ITERATIONS = 600000;
+const LEGACY_ITERATIONS = 210000;
 const MIN_ITERATIONS = 100000;
 const MAX_ITERATIONS = 5000000;
 const PASSWORD_MIN_LENGTH = 8;
@@ -171,7 +174,7 @@ function openSealedJson (document, password) {
     throw new Error(`Unsupported seal scheme: ${scheme}`);
   }
 
-  const iterations = Number(env.kdf && env.kdf.iterations) || DEFAULT_ITERATIONS;
+  const iterations = Number(env.kdf && env.kdf.iterations) || LEGACY_ITERATIONS;
   if (iterations < MIN_ITERATIONS || iterations > MAX_ITERATIONS) {
     throw new Error('Invalid PBKDF2 iteration count.');
   }
@@ -197,15 +200,31 @@ function openSealedJson (document, password) {
   }
 }
 
+/**
+ * True when an envelope was sealed with fewer PBKDF2 iterations than today's
+ * default; open it and seal the plaintext again.
+ *
+ * @param {*} document Envelope or a document with a nested `seal`.
+ * @returns {boolean}
+ */
+function needsReseal (document) {
+  const env = extractEnvelope(document);
+  if (!env) return false;
+  const iterations = Number(env.kdf && env.kdf.iterations) || LEGACY_ITERATIONS;
+  return iterations < DEFAULT_ITERATIONS;
+}
+
 module.exports = {
   SEAL_SCHEME,
   SEAL_TYPE,
   SEAL_VERSION,
   DEFAULT_ITERATIONS,
+  LEGACY_ITERATIONS,
   PASSWORD_MIN_LENGTH,
   extractEnvelope,
   isPasswordProtectedDocument,
   isSealedEnvelope,
+  needsReseal,
   openSealedJson,
   sealJson
 };

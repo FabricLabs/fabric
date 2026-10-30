@@ -10,7 +10,6 @@ const Fabric = require('../');
 
 const config = require('../settings/test');
 const samples = require('../assets/samples');
-const handler = require('../functions/handleException');
 
 // Types
 const Store = require('../types/store');

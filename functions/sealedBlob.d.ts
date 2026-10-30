@@ -40,12 +40,14 @@ declare const sealedBlob: {
   SEAL_TYPE: string;
   SEAL_VERSION: number;
   DEFAULT_ITERATIONS: number;
+  LEGACY_ITERATIONS: number;
   PASSWORD_MIN_LENGTH: number;
   sealJson: (plaintext: unknown, password: string, opts?: SealOptions) => CreatedSealedEnvelope;
   openSealedJson: (document: object, password: string) => unknown;
   extractEnvelope: (obj: unknown) => SealedEnvelope | null;
   isSealedEnvelope: (obj: unknown) => boolean;
   isPasswordProtectedDocument: (parsed: unknown) => boolean;
+  needsReseal: (document: unknown) => boolean;
   [key: string]: unknown;
 };
 

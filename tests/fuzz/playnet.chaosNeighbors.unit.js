@@ -10,7 +10,7 @@ const {
   chaosMessageBody,
   DEFAULT_PLAYNET_PEERS,
   DEFAULT_LOCAL_PEERS
-} = require('../../functions/playnetChaosNeighbors');
+} = require('../../scripts/lib/playnetChaosNeighbors');
 
 describe('playnet chaos neighbors (unit)', function () {
   it('lists all network conditions used for crash capture', function () {
@@ -46,7 +46,7 @@ describe('playnet chaos neighbors (unit)', function () {
   });
 
   it('plans short-term local lead and long-term hub.fabric.pub management', function () {
-    const { planPlaynetLeadCapture } = require('../../functions/playnetChaosNeighbors');
+    const { planPlaynetLeadCapture } = require('../../scripts/lib/playnetChaosNeighbors');
     const local = planPlaynetLeadCapture({ horizon: 'local-lead' });
     assert.strictEqual(local.networkAlwaysExists, true);
     assert.strictEqual(local.horizon, 'local-lead');

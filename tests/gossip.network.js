@@ -73,6 +73,7 @@ describe('@fabric/core gossip network catalog', function () {
       'CONTRACT_PUBLISH',
       'DOCUMENT_REQUEST',
       'P2P_CHAT_MESSAGE',
+      'P2P_DOCUMENT_BID',
       'P2P_PEER_ALIAS',
       'P2P_PEER_GOSSIP',
       'P2P_PEERING_OFFER',

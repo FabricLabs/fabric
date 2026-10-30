@@ -1841,12 +1841,15 @@ class Bitcoin extends Service {
     if (this.rpc) {
       try {
         await this._loadWallet(this.walletName);
-        const info = await this._makeRPCRequest('getnetworkinfo');
-        const version = parseInt(info.version);
-        const address = await this._makeWalletRequest('getnewaddress', [
-          '', // label
-          version >= 240000 ? 'legacy' : 'legacy' // address type
-        ], this.walletName);
+        // Taproot: the cheapest input to spend later. Segwit only where the
+        // wallet can't make one (Core before 22, or a non-descriptor wallet).
+        let address = null;
+        try {
+          address = await this._makeWalletRequest('getnewaddress', ['', 'bech32m'], this.walletName);
+        } catch (taprootError) {
+          if (this.settings.debug) this.emit('debug', `[FABRIC:BITCOIN] No Taproot address (${taprootError.message || taprootError}); using segwit`);
+          address = await this._makeWalletRequest('getnewaddress', ['', 'bech32'], this.walletName);
+        }
 
         if (!address) throw new Error('No address returned from getnewaddress');
         return address;
@@ -1854,37 +1857,23 @@ class Bitcoin extends Service {
       if (this.settings.debug) this.emit('debug', `[FABRIC:BITCOIN] Error getting unused address: ${error.message || error}`);
         throw error;
       }
-    } else if (this.settings.key || this._rootKey) {
-      // In fabric mode, derive from a Key instance; settings.key may be plain config.
-      const keySource = (this.settings.key && typeof this.settings.key.deriveAddress === 'function')
-        ? this.settings.key
-        : this._rootKey;
-      const target = keySource.deriveAddress(this.settings.state.walletIndex);
-      // Increment the index for next time
-      this.settings.state.walletIndex++;
-      // Track the address
-      this.settings.state.addresses[target.address] = {
-        index: this.settings.state.walletIndex - 1,
-        transactions: []
-      };
-      return target.address;
-    } else {
-      // If no key is provided, generate a new key for regtest
-      const key = new Key({
-        network: this.settings.network,
-        purpose: 44,
-        account: 0,
-        index: this.settings.state.walletIndex
-      });
-      this.settings.key = key;
-      const target = key.deriveAddress(this.settings.state.walletIndex);
-      this.settings.state.walletIndex++;
-      this.settings.state.addresses[target.address] = {
-        index: this.settings.state.walletIndex - 1,
-        transactions: []
-      };
-      return target.address;
     }
+
+    // Without bitcoind: BIP-86 Taproot (`m/86'/{coin}'/0'/0/i`) from a Key
+    // instance (settings.key may be plain config), else a new key.
+    let keySource = (this.settings.key && typeof this.settings.key.deriveAddress === 'function')
+      ? this.settings.key
+      : this._rootKey;
+    if (!keySource && !this.settings.key) {
+      keySource = new Key({ network: this.settings.network });
+      this.settings.key = keySource;
+    }
+    if (!keySource) throw new Error('No key to derive a receive address from (settings.key is not a Key)');
+    const index = this.settings.state.walletIndex;
+    const { address } = Wallet.deriveTaprootAddress(keySource, { index, network: this.settings.network });
+    this.settings.state.walletIndex++;
+    this.settings.state.addresses[address] = { index, transactions: [] };
+    return address;
   }
 
   async append (raw) {
@@ -2918,17 +2907,16 @@ class Bitcoin extends Service {
         datadir = './stores/bitcoin-signet';
         params.push('-signet');
         break;
+      // No fee estimates without real traffic; fall back to the 1 sat/vB relay floor.
       case 'regtest':
         datadir = './stores/bitcoin-regtest';
         params.push('-regtest');
-        params.push('-fallbackfee=1.0');
-        params.push('-maxtxfee=1.1');
+        params.push('-fallbackfee=0.00001');
         break;
       case 'playnet':
         datadir = './stores/bitcoin-playnet';
         params.push('-regtest');
-        params.push('-fallbackfee=1.0');
-        params.push('-maxtxfee=1.1');
+        params.push('-fallbackfee=0.00001');
         break;
     }
 

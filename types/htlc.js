@@ -39,7 +39,7 @@ const {
 } = require('./policy');
 const { taprootPsbtInputFields } = require('../functions/bip371');
 const { toBuffer } = require('../functions/bytes');
-const { encodeBitcoinUri } = require('../functions/bip21');
+const { encodeBitcoinUri } = require('./wallet/bip21');
 const { BIP125_SEQUENCE_LOCKTIME_ONLY } = require('../functions/bip125');
 
 bitcoin.initEccLib(ecc);

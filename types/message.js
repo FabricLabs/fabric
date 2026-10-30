@@ -32,6 +32,8 @@ const {
   P2P_PEER_ANNOUNCE,
   P2P_PEER_GOSSIP,
   P2P_PEERING_OFFER,
+  P2P_DOCUMENT_BID,
+  P2P_DOCUMENT_ASK,
   P2P_SESSION_OFFER,
   P2P_SESSION_OPEN,
   P2P_SESSION_ACK,
@@ -44,6 +46,14 @@ const {
   PASSPORT_CHALLENGE,
   PASSPORT_ASSERTION,
   PASSPORT_SIGN_REQUEST,
+  DELEGATION_LINK_OFFER,
+  DELEGATION_LINK_ANSWER,
+  DELEGATION_LINK_REVEAL,
+  DELEGATION_GRANT,
+  DELEGATION_REVOKE,
+  DELEGATION_REQUEST,
+  DELEGATION_RESULT,
+  DELEGATION_MAILBOX_FETCH,
   P2P_CONTRACT_PUBLISH,
   P2P_CONTRACT_MESSAGE,
   P2P_STATE_ROOT,
@@ -113,7 +123,7 @@ const Hash256 = require('./hash256');
 
 // Function Definitions
 const { schnorr } = require('@noble/curves/secp256k1.js');
-const taggedHash = require('../functions/taggedHash');
+const taggedHash = Hash256.tagged;
 
 /**
  * Byte ranges `[start, end)` of each AMP header field.
@@ -336,6 +346,8 @@ const WIRE_TYPE_DECODE_ORDER = Object.freeze([
   [P2P_PEER_ANNOUNCE, 'P2P_PEER_ANNOUNCE'],
   [P2P_PEER_GOSSIP, 'P2P_PEER_GOSSIP'],
   [P2P_PEERING_OFFER, 'P2P_PEERING_OFFER'],
+  [P2P_DOCUMENT_BID, 'P2P_DOCUMENT_BID'],
+  [P2P_DOCUMENT_ASK, 'P2P_DOCUMENT_ASK'],
   [P2P_SESSION_OFFER, 'P2P_SESSION_OFFER'],
   [P2P_SESSION_OPEN, 'P2P_SESSION_OPEN'],
   [P2P_SESSION_ACK, 'P2P_SESSION_ACK'],
@@ -348,6 +360,14 @@ const WIRE_TYPE_DECODE_ORDER = Object.freeze([
   [PASSPORT_CHALLENGE, 'PASSPORT_CHALLENGE'],
   [PASSPORT_ASSERTION, 'PASSPORT_ASSERTION'],
   [PASSPORT_SIGN_REQUEST, 'PASSPORT_SIGN_REQUEST'],
+  [DELEGATION_LINK_OFFER, 'DELEGATION_LINK_OFFER'],
+  [DELEGATION_LINK_ANSWER, 'DELEGATION_LINK_ANSWER'],
+  [DELEGATION_LINK_REVEAL, 'DELEGATION_LINK_REVEAL'],
+  [DELEGATION_GRANT, 'DELEGATION_GRANT'],
+  [DELEGATION_REVOKE, 'DELEGATION_REVOKE'],
+  [DELEGATION_REQUEST, 'DELEGATION_REQUEST'],
+  [DELEGATION_RESULT, 'DELEGATION_RESULT'],
+  [DELEGATION_MAILBOX_FETCH, 'DELEGATION_MAILBOX_FETCH'],
   [P2P_CONTRACT_PUBLISH, 'CONTRACT_PUBLISH'],
   [P2P_CONTRACT_MESSAGE, 'CONTRACT_MESSAGE'],
   [P2P_IDENT_REQUEST, 'P2P_IDENT_REQUEST'],
@@ -443,6 +463,8 @@ const LEGACY_MESSAGE_TYPE_ALIASES = Object.freeze({
   PeerAnnounce: P2P_PEER_ANNOUNCE,
   PeerGossip: P2P_PEER_GOSSIP,
   PeeringOffer: P2P_PEERING_OFFER,
+  DocumentBid: P2P_DOCUMENT_BID,
+  DocumentAsk: P2P_DOCUMENT_ASK,
   SessionOffer: P2P_SESSION_OFFER,
   SessionOpen: P2P_SESSION_OPEN,
   MusigStart: P2P_MUSIG_START,
@@ -453,7 +475,14 @@ const LEGACY_MESSAGE_TYPE_ALIASES = Object.freeze({
   MusigAcceptProposal: P2P_MUSIG_ACCEPT_PROPOSAL,
   PassportChallenge: PASSPORT_CHALLENGE,
   PassportAssertion: PASSPORT_ASSERTION,
-  PassportSignRequest: PASSPORT_SIGN_REQUEST,
+  DelegationLinkOffer: DELEGATION_LINK_OFFER,
+  DelegationLinkAnswer: DELEGATION_LINK_ANSWER,
+  DelegationLinkReveal: DELEGATION_LINK_REVEAL,
+  DelegationGrant: DELEGATION_GRANT,
+  DelegationRevoke: DELEGATION_REVOKE,
+  DelegationRequest: DELEGATION_REQUEST,
+  DelegationResult: DELEGATION_RESULT,
+  DelegationMailboxFetch: DELEGATION_MAILBOX_FETCH,
   FileSend: P2P_FILE_SEND,
   DocumentPricingPublish: P2P_DOCUMENT_PUBLISH,
   Ping: P2P_PING,
@@ -1574,6 +1603,29 @@ const SCHEMA_P2P_PEER_ANNOUNCE = Object.freeze([
   { name: 'nonce', type: 'string', optional: true }
 ]);
 /**
+ * @private A buyer's bid for one chunk (see {@link DocumentBook.createBid}).
+ * A zero `merkleRoot` / `blobHash` leaves that selector open. Times are Unix seconds.
+ */
+const SCHEMA_P2P_DOCUMENT_BID = Object.freeze([
+  { name: 'document', type: 'string' },
+  { name: 'merkleRoot', type: 'bytes32' },
+  { name: 'blobIndex', type: 'u32' },
+  { name: 'blobHash', type: 'bytes32' },
+  { name: 'maxSats', type: 'u64' },
+  { name: 'expiresAt', type: 'u64' },
+  { name: 'nonce', type: 'bytes32' }
+]);
+/** @private A seller's answer to one bid (see {@link DocumentBook.createAsk}). */
+const SCHEMA_P2P_DOCUMENT_ASK = Object.freeze([
+  { name: 'bid', type: 'bytes32' },
+  { name: 'document', type: 'string' },
+  { name: 'merkleRoot', type: 'bytes32' },
+  { name: 'blobIndex', type: 'u32' },
+  { name: 'blobHash', type: 'bytes32' },
+  { name: 'priceSats', type: 'u64' },
+  { name: 'expiresAt', type: 'u64' }
+]);
+/**
  * @private Statechain patch proposal. `catalogCanonical` is the document-registry
  * shorthand; `patchesCanonical` (RFC6902 JSON array) wins when non-empty.
  */
@@ -1642,16 +1694,100 @@ const SCHEMA_PASSPORT_ASSERTION = Object.freeze([
   { name: 'wallet', type: 'string', optional: true },
   { name: 'cosigner', type: 'string', optional: true }
 ]);
-/** @private A Passport device asks a paired desktop app to answer `challenge` (a PASSPORT_CHALLENGE frame). */
-const SCHEMA_PASSPORT_SIGN_REQUEST = Object.freeze([
+/**
+ * @private Delegation (`functions/delegation.js`). Times are Unix
+ * milliseconds; every frame is signed by its author. Pairing commits to the
+ * initiator's nonce before the responder picks its own.
+ */
+const SCHEMA_DELEGATION_LINK_OFFER = Object.freeze([
   { name: 'v', type: 'u8' },
+  { name: 'pubkey', type: 'string' },
   { name: 'origin', type: 'string' },
-  { name: 'nonce', type: 'string' },
+  { name: 'label', type: 'string' },
+  { name: 'network', type: 'string' },
+  { name: 'commitment', type: 'bytes32' },
   { name: 'issuedAt', type: 'u64' },
-  { name: 'expiresAt', type: 'u64' },
-  { name: 'challenge', type: 'message' },
+  { name: 'expiresAt', type: 'u64' }
+]);
+/** @private `offer` is the sha256 of the offer frame; `pubkey` (compressed, as in the offer) lets the other side grant to it. */
+const SCHEMA_DELEGATION_LINK_ANSWER = Object.freeze([
+  { name: 'v', type: 'u8' },
+  { name: 'pubkey', type: 'string' },
+  { name: 'offer', type: 'bytes32' },
+  { name: 'nonce', type: 'bytes32' },
+  { name: 'label', type: 'string' },
+  { name: 'issuedAt', type: 'u64' },
+  { name: 'expiresAt', type: 'u64' }
+]);
+/** @private `answer` is the sha256 of the answer frame; `nonce` opens the offer's commitment. */
+const SCHEMA_DELEGATION_LINK_REVEAL = Object.freeze([
+  { name: 'v', type: 'u8' },
+  { name: 'answer', type: 'bytes32' },
+  { name: 'nonce', type: 'bytes32' },
+  { name: 'issuedAt', type: 'u64' },
+  { name: 'expiresAt', type: 'u64' }
+]);
+/**
+ * @private Lets `grantee` ask the author to sign. Comma lists for `scopes`,
+ * `origins`, `networks`; `link` is the reveal hash hex (or empty);
+ * `cosigner` / `cosignerProof` disclose the author's BIP87 key.
+ */
+const SCHEMA_DELEGATION_GRANT = Object.freeze([
+  { name: 'v', type: 'u8' },
+  { name: 'pubkey', type: 'string' },
+  { name: 'grantee', type: 'string' },
+  { name: 'link', type: 'string' },
+  { name: 'scopes', type: 'string' },
+  { name: 'origins', type: 'string' },
+  { name: 'networks', type: 'string' },
+  { name: 'cosigner', type: 'string' },
+  { name: 'cosignerProof', type: 'string' },
+  { name: 'extensionOrigin', type: 'string' },
+  { name: 'label', type: 'string' },
+  { name: 'issuedAt', type: 'u64' }
+]);
+/** @private `grant` is the sha256 of the grant frame being withdrawn. */
+const SCHEMA_DELEGATION_REVOKE = Object.freeze([
+  { name: 'v', type: 'u8' },
+  { name: 'grant', type: 'bytes32' },
+  { name: 'issuedAt', type: 'u64' }
+]);
+/**
+ * @private Ask `target` to sign the embedded `request` frame under its grant
+ * `grant` (sha256 of the grant frame). `origin` / `disclose` apply to
+ * Passport challenges.
+ */
+const SCHEMA_DELEGATION_REQUEST = Object.freeze([
+  { name: 'v', type: 'u8' },
+  { name: 'pubkey', type: 'string' },
+  { name: 'target', type: 'string' },
+  { name: 'grant', type: 'bytes32' },
+  { name: 'nonce', type: 'bytes32' },
+  { name: 'request', type: 'message' },
+  { name: 'origin', type: 'string' },
   { name: 'account', type: 'u32' },
-  { name: 'disclose', type: 'string', optional: true }
+  { name: 'disclose', type: 'string' },
+  { name: 'purpose', type: 'string' },
+  { name: 'issuedAt', type: 'u64' },
+  { name: 'expiresAt', type: 'u64' }
+]);
+/** @private Either `answer` (a frame) or `refusal` (text) is set; `rule` names the rule that decided. */
+const SCHEMA_DELEGATION_RESULT = Object.freeze([
+  { name: 'v', type: 'u8' },
+  { name: 'request', type: 'bytes32' },
+  { name: 'answer', type: 'message' },
+  { name: 'refusal', type: 'string' },
+  { name: 'rule', type: 'string' },
+  { name: 'issuedAt', type: 'u64' }
+]);
+/** @private A mailbox read, signed by the key whose mail it is. */
+const SCHEMA_DELEGATION_MAILBOX_FETCH = Object.freeze([
+  { name: 'v', type: 'u8' },
+  { name: 'pubkey', type: 'string' },
+  { name: 'since', type: 'u64' },
+  { name: 'nonce', type: 'bytes32' },
+  { name: 'issuedAt', type: 'u64' },
+  { name: 'expiresAt', type: 'u64' }
 ]);
 
 /**
@@ -1717,6 +1853,12 @@ function tryParseMessageBody (message) {
   registerBodySchema(P2P_PEER_ANNOUNCE, SCHEMA_P2P_PEER_ANNOUNCE);
   registerBodySchema('P2P_PEER_ANNOUNCE', SCHEMA_P2P_PEER_ANNOUNCE);
   registerBodySchema('PeerAnnounce', SCHEMA_P2P_PEER_ANNOUNCE);
+  registerBodySchema(P2P_DOCUMENT_BID, SCHEMA_P2P_DOCUMENT_BID);
+  registerBodySchema('P2P_DOCUMENT_BID', SCHEMA_P2P_DOCUMENT_BID);
+  registerBodySchema('DocumentBid', SCHEMA_P2P_DOCUMENT_BID);
+  registerBodySchema(P2P_DOCUMENT_ASK, SCHEMA_P2P_DOCUMENT_ASK);
+  registerBodySchema('P2P_DOCUMENT_ASK', SCHEMA_P2P_DOCUMENT_ASK);
+  registerBodySchema('DocumentAsk', SCHEMA_P2P_DOCUMENT_ASK);
   registerBodySchema(SIDECHAIN_STATE_PATCH_TYPE, SCHEMA_SIDECHAIN_STATE_PATCH);
   registerBodySchema('SIDECHAIN_STATE_PATCH', SCHEMA_SIDECHAIN_STATE_PATCH);
   registerBodySchema('SidechainStatePatch', SCHEMA_SIDECHAIN_STATE_PATCH);
@@ -1744,9 +1886,21 @@ function tryParseMessageBody (message) {
   registerBodySchema(PASSPORT_ASSERTION, SCHEMA_PASSPORT_ASSERTION);
   registerBodySchema('PASSPORT_ASSERTION', SCHEMA_PASSPORT_ASSERTION);
   registerBodySchema('PassportAssertion', SCHEMA_PASSPORT_ASSERTION);
-  registerBodySchema(PASSPORT_SIGN_REQUEST, SCHEMA_PASSPORT_SIGN_REQUEST);
-  registerBodySchema('PASSPORT_SIGN_REQUEST', SCHEMA_PASSPORT_SIGN_REQUEST);
-  registerBodySchema('PassportSignRequest', SCHEMA_PASSPORT_SIGN_REQUEST);
+  const delegation = [
+    [DELEGATION_LINK_OFFER, 'DELEGATION_LINK_OFFER', 'DelegationLinkOffer', SCHEMA_DELEGATION_LINK_OFFER],
+    [DELEGATION_LINK_ANSWER, 'DELEGATION_LINK_ANSWER', 'DelegationLinkAnswer', SCHEMA_DELEGATION_LINK_ANSWER],
+    [DELEGATION_LINK_REVEAL, 'DELEGATION_LINK_REVEAL', 'DelegationLinkReveal', SCHEMA_DELEGATION_LINK_REVEAL],
+    [DELEGATION_GRANT, 'DELEGATION_GRANT', 'DelegationGrant', SCHEMA_DELEGATION_GRANT],
+    [DELEGATION_REVOKE, 'DELEGATION_REVOKE', 'DelegationRevoke', SCHEMA_DELEGATION_REVOKE],
+    [DELEGATION_REQUEST, 'DELEGATION_REQUEST', 'DelegationRequest', SCHEMA_DELEGATION_REQUEST],
+    [DELEGATION_RESULT, 'DELEGATION_RESULT', 'DelegationResult', SCHEMA_DELEGATION_RESULT],
+    [DELEGATION_MAILBOX_FETCH, 'DELEGATION_MAILBOX_FETCH', 'DelegationMailboxFetch', SCHEMA_DELEGATION_MAILBOX_FETCH]
+  ];
+  for (const [code, name, alias, schema] of delegation) {
+    registerBodySchema(code, schema);
+    registerBodySchema(name, schema);
+    registerBodySchema(alias, schema);
+  }
 })();
 
 // Legacy JSON bodies <-> typed field bodies, for the protocol opcodes whose
@@ -2139,7 +2293,14 @@ Message.SCHEMA_SIDECHAIN_STATE_PATCH = SCHEMA_SIDECHAIN_STATE_PATCH;
 Message.SCHEMA_P2P_MUSIG_START = SCHEMA_P2P_MUSIG_START;
 Message.SCHEMA_PASSPORT_CHALLENGE = SCHEMA_PASSPORT_CHALLENGE;
 Message.SCHEMA_PASSPORT_ASSERTION = SCHEMA_PASSPORT_ASSERTION;
-Message.SCHEMA_PASSPORT_SIGN_REQUEST = SCHEMA_PASSPORT_SIGN_REQUEST;
+Message.SCHEMA_DELEGATION_LINK_OFFER = SCHEMA_DELEGATION_LINK_OFFER;
+Message.SCHEMA_DELEGATION_LINK_ANSWER = SCHEMA_DELEGATION_LINK_ANSWER;
+Message.SCHEMA_DELEGATION_LINK_REVEAL = SCHEMA_DELEGATION_LINK_REVEAL;
+Message.SCHEMA_DELEGATION_GRANT = SCHEMA_DELEGATION_GRANT;
+Message.SCHEMA_DELEGATION_REVOKE = SCHEMA_DELEGATION_REVOKE;
+Message.SCHEMA_DELEGATION_REQUEST = SCHEMA_DELEGATION_REQUEST;
+Message.SCHEMA_DELEGATION_RESULT = SCHEMA_DELEGATION_RESULT;
+Message.SCHEMA_DELEGATION_MAILBOX_FETCH = SCHEMA_DELEGATION_MAILBOX_FETCH;
 
 const fs = require('fs');
 const path = require('path');

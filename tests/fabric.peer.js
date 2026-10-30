@@ -1642,6 +1642,21 @@ describe('@fabric/core/types/peer', function () {
         assert.strictEqual(inner.items[0].id, 'catdoc');
         assert.strictEqual(inner.items[0].published, true);
       });
+      it('serveLocalDocumentInventory leaves out documents the catalog marks unpublished', function () {
+        const peer = new Peer({ listen: false, peersDb: null, serveLocalDocumentInventory: true });
+        peer._state.content.documents = { listed: 'for sale', bought: 'kept private' };
+        peer._state.content.collections = {
+          documents: { listed: { published: true, purchasePriceSats: 900 }, bought: { published: false } }
+        };
+        let written = null;
+        peer.connections['127.0.0.1:15'] = { _writeFabric: (b) => { written = b; } };
+        peer._handleGenericMessage({
+          type: 'INVENTORY_REQUEST',
+          object: { kind: 'documents', created: Date.now() }
+        }, { name: '127.0.0.1:15' });
+        const inner = JSON.parse(Message.fromBuffer(written).data);
+        assert.deepStrictEqual(inner.items.map((item) => item.id), ['listed']);
+      });
       it('relayInventoryRequest relays offerBtc INVENTORY_REQUEST when no local items', function () {
         const peer = new Peer({ listen: false, peersDb: null, serveLocalDocumentInventory: true, relayInventoryRequest: true });
         peer._state.content.documents = {};

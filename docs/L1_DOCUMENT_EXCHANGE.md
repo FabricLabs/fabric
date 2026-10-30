@@ -55,6 +55,43 @@ Canonical JSON `type` aliases (normalized by Peer to legacy `INVENTORY_*`):
 HTTP **402** + `X-Fabric-Payment-Request` mapping: `@fabric/http`
 `docs/HTTP_402_FABRIC_PAYMENT.md`.
 
+## Chunk bids (finding sellers)
+
+An inventory request goes only to the peers the buyer is connected to. To
+find sellers further away, a buyer floods a bid for one chunk, and sellers
+answer along the path it took.
+
+| Role | AMP opcode | Typed fields |
+|------|------------|--------------|
+| Buyer bids | `P2P_DOCUMENT_BID` (`0x63`, flood) | `document`, `merkleRoot`, `blobIndex`, `blobHash`, `maxSats`, `expiresAt`, `nonce` |
+| Seller asks | `P2P_DOCUMENT_ASK` (`0x64`, directed) | `bid`, `document`, `merkleRoot`, `blobIndex`, `blobHash`, `priceSats`, `expiresAt` |
+
+- **Bid.** `Peer#bidForDocumentChunk({ documentId, blobIndex, maxSats, merkleRootHex?, blobHashHex?, ttlSeconds?, book? })`
+  signs it with a fresh key (bids don't link to the buyer's Peer identity) and
+  returns it; its id is `sha256(author ‖ body)`. A zero `merkleRoot` or
+  `blobHash` means "any". `expiresAt` is at most `DOCUMENT_BID_MAX_TTL_SECONDS`
+  (1 h) ahead.
+- **Relays** forward the bid bit-identical and keep `bid id → previous hop`
+  until it expires (at most `PEER_MAX_DOCUMENT_BID_ROUTES`). They drop bids that
+  are expired, too far ahead, already seen, or over
+  `DOCUMENT_BID_MAX_RELAYS_PER_ORIGIN_PER_MINUTE` from one connection.
+- **Sellers** holding the chunk as a per-blob sealed document answer when
+  `answerDocumentBids` is `true` (listed rate), or a function
+  `(bid, held) => priceSats | null`; otherwise `documentBid` is only emitted
+  and `Peer#askDocumentBid(bidId, { priceSats? })` answers by hand. An ask is
+  signed by the seller's Peer key, priced at most `maxSats`, and expires no
+  later than the bid. One ask per bid per seller.
+- **Asks** go back only to the previous hop of a bid the relay routed, after
+  the relay checks them against the bid; an ask for a bid it never routed is
+  dropped, never flooded. At most `PEER_MAX_ASKS_PER_DOCUMENT_BID` per bid.
+- **Buyer.** Asks for its own bid are checked, emitted as `documentAsk`, and
+  put in the `DocumentBook` passed as `book` (`DocumentBook#ingestAsk`).
+
+An ask is a quote, not sale terms: rows are `sealed: false` until the buyer
+gets an inventory item from that seller, so `pickBest` never pays on an ask
+alone. Pure parts: `DocumentBook.createBid` / `readBid` / `createAsk` /
+`readAsk` / `bidId`.
+
 ## Peer / CLI surface (implemented)
 
 | Area | Status | Notes |

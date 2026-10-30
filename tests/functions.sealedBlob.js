@@ -6,9 +6,11 @@ const {
   openSealedJson,
   isSealedEnvelope,
   isPasswordProtectedDocument,
+  needsReseal,
   SEAL_SCHEME,
   PASSWORD_MIN_LENGTH,
-  DEFAULT_ITERATIONS
+  DEFAULT_ITERATIONS,
+  LEGACY_ITERATIONS
 } = require('../functions/sealedBlob');
 
 describe('@fabric/core/functions/sealedBlob', function () {
@@ -25,6 +27,21 @@ describe('@fabric/core/functions/sealedBlob', function () {
     assert.strictEqual(envelope.kdf.iterations, DEFAULT_ITERATIONS);
     const opened = openSealedJson(envelope, password);
     assert.deepStrictEqual(opened, secret);
+  });
+
+  it('seals at 600000 iterations and flags older envelopes for resealing', function () {
+    assert.strictEqual(DEFAULT_ITERATIONS, 600000);
+    assert.strictEqual(LEGACY_ITERATIONS, 210000);
+    const current = sealJson(secret, password);
+    assert.strictEqual(needsReseal(current), false);
+    const old = sealJson(secret, password, { iterations: LEGACY_ITERATIONS });
+    assert.strictEqual(needsReseal(old), true);
+    assert.strictEqual(needsReseal({ seal: old }), true);
+    const unnamed = Object.assign({}, old, { kdf: Object.assign({}, old.kdf) });
+    delete unnamed.kdf.iterations;
+    assert.deepStrictEqual(openSealedJson(unnamed, password), secret);
+    assert.strictEqual(needsReseal(unnamed), true);
+    assert.strictEqual(needsReseal({ not: 'sealed' }), false);
   });
 
   it('opens a nested seal field (wallet document shape)', function () {

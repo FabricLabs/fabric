@@ -96,17 +96,22 @@ describe('@fabric/core/functions/accountKeys', function () {
     assert.strictEqual(keys.size, 4);
   });
 
-  it('hands out addresses only from 84\' and watches both accounts', function () {
+  it('hands out addresses only from 84\' and watches every account', function () {
     const a = deriveAccount(MASTER, { network: 'regtest' });
     const d = walletDescriptors(a.wallet);
     const s = a.wallet.segwit.xpub;
+    const t = a.wallet.taproot.xpub;
     const l = a.wallet.standard.xpub;
     assert.strictEqual(d.receive, `wpkh(${s}/0/*)`);
     assert.strictEqual(d.change, `wpkh(${s}/1/*)`);
     assert.deepStrictEqual(d.watch, [
       `wpkh(${s}/0/*)`, `wpkh(${s}/1/*)`,
+      `tr(${t}/0/*)`, `tr(${t}/1/*)`,
       `pkh(${l}/0/*)`, `pkh(${l}/1/*)`
     ]);
+    const { taproot, ...withoutTaproot } = a.wallet;
+    assert.ok(taproot);
+    assert.strictEqual(walletDescriptors(withoutTaproot).watch.length, 4, 'a wallet from before 86\' still has a watch set');
     for (const descriptor of d.watch) assert.ok(!descriptor.includes('['), 'no key origin / fingerprint');
     assert.strictEqual(WALLET_GAP_LIMIT, 20);
   });
@@ -120,7 +125,7 @@ describe('@fabric/core/functions/accountKeys', function () {
     for (const network of ['mainnet', 'regtest']) {
       for (const account of [0, 1]) {
         const w = deriveAccount(MASTER, { account, network }).wallet;
-        for (const xpub of [w.segwit.xpub, w.standard.xpub]) {
+        for (const xpub of [w.segwit.xpub, w.taproot.xpub, w.standard.xpub]) {
           assert.deepStrictEqual(header(xpub), { depth: 0, fingerprint: '00000000', child: '00000000' });
         }
       }
@@ -214,7 +219,7 @@ describe('@fabric/core/functions/accountKeys', function () {
     assert.strictEqual(locked.wallet.verified, false);
     assert.throws(() => walletReceiveAddress(locked.wallet, 'mainnet', 0), unverified);
     assert.throws(() => walletChangeAddress(locked.wallet, 'mainnet', 0), unverified);
-    assert.strictEqual(walletDescriptors(locked.wallet).watch.length, 4, 'watch-only display still works');
+    assert.strictEqual(walletDescriptors(locked.wallet).watch.length, 6, 'watch-only display still works');
 
     const master = openAccountVault(vault, LOCK);
     const open = currentVaultAccount(vault, master);

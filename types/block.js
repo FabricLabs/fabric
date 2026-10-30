@@ -28,7 +28,7 @@ const CONSENSUS_POW = 'pow';
 const CONSENSUS_FEDERATION = 'federation';
 const CONSENSUS_GOSSIP = 'gossip';
 const BLOCK_SIGNING_KIND = 'FabricBlock';
-const SIGNING_TAGS = require('../functions/signingTags');
+const SIGNING_TAGS = require('./key/signingTags');
 
 /**
  * @private

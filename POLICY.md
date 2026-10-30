@@ -150,10 +150,18 @@ Several application types use codes **outside** this range (see [`constants.js`]
 | `0x4225` | 16933 | `P2P_MUSIG_ACCEPT_PROPOSAL` † | Aggregated BIP-340 signature | ❌ No |
 | `0x4240` | 16960 | `PASSPORT_CHALLENGE` † | Site asks for a sign-in to its own origin, optionally naming its network and asking for wallet / cosigner keys (`fabric:` frame; site signature optional) | ❌ No |
 | `0x4241` | 16961 | `PASSPORT_ASSERTION` † | Sign-in signed by the identity, bound to origin + nonce + challenge hash + network + expiry | ❌ No |
-| `0x4242` | 16962 | `PASSPORT_SIGN_REQUEST` † | Paired Passport device asks a desktop signer to answer a challenge | ❌ No |
+| `0x4242` | 16962 | `PASSPORT_SIGN_REQUEST` † | Retired (reserved): replaced by `DELEGATION_REQUEST`; readers refuse it | ❌ No |
+| `0x4243` | 16963 | `DELEGATION_LINK_OFFER` † | Pairing offer committing to the initiator's secret nonce | ❌ No |
+| `0x4244` | 16964 | `DELEGATION_LINK_ANSWER` † | Pairing answer with the responder's nonce | ❌ No |
+| `0x4245` | 16965 | `DELEGATION_LINK_REVEAL` † | Initiator reveals its nonce; both sides show the same six-digit code | ❌ No |
+| `0x4246` | 16966 | `DELEGATION_GRANT` † | Lets one key ask another to sign, for listed scopes, origins, and networks; may disclose a cosigner key | ❌ No |
+| `0x4247` | 16967 | `DELEGATION_REVOKE` † | Withdraws a grant (grantor only) | ❌ No |
+| `0x4248` | 16968 | `DELEGATION_REQUEST` † | Asks a grantor to sign one embedded frame (Passport challenge, federation invite or withdrawal, unsigned chat) | ❌ No |
+| `0x4249` | 16969 | `DELEGATION_RESULT` † | The signed answer frame, or a refusal | ❌ No |
+| `0x424A` | 16970 | `DELEGATION_MAILBOX_FETCH` † | Proves the reader holds the key a mailbox serves | ❌ No |
 | `0x81`-`0x8F` (legacy draft) | … | CHAT / ACCEPT / REJECT / PAYMENT_* | Not all registered in `constants.js` — see Remaining work | ⚠️ Varies |
 
-The Passport types travel as `fabric:<frame>` strings between a page, Passport, and a desktop app (`functions/fabricUri`, `functions/passport`; spec in [docs/PASSPORT.md](docs/PASSPORT.md)), not over the mesh: `Peer` has no handler for them and does not relay them. They replace the earlier site-login types `0x4230`–`0x4232`, which are no longer known and are refused. Like the MuSig rows they are JS-only for now — `src/constants.h` does not list them.
+The Passport and delegation types travel as `fabric:<frame>` strings between a page, Passport, a rendezvous or mailbox, and a delegate (`functions/fabricUri`, `functions/passport`, `functions/delegation`; specs in [docs/PASSPORT.md](docs/PASSPORT.md) and [docs/DELEGATION.md](docs/DELEGATION.md)), not over the mesh: `Peer` has no handler for them and does not relay them. They replace the earlier site-login types `0x4230`–`0x4232`, which are no longer known and are refused. Like the MuSig rows they are JS-only for now — `src/constants.h` does not list them.
 
 ### Bitcoin Integration Types
 

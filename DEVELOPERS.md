@@ -11,6 +11,7 @@ There is a lot to cover when building decentralized applications on Fabric, so g
 - [Message types](#message-types-typesmessage)
 - [Architecture](#architecture)
 - [Storage](#storage-typesstore)
+- [Moving `functions/` into Types](#moving-functions-into-types)
 - [Reference links](#reference-links)
 - [Production & release](#production--release)
 - [Core types (reference)](#core-types-reference)
@@ -323,6 +324,16 @@ Other **`Store`** subclasses add domain behavior — for example **`Datastore`**
 - Removed standalone modules (unused or superseded): **`aggregator`**, **`consensus`**, **`mempool`**, **`swap`**, **`value`**, **`walker`**. See **`scripts/remove-legacy-types.sh`**.
 - Removed **`types/stash.js`** (legacy `Vector` + localforage); use **`Store`** or app-specific caches instead.
 
+### Moving `functions/` into Types
+Core's `functions/` helpers are folding into the Types that own them. The rules:
+
+- **Code moves to the Type**, as statics or a static namespace (`Witness.MuSig2`). A large implementation may live in a module beside the Type (`types/key/bip32.js`, like `types/bitcoin/`), exposed only through the Type.
+- **`functions/<name>.js` becomes a shim** that re-exports from the Type (pattern: `functions/messageBodyCodec.js`), plus a `.d.ts` shim where one exists today.
+- **Every path keeps working.** `./functions/*` is exported as a wildcard, so every path is public. The paths frozen in [PUBLIC_API.md](PUBLIC_API.md) stay frozen, and shims stay for at least the 0.1 line.
+- **`Peer` is already over 8,000 lines.** Peer-bound helpers go to smaller homes where they fit (`Message`, `Session`); the rest become `Peer` statics backed by modules in `types/peer/`.
+- **Leaves stay leaves:** `bytes`, `fabricCanonicalJson`, `wireJson`, `_sortKeys`, `oxfordJoin`, `truncateMiddle`, `json`, `fabricNativeAccel` (the native loader), `sipa/*` (vendored), and `passport` (its own spec).
+- **Each step ends with** `npm run ci` green (old tests run unchanged through the shims, new tests against the Types), `npm run check:downstream` passing, and `PUBLIC_API.md` and the CHANGELOG updated.
+
 ## Reference links
 | Link | Description |
 |------|-------------|
@@ -370,7 +381,7 @@ Canonical map of `types/` and `services/` across **`@fabric/core`**, **`@fabric/
 | Last reviewed | 2026-08-15 |
 | Trees scanned | `types/` + `services/` (Passport: `src/types/`, `src/background/`, `src/crypto/`, `src/utils/`) |
 | Local checkouts | `~/fabric-clean`, `~/fabric-http`, `~/hub.fabric.pub`, `~/fabric-browser-extension`, `~/star-citizen-live` (`~/goon.vc` insight only) |
-| Crypto lift | IdentityCrossSign + identity Schnorr + verify live in `@fabric/core/functions/*` (follow-up after [#183](https://github.com/FabricLabs/fabric/pull/183) merge). HTTP / Hub re-export those leaves; GoonCitizen keeps a browser-safe local copy for the dashboard bundle. |
+| Crypto lift | Delegation frames and identity Schnorr live in `@fabric/core` (`functions/delegation`, `types/delegation`, `functions/fabricIdentitySchnorr`). HTTP / Hub / GoonCitizen / Passport use them directly. |
 | Core `npm test` | 2026-08-14: gossip-network `verifiedPubkey` expect fixed; remaining work is identity lift + OUTSTANDING queue (not this suite fail). |
 
 ---
@@ -506,8 +517,8 @@ No top-level `types/` or `services/`. Treat as a **client** of core Key/Message 
 | `src/types/key.ts` | **Do not grow.** Incomplete elliptic Key; `toBech32()` is a stub. Target: `@fabric/core/types/key`. |
 | `src/types/identity.ts` | UI `IIdentity` / chain allowlist — not core Identity. Keep local. |
 | `src/background/encryptedDatastore.ts` | chrome.storage AES-GCM — parallel to `Store.openEncrypted`, not a merge candidate. |
-| `src/utils/identityCrossSign.ts` | **Re-export** of `@fabric/core/functions/identityCrossSign`. |
-| `src/utils/fabricSiteMessage.ts`, `fabricDeviceLinkSign.ts` | Clients of http — keep as clients. |
+| `src/background/delegation.ts` | A core `Delegation` (`@fabric/core/types/delegation`) on the encrypted datastore — no protocol code of its own. |
+| `src/utils/fabricSiteMessage.ts` | Client of http — keep as a client. |
 | `src/fabric/bitcoinService.ts` | Hub HTTP Bitcoin client — keep. |
 
 #### GoonCitizen — application
@@ -531,8 +542,8 @@ Payoff vs risk for *sharing* an API. Implement only with owner go-ahead; small P
 
 | Rank | Slice | Home | Payoff | Risk | Notes |
 |------|-------|------|--------|------|-------|
-| 1 | **IdentityCrossSign** (+ revoke) canonical strings + Schnorr verify | **core** `functions/identityCrossSign` + `identityCrossSignVerify` + `fabricIdentitySchnorr` | High | Low | **Implemented locally 2026-08-14; not in [#183](https://github.com/FabricLabs/fabric/pull/183).** Downstream re-exports already exist. Pin/link core before those CI jobs. Site-login HTTP stays in http. |
-| 2 | **Site-login + device-link** | **http** (already) | High | Low–med | GC/Passport/Hub must wrap http; do not fork verify. Possession-proof redeem is the security outstanding, not a new type. |
+| 1 | **Delegation** (pairing, grants, requests; replaced IdentityCrossSign and device-link) | **core** `functions/delegation` + `types/delegation` ([docs/DELEGATION.md](docs/DELEGATION.md)) | High | Low | Every participant builds a `Delegation` on its own key and store; do not fork frame code. |
+| 2 | **Passport + delegation transport** | **http** (`passportHttp`, `fabricDelegationHttp`, `fabricDelegationMailbox`, `fabricDelegate`) | High | Low–med | GC/Passport/Hub must wrap http; do not fork verify. |
 | 3 | **Passport Key → core Key** | **core** Key | High (crypto) | Med | Drop elliptic class; keep `IKey` UI state in Passport. |
 | 4 | **Retire Hub Queue/Worker forks** | **core** | Med | Low | Runtime already uses core Worker. |
 | 5 | **httpSharedMode** | **http** (already) | Med | Low | Hub + GC re-export; keep the test that they are the same function. |
@@ -613,7 +624,7 @@ Not a ship list. Owner go-ahead still required. Detail for Core also lives in [O
 - Existing OUTSTANDING items: type-tree keep/remove, `messageHex` laziness, `contractId` → `contractIdentifier`, genesis journal cap, blinded-execution scaffold, third-party review of peer/HTLC.
 
 #### Follow-up Core PR (new files)
-Identity leaves (`functions/identityCrossSign.js`, `fabricIdentitySchnorr.js`, `identityCrossSignVerify.js`) and tests in `tests/fabric.identity.js` are already on #185. Pin or `npm link` core in http / Hub / Passport / GoonCitizen. Sidecar `.d.ts` files were dropped for the GitHub 150-file review cap.
+`functions/fabricIdentitySchnorr.js` and its tests in `tests/fabric.identity.js` are already on #185; the IdentityCrossSign leaves were since replaced by delegation (`functions/delegation.js`, `types/delegation.js`). Pin or `npm link` core in http / Hub / Passport / GoonCitizen. Sidecar `.d.ts` files were dropped for the GitHub 150-file review cap.
 
 #### Pending tests (not failures)
 - 3× Lightning `_makeRPCRequest` (JSON-RPC line-delimited / error / timeout) — skipped unit stubs.
