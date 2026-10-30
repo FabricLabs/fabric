@@ -103,6 +103,38 @@ describe('BIP: content-addressed file exchange (test vectors)', function () {
         assert.strictEqual(sha256(Buffer.from(v.preimageHex, 'hex')).toString('hex'), v.contentHashHex);
         assert.strictEqual(purchaseContentHashHex(v.documentId, v.document), v.contentHashHex);
       });
+
+      it('envelope bytes match the spec layout', function () {
+        const u32 = (n) => { const b = Buffer.alloc(4); b.writeUInt32BE(n); return b; };
+        const u64 = (n) => { const b = Buffer.alloc(8); b.writeBigUInt64BE(BigInt(n)); return b; };
+        const bytes = (b) => Buffer.concat([u32(b.length), b]);
+        const str = (s) => bytes(Buffer.from(s, 'utf8'));
+        const d = v.document;
+        const body = Buffer.concat([
+          u32(0x7f),
+          bytes(Buffer.from(d.contentBase64, 'base64')),
+          str(v.documentId),
+          str(d.mime),
+          str(d.name),
+          u32(d.revision),
+          str(d.sha256),
+          u64(d.size),
+          str('')
+        ]);
+        const envelope = Buffer.concat([
+          Buffer.from('c0d3f33d', 'hex'),
+          u32(1),
+          Buffer.alloc(32),
+          Buffer.alloc(32),
+          u32(0x3e6),
+          u32(body.length),
+          sha256(sha256(body)),
+          Buffer.alloc(32),
+          Buffer.alloc(64),
+          body
+        ]);
+        assert.strictEqual(envelope.toString('hex'), v.envelopeHex);
+      });
     }
   });
 

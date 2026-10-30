@@ -216,6 +216,22 @@ describe('@fabric/core/types/key', function () {
       assert.equal(key.deriveAddress(0, 1, 'p2tr').address, 'bc1p3qkhfews2uk44qtvauqyr2ttdsw7svhkl9nkm9s9c3x4ax5h60wqwruhk7');
     });
 
+    it('derives addresses for the network it is on, never mainnet by default', function () {
+      const mnemonic = 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about';
+      const on = (network) => new Key({ mnemonic, purpose: 86, network });
+      assert.equal(on('mainnet').deriveAddress(0, 0, 'p2tr').address, 'bc1p5cyxnuxmeuwuvkwfem96lqzszd02n6xdcjrs20cac6yqjjwudpxqkedrcr');
+      for (const network of ['signet', 'testnet', 'testnet4']) {
+        assert.match(on(network).deriveAddress(0, 0, 'p2tr').address, /^tb1p/, network);
+        assert.match(on(network).deriveAddress(0, 0, 'p2wpkh').address, /^tb1q/, network);
+        assert.match(on(network).deriveAddress(0, 0, 'p2pkh').address, /^[mn]/, network);
+      }
+      for (const network of ['regtest', 'playnet']) {
+        assert.match(on(network).deriveAddress(0, 0, 'p2tr').address, /^bcrt1p/, network);
+        assert.match(on(network).deriveAddress(0, 0, 'p2wpkh').address, /^bcrt1q/, network);
+      }
+      assert.throws(() => on('nosuchnet').deriveAddress(0, 0, 'p2wpkh'), /Unsupported network/);
+    });
+
     it('can sign messages using Schnorr signatures', function () {
       const key = new Key({ private: '1111111111111111111111111111111111111111111111111111111111111111' });
       const message = 'test message';

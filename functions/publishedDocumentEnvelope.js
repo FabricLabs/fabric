@@ -3,14 +3,16 @@
 /**
  * Canonical Fabric `DocumentPublish` **unsigned** envelope bytes + document-offer types.
  *
- * **Legacy unsealed payment binding (do not hash signed gossip frames):**
- * 1. Build **unsigned** AMP bytes via {@link documentPublishEnvelopeBuffer}
- *    (signature field **must** be all zeros — this is the binding commitment).
+ * **Unsealed payment binding (do not hash signed gossip frames):**
+ * 1. Build **unsigned** AMP bytes via {@link documentPublishEnvelopeBuffer}:
+ *    the `DOCUMENT_PUBLISH` field frame of the whitelisted document fields
+ *    ({@link documentPublishMessage}), author and signature all zeros — this
+ *    is the binding commitment.
  * 2. HTLC / invoice **preimage** (32 bytes) = `SHA256(those unsigned bytes)`.
  * 3. **`purchaseContentHashHex`** / wire `contentHashHex` = `SHA256(preimage)`.
  *
- * Signing a `DocumentPublish` for Peer gossip changes the signature bytes and
- * **must not** be used as the payment commitment. Prefer
+ * Peer gossips the same frame signed, which sets its author and signature;
+ * those bytes **must not** be used as the payment commitment. Prefer
  * {@link module:functions/documentPaymentHash} `resolveDocumentContentHashHex`
  * for sealed vs envelope vs blob.
  *
@@ -117,8 +119,8 @@ function whitelistedDocumentFields (docIdNorm, parsed) {
 }
 
 /**
- * Assert AMP buffer is an **unsigned** DocumentPublish frame (signature all zeros).
- * Payment binding must never hash a Schnorr-signed gossip frame.
+ * Assert AMP buffer is an **unsigned** DocumentPublish frame (author and
+ * signature all zeros). Payment binding must never hash a Schnorr-signed gossip frame.
  * @param {Buffer} buf
  * @returns {Buffer} same buffer
  */
@@ -126,10 +128,11 @@ function assertUnsignedDocumentPublishEnvelope (buf) {
   if (!Buffer.isBuffer(buf) || buf.length < 208) {
     throw new Error('document publish envelope must be an AMP Message buffer (≥ 208 bytes)');
   }
+  const author = buf.subarray(40, 72);
   const sig = buf.subarray(144, 208);
-  if (!sig.equals(Buffer.alloc(64))) {
+  if (!author.equals(Buffer.alloc(32)) || !sig.equals(Buffer.alloc(64))) {
     throw new Error(
-      'document publish envelope must be unsigned (zero signature); ' +
+      'document publish envelope must be unsigned (zero author and signature); ' +
       'do not hash signed gossip DocumentPublish bytes for payment binding'
     );
   }
@@ -137,8 +140,22 @@ function assertUnsignedDocumentPublishEnvelope (buf) {
 }
 
 /**
- * Full **unsigned** AMP message bytes (header + body) for DocumentPublish with
- * canonical JSON payload. Signature field is always zeros — safe for payment hash.
+ * Unsigned `DOCUMENT_PUBLISH` field frame of the whitelisted document fields.
+ * Peer signs and gossips it; {@link documentPublishEnvelopeBuffer} hashes it
+ * unsigned, so the gossiped frame is the envelope plus the seller's author and
+ * signature.
+ * @param {string} docIdNorm
+ * @param {object} parsed
+ * @returns {Message}
+ */
+function documentPublishMessage (docIdNorm, parsed) {
+  return Message.fromLegacyBody('DOCUMENT_PUBLISH', whitelistedDocumentFields(docIdNorm, parsed));
+}
+
+/**
+ * Full **unsigned** AMP message bytes (header + field body) of
+ * {@link documentPublishMessage}. Author and signature are always zeros — safe
+ * for payment hash.
  * @param {string} docIdNorm
  * @param {object} parsed
  * @returns {Buffer}
@@ -147,13 +164,7 @@ function documentPublishEnvelopeBuffer (docIdNorm, parsed) {
   if (!docIdNorm || !parsed || parsed.contentBase64 == null) {
     throw new Error('document id and contentBase64 required for publish envelope');
   }
-  const payload = whitelistedDocumentFields(docIdNorm, parsed);
-  const dataStr = fabricCanonicalJson(payload);
-  const msg = Message.fromVector(['DocumentPublish', dataStr]);
-  // Ensure we never accidentally carry a signature into the commitment.
-  if (msg.raw && Buffer.isBuffer(msg.raw.signature)) msg.raw.signature.fill(0);
-  const buf = msg.toBuffer();
-  return assertUnsignedDocumentPublishEnvelope(buf);
+  return assertUnsignedDocumentPublishEnvelope(documentPublishMessage(docIdNorm, parsed).toBuffer());
 }
 
 /**
@@ -188,6 +199,7 @@ module.exports = {
   fabricCanonicalJson,
   whitelistedDocumentFields,
   assertUnsignedDocumentPublishEnvelope,
+  documentPublishMessage,
   documentPublishEnvelopeBuffer,
   inventoryHtlcPreimage32,
   inventoryHtlcPreimage32FromEnvelopeBuffer,

@@ -24,7 +24,7 @@
 
 const bitcoin = require('bitcoinjs-lib');
 const Coinjoin = require('./coinjoin');
-const bip32 = require('../functions/bip32');
+const bip32 = require('./key/bip32');
 
 const TAKER_STATES = Object.freeze({
   NEW: 'new',

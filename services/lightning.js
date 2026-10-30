@@ -1125,7 +1125,7 @@ Lightning.redactSensitiveCommandArg = redactSensitiveCommandArg;
 
 Object.assign(Lightning, {
   Bolt12: require('../functions/lightningBolt12'),
-  FabricPayment: require('../functions/fabricPaymentBech32'),
+  FabricPayment: require('../types/bech32/fabricPaymentBech32'),
   Bolt12Semantics: require('../functions/bolt12Semantics')
 });
 

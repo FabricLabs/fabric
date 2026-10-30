@@ -29,7 +29,7 @@ const {
   classifyChaosPeerError,
   chaosMessageBody,
   listPlaynetChaosConditions
-} = require('../functions/playnetChaosNeighbors');
+} = require('./lib/playnetChaosNeighbors');
 
 try {
   require('../functions/fabricHomeEnv').loadFabricHomeEnv();
@@ -281,7 +281,7 @@ ${listPlaynetChaosConditions().map((c) => `  ${c.id} — ${c.description}`).join
   if (argv.local && !argv.isolated) {
     plan.production = false;
     plan.isolated = false;
-    if (!argv.peers.length) plan.targets = require('../functions/playnetChaosNeighbors').DEFAULT_LOCAL_PEERS.slice();
+    if (!argv.peers.length) plan.targets = require('./lib/playnetChaosNeighbors').DEFAULT_LOCAL_PEERS.slice();
     plan.reportName = argv.reportName || 'playnet-chaos-neighbors-local.json';
   }
 

@@ -224,4 +224,49 @@ describe('types/htlc', function () {
     assert.strictEqual(Htlc.sha256(a).length, 32);
     assert.ok(!a.equals(b));
   });
+
+  it('claims a 716-sat output to taproot at 1 sat/vB and refuses it at 4', function () {
+    const seller = randomKeyPair();
+    const buyer = randomKeyPair();
+    const preimage = Htlc.randomPreimage();
+    const htlc = new Htlc({
+      network: 'regtest',
+      claimPubkey: seller.publicKey,
+      refundPubkey: buyer.publicKey,
+      paymentHash: Htlc.sha256(preimage),
+      refundLocktime: 1_000_000
+    });
+    const destination = htlc.address;
+    assert.strictEqual(Htlc.minimumForFeerate(1, destination), 716);
+    assert.ok(Htlc.minimumForFeerate(4, destination) > 716);
+    const bundle = htlc.prepareClaim({
+      fundedTxHex: fund(htlc, 716, 3),
+      preimage,
+      destinationAddress: destination,
+      feerate: 1,
+      tipHeight: 1000,
+      confirmations: 1,
+      refundLocktimeHeight: 1_000_000
+    });
+    assert.strictEqual(bundle.fee, 162);
+    assert.ok(bundle.destSats >= Htlc.P2TR_DUST_SATS);
+    assert.throws(() => htlc.prepareClaim({
+      fundedTxHex: fund(htlc, 716, 4),
+      preimage,
+      destinationAddress: destination,
+      feerate: 4
+    }), /dust/);
+    assert.strictEqual(Htlc.claimRefusal({ tipHeight: 9994, refundLocktime: 10000, confirmations: 1 }), null);
+    assert.ok(Htlc.claimRefusal({ tipHeight: 9995, refundLocktime: 10000, confirmations: 1 }));
+    assert.ok(Htlc.claimRefusal({ tipHeight: 1000, refundLocktime: 2000, confirmations: 0 }));
+    assert.throws(() => htlc.prepareClaim({
+      fundedTxHex: fund(htlc, 50_000, 5),
+      preimage,
+      destinationAddress: destination,
+      feeSats: 500,
+      tipHeight: 9995,
+      confirmations: 1,
+      refundLocktimeHeight: 10000
+    }), /claim-safety|inside 6 blocks|refund lock/);
+  });
 });

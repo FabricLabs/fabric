@@ -41,7 +41,7 @@ const { sortInputs, sortOutputs } = require('../functions/bip69');
 const { BIP125_SEQUENCE_LOCKTIME_ONLY } = require('../functions/bip125');
 const { networkForFabricName } = require('./policy');
 const groupChatSeal = require('../functions/groupChatSeal');
-const { pubkeyXOnly } = require('../functions/pubkey');
+const { pubkeyXOnly } = require('./key/pubkey');
 const { MAX_MESSAGE_SIZE } = require('../constants');
 
 bitcoin.initEccLib(ecc);

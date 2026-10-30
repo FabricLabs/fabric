@@ -1144,11 +1144,14 @@ describe('@fabric/core/services/bitcoin', function () {
         await assert.rejects(() => btc.generateBlock('addr'), /Invalid mode/);
       });
 
-      it('getUnusedAddress derives sequential addresses in fabric mode', async function () {
+      it('getUnusedAddress derives sequential BIP-86 addresses in fabric mode', async function () {
         const btc = new Bitcoin({ network: 'regtest', mode: 'fabric' });
         const a = await btc.getUnusedAddress();
         const b = await btc.getUnusedAddress();
         assert.notStrictEqual(a, b);
+        assert.match(a, /^bcrt1p/);
+        assert.match(b, /^bcrt1p/);
+        assert.deepStrictEqual([btc.settings.state.addresses[a].index, btc.settings.state.addresses[b].index], [0, 1]);
         assert.ok(btc.settings.state.addresses[a]);
         assert.ok(btc.settings.state.addresses[b]);
       });

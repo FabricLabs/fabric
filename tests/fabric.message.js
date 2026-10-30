@@ -451,7 +451,13 @@ describe('@fabric/core/types/message', function () {
         contract: 'cc'.repeat(32),
         payload
       });
-      assert.deepStrictEqual(cm.toFields(), { contract: 'cc'.repeat(32), payload });
+      assert.deepStrictEqual(cm.toFields(), {
+        contract: 'cc'.repeat(32),
+        payload,
+        recipient: '',
+        ref: '',
+        slot: ''
+      });
     });
 
     it('fromVector accepts an explicit parent hex as the third element', function () {

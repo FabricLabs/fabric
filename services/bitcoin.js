@@ -32,6 +32,7 @@ bitcoin.initEccLib(ecc);
 
 // Services
 const ZMQ = require('../services/zmq');
+const Watchtower = require('../services/watchtower');
 
 // Types
 const Actor = require('../types/actor');
@@ -621,6 +622,14 @@ class Bitcoin extends Service {
     }); */
 
     this.zmq = new ZMQ({ ...this.settings.zmq, key: { xprv: this._rootKey.xprv } });
+    // Every node that runs Bitcoin watches its own filings and those of
+    // clients the host admits. `settings.watchtower === false` turns it off.
+    this.watchtower = this.settings.watchtower === false
+      ? null
+      : new Watchtower({
+        localPrivateKey: this._rootKey && this._rootKey.private,
+        admit: typeof this.settings.watchtowerAdmit === 'function' ? this.settings.watchtowerAdmit : null
+      });
 
     // Define Bitcoin P2P Messages
     this.define('VersionPacket', { type: 0 });
@@ -1680,6 +1689,7 @@ class Bitcoin extends Service {
             try {
               const verbose = await this._makeRPCRequest('getrawtransaction', [txid, true]);
               if (verbose) {
+                if (verbose.hex) this.broadcastWatchtower([verbose.hex]).catch(() => {});
                 this.emit('transaction', Object.assign({}, verbose, { source: 'BitcoinTransactionHash' }));
                 if (this.wallet && typeof this.wallet.ingestBitcoinTransaction === 'function') {
                   this.wallet.ingestBitcoinTransaction(verbose, { source: 'BitcoinTransactionHash' });
@@ -1729,6 +1739,8 @@ class Bitcoin extends Service {
             tx: (verboseBlock && verboseBlock.tx) || [],
             source: 'BitcoinBlockHash'
           };
+          const watchHexes = payload.tx.map((tx) => tx && tx.hex).filter(Boolean);
+          if (watchHexes.length) this.broadcastWatchtower(watchHexes).catch(() => {});
           this.emit('block', payload);
           if (this.wallet && typeof this.wallet.ingestBitcoinBlock === 'function') {
             try {
@@ -1745,6 +1757,7 @@ class Bitcoin extends Service {
               ? content.content
               : null;
             if (rawHex) {
+              this.broadcastWatchtower([rawHex]).catch(() => {});
               const event = { hex: rawHex, source: 'BitcoinTransaction' };
               try {
                 const bitcoinjs = require('bitcoinjs-lib');
@@ -1841,12 +1854,15 @@ class Bitcoin extends Service {
     if (this.rpc) {
       try {
         await this._loadWallet(this.walletName);
-        const info = await this._makeRPCRequest('getnetworkinfo');
-        const version = parseInt(info.version);
-        const address = await this._makeWalletRequest('getnewaddress', [
-          '', // label
-          version >= 240000 ? 'legacy' : 'legacy' // address type
-        ], this.walletName);
+        // Taproot: the cheapest input to spend later. Segwit only where the
+        // wallet can't make one (Core before 22, or a non-descriptor wallet).
+        let address = null;
+        try {
+          address = await this._makeWalletRequest('getnewaddress', ['', 'bech32m'], this.walletName);
+        } catch (taprootError) {
+          if (this.settings.debug) this.emit('debug', `[FABRIC:BITCOIN] No Taproot address (${taprootError.message || taprootError}); using segwit`);
+          address = await this._makeWalletRequest('getnewaddress', ['', 'bech32'], this.walletName);
+        }
 
         if (!address) throw new Error('No address returned from getnewaddress');
         return address;
@@ -1854,37 +1870,23 @@ class Bitcoin extends Service {
       if (this.settings.debug) this.emit('debug', `[FABRIC:BITCOIN] Error getting unused address: ${error.message || error}`);
         throw error;
       }
-    } else if (this.settings.key || this._rootKey) {
-      // In fabric mode, derive from a Key instance; settings.key may be plain config.
-      const keySource = (this.settings.key && typeof this.settings.key.deriveAddress === 'function')
-        ? this.settings.key
-        : this._rootKey;
-      const target = keySource.deriveAddress(this.settings.state.walletIndex);
-      // Increment the index for next time
-      this.settings.state.walletIndex++;
-      // Track the address
-      this.settings.state.addresses[target.address] = {
-        index: this.settings.state.walletIndex - 1,
-        transactions: []
-      };
-      return target.address;
-    } else {
-      // If no key is provided, generate a new key for regtest
-      const key = new Key({
-        network: this.settings.network,
-        purpose: 44,
-        account: 0,
-        index: this.settings.state.walletIndex
-      });
-      this.settings.key = key;
-      const target = key.deriveAddress(this.settings.state.walletIndex);
-      this.settings.state.walletIndex++;
-      this.settings.state.addresses[target.address] = {
-        index: this.settings.state.walletIndex - 1,
-        transactions: []
-      };
-      return target.address;
     }
+
+    // Without bitcoind: BIP-86 Taproot (`m/86'/{coin}'/0'/0/i`) from a Key
+    // instance (settings.key may be plain config), else a new key.
+    let keySource = (this.settings.key && typeof this.settings.key.deriveAddress === 'function')
+      ? this.settings.key
+      : this._rootKey;
+    if (!keySource && !this.settings.key) {
+      keySource = new Key({ network: this.settings.network });
+      this.settings.key = keySource;
+    }
+    if (!keySource) throw new Error('No key to derive a receive address from (settings.key is not a Key)');
+    const index = this.settings.state.walletIndex;
+    const { address } = Wallet.deriveTaprootAddress(keySource, { index, network: this.settings.network });
+    this.settings.state.walletIndex++;
+    this.settings.state.addresses[address] = { index, transactions: [] };
+    return address;
   }
 
   async append (raw) {
@@ -2555,6 +2557,39 @@ class Bitcoin extends Service {
     return this._makeRPCRequest('sendrawtransaction', [ raw ]);
   }
 
+  /**
+   * Broadcast justice transactions for any revoked commitment in `txHexes`.
+   * A filing is dropped only once every one of its transactions is accepted
+   * or already settled. A prefix that does not decrypt is ignored.
+   * @param {string[]} txHexes raw transactions (block or mempool)
+   * @returns {Promise<string[]>} justice transactions submitted
+   */
+  async broadcastWatchtower (txHexes) {
+    const tower = this.watchtower;
+    if (!tower || !txHexes || !txHexes.length) return [];
+    const hits = tower.match(txHexes);
+    const sent = [];
+    for (const hit of hits) {
+      let keep = false;
+      for (const txHex of hit.transactions) {
+        try {
+          await this._spendRawTX(txHex);
+          sent.push(txHex);
+        } catch (e) {
+          if (Watchtower.broadcastSettled(e)) {
+            sent.push(txHex);
+          } else {
+            keep = true;
+            const msg = e && e.message ? e.message : String(e);
+            this.emit('warning', `[FABRIC:BITCOIN] watchtower broadcast: ${msg}`);
+          }
+        }
+      }
+      if (!keep) tower.drop(hit.client, hit.hint);
+    }
+    return sent;
+  }
+
   async _syncBestBlock () {
     return this._syncBestBlockHash();
   }
@@ -2918,17 +2953,16 @@ class Bitcoin extends Service {
         datadir = './stores/bitcoin-signet';
         params.push('-signet');
         break;
+      // No fee estimates without real traffic; fall back to the 1 sat/vB relay floor.
       case 'regtest':
         datadir = './stores/bitcoin-regtest';
         params.push('-regtest');
-        params.push('-fallbackfee=1.0');
-        params.push('-maxtxfee=1.1');
+        params.push('-fallbackfee=0.00001');
         break;
       case 'playnet':
         datadir = './stores/bitcoin-playnet';
         params.push('-regtest');
-        params.push('-fallbackfee=1.0');
-        params.push('-maxtxfee=1.1');
+        params.push('-fallbackfee=0.00001');
         break;
     }
 

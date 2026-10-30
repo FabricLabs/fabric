@@ -165,7 +165,9 @@ function enqueueMessageBuffer (store, contractId, bufferOrPaste, meta = {}) {
 /**
  * @param {{ get: Function, put: Function }} store
  * @param {string} contractId
- * @param {{ limit?: number, includeDelivered?: boolean, peerKey?: string }} [opts]
+ * @param {{ limit?: number, includeDelivered?: boolean, peerKey?: string, recipient?: string, ref?: string, slot?: string }} [opts]
+ *   `recipient`, `ref`, and `slot` match the CONTRACT_MESSAGE index fields.
+ *   The JSON payload is not parsed.
  * @returns {object[]}
  */
 function listQueuedMessages (store, contractId, opts = {}) {
@@ -174,6 +176,16 @@ function listQueuedMessages (store, contractId, opts = {}) {
   let rows = doc.entries.slice();
   if (peerKey && opts.includeDelivered !== true) {
     rows = rows.filter((e) => !(e.deliveredTo && e.deliveredTo[peerKey]));
+  }
+  if (opts.recipient || opts.ref || opts.slot) {
+    rows = rows.filter((entry) => {
+      if (!entry || !entry.hex) return false;
+      try {
+        return Message.contractMessageMatches(Message.fromBuffer(Buffer.from(entry.hex, 'hex')), opts);
+      } catch (_) {
+        return false;
+      }
+    });
   }
   const limit = Number(opts.limit);
   if (limit > 0 && rows.length > limit) rows = rows.slice(-limit);

@@ -5,7 +5,6 @@ const Message = require('../types/message');
 const {
   PASSPORT_CHALLENGE,
   PASSPORT_ASSERTION,
-  PASSPORT_SIGN_REQUEST,
   PASSPORT_MAX_TTL_MS,
   FIXTURE_SEED
 } = require('../constants');
@@ -18,10 +17,7 @@ const {
   createChallenge,
   readChallenge,
   signAssertion,
-  verifyAssertion,
-  createSignRequest,
-  readSignRequest,
-  pairingCode
+  verifyAssertion
 } = require('../functions/passport');
 
 const SITE = 'https://example.com';
@@ -81,12 +77,11 @@ function forge (fields, key = ACCOUNT.identity.key) {
 describe('@fabric/core/functions/passport', function () {
   this.timeout(30000);
 
-  it('registers the three opcodes with field schemas, never relayed', function () {
+  it('registers the challenge and assertion opcodes with field schemas, never relayed', function () {
     assert.strictEqual(PASSPORT_CHALLENGE, 0x4240);
     assert.strictEqual(PASSPORT_ASSERTION, 0x4241);
-    assert.strictEqual(PASSPORT_SIGN_REQUEST, 0x4242);
     assert.strictEqual(PASSPORT_MAX_TTL_MS, 3 * 60 * 1000);
-    for (const type of ['PASSPORT_CHALLENGE', 'PASSPORT_ASSERTION', 'PASSPORT_SIGN_REQUEST']) {
+    for (const type of ['PASSPORT_CHALLENGE', 'PASSPORT_ASSERTION']) {
       assert.ok(Message.getBodySchema(type), type);
       assert.strictEqual(Message.canonicalTypeName(Message.canonicalTypeCode(type)), type);
       assert.strictEqual(classifyGossipWireType(type), 'hub', type);
@@ -95,6 +90,9 @@ describe('@fabric/core/functions/passport', function () {
     }
     assert.strictEqual(Message.canonicalTypeCode('PassportAssertion'), PASSPORT_ASSERTION);
     assert.strictEqual(Message.canonicalTypeName(0x4230), null);
+    // Retired: delegated sign-ins are DELEGATION_REQUESTs (functions/delegation).
+    assert.strictEqual(Message.getBodySchema('PASSPORT_SIGN_REQUEST'), null);
+    assert.strictEqual(classifyGossipWireType('PASSPORT_SIGN_REQUEST'), 'hub');
   });
 
   it('normalizes origins', function () {
@@ -286,26 +284,15 @@ describe('@fabric/core/functions/passport', function () {
     assert.match(verifyAssertion(self, expected(first)).error, /identity key/);
   });
 
-  it('wraps a challenge in a sign request for a paired desktop', function () {
-    const c = challenge({ request: ['wallet', 'cosigner'] });
-    const req = createSignRequest({ challenge: c.uri, origin: SITE, account: 2, disclose: ['wallet'], now: NOW + 100 }, DEVICE);
-    assert.ok(req.expiresAt <= c.expiresAt);
-    const read = readSignRequest(req.uri, { now: NOW + 200 });
-    assert.strictEqual(read.ok, true, read.error);
-    assert.strictEqual(read.author, DEVICE.pubkey.slice(2));
-    assert.strictEqual(read.account, 2);
-    assert.deepStrictEqual(read.disclose, ['wallet']);
-    assert.strictEqual(read.challengeHash, c.hash);
-    assert.strictEqual(read.challenge.network, 'regtest');
-
-    // The desktop answers with the challenge it was handed.
-    const desk = deriveAccount(MASTER, { account: read.account, network: read.challenge.network });
+  it('names the delegate that asked in a delegated assertion', function () {
+    const c = challenge({ request: ['wallet'] });
+    const desk = deriveAccount(MASTER, { account: 2, network: 'regtest' });
     const a = signAssertion({
-      challenge: read.challengeBuffer,
-      origin: read.origin,
+      challenge: c.uri,
+      origin: SITE,
       signer: 'hub',
-      network: read.challenge.network,
-      disclose: read.disclose,
+      network: 'regtest',
+      disclose: ['wallet'],
       wallet: desk.wallet,
       device: DEVICE.pubkey,
       now: NOW + 300
@@ -315,10 +302,6 @@ describe('@fabric/core/functions/passport', function () {
     assert.strictEqual(v.signer, 'hub');
     assert.strictEqual(v.device, DEVICE.pubkey);
     assert.ok(v.wallet);
-
-    assert.throws(() => createSignRequest({ challenge: c.uri, origin: 'https://evil.example', now: NOW }, DEVICE), /different origin/);
-    assert.throws(() => createSignRequest({ challenge: challenge().uri, origin: SITE, disclose: ['cosigner'], now: NOW }, DEVICE), /did not ask/);
-    assert.match(readSignRequest(req.uri, { now: NOW + 10 * 60 * 1000 }).error, /expired/);
   });
 
   it('refuses old 0x4230-series frames', function () {
@@ -330,20 +313,8 @@ describe('@fabric/core/functions/passport', function () {
       const uri = encodeFabricUri(bytes);
       assert.match(verifyAssertion(uri, expected(c)).error, /unknown message type|not allowed/);
       assert.strictEqual(readChallenge(uri, { now: NOW }).ok, false);
-      assert.strictEqual(readSignRequest(uri, { now: NOW }).ok, false);
     }
     assert.strictEqual(readChallenge(a.uri, { now: NOW }).ok, false);
     assert.strictEqual(verifyAssertion(c.uri, expected(c)).ok, false);
-  });
-
-  it('derives the same six-digit pairing code on both devices', function () {
-    const a = ACCOUNT.identity.pubkey;
-    const b = OTHER.identity.pubkey;
-    const code = pairingCode(a, b);
-    assert.match(code, /^[0-9]{6}$/);
-    assert.strictEqual(pairingCode(b, a), code);
-    assert.strictEqual(pairingCode(a.slice(2), b), code);
-    assert.notStrictEqual(pairingCode(a, DEVICE.pubkey), code);
-    assert.throws(() => pairingCode(a, a), /itself/);
   });
 });

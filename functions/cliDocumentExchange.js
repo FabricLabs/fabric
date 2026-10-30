@@ -435,8 +435,12 @@ class CliDocumentExchange {
     const amountSats = amountArg != null && Number.isFinite(amountArg)
       ? amountArg
       : (Number(offer.rateSats) || 0);
-    if (amountSats > 0 && amountSats < HTLC_MINIMUM_SATS) {
-      return { error: `Cannot open paid buy: ${amountSats} sats is below the ${HTLC_MINIMUM_SATS}-sat HTLC minimum (the claim could not leave a non-dust output)` };
+    const feerate = Number(this._settings().claimFeerate);
+    const rate = Number.isFinite(feerate) && feerate > 0 ? feerate : 1;
+    let l1Min = HTLC_MINIMUM_SATS;
+    try { l1Min = Htlc.minimumForFeerate(rate); } catch (_) { l1Min = HTLC_MINIMUM_SATS; }
+    if (amountSats > 0 && amountSats < l1Min) {
+      return { error: `Cannot open paid buy: ${amountSats} sats is below the ${l1Min}-sat HTLC minimum at ${rate} sat/vB (the claim could not leave a non-dust output)` };
     }
     // Never fund a seller-supplied address without rebuilding a buyer-bound HTLC tree.
     let paymentAddress = null;
@@ -452,6 +456,12 @@ class CliDocumentExchange {
         if (!buyerHex || !sellerHex || !lock) {
           return {
             error: 'Cannot open paid buy: need buyer refund key, seller pubkey, and inventoryHtlcLocktimeHeight to build a buyer-bound HTLC'
+          };
+        }
+        const tip = peer && peer.settings ? Number(peer.settings.tipHeight) : NaN;
+        if (Number.isFinite(tip) && Number(lock) < tip + Htlc.minimumLockBlocks()) {
+          return {
+            error: `Cannot open paid buy: refund lock ${lock} is inside the claim-safety window at tip ${tip}`
           };
         }
         const ampSigner = offer.ampSignerPubkey || offer.wireSignerPubkey ||

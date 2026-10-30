@@ -59,7 +59,9 @@ function parsePages (writes) {
   return writes.map((buf) => {
     const msg = Message.fromBuffer(buf);
     assert.strictEqual(msg.type, 'P2P_INVENTORY_RESPONSE');
-    return JSON.parse(msg.data);
+    const parsed = Message.tryParseLegacyBody(msg);
+    assert.ok(parsed.ok && parsed.encoding === 'fields');
+    return parsed.value;
   });
 }
 
