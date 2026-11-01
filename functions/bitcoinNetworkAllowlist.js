@@ -2,7 +2,7 @@
 
 /**
  * @fileoverview Allowlist of Bitcoin test networks. Value-bearing code that
- * must never touch mainnet (payment channels, market HTLCs) accepts only
+ * must never touch mainnet (payment channels) accepts only
  * these names; anything else — mainnet aliases, typos, unknown names — is
  * refused rather than silently mapped to mainnet parameters.
  */

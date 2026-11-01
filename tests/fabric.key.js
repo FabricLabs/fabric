@@ -9,6 +9,8 @@ const { secp256k1, schnorr: nobleSchnorr } = require('@noble/curves/secp256k1.js
 const message = require('../assets/message');
 const playnet = require('../settings/playnet');
 
+const TEST_TAG = 'Fabric/Test';
+
 const SAMPLE = {
   seed: 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about',
   private: '1111111111111111111111111111111111111111111111111111111111111111'
@@ -214,10 +216,26 @@ describe('@fabric/core/types/key', function () {
       assert.equal(key.deriveAddress(0, 1, 'p2tr').address, 'bc1p3qkhfews2uk44qtvauqyr2ttdsw7svhkl9nkm9s9c3x4ax5h60wqwruhk7');
     });
 
+    it('derives addresses for the network it is on, never mainnet by default', function () {
+      const mnemonic = 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about';
+      const on = (network) => new Key({ mnemonic, purpose: 86, network });
+      assert.equal(on('mainnet').deriveAddress(0, 0, 'p2tr').address, 'bc1p5cyxnuxmeuwuvkwfem96lqzszd02n6xdcjrs20cac6yqjjwudpxqkedrcr');
+      for (const network of ['signet', 'testnet', 'testnet4']) {
+        assert.match(on(network).deriveAddress(0, 0, 'p2tr').address, /^tb1p/, network);
+        assert.match(on(network).deriveAddress(0, 0, 'p2wpkh').address, /^tb1q/, network);
+        assert.match(on(network).deriveAddress(0, 0, 'p2pkh').address, /^[mn]/, network);
+      }
+      for (const network of ['regtest', 'playnet']) {
+        assert.match(on(network).deriveAddress(0, 0, 'p2tr').address, /^bcrt1p/, network);
+        assert.match(on(network).deriveAddress(0, 0, 'p2wpkh').address, /^bcrt1q/, network);
+      }
+      assert.throws(() => on('nosuchnet').deriveAddress(0, 0, 'p2wpkh'), /Unsupported network/);
+    });
+
     it('can sign messages using Schnorr signatures', function () {
       const key = new Key({ private: '1111111111111111111111111111111111111111111111111111111111111111' });
       const message = 'test message';
-      const signature = key.signSchnorr(message);
+      const signature = key.signSchnorr(message, TEST_TAG);
       assert.ok(signature instanceof Buffer);
       assert.equal(signature.length, 64); // Schnorr signatures are 64 bytes
     });
@@ -225,18 +243,18 @@ describe('@fabric/core/types/key', function () {
     it('can verify valid Schnorr signatures', function () {
       const key = new Key({ private: '1111111111111111111111111111111111111111111111111111111111111111' });
       const message = 'test message';
-      const signature = key.signSchnorr(message);
-      const valid = key.verifySchnorr(message, signature);
+      const signature = key.signSchnorr(message, TEST_TAG);
+      const valid = key.verifySchnorr(message, signature, TEST_TAG);
       assert.ok(valid);
     });
 
     it('rejects invalid Schnorr signatures', function () {
       const key = new Key({ private: '1111111111111111111111111111111111111111111111111111111111111111' });
       const message = 'test message';
-      const signature = key.signSchnorr(message);
+      const signature = key.signSchnorr(message, TEST_TAG);
       const invalidSignature = Buffer.from(signature);
       invalidSignature[0] ^= 1; // Flip a bit to make the signature invalid
-      const valid = key.verifySchnorr(message, invalidSignature);
+      const valid = key.verifySchnorr(message, invalidSignature, TEST_TAG);
       assert.ok(!valid);
     });
 
@@ -244,12 +262,12 @@ describe('@fabric/core/types/key', function () {
       const key = new Key({ private: SAMPLE.private });
       const message1 = 'test message 1';
       const message2 = 'test message 2';
-      const signature1 = key.signSchnorr(message1);
-      const signature2 = key.signSchnorr(message2);
+      const signature1 = key.signSchnorr(message1, TEST_TAG);
+      const signature2 = key.signSchnorr(message2, TEST_TAG);
       assert.ok(!signature1.equals(signature2), 'distinct messages must not share signature bytes');
-      assert.strictEqual(key.verifySchnorr(message1, signature1), true);
-      assert.strictEqual(key.verifySchnorr(message2, signature1), false);
-      assert.strictEqual(key.verifySchnorr(message1, signature2), false);
+      assert.strictEqual(key.verifySchnorr(message1, signature1, TEST_TAG), true);
+      assert.strictEqual(key.verifySchnorr(message2, signature1, TEST_TAG), false);
+      assert.strictEqual(key.verifySchnorr(message1, signature2, TEST_TAG), false);
     });
 
     it('can create a new key from a seed', function () {
@@ -279,33 +297,33 @@ describe('@fabric/core/types/key', function () {
       assert.equal(actualPubkey, expectedPubkey);
     });
 
-    it('Schnorr signatures match noble BIP340 with zero auxRand', function () {
+    it('Schnorr signatures match noble BIP340 over the tagged hash with zero auxRand', function () {
       const key = new Key({ private: SAMPLE.private });
       const message = 'Hello, Fabric!';
-      const signature = key.signSchnorr(message);
-      const messageHash = require('crypto').createHash('sha256').update(Buffer.from(message)).digest();
+      const signature = key.signSchnorr(message, TEST_TAG);
+      const messageHash = require('../functions/taggedHash')(TEST_TAG, Buffer.from(message));
       const expected = Buffer.from(
         nobleSchnorr.sign(messageHash, Buffer.from(SAMPLE.private, 'hex'), Buffer.alloc(32))
       );
       assert.ok(signature.equals(expected));
-      assert.strictEqual(key.verifySchnorr(message, signature), true);
-      assert.strictEqual(key.verifySchnorr('Hello, World!', signature), false);
+      assert.strictEqual(key.verifySchnorr(message, signature, TEST_TAG), true);
+      assert.strictEqual(key.verifySchnorr('Hello, World!', signature, TEST_TAG), false);
     });
 
     it('rejects a Schnorr signature from a different key', function () {
       const key1 = new Key({ private: SAMPLE.private });
       const key2 = new Key({ seed: SAMPLE.seed });
       const message = 'Hello, Fabric!';
-      const signature = key1.signSchnorr(message);
-      assert.strictEqual(key1.verifySchnorr(message, signature), true);
-      assert.strictEqual(key2.verifySchnorr(message, signature), false);
+      const signature = key1.signSchnorr(message, TEST_TAG);
+      assert.strictEqual(key1.verifySchnorr(message, signature, TEST_TAG), true);
+      assert.strictEqual(key2.verifySchnorr(message, signature, TEST_TAG), false);
     });
 
     it('throws when signing without private key using Schnorr', function () {
       const key = new Key();
       const publicKey = new Key({ public: key.public.encodeCompressed() });
       const message = 'test message';
-      assert.throws(() => publicKey.signSchnorr(message), /Cannot sign without private key/);
+      assert.throws(() => publicKey.signSchnorr(message, TEST_TAG), /Cannot sign without private key/);
     });
 
     it('secure clears private material and marks state', function () {
@@ -321,7 +339,7 @@ describe('@fabric/core/types/key', function () {
     it('accepts Uint8Array private keys for signing', function () {
       const bytes = new Uint8Array(32).fill(1);
       const key = new Key({ private: bytes });
-      const sig = key.signSchnorr('byte-like private key');
+      const sig = key.signSchnorr('byte-like private key', TEST_TAG);
       assert.ok(Buffer.isBuffer(sig));
       assert.strictEqual(sig.length, 64);
     });
@@ -329,19 +347,19 @@ describe('@fabric/core/types/key', function () {
     it('throws on invalid private key format', function () {
       const key = new Key();
       key.private = 1;
-      assert.throws(() => key.signSchnorr('invalid private key'), /Invalid private key format/);
+      assert.throws(() => key.signSchnorr('invalid private key', TEST_TAG), /Invalid private key format/);
     });
 
     it('rejects non-hex string private key values', function () {
       const key = new Key();
       key.private = 'z'.repeat(32);
-      assert.throws(() => key.signSchnorr('invalid private key'), /Invalid private key format/);
+      assert.throws(() => key.signSchnorr('invalid private key', TEST_TAG), /Invalid private key format/);
     });
 
     it('rejects plain array-like private key objects', function () {
       const key = new Key();
       key.private = { length: 32 };
-      assert.throws(() => key.signSchnorr('invalid private key'), /Invalid private key format/);
+      assert.throws(() => key.signSchnorr('invalid private key', TEST_TAG), /Invalid private key format/);
     });
   });
 });

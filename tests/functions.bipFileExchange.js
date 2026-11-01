@@ -8,18 +8,13 @@ const {
   paymentHashHexFromKey
 } = require('../functions/documentSealedExchange');
 const {
-  documentLeafHex,
-  documentMerkleRootHex,
-  merkleRootHexFromBlobHashes,
-  blobPaymentHashHex
-} = require('../functions/documentBlobManifest');
-const {
   documentPublishEnvelopeBuffer,
   inventoryHtlcPreimage32,
   purchaseContentHashHex
 } = require('../functions/publishedDocumentEnvelope');
 const Htlc = require('../types/htlc');
 const VECTORS = require('./vectors/bip-fabric-file-exchange.json');
+const Document = require('../types/document');
 
 function sha256 (buf) {
   return crypto.createHash('sha256').update(buf).digest();
@@ -85,16 +80,16 @@ describe('BIP: content-addressed file exchange (test vectors)', function () {
           paymentHashHex: b.paymentHashHex,
           iv: Buffer.from(b.ivHex, 'hex').toString('base64')
         }));
-        assert.deepStrictEqual(blobs.map(documentLeafHex), v.leavesHex);
-        assert.strictEqual(documentMerkleRootHex(blobs), v.rootHex);
+        assert.deepStrictEqual(blobs.map((b) => Document.leafHex(b)), v.leavesHex);
+        assert.strictEqual(Document.rootHex(blobs), v.rootHex);
       });
     }
 
     it('a blob list without payment hashes or IVs uses zero fields', function () {
       const v = VECTORS.tree[2];
       const hashes = v.blobs.map((b) => b.blobHashHex);
-      assert.strictEqual(merkleRootHexFromBlobHashes(hashes), documentMerkleRootHex(hashes.map((blobHashHex) => ({ blobHashHex }))));
-      assert.notStrictEqual(merkleRootHexFromBlobHashes(hashes), v.rootHex);
+      assert.strictEqual(Document.rootHexFromBlobHashes(hashes), Document.rootHex(hashes.map((blobHashHex) => ({ blobHashHex }))));
+      assert.notStrictEqual(Document.rootHexFromBlobHashes(hashes), v.rootHex);
     });
   });
 
@@ -107,6 +102,38 @@ describe('BIP: content-addressed file exchange (test vectors)', function () {
         assert.strictEqual(inventoryHtlcPreimage32(v.documentId, v.document).toString('hex'), v.preimageHex);
         assert.strictEqual(sha256(Buffer.from(v.preimageHex, 'hex')).toString('hex'), v.contentHashHex);
         assert.strictEqual(purchaseContentHashHex(v.documentId, v.document), v.contentHashHex);
+      });
+
+      it('envelope bytes match the spec layout', function () {
+        const u32 = (n) => { const b = Buffer.alloc(4); b.writeUInt32BE(n); return b; };
+        const u64 = (n) => { const b = Buffer.alloc(8); b.writeBigUInt64BE(BigInt(n)); return b; };
+        const bytes = (b) => Buffer.concat([u32(b.length), b]);
+        const str = (s) => bytes(Buffer.from(s, 'utf8'));
+        const d = v.document;
+        const body = Buffer.concat([
+          u32(0x7f),
+          bytes(Buffer.from(d.contentBase64, 'base64')),
+          str(v.documentId),
+          str(d.mime),
+          str(d.name),
+          u32(d.revision),
+          str(d.sha256),
+          u64(d.size),
+          str('')
+        ]);
+        const envelope = Buffer.concat([
+          Buffer.from('c0d3f33d', 'hex'),
+          u32(1),
+          Buffer.alloc(32),
+          Buffer.alloc(32),
+          u32(0x3e6),
+          u32(body.length),
+          sha256(sha256(body)),
+          Buffer.alloc(32),
+          Buffer.alloc(64),
+          body
+        ]);
+        assert.strictEqual(envelope.toString('hex'), v.envelopeHex);
       });
     }
   });
@@ -123,7 +150,7 @@ describe('BIP: content-addressed file exchange (test vectors)', function () {
           Buffer.from(v.blobHashHex, 'utf8')
         ]);
         assert.strictEqual(sha256(payload).toString('hex'), v.contentHashHex);
-        assert.strictEqual(blobPaymentHashHex(v), v.contentHashHex);
+        assert.strictEqual(Document.blobPaymentHash(v), v.contentHashHex);
       });
     }
   });

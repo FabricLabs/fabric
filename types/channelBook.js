@@ -679,6 +679,45 @@ class ChannelBook extends Book {
     return out;
   }
 
+  /**
+   * Justice filings for every revoked commitment on this book. Each filing is
+   * ready for {@link Watchtower.appointment}: the transactions are already
+   * signed, and the commitment txid is the hint's preimage.
+   * @param {object} [opts] passed to {@link ChannelSession#penaltyFilings}
+   * @returns {object[]}
+   */
+  penaltyFilings (opts = {}) {
+    const out = [];
+    for (const session of this._rows()) {
+      try {
+        for (const filing of session.penaltyFilings(opts)) out.push(filing);
+      } catch (_) { /* one channel's revoked state does not block the others */ }
+    }
+    return out;
+  }
+
+  /**
+   * Raw transactions for the watchdog actions `onBlock` returned.
+   * @param {object[]} actions
+   * @param {object} [opts] passed to {@link ChannelSession#actionTransactions}
+   * @returns {string[]}
+   */
+  actionTransactions (actions, opts = {}) {
+    const grouped = new Map();
+    for (const action of actions || []) {
+      if (!action || !action.channelId) continue;
+      if (!grouped.has(action.channelId)) grouped.set(action.channelId, []);
+      grouped.get(action.channelId).push(action);
+    }
+    const out = [];
+    for (const [id, list] of grouped) {
+      const session = this._row(id);
+      if (!session) continue;
+      try { out.push(...session.actionTransactions(list, opts)); } catch (_) { /* skip */ }
+    }
+    return out;
+  }
+
   /** @returns {object} persistence snapshot (no private key) */
   export () {
     return {

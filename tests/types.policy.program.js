@@ -71,14 +71,14 @@ describe('Policy program-run hashlock', function () {
         pubkeyHex: a.pubkey
       }
     });
-    const { programRunId } = require('../functions/contractProgramBind');
+    const Program = require('../types/program');
     assert.strictEqual(
       withRun.programRunId,
-      programRunId('11'.repeat(32), '22'.repeat(32))
+      Program.runId('11'.repeat(32), '22'.repeat(32))
     );
     assert.notStrictEqual(
       withRun.programRunId,
-      programRunId('11'.repeat(32), '33'.repeat(32))
+      Program.runId('11'.repeat(32), '33'.repeat(32))
     );
   });
 

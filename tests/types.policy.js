@@ -755,7 +755,7 @@ describe('Policy', function () {
     const {
       buildWithdrawalRequest,
       prepareWithdrawalFromRequest
-    } = require('../functions/contractSpend');
+    } = require('../types/contract');
     const policy = Policy.normalize({
       network: 'regtest',
       publisher: pk(0),
@@ -945,14 +945,14 @@ describe('Policy composable trees + hashlock', function () {
 
 const Message = require('../types/message');
 const {
-  normalizeArcGenesis,
+  normalizeGenesis,
   resolveSpend,
   buildWithdrawalRequest,
   buildWithdrawalWitness,
   validateWithdrawalRequest,
   prepareWithdrawalFromRequest,
   verifyWithdrawalWitnessSignature
-} = require('../functions/contractSpend');
+} = require('../types/contract');
 const { pubkeyXOnly } = require('../functions/pubkey');
 const {
   createMemoryStore,
@@ -961,10 +961,10 @@ const {
   loadDoc
 } = require('../functions/contractMessageAccumulate');
 
-describe('contractSpend / ARC resolveSpend', function () {
-  it('normalizeArcGenesis maps proposedPolicy + messageTypes', function () {
+describe('Contract.resolveSpend / ARC withdrawals', function () {
+  it('normalizeGenesis maps proposedPolicy + messageTypes', function () {
     const a = new Key();
-    const arc = normalizeArcGenesis({
+    const arc = normalizeGenesis({
       name: 'DemoGroup',
       messageTypes: ['GroupChat', 'GroupChange'],
       proposedPolicy: { validators: [a.pubkey], threshold: 1 },
@@ -990,7 +990,7 @@ describe('contractSpend / ARC resolveSpend', function () {
     const b = new Key();
     const {
       tipSpendKeys
-    } = require('../functions/contractSpend');
+    } = require('../types/contract');
     const tip = {
       content: {
         signers: [a.pubkey],
@@ -1027,7 +1027,7 @@ describe('contractSpend / ARC resolveSpend', function () {
     const reader = new Key();
     const {
       tipSpendKeys
-    } = require('../functions/contractSpend');
+    } = require('../types/contract');
     const tip = {
       content: {
         signers: [],
@@ -1130,9 +1130,9 @@ describe('contractSpend / ARC resolveSpend', function () {
     assert.match(spend.address, /^tb1p/);
   });
 
-  it('normalizeArcGenesis does not default spendPolicy.network to regtest', function () {
+  it('normalizeGenesis does not default spendPolicy.network to regtest', function () {
     const a = new Key();
-    const arc = normalizeArcGenesis({
+    const arc = normalizeGenesis({
       proposedPolicy: { validators: [a.pubkey], threshold: 1 }
     });
     assert.strictEqual(arc.spendPolicy.network, undefined);

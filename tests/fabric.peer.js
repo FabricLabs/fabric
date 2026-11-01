@@ -10,6 +10,14 @@ const assert = require('assert');
 const net = require('net');
 const { EventEmitter } = require('events');
 const { PassThrough } = require('stream');
+const SIGNING_TAGS = require('../functions/signingTags');
+
+function sentBody (message) {
+  const parsed = Message.tryParseLegacyBody(message);
+  assert.ok(parsed.ok, parsed.ok ? '' : parsed.error.message);
+  assert.strictEqual(parsed.encoding, 'fields');
+  return parsed.value;
+}
 
 // Node configs may be JSON (node-a.json) or JS; resolve accordingly
 let NODEA, NODEB;
@@ -1162,6 +1170,19 @@ describe('@fabric/core/types/peer', function () {
         buyer._handleFabricMessage(badMsg.toBuffer(), { name: 'seller:1' }, null);
         assert.ok(rejected && /hash mismatch|rejected/i.test(String(rejected.error || 'rejected')));
       });
+      it('P2P_FILE_SEND of a document over MAX_DOCUMENT_BLOBS blobs warns and sends nothing', function () {
+        const { MAX_DOCUMENT_BLOBS } = require('../constants');
+        const seller = new Peer({ listen: false, peersDb: null, sealPricedDocuments: false });
+        seller._state.content.documents = { 'doc-huge': 'x'.repeat(MAX_DOCUMENT_BLOBS + 1) };
+        seller.settings.inventoryBlobChunkBytes = 1;
+        const frames = [];
+        const warnings = [];
+        seller.connections['buyer:3'] = { _writeFabric: (buf) => frames.push(buf) };
+        seller.on('warning', (w) => warnings.push(String(w)));
+        assert.strictEqual(seller._sendP2pFileSendToPeer('doc-huge', 'buyer:3'), false);
+        assert.strictEqual(frames.length, 0);
+        assert.ok(warnings.some((w) => /Cannot send document doc-huge/.test(w)));
+      });
       it('sealed priced doc: ciphertext without key; open only after settlement authorize', function () {
         const seller = new Peer({
           listen: false,
@@ -1356,7 +1377,7 @@ describe('@fabric/core/types/peer', function () {
         assert.strictEqual(peer.requestPeerInventory('seller:7', { kind: 'documents' }), true);
         const back = Message.fromBuffer(written);
         assert.strictEqual(back.type, 'P2P_INVENTORY_REQUEST');
-        const body = JSON.parse(back.data);
+        const body = sentBody(back);
         assert.strictEqual(body.kind, 'documents');
       });
       it('requestDocument directs DocumentRequest to one peer', function () {
@@ -1368,7 +1389,7 @@ describe('@fabric/core/types/peer', function () {
         assert.strictEqual(peer.requestDocument('abc', 'seller:3'), true);
         const back = Message.fromBuffer(written);
         assert.ok(back.type === 'DocumentRequest' || back.type === 'DOCUMENT_REQUEST');
-        assert.strictEqual(JSON.parse(back.data).document, 'abc');
+        assert.strictEqual(sentBody(back).document, 'abc');
       });
       it('private relay rewrites budgeted DocumentRequest instead of bit-identical forward', function () {
         const peer = new Peer({
@@ -1400,7 +1421,7 @@ describe('@fabric/core/types/peer', function () {
         assert.strictEqual(relayedIdentical, 0);
         assert.strictEqual(broadcastCalls, 0, 'private relay must not mesh-broadcast');
         assert.strictEqual(outs.length, 1);
-        const body = JSON.parse(Message.fromBuffer(outs[0]).data);
+        const body = sentBody(Message.fromBuffer(outs[0]));
         assert.strictEqual(body.document, 'missing-doc');
         assert.strictEqual(body.maxSats, 90);
         assert.strictEqual(body.relayHop, 2);
@@ -1514,7 +1535,7 @@ describe('@fabric/core/types/peer', function () {
       });
       it('derived-key debug summary uses Key.pubkey not settings.public', function () {
         const peer = new Peer({ listen: false, peersDb: null });
-        const derived = peer.identity.key.derive("m/44'/7778'/0'/0/0");
+        const derived = peer.identity.key.derive("m/7777'/7778'/0'/0/0");
         assert.ok(derived.pubkey && derived.pubkey.length >= 66);
         assert.ok(derived.settings.public == null || derived.settings.public === '');
         const summary = Peer.debugDerivedPublicSummary(derived);
@@ -1570,7 +1591,7 @@ describe('@fabric/core/types/peer', function () {
         }, { name: '127.0.0.1:11' });
         assert.ok(written && written.length);
         const back = Message.fromBuffer(written);
-        const inner = JSON.parse(back.data);
+        const inner = sentBody(back);
         assert.strictEqual(back.type, 'P2P_INVENTORY_RESPONSE');
         assert.strictEqual(inner.kind, 'documents');
         assert.strictEqual(inner.items.length, 1);
@@ -1585,7 +1606,7 @@ describe('@fabric/core/types/peer', function () {
         const items = [];
         peer.connections['127.0.0.1:12'] = {
           _writeFabric: (b) => {
-            const inner = JSON.parse(Message.fromBuffer(b).data);
+            const inner = sentBody(Message.fromBuffer(b));
             items.push(...(inner.items || []));
           }
         };
@@ -1622,11 +1643,26 @@ describe('@fabric/core/types/peer', function () {
         }, { name: '127.0.0.1:14' });
         assert.ok(written && written.length);
         const back = Message.fromBuffer(written);
-        const inner = JSON.parse(back.data);
+        const inner = sentBody(back);
         assert.strictEqual(inner.kind, 'documents');
         assert.strictEqual(inner.items.length, 1);
         assert.strictEqual(inner.items[0].id, 'catdoc');
         assert.strictEqual(inner.items[0].published, true);
+      });
+      it('serveLocalDocumentInventory leaves out documents the catalog marks unpublished', function () {
+        const peer = new Peer({ listen: false, peersDb: null, serveLocalDocumentInventory: true });
+        peer._state.content.documents = { listed: 'for sale', bought: 'kept private' };
+        peer._state.content.collections = {
+          documents: { listed: { published: true, purchasePriceSats: 900 }, bought: { published: false } }
+        };
+        let written = null;
+        peer.connections['127.0.0.1:15'] = { _writeFabric: (b) => { written = b; } };
+        peer._handleGenericMessage({
+          type: 'INVENTORY_REQUEST',
+          object: { kind: 'documents', created: Date.now() }
+        }, { name: '127.0.0.1:15' });
+        const inner = sentBody(Message.fromBuffer(written));
+        assert.deepStrictEqual(inner.items.map((item) => item.id), ['listed']);
       });
       it('relayInventoryRequest relays offerBtc INVENTORY_REQUEST when no local items', function () {
         const peer = new Peer({ listen: false, peersDb: null, serveLocalDocumentInventory: true, relayInventoryRequest: true });
@@ -2058,7 +2094,7 @@ describe('@fabric/core/types/peer', function () {
             id: peerId,
             pubkey: server.key.pubkey,
             parentPubkey: server.key.pubkey,
-            parentSignature: server.key.signSchnorr(proof).toString('hex')
+            parentSignature: server.key.signSchnorr(proof, SIGNING_TAGS.SESSION_KEY).toString('hex')
           },
           object: { challenge: 'selfloop' }
         };
@@ -2188,7 +2224,7 @@ describe('@fabric/core/types/peer', function () {
             id: remotePeerId,
             pubkey: remoteKey.pubkey,
             parentPubkey: remoteKey.pubkey,
-            parentSignature: remoteKey.signSchnorr(remoteProof).toString('hex')
+            parentSignature: remoteKey.signSchnorr(remoteProof, SIGNING_TAGS.SESSION_KEY).toString('hex')
           },
           object: { challenge: 'cafebabe' }
         };
@@ -2203,7 +2239,7 @@ describe('@fabric/core/types/peer', function () {
           setImmediate(() => {
             assert.ok(Buffer.isBuffer(replyBuffer));
             const reply = Message.fromBuffer(replyBuffer);
-            const replyContent = JSON.parse(reply.data);
+            const replyContent = sentBody(reply);
             assert.strictEqual(replyContent.type, 'P2P_SESSION_OPEN');
             assert.strictEqual(replyContent.object.initiator, remotePeerId);
             assert.strictEqual(replyContent.object.counterparty, server.identity.id);
@@ -2243,7 +2279,7 @@ describe('@fabric/core/types/peer', function () {
             id: remotePeerId,
             pubkey: remoteKey.pubkey,
             parentPubkey: remoteKey.pubkey,
-            parentSignature: remoteKey.signSchnorr(remoteProof).toString('hex')
+            parentSignature: remoteKey.signSchnorr(remoteProof, SIGNING_TAGS.SESSION_KEY).toString('hex')
           },
           object: { challenge: 'challenge' }
         };
@@ -2277,7 +2313,7 @@ describe('@fabric/core/types/peer', function () {
             id: serverId,
             pubkey: serverKey.pubkey,
             parentPubkey: serverKey.pubkey,
-            parentSignature: serverKey.signSchnorr(serverProof).toString('hex')
+            parentSignature: serverKey.signSchnorr(serverProof, SIGNING_TAGS.SESSION_KEY).toString('hex')
           },
           object: {
             initiator: peer.identity.id,
@@ -2309,7 +2345,7 @@ describe('@fabric/core/types/peer', function () {
             id: serverId,
             pubkey: serverKey.pubkey,
             parentPubkey: serverKey.pubkey,
-            parentSignature: serverKey.signSchnorr(serverProof).toString('hex')
+            parentSignature: serverKey.signSchnorr(serverProof, SIGNING_TAGS.SESSION_KEY).toString('hex')
           },
           object: {
             initiator: peer.identity.id,

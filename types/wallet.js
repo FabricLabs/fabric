@@ -2,16 +2,14 @@
 
 // External Dependencies
 const merge = require('lodash.merge');
-const { networks: bitcoinNetworks } = require('bitcoinjs-lib');
-/** @private Fabric settings use `mainnet`; bitcoinjs-lib 7 names that network `bitcoin`. */
-const networks = Object.assign({ mainnet: bitcoinNetworks.bitcoin }, bitcoinNetworks);
+const { networks: bitcoinNetworks, payments } = require('bitcoinjs-lib');
 
 // Mnemonics
 const ecc = require('./ecc');
-const BIP32 = require('../functions/bip32').default;
-const { DEFAULT_NETWORK: BIP32_DEFAULT_NETWORK } = require('../functions/bip32');
+const BIP32 = require('./key/bip32').default;
+const { DEFAULT_NETWORK: BIP32_DEFAULT_NETWORK } = require('./key/bip32');
 const bip32 = new BIP32(ecc);
-const bip39 = require('../functions/bip39');
+const bip39 = require('./key/bip39');
 
 // Types
 const Key = require('./key');
@@ -23,11 +21,40 @@ const Hash256 = require('./hash256');
 const Service = require('./service');
 const Secret = require('./secret');
 const State = require('./state');
+const accountKeys = require('./wallet/accountKeys');
+const walletWatch = require('./wallet/walletTransactionWatch');
+const bip21 = require('./wallet/bip21');
+const bip86 = require('./wallet/bip86');
 const {
   buildWatchSet,
   classifyWalletTransaction,
   BITCOIN_MESSAGE_TYPES
-} = require('../functions/walletTransactionWatch');
+} = walletWatch;
+const {
+  isMainnetNetwork,
+  bitcoinPurposeDerivationPath,
+  bitcoinReceiveDerivationPath
+} = require('../constants');
+
+/**
+ * bitcoinjs-lib parameters for a Fabric network name (signet and testnet4 share testnet's).
+ * @private
+ * @param {string} network
+ */
+function bitcoinNetworkFor (network) {
+  if (network === 'regtest') return bitcoinNetworks.regtest;
+  return isMainnetNetwork(network) ? bitcoinNetworks.bitcoin : bitcoinNetworks.testnet;
+}
+
+/**
+ * {@link Key} network name for a Fabric network name.
+ * @private
+ * @param {string} network
+ */
+function keyNetworkFor (network) {
+  if (network === 'regtest') return 'regtest';
+  return isMainnetNetwork(network) ? 'main' : 'testnet';
+}
 
 /**
  * Manage keys and track their balances.
@@ -70,7 +97,7 @@ class Wallet extends Service {
     }, settings);
 
     // Get network configuration
-    this.network = networks[this.settings.network] || networks.mainnet;
+    this.network = bitcoinNetworkFor(this.settings.network);
 
     this.database = null;
     this.account = null;
@@ -81,7 +108,7 @@ class Wallet extends Service {
     this.seed = null;
 
     // Initialize key management
-    this.key = new Key(this.settings.key);
+    this.key = new Key(Object.assign({}, this.settings.key, { network: keyNetworkFor(this.settings.network) }));
     this.seed = this.key.seed;
 
     this.wallet = {
@@ -216,7 +243,13 @@ class Wallet extends Service {
     });
   }
 
-  derive (path = require('../constants').BITCOIN_KEY_DERIVATION_PATH) {
+  /**
+   * Derive a key; the default is the first SegWit receive key of account 0
+   * on the wallet's network (`m/84'/{0|1}'/0'/0/0`).
+   * @param {string} [path]
+   */
+  derive (path) {
+    if (path == null) path = bitcoinReceiveDerivationPath(0, 0, this.settings.network);
     const derived = this.key.derive(path);
     return {
       privateKey: derived.private,
@@ -249,11 +282,7 @@ class Wallet extends Service {
             ]
           }
         ],
-        master: {
-          private: this.key.master.privateKey.toString('hex'),
-          public: this.key.master.publicKey.toString('hex')
-        },
-        seed: this.key.seed,
+        // Only the master xprv: the mnemonic and raw private hex are never written.
         xprv: this.key.master.toBase58()
       },
       version: this.version
@@ -346,7 +375,7 @@ class Wallet extends Service {
     }
     const key = new Key({
       seed: trimmed,
-      network: this.settings.network,
+      network: keyNetworkFor(this.settings.network),
       passphrase: opts.passphrase || ''
     });
     const xpub = key.xpub || key.pubkey;
@@ -453,25 +482,31 @@ class Wallet extends Service {
   }
 
   /**
-   * Derive and watch a window of addresses for a key (all common script types).
+   * Derive and watch a window of addresses for a key on the wallet's network:
+   * SegWit on `m/84'/{coin}'/0'`, Taproot on `m/86'/{coin}'/0'`, and standard
+   * on `m/44'/{coin}'/0'`, receive and change chains — the same set as
+   * {@link Wallet.walletDescriptors}.
    * @param {Key} key
    * @param {object} [opts]
    */
   _registerDerivedAddresses (key, opts = {}) {
-    if (!key || typeof key.deriveAddress !== 'function') return;
+    if (!key || !key.master || typeof key.master.derivePath !== 'function') return;
     const count = Math.max(1, Math.round(Number(opts.count != null ? opts.count : this.settings.gapLimit) || 20));
     const seedId = opts.seedId || null;
     const labels = opts.labels || [];
-    const types = ['p2pkh', 'p2wpkh', 'p2tr'];
-    for (let i = 0; i < count; i++) {
-      for (const type of types) {
-        try {
-          const der = key.deriveAddress(i, 0, type);
-          const addr = der && (der.address || (typeof der === 'string' ? der : null));
-          if (addr) {
-            this.watchAddress(addr, { seedId, index: i, type, labels, change: 0 });
-          }
-        } catch (_) { /* script type may be unsupported on this network */ }
+    const network = this.network;
+    const scripts = [
+      { purpose: 84, type: 'p2wpkh', address: (pubkey) => payments.p2wpkh({ pubkey, network }).address },
+      { purpose: bip86.BIP86_PURPOSE, type: 'p2tr', address: (pubkey) => bip86.address(pubkey, network) },
+      { purpose: 44, type: 'p2pkh', address: (pubkey) => payments.p2pkh({ pubkey, network }).address }
+    ];
+    for (const { purpose, type, address } of scripts) {
+      for (const change of [0, 1]) {
+        for (let i = 0; i < count; i++) {
+          const path = bitcoinPurposeDerivationPath(purpose, 0, change, i, this.settings.network);
+          const pubkey = Buffer.from(key.master.derivePath(path).publicKey);
+          this.watchAddress(address(pubkey), { seedId, index: i, type, labels, change });
+        }
       }
     }
   }
@@ -954,6 +989,10 @@ class Wallet extends Service {
     return this;
   }
 
+  /**
+   * Next unused receive address; see {@link Wallet#receiveAddress}.
+   * @returns {Promise<string>}
+   */
   async getUnusedAddress () {
     return this.receiveAddress();
   }
@@ -1208,9 +1247,8 @@ class Wallet extends Service {
     const index = typeof this.index === 'number' ? this.index : 0;
     this.index = index + 1;
 
-    // Use BIP44 Bitcoin receive path (coin type 0) — not Fabric identity (7777/7778).
-    const { bitcoinReceiveDerivationPath } = require('../constants');
-    const path = bitcoinReceiveDerivationPath(0, index);
+    // SegWit receive path on the wallet's network — never the Fabric identity.
+    const path = bitcoinReceiveDerivationPath(0, index, this.settings.network);
     const pair = this.key.derive(path);
 
     const keypair = {
@@ -1268,7 +1306,7 @@ class Wallet extends Service {
       await this._load();
     } else {
       // Legacy fallback for runtimes that initialize directly from key settings.
-      this.key = new Key({ seed: phrase });
+      this.key = new Key({ seed: phrase, network: keyNetworkFor(this.settings.network) });
       this.seed = this.key.seed;
     }
     return this.seed;
@@ -1278,9 +1316,18 @@ class Wallet extends Service {
     return this.database.close();
   }
 
+  /**
+   * Next BIP-86 Taproot receive address of account 0 (`m/86'/{coin}'/0'/0/i`),
+   * recorded in the wallet's address book and watched.
+   * @returns {Promise<string>}
+   */
   async receiveAddress () {
-    const keypair = await this.generateCleanKeyPair();
-    return keypair.public.toString('hex');
+    const index = Number.isSafeInteger(this._state.addressIndex) ? this._state.addressIndex : 0;
+    const { address } = Wallet.deriveTaprootAddress(this.key, { change: 0, index, network: this.settings.network });
+    this._state.addressIndex = index + 1;
+    this._state.addresses[address] = { index, type: 'p2tr', change: 0, used: false };
+    this.watchAddress(address, { seedId: 'primary', index, type: 'p2tr', change: 0, labels: ['receive'] });
+    return address;
   }
 
   // Add method to check gap limit
@@ -1346,6 +1393,32 @@ class Wallet extends Service {
    * @param {object} parsed Whitelisted document fields (see {@link Peer#_buildDocumentParsedForPublish}).
    * @returns {string}
    */
+  /**
+   * BIP-86 Taproot address of a key with private derivation
+   * (`m/86'/{coin}'/account'/change/index`).
+   * @param {Key} key Key holding a master that can derive hardened children.
+   * @param {Object} [options]
+   * @param {number} [options.account=0]
+   * @param {number} [options.change=0]
+   * @param {number} [options.index=0]
+   * @param {string} [options.network='mainnet'] Fabric network name.
+   * @returns {{ address: string, path: string, publicKey: string, outputKey: string }}
+   */
+  static deriveTaprootAddress (key, options = {}) {
+    if (!key || !key.master || typeof key.master.derivePath !== 'function') {
+      throw new Error('a key with a master is required to derive BIP-86 addresses');
+    }
+    const network = options.network || 'mainnet';
+    const path = bip86.path(options.account || 0, options.change || 0, options.index || 0, network);
+    const publicKey = Buffer.from(key.master.derivePath(path).publicKey);
+    return {
+      address: bip86.address(publicKey, bitcoinNetworkFor(network)),
+      path,
+      publicKey: publicKey.toString('hex'),
+      outputKey: bip86.outputKey(publicKey).toString('hex')
+    };
+  }
+
   static purchaseContentHashHex (documentId, parsed) {
     return require('../functions/documentPaymentHash').purchaseContentHashHex(documentId, parsed);
   }
@@ -1359,5 +1432,20 @@ class Wallet extends Service {
     return require('../functions/documentPaymentHash').resolveDocumentContentHashHex(opts);
   }
 }
+
+// One seed, many accounts: identity, wallet, and cosigner keys per (account, network), and the sealed vault.
+Object.assign(Wallet, accountKeys);
+Wallet.Accounts = accountKeys;
+
+// Which transactions and blocks concern a wallet.
+Wallet.Watch = walletWatch;
+
+// BIP-21 `bitcoin:` URIs.
+Wallet.BIP21 = bip21;
+Wallet.encodeBitcoinUri = bip21.encodeBitcoinUri;
+Wallet.parseBitcoinUri = bip21.parseBitcoinUri;
+
+// BIP-86 Taproot (key path only).
+Wallet.BIP86 = bip86;
 
 module.exports = Wallet;

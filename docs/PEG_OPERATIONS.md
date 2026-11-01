@@ -144,6 +144,6 @@ suites that already require `amountSats`.
 
 ## Related
 - `types/federation.js` (reserve ledger statics)
-- `functions/contractSpend.js` (`buildWithdrawalRequest`, `validateWithdrawalRequest`)
+- `types/contract.js` (`Contract.buildWithdrawalRequest`, `Contract.validateWithdrawalRequest`)
 - `types/policy.js` (`Policy`)
 - Hub `docs/FEDERATION_DEPLOYMENT.md` (network promotion, peg RPC names)

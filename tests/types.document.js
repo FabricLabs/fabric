@@ -6,14 +6,6 @@ const crypto = require('crypto');
 const Document = require('../types/document');
 const Peer = require('../types/peer');
 const {
-  merkleRootHexFromBlobHashes,
-  documentMerkleRootHex,
-  verifyOfferLeaves,
-  verifySealedBlobFrame,
-  DEFAULT_BLOB_CHUNK_BYTES,
-  SEALED_BLOB_CHUNK_BYTES
-} = require('../functions/documentBlobManifest');
-const {
   paymentHashHexFromKey,
   isWellFormedKeyReveal,
   BLOB_QUOTE_TYPE,
@@ -23,6 +15,7 @@ const {
 const DocumentBook = require('../types/documentBook');
 const Message = require('../types/message');
 const { HTLC_MINIMUM_SATS } = require('../constants');
+const DocumentBlobTransferBook = require('../types/documentBlobTransferBook');
 
 const RATE = HTLC_MINIMUM_SATS;
 
@@ -39,11 +32,11 @@ function sealedSends (seller, documentId, opts = {}) {
 
 describe('types/document (sealed blob tree)', function () {
   it('seals one key per blob; blob hash = SHA256(ciphertext), payment hash = SHA256(K_i)', function () {
-    const plain = crypto.randomBytes(DEFAULT_BLOB_CHUNK_BYTES * 2 + 100);
+    const plain = crypto.randomBytes(Document.CHUNK_BYTES * 2 + 100);
     const doc = Document.seal(plain);
     assert.strictEqual(doc.sealed, true);
     assert.strictEqual(doc.blobTotal, 3);
-    assert.ok(doc.bytesFor(0).length <= DEFAULT_BLOB_CHUNK_BYTES, 'ciphertext blob fits an AMP frame');
+    assert.ok(doc.bytesFor(0).length <= Document.CHUNK_BYTES, 'ciphertext blob fits an AMP frame');
     const pays = new Set();
     for (const b of doc.blobs) {
       assert.strictEqual(sha256(doc.bytesFor(b.index)), b.blobHashHex);
@@ -52,9 +45,9 @@ describe('types/document (sealed blob tree)', function () {
       pays.add(b.paymentHashHex);
     }
     assert.strictEqual(pays.size, 3, 'distinct K_i per blob');
-    assert.strictEqual(doc.chunkBytes, SEALED_BLOB_CHUNK_BYTES, 'leaves room for the inclusion proof');
-    assert.strictEqual(doc.merkleRootHex, documentMerkleRootHex(doc.blobs));
-    assert.notStrictEqual(doc.merkleRootHex, merkleRootHexFromBlobHashes(doc.blobs.map((b) => b.blobHashHex)));
+    assert.strictEqual(doc.chunkBytes, Document.SEALED_CHUNK_BYTES, 'leaves room for the inclusion proof');
+    assert.strictEqual(doc.merkleRootHex, Document.rootHex(doc.blobs));
+    assert.notStrictEqual(doc.merkleRootHex, Document.rootHexFromBlobHashes(doc.blobs.map((b) => b.blobHashHex)));
     assert.strictEqual(doc.hash, doc.merkleRootHex);
     assert.strictEqual(doc.contract.integrity, `sha256-${doc.merkleRootHex}`);
     assert.ok(doc.content().equals(plain));
@@ -110,7 +103,7 @@ describe('types/document (sealed blob tree)', function () {
     assert.strictEqual(manifestDoc.blobTotal, 1, 'manifest is one more sealed blob');
   });
 
-  it('fromPlain keeps the splitBlobs leaves and binds payment hash to the blob hash', function () {
+  it('fromPlain keeps the Document.split leaves and binds payment hash to the blob hash', function () {
     const plain = crypto.randomBytes(3000);
     const doc = Document.fromPlain(plain, { chunkBytes: 1024 });
     assert.strictEqual(doc.sealed, false);
@@ -368,14 +361,14 @@ describe('types/document (sealed blob tree)', function () {
       for (const b of bodies) {
         assert.ok(Array.isArray(b.proof));
         assert.ok(!('plaintextSha256' in b));
-        const v = verifySealedBlobFrame(b, { merkleRootHex: doc.merkleRootHex, blobTotal: doc.blobTotal });
+        const v = DocumentBlobTransferBook.verifySealedFrame(b, { merkleRootHex: doc.merkleRootHex, blobTotal: doc.blobTotal });
         assert.strictEqual(v.ok, true, v.error);
       }
       const item = doc.inventoryItem({ rateSats: RATE });
       assert.ok(!('plaintextSha256' in item));
       assert.ok(!('plaintextSha256' in doc.record()));
       const leaves = item.blobs.map((b) => ({ index: b.index, blobHashHex: b.blobHashHex, contentHashHex: b.contentHashHex, iv: b.iv }));
-      assert.strictEqual(verifyOfferLeaves({ merkleRootHex: item.merkleRootHex, blobTotal: item.blobTotal, blobs: leaves }).ok, true);
+      assert.strictEqual(Document.verifyOfferLeaves({ merkleRootHex: item.merkleRootHex, blobTotal: item.blobTotal, blobs: leaves }).ok, true);
     });
 
     it('a blob-hash inventory selector returns one blob with its proof', function () {
@@ -384,7 +377,7 @@ describe('types/document (sealed blob tree)', function () {
       assert.strictEqual(item.blobs.length, 1);
       const b = item.blobs[0];
       assert.ok(Array.isArray(b.proof));
-      assert.strictEqual(verifyOfferLeaves({
+      assert.strictEqual(Document.verifyOfferLeaves({
         merkleRootHex: item.merkleRootHex,
         blobTotal: item.blobTotal,
         blobs: [{ index: b.index, blobHashHex: b.blobHashHex, paymentHashHex: b.contentHashHex, iv: b.iv, proof: b.proof }]

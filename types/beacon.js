@@ -22,7 +22,7 @@ const Actor = require('./actor');
 const Message = require('./message');
 const Chain = require('./chain');
 const beaconFederationSigning = require('../functions/beaconFederationSigning');
-const bls = require('../functions/bls');
+const bls = require('./witness/bls');
 const Federation = require('./federation');
 
 const SATS_PER_BTC = 100_000_000;
@@ -317,7 +317,7 @@ class Beacon extends Actor {
     }
     let sig;
     try {
-      sig = this.key.signSchnorr(msg);
+      sig = this.key.signSchnorr(msg, beaconFederationSigning.FEDERATION_WITNESS_TAG);
     } catch (_) {
       return null;
     }
@@ -732,9 +732,7 @@ class Beacon extends Actor {
       beaconFederationSigning.messageBufferForPayload(round.payload),
       round.witness,
       this._federationValidators,
-      this._federationThreshold,
-      undefined,
-      { allowLegacy: false }
+      this._federationThreshold
     );
   }
 
@@ -1032,7 +1030,7 @@ class Beacon extends Actor {
       if (scheme === bls.SCHEME_BLS) {
         signatureHex = JSON.stringify(bls.createFederationBlsBundle(msg, this.key));
       } else {
-        const sig = this.key.signSchnorr(msg);
+        const sig = this.key.signSchnorr(msg, beaconFederationSigning.FEDERATION_WITNESS_TAG);
         signatureHex = Buffer.isBuffer(sig) ? sig.toString('hex') : String(sig);
       }
     } catch (err) {

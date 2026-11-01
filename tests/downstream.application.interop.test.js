@@ -38,10 +38,7 @@ const {
   markReceived,
   phaseFlags
 } = require('../functions/contractMessageCommit');
-const {
-  normalizeArcGenesis,
-  resolveSpend
-} = require('../functions/contractSpend');
+const Contract = require('../types/contract');
 
 /** Representative Federation group messageTypes allow-list (application catalogs may extend). */
 const FEDERATION_GROUP_MESSAGE_TYPES = Object.freeze([
@@ -312,13 +309,13 @@ describe('application ARC interop (Hub + Federation groups)', function () {
     const owner = new Key();
     const definition = hubPlaynetDefinition(owner);
     const contractId = new Actor(definition).id;
-    const arc = normalizeArcGenesis(definition);
+    const arc = Contract.normalizeGenesis(definition);
     assert.ok(arc.members.signers.length);
     assert.deepStrictEqual(arc.primitives.messageTypes.slice(0, 3), [
       'GroupChat', 'GroupChange', 'GroupChangeProposal'
     ]);
     const tipHash = 'ab'.repeat(32);
-    const spend = resolveSpend({
+    const spend = Contract.resolveSpend({
       genesis: arc,
       tip: {
         contractId,

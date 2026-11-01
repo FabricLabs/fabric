@@ -573,7 +573,8 @@ describe('@fabric/core/types/environment', function () {
         reloaded.unlockWallet(password);
         assert.ok(reloaded.wallet && reloaded.wallet.key);
         assert.strictEqual(reloaded.wallet.version, doc.walletVersion);
-        assert.ok(String(reloaded.wallet.key.seed || '').includes(FIXTURE_SEED.split(' ')[0]));
+        assert.strictEqual(reloaded.wallet.key.master.toBase58(), require('../functions/accountKeys').importSeed(FIXTURE_SEED));
+        assert.strictEqual(reloaded.wallet.key.seed || null, null, 'only the master xprv is sealed');
         reloaded.lockWallet();
       } finally {
         for (const k of Object.keys(prev)) {
@@ -1314,7 +1315,7 @@ describe('@fabric/core/functions/sealedBlob', function () {
     assert.ok(envelope.ciphertext);
     assert.ok(envelope.iv);
     assert.ok(envelope.kdf && envelope.kdf.salt);
-    assert.strictEqual(envelope.kdf.iterations, 210000);
+    assert.strictEqual(envelope.kdf.iterations, 600000);
     const opened = openSealedJson(envelope, password);
     assert.deepStrictEqual(opened, secret);
   });
@@ -1821,7 +1822,9 @@ describe('@fabric/core/functions/fabricSetup', function () {
 
         environment.unlockWallet(TEST_PASSWORD);
         assert.strictEqual(fabricSetup.snapshotEnvironment(environment).status, 'unlocked');
-        assert.strictEqual(fabricSetup.revealSecrets(environment).seed, created.seed);
+        const revealed = fabricSetup.revealSecrets(environment);
+        assert.strictEqual(revealed.seed, null, 'the mnemonic is never stored');
+        assert.match(String(revealed.xprv), /^xprv/);
 
         environment.setLockTimeoutMinutes(15);
         const snap = fabricSetup.snapshotEnvironment(environment);
