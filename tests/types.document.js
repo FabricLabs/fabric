@@ -583,6 +583,24 @@ describe('types/document (sealed blob tree)', function () {
       assert.strictEqual(seller.sealedBlobPreimageForPaymentHash(quotes[4].paymentHashHex), null);
       assert.strictEqual(seller.quoteSealedBlob({ documentId, blobIndex: 9 }).ok, false);
     });
+
+    it('a batch quote never goes below the listed rate × blobs', function () {
+      const seller = new Peer({ listen: false });
+      const doc = Document.seal(crypto.randomBytes(5000), { chunkBytes: 2048 });
+      const { documentId } = seller.publishSealedDocument(doc, { rateSats: RATE });
+      assert.strictEqual(doc.blobTotal, 3);
+      const listed = RATE * 3;
+      const quoted = (amountSats) => {
+        const out = seller.quoteSealedBatch({ documentId, start: 0, end: 2, amountSats });
+        assert.ok(out.ok, out.error);
+        assert.strictEqual(seller._sealedBlobQuotes.get(out.batch.paymentHashHex).priceSats, out.batch.amountSats);
+        return out.batch.amountSats;
+      };
+      assert.strictEqual(quoted(undefined), listed);
+      for (const low of [1, 0, -1, listed - 1, NaN, Infinity, 'free']) assert.strictEqual(quoted(low), listed, String(low));
+      assert.strictEqual(quoted(listed + 50), listed + 50);
+      assert.strictEqual(quoted(listed + 50.9), listed + 50);
+    });
   });
 
   describe('binary documents', function () {

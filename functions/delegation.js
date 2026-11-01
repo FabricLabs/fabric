@@ -193,6 +193,24 @@ function cleanLabel (label) {
 }
 
 /**
+ * Why a `FederationWithdrawalRequest` body cannot be shown to the co-signer,
+ * or null. Its address and amounts go into the prompt as written, so the
+ * address must be a plain base58 / bech32 string and the amounts whole sats.
+ * @private
+ * @param {Object} body
+ * @returns {string|null}
+ */
+function withdrawalBodyError (body) {
+  if (typeof body.destinationAddress !== 'string' || !/^[A-Za-z0-9]{14,90}$/.test(body.destinationAddress)) {
+    return 'malformed withdrawal request: destinationAddress';
+  }
+  for (const field of ['amountSats', 'feeSats']) {
+    if (!Number.isSafeInteger(body[field]) || body[field] < 0) return `malformed withdrawal request: ${field}`;
+  }
+  return null;
+}
+
+/**
  * Browser extension origin (`chrome-extension://<id>`, `moz-extension://<uuid>`), or null.
  * @param {string} value
  * @returns {string|null}
@@ -747,6 +765,10 @@ function readInnerFrame (buffer, options = {}) {
     if (!decoded.signed) return { ok: false, error: 'a federation message must be signed by its sender' };
     const body = contractBody(decoded.message);
     if (!body || !FEDERATION_REQUEST_TYPES.includes(body.type)) return { ok: false, error: 'only federation invites and withdrawal requests can be delegated' };
+    if (body.type === 'FederationWithdrawalRequest') {
+      const error = withdrawalBodyError(body);
+      if (error) return { ok: false, error };
+    }
     const network = body.descriptor && body.descriptor.network ? String(body.descriptor.network) : null;
     return { ok: true, scope: 'federation', type: body.type, hash, author: decoded.author, buffer: decoded.buffer, body, network };
   }
@@ -1106,6 +1128,8 @@ function notificationFor (read, context = {}) {
   } else if (read.scope === 'federation') {
     const body = read.inner.body;
     if (body.type === 'FederationWithdrawalRequest') {
+      const error = withdrawalBodyError(body);
+      if (error) throw new TypeError(`notificationFor: ${error}`);
       title = `Co-sign a withdrawal of ${Number(body.amountSats)} sats`;
       summary = `To ${String(body.destinationAddress)} (fee ${Number(body.feeSats)} sats).`;
     } else {

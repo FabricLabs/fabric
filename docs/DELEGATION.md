@@ -95,7 +95,10 @@ requester. The target checks it against its own grants (`authorize`): the
 grant exists, was made by the target to this requester, isn't revoked, covers
 the scope, and allows the origin and network. A federation withdrawal names
 only its federation, so under a network-limited grant the target resolves the
-network from its own federation record (`networkOf`), or refuses.
+network from its own federation record (`networkOf`), or refuses. Its
+`destinationAddress` must be 14–90 letters and digits and its `amountSats` and
+`feeSats` whole, non-negative sats, since the co-sign prompt shows them as
+written; any other withdrawal request is refused before anyone sees it.
 
 - **Passport.** The inner frame is the site's `PASSPORT_CHALLENGE`. `origin`
   is what the requester (Passport) saw and must equal the challenge's;

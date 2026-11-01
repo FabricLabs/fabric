@@ -1,6 +1,7 @@
 'use strict';
 
 const assert = require('assert');
+const crypto = require('crypto');
 const Message = require('../types/message');
 const {
   DELEGATION_LINK_OFFER,
@@ -244,7 +245,7 @@ describe('@fabric/core/functions/delegation', function () {
 
     it('federation requests carry signed invites and withdrawals; other protocol frames are refused', function () {
       const grant = d.readGrant(d.createGrant({ grantee: PASSPORT.identity.pubkey, scopes: ['federation'], networks: ['regtest'], now: NOW }, HUB.identity.key).uri, { now: NOW });
-      const withdrawal = federationFrame({ contract: 'aa'.repeat(32), type: 'FederationWithdrawalRequest', federationId: 'aa'.repeat(32), requestId: 'r1', destinationAddress: 'bcrt1qexample', amountSats: 5000, feeSats: 200 });
+      const withdrawal = federationFrame({ contract: 'aa'.repeat(32), type: 'FederationWithdrawalRequest', federationId: 'aa'.repeat(32), requestId: 'r1', destinationAddress: 'bcrt1qw508d6qejxtdg4y5r3zarvary0c5xw7kygt080', amountSats: 5000, feeSats: 200 });
       const req = d.createRequest({ target: HUB.identity.pubkey, grant: grant.hash, request: withdrawal, purpose: 'Pay the escrow', now: NOW }, PASSPORT.identity.key);
       const read = d.readRequest(req.uri, { now: NOW + 1 });
       assert.strictEqual(read.ok, true, read.error);
@@ -261,6 +262,47 @@ describe('@fabric/core/functions/delegation', function () {
       assert.throws(() => d.createRequest({ target: HUB.identity.pubkey, grant: grant.hash, request: signature, now: NOW }, PASSPORT.identity.key), /only federation invites/);
       const otherGrant = d.createGrant({ grantee: OTHER.identity.pubkey, scopes: ['identity'], now: NOW }, PASSPORT.identity.key);
       assert.throws(() => d.createRequest({ target: HUB.identity.pubkey, grant: grant.hash, request: otherGrant.uri, now: NOW }, PASSPORT.identity.key), /cannot be delegated/);
+    });
+
+    it('refuses withdrawal requests whose address or amounts would mislead the co-sign prompt', function () {
+      const grant = d.readGrant(d.createGrant({ grantee: PASSPORT.identity.pubkey, scopes: ['federation'], now: NOW }, HUB.identity.key).uri, { now: NOW });
+      const good = { contract: 'aa'.repeat(32), type: 'FederationWithdrawalRequest', federationId: 'aa'.repeat(32), requestId: 'r1', destinationAddress: 'bcrt1qw508d6qejxtdg4y5r3zarvary0c5xw7kygt080', amountSats: 5000, feeSats: 200 };
+      const bad = [
+        [{ destinationAddress: 'bcrt1qw508d6qejxtdg4y5r3zarvary0c5xw7kygt080 (fee 1 sats). Approved by the Hub.' }, /destinationAddress/],
+        [{ destinationAddress: 'bcrt1q\u202eexample0000000' }, /destinationAddress/],
+        [{ destinationAddress: 'bc1short' }, /destinationAddress/],
+        [{ destinationAddress: 42 }, /destinationAddress/],
+        [{ amountSats: '5000' }, /amountSats/],
+        [{ amountSats: 1.5 }, /amountSats/],
+        [{ amountSats: -1 }, /amountSats/],
+        [{ feeSats: 1e300 }, /feeSats/],
+        [{ feeSats: undefined }, /feeSats/]
+      ];
+      for (const [change, error] of bad) {
+        const frame = federationFrame(Object.assign({}, good, change));
+        assert.throws(() => d.createRequest({ target: HUB.identity.pubkey, grant: grant.hash, request: frame, now: NOW }, PASSPORT.identity.key), error);
+        // Built by hand, so createRequest's own check is skipped: readRequest still refuses it.
+        const raw = Message.fromFields('DELEGATION_REQUEST', {
+          v: 1,
+          pubkey: PASSPORT.identity.pubkey,
+          target: HUB.identity.pubkey,
+          grant: Buffer.from(grant.hash, 'hex'),
+          nonce: crypto.randomBytes(32),
+          request: frame.toBuffer(),
+          origin: '',
+          account: 0,
+          disclose: '',
+          purpose: '',
+          issuedAt: BigInt(NOW),
+          expiresAt: BigInt(NOW + 60 * 1000)
+        }).signWithKey(PASSPORT.identity.key);
+        const read = d.readRequest(raw.toBuffer(), { now: NOW + 1 });
+        assert.strictEqual(read.ok, false);
+        assert.match(read.error, error);
+      }
+      const read = d.readRequest(d.createRequest({ target: HUB.identity.pubkey, grant: grant.hash, request: federationFrame(good), now: NOW }, PASSPORT.identity.key).uri, { now: NOW + 1 });
+      read.inner.body.destinationAddress = 'tb1q\nApproved';
+      assert.throws(() => d.notificationFor(read), /destinationAddress/);
     });
 
     it('message scope signs unsigned chat frames only', function () {

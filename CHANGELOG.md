@@ -1,6 +1,10 @@
 # `@fabric/core` Changelog
 Recent changes to Fabric Core.
 
+## 2026-11-01
+- **Delegated withdrawal requests can't spoof the co-sign prompt.** `readRequest` and `createRequest` refuse a `FederationWithdrawalRequest` whose `destinationAddress` is not 14–90 letters and digits, or whose `amountSats` / `feeSats` are not non-negative safe integers (`malformed withdrawal request: <field>`). `notificationFor` throws on such a body instead of writing it into the title and summary, where an address carrying text like `(fee 1 sats). Approved by the Hub.` or bidi characters read as part of the prompt.
+- **A sealed batch quote never goes below the listed price.** `Peer#quoteSealedBatch` quotes the document's rate × blobs; `amountSats` can only raise it. A lower, zero, negative, or non-numeric `amountSats` (for example one copied from a buyer's bid) used to become the HTLC amount that releases every key in the batch.
+
 ## 2026-10-30
 - **CONTRACT_MESSAGE can be filtered without parsing its JSON payload.** Optional trailing fields `recipient`, `ref`, and `slot` are copied from the object the sender already holds (top-level, otherwise `object.<key>`). Empty fields are left off the wire, so an old decoder that stops after `payload` still reads the frame. `Message.contractMessageIndex` / `contractMessageMatches` and `listQueuedMessages({ recipient, ref, slot })` use those fields only. `ListContractMessageQueue` passes the same three query fields.
 - **Every node is a watchtower for itself and for clients registered with it.** `services/watchtower.js` stores per-output justice transactions for revoked commitments, encrypted under the commitment txid and indexed by its first 16 bytes. `ChannelSession#penaltyFilings` signs them when the counterparty revokes. `Bitcoin` scans blocks and mempool transactions and broadcasts a filing that decrypts; a shared prefix that does not decrypt is ignored. A filing is kept only for this node's own key, a current Passport session, or a Fabric peer the host has already registered. Mainnet channels stay refused.

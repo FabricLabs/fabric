@@ -5173,7 +5173,7 @@ class Peer extends Service {
    * @param {string} opts.documentId
    * @param {number} opts.start
    * @param {number} opts.end
-   * @param {number} [opts.amountSats]
+   * @param {number} [opts.amountSats] Ask above the listed price (rate × blobs). It never lowers it: a lower, non-finite, or negative amount quotes the listed price.
    * @returns {{ ok: boolean, batch: (Object|undefined), error: (string|undefined) }}
    */
   quoteSealedBatch (opts = {}) {
@@ -5190,7 +5190,9 @@ class Peer extends Service {
       if (!leaf || !keyHex) return { ok: false, error: `unknown blob index ${i}` };
       blobs.push({ blobIndex: i, blobHashHex: leaf.blobHashHex, keyHex });
     }
-    const price = opts.amountSats != null ? Math.floor(Number(opts.amountSats)) : this._sealedBlobPriceSats(documentId) * blobs.length;
+    const listed = this._sealedBlobPriceSats(documentId) * blobs.length;
+    const asked = opts.amountSats != null ? Math.floor(Number(opts.amountSats)) : NaN;
+    const price = Number.isSafeInteger(asked) && asked > listed ? asked : listed;
     const { batch, secretHex } = createBlobBatch({
       documentId,
       merkleRootHex: doc.merkleRootHex,
