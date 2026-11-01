@@ -227,7 +227,7 @@
     "cross-env": "=10.1.0",
     "debug-trace": "=2.2.3",
     "docco": "=0.9.2",
-    "eslint": "=10.13.0",
+    "eslint": "=10.14.0",
     "is-my-json-valid": "=2.20.6",
     "js-beautify": "=2.0.3",
     "jsdoc": "=4.0.5",
@@ -328,5 +328,9 @@
     "classic-level@3.0.0": true,
     "zeromq": true,
     "zeromq@6.8.0": true
+  },
+  "overrides": {
+    "glob": "=14.0.3",
+    "minimatch": "=11.0.3"
   }
 }
