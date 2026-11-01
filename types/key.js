@@ -121,23 +121,30 @@ function secpPointToRawBytes (point, compressed = true) {
   throw new Error('Unsupported secp256k1 Point API');
 }
 
-const { encodeCheck, decodeCheck } = require('../functions/base58');
-const bip39 = require('../functions/bip39');
-const { parseRawSeedHex, classifyFabricKeyMaterial } = require('../functions/fabricKeyMaterial');
-const bip32Module = require('../functions/bip32');
+const base58 = require('./key/base58');
+const { encodeCheck, decodeCheck } = base58;
+const bip39 = require('./key/bip39');
+const keyMaterial = require('./key/fabricKeyMaterial');
+const { parseRawSeedHex, classifyFabricKeyMaterial } = keyMaterial;
+const bip32Module = require('./key/bip32');
 const BIP32 = bip32Module.default;
 const BIP32_DEFAULT_NETWORK = bip32Module.DEFAULT_NETWORK;
+const bip49 = require('./key/bip49');
+const bip85 = require('./key/bip85');
+const pubkeyHelpers = require('./key/pubkey');
+const keyHasPrivateSigningMaterial = require('./key/keyHasPrivateSigningMaterial');
+const SIGNING_TAGS = require('./key/signingTags');
 const { payments } = require('bitcoinjs-lib');
-const { p2shP2wpkhPayment } = require('../functions/bip49');
-const { encodeSegwitAddress } = require('../functions/bech32');
-const taggedHash = require('../functions/taggedHash');
+const { p2shP2wpkhPayment } = bip49;
+const { encodeSegwitAddress } = require('./bech32/bech32');
 
 // Fabric Dependencies
 const Actor = require('./actor');
 const Hash256 = require('./hash256');
+const taggedHash = Hash256.tagged;
 
 /** @private Tag for the generic `Key#sign` / `Key#verify` pair. */
-const KEY_SIGN_TAG = require('../functions/signingTags').SIGN;
+const KEY_SIGN_TAG = SIGNING_TAGS.SIGN;
 const SCHNORR_TAG_PATTERN = /^Fabric\/[A-Za-z0-9/._-]{1,96}$/;
 
 /**
@@ -171,6 +178,32 @@ function bip32NetworkFromKeySettings (settings) {
     scriptHash: raw.scriptHash,
     wif: raw.wif
   };
+}
+
+/**
+ * Address and WIF parameters for a Key's network. Signet and testnet4 use
+ * testnet's, playnet is regtest. An unknown name throws rather than falling
+ * back to mainnet.
+ * @private
+ */
+function addressNetworkFromKeySettings (settings) {
+  const name = String(settings.network || 'main');
+  const nets = settings.networks;
+  switch (name) {
+    case 'main':
+    case 'mainnet':
+      return nets.mainnet;
+    case 'testnet':
+    case 'testnet3':
+    case 'testnet4':
+    case 'signet':
+      return nets.testnet;
+    case 'regtest':
+    case 'playnet':
+      return nets.regtest;
+    default:
+      throw new Error(`Unsupported network: ${name}`);
+  }
 }
 
 /**
@@ -504,7 +537,7 @@ class Key extends EventEmitter {
 
   deriveAddress (index = 0, change = 0, type = 'p2pkh') {
     const key = this.deriveKeyPair(index, change);
-    const network = this.settings.network === 'regtest' ? this.settings.networks.testnet : this.settings.networks[this.settings.network];
+    const network = addressNetworkFromKeySettings(this.settings);
 
     switch (type) {
       case 'p2pkh':
@@ -543,23 +576,7 @@ class Key extends EventEmitter {
         const tweakResult = ecc.xOnlyPointAddTweak(xOnlyPubkey, taggedHash('TapTweak', xOnlyPubkey));
         if (!tweakResult) throw new Error('Invalid tweak');
 
-        // Use the correct network prefix for bech32m
-        let hrp;
-        switch (this.settings.network) {
-          case 'main':
-            hrp = 'bc';
-            break;
-          case 'testnet':
-            hrp = 'tb';
-            break;
-          case 'regtest':
-            hrp = 'bcrt';
-            break;
-          default:
-            throw new Error(`Unsupported network: ${this.settings.network}`);
-        }
-
-        const address = encodeSegwitAddress(hrp, 1, Buffer.from(tweakResult.xOnlyPubkey));
+        const address = encodeSegwitAddress(network.bech32, 1, Buffer.from(tweakResult.xOnlyPubkey));
         if (!address) throw new Error('Invalid program');
 
         return {
@@ -827,9 +844,7 @@ class Key extends EventEmitter {
     if (!this.private) throw new Error('Cannot export WIF without private key');
     const privateKeyBuffer = privateKeyToBuffer(this.private);
 
-    const network = this.settings.network === 'regtest'
-      ? this.settings.networks.testnet
-      : this.settings.networks[this.settings.network] || this.settings.networks.mainnet;
+    const network = addressNetworkFromKeySettings(this.settings);
 
     const prefix = Buffer.from([network.wif]);
     const payload = Buffer.concat([
@@ -843,9 +858,7 @@ class Key extends EventEmitter {
 
   toBitcoinAddress () {
     if (!this.public) throw new Error('Cannot derive Bitcoin address without public key');
-    const network = this.settings.network === 'regtest'
-      ? this.settings.networks.testnet
-      : this.settings.networks[this.settings.network] || this.settings.networks.mainnet;
+    const network = addressNetworkFromKeySettings(this.settings);
 
     const p2pkh = payments.p2pkh({
       pubkey: Buffer.from(this.public.encode('hex'), 'hex'),
@@ -857,6 +870,34 @@ class Key extends EventEmitter {
 }
 
 Key.SIGN_TAG = KEY_SIGN_TAG;
+Key.TAGS = SIGNING_TAGS;
 Key.schnorrMessageHash = schnorrMessageHash;
+
+// BIP-32 HD keys (`fromSeed`, `fromBase58`, `HDNode`, `DEFAULT_NETWORK`; `default` is the bip32-style factory).
+Key.BIP32 = bip32Module;
+Key.HDNode = bip32Module.HDNode;
+
+// BIP-39 mnemonics, on the `Key.Mnemonic(entropy)` factory.
+Key.Mnemonic.WORD_COUNTS = bip39.MNEMONIC_WORD_COUNTS;
+Key.Mnemonic.wordlist = bip39.defaultWordlist;
+Key.Mnemonic.generate = bip39.generateMnemonic;
+Key.Mnemonic.validate = bip39.validateMnemonic;
+Key.Mnemonic.fromEntropy = bip39.entropyToMnemonic;
+Key.Mnemonic.toEntropy = bip39.mnemonicToEntropy;
+Key.Mnemonic.toSeed = bip39.mnemonicToSeed;
+Key.Mnemonic.toSeedSync = bip39.mnemonicToSeedSync;
+
+Key.BIP49 = bip49;
+Key.BIP85 = bip85;
+Key.Base58 = base58;
+
+// FABRIC_XPRV / FABRIC_SEED / FABRIC_MNEMONIC classification.
+Key.Material = keyMaterial;
+
+Key.pubkeyXOnly = pubkeyHelpers.pubkeyXOnly;
+Key.pubkeyCompressed = pubkeyHelpers.pubkeyCompressed;
+Key.pubkeysMatch = pubkeyHelpers.pubkeysMatch;
+Key.normalizePeerPubkeyHex = pubkeyHelpers.normalizePeerPubkeyHex;
+Key.hasPrivateSigningMaterial = keyHasPrivateSigningMaterial;
 
 module.exports = Key;

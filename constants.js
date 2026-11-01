@@ -156,8 +156,9 @@ function bitcoinChangeDerivationPath (account = 0, index = 0, networkOrCoinType)
 
 /**
  * BIP-43 purpose path for Bitcoin funds: m/{purpose}'/{coin}'/account'/{0|1}/index
- * Wallets hand out addresses from BIP-84 and watch BIP-44 too (see
- * `functions/accountKeys.js`); BIP-87 names the multisig cosigner key.
+ * Account wallets hand out addresses from BIP-84 and also watch BIP-86 Taproot
+ * and BIP-44 (see `types/wallet/accountKeys.js`); BIP-87 names the multisig
+ * cosigner key.
  *
  * @param {number} purpose 44 (p2pkh), 49 (p2sh-p2wpkh), 84 (p2wpkh), 86 (p2tr), or 87 (multisig)
  * @param {number} [account=0]
@@ -388,6 +389,12 @@ const P2P_PORT = 7777;
 const P2P_PEER_GOSSIP = 0x61;
 /** First-class wire opcode: peer needs more connections; relayed until fulfilled. */
 const P2P_PEERING_OFFER = 0x62;
+/** First-class wire opcode: a signed bid to buy one document chunk, flooded to find sellers. */
+const P2P_DOCUMENT_BID = 0x63;
+/** First-class wire opcode: a seller's signed answer to a bid, routed back along the bid's path. */
+const P2P_DOCUMENT_ASK = 0x64;
+/** Furthest a bid's `expiresAt` may be from now; also bounds how long relays keep its route. */
+const DOCUMENT_BID_MAX_TTL_SECONDS = 60 * 60;
 /** Max gossip relays per logical hop (anti amplification). */
 const GOSSIP_MAX_HOPS = 5;
 /** Per-origin relay budget per rolling minute (anti flood). */
@@ -441,6 +448,18 @@ const PEER_MAX_PENDING_SEALED_DELIVERIES = 32;
 const BITCOIN_DUST_SATS = 546;
 /** Size budget for a single-input HTLC claim or timeout spend (measured 162 vB for the tapscript claim leaf to a P2TR address). */
 const HTLC_CLAIM_VBYTES = 170;
+/** Measured virtual size of that claim. Fees use this; {@link HTLC_CLAIM_VBYTES} stays the budget. */
+const HTLC_CLAIM_MEASURED_VBYTES = 162;
+/** Taproot dust at Bitcoin Core's 3 sat/vB dust rate (43-byte output + 67-byte witness estimate). */
+const HTLC_P2TR_DUST_SATS = 330;
+/** Confirmations of the funding transaction before the seller may claim (`c`). */
+const HTLC_CLAIM_CONFIRMATIONS = 1;
+/** Blocks the seller's claim must finish before the refund lock (`d`). */
+const HTLC_CLAIM_SAFETY_BLOCKS = 6;
+/** Extra blocks the buyer leaves between funding and the refund lock. */
+const HTLC_CLAIM_LOCK_MARGIN_BLOCKS = 1;
+/** Consecutive sealed blobs one mainnet L1 HTLC pays for. */
+const DOCUMENT_L1_BATCH_BLOBS = 128;
 /**
  * Smallest payment an HTLC may carry (channel or L1): its claim pays at least
  * 1 sat/vB and still leaves a non-dust output, so the preimage holder can
@@ -448,13 +467,58 @@ const HTLC_CLAIM_VBYTES = 170;
  * CPFP the claim output.
  */
 const HTLC_MINIMUM_SATS = BITCOIN_DUST_SATS + HTLC_CLAIM_VBYTES;
-/** Max blobs in one document transfer (`blobTotal` cap). 8192 × ~24 KiB blobs ≈ 188 MiB per document. */
-const MAX_DOCUMENT_BLOBS = 8192;
+/**
+ * Bytes kept beside the base64 body of an unsealed `P2P_FILE_SEND`.
+ * Chunk size is `floor((MAX_MESSAGE_SIZE − this) × 3/4)`.
+ */
+const DOCUMENT_FILE_SEND_OVERHEAD = 640;
+/**
+ * Bytes kept beside the base64 body of a sealed `P2P_FILE_SEND`, including a
+ * full inclusion proof. At the FAT file cap that proof is 18 siblings and the
+ * JSON beside the body is 1,716 bytes, inside this reserve, so the sealed
+ * chunk stays 23,040 bytes.
+ */
+const DOCUMENT_SEALED_FRAME_OVERHEAD = 2048;
+/** AES-GCM tag appended to each sealed blob. Plaintext per sealed chunk is the ciphertext chunk minus this. */
+const DOCUMENT_GCM_TAG_BYTES = 16;
+/** Unsealed plaintext (and ciphertext) bytes in one blob. */
+const DOCUMENT_CHUNK_BYTES = Math.max(
+  256,
+  Math.floor((MAX_MESSAGE_SIZE - DOCUMENT_FILE_SEND_OVERHEAD) * 3 / 4)
+);
+/** Sealed ciphertext bytes in one blob. */
+const DOCUMENT_SEALED_CHUNK_BYTES = Math.max(
+  256,
+  Math.floor((MAX_MESSAGE_SIZE - DOCUMENT_SEALED_FRAME_OVERHEAD) * 3 / 4)
+);
+/** Sealed plaintext bytes in one blob. */
+const DOCUMENT_SEALED_PLAINTEXT_BYTES = DOCUMENT_SEALED_CHUNK_BYTES - DOCUMENT_GCM_TAG_BYTES;
+/**
+ * Maximum document size, in bytes.
+ * FAT16 and FAT32 both store file size as an unsigned 32-bit count. Microsoft
+ * documents each maximum as 2^32 − 1 bytes (4,294,967,295). The two limits
+ * are equal, so the lower one is this value exactly.
+ */
+const MAX_DOCUMENT_BYTES = 0xFFFFFFFF;
+/**
+ * Blobs one maximum-size document needs. Sealed plaintext chunks are the
+ * smaller of the two chunk sizes, so this count is
+ * `ceil(MAX_DOCUMENT_BYTES / DOCUMENT_SEALED_PLAINTEXT_BYTES)`. The last
+ * chunk is short; a file of `MAX_DOCUMENT_BYTES + 1` still fits in this many
+ * sealed chunks and is refused by the byte cap.
+ */
+const MAX_DOCUMENT_BLOBS = Math.ceil(MAX_DOCUMENT_BYTES / Math.min(DOCUMENT_CHUNK_BYTES, DOCUMENT_SEALED_PLAINTEXT_BYTES));
 /** Max blobs (parts) accepted for one per-blob sealed tree (`blobTotal` cap). */
 const PEER_MAX_SEALED_BLOB_PARTS = MAX_DOCUMENT_BLOBS;
 /** Alternate frames kept per held sealed blob (same ciphertext, another payment hash or IV). Bounds memory only: purchase pins (payment hash, advertised IV, seller origin) are what keep poisoned frames from blocking the paid delivery. */
 const PEER_MAX_SEALED_BLOB_ALTERNATES = 4;
-/** Global byte budget across every pending sealed row (ciphertext + retained frames); fits one full-size tree. */
+/**
+ * Global byte budget across every pending sealed row (ciphertext + one
+ * retained frame per blob). A full sealed tree can be larger than this;
+ * the cap is what stops one peer from pinning gigabytes of unsolicited
+ * frames. Nothing is allocated until frames arrive. Per origin the default
+ * is a quarter of this.
+ */
 const PEER_MAX_PENDING_SEALED_BYTES = 256 * 1024 * 1024;
 /** Byte budget for opened convergent chunks a Peer keeps so a chunk another document shares is not bought again. */
 const PEER_MAX_HELD_CHUNK_BYTES = 64 * 1024 * 1024;
@@ -462,6 +526,12 @@ const PEER_MAX_HELD_CHUNK_BYTES = 64 * 1024 * 1024;
 const PEER_PENDING_SEALED_TTL_MS = 60 * 60 * 1000;
 /** Max private DocumentRequest reverse-route entries. */
 const PEER_MAX_DOCUMENT_RELAY_ROUTES = 256;
+/** Max bid routes (bid id → previous hop) a Peer keeps for routing asks back. */
+const PEER_MAX_DOCUMENT_BID_ROUTES = 4096;
+/** Max bids per origin per rolling minute that a Peer floods onward. */
+const DOCUMENT_BID_MAX_RELAYS_PER_ORIGIN_PER_MINUTE = 30;
+/** Max asks a Peer takes (or routes back) per bid, one per seller. */
+const PEER_MAX_ASKS_PER_DOCUMENT_BID = 32;
 /** Max concurrent BIP-327 `P2P_MUSIG_*` sessions on a Peer (FIFO eviction). */
 const PEER_MAX_MUSIG_SESSIONS = 32;
 /** Idle TTL for a MuSig2 session before secret nonces are wiped. */
@@ -519,9 +589,31 @@ const P2P_MUSIG_ACCEPT_PROPOSAL = 0x4225;
  */
 const PASSPORT_CHALLENGE = 0x4240;
 const PASSPORT_ASSERTION = 0x4241;
+/**
+ * Retired: a desktop app is now asked with a `DELEGATION_REQUEST`. The opcode
+ * stays reserved and readers refuse it.
+ */
 const PASSPORT_SIGN_REQUEST = 0x4242;
 /** Longest lifetime any Passport frame may ask for. */
 const PASSPORT_MAX_TTL_MS = 3 * 60 * 1000;
+/**
+ * Delegation frames: pairing two key holders, grants that let one ask the
+ * other to sign, and the requests and results themselves. Carried as
+ * `fabric:<frame>` strings through a rendezvous / mailbox, never relayed on
+ * the mesh. See `functions/delegation.js` and `docs/DELEGATION.md`.
+ */
+const DELEGATION_LINK_OFFER = 0x4243;
+const DELEGATION_LINK_ANSWER = 0x4244;
+const DELEGATION_LINK_REVEAL = 0x4245;
+const DELEGATION_GRANT = 0x4246;
+const DELEGATION_REVOKE = 0x4247;
+const DELEGATION_REQUEST = 0x4248;
+const DELEGATION_RESULT = 0x4249;
+const DELEGATION_MAILBOX_FETCH = 0x424A;
+/** Longest lifetime of a pairing frame or a mailbox read (interactive). */
+const DELEGATION_LINK_MAX_TTL_MS = 3 * 60 * 1000;
+/** Longest lifetime of a delegation request (it may wait in a notification inbox). */
+const DELEGATION_REQUEST_MAX_TTL_MS = 24 * 60 * 60 * 1000;
 
 // Message Types
 const PEER_CANDIDATE = 0x09;
@@ -701,6 +793,10 @@ module.exports = {
   P2P_GENERIC,
   P2P_PEER_GOSSIP,
   P2P_PEERING_OFFER,
+  P2P_DOCUMENT_BID,
+  P2P_DOCUMENT_ASK,
+  DOCUMENT_BID_MAX_TTL_SECONDS,
+  DOCUMENT_BID_MAX_RELAYS_PER_ORIGIN_PER_MINUTE,
   GOSSIP_MAX_HOPS,
   GOSSIP_MAX_RELAYS_PER_ORIGIN_PER_MINUTE,
   GOSSIP_MAX_PAYLOAD_CACHE,
@@ -731,11 +827,26 @@ module.exports = {
   PEER_PENDING_SEALED_TTL_MS,
   BITCOIN_DUST_SATS,
   HTLC_CLAIM_VBYTES,
+  HTLC_CLAIM_MEASURED_VBYTES,
+  HTLC_P2TR_DUST_SATS,
+  HTLC_CLAIM_CONFIRMATIONS,
+  HTLC_CLAIM_SAFETY_BLOCKS,
+  HTLC_CLAIM_LOCK_MARGIN_BLOCKS,
+  DOCUMENT_L1_BATCH_BLOBS,
   HTLC_MINIMUM_SATS,
+  DOCUMENT_FILE_SEND_OVERHEAD,
+  DOCUMENT_SEALED_FRAME_OVERHEAD,
+  DOCUMENT_GCM_TAG_BYTES,
+  DOCUMENT_CHUNK_BYTES,
+  DOCUMENT_SEALED_CHUNK_BYTES,
+  DOCUMENT_SEALED_PLAINTEXT_BYTES,
+  MAX_DOCUMENT_BYTES,
   MAX_DOCUMENT_BLOBS,
   PEER_MAX_SEALED_BLOB_PARTS,
   PEER_MAX_SEALED_BLOB_ALTERNATES,
   PEER_MAX_DOCUMENT_RELAY_ROUTES,
+  PEER_MAX_DOCUMENT_BID_ROUTES,
+  PEER_MAX_ASKS_PER_DOCUMENT_BID,
   PEER_MAX_MUSIG_SESSIONS,
   PEER_MUSIG_SESSION_TTL_MS,
   SERVICE_COMMIT_HISTORY_MAX,
@@ -781,6 +892,16 @@ module.exports = {
   PASSPORT_ASSERTION,
   PASSPORT_SIGN_REQUEST,
   PASSPORT_MAX_TTL_MS,
+  DELEGATION_LINK_OFFER,
+  DELEGATION_LINK_ANSWER,
+  DELEGATION_LINK_REVEAL,
+  DELEGATION_GRANT,
+  DELEGATION_REVOKE,
+  DELEGATION_REQUEST,
+  DELEGATION_RESULT,
+  DELEGATION_MAILBOX_FETCH,
+  DELEGATION_LINK_MAX_TTL_MS,
+  DELEGATION_REQUEST_MAX_TTL_MS,
   PEER_CANDIDATE,
   SIDECHAIN_STATE_PATCH_TYPE,
   DOCUMENT_PUBLISH_TYPE,

@@ -1188,9 +1188,28 @@ describe('@fabric/core/services/bitcoin (deep coverage)', function () {
         if (m === 'getnetworkinfo') return { version: 260000 };
         throw new Error(m);
       };
-      btc._makeWalletRequest = async () => 'addr1';
+      const asked = [];
+      btc._makeWalletRequest = async (method, params) => {
+        asked.push([method, params[1]]);
+        return 'addr1';
+      };
       const a = await btc.getUnusedAddress();
       assert.strictEqual(a, 'addr1');
+      assert.deepStrictEqual(asked, [['getnewaddress', 'bech32m']]);
+    });
+
+    it('getUnusedAddress falls back to segwit when the wallet has no Taproot', async function () {
+      const btc = new Bitcoin({ network: 'regtest', mode: 'rpc' });
+      btc.rpc = {};
+      btc._loadWallet = async () => {};
+      const asked = [];
+      btc._makeWalletRequest = async (method, params) => {
+        asked.push(params[1]);
+        if (params[1] === 'bech32m') throw new Error('Legacy wallets cannot provide bech32m addresses');
+        return 'bcrt1qsegwit';
+      };
+      assert.strictEqual(await btc.getUnusedAddress(), 'bcrt1qsegwit');
+      assert.deepStrictEqual(asked, ['bech32m', 'bech32']);
     });
 
     it('_signRawTransactionWithWallet', async function () {

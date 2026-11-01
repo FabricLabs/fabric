@@ -69,9 +69,9 @@ const EVALUATION_SUITE = [
     layer: 'Applications',
     adoption: 'universal',
     why: 'Foundation of modern wallet backup and xpub watch-only.',
-    patterns: ['functions/bip32', 'BIP32', 'bip32', 'fromSeed', 'xprv', 'xpub'],
+    patterns: ['functions/bip32', 'types/key/bip32', 'BIP32', 'bip32', 'fromSeed', 'xprv', 'xpub'],
     expected: { core: 'full', hub: 'strong', passport: 'full', application: 'strong' },
-    notes: 'Core ships functions/bip32.js + BIP32 test vectors; Passport tests vectors.'
+    notes: 'Core ships types/key/bip32.js (Key.BIP32) + BIP32 test vectors; Passport tests vectors.'
   },
   {
     bip: 39,
@@ -80,9 +80,9 @@ const EVALUATION_SUITE = [
     layer: 'Applications',
     adoption: 'universal',
     why: 'Industry-standard recovery phrases (12/24 words).',
-    patterns: ['functions/bip39', 'BIP39', 'bip39', 'generateMnemonic', 'validateMnemonic', 'mnemonicToSeed'],
+    patterns: ['functions/bip39', 'types/key/bip39', 'BIP39', 'bip39', 'generateMnemonic', 'validateMnemonic', 'mnemonicToSeed'],
     expected: { core: 'full', hub: 'strong', passport: 'full', application: 'strong' },
-    notes: 'Core functions/bip39.js with English wordlist + NFKD passphrase tests.'
+    notes: 'Core types/key/bip39.js (Key.Mnemonic) with English wordlist + NFKD passphrase tests.'
   },
   {
     bip: 43,

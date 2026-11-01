@@ -24,9 +24,9 @@ const Token = require('./token');
 // Fabric Functions
 const { LOG_TYPES, CONTRACT_BODY_TYPES } = require('../functions/applicationNamespaces');
 const { fabricCanonicalJson } = require('../functions/fabricCanonicalJson');
-const { pubkeyXOnly, pubkeyCompressed, normalizePeerPubkeyHex } = require('../functions/pubkey');
+const { pubkeyXOnly, pubkeyCompressed, normalizePeerPubkeyHex } = require('./key/pubkey');
 const { sortPubkeysBip67 } = require('../functions/bip67');
-const SIGNING_TAGS = require('../functions/signingTags');
+const SIGNING_TAGS = require('./key/signingTags');
 
 // @private
 function sha256hex (s) {

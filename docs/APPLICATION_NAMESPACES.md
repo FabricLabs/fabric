@@ -31,7 +31,9 @@ fanout in some paths. Prefer `P2P_CHAT_MESSAGE` for all **mesh** chat.
 
 These `type` strings ride inside `CONTRACT_MESSAGE` (not outer opcodes).
 Product-specific types (missions, gameplay batches, share envelopes, activity
-trees) belong in **app catalogs**, not this core list.
+trees) belong in **app catalogs**, not this core list. `DocumentList` is the
+shared catalog of document metadata. Pack names such as `chat.catalog` and
+`profile.files` stay in the app that defines them.
 
 | Body `type` | Purpose |
 |-------------|---------|
@@ -49,6 +51,7 @@ trees) belong in **app catalogs**, not this core list.
 | `ContractWithdrawalWitness` | Co-signer witness for withdrawal / migration |
 | `MessageReceived` | Phase-1 delivery ACK for **any** sync-tracked wire frame — stored/relayed as `CONTRACT_MESSAGE`; 2PC sidecar only (does not advance tip clock) |
 | `MessageReceipt` | Phase-2 BIP340 receipt over message / content hash — same path; tip digest unchanged |
+| `DocumentList` | Compact document catalog (id, name, mime, size, optional merkle and price). No file bytes. Chunked to one AMP body. Fold by id, newest `observedAt` wins |
 | `ContractMessage` | Generic `ops` (RFC6902) commit from `Contract#commit`; Peer applies the ops to its copy of the contract state |
 
 ### Wire encoding

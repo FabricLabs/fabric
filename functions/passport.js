@@ -11,9 +11,9 @@
  *   signer saw, the nonce, the sha256 of the challenge frame, and the network
  *   whose paths it used. Wallet xpubs and the cosigner key are included only
  *   when the challenge asked and the user agreed.
- * - Passport asks a desktop app to answer for it with a `PASSPORT_SIGN_REQUEST`
- *   signed by the Passport device, carrying the challenge and the disclosures
- *   the user agreed to.
+ * - Passport asks another participant it holds a grant from (a desktop app, a
+ *   Hub) to answer for it with a `DELEGATION_REQUEST` embedding the challenge
+ *   (`functions/delegation.js`); the answer names the asker as `device`.
  *
  * Every frame carries `origin`, `nonce`, `issuedAt`, and `expiresAt`; readers
  * refuse lifetimes over {@link PASSPORT_MAX_TTL_MS}. Redeeming a nonce once is
@@ -41,7 +41,7 @@ const { PASSPORT_MAX_TTL_MS } = require('../constants');
 
 /** Protocol version carried in every frame. */
 const PASSPORT_VERSION = 2;
-/** Default lifetime of a challenge, assertion, or sign request. */
+/** Default lifetime of a challenge or assertion. */
 const PASSPORT_DEFAULT_TTL_MS = 2 * 60 * 1000;
 /** Allowed clock difference between signer and verifier. */
 const PASSPORT_CLOCK_SKEW_MS = 30 * 1000;
@@ -311,7 +311,7 @@ function walletDisclosure (wallet, network) {
  * @param {string[]} [params.disclose] What the user agreed to share; each must be requested.
  * @param {{ segwit: { xpub: string }, standard: { xpub: string } }} [params.wallet] Needed to disclose `wallet`.
  * @param {Key} [params.cosignerKey] Needed to disclose `cosigner`.
- * @param {string} [params.device] Compressed pubkey of the Passport device that asked (desktop signers).
+ * @param {string} [params.device] Compressed pubkey of the participant that asked (delegated sign-ins).
  * @param {number} [params.ttlMs]
  * @param {number} [params.now]
  * @param {Key} key The identity's private key.
@@ -570,122 +570,6 @@ function readCosignerDisclosure (text, context) {
   return { ok: true, cosigner: { pubkey: cosignerPubkey, proof: String(parsed.proof).toLowerCase() } };
 }
 
-/**
- * Ask a paired desktop app to answer a challenge (signed by the Passport device).
- * @param {Object} params
- * @param {string|Buffer|Message} params.challenge The site's `PASSPORT_CHALLENGE`.
- * @param {string} params.origin The origin Passport saw (must match the challenge).
- * @param {number} [params.account=0] Account index the desktop signs with.
- * @param {string[]} [params.disclose] What the user agreed to share; each must be requested.
- * @param {string} [params.nonce] 64 hex characters (generated when omitted).
- * @param {number} [params.ttlMs]
- * @param {number} [params.now]
- * @param {Key} key The Passport device key.
- * @returns {{ message: Message, uri: string, nonce: string, expiresAt: number }}
- */
-function createSignRequest (params = {}, key) {
-  assertSigningKey(key);
-  const origin = normalizeOrigin(params.origin);
-  if (!origin) throw new TypeError('createSignRequest: http(s) origin required');
-  const inner = readChallenge(params.challenge, { now: params.now });
-  if (!inner.ok) throw new Error(`createSignRequest: ${inner.error}`);
-  if (inner.challenge.origin !== origin) throw new Error('createSignRequest: the challenge names a different origin');
-  const disclose = normalizeDisclosures(params.disclose);
-  if (!disclose) throw new TypeError(`disclose may only list ${PASSPORT_DISCLOSURES.join(', ')}`);
-  for (const item of disclose) {
-    if (!inner.challenge.request.includes(item)) throw new Error(`createSignRequest: the challenge did not ask for ${item}`);
-  }
-  const account = params.account != null ? Number(params.account) : 0;
-  if (!Number.isInteger(account) || account < 0 || account >= 0x80000000) throw new RangeError('account must be a BIP32 child index');
-  const nonce = params.nonce != null ? String(params.nonce).toLowerCase() : createNonce();
-  if (!NONCE_PATTERN.test(nonce)) throw new TypeError('nonce must be 32 bytes of hex');
-  const issuedAt = Number.isFinite(params.now) ? params.now : Date.now();
-  const expiresAt = Math.min(issuedAt + clampTtl(params.ttlMs), inner.challenge.expiresAt);
-  const message = Message.fromFields('PASSPORT_SIGN_REQUEST', {
-    v: PASSPORT_VERSION,
-    origin,
-    nonce,
-    issuedAt: BigInt(issuedAt),
-    expiresAt: BigInt(expiresAt),
-    challenge: inner.buffer,
-    account,
-    disclose: disclose.join(',')
-  });
-  message.signWithKey(key);
-  return { message, uri: encodeFabricUri(message), nonce, expiresAt };
-}
-
-/**
- * Read a `PASSPORT_SIGN_REQUEST`: device signature, window, and the challenge.
- * Whether the author may ask (a paired device in the identity cluster) and
- * whether the nonce is fresh are the desktop app's checks.
- * @param {string|Buffer|Message} input
- * @param {Object} [options]
- * @param {number} [options.now]
- * @param {number} [options.maxTtlMs]
- * @returns {{ ok: true, author: string, origin: string, nonce: string, issuedAt: number, expiresAt: number, account: number, disclose: string[], challenge: object, challengeHash: string, challengeBuffer: Buffer }|{ ok: false, error: string }}
- */
-function readSignRequest (input, options = {}) {
-  const decoded = decodeInput(input, { allowedTypes: ['PASSPORT_SIGN_REQUEST'] });
-  if (!decoded.ok) return decoded;
-  const fields = decoded.message.toFields();
-  if (!fields) return { ok: false, error: 'malformed PASSPORT_SIGN_REQUEST body' };
-  if (Number(fields.v) !== PASSPORT_VERSION) return { ok: false, error: `unsupported Passport version ${fields.v}` };
-  const origin = normalizeOrigin(fields.origin);
-  if (!origin) return { ok: false, error: 'invalid origin' };
-  const nonce = String(fields.nonce || '');
-  if (!NONCE_PATTERN.test(nonce)) return { ok: false, error: 'invalid nonce' };
-  const issuedAt = toMillis(fields.issuedAt);
-  const expiresAt = toMillis(fields.expiresAt);
-  const windowError = checkWindow(issuedAt, expiresAt, options);
-  if (windowError) return { ok: false, error: `sign request ${windowError}` };
-  const inner = readChallenge(fields.challenge, options);
-  if (!inner.ok) return { ok: false, error: `challenge: ${inner.error}` };
-  if (inner.challenge.origin !== origin) return { ok: false, error: 'the challenge names a different origin' };
-  if (expiresAt > inner.challenge.expiresAt) return { ok: false, error: 'sign request outlives its challenge' };
-  const disclose = normalizeDisclosures(fields.disclose);
-  if (!disclose) return { ok: false, error: 'unknown disclosure' };
-  for (const item of disclose) {
-    if (!inner.challenge.request.includes(item)) return { ok: false, error: `the challenge did not ask for ${item}` };
-  }
-  const account = Number(fields.account);
-  if (!Number.isInteger(account) || account < 0 || account >= 0x80000000) return { ok: false, error: 'invalid account' };
-  return {
-    ok: true,
-    author: decoded.author,
-    origin,
-    nonce,
-    issuedAt,
-    expiresAt,
-    account,
-    disclose,
-    challenge: inner.challenge,
-    challengeHash: inner.hash,
-    challengeBuffer: inner.buffer
-  };
-}
-
-/**
- * Six-digit code both devices show while pairing, so the user can check they
- * are linking the two devices they think they are. Order-independent; takes
- * compressed or x-only pubkeys.
- * @param {string} a Pubkey hex.
- * @param {string} b Pubkey hex.
- * @returns {string}
- */
-function pairingCode (a, b) {
-  const xOnly = (pubkey) => {
-    const hex = String(pubkey || '').toLowerCase();
-    if (/^0[23][0-9a-f]{64}$/.test(hex)) return hex.slice(2);
-    if (/^[0-9a-f]{64}$/.test(hex)) return hex;
-    throw new TypeError('pairingCode: pubkeys must be hex');
-  };
-  const [first, second] = [xOnly(a), xOnly(b)].sort();
-  if (first === second) throw new Error('pairingCode: a device cannot pair with itself');
-  const digest = crypto.createHash('sha256').update(`fabric-pairing:1\n${first}\n${second}`, 'utf8').digest();
-  return String(digest.readUInt32BE(0) % 1000000).padStart(6, '0');
-}
-
 module.exports = {
   PASSPORT_VERSION,
   PASSPORT_DEFAULT_TTL_MS,
@@ -701,8 +585,5 @@ module.exports = {
   createChallenge,
   readChallenge,
   signAssertion,
-  verifyAssertion,
-  createSignRequest,
-  readSignRequest,
-  pairingCode
+  verifyAssertion
 };

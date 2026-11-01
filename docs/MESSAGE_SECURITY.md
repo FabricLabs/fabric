@@ -47,11 +47,7 @@ follows them cannot be made to sign something a site chose for it.
 | `Fabric/ContractWithdrawalWitness` | Contract withdrawal witness |
 | `Fabric/CircuitDecision` | Blinded-execution accept / reject |
 | `Fabric/GroupChange` | GroupChangeProposal vote |
-| `Fabric/IdentityCrossSign` | `fabric:identity-cross-sign:2:<session>:<nonce>:<local>:<peer>:<origin>` |
-| `Fabric/IdentityCrossSignRevoke` | `fabric:identity-cross-sign-revoke:2:<session>:<nonce>:<local>:<peer>:<revokedAt>:<origin>` |
-| `Fabric/DeviceLinkOffer` | Device-link offer (`@fabric/http`) |
-| `Fabric/DeviceLink` | Device-link countersign (`@fabric/http`) |
-| `Fabric/PassportCosigner` | `fabric-cosigner:1\n<scope>\n<identity>\n<cosigner>` — a cosigner key vouching for its identity within one scope (a Passport sign-in, a group contract) |
+| `Fabric/PassportCosigner` | `fabric-cosigner:1\n<scope>\n<identity>\n<cosigner>` — a cosigner key vouching for its identity within one scope (a Passport sign-in, a delegation grant, a group contract) |
 | `Fabric/OracleAttestation` | Oracle attestations (peering capability, price quotes) |
 | `Fabric/FederationInvite` | Signed federation contract invites |
 

@@ -7,6 +7,12 @@ const { verifyBlob } = require('./document');
 const { verifyInclusion } = require('../functions/bitcoinTxInclusion');
 const Message = require('./message');
 const { P2P_FILE_SEND } = require('../constants');
+const adaptor = require('./witness/adaptor');
+const bls = require('./witness/bls');
+const dleq = require('./witness/dleq');
+const musig2 = require('./witness/musig2');
+const musig2Adaptor = require('./witness/musig2Adaptor');
+const musig2Session = require('./witness/musig2Session');
 
 const HEX64 = /^[0-9a-f]{64}$/;
 /** @private lazily loaded bitcoinjs (fraud proofs that carry transactions) */
@@ -1405,5 +1411,21 @@ Witness.verifyPenaltyPreSig = FraudProof.verifyPenaltyPreSig;
 Witness.checkPenaltyPsbt = FraudProof.checkPenaltyPsbt;
 Witness.verifyBlobPath = verifyBlobPath;
 Witness.FRAUD_PROOF_KINDS = FRAUD_PROOF_KINDS;
+
+// BIP-327 MuSig2 (key aggregation, nonces, partial signatures); `Session` is
+// the Fabric round state machine over it, `Adaptor` its adaptor sessions.
+Witness.MuSig2 = Object.freeze(Object.assign({}, musig2, {
+  Adaptor: musig2Adaptor,
+  Session: musig2Session
+}));
+
+// BIP-340 adaptor signatures: pre-sign, pre-verify, adapt, extract.
+Witness.Adaptor = adaptor;
+
+// Chaum-Pedersen discrete-log equality proofs.
+Witness.DLEQ = dleq;
+
+// BLS12-381 signatures and the federation witness bundles bound to secp256k1 validators.
+Witness.BLS = bls;
 
 module.exports = Witness;

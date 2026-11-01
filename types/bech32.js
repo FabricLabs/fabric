@@ -1,6 +1,9 @@
 'use strict';
 
-const { encode, decode, toWords, fromWords } = require('../functions/bech32');
+const codec = require('./bech32/bech32');
+const payment = require('./bech32/fabricPaymentBech32');
+
+const { encode, decode, toWords, fromWords } = codec;
 
 class Bech32 {
   constructor (input = {}) {
@@ -38,5 +41,16 @@ class Bech32 {
     return encode(this.hrp, this.words, 'bech32m');
   }
 }
+
+// The raw codec's `decode` returns `{ hrp, words }`, unlike `Bech32.decode`.
+Bech32.Codec = codec;
+Bech32.CHARSET = codec.CHARSET;
+Bech32.toWords = toWords;
+Bech32.fromWords = fromWords;
+Bech32.convertBits = codec.convertBits;
+Bech32.encodeSegwitAddress = codec.encodeSegwitAddress;
+Bech32.decodeSegwitAddress = codec.decodeSegwitAddress;
+// Fabric routed payment strings (`fa1…`).
+Bech32.Payment = payment;
 
 module.exports = Bech32;
