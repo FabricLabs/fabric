@@ -45,7 +45,15 @@
 
 const crypto = require('crypto');
 
-const { MAX_MESSAGE_SIZE, MAX_DOCUMENT_BLOBS } = require('../constants');
+const {
+  MAX_MESSAGE_SIZE,
+  MAX_DOCUMENT_BLOBS,
+  MAX_DOCUMENT_BYTES,
+  DOCUMENT_CHUNK_BYTES,
+  DOCUMENT_SEALED_CHUNK_BYTES,
+  DOCUMENT_SEALED_FRAME_OVERHEAD,
+  DOCUMENT_GCM_TAG_BYTES
+} = require('../constants');
 const State = require('./state');
 const {
   CONVERGENT_SCHEME,
@@ -56,19 +64,11 @@ const {
   buildKeyRevealMessage
 } = require('../functions/documentSealedExchange');
 
-// Rough JSON envelope overhead for `P2P_FILE_SEND` / blob frames around a
-// base64 body (`name`, blob index fields, optional sealed/paymentHash/iv/scheme).
-const FILE_SEND_JSON_OVERHEAD = 640;
-
-// Max raw content bytes per blob so base64(body) + JSON stays ≤ MAX_MESSAGE_SIZE.
-const DEFAULT_BLOB_CHUNK_BYTES = Math.max(
-  256,
-  Math.floor((MAX_MESSAGE_SIZE - FILE_SEND_JSON_OVERHEAD) * 3 / 4)
-);
-
-// MAX_DOCUMENT_BLOBS × DEFAULT_BLOB_CHUNK_BYTES (197,394,432 bytes ≈ 188.3 MiB).
-// Callers with a larger metadata reserve use smaller blobs and a lower ceiling.
-const MAX_DOCUMENT_BYTES = MAX_DOCUMENT_BLOBS * DEFAULT_BLOB_CHUNK_BYTES;
+// Chunk sizes and the file cap live in `constants.js` so the blob count is
+// exactly the number of sealed plaintext chunks in a 2^32 − 1 byte file.
+const DEFAULT_BLOB_CHUNK_BYTES = DOCUMENT_CHUNK_BYTES;
+const SEALED_BLOB_CHUNK_BYTES = DOCUMENT_SEALED_CHUNK_BYTES;
+const SEALED_FRAME_JSON_OVERHEAD = DOCUMENT_SEALED_FRAME_OVERHEAD;
 
 const BLOB_INDEX_TYPE = 'DocumentBlobIndex';
 const BLOB_MERKLE_ALGO = 'DocumentTree';
@@ -78,17 +78,20 @@ const DOCUMENT_TREE_NODE = 0x01;
 const DOCUMENT_TREE_ROOT = 0x02;
 const DOCUMENT_TREE_IV_BYTES = 12;
 
-// JSON envelope reserve for a sealed per-blob frame: the inclusion proof
-// (up to log2(MAX_DOCUMENT_BLOBS) = 13 hex siblings) rides every frame.
-const SEALED_FRAME_JSON_OVERHEAD = 2048;
-// Max ciphertext bytes per sealed blob so frame + proof stay ≤ MAX_MESSAGE_SIZE.
-const SEALED_BLOB_CHUNK_BYTES = Math.max(
-  256,
-  Math.floor((MAX_MESSAGE_SIZE - SEALED_FRAME_JSON_OVERHEAD) * 3 / 4)
-);
-
 /** AES-GCM tag appended to each sealed blob. */
-const GCM_TAG_BYTES = 16;
+const GCM_TAG_BYTES = DOCUMENT_GCM_TAG_BYTES;
+
+/**
+ * Refuse a file larger than {@link MAX_DOCUMENT_BYTES}.
+ * @param {number} byteLength
+ * @private
+ */
+function assertDocumentByteLength (byteLength) {
+  if (!Number.isSafeInteger(byteLength) || byteLength < 0 || byteLength > MAX_DOCUMENT_BYTES) {
+    throw new Error(`document is ${byteLength} bytes (max ${MAX_DOCUMENT_BYTES})`);
+  }
+}
+
 const HEX64 = /^[0-9a-f]{64}$/;
 const MANIFEST_TYPE = 'DocumentManifest';
 
@@ -294,6 +297,7 @@ class Document extends State {
    */
   static seal (plaintext, opts = {}) {
     const plain = Buffer.isBuffer(plaintext) ? plaintext : Buffer.from(plaintext == null ? '' : plaintext);
+    assertDocumentByteLength(plain.length);
     const chunkBytes = Math.min(normalizeChunkBytes(opts.chunkBytes || SEALED_BLOB_CHUNK_BYTES), SEALED_BLOB_CHUNK_BYTES);
     const plainChunk = Math.max(1, chunkBytes - GCM_TAG_BYTES);
     const total = Math.max(1, Math.ceil(plain.length / plainChunk));
@@ -616,6 +620,7 @@ class Document extends State {
    */
   static split (buffer, chunkBytes = DEFAULT_BLOB_CHUNK_BYTES, documentId = undefined) {
     const buf = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer == null ? '' : buffer);
+    assertDocumentByteLength(buf.length);
     const size = normalizeChunkBytes(chunkBytes);
     const total = Math.max(1, Math.ceil(buf.length / size) || 1);
     if (!_validTotal(total)) {
@@ -673,9 +678,13 @@ class Document extends State {
    */
   static blobIndex (opts = {}) {
     const blobsIn = Array.isArray(opts.blobs) ? opts.blobs : [];
-    const total = blobsIn.length
-      ? Math.max(...blobsIn.map((b) => Number(b.total != null ? b.total : blobsIn.length)))
-      : 0;
+    // A loop, not Math.max(...): a FAT-sized file is ~1.9e5 blobs, and the
+    // spread overflows the stack.
+    let total = 0;
+    for (let i = 0; i < blobsIn.length; i++) {
+      const n = Number(blobsIn[i].total != null ? blobsIn[i].total : blobsIn.length);
+      if (n > total) total = n;
+    }
     const blobs = blobsIn.map((b, i) => ({
       index: Number(b.index != null ? b.index : i),
       total: Number(b.total != null ? b.total : total),
@@ -1354,6 +1363,7 @@ Document.CHUNK_BYTES = DEFAULT_BLOB_CHUNK_BYTES;
 Document.SEALED_CHUNK_BYTES = SEALED_BLOB_CHUNK_BYTES;
 Document.SEALED_FRAME_OVERHEAD = SEALED_FRAME_JSON_OVERHEAD;
 Document.MAX_BYTES = MAX_DOCUMENT_BYTES;
+Document.checkFileSize = assertDocumentByteLength;
 Document.BLOB_INDEX_TYPE = BLOB_INDEX_TYPE;
 
 module.exports = Document;

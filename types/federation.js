@@ -28,12 +28,12 @@ const ecc = require('./ecc');
 
 // Fabric Functions
 const { stableStringify } = require('../functions/fabricCanonicalJson');
-const { pubkeyXOnly, normalizePeerPubkeyHex } = require('../functions/pubkey');
+const { pubkeyXOnly, normalizePeerPubkeyHex } = require('./key/pubkey');
 
 // Fabric Types
 const Contract = require('./contract');
 const Key = require('./key');
-const FEDERATION_WITNESS_TAG = require('../functions/signingTags').FEDERATION_WITNESS;
+const FEDERATION_WITNESS_TAG = require('./key/signingTags').FEDERATION_WITNESS;
 const Program = require('./program');
 const Wallet = require('./wallet');
 
@@ -69,7 +69,7 @@ const MESSAGE_TYPE_SET = new Set(Object.values(MESSAGE_TYPES));
  * @private
  */
 function blsLib () {
-  return require('../functions/bls');
+  return require('./witness/bls');
 }
 
 /**

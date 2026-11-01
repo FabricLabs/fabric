@@ -58,6 +58,60 @@ describe('Document blob tree', function () {
     assert.strictEqual(Document.verifyBlobIndex(split.index).ok, true);
   });
 
+  it('caps a document at the FAT16 and FAT32 file size', function () {
+    const {
+      MAX_DOCUMENT_BYTES,
+      MAX_DOCUMENT_BLOBS,
+      DOCUMENT_SEALED_PLAINTEXT_BYTES,
+      DOCUMENT_SEALED_FRAME_OVERHEAD
+    } = require('../constants');
+    assert.strictEqual(MAX_DOCUMENT_BYTES, 0xFFFFFFFF);
+    assert.strictEqual(Document.MAX_BYTES, MAX_DOCUMENT_BYTES);
+    assert.ok(DOCUMENT_SEALED_PLAINTEXT_BYTES < Document.CHUNK_BYTES);
+    assert.strictEqual(MAX_DOCUMENT_BLOBS, Math.ceil(MAX_DOCUMENT_BYTES / DOCUMENT_SEALED_PLAINTEXT_BYTES));
+    assert.ok(Math.ceil(MAX_DOCUMENT_BYTES / Document.CHUNK_BYTES) <= MAX_DOCUMENT_BLOBS);
+    Document.checkFileSize(MAX_DOCUMENT_BYTES);
+    assert.throws(() => Document.checkFileSize(MAX_DOCUMENT_BYTES + 1), /4294967295/);
+
+    const layers = [MAX_DOCUMENT_BLOBS];
+    let width = MAX_DOCUMENT_BLOBS;
+    while (width > 1) {
+      width = Math.ceil(width / 2);
+      layers.push(width);
+    }
+    let proofLen = 0;
+    for (let i = 0; i < MAX_DOCUMENT_BLOBS; i++) {
+      let idx = i;
+      let len = 0;
+      for (let level = 0; level < layers.length - 1; level++) {
+        const sibling = idx % 2 ? idx - 1 : idx + 1;
+        if (sibling < layers[level]) len++;
+        idx = idx >> 1;
+      }
+      if (len > proofLen) proofLen = len;
+    }
+    const body = 'A'.repeat(Math.ceil(Document.SEALED_CHUNK_BYTES / 3) * 4);
+    const frame = {
+      name: 'ab'.repeat(32),
+      body,
+      blobIndex: MAX_DOCUMENT_BLOBS - 1,
+      blobTotal: MAX_DOCUMENT_BLOBS,
+      blobHashHex: 'ab'.repeat(32),
+      merkleRootHex: 'cd'.repeat(32),
+      chunkBytes: Document.SEALED_CHUNK_BYTES,
+      sealed: true,
+      perBlob: true,
+      paymentHashHex: 'ef'.repeat(32),
+      iv: Buffer.alloc(12).toString('base64'),
+      scheme: 'aes-256-gcm-convergent',
+      convergence: 'public',
+      proof: Array.from({ length: proofLen }, () => '12'.repeat(32))
+    };
+    const json = JSON.stringify(frame);
+    assert.ok(Buffer.byteLength(json) <= MAX_MESSAGE_SIZE);
+    assert.ok(Buffer.byteLength(json) - body.length <= DOCUMENT_SEALED_FRAME_OVERHEAD);
+  });
+
   it('refuses to split into more than MAX_DOCUMENT_BLOBS blobs before hashing any', function () {
     const { MAX_DOCUMENT_BLOBS } = require('../constants');
     const data = Buffer.alloc(MAX_DOCUMENT_BLOBS + 1, 1);

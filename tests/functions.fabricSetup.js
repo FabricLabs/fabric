@@ -343,7 +343,9 @@ describe('@fabric/core/functions/fabricSetup', function () {
 
         environment.unlockWallet(TEST_PASSWORD);
         assert.strictEqual(fabricSetup.snapshotEnvironment(environment).status, 'unlocked');
-        assert.strictEqual(fabricSetup.revealSecrets(environment).seed, created.seed);
+        const revealed = fabricSetup.revealSecrets(environment);
+        assert.strictEqual(revealed.seed, null, 'the mnemonic is never stored');
+        assert.match(String(revealed.xprv), /^xprv/);
 
         environment.setLockTimeoutMinutes(15);
         const snap = fabricSetup.snapshotEnvironment(environment);

@@ -22,7 +22,7 @@ const Actor = require('./actor');
 const Message = require('./message');
 const Chain = require('./chain');
 const beaconFederationSigning = require('../functions/beaconFederationSigning');
-const bls = require('../functions/bls');
+const bls = require('./witness/bls');
 const Federation = require('./federation');
 
 const SATS_PER_BTC = 100_000_000;

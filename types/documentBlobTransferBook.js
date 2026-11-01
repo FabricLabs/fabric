@@ -7,7 +7,7 @@
  */
 
 const crypto = require('crypto');
-const { MAX_DOCUMENT_BLOBS } = require('../constants');
+const { MAX_DOCUMENT_BLOBS, DOCUMENT_SEALED_CHUNK_BYTES } = require('../constants');
 const Document = require('./document');
 
 const INCOMPLETE_TRANSFER_TTL_MS = 10 * 60 * 1000;
@@ -17,8 +17,10 @@ const EXPECTATION_TTL_MS = 60 * 60 * 1000;
 const MAX_PENDING_BLOB_TRANSFERS = 64;
 // Max unsolicited incomplete transfers one origin may hold.
 const MAX_PENDING_BLOB_TRANSFERS_PER_ORIGIN = 8;
-// Byte budget across every incomplete transfer.
-const MAX_PENDING_BLOB_BYTES = 256 * 1024 * 1024;
+// Byte budget across every incomplete transfer: one maximum sealed file
+// (ciphertext; the last chunk is short, so this is a few mebibytes over the
+// 2^32 − 1 byte plaintext cap).
+const MAX_PENDING_BLOB_BYTES = MAX_DOCUMENT_BLOBS * DOCUMENT_SEALED_CHUNK_BYTES;
 
 /**
  * @param {*} v

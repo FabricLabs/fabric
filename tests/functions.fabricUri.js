@@ -124,7 +124,7 @@ describe('@fabric/core/functions/fabricUri', function () {
     const uri = encodeFabricUri(message);
     assert.strictEqual(decodeFabricUri(uri, { allowedTypes: ['P2P_CHAT_MESSAGE'] }).ok, true);
     assert.strictEqual(decodeFabricUri(uri, { allowedTypes: [0x68] }).ok, true);
-    assert.match(decodeFabricUri(uri, { allowedTypes: ['SiteLoginResponse'] }).error, /not allowed/);
+    assert.match(decodeFabricUri(uri, { allowedTypes: ['PassportAssertion'] }).error, /not allowed/);
   });
 
   it('refuses opcodes this build does not know', function () {

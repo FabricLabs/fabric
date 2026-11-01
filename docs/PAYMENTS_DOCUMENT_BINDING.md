@@ -6,13 +6,15 @@
 
 Helpers in [`publishedDocumentEnvelope.js`](../functions/publishedDocumentEnvelope.js):
 
-1. Canonical Fabric **`DocumentPublish`** AMP bytes from **`documentPublishEnvelopeBuffer`** — **signature field all zeros**.
+1. The **`DOCUMENT_PUBLISH`** field frame (`documentPublishMessage`) as AMP bytes from **`documentPublishEnvelopeBuffer`** — **author and signature fields all zeros**. Byte layout: [bip-fabric-file-exchange.md](./bip-fabric-file-exchange.md#unsealed-commitments).
 2. **32-byte preimage** = `SHA256(those unsigned bytes)`.
 3. **`purchaseContentHashHex`** = `SHA256(preimage)`.
 
-**Footgun eliminated:** do **not** hash a Schnorr-**signed** gossip `DocumentPublish` `toBuffer()`. Signing changes bytes 144–207 and diverges from the payment commitment. `assertUnsignedDocumentPublishEnvelope` / `inventoryHtlcPreimage32FromEnvelopeBuffer` **throw** if the signature region is non-zero.
+Peer gossips the same frame signed, so the gossiped bytes are the envelope with bytes 40–71 (author) and 144–207 (signature) filled in.
 
-Whitelist for the envelope JSON omits timestamps (`created` / `edited`) and lineage so Hub store vs Peer rebuild stay aligned.
+**Footgun eliminated:** do **not** hash a Schnorr-**signed** gossip `DocumentPublish` `toBuffer()`. Signing changes the author and signature and diverges from the payment commitment. `assertUnsignedDocumentPublishEnvelope` / `inventoryHtlcPreimage32FromEnvelopeBuffer` **throw** if either region is non-zero.
+
+The envelope's whitelisted fields omit timestamps (`created` / `edited`) and lineage so Hub store vs Peer rebuild stay aligned.
 
 ## AMP header `preimage` (Lightning-style)
 

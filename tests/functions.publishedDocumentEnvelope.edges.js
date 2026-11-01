@@ -55,6 +55,9 @@ describe('functions/publishedDocumentEnvelope edge cases', function () {
     const signed = Message.fromBuffer(unsigned).signWithKey(key).toBuffer();
     assert.throws(() => assertUnsignedDocumentPublishEnvelope(signed), /unsigned/);
     assert.throws(() => inventoryHtlcPreimage32FromEnvelopeBuffer(signed), /unsigned/);
+    const authored = Buffer.from(signed);
+    authored.fill(0, 144, 208);
+    assert.throws(() => assertUnsignedDocumentPublishEnvelope(authored), /zero author/);
   });
 
   it('documentPublishEnvelopeBuffer requires id and contentBase64', function () {

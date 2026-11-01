@@ -301,8 +301,10 @@ describe('DocumentBlobTransferBook', function () {
 
   it('caps one transfer at MAX_DOCUMENT_BLOBS and bounds pending bytes', function () {
     const crypto = require('crypto');
-    assert.strictEqual(Document.MAX_BYTES, MAX_DOCUMENT_BLOBS * Document.CHUNK_BYTES);
-    assert.strictEqual(Document.MAX_BYTES, 197394432);
+    const { MAX_DOCUMENT_BYTES, DOCUMENT_SEALED_CHUNK_BYTES } = require('../constants');
+    assert.strictEqual(Document.MAX_BYTES, MAX_DOCUMENT_BYTES);
+    assert.strictEqual(Document.MAX_BYTES, 0xFFFFFFFF);
+    assert.strictEqual(new DocumentBlobTransferBook().maxPendingBytes, MAX_DOCUMENT_BLOBS * DOCUMENT_SEALED_CHUNK_BYTES);
 
     const bytes = Buffer.alloc(100, 3);
     const blobHashHex = crypto.createHash('sha256').update(bytes).digest('hex');

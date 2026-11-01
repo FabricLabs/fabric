@@ -24,6 +24,13 @@ Downstream apps that must hide origin IPs from destinations SHOULD use
 `Peer#sendOnion(path, payload)` — not mesh `P2P_RELAY` flood. See
 [`docs/P2P_FORWARD.md`](docs/P2P_FORWARD.md).
 
+## Sign-in and keys
+Web sign-in is Passport v2 (`functions/passport`, spec in
+[`docs/PASSPORT.md`](docs/PASSPORT.md)); there is no site login, delegation
+signing, or `fabric://login`. Keys come from `functions/accountKeys`: per
+account and network, a Fabric identity, a Bitcoin wallet, and a cosigner key,
+never one key for both identity and funds ([IDENTITY.md](IDENTITY.md)).
+
 ## Scope
 This specification applies to:
 

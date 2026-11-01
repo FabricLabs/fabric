@@ -39,7 +39,7 @@ const psbtutils = require('bitcoinjs-lib/src/psbt/psbtutils');
 const { sortPubkeysBip67 } = require('../functions/bip67');
 const { taprootPsbtInputFields } = require('../functions/bip371');
 const { BIP125_SEQUENCE_FINAL, BIP125_SEQUENCE_LOCKTIME_ONLY } = require('../functions/bip125');
-const { aggregateXonly } = require('../functions/musig2');
+const { aggregateXonly } = require('./witness/musig2');
 const Program = require('./program');
 
 bitcoin.initEccLib(ecc);

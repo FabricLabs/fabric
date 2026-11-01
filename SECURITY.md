@@ -7,7 +7,7 @@ Fabric aims to maximize the security of a sensible default configuration while k
 Fabric networks are intended for deployment where **peers, relays, hubs, and operators may be hostile**. Design and review against:
 
 - Untrusted TCP / WebSocket / WebRTC neighbors (forgery, replay, amplification, pin hijack, logical front-running)
-- Phishing of identity flows (`fabric://login`, device-link) toward attacker-controlled hubs
+- Phishing of identity flows (Passport sign-in, device-link) toward attacker-controlled sites and hubs ([docs/PASSPORT.md](docs/PASSPORT.md))
 - Public observability of unsigned or plaintext application traffic unless an explicit seal is used
 - No reliance on an “honest majority” of random internet peers for key custody or contract acceptance
 

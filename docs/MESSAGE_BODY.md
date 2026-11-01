@@ -111,7 +111,7 @@ see the same object whichever encoding the sender used.
 | `P2P_PEER_GOSSIP` | `host`, `port`, `gossipHop`, `nonce`, `pubkey`? | same keys; a missing hop encodes as `GOSSIP_MAX_HOPS` |
 | `P2P_PEERING_OFFER` | `transport`, `host`, `port`, `peeringHop`, `pubkey`?, `slots`?, `peering`?, `nonce`? | same keys; a missing hop encodes as `PEERING_OFFER_MAX_HOPS` |
 | `CONTRACT_PUBLISH` | `definition` | the definition: `JSON.stringify` of the object, key order kept, so `Actor(definition).id` is unchanged |
-| `CONTRACT_MESSAGE` | `contract`, `payload` | `{ contract, ...payload }`; `payload` is `JSON.stringify` of the body without `contract` |
+| `CONTRACT_MESSAGE` | `contract`, `payload`, then optional `recipient`, `ref`, `slot` | `{ contract, ...payload }`; `payload` is `JSON.stringify` of the body without `contract`. The three index fields are copied from the object (top-level, else `object`) so a reader can match them without parsing `payload`. Empty ones are omitted. Old decoders ignore the trailing bytes. |
 | `SIDECHAIN_STATE_PATCH` | `basisClock`, `basisDigest`, `catalogCanonical`, `patchesCanonical`?, `federationWitnessCanonical`? | `{ type, version, kind, basisClock, basisDigest, patches, federationWitness }` |
 
 `?` marks optional trailing fields. Old decoders ignore trailing bytes, so
@@ -136,6 +136,60 @@ Core's own senders use fields: keepalive ping/pong, `Contract#deploy` /
 `Contract#commit`, and `buildSignedSidechainPatchMessage`. Everything else
 still sends JSON, and JSON bodies of all eight types are still accepted. The
 remaining phases are in [MESSAGE_BODY_MIGRATION.md](./MESSAGE_BODY_MIGRATION.md).
+
+### Keyed layouts (session, inventory, documents)
+
+Seven more opcodes map through the same statics, with a layout built from one
+key table per type (`KEYED_LAYOUTS` in `types/message.js`), so the schema and
+the mapping cannot drift:
+
+- `present` (`u32`) comes first: bit *i* is set when key *i* was in the body,
+  so `0`, `''` and `false` round-trip as written (`blobIndex: 0` is the first
+  blob, not "absent"). Bit 31 marks a Hub-style envelope
+  (`{ type, actor, object, target }`); the keys are then read under `object`.
+- One field per key the type's readers use.
+- `extra` (`string`) comes last: JSON of every key the table does not name,
+  and of any value that is not the declared kind (`null`, a string where a
+  number goes, upper-case hex, non-canonical base64, a negative number). A
+  body any JSON sender writes therefore maps to fields and back unchanged;
+  nothing is dropped, and encoding never fails for an object body.
+
+| Opcode | Keys with their own field |
+|--------|---------------------------|
+| `P2P_SESSION_OFFER` | `type`, `actor.{id, pubkey, parentPubkey, parentXpub, parentSignature}`, `object.challenge`, `object.maxFrameBytes` (`u32`) |
+| `P2P_SESSION_OPEN` | the same `type` and `actor` keys, `object.{initiator, counterparty, solution}`, `object.maxFrameBytes` |
+| `P2P_INVENTORY_REQUEST` | `kind`, `created`, `offerBtc`, `maxSats`, `buyerRefundPublicKey`, `blobHashHex`, `merkleRootHex`, `inventoryRelayTtl`, `htlcLocktimeBlocks`, `htlcAmountSats` |
+| `P2P_INVENTORY_RESPONSE` | `kind`, `created`, `inventoryId`, `page`, `pages`, `items` (JSON, key order kept) |
+| `P2P_DOCUMENT_PUBLISH` | `hash`, `rate`, `contentHash`, `contentHashHex`, `binding` |
+| `DOCUMENT_PUBLISH` | `contentBase64` (sent as raw `bytes`), `id`, `mime`, `name`, `revision`, `sha256`, `size` |
+| `DOCUMENT_REQUEST` | `document`, `id`, `maxSats`, `relayHop`, `routeId`, `blobIndex`, `batchEnd`, `blobTotal`, `quote`, `credit`, `creditRef`, `contentHashHex` |
+
+Hashes (`…Hex`, `contentHash`) are 32 raw bytes behind a length prefix, so an
+absent one costs 4 bytes. Integers are `u8` (hops, TTL), `u32` (indexes,
+pages, frame caps) or `u64` (sats, millisecond times; safe integers only).
+Envelope keys outside `object` (`type`, `actor`, `target`) and keys like
+Hub's `reason` or `hashes` ride in `extra`. Decoded objects list the extra keys
+first, then the table's keys, so top-level key order can differ from the
+sender's; values inside `extra` and `items` keep theirs. Nothing hashes these
+objects in key order (unlike `CONTRACT_PUBLISH`).
+
+Core's `Peer` sends all seven as fields, the session handshake included, and
+still reads JSON bodies of them (the generic Peer path, `DOCUMENT_PUBLISH`,
+and `DOCUMENT_REQUEST` all go through the legacy-body codec). A core without
+these layouts can't read the handshake, so it can't open a session.
+
+`DOCUMENT_PUBLISH` is the one with a payment binding: an unsealed document's
+purchase hash comes from the unsigned field frame
+`documentPublishEnvelopeBuffer` *rebuilds* from the decoded values
+(`purchaseContentHashHex`; byte layout in
+[bip-fabric-file-exchange.md](./bip-fabric-file-exchange.md#unsealed-commitments)),
+never from the bytes received, so every copy of a document has the same
+purchase hash and registration key. Peer gossips that same frame signed: only
+the author and signature differ. The content travels as raw bytes, about a
+quarter smaller than base64.
+
+`P2P_SESSION_ACK` has no layout: no code sends one and nothing reads it.
+`P2P_FILE_SEND` waits on the repricing question in the migration plan.
 
 ## `sensitive` is not encryption
 
