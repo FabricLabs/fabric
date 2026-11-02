@@ -1173,6 +1173,8 @@ class DocumentBook extends Book {
    * @param {number} [opts.blobIndex]
    * @param {number} [opts.maxSats]
    * @param {number} [opts.minPaidSats] drop paid offers below this (free offers stay)
+   * @param {boolean} [opts.paidSealedOnly] drop every paid unsealed offer (paid
+   *   unsealed offers always go while a sealed one is listed)
    * @param {string[]} [opts.excludeSellers]
    * @param {string} [opts.merkleRootHex] only offers for this tree root
    * @param {Object} [opts.weights]

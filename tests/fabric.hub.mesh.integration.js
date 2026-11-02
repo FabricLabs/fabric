@@ -543,18 +543,20 @@ function applicationDefinition (keys) {
   };
 }
 
-function signPublish (key, definition, encoding = 'json') {
+function signPublish (key, definition, encoding = 'json', parent = null) {
   const message = encoding === 'fields'
     ? Message.fromLegacyBody('CONTRACT_PUBLISH', definition)
     : Message.fromVector(['CONTRACT_PUBLISH', JSON.stringify(definition)]);
+  if (parent) message.parent = parent;
   return message.signWithKey(key);
 }
 
-function signContractMessage (key, contractId, type, object, encoding = 'json') {
+function signContractMessage (key, contractId, type, object, encoding = 'json', parent = null) {
   const body = { contract: contractId, type, object };
   const message = encoding === 'fields'
     ? Message.fromLegacyBody('CONTRACT_MESSAGE', body)
     : Message.fromVector(['CONTRACT_MESSAGE', JSON.stringify(body)]);
+  if (parent) message.parent = parent;
   return message.signWithKey(key);
 }
 
@@ -580,8 +582,10 @@ function buildGenericApplicationChain (opts = {}) {
   const mnemonics = opts.mnemonics || MNEMONICS;
   const material = opts.material || KEY_MATERIAL;
   const encoding = opts.encoding || 'json';
-  const publish = (key, def) => signPublish(key, def, encoding);
-  const send = (key, id, type, object) => signContractMessage(key, id, type, object, encoding);
+  let parent = null;
+  const link = (message) => { parent = message.id; return message; };
+  const publish = (key, def) => link(signPublish(key, def, encoding, parent));
+  const send = (key, id, type, object) => link(signContractMessage(key, id, type, object, encoding, parent));
   const keys = keysFromMaterial(material);
   const definition = applicationDefinition(keys);
   const contractId = new Actor(definition).id;

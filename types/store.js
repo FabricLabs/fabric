@@ -15,6 +15,15 @@ const Stack = require('./stack');
 const State = require('./state');
 
 /**
+ * Level before abstract-level 2 throws `LEVEL_NOT_FOUND` for a missing key;
+ * later versions resolve `undefined`.
+ * @private
+ */
+function isLevelNotFound (error) {
+  return !!error && (error.code === 'LEVEL_NOT_FOUND' || error.notFound === true);
+}
+
+/**
  * @classdesc Level-backed persistence extending {@link Actor}. Use optional {@link Codec} in <code>settings.codec</code> for
  * encrypted values; {@link Store.openEncrypted} matches Hub/shell keystore defaults. Commit/history behavior follows {@link Actor}.
  * @class Store
@@ -25,6 +34,7 @@ class Store extends Actor {
   /**
    * Create an instance of a {@link Store} to manage long-term storage (LevelDB by default).
    * @param  {Object} [settings={}] configuration object (<code>path</code>, <code>codec</code>, <code>persistent</code>, …).
+   * @param  {boolean} [settings.strict=false] `get` rejects when Level fails to read (a missing key still resolves `null`) and `set` rejects when Level fails to write, instead of resolving as if nothing went wrong
    * @return {Store} Instance of the Store, ready to start.
    */
   constructor (settings = {}) {
@@ -35,6 +45,7 @@ class Store extends Actor {
       path: './stores/store',
       type: 'leveldb',
       persistent: true,
+      strict: false,
       verbosity: 2, // 0 none, 1 error, 2 warning, 3 notice, 4 debug
     }, settings);
 
@@ -455,7 +466,8 @@ class Store extends Actor {
         this._state.indices[route.index] = route.pointer;
         pointer.set(this._state.content, route.path, value);
         return value;
-      } catch (_) {
+      } catch (E) {
+        if (this.settings.strict && !isLevelNotFound(E)) throw E;
         return null;
       }
     }
@@ -518,6 +530,7 @@ class Store extends Actor {
           : (Buffer.isBuffer(value) ? value : JSON.stringify(value));
         await this.db.put(route.path, payload);
       } catch (E) {
+        if (this.settings.strict) throw E;
         console.error('[FABRIC:STORE]', 'Could not persist key:', route.path, E);
       }
     }

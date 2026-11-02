@@ -1268,8 +1268,17 @@ describe('services/market (credit rail: pay after verify)', function () {
     market.attach({ peer: buyer, channels: buyerBook });
     const received = [];
     buyer.on('documentReceived', (ev) => received.push(ev.buffer));
-    return { plain, doc, buyer, seller, book, market, buyerBook, sellerBook, channel: opened.session, pump, ctl, received, documentId: pub.documentId };
+    return { plain, doc, buyer, seller, book, market, buyerBook, sellerBook, sellerKey, channel: opened.session, pump, ctl, received, documentId: pub.documentId };
   }
+
+  it('picks the credit channel by the serving peer, never by a sellerPubkey the offer names', function () {
+    const m = build();
+    const offer = { sealed: true, creditRateSats: CREDIT, paymentModes: ['htlc', 'credit'] };
+    assert.ok(m.buyerBook.sessionFor('mallory', m.sellerKey.pub), 'the named key has an open channel');
+    assert.strictEqual(m.market._creditFor(Object.assign({}, offer, { sellerId: 'mallory', sellerPubkey: m.sellerKey.pub })), null);
+    assert.strictEqual(m.market._channelFor(Object.assign({}, offer, { sellerId: 'mallory', sellerPubkey: m.sellerKey.pub }), 1), null);
+    assert.ok(m.market._creditFor(Object.assign({}, offer, { sellerId: 'alpha' })));
+  });
 
   it('advertises the credit price with paymentModes; private documents cannot take credit', function () {
     const m = build();

@@ -3719,6 +3719,12 @@ class Peer extends Service {
 
     // Emit peer event
     this.emit('peer', this.peers[connAddress]);
+    this.emit('peer:session', {
+      address: connAddress,
+      id: peerId,
+      publicKey: signerPubkeyHex,
+      direction: 'inbound'
+    });
 
     // Send session open event
     const keyClaim = this._buildSessionKeyExchangeClaim(this.identity.id);
@@ -3787,7 +3793,13 @@ class Peer extends Service {
     });
     this._addressToId[origin.name] = openPeerId;
     this._recordRemoteFrameCap(origin.name, message.object);
-    // Don't emit peer event here - it's already emitted in P2P_SESSION_OFFER
+    // `peer` stays offer-side only; `peer:session` fires on both sides of the handshake.
+    this.emit('peer:session', {
+      address: origin.name,
+      id: openPeerId,
+      publicKey: signerPubkeyHex,
+      direction: 'outbound'
+    });
     return this;
   }
 
@@ -5174,6 +5186,7 @@ class Peer extends Service {
    * @param {number} opts.start
    * @param {number} opts.end
    * @param {number} [opts.amountSats] Ask above the listed price (rate × blobs). It never lowers it: a lower, non-finite, or negative amount quotes the listed price.
+   * @param {number} [opts.maxSats] The buyer's ceiling: a price above it is refused, and no quote is kept.
    * @returns {{ ok: boolean, batch: (Object|undefined), error: (string|undefined) }}
    */
   quoteSealedBatch (opts = {}) {
@@ -5191,8 +5204,11 @@ class Peer extends Service {
       blobs.push({ blobIndex: i, blobHashHex: leaf.blobHashHex, keyHex });
     }
     const listed = this._sealedBlobPriceSats(documentId) * blobs.length;
+    if (!Number.isSafeInteger(listed) || listed < 0) return { ok: false, error: 'bad listed price' };
     const asked = opts.amountSats != null ? Math.floor(Number(opts.amountSats)) : NaN;
     const price = Number.isSafeInteger(asked) && asked > listed ? asked : listed;
+    const ceiling = opts.maxSats != null ? Number(opts.maxSats) : NaN;
+    if (Number.isFinite(ceiling) && price > ceiling) return { ok: false, error: 'price above maxSats' };
     const { batch, secretHex } = createBlobBatch({
       documentId,
       merkleRootHex: doc.merkleRootHex,
@@ -6861,7 +6877,7 @@ class Peer extends Service {
     }
     if (row.parsed && row.parsed.quote === true && this._getSealedBlobDocument(row.documentId)) {
       if (row.parsed.batchEnd != null) {
-        this._sendSealedBlobBatch(row.documentId, Number(row.parsed.blobIndex), Number(row.parsed.batchEnd), row.peerAddress, { routeId: row.parsed.routeId, amountSats: row.parsed.maxSats });
+        this._sendSealedBlobBatch(row.documentId, Number(row.parsed.blobIndex), Number(row.parsed.batchEnd), row.peerAddress, { routeId: row.parsed.routeId, amountSats: row.parsed.maxSats, maxSats: row.parsed.maxSats });
       } else {
         this._sendSealedBlobQuote(row.documentId, Number(row.parsed.blobIndex), row.peerAddress, { routeId: row.parsed.routeId });
       }
@@ -7003,7 +7019,7 @@ class Peer extends Service {
   _sendSealedBlobBatch (documentId, start, end, peerAddress, opts = {}) {
     const conn = peerAddress && this.connections[peerAddress];
     if (!conn || !conn._writeFabric) return null;
-    const out = this.quoteSealedBatch({ documentId, start, end, amountSats: opts.amountSats });
+    const out = this.quoteSealedBatch({ documentId, start, end, amountSats: opts.amountSats, maxSats: opts.maxSats });
     if (!out.ok) {
       this.emit('warning', `[FABRIC:PEER] blob batch failed for ${documentId}#${start}-${end}: ${out.error}`);
       return null;
@@ -7572,7 +7588,7 @@ class Peer extends Service {
     }
     if (parsed.quote === true && this._getSealedBlobDocument(docId)) {
       if (parsed.batchEnd != null) {
-        this._sendSealedBlobBatch(docId, Number(parsed.blobIndex), Number(parsed.batchEnd), origin.name, { routeId: parsed.routeId, amountSats: parsed.maxSats });
+        this._sendSealedBlobBatch(docId, Number(parsed.blobIndex), Number(parsed.batchEnd), origin.name, { routeId: parsed.routeId, amountSats: parsed.maxSats, maxSats: parsed.maxSats });
       } else {
         this._sendSealedBlobQuote(docId, Number(parsed.blobIndex), origin.name, { routeId: parsed.routeId });
       }

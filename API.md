@@ -8628,6 +8628,7 @@ Full chunk index: blob hash → ranked offers.
 | [opts.blobIndex] | <code>number</code> |  |
 | [opts.maxSats] | <code>number</code> |  |
 | [opts.minPaidSats] | <code>number</code> | drop paid offers below this (free offers stay) |
+| [opts.paidSealedOnly] | <code>boolean</code> | drop every paid unsealed offer (paid   unsealed offers always go while a sealed one is listed) |
 | [opts.excludeSellers] | <code>Array.&lt;string&gt;</code> |  |
 | [opts.merkleRootHex] | <code>string</code> | only offers for this tree root |
 | [opts.weights] | <code>Object</code> |  |

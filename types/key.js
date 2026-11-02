@@ -656,12 +656,12 @@ class Key extends EventEmitter {
   }
 
   _sign (msg, tag = KEY_SIGN_TAG) {
-    if (typeof msg !== 'string' && !Buffer.isBuffer(msg)) msg = JSON.stringify(msg);
+    if (typeof msg !== 'string' && !(msg instanceof Uint8Array)) msg = JSON.stringify(msg);
     return this.signSchnorr(msg, tag);
   }
 
   _verify (msg, sig, tag = KEY_SIGN_TAG) {
-    if (typeof msg !== 'string' && !Buffer.isBuffer(msg)) msg = JSON.stringify(msg);
+    if (typeof msg !== 'string' && !(msg instanceof Uint8Array)) msg = JSON.stringify(msg);
     return this.verifySchnorr(msg, sig, tag);
   }
 

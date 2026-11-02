@@ -316,7 +316,7 @@ class Market extends Service {
   _channelFor (offer, amountSats) {
     if (!this._channels) return null;
     const sellerId = String(offer.sellerId || offer.sellerAddress || '');
-    const channel = this._channels.sessionFor(sellerId, this._resolveSellerPubkeyHex(offer));
+    const channel = this._channels.sessionFor(sellerId, this._verifiedSellerPubkeyHex(offer));
     if (!channel || channel.status !== 'open' || channel.balances.localSats < amountSats) return null;
     return channel;
   }
@@ -335,7 +335,7 @@ class Market extends Service {
     if (!(rateSats > 0)) return null;
     if (Array.isArray(offer.paymentModes) && !offer.paymentModes.includes('credit')) return null;
     const sellerId = String(offer.sellerId || offer.sellerAddress || '');
-    const channel = this._channels.sessionFor(sellerId, this._resolveSellerPubkeyHex(offer));
+    const channel = this._channels.sessionFor(sellerId, this._verifiedSellerPubkeyHex(offer));
     if (!channel || channel.status !== 'open' || typeof channel.transfer !== 'function') return null;
     const reserve = channel.state && channel.state.policy ? Math.max(0, Number(channel.state.policy.channelReserveSats) || 0) : 0;
     const owed = Object.values(this._state.content.sessions)
@@ -1403,6 +1403,17 @@ class Market extends Service {
     } catch (e) {
       return { error: `could not build local HTLC: ${e.message}` };
     }
+  }
+
+  /**
+   * The seller key a payment channel may be chosen by: the AMP signer the
+   * inventory was verified under. `sellerPubkey` is whatever the item JSON
+   * says, so a peer could name any open channel with it.
+   * @private
+   */
+  _verifiedSellerPubkeyHex (offer) {
+    const signer = offer && offer.ampSignerPubkey;
+    return signer && /^[0-9a-f]{66}$/i.test(String(signer)) ? String(signer).toLowerCase() : null;
   }
 
   /** @private */

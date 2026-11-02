@@ -136,6 +136,15 @@ describe('@fabric/core/types/key', function () {
       assert.ok(!valid);
     });
 
+    it('signs a Uint8Array as the same raw bytes as a Buffer', function () {
+      const key = new Key({ private: SAMPLE.private });
+      const bytes = Uint8Array.from([1, 2, 3, 4]);
+      const signature = key._sign(bytes);
+      assert.ok(signature.equals(key._sign(Buffer.from(bytes))));
+      assert.ok(key._verify(Buffer.from(bytes), signature));
+      assert.ok(key._verify(bytes, signature));
+    });
+
     it('can encrypt and decrypt messages', function () {
       const key = new Key();
       const testMessage = 'Hello, Fabric!';

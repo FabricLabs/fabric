@@ -2522,6 +2522,46 @@ describe('@fabric/core/types/peer', function () {
       test();
     });
 
+    it('emits peer:session on both sides of the handshake', async function () {
+      this.timeout(20000);
+      const port = await getFreePort();
+      const server = new Peer(Object.assign(
+        {},
+        NODEA,
+        { listen: true, port, upnp: false, peers: [], networking: false, peersDb: null }
+      ));
+      const client = new Peer(Object.assign(
+        {},
+        NODEB,
+        {
+          listen: false,
+          port: 0,
+          upnp: false,
+          peersDb: null,
+          peers: [`${server.key.pubkey}@localhost:${port}`]
+        }
+      ));
+      peers.push(server, client);
+
+      const sessionOn = (peer) => new Promise((resolve) => peer.once('peer:session', resolve));
+      const serverSession = sessionOn(server);
+      const clientSession = sessionOn(client);
+      await server.start();
+      await client.start();
+      const [inbound, outbound] = await Promise.all([serverSession, clientSession]);
+      await client.stop();
+      await server.stop();
+
+      assert.strictEqual(inbound.direction, 'inbound');
+      assert.strictEqual(inbound.id, client.identity.id);
+      assert.strictEqual(server._addressToId[inbound.address], client.identity.id);
+      assert.ok(inbound.publicKey);
+      assert.strictEqual(outbound.direction, 'outbound');
+      assert.strictEqual(outbound.id, server.identity.id);
+      assert.strictEqual(client._addressToId[outbound.address], server.identity.id);
+      assert.ok(outbound.publicKey);
+    });
+
     it('can recover a message', async function () {
       const port = await getFreePort();
       const peer = new Peer({ ...settings, port, peers: [], upnp: false, networking: false, peersDb: null });

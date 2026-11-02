@@ -76,6 +76,28 @@ describe('@fabric/core/types/store', function () {
       assert.strictEqual(out, store);
     });
 
+    it('strict: Level read and write failures reject; a missing key is still null', async function () {
+      const broken = () => { throw new Error('disk gone'); };
+      const strict = new Store({ strict: true });
+      strict.db = { get: broken, put: broken };
+      await assert.rejects(strict.get('/metrics/a'), /disk gone/);
+      await assert.rejects(strict.set('/metrics/a', { n: 1 }), /disk gone/);
+
+      const missing = new Store({ strict: true });
+      missing.db = {
+        get: async () => {
+          const err = new Error('not found');
+          err.code = 'LEVEL_NOT_FOUND';
+          throw err;
+        }
+      };
+      assert.strictEqual(await missing.get('/metrics/none'), null);
+
+      const lenient = new Store();
+      lenient.db = { get: broken };
+      assert.strictEqual(await lenient.get('/metrics/a'), null);
+    });
+
     it('_setEncrypted/_getEncrypted round-trip plain values without codec', async function () {
       const store = new Store({ persistent: false });
       await store._setEncrypted('/wallet/secret', 'hello');

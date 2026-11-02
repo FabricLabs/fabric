@@ -601,6 +601,25 @@ describe('types/document (sealed blob tree)', function () {
       assert.strictEqual(quoted(listed + 50), listed + 50);
       assert.strictEqual(quoted(listed + 50.9), listed + 50);
     });
+
+    it('a batch quote stays within the buyer maxSats, and refuses an unsafe listed price', function () {
+      const seller = new Peer({ listen: false });
+      const doc = Document.seal(crypto.randomBytes(5000), { chunkBytes: 2048 });
+      const { documentId } = seller.publishSealedDocument(doc, { rateSats: RATE });
+      const listed = RATE * 3;
+      const over = seller.quoteSealedBatch({ documentId, start: 0, end: 2, maxSats: listed - 1 });
+      assert.strictEqual(over.ok, false);
+      assert.strictEqual(over.error, 'price above maxSats');
+      assert.strictEqual(seller._sealedBlobQuotes.size, 0, 'no quote is kept');
+      const within = seller.quoteSealedBatch({ documentId, start: 0, end: 2, amountSats: listed + 10, maxSats: listed + 10 });
+      assert.ok(within.ok, within.error);
+      assert.strictEqual(within.batch.amountSats, listed + 10);
+      seller._sealedBlobPriceSats = () => Number.MAX_SAFE_INTEGER;
+      const unsafe = seller.quoteSealedBatch({ documentId, start: 0, end: 2 });
+      assert.strictEqual(unsafe.ok, false);
+      assert.strictEqual(unsafe.error, 'bad listed price');
+      assert.strictEqual(seller._sealedBlobQuotes.size, 1, 'only the quote within maxSats is kept');
+    });
   });
 
   describe('binary documents', function () {
