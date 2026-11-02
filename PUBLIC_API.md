@@ -37,7 +37,7 @@ execution. Distributed Beacon / federation orchestration is Hub-composed and
 | Sidechain document | `@fabric/core/functions/sidechainState` | Patches, digests, journal |
 | Program manifest | `@fabric/core/functions/fabricProgramManifest` | Manifest v1 parse |
 | Passport sign-in | `@fabric/core/functions/passport` | `PASSPORT_CHALLENGE` / `PASSPORT_ASSERTION` frames ([docs/PASSPORT.md](docs/PASSPORT.md)) |
-| Delegation | `@fabric/core/functions/delegation`, `@fabric/core/types/delegation` | Pairing (commit-then-reveal code), grants, revokes, requests and results as `DELEGATION_*` frames; `Delegation` keeps one participant's state on its own key and store ([docs/DELEGATION.md](docs/DELEGATION.md)) |
+| Delegation | `@fabric/core/types/delegation` | Pairing (commit-then-reveal code), grants, revokes, requests and results as `DELEGATION_*` frames; `Delegation` keeps one participant's state on its own key and store ([docs/DELEGATION.md](docs/DELEGATION.md)) |
 
 ### Common supporting leaves (stable enough for Hub / HTTP)
 

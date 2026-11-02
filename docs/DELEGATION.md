@@ -20,10 +20,10 @@ receives in its own store, so its history replays as a
 Authority comes only from the recipient's own grants. A rendezvous or mailbox
 carries frames and decides nothing.
 
-Code: `functions/delegation` (frames, pure), `types/delegation` (one
+Code: `types/delegation` (frame builders and readers as statics; one
 participant's state), `@fabric/http` `functions/fabricDelegationHttp`
-(rendezvous), `functions/fabricDelegationMailbox`, `functions/fabricDelegate`
-(loopback answers), and `functions/fabricDelegationClient`.
+(rendezvous and mailbox), `functions/fabricDelegate` (loopback answers),
+and `functions/fabricDelegationClient`.
 
 Delegation replaces `PASSPORT_SIGN_REQUEST` (`0x4242`, retired: no schema,
 refused by readers, number reserved), the `IdentityCrossSign` /
@@ -154,7 +154,7 @@ returned result wherever the request came from. Writes are serialized.
 - **Rendezvous** (`/delegations`): `POST /delegations { frame }` takes an
   offer and returns its link id; `POST /delegations/:id/frames { frame }` the
   next frame in order; `GET /delegations/:id` the frames so far; `DELETE`
-  ends it. Each frame is checked with `functions/delegation` and stored until
+  ends it. Each frame is checked with `types/delegation` and stored until
   it expires.
 - **Mailbox** (`/services/delegation/mailbox`): `POST { frame }` takes
   requests, results, grants, and revokes addressed to a pubkey, capped and

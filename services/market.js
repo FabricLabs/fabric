@@ -109,6 +109,15 @@ function errorMessage (e) {
 }
 
 /** @private */
+/** @private 64-hex x-only form of an x-only or compressed key, else null. */
+function xOnlyHex (key) {
+  const hex = String(key || '').trim().toLowerCase();
+  if (/^[0-9a-f]{64}$/.test(hex)) return hex;
+  if (/^0[23][0-9a-f]{64}$/.test(hex)) return hex.slice(2);
+  return null;
+}
+
+/** @private */
 function sha256Hex (buf) {
   return crypto.createHash('sha256').update(buf).digest('hex');
 }
@@ -315,8 +324,7 @@ class Market extends Service {
    */
   _channelFor (offer, amountSats) {
     if (!this._channels) return null;
-    const sellerId = String(offer.sellerId || offer.sellerAddress || '');
-    const channel = this._channels.sessionFor(sellerId, this._verifiedSellerPubkeyHex(offer));
+    const channel = this._sellerChannel(String(offer.sellerId || offer.sellerAddress || ''), this._verifiedSellerPubkeyHex(offer));
     if (!channel || channel.status !== 'open' || channel.balances.localSats < amountSats) return null;
     return channel;
   }
@@ -334,8 +342,7 @@ class Market extends Service {
     const rateSats = Math.floor(Number(offer.creditRateSats) || 0);
     if (!(rateSats > 0)) return null;
     if (Array.isArray(offer.paymentModes) && !offer.paymentModes.includes('credit')) return null;
-    const sellerId = String(offer.sellerId || offer.sellerAddress || '');
-    const channel = this._channels.sessionFor(sellerId, this._verifiedSellerPubkeyHex(offer));
+    const channel = this._sellerChannel(String(offer.sellerId || offer.sellerAddress || ''), this._verifiedSellerPubkeyHex(offer));
     if (!channel || channel.status !== 'open' || typeof channel.transfer !== 'function') return null;
     const reserve = channel.state && channel.state.policy ? Math.max(0, Number(channel.state.policy.channelReserveSats) || 0) : 0;
     const owed = Object.values(this._state.content.sessions)
@@ -356,15 +363,32 @@ class Market extends Service {
     return credit && (rate === 0 || credit.rateSats <= rate) ? credit.rateSats : rate;
   }
 
-  /** @private the channel session a purchase was offered on */
+  /**
+   * The channel with a seller. With a verified signer it is only the channel
+   * whose remote key is that signer (either parity), never one that the
+   * seller id or the item JSON's `sellerPubkey` names.
+   * @private
+   * @param {string} sellerId
+   * @param {string|null} signerHex verified signer, x-only or compressed
+   * @returns {Object|null}
+   */
+  _sellerChannel (sellerId, signerHex) {
+    const x = xOnlyHex(signerHex);
+    if (!x) return this._channels.sessionFor(sellerId, null);
+    const channel = this._channels.sessionFor(null, `02${x}`) || this._channels.sessionFor(null, `03${x}`) || this._channels.sessionFor(sellerId, null);
+    const remote = channel && channel.funding ? xOnlyHex(channel.funding.remotePubkey) : null;
+    return remote === x ? channel : null;
+  }
+
+  /** @private the channel session a purchase was opened on, by its `channelId` */
   _channelOf (session) {
-    if (!this._channels) return null;
+    if (!this._channels || !session.channelId) return null;
     const byId = typeof this._channels.get === 'function'
       ? this._channels.get(String(session.channelId))
       : null;
     if (byId) return byId;
-    const ch = this._channels.sessionFor(session.sellerId, session.sellerPubkeyHex || null);
-    return ch && (!session.channelId || String(ch.channelId) === String(session.channelId)) ? ch : null;
+    const ch = this._sellerChannel(session.sellerId, session.channelSignerHex || null);
+    return ch && String(ch.channelId) === String(session.channelId) ? ch : null;
   }
 
   /**
@@ -407,7 +431,8 @@ class Market extends Service {
   _settleOverChannel (session) {
     const paymentHashHex = session.paymentHashHex || session.contentHashHex;
     if (session.rail !== 'channel' || !this._channels || !paymentHashHex || !(session.amountSats > 0)) return { status: 'unavailable', reason: 'not a channel session' };
-    const channel = this._channels.sessionFor(session.sellerId, session.sellerPubkeyHex || null);
+    // The channel chosen (and checked) when the session opened; `sellerPubkeyHex` is unverified.
+    const channel = this._channelOf(session);
     if (!channel || channel.status !== 'open') return { status: 'unavailable', reason: 'channel not open' };
     if (channel.balances.localSats < session.amountSats) return { status: 'unavailable', reason: 'insufficient channel balance' };
     if (channel.busy) return { status: 'busy', reason: 'channel round in flight' };
@@ -1228,6 +1253,7 @@ class Market extends Service {
       session.rail = 'credit';
       session.channelId = credit.channel.channelId;
     }
+    if (channel || onCredit) session.channelSignerHex = xOnlyHex(this._verifiedSellerPubkeyHex(offer));
     session.openedAt = this._now();
     session.created = session.openedAt;
     this._state.content.sessions[session.settlementId] = session;
@@ -1412,8 +1438,9 @@ class Market extends Service {
    * @private
    */
   _verifiedSellerPubkeyHex (offer) {
-    const signer = offer && offer.ampSignerPubkey;
-    return signer && /^[0-9a-f]{66}$/i.test(String(signer)) ? String(signer).toLowerCase() : null;
+    // `Peer` verifies the wire author as a 64-hex x-only key; older rows hold the compressed key.
+    const signer = offer && String(offer.ampSignerPubkey || '').trim().toLowerCase();
+    return signer && /^(0[23])?[0-9a-f]{64}$/.test(signer) ? signer : null;
   }
 
   /** @private */

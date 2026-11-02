@@ -452,14 +452,17 @@ class Store extends Actor {
     if (result === undefined && this.db && this.settings.persistent !== false) {
       try {
         const raw = await this.db.get(route.path);
+        // Level 10 resolves a missing key as `undefined` instead of throwing.
+        if (raw === undefined || raw === null) return null;
         let value = raw;
+        // `set` cannot store `null`, so persisted `null` text was the string 'null'.
         if (Buffer.isBuffer(raw)) {
           const text = raw.toString('utf8');
           const pr = tryParsePersistedJson(text);
-          value = pr.ok ? pr.value : text;
+          value = pr.ok && pr.value !== null ? pr.value : text;
         } else if (typeof raw === 'string') {
           const pr = tryParsePersistedJson(raw);
-          value = pr.ok ? pr.value : raw;
+          value = pr.ok && pr.value !== null ? pr.value : raw;
         }
         const info = await this.getDataInfo(value);
         this._state.metadata[route.index] = info;
@@ -513,16 +516,8 @@ class Store extends Actor {
       original: value
     });
 
-    this._state.actors[actor.id] = actor;
-    this._state.documents[hash] = value;
-    this._state.indices[route.index] = route.pointer;
-    this._state.metadata[route.index] = info;
-
-    pointer.set(this._state.content, route.path, value);
-
-    this.commit();
-
-    // Persist path → value when Level is open (survives stop/start reopen).
+    // Persist path → value when Level is open (survives stop/start reopen),
+    // before memory or a commit shows it: a strict write that fails changes nothing.
     if (this.db && this.settings.persistent !== false) {
       try {
         const payload = (typeof value === 'string')
@@ -534,6 +529,15 @@ class Store extends Actor {
         console.error('[FABRIC:STORE]', 'Could not persist key:', route.path, E);
       }
     }
+
+    this._state.actors[actor.id] = actor;
+    this._state.documents[hash] = value;
+    this._state.indices[route.index] = route.pointer;
+    this._state.metadata[route.index] = info;
+
+    pointer.set(this._state.content, route.path, value);
+
+    this.commit();
 
     return this.get(key);
   }

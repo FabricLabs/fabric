@@ -1715,7 +1715,7 @@ const SCHEMA_PASSPORT_ASSERTION = Object.freeze([
   { name: 'cosigner', type: 'string', optional: true }
 ]);
 /**
- * @private Delegation (`functions/delegation.js`). Times are Unix
+ * @private Delegation (`types/delegation.js`). Times are Unix
  * milliseconds; every frame is signed by its author. Pairing commits to the
  * initiator's nonce before the responder picks its own.
  */

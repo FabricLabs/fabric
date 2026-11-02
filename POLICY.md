@@ -161,7 +161,7 @@ Several application types use codes **outside** this range (see [`constants.js`]
 | `0x424A` | 16970 | `DELEGATION_MAILBOX_FETCH` † | Proves the reader holds the key a mailbox serves | ❌ No |
 | `0x81`-`0x8F` (legacy draft) | … | CHAT / ACCEPT / REJECT / PAYMENT_* | Not all registered in `constants.js` — see Remaining work | ⚠️ Varies |
 
-The Passport and delegation types travel as `fabric:<frame>` strings between a page, Passport, a rendezvous or mailbox, and a delegate (`functions/fabricUri`, `functions/passport`, `functions/delegation`; specs in [docs/PASSPORT.md](docs/PASSPORT.md) and [docs/DELEGATION.md](docs/DELEGATION.md)), not over the mesh: `Peer` has no handler for them and does not relay them. They replace the earlier site-login types `0x4230`–`0x4232`, which are no longer known and are refused. Like the MuSig rows they are JS-only for now — `src/constants.h` does not list them.
+The Passport and delegation types travel as `fabric:<frame>` strings between a page, Passport, a rendezvous or mailbox, and a delegate (`functions/fabricUri`, `functions/passport`, `types/delegation`; specs in [docs/PASSPORT.md](docs/PASSPORT.md) and [docs/DELEGATION.md](docs/DELEGATION.md)), not over the mesh: `Peer` has no handler for them and does not relay them. They replace the earlier site-login types `0x4230`–`0x4232`, which are no longer known and are refused. Like the MuSig rows they are JS-only for now — `src/constants.h` does not list them.
 
 ### Bitcoin Integration Types
 

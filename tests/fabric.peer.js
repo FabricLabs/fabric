@@ -2549,16 +2549,19 @@ describe('@fabric/core/types/peer', function () {
       await server.start();
       await client.start();
       const [inbound, outbound] = await Promise.all([serverSession, clientSession]);
+      // Close handlers drop `_addressToId` rows, so read them before stopping.
+      const inboundId = server._addressToId[inbound.address];
+      const outboundId = client._addressToId[outbound.address];
       await client.stop();
       await server.stop();
 
       assert.strictEqual(inbound.direction, 'inbound');
       assert.strictEqual(inbound.id, client.identity.id);
-      assert.strictEqual(server._addressToId[inbound.address], client.identity.id);
+      assert.strictEqual(inboundId, client.identity.id);
       assert.ok(inbound.publicKey);
       assert.strictEqual(outbound.direction, 'outbound');
       assert.strictEqual(outbound.id, server.identity.id);
-      assert.strictEqual(client._addressToId[outbound.address], server.identity.id);
+      assert.strictEqual(outboundId, server.identity.id);
       assert.ok(outbound.publicKey);
     });
 

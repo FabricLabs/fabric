@@ -1173,8 +1173,9 @@ class DocumentBook extends Book {
    * @param {number} [opts.blobIndex]
    * @param {number} [opts.maxSats]
    * @param {number} [opts.minPaidSats] drop paid offers below this (free offers stay)
-   * @param {boolean} [opts.paidSealedOnly] drop every paid unsealed offer (paid
-   *   unsealed offers always go while a sealed one is listed)
+   * @param {boolean} [opts.paidSealedOnly] `true`: drop every paid unsealed
+   *   offer, even when no sealed offer is left. Unset: drop paid unsealed
+   *   offers only while a sealed offer remains after the other filters.
    * @param {string[]} [opts.excludeSellers]
    * @param {string} [opts.merkleRootHex] only offers for this tree root
    * @param {Object} [opts.weights]
@@ -1198,8 +1199,9 @@ class DocumentBook extends Book {
    * @param {boolean} [opts.singleKey] legacy whole-document key: lock one seller
    * @param {number} [opts.maxSats] per-blob ceiling
    * @param {number} [opts.minPaidSats] drop paid offers below this (free offers stay)
-   * @param {boolean} [opts.paidSealedOnly] drop every paid unsealed offer (paid
-   *   unsealed offers always go while a sealed one is listed)
+   * @param {boolean} [opts.paidSealedOnly] `true`: drop every paid unsealed
+   *   offer, even when no sealed offer is left. Unset: drop paid unsealed
+   *   offers only while a sealed offer remains after the other filters.
    * @param {string[]} [opts.excludeSellers]
    * @param {string} [opts.merkleRootHex] only offers for this tree root; when
    *   omitted the plan still stays on **one** root (the first pick's), so

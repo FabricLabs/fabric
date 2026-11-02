@@ -1280,6 +1280,23 @@ describe('services/market (credit rail: pay after verify)', function () {
     assert.ok(m.market._creditFor(Object.assign({}, offer, { sellerId: 'alpha' })));
   });
 
+  it('binds the channel to the verified signer (x-only or compressed), with no seller-id fallback', function () {
+    const m = build();
+    const offer = { sealed: true, creditRateSats: CREDIT, paymentModes: ['htlc', 'credit'] };
+    const x = m.sellerKey.pub.slice(2);
+    const other = crypto.randomBytes(32).toString('hex');
+    assert.ok(m.market._channelFor(Object.assign({}, offer, { sellerId: 'unknown', ampSignerPubkey: x }), 1), 'x-only signer finds its channel');
+    assert.ok(m.market._creditFor(Object.assign({}, offer, { sellerId: 'unknown', ampSignerPubkey: m.sellerKey.pub })), 'compressed signer finds its channel');
+    assert.strictEqual(m.market._channelFor(Object.assign({}, offer, { sellerId: 'alpha', ampSignerPubkey: other }), 1), null, 'alias of another key is refused');
+    assert.strictEqual(m.market._creditFor(Object.assign({}, offer, { sellerId: 'alpha', ampSignerPubkey: other })), null);
+  });
+
+  it('settles a channel HTLC only on the channel the session opened on', function () {
+    const m = build();
+    const session = { rail: 'channel', sellerId: 'alpha', sellerPubkeyHex: m.sellerKey.pub, channelId: 'not-a-channel', amountSats: 1, paymentHashHex: crypto.randomBytes(32).toString('hex') };
+    assert.deepStrictEqual(m.market._settleOverChannel(session), { status: 'unavailable', reason: 'channel not open' });
+  });
+
   it('advertises the credit price with paymentModes; private documents cannot take credit', function () {
     const m = build();
     const item = m.seller._sealedBlobInventoryItems({})[0];

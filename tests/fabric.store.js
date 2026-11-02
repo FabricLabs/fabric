@@ -82,8 +82,13 @@ describe('@fabric/core/types/store', function () {
       strict.db = { get: broken, put: broken };
       await assert.rejects(strict.get('/metrics/a'), /disk gone/);
       await assert.rejects(strict.set('/metrics/a', { n: 1 }), /disk gone/);
+      strict.db = { get: async () => undefined, put: broken };
+      assert.strictEqual(await strict.get('/metrics/a'), null, 'a failed write is not kept in memory');
 
+      // Level 10 resolves a missing key as `undefined`; older Level threw LEVEL_NOT_FOUND.
       const missing = new Store({ strict: true });
+      missing.db = { get: async () => undefined };
+      assert.strictEqual(await missing.get('/metrics/none'), null);
       missing.db = {
         get: async () => {
           const err = new Error('not found');
@@ -92,6 +97,10 @@ describe('@fabric/core/types/store', function () {
         }
       };
       assert.strictEqual(await missing.get('/metrics/none'), null);
+
+      const text = new Store({ strict: true });
+      text.db = { get: async () => 'null' };
+      assert.strictEqual(await text.get('/metrics/word'), 'null', 'persisted null text is the string');
 
       const lenient = new Store();
       lenient.db = { get: broken };

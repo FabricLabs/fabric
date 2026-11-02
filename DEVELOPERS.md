@@ -381,7 +381,7 @@ Canonical map of `types/` and `services/` across **`@fabric/core`**, **`@fabric/
 | Last reviewed | 2026-08-15 |
 | Trees scanned | `types/` + `services/` (Passport: `src/types/`, `src/background/`, `src/crypto/`, `src/utils/`) |
 | Local checkouts | `~/fabric-clean`, `~/fabric-http`, `~/hub.fabric.pub`, `~/fabric-browser-extension`, `~/star-citizen-live` (`~/goon.vc` insight only) |
-| Crypto lift | Delegation frames and identity Schnorr live in `@fabric/core` (`functions/delegation`, `types/delegation`, `functions/fabricIdentitySchnorr`). HTTP / Hub / GoonCitizen / Passport use them directly. |
+| Crypto lift | Delegation frames and identity Schnorr live in `@fabric/core` (`types/delegation`, `functions/fabricIdentitySchnorr`). HTTP / Hub / GoonCitizen / Passport use them directly. |
 | Core `npm test` | 2026-08-14: gossip-network `verifiedPubkey` expect fixed; remaining work is identity lift + OUTSTANDING queue (not this suite fail). |
 
 ---
@@ -542,7 +542,7 @@ Payoff vs risk for *sharing* an API. Implement only with owner go-ahead; small P
 
 | Rank | Slice | Home | Payoff | Risk | Notes |
 |------|-------|------|--------|------|-------|
-| 1 | **Delegation** (pairing, grants, requests; replaced IdentityCrossSign and device-link) | **core** `functions/delegation` + `types/delegation` ([docs/DELEGATION.md](docs/DELEGATION.md)) | High | Low | Every participant builds a `Delegation` on its own key and store; do not fork frame code. |
+| 1 | **Delegation** (pairing, grants, requests; replaced IdentityCrossSign and device-link) | **core** `types/delegation` ([docs/DELEGATION.md](docs/DELEGATION.md)) | High | Low | Every participant builds a `Delegation` on its own key and store; do not fork frame code. |
 | 2 | **Passport + delegation transport** | **http** (`passportHttp`, `fabricDelegationHttp`, `fabricDelegationMailbox`, `fabricDelegate`) | High | Low–med | GC/Passport/Hub must wrap http; do not fork verify. |
 | 3 | **Passport Key → core Key** | **core** Key | High (crypto) | Med | Drop elliptic class; keep `IKey` UI state in Passport. |
 | 4 | **Retire Hub Queue/Worker forks** | **core** | Med | Low | Runtime already uses core Worker. |
@@ -624,7 +624,7 @@ Not a ship list. Owner go-ahead still required. Detail for Core also lives in [O
 - Existing OUTSTANDING items: type-tree keep/remove, `messageHex` laziness, `contractId` → `contractIdentifier`, genesis journal cap, blinded-execution scaffold, third-party review of peer/HTLC.
 
 #### Follow-up Core PR (new files)
-`functions/fabricIdentitySchnorr.js` and its tests in `tests/fabric.identity.js` are already on #185; the IdentityCrossSign leaves were since replaced by delegation (`functions/delegation.js`, `types/delegation.js`). Pin or `npm link` core in http / Hub / Passport / GoonCitizen. Sidecar `.d.ts` files were dropped for the GitHub 150-file review cap.
+`functions/fabricIdentitySchnorr.js` and its tests in `tests/fabric.identity.js` are already on #185; the IdentityCrossSign leaves were since replaced by delegation (`types/delegation.js`). Pin or `npm link` core in http / Hub / Passport / GoonCitizen. Sidecar `.d.ts` files were dropped for the GitHub 150-file review cap.
 
 #### Pending tests (not failures)
 - 3× Lightning `_makeRPCRequest` (JSON-RPC line-delimited / error / timeout) — skipped unit stubs.

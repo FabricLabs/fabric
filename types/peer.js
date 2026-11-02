@@ -6877,7 +6877,9 @@ class Peer extends Service {
     }
     if (row.parsed && row.parsed.quote === true && this._getSealedBlobDocument(row.documentId)) {
       if (row.parsed.batchEnd != null) {
-        this._sendSealedBlobBatch(row.documentId, Number(row.parsed.blobIndex), Number(row.parsed.batchEnd), row.peerAddress, { routeId: row.parsed.routeId, amountSats: row.parsed.maxSats, maxSats: row.parsed.maxSats });
+        // A refused batch quote (listed total above the buyer's maxSats) sends nothing; keep the request.
+        const quoted = this._sendSealedBlobBatch(row.documentId, Number(row.parsed.blobIndex), Number(row.parsed.batchEnd), row.peerAddress, { routeId: row.parsed.routeId, amountSats: row.parsed.maxSats, maxSats: row.parsed.maxSats });
+        if (!quoted) return { ok: false, error: 'batch quote refused (listed price above maxSats)' };
       } else {
         this._sendSealedBlobQuote(row.documentId, Number(row.parsed.blobIndex), row.peerAddress, { routeId: row.parsed.routeId });
       }

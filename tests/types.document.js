@@ -620,6 +620,17 @@ describe('types/document (sealed blob tree)', function () {
       assert.strictEqual(unsafe.error, 'bad listed price');
       assert.strictEqual(seller._sealedBlobQuotes.size, 1, 'only the quote within maxSats is kept');
     });
+
+    it('approving a batch request whose quote is refused reports it and keeps the request', function () {
+      const seller = new Peer({ listen: false });
+      const doc = Document.seal(crypto.randomBytes(5000), { chunkBytes: 2048 });
+      const { documentId } = seller.publishSealedDocument(doc, { rateSats: RATE });
+      seller.pendingDocumentRequests.r1 = { documentId, peerAddress: 'buyer', parsed: { quote: true, blobIndex: 0, batchEnd: 2, maxSats: RATE * 3 - 1 } };
+      const out = seller.approveDocumentRequest('r1');
+      assert.strictEqual(out.ok, false);
+      assert.match(out.error, /batch quote refused/);
+      assert.ok(seller.pendingDocumentRequests.r1, 'the request stays pending');
+    });
   });
 
   describe('binary documents', function () {

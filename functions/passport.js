@@ -13,7 +13,7 @@
  *   when the challenge asked and the user agreed.
  * - Passport asks another participant it holds a grant from (a desktop app, a
  *   Hub) to answer for it with a `DELEGATION_REQUEST` embedding the challenge
- *   (`functions/delegation.js`); the answer names the asker as `device`.
+ *   (`types/delegation.js`); the answer names the asker as `device`.
  *
  * Every frame carries `origin`, `nonce`, `issuedAt`, and `expiresAt`; readers
  * refuse lifetimes over {@link PASSPORT_MAX_TTL_MS}. Redeeming a nonce once is

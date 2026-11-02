@@ -600,7 +600,7 @@ const PASSPORT_MAX_TTL_MS = 3 * 60 * 1000;
  * Delegation frames: pairing two key holders, grants that let one ask the
  * other to sign, and the requests and results themselves. Carried as
  * `fabric:<frame>` strings through a rendezvous / mailbox, never relayed on
- * the mesh. See `functions/delegation.js` and `docs/DELEGATION.md`.
+ * the mesh. See `types/delegation.js` and `docs/DELEGATION.md`.
  */
 const DELEGATION_LINK_OFFER = 0x4243;
 const DELEGATION_LINK_ANSWER = 0x4244;
