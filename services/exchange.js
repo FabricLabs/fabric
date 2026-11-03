@@ -11,7 +11,6 @@ const merge = require('lodash.merge');
 // Fabric Types
 const Entity = require('../types/entity');
 const Collection = require('../types/collection');
-const Message = require('../types/message');
 const Service = require('../types/service');
 
 class Exchange extends Service {
@@ -96,7 +95,8 @@ class Exchange extends Service {
     if (!this._state.orders[entity.id]) this._state.orders[entity.id] = entity;
 
     await this.commit();
-    this.emit('message', Message.fromVector(['PostedExchangeOrder', state]));
+    // Local event, not a wire frame.
+    this.emit('message', { type: 'PostedExchangeOrder', object: state });
 
     return state;
   }

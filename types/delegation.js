@@ -144,6 +144,15 @@ function compressed (pubkey) {
 }
 
 /** @private */
+function sameNetwork (a, b) {
+  try {
+    return normalizeAccountNetwork(a) === normalizeAccountNetwork(b);
+  } catch (_) {
+    return false;
+  }
+}
+
+/** @private */
 function assertSigningKey (key) {
   if (!key || !key.private || typeof key.signSchnorrHash !== 'function') {
     throw new TypeError('a private signing Key is required');
@@ -205,13 +214,14 @@ function checkIssued (issuedAt, options = {}) {
 /**
  * Label as shown and signed: no control or bidi characters, at most 64 characters.
  * @param {string} label
+ * @param {number} [max] Longest kept (purposes and refusals keep 140).
  * @returns {string}
  */
-function cleanLabel (label) {
+function cleanLabel (label, max = DELEGATION_MAX_LABEL) {
   return String(label == null ? '' : label)
     .replace(/[\u0000-\u001f\u007f-\u009f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, '')
     .trim()
-    .slice(0, DELEGATION_MAX_LABEL);
+    .slice(0, max);
 }
 
 /**
@@ -854,7 +864,7 @@ function createRequest (params = {}, key) {
     origin,
     account,
     disclose: disclose.join(','),
-    purpose: params.purpose != null ? cleanLabel(String(params.purpose)).slice(0, DELEGATION_MAX_PURPOSE) : '',
+    purpose: params.purpose != null ? cleanLabel(String(params.purpose), DELEGATION_MAX_PURPOSE) : '',
     issuedAt: BigInt(issuedAt),
     expiresAt: BigInt(expiresAt)
   });
@@ -912,7 +922,7 @@ function readRequest (input, options = {}) {
   if (purpose.length > DELEGATION_MAX_PURPOSE) return { ok: false, error: 'purpose too long' };
   return {
     ok: true,
-    request: { requester, target, grant, nonce, origin, account, disclose, purpose: cleanLabel(purpose), issuedAt, expiresAt },
+    request: { requester, target, grant, nonce, origin, account, disclose, purpose: cleanLabel(purpose, DELEGATION_MAX_PURPOSE), issuedAt, expiresAt },
     scope: inner.scope,
     inner,
     author: decoded.author,
@@ -947,7 +957,13 @@ function authorize (read, grants = [], options = {}) {
   }
   if (grant.networks.length) {
     let network = read.inner.network;
-    if (!network && typeof options.networkOf === 'function') network = options.networkOf(read) || null;
+    if (read.scope === 'federation' && read.inner.type === 'FederationWithdrawalRequest') {
+      // A withdrawal spends a federation the host already holds: its network
+      // is the host's record, never the body's own claim.
+      const held = typeof options.networkOf === 'function' ? options.networkOf(read) || null : null;
+      if (network && held && !sameNetwork(network, held)) return { ok: false, error: `the withdrawal names ${network} and the federation is on ${held}` };
+      network = held;
+    } else if (!network && typeof options.networkOf === 'function') network = options.networkOf(read) || null;
     // A listed network is an allowlist, not a hint. A challenge that omits
     // network, and every message frame, would otherwise be signed for whatever
     // network the host passes.
@@ -988,7 +1004,7 @@ function createResult (params = {}, key) {
   const request = String(params.request || '').toLowerCase();
   if (!HEX32.test(request)) throw new TypeError('createResult: request hash required');
   const answer = params.answer != null ? frameBuffer(params.answer) : Buffer.alloc(0);
-  const refusal = params.refusal != null ? cleanLabel(String(params.refusal)).slice(0, DELEGATION_MAX_PURPOSE) : '';
+  const refusal = params.refusal != null ? cleanLabel(String(params.refusal), DELEGATION_MAX_PURPOSE) : '';
   if (!answer.length && !refusal) throw new TypeError('createResult: an answer or a refusal is required');
   if (answer.length && refusal) throw new TypeError('createResult: an answer and a refusal are exclusive');
   const issuedAt = Number.isFinite(params.now) ? params.now : Date.now();
@@ -1158,7 +1174,7 @@ function notificationFor (read, context = {}) {
       title = body.name ? `Join the shared wallet "${cleanLabel(body.name)}"` : 'Join a shared wallet';
       const validators = body.descriptor && Array.isArray(body.descriptor.validators) ? body.descriptor.validators.length : 0;
       const threshold = body.descriptor && body.descriptor.threshold;
-      summary = threshold ? `${threshold} of ${validators} signers.` : summary;
+      summary = Number.isSafeInteger(threshold) && threshold > 0 ? `${threshold} of ${validators} signers.` : summary;
     }
   } else if (!summary) {
     summary = `${label} asks you to sign a ${read.inner.type} message.`;
@@ -1217,6 +1233,44 @@ function answerMessage (read, key) {
 }
 
 /**
+ * Why an answer frame does not answer a request, or null when it does: a
+ * Passport assertion over the request's challenge and origin, the request's
+ * own message signed, or a federation reply for the same federation.
+ * @param {Object} read An `ok` {@link readRequest} result.
+ * @param {string|Buffer|Message} answer The answer frame.
+ * @returns {string|null}
+ */
+function answerError (read, answer) {
+  if (!read || !read.ok) return 'unreadable request';
+  let message = null;
+  try {
+    message = Message.fromBuffer(Buffer.from(frameBuffer(answer)));
+  } catch (_) {}
+  if (!message) return 'unreadable answer';
+  const inner = read.inner;
+  if (read.scope === 'passport') {
+    if (message.type !== 'PASSPORT_ASSERTION') return 'a passport request is answered with an assertion';
+    const fields = message.toFields() || {};
+    if (Buffer.from(fields.challengeHash || []).toString('hex') !== inner.hash) return 'the assertion is for another challenge';
+    if (normalizeOrigin(fields.origin) !== read.request.origin) return 'the assertion is for another origin';
+    return null;
+  }
+  if (read.scope === 'message') {
+    const asked = Message.fromBuffer(Buffer.from(inner.buffer));
+    if (message.type !== asked.type || !message.bodyBuffer.equals(asked.bodyBuffer)) return 'the answer signs another message';
+    return null;
+  }
+  if (read.scope === 'federation') {
+    const reply = message.type === 'CONTRACT_MESSAGE' ? contractBody(message) : null;
+    const expected = inner.body.type === 'FederationInvite' ? 'FederationInviteResponse' : 'FederationWithdrawalSignature';
+    if (!reply || reply.type !== expected) return `a ${inner.body.type} is answered with a ${expected}`;
+    if (String(reply.federationId || '').toLowerCase() !== String(inner.body.federationId || '').toLowerCase()) return 'the answer is for another federation';
+    return null;
+  }
+  return `unknown scope ${read.scope}`;
+}
+
+/**
  * The kind of frame `input` is, when it is a delegation frame.
  * @param {string|Buffer|Message} input
  * @returns {string|null}
@@ -1270,6 +1324,7 @@ const delegation = {
   notificationFor,
   answerPassport,
   answerMessage,
+  answerError,
   delegationType
 };
 
@@ -1823,6 +1878,11 @@ class Delegation extends EventEmitter {
       if (target && read.author !== target) return { ok: false, error: 'the result is not from the participant asked' };
       if (read.result.answer && !this._signers(state, 'received', out.grant, read.author).has(read.result.answer.author)) {
         return { ok: false, error: 'the answer is not signed by the participant asked' };
+      }
+      if (read.result.answer) {
+        const asked = delegation.readRequest(Buffer.from(out.hex, 'hex'), Object.assign({}, this._opts(), { now: out.at }));
+        const mismatch = asked.ok ? answerError(asked, read.result.answer.buffer) : `the request no longer reads: ${asked.error}`;
+        if (mismatch) return { ok: false, error: mismatch };
       }
       if (out.status !== 'sent') return { ok: true, type: 'DELEGATION_RESULT', request: read.result.request, duplicate: true };
       out.status = read.result.answer ? 'signed' : 'declined';

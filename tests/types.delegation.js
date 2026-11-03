@@ -274,9 +274,11 @@ describe('@fabric/core/types/delegation frames', function () {
     });
 
     it('a man in the middle gets a different code', function () {
-      const { offer, answer } = pair();
+      // Fixed nonces, so the two codes are the same on every run.
+      const offer = d.createLinkOffer({ origin: 'https://hub.fabric.pub', label: 'Passport', network: 'regtest', nonce: '11'.repeat(32), now: NOW }, PASSPORT.identity.key);
+      const answer = d.createLinkAnswer({ offer: offer.uri, label: 'Hub', nonce: '22'.repeat(32), now: NOW + 10 }, HUB.identity.key);
       // Mallory answers in HUB's place with her own key.
-      const mallory = d.createLinkAnswer({ offer: offer.uri, label: 'Hub', now: NOW + 10 }, OTHER.identity.key);
+      const mallory = d.createLinkAnswer({ offer: offer.uri, label: 'Hub', nonce: '33'.repeat(32), now: NOW + 10 }, OTHER.identity.key);
       const toMallory = d.createLinkReveal({ offer: offer.uri, answer: mallory.uri, nonce: offer.nonce, now: NOW + 20 }, PASSPORT.identity.key);
       const honest = d.createLinkReveal({ offer: offer.uri, answer: answer.uri, nonce: offer.nonce, now: NOW + 20 }, PASSPORT.identity.key);
       assert.notStrictEqual(toMallory.sas, honest.sas);
@@ -404,6 +406,28 @@ describe('@fabric/core/types/delegation frames', function () {
       assert.match(d.authorize(msg, [grant]).error, /this request does not/);
     });
 
+    it('keeps a purpose up to 140 characters', function () {
+      const grant = d.readGrant(hubGrant().uri, { now: NOW });
+      const purpose = 'p'.repeat(120);
+      const req = d.createRequest({ target: HUB.identity.pubkey, grant: grant.hash, request: Message.fromVector(['P2P_CHAT_MESSAGE', 'o7']), purpose, now: NOW }, PASSPORT.identity.key);
+      assert.strictEqual(d.readRequest(req.uri, { now: NOW + 1 }).request.purpose, purpose);
+    });
+
+    it('an answer must answer its own request', function () {
+      const grant = d.readGrant(hubGrant().uri, { now: NOW });
+      const ask = (text) => d.readRequest(d.createRequest({ target: HUB.identity.pubkey, grant: grant.hash, request: Message.fromVector(['P2P_CHAT_MESSAGE', text]), now: NOW }, PASSPORT.identity.key).uri, { now: NOW + 1 });
+      const mine = ask('o7');
+      const other = ask('pay me');
+      assert.strictEqual(d.answerError(mine, d.answerMessage(mine, HUB.identity.key)), null);
+      assert.match(d.answerError(mine, d.answerMessage(other, HUB.identity.key)), /another message/);
+      const c = challenge();
+      const signIn = d.readRequest(d.createRequest({ target: HUB.identity.pubkey, grant: grant.hash, request: c.uri, origin: SITE, now: NOW }, PASSPORT.identity.key).uri, { now: NOW + 1 });
+      assert.match(d.answerError(signIn, d.answerMessage(mine, HUB.identity.key)), /answered with an assertion/);
+      const elsewhere = d.readRequest(d.createRequest({ target: HUB.identity.pubkey, grant: grant.hash, request: challenge().uri, origin: SITE, now: NOW }, PASSPORT.identity.key).uri, { now: NOW + 1 });
+      const assertion = d.answerPassport(elsewhere, { signer: 'hub', network: 'regtest', now: NOW + 2 }, HUB.identity.key);
+      assert.match(d.answerError(signIn, assertion.uri), /another challenge/);
+    });
+
     it('a request cannot change the origin or ask for more than the challenge did', function () {
       const c = challenge({ request: [] });
       const grant = d.readGrant(hubGrant().uri, { now: NOW });
@@ -423,6 +447,18 @@ describe('@fabric/core/types/delegation frames', function () {
       assert.match(d.authorize(read, [grant]).error, /federation is unknown/);
       assert.strictEqual(d.authorize(read, [grant], { networkOf: () => 'regtest' }).ok, true);
       assert.match(d.authorize(read, [grant], { networkOf: () => 'mainnet' }).error, /does not cover/);
+      // The host's record decides a withdrawal's network, not a network the body claims.
+      const claimed = federationFrame({ contract: 'aa'.repeat(32), type: 'FederationWithdrawalRequest', federationId: 'aa'.repeat(32), requestId: 'r1', descriptor: { network: 'regtest' }, destinationAddress: 'bcrt1qw508d6qejxtdg4y5r3zarvary0c5xw7kygt080', amountSats: 5000, feeSats: 200 });
+      const claimedRead = d.readRequest(d.createRequest({ target: HUB.identity.pubkey, grant: grant.hash, request: claimed, now: NOW }, PASSPORT.identity.key).uri, { now: NOW + 1 });
+      assert.match(d.authorize(claimedRead, [grant]).error, /federation is unknown/);
+      assert.match(d.authorize(claimedRead, [grant], { networkOf: () => 'mainnet' }).error, /names regtest and the federation is on mainnet/);
+      assert.strictEqual(d.authorize(claimedRead, [grant], { networkOf: () => 'regtest' }).ok, true);
+      // A threshold that is not a positive integer does not reach the prompt.
+      const invite = federationFrame({ contract: 'aa'.repeat(32), type: 'FederationInvite', federationId: 'aa'.repeat(32), descriptor: { network: 'regtest', threshold: { toString: 'x' }, validators: ['02'.padEnd(66, '1')] } });
+      const inviteRead = d.readRequest(d.createRequest({ target: HUB.identity.pubkey, grant: grant.hash, request: invite, now: NOW }, PASSPORT.identity.key).uri, { now: NOW + 1 });
+      assert.strictEqual(inviteRead.ok, true, inviteRead.error);
+      assert.doesNotThrow(() => d.notificationFor(inviteRead));
+      assert.doesNotMatch(d.notificationFor(inviteRead).summary, /of 1 signers/);
 
       const unsigned = Message.fromVector(['CONTRACT_MESSAGE', JSON.stringify({ type: 'FederationWithdrawalRequest' })]);
       assert.throws(() => d.createRequest({ target: HUB.identity.pubkey, grant: grant.hash, request: unsigned, now: NOW }, PASSPORT.identity.key), /signed/);

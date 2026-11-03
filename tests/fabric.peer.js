@@ -11,6 +11,13 @@ const net = require('net');
 const { EventEmitter } = require('events');
 const { PassThrough } = require('stream');
 const SIGNING_TAGS = require('../functions/signingTags');
+const Bech32 = require('../types/bech32');
+const Hash256 = require('../types/hash256');
+
+/** Fabric id of a key, as a session offer must claim it. */
+function fabricIdOf (key) {
+  return new Bech32({ hrp: 'id', content: Hash256.digest(Buffer.from(key.pubkey, 'hex')) }).toString();
+}
 
 function sentBody (message) {
   const parsed = Message.tryParseLegacyBody(message);
@@ -1010,7 +1017,8 @@ describe('@fabric/core/types/peer', function () {
       });
       it('emits debug for unhandled message type', function (done) {
         const peer = new Peer({ listen: false, peersDb: null });
-        const msg = Message.fromVector(['IdentityRequest', JSON.stringify({})]);
+        // P2P_SESSION_ACK: registered, no handler, not deprecated (deprecated types warn instead).
+        const msg = Message.fromVector(['P2P_SESSION_ACK', JSON.stringify({})]);
         msg.signWithKey(peer.key);
         const buf = msg.toBuffer();
         peer.once('debug', (m) => {
@@ -2210,8 +2218,8 @@ describe('@fabric/core/types/peer', function () {
       it('on P2P_SESSION_OFFER registers peer, sets _addressToId, emits peer, and sends P2P_SESSION_OPEN via _writeFabric', function (done) {
         const server = new Peer({ listen: false, peersDb: null });
         const connAddress = '127.0.0.1:9999';
-        const remotePeerId = 'remote-peer-id-abc';
         const remoteKey = new Key();
+        const remotePeerId = fabricIdOf(remoteKey);
         const remoteProof = server._sessionKeyProofMessage(remotePeerId, remoteKey.pubkey, remoteKey.pubkey);
         let replyBuffer = null;
         server.connections[connAddress] = {
@@ -2255,8 +2263,8 @@ describe('@fabric/core/types/peer', function () {
         const server = new Peer({ listen: false, peersDb: null });
         const oldAddr = '127.0.0.1:8888';
         const newAddr = '127.0.0.1:9999';
-        const remotePeerId = 'same-peer-id';
         const remoteKey = new Key();
+        const remotePeerId = fabricIdOf(remoteKey);
         const remoteProof = server._sessionKeyProofMessage(remotePeerId, remoteKey.pubkey, remoteKey.pubkey);
         let oldDestroyCalled = false;
         let replyBuffer = null;
@@ -2302,8 +2310,8 @@ describe('@fabric/core/types/peer', function () {
       it('on P2P_SESSION_OPEN updates peers and _addressToId', function () {
         const peer = new Peer({ listen: false, peersDb: null });
         const connAddress = '127.0.0.1:9999';
-        const serverId = 'server-identity-id';
         const serverKey = new Key();
+        const serverId = fabricIdOf(serverKey);
         const serverProof = peer._sessionKeyProofMessage(serverId, serverKey.pubkey, serverKey.pubkey);
         peer.connections[connAddress] = { _writeFabric: () => {} };
 
@@ -2334,8 +2342,8 @@ describe('@fabric/core/types/peer', function () {
       it('P2P_SESSION_OPEN via _handleFabricMessage updates peers and _addressToId', function () {
         const peer = new Peer({ listen: false, peersDb: null });
         const connAddress = '127.0.0.1:9999';
-        const serverId = 'server-identity-id';
         const serverKey = new Key();
+        const serverId = fabricIdOf(serverKey);
         const serverProof = peer._sessionKeyProofMessage(serverId, serverKey.pubkey, serverKey.pubkey);
         peer.connections[connAddress] = { _writeFabric: () => {} };
 
@@ -2360,6 +2368,29 @@ describe('@fabric/core/types/peer', function () {
 
         assert.strictEqual(peer.peers[connAddress].id, serverId);
         assert.strictEqual(peer._addressToId[connAddress], serverId);
+      });
+
+      it('refuses a session that claims another key\'s id, or names another counterparty', function () {
+        const peer = new Peer({ listen: false, peersDb: null });
+        const connAddress = '127.0.0.1:9998';
+        const victimId = fabricIdOf(new Key());
+        const malloryKey = new Key();
+        peer.connections[connAddress] = { _writeFabric: () => {} };
+        const frame = (type, id, object) => {
+          const proof = peer._sessionKeyProofMessage(id, malloryKey.pubkey, malloryKey.pubkey);
+          const content = {
+            type,
+            actor: { id, pubkey: malloryKey.pubkey, parentPubkey: malloryKey.pubkey, parentSignature: malloryKey.signSchnorr(proof, SIGNING_TAGS.SESSION_KEY).toString('hex') },
+            object
+          };
+          return Message.fromVector([type, JSON.stringify(content)]).signWithKey(malloryKey).toBuffer();
+        };
+        const sessions = [];
+        peer.on('peer:session', (s) => sessions.push(s));
+        peer._handleFabricMessage(frame('P2P_SESSION_OFFER', victimId, { challenge: 'cafebabe' }), { name: connAddress }, null);
+        peer._handleFabricMessage(frame('P2P_SESSION_OPEN', fabricIdOf(malloryKey), { initiator: peer.identity.id, counterparty: victimId, solution: 'x' }), { name: connAddress }, null);
+        assert.deepStrictEqual(sessions, []);
+        assert.strictEqual(peer._addressToId[connAddress], undefined);
       });
 
       it('rejects and de-ranks P2P_SESSION_OFFER when key claim is unsigned', function () {

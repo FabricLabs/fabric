@@ -1174,10 +1174,18 @@ class Message extends Actor {
     if (!schema) {
       throw new Error(`Message.fromFields: no body schema registered for type ${type}`);
     }
-    return new Message(Object.assign({}, opts, {
+    const message = new Message(Object.assign({}, opts, {
       type,
       data: encodeBody(schema, fields)
     }));
+    // A name without an opcode falls back to P2P_BASE_MESSAGE, whose decoder
+    // has no schema: the frame could never be read back. Schemas registered
+    // by name only (e.g. `FabricProgramRun`) are for `encodeBody` / `decodeBody`.
+    if (message.raw.type.readUInt32BE(0) === P2P_BASE_MESSAGE &&
+        Message.canonicalTypeName(type) !== 'P2P_BASE_MESSAGE') {
+      throw new Error(`Message.fromFields: ${type} has no wire opcode; use Message.encodeBody with its schema`);
+    }
+    return message;
   }
 
   /**
@@ -1819,6 +1827,8 @@ const KEYED_FIELD_TYPES = Object.freeze({
   bool: 'u8',
   // Length-prefixed, so an absent hash costs 4 bytes rather than 32.
   hex32: 'bytes',
+  // Lowercase even-length hex of any size (raw blocks, transactions).
+  hex: 'bytes',
   base64: 'bytes',
   json: 'string'
 });
@@ -1945,6 +1955,54 @@ const KEYED_LAYOUTS = Object.freeze({
       { path: 'creditRef', field: 'creditRef', kind: 'string' },
       { path: 'contentHashHex', field: 'contentHash', kind: 'hex32' }
     ]
+  },
+  // Chain-tip gossip (Hub `{ tip, height, network, at, supply }`) or a ZMQ raw block (`content`).
+  BITCOIN_BLOCK: {
+    envelope: false,
+    keys: [
+      { path: 'tip', field: 'tip', kind: 'hex32' },
+      { path: 'height', field: 'height', kind: 'u32' },
+      { path: 'network', field: 'network', kind: 'string' },
+      { path: 'at', field: 'at', kind: 'string' },
+      { path: 'hash', field: 'hash', kind: 'hex32' },
+      { path: 'blockHash', field: 'blockHash', kind: 'hex32' },
+      { path: 'content', field: 'content', kind: 'hex' }
+    ]
+  },
+  BITCOIN_BLOCK_HASH: {
+    envelope: false,
+    keys: [{ path: 'content', field: 'content', kind: 'hex32' }]
+  },
+  BITCOIN_TRANSACTION: {
+    envelope: false,
+    keys: [{ path: 'content', field: 'content', kind: 'hex' }]
+  },
+  BITCOIN_TRANSACTION_HASH: {
+    envelope: false,
+    keys: [{ path: 'content', field: 'content', kind: 'hex32' }]
+  },
+  // `messages` stays JSON (leaf hash + wire base64 per entry) so the Merkle
+  // check in `functions/contractProposal.js` reads the same values.
+  CONTRACT_PROPOSAL: {
+    envelope: false,
+    keys: [
+      { path: 'version', field: 'version', kind: 'u8' },
+      { path: 'contractId', field: 'contractId', kind: 'string' },
+      { path: 'chain.parentRoot', field: 'parentRoot', kind: 'hex32' },
+      { path: 'chain.merkleRoot', field: 'merkleRoot', kind: 'hex32' },
+      { path: 'chain.leafHashes', field: 'leafHashes', kind: 'json' },
+      { path: 'statePatch', field: 'statePatch', kind: 'json' },
+      { path: 'messages', field: 'messages', kind: 'json' },
+      { path: 'psbt.proposalBase64', field: 'psbt', kind: 'base64' }
+    ]
+  },
+  P2P_FLUSH_CHAIN: {
+    envelope: false,
+    keys: [
+      { path: 'snapshotBlockHash', field: 'snapshotBlockHash', kind: 'hex32' },
+      { path: 'network', field: 'network', kind: 'string' },
+      { path: 'label', field: 'label', kind: 'string' }
+    ]
   }
 });
 
@@ -1962,6 +2020,18 @@ const SCHEMA_P2P_DOCUMENT_PUBLISH = keyedSchema(KEYED_LAYOUTS.P2P_DOCUMENT_PUBLI
 const SCHEMA_DOCUMENT_PUBLISH = keyedSchema(KEYED_LAYOUTS.DOCUMENT_PUBLISH);
 /** @private A request for a document or some of its blobs. */
 const SCHEMA_DOCUMENT_REQUEST = keyedSchema(KEYED_LAYOUTS.DOCUMENT_REQUEST);
+/** @private Bitcoin chain tip or raw block. */
+const SCHEMA_BITCOIN_BLOCK = keyedSchema(KEYED_LAYOUTS.BITCOIN_BLOCK);
+/** @private Bitcoin block hash. */
+const SCHEMA_BITCOIN_BLOCK_HASH = keyedSchema(KEYED_LAYOUTS.BITCOIN_BLOCK_HASH);
+/** @private Raw Bitcoin transaction. */
+const SCHEMA_BITCOIN_TRANSACTION = keyedSchema(KEYED_LAYOUTS.BITCOIN_TRANSACTION);
+/** @private Bitcoin transaction id. */
+const SCHEMA_BITCOIN_TRANSACTION_HASH = keyedSchema(KEYED_LAYOUTS.BITCOIN_TRANSACTION_HASH);
+/** @private Batched messages + Merkle root + state patch (+ optional PSBT). */
+const SCHEMA_CONTRACT_PROPOSAL = keyedSchema(KEYED_LAYOUTS.CONTRACT_PROPOSAL);
+/** @private Operator chain flush to a snapshot block. */
+const SCHEMA_P2P_FLUSH_CHAIN = keyedSchema(KEYED_LAYOUTS.P2P_FLUSH_CHAIN);
 
 /**
  * Parse an inbound AMP body: prefer JSON (legacy), else registered field schema.
@@ -2008,6 +2078,7 @@ function tryParseMessageBody (message) {
   registerBodySchema(P2P_PONG, SCHEMA_P2P_PING);
   registerBodySchema('P2P_PONG', SCHEMA_P2P_PING);
   registerBodySchema('Pong', SCHEMA_P2P_PING);
+  // Name-only: a run commitment layout for `encodeBody`, not a wire type.
   registerBodySchema('FabricProgramRun', SCHEMA_PROGRAM_RUN);
   registerBodySchema(P2P_CONTRACT_PUBLISH, SCHEMA_CONTRACT_PUBLISH);
   registerBodySchema('P2P_CONTRACT_PUBLISH', SCHEMA_CONTRACT_PUBLISH);
@@ -2081,7 +2152,13 @@ function tryParseMessageBody (message) {
     [P2P_INVENTORY_RESPONSE, 'P2P_INVENTORY_RESPONSE', 'InventoryResponse', SCHEMA_P2P_INVENTORY_RESPONSE],
     [P2P_DOCUMENT_PUBLISH, 'P2P_DOCUMENT_PUBLISH', 'DocumentPricingPublish', SCHEMA_P2P_DOCUMENT_PUBLISH],
     [DOCUMENT_PUBLISH_TYPE, 'DOCUMENT_PUBLISH', 'DocumentPublish', SCHEMA_DOCUMENT_PUBLISH],
-    [DOCUMENT_REQUEST_TYPE, 'DOCUMENT_REQUEST', 'DocumentRequest', SCHEMA_DOCUMENT_REQUEST]
+    [DOCUMENT_REQUEST_TYPE, 'DOCUMENT_REQUEST', 'DocumentRequest', SCHEMA_DOCUMENT_REQUEST],
+    [BITCOIN_BLOCK_TYPE, 'BITCOIN_BLOCK', 'BitcoinBlock', SCHEMA_BITCOIN_BLOCK],
+    [BITCOIN_BLOCK_HASH_TYPE, 'BITCOIN_BLOCK_HASH', 'BitcoinBlockHash', SCHEMA_BITCOIN_BLOCK_HASH],
+    [BITCOIN_TRANSACTION_TYPE, 'BITCOIN_TRANSACTION', 'BitcoinTransaction', SCHEMA_BITCOIN_TRANSACTION],
+    [BITCOIN_TRANSACTION_HASH_TYPE, 'BITCOIN_TRANSACTION_HASH', 'BitcoinTransactionHash', SCHEMA_BITCOIN_TRANSACTION_HASH],
+    [CONTRACT_PROPOSAL_TYPE, 'CONTRACT_PROPOSAL', 'ContractProposal', SCHEMA_CONTRACT_PROPOSAL],
+    [P2P_FLUSH_CHAIN, 'P2P_FLUSH_CHAIN', 'FlushChain', SCHEMA_P2P_FLUSH_CHAIN]
   ];
   for (const [code, name, alias, schema] of keyed) {
     registerBodySchema(code, schema);
@@ -2104,6 +2181,29 @@ const MAX_UINT32 = (2 ** 32) - 1;
 const MAX_PORT = 65535;
 
 /**
+ * Registered opcodes nothing sends or handles (docs/MESSAGE_BODY_MIGRATION.md
+ * Phase 4). They still decode; Peer counts and warns when one arrives, and a
+ * later protocol version removes them. `P2P_BASE_MESSAGE` and
+ * `P2P_CHAIN_SYNC_REQUEST` are still in use and are not listed.
+ */
+const DEPRECATED_WIRE_TYPES = Object.freeze([
+  'P2P_GENERIC',
+  'P2P_STATE_REQUEST',
+  'P2P_TRANSACTION',
+  'LOG_MESSAGE',
+  'GENERIC_LIST',
+  'BLOCK_CANDIDATE',
+  'P2P_IDENT_REQUEST',
+  'P2P_IDENT_RESPONSE',
+  'P2P_STATE_ROOT',
+  'P2P_STATE_CHANGE',
+  'P2P_CALL',
+  'PEER_CANDIDATE',
+  'SESSION_START',
+  'P2P_START_CHAIN'
+]);
+
+/**
  * Wire names whose legacy JSON bodies map onto field schemas.
  * @private
  */
@@ -2122,7 +2222,13 @@ const LEGACY_BODY_TYPES = Object.freeze([
   'P2P_INVENTORY_RESPONSE',
   'P2P_DOCUMENT_PUBLISH',
   'DOCUMENT_PUBLISH',
-  'DOCUMENT_REQUEST'
+  'DOCUMENT_REQUEST',
+  'BITCOIN_BLOCK',
+  'BITCOIN_BLOCK_HASH',
+  'BITCOIN_TRANSACTION',
+  'BITCOIN_TRANSACTION_HASH',
+  'CONTRACT_PROPOSAL',
+  'P2P_FLUSH_CHAIN'
 ]);
 
 /**
@@ -2389,6 +2495,8 @@ function keyedValueFits (kind, value) {
       return typeof value === 'boolean';
     case 'hex32':
       return typeof value === 'string' && /^[0-9a-f]{64}$/.test(value);
+    case 'hex':
+      return typeof value === 'string' && /^(?:[0-9a-f]{2})*$/.test(value);
     case 'base64':
       return typeof value === 'string' && Buffer.from(value, 'base64').toString('base64') === value;
     case 'json':
@@ -2409,6 +2517,7 @@ function keyedFieldValue (kind, value) {
     case 'bool':
       return value ? 1 : 0;
     case 'hex32':
+    case 'hex':
       return Buffer.from(value, 'hex');
     case 'base64':
       return Buffer.from(value, 'base64');
@@ -2439,6 +2548,8 @@ function keyedJsonValue (kind, field) {
       return field === 1 ? true : (field === 0 ? false : undefined);
     case 'hex32':
       return Buffer.isBuffer(field) && field.length === 32 ? field.toString('hex') : undefined;
+    case 'hex':
+      return Buffer.isBuffer(field) ? field.toString('hex') : undefined;
     case 'base64':
       return Buffer.isBuffer(field) ? field.toString('base64') : undefined;
     case 'json':
@@ -2722,6 +2833,7 @@ Message.setMessageParent = setMessageParent;
 Message.padDigits = padDigits;
 Message.verifyFrameAuthor = verifyFrameAuthor;
 Message.LEGACY_BODY_TYPES = LEGACY_BODY_TYPES;
+Message.DEPRECATED_WIRE_TYPES = DEPRECATED_WIRE_TYPES;
 Message.encodeLegacyBody = encodeLegacyBody;
 Message.decodeLegacyBody = decodeLegacyBody;
 Message.fromLegacyBody = fromLegacyBody;

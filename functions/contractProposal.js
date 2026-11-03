@@ -5,7 +5,7 @@
  * their canonical leaf hashes, optional parent chain root, RFC 6902 `statePatch`, and
  * optional PSBT reference(s) for on-chain legs (see hub `psbtFabric.js`).
  *
- * Wire type: `Message.fromVector(['ContractProposal', JSON.stringify(payload)])` → opcode {@link CONTRACT_PROPOSAL_TYPE}.
+ * Wire type: `Message.fromLegacyBody('CONTRACT_PROPOSAL', payload)` (keyed field layout) → opcode {@link CONTRACT_PROPOSAL_TYPE}.
  */
 
 const crypto = require('crypto');
@@ -155,8 +155,7 @@ function applyStatePatch (document, patch) {
  */
 function createContractProposalMessage (key, opts = {}) {
   const payload = buildContractProposalPayload(opts);
-  const body = JSON.stringify(payload);
-  const msg = Message.fromVector(['ContractProposal', body]);
+  const msg = Message.fromLegacyBody('CONTRACT_PROPOSAL', payload);
   if (key) msg.signWithKey(key);
   return msg;
 }

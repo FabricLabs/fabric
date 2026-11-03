@@ -574,6 +574,89 @@ describe('Message legacy bodies', function () {
     });
   });
 
+  describe('Bitcoin, proposal and flush layouts', function () {
+    const HASH = 'ab'.repeat(32);
+    const tipBody = { tip: HASH, height: 812, supply: 1.25, network: 'regtest', at: '2026-11-03T00:00:00.000Z' };
+
+    it('round-trips every key, odd values included', function () {
+      assert.deepStrictEqual(roundTrip('BitcoinBlock', tipBody), tipBody);
+      assert.deepStrictEqual(roundTrip('BitcoinBlock', { content: '00ff' }), { content: '00ff' });
+      assert.deepStrictEqual(roundTrip('BitcoinBlock', { tip: 'abc' }), { tip: 'abc' });
+      assert.deepStrictEqual(roundTrip('BitcoinTransaction', { content: '0102' }), { content: '0102' });
+      assert.deepStrictEqual(roundTrip('BitcoinTransaction', { content: 'ABC' }), { content: 'ABC' });
+      assert.deepStrictEqual(roundTrip('BitcoinBlockHash', { content: HASH }), { content: HASH });
+      assert.deepStrictEqual(roundTrip('BitcoinTransactionHash', { content: HASH }), { content: HASH });
+      const flush = { snapshotBlockHash: HASH, network: 'regtest', label: 'reset' };
+      assert.deepStrictEqual(roundTrip('P2P_FLUSH_CHAIN', flush), flush);
+    });
+
+    it('stores raw block and transaction bytes, not hex text', function () {
+      const content = 'ab'.repeat(100);
+      const m = Message.fromLegacyBody('BitcoinTransaction', { content });
+      assert.ok(m.toBuffer().length < Message.fromVector(['BitcoinTransaction', JSON.stringify({ content })]).toBuffer().length - 90);
+    });
+
+    it('a field CONTRACT_PROPOSAL still verifies', function () {
+      const { createContractProposalMessage, verifyContractProposalPayload } = require('../functions/contractProposal');
+      const inner = Message.fromVector(['P2P_BASE_MESSAGE', JSON.stringify({ type: 'X' })]).signWithKey(OWNER);
+      const msg = createContractProposalMessage(OWNER, { messages: [inner], contractId: 'c1', psbtProposalBase64: 'AQID' });
+      const parsed = Message.tryParseLegacyBody(Message.fromBuffer(msg.toBuffer()));
+      assert.strictEqual(parsed.encoding, 'fields');
+      assert.strictEqual(parsed.value.psbt.proposalBase64, 'AQID');
+      assert.strictEqual(verifyContractProposalPayload(parsed.value).ok, true);
+    });
+
+    it('Peer reads JSON and field BitcoinBlock / CONTRACT_PROPOSAL the same way', function () {
+      const { createContractProposalMessage } = require('../functions/contractProposal');
+      const inner = Message.fromVector(['P2P_BASE_MESSAGE', JSON.stringify({ type: 'X' })]).signWithKey(OWNER);
+      const fieldProposal = createContractProposalMessage(OWNER, { messages: [inner], contractId: 'c9' });
+      const proposalBody = Message.tryParseLegacyBody(fieldProposal).value;
+      const seen = [];
+      for (const frames of [
+        [jsonFrame('BitcoinBlock', tipBody), jsonFrame('ContractProposal', proposalBody)],
+        [fieldFrame('BitcoinBlock', tipBody), fieldProposal]
+      ]) {
+        const receiver = new Peer(offlinePeerSettings());
+        const got = {};
+        receiver.on('bitcoinBlock', (ev) => { got.block = ev.object; });
+        receiver.on('contract:proposal', (ev) => { got.proposal = [ev.contract, ev.payload.chain.merkleRoot]; });
+        for (const f of frames) receiver._handleFabricMessage(f.toBuffer(), { name: 'a' });
+        seen.push(got);
+      }
+      assert.deepStrictEqual(seen[0].block, tipBody);
+      assert.deepStrictEqual(seen[1], seen[0]);
+      assert.strictEqual(seen[1].proposal[0], 'c9');
+    });
+  });
+
+  describe('Phase 4: local records and deprecated opcodes', function () {
+    it('fromFields refuses a schema name with no opcode', function () {
+      const fields = { programHash: Buffer.alloc(32), runCommitment: Buffer.alloc(32), resultHint: '' };
+      assert.throws(() => Message.fromFields('FabricProgramRun', fields), /no wire opcode/);
+      const schema = Message.getBodySchema('FabricProgramRun');
+      assert.deepStrictEqual(Message.decodeBody(schema, Message.encodeBody(schema, fields)).resultHint, '');
+    });
+
+    it('Peer counts deprecated opcodes and warns once per type', function () {
+      const peer = new Peer(offlinePeerSettings());
+      const warnings = [];
+      peer.on('warning', (w) => warnings.push(String(w)));
+      for (let i = 0; i < 3; i++) {
+        const m = Message.fromVector(['P2P_STATE_ROOT', JSON.stringify({ n: i })]).signWithKey(OWNER);
+        peer._handleFabricMessage(m.toBuffer(), { name: 'a' });
+      }
+      assert.deepStrictEqual(peer.deprecatedWireTypeCounts(), { P2P_STATE_ROOT: 3 });
+      assert.strictEqual(warnings.filter((w) => w.includes('Deprecated wire type')).length, 1);
+    });
+
+    it('every deprecated name is a registered decode name', function () {
+      const names = Object.values(new Message({}).codes);
+      for (const t of Message.DEPRECATED_WIRE_TYPES) assert.ok(names.includes(t), t);
+      assert.ok(!Message.DEPRECATED_WIRE_TYPES.includes('P2P_BASE_MESSAGE'));
+      assert.ok(!Message.DEPRECATED_WIRE_TYPES.includes('P2P_CHAIN_SYNC_REQUEST'));
+    });
+  });
+
   describe('contract helpers accept field frames', function () {
     const id = new Actor(definition()).id;
     const frame = fieldFrame('CONTRACT_MESSAGE', { contract: id, type: 'GroupChat', object: { body: 'hi' } });

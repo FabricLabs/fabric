@@ -262,6 +262,7 @@ const Actor = require('./actor');
 const Document = require('./document');
 const Hash256 = require('./hash256');
 const Identity = require('./identity');
+const Bech32 = require('./bech32');
 const Key = require('./key');
 const Machine = require('./machine');
 const Message = require('./message');
@@ -2388,7 +2389,7 @@ class Peer extends Service {
 
   /**
    * Sign and send `P2P_FLUSH_CHAIN` to all connected peers with registry score &gt; threshold.
-   * Body JSON: `{ snapshotBlockHash, network?, label? }`.
+   * Body `{ snapshotBlockHash, network?, label? }`, sent as `P2P_FLUSH_CHAIN` fields.
    *
    * **Receivers** (see `P2P_FLUSH_CHAIN` handler) require **both**:
    * 1. Sender pubkey in {@link Peer#settings.flushChainAuthorizedPubkeys} (non-empty allowlist), and
@@ -2400,8 +2401,8 @@ class Peer extends Service {
    * @returns {number} number of sockets written
    */
   sendFlushChainToTrustedPeers (object) {
-    const body = JSON.stringify(object && typeof object === 'object' ? object : {});
-    const msg = Message.fromVector(['P2P_FLUSH_CHAIN', body]).signWithKey(this.key);
+    const body = object && typeof object === 'object' && !Array.isArray(object) ? object : {};
+    const msg = Message.fromLegacyBody('P2P_FLUSH_CHAIN', body).signWithKey(this.key);
     const buf = msg.toBuffer();
     const threshold = Number(this.settings.flushChainMinTrustedScore) || 800;
     let n = 0;
@@ -2833,6 +2834,12 @@ class Peer extends Service {
       this._punishPeerForSessionKeyViolation(originName, 'claimed child key does not match signer', punishOpts);
       return false;
     }
+    // A Fabric id is the hash of its key: an offer may not claim another key's id.
+    const ownIds = ['02', '03'].map((parity) => new Bech32({ hrp: 'id', content: Hash256.digest(Buffer.from(`${parity}${claimedParent}`, 'hex')) }).toString());
+    if (!ownIds.includes(peerId)) {
+      this._punishPeerForSessionKeyViolation(originName, 'claimed id is not the parent key\'s id', punishOpts);
+      return false;
+    }
 
     const proofMsg = this._sessionKeyProofMessage(peerId, claimedChild, claimedParent);
     let ok = false;
@@ -2964,6 +2971,31 @@ class Peer extends Service {
    * @param {boolean} [options.peeledForward] true when delivered via {@link Peer#_handleP2PForward} peel
    * @returns {Peer} Instance of the Peer.
    */
+  /**
+   * Count an inbound deprecated opcode; warn on the first of each type and on
+   * every 100th after, so a misbehaving sender can't flood the log.
+   * @private
+   * @param {string} type
+   * @param {object|null} origin
+   */
+  _countDeprecatedWireType (type, origin) {
+    if (!this._deprecatedWireCounts) this._deprecatedWireCounts = {};
+    const n = (this._deprecatedWireCounts[type] || 0) + 1;
+    this._deprecatedWireCounts[type] = n;
+    if (n === 1 || n % 100 === 0) {
+      const from = origin && origin.name ? origin.name : 'unknown';
+      this.emit('warning', `[FABRIC:PEER] Deprecated wire type ${type} from ${from} (seen ${n}); ignored`);
+    }
+  }
+
+  /**
+   * Inbound deprecated opcodes seen since start, by wire name.
+   * @returns {Object<string, number>}
+   */
+  deprecatedWireTypeCounts () {
+    return Object.assign({}, this._deprecatedWireCounts || {});
+  }
+
   _handleFabricMessage (buffer, origin = null, socket = null, options = null) {
     const opts = (options && typeof options === 'object') ? options : {};
     const originName = (origin && origin.name) ? origin.name : null;
@@ -3104,6 +3136,10 @@ class Peer extends Service {
 
     switch (message.type) {
       default:
+        if (Message.DEPRECATED_WIRE_TYPES.includes(message.type)) {
+          this._countDeprecatedWireType(message.type, origin);
+          break;
+        }
         this.emit('debug', `Unhandled message type: ${message.type}`);
         break;
       case 'P2P_MUSIG_START':
@@ -3165,8 +3201,8 @@ class Peer extends Service {
       case 'BitcoinBlock': {
         // Chain-tip gossip: relay so sparse meshes learn Bitcoin network tip.
         // Logical tip claim stops re-signed copies of the same tip from re-emitting / re-relaying.
-        const rawBb = messageDataToString(message.data);
-        const prBb = tryParseWireJsonBody(rawBb);
+        // JSON or field body (Message.tryParseLegacyBody reads both).
+        const prBb = Message.tryParseLegacyBody(message);
         if (prBb.ok && prBb.value && typeof prBb.value === 'object' && !Array.isArray(prBb.value)) {
           const claimBb = this._claimLogicalRegistrationOrPunish(
             message.type, prBb.value, signerPubkeyHex, scoreOrigin);
@@ -3177,7 +3213,12 @@ class Peer extends Service {
             break;
           }
         }
-        this.emit('bitcoinBlock', { message, origin, socket });
+        this.emit('bitcoinBlock', {
+          message,
+          origin,
+          socket,
+          object: prBb.ok && prBb.value && typeof prBb.value === 'object' ? prBb.value : null
+        });
         // Peel / RELAY unwrap: outer envelope already floods — never mesh-relay the inner tip.
         if (origin && origin.name && delivery.allowMeshRelay) {
           this.relayFrom(origin.name, message);
@@ -3227,10 +3268,9 @@ class Peer extends Service {
           }
           break;
         }
-        const rawFc = messageDataToString(message.data);
-        const prFc = tryParseWireJsonBody(rawFc);
+        const prFc = Message.tryParseLegacyBody(message);
         if (!prFc.ok) {
-          this.emit('warning', `[FABRIC:PEER] FLUSH_CHAIN JSON parse failed: ${prFc.error.message}`);
+          this.emit('warning', `[FABRIC:PEER] FLUSH_CHAIN parse failed: ${prFc.error.message}`);
           break;
         }
         const object = prFc.value;
@@ -3488,8 +3528,7 @@ class Peer extends Service {
         break;
       case 'CONTRACT_PROPOSAL':
       case 'ContractProposal': {
-        const rawCp = messageDataToString(message.data);
-        const prCp = tryParseWireJsonBody(rawCp);
+        const prCp = Message.tryParseLegacyBody(message);
         if (!prCp.ok || prCp.value === null || typeof prCp.value !== 'object' || Array.isArray(prCp.value)) {
           this.emit('warning', `[FABRIC:PEER] CONTRACT_PROPOSAL parse failed: ${prCp.ok ? 'invalid body' : prCp.error.message}`);
           break;
@@ -3767,6 +3806,10 @@ class Peer extends Service {
       const sessionClaim = this._validateSessionKeyExchangeClaim(
         message, signerPubkeyHex, origin && origin.name, { peeledForward: opts.peeledForward === true });
       if (!sessionClaim) return this;
+      if (openPeerId !== sessionClaim.peerId) {
+        this._punishPeerForSessionKeyViolation(origin && origin.name, 'counterparty is not the signer\'s id', { peeledForward: opts.peeledForward === true });
+        return this;
+      }
     }
     // Hairpin: OPEN signed with our own key (SESSION_OFFER path should catch first).
     // Note: object.initiator === our id is normal when we dialed and they accepted.

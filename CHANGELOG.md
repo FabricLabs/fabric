@@ -1,6 +1,12 @@
 # `@fabric/core` Changelog
 Recent changes to Fabric Core.
 
+## 2026-11-03
+- **A session's Fabric id must be its key's id.** `P2P_SESSION_OFFER` and `P2P_SESSION_OPEN` are refused (and the sender de-ranked) when `actor.id` is not the id of the signed parent key, and `P2P_SESSION_OPEN` when `counterparty` is not that id, so a peer can no longer bind another participant's id to its own key.
+- **Delegation answers are bound to their request.** `Delegation` records a `DELEGATION_RESULT` only when its answer answers the request it names: an assertion over the same challenge and origin, the same message signed, or a reply for the same federation (`answerError`).
+- **A delegated federation withdrawal is checked against the network the host holds** (`networkOf`), not a network its body claims; with no host record it fails closed. A purpose or refusal keeps up to 140 characters (`cleanLabel(label, max)`), and an invite threshold that is not a positive integer no longer reaches the prompt.
+- **`Store#set` writes one key in call order** and refuses a write beneath a non-object parent before it reaches Level.
+
 ## 2026-11-02
 - **Delegation frame helpers moved into `types/delegation` (breaking).** `functions/delegation` is gone: `createGrant`, `readRequest`, `authorize`, `notificationFor` and the other frame builders and readers are statics on `Delegation` (and properties of `require('@fabric/core/types/delegation')`).
 - **Channel and credit payments stay on the channel the verified signer owns.** `Market` accepts `Peer`'s x-only wire signer as well as the compressed key, picks the channel whose remote key is that signer (never one the seller id or the item's `sellerPubkey` names), stores `channelSignerHex` on the session, and settles a channel HTLC only on the session's `channelId`.

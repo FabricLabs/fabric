@@ -321,7 +321,7 @@ describe('Peer P2P_FLUSH_CHAIN', function () {
     const m2 = Message.fromVector(['P2P_FLUSH_CHAIN', '{not-json']);
     m2.signWithKey(peer.key);
     peer._handleFabricMessage(m2.toBuffer(), { name: '127.0.0.1:12' }, null);
-    assert.ok(warns.some((w) => w.includes('JSON parse failed')));
+    assert.ok(warns.some((w) => w.includes('FLUSH_CHAIN parse failed')));
 
     const m3 = Message.fromVector(['P2P_FLUSH_CHAIN', JSON.stringify({ snapshotBlockHash: 'bad' })]);
     m3.signWithKey(peer.key);

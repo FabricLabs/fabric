@@ -498,6 +498,42 @@ class Store extends Actor {
    */
   async set (key, value) {
     const route = await this.getRouteInfo(key);
+    // Writes to one path run in call order, so Level and memory agree on the last.
+    if (!this._writes) this._writes = new Map();
+    const previous = this._writes.get(route.path) || Promise.resolve();
+    const write = previous.catch(() => {}).then(() => this._set(key, value, route));
+    const tail = write.catch(() => {});
+    this._writes.set(route.path, tail);
+    tail.then(() => {
+      if (this._writes.get(route.path) === tail) this._writes.delete(route.path);
+    });
+    return write;
+  }
+
+  /**
+   * Why `path` cannot be written in `content`: an existing parent is a scalar.
+   * @private
+   */
+  _parentError (path) {
+    let tokens = [];
+    try {
+      tokens = pointer.parse(path);
+    } catch (E) {
+      return `bad path ${path}`;
+    }
+    let node = this._state.content;
+    for (const token of tokens.slice(0, -1)) {
+      if (node === null || typeof node !== 'object') return `${path} is beneath a value that is not an object`;
+      if (!Object.prototype.hasOwnProperty.call(node, token)) return null;
+      node = node[token];
+    }
+    return (node === null || typeof node !== 'object') ? `${path} is beneath a value that is not an object` : null;
+  }
+
+  /** @private */
+  async _set (key, value, route) {
+    const parentError = this._parentError(route.path);
+    if (parentError) throw new Error(`[FABRIC:STORE] ${parentError}`);
     const info = await this.getDataInfo(value);
     const data = await this.encodeValue(value);
 

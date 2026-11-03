@@ -107,6 +107,37 @@ describe('@fabric/core/types/store', function () {
       assert.strictEqual(await lenient.get('/metrics/a'), null);
     });
 
+    it('writes to one key land in call order, in Level and in memory', async function () {
+      const disk = new Map();
+      const store = new Store({ strict: true });
+      // The first put resolves last, as concurrent Level writes may.
+      let delay = 30;
+      store.db = {
+        get: async (key) => disk.get(key),
+        put: (key, value) => new Promise((resolve) => setTimeout(() => { disk.set(key, value); resolve(); }, (delay -= 15) + 15))
+      };
+      await Promise.all([store.set('/metrics/a', 'first'), store.set('/metrics/a', 'second')]);
+      assert.strictEqual(disk.get('/metrics/a'), 'second');
+      assert.strictEqual(store._state.content.metrics.a, 'second');
+      // A failed write does not hold up the next one.
+      const broken = new Store({ strict: true });
+      let fail = true;
+      broken.db = { get: async () => undefined, put: async () => { if (fail) { fail = false; throw new Error('disk gone'); } } };
+      const results = await Promise.allSettled([broken.set('/metrics/a', 1), broken.set('/metrics/a', 2)]);
+      assert.deepStrictEqual(results.map((r) => r.status), ['rejected', 'fulfilled']);
+      assert.strictEqual(broken._state.content.metrics.a, 2);
+    });
+
+    it('refuses a write beneath a scalar before it reaches Level', async function () {
+      const puts = [];
+      const store = new Store({ strict: true });
+      store.db = { get: async () => undefined, put: async (key) => { puts.push(key); } };
+      await store.set('/metrics', 'flat');
+      await assert.rejects(store.set('/metrics/a', 1), /not an object/);
+      assert.deepStrictEqual(puts, ['/metrics']);
+      assert.strictEqual(store._state.content.metrics, 'flat');
+    });
+
     it('_setEncrypted/_getEncrypted round-trip plain values without codec', async function () {
       const store = new Store({ persistent: false });
       await store._setEncrypted('/wallet/secret', 'hello');

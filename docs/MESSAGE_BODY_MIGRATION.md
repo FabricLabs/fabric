@@ -10,8 +10,8 @@ optional fields, which old decoders ignore.
 ```text
 Phase 1  core, 8 types with a schema        done (2026-10-24)
 Phase 2  downstream senders and readers     next
-Phase 3  schemas for the 17 types without   7 in and sent by core (2026-10-30)
-Phase 4  unregistered names, legacy opcodes any time
+Phase 3  schemas for the 17 types without   13 in (2026-10-30, 2026-11-03); 4 left
+Phase 4  unregistered names, legacy opcodes done (2026-11-03)
 Phase 5  decoder requires fields            last, after a deprecation window
 ```
 
@@ -25,22 +25,24 @@ as of Phase 1.
 | **Raw bytes, by design** (3) | No schema on purpose: UTF-8 text or a raw inner frame. | `P2P_CHAT_MESSAGE` `0x68`, `P2P_PEER_ALIAS` `0x5b`, `P2P_RELAY` `0x43` |
 | **Core sends fields; downstream still JSON** (8, Phase 1) | Core senders use `Message.fromLegacyBody`; every receiver accepts both. Hub, GoonCitizen and goon.vc still send JSON. | `P2P_PING` `0x12`, `P2P_PONG` `0x13`, `P2P_PEER_ANNOUNCE` `0x5c`, `P2P_PEER_GOSSIP` `0x61`, `P2P_PEERING_OFFER` `0x62`, `CONTRACT_PUBLISH` `0x5f`, `CONTRACT_MESSAGE` `0x60`, `SIDECHAIN_STATE_PATCH` `0x3e5` |
 | **Core sends fields** (7, Phase 3) | Keyed layout registered and mapped; core's Peer sends fields, the session handshake included, and reads both. Cores without the layouts are not supported. | `P2P_SESSION_OFFER` `0x5d`, `P2P_SESSION_OPEN` `0x5e`, `P2P_INVENTORY_REQUEST` `0x57`, `P2P_INVENTORY_RESPONSE` `0x58`, `P2P_DOCUMENT_PUBLISH` `0x5a`, `DOCUMENT_PUBLISH` `0x3e6`, `DOCUMENT_REQUEST` `0x3e7` |
-| **Needs a schema** (10, Phase 3) | Mesh traffic with a JSON body and no schema. | `P2P_SESSION_ACK` `0x4200`, `P2P_FILE_SEND` `0x59`, `CONTRACT_PROPOSAL` `0x8a`, `P2P_INSTRUCTION` `0x20`, `P2P_STATE_COMMITTMENT` `0x32`, `P2P_FLUSH_CHAIN` `0x56`, `BITCOIN_BLOCK` `0x5208`, `BITCOIN_BLOCK_HASH` `0x526c`, `BITCOIN_TRANSACTION` `0x55f0`, `BITCOIN_TRANSACTION_HASH` `0x5654` |
+| **Needs a schema** (4) | Mesh traffic with a JSON body and no schema. `P2P_FILE_SEND` waits on open question 4; the other three have no originator (Phase 4 candidates). | `P2P_SESSION_ACK` `0x4200`, `P2P_FILE_SEND` `0x59`, `P2P_INSTRUCTION` `0x20`, `P2P_STATE_COMMITTMENT` `0x32` |
+| **Schema; readers in core** (6, Phase 3, 2026-11-03) | Keyed layout registered; Peer reads both encodings. Core sends `CONTRACT_PROPOSAL` and `P2P_FLUSH_CHAIN` as fields; Hub still sends `BitcoinBlock` and `ContractProposal` as JSON. | `BITCOIN_BLOCK` `0x5208`, `BITCOIN_BLOCK_HASH` `0x526c`, `BITCOIN_TRANSACTION` `0x55f0`, `BITCOIN_TRANSACTION_HASH` `0x5654`, `CONTRACT_PROPOSAL` `0x8a`, `P2P_FLUSH_CHAIN` `0x56` |
 | **JSON at the edge, by design** (5) | Hub / `@fabric/http` carriers where JSON is the intended body. | `JSON_CALL` `0x3e80`, `JSON_PATCH` `0x400`, `GENERIC_MESSAGE` `0x3aff`, `CHAT_MESSAGE` `0x67`, `P2P_MESSAGE_RECEIPT` `0x44` |
-| **Legacy, unplanned** (16, Phase 4) | JSON or empty body, nothing plans to modernize them; deprecation candidates. | `P2P_BASE_MESSAGE` `0x31`, `P2P_GENERIC` `0x80`, `P2P_STATE_REQUEST` `0x29`, `P2P_TRANSACTION` `0x39`, `P2P_CHAIN_SYNC_REQUEST` `0x55`, `LOG_MESSAGE` `0xc0d49070`, `GENERIC_LIST` `0xc0d4c76e`, `BLOCK_CANDIDATE` `0x3`, `P2P_IDENT_REQUEST` `0x1`, `P2P_IDENT_RESPONSE` `0x11`, `P2P_STATE_ROOT` `0x30`, `P2P_STATE_CHANGE` `0x33`, `P2P_CALL` `0x42`, `PEER_CANDIDATE` `0x9`, `SESSION_START` `0x2`, `P2P_START_CHAIN` `0x21` |
+| **Deprecated** (14, Phase 4) | Decode only; Peer counts and warns (`Message.DEPRECATED_WIRE_TYPES`). Removed in a later protocol version. | `P2P_GENERIC` `0x80`, `P2P_STATE_REQUEST` `0x29`, `P2P_TRANSACTION` `0x39`, `LOG_MESSAGE` `0xc0d49070`, `GENERIC_LIST` `0xc0d4c76e`, `BLOCK_CANDIDATE` `0x3`, `P2P_IDENT_REQUEST` `0x1`, `P2P_IDENT_RESPONSE` `0x11`, `P2P_STATE_ROOT` `0x30`, `P2P_STATE_CHANGE` `0x33`, `P2P_CALL` `0x42`, `PEER_CANDIDATE` `0x9`, `SESSION_START` `0x2`, `P2P_START_CHAIN` `0x21` |
+| **Legacy, in use** (2) | JSON bodies; still sent by Hub. | `P2P_BASE_MESSAGE` `0x31`, `P2P_CHAIN_SYNC_REQUEST` `0x55` |
 | **Lightning, reserved** (20) | `0x2000`–`0x2013`; registered, no body codec, no core originator. | `LIGHTNING_INIT` … `LIGHTNING_PONG` |
 
-### Names sent from core that are not in the catalog
-`Message.fromVector` resolves an unknown name to `P2P_BASE_MESSAGE` (`0x31`),
-so these go out as generic JSON frames:
+### Names that are not in the catalog
+`Message.fromVector` resolves an unknown name to `P2P_BASE_MESSAGE` (`0x31`).
+None of these were ever sent to peers; Phase 4 settled each one:
 
-| Name | Body | Where |
-|------|------|-------|
-| `BEACON_EPOCH` | JSON epoch | `types/beacon.js:338`, `:354` |
-| `CONTRACT_GENESIS` | JSON genesis (hashed locally, not sent) | `types/contract.js:211` |
-| `COMMIT` | serialized commit | `types/filesystem.js:459` |
-| `PostedExchangeOrder` | object → JSON | `services/exchange.js:99` |
-| `FabricProgramRun` | schema registered by name (`types/message.js:1487`), but decode looks up `0x31`, so the schema is never reached | — |
+| Name | Now |
+|------|-----|
+| `BEACON_EPOCH` | no frame; entry id is `epochEntryId(payload)` (`types/beacon.js`) |
+| `CONTRACT_GENESIS` | unchanged: signed frame stored in the definition (`types/contract.js`) |
+| `COMMIT` | plain `{ type, id, state, signatures }` record (`types/filesystem.js`) |
+| `PostedExchangeOrder` | plain `{ type, object }` event (`services/exchange.js`) |
+| `FabricProgramRun` | name-only schema for `encodeBody`; `fromFields` refuses it |
 
 ## Phase 1 — core, eight types with a schema (done)
 What changed is in `CHANGELOG.md` (2026-10-24) and the mapping is documented
@@ -88,17 +90,17 @@ frame. Replace the parse with `tryParseLegacyBody(message)` (or
 |------------|-------|-------|
 | GoonCitizen | `functions/fabricMessageLog.js:263` | `JSON.parse` of the body text for the log view |
 | GoonCitizen | `functions/groupShareMessage.js:329` | `JSON.parse` of a `fabric:` clip body |
-| Hub | `functions/fabricMessageRegistry.js:40-59` | lists `CONTRACT_MESSAGE` and the peering types as `utf8Json`; should say fields with JSON accepted |
-| fabric-http | `functions/messageBodyJsonBridge.js` | maps only `SIDECHAIN_STATE_PATCH`; add the contract and peering types (JSON ↔ fields for REST and the browser). It re-registers the sidechain schema only when it has fewer than 4 fields, so the 5-field core schema is left alone |
+| Hub | `functions/fabricMessageRegistry.js` | **Done (2026-11-02):** mapped types are `fields-legacy-json`; the `fabric:` viewer previews field bodies as JSON. Peer-event readers needed no change. |
+| fabric-http | `functions/messageBodyJsonBridge.js` | **Done (2026-11-02):** `messageBodyToJson` adds `legacy` for all 15 mapped types (either encoding); `messageFromLegacyJson` builds field frames. |
 | Passport | `src/fabric/fabricWireNotify.ts:55`, `src/fabric/messageTypes.ts` | `JSON.parse` of contract bodies for notifications |
 
 ### Senders
 | Repository | Where | Type |
 |------------|-------|------|
-| Hub | `services/hub.js:14702` | `P2P_PEERING_OFFER` |
-| Hub | `functions/identityClusterHttp.js:55` | `CONTRACT_MESSAGE` (`IdentityCrossSign`) |
-| Hub | `services/challenge.js:685`, `services/market.js:143` | `CONTRACT_MESSAGE` (market namespace) |
-| Hub | `scripts/lib/playnetOps.js`, `scripts/playnet-regtest-mesh-launch.js` | `CONTRACT_PUBLISH` |
+| Hub | `services/hub.js` peering offer broadcast | `P2P_PEERING_OFFER` — **done (2026-11-02)** |
+| Hub | `functions/identityClusterHttp.js` | `CONTRACT_MESSAGE` (`IdentityCrossSign`) — removed from Hub |
+| Hub | `services/challenge.js`, `services/market.js`, `services/hub.js` `_publishContractMessage`, inventory envelopes | `CONTRACT_MESSAGE`, `P2P_INVENTORY_*` — **done (2026-11-02)** |
+| Hub | `scripts/lib/playnetOps.js` | `CONTRACT_PUBLISH` — Hub no longer publishes; application repos do |
 | GoonCitizen | `services/FabricNetwork.js:608` (`_signMessage`; contract sends at `:683`) | every contract message the app sends |
 | GoonCitizen | `services/FabricNetwork.js:1262-1275` | `P2P_PEERING_OFFER` (carries `rendezvous`, see the open questions) |
 | GoonCitizen | `functions/clusterSync.js:291` | `CONTRACT_MESSAGE` (`DeviceDataShare`) |
@@ -117,8 +119,8 @@ Every app must run a core that has Phase 1 before it sends fields. Today:
 
 | Repository | `@fabric/core` pin | Locked commit | Has Phase 1 |
 |------------|--------------------|---------------|-------------|
-| Hub | `FabricLabs/fabric#feature/channels` | `1ba3b3c` | no (Phase 1 is uncommitted on top of it) |
-| fabric-http | `FabricLabs/fabric#feature/channels` | `1ba3b3c` | no |
+| Hub | `FabricLabs/fabric#feature/passport` | — | yes |
+| fabric-http | `FabricLabs/fabric#feature/passport` | — | yes |
 | GoonCitizen | `github:FabricLabs/fabric#feature/rsi` | `83eeda7`; dev links `~/fabric-clean` | no |
 | Passport | `github:FabricLabs/fabric#feature/rsi` | `8092ba8` | no |
 | Sensemaker | `file:../fabric-clean` | working tree | yes, once committed |
@@ -152,27 +154,50 @@ handshake. The unsigned envelope behind an unsealed purchase hash
 unsealed purchase hashes changed with it; the file-exchange BIP's layout and
 test vectors follow. Sealed and per-blob payment hashes don't involve it.
 
+**Done (2026-11-03): Bitcoin, contract proposals, chain flush.** Six more
+keyed layouts. A new `hex` key kind stores raw blocks and transactions as
+bytes. `CONTRACT_PROPOSAL` keeps `messages` as one JSON field rather than
+nested `message` fields: the Merkle check hashes each entry's decoded wire
+bytes, so either works, and JSON keeps `leafHash` beside each frame. Hub
+readers of `bitcoinBlock` use the event's parsed `object`; Hub senders of
+`BitcoinBlock` and `ContractProposal` switch once the seeds run this core.
+
 | Group | Types | Notes |
 |-------|-------|-------|
 | Session | `P2P_SESSION_OFFER`, `P2P_SESSION_OPEN` (done), `P2P_SESSION_ACK` | `P2P_SESSION_ACK` has no originator and no reader, so it has no layout: give it one when something sends it, or move it to Phase 4. |
 | Inventory | `P2P_INVENTORY_REQUEST`, `P2P_INVENTORY_RESPONSE` (done) | `items` is one JSON string field (offer rows nest proofs and leaves), so the page arithmetic (`DocumentBook.paginateInventoryItems`, which measures JSON) still holds: a page's other fields take about 60 bytes, well under the 256-byte reserve. |
 | Files and documents | `P2P_DOCUMENT_PUBLISH`, `DOCUMENT_PUBLISH`, `DOCUMENT_REQUEST` (done); `P2P_FILE_SEND` | `DOCUMENT_PUBLISH` carries the content as raw bytes; its purchase hash is rebuilt from the decoded values, so every copy agrees. `P2P_FILE_SEND` waits on open question 4. |
-| Contracts | `CONTRACT_PROPOSAL` | Batched messages + Merkle root + JSON Patch + optional PSBT. The batched messages can be `message` fields. |
-| Control | `P2P_INSTRUCTION`, `P2P_STATE_COMMITTMENT`, `P2P_FLUSH_CHAIN` | The first two have no core originator: a schema, or move them to Phase 4. |
-| Bitcoin | `BITCOIN_BLOCK`, `BITCOIN_BLOCK_HASH`, `BITCOIN_TRANSACTION`, `BITCOIN_TRANSACTION_HASH` | `services/zmq.js:96-108` sends `{ content: hex }`. Raw bytes (`bytes` / `bytes32`) are the natural schema. |
+| Contracts | `CONTRACT_PROPOSAL` (done) | Keyed layout; `messages` stays one JSON field. |
+| Control | `P2P_FLUSH_CHAIN` (done); `P2P_INSTRUCTION`, `P2P_STATE_COMMITTMENT` | The last two have no core originator: a schema, or move them to Phase 4. |
+| Bitcoin | `BITCOIN_BLOCK`, `BITCOIN_BLOCK_HASH`, `BITCOIN_TRANSACTION`, `BITCOIN_TRANSACTION_HASH` (done) | Keyed layouts; `content` is raw bytes (`hex` kind). Hub's tip gossip keys (`tip`, `height`, `network`, `at`) have fields; `supply` rides in `extra`. |
 
-## Phase 4 — unregistered names and legacy opcodes
-- Give `BEACON_EPOCH` a real opcode, or send it under `CONTRACT_MESSAGE`.
-  Beacon chains persisted under `beacon/CHAIN` hold these frames, so either way
-  old chains must still load.
-- `CONTRACT_GENESIS` and `COMMIT` are only hashed or stored locally. Use a
-  plain buffer instead of a `Message`, or register them.
-- `PostedExchangeOrder`: register it or move it under a contract namespace.
-- `FabricProgramRun`: attach `SCHEMA_PROGRAM_RUN` to a real opcode so decode
-  reaches it.
-- Deprecate the legacy opcodes nothing sends (the "Legacy, unplanned" row):
-  keep them decodable, warn on receive, and remove them in a later protocol
-  version.
+## Phase 4 — unregistered names and legacy opcodes (done 2026-11-03)
+No opcodes were added: none of the unregistered names ever reached the wire.
+
+- **`BEACON_EPOCH`**: the Beacon built a signed frame only to take its hash as
+  the `beacon/CHAIN` entry id. Entries now use `epochEntryId` (double-SHA256
+  of the epoch's canonical JSON), so ids are deterministic. Stored entries
+  keep their ids; chain links only compare ids, so old chains still load.
+- **`COMMIT`**: `Filesystem#commit` emits a plain record
+  `{ type: 'COMMIT', id, state, signatures }`; `id` is the state digest and
+  the signature (when the key can sign) covers it. Every `commit` listener
+  only logs.
+- **`CONTRACT_GENESIS`**: unchanged. The author-signed frame is stored hex in
+  the contract definition (`messages[genesis]`), and its hash is the genesis
+  id; it is a stored record, not traffic.
+- **`PostedExchangeOrder`**: `services/exchange.js` emits a local
+  `{ type, object }` event instead of a frame.
+- **`FabricProgramRun`**: still registered by name for `encodeBody` /
+  `decodeBody`. `Message.fromFields` now throws for any name that has a
+  schema but no opcode, instead of building a `P2P_BASE_MESSAGE` frame no one
+  can decode.
+- **Deprecated opcodes**: `Message.DEPRECATED_WIRE_TYPES` lists the 14
+  registered opcodes nothing sends or handles. They still decode; Peer counts
+  them (`Peer#deprecatedWireTypeCounts()`) and warns on the first of each type
+  and every 100th. `P2P_BASE_MESSAGE` and `P2P_CHAIN_SYNC_REQUEST` are still
+  in use and stay off the list. `P2P_SESSION_ACK`, `P2P_INSTRUCTION` and
+  `P2P_STATE_COMMITTMENT` stay registered without a schema until something
+  sends them. Removal waits for a protocol version bump.
 
 ## Phase 5 — require fields
 Once Phase 2 is done everywhere and the deprecation window has passed,

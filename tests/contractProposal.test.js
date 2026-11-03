@@ -52,8 +52,9 @@ describe('functions/contractProposal', function () {
     const again = Message.fromBuffer(msg.toBuffer());
     assert.strictEqual(again.wireType, 'CONTRACT_PROPOSAL');
     assert.strictEqual(again.friendlyType, 'ContractProposal');
-    const payload = JSON.parse(again.data);
-    const v = verifyContractProposalPayload(payload);
+    const parsed = Message.tryParseLegacyBody(again);
+    assert.strictEqual(parsed.encoding, 'fields');
+    const v = verifyContractProposalPayload(parsed.value);
     assert.strictEqual(v.ok, true);
   });
 
