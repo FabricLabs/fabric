@@ -57,11 +57,11 @@ describe('@fabric/core Peer gossip / peering production network', function () {
   }
 
   function signGossip (key, object) {
-    return Message.fromVector(['P2P_PEER_GOSSIP', JSON.stringify(object)]).signWithKey(key);
+    return Message.fromLegacyBody('P2P_PEER_GOSSIP', object).signWithKey(key);
   }
 
   function signOffer (key, object) {
-    return Message.fromVector(['P2P_PEERING_OFFER', JSON.stringify(object)]).signWithKey(key);
+    return Message.fromLegacyBody('P2P_PEERING_OFFER', object).signWithKey(key);
   }
 
   describe('constants align with SECURITY.md defaults', function () {
@@ -113,7 +113,7 @@ describe('@fabric/core Peer gossip / peering production network', function () {
       peer._handleFabricMessage(wire, { name: origin }, null);
 
       const fwd = edges['127.0.0.1:8101'][0];
-      const parsed = JSON.parse(Message.fromBuffer(fwd).data.toString('utf8'));
+      const parsed = Message.tryParseLegacyBody(Message.fromBuffer(fwd)).value;
       assert.strictEqual(parsed.gossipHop, 4);
       assert.ok(wire.equals(fwd));
     });

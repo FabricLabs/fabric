@@ -12,7 +12,7 @@ Phase 1  core, 8 types with a schema        done (2026-10-24)
 Phase 2  downstream senders and readers     next
 Phase 3  schemas for the 17 types without   13 in (2026-10-30, 2026-11-03); 4 left
 Phase 4  unregistered names, legacy opcodes done (2026-11-03)
-Phase 5  decoder requires fields            last, after a deprecation window
+Phase 5  decoder requires fields            done (2026-11-03), no deprecation window
 ```
 
 ## Status
@@ -199,14 +199,31 @@ No opcodes were added: none of the unregistered names ever reached the wire.
   `P2P_STATE_COMMITTMENT` stay registered without a schema until something
   sends them. Removal waits for a protocol version bump.
 
-## Phase 5 — require fields
-Once Phase 2 is done everywhere and the deprecation window has passed,
-`tryParseMessageBody` stops trying JSON first for opcodes that have a schema,
-and Peer drops JSON bodies of those types (counted, not penalized at first).
-The JSON fixture chain (`tests/fixtures/application-contract-chain.json`) then
-becomes a negative test. Any stored journal, collection or Beacon chain that
-holds JSON frames still has to replay; keep a JSON decode path for replay of
-stored frames even after the wire rejects them.
+## Phase 5 — require fields (done 2026-11-03)
+Enforced now, ahead of the original preconditions, by owner decision: the
+deprecation window was skipped.
+
+- Peer drops a frame whose type has a field layout (`Message.LEGACY_BODY_TYPES`,
+  21 types) when its body is JSON, before any handler, without penalty. It
+  counts drops per type (`Peer#jsonBodyCounts()`) and warns on the first of
+  each type and every 100th, naming `Message.fromLegacyBody` as the fix.
+- `acceptJsonBodies: true` on Peer lets them through, for harnesses that
+  replay old frames over the wire.
+- Stored frames still replay: `Message.tryParseLegacyBody`,
+  `fabricMessageCollection`, `contractMessageAccumulate` and the queue read
+  JSON frames unchanged. The committed JSON fixture chain
+  (`tests/fixtures/application-contract-chain.json`) is now the negative test:
+  a Peer registers nothing from it, while the stored chain still folds to the
+  same tip.
+- Types without a layout (`P2P_CHAIN_SYNC_REQUEST`, `P2P_BASE_MESSAGE`,
+  `P2P_FILE_SEND`, the edge JSON types) keep JSON bodies.
+- Hub sends `BitcoinBlock`, `ContractProposal` and WebRTC-relayed frames of
+  these types as fields. Browsers still get JSON over WebSocket.
+
+**Breaks:** GoonCitizen, goon.vc, Passport and Hubs or seeds on an older core
+still send JSON for some of these types. A peer on this core drops those
+frames until each switches senders (Phase 2 table). Watch `jsonBodyCounts()`
+on the seeds.
 
 ## Rollout order
 1. **Ship Phase 1 core to the seeds first.** `hub.fabric.pub` and

@@ -225,7 +225,7 @@ describe('peer/message integration (mesh & secure delivery)', function () {
     hub.peers[addr] = { id: 'victim', publicKey: expectedSigner.pubkey };
 
     // Inventory is mesh-relay-as-is (author may be a prior hop). Pin applies to local types.
-    const msg = Message.fromVector(['P2P_DOCUMENT_PUBLISH', JSON.stringify({ id: 'doc', content: 'x' })]);
+    const msg = Message.fromLegacyBody('P2P_DOCUMENT_PUBLISH', { id: 'doc', content: 'x' });
     msg.signWithKey(attacker);
 
     let warned = false;
@@ -274,11 +274,11 @@ describe('peer/message integration (mesh & secure delivery)', function () {
     };
     hub.peers[origin] = { id: 'relay-peer', publicKey: hub.key.pubkey };
 
-    const msg = Message.fromVector(['P2P_PEER_GOSSIP', JSON.stringify({
+    const msg = Message.fromLegacyBody('P2P_PEER_GOSSIP', {
       host: '10.0.0.9',
       port: 9001,
       gossipHop: 3
-    })]);
+    });
     msg.signWithKey(author);
     const original = msg.toBuffer();
     assert.strictEqual(msg.type, 'P2P_PEER_GOSSIP');
@@ -333,11 +333,11 @@ describe('peer/message integration (mesh & secure delivery)', function () {
     };
     hub.peers[origin] = { id: 'relay-peer', publicKey: hub.key.pubkey };
 
-    const msg = Message.fromVector(['CONTRACT_MESSAGE', JSON.stringify({
+    const msg = Message.fromLegacyBody('CONTRACT_MESSAGE', {
       contract: 'group-contract-id',
       type: 'GroupChat',
       object: { body: 'as-is-contract', author: author.pubkey }
-    })]);
+    });
     msg.signWithKey(author);
     const original = msg.toBuffer();
 
@@ -363,11 +363,11 @@ describe('peer/message integration (mesh & secure delivery)', function () {
     const events = [];
     hub.on('contract:message', (e) => events.push(e));
 
-    const msg = Message.fromVector(['CONTRACT_MESSAGE', JSON.stringify({
+    const msg = Message.fromLegacyBody('CONTRACT_MESSAGE', {
       contract: 'unregistered-contract-id',
       type: 'MissionBroadcast',
       object: { mission: { id: 'm1' } }
-    })]);
+    });
     msg.signWithKey(k);
     const wire = msg.toBuffer();
 
@@ -398,11 +398,11 @@ describe('peer/message integration (mesh & secure delivery)', function () {
     hub.peers[origin] = { id: 'p', publicKey: k.pubkey };
 
     let warned = false;
-    hub.once('warning', (w) => { if (/missing .*contract/i.test(String(w))) warned = true; });
+    hub.once('warning', (w) => { if (/missing .*contract|CONTRACT_MESSAGE parse failed/i.test(String(w))) warned = true; });
     let events = 0;
     hub.on('contract:message', () => { events++; });
 
-    const msg = Message.fromVector(['CONTRACT_MESSAGE', JSON.stringify({ type: 'X', object: {} })]);
+    const msg = Message.fromFields('CONTRACT_MESSAGE', { contract: '', payload: JSON.stringify({ type: 'X', object: {} }) });
     msg.signWithKey(k);
     hub._handleFabricMessage(msg.toBuffer(), { name: origin }, null);
 
@@ -421,7 +421,7 @@ describe('peer/message integration (mesh & secure delivery)', function () {
     hub.once('contract:publish', (e) => { event = e; });
 
     const definition = { name: 'AppPeer', version: 1, state: {} };
-    const msg = Message.fromVector(['CONTRACT_PUBLISH', JSON.stringify(definition)]);
+    const msg = Message.fromLegacyBody('CONTRACT_PUBLISH', definition);
     msg.signWithKey(k);
     hub._handleFabricMessage(msg.toBuffer(), { name: origin }, null);
 
@@ -441,7 +441,7 @@ describe('peer/message integration (mesh & secure delivery)', function () {
       members: { signers: [k.pubkey], threshold: 1 },
       state: {}
     };
-    const publish = Message.fromVector(['CONTRACT_PUBLISH', JSON.stringify(definition)]);
+    const publish = Message.fromLegacyBody('CONTRACT_PUBLISH', definition);
     publish.signWithKey(k);
     hub._handleFabricMessage(publish.toBuffer(), { name: origin }, null);
 
@@ -449,11 +449,11 @@ describe('peer/message integration (mesh & secure delivery)', function () {
     const contractId = new Actor(definition).id;
     const events = [];
     hub.on('contract:message', (e) => events.push(e));
-    const msg = Message.fromVector(['CONTRACT_MESSAGE', JSON.stringify({
+    const msg = Message.fromLegacyBody('CONTRACT_MESSAGE', {
       contract: contractId,
       type: 'GroupChat',
       object: { body: 'hi' }
-    })]);
+    });
     msg.signWithKey(k);
     hub._handleFabricMessage(msg.toBuffer(), { name: origin }, null);
 

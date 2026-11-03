@@ -274,7 +274,7 @@ describe('@fabric/core/types/peer', function () {
     describe('relayFrom', function () {
       it('writes message to all connections except origin', function () {
         const peer = new Peer({ listen: false, peersDb: null });
-        const msg = Message.fromVector(['P2P_PONG', JSON.stringify({ created: new Date().toISOString() })]);
+        const msg = Message.fromLegacyBody('P2P_PONG', { created: new Date().toISOString() });
         let written = false;
         peer.connections['b'] = { _writeFabric: (m) => { written = true; } };
         peer.relayFrom('a', msg);
@@ -1003,7 +1003,7 @@ describe('@fabric/core/types/peer', function () {
         const other = new Key();
         peer.peers.o = { publicKey: expectedSigner.public.encodeCompressed('hex') };
         // Use a non-relay-as-is type so TCP peer pin still applies (inventory is mesh-relayable).
-        const msg = Message.fromVector(['P2P_DOCUMENT_PUBLISH', JSON.stringify({ id: 'x', content: 'y' })]);
+        const msg = Message.fromLegacyBody('P2P_DOCUMENT_PUBLISH', { id: 'x', content: 'y' });
         msg.signWithKey(other);
         let warned = false;
         let errored = false;
@@ -1056,7 +1056,7 @@ describe('@fabric/core/types/peer', function () {
           assert.strictEqual(ev.message.type, 'INVENTORY_REQUEST');
           done();
         });
-        const msg = Message.fromVector(['P2P_INVENTORY_REQUEST', JSON.stringify({ offerBtc: true })]);
+        const msg = Message.fromLegacyBody('P2P_INVENTORY_REQUEST', { offerBtc: true });
         msg.signWithKey(peer.key);
         peer._handleFabricMessage(msg.toBuffer(), { name: 'o' });
       });
@@ -1100,7 +1100,7 @@ describe('@fabric/core/types/peer', function () {
           n++;
         });
         peer.relayFrom = () => {};
-        const msg = Message.fromVector(['DocumentRequest', JSON.stringify({ document: 'doc-wire-x' })]);
+        const msg = Message.fromLegacyBody('DocumentRequest', { document: 'doc-wire-x' });
         msg.signWithKey(peer.key);
         peer._handleFabricMessage(msg.toBuffer(), { name: 'o' }, null);
         assert.strictEqual(n, 2);
@@ -1109,7 +1109,7 @@ describe('@fabric/core/types/peer', function () {
         const peer = new Peer({ listen: false, peersDb: null });
         let relayed = 0;
         peer.relayFrom = () => { relayed++; };
-        const msg = Message.fromVector(['DocumentRequest', JSON.stringify({ document: 'missing-doc' })]);
+        const msg = Message.fromLegacyBody('DocumentRequest', { document: 'missing-doc' });
         msg.signWithKey(peer.key);
         peer._handleFabricMessage(msg.toBuffer(), { name: 'requester:9' }, null);
         assert.strictEqual(relayed, 1);
@@ -1128,7 +1128,7 @@ describe('@fabric/core/types/peer', function () {
         };
         let relayed = 0;
         peer.relayFrom = () => { relayed++; };
-        const msg = Message.fromVector(['DocumentRequest', JSON.stringify({ document: 'doc-held' })]);
+        const msg = Message.fromLegacyBody('DocumentRequest', { document: 'doc-held' });
         msg.signWithKey(peer.key);
         peer._handleFabricMessage(msg.toBuffer(), { name: 'requester:8' }, null);
         assert.strictEqual(relayed, 0);
@@ -1239,10 +1239,10 @@ describe('@fabric/core/types/peer', function () {
         seller.connections['buyer:3'] = {
           _writeFabric: (buf) => buyer2._handleFabricMessage(buf, { name: 'seller:3' }, null)
         };
-        const echoReq = Message.fromVector(['DocumentRequest', JSON.stringify({
+        const echoReq = Message.fromLegacyBody('DocumentRequest', {
           document: 'doc-seal',
           contentHashHex: meta.paymentHashHex
-        })]);
+        });
         echoReq.signWithKey(buyer2.key);
         seller._handleFabricMessage(echoReq.toBuffer(), { name: 'buyer:3' }, null);
         assert.strictEqual(opened2, null);
@@ -1260,10 +1260,10 @@ describe('@fabric/core/types/peer', function () {
           settlementId: 'test-settlement'
         });
         assert.ok(auth.ok, auth.error);
-        const okReq = Message.fromVector(['DocumentRequest', JSON.stringify({
+        const okReq = Message.fromLegacyBody('DocumentRequest', {
           document: 'doc-seal',
           contentHashHex: meta.paymentHashHex
-        })]);
+        });
         okReq.signWithKey(buyer3.key);
         seller._handleFabricMessage(okReq.toBuffer(), { name: 'buyer:4' }, null);
         assert.ok(opened3 && opened3.opened);
@@ -1341,7 +1341,7 @@ describe('@fabric/core/types/peer', function () {
           _writeFabric: (buf) => { written = buf; }
         };
         peer.on('documentRequestPending', (row) => { pending = row; });
-        const msg = Message.fromVector(['DocumentRequest', JSON.stringify({ document: 'doc-consent' })]);
+        const msg = Message.fromLegacyBody('DocumentRequest', { document: 'doc-consent' });
         msg.signWithKey(peer.key);
         peer._handleFabricMessage(msg.toBuffer(), { name: 'buyer:1' }, null);
         assert.strictEqual(written, null);
@@ -1367,7 +1367,7 @@ describe('@fabric/core/types/peer', function () {
         peer.connections['buyer:2'] = {
           _writeFabric: () => { writes++; }
         };
-        const msg = Message.fromVector(['DocumentRequest', JSON.stringify({ document: 'doc-deny' })]);
+        const msg = Message.fromLegacyBody('DocumentRequest', { document: 'doc-deny' });
         msg.signWithKey(peer.key);
         peer._handleFabricMessage(msg.toBuffer(), { name: 'buyer:2' }, null);
         const key = peer.listPendingDocumentRequests()[0].key;
@@ -1418,12 +1418,12 @@ describe('@fabric/core/types/peer', function () {
         peer.connections['buyer:1'] = {
           _writeFabric: () => { throw new Error('must not bounce rewrite to origin'); }
         };
-        const msg = Message.fromVector(['DocumentRequest', JSON.stringify({
+        const msg = Message.fromLegacyBody('DocumentRequest', {
           document: 'missing-doc',
           maxSats: 100,
           relayHop: 3,
           routeId: 'aabbccdd'
-        })]);
+        });
         msg.signWithKey(peer.key);
         peer._handleFabricMessage(msg.toBuffer(), { name: 'buyer:1' }, null);
         assert.strictEqual(relayedIdentical, 0);
@@ -1447,12 +1447,12 @@ describe('@fabric/core/types/peer', function () {
         const outs = { a: 0, b: 0 };
         peer.connections['peer:a'] = { _writeFabric: () => { outs.a++; } };
         peer.connections['peer:b'] = { _writeFabric: () => { outs.b++; } };
-        const msg = Message.fromVector(['DocumentRequest', JSON.stringify({
+        const msg = Message.fromLegacyBody('DocumentRequest', {
           document: 'missing-doc',
           maxSats: 50,
           relayHop: 2,
           nextPeer: 'peer:b'
-        })]);
+        });
         msg.signWithKey(peer.key);
         peer._handleFabricMessage(msg.toBuffer(), { name: 'buyer:9' }, null);
         assert.strictEqual(outs.a, 0);
@@ -1774,7 +1774,7 @@ describe('@fabric/core/types/peer', function () {
         peer.relayFrom = function () { relays++; };
         const origin = { name: '127.0.0.1:1' };
         const body = { type: 'P2P_PEER_GOSSIP', object: { host: '1.2.3.4', port: 9000 } };
-        const wire = Message.fromVector(['P2P_PEER_GOSSIP', JSON.stringify(body.object)]).signWithKey(peer.key);
+        const wire = Message.fromLegacyBody('P2P_PEER_GOSSIP', body.object).signWithKey(peer.key);
         peer._handleGenericMessage(body, origin, null, wire);
         peer._handleGenericMessage({ ...body, object: { ...body.object } }, origin, null, wire);
         assert.strictEqual(relays, 1);
@@ -1785,7 +1785,7 @@ describe('@fabric/core/types/peer', function () {
         peer.relayFrom = function () { relays++; };
         const origin = { name: '127.0.0.1:2' };
         const object = { host: '5.6.7.8', port: 1, gossipHop: 0 };
-        const wire = Message.fromVector(['P2P_PEER_GOSSIP', JSON.stringify(object)]).signWithKey(peer.key);
+        const wire = Message.fromLegacyBody('P2P_PEER_GOSSIP', object).signWithKey(peer.key);
         peer._handleGenericMessage({
           type: 'P2P_PEER_GOSSIP',
           object
@@ -1803,7 +1803,7 @@ describe('@fabric/core/types/peer', function () {
         const origin = { name: '127.0.0.1:3' };
         for (let i = 0; i < 4; i++) {
           const object = { host: '9.8.7.6', port: 7000 + i };
-          const wire = Message.fromVector(['P2P_PEER_GOSSIP', JSON.stringify(object)]).signWithKey(peer.key);
+          const wire = Message.fromLegacyBody('P2P_PEER_GOSSIP', object).signWithKey(peer.key);
           peer._handleGenericMessage({
             type: 'P2P_PEER_GOSSIP',
             object
@@ -1820,7 +1820,7 @@ describe('@fabric/core/types/peer', function () {
           type: 'P2P_PEERING_OFFER',
           object: { host: '1.2.3.4', port: 9000, transport: 'fabric' }
         };
-        const wire = Message.fromVector(['P2P_PEERING_OFFER', JSON.stringify(body.object)]).signWithKey(peer.key);
+        const wire = Message.fromLegacyBody('P2P_PEERING_OFFER', body.object).signWithKey(peer.key);
         peer._handleGenericMessage(body, origin, null, wire);
         peer._handleGenericMessage({ ...body, object: { ...body.object } }, origin, null, wire);
         assert.strictEqual(relays, 1);
@@ -1831,7 +1831,7 @@ describe('@fabric/core/types/peer', function () {
         peer.relayFrom = function () { relays++; };
         const origin = { name: '127.0.0.1:5' };
         const object = { host: '5.6.7.8', port: 1, transport: 'fabric', peeringHop: 0 };
-        const wire = Message.fromVector(['P2P_PEERING_OFFER', JSON.stringify(object)]).signWithKey(peer.key);
+        const wire = Message.fromLegacyBody('P2P_PEERING_OFFER', object).signWithKey(peer.key);
         peer._handleGenericMessage({
           type: 'P2P_PEERING_OFFER',
           object
@@ -1849,7 +1849,7 @@ describe('@fabric/core/types/peer', function () {
         const origin = { name: '127.0.0.1:6' };
         for (let i = 0; i < 4; i++) {
           const object = { host: '9.8.7.6', port: 7000 + i, transport: 'fabric' };
-          const wire = Message.fromVector(['P2P_PEERING_OFFER', JSON.stringify(object)]).signWithKey(peer.key);
+          const wire = Message.fromLegacyBody('P2P_PEERING_OFFER', object).signWithKey(peer.key);
           peer._handleGenericMessage({
             type: 'P2P_PEERING_OFFER',
             object
@@ -2021,7 +2021,7 @@ describe('@fabric/core/types/peer', function () {
         assert.strictEqual(peer._registerContract(definition, attackerPub), false);
         assert.strictEqual(Object.keys(peer.contracts).length, 0);
 
-        const wireAttacker = Message.fromVector(['CONTRACT_PUBLISH', JSON.stringify(definition)])
+        const wireAttacker = Message.fromLegacyBody('CONTRACT_PUBLISH', definition)
           .signWithKey(attacker);
         let publishes = 0;
         peer.on('contract:publish', () => { publishes++; });
@@ -2034,7 +2034,7 @@ describe('@fabric/core/types/peer', function () {
         assert.strictEqual(Object.keys(peer.contracts).length, 0);
 
         // Victim still wins first registration (logical slot not burned).
-        const wireOwner = Message.fromVector(['CONTRACT_PUBLISH', JSON.stringify(definition)])
+        const wireOwner = Message.fromLegacyBody('CONTRACT_PUBLISH', definition)
           .signWithKey(owner);
         peer._handleGenericMessage({
           type: 'CONTRACT_PUBLISH',
@@ -2106,7 +2106,7 @@ describe('@fabric/core/types/peer', function () {
           },
           object: { challenge: 'selfloop' }
         };
-        const msg = Message.fromVector(['P2P_SESSION_OFFER', JSON.stringify(content)]);
+        const msg = Message.fromLegacyBody('P2P_SESSION_OFFER', content);
         msg.signWithKey(server.key);
         server._handleFabricMessage(msg.toBuffer(), { name: connAddress }, null);
 
@@ -2236,7 +2236,7 @@ describe('@fabric/core/types/peer', function () {
           },
           object: { challenge: 'cafebabe' }
         };
-        const msg = Message.fromVector(['P2P_SESSION_OFFER', JSON.stringify(content)]);
+        const msg = Message.fromLegacyBody('P2P_SESSION_OFFER', content);
         msg.signWithKey(remoteKey);
         const buf = msg.toBuffer();
 
@@ -2291,7 +2291,7 @@ describe('@fabric/core/types/peer', function () {
           },
           object: { challenge: 'challenge' }
         };
-        const msg = Message.fromVector(['P2P_SESSION_OFFER', JSON.stringify(content)]);
+        const msg = Message.fromLegacyBody('P2P_SESSION_OFFER', content);
         msg.signWithKey(remoteKey);
 
         server.once('peer', () => {
@@ -2329,7 +2329,7 @@ describe('@fabric/core/types/peer', function () {
             solution: 'challenge'
           }
         };
-        const msg = Message.fromVector(['P2P_SESSION_OPEN', JSON.stringify(content)]);
+        const msg = Message.fromLegacyBody('P2P_SESSION_OPEN', content);
         msg.signWithKey(peer.key);
 
         peer._handleGenericMessage(content, { name: connAddress }, null);
@@ -2361,7 +2361,7 @@ describe('@fabric/core/types/peer', function () {
             solution: 'challenge'
           }
         };
-        const msg = Message.fromVector(['P2P_SESSION_OPEN', JSON.stringify(content)]);
+        const msg = Message.fromLegacyBody('P2P_SESSION_OPEN', content);
         msg.signWithKey(serverKey);
 
         peer._handleFabricMessage(msg.toBuffer(), { name: connAddress }, null);
@@ -2415,7 +2415,7 @@ describe('@fabric/core/types/peer', function () {
           },
           object: { challenge: 'cafef00d' }
         };
-        const msg = Message.fromVector(['P2P_SESSION_OFFER', JSON.stringify(content)]);
+        const msg = Message.fromLegacyBody('P2P_SESSION_OFFER', content);
         msg.signWithKey(remoteKey);
         server._handleFabricMessage(msg.toBuffer(), { name: connAddress }, null);
 

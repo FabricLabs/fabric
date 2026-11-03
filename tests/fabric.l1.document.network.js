@@ -51,7 +51,7 @@ function sendInventoryRequest (fromPeer, remoteKey, object) {
   if (!conn || !conn._writeFabric) {
     throw new Error(`No Fabric connection to ${remoteKey}`);
   }
-  const msg = Message.fromVector(['P2P_INVENTORY_REQUEST', JSON.stringify(object || {})]);
+  const msg = Message.fromLegacyBody('P2P_INVENTORY_REQUEST', object || {});
   msg.signWithKey(fromPeer.key);
   conn._writeFabric(msg.toBuffer());
 }
@@ -212,7 +212,7 @@ describe('@fabric/core L1 document publish & distribution', function () {
     server._state.content.documents[docKey] = body;
     server.commit();
 
-    const req = Message.fromVector(['DocumentRequest', JSON.stringify({ document: docKey })]);
+    const req = Message.fromLegacyBody('DocumentRequest', { document: docKey });
     req.signWithKey(client.key);
     client.broadcast(req.toBuffer());
 

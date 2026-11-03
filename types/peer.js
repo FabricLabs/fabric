@@ -2989,6 +2989,50 @@ class Peer extends Service {
   }
 
   /**
+   * Whether `message` is a JSON body of a type with a field layout
+   * (`Message.LEGACY_BODY_TYPES`), which the wire no longer accepts
+   * (docs/MESSAGE_BODY_MIGRATION.md Phase 5). `acceptJsonBodies: true` lets
+   * them through, e.g. for a harness replaying old frames. Stored frames are
+   * read with `Message.tryParseLegacyBody`, which still accepts JSON.
+   * @private
+   * @param {Message} message
+   * @returns {boolean}
+   */
+  _isRefusedJsonBody (message) {
+    if (this.settings.acceptJsonBodies === true) return false;
+    const name = Message.canonicalTypeName(message.type);
+    if (!name || !Message.LEGACY_BODY_TYPES.includes(name)) return false;
+    const body = message.raw && message.raw.data;
+    if (!body || !body.length) return false;
+    const parsed = Message.tryParseMessageBody(message);
+    return parsed.ok && parsed.encoding === 'json';
+  }
+
+  /**
+   * Count a refused JSON body; warn on the first of each type and every 100th.
+   * @private
+   * @param {string} type
+   * @param {object|null} origin
+   */
+  _countJsonBody (type, origin) {
+    if (!this._jsonBodyCounts) this._jsonBodyCounts = {};
+    const n = (this._jsonBodyCounts[type] || 0) + 1;
+    this._jsonBodyCounts[type] = n;
+    if (n === 1 || n % 100 === 0) {
+      const from = origin && origin.name ? origin.name : 'unknown';
+      this.emit('warning', `[FABRIC:PEER] Dropped JSON body of ${type} from ${from} (seen ${n}); send fields (Message.fromLegacyBody)`);
+    }
+  }
+
+  /**
+   * Refused JSON bodies of field-layout types since start, by wire name.
+   * @returns {Object<string, number>}
+   */
+  jsonBodyCounts () {
+    return Object.assign({}, this._jsonBodyCounts || {});
+  }
+
+  /**
    * Inbound deprecated opcodes seen since start, by wire name.
    * @returns {Object<string, number>}
    */
@@ -3129,6 +3173,11 @@ class Peer extends Service {
         }
         return this;
       }
+    }
+
+    if (this._isRefusedJsonBody(message)) {
+      this._countJsonBody(message.type, origin);
+      return this;
     }
 
     if (this.settings.debug) this.emit('debug', `Message author: ${message.raw.signature.toString('hex')}`);

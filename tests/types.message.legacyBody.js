@@ -263,7 +263,7 @@ describe('Message legacy bodies', function () {
   });
 
   describe('dedup and registration keys ignore the encoding', function () {
-    const peer = new Peer(offlinePeerSettings());
+    const peer = new Peer(offlinePeerSettings({ acceptJsonBodies: true }));
 
     it('gossip and offer payload keys', function () {
       const jsonGossip = { type: 'P2P_PEER_GOSSIP', object: { port: '7777', nonce: 'g', host: 'h', gossipHop: 2 } };
@@ -289,7 +289,7 @@ describe('Message legacy bodies', function () {
     });
 
     it('a JSON copy and a field copy of one gossip emit once', function () {
-      const receiver = new Peer(offlinePeerSettings());
+      const receiver = new Peer(offlinePeerSettings({ acceptJsonBodies: true }));
       let seen = 0;
       receiver.on('peeringGossip', () => { seen += 1; });
       const body = { host: '10.1.1.1', port: 7777, nonce: 'once' };
@@ -301,7 +301,7 @@ describe('Message legacy bodies', function () {
 
   describe('Peer receive paths', function () {
     it('field offers reach peeringOffer with the legacy object', function () {
-      const receiver = new Peer(offlinePeerSettings());
+      const receiver = new Peer(offlinePeerSettings({ acceptJsonBodies: true }));
       let got = null;
       receiver.on('peeringOffer', (ev) => { got = ev; });
       receiver._handleFabricMessage(fieldFrame('P2P_PEERING_OFFER', {
@@ -314,7 +314,7 @@ describe('Message legacy bodies', function () {
     });
 
     it('a field publish registers the same contract as JSON', function () {
-      const receiver = new Peer(offlinePeerSettings());
+      const receiver = new Peer(offlinePeerSettings({ acceptJsonBodies: true }));
       const events = [];
       receiver.on('contract:publish', (ev) => events.push(ev));
       receiver._handleFabricMessage(fieldFrame('CONTRACT_PUBLISH', definition()).toBuffer(), { name: 'a' });
@@ -329,7 +329,7 @@ describe('Message legacy bodies', function () {
       const body = { contract: id, type: 'ContractMessage', ops: [{ op: 'add', path: '/note', value: 'from-fields' }] };
       const shapes = [];
       for (const frame of [jsonFrame('CONTRACT_MESSAGE', body), fieldFrame('CONTRACT_MESSAGE', body)]) {
-        const receiver = new Peer(offlinePeerSettings());
+        const receiver = new Peer(offlinePeerSettings({ acceptJsonBodies: true }));
         receiver._handleFabricMessage(fieldFrame('CONTRACT_PUBLISH', definition()).toBuffer(), { name: 'a' });
         let ev = null;
         receiver.on('contract:message', (e) => { ev = e; });
@@ -358,7 +358,7 @@ describe('Message legacy bodies', function () {
     });
 
     it('repeated pings and pongs are distinct frames', function () {
-      const peer = new Peer(offlinePeerSettings());
+      const peer = new Peer(offlinePeerSettings({ acceptJsonBodies: true }));
       const socket = {};
       const pings = [];
       const realSetInterval = global.setInterval;
@@ -391,7 +391,7 @@ describe('Message legacy bodies', function () {
 
   describe('session, inventory, and document layouts', function () {
     const HASH = 'ab'.repeat(32);
-    const sender = new Peer(offlinePeerSettings());
+    const sender = new Peer(offlinePeerSettings({ acceptJsonBodies: true }));
     const claim = sender._buildSessionKeyExchangeClaim();
     const sessionOffer = {
       type: 'P2P_SESSION_OFFER',
@@ -439,7 +439,7 @@ describe('Message legacy bodies', function () {
     });
 
     it('a field session offer passes the key-exchange check like JSON', function () {
-      const receiver = new Peer(offlinePeerSettings());
+      const receiver = new Peer(offlinePeerSettings({ acceptJsonBodies: true }));
       const fromJson = receiver._validateSessionKeyExchangeClaim(sessionOffer, claim.pubkey, 'a');
       const fromFields = receiver._validateSessionKeyExchangeClaim(roundTrip('P2P_SESSION_OFFER', sessionOffer), claim.pubkey, 'a');
       assert.ok(fromJson);
@@ -535,7 +535,7 @@ describe('Message legacy bodies', function () {
     });
 
     it('dedup and registration keys ignore the encoding', function () {
-      const peer = new Peer(offlinePeerSettings());
+      const peer = new Peer(offlinePeerSettings({ acceptJsonBodies: true }));
       assert.strictEqual(
         peer._logicalRegistrationKey('DOCUMENT_PUBLISH', roundTrip('DOCUMENT_PUBLISH', documentBody)),
         peer._logicalRegistrationKey('DOCUMENT_PUBLISH', documentBody)
@@ -553,7 +553,7 @@ describe('Message legacy bodies', function () {
       const rate = { type: 'P2P_DOCUMENT_PUBLISH', object: { hash: HASH, rate: 1000, contentHash: HASH } };
       const seen = [];
       for (const frame of [jsonFrame, fieldFrame]) {
-        const receiver = new Peer(offlinePeerSettings());
+        const receiver = new Peer(offlinePeerSettings({ acceptJsonBodies: true }));
         const got = {};
         receiver.on('documentRequest', (ev) => { got.request = ev.parsed; });
         receiver.on('documentPublish', (ev) => {
@@ -616,7 +616,7 @@ describe('Message legacy bodies', function () {
         [jsonFrame('BitcoinBlock', tipBody), jsonFrame('ContractProposal', proposalBody)],
         [fieldFrame('BitcoinBlock', tipBody), fieldProposal]
       ]) {
-        const receiver = new Peer(offlinePeerSettings());
+        const receiver = new Peer(offlinePeerSettings({ acceptJsonBodies: true }));
         const got = {};
         receiver.on('bitcoinBlock', (ev) => { got.block = ev.object; });
         receiver.on('contract:proposal', (ev) => { got.proposal = [ev.contract, ev.payload.chain.merkleRoot]; });
@@ -629,6 +629,36 @@ describe('Message legacy bodies', function () {
     });
   });
 
+  describe('Phase 5: the wire requires fields', function () {
+    it('a default Peer drops JSON bodies of field types and counts them', function () {
+      const receiver = new Peer(offlinePeerSettings());
+      const warnings = [];
+      receiver.on('warning', (w) => warnings.push(String(w)));
+      let blocks = 0;
+      receiver.on('bitcoinBlock', () => { blocks++; });
+      const tip = { tip: 'cd'.repeat(32), height: 1 };
+      receiver._handleFabricMessage(jsonFrame('BitcoinBlock', tip).toBuffer(), { name: 'a' });
+      assert.strictEqual(blocks, 0);
+      assert.deepStrictEqual(receiver.jsonBodyCounts(), { BITCOIN_BLOCK: 1 });
+      assert.ok(warnings.some((w) => w.includes('Dropped JSON body of BITCOIN_BLOCK')));
+      receiver._handleFabricMessage(fieldFrame('BitcoinBlock', tip).toBuffer(), { name: 'a' });
+      assert.strictEqual(blocks, 1);
+    });
+
+    it('types without a layout keep JSON bodies', function () {
+      const receiver = new Peer(offlinePeerSettings());
+      receiver._handleFabricMessage(jsonFrame('P2P_CHAIN_SYNC_REQUEST', { tip: 'ab' }).toBuffer(), { name: 'a' });
+      assert.deepStrictEqual(receiver.jsonBodyCounts(), {});
+    });
+
+    it('stored JSON frames still parse for replay', function () {
+      const body = { contract: 'ab'.repeat(32), type: 'Example', object: { n: 1 } };
+      const parsed = Message.tryParseLegacyBody(Message.fromBuffer(jsonFrame('CONTRACT_MESSAGE', body).toBuffer()));
+      assert.strictEqual(parsed.encoding, 'json');
+      assert.deepStrictEqual(parsed.value, body);
+    });
+  });
+
   describe('Phase 4: local records and deprecated opcodes', function () {
     it('fromFields refuses a schema name with no opcode', function () {
       const fields = { programHash: Buffer.alloc(32), runCommitment: Buffer.alloc(32), resultHint: '' };
@@ -638,7 +668,7 @@ describe('Message legacy bodies', function () {
     });
 
     it('Peer counts deprecated opcodes and warns once per type', function () {
-      const peer = new Peer(offlinePeerSettings());
+      const peer = new Peer(offlinePeerSettings({ acceptJsonBodies: true }));
       const warnings = [];
       peer.on('warning', (w) => warnings.push(String(w)));
       for (let i = 0; i < 3; i++) {

@@ -96,12 +96,12 @@ describe('@fabric/core Hub mesh integration', function () {
       const sock = hub.connections[addr];
       if (!sock || !sock._writeFabric) return;
 
-      const inv = Message.fromVector(['P2P_INVENTORY_RESPONSE', JSON.stringify({
+      const inv = Message.fromLegacyBody('P2P_INVENTORY_RESPONSE', {
         type: 'INVENTORY_RESPONSE',
         object: {
           items: [{ id: docId, rateSats: askSats, contentHash, network: 'bitcoin' }]
         }
-      })]);
+      });
       inv.signWithKey(hub.key);
       sock._writeFabric(inv.toBuffer());
 
@@ -404,52 +404,21 @@ describe('generic application contract chain', function () {
     assert.strictEqual(replayed.tip.stateDigest, fixture.tip.stateDigest);
   });
 
-  it('gossips the fixture chain across a local Peer mesh and replays to the same tip', async function () {
+  it('a Peer drops the JSON fixture chain on the wire; the stored chain still replays', function () {
     const fixture = loadFixture();
-    const network = new NetworkHarness({
-      peerCount: 3,
-      topology: 'star',
-      connectTimeoutMs: 20000
-    });
-    try {
-      await network.start();
-      const collectors = network.peers.map(attachCollector);
-      const hub = network.peers[0];
-      for (const row of fixture.collection.messages) {
-        hub._handleFabricMessage(Buffer.from(row.hex, 'hex'), { name: 'local-inject' });
-      }
-
-      const expected = fixture.collection.messages.map((m) => m.hash).sort();
-      await waitUntil(() => {
-        return collectors.every((col) => {
-          const got = appHashes(col);
-          return got.length === expected.length && got.every((h, i) => h === expected[i]);
-        });
-      }, 20000);
-
-      for (const peer of network.peers) {
-        assert.ok(
-          peer.contracts && peer.contracts[fixture.contractId],
-          'each node should register the published contract'
-        );
-      }
-
-      for (const col of collectors) {
-        const subset = createCollection();
-        for (const row of col.messages) {
-          if (row.type === 'CONTRACT_PUBLISH' || row.type === 'CONTRACT_MESSAGE') {
-            ingest(subset, row.hex);
-          }
-        }
-        const replayed = replayCollectionDocument(toJSON(subset));
-        assert.strictEqual(replayed.tip.stateDigest, fixture.tip.stateDigest);
-        assert.deepStrictEqual(replayed.tip.members, fixture.tip.members);
-        assert.deepStrictEqual(replayed.tip.chatBodies, fixture.tip.chatBodies);
-        assert.strictEqual(replayed.tip.proposalStatus, 'adopted');
-      }
-    } finally {
-      await network.stop();
+    const peer = new Peer({ listen: false, peersDb: null, networking: false });
+    for (const row of fixture.collection.messages) {
+      peer._handleFabricMessage(Buffer.from(row.hex, 'hex'), { name: 'local-inject' });
     }
+    assert.ok(!(peer.contracts && peer.contracts[fixture.contractId]), 'JSON CONTRACT_PUBLISH must not register');
+    const counts = peer.jsonBodyCounts();
+    assert.ok(counts.CONTRACT_PUBLISH >= 1 && counts.CONTRACT_MESSAGE >= 1, JSON.stringify(counts));
+
+    const stored = createCollection();
+    for (const row of fixture.collection.messages) ingest(stored, row.hex);
+    const replayed = replayCollectionDocument(toJSON(stored));
+    assert.strictEqual(replayed.tip.stateDigest, fixture.tip.stateDigest);
+    assert.deepStrictEqual(replayed.tip.members, fixture.tip.members);
   });
 });
 
@@ -888,7 +857,7 @@ describe('playnet contract publish + re-publish', function () {
     let publishes = 0;
     peer.on('contract:publish', () => { publishes++; });
 
-    const wire = Message.fromVector(['CONTRACT_PUBLISH', JSON.stringify(definition)]).signWithKey(owner);
+    const wire = Message.fromLegacyBody('CONTRACT_PUBLISH', definition).signWithKey(owner);
     peer._handleFabricMessage(wire.toBuffer(), { name: '127.0.0.1:18444' });
 
     assert.ok(peer.contracts[contractId] || Object.keys(peer.contracts || {}).length >= 1);
@@ -925,7 +894,7 @@ describe('playnet contract publish + re-publish', function () {
       parties: [String(owner.pubkey).toLowerCase()],
       state: { network: 'regtest' }
     };
-    const msg = Message.fromVector(['CONTRACT_PUBLISH', JSON.stringify(definition)]).signWithKey(owner);
+    const msg = Message.fromLegacyBody('CONTRACT_PUBLISH', definition).signWithKey(owner);
     const sent = peer.broadcast(msg.toBuffer());
     assert.ok(sent > 0, `expected CONTRACT_PUBLISH fan-out > 0, got ${sent}`);
     assert.strictEqual(writes.length, 1);
@@ -993,13 +962,13 @@ describe('playnet contract publish live', function () {
         parties: [ownerPub],
         state: { network: process.env.FABRIC_FLUSH_NETWORK || 'regtest' }
       };
-      const msg = Message.fromVector(['CONTRACT_PUBLISH', JSON.stringify(definition)]).signWithKey(peer.key);
+      const msg = Message.fromLegacyBody('CONTRACT_PUBLISH', definition).signWithKey(peer.key);
       const sent1 = peer.broadcast(msg.toBuffer());
       assert.ok(sent1 > 0, `expected CONTRACT_PUBLISH fan-out > 0, got ${sent1}`);
 
       // Brief observe, then re-publish once.
       await new Promise((r) => setTimeout(r, 1000));
-      const msg2 = Message.fromVector(['CONTRACT_PUBLISH', JSON.stringify(definition)]).signWithKey(peer.key);
+      const msg2 = Message.fromLegacyBody('CONTRACT_PUBLISH', definition).signWithKey(peer.key);
       const sent2 = peer.broadcast(msg2.toBuffer());
       assert.ok(sent2 > 0, `expected second CONTRACT_PUBLISH fan-out > 0, got ${sent2}`);
       await new Promise((r) => setTimeout(r, 1000));
