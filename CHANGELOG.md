@@ -6,6 +6,7 @@ Recent changes to Fabric Core.
 - **Delegation answers are bound to their request.** `Delegation` records a `DELEGATION_RESULT` only when its answer answers the request it names: an assertion over the same challenge and origin, the same message signed, or a reply for the same federation (`answerError`).
 - **A delegated federation withdrawal is checked against the network the host holds** (`networkOf`), not a network its body claims; with no host record it fails closed. A purpose or refusal keeps up to 140 characters (`cleanLabel(label, max)`), and an invite threshold that is not a positive integer no longer reaches the prompt.
 - **`Store#set` writes one key in call order** and refuses a write beneath a non-object parent before it reaches Level.
+- **No opt-out for JSON bodies on the wire (breaking).** `Peer`'s `acceptJsonBodies` setting is removed: a JSON body of a `Message.LEGACY_BODY_TYPES` type is always dropped, so an older sender's frames are refused.
 
 ## 2026-11-02
 - **Delegation frame helpers moved into `types/delegation` (breaking).** `functions/delegation` is gone: `createGrant`, `readRequest`, `authorize`, `notificationFor` and the other frame builders and readers are statics on `Delegation` (and properties of `require('@fabric/core/types/delegation')`).

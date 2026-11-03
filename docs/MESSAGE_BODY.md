@@ -84,8 +84,8 @@ API: `types/message.js` body codec helpers (`Message.encodeBody` /
   `JSON.stringify` (deprecated transitional path for GenericMessage and
   unmigrated types). New opcodes **must** ship a field schema.
 - **Required on the wire:** Peer drops JSON bodies of every type in
-  `Message.LEGACY_BODY_TYPES` (counted in `Peer#jsonBodyCounts()`;
-  `acceptJsonBodies: true` opts out). Send them with `Message.fromLegacyBody`.
+  `Message.LEGACY_BODY_TYPES` (counted in `Peer#jsonBodyCounts()`; there is
+  no opt-out). Send them with `Message.fromLegacyBody`.
   Stored JSON frames still parse with `Message.tryParseLegacyBody`.
 - **Opaque UTF-8 exceptions:** `P2P_CHAT_MESSAGE` and `P2P_PEER_ALIAS` use the
   body bytes as the UTF-8 text / nickname itself (no field schema, no JSON).

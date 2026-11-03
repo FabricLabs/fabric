@@ -207,8 +207,8 @@ deprecation window was skipped.
   21 types) when its body is JSON, before any handler, without penalty. It
   counts drops per type (`Peer#jsonBodyCounts()`) and warns on the first of
   each type and every 100th, naming `Message.fromLegacyBody` as the fix.
-- `acceptJsonBodies: true` on Peer lets them through, for harnesses that
-  replay old frames over the wire.
+- There is no opt-out: the `acceptJsonBodies` setting is gone, so old JSON
+  frames can't be replayed over the wire.
 - Stored frames still replay: `Message.tryParseLegacyBody`,
   `fabricMessageCollection`, `contractMessageAccumulate` and the queue read
   JSON frames unchanged. The committed JSON fixture chain

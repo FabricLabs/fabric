@@ -2991,15 +2991,13 @@ class Peer extends Service {
   /**
    * Whether `message` is a JSON body of a type with a field layout
    * (`Message.LEGACY_BODY_TYPES`), which the wire no longer accepts
-   * (docs/MESSAGE_BODY_MIGRATION.md Phase 5). `acceptJsonBodies: true` lets
-   * them through, e.g. for a harness replaying old frames. Stored frames are
-   * read with `Message.tryParseLegacyBody`, which still accepts JSON.
+   * (docs/MESSAGE_BODY_MIGRATION.md Phase 5). Stored frames are read with
+   * `Message.tryParseLegacyBody`, which still accepts JSON.
    * @private
    * @param {Message} message
    * @returns {boolean}
    */
   _isRefusedJsonBody (message) {
-    if (this.settings.acceptJsonBodies === true) return false;
     const name = Message.canonicalTypeName(message.type);
     if (!name || !Message.LEGACY_BODY_TYPES.includes(name)) return false;
     const body = message.raw && message.raw.data;
