@@ -1,5 +1,6 @@
 'use strict';
 
+const { PERSISTED_JSON_MAX_CHARS } = require('../constants');
 const { tryParsePersistedJson } = require('../functions/wireJson');
 
 // Dependencies
@@ -581,6 +582,12 @@ class Store extends Actor {
   async _set (key, value, route) {
     const parentError = await this._parentError(route.path);
     if (parentError) throw new Error(`[FABRIC:STORE] ${parentError}`);
+    const persisting = !!this.db && this.settings.persistent !== false;
+    // Level reads text back through the persisted JSON cap: a longer object would reopen as a string.
+    if (persisting && typeof value !== 'string' && !Buffer.isBuffer(value)
+      && JSON.stringify(value).length > PERSISTED_JSON_MAX_CHARS) {
+      throw new Error(`[FABRIC:STORE] ${route.path} is larger than ${PERSISTED_JSON_MAX_CHARS} characters of JSON`);
+    }
     const info = await this.getDataInfo(value);
     const data = await this.encodeValue(value);
 
@@ -601,7 +608,7 @@ class Store extends Actor {
 
     // Persist path → value when Level is open (survives stop/start reopen),
     // before memory or a commit shows it: a strict write that fails changes nothing.
-    if (this.db && this.settings.persistent !== false) {
+    if (persisting) {
       try {
         const payload = (typeof value === 'string')
           ? value

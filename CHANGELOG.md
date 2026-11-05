@@ -1,6 +1,10 @@
 # `@fabric/core` Changelog
 Recent changes to Fabric Core.
 
+## 2026-11-05
+- **A withdrawal answer must name its withdrawal.** A delegated `FederationWithdrawalRequest` needs a `requestId`, and `answerError` matches `federationId` and `requestId` only when both frames carry them, so two missing ids no longer count as a match.
+- **`Store#set` refuses an object whose JSON is longer than `PERSISTED_JSON_MAX_CHARS`** before writing it to Level, where it would read back as text after a reopen. Strings are not capped.
+
 ## 2026-11-04
 - **Beacon epoch ids are double-SHA256**, as documented: `epochEntryId` uses `Hash256.doubleDigest` over the epoch's canonical JSON. Entries already in `beacon/CHAIN` keep their stored ids.
 - **`Store#set` orders a parent and its children.** Writes queue by top-level key, so `/metrics` and `/metrics/a` run in call order; the parent check also reads ancestors from Level when memory has none (after a reopen); a path through `__proto__`, `constructor` or `prototype` is refused; and `stop()` waits for queued writes before Level closes.

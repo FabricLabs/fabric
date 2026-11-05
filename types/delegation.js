@@ -233,6 +233,7 @@ function cleanLabel (label, max = DELEGATION_MAX_LABEL) {
  * @returns {string|null}
  */
 function withdrawalBodyError (body) {
+  if (typeof body.requestId !== 'string' || !body.requestId.trim()) return 'malformed withdrawal request: requestId';
   if (typeof body.destinationAddress !== 'string' || !/^[A-Za-z0-9]{14,90}$/.test(body.destinationAddress)) {
     return 'malformed withdrawal request: destinationAddress';
   }
@@ -240,6 +241,12 @@ function withdrawalBodyError (body) {
     if (!Number.isSafeInteger(body[field]) || body[field] < 0) return `malformed withdrawal request: ${field}`;
   }
   return null;
+}
+
+/** Two ids that are both present and equal, ignoring case. */
+function sameId (a, b) {
+  const left = String(a || '').trim().toLowerCase();
+  return left !== '' && left === String(b || '').trim().toLowerCase();
 }
 
 /**
@@ -1266,8 +1273,8 @@ function answerError (read, answer) {
     const reply = message.type === 'CONTRACT_MESSAGE' ? contractBody(message) : null;
     const expected = inner.body.type === 'FederationInvite' ? 'FederationInviteResponse' : 'FederationWithdrawalSignature';
     if (!reply || reply.type !== expected) return `a ${inner.body.type} is answered with a ${expected}`;
-    if (String(reply.federationId || '').toLowerCase() !== String(inner.body.federationId || '').toLowerCase()) return 'the answer is for another federation';
-    if (inner.body.type === 'FederationWithdrawalRequest' && String(reply.requestId || '').toLowerCase() !== String(inner.body.requestId || '').toLowerCase()) {
+    if (!sameId(reply.federationId, inner.body.federationId)) return 'the answer is for another federation';
+    if (inner.body.type === 'FederationWithdrawalRequest' && !sameId(reply.requestId, inner.body.requestId)) {
       return 'the answer is for another withdrawal';
     }
     return null;

@@ -171,6 +171,19 @@ describe('@fabric/core/types/store', function () {
       assert.strictEqual({}.polluted, undefined);
     });
 
+    it('refuses an object too large to read back after a reopen', async function () {
+      const { PERSISTED_JSON_MAX_CHARS } = require('../constants');
+      const puts = [];
+      const store = new Store({ strict: true, persistent: true });
+      store.db = { get: async () => undefined, put: async (key) => { puts.push(key); } };
+      await assert.rejects(store.set('/blobs/big', { text: 'x'.repeat(PERSISTED_JSON_MAX_CHARS) }), /larger than/);
+      assert.deepStrictEqual(puts, []);
+      assert.strictEqual(store._state.content.blobs, undefined);
+      // Text is stored as itself, so its length is not capped.
+      await store.set('/blobs/text', 'x'.repeat(PERSISTED_JSON_MAX_CHARS + 1));
+      assert.deepStrictEqual(puts, ['/blobs/text']);
+    });
+
     it('stop waits for queued writes before Level closes', async function () {
       const order = [];
       const store = new Store({ strict: true, persistent: true });

@@ -468,6 +468,12 @@ describe('@fabric/core/types/delegation frames', function () {
       const signs = (requestId) => federationFrame({ contract: 'aa'.repeat(32), type: 'FederationWithdrawalSignature', federationId: 'aa'.repeat(32), requestId, signatures: [] }, HUB.cosigner.key);
       assert.strictEqual(d.answerError(read, signs('r1')), null);
       assert.match(d.answerError(read, signs('r2')), /another withdrawal/);
+      // Ids bind only when present: an answer without one, or a request without one, binds nothing.
+      assert.match(d.answerError(read, signs(undefined)), /another withdrawal/);
+      const unnamed = federationFrame({ contract: 'aa'.repeat(32), type: 'FederationWithdrawalSignature', requestId: 'r1', signatures: [] }, HUB.cosigner.key);
+      assert.match(d.answerError(read, unnamed), /another federation/);
+      const unbound = federationFrame({ contract: 'aa'.repeat(32), type: 'FederationWithdrawalRequest', federationId: 'aa'.repeat(32), destinationAddress: 'bcrt1qw508d6qejxtdg4y5r3zarvary0c5xw7kygt080', amountSats: 5000, feeSats: 200 });
+      assert.match(d.readInnerFrame(Buffer.from(unbound.toBuffer())).error, /malformed withdrawal request: requestId/);
       // The host's record decides a withdrawal's network, not a network the body claims.
       const claimed = federationFrame({ contract: 'aa'.repeat(32), type: 'FederationWithdrawalRequest', federationId: 'aa'.repeat(32), requestId: 'r1', descriptor: { network: 'regtest' }, destinationAddress: 'bcrt1qw508d6qejxtdg4y5r3zarvary0c5xw7kygt080', amountSats: 5000, feeSats: 200 });
       const claimedRead = d.readRequest(d.createRequest({ target: HUB.identity.pubkey, grant: grant.hash, request: claimed, now: NOW }, PASSPORT.identity.key).uri, { now: NOW + 1 });
