@@ -54,6 +54,10 @@ const {
   DELEGATION_REQUEST,
   DELEGATION_RESULT,
   DELEGATION_MAILBOX_FETCH,
+  PASSPORT_CONNECT,
+  PASSPORT_SESSION,
+  PASSPORT_RESUME,
+  PASSPORT_REFUSED,
   P2P_CONTRACT_PUBLISH,
   P2P_CONTRACT_MESSAGE,
   P2P_STATE_ROOT,
@@ -368,6 +372,10 @@ const WIRE_TYPE_DECODE_ORDER = Object.freeze([
   [DELEGATION_REQUEST, 'DELEGATION_REQUEST'],
   [DELEGATION_RESULT, 'DELEGATION_RESULT'],
   [DELEGATION_MAILBOX_FETCH, 'DELEGATION_MAILBOX_FETCH'],
+  [PASSPORT_CONNECT, 'PASSPORT_CONNECT'],
+  [PASSPORT_SESSION, 'PASSPORT_SESSION'],
+  [PASSPORT_RESUME, 'PASSPORT_RESUME'],
+  [PASSPORT_REFUSED, 'PASSPORT_REFUSED'],
   [P2P_CONTRACT_PUBLISH, 'CONTRACT_PUBLISH'],
   [P2P_CONTRACT_MESSAGE, 'CONTRACT_MESSAGE'],
   [P2P_IDENT_REQUEST, 'P2P_IDENT_REQUEST'],
@@ -483,6 +491,10 @@ const LEGACY_MESSAGE_TYPE_ALIASES = Object.freeze({
   DelegationRequest: DELEGATION_REQUEST,
   DelegationResult: DELEGATION_RESULT,
   DelegationMailboxFetch: DELEGATION_MAILBOX_FETCH,
+  PassportConnect: PASSPORT_CONNECT,
+  PassportSession: PASSPORT_SESSION,
+  PassportResume: PASSPORT_RESUME,
+  PassportRefused: PASSPORT_REFUSED,
   FileSend: P2P_FILE_SEND,
   DocumentPricingPublish: P2P_DOCUMENT_PUBLISH,
   Ping: P2P_PING,
@@ -1689,9 +1701,12 @@ const SCHEMA_P2P_MUSIG_SIGNATURE = Object.freeze([
   { name: 'signature', type: 'bytes' }
 ]);
 /**
- * @private Passport v2 sign-in (`functions/passport.js`). Times are Unix
+ * @private Passport sign-in (`functions/passport.js`). Times are Unix
  * milliseconds; `request` / `disclose` are comma lists of `wallet`, `cosigner`.
- * A challenge may be unsigned (zero author).
+ * A v2 challenge may be unsigned (zero author). A v3 (peer) challenge is
+ * signed by `peer`, echoes the signer's `clientNonce`, and may leave `origin`
+ * empty; `homes` is a comma list of origins the peer says it serves. The v3
+ * fields are trailing optionals, so v2 frames encode exactly as before.
  */
 const SCHEMA_PASSPORT_CHALLENGE = Object.freeze([
   { name: 'v', type: 'u8' },
@@ -1701,11 +1716,16 @@ const SCHEMA_PASSPORT_CHALLENGE = Object.freeze([
   { name: 'expiresAt', type: 'u64' },
   { name: 'purpose', type: 'string', optional: true },
   { name: 'network', type: 'string', optional: true },
-  { name: 'request', type: 'string', optional: true }
+  { name: 'request', type: 'string', optional: true },
+  { name: 'peer', type: 'string', optional: true },
+  { name: 'clientNonce', type: 'string', optional: true },
+  { name: 'homes', type: 'string', optional: true }
 ]);
 /**
  * @private Signed by the identity; `pubkey` is compressed hex and must match
  * the author. `wallet` / `cosigner` are JSON, present only when requested.
+ * v3 adds `peer` (the audience) and `sessionKey` (the key later requests are
+ * signed with).
  */
 const SCHEMA_PASSPORT_ASSERTION = Object.freeze([
   { name: 'v', type: 'u8' },
@@ -1720,7 +1740,52 @@ const SCHEMA_PASSPORT_ASSERTION = Object.freeze([
   { name: 'signer', type: 'string' },
   { name: 'device', type: 'string', optional: true },
   { name: 'wallet', type: 'string', optional: true },
-  { name: 'cosigner', type: 'string', optional: true }
+  { name: 'cosigner', type: 'string', optional: true },
+  { name: 'peer', type: 'string', optional: true },
+  { name: 'sessionKey', type: 'string', optional: true }
+]);
+/**
+ * @private Passport v3 peer sessions. `PASSPORT_CONNECT` (unsigned) asks a
+ * peer for a challenge; `clientNonce` makes that challenge fresh to this
+ * connection. `peer` is the key the signer expects, `origin` the page that
+ * asked (informational).
+ */
+const SCHEMA_PASSPORT_CONNECT = Object.freeze([
+  { name: 'v', type: 'u8' },
+  { name: 'clientNonce', type: 'string' },
+  { name: 'issuedAt', type: 'u64' },
+  { name: 'expiresAt', type: 'u64' },
+  { name: 'peer', type: 'string', optional: true },
+  { name: 'origin', type: 'string', optional: true },
+  { name: 'request', type: 'string', optional: true }
+]);
+/** @private Signed by the peer: `sessionKey` now speaks for `pubkey` on this peer until `expiresAt`. */
+const SCHEMA_PASSPORT_SESSION = Object.freeze([
+  { name: 'v', type: 'u8' },
+  { name: 'sessionId', type: 'bytes32' },
+  { name: 'assertionHash', type: 'bytes32' },
+  { name: 'pubkey', type: 'string' },
+  { name: 'identityId', type: 'string' },
+  { name: 'sessionKey', type: 'string' },
+  { name: 'issuedAt', type: 'u64' },
+  { name: 'expiresAt', type: 'u64' }
+]);
+/** @private Signed by the session key: answer a fresh challenge from `peer` to re-bind session `sessionId`. */
+const SCHEMA_PASSPORT_RESUME = Object.freeze([
+  { name: 'v', type: 'u8' },
+  { name: 'sessionId', type: 'bytes32' },
+  { name: 'peer', type: 'string' },
+  { name: 'nonce', type: 'string' },
+  { name: 'challengeHash', type: 'bytes32' },
+  { name: 'issuedAt', type: 'u64' },
+  { name: 'expiresAt', type: 'u64' }
+]);
+/** @private Why a peer refused a connect, assertion, or resume; `answers` is the sha256 of that frame (or zero). */
+const SCHEMA_PASSPORT_REFUSED = Object.freeze([
+  { name: 'v', type: 'u8' },
+  { name: 'answers', type: 'bytes32' },
+  { name: 'error', type: 'string' },
+  { name: 'issuedAt', type: 'u64' }
 ]);
 /**
  * @private Delegation (`types/delegation.js`). Times are Unix
@@ -1772,7 +1837,8 @@ const SCHEMA_DELEGATION_GRANT = Object.freeze([
   { name: 'cosignerProof', type: 'string' },
   { name: 'extensionOrigin', type: 'string' },
   { name: 'label', type: 'string' },
-  { name: 'issuedAt', type: 'u64' }
+  { name: 'issuedAt', type: 'u64' },
+  { name: 'peers', type: 'string', optional: true }
 ]);
 /** @private `grant` is the sha256 of the grant frame being withdrawn. */
 const SCHEMA_DELEGATION_REVOKE = Object.freeze([
@@ -1797,7 +1863,8 @@ const SCHEMA_DELEGATION_REQUEST = Object.freeze([
   { name: 'disclose', type: 'string' },
   { name: 'purpose', type: 'string' },
   { name: 'issuedAt', type: 'u64' },
-  { name: 'expiresAt', type: 'u64' }
+  { name: 'expiresAt', type: 'u64' },
+  { name: 'sessionKey', type: 'string', optional: true }
 ]);
 /** @private Either `answer` (a frame) or `refusal` (text) is set; `rule` names the rule that decided. */
 const SCHEMA_DELEGATION_RESULT = Object.freeze([
@@ -2130,6 +2197,17 @@ function tryParseMessageBody (message) {
   registerBodySchema(PASSPORT_ASSERTION, SCHEMA_PASSPORT_ASSERTION);
   registerBodySchema('PASSPORT_ASSERTION', SCHEMA_PASSPORT_ASSERTION);
   registerBodySchema('PassportAssertion', SCHEMA_PASSPORT_ASSERTION);
+  const passportPeer = [
+    [PASSPORT_CONNECT, 'PASSPORT_CONNECT', 'PassportConnect', SCHEMA_PASSPORT_CONNECT],
+    [PASSPORT_SESSION, 'PASSPORT_SESSION', 'PassportSession', SCHEMA_PASSPORT_SESSION],
+    [PASSPORT_RESUME, 'PASSPORT_RESUME', 'PassportResume', SCHEMA_PASSPORT_RESUME],
+    [PASSPORT_REFUSED, 'PASSPORT_REFUSED', 'PassportRefused', SCHEMA_PASSPORT_REFUSED]
+  ];
+  for (const [code, name, alias, schema] of passportPeer) {
+    registerBodySchema(code, schema);
+    registerBodySchema(name, schema);
+    registerBodySchema(alias, schema);
+  }
   const delegation = [
     [DELEGATION_LINK_OFFER, 'DELEGATION_LINK_OFFER', 'DelegationLinkOffer', SCHEMA_DELEGATION_LINK_OFFER],
     [DELEGATION_LINK_ANSWER, 'DELEGATION_LINK_ANSWER', 'DelegationLinkAnswer', SCHEMA_DELEGATION_LINK_ANSWER],
@@ -2859,6 +2937,10 @@ Message.SCHEMA_SIDECHAIN_STATE_PATCH = SCHEMA_SIDECHAIN_STATE_PATCH;
 Message.SCHEMA_P2P_MUSIG_START = SCHEMA_P2P_MUSIG_START;
 Message.SCHEMA_PASSPORT_CHALLENGE = SCHEMA_PASSPORT_CHALLENGE;
 Message.SCHEMA_PASSPORT_ASSERTION = SCHEMA_PASSPORT_ASSERTION;
+Message.SCHEMA_PASSPORT_CONNECT = SCHEMA_PASSPORT_CONNECT;
+Message.SCHEMA_PASSPORT_SESSION = SCHEMA_PASSPORT_SESSION;
+Message.SCHEMA_PASSPORT_RESUME = SCHEMA_PASSPORT_RESUME;
+Message.SCHEMA_PASSPORT_REFUSED = SCHEMA_PASSPORT_REFUSED;
 Message.SCHEMA_DELEGATION_LINK_OFFER = SCHEMA_DELEGATION_LINK_OFFER;
 Message.SCHEMA_DELEGATION_LINK_ANSWER = SCHEMA_DELEGATION_LINK_ANSWER;
 Message.SCHEMA_DELEGATION_LINK_REVEAL = SCHEMA_DELEGATION_LINK_REVEAL;

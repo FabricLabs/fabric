@@ -2,8 +2,8 @@
 Recent changes to Fabric Core.
 
 ## 2026-11-05
-- **A withdrawal answer must name its withdrawal.** A delegated `FederationWithdrawalRequest` needs a `requestId`, and `answerError` matches `federationId` and `requestId` only when both frames carry them, so two missing ids no longer count as a match.
-- **`Store#set` refuses an object whose JSON is longer than `PERSISTED_JSON_MAX_CHARS`** before writing it to Level, where it would read back as text after a reopen. Strings are not capped.
+- **Delegated federation frames carry canonical ids, compared exactly.** A delegated request and its answer must each have a lowercase 64-hex `federationId` equal to `contract`, and withdrawal messages a lowercase 64-hex `requestId`, as `Federation.verifySender` and `verifyWithdrawalRequest` require; `answerError` then compares the ids exactly. A padded, uppercase or missing id is refused before it can be recorded as an answer.
+- **`Store` refuses JSON longer than `PERSISTED_JSON_MAX_CHARS`**, which would read back as text after a reopen. `set` checks the value it writes (strings stored as themselves are not capped); `_POST` and `_PUSH` check every key they write (collection list, entity, serialized collection; blob, stack, entity) before the first write, so a refused post or push leaves nothing behind.
 
 ## 2026-11-04
 - **Beacon epoch ids are double-SHA256**, as documented: `epochEntryId` uses `Hash256.doubleDigest` over the epoch's canonical JSON. Entries already in `beacon/CHAIN` keep their stored ids.

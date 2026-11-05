@@ -610,6 +610,19 @@ const DELEGATION_REVOKE = 0x4247;
 const DELEGATION_REQUEST = 0x4248;
 const DELEGATION_RESULT = 0x4249;
 const DELEGATION_MAILBOX_FETCH = 0x424A;
+/**
+ * Passport peer sessions (v3): sign in to a peer named by its key, over a
+ * connection the signer opened. `PASSPORT_CONNECT` asks for a challenge,
+ * `PASSPORT_SESSION` confirms a session key, `PASSPORT_RESUME` re-binds one
+ * on a new connection, `PASSPORT_REFUSED` says why the peer would not. Sent
+ * only on that connection, never relayed.
+ */
+const PASSPORT_CONNECT = 0x424B;
+const PASSPORT_SESSION = 0x424C;
+const PASSPORT_RESUME = 0x424D;
+const PASSPORT_REFUSED = 0x424E;
+/** Longest lifetime of a peer session. */
+const PASSPORT_SESSION_MAX_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 /** Longest lifetime of a pairing frame or a mailbox read (interactive). */
 const DELEGATION_LINK_MAX_TTL_MS = 3 * 60 * 1000;
 /** Longest lifetime of a delegation request (it may wait in a notification inbox). */
@@ -900,6 +913,11 @@ module.exports = {
   DELEGATION_REQUEST,
   DELEGATION_RESULT,
   DELEGATION_MAILBOX_FETCH,
+  PASSPORT_CONNECT,
+  PASSPORT_SESSION,
+  PASSPORT_RESUME,
+  PASSPORT_REFUSED,
+  PASSPORT_SESSION_MAX_TTL_MS,
   DELEGATION_LINK_MAX_TTL_MS,
   DELEGATION_REQUEST_MAX_TTL_MS,
   PEER_CANDIDATE,

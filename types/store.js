@@ -33,6 +33,25 @@ function routePath (path) {
 const UNSAFE_PATH_TOKENS = new Set(['__proto__', 'constructor', 'prototype']);
 
 /**
+ * The JSON `set` writes for `value`, or null when it writes the value as itself.
+ * @private
+ */
+function persistedJson (value) {
+  return (typeof value === 'string' || Buffer.isBuffer(value)) ? null : JSON.stringify(value);
+}
+
+/**
+ * Level reads text back through the persisted JSON cap, so longer JSON would
+ * reopen as a string, not the object written.
+ * @private
+ */
+function persistedSizeError (path, json) {
+  return typeof json === 'string' && json.length > PERSISTED_JSON_MAX_CHARS
+    ? `${path} is larger than ${PERSISTED_JSON_MAX_CHARS} characters of JSON`
+    : null;
+}
+
+/**
  * A value read back from Level. `set` cannot store `null`, so persisted `null`
  * text was the string 'null'.
  * @private
@@ -353,10 +372,7 @@ class Store extends Actor {
 
       // Add Element to Collection
       origin.push(value);
-
-      // Store the object at an entity locale
-      await self._PUT(`/entities/${state.id}`, value);
-      let serialized = await origin.serialize();
+      const serialized = String(await origin.serialize());
 
       // Keep in-memory collection view in sync for _GET/_PUT call paths.
       const existingList = await self._GET(key);
@@ -364,10 +380,22 @@ class Store extends Actor {
       const inMemoryList = Array.isArray(existingList) ? existingList.filter((item) => item != null) : [];
       const seedList = inMemoryList.length ? inMemoryList : persistedList;
       const nextList = seedList.concat([value]);
+
+      // Every key this post writes must read back after a reopen; check them all before the first write.
+      if (this.settings.persistent !== false) {
+        const sizeError = persistedSizeError(key, persistedJson(nextList))
+          || persistedSizeError(`/entities/${state.id}`, persistedJson(value))
+          || persistedSizeError(address, serialized);
+        if (sizeError) throw new Error(`[FABRIC:STORE] ${sizeError}`);
+      }
+
       await self._PUT(key, nextList);
 
+      // Store the object at an entity locale
+      await self._PUT(`/entities/${state.id}`, value);
+
       // Write serialized Collection to disk
-      await self.db.put(address, serialized.toString());
+      await self.db.put(address, serialized);
     } catch (E) {
       console.log('Could not POST:', key, value, E);
       return false;
@@ -384,6 +412,13 @@ class Store extends Actor {
     let vector = new State(data);
     let stack = new Stack(list);
     stack.push(vector.id);
+    // Check every key this push writes before the first write (`_REGISTER` writes the entity).
+    if (this.settings.persistent !== false) {
+      const sizeError = persistedSizeError(`/blobs/${vector.id}`, persistedJson(vector['@data']))
+        || persistedSizeError(path, persistedJson(stack['@data']))
+        || persistedSizeError('/entities', persistedJson(new Actor(data).toObject()));
+      if (sizeError) throw new Error(`[FABRIC:STORE] ${sizeError}`);
+    }
     await this._REGISTER(data);
     await this._PUT(`/blobs/${vector.id}`, vector['@data']);
     await this._SET(path, stack['@data']);
@@ -583,11 +618,9 @@ class Store extends Actor {
     const parentError = await this._parentError(route.path);
     if (parentError) throw new Error(`[FABRIC:STORE] ${parentError}`);
     const persisting = !!this.db && this.settings.persistent !== false;
-    // Level reads text back through the persisted JSON cap: a longer object would reopen as a string.
-    if (persisting && typeof value !== 'string' && !Buffer.isBuffer(value)
-      && JSON.stringify(value).length > PERSISTED_JSON_MAX_CHARS) {
-      throw new Error(`[FABRIC:STORE] ${route.path} is larger than ${PERSISTED_JSON_MAX_CHARS} characters of JSON`);
-    }
+    const json = persistedJson(value);
+    const sizeError = persisting ? persistedSizeError(route.path, json) : null;
+    if (sizeError) throw new Error(`[FABRIC:STORE] ${sizeError}`);
     const info = await this.getDataInfo(value);
     const data = await this.encodeValue(value);
 
@@ -595,9 +628,7 @@ class Store extends Actor {
     // This is what defines our key => value store.
     // All functions can be run as a map of an original input vector, allowing
     // binary scoping across trees of varying complexity.
-    const hashInput = (typeof value === 'string' || Buffer.isBuffer(value))
-      ? value
-      : JSON.stringify(value);
+    const hashInput = json === null ? value : json;
     const hash = this.sha256(hashInput);
     const actor = new Actor({
       type: 'FabricDocument',
@@ -610,10 +641,7 @@ class Store extends Actor {
     // before memory or a commit shows it: a strict write that fails changes nothing.
     if (persisting) {
       try {
-        const payload = (typeof value === 'string')
-          ? value
-          : (Buffer.isBuffer(value) ? value : JSON.stringify(value));
-        await this.db.put(route.path, payload);
+        await this.db.put(route.path, json === null ? value : json);
       } catch (E) {
         if (this.settings.strict) throw E;
         console.error('[FABRIC:STORE]', 'Could not persist key:', route.path, E);

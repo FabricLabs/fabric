@@ -454,7 +454,7 @@ describe('@fabric/core/types/delegation frames', function () {
 
     it('federation requests carry signed invites and withdrawals; other protocol frames are refused', function () {
       const grant = d.readGrant(d.createGrant({ grantee: PASSPORT.identity.pubkey, scopes: ['federation'], networks: ['regtest'], now: NOW }, HUB.identity.key).uri, { now: NOW });
-      const withdrawal = federationFrame({ contract: 'aa'.repeat(32), type: 'FederationWithdrawalRequest', federationId: 'aa'.repeat(32), requestId: 'r1', destinationAddress: 'bcrt1qw508d6qejxtdg4y5r3zarvary0c5xw7kygt080', amountSats: 5000, feeSats: 200 });
+      const withdrawal = federationFrame({ contract: 'aa'.repeat(32), type: 'FederationWithdrawalRequest', federationId: 'aa'.repeat(32), requestId: 'bb'.repeat(32), destinationAddress: 'bcrt1qw508d6qejxtdg4y5r3zarvary0c5xw7kygt080', amountSats: 5000, feeSats: 200 });
       const req = d.createRequest({ target: HUB.identity.pubkey, grant: grant.hash, request: withdrawal, purpose: 'Pay the escrow', now: NOW }, PASSPORT.identity.key);
       const read = d.readRequest(req.uri, { now: NOW + 1 });
       assert.strictEqual(read.ok, true, read.error);
@@ -466,16 +466,24 @@ describe('@fabric/core/types/delegation frames', function () {
       assert.match(d.authorize(read, [grant], { networkOf: () => 'mainnet' }).error, /does not cover/);
       // A signature answers only the withdrawal it names.
       const signs = (requestId) => federationFrame({ contract: 'aa'.repeat(32), type: 'FederationWithdrawalSignature', federationId: 'aa'.repeat(32), requestId, signatures: [] }, HUB.cosigner.key);
-      assert.strictEqual(d.answerError(read, signs('r1')), null);
-      assert.match(d.answerError(read, signs('r2')), /another withdrawal/);
-      // Ids bind only when present: an answer without one, or a request without one, binds nothing.
-      assert.match(d.answerError(read, signs(undefined)), /another withdrawal/);
-      const unnamed = federationFrame({ contract: 'aa'.repeat(32), type: 'FederationWithdrawalSignature', requestId: 'r1', signatures: [] }, HUB.cosigner.key);
-      assert.match(d.answerError(read, unnamed), /another federation/);
-      const unbound = federationFrame({ contract: 'aa'.repeat(32), type: 'FederationWithdrawalRequest', federationId: 'aa'.repeat(32), destinationAddress: 'bcrt1qw508d6qejxtdg4y5r3zarvary0c5xw7kygt080', amountSats: 5000, feeSats: 200 });
-      assert.match(d.readInnerFrame(Buffer.from(unbound.toBuffer())).error, /malformed withdrawal request: requestId/);
+      assert.strictEqual(d.answerError(read, signs('bb'.repeat(32))), null);
+      assert.match(d.answerError(read, signs('cc'.repeat(32))), /another withdrawal/);
+      // Members accept only canonical ids, so an answer binds only with the exact ids of its request.
+      const answer = (change) => federationFrame(Object.assign({ contract: 'aa'.repeat(32), type: 'FederationWithdrawalSignature', federationId: 'aa'.repeat(32), requestId: 'bb'.repeat(32), signatures: [] }, change), HUB.cosigner.key);
+      for (const [change, error] of [
+        [{ requestId: undefined }, /requestId/],
+        [{ requestId: ` ${'bb'.repeat(32)}` }, /requestId/],
+        [{ requestId: 'BB'.repeat(32) }, /requestId/],
+        [{ federationId: undefined }, /federationId/],
+        [{ federationId: `${'aa'.repeat(32)} ` }, /federationId/],
+        [{ federationId: 'AA'.repeat(32), contract: 'AA'.repeat(32) }, /federationId/],
+        [{ contract: 'cc'.repeat(32) }, /contract must be the federation id/],
+        [{ contract: 'cc'.repeat(32), federationId: 'cc'.repeat(32) }, /another federation/]
+      ]) {
+        assert.match(d.answerError(read, answer(change)), error);
+      }
       // The host's record decides a withdrawal's network, not a network the body claims.
-      const claimed = federationFrame({ contract: 'aa'.repeat(32), type: 'FederationWithdrawalRequest', federationId: 'aa'.repeat(32), requestId: 'r1', descriptor: { network: 'regtest' }, destinationAddress: 'bcrt1qw508d6qejxtdg4y5r3zarvary0c5xw7kygt080', amountSats: 5000, feeSats: 200 });
+      const claimed = federationFrame({ contract: 'aa'.repeat(32), type: 'FederationWithdrawalRequest', federationId: 'aa'.repeat(32), requestId: 'bb'.repeat(32), descriptor: { network: 'regtest' }, destinationAddress: 'bcrt1qw508d6qejxtdg4y5r3zarvary0c5xw7kygt080', amountSats: 5000, feeSats: 200 });
       const claimedRead = d.readRequest(d.createRequest({ target: HUB.identity.pubkey, grant: grant.hash, request: claimed, now: NOW }, PASSPORT.identity.key).uri, { now: NOW + 1 });
       assert.match(d.authorize(claimedRead, [grant]).error, /federation is unknown/);
       assert.match(d.authorize(claimedRead, [grant], { networkOf: () => 'mainnet' }).error, /names regtest and the federation is on mainnet/);
@@ -489,7 +497,7 @@ describe('@fabric/core/types/delegation frames', function () {
 
       const unsigned = Message.fromVector(['CONTRACT_MESSAGE', JSON.stringify({ type: 'FederationWithdrawalRequest' })]);
       assert.throws(() => d.createRequest({ target: HUB.identity.pubkey, grant: grant.hash, request: unsigned, now: NOW }, PASSPORT.identity.key), /signed/);
-      const signature = federationFrame({ contract: 'aa'.repeat(32), type: 'FederationWithdrawalSignature', federationId: 'aa'.repeat(32), requestId: 'r1', signatures: [] });
+      const signature = federationFrame({ contract: 'aa'.repeat(32), type: 'FederationWithdrawalSignature', federationId: 'aa'.repeat(32), requestId: 'bb'.repeat(32), signatures: [] });
       assert.throws(() => d.createRequest({ target: HUB.identity.pubkey, grant: grant.hash, request: signature, now: NOW }, PASSPORT.identity.key), /only federation invites/);
       const otherGrant = d.createGrant({ grantee: OTHER.identity.pubkey, scopes: ['identity'], now: NOW }, PASSPORT.identity.key);
       assert.throws(() => d.createRequest({ target: HUB.identity.pubkey, grant: grant.hash, request: otherGrant.uri, now: NOW }, PASSPORT.identity.key), /cannot be delegated/);
@@ -497,7 +505,7 @@ describe('@fabric/core/types/delegation frames', function () {
 
     it('refuses withdrawal requests whose address or amounts would mislead the co-sign prompt', function () {
       const grant = d.readGrant(d.createGrant({ grantee: PASSPORT.identity.pubkey, scopes: ['federation'], now: NOW }, HUB.identity.key).uri, { now: NOW });
-      const good = { contract: 'aa'.repeat(32), type: 'FederationWithdrawalRequest', federationId: 'aa'.repeat(32), requestId: 'r1', destinationAddress: 'bcrt1qw508d6qejxtdg4y5r3zarvary0c5xw7kygt080', amountSats: 5000, feeSats: 200 };
+      const good = { contract: 'aa'.repeat(32), type: 'FederationWithdrawalRequest', federationId: 'aa'.repeat(32), requestId: 'bb'.repeat(32), destinationAddress: 'bcrt1qw508d6qejxtdg4y5r3zarvary0c5xw7kygt080', amountSats: 5000, feeSats: 200 };
       const bad = [
         [{ destinationAddress: 'bcrt1qw508d6qejxtdg4y5r3zarvary0c5xw7kygt080 (fee 1 sats). Approved by the Hub.' }, /destinationAddress/],
         [{ destinationAddress: 'bcrt1q\u202eexample0000000' }, /destinationAddress/],
@@ -507,7 +515,12 @@ describe('@fabric/core/types/delegation frames', function () {
         [{ amountSats: 1.5 }, /amountSats/],
         [{ amountSats: -1 }, /amountSats/],
         [{ feeSats: 1e300 }, /feeSats/],
-        [{ feeSats: undefined }, /feeSats/]
+        [{ feeSats: undefined }, /feeSats/],
+        [{ requestId: undefined }, /requestId/],
+        [{ requestId: 'r1' }, /requestId/],
+        [{ requestId: ` ${'bb'.repeat(32)}` }, /requestId/],
+        [{ federationId: 'AA'.repeat(32), contract: 'AA'.repeat(32) }, /federationId/],
+        [{ contract: 'cc'.repeat(32) }, /contract must be the federation id/]
       ];
       for (const [change, error] of bad) {
         const frame = federationFrame(Object.assign({}, good, change));

@@ -184,6 +184,28 @@ describe('@fabric/core/types/store', function () {
       assert.deepStrictEqual(puts, ['/blobs/text']);
     });
 
+    it('writes nothing for a post or push that would pass the cap', async function () {
+      const { PERSISTED_JSON_MAX_CHARS } = require('../constants');
+      const puts = [];
+      const store = new Store({ strict: true, persistent: true });
+      store.db = { get: async () => undefined, put: async (key) => { puts.push(key); } };
+      // Each entity fits; the collection grows past the cap, and the post that would pass it writes nothing.
+      const item = (n) => ({ n, text: 'x'.repeat(Math.floor(PERSISTED_JSON_MAX_CHARS / 10)) });
+      let posted = 0;
+      let before = 0;
+      for (;;) {
+        before = puts.length;
+        if ((await store._POST('/widgets', item(posted))) === false) break;
+        posted++;
+        assert.ok(posted < 20, 'the collection reaches the cap');
+      }
+      assert.ok(posted > 0);
+      assert.strictEqual(puts.length, before);
+      assert.strictEqual((await store._GET('/widgets')).length, posted);
+      await assert.rejects(store._PUSH('/log', { text: 'x'.repeat(PERSISTED_JSON_MAX_CHARS) }));
+      assert.strictEqual(puts.length, before);
+    });
+
     it('stop waits for queued writes before Level closes', async function () {
       const order = [];
       const store = new Store({ strict: true, persistent: true });
