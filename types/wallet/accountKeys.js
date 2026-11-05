@@ -48,14 +48,20 @@ const WALLET_GAP_LIMIT = 20;
 const ACCOUNT_VAULT_TYPE = 'FabricAccountVault';
 const ACCOUNT_VAULT_VERSION = 2;
 
-/** @private bitcoinjs-lib address parameters per network. */
+/**
+ * bitcoinjs-lib address parameters per network.
+ * @private
+ */
 const ADDRESS_NETWORKS = Object.freeze({
   mainnet: networks.bitcoin,
   testnet: networks.testnet,
   regtest: networks.regtest
 });
 
-/** @private BIP32 serialization versions (xprv/xpub, tprv/tpub). */
+/**
+ * BIP32 serialization versions (xprv/xpub, tprv/tpub).
+ * @private
+ */
 const VERSIONS = Object.freeze({
   mainnet: networks.bitcoin.bip32,
   testnet: networks.testnet.bip32
@@ -397,7 +403,7 @@ function unsealMaster (blob, lockPassword) {
  * client can show identities and watch-only balances. Anyone able to edit the
  * record can change it, and no key is available to check it while locked, so
  * {@link currentVaultAccount} marks it unverified until the master checks it.
- * @param {ReturnType<typeof deriveAccount>} derived
+ * @param {object} derived result of `deriveAccount`
  * @param {string} [label]
  * @returns {object}
  */
