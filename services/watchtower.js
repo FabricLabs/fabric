@@ -122,7 +122,10 @@ class Watchtower extends Service {
     const priv = priv32(settings.localPrivateKey);
     this.localPubkey = priv ? Witness.xOnlyPubkeyHex(priv) : (Key.pubkeyXOnly(settings.localPubkey) || null);
     this._admit = typeof settings.admit === 'function' ? settings.admit : null;
-    /** @type {Map<string, object>} `${client}|${hint}` → signed appointment */
+    /**
+     * `${client}|${hint}` → signed appointment
+     * @type {Map<string, object>}
+     */
     this._filings = new Map();
   }
 
