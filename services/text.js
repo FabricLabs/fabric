@@ -6,7 +6,7 @@ const oxfordJoin = require('../functions/oxfordJoin');
 
 /**
  * Text-oriented {@link Service} stub (legacy name was <code>TXT</code>).
- * Static helpers mirror small utilities used in Sensemaker (tokenize, middle truncation,
+ * Static helpers for common text formatting (tokenize, middle truncation,
  * relative time strings) and core helpers ({@link module:functions/oxfordJoin}).
  * @class Text
  * @extends Service
@@ -18,7 +18,7 @@ class Text extends Service {
   }
 
   /**
-   * Split on runs of whitespace (Sensemaker-style tokenization).
+   * Split on runs of whitespace.
    * @param {string} string
    * @returns {string[]}
    */
@@ -38,7 +38,7 @@ class Text extends Service {
   }
 
   /**
-   * Human-readable relative time (e.g. <code>3 days ago</code>), ported from Sensemaker.
+   * Human-readable relative time (e.g. <code>3 days ago</code>).
    * @param {Date|string|number} date
    * @returns {string}
    */

@@ -25,6 +25,7 @@ src/*
 !src/message.h
 !src/memory.h
 !src/noise.h
+!src/noise.c
 !src/p2p.c
 !src/peer.c
 !src/peer.h
@@ -66,12 +67,19 @@ lib-cov
 ### Coverage directory used by tools like istanbul
 coverage
 reports/coverage-btc-tmp/
+reports/coverage-*/
 reports/credits.json
 reports/licenses.json
 reports/benchmark-latest.json
+reports/simulator-latest.json
+reports/simulator-beacon-audit-latest.json
+reports/simulator-beacon-audit-latest.md
+reports/simulator-beacon-1000.log
 reports/AUDIT.json
 reports/class-inheritance.json
 reports/npm-audit.json
+reports/bip-compliance.json
+reports/bip-compliance.md
 
 ### node-waf configuration
 .lock-wscript
@@ -112,6 +120,16 @@ result*
 .idea
 
 _book
+
+# Local coverage dumps (never pack / never commit)
+coverage-hot*/
+coverage-covfocus/
+coverage-hot
+reports/cov-*/
+
+# Local run artifacts (chaos/adversary probes, ad-hoc review bundles)
+reports/playnet-chaos-neighbors*.json
+reports/rsi-*-review/
 
 # Pesky Mac Stuff
 .DS_Store

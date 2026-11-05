@@ -16,6 +16,7 @@ const parser = require('content-type');
 // Internal Types
 const Actor = require('./actor');
 const Message = require('./message');
+const { randomUnit } = require('../functions/bytes');
 
 /**
  * @classdesc <strong>WebSocket client</strong> to a remote Fabric/Hub-style host (extends {@link Actor}). Per comment in
@@ -36,7 +37,7 @@ class Remote extends Actor {
 
     this.settings = Object.assign({
       backoff: 2,
-      entropy: Math.random(),
+      entropy: randomUnit(),
       macaroon: null,
       secure: true,
       state: {
@@ -154,7 +155,7 @@ class Remote extends Actor {
     console.log('[FABRIC:REMOTE]', 'Socket close:', message);
     this._reconnectAttempts++;
     this._reconnector = setTimeout(this.connect.bind(this), this._nextReconnect);
-    this._nextReconnect = Math.pow(this.settings.backoff, this._reconnectAttempts) * 1000 * Math.random();
+    this._nextReconnect = Math.pow(this.settings.backoff, this._reconnectAttempts) * 1000 * randomUnit();
   }
 
   async _handleSocketError (message) {

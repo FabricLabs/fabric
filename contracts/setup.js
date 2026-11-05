@@ -1,55 +1,45 @@
 /**
- * OP_SETUP () : Configures the environment for Fabric.
+ * OP_SETUP () : Configures the local Fabric environment.
+ *
+ * Interactive (TTY): lightweight Blessed TUI over {@link module:functions/fabricSetup}
+ * — view public key data, backup, restore, generate / regenerate.
+ * One-shot flags (`--no-tui`, `--json`, `--backup`, `--restore`, `--force`) skip the TUI.
  */
 
-// Dependencies
-const Wallet = require('../types/wallet');
+'use strict';
 
-// Program Definition
-async function OP_SETUP (command = {}) {
-  // TODO: replicate this program in C / ASM
-  if (this.environment.wallet && !this.program.force) {
-    console.warn('[FABRIC:CLI]', 'Wallet file exists, no data will be written.  Use --force to override.');
-    console.warn('[FABRIC:CLI]', '[WARNING]', '--force DESTROYS ALL DATA: DOUBLE-CHECK YOUR BACKUPS!');
-    console.warn('[FABRIC:CLI]', 'EXISTING_XPUB_PUBLIC', '=', this.environment.wallet.key.xpub);
-  } else {
-    console.log('[FABRIC:CLI]', 'No wallet found!  Generating new seed...');
+const fabricSetup = require('../functions/fabricSetup');
+const SetupTui = require('../types/setup');
 
-    const seed = Wallet.createSeed(this.program.passphrase);
-    const wallet = Wallet.fromSeed(seed);
+/**
+ * @param {Object} [opts] Commander command options.
+ * @returns {Promise<string>}
+ */
+async function OP_SETUP (opts = {}) {
+  const globalOpts = (this.program && typeof this.program.opts === 'function')
+    ? this.program.opts()
+    : {};
+  const merged = Object.assign({}, globalOpts, opts && typeof opts === 'object' ? opts : {});
 
-    console.warn('[FABRIC:CLI]', '---');
-    console.warn('[FABRIC:CLI]', '[!!!]', 'WARNING!', 'TOXIC WASTE BELOW', '[!!!]');
-    console.warn('[FABRIC:CLI]', '[!!!]', 'The below is PRIVATE KEY MATERIAL, which can be used to');
-    console.warn('[FABRIC:CLI]', '[!!!]', 'spend funds from this wallet & deanonymize historical transactions.');
-    console.warn('[FABRIC:CLI]', '[!!!]', 'DO NOT DISTRIBUTE', '[!!!]');
-    console.warn('[FABRIC:CLI]', '---');
-
-    // ### [!!!] Toxic Waste [!!!]
-    // TODO: remove from log output...
-    console.warn('[FABRIC:CLI]', `Your seed phrase:\n\n${seed.phrase}\n`);
-    console.warn('[FABRIC:CLI]', `Your master key: ${seed.master}`);
-    console.warn('[FABRIC:CLI]', `Your master xprv: ${seed.xprv}`);
-
-    // Save file
-    this.environment.setWallet(wallet, true);
-
-    console.warn('[FABRIC:CLI]', `The private key for your seed phrase has been saved to your wallet: ${wallet.WALLET_FILE}`);
-    console.warn('[FABRIC:CLI]', 'All done!  You can now run the `fabric` command to launch your node.');
-
-    // Report to console
-    // Load Keys, etc.
-    wallet.start();
-
-    // Debug output
-    console.debug(`Wallet: [${(wallet) ? wallet.id : 'unknown' }]:`, wallet.export());
-    console.debug(`Wallet State:`, wallet.state);
-    console.debug(`Wallet Keys:`, wallet.state.keys);
+  if (fabricSetup.shouldLaunchTui(merged, { stdout: process.stdout })) {
+    const ui = new SetupTui(this.environment, {
+      passphrase: merged.passphrase || '',
+      password: merged.password || process.env.FABRIC_PASSWORD || '',
+      walletFile: merged.wallet,
+      force: !!merged.force
+    });
+    await ui.start();
+    return JSON.stringify({
+      wallet: this.environment.wallet && this.environment.wallet.id
+    });
   }
 
-  // Success!
-  return JSON.stringify({ wallet: this.environment.wallet.id });
+  const result = await fabricSetup.runSetupCli(this.environment, merged);
+  return JSON.stringify({
+    ok: result && result.ok !== false,
+    wallet: this.environment.wallet && this.environment.wallet.id,
+    skipped: !!(result && result.skipped)
+  });
 }
 
-// Module
 module.exports = OP_SETUP;

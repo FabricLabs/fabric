@@ -25,6 +25,10 @@
 #include <Security/Security.h>
 #endif
 
+#ifndef _WIN32
+#include <pthread.h>
+#endif
+
 // Internal allocation tracking for secure free operations
 typedef struct allocation_record
 {
@@ -35,6 +39,38 @@ typedef struct allocation_record
 
 static allocation_record_t *allocations = NULL;
 static int memory_initialized = 0;
+
+#ifndef _WIN32
+static pthread_mutex_t g_secure_alloc_mutex;
+static int g_secure_alloc_mutex_ready = 0;
+
+static void secure_alloc_mutex_init (void)
+{
+  if (g_secure_alloc_mutex_ready)
+    return;
+
+  pthread_mutexattr_t attr;
+  pthread_mutexattr_init(&attr);
+  pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
+  pthread_mutex_init(&g_secure_alloc_mutex, &attr);
+  pthread_mutexattr_destroy(&attr);
+  g_secure_alloc_mutex_ready = 1;
+}
+
+static inline void secure_alloc_lock (void)
+{
+  secure_alloc_mutex_init();
+  pthread_mutex_lock(&g_secure_alloc_mutex);
+}
+
+static inline void secure_alloc_unlock (void)
+{
+  pthread_mutex_unlock(&g_secure_alloc_mutex);
+}
+#else
+static inline void secure_alloc_lock (void) {}
+static inline void secure_alloc_unlock (void) {}
+#endif
 
 // Platform-specific secure zero implementation
 #ifdef _WIN32
@@ -56,20 +92,25 @@ static void secure_zero_impl(volatile void *ptr, size_t len)
 
 FabricError fabric_secure_memory_init(void)
 {
+  secure_alloc_lock();
   if (memory_initialized)
   {
+    secure_alloc_unlock();
     return FABRIC_SUCCESS;
   }
 
   allocations = NULL;
   memory_initialized = 1;
+  secure_alloc_unlock();
   return FABRIC_SUCCESS;
 }
 
 void fabric_secure_memory_cleanup(void)
 {
+  secure_alloc_lock();
   if (!memory_initialized)
   {
+    secure_alloc_unlock();
     return;
   }
 
@@ -89,29 +130,42 @@ void fabric_secure_memory_cleanup(void)
 
   allocations = NULL;
   memory_initialized = 0;
+  secure_alloc_unlock();
 }
 
 /** @return 0 on success, -1 if tracking metadata could not be allocated */
 static int track_allocation(void *ptr, size_t size)
 {
+  secure_alloc_lock();
   if (!ptr || size == 0)
+  {
+    secure_alloc_unlock();
     return 0;
+  }
 
   allocation_record_t *record = malloc(sizeof(allocation_record_t));
   if (!record)
+  {
+    secure_alloc_unlock();
     return -1;
+  }
 
   record->ptr = ptr;
   record->size = size;
   record->next = allocations;
   allocations = record;
+  secure_alloc_unlock();
   return 0;
 }
 
 static size_t untrack_allocation(void *ptr)
 {
+  secure_alloc_lock();
   if (!ptr)
+  {
+    secure_alloc_unlock();
     return 0;
+  }
 
   allocation_record_t **current = &allocations;
   while (*current)
@@ -122,11 +176,13 @@ static size_t untrack_allocation(void *ptr)
       size_t size = to_remove->size;
       *current = to_remove->next;
       free(to_remove);
+      secure_alloc_unlock();
       return size;
     }
     current = &(*current)->next;
   }
 
+  secure_alloc_unlock();
   return 0; // Not found
 }
 
@@ -205,6 +261,10 @@ void *fabric_secure_realloc(void *ptr, size_t old_size, size_t new_size)
   if (old_size == 0)
   {
     old_size = fabric_secure_malloc_size(ptr);
+    if (old_size == 0)
+    {
+      return NULL;
+    }
   }
 
   void *new_ptr = fabric_secure_malloc(new_size);
@@ -322,16 +382,20 @@ size_t fabric_secure_malloc_size(void *ptr)
   if (!ptr)
     return 0;
 
+  secure_alloc_lock();
   allocation_record_t *current = allocations;
   while (current)
   {
     if (current->ptr == ptr)
     {
-      return current->size;
+      size_t sz = current->size;
+      secure_alloc_unlock();
+      return sz;
     }
     current = current->next;
   }
 
+  secure_alloc_unlock();
   return 0; // Not found
 }
 

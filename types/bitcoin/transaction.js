@@ -57,7 +57,10 @@ class BitcoinTransaction extends Actor {
   }
 
   _rawBuf () {
-    return rawTransactionBuffer(this.settings.raw);
+    if (this._state.content.raw != null) {
+      return this._state.content.raw;
+    }
+    return Buffer.alloc(0);
   }
 
   get hash () {

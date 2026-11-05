@@ -17,10 +17,10 @@
  */
 
 /**
- * TLV types named in BOLT #12 (offer / invoice_request / invoice ranges differ by stream).
+ * TLV type numbers for BOLT #12 and Core Lightning `decode` fields (offer / invoice_request / invoice).
  * @readonly
  */
-const BOLT12_TLV = Object.freeze({
+const CLN_BOLT12_TLV = Object.freeze({
   INVREQ_METADATA: 0,
   OFFER_CHAINS: 2,
   OFFER_METADATA: 4,
@@ -40,8 +40,12 @@ const BOLT12_TLV = Object.freeze({
   OFFER_RECURRENCE_LIMIT: 29,
   INVREQ_CHAIN: 80,
   INVREQ_AMOUNT: 82,
+  INVREQ_FEATURES: 84,
   INVREQ_QUANTITY: 86,
   INVREQ_PAYER_ID: 88,
+  INVREQ_PAYER_NOTE: 89,
+  INVREQ_PATHS: 90,
+  INVREQ_BIP353_NAME: 91,
   INVREQ_RECURRENCE_COUNTER: 92,
   INVREQ_RECURRENCE_START: 93,
   INVREQ_RECURRENCE_CANCEL: 94,
@@ -50,11 +54,17 @@ const BOLT12_TLV = Object.freeze({
   INVOICE_PATHS: 160,
   INVOICE_BLINDEDPAY: 162,
   INVOICE_CREATED_AT: 164,
+  INVOICE_RELATIVE_EXPIRY: 166,
   INVOICE_PAYMENT_HASH: 168,
   INVOICE_AMOUNT: 170,
+  INVOICE_FALLBACKS: 172,
+  INVOICE_FEATURES: 174,
   INVOICE_NODE_ID: 176,
   INVOICE_RECURRENCE_BASETIME: 177
 });
+
+/** @deprecated Use {@link CLN_BOLT12_TLV} — name kept for existing imports. */
+const BOLT12_TLV = CLN_BOLT12_TLV;
 
 /**
  * Normalized kind for a value returned by **`decode`** / **`decodeLightning`**.
@@ -143,6 +153,7 @@ function summarizeBolt12RecurrenceFromDecode (decoded) {
 
 module.exports = {
   BOLT12_TLV,
+  CLN_BOLT12_TLV,
   Bolt12StreamKind,
   bip340SignatureApplies,
   classifyDecodedBolt12,

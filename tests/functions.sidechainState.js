@@ -1,0 +1,641 @@
+'use strict';
+
+const assert = require('assert');
+const crypto = require('crypto');
+const Key = require('../types/key');
+const de = require('../functions/beaconFederationSigning');
+const { jsonSafe, stableStringify } = require('../functions/fabricCanonicalJson');
+const { parseDistributedManifestV1 } = require('../functions/fabricProgramManifest');
+const sc = require('../functions/sidechainState');
+const Message = require('../types/message');
+const SIGNING_TAGS = require('../functions/signingTags');
+
+function legacyBody (msg) {
+  const parsed = Message.tryParseLegacyBody(Message.fromBuffer(msg.toBuffer()));
+  assert.strictEqual(parsed.encoding, 'fields');
+  return parsed.value;
+}
+
+// Compat aliases used by older assertions in this file
+de.jsonSafe = jsonSafe;
+de.stableStringify = stableStringify;
+de.parseDistributedManifestV1 = parseDistributedManifestV1;
+
+describe('@fabric/core/functions/sidechainState', function () {
+  it('contract namespace paths and parent seal patches', function () {
+    const id = 'ab'.repeat(32);
+    const paths = sc.storePathsForContract(id);
+    assert.strictEqual(paths.state, `sidechains/${id}/STATE`);
+    assert.strictEqual(sc.parentSealPath(id), `/namespaces/${id}`);
+    const head = sc.namespaceHeadFromState(id, sc.createInitialState(), { name: 'App' });
+    const patches = sc.patchesForNamespaceHead({}, id, head);
+    assert.strictEqual(patches[0].path, '/namespaces');
+    assert.ok(patches[0].value[id]);
+  });
+
+  it('stateDigest is stable for same content', function () {
+    const a = { version: 1, clock: 0, content: { x: 1 } };
+    const b = { version: 1, clock: 0, content: { x: 1 } };
+    assert.strictEqual(sc.stateDigest(a), sc.stateDigest(b));
+  });
+
+  it('applyPatchesToState bumps clock and applies RFC6902', function () {
+    const s0 = sc.createInitialState();
+    const r = sc.applyPatchesToState(s0, [{ op: 'add', path: '/hello', value: 'world' }]);
+    assert.strictEqual(r.ok, true);
+    assert.strictEqual(r.state.clock, 1);
+    assert.strictEqual(r.state.content.hello, 'world');
+  });
+
+  it('validatePatchesAgainstPolicy rejects denied and disallowed paths', function () {
+    const policy = sc.parseStatechainPathPolicy({
+      maxOps: 2,
+      allowedPathPrefixes: ['/app'],
+      deniedPathPrefixes: ['/app/secret']
+    });
+    assert.strictEqual(
+      sc.validatePatchesAgainstPolicy([{ op: 'add', path: '/other', value: 1 }], policy).ok,
+      false
+    );
+    assert.strictEqual(
+      sc.validatePatchesAgainstPolicy([{ op: 'add', path: '/app/secret', value: 1 }], policy).ok,
+      false
+    );
+    assert.strictEqual(
+      sc.validatePatchesAgainstPolicy([{ op: 'add', path: '/app/ok', value: 1 }], policy).ok,
+      true
+    );
+    // A prefix must match a whole JSON Pointer segment. A bare `startsWith`
+    // would widen `/federationReserve` to `/federationReserveShadow`.
+    assert.strictEqual(
+      sc.validatePatchesAgainstPolicy([{ op: 'add', path: '/application', value: 1 }], policy).ok,
+      false,
+      '/app must not allow the sibling key /application'
+    );
+    assert.strictEqual(
+      sc.validatePatchesAgainstPolicy([{ op: 'add', path: '/applications/x', value: 1 }], policy).ok,
+      false
+    );
+    assert.strictEqual(
+      sc.validatePatchesAgainstPolicy([{
+        op: 'copy',
+        from: '/application',
+        path: '/app/ok'
+      }], policy).ok,
+      false,
+      'sibling-prefix widening must not leak through copy `from`'
+    );
+
+    const rootPolicy = sc.parseStatechainPathPolicy({ allowedPathPrefixes: ['/'] });
+    assert.strictEqual(
+      sc.validatePatchesAgainstPolicy([{ op: 'add', path: '/anywhere', value: 1 }], rootPolicy).ok,
+      true,
+      "'/' is a wildcard prefix — operators must not allow it"
+    );
+    assert.strictEqual(
+      sc.validatePatchesAgainstPolicy([{
+        op: 'copy',
+        from: '/outside',
+        path: '/app/ok'
+      }], policy).ok,
+      false
+    );
+    assert.strictEqual(
+      sc.validatePatchesAgainstPolicy([{
+        op: 'move',
+        from: '/app/secret',
+        path: '/app/ok'
+      }], policy).ok,
+      false
+    );
+    assert.strictEqual(
+      sc.validatePatchesAgainstPolicy([{
+        op: 'copy',
+        from: '/app/src',
+        path: '/app/dst'
+      }], policy).ok,
+      true
+    );
+    assert.strictEqual(
+      sc.applyPatchesToState(sc.createInitialState(), [
+        { op: 'add', path: '/a', value: 1 },
+        { op: 'add', path: '/b', value: 2 },
+        { op: 'add', path: '/c', value: 3 }
+      ], policy).ok,
+      false
+    );
+  });
+
+  it('signingStringForSidechainStatePatch is stable', function () {
+    const p = {
+      basisClock: 0,
+      basisDigest: 'abc',
+      patches: [{ op: 'add', path: '/a', value: 1 }]
+    };
+    assert.strictEqual(
+      sc.signingStringForSidechainStatePatch(p),
+      sc.signingStringForSidechainStatePatch(p)
+    );
+    assert.strictEqual(sc.patchCommitmentDigestHex(p).length, 64);
+  });
+
+  it('loadStateAt parses Buffer STATE documents (not only strings)', function () {
+    const doc = { version: 1, clock: 4, content: { n: 7 } };
+    const fs = {
+      readFile: () => Buffer.from(JSON.stringify(doc), 'utf8')
+    };
+    const loaded = sc.loadStateAt(fs, 'sidechain/STATE');
+    assert.strictEqual(loaded.clock, 4);
+    assert.strictEqual(loaded.content.n, 7);
+  });
+
+  it('snapshots round-trip and prune by beacon clock', function () {
+    const store = new Map();
+    const fs = {
+      readFile: (name) => {
+        const v = store.get(name);
+        return v != null ? Buffer.from(v, 'utf8') : null;
+      },
+      writeFile: (name, content) => {
+        store.set(name, typeof content === 'string' ? content : content.toString('utf8'));
+        return true;
+      }
+    };
+    const st = { version: 1, clock: 2, content: { x: 1 } };
+    assert.strictEqual(sc.saveSnapshotForBeaconClockSync(fs, 5, st), true);
+    const got = sc.loadSnapshotForBeaconClock(fs, 5);
+    assert.strictEqual(got.clock, 2);
+    sc.saveSnapshotForBeaconClockSync(fs, 7, { version: 1, clock: 3, content: {} });
+    sc.pruneSnapshotsAfterBeaconClockSync(fs, 5);
+    assert.ok(sc.loadSnapshotForBeaconClock(fs, 5));
+    assert.strictEqual(sc.loadSnapshotForBeaconClock(fs, 7), null);
+  });
+
+  it('journal seals and resolveStateForBeaconTip replays unsealed', function () {
+    const store = new Map();
+    const fs = {
+      readFile: (name) => {
+        const v = store.get(name);
+        return v != null ? Buffer.from(v, 'utf8') : null;
+      },
+      writeFile: (name, content) => {
+        store.set(name, typeof content === 'string' ? content : content.toString('utf8'));
+        return true;
+      }
+    };
+
+    const s0 = sc.createInitialState();
+    const p1 = [{ op: 'add', path: '/a', value: 1 }];
+    const r1 = sc.applyPatchesToState(s0, p1);
+    assert.ok(r1.ok);
+    sc.appendJournalEntrySync(fs, {
+      basisClock: 0,
+      clock: r1.state.clock,
+      basisDigest: r1.basisDigest,
+      newDigest: r1.newDigest,
+      patchDigest: sc.patchCommitmentDigestHex({
+        basisClock: 0,
+        basisDigest: r1.basisDigest,
+        patches: p1
+      }),
+      patches: p1
+    });
+    sc.saveSnapshotForBeaconClockSync(fs, 1, r1.state);
+    sc.sealJournalThroughSidechainClockSync(fs, r1.state.clock, 1);
+
+    const p2 = [{ op: 'add', path: '/b', value: 2 }];
+    const r2 = sc.applyPatchesToState(r1.state, p2);
+    sc.appendJournalEntrySync(fs, {
+      basisClock: r1.state.clock,
+      clock: r2.state.clock,
+      basisDigest: r2.basisDigest,
+      newDigest: r2.newDigest,
+      patches: p2
+    });
+
+    const tipPayload = {
+      clock: 1,
+      sidechain: { clock: r1.state.clock, stateDigest: sc.stateDigest(r1.state) }
+    };
+    const resolved = sc.resolveStateForBeaconTip({
+      tipPayload,
+      snapshot: sc.loadSnapshotForBeaconClock(fs, 1),
+      loadedState: r2.state,
+      journalEntries: sc.loadJournalDoc(fs).entries,
+      replayUnsealed: true
+    });
+    assert.strictEqual(resolved.source, 'snapshot');
+    assert.strictEqual(resolved.unsealedApplied, 1);
+    assert.strictEqual(resolved.state.content.a, 1);
+    assert.strictEqual(resolved.state.content.b, 2);
+    assert.strictEqual(resolved.state.clock, 2);
+  });
+
+  it('resolveStateForBeaconTip falls back to genesis when snapshot and digest missing', function () {
+    const r = sc.resolveStateForBeaconTip({
+      tipPayload: { clock: 9, sidechain: { stateDigest: 'dead' } },
+      snapshot: null,
+      loadedState: { version: 1, clock: 3, content: { x: 1 } },
+      replayUnsealed: false
+    });
+    assert.strictEqual(r.source, 'genesis');
+    assert.strictEqual(r.state.clock, 0);
+    assert.ok(r.warning);
+  });
+
+  it('createSerializeQueue runs jobs in order', async function () {
+    const run = sc.createSerializeQueue();
+    const order = [];
+    await Promise.all([
+      run(async () => { await new Promise((r) => setTimeout(r, 20)); order.push(1); }),
+      run(async () => { order.push(2); })
+    ]);
+    assert.deepStrictEqual(order, [1, 2]);
+  });
+
+  it('encode/parse SIDECHAIN_STATE_PATCH message', function () {
+    const body = sc.encodeSidechainStatePatchMessage({
+      basisClock: 0,
+      basisDigest: 'aa'.repeat(32),
+      patches: [{ op: 'add', path: '/x', value: 1 }]
+    });
+    assert.strictEqual(body.type, sc.SIDECHAIN_STATE_PATCH_TYPE);
+    const parsed = sc.parseSidechainStatePatchMessage(body);
+    assert.strictEqual(parsed.ok, true);
+    assert.strictEqual(parsed.proposal.basisClock, 0);
+  });
+
+  it('buildSignedSidechainPatchMessage round-trip', function () {
+    const key = new Key({ private: '1111111111111111111111111111111111111111111111111111111111111111' });
+    const proposal = {
+      basisClock: 0,
+      basisDigest: 'aa'.repeat(32),
+      patches: [{ op: 'add', path: '/rsi', value: { digest: 'bb' } }]
+    };
+    const msg = sc.buildSignedSidechainPatchMessage({ proposal, signKey: key });
+    const parsed = sc.parseSidechainStatePatchMessage(legacyBody(msg));
+    assert.strictEqual(parsed.ok, true);
+    assert.ok(parsed.proposal.federationWitness);
+    assert.strictEqual(parsed.proposal.basisDigest, proposal.basisDigest);
+    assert.deepStrictEqual(parsed.proposal.patches, proposal.patches);
+  });
+
+  it('parseSidechainStatePatchMessage accepts decoded field objects', function () {
+    const key = new Key({ private: '1111111111111111111111111111111111111111111111111111111111111111' });
+    const proposal = {
+      basisClock: 3,
+      basisDigest: 'ab'.repeat(32),
+      patches: [{ op: 'add', path: '/rsi', value: { digest: 'bb' } }]
+    };
+    const msg = sc.buildSignedSidechainPatchMessage({ proposal, signKey: key });
+    const fields = Message.fromBuffer(msg.toBuffer()).toFields();
+    assert.ok(Buffer.isBuffer(fields.basisDigest));
+    const parsed = sc.parseSidechainStatePatchMessage(fields);
+    assert.strictEqual(parsed.ok, true);
+    assert.strictEqual(parsed.proposal.basisClock, 3);
+    assert.strictEqual(parsed.proposal.basisDigest, proposal.basisDigest);
+    assert.deepStrictEqual(parsed.proposal.patches, proposal.patches);
+    assert.ok(parsed.proposal.federationWitness);
+  });
+
+  it('buildSignedSidechainPatchMessage rejects a non-hex basisDigest', function () {
+    assert.throws(() => sc.buildSignedSidechainPatchMessage({
+      proposal: { basisClock: 0, basisDigest: 'aa', patches: [{ op: 'add', path: '/z', value: 1 }] }
+    }), /64 lowercase hex/);
+  });
+
+  it('buildSignedSidechainPatchMessage skips AMP sign when signKey cannot sign', function () {
+    const proposal = {
+      basisClock: 0,
+      basisDigest: 'aa'.repeat(32),
+      patches: [{ op: 'add', path: '/z', value: 1 }]
+    };
+    const watchOnly = { pubkey: 'ab'.repeat(32) }; // no .sign
+    assert.doesNotThrow(function () {
+      sc.buildSignedSidechainPatchMessage({
+        proposal,
+        signKey: watchOnly,
+        federationWitness: { version: 1, signatures: {} }
+      });
+    });
+    const msg = sc.buildSignedSidechainPatchMessage({
+      proposal,
+      signKey: watchOnly,
+      federationWitness: { version: 1, signatures: {} }
+    });
+    const parsed = sc.parseSidechainStatePatchMessage(legacyBody(msg));
+    assert.strictEqual(parsed.ok, true);
+  });
+
+  it('buildSignedSidechainPatchMessage skips AMP sign for watch-only Key', function () {
+    const full = new Key({ private: '1111111111111111111111111111111111111111111111111111111111111111' });
+    const watchOnly = new Key({ public: full.pubkey });
+    const proposal = {
+      basisClock: 0,
+      basisDigest: 'aa'.repeat(32),
+      patches: [{ op: 'add', path: '/z', value: 1 }]
+    };
+    let msg;
+    assert.doesNotThrow(function () {
+      msg = sc.buildSignedSidechainPatchMessage({
+        proposal,
+        signKey: watchOnly,
+        federationWitness: { version: 1, signatures: {} }
+      });
+    });
+    const parsed = sc.parseSidechainStatePatchMessage(legacyBody(msg));
+    assert.strictEqual(parsed.ok, true);
+  });
+
+  it('buildFederationWitnessForSidechainPatch returns null without a signing key', function () {
+    assert.strictEqual(sc.buildFederationWitnessForSidechainPatch({
+      proposal: { basisClock: 0, basisDigest: 'aa'.repeat(32), patches: [] },
+      signKey: null
+    }), null);
+  });
+
+  it('buildFederationWitnessForSidechainPatch returns null for watch-only Key', function () {
+    const full = new Key({ private: '2222222222222222222222222222222222222222222222222222222222222222' });
+    const watchOnly = new Key({ public: full.pubkey });
+    assert.strictEqual(sc.buildFederationWitnessForSidechainPatch({
+      proposal: { basisClock: 0, basisDigest: 'aa'.repeat(32), patches: [] },
+      signKey: watchOnly
+    }), null);
+  });
+
+  it('buildFederationWitnessForSidechainPatch attaches validators metadata when provided', function () {
+    const key = new Key({ private: '1111111111111111111111111111111111111111111111111111111111111111' });
+    const proposal = {
+      basisClock: 1,
+      basisDigest: 'cc'.repeat(32),
+      patches: [{ op: 'add', path: '/y', value: 2 }]
+    };
+    const witness = sc.buildFederationWitnessForSidechainPatch({
+      proposal,
+      signKey: key,
+      validators: [key.pubkey],
+      threshold: 1
+    });
+    assert.ok(witness);
+    assert.deepStrictEqual(witness.validators, [key.pubkey]);
+    assert.strictEqual(witness.threshold, 1);
+    assert.ok(witness.signatures[key.pubkey]);
+  });
+
+  it('parseSidechainStatePatchMessage rejects incomplete bodies', function () {
+    assert.strictEqual(sc.parseSidechainStatePatchMessage(null).ok, false);
+    assert.strictEqual(sc.parseSidechainStatePatchMessage({ type: 'Other' }).ok, false);
+  });
+
+  it('verifyEpochChainFederationWitnesses fail-closed', function () {
+    const key = new Key({ private: '1111111111111111111111111111111111111111111111111111111111111111' });
+    const epoch = { clock: 1, height: 1 };
+    const msg = Buffer.from(de.signingStringForBeaconEpoch(epoch), 'utf8');
+    const good = {
+      type: 'BEACON_EPOCH',
+      payload: epoch,
+      federationWitness: { signatures: { [key.pubkey]: key.signSchnorr(msg, SIGNING_TAGS.FEDERATION_WITNESS).toString('hex') } }
+    };
+    const bad = { type: 'BEACON_EPOCH', payload: epoch, federationWitness: null };
+    assert.strictEqual(sc.verifyEpochChainFederationWitnesses([good], [key.pubkey], 1).ok, true);
+    assert.strictEqual(sc.verifyEpochChainFederationWitnesses([bad], [key.pubkey], 1).ok, false);
+  });
+
+  it('parseDistributedManifestV1 includes sidechainPolicy', function () {
+    const r = de.parseDistributedManifestV1({
+      version: 1,
+      programId: 'p',
+      programHash: 'h',
+      allowedMessageTypes: [sc.SIDECHAIN_STATE_PATCH_TYPE],
+      sidechainPolicy: { allowedPathPrefixes: ['/app'], maxOps: 4 }
+    });
+    assert.strictEqual(r.ok, true);
+    assert.ok(r.manifest.sidechainPolicy);
+    assert.strictEqual(r.manifest.sidechainPolicy.maxOps, 4);
+    assert.deepStrictEqual(r.manifest.sidechainPolicy.allowedPathPrefixes, ['/app']);
+  });
+
+  it('summarizeJournal and summarizeSnapshots for operator UI', function () {
+    const store = new Map();
+    const fs = {
+      readFile: (name) => {
+        const v = store.get(name);
+        return v != null ? Buffer.from(v, 'utf8') : null;
+      },
+      writeFile: (name, content) => {
+        store.set(name, typeof content === 'string' ? content : content.toString('utf8'));
+        return true;
+      }
+    };
+
+    const s0 = sc.createInitialState();
+    const patches = [{ op: 'add', path: '/ui', value: true }];
+    const applied = sc.applyPatchesToState(s0, patches);
+    assert.ok(applied.ok);
+    sc.appendJournalEntrySync(fs, {
+      basisClock: 0,
+      clock: applied.state.clock,
+      basisDigest: applied.basisDigest,
+      newDigest: applied.newDigest,
+      patchDigest: sc.patchCommitmentDigestHex({
+        basisClock: 0,
+        basisDigest: applied.basisDigest,
+        patches
+      }),
+      patches
+    });
+    sc.saveSnapshotForBeaconClockSync(fs, 3, applied.state);
+    sc.sealJournalThroughSidechainClockSync(fs, applied.state.clock, 3);
+
+    const openPatches = [{ op: 'add', path: '/open', value: 1 }];
+    const open = sc.applyPatchesToState(applied.state, openPatches);
+    sc.appendJournalEntrySync(fs, {
+      basisClock: applied.state.clock,
+      clock: open.state.clock,
+      basisDigest: open.basisDigest,
+      newDigest: open.newDigest,
+      patches: openPatches
+    });
+
+    const journal = sc.summarizeJournal(fs, { limit: 10, includePatches: true });
+    assert.strictEqual(journal.version, 1);
+    assert.strictEqual(journal.path, sc.SIDECHAIN_JOURNAL_PATH);
+    assert.strictEqual(journal.entryCount, 2);
+    assert.strictEqual(journal.unsealedCount, 1);
+    assert.ok(journal.entries.length >= 1);
+    assert.ok(Array.isArray(journal.entries[0].patches));
+
+    const snaps = sc.summarizeSnapshots(fs, { limit: 5, includeContent: true });
+    assert.strictEqual(snaps.version, 1);
+    assert.strictEqual(snaps.path, sc.SIDECHAIN_SNAPSHOTS_PATH);
+    assert.strictEqual(snaps.snapshotCount, 1);
+    assert.strictEqual(snaps.snapshots[0].beaconClock, 3);
+    assert.strictEqual(snaps.snapshots[0].sidechainClock, applied.state.clock);
+    assert.ok(snaps.snapshots[0].content);
+    assert.strictEqual(snaps.snapshots[0].content.ui, true);
+  });
+
+  it('pruneSnapshotsForRemovedBeaconClocksSync drops listed clocks', function () {
+    const store = new Map();
+    const fs = {
+      readFile: (name) => {
+        const v = store.get(name);
+        return v != null ? Buffer.from(v, 'utf8') : null;
+      },
+      writeFile: (name, content) => {
+        store.set(name, typeof content === 'string' ? content : content.toString('utf8'));
+        return true;
+      }
+    };
+    sc.saveSnapshotForBeaconClockSync(fs, 1, { version: 1, clock: 1, content: {} });
+    sc.saveSnapshotForBeaconClockSync(fs, 2, { version: 1, clock: 2, content: {} });
+    sc.pruneSnapshotsForRemovedBeaconClocksSync(fs, [1]);
+    assert.strictEqual(sc.loadSnapshotForBeaconClock(fs, 1), null);
+    assert.ok(sc.loadSnapshotForBeaconClock(fs, 2));
+  });
+});
+
+const fh = require('../functions/fabricHallmark');
+
+describe('@fabric/core/functions/fabricHallmark', function () {
+  const tip = 'ab'.repeat(32);
+  const contractId = 'cd'.repeat(32);
+  const sidechain = { clock: 3, stateDigest: '11'.repeat(32) };
+  const contracts = { clock: 1, stateDigest: '22'.repeat(32) };
+
+  it('derives a stable 32-byte commitment over tip + contract + state digests', function () {
+    const a = fh.deriveFabricHallmarkCommitmentHex({
+      tipBlockHashHex: tip,
+      contractIdHex: contractId,
+      sidechain,
+      contracts
+    });
+    const b = fh.deriveFabricHallmarkCommitmentHex({
+      tipBlockHashHex: tip,
+      contractIdHex: contractId,
+      sidechain: { clock: 3, stateDigest: '11'.repeat(32) },
+      contracts: { clock: 1, stateDigest: '22'.repeat(32) }
+    });
+    assert.strictEqual(a.length, 64);
+    assert.strictEqual(a, b);
+  });
+
+  it('changes commitment when sidechain stateDigest changes', function () {
+    const base = fh.deriveFabricHallmarkCommitmentHex({
+      tipBlockHashHex: tip,
+      contractIdHex: contractId,
+      sidechain,
+      contracts
+    });
+    const next = fh.deriveFabricHallmarkCommitmentHex({
+      tipBlockHashHex: tip,
+      contractIdHex: contractId,
+      sidechain: { clock: 3, stateDigest: '33'.repeat(32) },
+      contracts
+    });
+    assert.notStrictEqual(base, next);
+  });
+
+  it('ignores balance-like fields not in the commitment schema', function () {
+    const a = fh.deriveFabricHallmarkCommitmentHex({
+      tipBlockHashHex: tip,
+      contractIdHex: contractId,
+      sidechain,
+      contracts
+    });
+    const b = fh.deriveFabricHallmarkCommitmentHex({
+      tipBlockHashHex: tip,
+      contractIdHex: contractId,
+      sidechain: Object.assign({ balanceSats: 999 }, sidechain),
+      contracts: Object.assign({ height: 42 }, contracts)
+    });
+    assert.strictEqual(a, b);
+  });
+
+  it('encodes a 40-byte payload with magic + tip suffix + commitment', function () {
+    const { payload, commitmentHex, tipHashSuffixHex } = fh.encodeFabricHallmarkFromState({
+      tipBlockHashHex: tip,
+      contractIdHex: contractId,
+      sidechain,
+      contracts
+    });
+    assert.strictEqual(payload.length, fh.HALLMARK_PAYLOAD_LENGTH);
+    assert.strictEqual(payload.subarray(0, 4).toString('hex'), fh.HALLMARK_MAGIC_HEX);
+    assert.strictEqual(tipHashSuffixHex, tip.slice(-8));
+    assert.strictEqual(payload.subarray(4, 8).toString('hex'), tipHashSuffixHex);
+    assert.strictEqual(payload.subarray(8, 40).toString('hex'), commitmentHex);
+  });
+
+  it('round-trips decode and verify', function () {
+    const { payload, commitmentHex } = fh.encodeFabricHallmarkFromState({
+      tipBlockHashHex: tip,
+      contractIdHex: contractId,
+      sidechain,
+      contracts
+    });
+    const decoded = fh.decodeFabricHallmark(payload);
+    assert.ok(decoded);
+    assert.strictEqual(decoded.commitmentHex, commitmentHex);
+    assert.strictEqual(fh.verifyFabricHallmark(payload, { tipBlockHashHex: tip, commitmentHex }), true);
+    assert.strictEqual(fh.verifyFabricHallmark(payload.toString('hex'), { tipBlockHashHex: tip }), true);
+  });
+
+  it('rejects wrong magic, length, or tip suffix', function () {
+    const { payload, commitmentHex } = fh.encodeFabricHallmarkFromState({
+      tipBlockHashHex: tip,
+      contractIdHex: contractId,
+      sidechain,
+      contracts
+    });
+    const badMagic = Buffer.from(payload);
+    badMagic[0] = 0xff;
+    assert.strictEqual(fh.decodeFabricHallmark(badMagic), null);
+    assert.strictEqual(fh.decodeFabricHallmark(payload.subarray(0, 20)), null);
+
+    const otherTip = 'ef'.repeat(32);
+    assert.strictEqual(
+      fh.verifyFabricHallmark(payload, { tipBlockHashHex: otherTip, commitmentHex }),
+      false
+    );
+  });
+
+  it('tipHashSuffixFromBlockHash takes the last four bytes', function () {
+    const hash = '00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff';
+    assert.strictEqual(fh.tipHashSuffixFromBlockHash(hash).toString('hex'), 'ccddeeff');
+  });
+
+  it('omits malformed stateDigest from the commitment (same as absent)', function () {
+    const withValid = fh.deriveFabricHallmarkCommitmentHex({
+      tipBlockHashHex: tip,
+      contractIdHex: contractId,
+      sidechain,
+      contracts
+    });
+    const withBad = fh.deriveFabricHallmarkCommitmentHex({
+      tipBlockHashHex: tip,
+      contractIdHex: contractId,
+      sidechain: { clock: 3, stateDigest: 'not-a-digest' },
+      contracts
+    });
+    const without = fh.deriveFabricHallmarkCommitmentHex({
+      tipBlockHashHex: tip,
+      contractIdHex: contractId,
+      sidechain: { clock: 3 },
+      contracts
+    });
+    assert.notStrictEqual(withValid, withBad);
+    assert.strictEqual(withBad, without);
+  });
+
+  it('rejects non-hex and wrong-length tip hashes without a dynamic RegExp', function () {
+    assert.throws(() => fh.tipHashBytesFromBlockHash('zz'.repeat(32)), /expected 64 hex chars/);
+    assert.throws(() => fh.tipHashBytesFromBlockHash('ab'.repeat(31)), /expected 64 hex chars/);
+    assert.throws(() => fh.tipHashBytesFromBlockHash(''), /expected 64 hex chars/);
+  });
+
+  it('exports a copy of HALLMARK_MAGIC (mutation-safe)', function () {
+    const a = fh.HALLMARK_MAGIC;
+    a[0] = 0xff;
+    assert.strictEqual(fh.HALLMARK_MAGIC.toString('hex'), fh.HALLMARK_MAGIC_HEX);
+  });
+});

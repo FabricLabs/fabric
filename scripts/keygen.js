@@ -4,10 +4,12 @@ const Wallet = require('../types/wallet');
 
 async function main () {
   const wallet = new Wallet();
-  const seed = await wallet._createSeed();
+  const seed = await wallet._createFromFreshSeed();
   const keypair = await wallet.generateCleanKeyPair();
-  console.warn('[FABRIC:KEYGEN]', 'Key generated:', keypair);
-  console.warn('[FABRIC:KEYGEN]', 'SEED:', seed);
+  console.warn('[FABRIC:KEYGEN]', 'Key generated (public):', keypair.public && typeof keypair.public.encodeCompressed === 'function'
+    ? keypair.public.encodeCompressed('hex')
+    : keypair.public);
+  console.warn('[FABRIC:KEYGEN]', 'SEED PHRASE:', seed.phrase);
   process.exit();
 }
 

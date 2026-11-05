@@ -5,7 +5,7 @@ const Service = require('../types/service');
 const Message = require('../types/message');
 
 /**
- * Connect and subscribe to Redis servers.
+ * Connect and subscribe to Redis servers (node-redis v6).
  */
 class Redis extends Service {
   /**
@@ -13,13 +13,12 @@ class Redis extends Service {
    * @param {Object} [settings] Settings for the Redis connection.
    * @param {String} [settings.host] Host for the Redis server.
    * @param {Number} [settings.port] Remote Redis service port.
+   * @param {String} [settings.url] Optional redis URL (overrides host/port).
    * @returns {Redis} Instance of the Redis service, ready to run `start()`
    */
   constructor (settings = {}) {
     super(settings);
 
-    // Assign settings over the defaults
-    // NOTE: switch to lodash.merge if clobbering defaults
     this.settings = Object.assign({
       host: 'localhost',
       port: 6379,
@@ -32,30 +31,48 @@ class Redis extends Service {
     return this;
   }
 
+  _clientOptions () {
+    if (this.settings.url) {
+      return { url: this.settings.url };
+    }
+    return {
+      socket: {
+        host: this.settings.host,
+        port: this.settings.port
+      }
+    };
+  }
+
+  _emitChannelMessage (channel, message) {
+    const topic = channel != null ? String(channel) : '';
+    const raw = Buffer.isBuffer(message)
+      ? message
+      : Buffer.from(message == null ? '' : String(message));
+    const path = `channels/${topic}`;
+    this.emit('debug', `Redis message @ [${path}] (${raw.length} bytes) ⇒ ${raw.toString('hex')}`);
+    this.emit('message', Message.fromVector(['Generic', {
+      topic,
+      message: raw.toString('hex'),
+      encoding: 'hex'
+    }]).toObject());
+  }
+
   /**
    * Opens the connection and subscribes to the requested channels.
-   * @returns {Redis} Instance of the service.
+   * @returns {Promise<Redis>}
    */
   async start () {
     const self = this;
 
-    this.socket = redis.createClient(this.settings);
+    this.socket = redis.createClient(this._clientOptions());
     this.socket.on('error', function _handleSocketError (error) {
       self.emit('error', `Redis socket error: ${error}`);
     });
 
-    this.socket.on('message', function _handleSocketMessage (topic, message) {
-      const path = `channels/${topic.toString()}`;
-      self.emit('debug', `Redis message @ [${path}] (${message.length} bytes) ⇒ ${message.toString('hex')}`);
-      self.emit('message', Message.fromVector(['Generic', {
-        topic: topic.toString(),
-        message: message.toString('hex'),
-        encoding: 'hex'
-      }]).toObject());
-    });
+    await this.socket.connect();
 
     for (let i = 0; i < this.settings.subscriptions.length; i++) {
-      this.subscribe(this.settings.subscriptions[i]);
+      await this.subscribe(this.settings.subscriptions[i]);
     }
 
     this.status = 'STARTED';
@@ -68,17 +85,34 @@ class Redis extends Service {
 
   /**
    * Closes the connection to the Redis server.
-   * @returns {Redis} Instance of the service.
+   * @returns {Promise<Redis>}
    */
   async stop () {
     this.status = 'STOPPING';
-    this.socket.close();
+    if (this.socket) {
+      try {
+        if (typeof this.socket.isOpen === 'boolean' && this.socket.isOpen) {
+          await this.socket.quit();
+        }
+      } catch (_) {
+        try { this.socket.disconnect(); } catch (__) {}
+      }
+      this.socket = null;
+    }
     this.status = 'STOPPED';
     return this;
   }
 
-  subscribe (name) {
-    this.socket.subscribe(name);
+  /**
+   * @param {string} name Channel name
+   * @returns {Promise<void>}
+   */
+  async subscribe (name) {
+    if (!this.socket) throw new Error('Redis client is not started');
+    const channel = String(name);
+    await this.socket.subscribe(channel, (message, subscribedChannel) => {
+      this._emitChannelMessage(subscribedChannel || channel, message);
+    });
   }
 }
 

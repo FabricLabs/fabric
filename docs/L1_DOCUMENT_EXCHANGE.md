@@ -1,65 +1,258 @@
 # L1 document exchange
-This document tracks **priorities**, **expectations**, and **tests** for Layer-1 document publish, inventory, and settlement alignment with [`functions/publishedDocumentEnvelope.js`](../functions/publishedDocumentEnvelope.js) and hub flows.
+This document tracks **priorities**, **expectations**, and **tests** for Layer-1 document publish, inventory, settlement, ranked offers, multi-blob delivery, and private paid relay — aligned with [`functions/publishedDocumentEnvelope.js`](../functions/publishedDocumentEnvelope.js), [`types/htlc.js`](../types/htlc.js), and hub flows.
 
 ## Canonical L1 binding (implemented)
-Hub and on-chain flows use:
 
-1. **Canonical `DocumentPublish` AMP bytes** — `documentPublishEnvelopeBuffer(docId, parsed)` (whitelisted JSON + `Message.fromVector(['DocumentPublish', …])`).
-2. **Preimage** — `SHA256(wire bytes)`.
-3. **`purchaseContentHashHex`** — `SHA256(preimage)` as hex (invoice / HTLC `contentHash`).
+**Single reference path:** [`functions/documentPaymentHash.js`](../functions/documentPaymentHash.js) → `resolveDocumentContentHashHex(...)`.
 
-See also: [`docs/PAYMENTS_DOCUMENT_BINDING.md`](PAYMENTS_DOCUMENT_BINDING.md).
+Wire / session / HTTP field is always **`contentHashHex`** (aliases on ingest: `contentHash`, `paymentHashHex`, `purchaseContentHashHex`).
 
-**Tests:** `tests/l1.document.exchange.expectations.js` (envelope + hash invariants).
+| Binding | When | Commitment |
+|---------|------|------------|
+| **sealed** | priced AES-GCM docs | `SHA256(content key K)` |
+| **envelope** | legacy / unsealed | `purchaseContentHashHex` = SHA256(SHA256(DocumentPublish AMP bytes)) |
+| **blob** | unsealed multi-blob settles | `Document.blobPaymentHash({ documentId, blobIndex, blobHashHex })` |
 
-## Peer behavior (implemented vs gaps)
+See also: [`docs/PAYMENTS_DOCUMENT_BINDING.md`](PAYMENTS_DOCUMENT_BINDING.md), [`docs/bip-fabric-file-exchange.md`](bip-fabric-file-exchange.md).
+
+## Canonical Core surface (CLI-first)
+
+Operator document exchange is standardized on the Fabric CLI packs
+`documents` + `documents-market`. Headless logic lives in Core:
+
+| Module | Role |
+|--------|------|
+| [`functions/cliDocumentExchange.js`](../functions/cliDocumentExchange.js) | `CliDocumentExchange` — import/publish/inventory/offers/buy/confirm/claimwatch/refund + pack catalog |
+| [`functions/cliContracts.js`](../functions/cliContracts.js) | Shell pack command maps |
+| `types/cli.js` | Blessed TUI adapters only (delegates to `CliDocumentExchange`) |
+
+## Naming (do not conflate)
+
+| Name | Where | Meaning |
+|------|-------|---------|
+| **`FABRIC_DOCUMENT_OFFER`** | Wire envelope (`publishedDocumentEnvelope`) | Inventory-request JSON `type` alias for catalog/terms |
+| **`DocumentBook`** | `@fabric/core/types/documentBook` | Ranked local book of seller listings after `/inventory … btc` |
+| **Hub sidechain `DocumentOffer`** | Hub Beacon / reward flows | Application-state reward offer — **not** this inventory envelope |
+| **HTTP 402 `documentOffer`** | `@fabric/http` | Payment-request summary for web/extension auto-pay |
+
+BOLT12 Lightning **offer** strings (`lno1…`) are a different vocabulary — see
+[`FABRIC_LIGHTNING_OFFERS.md`](FABRIC_LIGHTNING_OFFERS.md).
+
+## Inventory offer wire
+
+| Role | AMP opcode | Typical inner JSON |
+|------|------------|--------------------|
+| Catalog / terms request | `P2P_INVENTORY_REQUEST` (`0x57`) | `{ "type": "…", "object": { … } }` |
+| Items / hashes / hints | `P2P_INVENTORY_RESPONSE` (`0x58`) | `{ "kind": "documents", … }` |
+
+Canonical JSON `type` aliases (normalized by Peer to legacy `INVENTORY_*`):
+
+| Semantic | Canonical `type` | Synonyms | Handler `type` |
+|----------|------------------|----------|----------------|
+| Buyer asks | `FABRIC_DOCUMENT_OFFER` | `FABRIC_DOCUMENT_OFFER_REQUEST` | `INVENTORY_REQUEST` |
+| Seller replies | `FABRIC_DOCUMENT_OFFER_RESPONSE` | `FABRIC_DOCUMENT_OFFER_REPLY` | `INVENTORY_RESPONSE` |
+
+HTTP **402** + `X-Fabric-Payment-Request` mapping: `@fabric/http`
+`docs/HTTP_402_FABRIC_PAYMENT.md`.
+
+## Chunk bids (finding sellers)
+
+An inventory request goes only to the peers the buyer is connected to. To
+find sellers further away, a buyer floods a bid for one chunk, and sellers
+answer along the path it took.
+
+| Role | AMP opcode | Typed fields |
+|------|------------|--------------|
+| Buyer bids | `P2P_DOCUMENT_BID` (`0x63`, flood) | `document`, `merkleRoot`, `blobIndex`, `blobHash`, `maxSats`, `expiresAt`, `nonce` |
+| Seller asks | `P2P_DOCUMENT_ASK` (`0x64`, directed) | `bid`, `document`, `merkleRoot`, `blobIndex`, `blobHash`, `priceSats`, `expiresAt` |
+
+- **Bid.** `Peer#bidForDocumentChunk({ documentId, blobIndex, maxSats, merkleRootHex?, blobHashHex?, ttlSeconds?, book? })`
+  signs it with a fresh key (bids don't link to the buyer's Peer identity) and
+  returns it; its id is `sha256(author ‖ body)`. A zero `merkleRoot` or
+  `blobHash` means "any". `expiresAt` is at most `DOCUMENT_BID_MAX_TTL_SECONDS`
+  (1 h) ahead.
+- **Relays** forward the bid bit-identical and keep `bid id → previous hop`
+  until it expires (at most `PEER_MAX_DOCUMENT_BID_ROUTES`). They drop bids that
+  are expired, too far ahead, already seen, or over
+  `DOCUMENT_BID_MAX_RELAYS_PER_ORIGIN_PER_MINUTE` from one connection.
+- **Sellers** holding the chunk as a per-blob sealed document answer when
+  `answerDocumentBids` is `true` (listed rate), or a function
+  `(bid, held) => priceSats | null`; otherwise `documentBid` is only emitted
+  and `Peer#askDocumentBid(bidId, { priceSats? })` answers by hand. An ask is
+  signed by the seller's Peer key, priced at most `maxSats`, and expires no
+  later than the bid. One ask per bid per seller.
+- **Asks** go back only to the previous hop of a bid the relay routed, after
+  the relay checks them against the bid; an ask for a bid it never routed is
+  dropped, never flooded. At most `PEER_MAX_ASKS_PER_DOCUMENT_BID` per bid.
+- **Buyer.** Asks for its own bid are checked, emitted as `documentAsk`, and
+  put in the `DocumentBook` passed as `book` (`DocumentBook#ingestAsk`).
+
+An ask is a quote, not sale terms: rows are `sealed: false` until the buyer
+gets an inventory item from that seller, so `pickBest` never pays on an ask
+alone. Pure parts: `DocumentBook.createBid` / `readBid` / `createAsk` /
+`readAsk` / `bidId`.
+
+## Peer / CLI surface (implemented)
+
 | Area | Status | Notes |
 |------|--------|--------|
-| `INVENTORY_REQUEST` / `INVENTORY_RESPONSE` | Emit `inventory` / `inventoryResponse` | Hub or app layer fills responses. Opt-in **`relayInventoryRequest`** / **`relayInventoryResponse`** (with **`serveLocalDocumentInventory`**) forward unserved BTC inventory traffic per `POLICY.md`. |
-| `P2P_DOCUMENT_PUBLISH` (generic body) | Emit `documentPublish` | Pricing gossip: `source: 'pricing'`, `documentId`, `rateSats`, `contentHash`. |
-| `_publishDocument(id, content, rateSats)` | Canonical + optional pricing | **1)** `DocumentPublish` AMP (L1 hash). **2)** If `rateSats > 0`, generic `P2P_DOCUMENT_PUBLISH` with `contentHash`. |
-| Wire `DOCUMENT_PUBLISH` | Implemented | `Peer#_handleFabricMessage` emits `documentPublish` / `DocumentPublish` (`source: 'canonical'`). |
-| Wire `DOCUMENT_REQUEST` | Implemented | Emits `documentRequest` / `DocumentRequest`. If `state.documents[id]` exists, replies with `P2P_FILE_SEND` to the requester; else **relays** the request to other peers. |
-| CLI `DocumentPublish` / `DocumentRequest` | Matched | `Peer` emits PascalCase and camelCase; `request` CLI command signs and broadcasts `DocumentRequest`. |
-| `serveLocalDocumentInventory` | Opt-in | When `true`, answers `INVENTORY_REQUEST` with `object.offerBtc` using `state.documents`, `documentRates`, and L1 `contentHash` per item. |
-| `announceDocumentsOnPeerConnect` | Opt-in | When `true`, after `P2P_SESSION_OPEN` to an inbound peer, replays canonical + pricing publishes for all `state.documents` (late-joiner gossip). |
-| `relayInventoryRequest` | Opt-in | With `serveLocalDocumentInventory`, relays `offerBtc` requests that produced no local `INVENTORY_RESPONSE`. |
-| `relayInventoryResponse` | Opt-in | Relays `INVENTORY_RESPONSE` generic wire to peers other than the sender (star routers). |
+| Inventory + offer book | Implemented | `/inventory [peer] [btc]` ingests into `DocumentBook`; `/offers` ranks by price/latency/score/completeness |
+| Multi-blob | Implemented | Indexed wire-sized `P2P_FILE_SEND`; Tree verify; priced docs **sealed-until-claim** (AES-GCM; HTLC = SHA256(K); key reveal only on matching payment hash) |
+| Consent file path | Implemented | `/request` → `/pending` → `/approve` / `/deny`; `autoFulfillDocumentRequests` off in CLI |
+| L1 buy/confirm | Implemented | `/buy` session + `/confirm <id> <txid>` (local L1 verify and/or Hub `ConfirmInventoryHtlcPayment`) via `CliDocumentExchange` |
+| Claim-watch open | Implemented | `/claimwatch` **or** wallet block/mempool watch extracts `K` from seller claim witness and opens sealed delivery |
+| Refund after locktime | Implemented | `/refund` + `/refunds` list (mature/failed/pending) + tip maturity notice |
+| Wallet tx watch | Implemented | Multi-seed key collection; ZMQ `BitcoinBlock*` / `BitcoinTransaction*` → `Wallet.ingest*`; monitors all known Bitcoin message types against watched addresses |
+| CLI contracts | Implemented | `/contracts` lists sessions + shell packs; interfaces model in `CONTRACTS.md`; `debug` off by default |
+| Private paid relay | Implemented | Budgeted `DocumentRequest` rewritten with reduced `maxSats`; `/relayfees`; reverse-route map |
+| Payment hash path | Implemented | `documentPaymentHash.resolveDocumentContentHashHex` shared by Peer, CLI, Hub, HTTP 402 |
+| HTLC builders | In `@fabric/core` | `Htlc` (`types/htlc`) / `documentSealedExchange` |
 
-## Prioritized backlog
-### P0 — Correctness and hub interoperability
+## CLI flows
 
-1. ~~**Unify publish bytes**~~ — Canonical `DocumentPublish` is primary; pricing uses generic gossip with explicit `contentHash`.
-2. ~~**Wire dispatch**~~ — `DOCUMENT_PUBLISH` / `DOCUMENT_REQUEST` handled in `Peer#_handleFabricMessage`.
-3. ~~**CLI event names**~~ — `DocumentPublish` / `DocumentRequest` emitted alongside camelCase events.
+### Unpaid consent
+```text
+/import ./note.txt
+/publish <id> 0
+# buyer: /connect … ; /inventory <peer> ; /request <id> <peer>
+# seller: /pending ; /approve <key>
+```
 
-### P1 — Data plane in core
-4. ~~**Default inventory helper**~~ — `serveLocalDocumentInventory` + `_respondInventoryFromLocalDocuments`; `_publishDocument` records `documentRates`.
-5. ~~**File API**~~ — `Peer#sendDocumentFileToPeer(documentId, peerAddress)` wraps `P2P_FILE_SEND` (shared with `DOCUMENT_REQUEST` fulfillment).
-6. ~~**Request round-trip**~~ — `DOCUMENT_REQUEST` → local `P2P_FILE_SEND` when held; tests in `tests/fabric.peer.js` and `tests/fabric.l1.document.network.js`.
+### Ranked paid (L1)
+```text
+/inventory <seller> btc
+/offers <documentId>
+/buy <documentId> auto [amountSats]
+# pay BIP21 / address from session
+/confirm <settlementId> <txid>
+# ciphertext may arrive sealed; open via Fabric key reveal, or:
+/claimwatch <settlementId> <claimTxid>
+# if seller never claims / never reveals after locktime:
+/refunds                   # list mature / failed / pending
+/refund <settlementId> [destinationAddress] [feeSats]
+```
 
-### P2 — Settlement and policy
-7. **Funds** — `Wallet.purchaseContentHashHex(documentId, parsed)` aligns with hub `CreatePurchaseInvoice` / HTLC `contentHash`; HTLC spend path remains service/hub-specific.
-8. ~~**Relay policy (inventory)**~~ — `relayInventoryRequest` / `relayInventoryResponse` (defaults off; request relay requires `serveLocalDocumentInventory` + unserved `offerBtc` request). `DOCUMENT_REQUEST` already relays when the document is not held.
+### Private relay policy
+```text
+/relayfees              # show
+/relayfees 10           # fixed sats skim per hop
+/relayfees 100bps       # percent of maxSats
+```
 
-### P3 — UX and resilience
-9. ~~**CLI handlers**~~ — `_handlePeerDocumentPublish` / `_handlePeerDocumentRequest` show document id, truncated hash, and local-library hints (not raw JSON dumps).
-10. ~~**Late joiners**~~ — `announceDocumentsOnPeerConnect` replays publishes after `P2P_SESSION_OPEN`; inventory relay covers buyers behind a star router.
+Terminal notes (contracts as interfaces, Hub registry, shell packs, verbosity): [`docs/CLI.md`](CLI.md), [`docs/CONTRACTS.md`](CONTRACTS.md).
+## Security rules
+1. Never accept blob bytes without `SHA256(bytes) === blobHashHex` (Peer `DocumentBlobTransferBook`).
+2. Deduplicate settlements per `(documentId, blobIndex, contentHash)` (`DocumentBook.settlementDedupeKey`).
+3. Priced documents: HTLC / buy `contentHash` is **`SHA256(content key K)`**; ciphertext may ship anytime; **K is revealed only** after **verified settlement** (`Peer.authorizeDocumentKeyReveal` requires `settlementId` or `txid`) **or** when the seller claim witness exposes `K` on-chain (`/claimwatch`). Echoing the public inventory `paymentHashHex` alone must never unlock `K`.
+4. Unsealed / free docs may still use `Document.blobPaymentHash` for per-blob settles.
+5. Priced `DOCUMENT_REQUEST` must not bit-identical-relay buyer frames when `relayPrivateDocumentRequests` is on; rewritten requests are **directed** (onion `relayPath`, `nextPeer`, or fan-out excluding origin) — never mesh-broadcast.
+6. `maxSats` monotone decreasing across hops; fee skim cannot inflate budget.
+7. Preimage / content key must not ride inside unpaid file chunks.
+7a. Paid `/buy` always builds a **buyer-bound** local P2TR HTLC; seller-supplied `htlc.paymentAddress` is accepted only when it matches that script.
+7b. Paid `/confirm` **fails closed** without Hub `ConfirmInventoryHtlcPayment` success or local L1 amount verify — never skip a failed RPC.
+8. Ranking mixes peer score so slightly cheaper sybils do not always win; **legacy document-level sealed** plans (one `K` for the whole ciphertext — every blob carries the same payment hash) stay on one seller. **Per-blob sealed** trees (`types/document.js`, distinct `SHA256(K_i)` per index) are planned per blob across sellers.
+9. After refund locktime, buyer recovers funds with `/refund`; completed opens refuse refund.
+10. `forceReveal` on approve is ignored unless `allowForceDocumentKeyReveal` is explicitly enabled.
 
-## Regression tests
-| File | Purpose |
-|------|---------|
-| `tests/l1.document.exchange.expectations.js` | Envelope/hash invariants, canonical vs pricing broadcast, CLI/Peer event wiring. |
-| `tests/l1.document.exchange.flow.js` | End-to-end TCP: canonical hash + pricing alignment. |
-| `tests/fabric.l1.document.network.js` | Network `documentPublish`, `DOCUMENT_REQUEST` → `file`, `purchaseContentHashHex`, star inventory relay. |
-| `tests/fabric.hub.mesh.integration.js` | Hub-style mesh: inventory + file send; optional `announceDocumentsOnPeerConnect` late-joiner replay. |
-| `tests/fabric.peer.js` | `DOCUMENT_REQUEST` dispatch, relay, inventory relay flags, `P2P_FILE_SEND` reply when held. |
+## Per-blob sealing (`types/document.js`) — chunk-level is the only sealing
+A `Document` is a Tree over wire-sized blobs. When sealed, **every blob has its own key**:
 
-## Expectations (machine-checked)
-The expectations test file asserts:
+| Quantity | Value |
+|----------|-------|
+| `K_i` | **convergent** (default, `aes-256-gcm-convergent`): `taggedHash('Fabric/DocumentConvergentKey', mode ‖ secret? ‖ plaintext_i)`; **private** (`Document.seal(…, { private: true })`, `aes-256-gcm-content`): random |
+| `iv_i` | convergent: `taggedHash('Fabric/DocumentConvergentIv', K_i)[0..12]`; private: random |
+| `blobHashHex_i` | `SHA256(ciphertext_i)` (AES-256-GCM, `K_i`, `iv_i`, tag appended) |
+| `paymentHashHex_i` | `SHA256(K_i)` — the HTLC hash for blob `i` |
+| `merkleRootHex` | document tree root over the leaves `(blobHashHex_i, paymentHashHex_i, iv_i)`, bound to the blob count (`Document.rootHex`; see the BIP) |
+| plaintext chunk | `chunkBytes - 16` so the ciphertext blob still fits one `P2P_FILE_SEND` |
 
-- **`purchaseContentHashHex`** is deterministic and 64 hex chars for valid parsed documents.
-- **Preimage** matches `SHA256(documentPublishEnvelopeBuffer(…))`.
-- **`Peer`** emits **`documentPublish`** for `P2P_DOCUMENT_PUBLISH` (pricing) and canonical **`DocumentPublish`** for `DOCUMENT_PUBLISH`.
-- **Inventory** events fire for `INVENTORY_REQUEST` / `INVENTORY_RESPONSE` generic messages.
-- **Canonical alignment:** `_publishDocument` with `rate 0` matches hub envelope bytes; with `rate > 0` the first broadcast matches the canonical envelope and the second is pricing gossip.
+### Convergent sealing and de-duplication
+Segmentation is fixed-size and automatic (no content detection). With convergent keys the same plaintext chunk seals to the same ciphertext, `blobHashHex`, and `paymentHashHex` for **every** seller and every document, so overlaps de-duplicate by construction:
+
+- **One tree per file.** A convergent document is published under its `merkleRootHex`; a custom `documentId` is kept only as a local label. Two sellers of the same file list the same root, and `DocumentBook` plans one multi-seller purchase across them.
+- **One purchase per chunk.** A chunk is identified by `(blobHashHex, paymentHashHex)`. An opened convergent chunk is kept in the Peer's held store (`maxHeldChunkBytes`, `PEER_MAX_HELD_CHUNK_BYTES`, oldest evicted first). `Peer#heldChunk` / `adoptHeldChunk` open a matching chunk of any other document from there, and `services/market.js` skips buying it (`_openHeld`) and counts a chunk as covered across document ids.
+- **A blob that repeats inside one document** (`_usesSingleKey`) is bought and revealed once.
+- **Scoped convergence.** `convergenceSecret` (32-byte `SHA256` of what is given) makes the keys a function of the secret too: only holders of the secret (a community) de-duplicate with each other, which blunts confirmation-of-file guesses by outsiders. Public convergence lets anyone who has a file test whether a given tree is that file; use `private: true` when that matters.
+
+### Seed after download
+A buyer that opened a whole convergent tree keeps its leaf record (hashes, IVs, sizes; at most 256 trees) and can sell the **same** tree from the held chunks: `Peer#seedableDocument(id)` / `Peer#seedDocument(id, { rateSats, creditRateSats, creditLimitSats })` rebuild the `Document` with `Document.fromRecord` + `acceptBytes` + `setKey` and call `publishSealedDocument` — nothing is resealed and the root, chunks, and payment hashes are unchanged. `documentReceived` carries `seedable: true`; `Market({ seed: { rateSats, … } })` seeds every such download automatically (`seeded` event). A chunk evicted from the held store makes `seedDocument` fail (`no longer held`); resealing the plaintext gives the same tree under public convergence. The Hub's document-market republish (`republishWithMarkup`) seeds a received convergent tree this way instead of resealing it.
+
+### Pay after verify (credit rail)
+Convergent chunks let a seeder earn per chunk with **no HTLC and no 716-sat floor**: the seller reveals `K_i` first, the buyer checks it opens the committed blob, then pays with a channel balance transfer.
+
+1. Seller `publishSealedDocument(doc, { rateSats, creditRateSats, creditLimitSats })` (convergent documents only — a private document's key is paid for before it is revealed). Inventory items add `creditRateSats` and `paymentModes: ['htlc', 'credit']`.
+2. Buyer `DocumentRequest { document, blobIndex, contentHashHex, credit: true, creditRef }` (`Peer#requestDocument(id, peer, { credit: true, creditRef })`). The seller decides in `settings.sealedBlobCredit(request)` — typically `(r) => channelBook.extendCredit(r)`, which needs an open channel with the buyer whose balance covers the amount above its reserve, a fresh `ref`, and the outstanding total within `creditLimitSats`. On yes it sends the frame and the key at once (`documentBlobCredit` event either way).
+3. Buyer `services/market.js` picks the credit rail when it is cheaper (or equal) and an open channel to that seller can pay it on top of credit already outstanding (`settings.credit`, default on). The budget stays **reserved** until the blob opens from that seller's key; then `ChannelBook#transfer(channelId, amountSats, creditRef)` pays it (`creditTransferred`) and the budget moves to spent. A key that does not open the blob is **never paid** (fraud; that seller is not asked for it again); a busy channel round retries on `tick` (`settling`).
+4. Seller `ChannelBook` applies a transfer naming the ref once it is final (`transferReceived`, `creditSettled`); `outstanding(channelId)` is what a buyer still owes. The seller's exposure is at most `creditLimitSats` per channel, and cutting credit off is its remedy.
+
+A one-blob document is indistinguishable from any other blob. The wire carries **hashes, public keys, and signatures only**:
+
+- `Document#record()` / `Document#inventoryItem()` have no `name`, `mime`, `url`, or `title`; each inventory blob's `contentHashHex` is `paymentHashHex_i`, so the existing `DocumentBook` builds one HTLC per blob and a **multi-seller** plan.
+- `DocumentPublish` envelope is unchanged (`whitelistedDocumentFields` still has `name` / `mime` / `size`); publishers fill `name` with the blob hash and `mime` with `application/octet-stream` (already the defaults). Applications must not copy titles back into the envelope.
+- Human-readable metadata lives in a **manifest blob**: `Document.encodeManifest({ title, url, mime, merkleRootHex, … })` → canonical JSON → sealed as its own one-blob `Document` and bought like any other chunk (`Document.decodeManifest` on the buyer). The content tree's root inside the manifest is what links the two.
+
+Wire path (no new opcodes):
+
+1. Seller `peer.publishSealedDocument(doc, { rateSats })` — registry `documentSealedBlobs[documentId]`; inventory (`P2P_INVENTORY_RESPONSE`) lists `perBlob: true` items, honoring `maxSats` / `blobHashHex` / `merkleRootHex` selectors.
+2. Buyer `DocumentRequest { document, blobIndex: i, contentHashHex: paymentHashHex_i }` after settling that blob (`authorizeDocumentKeyReveal` keyed `documentId|paymentHashHex_i` on the seller — same gate as whole-document reveals; hash echo alone never unlocks).
+3. Seller `P2P_FILE_SEND` frame for blob `i` (`sealed: true, perBlob: true, paymentHashHex, iv`) then **one existing `DocumentContentKeyReveal` per blob** (`object.blobIndex`, `object.blobHashHex` added to the same body).
+4. Buyer `Peer` keeps `pendingSealedBlobs[documentId|merkleRootHex]`, opens each blob on its reveal (`documentBlobOpened`) — or with a key learned on a payment channel (`openSealedBlobWithKey`, `sealedBlobKeyForPaymentHash`) — and emits `documentReceived` / `documentOpened` once all blobs open and the Tree root matches. `Document.fromRecord(record)` + `acceptBytes` / `openBlob` do the same outside a Peer (Hub, GoonCitizen, Passport).
+
+Reassembly rules (the first frame never dictates the shape): every per-blob frame must carry a 64-hex `merkleRootHex` and a sane `blobTotal` (≤ `PEER_MAX_SEALED_BLOB_PARTS`); frames whose root / total differ from the row already being assembled, or from what `blobTransfers.expectTransfer` registered for the purchase, are rejected; a row may collect parts from several sellers (swarm plans), so origin is recorded per part rather than locked per row; an index already held with a different `blobHashHex` is never overwritten; rows are capped by count (`PEER_MAX_PENDING_SEALED_DELIVERIES`), by total held frame bytes (`PEER_MAX_PENDING_SEALED_BYTES`), and expire after `PEER_PENDING_SEALED_TTL_MS`. Each held part keeps the raw signed `P2P_FILE_SEND` frame (exposed as `frameHex`) so a `wrong-bytes` fraud proof can cite the seller's own signature. On the buying side, `Book#pickBest` / `pickBlobPlan` filter listed offers by the wanted `merkleRootHex` (or lock to the first pick's root) so a plan never mixes blobs from two trees.
+
+Presentation: `Document#compile([env, ui])` still emits the Jade fragment `extends <env> / block body / <ui>(state="<id>") {{state}}`; `@fabric/http` `components/document.js` (`fabric-document`) renders the hash-only record plus ranked offers, and only shows manifest / content client-side after the keys are held.
+
+## Simulator
+Action packs live under `tests/simulator/scenarios/packs/` (e.g. `document-market`).
+- `document-swarm` — multi-seller blob plan + reassembly + sybil resistance
+- `document-relay-private` — multi-hop fee skim + unlinkability flag
+
+```bash
+npm run test:simulator
+node tests/simulator/run.js --scenario document-swarm
+```
+
+## Shared modules (`@fabric/core/functions`)
+- `types/htlc.js` — P2TR HTLC + claim-preimage extract + refund maturity + offer validation
+- `documentSealedExchange.js` — AES-GCM content key (convergent `convergentKey` / `convergentIv`, or random) + sealed sale + `openWithClaimPreimage`
+- `types/document.js` — split / tree / reassemble statics; `types/documentBlobTransferBook.js` — buyer `DocumentBlobTransferBook`
+- `types/documentBook.js` — ranked offer book, purchase sessions, private request relay, inventory paging
+- `documentPaymentHash.js` — single `contentHashHex` resolver (sealed / envelope / blob)
+- `walletTransactionWatch.js` — classify/match wallet-associated Bitcoin txs (multi-seed watch set)
+
+## Availability market (`types/bond.js`, `types/challenge.js`, `types/witness.js`)
+Publisher bounties and provider deposits are **Taproot scripts only** (no custodian, no new opcode):
+
+- `Bond.buildBounty` — one P2TR output per epoch; a hashlock leaf per provider (`SHA256(preimage_{epoch,provider})` + provider sig) and a publisher CLTV `refund` leaf. The challenger reveals an epoch preimage only after a passing `AvailabilityResponse` (`Bond.prepareBountyClaim` / `prepareBountyRefund`).
+- `Bond.buildDeposit` — provider deposit with a 2-of-2 `penalty` leaf (provider + publisher, MVP adjudicator), a 2-of-2 `checkin` leaf (CSV 1 — re-deposit to the same address), and a provider CLTV `withdraw` leaf. `Bond.preparePenaltySpend` **refuses** without a verifying `FraudProof` naming that provider, and refuses `timelock` verdicts (those spend the pre-signed penalty instead).
+- **Timelocked non-response** — silence is proved from chain time, not from a verifier's claim of absence. Before round *n* is live the provider signs round *n + 1*'s penalty: `Bond.prepareDepositPenalty(deposit, { fundedTxHex, deadlineHeight, destinationAddress })` is a PSBT spending the deposit through the `penalty` leaf with `nLockTime = deadlineHeight`; `Bond.signPenaltyAsProvider` yields a `DepositPenaltyPreSig` artifact (`Witness.verifyPenaltyPreSig`). `Challenge.issue({ deadlineHeight, deposit: { txid, vout } })` binds the round to that deadline and outpoint. The provider defeats the pre-signed penalty by answering **or** by broadcasting the `checkin` spend (`Bond.prepareDepositCheckIn`) before the deadline — either way the outpoint the pre-signature spends is gone. If the outpoint is still unspent at `deadlineHeight`, the publisher finalizes with `Bond.finalizePreSignedPenalty` and anyone can verify the `non-response` proof (`evidence: 'timelock'`, `enforceableAfterHeight`) with a chain view `ctx: { tipHeight, outpointUnspent }`. `Bond#recordRound(round, { penaltyPreSig, checkInPsbtBase64, deposit })` keeps these exits in a `Contract.Resolutions` tree; `resolvable` is false until the penalty pre-signature is held.
+- `Challenge.issue` / `respond` / `validate` — leaf index `SHA256(root‖epoch‖nonce) mod n`; the response carries the blob's Tree inclusion proof plus `possessionHex = SHA256(nonce‖bytes)`. `validate` with a missing response only hints `fraud` when `ctx.tipHeight ≥ challenge.deadlineHeight`; `proofFor` an absence requires `extra.penaltyPreSig`.
+- `Witness.FraudProof` kinds and the evidence each **must** carry (a proof without it does not verify):
+  - `wrong-leaf` — signed challenge + signed response whose leaf / hash / inclusion disagree with the committed tree.
+  - `non-response` — signed challenge with `deadlineHeight` + deposit outpoint, the provider's `DepositPenaltyPreSig`, and a chain view showing the outpoint unspent at or after the deadline (`evidence: 'timelock'`).
+  - `wrong-bytes` — the seller's signed `DocumentOffer` (with `paymentHashHex`), the buyer's claim, and the **raw signed `P2P_FILE_SEND` frame** (`delivery.frameHex`) authored by the offer signer (`Message.verifyFrameAuthor`), whose signed body names the same `paymentHashHex` and whose body bytes hash to something other than the offered `blobHashHex` (`evidence: 'signed-frame'`). Peers keep `frameHex` per held sealed blob for exactly this.
+  - `wrongful-penalty` — the honest challenge/response pair plus the **signed penalty transaction** that spent the challenge's deposit outpoint through the deposit's 2-of-2 `penalty` leaf (`penaltyTxHex`; an honest `checkin` or the provider's `withdraw` also spends the outpoint and never verifies), and broadcast evidence exactly as for `stale-commitment` (`evidence: 'inclusion' | 'chain-view'`). The penalized party can always publish it.
+  - `stale-commitment` — the offender's signed `ChannelRevoke` plus the broadcast commitment **and** broadcast evidence: a `BitcoinTxInclusion` SPV artifact (`functions/bitcoinTxInclusion.js`: 80-byte header meeting its own `bits` proof-of-work target + Merkle branch, depth pinned by `txCount`, CVE-2012-2459 duplicate nodes rejected) **whose header the verifier knows** (`ctx.headerKnown(blockHash)`), or `ctx.txConfirmed(txid)` (`evidence: 'inclusion' | 'chain-view'`). An inclusion artifact alone never verifies; 64-byte transactions are refused.
+  `DepositPenaltyPreSig` destinations are the publisher's: `Challenge.issue({ deposit: { penaltyAddress, minPenaltySats } })` signs them, and `Witness.verifyPenaltyPreSig` (and `Bond#recordRound` / `finalizePreSignedPenalty`) refuse a pre-signature that does not pay at least `minPenaltySats` to `penaltyAddress`.
+  `DocumentBook#ingestFraudProof` penalizes the offender **locally**; reputation is never gossiped.
+- Bodies `AvailabilityCommitment` / `AvailabilityChallenge` / `AvailabilityResponse` / `FraudProof` ride `CONTRACT_MESSAGE` under `SHA256('fabric-document-market')` as `Witness.signArtifact` artifacts (x-only BIP340 pubkey + signature; canonical form is the JSON round trip, so bodies verify after the wire).
+
+## Fabric payment channels (`types/channel.js`) — Phase 4
+Per-chunk settlement moves off-chain while L1 stays the funding/exit rail. The design follows Lightning (BOLT 2/3/5) penalty channels, scaled for a per-chunk market; the review that drove it covered Impulse (BitPay 2015 payer→operator→recipient channels), Lightning, Flood & Loot, RBF pinning / replacement cycling, HTLC jamming, time dilation and the wormhole attack.
+
+- **Funding** — `Channel.buildFunding`: P2TR with a `cooperative` 2-of-2 leaf and a funder CLTV `refund` leaf after `expireAfter`. The record carries `toSelfDelay` (bound into `channelId`). Mainnet is refused.
+- **Asymmetric commitments** — `Channel.buildCommitment(funding, state, { holder, holderPoint })` builds *one party's* commitment: the holder's `toLocal` is a P2TR with a `delayed` leaf (holder key after `toSelfDelay` CSV) and a `revocation` leaf (immediate, revocation key); the counterparty's `toRemote` is a plain output; each pending HTLC is a P2TR with `claim` (hashlock + receiver key), `timeout` (sender key after CLTV) and `revocation` leaves — whichever leaf pays the *holder* also carries the CSV delay, so a holder who broadcasts can always be punished first; two 330-sat **anchor** outputs (one per party) give either side a CPFP handle without pre-signed fees. HTLCs are never **trimmed**: each one is at least `HTLC_MINIMUM_SATS` (716 = 546 dust + 170 vB claim at 1 sat/vB), so every HTLC is claimable on mainnet. Peers sign **each other's** commitment and exchange only tapscript signatures (PSBT base64).
+- **Revocation** — per-commitment secrets `Channel.commitmentSecret(seed, n)` (SHA-256 chain over a per-channel seed derived from the channel key; shachain compaction is out of scope), points `secret·G`, and the BOLT 3 revocation key `Channel.revocationPubkey(basepoint = counterparty key, point)` / `Channel.revocationPrivkey`. The update round is **proposal → reply (+ inline `revoke` of the replier's state n−1) → `ChannelRevoke` n−1**; `receive()` refuses state n+1 until state n−1 is revoked by the counterparty, so revocation cannot be withheld, and refuses any proposal whose balances do not follow from the previous state (HTLCs added only by the proposer from its own balance, removed only through a settlement it can prove, fee deltas paid by the funder within negotiated bounds). Open is three messages (`ChannelOpen` → `ChannelCommitment` #0 → ack) because the funder cannot sign the counterparty's commitment before learning its first point.
+- **Justice** — `Session.observe(txHex, { inclusion })` classifies a funding spend as our latest, their latest, or a **stale** (revoked) commitment; stale yields `Channel.prepareJusticeSpend` (one transaction sweeping their `toLocal` and every HTLC output through the `revocation` leaves, signed with the derived revocation key; output indexes come from the built PSBT, and each swept script is checked against the broadcast transaction) plus a `FraudProof` of kind **`stale-commitment`** (the offender's own signed `ChannelRevoke` naming the commitment txid, the broadcast transaction, and a `BitcoinTxInclusion` SPV artifact when the host supplied the block). HTLC spends are scanned for preimages (`Channel.harvestPreimages`). `ChannelBook#onBlock({ height, txHexes, blockHeaderHex, txids })` is the host hook (Hub `services/market.js#onBitcoinBlock` fetches `getblock(tip, 2)` + the raw header from the ZMQ block handler; GoonCitizen `MarketManager#onBitcoinBlock` accepts the same fields from its host). The broadcast of those penalties is the node's watchtower (`services/watchtower.js`): on each revoke, `ChannelSession#penaltyFilings` signs one justice transaction per output and the node files them, encrypted under the commitment txid. `Bitcoin` scans the block and the mempool and broadcasts a filing that decrypts. The same store accepts a `WatchtowerAppointment` from a client already registered with the node (its own key, a current Passport session, or a registered Fabric peer). Live `observe` still publishes the fraud proof and learns preimages. The host also broadcasts the book's own `forceClose`, `claimHtlc`, and `timeoutHtlc` actions.
+- **Chain time** — sessions are `pending` until the funding tx has `minFundingConfirmations` (1 regtest/signet, else 3; Book `confirmations` cache fed by the host); every HTLC must satisfy `tip + minCltvDelta ≤ expireAfter ≤ funding.expireAfter − toSelfDelay − closeMarginBlocks`; `Session.tick(tip)` auto-fails expired received HTLCs and flags expired offered ones for on-chain timeout; when the host's tip is unknown or older than `staleTipMs` (60 min) no new HTLC is accepted (time-dilation guard). `ChannelBook` **always** wires `tipHeight` into its sessions, and a sender-side `ChannelHtlcFail` (or our own `failHtlc`) is refused while the tip is unknown — "no chain view" is never read as "already expired".
+- **Seller-fulfills** — the party that *sells* a blob holds `K_i`, so it settles the HTLC: `ChannelBook({ preimageFor })` (`types/channelBook`) (hosts pass `Peer#sealedBlobPreimageForPaymentHash`) fulfills a received HTLC the moment it is committed and the round is quiet; the buyer learns `K_i` from the `ChannelHtlcFulfill` (`Book` events `htlcCommitted` / `htlcFulfilled` / `htlcSettled`, payload includes `preimageHex`) and opens the held ciphertext with `Peer#openSealedBlobWithKey`. No `DocumentContentKeyReveal` is needed on the channel rail and the key is never handed over before the HTLC is settled.
+- **Balance transfers** — `Session#transfer({ amountSats, ref })` proposes a commitment that moves `amountSats` from the proposer's balance to the counterparty with no HTLC (`ChannelCommitment` body `transfer: { amountSats, ref }`). The receiver refuses one whose balances do not follow, that changes HTLCs or fees, or that leaves the proposer under `channelReserveSats`; a ref already paid is refused by the sender. A received transfer is final once the proposer revoked the state before it; `ChannelBook` then emits `transferReceived` and settles the matching credit. `ChannelBook#transfer(counterparty, amountSats, ref)` proposes and publishes; `extendCredit` / `outstanding` / `listCredits` are the seller's credit ledger (exported with the book). Outputs under `BITCOIN_DUST_SATS` are trimmed from commitments, so small balances live in the counterparty's output until they grow.
+- **Limits** — policy negotiated at `ChannelOpen`, stricter value wins (`Channel.negotiatePolicy`): `maxAcceptedHtlcs` (30), `maxHtlcValueInFlightSats`, `htlcMinimumSats` (716 floor, `HTLC_MINIMUM_SATS`), `channelReserveSats` (1 % of capacity, min dust), commitment fee bounds (`updateFee` within `[minCommitFeeSats, maxCommitFeeSats]`, funder pays). Duplicate payment hashes in flight are rejected (wormhole / replay).
+- **Forwarding** — `Channel.planRoute` + `Channel.checkForward` (fee, CLTV delta, same payment hash) and `ChannelBook#forward(upstream, htlcId, downstream, policy)`: offers the downstream HTLC with `forwardOf` and links the legs so a downstream fulfil/fail propagates upstream automatically.
+- **Sessions / registry** — `Channel.Session` (`open`, `offerHtlc`, `updateFee`, `receive`, `fulfillHtlc` / `failHtlc` / `receiveSettlement`, `ingest`, `tick`, `observe`, `close`, `finalize`, export/import), and `ChannelBook` (`types/channelBook`: `get`, `sessionFor`, `ingest`, `open`, `forward`, `setTip` / `tick` / `onBlock`, `setConfirmations`, export/import). `services/market.js` (budget agent) pays a chunk over an open channel first: a session is confirmed only once the HTLC is actually offered (`offered`); a busy round or unknown tip **defers** it (`channel_pending`, retried on `tick`) rather than requesting delivery unpaid; a dead channel falls back without penalizing the seller and the document goes back to `wanted`; spend is accounted when the HTLC settles, not when it is offered. Bodies `ChannelOpen` / `ChannelCommitment` / `ChannelRevoke` / `ChannelHtlcFulfill` / `ChannelHtlcFail` / `ChannelClose` ride `CONTRACT_MESSAGE` under the document-market namespace as `Witness.signArtifact` artifacts — **no channel opcode**, no change to `constants.js`, the AMP header or `MAX_MESSAGE_SIZE`.
+- **Out of scope (explicit):** eltoo / `SIGHASH_ANYPREVOUT`, shachain compaction, second-stage HTLC-success/timeout transactions, package relay / v3 policy, onion routing. Channels stay regtest/signet/testnet and short-lived. The watchtower above covers penalty broadcast only; it does not lift the mainnet refusal.
+
+## Next steps
+1. Bind NOISE session static keys to Fabric derived identity (enables `pubkey@host` dial pins).
+2. Channel hardening follow-ups: second-stage HTLC transactions, package relay once v3 policy is available. Penalty broadcast is the watchtower (`services/watchtower.js`).
+3. Post BIP draft to bitcoin-dev with frozen test vectors.
