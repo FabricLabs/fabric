@@ -997,22 +997,21 @@ function createPeerSession (params = {}, key) {
  * Read a `PASSPORT_SESSION`.
  * @param {string|Buffer|Message} input
  * @param {Object} [options]
- * @param {string} [options.peer] The peer that must have signed it.
+ * @param {string} options.peer The peer that must have signed it.
  * @param {string} [options.sessionKey] The session key it must confirm.
  * @param {string} [options.assertionHash] The assertion it must answer.
  * @param {number} [options.now]
  * @returns {{ ok: true, session: { sessionId: string, assertionHash: string, identity: { id: string, pubkey: string }, sessionKey: string, issuedAt: number, expiresAt: number }, author: string, hash: string }|{ ok: false, error: string }}
  */
 function readPeerSession (input, options = {}) {
+  const peer = compressedPubkey(options.peer);
+  if (!peer) return { ok: false, error: 'expected peer must be a compressed pubkey' };
   const decoded = decodeInput(input, { allowedTypes: ['PASSPORT_SESSION'] });
   if (!decoded.ok) return decoded;
   const fields = decoded.message.toFields();
   if (!fields) return { ok: false, error: 'malformed PASSPORT_SESSION body' };
   if (Number(fields.v) !== PASSPORT_PEER_VERSION) return { ok: false, error: `unsupported Passport version ${fields.v}` };
-  if (options.peer) {
-    const peer = compressedPubkey(options.peer);
-    if (!peer || peer.slice(2) !== decoded.author) return { ok: false, error: 'session is from another peer' };
-  }
+  if (peer.slice(2) !== decoded.author) return { ok: false, error: 'session is from another peer' };
   const sessionId = hex32(fields.sessionId);
   if (!isHash(sessionId)) return { ok: false, error: 'missing sessionId' };
   const assertionHash = hex32(fields.assertionHash);

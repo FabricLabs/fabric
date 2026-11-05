@@ -343,6 +343,9 @@ class Store extends Actor {
     let family = null;
     let origin = null;
     let entity = null;
+    let existingList;
+    let listWritten = false;
+    let entityWritten = false;
 
     // TODO: use ._GET
     try {
@@ -375,7 +378,7 @@ class Store extends Actor {
       const serialized = String(await origin.serialize());
 
       // Keep in-memory collection view in sync for _GET/_PUT call paths.
-      const existingList = await self._GET(key);
+      existingList = await self._GET(key);
       const persistedList = Array.isArray(family) ? family.filter((item) => item != null) : [];
       const inMemoryList = Array.isArray(existingList) ? existingList.filter((item) => item != null) : [];
       const seedList = inMemoryList.length ? inMemoryList : persistedList;
@@ -390,14 +393,20 @@ class Store extends Actor {
       }
 
       await self._PUT(key, nextList);
+      listWritten = true;
 
       // Store the object at an entity locale
       await self._PUT(`/entities/${state.id}`, value);
+      entityWritten = true;
 
       // Write serialized Collection to disk
       await self.db.put(address, serialized);
     } catch (E) {
       console.log('Could not POST:', key, value, E);
+      // Undo what this post already wrote, so a reopen never lists an item
+      // whose entity or collection record is missing.
+      if (entityWritten) await self._PUT(`/entities/${state.id}`, null).catch(() => {});
+      if (listWritten) await self._PUT(key, existingList === undefined ? null : existingList).catch(() => {});
       return false;
     }
 

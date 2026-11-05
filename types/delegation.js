@@ -1019,11 +1019,13 @@ function authorize (read, grants = [], options = {}) {
   if (!grant.scopes.includes(read.scope)) return { ok: false, error: `the grant does not cover ${read.scope}` };
   if (read.scope === 'passport') {
     const challenge = read.inner.challenge;
-    // A peer sign-in names its page only as the requester reports it; a grant
-    // limited to origins still needs one it lists.
-    const origin = challenge.origin || read.request.origin;
-    if (grant.origins.length && !grant.origins.includes(origin)) {
-      return { ok: false, error: `the grant does not cover ${origin || 'a sign-in without an origin'}` };
+    // The origin is what the requester saw, never what a peer's challenge
+    // claims: a grant limited to origins needs the requester to report one it
+    // lists. (`readRequest` already refuses a request whose origin differs
+    // from the challenge's when both name one.)
+    const origin = read.request.origin;
+    if (grant.origins.length && (!origin || !grant.origins.includes(origin))) {
+      return { ok: false, error: `the grant does not cover ${origin || 'a sign-in without a reported origin'}` };
     }
     const peers = grant.peers || [];
     if (peers.length && (!challenge.peer || !peers.includes(challenge.peer))) {
@@ -1236,7 +1238,7 @@ function notificationFor (read, context = {}) {
   let summary = read.request.purpose || '';
   if (read.scope === 'passport') {
     const challenge = read.inner.challenge;
-    const origin = challenge.origin || read.request.origin;
+    const origin = read.request.origin || challenge.origin;
     const host = origin ? new URL(origin).host : `peer ${challenge.peer.slice(2, 10)}…`;
     title = `Sign in to ${host}`;
     summary = read.inner.challenge.purpose || summary || `${label} asks you to sign in to ${host} for it.`;

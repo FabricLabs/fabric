@@ -76,6 +76,9 @@ const musig2Session = require('./witness/musig2Session');
 const sidechainState = require('../functions/sidechainState');
 const { epochCommitmentDigestHex } = require('../functions/beaconFederationSigning');
 const Federation = require('./federation');
+
+/** Session-advertised level of field-body support (`object.fieldBodies`). */
+const FIELD_BODIES_VERSION = 1;
 const {
   aggregatePeerBandwidth,
   peerBandwidthSnapshot,
@@ -2389,7 +2392,8 @@ class Peer extends Service {
 
   /**
    * Sign and send `P2P_FLUSH_CHAIN` to all connected peers with registry score &gt; threshold.
-   * Body `{ snapshotBlockHash, network?, label? }`, sent as `P2P_FLUSH_CHAIN` fields.
+   * Body `{ snapshotBlockHash, network?, label? }`, sent as `P2P_FLUSH_CHAIN` fields to peers
+   * that advertised `fieldBodies` in their session message, and as JSON to older peers.
    *
    * **Receivers** (see `P2P_FLUSH_CHAIN` handler) require **both**:
    * 1. Sender pubkey in {@link Peer#settings.flushChainAuthorizedPubkeys} (non-empty allowlist), and
@@ -2402,13 +2406,22 @@ class Peer extends Service {
    */
   sendFlushChainToTrustedPeers (object) {
     const body = object && typeof object === 'object' && !Array.isArray(object) ? object : {};
-    const msg = Message.fromLegacyBody('P2P_FLUSH_CHAIN', body).signWithKey(this.key);
-    const buf = msg.toBuffer();
+    let fields = null;
+    let json = null;
     const threshold = Number(this.settings.flushChainMinTrustedScore) || 800;
     let n = 0;
     for (const id in this.connections) {
       if (!(this._registryScoreForConnectionAddress(id) > threshold)) continue;
-      this.connections[id]._writeFabric(buf);
+      const socket = this.connections[id];
+      let buf;
+      if (socket._fabricRemoteFieldBodies) {
+        if (!fields) fields = Message.fromLegacyBody('P2P_FLUSH_CHAIN', body).signWithKey(this.key).toBuffer();
+        buf = fields;
+      } else {
+        if (!json) json = Message.fromVector(['P2P_FLUSH_CHAIN', JSON.stringify(body)]).signWithKey(this.key).toBuffer();
+        buf = json;
+      }
+      socket._writeFabric(buf);
       n++;
     }
     return n;
@@ -2432,7 +2445,9 @@ class Peer extends Service {
       },
       object: {
         challenge: crypto.randomBytes(8).toString('hex'),
-        maxFrameBytes: this._localMaxFrameBytes()
+        maxFrameBytes: this._localMaxFrameBytes(),
+        // Rides in the layout's `extra`, so older decoders keep working.
+        fieldBodies: FIELD_BODIES_VERSION
       }
     };
 
@@ -3827,7 +3842,8 @@ class Peer extends Service {
         initiator: message.actor.id,
         counterparty: this.identity.id,
         solution: message.object.challenge,
-        maxFrameBytes: this._localMaxFrameBytes()
+        maxFrameBytes: this._localMaxFrameBytes(),
+        fieldBodies: FIELD_BODIES_VERSION
       }
     };
 
@@ -4542,6 +4558,21 @@ class Peer extends Service {
   }
 
   /**
+   * Record whether a remote parses field bodies for every legacy-JSON opcode
+   * (`object.fieldBodies` in its session message). Absent = an older peer
+   * that parses `P2P_FLUSH_CHAIN` and the like as JSON only.
+   * @param {string} connAddress
+   * @param {Object} sessionObject Session message `object`
+   * @returns {boolean}
+   */
+  _recordRemoteFieldBodies (connAddress, sessionObject) {
+    const supported = Number(sessionObject && sessionObject.fieldBodies) >= FIELD_BODIES_VERSION;
+    const socket = connAddress && this.connections ? this.connections[connAddress] : null;
+    if (socket) socket._fabricRemoteFieldBodies = supported;
+    return supported;
+  }
+
+  /**
    * Record the frame cap a remote advertised in `P2P_SESSION_OFFER` / `P2P_SESSION_OPEN`
    * (`object.maxFrameBytes`). Absent or invalid = legacy 4096-byte peer.
    * @param {string} connAddress
@@ -4549,6 +4580,7 @@ class Peer extends Service {
    * @returns {number} Cap now used for frames sent to that connection
    */
   _recordRemoteFrameCap (connAddress, sessionObject) {
+    this._recordRemoteFieldBodies(connAddress, sessionObject);
     const advertised = Number(sessionObject && sessionObject.maxFrameBytes);
     const cap = (Number.isInteger(advertised) && advertised > HEADER_SIZE)
       ? Math.min(advertised, HEADER_SIZE + MAX_MESSAGE_SIZE)

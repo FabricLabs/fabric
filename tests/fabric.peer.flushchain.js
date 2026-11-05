@@ -165,6 +165,27 @@ describe('Peer P2P_FLUSH_CHAIN', function () {
     assert.strictEqual(writes[0].id, '127.0.0.1:2');
   });
 
+  it('sendFlushChainToTrustedPeers sends fields only to peers that advertised fieldBodies', function () {
+    const sent = {};
+    const peer = createPeer();
+    peers.push(peer);
+    for (const port of [3, 4]) {
+      peer.connections[`127.0.0.1:${port}`] = { _writeFabric: (buf) => { sent[port] = Message.fromBuffer(buf); } };
+      peer._state.peers[`pk_${port}`] = { id: `pk_${port}`, address: `127.0.0.1:${port}`, score: 900 };
+      peer._addressToId[`127.0.0.1:${port}`] = `pk_${port}`;
+    }
+    assert.strictEqual(peer._recordRemoteFieldBodies('127.0.0.1:3', { maxFrameBytes: 9000, fieldBodies: 1 }), true);
+    assert.strictEqual(peer._recordRemoteFieldBodies('127.0.0.1:4', { maxFrameBytes: 9000 }), false);
+    const body = { snapshotBlockHash: '0'.repeat(64), network: 'playnet' };
+    assert.strictEqual(peer.sendFlushChainToTrustedPeers(body), 2);
+    const newer = Message.tryParseLegacyBody(sent[3]);
+    const older = Message.tryParseLegacyBody(sent[4]);
+    assert.strictEqual(newer.encoding, 'fields');
+    assert.strictEqual(older.encoding, 'json', 'an older peer gets the JSON it parses');
+    assert.strictEqual(JSON.parse(sent[4].body).snapshotBlockHash, body.snapshotBlockHash);
+    assert.strictEqual(newer.value.snapshotBlockHash, body.snapshotBlockHash);
+  });
+
   it('relayFromTrustedPeers skips low-score peers and origin', function () {
     const writes = [];
     const peer = createPeer();

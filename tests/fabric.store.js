@@ -150,6 +150,28 @@ describe('@fabric/core/types/store', function () {
       assert.ok(!disk.has('/metrics/a'));
     });
 
+    it('a post whose entity or collection write fails leaves the list as it was', async function () {
+      const disk = new Map();
+      const store = new Store({ strict: true, persistent: true });
+      let failOn = null;
+      store.db = {
+        get: async (key) => disk.get(key),
+        put: async (key, value) => {
+          if (failOn && failOn(key)) throw new Error('disk full');
+          disk.set(key, value);
+        }
+      };
+      assert.notStrictEqual(await store._POST('/widgets', { n: 0 }), false);
+      const before = disk.get('/widgets');
+      for (const target of [(k) => k.startsWith('/entities/'), (k) => k.startsWith('/collections/')]) {
+        failOn = target;
+        assert.strictEqual(await store._POST('/widgets', { n: 1 }), false);
+        failOn = null;
+        assert.strictEqual(disk.get('/widgets'), before, 'the persisted list is unchanged');
+        assert.deepStrictEqual(await store._GET('/widgets'), [{ n: 0 }], 'and so is memory');
+      }
+    });
+
     it('refuses a child beneath a scalar stored before a reopen', async function () {
       const puts = [];
       const store = new Store({ strict: true });

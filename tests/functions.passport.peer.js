@@ -133,6 +133,7 @@ describe('@fabric/core/functions/passport peer sessions (v3)', function () {
     assert.strictEqual(back.session.sessionId, s.sessionId);
     assert.strictEqual(back.session.identity.id, USER.identity.id);
     assert.match(readPeerSession(s.uri, { peer: IMPOSTOR.pubkey, now: NOW + 130 }).error, /another peer/);
+    assert.match(readPeerSession(s.uri, { now: NOW + 130 }).error, /expected peer/, 'the signer check is never skipped');
 
     // A frame signed by the session key is the identity's on this peer.
     const call = Message.fromVector(['JSONCall', JSON.stringify({ method: 'Whoami', params: [] })]).signWithKey(SESSION);
@@ -244,5 +245,14 @@ describe('@fabric/core/functions/passport peer sessions (v3)', function () {
     const site = createChallenge({ origin: 'https://app.example', network: 'regtest', now: NOW });
     const readSite = d.readRequest(d.createRequest({ target: DESK.identity.pubkey, grant: grant.hash, request: site.uri, origin: 'https://app.example', now: NOW + 30 }, PASSPORT_KEY).uri, { now: NOW + 40 });
     assert.match(d.authorize(readSite, [grant]).error, /site sign-ins/);
+
+    // An origin-limited grant needs the origin the requester saw, not the peer's claim.
+    const limited = d.readGrant(d.createGrant({ grantee: PASSPORT_KEY.pubkey, scopes: ['passport'], origins: ['https://app.example'], now: NOW + 1 }, DESK.identity.key).uri, { now: NOW + 2 });
+    const claimed = handshake({ challenge: { origin: 'https://app.example' } }).challenge;
+    const unreported = d.readRequest(d.createRequest({ target: DESK.identity.pubkey, grant: limited.hash, request: claimed.uri, sessionKey: SESSION.pubkey, now: NOW + 30 }, PASSPORT_KEY).uri, { now: NOW + 40 });
+    assert.strictEqual(unreported.ok, true, unreported.error);
+    assert.match(d.authorize(unreported, [limited]).error, /without a reported origin/);
+    const reported = d.readRequest(d.createRequest({ target: DESK.identity.pubkey, grant: limited.hash, request: claimed.uri, origin: 'https://app.example', sessionKey: SESSION.pubkey, now: NOW + 30 }, PASSPORT_KEY).uri, { now: NOW + 40 });
+    assert.strictEqual(d.authorize(reported, [limited]).ok, true);
   });
 });

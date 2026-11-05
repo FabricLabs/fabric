@@ -150,12 +150,21 @@ function applyStatePatch (document, patch) {
 
 /**
  * Create and optionally sign a ContractProposal {@link Message}.
+ *
+ * A proposal is signed by its author and relayed unchanged, so it can't be
+ * re-encoded for each peer on the way. Receivers parse both encodings; an
+ * author that must still reach peers which read proposals as JSON only
+ * passes `encoding: 'json'`.
  * @param {import('../types/key')} key
  * @param {Object} opts passed to {@link buildContractProposalPayload}
+ * @param {string} [opts.encoding='fields'] `fields`, or `json` for older receivers.
  */
 function createContractProposalMessage (key, opts = {}) {
-  const payload = buildContractProposalPayload(opts);
-  const msg = Message.fromLegacyBody('CONTRACT_PROPOSAL', payload);
+  const { encoding, ...payloadOpts } = opts;
+  const payload = buildContractProposalPayload(payloadOpts);
+  const msg = encoding === 'json'
+    ? Message.fromVector(['CONTRACT_PROPOSAL', JSON.stringify(payload)])
+    : Message.fromLegacyBody('CONTRACT_PROPOSAL', payload);
   if (key) msg.signWithKey(key);
   return msg;
 }
