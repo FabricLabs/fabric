@@ -305,7 +305,10 @@ function normalizeOrigins (value) {
   return out.sort();
 }
 
-/** @private Compressed peer pubkeys a `passport` grant is limited to (v3 peer sign-ins). */
+/**
+ * Compressed peer pubkeys a `passport` grant is limited to (v3 peer sign-ins).
+ * @private
+ */
 function normalizePeers (value) {
   const out = [];
   for (const item of list(value)) {
@@ -796,7 +799,10 @@ function readRevoke (input, options = {}) {
   return { ok: true, revoke: { grant, issuedAt }, author: decoded.author, hash: sha256(decoded.buffer).toString('hex'), buffer: decoded.buffer };
 }
 
-/** @private Parse a CONTRACT_MESSAGE body (legacy JSON or `{ contract, payload }` fields). */
+/**
+ * Parse a CONTRACT_MESSAGE body (legacy JSON or `{ contract, payload }` fields).
+ * @private
+ */
 function contractBody (message) {
   const parsed = Message.tryParseMessageBody(message);
   if (!parsed.ok) return null;
@@ -1372,7 +1378,10 @@ function delegationType (input) {
   }
 }
 
-/** @private Frame builders and readers, also published as statics on `Delegation`. */
+/**
+ * Frame builders and readers, also published as statics on `Delegation`.
+ * @private
+ */
 const delegation = {
   DELEGATION_VERSION,
   DELEGATION_SCOPES,
@@ -1512,7 +1521,10 @@ class Delegation extends EventEmitter {
     return this;
   }
 
-  /** @private Run `fn` alone, then persist. */
+  /**
+   * Run `fn` alone, then persist.
+   * @private
+   */
   _serial (fn) {
     const run = this._queue.then(async () => {
       await this.load();

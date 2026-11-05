@@ -1381,7 +1381,10 @@ Message.FRIENDLY_TO_WIRE_TYPE = FRIENDLY_TO_WIRE_TYPE;
 const BODY_FIELD_TYPES = Object.freeze([
   'u8', 'u16', 'u32', 'u64', 'bytes32', 'bytes', 'string', 'message'
 ]);
-/** @private @type {Map<number|string, Array<{ name: string, type: string }>>} */
+/**
+ * @type {Map<number|string, Array<{ name: string, type: string }>>}
+ * @private
+ */
 const BODY_SCHEMA_BY_KEY = new Map();
 
 function registerBodySchema (opcodeOrName, schema) {
@@ -1417,7 +1420,7 @@ function _readU32 (buf, offset) {
  * the same. Older decoders ignore those trailing bytes, so an absent filter
  * does not change the body they already know.
  * @private
- * @param {{ optional?: boolean, type: string }} def
+ * @param {{ optional: (boolean|undefined), type: string }} def
  * @param {*} value
  * @returns {boolean}
  */
@@ -1591,7 +1594,10 @@ function decodeBody (schema, buffer) {
 
 const SCHEMA_P2P_PING = Object.freeze([{ name: 'nonce', type: 'string' }]);
 const SCHEMA_P2P_CHAT = null;
-/** @private Transitional field layouts; JSON bodies remain accepted via tryParseMessageBody. */
+/**
+ * Transitional field layouts; JSON bodies remain accepted via tryParseMessageBody.
+ * @private
+ */
 const SCHEMA_CONTRACT_PUBLISH = Object.freeze([
   { name: 'definition', type: 'string' }
 ]);
@@ -1609,15 +1615,19 @@ const SCHEMA_PROGRAM_RUN = Object.freeze([
   { name: 'runCommitment', type: 'bytes32' },
   { name: 'resultHint', type: 'string' }
 ]);
-/** @private Directed onion hop — see {@link module:@fabric/core/functions/fabricOnion}. */
+/**
+ * Directed onion hop — see {@link module:@fabric/core/functions/fabricOnion}.
+ * @private
+ */
 const SCHEMA_P2P_FORWARD = Object.freeze([
   { name: 'nextPeer', type: 'bytes32' },
   { name: 'ttl', type: 'u8' },
   { name: 'inner', type: 'message' }
 ]);
 /**
- * @private Discovery / peering field layouts; JSON bodies remain accepted.
+ * Discovery / peering field layouts; JSON bodies remain accepted.
  * Optional fields are appended only — older decoders ignore trailing bytes.
+ * @private
  */
 const SCHEMA_P2P_PEER_GOSSIP = Object.freeze([
   { name: 'host', type: 'string' },
@@ -1643,8 +1653,9 @@ const SCHEMA_P2P_PEER_ANNOUNCE = Object.freeze([
   { name: 'nonce', type: 'string', optional: true }
 ]);
 /**
- * @private A buyer's bid for one chunk (see {@link DocumentBook.createBid}).
+ * A buyer's bid for one chunk (see {@link DocumentBook.createBid}).
  * A zero `merkleRoot` / `blobHash` leaves that selector open. Times are Unix seconds.
+ * @private
  */
 const SCHEMA_P2P_DOCUMENT_BID = Object.freeze([
   { name: 'document', type: 'string' },
@@ -1655,7 +1666,10 @@ const SCHEMA_P2P_DOCUMENT_BID = Object.freeze([
   { name: 'expiresAt', type: 'u64' },
   { name: 'nonce', type: 'bytes32' }
 ]);
-/** @private A seller's answer to one bid (see {@link DocumentBook.createAsk}). */
+/**
+ * A seller's answer to one bid (see {@link DocumentBook.createAsk}).
+ * @private
+ */
 const SCHEMA_P2P_DOCUMENT_ASK = Object.freeze([
   { name: 'bid', type: 'bytes32' },
   { name: 'document', type: 'string' },
@@ -1666,8 +1680,9 @@ const SCHEMA_P2P_DOCUMENT_ASK = Object.freeze([
   { name: 'expiresAt', type: 'u64' }
 ]);
 /**
- * @private Statechain patch proposal. `catalogCanonical` is the document-registry
+ * Statechain patch proposal. `catalogCanonical` is the document-registry
  * shorthand; `patchesCanonical` (RFC6902 JSON array) wins when non-empty.
+ * @private
  */
 const SCHEMA_SIDECHAIN_STATE_PATCH = Object.freeze([
   { name: 'basisClock', type: 'u32' },
@@ -1676,7 +1691,10 @@ const SCHEMA_SIDECHAIN_STATE_PATCH = Object.freeze([
   { name: 'patchesCanonical', type: 'string', optional: true },
   { name: 'federationWitnessCanonical', type: 'string', optional: true }
 ]);
-/** @private BIP-327 directed MuSig2 session (JSON bodies still accepted). */
+/**
+ * BIP-327 directed MuSig2 session (JSON bodies still accepted).
+ * @private
+ */
 const SCHEMA_P2P_MUSIG_START = Object.freeze([
   { name: 'sessionId', type: 'bytes32' },
   { name: 'msg', type: 'bytes' },
@@ -1701,12 +1719,13 @@ const SCHEMA_P2P_MUSIG_SIGNATURE = Object.freeze([
   { name: 'signature', type: 'bytes' }
 ]);
 /**
- * @private Passport sign-in (`functions/passport.js`). Times are Unix
+ * Passport sign-in (`functions/passport.js`). Times are Unix
  * milliseconds; `request` / `disclose` are comma lists of `wallet`, `cosigner`.
  * A v2 challenge may be unsigned (zero author). A v3 (peer) challenge is
  * signed by `peer`, echoes the signer's `clientNonce`, and may leave `origin`
  * empty; `homes` is a comma list of origins the peer says it serves. The v3
  * fields are trailing optionals, so v2 frames encode exactly as before.
+ * @private
  */
 const SCHEMA_PASSPORT_CHALLENGE = Object.freeze([
   { name: 'v', type: 'u8' },
@@ -1722,10 +1741,11 @@ const SCHEMA_PASSPORT_CHALLENGE = Object.freeze([
   { name: 'homes', type: 'string', optional: true }
 ]);
 /**
- * @private Signed by the identity; `pubkey` is compressed hex and must match
+ * Signed by the identity; `pubkey` is compressed hex and must match
  * the author. `wallet` / `cosigner` are JSON, present only when requested.
  * v3 adds `peer` (the audience) and `sessionKey` (the key later requests are
  * signed with).
+ * @private
  */
 const SCHEMA_PASSPORT_ASSERTION = Object.freeze([
   { name: 'v', type: 'u8' },
@@ -1745,10 +1765,11 @@ const SCHEMA_PASSPORT_ASSERTION = Object.freeze([
   { name: 'sessionKey', type: 'string', optional: true }
 ]);
 /**
- * @private Passport v3 peer sessions. `PASSPORT_CONNECT` (unsigned) asks a
+ * Passport v3 peer sessions. `PASSPORT_CONNECT` (unsigned) asks a
  * peer for a challenge; `clientNonce` makes that challenge fresh to this
  * connection. `peer` is the key the signer expects, `origin` the page that
  * asked (informational).
+ * @private
  */
 const SCHEMA_PASSPORT_CONNECT = Object.freeze([
   { name: 'v', type: 'u8' },
@@ -1759,7 +1780,10 @@ const SCHEMA_PASSPORT_CONNECT = Object.freeze([
   { name: 'origin', type: 'string', optional: true },
   { name: 'request', type: 'string', optional: true }
 ]);
-/** @private Signed by the peer: `sessionKey` now speaks for `pubkey` on this peer until `expiresAt`. */
+/**
+ * Signed by the peer: `sessionKey` now speaks for `pubkey` on this peer until `expiresAt`.
+ * @private
+ */
 const SCHEMA_PASSPORT_SESSION = Object.freeze([
   { name: 'v', type: 'u8' },
   { name: 'sessionId', type: 'bytes32' },
@@ -1770,7 +1794,10 @@ const SCHEMA_PASSPORT_SESSION = Object.freeze([
   { name: 'issuedAt', type: 'u64' },
   { name: 'expiresAt', type: 'u64' }
 ]);
-/** @private Signed by the session key: answer a fresh challenge from `peer` to re-bind session `sessionId`. */
+/**
+ * Signed by the session key: answer a fresh challenge from `peer` to re-bind session `sessionId`.
+ * @private
+ */
 const SCHEMA_PASSPORT_RESUME = Object.freeze([
   { name: 'v', type: 'u8' },
   { name: 'sessionId', type: 'bytes32' },
@@ -1780,7 +1807,10 @@ const SCHEMA_PASSPORT_RESUME = Object.freeze([
   { name: 'issuedAt', type: 'u64' },
   { name: 'expiresAt', type: 'u64' }
 ]);
-/** @private Why a peer refused a connect, assertion, or resume; `answers` is the sha256 of that frame (or zero). */
+/**
+ * Why a peer refused a connect, assertion, or resume; `answers` is the sha256 of that frame (or zero).
+ * @private
+ */
 const SCHEMA_PASSPORT_REFUSED = Object.freeze([
   { name: 'v', type: 'u8' },
   { name: 'answers', type: 'bytes32' },
@@ -1788,9 +1818,10 @@ const SCHEMA_PASSPORT_REFUSED = Object.freeze([
   { name: 'issuedAt', type: 'u64' }
 ]);
 /**
- * @private Delegation (`types/delegation.js`). Times are Unix
+ * Delegation (`types/delegation.js`). Times are Unix
  * milliseconds; every frame is signed by its author. Pairing commits to the
  * initiator's nonce before the responder picks its own.
+ * @private
  */
 const SCHEMA_DELEGATION_LINK_OFFER = Object.freeze([
   { name: 'v', type: 'u8' },
@@ -1802,7 +1833,10 @@ const SCHEMA_DELEGATION_LINK_OFFER = Object.freeze([
   { name: 'issuedAt', type: 'u64' },
   { name: 'expiresAt', type: 'u64' }
 ]);
-/** @private `offer` is the sha256 of the offer frame; `pubkey` (compressed, as in the offer) lets the other side grant to it. */
+/**
+ * `offer` is the sha256 of the offer frame; `pubkey` (compressed, as in the offer) lets the other side grant to it.
+ * @private
+ */
 const SCHEMA_DELEGATION_LINK_ANSWER = Object.freeze([
   { name: 'v', type: 'u8' },
   { name: 'pubkey', type: 'string' },
@@ -1812,7 +1846,10 @@ const SCHEMA_DELEGATION_LINK_ANSWER = Object.freeze([
   { name: 'issuedAt', type: 'u64' },
   { name: 'expiresAt', type: 'u64' }
 ]);
-/** @private `answer` is the sha256 of the answer frame; `nonce` opens the offer's commitment. */
+/**
+ * `answer` is the sha256 of the answer frame; `nonce` opens the offer's commitment.
+ * @private
+ */
 const SCHEMA_DELEGATION_LINK_REVEAL = Object.freeze([
   { name: 'v', type: 'u8' },
   { name: 'answer', type: 'bytes32' },
@@ -1821,9 +1858,10 @@ const SCHEMA_DELEGATION_LINK_REVEAL = Object.freeze([
   { name: 'expiresAt', type: 'u64' }
 ]);
 /**
- * @private Lets `grantee` ask the author to sign. Comma lists for `scopes`,
+ * Lets `grantee` ask the author to sign. Comma lists for `scopes`,
  * `origins`, `networks`; `link` is the reveal hash hex (or empty);
  * `cosigner` / `cosignerProof` disclose the author's BIP87 key.
+ * @private
  */
 const SCHEMA_DELEGATION_GRANT = Object.freeze([
   { name: 'v', type: 'u8' },
@@ -1840,16 +1878,20 @@ const SCHEMA_DELEGATION_GRANT = Object.freeze([
   { name: 'issuedAt', type: 'u64' },
   { name: 'peers', type: 'string', optional: true }
 ]);
-/** @private `grant` is the sha256 of the grant frame being withdrawn. */
+/**
+ * `grant` is the sha256 of the grant frame being withdrawn.
+ * @private
+ */
 const SCHEMA_DELEGATION_REVOKE = Object.freeze([
   { name: 'v', type: 'u8' },
   { name: 'grant', type: 'bytes32' },
   { name: 'issuedAt', type: 'u64' }
 ]);
 /**
- * @private Ask `target` to sign the embedded `request` frame under its grant
+ * Ask `target` to sign the embedded `request` frame under its grant
  * `grant` (sha256 of the grant frame). `origin` / `disclose` apply to
  * Passport challenges.
+ * @private
  */
 const SCHEMA_DELEGATION_REQUEST = Object.freeze([
   { name: 'v', type: 'u8' },
@@ -1866,7 +1908,10 @@ const SCHEMA_DELEGATION_REQUEST = Object.freeze([
   { name: 'expiresAt', type: 'u64' },
   { name: 'sessionKey', type: 'string', optional: true }
 ]);
-/** @private Either `answer` (a frame) or `refusal` (text) is set; `rule` names the rule that decided. */
+/**
+ * Either `answer` (a frame) or `refusal` (text) is set; `rule` names the rule that decided.
+ * @private
+ */
 const SCHEMA_DELEGATION_RESULT = Object.freeze([
   { name: 'v', type: 'u8' },
   { name: 'request', type: 'bytes32' },
@@ -1875,7 +1920,10 @@ const SCHEMA_DELEGATION_RESULT = Object.freeze([
   { name: 'rule', type: 'string' },
   { name: 'issuedAt', type: 'u64' }
 ]);
-/** @private A mailbox read, signed by the key whose mail it is. */
+/**
+ * A mailbox read, signed by the key whose mail it is.
+ * @private
+ */
 const SCHEMA_DELEGATION_MAILBOX_FETCH = Object.freeze([
   { name: 'v', type: 'u8' },
   { name: 'pubkey', type: 'string' },
@@ -1885,7 +1933,10 @@ const SCHEMA_DELEGATION_MAILBOX_FETCH = Object.freeze([
   { name: 'expiresAt', type: 'u64' }
 ]);
 
-/** @private Field type for each value kind of a keyed layout. */
+/**
+ * Field type for each value kind of a keyed layout.
+ * @private
+ */
 const KEYED_FIELD_TYPES = Object.freeze({
   string: 'string',
   u8: 'u8',
@@ -1901,8 +1952,9 @@ const KEYED_FIELD_TYPES = Object.freeze({
 });
 
 /**
- * @private Set in `present` when the keys were read under `object` of a
+ * Set in `present` when the keys were read under `object` of a
  * `{ type, actor, object, … }` envelope (Hub-style senders).
+ * @private
  */
 const KEYED_ENVELOPE_FLAG = 0x80000000;
 
@@ -1922,7 +1974,10 @@ function keyedSchema (layout) {
     .concat([{ name: 'extra', type: 'string' }]));
 }
 
-/** @private Session key-exchange claim (`Peer#_buildSessionKeyExchangeClaim`). */
+/**
+ * Session key-exchange claim (`Peer#_buildSessionKeyExchangeClaim`).
+ * @private
+ */
 const SESSION_ACTOR_KEYS = [
   { path: 'type', field: 'type', kind: 'string' },
   { path: 'actor.id', field: 'actor', kind: 'string' },
@@ -1933,9 +1988,10 @@ const SESSION_ACTOR_KEYS = [
 ];
 
 /**
- * @private Legacy JSON layouts of the session, inventory, and document
+ * Legacy JSON layouts of the session, inventory, and document
  * opcodes. Paths are read under `object` when `envelope` is set and the body
  * is an envelope.
+ * @private
  */
 const KEYED_LAYOUTS = Object.freeze({
   P2P_SESSION_OFFER: {
@@ -2073,31 +2129,70 @@ const KEYED_LAYOUTS = Object.freeze({
   }
 });
 
-/** @private Session handshake offer: the key-exchange claim plus `challenge`. */
+/**
+ * Session handshake offer: the key-exchange claim plus `challenge`.
+ * @private
+ */
 const SCHEMA_P2P_SESSION_OFFER = keyedSchema(KEYED_LAYOUTS.P2P_SESSION_OFFER);
-/** @private Session handshake answer: the claim plus the solved `challenge`. */
+/**
+ * Session handshake answer: the claim plus the solved `challenge`.
+ * @private
+ */
 const SCHEMA_P2P_SESSION_OPEN = keyedSchema(KEYED_LAYOUTS.P2P_SESSION_OPEN);
-/** @private Document (`kind`) or L1 offer (`offerBtc`) inventory query. */
+/**
+ * Document (`kind`) or L1 offer (`offerBtc`) inventory query.
+ * @private
+ */
 const SCHEMA_P2P_INVENTORY_REQUEST = keyedSchema(KEYED_LAYOUTS.P2P_INVENTORY_REQUEST);
-/** @private One page of an inventory reply. */
+/**
+ * One page of an inventory reply.
+ * @private
+ */
 const SCHEMA_P2P_INVENTORY_RESPONSE = keyedSchema(KEYED_LAYOUTS.P2P_INVENTORY_RESPONSE);
-/** @private A seller's price for one document. */
+/**
+ * A seller's price for one document.
+ * @private
+ */
 const SCHEMA_P2P_DOCUMENT_PUBLISH = keyedSchema(KEYED_LAYOUTS.P2P_DOCUMENT_PUBLISH);
-/** @private A published document; `content` is the raw bytes of `contentBase64`. */
+/**
+ * A published document; `content` is the raw bytes of `contentBase64`.
+ * @private
+ */
 const SCHEMA_DOCUMENT_PUBLISH = keyedSchema(KEYED_LAYOUTS.DOCUMENT_PUBLISH);
-/** @private A request for a document or some of its blobs. */
+/**
+ * A request for a document or some of its blobs.
+ * @private
+ */
 const SCHEMA_DOCUMENT_REQUEST = keyedSchema(KEYED_LAYOUTS.DOCUMENT_REQUEST);
-/** @private Bitcoin chain tip or raw block. */
+/**
+ * Bitcoin chain tip or raw block.
+ * @private
+ */
 const SCHEMA_BITCOIN_BLOCK = keyedSchema(KEYED_LAYOUTS.BITCOIN_BLOCK);
-/** @private Bitcoin block hash. */
+/**
+ * Bitcoin block hash.
+ * @private
+ */
 const SCHEMA_BITCOIN_BLOCK_HASH = keyedSchema(KEYED_LAYOUTS.BITCOIN_BLOCK_HASH);
-/** @private Raw Bitcoin transaction. */
+/**
+ * Raw Bitcoin transaction.
+ * @private
+ */
 const SCHEMA_BITCOIN_TRANSACTION = keyedSchema(KEYED_LAYOUTS.BITCOIN_TRANSACTION);
-/** @private Bitcoin transaction id. */
+/**
+ * Bitcoin transaction id.
+ * @private
+ */
 const SCHEMA_BITCOIN_TRANSACTION_HASH = keyedSchema(KEYED_LAYOUTS.BITCOIN_TRANSACTION_HASH);
-/** @private Batched messages + Merkle root + state patch (+ optional PSBT). */
+/**
+ * Batched messages + Merkle root + state patch (+ optional PSBT).
+ * @private
+ */
 const SCHEMA_CONTRACT_PROPOSAL = keyedSchema(KEYED_LAYOUTS.CONTRACT_PROPOSAL);
-/** @private Operator chain flush to a snapshot block. */
+/**
+ * Operator chain flush to a snapshot block.
+ * @private
+ */
 const SCHEMA_P2P_FLUSH_CHAIN = keyedSchema(KEYED_LAYOUTS.P2P_FLUSH_CHAIN);
 
 /**

@@ -86,9 +86,15 @@ const {
   recordPeerBandwidth
 } = require('../functions/peerBandwidth');
 
-/** @private Max UTF-8 code units for first-class P2P_CHAT_MESSAGE body (text only). */
+/**
+ * Max UTF-8 code units for first-class P2P_CHAT_MESSAGE body (text only).
+ * @private
+ */
 const P2P_CHAT_MAX_CHARS = 2000;
-/** @private Max UTF-8 code units for first-class P2P_PEER_ALIAS body (nickname). */
+/**
+ * Max UTF-8 code units for first-class P2P_PEER_ALIAS body (nickname).
+ * @private
+ */
 const P2P_PEER_ALIAS_MAX_CHARS = 64;
 
 /**
@@ -5971,7 +5977,10 @@ class Peer extends Service {
     return candidates.length === 1 ? candidates[0] : null;
   }
 
-  /** @private bytes held by one pending sealed row (ciphertext + retained frames) */
+  /**
+   * bytes held by one pending sealed row (ciphertext + retained frames)
+   * @private
+   */
   static _sealedRowBytes (row) {
     let total = 0;
     for (const p of row.parts.values()) {
@@ -5982,7 +5991,10 @@ class Peer extends Service {
     return total;
   }
 
-  /** @private global byte budget for `pendingSealedBlobs` */
+  /**
+   * global byte budget for `pendingSealedBlobs`
+   * @private
+   */
   _pendingSealedBudget () {
     const budgetSetting = Number(this.settings.maxPendingSealedBytes);
     return Number.isFinite(budgetSetting) && budgetSetting > 0 ? budgetSetting : PEER_MAX_PENDING_SEALED_BYTES;
@@ -6170,7 +6182,10 @@ class Peer extends Service {
     }
   }
 
-  /** @private `convergence` claimed by a frame: 'public' | 'scoped' | null */
+  /**
+   * `convergence` claimed by a frame: 'public' | 'scoped' | null
+   * @private
+   */
   static _frameConvergence (obj) {
     const c = obj && obj.convergence;
     return c === 'public' || c === 'scoped' ? c : null;
@@ -8726,5 +8741,8 @@ class Swarm extends Actor {
 
 module.exports = Peer;
 module.exports.Swarm = Swarm;
-/** @private Test/debug helper — never log private material. */
+/**
+ * Test/debug helper — never log private material.
+ * @private
+ */
 Peer.debugDerivedPublicSummary = peerDebugDerivedPublicSummary;
