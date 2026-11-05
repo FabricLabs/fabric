@@ -398,7 +398,26 @@ describe('peer/message integration (mesh & secure delivery)', function () {
     hub.peers[origin] = { id: 'p', publicKey: k.pubkey };
 
     let warned = false;
-    hub.once('warning', (w) => { if (/missing .*contract|CONTRACT_MESSAGE parse failed/i.test(String(w))) warned = true; });
+    hub.on('warning', (w) => { if (/missing `contract` namespace id/.test(String(w))) warned = true; });
+    let events = 0;
+    hub.on('contract:message', () => { events++; });
+
+    // The field decoder refuses an empty `contract` first; this reaches the dispatch check itself.
+    hub._handleGenericMessage({ type: 'CONTRACT_MESSAGE', object: { contract: '', payload: JSON.stringify({ type: 'X', object: {} }) } }, { name: origin }, null);
+
+    assert.ok(warned, 'expected warning for missing contract namespace');
+    assert.strictEqual(events, 0);
+  });
+
+  it('CONTRACT_MESSAGE field body with an empty contract is refused before dispatch', function () {
+    const hub = mockHub();
+    const k = new Key();
+    const origin = '127.0.0.1:7851';
+    hub.connections[origin] = { _writeFabric: () => {}, destroy: () => {} };
+    hub.peers[origin] = { id: 'p', publicKey: k.pubkey };
+
+    let refused = false;
+    hub.on('warning', (w) => { if (/CONTRACT_MESSAGE parse failed: unusable field body/.test(String(w))) refused = true; });
     let events = 0;
     hub.on('contract:message', () => { events++; });
 
@@ -406,7 +425,7 @@ describe('peer/message integration (mesh & secure delivery)', function () {
     msg.signWithKey(k);
     hub._handleFabricMessage(msg.toBuffer(), { name: origin }, null);
 
-    assert.ok(warned, 'expected warning for missing contract namespace');
+    assert.ok(refused, 'expected the field body to be refused');
     assert.strictEqual(events, 0);
   });
 

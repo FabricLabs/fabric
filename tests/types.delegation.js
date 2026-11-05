@@ -171,6 +171,21 @@ describe('@fabric/core/types/delegation', function () {
     await assert.rejects(() => hub.sign(pending.hash, answer), /revoked/);
   });
 
+  it('the host does not record an answer to another request', async function () {
+    const passport = new Delegation({ key: PASSPORT.identity.key });
+    const hub = new Delegation({ key: HUB.identity.key });
+    const grant = await hub.grant({ grantee: PASSPORT.identity.pubkey, scopes: ['message'] });
+    await passport.receive(grant.uri);
+    const req = await passport.request({ target: HUB.identity.pubkey, request: Message.fromVector(['P2P_CHAT_MESSAGE', 'sign me']) });
+    await hub.receive(req.uri);
+    const [pending] = await hub.pending();
+    const other = d.readRequest(d.createRequest({ target: HUB.identity.pubkey, grant: grant.hash, request: Message.fromVector(['P2P_CHAT_MESSAGE', 'pay me']) }, PASSPORT.identity.key).uri);
+    await assert.rejects(() => hub.sign(pending.hash, d.answerMessage(other, HUB.identity.key)), /another message/);
+    assert.strictEqual((await hub.pending()).length, 1, 'the request is still pending');
+    const result = await hub.sign(pending.hash, d.answerMessage(pending.read, HUB.identity.key));
+    assert.strictEqual((await passport.receive(result.uri)).ok, true);
+  });
+
   it('only the grantor revokes, and only the asked participant answers', async function () {
     const passport = new Delegation({ key: PASSPORT.identity.key });
     const hub = new Delegation({ key: HUB.identity.key });
@@ -420,6 +435,8 @@ describe('@fabric/core/types/delegation frames', function () {
       const other = ask('pay me');
       assert.strictEqual(d.answerError(mine, d.answerMessage(mine, HUB.identity.key)), null);
       assert.match(d.answerError(mine, d.answerMessage(other, HUB.identity.key)), /another message/);
+      // An unsigned copy of the asked message is not an answer.
+      assert.match(d.answerError(mine, Buffer.from(mine.inner.buffer)), /unsigned/);
       const c = challenge();
       const signIn = d.readRequest(d.createRequest({ target: HUB.identity.pubkey, grant: grant.hash, request: c.uri, origin: SITE, now: NOW }, PASSPORT.identity.key).uri, { now: NOW + 1 });
       assert.match(d.answerError(signIn, d.answerMessage(mine, HUB.identity.key)), /answered with an assertion/);
@@ -447,6 +464,10 @@ describe('@fabric/core/types/delegation frames', function () {
       assert.match(d.authorize(read, [grant]).error, /federation is unknown/);
       assert.strictEqual(d.authorize(read, [grant], { networkOf: () => 'regtest' }).ok, true);
       assert.match(d.authorize(read, [grant], { networkOf: () => 'mainnet' }).error, /does not cover/);
+      // A signature answers only the withdrawal it names.
+      const signs = (requestId) => federationFrame({ contract: 'aa'.repeat(32), type: 'FederationWithdrawalSignature', federationId: 'aa'.repeat(32), requestId, signatures: [] }, HUB.cosigner.key);
+      assert.strictEqual(d.answerError(read, signs('r1')), null);
+      assert.match(d.answerError(read, signs('r2')), /another withdrawal/);
       // The host's record decides a withdrawal's network, not a network the body claims.
       const claimed = federationFrame({ contract: 'aa'.repeat(32), type: 'FederationWithdrawalRequest', federationId: 'aa'.repeat(32), requestId: 'r1', descriptor: { network: 'regtest' }, destinationAddress: 'bcrt1qw508d6qejxtdg4y5r3zarvary0c5xw7kygt080', amountSats: 5000, feeSats: 200 });
       const claimedRead = d.readRequest(d.createRequest({ target: HUB.identity.pubkey, grant: grant.hash, request: claimed, now: NOW }, PASSPORT.identity.key).uri, { now: NOW + 1 });

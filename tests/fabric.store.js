@@ -138,6 +138,53 @@ describe('@fabric/core/types/store', function () {
       assert.strictEqual(store._state.content.metrics, 'flat');
     });
 
+    it('orders a parent and a child write, so the child never lands beneath a scalar', async function () {
+      const disk = new Map();
+      const store = new Store({ strict: true });
+      store.db = {
+        get: async (key) => disk.get(key),
+        put: (key, value) => new Promise((resolve) => setTimeout(() => { disk.set(key, value); resolve(); }, 10))
+      };
+      const results = await Promise.allSettled([store.set('/metrics', 'flat'), store.set('/metrics/a', 1)]);
+      assert.deepStrictEqual(results.map((r) => r.status), ['fulfilled', 'rejected']);
+      assert.ok(!disk.has('/metrics/a'));
+    });
+
+    it('refuses a child beneath a scalar stored before a reopen', async function () {
+      const puts = [];
+      const store = new Store({ strict: true });
+      // Memory is empty, as after a restart; Level still holds `/metrics` as text.
+      store.db = { get: async (key) => (key === '/metrics' ? 'flat' : undefined), put: async (key) => { puts.push(key); } };
+      await assert.rejects(store.set('/metrics/a', 1), /not an object/);
+      assert.deepStrictEqual(puts, []);
+      store.db.get = async (key) => (key === '/metrics' ? JSON.stringify({ b: 2 }) : undefined);
+      await store.set('/metrics/a', 1);
+      assert.deepStrictEqual(puts, ['/metrics/a']);
+    });
+
+    it('refuses a path through a reserved key', async function () {
+      const store = new Store({ strict: true });
+      store.db = { get: async () => undefined, put: async () => {} };
+      for (const key of ['/__proto__/polluted', '/a/constructor/prototype/polluted']) {
+        await assert.rejects(store.set(key, 1), /reserved key/);
+      }
+      assert.strictEqual({}.polluted, undefined);
+    });
+
+    it('stop waits for queued writes before Level closes', async function () {
+      const order = [];
+      const store = new Store({ strict: true, persistent: true });
+      store.db = {
+        get: async () => undefined,
+        put: (key, value) => new Promise((resolve) => setTimeout(() => { order.push(`put ${value}`); resolve(); }, 10))
+      };
+      store.close = async () => { order.push('close'); };
+      const writes = [store.set('/metrics/a', 1), store.set('/metrics/a', 2)];
+      await store.stop();
+      await Promise.all(writes);
+      assert.deepStrictEqual(order, ['put 1', 'put 2', 'close']);
+    });
+
     it('_setEncrypted/_getEncrypted round-trip plain values without codec', async function () {
       const store = new Store({ persistent: false });
       await store._setEncrypted('/wallet/secret', 'hello');

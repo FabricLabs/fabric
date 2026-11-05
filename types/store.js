@@ -23,6 +23,32 @@ function isLevelNotFound (error) {
   return !!error && (error.code === 'LEVEL_NOT_FOUND' || error.notFound === true);
 }
 
+/** `path` as an absolute JSON Pointer path. */
+function routePath (path) {
+  return path.substring(0, 1) === '/' ? path : '/' + path;
+}
+
+/** Path tokens that would reach `Object.prototype` through `pointer.set`. */
+const UNSAFE_PATH_TOKENS = new Set(['__proto__', 'constructor', 'prototype']);
+
+/**
+ * A value read back from Level. `set` cannot store `null`, so persisted `null`
+ * text was the string 'null'.
+ * @private
+ */
+function decodePersisted (raw) {
+  if (Buffer.isBuffer(raw)) {
+    const text = raw.toString('utf8');
+    const pr = tryParsePersistedJson(text);
+    return pr.ok && pr.value !== null ? pr.value : text;
+  }
+  if (typeof raw === 'string') {
+    const pr = tryParsePersistedJson(raw);
+    return pr.ok && pr.value !== null ? pr.value : raw;
+  }
+  return raw;
+}
+
 /**
  * @classdesc Level-backed persistence extending {@link Actor}. Use optional {@link Codec} in <code>settings.codec</code> for
  * encrypted values; {@link Store.openEncrypted} matches Hub/shell keystore defaults. Commit/history behavior follows {@link Actor}.
@@ -412,7 +438,7 @@ class Store extends Actor {
   }
 
   async getRouteInfo (path) {
-    if (path.substring(0, 1) !== '/') path = '/' + path;
+    path = routePath(path);
 
     const id = pointer.escape(path);
     const router = this.sha256(id);
@@ -454,16 +480,7 @@ class Store extends Actor {
         const raw = await this.db.get(route.path);
         // Level 10 resolves a missing key as `undefined` instead of throwing.
         if (raw === undefined || raw === null) return null;
-        let value = raw;
-        // `set` cannot store `null`, so persisted `null` text was the string 'null'.
-        if (Buffer.isBuffer(raw)) {
-          const text = raw.toString('utf8');
-          const pr = tryParsePersistedJson(text);
-          value = pr.ok && pr.value !== null ? pr.value : text;
-        } else if (typeof raw === 'string') {
-          const pr = tryParsePersistedJson(raw);
-          value = pr.ok && pr.value !== null ? pr.value : raw;
-        }
+        const value = decodePersisted(raw);
         const info = await this.getDataInfo(value);
         this._state.metadata[route.index] = info;
         this._state.indices[route.index] = route.pointer;
@@ -497,42 +514,72 @@ class Store extends Actor {
    * @param       {Mixed} value Content to store at `key`.
    */
   async set (key, value) {
-    const route = await this.getRouteInfo(key);
-    // Writes to one path run in call order, so Level and memory agree on the last.
+    // Writes under one top-level key run in call order, so a parent and its
+    // children never race and Level and memory agree on the last write. The
+    // write is queued before any await, so `stop` sees it.
+    const lane = routePath(key).split('/')[1] || '';
     if (!this._writes) this._writes = new Map();
-    const previous = this._writes.get(route.path) || Promise.resolve();
-    const write = previous.catch(() => {}).then(() => this._set(key, value, route));
+    const previous = this._writes.get(lane) || Promise.resolve();
+    const write = previous.catch(() => {}).then(async () => this._set(key, value, await this.getRouteInfo(key)));
     const tail = write.catch(() => {});
-    this._writes.set(route.path, tail);
+    this._writes.set(lane, tail);
     tail.then(() => {
-      if (this._writes.get(route.path) === tail) this._writes.delete(route.path);
+      if (this._writes.get(lane) === tail) this._writes.delete(lane);
     });
     return write;
   }
 
   /**
-   * Why `path` cannot be written in `content`: an existing parent is a scalar.
+   * Why `path` cannot be written: it names an unsafe key, or an existing
+   * parent (in memory, or in Level after a reopen) is not an object.
    * @private
    */
-  _parentError (path) {
+  async _parentError (path) {
     let tokens = [];
     try {
       tokens = pointer.parse(path);
     } catch (E) {
       return `bad path ${path}`;
     }
+    if (tokens.some((token) => UNSAFE_PATH_TOKENS.has(token))) return `${path} names a reserved key`;
+    const beneath = `${path} is beneath a value that is not an object`;
     let node = this._state.content;
-    for (const token of tokens.slice(0, -1)) {
-      if (node === null || typeof node !== 'object') return `${path} is beneath a value that is not an object`;
-      if (!Object.prototype.hasOwnProperty.call(node, token)) return null;
-      node = node[token];
+    for (let i = 0; i < tokens.length - 1; i++) {
+      if (node === null || typeof node !== 'object') return beneath;
+      if (!Object.prototype.hasOwnProperty.call(node, tokens[i])) {
+        return (await this._persistedParentIsScalar(tokens, i)) ? beneath : null;
+      }
+      node = node[tokens[i]];
     }
-    return (node === null || typeof node !== 'object') ? `${path} is beneath a value that is not an object` : null;
+    return (node === null || typeof node !== 'object') ? beneath : null;
+  }
+
+  /**
+   * Is an ancestor from `tokens[from]` down, absent from memory, stored in
+   * Level as something other than an object?
+   * @private
+   */
+  async _persistedParentIsScalar (tokens, from) {
+    if (!this.db || this.settings.persistent === false) return false;
+    for (let i = from; i < tokens.length - 1; i++) {
+      let raw;
+      try {
+        raw = await this.db.get(pointer.compile(tokens.slice(0, i + 1)));
+      } catch (E) {
+        if (isLevelNotFound(E)) continue;
+        if (this.settings.strict) throw E;
+        continue;
+      }
+      if (raw === undefined || raw === null) continue;
+      const value = decodePersisted(raw);
+      if (value === null || typeof value !== 'object') return true;
+    }
+    return false;
   }
 
   /** @private */
   async _set (key, value, route) {
-    const parentError = this._parentError(route.path);
+    const parentError = await this._parentError(route.path);
     if (parentError) throw new Error(`[FABRIC:STORE] ${parentError}`);
     const info = await this.getDataInfo(value);
     const data = await this.encodeValue(value);
@@ -772,6 +819,11 @@ class Store extends Actor {
 
   async stop () {
     this.status = 'stopping';
+
+    // Queued writes finish before Level closes, so none fails against a closed db.
+    while (this._writes && this._writes.size) {
+      await Promise.all([...this._writes.values()]);
+    }
 
     if (this.settings.persistent !== true) {
       await this.flush();

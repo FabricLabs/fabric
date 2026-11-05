@@ -1242,11 +1242,13 @@ function answerMessage (read, key) {
  */
 function answerError (read, answer) {
   if (!read || !read.ok) return 'unreadable request';
-  let message = null;
+  // Only a frame its author signed answers a request; an unsigned copy does not.
+  let decoded = null;
   try {
-    message = Message.fromBuffer(Buffer.from(frameBuffer(answer)));
+    decoded = decodeFrame(Buffer.from(frameBuffer(answer)), null);
   } catch (_) {}
-  if (!message) return 'unreadable answer';
+  if (!decoded || !decoded.ok) return `unreadable answer${decoded && decoded.error ? `: ${decoded.error}` : ''}`;
+  const message = decoded.message;
   const inner = read.inner;
   if (read.scope === 'passport') {
     if (message.type !== 'PASSPORT_ASSERTION') return 'a passport request is answered with an assertion';
@@ -1265,6 +1267,9 @@ function answerError (read, answer) {
     const expected = inner.body.type === 'FederationInvite' ? 'FederationInviteResponse' : 'FederationWithdrawalSignature';
     if (!reply || reply.type !== expected) return `a ${inner.body.type} is answered with a ${expected}`;
     if (String(reply.federationId || '').toLowerCase() !== String(inner.body.federationId || '').toLowerCase()) return 'the answer is for another federation';
+    if (inner.body.type === 'FederationWithdrawalRequest' && String(reply.requestId || '').toLowerCase() !== String(inner.body.requestId || '').toLowerCase()) {
+      return 'the answer is for another withdrawal';
+    }
     return null;
   }
   return `unknown scope ${read.scope}`;
@@ -1733,11 +1738,14 @@ class Delegation extends EventEmitter {
       if (!auth.ok) throw new Error(auth.error);
       const made = delegation.createResult(Object.assign({ request: hash, now: this._now() }, fields), this.key);
       if (fields.answer) {
-        const read = delegation.readResult(made.message, this._opts());
-        if (!read.ok) throw new Error(read.error);
-        if (!this._signers(state, 'given', item.grant).has(read.result.answer.author)) {
+        const answered = delegation.readResult(made.message, this._opts());
+        if (!answered.ok) throw new Error(answered.error);
+        if (!this._signers(state, 'given', item.grant).has(answered.result.answer.author)) {
           throw new Error('the answer must be signed by this participant\'s identity or granted cosigner key');
         }
+        // The requester runs the same check; an answer it would refuse is never recorded.
+        const mismatch = answerError(read, answered.result.answer.buffer);
+        if (mismatch) throw new Error(mismatch);
       }
       item.status = status;
       item.result = made.message.toBuffer().toString('hex');

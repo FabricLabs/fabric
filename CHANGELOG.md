@@ -1,6 +1,11 @@
 # `@fabric/core` Changelog
 Recent changes to Fabric Core.
 
+## 2026-11-04
+- **Beacon epoch ids are double-SHA256**, as documented: `epochEntryId` uses `Hash256.doubleDigest` over the epoch's canonical JSON. Entries already in `beacon/CHAIN` keep their stored ids.
+- **`Store#set` orders a parent and its children.** Writes queue by top-level key, so `/metrics` and `/metrics/a` run in call order; the parent check also reads ancestors from Level when memory has none (after a reopen); a path through `__proto__`, `constructor` or `prototype` is refused; and `stop()` waits for queued writes before Level closes.
+- **A delegated answer must be signed and must answer its own request.** `answerError` refuses an unsigned answer and a withdrawal signature for another `requestId`, and `Delegation#sign` runs the same check before recording, so a host never stores an answer its requester would refuse.
+
 ## 2026-11-03
 - **A session's Fabric id must be its key's id.** `P2P_SESSION_OFFER` and `P2P_SESSION_OPEN` are refused (and the sender de-ranked) when `actor.id` is not the id of the signed parent key, and `P2P_SESSION_OPEN` when `counterparty` is not that id, so a peer can no longer bind another participant's id to its own key.
 - **Delegation answers are bound to their request.** `Delegation` records a `DELEGATION_RESULT` only when its answer answers the request it names: an assertion over the same challenge and origin, the same message signed, or a reply for the same federation (`answerError`).
