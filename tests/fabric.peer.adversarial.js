@@ -642,9 +642,27 @@ describe('@fabric/core RC1 first-tier contract', function () {
       assert.strictEqual(wasDestroyed(), true);
     });
 
-    it('verified frames FIFO-evict so an older wire hash can be claimed again', function () {
+    it('verified frames FIFO-evict, and the replay filter still drops the evicted frame', function () {
       const peer = offlinePeer({
         gossip: { maxWireHashCache: 2 }
+      });
+      const origin = '127.0.0.1:rc1-fifo-filter';
+      const key = new Key();
+      peer.connections[origin] = wireConn([]);
+      peer.peers[origin] = { publicKey: key.pubkey };
+
+      const frames = [1, 2, 3].map((n) => signPing(key, `fifo-${n}`).toBuffer());
+      const hashes = frames.map((buf) => crypto.createHash('sha256').update(buf).digest('hex'));
+      for (const buf of frames) peer._handleFabricMessage(buf, { name: origin }, null);
+      assert.strictEqual(peer.messages[hashes[0]], undefined, 'the FIFO cache stays bounded');
+
+      peer._handleFabricMessage(frames[0], { name: origin }, null);
+      assert.strictEqual(peer.messages[hashes[0]], undefined, 'a replay after eviction is dropped, not re-claimed');
+    });
+
+    it('without the replay filter, an evicted wire hash can be claimed again', function () {
+      const peer = offlinePeer({
+        gossip: { maxWireHashCache: 2, replayFilter: false }
       });
       const origin = '127.0.0.1:rc1-fifo';
       const key = new Key();

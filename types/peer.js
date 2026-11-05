@@ -199,6 +199,7 @@ const crypto = require('crypto');
 const { Level } = require('level');
 const stream = require('stream');
 const manager = require('fast-json-patch');
+const WireReplayFilter = require('../functions/wireReplayFilter');
 const noise = require('../functions/noiseProtocolStream');
 const merge = require('lodash.merge');
 const { EventEmitter } = require('events');
@@ -513,7 +514,10 @@ class Peer extends Service {
         maxHops: GOSSIP_MAX_HOPS,
         maxRelaysPerOriginPerMinute: GOSSIP_MAX_RELAYS_PER_ORIGIN_PER_MINUTE,
         maxPayloadCache: GOSSIP_MAX_PAYLOAD_CACHE,
-        maxWireHashCache: PEER_MAX_WIRE_HASH_CACHE
+        maxWireHashCache: PEER_MAX_WIRE_HASH_CACHE,
+        // Time-window replay filter behind the FIFO cache (`functions/wireReplayFilter`);
+        // `false` turns it off, an object overrides its settings.
+        replayFilter: {}
       },
       // Mesh chat amplify controls (local `chat` event still fires when limited).
       chat: {
@@ -717,6 +721,10 @@ class Peer extends Service {
     /** Wire-envelope dedup (SHA-256 of full buffer); FIFO-capped via {@link Peer#_rememberWireHash}. */
     this.messages = {};
     this._wireHashOrder = [];
+    /** Wire hashes seen within a time window, so flooding the FIFO cache cannot reopen a replay. */
+    this._wireReplayFilter = (this.settings.gossip && this.settings.gossip.replayFilter === false)
+      ? null
+      : new WireReplayFilter((this.settings.gossip && this.settings.gossip.replayFilter) || {});
     /**
      * Logical first-writer-wins registrations (content-addressed keys).
      * Catches re-signed duplicates of CONTRACT_PUBLISH / DOCUMENT_PUBLISH / etc.
@@ -815,6 +823,7 @@ class Peer extends Service {
     }
     this.messages[hash] = true;
     this._wireHashOrder.push(hash);
+    if (this._wireReplayFilter) this._wireReplayFilter.add(hash);
   }
 
   /**
@@ -3112,7 +3121,7 @@ class Peer extends Service {
     if (this.settings.debug) this.emit('debug', `Got Fabric message: ${message}`);
 
     // Have we seen this exact wire envelope before? (silent — no score change)
-    if (this.messages[hash]) {
+    if (this.messages[hash] || (this._wireReplayFilter && this._wireReplayFilter.has(hash))) {
       return this;
     }
 
