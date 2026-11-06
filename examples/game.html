@@ -6,7 +6,7 @@
   <title>game.js</title>
   <meta http-equiv="content-type" content="text/html; charset=UTF-8">
   <meta name="viewport" content="width=device-width, target-densitydpi=160dpi, initial-scale=1.0; maximum-scale=1.0; user-scalable=0;">
-  <link rel="stylesheet" media="all" href="docco.css" />
+  <link rel="stylesheet" media="all" href="../docco.css" />
 </head>
 
 <body>
@@ -22,98 +22,133 @@
             <div id="jump_page">
 
 
+              <a class="source" href="agents.html">
+                examples/agents.js
+              </a>
+
+
               <a class="source" href="app.html">
-                app.js
+                examples/app.js
               </a>
 
 
               <a class="source" href="bitcoin.html">
-                bitcoin.js
+                examples/bitcoin.js
               </a>
 
 
               <a class="source" href="blockchain.html">
-                blockchain.js
+                examples/blockchain.js
               </a>
 
 
               <a class="source" href="chain.html">
-                chain.js
+                examples/chain.js
               </a>
 
 
               <a class="source" href="cli.html">
-                cli.js
+                examples/cli.js
               </a>
 
 
               <a class="source" href="collection.html">
-                collection.js
+                examples/collection.js
+              </a>
+
+
+              <a class="source" href="environment.html">
+                examples/environment.js
+              </a>
+
+
+              <a class="source" href="fabric-basic-usage.html">
+                examples/fabric-basic-usage.js
+              </a>
+
+
+              <a class="source" href="fabric-demo.html">
+                examples/fabric-demo.js
               </a>
 
 
               <a class="source" href="fabric.html">
-                fabric.js
+                examples/fabric.js
               </a>
 
 
               <a class="source" href="game.html">
-                game.js
+                examples/game.js
               </a>
 
 
               <a class="source" href="heartbeat.html">
-                heartbeat.js
+                examples/heartbeat.js
               </a>
 
 
               <a class="source" href="http.html">
-                http.js
+                examples/http.js
               </a>
 
 
               <a class="source" href="index.html">
-                index.js
+                examples/index.js
+              </a>
+
+
+              <a class="source" href="lightning.html">
+                examples/lightning.js
+              </a>
+
+
+              <a class="source" href="message.html">
+                examples/message.js
               </a>
 
 
               <a class="source" href="network.html">
-                network.js
+                examples/network.js
+              </a>
+
+
+              <a class="source" href="onion-forward.html">
+                examples/onion-forward.js
               </a>
 
 
               <a class="source" href="oracle.html">
-                oracle.js
+                examples/oracle.js
               </a>
 
 
               <a class="source" href="p2pkh.html">
-                p2pkh.js
+                examples/p2pkh.js
               </a>
 
 
               <a class="source" href="relay.html">
-                relay.js
+                examples/relay.js
               </a>
 
 
               <a class="source" href="service.html">
-                service.js
+                examples/service.js
               </a>
 
 
               <a class="source" href="store.html">
-                store.js
+                examples/store.js
               </a>
 
 
               <a class="source" href="swarm.html">
-                swarm.js
+                examples/swarm.js
               </a>
 
 
               <a class="source" href="witness.html">
-                witness.js
+                examples/witness.js
               </a>
 
             </div>
@@ -134,31 +169,30 @@
       <li id="section-1">
         <div class="annotation">
 
-          <div class="pilwrap ">
-            <a class="pilcrow" href="#section-1">&#182;</a>
+          <div class="sswrap ">
+            <a class="ss" href="#section-1">&#x00a7;</a>
           </div>
 
         </div>
 
         <div class="content">
           <div class='highlight'>
-            <pre><span class="hljs-keyword">var</span> _ = <span class="hljs-built_in">require</span>(<span class="hljs-string">&#x27;../lib/functions&#x27;</span>);
+            <pre><span class="hljs-keyword">const</span> _ = <span class="hljs-built_in">require</span>(<span class="hljs-string">&#x27;../contracts/functions&#x27;</span>);
 
-<span class="hljs-keyword">var</span> <span class="hljs-title class_">Fabric</span> = <span class="hljs-built_in">require</span>(<span class="hljs-string">&#x27;../lib/fabric&#x27;</span>);
-<span class="hljs-keyword">var</span> game = <span class="hljs-keyword">new</span> <span class="hljs-title class_">Fabric</span>({
+<span class="hljs-keyword">const</span> <span class="hljs-title class_">Fabric</span> = <span class="hljs-built_in">require</span>(<span class="hljs-string">&#x27;../types/fabric&#x27;</span>);
+<span class="hljs-keyword">const</span> game = <span class="hljs-keyword">new</span> <span class="hljs-title class_">Fabric</span>({
   <span class="hljs-attr">spawns</span>: []
 });
 
-<span class="hljs-keyword">var</span> template = <span class="hljs-built_in">require</span>(<span class="hljs-string">&#x27;../data/mob&#x27;</span>);
+<span class="hljs-keyword">const</span> template = <span class="hljs-built_in">require</span>(<span class="hljs-string">&#x27;../data/mob&#x27;</span>);
 
 game.<span class="hljs-title function_">use</span>(<span class="hljs-string">&#x27;tick&#x27;</span>, <span class="hljs-keyword">function</span> (<span class="hljs-params">input</span>) {
-  <span class="hljs-keyword">var</span> self = <span class="hljs-variable language_">this</span>;
+  <span class="hljs-keyword">const</span> self = <span class="hljs-variable language_">this</span>;
   <span class="hljs-variable language_">console</span>.<span class="hljs-title function_">log</span>(<span class="hljs-string">&#x27;tick!&#x27;</span>, self.<span class="hljs-property">clock</span>);
   <span class="hljs-keyword">return</span> input;
 });
 
 game.<span class="hljs-title function_">use</span>(<span class="hljs-string">&#x27;spawn&#x27;</span>, <span class="hljs-keyword">function</span> (<span class="hljs-params">input</span>) {
-  <span class="hljs-keyword">var</span> self = <span class="hljs-variable language_">this</span>;
   <span class="hljs-keyword">var</span> data = _.<span class="hljs-title function_">clone</span>(template);
 
   data.<span class="hljs-property">id</span> = <span class="hljs-title class_">Math</span>.<span class="hljs-title function_">random</span>();
@@ -183,8 +217,8 @@ game.<span class="hljs-title function_">use</span>(<span class="hljs-string">&#x
       <li id="section-2">
         <div class="annotation">
 
-          <div class="pilwrap ">
-            <a class="pilcrow" href="#section-2">&#182;</a>
+          <div class="sswrap ">
+            <a class="ss" href="#section-2">&#x00a7;</a>
           </div>
           <p>target.transactions.push(tx);
             target.transactions.push(tx);</p>
@@ -197,8 +231,8 @@ game.<span class="hljs-title function_">use</span>(<span class="hljs-string">&#x
       <li id="section-3">
         <div class="annotation">
 
-          <div class="pilwrap ">
-            <a class="pilcrow" href="#section-3">&#182;</a>
+          <div class="sswrap ">
+            <a class="ss" href="#section-3">&#x00a7;</a>
           </div>
           <p>TODO: use fabric call
             input.spawns[1].life -= 5;</p>
@@ -225,8 +259,8 @@ game.<span class="hljs-title function_">use</span>(<span class="hljs-string">&#x
       <li id="section-4">
         <div class="annotation">
 
-          <div class="pilwrap ">
-            <a class="pilcrow" href="#section-4">&#182;</a>
+          <div class="sswrap ">
+            <a class="ss" href="#section-4">&#x00a7;</a>
           </div>
           <p>game.compute();</p>
 
@@ -244,8 +278,6 @@ game.<span class="hljs-title function_">use</span>(<span class="hljs-string">&#x
 });
 
 game.<span class="hljs-title function_">use</span>(<span class="hljs-string">&#x27;battle&#x27;</span>, <span class="hljs-keyword">function</span> (<span class="hljs-params">input</span>) {
-  <span class="hljs-keyword">var</span> self = <span class="hljs-variable language_">this</span>;
-  
   <span class="hljs-variable language_">console</span>.<span class="hljs-title function_">log</span>(<span class="hljs-string">&#x27;battling...&#x27;</span>, input.<span class="hljs-property">spawns</span>);
   
   input.<span class="hljs-property">spawns</span>[<span class="hljs-number">0</span>].<span class="hljs-property">stack</span>.<span class="hljs-title function_">push</span>(<span class="hljs-string">&#x27;attack&#x27;</span>);
@@ -265,8 +297,8 @@ game.<span class="hljs-property">stack</span>.<span class="hljs-title function_"
       <li id="section-5">
         <div class="annotation">
 
-          <div class="pilwrap ">
-            <a class="pilcrow" href="#section-5">&#182;</a>
+          <div class="sswrap ">
+            <a class="ss" href="#section-5">&#x00a7;</a>
           </div>
           <p>game.stack.push(‘spawn’);</p>
 

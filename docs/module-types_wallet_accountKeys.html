@@ -1,0 +1,5611 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <title>Module: types/wallet/accountKeys &middot; Docs</title>
+  <script src="scripts/prettify/prettify.js"> </script>
+  <script src="scripts/prettify/lang-css.js"> </script>
+  <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+  <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+  <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+  <script>
+    window.dataLayer = window.dataLayer || [];
+
+    function gtag() {
+      dataLayer.push(arguments);
+    }
+    gtag('js', new Date());
+    gtag('config', 'G-09Y57FL980');
+  </script>
+</head>
+
+<body>
+  <div id="main">
+    <h1 class="page-title">Module: types/wallet/accountKeys</h1>
+
+
+
+
+    <section>
+
+      <header>
+
+
+
+
+
+      </header>
+
+      <article>
+        <div class="container-overview">
+
+
+          <div class="description">One seed, many accounts, three separate keys each.
+
+            A user imports one mnemonic (plus an optional BIP39 passphrase) once; the
+            client keeps only the resulting master xprv, sealed by a separate lock
+            password. From that master, every (account, network) pair derives:
+
+            - a Fabric identity key `m/7777'/F'/n'/0/0` (F = 7777 on mainnet, 7778 elsewhere),
+            the only key a sign-in proves;
+            - a Bitcoin wallet: `m/84'/B'/n'` (SegWit, every new receive and change
+            address), `m/86'/B'/n'` (BIP-86 Taproot `tr`, for Taproot payments and
+            contracts), and `m/44'/B'/n'` (standard `pkh`), the last two watched and
+            spendable but never handing out receive addresses here; B = 0 on mainnet
+            and 1 elsewhere;
+            - a multisig cosigner key `m/87'/B'/n'/0/0` for group wallets, escrow, and
+            federations — never the identity key.
+
+            Wallet xpubs are shared with depth, parent fingerprint, and child number
+            zeroed and no key origin, so xpubs from two accounts can't be linked to
+            one seed.</div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            <dt class="tag-source">Source:</dt>
+            <dd class="tag-source">
+              <ul class="dummy">
+                <li>
+                  <a href="types_wallet_accountKeys.js.html">types/wallet/accountKeys.js</a>, <a href="types_wallet_accountKeys.js.html#line3">line 3</a>
+                </li>
+              </ul>
+            </dd>
+
+
+
+
+
+
+
+          </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h3 class="subsection-title">Members</h3>
+
+
+
+        <h4 class="name" id=".ARGON2_MASTER"><span class="type-signature">(static) </span>ARGON2_MASTER<span class="type-signature"></span></h4>
+
+
+
+
+        <div class="description">
+          True when sealMaster uses Argon2id. Older cores omit this and stay on PBKDF2.
+        </div>
+
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_wallet_accountKeys.js.html">types/wallet/accountKeys.js</a>, <a href="types_wallet_accountKeys.js.html#line599">line 599</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+        <h4 class="name" id="~ACCOUNT_NETWORKS"><span class="type-signature">(inner, constant) </span>ACCOUNT_NETWORKS<span class="type-signature"></span></h4>
+
+
+
+
+        <div class="description">
+          Networks an account may be derived for.
+        </div>
+
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_wallet_accountKeys.js.html">types/wallet/accountKeys.js</a>, <a href="types_wallet_accountKeys.js.html#line44">line 44</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+        <h4 class="name" id="~ACCOUNT_VAULT_TYPE"><span class="type-signature">(inner, constant) </span>ACCOUNT_VAULT_TYPE<span class="type-signature"></span></h4>
+
+
+
+
+        <div class="description">
+          Stored record type for a sealed master plus its public account cache.
+        </div>
+
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_wallet_accountKeys.js.html">types/wallet/accountKeys.js</a>, <a href="types_wallet_accountKeys.js.html#line48">line 48</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+        <h4 class="name" id="~WALLET_GAP_LIMIT"><span class="type-signature">(inner, constant) </span>WALLET_GAP_LIMIT<span class="type-signature"></span></h4>
+
+
+
+
+        <div class="description">
+          Addresses scanned past the last used one, on each chain of each wallet account.
+        </div>
+
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_wallet_accountKeys.js.html">types/wallet/accountKeys.js</a>, <a href="types_wallet_accountKeys.js.html#line46">line 46</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+        <h3 class="subsection-title">Methods</h3>
+
+
+
+
+
+
+
+        <h4 class="name" id="~accountPublicView"><span class="type-signature">(inner) </span>accountPublicView<span class="signature">(derived, label<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {object}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Public data of a derived account, cached unsealed in a vault so a locked
+          client can show identities and watch-only balances. Anyone able to edit the
+          record can change it, and no key is available to check it while locked, so
+          currentVaultAccount marks it unverified until the master checks it.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+              <th>Attributes</th>
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>derived</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">object</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last">result of `deriveAccount`</td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>label</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">string</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+                &lt;optional><br>
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_wallet_accountKeys.js.html">types/wallet/accountKeys.js</a>, <a href="types_wallet_accountKeys.js.html#line410">line 410</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">object</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="~checkCachedAccount"><span class="type-signature">(inner) </span>checkCachedAccount<span class="signature">(key, cached, master)</span><span class="type-signature"> &rarr; {object}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Check one cached account/network pair against what `master` derives.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>key</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">string</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last">Vault key of the pair (`vaultAccountKey`).</td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>cached</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">object</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last">The cached public view.</td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>master</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">string</span>
+                |
+
+                <span class="param-type"><a href="Key.html">Key</a></span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_wallet_accountKeys.js.html">types/wallet/accountKeys.js</a>, <a href="types_wallet_accountKeys.js.html#line497">line 497</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          The fresh view of a cached pair; throws when they differ.
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">object</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="~cosignerProof"><span class="type-signature">(inner) </span>cosignerProof<span class="signature">(cosignerKey, params)</span><span class="type-signature"> &rarr; {string}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Sign a claim, by the holder of `cosignerKey`, that it acts for
+          `identityPubkey` within `scope` (e.g. `passport:<origin>:<challengeHash>`,
+              `group:<contractId>`). Only the cosigner key signs, and an identity pubkey
+                is public, so the proof alone does not show that the identity authorized
+                the cosigner: carry it inside a message the identity key signs, as a
+                `PASSPORT_ASSERTION` does.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>cosignerKey</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type"><a href="Key.html">Key</a></span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>params</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Object</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_wallet_accountKeys.js.html">types/wallet/accountKeys.js</a>, <a href="types_wallet_accountKeys.js.html#line343">line 343</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          BIP340 signature hex.
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">string</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="~createAccountVault"><span class="type-signature">(inner) </span>createAccountVault<span class="signature">(params)</span><span class="type-signature"> &rarr; {object}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          A new stored record: the sealed master, the current pair, and its public cache.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>params</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Object</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last">
+                <h6>Properties</h6>
+
+
+                <table class="params">
+                  <thead>
+                    <tr>
+
+                      <th>Name</th>
+
+
+                      <th>Type</th>
+
+
+                      <th>Attributes</th>
+
+
+
+                      <th>Default</th>
+
+
+                      <th class="last">Description</th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+
+
+                    <tr>
+
+                      <td class="name"><code>master</code></td>
+
+
+                      <td class="type">
+
+
+                        <span class="param-type">string</span>
+                        |
+
+                        <span class="param-type"><a href="Key.html">Key</a></span>
+
+
+
+                      </td>
+
+
+                      <td class="attributes">
+
+
+
+
+
+                      </td>
+
+
+
+                      <td class="default">
+
+                      </td>
+
+
+                      <td class="description last"></td>
+                    </tr>
+
+
+
+                    <tr>
+
+                      <td class="name"><code>lockPassword</code></td>
+
+
+                      <td class="type">
+
+
+                        <span class="param-type">string</span>
+
+
+
+                      </td>
+
+
+                      <td class="attributes">
+
+
+
+
+
+                      </td>
+
+
+
+                      <td class="default">
+
+                      </td>
+
+
+                      <td class="description last"></td>
+                    </tr>
+
+
+
+                    <tr>
+
+                      <td class="name"><code>account</code></td>
+
+
+                      <td class="type">
+
+
+                        <span class="param-type">number</span>
+
+
+
+                      </td>
+
+
+                      <td class="attributes">
+
+                        &lt;optional><br>
+
+
+
+
+
+                      </td>
+
+
+
+                      <td class="default">
+
+                        0
+
+                      </td>
+
+
+                      <td class="description last"></td>
+                    </tr>
+
+
+
+                    <tr>
+
+                      <td class="name"><code>network</code></td>
+
+
+                      <td class="type">
+
+
+                        <span class="param-type">string</span>
+
+
+
+                      </td>
+
+
+                      <td class="attributes">
+
+                        &lt;optional><br>
+
+
+
+
+
+                      </td>
+
+
+
+                      <td class="default">
+
+                        'mainnet'
+
+                      </td>
+
+
+                      <td class="description last"></td>
+                    </tr>
+
+
+
+                    <tr>
+
+                      <td class="name"><code>label</code></td>
+
+
+                      <td class="type">
+
+
+                        <span class="param-type">string</span>
+
+
+
+                      </td>
+
+
+                      <td class="attributes">
+
+                        &lt;optional><br>
+
+
+
+
+
+                      </td>
+
+
+
+                      <td class="default">
+
+                      </td>
+
+
+                      <td class="description last"></td>
+                    </tr>
+
+
+                  </tbody>
+                </table>
+
+              </td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_wallet_accountKeys.js.html">types/wallet/accountKeys.js</a>, <a href="types_wallet_accountKeys.js.html#line446">line 446</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">object</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="~currentVaultAccount"><span class="type-signature">(inner) </span>currentVaultAccount<span class="signature">(vault, master<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {object|null}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Public view of the vault's current pair, marked `verified` on the view and
+          its `wallet`. Without the master it is the cache as stored, `verified:
+          false`: show it as unverified, and walletReceiveAddress /
+          walletChangeAddress refuse its wallet. With the master the pair is
+          re-derived and checked first (`FABRIC_ACCOUNT_VAULT_MISMATCH` when it
+          differs), and the view is `verified: true`.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+              <th>Attributes</th>
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>vault</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">object</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>master</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">string</span>
+                |
+
+                <span class="param-type"><a href="Key.html">Key</a></span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+                &lt;optional><br>
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_wallet_accountKeys.js.html">types/wallet/accountKeys.js</a>, <a href="types_wallet_accountKeys.js.html#line587">line 587</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">object</span>
+            |
+
+            <span class="param-type">null</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="~deriveAccount"><span class="type-signature">(inner) </span>deriveAccount<span class="signature">(master, options<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {Object}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Derive the three keys of one (account, network) pair.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+              <th>Attributes</th>
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>master</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">string</span>
+                |
+
+                <span class="param-type"><a href="Key.html">Key</a></span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last">Master xprv.</td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>options</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Object</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+                &lt;optional><br>
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last">
+                <h6>Properties</h6>
+
+
+                <table class="params">
+                  <thead>
+                    <tr>
+
+                      <th>Name</th>
+
+
+                      <th>Type</th>
+
+
+                      <th>Attributes</th>
+
+
+
+                      <th>Default</th>
+
+
+                      <th class="last">Description</th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+
+
+                    <tr>
+
+                      <td class="name"><code>account</code></td>
+
+
+                      <td class="type">
+
+
+                        <span class="param-type">number</span>
+
+
+
+                      </td>
+
+
+                      <td class="attributes">
+
+                        &lt;optional><br>
+
+
+
+
+
+                      </td>
+
+
+
+                      <td class="default">
+
+                        0
+
+                      </td>
+
+
+                      <td class="description last"></td>
+                    </tr>
+
+
+
+                    <tr>
+
+                      <td class="name"><code>network</code></td>
+
+
+                      <td class="type">
+
+
+                        <span class="param-type">string</span>
+
+
+
+                      </td>
+
+
+                      <td class="attributes">
+
+                        &lt;optional><br>
+
+
+
+
+
+                      </td>
+
+
+
+                      <td class="default">
+
+                        'mainnet'
+
+                      </td>
+
+
+                      <td class="description last"></td>
+                    </tr>
+
+
+                  </tbody>
+                </table>
+
+              </td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_wallet_accountKeys.js.html">types/wallet/accountKeys.js</a>, <a href="types_wallet_accountKeys.js.html#line192">line 192</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Object</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="~extendedKeyForNetwork"><span class="type-signature">(inner) </span>extendedKeyForNetwork<span class="signature">(base58, network)</span><span class="type-signature"> &rarr; {string}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Re-serialize an extended key with a network's version bytes (`xpub`/`xprv`
+          on mainnet, `tpub`/`tprv` elsewhere). Key material is unchanged.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>base58</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">string</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>network</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">string</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_wallet_accountKeys.js.html">types/wallet/accountKeys.js</a>, <a href="types_wallet_accountKeys.js.html#line118">line 118</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">string</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="~generateMnemonic"><span class="type-signature">(inner) </span>generateMnemonic<span class="signature">(strength<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {string}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Generate a new mnemonic. Show it once for backup; it is never stored.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+              <th>Attributes</th>
+
+
+
+              <th>Default</th>
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>strength</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">number</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+                &lt;optional><br>
+
+
+
+
+
+              </td>
+
+
+
+              <td class="default">
+
+                256
+
+              </td>
+
+
+              <td class="description last">Entropy bits (128 → 12 words, 256 → 24 words).</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_wallet_accountKeys.js.html">types/wallet/accountKeys.js</a>, <a href="types_wallet_accountKeys.js.html#line151">line 151</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">string</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="~importSeed"><span class="type-signature">(inner) </span>importSeed<span class="signature">(mnemonic, passphrase<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {string}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Turn a mnemonic and optional BIP39 passphrase into the master xprv. Callers
+          drop the mnemonic and passphrase right after.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+              <th>Attributes</th>
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>mnemonic</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">string</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>passphrase</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">string</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+                &lt;optional><br>
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last">The derivation password (BIP39 passphrase).</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_wallet_accountKeys.js.html">types/wallet/accountKeys.js</a>, <a href="types_wallet_accountKeys.js.html#line162">line 162</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          Master xprv (mainnet serialization; the network is chosen per account).
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">string</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="~normalizeAccountNetwork"><span class="type-signature">(inner) </span>normalizeAccountNetwork<span class="signature">(network)</span><span class="type-signature"> &rarr; {string}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Canonical network name for account derivation.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>network</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">string</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_wallet_accountKeys.js.html">types/wallet/accountKeys.js</a>, <a href="types_wallet_accountKeys.js.html#line75">line 75</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          One of ACCOUNT_NETWORKS.
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">string</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="~normalizeMasterXprv"><span class="type-signature">(inner) </span>normalizeMasterXprv<span class="signature">(master)</span><span class="type-signature"> &rarr; {string}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Validate a master xprv (depth 0, private) and serialize it for mainnet.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>master</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">string</span>
+                |
+
+                <span class="param-type"><a href="Key.html">Key</a></span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last">xprv / tprv string or a Key holding one.</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_wallet_accountKeys.js.html">types/wallet/accountKeys.js</a>, <a href="types_wallet_accountKeys.js.html#line175">line 175</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">string</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="~openAccountVault"><span class="type-signature">(inner) </span>openAccountVault<span class="signature">(vault, lockPassword)</span><span class="type-signature"> &rarr; {string}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Unlock a vault: open the sealed master with the lock password and check the
+          public cache against it (verifyVaultAccounts). Pass the master to
+          currentVaultAccount for a view that hands out addresses.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>vault</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">object</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>lockPassword</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">string</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_wallet_accountKeys.js.html">types/wallet/accountKeys.js</a>, <a href="types_wallet_accountKeys.js.html#line542">line 542</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          Master xprv.
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">string</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="~sealMaster"><span class="type-signature">(inner) </span>sealMaster<span class="signature">(master, lockPassword)</span><span class="type-signature"> &rarr; {object}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Seal a master xprv with the lock password (Argon2id, AES-256-GCM).
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>master</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">string</span>
+                |
+
+                <span class="param-type"><a href="Key.html">Key</a></span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>lockPassword</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">string</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_wallet_accountKeys.js.html">types/wallet/accountKeys.js</a>, <a href="types_wallet_accountKeys.js.html#line381">line 381</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">object</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="~selectVaultAccount"><span class="type-signature">(inner) </span>selectVaultAccount<span class="signature">(vault, params)</span><span class="type-signature"> &rarr; {object}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Switch a vault to another pair. Derives (and caches) it when the master is
+          given; without it only cached pairs can be selected.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>vault</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">object</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>params</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Object</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_wallet_accountKeys.js.html">types/wallet/accountKeys.js</a>, <a href="types_wallet_accountKeys.js.html#line556">line 556</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          New vault record.
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">object</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="~shareableAccountXpub"><span class="type-signature">(inner) </span>shareableAccountXpub<span class="signature">(base58, network)</span><span class="type-signature"> &rarr; {string}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Serialize an account xpub for sharing: the network's version bytes, with
+          depth, parent fingerprint, and child number zeroed. Those header fields
+          would otherwise tie every account of one seed to the same parent; child
+          derivation doesn't use them, so addresses are unchanged.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>base58</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">string</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last">Account xpub / tpub.</td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>network</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">string</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_wallet_accountKeys.js.html">types/wallet/accountKeys.js</a>, <a href="types_wallet_accountKeys.js.html#line135">line 135</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">string</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="~unsealMaster"><span class="type-signature">(inner) </span>unsealMaster<span class="signature">(blob, lockPassword)</span><span class="type-signature"> &rarr; {string}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Open a sealed master xprv.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>blob</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">object</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>lockPassword</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">string</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_wallet_accountKeys.js.html">types/wallet/accountKeys.js</a>, <a href="types_wallet_accountKeys.js.html#line395">line 395</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">string</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="~vaultAccountKey"><span class="type-signature">(inner) </span>vaultAccountKey<span class="signature">(account, network)</span><span class="type-signature"> &rarr; {string}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Cache key of one (account, network) pair in a vault.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>account</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">number</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>network</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">string</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_wallet_accountKeys.js.html">types/wallet/accountKeys.js</a>, <a href="types_wallet_accountKeys.js.html#line432">line 432</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">string</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="~verifyCosignerProof"><span class="type-signature">(inner) </span>verifyCosignerProof<span class="signature">(params)</span><span class="type-signature"> &rarr; {boolean}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Check a cosigner proof: the cosigner key signed this claim. Accept it only
+          from inside a message the identity key signed (see cosignerProof).
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>params</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Object</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_wallet_accountKeys.js.html">types/wallet/accountKeys.js</a>, <a href="types_wallet_accountKeys.js.html#line359">line 359</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">boolean</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="~verifyVaultAccounts"><span class="type-signature">(inner) </span>verifyVaultAccounts<span class="signature">(vault, master)</span><span class="type-signature"> &rarr; {object}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Check every cached pair of a vault against what `master` derives, and
+          refuse a vault whose cache was edited (say, an xpub swapped for someone
+          else's). Re-deriving checks more than a MAC could, and needs no key while
+          locked, when nothing could check a MAC anyway.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>vault</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">object</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>master</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">string</span>
+                |
+
+                <span class="param-type"><a href="Key.html">Key</a></span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_wallet_accountKeys.js.html">types/wallet/accountKeys.js</a>, <a href="types_wallet_accountKeys.js.html#line524">line 524</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          The vault, unchanged.
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">object</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="~walletAddress"><span class="type-signature">(inner) </span>walletAddress<span class="signature">(params)</span><span class="type-signature"> &rarr; {string}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Address at `<chain>/<index>` of a wallet account xpub.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>params</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Object</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last">
+                <h6>Properties</h6>
+
+
+                <table class="params">
+                  <thead>
+                    <tr>
+
+                      <th>Name</th>
+
+
+                      <th>Type</th>
+
+
+                      <th>Attributes</th>
+
+
+
+                      <th>Default</th>
+
+
+                      <th class="last">Description</th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+
+
+                    <tr>
+
+                      <td class="name"><code>xpub</code></td>
+
+
+                      <td class="type">
+
+
+                        <span class="param-type">string</span>
+
+
+
+                      </td>
+
+
+                      <td class="attributes">
+
+
+
+
+
+                      </td>
+
+
+
+                      <td class="default">
+
+                      </td>
+
+
+                      <td class="description last">Account xpub / tpub.</td>
+                    </tr>
+
+
+
+                    <tr>
+
+                      <td class="name"><code>network</code></td>
+
+
+                      <td class="type">
+
+
+                        <span class="param-type">string</span>
+
+
+
+                      </td>
+
+
+                      <td class="attributes">
+
+
+
+
+
+                      </td>
+
+
+
+                      <td class="default">
+
+                      </td>
+
+
+                      <td class="description last"></td>
+                    </tr>
+
+
+
+                    <tr>
+
+                      <td class="name"><code>script</code></td>
+
+
+                      <td class="type">
+
+
+                        <span class="param-type">'wpkh'</span>
+                        |
+
+                        <span class="param-type">'tr'</span>
+                        |
+
+                        <span class="param-type">'pkh'</span>
+
+
+
+                      </td>
+
+
+                      <td class="attributes">
+
+                        &lt;optional><br>
+
+
+
+
+
+                      </td>
+
+
+
+                      <td class="default">
+
+                        'wpkh'
+
+                      </td>
+
+
+                      <td class="description last">`tr` is BIP-86 (key path only).</td>
+                    </tr>
+
+
+
+                    <tr>
+
+                      <td class="name"><code>change</code></td>
+
+
+                      <td class="type">
+
+
+                        <span class="param-type">number</span>
+
+
+
+                      </td>
+
+
+                      <td class="attributes">
+
+                        &lt;optional><br>
+
+
+
+
+
+                      </td>
+
+
+
+                      <td class="default">
+
+                        0
+
+                      </td>
+
+
+                      <td class="description last"></td>
+                    </tr>
+
+
+
+                    <tr>
+
+                      <td class="name"><code>index</code></td>
+
+
+                      <td class="type">
+
+
+                        <span class="param-type">number</span>
+
+
+
+                      </td>
+
+
+                      <td class="attributes">
+
+                        &lt;optional><br>
+
+
+
+
+
+                      </td>
+
+
+
+                      <td class="default">
+
+                        0
+
+                      </td>
+
+
+                      <td class="description last"></td>
+                    </tr>
+
+
+                  </tbody>
+                </table>
+
+              </td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_wallet_accountKeys.js.html">types/wallet/accountKeys.js</a>, <a href="types_wallet_accountKeys.js.html#line267">line 267</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">string</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="~walletChangeAddress"><span class="type-signature">(inner) </span>walletChangeAddress<span class="signature">(wallet, network, index)</span><span class="type-signature"> &rarr; {string}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Change address: always from the SegWit account. Refuses a wallet from a
+          locked vault view, like walletReceiveAddress.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+              <th>Default</th>
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>wallet</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Object</span>
+
+
+
+              </td>
+
+
+
+
+              <td class="default">
+
+              </td>
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>network</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">string</span>
+
+
+
+              </td>
+
+
+
+
+              <td class="default">
+
+              </td>
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>index</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">number</span>
+
+
+
+              </td>
+
+
+
+
+              <td class="default">
+
+                0
+
+              </td>
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_wallet_accountKeys.js.html">types/wallet/accountKeys.js</a>, <a href="types_wallet_accountKeys.js.html#line312">line 312</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">string</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="~walletDescriptors"><span class="type-signature">(inner) </span>walletDescriptors<span class="signature">(wallet)</span><span class="type-signature"> &rarr; {Object}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          The watch set of a wallet: SegWit receive and change, the Taproot account's
+          `tr` receive and change (when the wallet has one), and the standard
+          account's `pkh` receive and change. No key origins.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>wallet</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Object</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_wallet_accountKeys.js.html">types/wallet/accountKeys.js</a>, <a href="types_wallet_accountKeys.js.html#line243">line 243</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Object</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="~walletReceiveAddress"><span class="type-signature">(inner) </span>walletReceiveAddress<span class="signature">(wallet, network, index)</span><span class="type-signature"> &rarr; {string}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Next receive address: always from the SegWit account. Refuses a wallet
+          from a locked vault view (`verified: false`, see currentVaultAccount).
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+              <th>Default</th>
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>wallet</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Object</span>
+
+
+
+              </td>
+
+
+
+
+              <td class="default">
+
+              </td>
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>network</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">string</span>
+
+
+
+              </td>
+
+
+
+
+              <td class="default">
+
+              </td>
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>index</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">number</span>
+
+
+
+              </td>
+
+
+
+
+              <td class="default">
+
+                0
+
+              </td>
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_wallet_accountKeys.js.html">types/wallet/accountKeys.js</a>, <a href="types_wallet_accountKeys.js.html#line299">line 299</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">string</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+      </article>
+
+    </section>
+
+
+
+  </div>
+  <nav>
+    <h2><a href="index.html">Home</a></h2>
+    <h3>Modules</h3>
+    <ul>
+      <li><a href="module-types_bech32_bech32.html">types/bech32/bech32</a></li>
+      <li><a href="module-types_bech32_fabricPaymentBech32.html">types/bech32/fabricPaymentBech32</a></li>
+      <li><a href="module-types_delegation.html">types/delegation</a></li>
+      <li><a href="module-types_key_base58.html">types/key/base58</a></li>
+      <li><a href="module-types_key_bip32.html">types/key/bip32</a></li>
+      <li><a href="module-types_key_bip39.html">types/key/bip39</a></li>
+      <li><a href="module-types_key_bip49.html">types/key/bip49</a></li>
+      <li><a href="module-types_key_bip85.html">types/key/bip85</a></li>
+      <li><a href="module-types_key_fabricKeyMaterial.html">types/key/fabricKeyMaterial</a></li>
+      <li><a href="module-types_key_keyHasPrivateSigningMaterial.html">types/key/keyHasPrivateSigningMaterial</a></li>
+      <li><a href="module-types_key_pubkey.html">types/key/pubkey</a></li>
+      <li><a href="module-types_key_signingTags.html">types/key/signingTags</a></li>
+      <li><a href="module-types_typetree.html">types/typetree</a></li>
+      <li><a href="module-types_wallet_accountKeys.html">types/wallet/accountKeys</a></li>
+      <li><a href="module-types_wallet_bip21.html">types/wallet/bip21</a></li>
+      <li><a href="module-types_wallet_bip86.html">types/wallet/bip86</a></li>
+      <li><a href="module-types_witness_adaptor.html">types/witness/adaptor</a></li>
+      <li><a href="module-types_witness_bls.html">types/witness/bls</a></li>
+      <li><a href="module-types_witness_dleq.html">types/witness/dleq</a></li>
+      <li><a href="module-types_witness_musig2.html">types/witness/musig2</a></li>
+      <li><a href="module-types_witness_musig2Adaptor.html">types/witness/musig2Adaptor</a></li>
+      <li><a href="module-types_witness_musig2Session.html">types/witness/musig2Session</a></li>
+      <li><a href="types_ecc.html#.module:selftest">types/ecc.selftest</a></li>
+    </ul>
+    <h3>Classes</h3>
+    <ul>
+      <li><a href="Actor.html">Actor</a></li>
+      <li><a href="Beacon.html">Beacon</a></li>
+      <li><a href="Bitcoin.html">Bitcoin</a></li>
+      <li><a href="Block.html">Block</a></li>
+      <li><a href="Bond.html">Bond</a></li>
+      <li><a href="Book.html">Book</a></li>
+      <li><a href="Chain.html">Chain</a></li>
+      <li><a href="Challenge.html">Challenge</a></li>
+      <li><a href="Channel.html">Channel</a></li>
+      <li><a href="ChannelBook.html">ChannelBook</a></li>
+      <li><a href="ChannelSession.html">ChannelSession</a></li>
+      <li><a href="Circuit.html">Circuit</a></li>
+      <li><a href="Coinjoin.html">Coinjoin</a></li>
+      <li><a href="CoinjoinBook.html">CoinjoinBook</a></li>
+      <li><a href="CoinjoinMakerRound.html">CoinjoinMakerRound</a></li>
+      <li><a href="CoinjoinTakerRound.html">CoinjoinTakerRound</a></li>
+      <li><a href="Collection.html">Collection</a></li>
+      <li><a href="Component.html">Component</a></li>
+      <li><a href="Contract.html">Contract</a></li>
+      <li><a href="Disk.html">Disk</a></li>
+      <li><a href="Document.html">Document</a></li>
+      <li><a href="DocumentBlobTransferBook.html">DocumentBlobTransferBook</a></li>
+      <li><a href="DocumentBook.html">DocumentBook</a></li>
+      <li><a href="EncryptedPromise.html">EncryptedPromise</a></li>
+      <li><a href="Entity.html">Entity</a></li>
+      <li><a href="Entity.Transition.html">Transition</a></li>
+      <li><a href="Environment.html">Environment</a></li>
+      <li><a href="Fabric.html">Fabric</a></li>
+      <li><a href="Federation.html">Federation</a></li>
+      <li><a href="FidelityVerifier.html">FidelityVerifier</a></li>
+      <li><a href="Filesystem.html">Filesystem</a></li>
+      <li><a href="FraudProof.html">FraudProof</a></li>
+      <li><a href="HKDF.html">HKDF</a></li>
+      <li><a href="Hash256.html">Hash256</a></li>
+      <li><a href="Htlc.html">Htlc</a></li>
+      <li><a href="Identity.html">Identity</a></li>
+      <li><a href="Interface.html">Interface</a></li>
+      <li><a href="Key.html">Key</a></li>
+      <li><a href="Ledger.html">Ledger</a></li>
+      <li><a href="Lightning.html">Lightning</a></li>
+      <li><a href="LiquidityBook.html">LiquidityBook</a></li>
+      <li><a href="Logger.html">Logger</a></li>
+      <li><a href="Machine.html">Machine</a></li>
+      <li><a href="Market.html">Market</a></li>
+      <li><a href="Message.html">Message</a></li>
+      <li><a href="OrderBook.html">OrderBook</a></li>
+      <li><a href="Peer.html">Peer</a></li>
+      <li><a href="PodleBlacklist.html">PodleBlacklist</a></li>
+      <li><a href="Policy.html">Policy</a></li>
+      <li><a href="Program.html">Program</a></li>
+      <li><a href="Reader.html">Reader</a></li>
+      <li><a href="Redis.html">Redis</a></li>
+      <li><a href="Remote.html">Remote</a></li>
+      <li><a href="Resolutions.html">Resolutions</a></li>
+      <li><a href="Resource.html">Resource</a></li>
+      <li><a href="RoundRobin.html">RoundRobin</a></li>
+      <li><a href="Scribe.html">Scribe</a></li>
+      <li><a href="Script.html">Script</a></li>
+      <li><a href="Secret.html">Secret</a></li>
+      <li><a href="Service.html">Service</a></li>
+      <li><a href="Session.html">Session</a></li>
+      <li><a href="SetupTui.html">SetupTui</a></li>
+      <li><a href="SignedBook.html">SignedBook</a></li>
+      <li><a href="State.html">State</a></li>
+      <li><a href="Store.html">Store</a></li>
+      <li><a href="Swap.html">Swap</a></li>
+      <li><a href="global.html#Text">Text</a></li>
+      <li><a href="Token.html">Token</a></li>
+      <li><a href="Tree.html">Tree</a></li>
+      <li><a href="Vector.html">Vector</a></li>
+      <li><a href="Wallet.html">Wallet</a></li>
+      <li><a href="Watchtower.html">Watchtower</a></li>
+      <li><a href="Worker.html">Worker</a></li>
+      <li><a href="ZMQ.html">ZMQ</a></li>
+      <li><a href="module-types_delegation-Delegation.html">Delegation</a></li>
+      <li><a href="module-types_key_bip32-BIP32Factory.html">BIP32Factory</a></li>
+      <li><a href="module-types_witness_musig2-InvalidContributionError.html">InvalidContributionError</a></li>
+    </ul>
+    <h3>Global</h3>
+    <ul>
+      <li><a href="global.html#ASK_TYPE">ASK_TYPE</a></li>
+      <li><a href="global.html#BID_CLOCK_SKEW_SECONDS">BID_CLOCK_SKEW_SECONDS</a></li>
+      <li><a href="global.html#BID_TYPE">BID_TYPE</a></li>
+      <li><a href="global.html#BITCOIN_MESSAGE_TYPES">BITCOIN_MESSAGE_TYPES</a></li>
+      <li><a href="global.html#CHANNEL_BODY_TYPES">CHANNEL_BODY_TYPES</a></li>
+      <li><a href="global.html#CHANNEL_DEFAULTS">CHANNEL_DEFAULTS</a></li>
+      <li><a href="global.html#CLTV_TIMESTAMP_THRESHOLD">CLTV_TIMESTAMP_THRESHOLD</a></li>
+      <li><a href="global.html#DEFAULT_BID_TTL_SECONDS">DEFAULT_BID_TTL_SECONDS</a></li>
+      <li><a href="global.html#DEFAULT_FEE_SATS">DEFAULT_FEE_SATS</a></li>
+      <li><a href="global.html#DEFAULT_INVOICE_EXPIRY_SECONDS">DEFAULT_INVOICE_EXPIRY_SECONDS</a></li>
+      <li><a href="global.html#DEFAULT_INVOICE_MARGIN_SECONDS">DEFAULT_INVOICE_MARGIN_SECONDS</a></li>
+      <li><a href="global.html#DEFAULT_MAX_SIGNS">DEFAULT_MAX_SIGNS</a></li>
+      <li><a href="global.html#DEFAULT_MIN_CLAIM_BLOCKS">DEFAULT_MIN_CLAIM_BLOCKS</a></li>
+      <li><a href="global.html#DEFAULT_MIN_CONFIRMATIONS">DEFAULT_MIN_CONFIRMATIONS</a></li>
+      <li><a href="global.html#DEFAULT_MIN_EQUAL_OUTPUTS">DEFAULT_MIN_EQUAL_OUTPUTS</a></li>
+      <li><a href="global.html#DEFAULT_WEIGHTS">DEFAULT_WEIGHTS</a></li>
+      <li><a href="global.html#DEPRECATED_WIRE_TYPES">DEPRECATED_WIRE_TYPES</a></li>
+      <li><a href="global.html#DUST_SATS">DUST_SATS</a></li>
+      <li><a href="global.html#EXIT_KINDS">EXIT_KINDS</a></li>
+      <li><a href="global.html#EXIT_SIGNATURE_TYPE">EXIT_SIGNATURE_TYPE</a></li>
+      <li><a href="global.html#FIDELITY_LOCKTIME_GRID">FIDELITY_LOCKTIME_GRID</a></li>
+      <li><a href="global.html#FIDELITY_MAX_CERT_BLOCKS">FIDELITY_MAX_CERT_BLOCKS</a></li>
+      <li><a href="global.html#FIELD_BODIES_VERSION">FIELD_BODIES_VERSION</a></li>
+      <li><a href="global.html#GCM_TAG_BYTES">GCM_TAG_BYTES</a></li>
+      <li><a href="global.html#HOP_PENALTY_MS">HOP_PENALTY_MS</a></li>
+      <li><a href="global.html#INPUT_HEADROOM">INPUT_HEADROOM</a></li>
+      <li><a href="global.html#LEAF_VERSION">LEAF_VERSION</a></li>
+      <li><a href="global.html#LOCKTIME_SLACK_BLOCKS">LOCKTIME_SLACK_BLOCKS</a></li>
+      <li><a href="global.html#LOCKTIME_THRESHOLD">LOCKTIME_THRESHOLD</a></li>
+      <li><a href="global.html#MAX_EVIDENCE">MAX_EVIDENCE</a></li>
+      <li><a href="global.html#MAX_FEE_PPM">MAX_FEE_PPM</a></li>
+      <li><a href="global.html#MAX_LOCKTIME">MAX_LOCKTIME</a></li>
+      <li><a href="global.html#MAX_MAKERS">MAX_MAKERS</a></li>
+      <li><a href="global.html#MAX_MAKER_INPUTS">MAX_MAKER_INPUTS</a></li>
+      <li><a href="global.html#MAX_OFFERS">MAX_OFFERS</a></li>
+      <li><a href="global.html#MAX_PREMIUM_PPM">MAX_PREMIUM_PPM</a></li>
+      <li><a href="global.html#MAX_PROVIDERS">MAX_PROVIDERS</a></li>
+      <li><a href="global.html#MAX_PSBT_CHARS">MAX_PSBT_CHARS</a></li>
+      <li><a href="global.html#MAX_REFUND_LOCK_BLOCKS">MAX_REFUND_LOCK_BLOCKS</a></li>
+      <li><a href="global.html#MAX_SETTLED_CREDITS">MAX_SETTLED_CREDITS</a></li>
+      <li><a href="global.html#MAX_TRANSFERS">MAX_TRANSFERS</a></li>
+      <li><a href="global.html#MIN_COINJOIN_SATS">MIN_COINJOIN_SATS</a></li>
+      <li><a href="global.html#MIN_INVOICE_EXPIRY_SECONDS">MIN_INVOICE_EXPIRY_SECONDS</a></li>
+      <li><a href="global.html#MIN_REFUND_LOCK_BLOCKS">MIN_REFUND_LOCK_BLOCKS</a></li>
+      <li><a href="global.html#PODLE_BLACKLIST_SIZE">PODLE_BLACKLIST_SIZE</a></li>
+      <li><a href="global.html#PODLE_MAX_INDEX">PODLE_MAX_INDEX</a></li>
+      <li><a href="global.html#PODLE_MIN_AGE_CONFS">PODLE_MIN_AGE_CONFS</a></li>
+      <li><a href="global.html#PODLE_MIN_VALUE_PCT">PODLE_MIN_VALUE_PCT</a></li>
+      <li><a href="global.html#PODLE_TAG">PODLE_TAG</a></li>
+      <li><a href="global.html#ROUND_TYPES">ROUND_TYPES</a></li>
+      <li><a href="global.html#SCORE_INVENTORY_ONLY">SCORE_INVENTORY_ONLY</a></li>
+      <li><a href="global.html#SCORE_MAX">SCORE_MAX</a></li>
+      <li><a href="global.html#SCORE_UNKNOWN">SCORE_UNKNOWN</a></li>
+      <li><a href="global.html#SEALED_TYPE">SEALED_TYPE</a></li>
+      <li><a href="global.html#SEAL_NAMESPACE">SEAL_NAMESPACE</a></li>
+      <li><a href="global.html#SIGNER_FIELD">SIGNER_FIELD</a></li>
+      <li><a href="global.html#TAPROOT_INTERNAL_NUMS">TAPROOT_INTERNAL_NUMS</a></li>
+      <li><a href="global.html#TELEMETRY_TYPE">TELEMETRY_TYPE</a></li>
+      <li><a href="global.html#TELEMETRY_VERSION">TELEMETRY_VERSION</a></li>
+      <li><a href="global.html#UNSAFE_PATH_TOKENS">UNSAFE_PATH_TOKENS</a></li>
+      <li><a href="global.html#WALLET_TX_KINDS">WALLET_TX_KINDS</a></li>
+      <li><a href="global.html#WEIGHT_OVERHEAD">WEIGHT_OVERHEAD</a></li>
+      <li><a href="global.html#YEAR_BLOCKS">YEAR_BLOCKS</a></li>
+      <li><a href="global.html#assertMonotoneBudget">assertMonotoneBudget</a></li>
+      <li><a href="global.html#bitcoin">bitcoin</a></li>
+      <li><a href="global.html#bodyId">bodyId</a></li>
+      <li><a href="global.html#broadcastSettled">broadcastSettled</a></li>
+      <li><a href="global.html#buildContractTaproot">buildContractTaproot</a></li>
+      <li><a href="global.html#buildEscrow">buildEscrow</a></li>
+      <li><a href="global.html#buildFederationVaultFromPolicy">buildFederationVaultFromPolicy</a></li>
+      <li><a href="global.html#buildFidelity">buildFidelity</a></li>
+      <li><a href="global.html#buildForwardedDocumentRequest">buildForwardedDocumentRequest</a></li>
+      <li><a href="global.html#buildHashlockLeaf">buildHashlockLeaf</a></li>
+      <li><a href="global.html#buildHashlockTapscript">buildHashlockTapscript</a></li>
+      <li><a href="global.html#buildPsbt">buildPsbt</a></li>
+      <li><a href="global.html#buildScriptLeaf">buildScriptLeaf</a></li>
+      <li><a href="global.html#buildSpendLeaf">buildSpendLeaf</a></li>
+      <li><a href="global.html#buildWatchSet">buildWatchSet</a></li>
+      <li><a href="global.html#checkPodleUtxo">checkPodleUtxo</a></li>
+      <li><a href="global.html#classifyWalletTransaction">classifyWalletTransaction</a></li>
+      <li><a href="global.html#codec">codec</a></li>
+      <li><a href="global.html#compileLeaves">compileLeaves</a></li>
+      <li><a href="global.html#composePolicyWithRunHashlock">composePolicyWithRunHashlock</a></li>
+      <li><a href="global.html#composeTaprootTree">composeTaprootTree</a></li>
+      <li><a href="global.html#computeRelayFee">computeRelayFee</a></li>
+      <li><a href="global.html#contractMessageIndex">contractMessageIndex</a></li>
+      <li><a href="global.html#contractMessageMatches">contractMessageMatches</a></li>
+      <li><a href="global.html#createBlobMerkleTree">createBlobMerkleTree</a></li>
+      <li><a href="global.html#createDocumentPurchaseSession">createDocumentPurchaseSession</a></li>
+      <li><a href="global.html#describePsbt">describePsbt</a></li>
+      <li><a href="global.html#descriptorPrivateKey">descriptorPrivateKey</a></li>
+      <li><a href="global.html#envelopeRecipient">envelopeRecipient</a></li>
+      <li><a href="global.html#estimateVsize">estimateVsize</a></li>
+      <li><a href="global.html#evaluateTierWhen">evaluateTierWhen</a></li>
+      <li><a href="global.html#expireHeight">expireHeight</a></li>
+      <li><a href="global.html#fidelityLocktimes">fidelityLocktimes</a></li>
+      <li><a href="global.html#fidelityPath">fidelityPath</a></li>
+      <li><a href="global.html#fidelityValue">fidelityValue</a></li>
+      <li><a href="global.html#finalize">finalize</a></li>
+      <li><a href="global.html#finalizeHashlockPsbt">finalizeHashlockPsbt</a></li>
+      <li><a href="global.html#finalizeSpendPsbt">finalizeSpendPsbt</a></li>
+      <li><a href="global.html#findSession">findSession</a></li>
+      <li><a href="global.html#fromContractMessage">fromContractMessage</a></li>
+      <li><a href="global.html#generatePodle">generatePodle</a></li>
+      <li><a href="global.html#hashlockFromProgramRun">hashlockFromProgramRun</a></li>
+      <li><a href="global.html#invoiceAmountMsat">invoiceAmountMsat</a></li>
+      <li><a href="global.html#isDuplicateSettlement">isDuplicateSettlement</a></li>
+      <li><a href="global.html#isValidFidelityLocktime">isValidFidelityLocktime</a></li>
+      <li><a href="global.html#l1GiverTerms">l1GiverTerms</a></li>
+      <li><a href="global.html#leafScripts">leafScripts</a></li>
+      <li><a href="global.html#listRefundCandidates">listRefundCandidates</a></li>
+      <li><a href="global.html#lockFrom">lockFrom</a></li>
+      <li><a href="global.html#makerChange">makerChange</a></li>
+      <li><a href="global.html#makerFee">makerFee</a></li>
+      <li><a href="global.html#memoryChain">memoryChain</a></li>
+      <li><a href="global.html#memoryWallet">memoryWallet</a></li>
+      <li><a href="global.html#mergeMakerSignatures">mergeMakerSignatures</a></li>
+      <li><a href="global.html#nextPodleIndex">nextPodleIndex</a></li>
+      <li><a href="global.html#normalizeAuth">normalizeAuth</a></li>
+      <li><a href="global.html#normalizeCancel">normalizeCancel</a></li>
+      <li><a href="global.html#normalizeContractSpendPolicy">normalizeContractSpendPolicy</a></li>
+      <li><a href="global.html#normalizeExtraLeafSpecs">normalizeExtraLeafSpecs</a></li>
+      <li><a href="global.html#normalizeFidelity">normalizeFidelity</a></li>
+      <li><a href="global.html#normalizeFill">normalizeFill</a></li>
+      <li><a href="global.html#normalizeFillAck">normalizeFillAck</a></li>
+      <li><a href="global.html#normalizeFunded">normalizeFunded</a></li>
+      <li><a href="global.html#normalizeHashlockSpec">normalizeHashlockSpec</a></li>
+      <li><a href="global.html#normalizeIoAuth">normalizeIoAuth</a></li>
+      <li><a href="global.html#normalizeLeaf">normalizeLeaf</a></li>
+      <li><a href="global.html#normalizeLock">normalizeLock</a></li>
+      <li><a href="global.html#normalizeOffer">normalizeOffer</a></li>
+      <li><a href="global.html#normalizeOrder">normalizeOrder</a></li>
+      <li><a href="global.html#normalizeSig">normalizeSig</a></li>
+      <li><a href="global.html#normalizeTake">normalizeTake</a></li>
+      <li><a href="global.html#normalizeTakeAccept">normalizeTakeAccept</a></li>
+      <li><a href="global.html#normalizeTx">normalizeTx</a></li>
+      <li><a href="global.html#offerKey">offerKey</a></li>
+      <li><a href="global.html#openFiling">openFiling</a></li>
+      <li><a href="global.html#openRoundMessage">openRoundMessage</a></li>
+      <li><a href="global.html#paginateInventoryItems">paginateInventoryItems</a></li>
+      <li><a href="global.html#parseXOnlyPubkeysFromSpendScript">parseXOnlyPubkeysFromSpendScript</a></li>
+      <li><a href="global.html#planCoinjoin">planCoinjoin</a></li>
+      <li><a href="global.html#podleCommitment">podleCommitment</a></li>
+      <li><a href="global.html#podleGenerator">podleGenerator</a></li>
+      <li><a href="global.html#policyAfterDecay">policyAfterDecay</a></li>
+      <li><a href="global.html#prepareDecayMigrationPsbt">prepareDecayMigrationPsbt</a></li>
+      <li><a href="global.html#prepareFidelityRedeem">prepareFidelityRedeem</a></li>
+      <li><a href="global.html#prepareHashlockWithdrawalPsbt">prepareHashlockWithdrawalPsbt</a></li>
+      <li><a href="global.html#prepareTierWithdrawalPsbt">prepareTierWithdrawalPsbt</a></li>
+      <li><a href="global.html#quote">quote</a></li>
+      <li><a href="global.html#randomNonce">randomNonce</a></li>
+      <li><a href="global.html#randomPrivateKey">randomPrivateKey</a></li>
+      <li><a href="global.html#randomRoundId">randomRoundId</a></li>
+      <li><a href="global.html#rememberSettlement">rememberSettlement</a></li>
+      <li><a href="global.html#roleFor">roleFor</a></li>
+      <li><a href="global.html#roles">roles</a></li>
+      <li><a href="global.html#routePath">routePath</a></li>
+      <li><a href="global.html#scriptTreeFromLeaves">scriptTreeFromLeaves</a></li>
+      <li><a href="global.html#sealRoundMessage">sealRoundMessage</a></li>
+      <li><a href="global.html#selectActiveTiers">selectActiveTiers</a></li>
+      <li><a href="global.html#sellerDedupeKey">sellerDedupeKey</a></li>
+      <li><a href="global.html#settlementDedupeKey">settlementDedupeKey</a></li>
+      <li><a href="global.html#signFidelityCertificate">signFidelityCertificate</a></li>
+      <li><a href="global.html#signFidelityRedeem">signFidelityRedeem</a></li>
+      <li><a href="global.html#signKeyPathInputs">signKeyPathInputs</a></li>
+      <li><a href="global.html#signOwnership">signOwnership</a></li>
+      <li><a href="global.html#signingString">signingString</a></li>
+      <li><a href="global.html#spendAddress">spendAddress</a></li>
+      <li><a href="global.html#synthesizeDefaultLadder">synthesizeDefaultLadder</a></li>
+      <li><a href="global.html#taprootKeyPath">taprootKeyPath</a></li>
+      <li><a href="global.html#taprootOutputPrivateKey">taprootOutputPrivateKey</a></li>
+      <li><a href="global.html#tierWhenPath">tierWhenPath</a></li>
+      <li><a href="global.html#timelockMature">timelockMature</a></li>
+      <li><a href="global.html#toContractMessage">toContractMessage</a></li>
+      <li><a href="global.html#toIntegerSats">toIntegerSats</a></li>
+      <li><a href="global.html#unsignedTxid">unsignedTxid</a></li>
+      <li><a href="global.html#validateEscrow">validateEscrow</a></li>
+      <li><a href="global.html#validateFill">validateFill</a></li>
+      <li><a href="global.html#validateForMaker">validateForMaker</a></li>
+      <li><a href="global.html#validateForTaker">validateForTaker</a></li>
+      <li><a href="global.html#validateInvoice">validateInvoice</a></li>
+      <li><a href="global.html#validateTake">validateTake</a></li>
+      <li><a href="global.html#validateTakeAccept">validateTakeAccept</a></li>
+      <li><a href="global.html#verifyBlobPath">verifyBlobPath</a></li>
+      <li><a href="global.html#verifyFidelity">verifyFidelity</a></li>
+      <li><a href="global.html#verifyFidelityCertificate">verifyFidelityCertificate</a></li>
+      <li><a href="global.html#verifyOwnership">verifyOwnership</a></li>
+      <li><a href="global.html#verifyPodle">verifyPodle</a></li>
+      <li><a href="global.html#weightsForProximity">weightsForProximity</a></li>
+    </ul>
+  </nav>
+  <br class="clear" />
+  <footer><a href="https://github.com/FabricLabs/fabric">git://</a> &middot; <a href="https://chat.fabric.pub/#/room/#hub:fabric.pub">Community</a></footer>
+  <script type="text/javascript">
+    prettyPrint();
+  </script>
+  <script src="scripts/linenumber.js"></script>
+</body>
+
+</html>

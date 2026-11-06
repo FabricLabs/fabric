@@ -392,7 +392,7 @@
             <dd class="tag-source">
               <ul class="dummy">
                 <li>
-                  <a href="types_wallet.js.html">types/wallet.js</a>, <a href="types_wallet.js.html#line30">line 30</a>
+                  <a href="types_wallet.js.html">types/wallet.js</a>, <a href="types_wallet.js.html#line64">line 64</a>
                 </li>
               </ul>
             </dd>
@@ -454,6 +454,82 @@
 
 
 
+
+
+
+
+
+
+
+
+        <h3 class="subsection-title">Members</h3>
+
+
+
+        <h4 class="name" id="_emittedWalletTxKeys"><span class="type-signature"></span>_emittedWalletTxKeys<span class="type-signature"> :Set.&lt;string></span></h4>
+
+
+
+
+
+
+        <h5>Type:</h5>
+        <ul>
+          <li>
+
+            <span class="param-type">Set.&lt;string></span>
+
+
+          </li>
+        </ul>
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_wallet.js.html">types/wallet.js</a>, <a href="types_wallet.js.html#line135">line 135</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
 
 
 
@@ -575,7 +651,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_wallet.js.html">types/wallet.js</a>, <a href="types_wallet.js.html#line687">line 687</a>
+                <a href="types_wallet.js.html">types/wallet.js</a>, <a href="types_wallet.js.html#line1026">line 1026</a>
               </li>
             </ul>
           </dd>
@@ -621,7 +697,7 @@
 
 
         <div class="description">
-          Generate <a href="Script.html">Script</a> for reclaiming funds commited to a Swap.
+          Generate <a href="Script.html">Script</a> for reclaiming funds commited to a <a href="Swap.html">Swap</a>.
         </div>
 
 
@@ -716,7 +792,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_wallet.js.html">types/wallet.js</a>, <a href="types_wallet.js.html#line819">line 819</a>
+                <a href="types_wallet.js.html">types/wallet.js</a>, <a href="types_wallet.js.html#line1158">line 1158</a>
               </li>
             </ul>
           </dd>
@@ -762,7 +838,7 @@
 
 
         <div class="description">
-          Generate <a href="Script.html">Script</a> for claiming a Swap.
+          Generate <a href="Script.html">Script</a> for claiming a <a href="Swap.html">Swap</a>.
         </div>
 
 
@@ -880,7 +956,194 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_wallet.js.html">types/wallet.js</a>, <a href="types_wallet.js.html#line803">line 803</a>
+                <a href="types_wallet.js.html">types/wallet.js</a>, <a href="types_wallet.js.html#line1142">line 1142</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="_registerDerivedAddresses"><span class="type-signature"></span>_registerDerivedAddresses<span class="signature">(key, opts<span class="signature-attributes">opt</span>)</span><span class="type-signature"></span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Derive and watch a window of addresses for a key on the wallet's network:
+          SegWit on `m/84'/{coin}'/0'`, Taproot on `m/86'/{coin}'/0'`, and standard
+          on `m/44'/{coin}'/0'`, receive and change chains — the same set as
+          Wallet.walletDescriptors.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+              <th>Attributes</th>
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>key</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type"><a href="Key.html">Key</a></span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>opts</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">object</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+                &lt;optional><br>
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_wallet.js.html">types/wallet.js</a>, <a href="types_wallet.js.html#line492">line 492</a>
               </li>
             </ul>
           </dd>
@@ -1021,7 +1284,257 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_wallet.js.html">types/wallet.js</a>, <a href="types_wallet.js.html#line674">line 674</a>
+                <a href="types_wallet.js.html">types/wallet.js</a>, <a href="types_wallet.js.html#line1013">line 1013</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="createHTLC"><span class="type-signature">(async) </span>createHTLC<span class="signature">()</span><span class="type-signature"></span></h4>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="important tag-deprecated">Deprecated:</dt>
+          <dd>
+            <ul class="dummy">
+              <li>Legacy bcoin-style HTLC for channels — not the document-market P2TR profile.
+                Use `@fabric/core/types/htlc` instead.</li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_wallet.js.html">types/wallet.js</a>, <a href="types_wallet.js.html#line816">line 816</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="derive"><span class="type-signature"></span>derive<span class="signature">(path<span class="signature-attributes">opt</span>)</span><span class="type-signature"></span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Derive a key; the default is the first SegWit receive key of account 0
+          on the wallet's network (`m/84'/{0|1}'/0'/0/0`).
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+              <th>Attributes</th>
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>path</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">string</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+                &lt;optional><br>
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_wallet.js.html">types/wallet.js</a>, <a href="types_wallet.js.html#line251">line 251</a>
               </li>
             </ul>
           </dd>
@@ -1162,7 +1675,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_wallet.js.html">types/wallet.js</a>, <a href="types_wallet.js.html#line465">line 465</a>
+                <a href="types_wallet.js.html">types/wallet.js</a>, <a href="types_wallet.js.html#line796">line 796</a>
               </li>
             </ul>
           </dd>
@@ -1303,7 +1816,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_wallet.js.html">types/wallet.js</a>, <a href="types_wallet.js.html#line476">line 476</a>
+                <a href="types_wallet.js.html">types/wallet.js</a>, <a href="types_wallet.js.html#line807">line 807</a>
               </li>
             </ul>
           </dd>
@@ -1328,6 +1841,704 @@
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="getUnusedAddress"><span class="type-signature">(async) </span>getUnusedAddress<span class="signature">()</span><span class="type-signature"> &rarr; {Promise.&lt;string>}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Next unused receive address; see <a href="Wallet.html#receiveAddress">Wallet#receiveAddress</a>.
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_wallet.js.html">types/wallet.js</a>, <a href="types_wallet.js.html#line996">line 996</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Promise.&lt;string></span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="getWatchSet"><span class="type-signature"></span>getWatchSet<span class="signature">()</span><span class="type-signature"> &rarr; {object}</span></h4>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_wallet.js.html">types/wallet.js</a>, <a href="types_wallet.js.html#line480">line 480</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          watch set snapshot
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">object</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="ingestBitcoinBlock"><span class="type-signature"></span>ingestBitcoinBlock<span class="signature">(block)</span><span class="type-signature"> &rarr; {Array.&lt;object>}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Process a new block tip (optionally with verbosity-2 `tx` / `transactions`).
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>block</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">object</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_wallet.js.html">types/wallet.js</a>, <a href="types_wallet.js.html#line574">line 574</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          related classifications
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Array.&lt;object></span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="ingestBitcoinTransaction"><span class="type-signature"></span>ingestBitcoinTransaction<span class="signature">(txOrHex, context<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {object}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Ingest a Bitcoin transaction (verbose RPC object or raw hex) and emit when related.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+              <th>Attributes</th>
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>txOrHex</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">object</span>
+                |
+
+                <span class="param-type">string</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>context</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">object</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+                &lt;optional><br>
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last">{ tip, height, source }</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_wallet.js.html">types/wallet.js</a>, <a href="types_wallet.js.html#line520">line 520</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          classification
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">object</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="listSeeds"><span class="type-signature"></span>listSeeds<span class="signature">()</span><span class="type-signature"> &rarr; {Array.&lt;{seedId: string, xpub: string, labels: Array.&lt;string>}>}</span></h4>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_wallet.js.html">types/wallet.js</a>, <a href="types_wallet.js.html#line402">line 402</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Array.&lt;{seedId: string, xpub: string, labels: Array.&lt;string>}></span>
+
+
+          </dd>
+        </dl>
 
 
 
@@ -1506,7 +2717,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_wallet.js.html">types/wallet.js</a>, <a href="types_wallet.js.html#line269">line 269</a>
+                <a href="types_wallet.js.html">types/wallet.js</a>, <a href="types_wallet.js.html#line324">line 324</a>
               </li>
             </ul>
           </dd>
@@ -1539,6 +2750,319 @@
         <div class="param-desc">
           Stored key descriptor.
         </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Object</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="loadSeed"><span class="type-signature"></span>loadSeed<span class="signature">(phrase, labels<span class="signature-attributes">opt</span>, opts<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {Object}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Load an additional BIP39 seed into this wallet's key collection (does not
+          replace the primary `this.key`). Addresses derived from the seed are watched.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+              <th>Attributes</th>
+
+
+
+              <th>Default</th>
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>phrase</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">string</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+
+
+
+
+              </td>
+
+
+
+              <td class="default">
+
+              </td>
+
+
+              <td class="description last">BIP39 mnemonic</td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>labels</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Array.&lt;string></span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+                &lt;optional><br>
+
+
+
+
+
+              </td>
+
+
+
+              <td class="default">
+
+                []
+
+              </td>
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>opts</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">object</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+                &lt;optional><br>
+
+
+
+
+
+              </td>
+
+
+
+              <td class="default">
+
+              </td>
+
+
+              <td class="description last">
+                <h6>Properties</h6>
+
+
+                <table class="params">
+                  <thead>
+                    <tr>
+
+                      <th>Name</th>
+
+
+                      <th>Type</th>
+
+
+                      <th>Attributes</th>
+
+
+
+
+                      <th class="last">Description</th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+
+
+                    <tr>
+
+                      <td class="name"><code>addressWindow</code></td>
+
+
+                      <td class="type">
+
+
+                        <span class="param-type">number</span>
+
+
+
+                      </td>
+
+
+                      <td class="attributes">
+
+                        &lt;optional><br>
+
+
+
+
+
+                      </td>
+
+
+
+
+                      <td class="description last">receive indices to watch (default gapLimit)</td>
+                    </tr>
+
+
+                  </tbody>
+                </table>
+
+              </td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_wallet.js.html">types/wallet.js</a>, <a href="types_wallet.js.html#line370">line 370</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
 
 
 
@@ -1669,7 +3193,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_wallet.js.html">types/wallet.js</a>, <a href="types_wallet.js.html#line897">line 897</a>
+                <a href="types_wallet.js.html">types/wallet.js</a>, <a href="types_wallet.js.html#line1229">line 1229</a>
               </li>
             </ul>
           </dd>
@@ -1694,6 +3218,117 @@
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="receiveAddress"><span class="type-signature">(async) </span>receiveAddress<span class="signature">()</span><span class="type-signature"> &rarr; {Promise.&lt;string>}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Next BIP-86 Taproot receive address of account 0 (`m/86'/{coin}'/0'/0/i`),
+          recorded in the wallet's address book and watched.
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_wallet.js.html">types/wallet.js</a>, <a href="types_wallet.js.html#line1324">line 1324</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Promise.&lt;string></span>
+
+
+          </dd>
+        </dl>
 
 
 
@@ -1761,7 +3396,516 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_wallet.js.html">types/wallet.js</a>, <a href="types_wallet.js.html#line302">line 302</a>
+                <a href="types_wallet.js.html">types/wallet.js</a>, <a href="types_wallet.js.html#line599">line 599</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="watchAddress"><span class="type-signature"></span>watchAddress<span class="signature">(address, meta<span class="signature-attributes">opt</span>)</span><span class="type-signature"></span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Watch a Bitcoin address for wallet-associated transactions.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+              <th>Attributes</th>
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>address</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">string</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>meta</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">object</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+                &lt;optional><br>
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_wallet.js.html">types/wallet.js</a>, <a href="types_wallet.js.html#line422">line 422</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="watchHtlc"><span class="type-signature"></span>watchHtlc<span class="signature">(htlc)</span><span class="type-signature"></span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Watch an inventory HTLC offer (payment address + payment hash + optional settlement).
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>htlc</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">object</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_wallet.js.html">types/wallet.js</a>, <a href="types_wallet.js.html#line456">line 456</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="watchPaymentHash"><span class="type-signature"></span>watchPaymentHash<span class="signature">(paymentHashHex, meta<span class="signature-attributes">opt</span>)</span><span class="type-signature"></span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Watch an HTLC payment hash (SHA256 preimage) so claim witnesses are detected.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+              <th>Attributes</th>
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>paymentHashHex</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">string</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>meta</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">object</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+                &lt;optional><br>
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_wallet.js.html">types/wallet.js</a>, <a href="types_wallet.js.html#line443">line 443</a>
               </li>
             </ul>
           </dd>
@@ -1902,7 +4046,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_wallet.js.html">types/wallet.js</a>, <a href="types_wallet.js.html#line158">line 158</a>
+                <a href="types_wallet.js.html">types/wallet.js</a>, <a href="types_wallet.js.html#line211">line 211</a>
               </li>
             </ul>
           </dd>
@@ -1945,6 +4089,395 @@
           <dd>
 
             <span class="param-type">FabricSeed</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id=".deriveTaprootAddress"><span class="type-signature">(static) </span>deriveTaprootAddress<span class="signature">(key, options<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {Object}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          BIP-86 Taproot address of a key with private derivation
+          (`m/86'/{coin}'/account'/change/index`).
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+              <th>Attributes</th>
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>key</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type"><a href="Key.html">Key</a></span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last">Key holding a master that can derive hardened children.</td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>options</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Object</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+                &lt;optional><br>
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last">
+                <h6>Properties</h6>
+
+
+                <table class="params">
+                  <thead>
+                    <tr>
+
+                      <th>Name</th>
+
+
+                      <th>Type</th>
+
+
+                      <th>Attributes</th>
+
+
+
+                      <th>Default</th>
+
+
+                      <th class="last">Description</th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+
+
+                    <tr>
+
+                      <td class="name"><code>account</code></td>
+
+
+                      <td class="type">
+
+
+                        <span class="param-type">number</span>
+
+
+
+                      </td>
+
+
+                      <td class="attributes">
+
+                        &lt;optional><br>
+
+
+
+
+
+                      </td>
+
+
+
+                      <td class="default">
+
+                        0
+
+                      </td>
+
+
+                      <td class="description last"></td>
+                    </tr>
+
+
+
+                    <tr>
+
+                      <td class="name"><code>change</code></td>
+
+
+                      <td class="type">
+
+
+                        <span class="param-type">number</span>
+
+
+
+                      </td>
+
+
+                      <td class="attributes">
+
+                        &lt;optional><br>
+
+
+
+
+
+                      </td>
+
+
+
+                      <td class="default">
+
+                        0
+
+                      </td>
+
+
+                      <td class="description last"></td>
+                    </tr>
+
+
+
+                    <tr>
+
+                      <td class="name"><code>index</code></td>
+
+
+                      <td class="type">
+
+
+                        <span class="param-type">number</span>
+
+
+
+                      </td>
+
+
+                      <td class="attributes">
+
+                        &lt;optional><br>
+
+
+
+
+
+                      </td>
+
+
+
+                      <td class="default">
+
+                        0
+
+                      </td>
+
+
+                      <td class="description last"></td>
+                    </tr>
+
+
+
+                    <tr>
+
+                      <td class="name"><code>network</code></td>
+
+
+                      <td class="type">
+
+
+                        <span class="param-type">string</span>
+
+
+
+                      </td>
+
+
+                      <td class="attributes">
+
+                        &lt;optional><br>
+
+
+
+
+
+                      </td>
+
+
+
+                      <td class="default">
+
+                        'mainnet'
+
+                      </td>
+
+
+                      <td class="description last">Fabric network name.</td>
+                    </tr>
+
+
+                  </tbody>
+                </table>
+
+              </td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_wallet.js.html">types/wallet.js</a>, <a href="types_wallet.js.html#line1407">line 1407</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Object</span>
 
 
           </dd>
@@ -2065,7 +4598,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_wallet.js.html">types/wallet.js</a>, <a href="types_wallet.js.html#line175">line 175</a>
+                <a href="types_wallet.js.html">types/wallet.js</a>, <a href="types_wallet.js.html#line228">line 228</a>
               </li>
             </ul>
           </dd>
@@ -2125,7 +4658,7 @@
 
 
 
-        <h4 class="name" id=".purchaseContentHashHex"><span class="type-signature">(static) </span>purchaseContentHashHex<span class="signature">(documentId, parsed)</span><span class="type-signature"> &rarr; {string}</span></h4>
+        <h4 class="name" id=".resolveDocumentContentHashHex"><span class="type-signature">(static) </span>resolveDocumentContentHashHex<span class="signature">(opts)</span><span class="type-signature"> &rarr; {Object}</span></h4>
 
 
 
@@ -2133,7 +4666,7 @@
 
 
         <div class="description">
-          L1 / hub document purchase binding: same 64-char hex as hub `CreatePurchaseInvoice` / HTLC `contentHash`.
+          Single path for buy / HTLC `contentHashHex` (sealed | envelope | blob).
         </div>
 
 
@@ -2169,30 +4702,7 @@
 
             <tr>
 
-              <td class="name"><code>documentId</code></td>
-
-
-              <td class="type">
-
-
-                <span class="param-type">string</span>
-
-
-
-              </td>
-
-
-
-
-
-              <td class="description last"></td>
-            </tr>
-
-
-
-            <tr>
-
-              <td class="name"><code>parsed</code></td>
+              <td class="name"><code>opts</code></td>
 
 
               <td class="type">
@@ -2208,7 +4718,7 @@
 
 
 
-              <td class="description last">Whitelisted document fields (see <a href="Peer.html#_buildDocumentParsedForPublish">Peer#_buildDocumentParsedForPublish</a>).</td>
+              <td class="description last">see module:functions/documentPaymentHash.resolveDocumentContentHashHex</td>
             </tr>
 
 
@@ -2251,7 +4761,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_wallet.js.html">types/wallet.js</a>, <a href="types_wallet.js.html#line1054">line 1054</a>
+                <a href="types_wallet.js.html">types/wallet.js</a>, <a href="types_wallet.js.html#line1431">line 1431</a>
               </li>
             </ul>
           </dd>
@@ -2289,7 +4799,7 @@
           </dt>
           <dd>
 
-            <span class="param-type">string</span>
+            <span class="param-type">Object</span>
 
 
           </dd>
@@ -2316,56 +4826,303 @@
   </div>
   <nav>
     <h2><a href="index.html">Home</a></h2>
+    <h3>Modules</h3>
+    <ul>
+      <li><a href="module-types_bech32_bech32.html">types/bech32/bech32</a></li>
+      <li><a href="module-types_bech32_fabricPaymentBech32.html">types/bech32/fabricPaymentBech32</a></li>
+      <li><a href="module-types_delegation.html">types/delegation</a></li>
+      <li><a href="module-types_key_base58.html">types/key/base58</a></li>
+      <li><a href="module-types_key_bip32.html">types/key/bip32</a></li>
+      <li><a href="module-types_key_bip39.html">types/key/bip39</a></li>
+      <li><a href="module-types_key_bip49.html">types/key/bip49</a></li>
+      <li><a href="module-types_key_bip85.html">types/key/bip85</a></li>
+      <li><a href="module-types_key_fabricKeyMaterial.html">types/key/fabricKeyMaterial</a></li>
+      <li><a href="module-types_key_keyHasPrivateSigningMaterial.html">types/key/keyHasPrivateSigningMaterial</a></li>
+      <li><a href="module-types_key_pubkey.html">types/key/pubkey</a></li>
+      <li><a href="module-types_key_signingTags.html">types/key/signingTags</a></li>
+      <li><a href="module-types_typetree.html">types/typetree</a></li>
+      <li><a href="module-types_wallet_accountKeys.html">types/wallet/accountKeys</a></li>
+      <li><a href="module-types_wallet_bip21.html">types/wallet/bip21</a></li>
+      <li><a href="module-types_wallet_bip86.html">types/wallet/bip86</a></li>
+      <li><a href="module-types_witness_adaptor.html">types/witness/adaptor</a></li>
+      <li><a href="module-types_witness_bls.html">types/witness/bls</a></li>
+      <li><a href="module-types_witness_dleq.html">types/witness/dleq</a></li>
+      <li><a href="module-types_witness_musig2.html">types/witness/musig2</a></li>
+      <li><a href="module-types_witness_musig2Adaptor.html">types/witness/musig2Adaptor</a></li>
+      <li><a href="module-types_witness_musig2Session.html">types/witness/musig2Session</a></li>
+      <li><a href="types_ecc.html#.module:selftest">types/ecc.selftest</a></li>
+    </ul>
     <h3>Classes</h3>
     <ul>
       <li><a href="Actor.html">Actor</a></li>
+      <li><a href="Beacon.html">Beacon</a></li>
       <li><a href="Bitcoin.html">Bitcoin</a></li>
+      <li><a href="Block.html">Block</a></li>
       <li><a href="Bond.html">Bond</a></li>
+      <li><a href="Book.html">Book</a></li>
       <li><a href="Chain.html">Chain</a></li>
+      <li><a href="Challenge.html">Challenge</a></li>
       <li><a href="Channel.html">Channel</a></li>
+      <li><a href="ChannelBook.html">ChannelBook</a></li>
+      <li><a href="ChannelSession.html">ChannelSession</a></li>
       <li><a href="Circuit.html">Circuit</a></li>
+      <li><a href="Coinjoin.html">Coinjoin</a></li>
+      <li><a href="CoinjoinBook.html">CoinjoinBook</a></li>
+      <li><a href="CoinjoinMakerRound.html">CoinjoinMakerRound</a></li>
+      <li><a href="CoinjoinTakerRound.html">CoinjoinTakerRound</a></li>
       <li><a href="Collection.html">Collection</a></li>
+      <li><a href="Component.html">Component</a></li>
       <li><a href="Contract.html">Contract</a></li>
       <li><a href="Disk.html">Disk</a></li>
+      <li><a href="Document.html">Document</a></li>
+      <li><a href="DocumentBlobTransferBook.html">DocumentBlobTransferBook</a></li>
+      <li><a href="DocumentBook.html">DocumentBook</a></li>
+      <li><a href="EncryptedPromise.html">EncryptedPromise</a></li>
       <li><a href="Entity.html">Entity</a></li>
       <li><a href="Entity.Transition.html">Transition</a></li>
       <li><a href="Environment.html">Environment</a></li>
       <li><a href="Fabric.html">Fabric</a></li>
       <li><a href="Federation.html">Federation</a></li>
+      <li><a href="FidelityVerifier.html">FidelityVerifier</a></li>
       <li><a href="Filesystem.html">Filesystem</a></li>
+      <li><a href="FraudProof.html">FraudProof</a></li>
       <li><a href="HKDF.html">HKDF</a></li>
       <li><a href="Hash256.html">Hash256</a></li>
+      <li><a href="Htlc.html">Htlc</a></li>
       <li><a href="Identity.html">Identity</a></li>
       <li><a href="Interface.html">Interface</a></li>
       <li><a href="Key.html">Key</a></li>
       <li><a href="Ledger.html">Ledger</a></li>
       <li><a href="Lightning.html">Lightning</a></li>
+      <li><a href="LiquidityBook.html">LiquidityBook</a></li>
       <li><a href="Logger.html">Logger</a></li>
       <li><a href="Machine.html">Machine</a></li>
+      <li><a href="Market.html">Market</a></li>
       <li><a href="Message.html">Message</a></li>
+      <li><a href="OrderBook.html">OrderBook</a></li>
       <li><a href="Peer.html">Peer</a></li>
+      <li><a href="PodleBlacklist.html">PodleBlacklist</a></li>
+      <li><a href="Policy.html">Policy</a></li>
+      <li><a href="Program.html">Program</a></li>
       <li><a href="Reader.html">Reader</a></li>
       <li><a href="Redis.html">Redis</a></li>
       <li><a href="Remote.html">Remote</a></li>
+      <li><a href="Resolutions.html">Resolutions</a></li>
       <li><a href="Resource.html">Resource</a></li>
       <li><a href="RoundRobin.html">RoundRobin</a></li>
       <li><a href="Scribe.html">Scribe</a></li>
       <li><a href="Script.html">Script</a></li>
+      <li><a href="Secret.html">Secret</a></li>
       <li><a href="Service.html">Service</a></li>
       <li><a href="Session.html">Session</a></li>
+      <li><a href="SetupTui.html">SetupTui</a></li>
+      <li><a href="SignedBook.html">SignedBook</a></li>
       <li><a href="State.html">State</a></li>
       <li><a href="Store.html">Store</a></li>
+      <li><a href="Swap.html">Swap</a></li>
       <li><a href="global.html#Text">Text</a></li>
       <li><a href="Token.html">Token</a></li>
       <li><a href="Tree.html">Tree</a></li>
       <li><a href="Vector.html">Vector</a></li>
       <li><a href="Wallet.html">Wallet</a></li>
+      <li><a href="Watchtower.html">Watchtower</a></li>
       <li><a href="Worker.html">Worker</a></li>
       <li><a href="ZMQ.html">ZMQ</a></li>
+      <li><a href="module-types_delegation-Delegation.html">Delegation</a></li>
+      <li><a href="module-types_key_bip32-BIP32Factory.html">BIP32Factory</a></li>
+      <li><a href="module-types_witness_musig2-InvalidContributionError.html">InvalidContributionError</a></li>
     </ul>
     <h3>Global</h3>
     <ul>
-      <li><a href="global.html#appendLightningStderrChunk">appendLightningStderrChunk</a></li>
+      <li><a href="global.html#ASK_TYPE">ASK_TYPE</a></li>
+      <li><a href="global.html#BID_CLOCK_SKEW_SECONDS">BID_CLOCK_SKEW_SECONDS</a></li>
+      <li><a href="global.html#BID_TYPE">BID_TYPE</a></li>
+      <li><a href="global.html#BITCOIN_MESSAGE_TYPES">BITCOIN_MESSAGE_TYPES</a></li>
+      <li><a href="global.html#CHANNEL_BODY_TYPES">CHANNEL_BODY_TYPES</a></li>
+      <li><a href="global.html#CHANNEL_DEFAULTS">CHANNEL_DEFAULTS</a></li>
+      <li><a href="global.html#CLTV_TIMESTAMP_THRESHOLD">CLTV_TIMESTAMP_THRESHOLD</a></li>
+      <li><a href="global.html#DEFAULT_BID_TTL_SECONDS">DEFAULT_BID_TTL_SECONDS</a></li>
+      <li><a href="global.html#DEFAULT_FEE_SATS">DEFAULT_FEE_SATS</a></li>
+      <li><a href="global.html#DEFAULT_INVOICE_EXPIRY_SECONDS">DEFAULT_INVOICE_EXPIRY_SECONDS</a></li>
+      <li><a href="global.html#DEFAULT_INVOICE_MARGIN_SECONDS">DEFAULT_INVOICE_MARGIN_SECONDS</a></li>
+      <li><a href="global.html#DEFAULT_MAX_SIGNS">DEFAULT_MAX_SIGNS</a></li>
+      <li><a href="global.html#DEFAULT_MIN_CLAIM_BLOCKS">DEFAULT_MIN_CLAIM_BLOCKS</a></li>
+      <li><a href="global.html#DEFAULT_MIN_CONFIRMATIONS">DEFAULT_MIN_CONFIRMATIONS</a></li>
+      <li><a href="global.html#DEFAULT_MIN_EQUAL_OUTPUTS">DEFAULT_MIN_EQUAL_OUTPUTS</a></li>
+      <li><a href="global.html#DEFAULT_WEIGHTS">DEFAULT_WEIGHTS</a></li>
+      <li><a href="global.html#DEPRECATED_WIRE_TYPES">DEPRECATED_WIRE_TYPES</a></li>
+      <li><a href="global.html#DUST_SATS">DUST_SATS</a></li>
+      <li><a href="global.html#EXIT_KINDS">EXIT_KINDS</a></li>
+      <li><a href="global.html#EXIT_SIGNATURE_TYPE">EXIT_SIGNATURE_TYPE</a></li>
+      <li><a href="global.html#FIDELITY_LOCKTIME_GRID">FIDELITY_LOCKTIME_GRID</a></li>
+      <li><a href="global.html#FIDELITY_MAX_CERT_BLOCKS">FIDELITY_MAX_CERT_BLOCKS</a></li>
+      <li><a href="global.html#FIELD_BODIES_VERSION">FIELD_BODIES_VERSION</a></li>
+      <li><a href="global.html#GCM_TAG_BYTES">GCM_TAG_BYTES</a></li>
+      <li><a href="global.html#HOP_PENALTY_MS">HOP_PENALTY_MS</a></li>
+      <li><a href="global.html#INPUT_HEADROOM">INPUT_HEADROOM</a></li>
+      <li><a href="global.html#LEAF_VERSION">LEAF_VERSION</a></li>
+      <li><a href="global.html#LOCKTIME_SLACK_BLOCKS">LOCKTIME_SLACK_BLOCKS</a></li>
+      <li><a href="global.html#LOCKTIME_THRESHOLD">LOCKTIME_THRESHOLD</a></li>
+      <li><a href="global.html#MAX_EVIDENCE">MAX_EVIDENCE</a></li>
+      <li><a href="global.html#MAX_FEE_PPM">MAX_FEE_PPM</a></li>
+      <li><a href="global.html#MAX_LOCKTIME">MAX_LOCKTIME</a></li>
+      <li><a href="global.html#MAX_MAKERS">MAX_MAKERS</a></li>
+      <li><a href="global.html#MAX_MAKER_INPUTS">MAX_MAKER_INPUTS</a></li>
+      <li><a href="global.html#MAX_OFFERS">MAX_OFFERS</a></li>
+      <li><a href="global.html#MAX_PREMIUM_PPM">MAX_PREMIUM_PPM</a></li>
+      <li><a href="global.html#MAX_PROVIDERS">MAX_PROVIDERS</a></li>
+      <li><a href="global.html#MAX_PSBT_CHARS">MAX_PSBT_CHARS</a></li>
+      <li><a href="global.html#MAX_REFUND_LOCK_BLOCKS">MAX_REFUND_LOCK_BLOCKS</a></li>
+      <li><a href="global.html#MAX_SETTLED_CREDITS">MAX_SETTLED_CREDITS</a></li>
+      <li><a href="global.html#MAX_TRANSFERS">MAX_TRANSFERS</a></li>
+      <li><a href="global.html#MIN_COINJOIN_SATS">MIN_COINJOIN_SATS</a></li>
+      <li><a href="global.html#MIN_INVOICE_EXPIRY_SECONDS">MIN_INVOICE_EXPIRY_SECONDS</a></li>
+      <li><a href="global.html#MIN_REFUND_LOCK_BLOCKS">MIN_REFUND_LOCK_BLOCKS</a></li>
+      <li><a href="global.html#PODLE_BLACKLIST_SIZE">PODLE_BLACKLIST_SIZE</a></li>
+      <li><a href="global.html#PODLE_MAX_INDEX">PODLE_MAX_INDEX</a></li>
+      <li><a href="global.html#PODLE_MIN_AGE_CONFS">PODLE_MIN_AGE_CONFS</a></li>
+      <li><a href="global.html#PODLE_MIN_VALUE_PCT">PODLE_MIN_VALUE_PCT</a></li>
+      <li><a href="global.html#PODLE_TAG">PODLE_TAG</a></li>
+      <li><a href="global.html#ROUND_TYPES">ROUND_TYPES</a></li>
+      <li><a href="global.html#SCORE_INVENTORY_ONLY">SCORE_INVENTORY_ONLY</a></li>
+      <li><a href="global.html#SCORE_MAX">SCORE_MAX</a></li>
+      <li><a href="global.html#SCORE_UNKNOWN">SCORE_UNKNOWN</a></li>
+      <li><a href="global.html#SEALED_TYPE">SEALED_TYPE</a></li>
+      <li><a href="global.html#SEAL_NAMESPACE">SEAL_NAMESPACE</a></li>
+      <li><a href="global.html#SIGNER_FIELD">SIGNER_FIELD</a></li>
+      <li><a href="global.html#TAPROOT_INTERNAL_NUMS">TAPROOT_INTERNAL_NUMS</a></li>
+      <li><a href="global.html#TELEMETRY_TYPE">TELEMETRY_TYPE</a></li>
+      <li><a href="global.html#TELEMETRY_VERSION">TELEMETRY_VERSION</a></li>
+      <li><a href="global.html#UNSAFE_PATH_TOKENS">UNSAFE_PATH_TOKENS</a></li>
+      <li><a href="global.html#WALLET_TX_KINDS">WALLET_TX_KINDS</a></li>
+      <li><a href="global.html#WEIGHT_OVERHEAD">WEIGHT_OVERHEAD</a></li>
+      <li><a href="global.html#YEAR_BLOCKS">YEAR_BLOCKS</a></li>
+      <li><a href="global.html#assertMonotoneBudget">assertMonotoneBudget</a></li>
+      <li><a href="global.html#bitcoin">bitcoin</a></li>
+      <li><a href="global.html#bodyId">bodyId</a></li>
+      <li><a href="global.html#broadcastSettled">broadcastSettled</a></li>
+      <li><a href="global.html#buildContractTaproot">buildContractTaproot</a></li>
+      <li><a href="global.html#buildEscrow">buildEscrow</a></li>
+      <li><a href="global.html#buildFederationVaultFromPolicy">buildFederationVaultFromPolicy</a></li>
+      <li><a href="global.html#buildFidelity">buildFidelity</a></li>
+      <li><a href="global.html#buildForwardedDocumentRequest">buildForwardedDocumentRequest</a></li>
+      <li><a href="global.html#buildHashlockLeaf">buildHashlockLeaf</a></li>
+      <li><a href="global.html#buildHashlockTapscript">buildHashlockTapscript</a></li>
+      <li><a href="global.html#buildPsbt">buildPsbt</a></li>
+      <li><a href="global.html#buildScriptLeaf">buildScriptLeaf</a></li>
+      <li><a href="global.html#buildSpendLeaf">buildSpendLeaf</a></li>
+      <li><a href="global.html#buildWatchSet">buildWatchSet</a></li>
+      <li><a href="global.html#checkPodleUtxo">checkPodleUtxo</a></li>
+      <li><a href="global.html#classifyWalletTransaction">classifyWalletTransaction</a></li>
+      <li><a href="global.html#codec">codec</a></li>
+      <li><a href="global.html#compileLeaves">compileLeaves</a></li>
+      <li><a href="global.html#composePolicyWithRunHashlock">composePolicyWithRunHashlock</a></li>
+      <li><a href="global.html#composeTaprootTree">composeTaprootTree</a></li>
+      <li><a href="global.html#computeRelayFee">computeRelayFee</a></li>
+      <li><a href="global.html#contractMessageIndex">contractMessageIndex</a></li>
+      <li><a href="global.html#contractMessageMatches">contractMessageMatches</a></li>
+      <li><a href="global.html#createBlobMerkleTree">createBlobMerkleTree</a></li>
+      <li><a href="global.html#createDocumentPurchaseSession">createDocumentPurchaseSession</a></li>
+      <li><a href="global.html#describePsbt">describePsbt</a></li>
+      <li><a href="global.html#descriptorPrivateKey">descriptorPrivateKey</a></li>
+      <li><a href="global.html#envelopeRecipient">envelopeRecipient</a></li>
+      <li><a href="global.html#estimateVsize">estimateVsize</a></li>
+      <li><a href="global.html#evaluateTierWhen">evaluateTierWhen</a></li>
+      <li><a href="global.html#expireHeight">expireHeight</a></li>
+      <li><a href="global.html#fidelityLocktimes">fidelityLocktimes</a></li>
+      <li><a href="global.html#fidelityPath">fidelityPath</a></li>
+      <li><a href="global.html#fidelityValue">fidelityValue</a></li>
+      <li><a href="global.html#finalize">finalize</a></li>
+      <li><a href="global.html#finalizeHashlockPsbt">finalizeHashlockPsbt</a></li>
+      <li><a href="global.html#finalizeSpendPsbt">finalizeSpendPsbt</a></li>
+      <li><a href="global.html#findSession">findSession</a></li>
+      <li><a href="global.html#fromContractMessage">fromContractMessage</a></li>
+      <li><a href="global.html#generatePodle">generatePodle</a></li>
+      <li><a href="global.html#hashlockFromProgramRun">hashlockFromProgramRun</a></li>
+      <li><a href="global.html#invoiceAmountMsat">invoiceAmountMsat</a></li>
+      <li><a href="global.html#isDuplicateSettlement">isDuplicateSettlement</a></li>
+      <li><a href="global.html#isValidFidelityLocktime">isValidFidelityLocktime</a></li>
+      <li><a href="global.html#l1GiverTerms">l1GiverTerms</a></li>
+      <li><a href="global.html#leafScripts">leafScripts</a></li>
+      <li><a href="global.html#listRefundCandidates">listRefundCandidates</a></li>
+      <li><a href="global.html#lockFrom">lockFrom</a></li>
+      <li><a href="global.html#makerChange">makerChange</a></li>
+      <li><a href="global.html#makerFee">makerFee</a></li>
+      <li><a href="global.html#memoryChain">memoryChain</a></li>
+      <li><a href="global.html#memoryWallet">memoryWallet</a></li>
+      <li><a href="global.html#mergeMakerSignatures">mergeMakerSignatures</a></li>
+      <li><a href="global.html#nextPodleIndex">nextPodleIndex</a></li>
+      <li><a href="global.html#normalizeAuth">normalizeAuth</a></li>
+      <li><a href="global.html#normalizeCancel">normalizeCancel</a></li>
+      <li><a href="global.html#normalizeContractSpendPolicy">normalizeContractSpendPolicy</a></li>
+      <li><a href="global.html#normalizeExtraLeafSpecs">normalizeExtraLeafSpecs</a></li>
+      <li><a href="global.html#normalizeFidelity">normalizeFidelity</a></li>
+      <li><a href="global.html#normalizeFill">normalizeFill</a></li>
+      <li><a href="global.html#normalizeFillAck">normalizeFillAck</a></li>
+      <li><a href="global.html#normalizeFunded">normalizeFunded</a></li>
+      <li><a href="global.html#normalizeHashlockSpec">normalizeHashlockSpec</a></li>
+      <li><a href="global.html#normalizeIoAuth">normalizeIoAuth</a></li>
+      <li><a href="global.html#normalizeLeaf">normalizeLeaf</a></li>
+      <li><a href="global.html#normalizeLock">normalizeLock</a></li>
+      <li><a href="global.html#normalizeOffer">normalizeOffer</a></li>
+      <li><a href="global.html#normalizeOrder">normalizeOrder</a></li>
+      <li><a href="global.html#normalizeSig">normalizeSig</a></li>
+      <li><a href="global.html#normalizeTake">normalizeTake</a></li>
+      <li><a href="global.html#normalizeTakeAccept">normalizeTakeAccept</a></li>
+      <li><a href="global.html#normalizeTx">normalizeTx</a></li>
+      <li><a href="global.html#offerKey">offerKey</a></li>
+      <li><a href="global.html#openFiling">openFiling</a></li>
+      <li><a href="global.html#openRoundMessage">openRoundMessage</a></li>
+      <li><a href="global.html#paginateInventoryItems">paginateInventoryItems</a></li>
+      <li><a href="global.html#parseXOnlyPubkeysFromSpendScript">parseXOnlyPubkeysFromSpendScript</a></li>
+      <li><a href="global.html#planCoinjoin">planCoinjoin</a></li>
+      <li><a href="global.html#podleCommitment">podleCommitment</a></li>
+      <li><a href="global.html#podleGenerator">podleGenerator</a></li>
+      <li><a href="global.html#policyAfterDecay">policyAfterDecay</a></li>
+      <li><a href="global.html#prepareDecayMigrationPsbt">prepareDecayMigrationPsbt</a></li>
+      <li><a href="global.html#prepareFidelityRedeem">prepareFidelityRedeem</a></li>
+      <li><a href="global.html#prepareHashlockWithdrawalPsbt">prepareHashlockWithdrawalPsbt</a></li>
+      <li><a href="global.html#prepareTierWithdrawalPsbt">prepareTierWithdrawalPsbt</a></li>
+      <li><a href="global.html#quote">quote</a></li>
+      <li><a href="global.html#randomNonce">randomNonce</a></li>
+      <li><a href="global.html#randomPrivateKey">randomPrivateKey</a></li>
+      <li><a href="global.html#randomRoundId">randomRoundId</a></li>
+      <li><a href="global.html#rememberSettlement">rememberSettlement</a></li>
+      <li><a href="global.html#roleFor">roleFor</a></li>
+      <li><a href="global.html#roles">roles</a></li>
+      <li><a href="global.html#routePath">routePath</a></li>
+      <li><a href="global.html#scriptTreeFromLeaves">scriptTreeFromLeaves</a></li>
+      <li><a href="global.html#sealRoundMessage">sealRoundMessage</a></li>
+      <li><a href="global.html#selectActiveTiers">selectActiveTiers</a></li>
+      <li><a href="global.html#sellerDedupeKey">sellerDedupeKey</a></li>
+      <li><a href="global.html#settlementDedupeKey">settlementDedupeKey</a></li>
+      <li><a href="global.html#signFidelityCertificate">signFidelityCertificate</a></li>
+      <li><a href="global.html#signFidelityRedeem">signFidelityRedeem</a></li>
+      <li><a href="global.html#signKeyPathInputs">signKeyPathInputs</a></li>
+      <li><a href="global.html#signOwnership">signOwnership</a></li>
+      <li><a href="global.html#signingString">signingString</a></li>
+      <li><a href="global.html#spendAddress">spendAddress</a></li>
+      <li><a href="global.html#synthesizeDefaultLadder">synthesizeDefaultLadder</a></li>
+      <li><a href="global.html#taprootKeyPath">taprootKeyPath</a></li>
+      <li><a href="global.html#taprootOutputPrivateKey">taprootOutputPrivateKey</a></li>
+      <li><a href="global.html#tierWhenPath">tierWhenPath</a></li>
+      <li><a href="global.html#timelockMature">timelockMature</a></li>
+      <li><a href="global.html#toContractMessage">toContractMessage</a></li>
+      <li><a href="global.html#toIntegerSats">toIntegerSats</a></li>
+      <li><a href="global.html#unsignedTxid">unsignedTxid</a></li>
+      <li><a href="global.html#validateEscrow">validateEscrow</a></li>
+      <li><a href="global.html#validateFill">validateFill</a></li>
+      <li><a href="global.html#validateForMaker">validateForMaker</a></li>
+      <li><a href="global.html#validateForTaker">validateForTaker</a></li>
+      <li><a href="global.html#validateInvoice">validateInvoice</a></li>
+      <li><a href="global.html#validateTake">validateTake</a></li>
+      <li><a href="global.html#validateTakeAccept">validateTakeAccept</a></li>
+      <li><a href="global.html#verifyBlobPath">verifyBlobPath</a></li>
+      <li><a href="global.html#verifyFidelity">verifyFidelity</a></li>
+      <li><a href="global.html#verifyFidelityCertificate">verifyFidelityCertificate</a></li>
+      <li><a href="global.html#verifyOwnership">verifyOwnership</a></li>
+      <li><a href="global.html#verifyPodle">verifyPodle</a></li>
+      <li><a href="global.html#weightsForProximity">weightsForProximity</a></li>
     </ul>
   </nav>
   <br class="clear" />

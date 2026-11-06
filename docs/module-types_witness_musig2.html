@@ -1,0 +1,4876 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <title>Module: types/witness/musig2 &middot; Docs</title>
+  <script src="scripts/prettify/prettify.js"> </script>
+  <script src="scripts/prettify/lang-css.js"> </script>
+  <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+  <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+  <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+  <script>
+    window.dataLayer = window.dataLayer || [];
+
+    function gtag() {
+      dataLayer.push(arguments);
+    }
+    gtag('js', new Date());
+    gtag('config', 'G-09Y57FL980');
+  </script>
+</head>
+
+<body>
+  <div id="main">
+    <h1 class="page-title">Module: types/witness/musig2</h1>
+
+
+
+
+    <section>
+
+      <header>
+
+
+
+
+
+      </header>
+
+      <article>
+        <div class="container-overview">
+
+
+          <div class="description">BIP-327 MuSig2.</div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            <dt class="tag-source">Source:</dt>
+            <dd class="tag-source">
+              <ul class="dummy">
+                <li>
+                  <a href="types_witness_musig2.js.html">types/witness/musig2.js</a>, <a href="types_witness_musig2.js.html#line1">line 1</a>
+                </li>
+              </ul>
+            </dd>
+
+
+
+
+
+
+
+          </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        </div>
+
+
+
+
+
+
+        <h3 class="subsection-title">Classes</h3>
+
+        <dl>
+          <dt><a href="module-types_witness_musig2-InvalidContributionError.html">InvalidContributionError</a></dt>
+          <dd></dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+        <h3 class="subsection-title">Methods</h3>
+
+
+
+
+
+
+
+        <h4 class="name" id="~aggregateXonly"><span class="type-signature">(inner) </span>aggregateXonly<span class="signature">(pubkeys)</span><span class="type-signature"> &rarr; {Buffer}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Convenience: x-only MuSig2 aggregate of compressed pubkeys (no tweaks).
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>pubkeys</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Array.&lt;(Buffer|string)></span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_witness_musig2.js.html">types/witness/musig2.js</a>, <a href="types_witness_musig2.js.html#line802">line 802</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          32-byte x-only
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Buffer</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="~applyTweak"><span class="type-signature">(inner) </span>applyTweak<span class="signature">(keyaggCtx, tweak, isXonly)</span><span class="type-signature"> &rarr; {Object}</span></h4>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>keyaggCtx</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Object</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>tweak</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Buffer</span>
+                |
+
+                <span class="param-type">string</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>isXonly</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">boolean</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_witness_musig2.js.html">types/witness/musig2.js</a>, <a href="types_witness_musig2.js.html#line378">line 378</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Object</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="~deterministicSign"><span class="type-signature">(inner) </span>deterministicSign<span class="signature">(sk, aggothernonce, pubkeys, tweaks, isXonly, msg, rand, adaptor<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {Object}</span></h4>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+              <th>Attributes</th>
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>sk</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Buffer</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>aggothernonce</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Buffer</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>pubkeys</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Array.&lt;Buffer></span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>tweaks</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Array.&lt;Buffer></span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>isXonly</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Array.&lt;boolean></span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>msg</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Buffer</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>rand</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Buffer</span>
+                |
+
+                <span class="param-type">null</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>adaptor</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Buffer</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+                &lt;optional><br>
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last">33-byte adaptor point; the partial signature is then
+                a pre-signature share of that adaptor session</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_witness_musig2.js.html">types/witness/musig2.js</a>, <a href="types_witness_musig2.js.html#line753">line 753</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Object</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="~getSessionValues"><span class="type-signature">(inner) </span>getSessionValues<span class="signature">(sessionCtx)</span><span class="type-signature"> &rarr; {Object}</span></h4>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>sessionCtx</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">object</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_witness_musig2.js.html">types/witness/musig2.js</a>, <a href="types_witness_musig2.js.html#line561">line 561</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          With an adaptor, `R` is the final nonce (R1 + T) + b·R2.
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Object</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="~getXonlyPk"><span class="type-signature">(inner) </span>getXonlyPk<span class="signature">(keyaggCtx)</span><span class="type-signature"> &rarr; {Buffer}</span></h4>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>keyaggCtx</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Object</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_witness_musig2.js.html">types/witness/musig2.js</a>, <a href="types_witness_musig2.js.html#line368">line 368</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          32-byte x-only
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Buffer</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="~individualPk"><span class="type-signature">(inner) </span>individualPk<span class="signature">(seckey)</span><span class="type-signature"> &rarr; {Buffer}</span></h4>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>seckey</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Buffer</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_witness_musig2.js.html">types/witness/musig2.js</a>, <a href="types_witness_musig2.js.html#line269">line 269</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Buffer</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="~keyAgg"><span class="type-signature">(inner) </span>keyAgg<span class="signature">(pubkeys)</span><span class="type-signature"> &rarr; {Object}</span></h4>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>pubkeys</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Array.&lt;(Buffer|Uint8Array|string)></span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_witness_musig2.js.html">types/witness/musig2.js</a>, <a href="types_witness_musig2.js.html#line340">line 340</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Object</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="~keyAggAndTweak"><span class="type-signature">(inner) </span>keyAggAndTweak<span class="signature">(pubkeys, tweaks, isXonly)</span><span class="type-signature"> &rarr; {Object}</span></h4>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>pubkeys</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Array.&lt;Buffer></span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>tweaks</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Array.&lt;Buffer></span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>isXonly</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Array.&lt;boolean></span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_witness_musig2.js.html">types/witness/musig2.js</a>, <a href="types_witness_musig2.js.html#line405">line 405</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Object</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="~keyAggCoeff"><span class="type-signature">(inner) </span>keyAggCoeff<span class="signature">(pubkeys, pk_)</span><span class="type-signature"> &rarr; {bigint}</span></h4>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>pubkeys</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Array.&lt;Buffer></span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>pk_</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Buffer</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_witness_musig2.js.html">types/witness/musig2.js</a>, <a href="types_witness_musig2.js.html#line332">line 332</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">bigint</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="~keySort"><span class="type-signature">(inner) </span>keySort<span class="signature">(pubkeys)</span><span class="type-signature"> &rarr; {Array.&lt;Buffer>}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Lexicographic sort of compressed encodings (BIP-327 KeySort). Does not
+          require valid curve points — the official vectors include an invalid key.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>pubkeys</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Array.&lt;(Buffer|Uint8Array|string)></span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_witness_musig2.js.html">types/witness/musig2.js</a>, <a href="types_witness_musig2.js.html#line285">line 285</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Array.&lt;Buffer></span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="~musig2IsNOfN"><span class="type-signature">(inner) </span>musig2IsNOfN<span class="signature">(threshold, n)</span><span class="type-signature"> &rarr; {boolean}</span></h4>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>threshold</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">number</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>n</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">number</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_witness_musig2.js.html">types/witness/musig2.js</a>, <a href="types_witness_musig2.js.html#line105">line 105</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">boolean</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="~nonceAgg"><span class="type-signature">(inner) </span>nonceAgg<span class="signature">(pubnonces)</span><span class="type-signature"> &rarr; {Buffer}</span></h4>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>pubnonces</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Array.&lt;(Buffer|string)></span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_witness_musig2.js.html">types/witness/musig2.js</a>, <a href="types_witness_musig2.js.html#line507">line 507</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          66-byte aggnonce
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Buffer</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="~nonceGen"><span class="type-signature">(inner) </span>nonceGen<span class="signature">(sk, pk, aggpk, msg, extraIn)</span><span class="type-signature"> &rarr; {Object}</span></h4>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>sk</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Buffer</span>
+                |
+
+                <span class="param-type">null</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>pk</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Buffer</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>aggpk</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Buffer</span>
+                |
+
+                <span class="param-type">null</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>msg</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Buffer</span>
+                |
+
+                <span class="param-type">null</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>extraIn</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Buffer</span>
+                |
+
+                <span class="param-type">null</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_witness_musig2.js.html">types/witness/musig2.js</a>, <a href="types_witness_musig2.js.html#line493">line 493</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Object</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="~nonceGenInternal"><span class="type-signature">(inner) </span>nonceGenInternal<span class="signature">(rand_, sk, pk, aggpk, msg, extraIn)</span><span class="type-signature"> &rarr; {Object}</span></h4>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>rand_</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Buffer</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>sk</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Buffer</span>
+                |
+
+                <span class="param-type">null</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>pk</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Buffer</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>aggpk</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Buffer</span>
+                |
+
+                <span class="param-type">null</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>msg</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Buffer</span>
+                |
+
+                <span class="param-type">null</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>extraIn</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Buffer</span>
+                |
+
+                <span class="param-type">null</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_witness_musig2.js.html">types/witness/musig2.js</a>, <a href="types_witness_musig2.js.html#line457">line 457</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Object</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="~partialSigAgg"><span class="type-signature">(inner) </span>partialSigAgg<span class="signature">(psigs, sessionCtx)</span><span class="type-signature"> &rarr; {Buffer}</span></h4>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>psigs</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Array.&lt;Buffer></span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>sessionCtx</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">object</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_witness_musig2.js.html">types/witness/musig2.js</a>, <a href="types_witness_musig2.js.html#line705">line 705</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          64-byte BIP-340 signature
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Buffer</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="~partialSigVerify"><span class="type-signature">(inner) </span>partialSigVerify<span class="signature">(psig, pubnonces, pubkeys, tweaks, isXonly, msg, i, adaptor<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {boolean}</span></h4>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+              <th>Attributes</th>
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>psig</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Buffer</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>pubnonces</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Array.&lt;Buffer></span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>pubkeys</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Array.&lt;Buffer></span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>tweaks</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Array.&lt;Buffer></span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>isXonly</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Array.&lt;boolean></span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>msg</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Buffer</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>i</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">number</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>adaptor</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Buffer</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+                &lt;optional><br>
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last">33-byte adaptor point of an adaptor session</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_witness_musig2.js.html">types/witness/musig2.js</a>, <a href="types_witness_musig2.js.html#line691">line 691</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">boolean</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="~partialSigVerifyInternal"><span class="type-signature">(inner) </span>partialSigVerifyInternal<span class="signature">(psig, pubnonce, pk, sessionCtx)</span><span class="type-signature"> &rarr; {boolean}</span></h4>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>psig</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Buffer</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>pubnonce</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Buffer</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>pk</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Buffer</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>sessionCtx</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">object</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_witness_musig2.js.html">types/witness/musig2.js</a>, <a href="types_witness_musig2.js.html#line661">line 661</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">boolean</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="~sessionContext"><span class="type-signature">(inner) </span>sessionContext<span class="signature">(aggnonce, pubkeys, tweaks, isXonly, msg, adaptor<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {object}</span></h4>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+              <th>Attributes</th>
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>aggnonce</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Buffer</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>pubkeys</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Array.&lt;Buffer></span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>tweaks</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Array.&lt;Buffer></span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>isXonly</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Array.&lt;boolean></span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>msg</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Buffer</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>adaptor</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Buffer</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+                &lt;optional><br>
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last">33-byte compressed adaptor point T; the session then
+                makes a pre-signature that `T`'s secret completes (secp256k1-zkp `musig_nonce_process`)</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_witness_musig2.js.html">types/witness/musig2.js</a>, <a href="types_witness_musig2.js.html#line540">line 540</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">object</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="~sign"><span class="type-signature">(inner) </span>sign<span class="signature">(secnonce, sk, sessionCtx)</span><span class="type-signature"> &rarr; {Buffer}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Zero the secret nonce after use (BIP-327). Mutates `secnonce` in place.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>secnonce</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Buffer</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last">97-byte (k1 || k2 || pk)</td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>sk</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Buffer</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>sessionCtx</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">object</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_witness_musig2.js.html">types/witness/musig2.js</a>, <a href="types_witness_musig2.js.html#line614">line 614</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          32-byte partial signature
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Buffer</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="~verifyAggregatedSchnorr"><span class="type-signature">(inner) </span>verifyAggregatedSchnorr<span class="signature">(message, signature, pubkeys, claimedAggregate<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {boolean}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          BIP-340 verify of an aggregated signature against keys we compute (never
+          trust a caller-supplied aggregate). `message` is hashed with SHA-256 unless
+          it is already 32 bytes.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+              <th>Attributes</th>
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>message</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Buffer</span>
+                |
+
+                <span class="param-type">string</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>signature</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Buffer</span>
+                |
+
+                <span class="param-type">string</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last">64-byte Schnorr</td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>pubkeys</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Array.&lt;(Buffer|string)></span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last">compressed participants</td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>claimedAggregate</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Buffer</span>
+                |
+
+                <span class="param-type">string</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+                &lt;optional><br>
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last">compressed or x-only; must match</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_witness_musig2.js.html">types/witness/musig2.js</a>, <a href="types_witness_musig2.js.html#line818">line 818</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">boolean</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+      </article>
+
+    </section>
+
+
+
+  </div>
+  <nav>
+    <h2><a href="index.html">Home</a></h2>
+    <h3>Modules</h3>
+    <ul>
+      <li><a href="module-types_bech32_bech32.html">types/bech32/bech32</a></li>
+      <li><a href="module-types_bech32_fabricPaymentBech32.html">types/bech32/fabricPaymentBech32</a></li>
+      <li><a href="module-types_delegation.html">types/delegation</a></li>
+      <li><a href="module-types_key_base58.html">types/key/base58</a></li>
+      <li><a href="module-types_key_bip32.html">types/key/bip32</a></li>
+      <li><a href="module-types_key_bip39.html">types/key/bip39</a></li>
+      <li><a href="module-types_key_bip49.html">types/key/bip49</a></li>
+      <li><a href="module-types_key_bip85.html">types/key/bip85</a></li>
+      <li><a href="module-types_key_fabricKeyMaterial.html">types/key/fabricKeyMaterial</a></li>
+      <li><a href="module-types_key_keyHasPrivateSigningMaterial.html">types/key/keyHasPrivateSigningMaterial</a></li>
+      <li><a href="module-types_key_pubkey.html">types/key/pubkey</a></li>
+      <li><a href="module-types_key_signingTags.html">types/key/signingTags</a></li>
+      <li><a href="module-types_typetree.html">types/typetree</a></li>
+      <li><a href="module-types_wallet_accountKeys.html">types/wallet/accountKeys</a></li>
+      <li><a href="module-types_wallet_bip21.html">types/wallet/bip21</a></li>
+      <li><a href="module-types_wallet_bip86.html">types/wallet/bip86</a></li>
+      <li><a href="module-types_witness_adaptor.html">types/witness/adaptor</a></li>
+      <li><a href="module-types_witness_bls.html">types/witness/bls</a></li>
+      <li><a href="module-types_witness_dleq.html">types/witness/dleq</a></li>
+      <li><a href="module-types_witness_musig2.html">types/witness/musig2</a></li>
+      <li><a href="module-types_witness_musig2Adaptor.html">types/witness/musig2Adaptor</a></li>
+      <li><a href="module-types_witness_musig2Session.html">types/witness/musig2Session</a></li>
+      <li><a href="types_ecc.html#.module:selftest">types/ecc.selftest</a></li>
+    </ul>
+    <h3>Classes</h3>
+    <ul>
+      <li><a href="Actor.html">Actor</a></li>
+      <li><a href="Beacon.html">Beacon</a></li>
+      <li><a href="Bitcoin.html">Bitcoin</a></li>
+      <li><a href="Block.html">Block</a></li>
+      <li><a href="Bond.html">Bond</a></li>
+      <li><a href="Book.html">Book</a></li>
+      <li><a href="Chain.html">Chain</a></li>
+      <li><a href="Challenge.html">Challenge</a></li>
+      <li><a href="Channel.html">Channel</a></li>
+      <li><a href="ChannelBook.html">ChannelBook</a></li>
+      <li><a href="ChannelSession.html">ChannelSession</a></li>
+      <li><a href="Circuit.html">Circuit</a></li>
+      <li><a href="Coinjoin.html">Coinjoin</a></li>
+      <li><a href="CoinjoinBook.html">CoinjoinBook</a></li>
+      <li><a href="CoinjoinMakerRound.html">CoinjoinMakerRound</a></li>
+      <li><a href="CoinjoinTakerRound.html">CoinjoinTakerRound</a></li>
+      <li><a href="Collection.html">Collection</a></li>
+      <li><a href="Component.html">Component</a></li>
+      <li><a href="Contract.html">Contract</a></li>
+      <li><a href="Disk.html">Disk</a></li>
+      <li><a href="Document.html">Document</a></li>
+      <li><a href="DocumentBlobTransferBook.html">DocumentBlobTransferBook</a></li>
+      <li><a href="DocumentBook.html">DocumentBook</a></li>
+      <li><a href="EncryptedPromise.html">EncryptedPromise</a></li>
+      <li><a href="Entity.html">Entity</a></li>
+      <li><a href="Entity.Transition.html">Transition</a></li>
+      <li><a href="Environment.html">Environment</a></li>
+      <li><a href="Fabric.html">Fabric</a></li>
+      <li><a href="Federation.html">Federation</a></li>
+      <li><a href="FidelityVerifier.html">FidelityVerifier</a></li>
+      <li><a href="Filesystem.html">Filesystem</a></li>
+      <li><a href="FraudProof.html">FraudProof</a></li>
+      <li><a href="HKDF.html">HKDF</a></li>
+      <li><a href="Hash256.html">Hash256</a></li>
+      <li><a href="Htlc.html">Htlc</a></li>
+      <li><a href="Identity.html">Identity</a></li>
+      <li><a href="Interface.html">Interface</a></li>
+      <li><a href="Key.html">Key</a></li>
+      <li><a href="Ledger.html">Ledger</a></li>
+      <li><a href="Lightning.html">Lightning</a></li>
+      <li><a href="LiquidityBook.html">LiquidityBook</a></li>
+      <li><a href="Logger.html">Logger</a></li>
+      <li><a href="Machine.html">Machine</a></li>
+      <li><a href="Market.html">Market</a></li>
+      <li><a href="Message.html">Message</a></li>
+      <li><a href="OrderBook.html">OrderBook</a></li>
+      <li><a href="Peer.html">Peer</a></li>
+      <li><a href="PodleBlacklist.html">PodleBlacklist</a></li>
+      <li><a href="Policy.html">Policy</a></li>
+      <li><a href="Program.html">Program</a></li>
+      <li><a href="Reader.html">Reader</a></li>
+      <li><a href="Redis.html">Redis</a></li>
+      <li><a href="Remote.html">Remote</a></li>
+      <li><a href="Resolutions.html">Resolutions</a></li>
+      <li><a href="Resource.html">Resource</a></li>
+      <li><a href="RoundRobin.html">RoundRobin</a></li>
+      <li><a href="Scribe.html">Scribe</a></li>
+      <li><a href="Script.html">Script</a></li>
+      <li><a href="Secret.html">Secret</a></li>
+      <li><a href="Service.html">Service</a></li>
+      <li><a href="Session.html">Session</a></li>
+      <li><a href="SetupTui.html">SetupTui</a></li>
+      <li><a href="SignedBook.html">SignedBook</a></li>
+      <li><a href="State.html">State</a></li>
+      <li><a href="Store.html">Store</a></li>
+      <li><a href="Swap.html">Swap</a></li>
+      <li><a href="global.html#Text">Text</a></li>
+      <li><a href="Token.html">Token</a></li>
+      <li><a href="Tree.html">Tree</a></li>
+      <li><a href="Vector.html">Vector</a></li>
+      <li><a href="Wallet.html">Wallet</a></li>
+      <li><a href="Watchtower.html">Watchtower</a></li>
+      <li><a href="Worker.html">Worker</a></li>
+      <li><a href="ZMQ.html">ZMQ</a></li>
+      <li><a href="module-types_delegation-Delegation.html">Delegation</a></li>
+      <li><a href="module-types_key_bip32-BIP32Factory.html">BIP32Factory</a></li>
+      <li><a href="module-types_witness_musig2-InvalidContributionError.html">InvalidContributionError</a></li>
+    </ul>
+    <h3>Global</h3>
+    <ul>
+      <li><a href="global.html#ASK_TYPE">ASK_TYPE</a></li>
+      <li><a href="global.html#BID_CLOCK_SKEW_SECONDS">BID_CLOCK_SKEW_SECONDS</a></li>
+      <li><a href="global.html#BID_TYPE">BID_TYPE</a></li>
+      <li><a href="global.html#BITCOIN_MESSAGE_TYPES">BITCOIN_MESSAGE_TYPES</a></li>
+      <li><a href="global.html#CHANNEL_BODY_TYPES">CHANNEL_BODY_TYPES</a></li>
+      <li><a href="global.html#CHANNEL_DEFAULTS">CHANNEL_DEFAULTS</a></li>
+      <li><a href="global.html#CLTV_TIMESTAMP_THRESHOLD">CLTV_TIMESTAMP_THRESHOLD</a></li>
+      <li><a href="global.html#DEFAULT_BID_TTL_SECONDS">DEFAULT_BID_TTL_SECONDS</a></li>
+      <li><a href="global.html#DEFAULT_FEE_SATS">DEFAULT_FEE_SATS</a></li>
+      <li><a href="global.html#DEFAULT_INVOICE_EXPIRY_SECONDS">DEFAULT_INVOICE_EXPIRY_SECONDS</a></li>
+      <li><a href="global.html#DEFAULT_INVOICE_MARGIN_SECONDS">DEFAULT_INVOICE_MARGIN_SECONDS</a></li>
+      <li><a href="global.html#DEFAULT_MAX_SIGNS">DEFAULT_MAX_SIGNS</a></li>
+      <li><a href="global.html#DEFAULT_MIN_CLAIM_BLOCKS">DEFAULT_MIN_CLAIM_BLOCKS</a></li>
+      <li><a href="global.html#DEFAULT_MIN_CONFIRMATIONS">DEFAULT_MIN_CONFIRMATIONS</a></li>
+      <li><a href="global.html#DEFAULT_MIN_EQUAL_OUTPUTS">DEFAULT_MIN_EQUAL_OUTPUTS</a></li>
+      <li><a href="global.html#DEFAULT_WEIGHTS">DEFAULT_WEIGHTS</a></li>
+      <li><a href="global.html#DEPRECATED_WIRE_TYPES">DEPRECATED_WIRE_TYPES</a></li>
+      <li><a href="global.html#DUST_SATS">DUST_SATS</a></li>
+      <li><a href="global.html#EXIT_KINDS">EXIT_KINDS</a></li>
+      <li><a href="global.html#EXIT_SIGNATURE_TYPE">EXIT_SIGNATURE_TYPE</a></li>
+      <li><a href="global.html#FIDELITY_LOCKTIME_GRID">FIDELITY_LOCKTIME_GRID</a></li>
+      <li><a href="global.html#FIDELITY_MAX_CERT_BLOCKS">FIDELITY_MAX_CERT_BLOCKS</a></li>
+      <li><a href="global.html#FIELD_BODIES_VERSION">FIELD_BODIES_VERSION</a></li>
+      <li><a href="global.html#GCM_TAG_BYTES">GCM_TAG_BYTES</a></li>
+      <li><a href="global.html#HOP_PENALTY_MS">HOP_PENALTY_MS</a></li>
+      <li><a href="global.html#INPUT_HEADROOM">INPUT_HEADROOM</a></li>
+      <li><a href="global.html#LEAF_VERSION">LEAF_VERSION</a></li>
+      <li><a href="global.html#LOCKTIME_SLACK_BLOCKS">LOCKTIME_SLACK_BLOCKS</a></li>
+      <li><a href="global.html#LOCKTIME_THRESHOLD">LOCKTIME_THRESHOLD</a></li>
+      <li><a href="global.html#MAX_EVIDENCE">MAX_EVIDENCE</a></li>
+      <li><a href="global.html#MAX_FEE_PPM">MAX_FEE_PPM</a></li>
+      <li><a href="global.html#MAX_LOCKTIME">MAX_LOCKTIME</a></li>
+      <li><a href="global.html#MAX_MAKERS">MAX_MAKERS</a></li>
+      <li><a href="global.html#MAX_MAKER_INPUTS">MAX_MAKER_INPUTS</a></li>
+      <li><a href="global.html#MAX_OFFERS">MAX_OFFERS</a></li>
+      <li><a href="global.html#MAX_PREMIUM_PPM">MAX_PREMIUM_PPM</a></li>
+      <li><a href="global.html#MAX_PROVIDERS">MAX_PROVIDERS</a></li>
+      <li><a href="global.html#MAX_PSBT_CHARS">MAX_PSBT_CHARS</a></li>
+      <li><a href="global.html#MAX_REFUND_LOCK_BLOCKS">MAX_REFUND_LOCK_BLOCKS</a></li>
+      <li><a href="global.html#MAX_SETTLED_CREDITS">MAX_SETTLED_CREDITS</a></li>
+      <li><a href="global.html#MAX_TRANSFERS">MAX_TRANSFERS</a></li>
+      <li><a href="global.html#MIN_COINJOIN_SATS">MIN_COINJOIN_SATS</a></li>
+      <li><a href="global.html#MIN_INVOICE_EXPIRY_SECONDS">MIN_INVOICE_EXPIRY_SECONDS</a></li>
+      <li><a href="global.html#MIN_REFUND_LOCK_BLOCKS">MIN_REFUND_LOCK_BLOCKS</a></li>
+      <li><a href="global.html#PODLE_BLACKLIST_SIZE">PODLE_BLACKLIST_SIZE</a></li>
+      <li><a href="global.html#PODLE_MAX_INDEX">PODLE_MAX_INDEX</a></li>
+      <li><a href="global.html#PODLE_MIN_AGE_CONFS">PODLE_MIN_AGE_CONFS</a></li>
+      <li><a href="global.html#PODLE_MIN_VALUE_PCT">PODLE_MIN_VALUE_PCT</a></li>
+      <li><a href="global.html#PODLE_TAG">PODLE_TAG</a></li>
+      <li><a href="global.html#ROUND_TYPES">ROUND_TYPES</a></li>
+      <li><a href="global.html#SCORE_INVENTORY_ONLY">SCORE_INVENTORY_ONLY</a></li>
+      <li><a href="global.html#SCORE_MAX">SCORE_MAX</a></li>
+      <li><a href="global.html#SCORE_UNKNOWN">SCORE_UNKNOWN</a></li>
+      <li><a href="global.html#SEALED_TYPE">SEALED_TYPE</a></li>
+      <li><a href="global.html#SEAL_NAMESPACE">SEAL_NAMESPACE</a></li>
+      <li><a href="global.html#SIGNER_FIELD">SIGNER_FIELD</a></li>
+      <li><a href="global.html#TAPROOT_INTERNAL_NUMS">TAPROOT_INTERNAL_NUMS</a></li>
+      <li><a href="global.html#TELEMETRY_TYPE">TELEMETRY_TYPE</a></li>
+      <li><a href="global.html#TELEMETRY_VERSION">TELEMETRY_VERSION</a></li>
+      <li><a href="global.html#UNSAFE_PATH_TOKENS">UNSAFE_PATH_TOKENS</a></li>
+      <li><a href="global.html#WALLET_TX_KINDS">WALLET_TX_KINDS</a></li>
+      <li><a href="global.html#WEIGHT_OVERHEAD">WEIGHT_OVERHEAD</a></li>
+      <li><a href="global.html#YEAR_BLOCKS">YEAR_BLOCKS</a></li>
+      <li><a href="global.html#assertMonotoneBudget">assertMonotoneBudget</a></li>
+      <li><a href="global.html#bitcoin">bitcoin</a></li>
+      <li><a href="global.html#bodyId">bodyId</a></li>
+      <li><a href="global.html#broadcastSettled">broadcastSettled</a></li>
+      <li><a href="global.html#buildContractTaproot">buildContractTaproot</a></li>
+      <li><a href="global.html#buildEscrow">buildEscrow</a></li>
+      <li><a href="global.html#buildFederationVaultFromPolicy">buildFederationVaultFromPolicy</a></li>
+      <li><a href="global.html#buildFidelity">buildFidelity</a></li>
+      <li><a href="global.html#buildForwardedDocumentRequest">buildForwardedDocumentRequest</a></li>
+      <li><a href="global.html#buildHashlockLeaf">buildHashlockLeaf</a></li>
+      <li><a href="global.html#buildHashlockTapscript">buildHashlockTapscript</a></li>
+      <li><a href="global.html#buildPsbt">buildPsbt</a></li>
+      <li><a href="global.html#buildScriptLeaf">buildScriptLeaf</a></li>
+      <li><a href="global.html#buildSpendLeaf">buildSpendLeaf</a></li>
+      <li><a href="global.html#buildWatchSet">buildWatchSet</a></li>
+      <li><a href="global.html#checkPodleUtxo">checkPodleUtxo</a></li>
+      <li><a href="global.html#classifyWalletTransaction">classifyWalletTransaction</a></li>
+      <li><a href="global.html#codec">codec</a></li>
+      <li><a href="global.html#compileLeaves">compileLeaves</a></li>
+      <li><a href="global.html#composePolicyWithRunHashlock">composePolicyWithRunHashlock</a></li>
+      <li><a href="global.html#composeTaprootTree">composeTaprootTree</a></li>
+      <li><a href="global.html#computeRelayFee">computeRelayFee</a></li>
+      <li><a href="global.html#contractMessageIndex">contractMessageIndex</a></li>
+      <li><a href="global.html#contractMessageMatches">contractMessageMatches</a></li>
+      <li><a href="global.html#createBlobMerkleTree">createBlobMerkleTree</a></li>
+      <li><a href="global.html#createDocumentPurchaseSession">createDocumentPurchaseSession</a></li>
+      <li><a href="global.html#describePsbt">describePsbt</a></li>
+      <li><a href="global.html#descriptorPrivateKey">descriptorPrivateKey</a></li>
+      <li><a href="global.html#envelopeRecipient">envelopeRecipient</a></li>
+      <li><a href="global.html#estimateVsize">estimateVsize</a></li>
+      <li><a href="global.html#evaluateTierWhen">evaluateTierWhen</a></li>
+      <li><a href="global.html#expireHeight">expireHeight</a></li>
+      <li><a href="global.html#fidelityLocktimes">fidelityLocktimes</a></li>
+      <li><a href="global.html#fidelityPath">fidelityPath</a></li>
+      <li><a href="global.html#fidelityValue">fidelityValue</a></li>
+      <li><a href="global.html#finalize">finalize</a></li>
+      <li><a href="global.html#finalizeHashlockPsbt">finalizeHashlockPsbt</a></li>
+      <li><a href="global.html#finalizeSpendPsbt">finalizeSpendPsbt</a></li>
+      <li><a href="global.html#findSession">findSession</a></li>
+      <li><a href="global.html#fromContractMessage">fromContractMessage</a></li>
+      <li><a href="global.html#generatePodle">generatePodle</a></li>
+      <li><a href="global.html#hashlockFromProgramRun">hashlockFromProgramRun</a></li>
+      <li><a href="global.html#invoiceAmountMsat">invoiceAmountMsat</a></li>
+      <li><a href="global.html#isDuplicateSettlement">isDuplicateSettlement</a></li>
+      <li><a href="global.html#isValidFidelityLocktime">isValidFidelityLocktime</a></li>
+      <li><a href="global.html#l1GiverTerms">l1GiverTerms</a></li>
+      <li><a href="global.html#leafScripts">leafScripts</a></li>
+      <li><a href="global.html#listRefundCandidates">listRefundCandidates</a></li>
+      <li><a href="global.html#lockFrom">lockFrom</a></li>
+      <li><a href="global.html#makerChange">makerChange</a></li>
+      <li><a href="global.html#makerFee">makerFee</a></li>
+      <li><a href="global.html#memoryChain">memoryChain</a></li>
+      <li><a href="global.html#memoryWallet">memoryWallet</a></li>
+      <li><a href="global.html#mergeMakerSignatures">mergeMakerSignatures</a></li>
+      <li><a href="global.html#nextPodleIndex">nextPodleIndex</a></li>
+      <li><a href="global.html#normalizeAuth">normalizeAuth</a></li>
+      <li><a href="global.html#normalizeCancel">normalizeCancel</a></li>
+      <li><a href="global.html#normalizeContractSpendPolicy">normalizeContractSpendPolicy</a></li>
+      <li><a href="global.html#normalizeExtraLeafSpecs">normalizeExtraLeafSpecs</a></li>
+      <li><a href="global.html#normalizeFidelity">normalizeFidelity</a></li>
+      <li><a href="global.html#normalizeFill">normalizeFill</a></li>
+      <li><a href="global.html#normalizeFillAck">normalizeFillAck</a></li>
+      <li><a href="global.html#normalizeFunded">normalizeFunded</a></li>
+      <li><a href="global.html#normalizeHashlockSpec">normalizeHashlockSpec</a></li>
+      <li><a href="global.html#normalizeIoAuth">normalizeIoAuth</a></li>
+      <li><a href="global.html#normalizeLeaf">normalizeLeaf</a></li>
+      <li><a href="global.html#normalizeLock">normalizeLock</a></li>
+      <li><a href="global.html#normalizeOffer">normalizeOffer</a></li>
+      <li><a href="global.html#normalizeOrder">normalizeOrder</a></li>
+      <li><a href="global.html#normalizeSig">normalizeSig</a></li>
+      <li><a href="global.html#normalizeTake">normalizeTake</a></li>
+      <li><a href="global.html#normalizeTakeAccept">normalizeTakeAccept</a></li>
+      <li><a href="global.html#normalizeTx">normalizeTx</a></li>
+      <li><a href="global.html#offerKey">offerKey</a></li>
+      <li><a href="global.html#openFiling">openFiling</a></li>
+      <li><a href="global.html#openRoundMessage">openRoundMessage</a></li>
+      <li><a href="global.html#paginateInventoryItems">paginateInventoryItems</a></li>
+      <li><a href="global.html#parseXOnlyPubkeysFromSpendScript">parseXOnlyPubkeysFromSpendScript</a></li>
+      <li><a href="global.html#planCoinjoin">planCoinjoin</a></li>
+      <li><a href="global.html#podleCommitment">podleCommitment</a></li>
+      <li><a href="global.html#podleGenerator">podleGenerator</a></li>
+      <li><a href="global.html#policyAfterDecay">policyAfterDecay</a></li>
+      <li><a href="global.html#prepareDecayMigrationPsbt">prepareDecayMigrationPsbt</a></li>
+      <li><a href="global.html#prepareFidelityRedeem">prepareFidelityRedeem</a></li>
+      <li><a href="global.html#prepareHashlockWithdrawalPsbt">prepareHashlockWithdrawalPsbt</a></li>
+      <li><a href="global.html#prepareTierWithdrawalPsbt">prepareTierWithdrawalPsbt</a></li>
+      <li><a href="global.html#quote">quote</a></li>
+      <li><a href="global.html#randomNonce">randomNonce</a></li>
+      <li><a href="global.html#randomPrivateKey">randomPrivateKey</a></li>
+      <li><a href="global.html#randomRoundId">randomRoundId</a></li>
+      <li><a href="global.html#rememberSettlement">rememberSettlement</a></li>
+      <li><a href="global.html#roleFor">roleFor</a></li>
+      <li><a href="global.html#roles">roles</a></li>
+      <li><a href="global.html#routePath">routePath</a></li>
+      <li><a href="global.html#scriptTreeFromLeaves">scriptTreeFromLeaves</a></li>
+      <li><a href="global.html#sealRoundMessage">sealRoundMessage</a></li>
+      <li><a href="global.html#selectActiveTiers">selectActiveTiers</a></li>
+      <li><a href="global.html#sellerDedupeKey">sellerDedupeKey</a></li>
+      <li><a href="global.html#settlementDedupeKey">settlementDedupeKey</a></li>
+      <li><a href="global.html#signFidelityCertificate">signFidelityCertificate</a></li>
+      <li><a href="global.html#signFidelityRedeem">signFidelityRedeem</a></li>
+      <li><a href="global.html#signKeyPathInputs">signKeyPathInputs</a></li>
+      <li><a href="global.html#signOwnership">signOwnership</a></li>
+      <li><a href="global.html#signingString">signingString</a></li>
+      <li><a href="global.html#spendAddress">spendAddress</a></li>
+      <li><a href="global.html#synthesizeDefaultLadder">synthesizeDefaultLadder</a></li>
+      <li><a href="global.html#taprootKeyPath">taprootKeyPath</a></li>
+      <li><a href="global.html#taprootOutputPrivateKey">taprootOutputPrivateKey</a></li>
+      <li><a href="global.html#tierWhenPath">tierWhenPath</a></li>
+      <li><a href="global.html#timelockMature">timelockMature</a></li>
+      <li><a href="global.html#toContractMessage">toContractMessage</a></li>
+      <li><a href="global.html#toIntegerSats">toIntegerSats</a></li>
+      <li><a href="global.html#unsignedTxid">unsignedTxid</a></li>
+      <li><a href="global.html#validateEscrow">validateEscrow</a></li>
+      <li><a href="global.html#validateFill">validateFill</a></li>
+      <li><a href="global.html#validateForMaker">validateForMaker</a></li>
+      <li><a href="global.html#validateForTaker">validateForTaker</a></li>
+      <li><a href="global.html#validateInvoice">validateInvoice</a></li>
+      <li><a href="global.html#validateTake">validateTake</a></li>
+      <li><a href="global.html#validateTakeAccept">validateTakeAccept</a></li>
+      <li><a href="global.html#verifyBlobPath">verifyBlobPath</a></li>
+      <li><a href="global.html#verifyFidelity">verifyFidelity</a></li>
+      <li><a href="global.html#verifyFidelityCertificate">verifyFidelityCertificate</a></li>
+      <li><a href="global.html#verifyOwnership">verifyOwnership</a></li>
+      <li><a href="global.html#verifyPodle">verifyPodle</a></li>
+      <li><a href="global.html#weightsForProximity">weightsForProximity</a></li>
+    </ul>
+  </nav>
+  <br class="clear" />
+  <footer><a href="https://github.com/FabricLabs/fabric">git://</a> &middot; <a href="https://chat.fabric.pub/#/room/#hub:fabric.pub">Community</a></footer>
+  <script type="text/javascript">
+    prettyPrint();
+  </script>
+  <script src="scripts/linenumber.js"></script>
+</body>
+
+</html>
