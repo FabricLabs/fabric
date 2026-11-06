@@ -209,6 +209,48 @@ and does not put them on the wire, so it is unchanged.
 `P2P_SESSION_ACK` has no layout: no code sends one and nothing reads it.
 `P2P_FILE_SEND` waits on the repricing question in the migration plan.
 
+## Peer sends no JSON bodies
+
+Since 2026-11-05 every frame `Peer` originates uses a field layout:
+
+| Opcode | Dec | Keys with their own field |
+|--------|-----|---------------------------|
+| `P2P_FILE_SEND` | 89 | `name`, `body` (raw blob bytes, base64 in the legacy object), `blobIndex`, `blobTotal`, `blobHashHex`, `merkleRootHex`, `chunkBytes`, `contentSha256`, `sealed`, `perBlob`, `paymentHashHex`, `iv`, `scheme`, `routeId`, `relayedBy`, `deliveryFabricId`, `fileRelayTtl`, `proof` (JSON) |
+| `P2P_CHAIN_SYNC_REQUEST` | 85 | `v`, `reason`, `requester`, `at`, `tip` |
+| `DOCUMENT_KEY_REVEAL` | 1000 | `documentId`, `keyHex`, `paymentHashHex`, `iv`, `scheme`, `plaintextSha256`, `settlementId`, `blobIndex`, `routeId` |
+| `DOCUMENT_BLOB_QUOTE` | 1001 | `documentId`, `merkleRootHex`, `blobIndex`, `blobHashHex`, `keyHashHex`, `paymentHashHex`, `wrappedKeyHex`, `amountSats`, `expiresAt`, `routeId` |
+| `DOCUMENT_BLOB_BATCH` | 1002 | `documentId`, `merkleRootHex`, `start`, `end`, `paymentHashHex`, `amountSats`, `expiresAt`, `blobs` (JSON key wraps), `routeId` |
+
+The three `DOCUMENT_*` opcodes are new: key reveals, blob quotes and blob
+batches used to ride `GenericMessage` JSON. Their friendly names are the old
+inner types (`DocumentContentKeyReveal`, `DocumentBlobQuote`,
+`DocumentBlobBatch`), and their legacy shape is the same `{ type, object }`
+body, so the handlers did not change. A `GenericMessage` / `P2P_BASE_MESSAGE`
+carrying one of those inner types is now dropped with a warning. A file-send
+frame is about a third smaller than its JSON form, so blob prices
+(`HTLC_MINIMUM_SATS` per blob) buy more bytes; per-blob pricing is unchanged.
+
+`@fabric/http` keepalives are field frames too: the server and bridge send
+`P2P_PING` / `P2P_PONG` with `{ nonce }` (the sender's clock), and a client's
+text `{"type":"HEARTBEAT"}` is carried as a `P2P_PING` field frame. ZMQ
+notifications (`services/zmq`) are `BITCOIN_*` field frames, read back by
+`Bitcoin#_handleZMQMessage`.
+
+`GenericMessage` stays JSON: it is the Hub ↔ browser carrier, and Peer only
+dispatches or relays it (inventory it relays without the original frame is
+rebuilt as `P2P_INVENTORY_*` fields; anything else is not relayed).
+
+## `Message` refuses silent fallbacks
+
+- An unregistered type **name** throws `Unknown message type` (it used to
+  become `P2P_BASE_MESSAGE`). Numeric opcodes are still written as given.
+  Code that relied on the fallback now names `P2P_BASE_MESSAGE` explicitly.
+- A plain-object body for a type with a field layout throws: build it with
+  `Message.fromLegacyBody` or `Message.fromFields`. A JSON **string** body is
+  still accepted, as the explicit way to build replay and negative-test
+  frames; Peer drops those on receive.
+- `Message.fromFields` throws for a name-only schema (`FabricProgramRun`).
+
 ## `sensitive` is not encryption
 
 `Message` constructor option / property `sensitive: true`:

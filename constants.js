@@ -360,6 +360,10 @@ const GENERIC_LIST_TYPE = 3235170158;
 const SIDECHAIN_STATE_PATCH_TYPE = 997;
 const DOCUMENT_PUBLISH_TYPE = 998;
 const DOCUMENT_REQUEST_TYPE = 999;
+/** Sealed document delivery: content-key reveal, per-blob quote, blob batch (directed; typed fields). */
+const DOCUMENT_KEY_REVEAL_TYPE = 1000;
+const DOCUMENT_BLOB_QUOTE_TYPE = 1001;
+const DOCUMENT_BLOB_BATCH_TYPE = 1002;
 const JSON_CALL_TYPE = 16000;
 const PATCH_MESSAGE_TYPE = 1024;
 /** Contract negotiation: batched Fabric messages + chain Merkle root + JSON Patch (RFC 6902) — see docs/CONTRACT_PROPOSAL.md */
@@ -924,6 +928,9 @@ module.exports = {
   SIDECHAIN_STATE_PATCH_TYPE,
   DOCUMENT_PUBLISH_TYPE,
   DOCUMENT_REQUEST_TYPE,
+  DOCUMENT_KEY_REVEAL_TYPE,
+  DOCUMENT_BLOB_QUOTE_TYPE,
+  DOCUMENT_BLOB_BATCH_TYPE,
   JSON_CALL_TYPE,
   PATCH_MESSAGE_TYPE,
   CONTRACT_PROPOSAL_TYPE,

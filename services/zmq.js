@@ -93,19 +93,19 @@ class ZMQ extends Service {
     this.socket.on('message', (topic, message) => {
       switch (topic.toString()) {
         case 'rawblock':
-          const block = Message.fromVector(['BitcoinBlock', { content: message.toString('hex') }]);
+          const block = Message.fromLegacyBody('BitcoinBlock', { content: message.toString('hex') });
           this.emit('message', block);
           break;
         case 'rawtx':
-          const transaction = Message.fromVector(['BitcoinTransaction', { content: message.toString('hex') }]);
+          const transaction = Message.fromLegacyBody('BitcoinTransaction', { content: message.toString('hex') });
           this.emit('message', transaction);
           break;
         case 'hashtx':
-          const txHash = Message.fromVector(['BitcoinTransactionHash', { content: message.toString('hex') }]);
+          const txHash = Message.fromLegacyBody('BitcoinTransactionHash', { content: message.toString('hex') });
           this.emit('message', txHash);
           break;
         case 'hashblock':
-          const blockHash = Message.fromVector(['BitcoinBlockHash', { content: message.toString('hex') }]);
+          const blockHash = Message.fromLegacyBody('BitcoinBlockHash', { content: message.toString('hex') });
           this.emit('message', blockHash);
           break;
       }

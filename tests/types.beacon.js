@@ -413,6 +413,26 @@ describe('@fabric/core/types/beacon', function () {
     );
   });
 
+  it('an epoch id is the digest of the payload the chain stores', async function () {
+    const Hash256 = require('../types/hash256');
+    const fabricCanonicalJson = require('../functions/fabricCanonicalJson');
+    const fs = memoryFs();
+    const beacon = new Beacon({ regtest: true, mineOnStart: false, interval: 0 });
+    beacon.attach({
+      bitcoin: stubBitcoin({ height: 2, tip: '11'.repeat(32) }),
+      fs,
+      key: new Key(),
+      // A snapshot with an unset field: canonical JSON would hash it as null, the stored JSON drops it.
+      getContractsSnapshotForEpoch: () => ({ clock: 0, stateDigest: '22'.repeat(32), acceptedCount: undefined })
+    });
+    assert.ok(await beacon.createEpoch());
+    if (!fs.readFile(Beacon.BEACON_CHAIN_PATH)) await beacon._persistEpochChain();
+    const { messages } = JSON.parse(fs.readFile(Beacon.BEACON_CHAIN_PATH));
+    const entry = messages[messages.length - 1];
+    assert.ok(!('acceptedCount' in entry.payload.contracts), 'the stored payload drops the unset field');
+    assert.strictEqual(entry.id, Hash256.doubleDigest(fabricCanonicalJson(entry.payload)));
+  });
+
   it('federated createEpoch omits balance/timestamp from the sealed payload', async function () {
     const k1 = new Key({ private: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' });
     const beacon = new Beacon({

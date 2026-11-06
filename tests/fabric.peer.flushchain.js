@@ -165,7 +165,7 @@ describe('Peer P2P_FLUSH_CHAIN', function () {
     assert.strictEqual(writes[0].id, '127.0.0.1:2');
   });
 
-  it('sendFlushChainToTrustedPeers sends fields only to peers that advertised fieldBodies', function () {
+  it('sendFlushChainToTrustedPeers sends fields to every trusted peer, advertised or not', function () {
     const sent = {};
     const peer = createPeer();
     peers.push(peer);
@@ -178,12 +178,12 @@ describe('Peer P2P_FLUSH_CHAIN', function () {
     assert.strictEqual(peer._recordRemoteFieldBodies('127.0.0.1:4', { maxFrameBytes: 9000 }), false);
     const body = { snapshotBlockHash: '0'.repeat(64), network: 'playnet' };
     assert.strictEqual(peer.sendFlushChainToTrustedPeers(body), 2);
-    const newer = Message.tryParseLegacyBody(sent[3]);
-    const older = Message.tryParseLegacyBody(sent[4]);
-    assert.strictEqual(newer.encoding, 'fields');
-    assert.strictEqual(older.encoding, 'json', 'an older peer gets the JSON it parses');
-    assert.strictEqual(JSON.parse(sent[4].body).snapshotBlockHash, body.snapshotBlockHash);
-    assert.strictEqual(newer.value.snapshotBlockHash, body.snapshotBlockHash);
+    // Peer sends no JSON bodies: a peer without `fieldBodies` gets the same field frame.
+    for (const port of [3, 4]) {
+      const parsed = Message.tryParseLegacyBody(sent[port]);
+      assert.strictEqual(parsed.encoding, 'fields', String(port));
+      assert.strictEqual(parsed.value.snapshotBlockHash, body.snapshotBlockHash);
+    }
   });
 
   it('relayFromTrustedPeers skips low-score peers and origin', function () {
@@ -240,7 +240,7 @@ describe('Peer P2P_FLUSH_CHAIN', function () {
     peers.push(peer);
     let seen = null;
     peer.once('chainSyncRequest', (ev) => { seen = ev; });
-    const msg = Message.fromVector(['P2P_CHAIN_SYNC_REQUEST', JSON.stringify({ tip: '1234' })]);
+    const msg = Message.fromLegacyBody('P2P_CHAIN_SYNC_REQUEST', { tip: '1234' });
     msg.signWithKey(peer.key);
     peer._handleFabricMessage(msg.toBuffer(), { name: '127.0.0.1:10' }, null);
     assert.ok(seen);

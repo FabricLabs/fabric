@@ -8,6 +8,7 @@ const jayson = require('jayson/lib/client');
 // Fabric Types
 const Bitcoin = require('../../services/bitcoin');
 const Key = require('../../types/key');
+const Message = require('../../types/message');
 const {
   isolatedManagedRegtestSettings,
   rpcProbeLooksUnavailable
@@ -489,14 +490,12 @@ describe('@fabric/core/services/bitcoin', function () {
           throw new Error(`unexpected method ${method}`);
         };
 
-        const payload = Buffer.from(JSON.stringify({ content: 'abc123tip' }), 'utf8');
-        await btc._handleZMQMessage({
-          type: 'BitcoinBlockHash',
-          data: payload
-        });
+        // What services/zmq emits for `hashblock`: a field-body Message.
+        const tip = 'ab'.repeat(32);
+        await btc._handleZMQMessage(Message.fromLegacyBody('BitcoinBlockHash', { content: tip }));
 
         assert.strictEqual(btc._state.content.height, 321);
-        assert.strictEqual(btc._state.content.tip, 'abc123tip');
+        assert.strictEqual(btc._state.content.tip, tip);
         assert.strictEqual(btc._state.content.supply, 123.45);
         assert.strictEqual(committed, 1);
       });
@@ -528,14 +527,12 @@ describe('@fabric/core/services/bitcoin', function () {
           throw new Error(`unexpected method ${method}`);
         };
 
-        const raw = [
-          Buffer.from('BitcoinBlockHash', 'utf8'),
-          Buffer.from(JSON.stringify({ content: 'tip-raw-array' }), 'utf8')
-        ];
-        await btc._handleZMQMessage(raw);
+        // bitcoind's own frame: topic + the 32 hash bytes.
+        const tip = 'cd'.repeat(32);
+        await btc._handleZMQMessage([Buffer.from('hashblock', 'utf8'), Buffer.from(tip, 'hex')]);
 
         assert.strictEqual(btc._state.content.height, 9);
-        assert.strictEqual(btc._state.content.tip, 'tip-raw-array');
+        assert.strictEqual(btc._state.content.tip, tip);
         assert.strictEqual(btc._state.content.supply, 50);
         assert.strictEqual(committed, 1);
       });
