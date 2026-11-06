@@ -355,10 +355,11 @@ int fabric_pbkdf2_hmac_sha512(const uint8_t *password, size_t password_len,
 
   if (!out || iterations == 0) return 0;
   if ((password == NULL && password_len > 0) || (salt == NULL && salt_len > 0)) return 0;
-  if (salt_len + 4 > sizeof(sbuf)) return 0;
+  /* Overflow-safe: salt_len + 4 may wrap size_t for huge salt_len. */
+  if (salt_len > sizeof(sbuf) - 4) return 0;
 
   while (generated < out_len) {
-    memcpy(sbuf, salt, salt_len);
+    if (salt_len > 0) memcpy(sbuf, salt, salt_len);
     sbuf[salt_len + 0] = (uint8_t)((block_index >> 24) & 0xff);
     sbuf[salt_len + 1] = (uint8_t)((block_index >> 16) & 0xff);
     sbuf[salt_len + 2] = (uint8_t)((block_index >> 8) & 0xff);

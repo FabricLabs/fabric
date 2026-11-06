@@ -1,0 +1,9908 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <title>Class: ChannelSession &middot; Docs</title>
+  <script src="scripts/prettify/prettify.js"> </script>
+  <script src="scripts/prettify/lang-css.js"> </script>
+  <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+  <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+  <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+  <script>
+    window.dataLayer = window.dataLayer || [];
+
+    function gtag() {
+      dataLayer.push(arguments);
+    }
+    gtag('js', new Date());
+    gtag('config', 'G-09Y57FL980');
+  </script>
+</head>
+
+<body>
+  <div id="main">
+    <h1 class="page-title">Class: ChannelSession</h1>
+
+
+
+
+    <section>
+
+      <header>
+
+        <h2><span class="attribs"><span class="type-signature"></span></span>ChannelSession<span class="signature">()</span><span class="type-signature"></span></h2>
+
+        <div class="class-description">Off-chain state of one Fabric payment channel from the local
+          party's perspective: balances, pending HTLCs (one per chunk), each party's
+          current commitment and the counterparty's signature on **ours**. Updates are
+          exchanged as signed `CONTRACT_MESSAGE` bodies (Channel.BODY_TYPES):
+
+          1. proposer → `ChannelCommitment n` (signature on the *counterparty's*
+          commitment `n`, next per-commitment point);
+          2. counterparty → `ChannelCommitment n` reply (signature on the proposer's
+          commitment `n`, inline `revoke` of its own state `n-1`, next point);
+          3. proposer → `ChannelRevoke n-1`.
+
+          A party that broadcasts a revoked commitment loses everything on it
+          (<a href="Channel.html#.prepareJusticeSpend">Channel.prepareJusticeSpend</a>); the latest commitment pays the
+          holder only after `toSelfDelay`. Open is three messages (`ChannelOpen`,
+          reply, ack) because the funder cannot sign the counterparty's commitment
+          before learning its first per-commitment point.
+
+          Both parties proposing state `n` at once is resolved deterministically:
+          the funder's proposal wins, the non-funder rolls its own back and replays
+          it (<a href="ChannelSession.html#repropose">ChannelSession#repropose</a>) once the round completes. After a
+          reconnect, <a href="ChannelSession.html#reestablish">ChannelSession#reestablish</a> tells the peer which states we
+          hold signed and revoked; the answer resends whatever we missed.</div>
+
+
+      </header>
+
+      <article>
+        <div class="container-overview">
+
+
+
+
+          <h2>Constructor</h2>
+
+
+
+          <h4 class="name" id="ChannelSession"><span class="type-signature"></span>new ChannelSession<span class="signature">()</span><span class="type-signature"></span></h4>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            <dt class="tag-source">Source:</dt>
+            <dd class="tag-source">
+              <ul class="dummy">
+                <li>
+                  <a href="types_channel.js.html">types/channel.js</a>, <a href="types_channel.js.html#line1367">line 1367</a>
+                </li>
+              </ul>
+            </dd>
+
+
+
+
+
+
+
+          </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h3 class="subsection-title">Members</h3>
+
+
+
+        <h4 class="name" id="busy"><span class="type-signature"></span>busy<span class="type-signature"></span></h4>
+
+
+
+
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_channel.js.html">types/channel.js</a>, <a href="types_channel.js.html#line1507">line 1507</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+        <h4 class="name" id="commitment"><span class="type-signature"></span>commitment<span class="type-signature"></span></h4>
+
+
+
+
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_channel.js.html">types/channel.js</a>, <a href="types_channel.js.html#line1501">line 1501</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+        <h4 class="name" id="fullySigned"><span class="type-signature"></span>fullySigned<span class="type-signature"></span></h4>
+
+
+
+
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_channel.js.html">types/channel.js</a>, <a href="types_channel.js.html#line1505">line 1505</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+        <h4 class="name" id="lastSignedCommitment"><span class="type-signature"></span>lastSignedCommitment<span class="type-signature"></span></h4>
+
+
+
+
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_channel.js.html">types/channel.js</a>, <a href="types_channel.js.html#line1503">line 1503</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+        <h4 class="name" id="resolvable"><span class="type-signature"></span>resolvable<span class="type-signature"></span></h4>
+
+
+
+
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_channel.js.html">types/channel.js</a>, <a href="types_channel.js.html#line1486">line 1486</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+        <h4 class="name" id="transfers"><span class="type-signature"></span>transfers<span class="type-signature"></span></h4>
+
+
+
+
+        <div class="description">
+          Balance transfers sent and received (`{ amountSats, ref, direction, number }`), newest last.
+        </div>
+
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_channel.js.html">types/channel.js</a>, <a href="types_channel.js.html#line1499">line 1499</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+        <h3 class="subsection-title">Methods</h3>
+
+
+
+
+
+
+
+        <h4 class="name" id="actionTransactions"><span class="type-signature"></span>actionTransactions<span class="signature">(actions, opts<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {Array.&lt;string>}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Broadcastable transactions for this session's watchdog actions: our own
+          force-close, and an HTLC claim or timeout spent from that commitment.
+          A remote commitment already on chain is left alone (its penalty is a
+          watchtower filing, not one of these).
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+              <th>Attributes</th>
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>actions</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Array.&lt;object></span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last">from <a href="ChannelSession.html#tick">ChannelSession#tick</a></td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>opts</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">object</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+                &lt;optional><br>
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last">`{ destinationAddress?, feeSats? }`</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_channel.js.html">types/channel.js</a>, <a href="types_channel.js.html#line2713">line 2713</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          raw transaction hex
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Array.&lt;string></span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="canFulfil"><span class="type-signature"></span>canFulfil<span class="signature">(row, tip<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {boolean}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          A received HTLC may be fulfilled off-chain only while the funding is
+          confirmed and `expireAfter − tip > toSelfDelay + htlcSafetyBlocks`;
+          otherwise the receiver must claim on-chain. Offered HTLCs (the sender
+          settling with a preimage it learned) are always allowed.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+              <th>Attributes</th>
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>row</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">object</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last">HTLC row</td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>tip</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">number</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+                &lt;optional><br>
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_channel.js.html">types/channel.js</a>, <a href="types_channel.js.html#line1558">line 1558</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">boolean</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="close"><span class="type-signature"></span>close<span class="signature">()</span><span class="type-signature"> &rarr; {object}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Cooperative close: no HTLCs pending, latest balances. Returns a
+          `ChannelClose` proposal; the reply countersigns and both finalize.
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_channel.js.html">types/channel.js</a>, <a href="types_channel.js.html#line2654">line 2654</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">object</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="export"><span class="type-signature"></span>export<span class="signature">()</span><span class="type-signature"> &rarr; {object}</span></h4>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_channel.js.html">types/channel.js</a>, <a href="types_channel.js.html#line2769">line 2769</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          persistence snapshot (no private key)
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">object</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="failHtlc"><span class="type-signature"></span>failHtlc<span class="signature">(id, reason<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {object}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Fail an HTLC: the receiver may fail a received HTLC at any time; the
+          sender may fail its own offered HTLC only once expired at the known tip.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+              <th>Attributes</th>
+
+
+
+              <th>Default</th>
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>id</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">string</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+
+
+
+
+              </td>
+
+
+
+              <td class="default">
+
+              </td>
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>reason</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">string</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+                &lt;optional><br>
+
+
+
+
+
+              </td>
+
+
+
+              <td class="default">
+
+                failed
+
+              </td>
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_channel.js.html">types/channel.js</a>, <a href="types_channel.js.html#line2382">line 2382</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          `ChannelHtlcFail` body
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">object</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="finalize"><span class="type-signature"></span>finalize<span class="signature">()</span><span class="type-signature"> &rarr; {object}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Broadcastable commitment: the current state when countersigned, else the
+          last countersigned one (mid-round, while our proposal is unanswered).
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_channel.js.html">types/channel.js</a>, <a href="types_channel.js.html#line2628">line 2628</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          `{ txHex, txid, number, commitment }`
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">object</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="fulfillHtlc"><span class="type-signature"></span>fulfillHtlc<span class="signature">(id, preimageHex)</span><span class="type-signature"> &rarr; {object}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Settle an HTLC with its preimage: the amount moves to the **receiver's**
+          balance and the proposal carries the preimage. Normally the receiver
+          reveals; the sender may also settle an HTLC it offered once it learned
+          the preimage elsewhere (e.g. the seller's public key reveal) — that only
+          ever pays the counterparty.
+
+          The receiver reveals only while <a href="ChannelSession.html#canFulfil">ChannelSession#canFulfil</a>: once
+          the preimage is out, a sender that withholds its countersignature forces
+          the receiver on-chain, where the receiver's claim is CSV-delayed by
+          `toSelfDelay` on its own commitment. The sender's timeout there waits
+          `toSelfDelay + htlcClaimWindowBlocks`, and on the sender's commitment the
+          receiver claims immediately, so a fulfill with that margin cannot be
+          raced. Too close to expiry the preimage is only remembered and the
+          watchdog (<a href="ChannelSession.html#tick">ChannelSession#tick</a>) asks the host to claim on-chain.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>id</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">string</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>preimageHex</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">string</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_channel.js.html">types/channel.js</a>, <a href="types_channel.js.html#line2352">line 2352</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          `ChannelHtlcFulfill` body (+ the new commitment via `commitment`)
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">object</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="handleReestablish"><span class="type-signature"></span>handleReestablish<span class="signature">(body)</span><span class="type-signature"> &rarr; {Array.&lt;object>}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Answer a peer's `ChannelReestablish`: resend the revocations it has not
+          seen and, when it lacks a signature on our current state number, our last
+          update (proposal, countersignature, or settlement) for that state.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>body</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">object</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last">verified `ChannelReestablish`</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_channel.js.html">types/channel.js</a>, <a href="types_channel.js.html#line2476">line 2476</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          bodies to send, in order
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Array.&lt;object></span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="htlcExpiryBounds"><span class="type-signature"></span>htlcExpiryBounds<span class="signature">(tip<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {Object|null}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Valid `expireAfter` heights for a new HTLC at a tip.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+              <th>Attributes</th>
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>tip</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">number</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+                &lt;optional><br>
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last">defaults to the session tip</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_channel.js.html">types/channel.js</a>, <a href="types_channel.js.html#line1541">line 1541</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          `null` when the tip is unknown
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Object</span>
+            |
+
+            <span class="param-type">null</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="ingest"><span class="type-signature"></span>ingest<span class="signature">(body, ctx<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {object|Array.&lt;object>|null}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Dispatch any inbound `Channel*` body to the right handler.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+              <th>Attributes</th>
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>body</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">object</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>ctx</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">object</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+                &lt;optional><br>
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_channel.js.html">types/channel.js</a>, <a href="types_channel.js.html#line2448">line 2448</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          reply body (array for `ChannelReestablish`)
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">object</span>
+            |
+
+            <span class="param-type">Array.&lt;object></span>
+            |
+
+            <span class="param-type">null</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="learnPreimage"><span class="type-signature"></span>learnPreimage<span class="signature">(paymentHashHex, preimageHex)</span><span class="type-signature"> &rarr; {boolean}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Remember a preimage for one of this channel's HTLCs (e.g. learned
+          downstream) so the watchdog can claim it on-chain.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>paymentHashHex</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">string</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>preimageHex</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">string</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_channel.js.html">types/channel.js</a>, <a href="types_channel.js.html#line1571">line 1571</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          stored
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">boolean</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="observe"><span class="type-signature"></span>observe<span class="signature">(txHex, opts<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {object}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Classify an observed on-chain transaction: our/their latest commitment,
+          a **stale** (revoked) counterparty commitment — returning a signed
+          justice transaction and a `FraudProof` — or an HTLC spend whose witness
+          reveals preimages we are owed.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+              <th>Attributes</th>
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>txHex</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">string</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>opts</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">object</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+                &lt;optional><br>
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last">`{ destinationAddress?, feeSats?, excludeVouts?, perOutput?, inclusion?: { blockHeaderHex, txids } }` — `excludeVouts` skips stale outputs already spent; `perOutput` also returns one justice tx per output (`justiceSpends`); `inclusion` lets a stale-commitment proof carry an SPV branch binding the broadcast to a block header</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_channel.js.html">types/channel.js</a>, <a href="types_channel.js.html#line2570">line 2570</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          `{ kind, txid, justice?, justiceSpends?, fraudProof?, preimages? }`
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">object</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="offerHtlc"><span class="type-signature"></span>offerHtlc<span class="signature">(htlc)</span><span class="type-signature"> &rarr; {object}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Offer an HTLC (pay for one chunk): moves `amountSats` from our balance
+          into a pending HTLC and returns the `ChannelCommitment` proposal.
+          `expireAfter − tip` must be at least <a href="Channel.html#.minHtlcExpiryDelta">Channel.minHtlcExpiryDelta</a>.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>htlc</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">object</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last">`{ id?, amountSats, paymentHashHex, blobHashHex?, expireAfter, forwardOf? }`</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_channel.js.html">types/channel.js</a>, <a href="types_channel.js.html#line1785">line 1785</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">object</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="open"><span class="type-signature"></span>open<span class="signature">()</span><span class="type-signature"> &rarr; {object}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Initial `ChannelOpen` body (funder): the funding record (public fields,
+          funding outpoint included), balances, our policy proposal and first two
+          per-commitment points. No commitment signature yet — see the class
+          description.
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_channel.js.html">types/channel.js</a>, <a href="types_channel.js.html#line1727">line 1727</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">object</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="penaltyFilings"><span class="type-signature"></span>penaltyFilings<span class="signature">(opts<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {Array.&lt;object>}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Per-output justice transactions for every revoked counterparty commitment,
+          signed now so a watchtower can broadcast them without this channel key.
+          The commitment transaction is the unsigned one rebuilt from the revoked
+          state (its txid is already fixed). One transaction per output, so a spent
+          output does not take the others with it.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+              <th>Attributes</th>
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>opts</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">object</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+                &lt;optional><br>
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last">`{ destinationAddress?, feeSats? }` — destination defaults to this session's `localAddress`</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_channel.js.html">types/channel.js</a>, <a href="types_channel.js.html#line2671">line 2671</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          `[{ commitmentTxid, transactions }]`
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Array.&lt;object></span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="preimageFor"><span class="type-signature"></span>preimageFor<span class="signature">(paymentHashHex)</span><span class="type-signature"></span></h4>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>paymentHashHex</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">string</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last">@returns {string|null} preimage learned on this channel</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_channel.js.html">types/channel.js</a>, <a href="types_channel.js.html#line2619">line 2619</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="receive"><span class="type-signature"></span>receive<span class="signature">(body, ctx<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {object|Array.&lt;object>|null}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Ingest a counterparty `ChannelOpen` / `ChannelCommitment` / `ChannelClose`
+          / `ChannelRevoke` / `ChannelReestablish`. Returns the body we must send
+          back (countersignature with inline revoke, `ChannelRevoke`, or `null`) —
+          an array of bodies for `ChannelReestablish`.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+              <th>Attributes</th>
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>body</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">object</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last">signed artifact from the peer</td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>ctx</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">object</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+                &lt;optional><br>
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last">`{ settlement }` from <a href="ChannelSession.html#receiveSettlement">ChannelSession#receiveSettlement</a></td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_channel.js.html">types/channel.js</a>, <a href="types_channel.js.html#line2104">line 2104</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">object</span>
+            |
+
+            <span class="param-type">Array.&lt;object></span>
+            |
+
+            <span class="param-type">null</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="receiveSettlement"><span class="type-signature"></span>receiveSettlement<span class="signature">(body)</span><span class="type-signature"> &rarr; {object|null}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Apply a counterparty `ChannelHtlcFulfill` / `ChannelHtlcFail` body.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>body</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">object</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_channel.js.html">types/channel.js</a>, <a href="types_channel.js.html#line2406">line 2406</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          our countersignature body
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">object</span>
+            |
+
+            <span class="param-type">null</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="reestablish"><span class="type-signature"></span>reestablish<span class="signature">()</span><span class="type-signature"> &rarr; {object}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          `ChannelReestablish` body for a reconnect: our state number, the newest
+          of our commitments the peer has signed, and how far each side's states
+          are revoked. The peer answers with <a href="ChannelSession.html#handleReestablish">ChannelSession#handleReestablish</a>.
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_channel.js.html">types/channel.js</a>, <a href="types_channel.js.html#line2459">line 2459</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">object</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="repropose"><span class="type-signature"></span>repropose<span class="signature">()</span><span class="type-signature"> &rarr; {object|null}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Replay the first intent abandoned in a simultaneous-proposal tie-break
+          (offer / fulfill / fail / fee / transfer / close). Intents that no longer apply are
+          dropped into `state.droppedIntents`.
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_channel.js.html">types/channel.js</a>, <a href="types_channel.js.html#line1965">line 1965</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          new proposal body, or `null`
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">object</span>
+            |
+
+            <span class="param-type">null</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="tick"><span class="type-signature"></span>tick<span class="signature">(tipHeight<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {Object}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Chain-time watchdog. Polls funding confirmations, settles what it can
+          off-chain (fulfill received HTLCs whose preimage is known while the margin
+          allows; fail expired received HTLCs without one; fail expired offered
+          HTLCs) and returns the on-chain **actions** the host must take:
+
+          - `{ type: 'forceClose', channelId, reason: 'channel-expiry'|'htlc-claim'|'htlc-timeout', deadline, tip }`
+          — at `expireAfter − toSelfDelay − closeMarginBlocks` for the channel, when
+          a received HTLC with a known preimage can no longer be fulfilled
+          off-chain, or `htlcSafetyBlocks` after an offered HTLC expired unresolved;
+          - `{ type: 'claimHtlc', channelId, htlcId, paymentHashHex, preimageHex, amountSats, expireAfter, deadline }`
+          (<a href="Channel.html#.prepareHtlcClaim">Channel.prepareHtlcClaim</a>);
+          - `{ type: 'timeoutHtlc', channelId, htlcId, paymentHashHex, amountSats, expireAfter }`
+          (<a href="Channel.html#.prepareHtlcTimeout">Channel.prepareHtlcTimeout</a>).
+
+          HTLCs are taken from the current state and the last countersigned one, so
+          an HTLC removed by a round still in flight is watched until it completes.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+              <th>Attributes</th>
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>tipHeight</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">number</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+                &lt;optional><br>
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last">defaults to the session tip</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_channel.js.html">types/channel.js</a>, <a href="types_channel.js.html#line2507">line 2507</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Object</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="transfer"><span class="type-signature"></span>transfer<span class="signature">(opts)</span><span class="type-signature"> &rarr; {object}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Pay the counterparty from our balance with no HTLC: the next commitment
+          just moves `amountSats` to them (pay-after-verify credit — nothing to
+          claim, refund, or settle on chain, so no HTLC minimum). No HTLC or fee
+          change rides along, and our balance must stay above the reserve.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>opts</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">object</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last">`{ amountSats, ref? }` — `ref` names what is paid
+                for and reaches the receiver; a `ref` already sent is refused.</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_channel.js.html">types/channel.js</a>, <a href="types_channel.js.html#line1811">line 1811</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          `ChannelCommitment` proposal carrying `transfer`
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">object</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="updateFee"><span class="type-signature"></span>updateFee<span class="signature">(feeSats)</span><span class="type-signature"> &rarr; {object}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Propose a new fixed commitment fee (funder only; bounded by the
+          negotiated policy and never below `minFeerate` for the HTLC count; the
+          funder's balance absorbs the difference and must stay above the reserve).
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>feeSats</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">number</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_channel.js.html">types/channel.js</a>, <a href="types_channel.js.html#line1846">line 1846</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          `ChannelCommitment` proposal
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">object</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="updateFeerate"><span class="type-signature"></span>updateFeerate<span class="signature">(satPerVb)</span><span class="type-signature"> &rarr; {object}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Switch to / change a commitment feerate (funder only): the fee becomes
+          `feerate × estimated vsize` (HTLC outputs included) on every later state.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>satPerVb</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">number</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last">integer ≥ policy `minFeerate`</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_channel.js.html">types/channel.js</a>, <a href="types_channel.js.html#line1866">line 1866</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          `ChannelCommitment` proposal
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">object</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id=".import"><span class="type-signature">(static) </span>import<span class="signature">(snapshot, localPrivateKey, deps<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {<a href="ChannelSession.html">ChannelSession</a>}</span></h4>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+              <th>Attributes</th>
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>snapshot</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">object</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last">from <a href="ChannelSession.html#export">ChannelSession#export</a></td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>localPrivateKey</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Buffer</span>
+                |
+
+                <span class="param-type">string</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>deps</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">object</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+                &lt;optional><br>
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last">`{ tipHeight?, confirmations? }`</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_channel.js.html">types/channel.js</a>, <a href="types_channel.js.html#line2792">line 2792</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type"><a href="ChannelSession.html">ChannelSession</a></span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+      </article>
+
+    </section>
+
+
+
+
+
+
+
+    <section>
+
+      <header>
+
+        <h2><span class="attribs"><span class="type-signature"></span></span>ChannelSession<span class="signature">(opts)</span><span class="type-signature"></span></h2>
+
+
+      </header>
+
+      <article>
+        <div class="container-overview">
+
+
+
+
+
+
+          <h4 class="name" id="ChannelSession"><span class="type-signature"></span>new ChannelSession<span class="signature">(opts)</span><span class="type-signature"></span></h4>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <h5>Parameters:</h5>
+
+
+          <table class="params">
+            <thead>
+              <tr>
+
+                <th>Name</th>
+
+
+                <th>Type</th>
+
+
+
+
+
+                <th class="last">Description</th>
+              </tr>
+            </thead>
+
+            <tbody>
+
+
+              <tr>
+
+                <td class="name"><code>opts</code></td>
+
+
+                <td class="type">
+
+
+                  <span class="param-type">object</span>
+
+
+
+                </td>
+
+
+
+
+
+                <td class="description last">`{ funding, fundedTxHex, localPrivateKey, localSats, remoteSats, localAddress, remoteAddress, feeSats?, feerate?, policy?, tipHeight?, confirmations?, fundingConfirmed?, minFundingConfirmations? }`
+                  `confirmations(txid)` gates the channel on the funding depth; without it
+                  only the funder (or `fundingConfirmed: true`, explicit trust) treats the
+                  funding as confirmed. `feerate` (sat/vB) derives the commitment fee from
+                  the HTLC count instead of a fixed `feeSats`.</td>
+              </tr>
+
+
+            </tbody>
+          </table>
+
+
+
+
+
+
+          <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            <dt class="tag-source">Source:</dt>
+            <dd class="tag-source">
+              <ul class="dummy">
+                <li>
+                  <a href="types_channel.js.html">types/channel.js</a>, <a href="types_channel.js.html#line1400">line 1400</a>
+                </li>
+              </ul>
+            </dd>
+
+
+
+
+
+
+
+          </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h3 class="subsection-title">Members</h3>
+
+
+
+        <h4 class="name" id="busy"><span class="type-signature"></span>busy<span class="type-signature"></span></h4>
+
+
+
+
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_channel.js.html">types/channel.js</a>, <a href="types_channel.js.html#line1507">line 1507</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+        <h4 class="name" id="commitment"><span class="type-signature"></span>commitment<span class="type-signature"></span></h4>
+
+
+
+
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_channel.js.html">types/channel.js</a>, <a href="types_channel.js.html#line1501">line 1501</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+        <h4 class="name" id="fullySigned"><span class="type-signature"></span>fullySigned<span class="type-signature"></span></h4>
+
+
+
+
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_channel.js.html">types/channel.js</a>, <a href="types_channel.js.html#line1505">line 1505</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+        <h4 class="name" id="lastSignedCommitment"><span class="type-signature"></span>lastSignedCommitment<span class="type-signature"></span></h4>
+
+
+
+
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_channel.js.html">types/channel.js</a>, <a href="types_channel.js.html#line1503">line 1503</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+        <h4 class="name" id="resolvable"><span class="type-signature"></span>resolvable<span class="type-signature"></span></h4>
+
+
+
+
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_channel.js.html">types/channel.js</a>, <a href="types_channel.js.html#line1486">line 1486</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+        <h4 class="name" id="transfers"><span class="type-signature"></span>transfers<span class="type-signature"></span></h4>
+
+
+
+
+        <div class="description">
+          Balance transfers sent and received (`{ amountSats, ref, direction, number }`), newest last.
+        </div>
+
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_channel.js.html">types/channel.js</a>, <a href="types_channel.js.html#line1499">line 1499</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+        <h3 class="subsection-title">Methods</h3>
+
+
+
+
+
+
+
+        <h4 class="name" id="actionTransactions"><span class="type-signature"></span>actionTransactions<span class="signature">(actions, opts<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {Array.&lt;string>}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Broadcastable transactions for this session's watchdog actions: our own
+          force-close, and an HTLC claim or timeout spent from that commitment.
+          A remote commitment already on chain is left alone (its penalty is a
+          watchtower filing, not one of these).
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+              <th>Attributes</th>
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>actions</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Array.&lt;object></span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last">from <a href="ChannelSession.html#tick">ChannelSession#tick</a></td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>opts</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">object</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+                &lt;optional><br>
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last">`{ destinationAddress?, feeSats? }`</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_channel.js.html">types/channel.js</a>, <a href="types_channel.js.html#line2713">line 2713</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          raw transaction hex
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Array.&lt;string></span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="canFulfil"><span class="type-signature"></span>canFulfil<span class="signature">(row, tip<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {boolean}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          A received HTLC may be fulfilled off-chain only while the funding is
+          confirmed and `expireAfter − tip > toSelfDelay + htlcSafetyBlocks`;
+          otherwise the receiver must claim on-chain. Offered HTLCs (the sender
+          settling with a preimage it learned) are always allowed.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+              <th>Attributes</th>
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>row</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">object</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last">HTLC row</td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>tip</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">number</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+                &lt;optional><br>
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_channel.js.html">types/channel.js</a>, <a href="types_channel.js.html#line1558">line 1558</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">boolean</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="close"><span class="type-signature"></span>close<span class="signature">()</span><span class="type-signature"> &rarr; {object}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Cooperative close: no HTLCs pending, latest balances. Returns a
+          `ChannelClose` proposal; the reply countersigns and both finalize.
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_channel.js.html">types/channel.js</a>, <a href="types_channel.js.html#line2654">line 2654</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">object</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="export"><span class="type-signature"></span>export<span class="signature">()</span><span class="type-signature"> &rarr; {object}</span></h4>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_channel.js.html">types/channel.js</a>, <a href="types_channel.js.html#line2769">line 2769</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          persistence snapshot (no private key)
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">object</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="failHtlc"><span class="type-signature"></span>failHtlc<span class="signature">(id, reason<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {object}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Fail an HTLC: the receiver may fail a received HTLC at any time; the
+          sender may fail its own offered HTLC only once expired at the known tip.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+              <th>Attributes</th>
+
+
+
+              <th>Default</th>
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>id</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">string</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+
+
+
+
+              </td>
+
+
+
+              <td class="default">
+
+              </td>
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>reason</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">string</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+                &lt;optional><br>
+
+
+
+
+
+              </td>
+
+
+
+              <td class="default">
+
+                failed
+
+              </td>
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_channel.js.html">types/channel.js</a>, <a href="types_channel.js.html#line2382">line 2382</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          `ChannelHtlcFail` body
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">object</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="finalize"><span class="type-signature"></span>finalize<span class="signature">()</span><span class="type-signature"> &rarr; {object}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Broadcastable commitment: the current state when countersigned, else the
+          last countersigned one (mid-round, while our proposal is unanswered).
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_channel.js.html">types/channel.js</a>, <a href="types_channel.js.html#line2628">line 2628</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          `{ txHex, txid, number, commitment }`
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">object</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="fulfillHtlc"><span class="type-signature"></span>fulfillHtlc<span class="signature">(id, preimageHex)</span><span class="type-signature"> &rarr; {object}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Settle an HTLC with its preimage: the amount moves to the **receiver's**
+          balance and the proposal carries the preimage. Normally the receiver
+          reveals; the sender may also settle an HTLC it offered once it learned
+          the preimage elsewhere (e.g. the seller's public key reveal) — that only
+          ever pays the counterparty.
+
+          The receiver reveals only while <a href="ChannelSession.html#canFulfil">ChannelSession#canFulfil</a>: once
+          the preimage is out, a sender that withholds its countersignature forces
+          the receiver on-chain, where the receiver's claim is CSV-delayed by
+          `toSelfDelay` on its own commitment. The sender's timeout there waits
+          `toSelfDelay + htlcClaimWindowBlocks`, and on the sender's commitment the
+          receiver claims immediately, so a fulfill with that margin cannot be
+          raced. Too close to expiry the preimage is only remembered and the
+          watchdog (<a href="ChannelSession.html#tick">ChannelSession#tick</a>) asks the host to claim on-chain.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>id</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">string</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>preimageHex</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">string</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_channel.js.html">types/channel.js</a>, <a href="types_channel.js.html#line2352">line 2352</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          `ChannelHtlcFulfill` body (+ the new commitment via `commitment`)
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">object</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="handleReestablish"><span class="type-signature"></span>handleReestablish<span class="signature">(body)</span><span class="type-signature"> &rarr; {Array.&lt;object>}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Answer a peer's `ChannelReestablish`: resend the revocations it has not
+          seen and, when it lacks a signature on our current state number, our last
+          update (proposal, countersignature, or settlement) for that state.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>body</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">object</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last">verified `ChannelReestablish`</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_channel.js.html">types/channel.js</a>, <a href="types_channel.js.html#line2476">line 2476</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          bodies to send, in order
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Array.&lt;object></span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="htlcExpiryBounds"><span class="type-signature"></span>htlcExpiryBounds<span class="signature">(tip<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {Object|null}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Valid `expireAfter` heights for a new HTLC at a tip.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+              <th>Attributes</th>
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>tip</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">number</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+                &lt;optional><br>
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last">defaults to the session tip</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_channel.js.html">types/channel.js</a>, <a href="types_channel.js.html#line1541">line 1541</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          `null` when the tip is unknown
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Object</span>
+            |
+
+            <span class="param-type">null</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="ingest"><span class="type-signature"></span>ingest<span class="signature">(body, ctx<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {object|Array.&lt;object>|null}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Dispatch any inbound `Channel*` body to the right handler.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+              <th>Attributes</th>
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>body</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">object</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>ctx</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">object</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+                &lt;optional><br>
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_channel.js.html">types/channel.js</a>, <a href="types_channel.js.html#line2448">line 2448</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          reply body (array for `ChannelReestablish`)
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">object</span>
+            |
+
+            <span class="param-type">Array.&lt;object></span>
+            |
+
+            <span class="param-type">null</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="learnPreimage"><span class="type-signature"></span>learnPreimage<span class="signature">(paymentHashHex, preimageHex)</span><span class="type-signature"> &rarr; {boolean}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Remember a preimage for one of this channel's HTLCs (e.g. learned
+          downstream) so the watchdog can claim it on-chain.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>paymentHashHex</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">string</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>preimageHex</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">string</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_channel.js.html">types/channel.js</a>, <a href="types_channel.js.html#line1571">line 1571</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          stored
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">boolean</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="observe"><span class="type-signature"></span>observe<span class="signature">(txHex, opts<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {object}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Classify an observed on-chain transaction: our/their latest commitment,
+          a **stale** (revoked) counterparty commitment — returning a signed
+          justice transaction and a `FraudProof` — or an HTLC spend whose witness
+          reveals preimages we are owed.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+              <th>Attributes</th>
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>txHex</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">string</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>opts</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">object</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+                &lt;optional><br>
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last">`{ destinationAddress?, feeSats?, excludeVouts?, perOutput?, inclusion?: { blockHeaderHex, txids } }` — `excludeVouts` skips stale outputs already spent; `perOutput` also returns one justice tx per output (`justiceSpends`); `inclusion` lets a stale-commitment proof carry an SPV branch binding the broadcast to a block header</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_channel.js.html">types/channel.js</a>, <a href="types_channel.js.html#line2570">line 2570</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          `{ kind, txid, justice?, justiceSpends?, fraudProof?, preimages? }`
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">object</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="offerHtlc"><span class="type-signature"></span>offerHtlc<span class="signature">(htlc)</span><span class="type-signature"> &rarr; {object}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Offer an HTLC (pay for one chunk): moves `amountSats` from our balance
+          into a pending HTLC and returns the `ChannelCommitment` proposal.
+          `expireAfter − tip` must be at least <a href="Channel.html#.minHtlcExpiryDelta">Channel.minHtlcExpiryDelta</a>.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>htlc</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">object</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last">`{ id?, amountSats, paymentHashHex, blobHashHex?, expireAfter, forwardOf? }`</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_channel.js.html">types/channel.js</a>, <a href="types_channel.js.html#line1785">line 1785</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">object</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="open"><span class="type-signature"></span>open<span class="signature">()</span><span class="type-signature"> &rarr; {object}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Initial `ChannelOpen` body (funder): the funding record (public fields,
+          funding outpoint included), balances, our policy proposal and first two
+          per-commitment points. No commitment signature yet — see the class
+          description.
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_channel.js.html">types/channel.js</a>, <a href="types_channel.js.html#line1727">line 1727</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">object</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="penaltyFilings"><span class="type-signature"></span>penaltyFilings<span class="signature">(opts<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {Array.&lt;object>}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Per-output justice transactions for every revoked counterparty commitment,
+          signed now so a watchtower can broadcast them without this channel key.
+          The commitment transaction is the unsigned one rebuilt from the revoked
+          state (its txid is already fixed). One transaction per output, so a spent
+          output does not take the others with it.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+              <th>Attributes</th>
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>opts</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">object</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+                &lt;optional><br>
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last">`{ destinationAddress?, feeSats? }` — destination defaults to this session's `localAddress`</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_channel.js.html">types/channel.js</a>, <a href="types_channel.js.html#line2671">line 2671</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          `[{ commitmentTxid, transactions }]`
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Array.&lt;object></span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="preimageFor"><span class="type-signature"></span>preimageFor<span class="signature">(paymentHashHex)</span><span class="type-signature"></span></h4>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>paymentHashHex</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">string</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last">@returns {string|null} preimage learned on this channel</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_channel.js.html">types/channel.js</a>, <a href="types_channel.js.html#line2619">line 2619</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="receive"><span class="type-signature"></span>receive<span class="signature">(body, ctx<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {object|Array.&lt;object>|null}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Ingest a counterparty `ChannelOpen` / `ChannelCommitment` / `ChannelClose`
+          / `ChannelRevoke` / `ChannelReestablish`. Returns the body we must send
+          back (countersignature with inline revoke, `ChannelRevoke`, or `null`) —
+          an array of bodies for `ChannelReestablish`.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+              <th>Attributes</th>
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>body</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">object</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last">signed artifact from the peer</td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>ctx</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">object</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+                &lt;optional><br>
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last">`{ settlement }` from <a href="ChannelSession.html#receiveSettlement">ChannelSession#receiveSettlement</a></td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_channel.js.html">types/channel.js</a>, <a href="types_channel.js.html#line2104">line 2104</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">object</span>
+            |
+
+            <span class="param-type">Array.&lt;object></span>
+            |
+
+            <span class="param-type">null</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="receiveSettlement"><span class="type-signature"></span>receiveSettlement<span class="signature">(body)</span><span class="type-signature"> &rarr; {object|null}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Apply a counterparty `ChannelHtlcFulfill` / `ChannelHtlcFail` body.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>body</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">object</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_channel.js.html">types/channel.js</a>, <a href="types_channel.js.html#line2406">line 2406</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          our countersignature body
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">object</span>
+            |
+
+            <span class="param-type">null</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="reestablish"><span class="type-signature"></span>reestablish<span class="signature">()</span><span class="type-signature"> &rarr; {object}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          `ChannelReestablish` body for a reconnect: our state number, the newest
+          of our commitments the peer has signed, and how far each side's states
+          are revoked. The peer answers with <a href="ChannelSession.html#handleReestablish">ChannelSession#handleReestablish</a>.
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_channel.js.html">types/channel.js</a>, <a href="types_channel.js.html#line2459">line 2459</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">object</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="repropose"><span class="type-signature"></span>repropose<span class="signature">()</span><span class="type-signature"> &rarr; {object|null}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Replay the first intent abandoned in a simultaneous-proposal tie-break
+          (offer / fulfill / fail / fee / transfer / close). Intents that no longer apply are
+          dropped into `state.droppedIntents`.
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_channel.js.html">types/channel.js</a>, <a href="types_channel.js.html#line1965">line 1965</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          new proposal body, or `null`
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">object</span>
+            |
+
+            <span class="param-type">null</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="tick"><span class="type-signature"></span>tick<span class="signature">(tipHeight<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {Object}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Chain-time watchdog. Polls funding confirmations, settles what it can
+          off-chain (fulfill received HTLCs whose preimage is known while the margin
+          allows; fail expired received HTLCs without one; fail expired offered
+          HTLCs) and returns the on-chain **actions** the host must take:
+
+          - `{ type: 'forceClose', channelId, reason: 'channel-expiry'|'htlc-claim'|'htlc-timeout', deadline, tip }`
+          — at `expireAfter − toSelfDelay − closeMarginBlocks` for the channel, when
+          a received HTLC with a known preimage can no longer be fulfilled
+          off-chain, or `htlcSafetyBlocks` after an offered HTLC expired unresolved;
+          - `{ type: 'claimHtlc', channelId, htlcId, paymentHashHex, preimageHex, amountSats, expireAfter, deadline }`
+          (<a href="Channel.html#.prepareHtlcClaim">Channel.prepareHtlcClaim</a>);
+          - `{ type: 'timeoutHtlc', channelId, htlcId, paymentHashHex, amountSats, expireAfter }`
+          (<a href="Channel.html#.prepareHtlcTimeout">Channel.prepareHtlcTimeout</a>).
+
+          HTLCs are taken from the current state and the last countersigned one, so
+          an HTLC removed by a round still in flight is watched until it completes.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+              <th>Attributes</th>
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>tipHeight</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">number</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+                &lt;optional><br>
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last">defaults to the session tip</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_channel.js.html">types/channel.js</a>, <a href="types_channel.js.html#line2507">line 2507</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Object</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="transfer"><span class="type-signature"></span>transfer<span class="signature">(opts)</span><span class="type-signature"> &rarr; {object}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Pay the counterparty from our balance with no HTLC: the next commitment
+          just moves `amountSats` to them (pay-after-verify credit — nothing to
+          claim, refund, or settle on chain, so no HTLC minimum). No HTLC or fee
+          change rides along, and our balance must stay above the reserve.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>opts</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">object</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last">`{ amountSats, ref? }` — `ref` names what is paid
+                for and reaches the receiver; a `ref` already sent is refused.</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_channel.js.html">types/channel.js</a>, <a href="types_channel.js.html#line1811">line 1811</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          `ChannelCommitment` proposal carrying `transfer`
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">object</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="updateFee"><span class="type-signature"></span>updateFee<span class="signature">(feeSats)</span><span class="type-signature"> &rarr; {object}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Propose a new fixed commitment fee (funder only; bounded by the
+          negotiated policy and never below `minFeerate` for the HTLC count; the
+          funder's balance absorbs the difference and must stay above the reserve).
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>feeSats</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">number</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_channel.js.html">types/channel.js</a>, <a href="types_channel.js.html#line1846">line 1846</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          `ChannelCommitment` proposal
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">object</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="updateFeerate"><span class="type-signature"></span>updateFeerate<span class="signature">(satPerVb)</span><span class="type-signature"> &rarr; {object}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Switch to / change a commitment feerate (funder only): the fee becomes
+          `feerate × estimated vsize` (HTLC outputs included) on every later state.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>satPerVb</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">number</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last">integer ≥ policy `minFeerate`</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_channel.js.html">types/channel.js</a>, <a href="types_channel.js.html#line1866">line 1866</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          `ChannelCommitment` proposal
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">object</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id=".import"><span class="type-signature">(static) </span>import<span class="signature">(snapshot, localPrivateKey, deps<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {<a href="ChannelSession.html">ChannelSession</a>}</span></h4>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+              <th>Attributes</th>
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>snapshot</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">object</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last">from <a href="ChannelSession.html#export">ChannelSession#export</a></td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>localPrivateKey</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Buffer</span>
+                |
+
+                <span class="param-type">string</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>deps</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">object</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+                &lt;optional><br>
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last">`{ tipHeight?, confirmations? }`</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_channel.js.html">types/channel.js</a>, <a href="types_channel.js.html#line2792">line 2792</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type"><a href="ChannelSession.html">ChannelSession</a></span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+      </article>
+
+    </section>
+
+
+
+  </div>
+  <nav>
+    <h2><a href="index.html">Home</a></h2>
+    <h3>Modules</h3>
+    <ul>
+      <li><a href="module-types_bech32_bech32.html">types/bech32/bech32</a></li>
+      <li><a href="module-types_bech32_fabricPaymentBech32.html">types/bech32/fabricPaymentBech32</a></li>
+      <li><a href="module-types_delegation.html">types/delegation</a></li>
+      <li><a href="module-types_key_base58.html">types/key/base58</a></li>
+      <li><a href="module-types_key_bip32.html">types/key/bip32</a></li>
+      <li><a href="module-types_key_bip39.html">types/key/bip39</a></li>
+      <li><a href="module-types_key_bip49.html">types/key/bip49</a></li>
+      <li><a href="module-types_key_bip85.html">types/key/bip85</a></li>
+      <li><a href="module-types_key_fabricKeyMaterial.html">types/key/fabricKeyMaterial</a></li>
+      <li><a href="module-types_key_keyHasPrivateSigningMaterial.html">types/key/keyHasPrivateSigningMaterial</a></li>
+      <li><a href="module-types_key_pubkey.html">types/key/pubkey</a></li>
+      <li><a href="module-types_key_signingTags.html">types/key/signingTags</a></li>
+      <li><a href="module-types_typetree.html">types/typetree</a></li>
+      <li><a href="module-types_wallet_accountKeys.html">types/wallet/accountKeys</a></li>
+      <li><a href="module-types_wallet_bip21.html">types/wallet/bip21</a></li>
+      <li><a href="module-types_wallet_bip86.html">types/wallet/bip86</a></li>
+      <li><a href="module-types_witness_adaptor.html">types/witness/adaptor</a></li>
+      <li><a href="module-types_witness_bls.html">types/witness/bls</a></li>
+      <li><a href="module-types_witness_dleq.html">types/witness/dleq</a></li>
+      <li><a href="module-types_witness_musig2.html">types/witness/musig2</a></li>
+      <li><a href="module-types_witness_musig2Adaptor.html">types/witness/musig2Adaptor</a></li>
+      <li><a href="module-types_witness_musig2Session.html">types/witness/musig2Session</a></li>
+      <li><a href="types_ecc.html#.module:selftest">types/ecc.selftest</a></li>
+    </ul>
+    <h3>Classes</h3>
+    <ul>
+      <li><a href="Actor.html">Actor</a></li>
+      <li><a href="Beacon.html">Beacon</a></li>
+      <li><a href="Bitcoin.html">Bitcoin</a></li>
+      <li><a href="Block.html">Block</a></li>
+      <li><a href="Bond.html">Bond</a></li>
+      <li><a href="Book.html">Book</a></li>
+      <li><a href="Chain.html">Chain</a></li>
+      <li><a href="Challenge.html">Challenge</a></li>
+      <li><a href="Channel.html">Channel</a></li>
+      <li><a href="ChannelBook.html">ChannelBook</a></li>
+      <li><a href="ChannelSession.html">ChannelSession</a></li>
+      <li><a href="Circuit.html">Circuit</a></li>
+      <li><a href="Coinjoin.html">Coinjoin</a></li>
+      <li><a href="CoinjoinBook.html">CoinjoinBook</a></li>
+      <li><a href="CoinjoinMakerRound.html">CoinjoinMakerRound</a></li>
+      <li><a href="CoinjoinTakerRound.html">CoinjoinTakerRound</a></li>
+      <li><a href="Collection.html">Collection</a></li>
+      <li><a href="Component.html">Component</a></li>
+      <li><a href="Contract.html">Contract</a></li>
+      <li><a href="Disk.html">Disk</a></li>
+      <li><a href="Document.html">Document</a></li>
+      <li><a href="DocumentBlobTransferBook.html">DocumentBlobTransferBook</a></li>
+      <li><a href="DocumentBook.html">DocumentBook</a></li>
+      <li><a href="EncryptedPromise.html">EncryptedPromise</a></li>
+      <li><a href="Entity.html">Entity</a></li>
+      <li><a href="Entity.Transition.html">Transition</a></li>
+      <li><a href="Environment.html">Environment</a></li>
+      <li><a href="Fabric.html">Fabric</a></li>
+      <li><a href="Federation.html">Federation</a></li>
+      <li><a href="FidelityVerifier.html">FidelityVerifier</a></li>
+      <li><a href="Filesystem.html">Filesystem</a></li>
+      <li><a href="FraudProof.html">FraudProof</a></li>
+      <li><a href="HKDF.html">HKDF</a></li>
+      <li><a href="Hash256.html">Hash256</a></li>
+      <li><a href="Htlc.html">Htlc</a></li>
+      <li><a href="Identity.html">Identity</a></li>
+      <li><a href="Interface.html">Interface</a></li>
+      <li><a href="Key.html">Key</a></li>
+      <li><a href="Ledger.html">Ledger</a></li>
+      <li><a href="Lightning.html">Lightning</a></li>
+      <li><a href="LiquidityBook.html">LiquidityBook</a></li>
+      <li><a href="Logger.html">Logger</a></li>
+      <li><a href="Machine.html">Machine</a></li>
+      <li><a href="Market.html">Market</a></li>
+      <li><a href="Message.html">Message</a></li>
+      <li><a href="OrderBook.html">OrderBook</a></li>
+      <li><a href="Peer.html">Peer</a></li>
+      <li><a href="PodleBlacklist.html">PodleBlacklist</a></li>
+      <li><a href="Policy.html">Policy</a></li>
+      <li><a href="Program.html">Program</a></li>
+      <li><a href="Reader.html">Reader</a></li>
+      <li><a href="Redis.html">Redis</a></li>
+      <li><a href="Remote.html">Remote</a></li>
+      <li><a href="Resolutions.html">Resolutions</a></li>
+      <li><a href="Resource.html">Resource</a></li>
+      <li><a href="RoundRobin.html">RoundRobin</a></li>
+      <li><a href="Scribe.html">Scribe</a></li>
+      <li><a href="Script.html">Script</a></li>
+      <li><a href="Secret.html">Secret</a></li>
+      <li><a href="Service.html">Service</a></li>
+      <li><a href="Session.html">Session</a></li>
+      <li><a href="SetupTui.html">SetupTui</a></li>
+      <li><a href="SignedBook.html">SignedBook</a></li>
+      <li><a href="State.html">State</a></li>
+      <li><a href="Store.html">Store</a></li>
+      <li><a href="Swap.html">Swap</a></li>
+      <li><a href="global.html#Text">Text</a></li>
+      <li><a href="Token.html">Token</a></li>
+      <li><a href="Tree.html">Tree</a></li>
+      <li><a href="Vector.html">Vector</a></li>
+      <li><a href="Wallet.html">Wallet</a></li>
+      <li><a href="Watchtower.html">Watchtower</a></li>
+      <li><a href="Worker.html">Worker</a></li>
+      <li><a href="ZMQ.html">ZMQ</a></li>
+      <li><a href="module-types_delegation-Delegation.html">Delegation</a></li>
+      <li><a href="module-types_key_bip32-BIP32Factory.html">BIP32Factory</a></li>
+      <li><a href="module-types_witness_musig2-InvalidContributionError.html">InvalidContributionError</a></li>
+    </ul>
+    <h3>Global</h3>
+    <ul>
+      <li><a href="global.html#ASK_TYPE">ASK_TYPE</a></li>
+      <li><a href="global.html#BID_CLOCK_SKEW_SECONDS">BID_CLOCK_SKEW_SECONDS</a></li>
+      <li><a href="global.html#BID_TYPE">BID_TYPE</a></li>
+      <li><a href="global.html#BITCOIN_MESSAGE_TYPES">BITCOIN_MESSAGE_TYPES</a></li>
+      <li><a href="global.html#CHANNEL_BODY_TYPES">CHANNEL_BODY_TYPES</a></li>
+      <li><a href="global.html#CHANNEL_DEFAULTS">CHANNEL_DEFAULTS</a></li>
+      <li><a href="global.html#CLTV_TIMESTAMP_THRESHOLD">CLTV_TIMESTAMP_THRESHOLD</a></li>
+      <li><a href="global.html#DEFAULT_BID_TTL_SECONDS">DEFAULT_BID_TTL_SECONDS</a></li>
+      <li><a href="global.html#DEFAULT_FEE_SATS">DEFAULT_FEE_SATS</a></li>
+      <li><a href="global.html#DEFAULT_INVOICE_EXPIRY_SECONDS">DEFAULT_INVOICE_EXPIRY_SECONDS</a></li>
+      <li><a href="global.html#DEFAULT_INVOICE_MARGIN_SECONDS">DEFAULT_INVOICE_MARGIN_SECONDS</a></li>
+      <li><a href="global.html#DEFAULT_MAX_SIGNS">DEFAULT_MAX_SIGNS</a></li>
+      <li><a href="global.html#DEFAULT_MIN_CLAIM_BLOCKS">DEFAULT_MIN_CLAIM_BLOCKS</a></li>
+      <li><a href="global.html#DEFAULT_MIN_CONFIRMATIONS">DEFAULT_MIN_CONFIRMATIONS</a></li>
+      <li><a href="global.html#DEFAULT_MIN_EQUAL_OUTPUTS">DEFAULT_MIN_EQUAL_OUTPUTS</a></li>
+      <li><a href="global.html#DEFAULT_WEIGHTS">DEFAULT_WEIGHTS</a></li>
+      <li><a href="global.html#DEPRECATED_WIRE_TYPES">DEPRECATED_WIRE_TYPES</a></li>
+      <li><a href="global.html#DUST_SATS">DUST_SATS</a></li>
+      <li><a href="global.html#EXIT_KINDS">EXIT_KINDS</a></li>
+      <li><a href="global.html#EXIT_SIGNATURE_TYPE">EXIT_SIGNATURE_TYPE</a></li>
+      <li><a href="global.html#FIDELITY_LOCKTIME_GRID">FIDELITY_LOCKTIME_GRID</a></li>
+      <li><a href="global.html#FIDELITY_MAX_CERT_BLOCKS">FIDELITY_MAX_CERT_BLOCKS</a></li>
+      <li><a href="global.html#FIELD_BODIES_VERSION">FIELD_BODIES_VERSION</a></li>
+      <li><a href="global.html#GCM_TAG_BYTES">GCM_TAG_BYTES</a></li>
+      <li><a href="global.html#HOP_PENALTY_MS">HOP_PENALTY_MS</a></li>
+      <li><a href="global.html#INPUT_HEADROOM">INPUT_HEADROOM</a></li>
+      <li><a href="global.html#LEAF_VERSION">LEAF_VERSION</a></li>
+      <li><a href="global.html#LOCKTIME_SLACK_BLOCKS">LOCKTIME_SLACK_BLOCKS</a></li>
+      <li><a href="global.html#LOCKTIME_THRESHOLD">LOCKTIME_THRESHOLD</a></li>
+      <li><a href="global.html#MAX_EVIDENCE">MAX_EVIDENCE</a></li>
+      <li><a href="global.html#MAX_FEE_PPM">MAX_FEE_PPM</a></li>
+      <li><a href="global.html#MAX_LOCKTIME">MAX_LOCKTIME</a></li>
+      <li><a href="global.html#MAX_MAKERS">MAX_MAKERS</a></li>
+      <li><a href="global.html#MAX_MAKER_INPUTS">MAX_MAKER_INPUTS</a></li>
+      <li><a href="global.html#MAX_OFFERS">MAX_OFFERS</a></li>
+      <li><a href="global.html#MAX_PREMIUM_PPM">MAX_PREMIUM_PPM</a></li>
+      <li><a href="global.html#MAX_PROVIDERS">MAX_PROVIDERS</a></li>
+      <li><a href="global.html#MAX_PSBT_CHARS">MAX_PSBT_CHARS</a></li>
+      <li><a href="global.html#MAX_REFUND_LOCK_BLOCKS">MAX_REFUND_LOCK_BLOCKS</a></li>
+      <li><a href="global.html#MAX_SETTLED_CREDITS">MAX_SETTLED_CREDITS</a></li>
+      <li><a href="global.html#MAX_TRANSFERS">MAX_TRANSFERS</a></li>
+      <li><a href="global.html#MIN_COINJOIN_SATS">MIN_COINJOIN_SATS</a></li>
+      <li><a href="global.html#MIN_INVOICE_EXPIRY_SECONDS">MIN_INVOICE_EXPIRY_SECONDS</a></li>
+      <li><a href="global.html#MIN_REFUND_LOCK_BLOCKS">MIN_REFUND_LOCK_BLOCKS</a></li>
+      <li><a href="global.html#PODLE_BLACKLIST_SIZE">PODLE_BLACKLIST_SIZE</a></li>
+      <li><a href="global.html#PODLE_MAX_INDEX">PODLE_MAX_INDEX</a></li>
+      <li><a href="global.html#PODLE_MIN_AGE_CONFS">PODLE_MIN_AGE_CONFS</a></li>
+      <li><a href="global.html#PODLE_MIN_VALUE_PCT">PODLE_MIN_VALUE_PCT</a></li>
+      <li><a href="global.html#PODLE_TAG">PODLE_TAG</a></li>
+      <li><a href="global.html#ROUND_TYPES">ROUND_TYPES</a></li>
+      <li><a href="global.html#SCORE_INVENTORY_ONLY">SCORE_INVENTORY_ONLY</a></li>
+      <li><a href="global.html#SCORE_MAX">SCORE_MAX</a></li>
+      <li><a href="global.html#SCORE_UNKNOWN">SCORE_UNKNOWN</a></li>
+      <li><a href="global.html#SEALED_TYPE">SEALED_TYPE</a></li>
+      <li><a href="global.html#SEAL_NAMESPACE">SEAL_NAMESPACE</a></li>
+      <li><a href="global.html#SIGNER_FIELD">SIGNER_FIELD</a></li>
+      <li><a href="global.html#TAPROOT_INTERNAL_NUMS">TAPROOT_INTERNAL_NUMS</a></li>
+      <li><a href="global.html#TELEMETRY_TYPE">TELEMETRY_TYPE</a></li>
+      <li><a href="global.html#TELEMETRY_VERSION">TELEMETRY_VERSION</a></li>
+      <li><a href="global.html#UNSAFE_PATH_TOKENS">UNSAFE_PATH_TOKENS</a></li>
+      <li><a href="global.html#WALLET_TX_KINDS">WALLET_TX_KINDS</a></li>
+      <li><a href="global.html#WEIGHT_OVERHEAD">WEIGHT_OVERHEAD</a></li>
+      <li><a href="global.html#YEAR_BLOCKS">YEAR_BLOCKS</a></li>
+      <li><a href="global.html#assertMonotoneBudget">assertMonotoneBudget</a></li>
+      <li><a href="global.html#bitcoin">bitcoin</a></li>
+      <li><a href="global.html#bodyId">bodyId</a></li>
+      <li><a href="global.html#broadcastSettled">broadcastSettled</a></li>
+      <li><a href="global.html#buildContractTaproot">buildContractTaproot</a></li>
+      <li><a href="global.html#buildEscrow">buildEscrow</a></li>
+      <li><a href="global.html#buildFederationVaultFromPolicy">buildFederationVaultFromPolicy</a></li>
+      <li><a href="global.html#buildFidelity">buildFidelity</a></li>
+      <li><a href="global.html#buildForwardedDocumentRequest">buildForwardedDocumentRequest</a></li>
+      <li><a href="global.html#buildHashlockLeaf">buildHashlockLeaf</a></li>
+      <li><a href="global.html#buildHashlockTapscript">buildHashlockTapscript</a></li>
+      <li><a href="global.html#buildPsbt">buildPsbt</a></li>
+      <li><a href="global.html#buildScriptLeaf">buildScriptLeaf</a></li>
+      <li><a href="global.html#buildSpendLeaf">buildSpendLeaf</a></li>
+      <li><a href="global.html#buildWatchSet">buildWatchSet</a></li>
+      <li><a href="global.html#checkPodleUtxo">checkPodleUtxo</a></li>
+      <li><a href="global.html#classifyWalletTransaction">classifyWalletTransaction</a></li>
+      <li><a href="global.html#codec">codec</a></li>
+      <li><a href="global.html#compileLeaves">compileLeaves</a></li>
+      <li><a href="global.html#composePolicyWithRunHashlock">composePolicyWithRunHashlock</a></li>
+      <li><a href="global.html#composeTaprootTree">composeTaprootTree</a></li>
+      <li><a href="global.html#computeRelayFee">computeRelayFee</a></li>
+      <li><a href="global.html#contractMessageIndex">contractMessageIndex</a></li>
+      <li><a href="global.html#contractMessageMatches">contractMessageMatches</a></li>
+      <li><a href="global.html#createBlobMerkleTree">createBlobMerkleTree</a></li>
+      <li><a href="global.html#createDocumentPurchaseSession">createDocumentPurchaseSession</a></li>
+      <li><a href="global.html#describePsbt">describePsbt</a></li>
+      <li><a href="global.html#descriptorPrivateKey">descriptorPrivateKey</a></li>
+      <li><a href="global.html#envelopeRecipient">envelopeRecipient</a></li>
+      <li><a href="global.html#estimateVsize">estimateVsize</a></li>
+      <li><a href="global.html#evaluateTierWhen">evaluateTierWhen</a></li>
+      <li><a href="global.html#expireHeight">expireHeight</a></li>
+      <li><a href="global.html#fidelityLocktimes">fidelityLocktimes</a></li>
+      <li><a href="global.html#fidelityPath">fidelityPath</a></li>
+      <li><a href="global.html#fidelityValue">fidelityValue</a></li>
+      <li><a href="global.html#finalize">finalize</a></li>
+      <li><a href="global.html#finalizeHashlockPsbt">finalizeHashlockPsbt</a></li>
+      <li><a href="global.html#finalizeSpendPsbt">finalizeSpendPsbt</a></li>
+      <li><a href="global.html#findSession">findSession</a></li>
+      <li><a href="global.html#fromContractMessage">fromContractMessage</a></li>
+      <li><a href="global.html#generatePodle">generatePodle</a></li>
+      <li><a href="global.html#hashlockFromProgramRun">hashlockFromProgramRun</a></li>
+      <li><a href="global.html#invoiceAmountMsat">invoiceAmountMsat</a></li>
+      <li><a href="global.html#isDuplicateSettlement">isDuplicateSettlement</a></li>
+      <li><a href="global.html#isValidFidelityLocktime">isValidFidelityLocktime</a></li>
+      <li><a href="global.html#l1GiverTerms">l1GiverTerms</a></li>
+      <li><a href="global.html#leafScripts">leafScripts</a></li>
+      <li><a href="global.html#listRefundCandidates">listRefundCandidates</a></li>
+      <li><a href="global.html#lockFrom">lockFrom</a></li>
+      <li><a href="global.html#makerChange">makerChange</a></li>
+      <li><a href="global.html#makerFee">makerFee</a></li>
+      <li><a href="global.html#memoryChain">memoryChain</a></li>
+      <li><a href="global.html#memoryWallet">memoryWallet</a></li>
+      <li><a href="global.html#mergeMakerSignatures">mergeMakerSignatures</a></li>
+      <li><a href="global.html#nextPodleIndex">nextPodleIndex</a></li>
+      <li><a href="global.html#normalizeAuth">normalizeAuth</a></li>
+      <li><a href="global.html#normalizeCancel">normalizeCancel</a></li>
+      <li><a href="global.html#normalizeContractSpendPolicy">normalizeContractSpendPolicy</a></li>
+      <li><a href="global.html#normalizeExtraLeafSpecs">normalizeExtraLeafSpecs</a></li>
+      <li><a href="global.html#normalizeFidelity">normalizeFidelity</a></li>
+      <li><a href="global.html#normalizeFill">normalizeFill</a></li>
+      <li><a href="global.html#normalizeFillAck">normalizeFillAck</a></li>
+      <li><a href="global.html#normalizeFunded">normalizeFunded</a></li>
+      <li><a href="global.html#normalizeHashlockSpec">normalizeHashlockSpec</a></li>
+      <li><a href="global.html#normalizeIoAuth">normalizeIoAuth</a></li>
+      <li><a href="global.html#normalizeLeaf">normalizeLeaf</a></li>
+      <li><a href="global.html#normalizeLock">normalizeLock</a></li>
+      <li><a href="global.html#normalizeOffer">normalizeOffer</a></li>
+      <li><a href="global.html#normalizeOrder">normalizeOrder</a></li>
+      <li><a href="global.html#normalizeSig">normalizeSig</a></li>
+      <li><a href="global.html#normalizeTake">normalizeTake</a></li>
+      <li><a href="global.html#normalizeTakeAccept">normalizeTakeAccept</a></li>
+      <li><a href="global.html#normalizeTx">normalizeTx</a></li>
+      <li><a href="global.html#offerKey">offerKey</a></li>
+      <li><a href="global.html#openFiling">openFiling</a></li>
+      <li><a href="global.html#openRoundMessage">openRoundMessage</a></li>
+      <li><a href="global.html#paginateInventoryItems">paginateInventoryItems</a></li>
+      <li><a href="global.html#parseXOnlyPubkeysFromSpendScript">parseXOnlyPubkeysFromSpendScript</a></li>
+      <li><a href="global.html#planCoinjoin">planCoinjoin</a></li>
+      <li><a href="global.html#podleCommitment">podleCommitment</a></li>
+      <li><a href="global.html#podleGenerator">podleGenerator</a></li>
+      <li><a href="global.html#policyAfterDecay">policyAfterDecay</a></li>
+      <li><a href="global.html#prepareDecayMigrationPsbt">prepareDecayMigrationPsbt</a></li>
+      <li><a href="global.html#prepareFidelityRedeem">prepareFidelityRedeem</a></li>
+      <li><a href="global.html#prepareHashlockWithdrawalPsbt">prepareHashlockWithdrawalPsbt</a></li>
+      <li><a href="global.html#prepareTierWithdrawalPsbt">prepareTierWithdrawalPsbt</a></li>
+      <li><a href="global.html#quote">quote</a></li>
+      <li><a href="global.html#randomNonce">randomNonce</a></li>
+      <li><a href="global.html#randomPrivateKey">randomPrivateKey</a></li>
+      <li><a href="global.html#randomRoundId">randomRoundId</a></li>
+      <li><a href="global.html#rememberSettlement">rememberSettlement</a></li>
+      <li><a href="global.html#roleFor">roleFor</a></li>
+      <li><a href="global.html#roles">roles</a></li>
+      <li><a href="global.html#routePath">routePath</a></li>
+      <li><a href="global.html#scriptTreeFromLeaves">scriptTreeFromLeaves</a></li>
+      <li><a href="global.html#sealRoundMessage">sealRoundMessage</a></li>
+      <li><a href="global.html#selectActiveTiers">selectActiveTiers</a></li>
+      <li><a href="global.html#sellerDedupeKey">sellerDedupeKey</a></li>
+      <li><a href="global.html#settlementDedupeKey">settlementDedupeKey</a></li>
+      <li><a href="global.html#signFidelityCertificate">signFidelityCertificate</a></li>
+      <li><a href="global.html#signFidelityRedeem">signFidelityRedeem</a></li>
+      <li><a href="global.html#signKeyPathInputs">signKeyPathInputs</a></li>
+      <li><a href="global.html#signOwnership">signOwnership</a></li>
+      <li><a href="global.html#signingString">signingString</a></li>
+      <li><a href="global.html#spendAddress">spendAddress</a></li>
+      <li><a href="global.html#synthesizeDefaultLadder">synthesizeDefaultLadder</a></li>
+      <li><a href="global.html#taprootKeyPath">taprootKeyPath</a></li>
+      <li><a href="global.html#taprootOutputPrivateKey">taprootOutputPrivateKey</a></li>
+      <li><a href="global.html#tierWhenPath">tierWhenPath</a></li>
+      <li><a href="global.html#timelockMature">timelockMature</a></li>
+      <li><a href="global.html#toContractMessage">toContractMessage</a></li>
+      <li><a href="global.html#toIntegerSats">toIntegerSats</a></li>
+      <li><a href="global.html#unsignedTxid">unsignedTxid</a></li>
+      <li><a href="global.html#validateEscrow">validateEscrow</a></li>
+      <li><a href="global.html#validateFill">validateFill</a></li>
+      <li><a href="global.html#validateForMaker">validateForMaker</a></li>
+      <li><a href="global.html#validateForTaker">validateForTaker</a></li>
+      <li><a href="global.html#validateInvoice">validateInvoice</a></li>
+      <li><a href="global.html#validateTake">validateTake</a></li>
+      <li><a href="global.html#validateTakeAccept">validateTakeAccept</a></li>
+      <li><a href="global.html#verifyBlobPath">verifyBlobPath</a></li>
+      <li><a href="global.html#verifyFidelity">verifyFidelity</a></li>
+      <li><a href="global.html#verifyFidelityCertificate">verifyFidelityCertificate</a></li>
+      <li><a href="global.html#verifyOwnership">verifyOwnership</a></li>
+      <li><a href="global.html#verifyPodle">verifyPodle</a></li>
+      <li><a href="global.html#weightsForProximity">weightsForProximity</a></li>
+    </ul>
+  </nav>
+  <br class="clear" />
+  <footer><a href="https://github.com/FabricLabs/fabric">git://</a> &middot; <a href="https://chat.fabric.pub/#/room/#hub:fabric.pub">Community</a></footer>
+  <script type="text/javascript">
+    prettyPrint();
+  </script>
+  <script src="scripts/linenumber.js"></script>
+</body>
+
+</html>

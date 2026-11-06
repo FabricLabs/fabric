@@ -13,9 +13,24 @@ const EventEmitter = require('events');
 const cp = require('child_process');
 
 const Bitcoin = require('../../services/bitcoin');
+const {
+  rpcProbeLooksUnavailable
+} = require('../helpers/bitcoinRegtest');
 
 describe('@fabric/core/services/bitcoin (deep coverage)', function () {
   this.timeout(180000);
+
+  describe('rpcProbeLooksUnavailable', function () {
+    it('treats connection failures and HTTP auth errors as unavailable', function () {
+      const unauthorized = new Error('');
+      unauthorized.code = 401;
+      const refused = new Error('connect ECONNREFUSED 127.0.0.1:18443');
+      refused.code = 'ECONNREFUSED';
+      assert.strictEqual(rpcProbeLooksUnavailable(unauthorized), true);
+      assert.strictEqual(rpcProbeLooksUnavailable(refused), true);
+      assert.strictEqual(rpcProbeLooksUnavailable(new Error('[-8] Block height out of range')), false);
+    });
+  });
 
   describe('_buildRPCProbeCandidates with credentials and secure client', function () {
     it('pushes settings.credentials candidates when username/password set', async function () {
@@ -191,6 +206,65 @@ describe('@fabric/core/services/bitcoin (deep coverage)', function () {
         outputs: [{ address: addr, value: 5000 }]
       });
       assert.ok(psbt && typeof psbt.toBase64 === 'function');
+    });
+
+    it('_buildPSBT orders vin/vout with BIP-69', async function () {
+      const addr = 'bcrt1pr4wctwfz0uznz86ash62jret9gq8ysg82zlzl9kdmuvq066pjcmsa0plmz';
+      const btc = new Bitcoin({ network: 'regtest', mode: 'rpc' });
+      btc._makeRPCRequest = async function (method) {
+        if (method === 'gettxout') return { value: 1.0, scriptPubKey: { hex: '00' } };
+        throw new Error(method);
+      };
+      const highTxid = 'ff'.repeat(32);
+      const lowTxid = 'aa'.repeat(32);
+      const psbt = await btc._buildPSBT({
+        inputs: [
+          { txid: highTxid, vout: 1 },
+          { txid: lowTxid, vout: 0 }
+        ],
+        outputs: [
+          { address: addr, value: 9000 },
+          { address: addr, value: 1000 }
+        ]
+      });
+      const id0 = Buffer.from(psbt.txInputs[0].hash).reverse().toString('hex');
+      const id1 = Buffer.from(psbt.txInputs[1].hash).reverse().toString('hex');
+      assert.strictEqual(id0, lowTxid);
+      assert.strictEqual(psbt.txInputs[0].index, 0);
+      assert.strictEqual(id1, highTxid);
+      assert.strictEqual(psbt.txInputs[1].index, 1);
+      const v0 = psbt.txOutputs[0].value;
+      const v1 = psbt.txOutputs[1].value;
+      assert.strictEqual(Number(v0), 1000);
+      assert.strictEqual(Number(v1), 9000);
+    });
+
+    it('throws on fractional satoshi output values', async function () {
+      const addr = 'bcrt1pr4wctwfz0uznz86ash62jret9gq8ysg82zlzl9kdmuvq066pjcmsa0plmz';
+      const btc = new Bitcoin({ network: 'regtest', mode: 'rpc' });
+      btc._makeRPCRequest = async () => null;
+      await assert.rejects(
+        () => btc._buildPSBT({
+          inputs: [],
+          outputs: [{ address: addr, value: 1.5 }]
+        }),
+        /integer satoshi/
+      );
+    });
+
+    it('throws on null, false, or blank output values instead of coercing to zero', async function () {
+      const addr = 'bcrt1pr4wctwfz0uznz86ash62jret9gq8ysg82zlzl9kdmuvq066pjcmsa0plmz';
+      const btc = new Bitcoin({ network: 'regtest', mode: 'rpc' });
+      btc._makeRPCRequest = async () => null;
+      for (const value of [null, false, '']) {
+        await assert.rejects(
+          () => btc._buildPSBT({
+            inputs: [],
+            outputs: [{ address: addr, value }]
+          }),
+          /integer satoshi/
+        );
+      }
     });
 
     it('throws on invalid output address', async function () {
@@ -587,6 +661,22 @@ describe('@fabric/core/services/bitcoin (deep coverage)', function () {
       Bitcoin.prototype._waitForBitcoind = origWait;
     });
 
+    // Remove process-level handlers registered by createLocalNode and drop the child ref.
+    function detachProcessHandlers (btc) {
+      try {
+        if (btc._errorHandlers && btc._errorHandlers.SIGINT) process.removeListener('SIGINT', btc._errorHandlers.SIGINT);
+        if (btc._errorHandlers && btc._errorHandlers.SIGTERM) process.removeListener('SIGTERM', btc._errorHandlers.SIGTERM);
+        if (btc._errorHandlers && btc._errorHandlers.exit) process.removeListener('exit', btc._errorHandlers.exit);
+        if (btc._errorHandlers && btc._errorHandlers.uncaughtException) {
+          process.removeListener('uncaughtException', btc._errorHandlers.uncaughtException);
+        }
+        if (btc._errorHandlers && btc._errorHandlers.unhandledRejection) {
+          process.removeListener('unhandledRejection', btc._errorHandlers.unhandledRejection);
+        }
+      } catch (_) { /* ignore */ }
+      btc._nodeProcess = null;
+    }
+
     it('spawns bitcoind when managed with credentials', async function () {
       const btc = new Bitcoin({
         network: 'regtest',
@@ -646,6 +736,312 @@ describe('@fabric/core/services/bitcoin (deep coverage)', function () {
         }
       } catch (e) { /* ignore */ }
       btc._nodeProcess = null;
+    });
+
+    it('does not throw when bitcoind Error: stderr has no error listener', async function () {
+      const btc = new Bitcoin({
+        network: 'regtest',
+        mode: 'rpc',
+        managed: true,
+        listen: 0,
+        username: 'rpcuser',
+        password: 'rpcpass',
+        rpcport: 18511,
+        port: 18510,
+        datadir: `./stores/btc-deep-stderr-${process.pid}`
+      });
+      const warnings = [];
+      btc.on('warning', (msg) => warnings.push(String(msg)));
+      await btc.createLocalNode();
+      assert.doesNotThrow(() => {
+        btc._nodeProcess.stderr.emit(
+          'data',
+          Buffer.from('Error: Unable to start HTTP server. See debug log for details.\n')
+        );
+      });
+      assert.ok(warnings.some((w) => w.includes('Unable to start HTTP server')));
+      try {
+        if (btc._errorHandlers && btc._errorHandlers.SIGINT) process.removeListener('SIGINT', btc._errorHandlers.SIGINT);
+        if (btc._errorHandlers && btc._errorHandlers.SIGTERM) process.removeListener('SIGTERM', btc._errorHandlers.SIGTERM);
+        if (btc._errorHandlers && btc._errorHandlers.exit) process.removeListener('exit', btc._errorHandlers.exit);
+        if (btc._errorHandlers && btc._errorHandlers.uncaughtException) {
+          process.removeListener('uncaughtException', btc._errorHandlers.uncaughtException);
+        }
+        if (btc._errorHandlers && btc._errorHandlers.unhandledRejection) {
+          process.removeListener('unhandledRejection', btc._errorHandlers.unhandledRejection);
+        }
+      } catch (e) { /* ignore */ }
+      btc._nodeProcess = null;
+    });
+
+    it('emits error for bitcoind Error: stderr when a listener is present', async function () {
+      const btc = new Bitcoin({
+        network: 'regtest',
+        mode: 'rpc',
+        managed: true,
+        listen: 0,
+        username: 'rpcuser',
+        password: 'rpcpass',
+        rpcport: 18513,
+        port: 18512,
+        datadir: `./stores/btc-deep-stderr-listen-${process.pid}`
+      });
+      const errors = [];
+      btc.on('error', (msg) => errors.push(String(msg)));
+      await btc.createLocalNode();
+      btc._nodeProcess.stderr.emit(
+        'data',
+        Buffer.from('Error: Unable to start HTTP server. See debug log for details.\n')
+      );
+      assert.ok(errors.some((e) => e.includes('Unable to start HTTP server')));
+      try {
+        if (btc._errorHandlers && btc._errorHandlers.SIGINT) process.removeListener('SIGINT', btc._errorHandlers.SIGINT);
+        if (btc._errorHandlers && btc._errorHandlers.SIGTERM) process.removeListener('SIGTERM', btc._errorHandlers.SIGTERM);
+        if (btc._errorHandlers && btc._errorHandlers.exit) process.removeListener('exit', btc._errorHandlers.exit);
+        if (btc._errorHandlers && btc._errorHandlers.uncaughtException) {
+          process.removeListener('uncaughtException', btc._errorHandlers.uncaughtException);
+        }
+        if (btc._errorHandlers && btc._errorHandlers.unhandledRejection) {
+          process.removeListener('unhandledRejection', btc._errorHandlers.unhandledRejection);
+        }
+      } catch (e) { /* ignore */ }
+      btc._nodeProcess = null;
+    });
+
+    it('classifies fatal and exception stderr lines as errors', async function () {
+      const btc = new Bitcoin({
+        network: 'regtest',
+        mode: 'rpc',
+        managed: true,
+        listen: 0,
+        username: 'rpcuser',
+        password: 'rpcpass',
+        rpcport: 18521,
+        port: 18520,
+        datadir: `./stores/btc-deep-stderr-fatal-${process.pid}`
+      });
+      const errors = [];
+      btc.on('error', (msg) => errors.push(String(msg)));
+      await btc.createLocalNode();
+      // No 'error:' prefix and no ' error: ' infix: must reach the fatal/exception checks.
+      btc._nodeProcess.stderr.emit('data', Buffer.from('fatal leveldb corruption detected\n'));
+      btc._nodeProcess.stderr.emit('data', Buffer.from('Unhandled exception in init\n'));
+      assert.ok(errors.some((e) => e.includes('fatal leveldb corruption')));
+      assert.ok(errors.some((e) => e.includes('Unhandled exception')));
+      detachProcessHandlers(btc);
+    });
+
+    it('routes non-error stderr lines to debug only when debug is enabled', async function () {
+      const btc = new Bitcoin({
+        network: 'regtest',
+        mode: 'rpc',
+        managed: true,
+        listen: 0,
+        debug: true,
+        username: 'rpcuser',
+        password: 'rpcpass',
+        rpcport: 18523,
+        port: 18522,
+        datadir: `./stores/btc-deep-stderr-debug-${process.pid}`
+      });
+      const debugs = [];
+      const errors = [];
+      btc.on('debug', (msg) => debugs.push(String(msg)));
+      btc.on('error', (msg) => errors.push(String(msg)));
+      await btc.createLocalNode();
+      // Blank line between content lines exercises the empty-line skip.
+      btc._nodeProcess.stderr.emit('data', Buffer.from('Loading block index...\n\nDone loading\n'));
+      assert.ok(debugs.some((d) => d.includes('Loading block index')));
+      assert.ok(debugs.some((d) => d.includes('Done loading')));
+      assert.strictEqual(errors.length, 0);
+      detachProcessHandlers(btc);
+    });
+
+    it('joins stderr lines split across chunks before classifying', async function () {
+      const btc = new Bitcoin({
+        network: 'regtest',
+        mode: 'rpc',
+        managed: true,
+        listen: 0,
+        username: 'rpcuser',
+        password: 'rpcpass',
+        rpcport: 18525,
+        port: 18524,
+        datadir: `./stores/btc-deep-stderr-split-${process.pid}`
+      });
+      const errors = [];
+      btc.on('error', (msg) => errors.push(String(msg)));
+      await btc.createLocalNode();
+      btc._nodeProcess.stderr.emit('data', Buffer.from('Error: Unable to'));
+      assert.strictEqual(errors.length, 0);
+      btc._nodeProcess.stderr.emit('data', Buffer.from(' bind to port\n'));
+      assert.ok(errors.some((e) => e.includes('Error: Unable to bind to port')));
+      detachProcessHandlers(btc);
+    });
+
+    it('flushes a trailing stderr fragment on stderr end', async function () {
+      const btc = new Bitcoin({
+        network: 'regtest',
+        mode: 'rpc',
+        managed: true,
+        listen: 0,
+        username: 'rpcuser',
+        password: 'rpcpass',
+        rpcport: 18527,
+        port: 18526,
+        datadir: `./stores/btc-deep-stderr-end-${process.pid}`
+      });
+      const errors = [];
+      btc.on('error', (msg) => errors.push(String(msg)));
+      await btc.createLocalNode();
+      btc._nodeProcess.stderr.emit('data', Buffer.from('Error: corrupt without newline'));
+      btc._nodeProcess.stderr.emit('end');
+      assert.ok(errors.some((e) => e.includes('corrupt without newline')));
+      detachProcessHandlers(btc);
+    });
+
+    it('flushes a trailing non-error stderr fragment on stderr close when debug is enabled', async function () {
+      const btc = new Bitcoin({
+        network: 'regtest',
+        mode: 'rpc',
+        managed: true,
+        listen: 0,
+        debug: true,
+        username: 'rpcuser',
+        password: 'rpcpass',
+        rpcport: 18529,
+        port: 18528,
+        datadir: `./stores/btc-deep-stderr-close-${process.pid}`
+      });
+      const debugs = [];
+      btc.on('debug', (msg) => debugs.push(String(msg)));
+      await btc.createLocalNode();
+      btc._nodeProcess.stderr.emit('data', Buffer.from('Set best chain'));
+      btc._nodeProcess.stderr.emit('close');
+      assert.ok(debugs.some((d) => d.includes('Set best chain')));
+      detachProcessHandlers(btc);
+    });
+
+    it('ignores empty and whitespace-only stderr flush buffers', async function () {
+      const btc = new Bitcoin({
+        network: 'regtest',
+        mode: 'rpc',
+        managed: true,
+        listen: 0,
+        username: 'rpcuser',
+        password: 'rpcpass',
+        rpcport: 18531,
+        port: 18530,
+        datadir: `./stores/btc-deep-stderr-empty-${process.pid}`
+      });
+      const errors = [];
+      const warnings = [];
+      btc.on('error', (msg) => errors.push(String(msg)));
+      btc.on('warning', (msg) => warnings.push(String(msg)));
+      await btc.createLocalNode();
+      btc._nodeProcess.stderr.emit('close');
+      btc._nodeProcess.stderr.emit('data', Buffer.from('   '));
+      btc._nodeProcess.stderr.emit('end');
+      assert.strictEqual(errors.length, 0);
+      assert.strictEqual(warnings.length, 0);
+      detachProcessHandlers(btc);
+    });
+
+    it('routes child process errors through the safe error channel', async function () {
+      const btc = new Bitcoin({
+        network: 'regtest',
+        mode: 'rpc',
+        managed: true,
+        listen: 0,
+        username: 'rpcuser',
+        password: 'rpcpass',
+        rpcport: 18533,
+        port: 18532,
+        datadir: `./stores/btc-deep-childerr-${process.pid}`
+      });
+      const warnings = [];
+      btc.on('warning', (msg) => warnings.push(String(msg)));
+      await btc.createLocalNode();
+      assert.doesNotThrow(() => btc._nodeProcess.emit('error', new Error('spawn blew up')));
+      assert.ok(warnings.some((w) => w.includes('Bitcoin Core process error')));
+      detachProcessHandlers(btc);
+    });
+
+    it('routes cleanup kill failures through the safe error channel', async function () {
+      const btc = new Bitcoin({
+        network: 'regtest',
+        mode: 'rpc',
+        managed: true,
+        listen: 0,
+        username: 'rpcuser',
+        password: 'rpcpass',
+        rpcport: 18535,
+        port: 18534,
+        datadir: `./stores/btc-deep-cleanup-${process.pid}`
+      });
+      const warnings = [];
+      btc.on('warning', (msg) => warnings.push(String(msg)));
+      await btc.createLocalNode();
+      btc._nodeProcess.kill = function () {
+        throw new Error('kill boom');
+      };
+      await btc._errorHandlers.SIGINT();
+      assert.ok(warnings.some((w) => w.includes('Error during cleanup')));
+      detachProcessHandlers(btc);
+    });
+
+    it('attributes process-level errors from this service only', async function () {
+      const btc = new Bitcoin({
+        network: 'regtest',
+        mode: 'rpc',
+        managed: true,
+        listen: 0,
+        username: 'rpcuser',
+        password: 'rpcpass',
+        rpcport: 18537,
+        port: 18536,
+        datadir: `./stores/btc-deep-procerr-${process.pid}`
+      });
+      const warnings = [];
+      btc.on('warning', (msg) => warnings.push(String(msg)));
+      await btc.createLocalNode();
+      await btc._errorHandlers.uncaughtException({ source: 'bitcoin', message: 'child exploded' });
+      await btc._errorHandlers.unhandledRejection({ source: 'bitcoin' });
+      btc._nodeProcess.pid = 4321;
+      await btc._errorHandlers.uncaughtException({ pid: 4321, message: 'pid match' });
+      await btc._errorHandlers.uncaughtException({ source: 'other', message: 'ignore me' });
+      await btc._errorHandlers.unhandledRejection({ source: 'other' });
+      assert.ok(warnings.some((w) => w.includes('Uncaught exception from Bitcoin service')));
+      assert.ok(warnings.some((w) => w.includes('Unhandled rejection from Bitcoin service')));
+      assert.ok(!warnings.some((w) => w.includes('ignore me')));
+      detachProcessHandlers(btc);
+    });
+
+    it('logs child stdout lines and close events', async function () {
+      const btc = new Bitcoin({
+        network: 'regtest',
+        mode: 'rpc',
+        managed: true,
+        listen: 0,
+        debug: true,
+        username: 'rpcuser',
+        password: 'rpcpass',
+        rpcport: 18539,
+        port: 18538,
+        datadir: `./stores/btc-deep-stdout-${process.pid}`
+      });
+      const debugs = [];
+      const logs = [];
+      btc.on('debug', (msg) => debugs.push(String(msg)));
+      btc.on('log', (msg) => logs.push(String(msg)));
+      await btc.createLocalNode();
+      btc._nodeProcess.stdout.emit('data', Buffer.from('bitcoind starting\n'));
+      btc._nodeProcess.stdout.emit('data', Buffer.from('\n'));
+      btc._nodeProcess.emit('close', 0);
+      assert.ok(debugs.some((d) => d.includes('bitcoind starting')));
+      assert.ok(logs.some((l) => l.includes('exited with code 0')));
+      assert.strictEqual(btc._nodeProcess, null);
+      detachProcessHandlers(btc);
     });
   });
 
@@ -744,8 +1140,17 @@ describe('@fabric/core/services/bitcoin (deep coverage)', function () {
       for (const [ev, h] of Object.entries(btc._errorHandlers)) {
         process.on(ev, h);
       }
+      const before = {};
+      for (const ev of Object.keys(btc._errorHandlers)) {
+        before[ev] = process.listenerCount(ev);
+      }
+      const handlers = { ...btc._errorHandlers };
       await btc.cleanup();
-      assert.ok(true);
+      for (const [ev, h] of Object.entries(handlers)) {
+        assert.ok(!process.listeners(ev).includes(h), `${ev} handler must be removed`);
+        assert.ok(process.listenerCount(ev) <= before[ev]);
+        assert.strictEqual(btc._errorHandlers[ev], null);
+      }
     });
   });
 
@@ -783,9 +1188,28 @@ describe('@fabric/core/services/bitcoin (deep coverage)', function () {
         if (m === 'getnetworkinfo') return { version: 260000 };
         throw new Error(m);
       };
-      btc._makeWalletRequest = async () => 'addr1';
+      const asked = [];
+      btc._makeWalletRequest = async (method, params) => {
+        asked.push([method, params[1]]);
+        return 'addr1';
+      };
       const a = await btc.getUnusedAddress();
       assert.strictEqual(a, 'addr1');
+      assert.deepStrictEqual(asked, [['getnewaddress', 'bech32m']]);
+    });
+
+    it('getUnusedAddress falls back to segwit when the wallet has no Taproot', async function () {
+      const btc = new Bitcoin({ network: 'regtest', mode: 'rpc' });
+      btc.rpc = {};
+      btc._loadWallet = async () => {};
+      const asked = [];
+      btc._makeWalletRequest = async (method, params) => {
+        asked.push(params[1]);
+        if (params[1] === 'bech32m') throw new Error('Legacy wallets cannot provide bech32m addresses');
+        return 'bcrt1qsegwit';
+      };
+      assert.strictEqual(await btc.getUnusedAddress(), 'bcrt1qsegwit');
+      assert.deepStrictEqual(asked, ['bech32m', 'bech32']);
     });
 
     it('_signRawTransactionWithWallet', async function () {

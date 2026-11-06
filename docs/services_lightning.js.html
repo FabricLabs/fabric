@@ -44,7 +44,6 @@ const { mkdirp } = require('mkdirp');
 // Fabric Types
 const Actor = require('../types/actor');
 const Key = require('../types/key');
-const Remote = require('../types/remote');
 const Service = require('../types/service');
 const Machine = require('../types/machine');
 
@@ -58,8 +57,50 @@ function redactSensitiveCommandArg (arg) {
   );
 }
 
+function shouldTreatLightningStderrAsError (line) {
+  const text = String(line || '').trim().toLowerCase();
+  if (!text) return false;
+  return (
+    text.includes('error') ||
+    text.includes('fatal') ||
+    text.includes('exception') ||
+    text.includes('traceback')
+  );
+}
+
+function appendLightningStderrChunk (service, chunk) {
+  if (!service._lightningdStderrBuf) service._lightningdStderrBuf = '';
+  service._lightningdStderrBuf += chunk.toString('utf8');
+  const parts = service._lightningdStderrBuf.split(/\r?\n/);
+  service._lightningdStderrBuf = parts.pop() || '';
+  for (const raw of parts) {
+    const line = raw.trim();
+    if (!line) continue;
+    if (shouldTreatLightningStderrAsError(line)) {
+      service.emit('error', `[FABRIC:LIGHTNING] ${line}`);
+      continue;
+    }
+    if (service.settings.debug) service.emit('debug', `[FABRIC:LIGHTNING] ${line}`);
+  }
+}
+
+function flushLightningStderrBuffer (service) {
+  if (!service._lightningdStderrBuf) return;
+  const line = service._lightningdStderrBuf.trim();
+  service._lightningdStderrBuf = '';
+  if (!line) return;
+  if (shouldTreatLightningStderrAsError(line)) {
+    service.emit('error', `[FABRIC:LIGHTNING] ${line}`);
+    return;
+  }
+  if (service.settings.debug) service.emit('debug', `[FABRIC:LIGHTNING] ${line}`);
+}
+
 /**
- * Manage a Lightning node.
+ * Manage a Lightning node (Core Lightning JSON-RPC over Unix socket).
+ *
+ * BOLT checklist: `docs/BOLT_COMPATIBILITY.md`. RPC map: `docs/LIGHTNING_COMPAT.md`.
+ * @see Lightning.DOCS
  */
 class Lightning extends Service {
   /**
@@ -114,6 +155,7 @@ class Lightning extends Service {
     this.settings.bitcoin.rpcpassword = this.settings.bitcoin.rpcpassword || this.settings.bitcoin.password;
 
     this.machine = new Machine(this.settings);
+    /** Optional RPC client handle (e.g. REST/grpc); not used by Core Lightning socket `_makeRPCRequest`. */
     this.rpc = null;
     this.rest = null;
     this.status = 'disconnected';
@@ -161,6 +203,22 @@ class Lightning extends Service {
     if (n === 'testnet' || n === 'test') return 'testnet';
     if (n === 'signet') return 'signet';
     return 'regtest';
+  }
+
+  _bitcoinCliNetworkFlag () {
+    const network = String(this.settings.network || 'regtest').toLowerCase();
+    switch (network) {
+      case 'main':
+      case 'bitcoin':
+      case 'mainnet': return null;
+      case 'test':
+      case 'testnet': return '-testnet';
+      case 'testnet4': return '-testnet4';
+      case 'signet': return '-signet';
+      case 'regtest':
+      default:
+        return '-regtest';
+    }
   }
 
   static plugin (state) {
@@ -241,14 +299,215 @@ class Lightning extends Service {
   /**
    * Create a new Lightning invoice.
    * @param {String} amount Amount in millisatoshi (msat).
+   * @param {String} [label]
+   * @param {String} [description]
+   * @param {Object} [options]
+   * @param {String} [options.preimage] 32-byte hex preimage to lock the invoice to (swaps: the HTLC hash must match)
+   * @param {Number} [options.expiry] seconds until the invoice expires
    */
-  async createInvoice (amount, label = 'Generic Invoice', description = 'Generic description.') {
-    const result = await this._makeRPCRequest('invoice', [amount, label, description]);
+  async createInvoice (amount, label = 'Generic Invoice', description = 'Generic description.', options = {}) {
+    const opts = options || {};
+    // JSON-RPC keyword params are the object itself; wrapped in an array it would be read as `amount_msat`.
+    const params = (opts.preimage != null || opts.expiry != null)
+      ? Object.assign(
+          { amount_msat: amount, label, description },
+          opts.preimage != null ? { preimage: String(opts.preimage) } : {},
+          opts.expiry != null ? { expiry: Number(opts.expiry) } : {}
+        )
+      : [amount, label, description];
+    const result = await this._makeRPCRequest('invoice', params);
     return {
       bolt11: result.bolt11,
       paymentHash: result.payment_hash,
       expiresAt: result.expires_at
     };
+  }
+
+  /**
+   * Invoke any Core Lightning JSON-RPC method over the lightningd socket (escape hatch for methods without a typed wrapper).
+   * Named `callRpc` so it does not shadow the `rpc` instance property.
+   * @param {String} method RPC method name (e.g. `listpeers`).
+   * @param {Array} [params=[]] Positional/object params as accepted by lightningd for that method.
+   * @param {Number} [timeoutMs=30000] Optional timeout.
+   * @returns {Promise&lt;*>} RPC result.
+   */
+  async callRpc (method, params = [], timeoutMs = 30000) {
+    return this._makeRPCRequest(method, params, timeoutMs);
+  }
+
+  /**
+   * Decode a BOLT11 invoice or BOLT12 offer string (Core Lightning `decode`).
+   * @param {String} boltString `lnbc...`, `lno1...`, etc.
+   * @returns {Promise&lt;Object>} Decoded fields.
+   */
+  async decodeLightning (boltString) {
+    return this._makeRPCRequest('decode', [boltString]);
+  }
+
+  /**
+   * Decode a BOLT11 invoice for payment fields (Core Lightning `decodepay`).
+   * @param {String} bolt11
+   * @returns {Promise&lt;Object>} Decoded pay details.
+   */
+  async decodePay (bolt11) {
+    return this._makeRPCRequest('decodepay', [bolt11]);
+  }
+
+  /**
+   * Create a BOLT12 offer (requires `experimental-offers` / modern CLN). Pass-through to `offer`.
+   * @param {Object} params Keyword args, e.g. `{ amount_msat, description, label, issuer, ... }`.
+   * @returns {Promise&lt;Object>} Offer result (includes `bolt12` / offer id per CLN version).
+   */
+  async createOffer (params) {
+    if (!params || typeof params !== 'object' || Array.isArray(params)) {
+      throw new Error('createOffer requires a params object (e.g. { amount_msat, description })');
+    }
+    return this._makeRPCRequest('offer', [params]);
+  }
+
+  /**
+   * Request a BOLT11 invoice from a BOLT12 offer (Core Lightning `fetchinvoice`).
+   *
+   * Call either:
+   * - `fetchInvoice('lno1…')` or `fetchInvoice('lno1…', { amount_msat, quantity, payer_note, timeout, … })`
+   * - **Recurrence** (when the offer is recurring): `recurrence_counter` (start at 0), `recurrence_start`, `recurrence_label` (stable label linking the series; required when counter is set). See Core Lightning **`fetchinvoice`** and [BOLT #12](https://github.com/lightning/bolts/blob/master/12-offer-encoding.md).
+   * - `fetchInvoice({ offer: 'lno1…', amount_msat, … })` — single keyword object as accepted by CLN.
+   *
+   * @param {String|Object} offerOrParams Bolt12 offer string (`lno1…`), or one params object with an `offer` field.
+   * @param {Object} [invoiceParams] When the first arg is a string, optional extra fields merged into the RPC (second positional group).
+   * @returns {Promise&lt;Object>} Invoice response (includes `invoice` bolt11 when successful).
+   */
+  async fetchInvoice (offerOrParams, invoiceParams = null) {
+    if (offerOrParams != null &amp;&amp; typeof offerOrParams === 'object' &amp;&amp; !Array.isArray(offerOrParams) &amp;&amp; typeof offerOrParams.offer === 'string') {
+      if (invoiceParams != null &amp;&amp; typeof invoiceParams === 'object' &amp;&amp; !Array.isArray(invoiceParams)) {
+        return this._makeRPCRequest('fetchinvoice', [Object.assign({}, offerOrParams, invoiceParams)]);
+      }
+      return this._makeRPCRequest('fetchinvoice', [offerOrParams]);
+    }
+    if (typeof offerOrParams !== 'string') {
+      throw new Error('fetchInvoice requires offer string or params object with `offer`');
+    }
+    if (invoiceParams != null &amp;&amp; typeof invoiceParams === 'object' &amp;&amp; !Array.isArray(invoiceParams)) {
+      return this._makeRPCRequest('fetchinvoice', [offerOrParams, invoiceParams]);
+    }
+    return this._makeRPCRequest('fetchinvoice', [offerOrParams]);
+  }
+
+  /**
+   * Pay a BOLT11 invoice or BOLT12-fetched bolt11 string (Core Lightning `pay`).
+   * @param {String|Object} invoiceOrParams Bolt11 string, or keyword object (e.g. `{ bolt11 }`, `{ bolt12 }` per CLN).
+   * @param {Number} [timeoutMs=30000]
+   * @returns {Promise&lt;Object>} Payment result; `paymentPreimage` mirrors CLN `payment_preimage`.
+   */
+  async pay (invoiceOrParams, timeoutMs = 30000) {
+    const result = await this._makeRPCRequest('pay', [invoiceOrParams], timeoutMs);
+    if (result &amp;&amp; typeof result === 'object' &amp;&amp; result.payment_preimage != null &amp;&amp; result.paymentPreimage == null) {
+      return Object.assign({}, result, { paymentPreimage: result.payment_preimage });
+    }
+    return result;
+  }
+
+  /**
+   * List offers created on this node (Core Lightning `listoffers`).
+   * @param {String|Object|null} [filter] `offer_id` string, or `{ offer_id?, active_only? }`, or null for all.
+   * @returns {Promise&lt;Object>}
+   */
+  async listOffers (filter = null) {
+    if (filter == null) return this._makeRPCRequest('listoffers', []);
+    if (typeof filter === 'string') return this._makeRPCRequest('listoffers', [filter]);
+    if (typeof filter === 'object' &amp;&amp; !Array.isArray(filter)) {
+      return this._makeRPCRequest('listoffers', [filter]);
+    }
+    throw new Error('listOffers expects offer_id string, filter object, or null');
+  }
+
+  /**
+   * Disable a local offer by id (Core Lightning `disableoffer`).
+   * @param {String} offerId
+   * @returns {Promise&lt;Object>}
+   */
+  async disableOffer (offerId) {
+    return this._makeRPCRequest('disableoffer', [offerId]);
+  }
+
+  /**
+   * Create a BOLT12 `invoice_request` (you request that someone else pay you via their offer flow). Returns `bolt12` (`lnr1…`). (Core Lightning `invoicerequest`, v22.11+.)
+   * @param {Object} params `{ amount, description, issuer?, label?, absolute_expiry?, single_use? }` — see CLN docs for amount formats.
+   * @returns {Promise&lt;Object>}
+   */
+  async createInvoiceRequest (params) {
+    if (!params || typeof params !== 'object' || Array.isArray(params)) {
+      throw new Error('createInvoiceRequest requires a params object (e.g. { amount, description })');
+    }
+    return this._makeRPCRequest('invoicerequest', [params]);
+  }
+
+  /**
+   * List `invoice_request` records (Core Lightning `listinvoicerequests`).
+   * @param {String|Object|null} [filter] `invreq_id` string, or `{ invreq_id?, active_only? }`, or null for all.
+   * @returns {Promise&lt;Object>}
+   */
+  async listInvoiceRequests (filter = null) {
+    if (filter == null) return this._makeRPCRequest('listinvoicerequests', []);
+    if (typeof filter === 'string') return this._makeRPCRequest('listinvoicerequests', [filter]);
+    if (typeof filter === 'object' &amp;&amp; !Array.isArray(filter)) {
+      return this._makeRPCRequest('listinvoicerequests', [filter]);
+    }
+    throw new Error('listInvoiceRequests expects invreq_id string, filter object, or null');
+  }
+
+  /**
+   * Disable an `invoice_request` so no further invoices are accepted (Core Lightning `disableinvoicerequest`).
+   * @param {String} invreqId
+   * @returns {Promise&lt;Object>}
+   */
+  async disableInvoiceRequest (invreqId) {
+    return this._makeRPCRequest('disableinvoicerequest', [invreqId]);
+  }
+
+  /**
+   * Create and send a BOLT12 invoice to the issuer of an `invoice_request` (Core Lightning `sendinvoice`).
+   * @param {Object} params `{ invreq, label, amount_msat?, timeout?, quantity? }` — `invreq` is the `lnr1…` string.
+   * @returns {Promise&lt;Object>}
+   */
+  async sendInvoice (params) {
+    if (!params || typeof params !== 'object' || Array.isArray(params)) {
+      throw new Error('sendInvoice requires a params object (e.g. { invreq, label })');
+    }
+    return this._makeRPCRequest('sendinvoice', [params]);
+  }
+
+  /**
+   * Route probe (Core Lightning `getroute`).
+   * CLN order: `id`, `amount_msat`, `riskfactor`, `cltv`, `fromid`, `fuzzpercent`, `exclude`, `maxhops`
+   * — the fourth **positional** is `cltv`, not `maxhops`. To set `maxhops` (or other tail fields) use the
+   * `routeOptions` object so intermediate slots are sent as `null` where needed.
+   * @param {String} destinationId Destination node id (pubkey).
+   * @param {Number|String} amountMsat
+   * @param {Number} [riskfactor=10]
+   * @param {Number|Object|null} [cltvOrRouteOptions] Omitted: three-arg RPC. If a number: fourth positional (`cltv`).
+   *   If an object: tail fields `cltv`, `fromid`, `fuzzpercent`, `exclude`, `maxhops` (each optional).
+   * @returns {Promise&lt;Object>}
+   */
+  async getRoute (destinationId, amountMsat, riskfactor = 10, cltvOrRouteOptions = null) {
+    if (cltvOrRouteOptions != null &amp;&amp; typeof cltvOrRouteOptions === 'object' &amp;&amp; !Array.isArray(cltvOrRouteOptions)) {
+      const o = cltvOrRouteOptions;
+      return this._makeRPCRequest('getroute', [
+        destinationId,
+        amountMsat,
+        riskfactor,
+        o.cltv != null ? o.cltv : null,
+        o.fromid != null ? o.fromid : null,
+        o.fuzzpercent != null ? o.fuzzpercent : null,
+        o.exclude != null ? o.exclude : null,
+        o.maxhops != null ? o.maxhops : null
+      ]);
+    }
+    const args = [destinationId, amountMsat, riskfactor];
+    if (cltvOrRouteOptions != null) {
+      args.push(cltvOrRouteOptions);
+    }
+    return this._makeRPCRequest('getroute', args);
   }
 
   /**
@@ -320,7 +579,7 @@ class Lightning extends Service {
         ];
 
         // Wait for all checks to complete
-        const results = await Promise.all(checks);
+        await Promise.all(checks);
 
         if (this.settings.debug) {
           this.emit('debug', '[FABRIC:LIGHTNING] Successfully connected to lightningd');
@@ -414,11 +673,19 @@ class Lightning extends Service {
         if (this.settings.debug) this.emit('debug', `[FABRIC:LIGHTNING] ${data.toString('utf8').trim()}`);
       });
 
+      this._lightningdStderrBuf = '';
       this._child.stderr.on('data', (data) => {
-        this.emit('error', `[FABRIC:LIGHTNING] ${data.toString('utf8').trim()}`);
+        appendLightningStderrChunk(this, data);
+      });
+      this._child.stderr.on('end', () => {
+        flushLightningStderrBuffer(this);
+      });
+      this._child.stderr.on('close', () => {
+        flushLightningStderrBuffer(this);
       });
 
       this._child.on('close', (code) => {
+        flushLightningStderrBuffer(this);
         if (this.settings.debug) this.emit('debug', `[FABRIC:LIGHTNING] Lightning node exited with code ${code}`);
         this.emit('log', `[FABRIC:LIGHTNING] Lightning node exited with code ${code}`);
       });
@@ -444,7 +711,7 @@ class Lightning extends Service {
           if (child.exitCode === null) {
             try {
               child.kill('SIGKILL');
-            } catch (error) {
+            } catch {
               // Ignore if process already exited between checks.
             }
 
@@ -472,7 +739,7 @@ class Lightning extends Service {
           // this.emit('error', err);
         }
       };
-      this._errorHandlers.unhandledRejection = async (reason, promise) => {
+      this._errorHandlers.unhandledRejection = async (reason, _promise) => {
         // Only handle rejections from this service's operations
         if (reason.source === 'lightning' || (this._child &amp;&amp; reason.pid === this._child.pid)) {
           this.emit('error', '[FABRIC:LIGHTNING] Unhandled rejection from Lightning service');
@@ -510,24 +777,26 @@ class Lightning extends Service {
     if (this.settings.managed &amp;&amp; this.settings.bitcoin) {
       if (this.settings.debug) this.emit('debug', '[FABRIC:LIGHTNING] Waiting for Lightning to be ready...');
       try {
-        const bitcoinCli = children.spawn('bitcoin-cli', [
-        '-regtest',
-        `-datadir=${this.settings.bitcoin.datadir}`,
-        '-rpcclienttimeout=60',
-        `-rpcconnect=${this.settings.bitcoin.host}`,
-        `-rpcport=${this.settings.bitcoin.rpcport}`,
-        `-rpcuser=${this.settings.bitcoin.rpcuser}`,
-        '-stdinrpcpass',
-        'getblockchaininfo'
-      ]);
+        const bitcoinCliArgs = [
+          `-datadir=${this.settings.bitcoin.datadir}`,
+          '-rpcclienttimeout=60',
+          `-rpcconnect=${this.settings.bitcoin.host}`,
+          `-rpcport=${this.settings.bitcoin.rpcport}`,
+          `-rpcuser=${this.settings.bitcoin.rpcuser}`,
+          '-stdinrpcpass',
+          'getblockchaininfo'
+        ];
+        const networkFlag = this._bitcoinCliNetworkFlag();
+        if (networkFlag) bitcoinCliArgs.unshift(networkFlag);
+        const bitcoinCli = children.spawn('bitcoin-cli', bitcoinCliArgs);
 
       bitcoinCli.stdin.write(this.settings.bitcoin.rpcpassword + '\n');
       bitcoinCli.stdin.end();
 
       await new Promise((resolve, reject) => {
-        let output = '';
+        let _output = '';
         bitcoinCli.stdout.on('data', (data) => {
-          output += data.toString();
+          _output += data.toString();
         });
         bitcoinCli.stderr.on('data', (data) => {
           const line = data.toString();
@@ -544,8 +813,10 @@ class Lightning extends Service {
       });
 
         if (this.settings.debug) this.emit('debug', '[FABRIC:LIGHTNING] Lightning is ready');
-      } catch (error) {
-        throw new Error(`Could not connect to bitcoind using bitcoin-cli. Is lightningd running?\n\nMake sure you have bitcoind running and that bitcoin-cli is able to connect to bitcoind.\n\nYou can verify that your Bitcoin Core installation is ready for use by running:\n\n    $ bitcoin-cli -regtest -datadir=${this.settings.bitcoin.datadir} -rpcclienttimeout=60 -rpcconnect=${this.settings.bitcoin.host} -rpcport=${this.settings.bitcoin.rpcport} -rpcuser=${this.settings.bitcoin.rpcuser} -stdinrpcpass echo 'hello world'`);
+      } catch {
+        const networkFlag = this._bitcoinCliNetworkFlag();
+        const networkHint = networkFlag ? `${networkFlag} ` : '';
+        throw new Error(`Could not connect to bitcoind using bitcoin-cli. Is lightningd running?\n\nMake sure you have bitcoind running and that bitcoin-cli is able to connect to bitcoind.\n\nYou can verify that your Bitcoin Core installation is ready for use by running:\n\n    $ bitcoin-cli ${networkHint}-datadir=${this.settings.bitcoin.datadir} -rpcclienttimeout=60 -rpcconnect=${this.settings.bitcoin.host} -rpcport=${this.settings.bitcoin.rpcport} -rpcuser=${this.settings.bitcoin.rpcuser} -stdinrpcpass echo 'hello world'`);
       }
     }
 
@@ -657,7 +928,7 @@ class Lightning extends Service {
         if (settled) return;
         settled = true;
         if (timeoutId) clearTimeout(timeoutId);
-        try { client.destroy(); } catch (_) {}
+        try { client.destroy(); } catch {}
         fn(arg);
       };
 
@@ -677,7 +948,7 @@ class Lightning extends Service {
             const response = JSON.parse(buffer);
             if (response.result !== undefined) return finish(resolve, response.result);
             if (response.error) return finish(reject, Object.assign(new Error(response.error.message || 'RPC error'), response.error));
-          } catch (_) {
+          } catch {
             if (buffer.length > 2 * 1024 * 1024) finish(reject, new Error('Lightning RPC response too large'));
           }
         });
@@ -849,16 +1120,47 @@ class Lightning extends Service {
  */
 Lightning.CLN_RPC_METHODS = Object.freeze([
   'connect',
+  'decode',
+  'decodepay',
+  'disableinvoicerequest',
+  'disableoffer',
+  'fetchinvoice',
   'fundchannel',
   'getinfo',
+  'getroute',
   'invoice',
+  'invoicerequest',
   'listchannels',
   'listfunds',
+  'listinvoicerequests',
+  'listoffers',
   'newaddr',
+  'offer',
+  'pay',
+  'sendinvoice',
   'stop'
 ]);
 
+/**
+ * Paths to canonical Markdown docs (relative to the `@fabric/core` package root).
+ * `fabricLightningMarkets` and `fabricLightningOffers` point at the same file (Fabric **markets** vs Lightning BOLT12 **offers**).
+ * @type {Readonly&lt;{ boltCompatibility: string, fabricLightningOffers: string, fabricLightningMarkets: string, fabricPaymentBech32: string, lightningCompat: string }>}
+ */
+Lightning.DOCS = Object.freeze({
+  boltCompatibility: 'docs/BOLT_COMPATIBILITY.md',
+  fabricLightningOffers: 'docs/FABRIC_LIGHTNING_OFFERS.md',
+  fabricLightningMarkets: 'docs/FABRIC_LIGHTNING_OFFERS.md',
+  fabricPaymentBech32: 'docs/FABRIC_PAYMENT_BECH32.md',
+  lightningCompat: 'docs/LIGHTNING_COMPAT.md'
+});
+
 Lightning.redactSensitiveCommandArg = redactSensitiveCommandArg;
+
+Object.assign(Lightning, {
+  Bolt12: require('../functions/lightningBolt12'),
+  FabricPayment: require('../types/bech32/fabricPaymentBech32'),
+  Bolt12Semantics: require('../functions/bolt12Semantics')
+});
 
 module.exports = Lightning;
 </code></pre>
@@ -870,69 +1172,303 @@ module.exports = Lightning;
   </div>
   <nav>
     <h2><a href="index.html">Home</a></h2>
+    <h3>Modules</h3>
+    <ul>
+      <li><a href="module-types_bech32_bech32.html">types/bech32/bech32</a></li>
+      <li><a href="module-types_bech32_fabricPaymentBech32.html">types/bech32/fabricPaymentBech32</a></li>
+      <li><a href="module-types_delegation.html">types/delegation</a></li>
+      <li><a href="module-types_key_base58.html">types/key/base58</a></li>
+      <li><a href="module-types_key_bip32.html">types/key/bip32</a></li>
+      <li><a href="module-types_key_bip39.html">types/key/bip39</a></li>
+      <li><a href="module-types_key_bip49.html">types/key/bip49</a></li>
+      <li><a href="module-types_key_bip85.html">types/key/bip85</a></li>
+      <li><a href="module-types_key_fabricKeyMaterial.html">types/key/fabricKeyMaterial</a></li>
+      <li><a href="module-types_key_keyHasPrivateSigningMaterial.html">types/key/keyHasPrivateSigningMaterial</a></li>
+      <li><a href="module-types_key_pubkey.html">types/key/pubkey</a></li>
+      <li><a href="module-types_key_signingTags.html">types/key/signingTags</a></li>
+      <li><a href="module-types_typetree.html">types/typetree</a></li>
+      <li><a href="module-types_wallet_accountKeys.html">types/wallet/accountKeys</a></li>
+      <li><a href="module-types_wallet_bip21.html">types/wallet/bip21</a></li>
+      <li><a href="module-types_wallet_bip86.html">types/wallet/bip86</a></li>
+      <li><a href="module-types_witness_adaptor.html">types/witness/adaptor</a></li>
+      <li><a href="module-types_witness_bls.html">types/witness/bls</a></li>
+      <li><a href="module-types_witness_dleq.html">types/witness/dleq</a></li>
+      <li><a href="module-types_witness_musig2.html">types/witness/musig2</a></li>
+      <li><a href="module-types_witness_musig2Adaptor.html">types/witness/musig2Adaptor</a></li>
+      <li><a href="module-types_witness_musig2Session.html">types/witness/musig2Session</a></li>
+      <li><a href="types_ecc.html#.module:selftest">types/ecc.selftest</a></li>
+    </ul>
     <h3>Classes</h3>
     <ul>
       <li><a href="Actor.html">Actor</a></li>
+      <li><a href="Beacon.html">Beacon</a></li>
       <li><a href="Bitcoin.html">Bitcoin</a></li>
-      <li><a href="CLI.html">CLI</a></li>
+      <li><a href="Block.html">Block</a></li>
+      <li><a href="Bond.html">Bond</a></li>
+      <li><a href="Book.html">Book</a></li>
       <li><a href="Chain.html">Chain</a></li>
+      <li><a href="Challenge.html">Challenge</a></li>
       <li><a href="Channel.html">Channel</a></li>
+      <li><a href="ChannelBook.html">ChannelBook</a></li>
+      <li><a href="ChannelSession.html">ChannelSession</a></li>
       <li><a href="Circuit.html">Circuit</a></li>
+      <li><a href="Coinjoin.html">Coinjoin</a></li>
+      <li><a href="CoinjoinBook.html">CoinjoinBook</a></li>
+      <li><a href="CoinjoinMakerRound.html">CoinjoinMakerRound</a></li>
+      <li><a href="CoinjoinTakerRound.html">CoinjoinTakerRound</a></li>
       <li><a href="Collection.html">Collection</a></li>
+      <li><a href="Component.html">Component</a></li>
+      <li><a href="Contract.html">Contract</a></li>
+      <li><a href="Disk.html">Disk</a></li>
+      <li><a href="Document.html">Document</a></li>
+      <li><a href="DocumentBlobTransferBook.html">DocumentBlobTransferBook</a></li>
+      <li><a href="DocumentBook.html">DocumentBook</a></li>
+      <li><a href="EncryptedPromise.html">EncryptedPromise</a></li>
+      <li><a href="Entity.html">Entity</a></li>
+      <li><a href="Entity.Transition.html">Transition</a></li>
       <li><a href="Environment.html">Environment</a></li>
       <li><a href="Fabric.html">Fabric</a></li>
-      <li><a href="FabricShell.html">FabricShell</a></li>
       <li><a href="Federation.html">Federation</a></li>
+      <li><a href="FidelityVerifier.html">FidelityVerifier</a></li>
       <li><a href="Filesystem.html">Filesystem</a></li>
+      <li><a href="FraudProof.html">FraudProof</a></li>
       <li><a href="HKDF.html">HKDF</a></li>
       <li><a href="Hash256.html">Hash256</a></li>
+      <li><a href="Htlc.html">Htlc</a></li>
       <li><a href="Identity.html">Identity</a></li>
       <li><a href="Interface.html">Interface</a></li>
       <li><a href="Key.html">Key</a></li>
       <li><a href="Ledger.html">Ledger</a></li>
       <li><a href="Lightning.html">Lightning</a></li>
+      <li><a href="LiquidityBook.html">LiquidityBook</a></li>
       <li><a href="Logger.html">Logger</a></li>
       <li><a href="Machine.html">Machine</a></li>
+      <li><a href="Market.html">Market</a></li>
       <li><a href="Message.html">Message</a></li>
+      <li><a href="OrderBook.html">OrderBook</a></li>
       <li><a href="Peer.html">Peer</a></li>
+      <li><a href="PodleBlacklist.html">PodleBlacklist</a></li>
+      <li><a href="Policy.html">Policy</a></li>
+      <li><a href="Program.html">Program</a></li>
       <li><a href="Reader.html">Reader</a></li>
       <li><a href="Redis.html">Redis</a></li>
       <li><a href="Remote.html">Remote</a></li>
+      <li><a href="Resolutions.html">Resolutions</a></li>
       <li><a href="Resource.html">Resource</a></li>
+      <li><a href="RoundRobin.html">RoundRobin</a></li>
       <li><a href="Scribe.html">Scribe</a></li>
       <li><a href="Script.html">Script</a></li>
+      <li><a href="Secret.html">Secret</a></li>
       <li><a href="Service.html">Service</a></li>
       <li><a href="Session.html">Session</a></li>
+      <li><a href="SetupTui.html">SetupTui</a></li>
+      <li><a href="SignedBook.html">SignedBook</a></li>
       <li><a href="State.html">State</a></li>
       <li><a href="Store.html">Store</a></li>
+      <li><a href="Swap.html">Swap</a></li>
+      <li><a href="global.html#Text">Text</a></li>
       <li><a href="Token.html">Token</a></li>
       <li><a href="Tree.html">Tree</a></li>
       <li><a href="Vector.html">Vector</a></li>
       <li><a href="Wallet.html">Wallet</a></li>
+      <li><a href="Watchtower.html">Watchtower</a></li>
       <li><a href="Worker.html">Worker</a></li>
       <li><a href="ZMQ.html">ZMQ</a></li>
+      <li><a href="module-types_delegation-Delegation.html">Delegation</a></li>
+      <li><a href="module-types_key_bip32-BIP32Factory.html">BIP32Factory</a></li>
+      <li><a href="module-types_witness_musig2-InvalidContributionError.html">InvalidContributionError</a></li>
     </ul>
     <h3>Global</h3>
     <ul>
-      <li><a href="global.html#BEACON_EPOCH_SIGNING_KIND">BEACON_EPOCH_SIGNING_KIND</a></li>
-      <li><a href="global.html#FRIENDLY_TYPE_BY_WIRE">FRIENDLY_TYPE_BY_WIRE</a></li>
-      <li><a href="global.html#WIRE_TYPE_DECODE_ORDER">WIRE_TYPE_DECODE_ORDER</a></li>
-      <li><a href="global.html#crypto">crypto</a></li>
-      <li><a href="global.html#epochCommitmentDigestHex">epochCommitmentDigestHex</a></li>
-      <li><a href="global.html#explorerBaseUrl">explorerBaseUrl</a></li>
-      <li><a href="global.html#friendlyTypeFromWire">friendlyTypeFromWire</a></li>
-      <li><a href="global.html#gossip">gossip</a></li>
-      <li><a href="global.html#isAllZero32">isAllZero32</a></li>
-      <li><a href="global.html#jsonSafe">jsonSafe</a></li>
-      <li><a href="global.html#p2pAddNodes">p2pAddNodes</a></li>
-      <li><a href="global.html#p2pAddNodesAllowMainnet">p2pAddNodesAllowMainnet</a></li>
-      <li><a href="global.html#parseDistributedManifestV1">parseDistributedManifestV1</a></li>
-      <li><a href="global.html#peerDebugDerivedPublicSummary">peerDebugDerivedPublicSummary</a></li>
-      <li><a href="global.html#signingStringForBeaconEpoch">signingStringForBeaconEpoch</a></li>
-      <li><a href="global.html#stableStringify">stableStringify</a></li>
-      <li><a href="global.html#verifyFederationWitnessOnMessage">verifyFederationWitnessOnMessage</a></li>
-      <li><a href="global.html#wireTraffic">wireTraffic</a></li>
-      <li><a href="global.html#wireTypeFromFriendly">wireTypeFromFriendly</a></li>
+      <li><a href="global.html#ASK_TYPE">ASK_TYPE</a></li>
+      <li><a href="global.html#BID_CLOCK_SKEW_SECONDS">BID_CLOCK_SKEW_SECONDS</a></li>
+      <li><a href="global.html#BID_TYPE">BID_TYPE</a></li>
+      <li><a href="global.html#BITCOIN_MESSAGE_TYPES">BITCOIN_MESSAGE_TYPES</a></li>
+      <li><a href="global.html#CHANNEL_BODY_TYPES">CHANNEL_BODY_TYPES</a></li>
+      <li><a href="global.html#CHANNEL_DEFAULTS">CHANNEL_DEFAULTS</a></li>
+      <li><a href="global.html#CLTV_TIMESTAMP_THRESHOLD">CLTV_TIMESTAMP_THRESHOLD</a></li>
+      <li><a href="global.html#DEFAULT_BID_TTL_SECONDS">DEFAULT_BID_TTL_SECONDS</a></li>
+      <li><a href="global.html#DEFAULT_FEE_SATS">DEFAULT_FEE_SATS</a></li>
+      <li><a href="global.html#DEFAULT_INVOICE_EXPIRY_SECONDS">DEFAULT_INVOICE_EXPIRY_SECONDS</a></li>
+      <li><a href="global.html#DEFAULT_INVOICE_MARGIN_SECONDS">DEFAULT_INVOICE_MARGIN_SECONDS</a></li>
+      <li><a href="global.html#DEFAULT_MAX_SIGNS">DEFAULT_MAX_SIGNS</a></li>
+      <li><a href="global.html#DEFAULT_MIN_CLAIM_BLOCKS">DEFAULT_MIN_CLAIM_BLOCKS</a></li>
+      <li><a href="global.html#DEFAULT_MIN_CONFIRMATIONS">DEFAULT_MIN_CONFIRMATIONS</a></li>
+      <li><a href="global.html#DEFAULT_MIN_EQUAL_OUTPUTS">DEFAULT_MIN_EQUAL_OUTPUTS</a></li>
+      <li><a href="global.html#DEFAULT_WEIGHTS">DEFAULT_WEIGHTS</a></li>
+      <li><a href="global.html#DEPRECATED_WIRE_TYPES">DEPRECATED_WIRE_TYPES</a></li>
+      <li><a href="global.html#DUST_SATS">DUST_SATS</a></li>
+      <li><a href="global.html#EXIT_KINDS">EXIT_KINDS</a></li>
+      <li><a href="global.html#EXIT_SIGNATURE_TYPE">EXIT_SIGNATURE_TYPE</a></li>
+      <li><a href="global.html#FIDELITY_LOCKTIME_GRID">FIDELITY_LOCKTIME_GRID</a></li>
+      <li><a href="global.html#FIDELITY_MAX_CERT_BLOCKS">FIDELITY_MAX_CERT_BLOCKS</a></li>
+      <li><a href="global.html#FIELD_BODIES_VERSION">FIELD_BODIES_VERSION</a></li>
+      <li><a href="global.html#GCM_TAG_BYTES">GCM_TAG_BYTES</a></li>
+      <li><a href="global.html#HOP_PENALTY_MS">HOP_PENALTY_MS</a></li>
+      <li><a href="global.html#INPUT_HEADROOM">INPUT_HEADROOM</a></li>
+      <li><a href="global.html#LEAF_VERSION">LEAF_VERSION</a></li>
+      <li><a href="global.html#LOCKTIME_SLACK_BLOCKS">LOCKTIME_SLACK_BLOCKS</a></li>
+      <li><a href="global.html#LOCKTIME_THRESHOLD">LOCKTIME_THRESHOLD</a></li>
+      <li><a href="global.html#MAX_EVIDENCE">MAX_EVIDENCE</a></li>
+      <li><a href="global.html#MAX_FEE_PPM">MAX_FEE_PPM</a></li>
+      <li><a href="global.html#MAX_LOCKTIME">MAX_LOCKTIME</a></li>
+      <li><a href="global.html#MAX_MAKERS">MAX_MAKERS</a></li>
+      <li><a href="global.html#MAX_MAKER_INPUTS">MAX_MAKER_INPUTS</a></li>
+      <li><a href="global.html#MAX_OFFERS">MAX_OFFERS</a></li>
+      <li><a href="global.html#MAX_PREMIUM_PPM">MAX_PREMIUM_PPM</a></li>
+      <li><a href="global.html#MAX_PROVIDERS">MAX_PROVIDERS</a></li>
+      <li><a href="global.html#MAX_PSBT_CHARS">MAX_PSBT_CHARS</a></li>
+      <li><a href="global.html#MAX_REFUND_LOCK_BLOCKS">MAX_REFUND_LOCK_BLOCKS</a></li>
+      <li><a href="global.html#MAX_SETTLED_CREDITS">MAX_SETTLED_CREDITS</a></li>
+      <li><a href="global.html#MAX_TRANSFERS">MAX_TRANSFERS</a></li>
+      <li><a href="global.html#MIN_COINJOIN_SATS">MIN_COINJOIN_SATS</a></li>
+      <li><a href="global.html#MIN_INVOICE_EXPIRY_SECONDS">MIN_INVOICE_EXPIRY_SECONDS</a></li>
+      <li><a href="global.html#MIN_REFUND_LOCK_BLOCKS">MIN_REFUND_LOCK_BLOCKS</a></li>
+      <li><a href="global.html#PODLE_BLACKLIST_SIZE">PODLE_BLACKLIST_SIZE</a></li>
+      <li><a href="global.html#PODLE_MAX_INDEX">PODLE_MAX_INDEX</a></li>
+      <li><a href="global.html#PODLE_MIN_AGE_CONFS">PODLE_MIN_AGE_CONFS</a></li>
+      <li><a href="global.html#PODLE_MIN_VALUE_PCT">PODLE_MIN_VALUE_PCT</a></li>
+      <li><a href="global.html#PODLE_TAG">PODLE_TAG</a></li>
+      <li><a href="global.html#ROUND_TYPES">ROUND_TYPES</a></li>
+      <li><a href="global.html#SCORE_INVENTORY_ONLY">SCORE_INVENTORY_ONLY</a></li>
+      <li><a href="global.html#SCORE_MAX">SCORE_MAX</a></li>
+      <li><a href="global.html#SCORE_UNKNOWN">SCORE_UNKNOWN</a></li>
+      <li><a href="global.html#SEALED_TYPE">SEALED_TYPE</a></li>
+      <li><a href="global.html#SEAL_NAMESPACE">SEAL_NAMESPACE</a></li>
+      <li><a href="global.html#SIGNER_FIELD">SIGNER_FIELD</a></li>
+      <li><a href="global.html#TAPROOT_INTERNAL_NUMS">TAPROOT_INTERNAL_NUMS</a></li>
+      <li><a href="global.html#TELEMETRY_TYPE">TELEMETRY_TYPE</a></li>
+      <li><a href="global.html#TELEMETRY_VERSION">TELEMETRY_VERSION</a></li>
+      <li><a href="global.html#UNSAFE_PATH_TOKENS">UNSAFE_PATH_TOKENS</a></li>
+      <li><a href="global.html#WALLET_TX_KINDS">WALLET_TX_KINDS</a></li>
+      <li><a href="global.html#WEIGHT_OVERHEAD">WEIGHT_OVERHEAD</a></li>
+      <li><a href="global.html#YEAR_BLOCKS">YEAR_BLOCKS</a></li>
+      <li><a href="global.html#assertMonotoneBudget">assertMonotoneBudget</a></li>
+      <li><a href="global.html#bitcoin">bitcoin</a></li>
+      <li><a href="global.html#bodyId">bodyId</a></li>
+      <li><a href="global.html#broadcastSettled">broadcastSettled</a></li>
+      <li><a href="global.html#buildContractTaproot">buildContractTaproot</a></li>
+      <li><a href="global.html#buildEscrow">buildEscrow</a></li>
+      <li><a href="global.html#buildFederationVaultFromPolicy">buildFederationVaultFromPolicy</a></li>
+      <li><a href="global.html#buildFidelity">buildFidelity</a></li>
+      <li><a href="global.html#buildForwardedDocumentRequest">buildForwardedDocumentRequest</a></li>
+      <li><a href="global.html#buildHashlockLeaf">buildHashlockLeaf</a></li>
+      <li><a href="global.html#buildHashlockTapscript">buildHashlockTapscript</a></li>
+      <li><a href="global.html#buildPsbt">buildPsbt</a></li>
+      <li><a href="global.html#buildScriptLeaf">buildScriptLeaf</a></li>
+      <li><a href="global.html#buildSpendLeaf">buildSpendLeaf</a></li>
+      <li><a href="global.html#buildWatchSet">buildWatchSet</a></li>
+      <li><a href="global.html#checkPodleUtxo">checkPodleUtxo</a></li>
+      <li><a href="global.html#classifyWalletTransaction">classifyWalletTransaction</a></li>
+      <li><a href="global.html#codec">codec</a></li>
+      <li><a href="global.html#compileLeaves">compileLeaves</a></li>
+      <li><a href="global.html#composePolicyWithRunHashlock">composePolicyWithRunHashlock</a></li>
+      <li><a href="global.html#composeTaprootTree">composeTaprootTree</a></li>
+      <li><a href="global.html#computeRelayFee">computeRelayFee</a></li>
+      <li><a href="global.html#contractMessageIndex">contractMessageIndex</a></li>
+      <li><a href="global.html#contractMessageMatches">contractMessageMatches</a></li>
+      <li><a href="global.html#createBlobMerkleTree">createBlobMerkleTree</a></li>
+      <li><a href="global.html#createDocumentPurchaseSession">createDocumentPurchaseSession</a></li>
+      <li><a href="global.html#describePsbt">describePsbt</a></li>
+      <li><a href="global.html#descriptorPrivateKey">descriptorPrivateKey</a></li>
+      <li><a href="global.html#envelopeRecipient">envelopeRecipient</a></li>
+      <li><a href="global.html#estimateVsize">estimateVsize</a></li>
+      <li><a href="global.html#evaluateTierWhen">evaluateTierWhen</a></li>
+      <li><a href="global.html#expireHeight">expireHeight</a></li>
+      <li><a href="global.html#fidelityLocktimes">fidelityLocktimes</a></li>
+      <li><a href="global.html#fidelityPath">fidelityPath</a></li>
+      <li><a href="global.html#fidelityValue">fidelityValue</a></li>
+      <li><a href="global.html#finalize">finalize</a></li>
+      <li><a href="global.html#finalizeHashlockPsbt">finalizeHashlockPsbt</a></li>
+      <li><a href="global.html#finalizeSpendPsbt">finalizeSpendPsbt</a></li>
+      <li><a href="global.html#findSession">findSession</a></li>
+      <li><a href="global.html#fromContractMessage">fromContractMessage</a></li>
+      <li><a href="global.html#generatePodle">generatePodle</a></li>
+      <li><a href="global.html#hashlockFromProgramRun">hashlockFromProgramRun</a></li>
+      <li><a href="global.html#invoiceAmountMsat">invoiceAmountMsat</a></li>
+      <li><a href="global.html#isDuplicateSettlement">isDuplicateSettlement</a></li>
+      <li><a href="global.html#isValidFidelityLocktime">isValidFidelityLocktime</a></li>
+      <li><a href="global.html#l1GiverTerms">l1GiverTerms</a></li>
+      <li><a href="global.html#leafScripts">leafScripts</a></li>
+      <li><a href="global.html#listRefundCandidates">listRefundCandidates</a></li>
+      <li><a href="global.html#lockFrom">lockFrom</a></li>
+      <li><a href="global.html#makerChange">makerChange</a></li>
+      <li><a href="global.html#makerFee">makerFee</a></li>
+      <li><a href="global.html#memoryChain">memoryChain</a></li>
+      <li><a href="global.html#memoryWallet">memoryWallet</a></li>
+      <li><a href="global.html#mergeMakerSignatures">mergeMakerSignatures</a></li>
+      <li><a href="global.html#nextPodleIndex">nextPodleIndex</a></li>
+      <li><a href="global.html#normalizeAuth">normalizeAuth</a></li>
+      <li><a href="global.html#normalizeCancel">normalizeCancel</a></li>
+      <li><a href="global.html#normalizeContractSpendPolicy">normalizeContractSpendPolicy</a></li>
+      <li><a href="global.html#normalizeExtraLeafSpecs">normalizeExtraLeafSpecs</a></li>
+      <li><a href="global.html#normalizeFidelity">normalizeFidelity</a></li>
+      <li><a href="global.html#normalizeFill">normalizeFill</a></li>
+      <li><a href="global.html#normalizeFillAck">normalizeFillAck</a></li>
+      <li><a href="global.html#normalizeFunded">normalizeFunded</a></li>
+      <li><a href="global.html#normalizeHashlockSpec">normalizeHashlockSpec</a></li>
+      <li><a href="global.html#normalizeIoAuth">normalizeIoAuth</a></li>
+      <li><a href="global.html#normalizeLeaf">normalizeLeaf</a></li>
+      <li><a href="global.html#normalizeLock">normalizeLock</a></li>
+      <li><a href="global.html#normalizeOffer">normalizeOffer</a></li>
+      <li><a href="global.html#normalizeOrder">normalizeOrder</a></li>
+      <li><a href="global.html#normalizeSig">normalizeSig</a></li>
+      <li><a href="global.html#normalizeTake">normalizeTake</a></li>
+      <li><a href="global.html#normalizeTakeAccept">normalizeTakeAccept</a></li>
+      <li><a href="global.html#normalizeTx">normalizeTx</a></li>
+      <li><a href="global.html#offerKey">offerKey</a></li>
+      <li><a href="global.html#openFiling">openFiling</a></li>
+      <li><a href="global.html#openRoundMessage">openRoundMessage</a></li>
+      <li><a href="global.html#paginateInventoryItems">paginateInventoryItems</a></li>
+      <li><a href="global.html#parseXOnlyPubkeysFromSpendScript">parseXOnlyPubkeysFromSpendScript</a></li>
+      <li><a href="global.html#planCoinjoin">planCoinjoin</a></li>
+      <li><a href="global.html#podleCommitment">podleCommitment</a></li>
+      <li><a href="global.html#podleGenerator">podleGenerator</a></li>
+      <li><a href="global.html#policyAfterDecay">policyAfterDecay</a></li>
+      <li><a href="global.html#prepareDecayMigrationPsbt">prepareDecayMigrationPsbt</a></li>
+      <li><a href="global.html#prepareFidelityRedeem">prepareFidelityRedeem</a></li>
+      <li><a href="global.html#prepareHashlockWithdrawalPsbt">prepareHashlockWithdrawalPsbt</a></li>
+      <li><a href="global.html#prepareTierWithdrawalPsbt">prepareTierWithdrawalPsbt</a></li>
+      <li><a href="global.html#quote">quote</a></li>
+      <li><a href="global.html#randomNonce">randomNonce</a></li>
+      <li><a href="global.html#randomPrivateKey">randomPrivateKey</a></li>
+      <li><a href="global.html#randomRoundId">randomRoundId</a></li>
+      <li><a href="global.html#rememberSettlement">rememberSettlement</a></li>
+      <li><a href="global.html#roleFor">roleFor</a></li>
+      <li><a href="global.html#roles">roles</a></li>
+      <li><a href="global.html#routePath">routePath</a></li>
+      <li><a href="global.html#scriptTreeFromLeaves">scriptTreeFromLeaves</a></li>
+      <li><a href="global.html#sealRoundMessage">sealRoundMessage</a></li>
+      <li><a href="global.html#selectActiveTiers">selectActiveTiers</a></li>
+      <li><a href="global.html#sellerDedupeKey">sellerDedupeKey</a></li>
+      <li><a href="global.html#settlementDedupeKey">settlementDedupeKey</a></li>
+      <li><a href="global.html#signFidelityCertificate">signFidelityCertificate</a></li>
+      <li><a href="global.html#signFidelityRedeem">signFidelityRedeem</a></li>
+      <li><a href="global.html#signKeyPathInputs">signKeyPathInputs</a></li>
+      <li><a href="global.html#signOwnership">signOwnership</a></li>
+      <li><a href="global.html#signingString">signingString</a></li>
+      <li><a href="global.html#spendAddress">spendAddress</a></li>
+      <li><a href="global.html#synthesizeDefaultLadder">synthesizeDefaultLadder</a></li>
+      <li><a href="global.html#taprootKeyPath">taprootKeyPath</a></li>
+      <li><a href="global.html#taprootOutputPrivateKey">taprootOutputPrivateKey</a></li>
+      <li><a href="global.html#tierWhenPath">tierWhenPath</a></li>
+      <li><a href="global.html#timelockMature">timelockMature</a></li>
+      <li><a href="global.html#toContractMessage">toContractMessage</a></li>
+      <li><a href="global.html#toIntegerSats">toIntegerSats</a></li>
+      <li><a href="global.html#unsignedTxid">unsignedTxid</a></li>
+      <li><a href="global.html#validateEscrow">validateEscrow</a></li>
+      <li><a href="global.html#validateFill">validateFill</a></li>
+      <li><a href="global.html#validateForMaker">validateForMaker</a></li>
+      <li><a href="global.html#validateForTaker">validateForTaker</a></li>
+      <li><a href="global.html#validateInvoice">validateInvoice</a></li>
+      <li><a href="global.html#validateTake">validateTake</a></li>
+      <li><a href="global.html#validateTakeAccept">validateTakeAccept</a></li>
+      <li><a href="global.html#verifyBlobPath">verifyBlobPath</a></li>
+      <li><a href="global.html#verifyFidelity">verifyFidelity</a></li>
+      <li><a href="global.html#verifyFidelityCertificate">verifyFidelityCertificate</a></li>
+      <li><a href="global.html#verifyOwnership">verifyOwnership</a></li>
+      <li><a href="global.html#verifyPodle">verifyPodle</a></li>
+      <li><a href="global.html#weightsForProximity">weightsForProximity</a></li>
     </ul>
   </nav>
   <br class="clear" />

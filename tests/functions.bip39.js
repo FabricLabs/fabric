@@ -11,6 +11,8 @@ const {
   validateMnemonic,
   defaultWordlist
 } = require('../functions/bip39');
+const { fromSeed } = require('../functions/bip32');
+const VECTORS = require('./vectors/bip39.json');
 
 describe('@fabric/core/functions/bip39', function () {
   const VALID_12 = 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about';
@@ -101,4 +103,30 @@ describe('@fabric/core/functions/bip39', function () {
     const mutated = words.join(' ');
     assert.throws(() => mnemonicToEntropy(mutated), /Invalid checksum/);
   });
+
+  it('generateMnemonic falls back to Web Crypto when randomBytes is missing', function () {
+    const orig = crypto.randomBytes;
+    crypto.randomBytes = undefined;
+    try {
+      const mnemonic = generateMnemonic(128);
+      assert.strictEqual(mnemonic.split(/\s+/).length, 12);
+      assert.ok(validateMnemonic(mnemonic));
+    } finally {
+      crypto.randomBytes = orig;
+    }
+  });
+});
+
+describe('@fabric/core/functions/bip39 official test vectors (English, passphrase TREZOR)', function () {
+  for (const { entropy, mnemonic, seed, xprv } of VECTORS.english) {
+    it(`round-trips ${entropy.length * 4}-bit entropy ${entropy.slice(0, 8)}…`, function () {
+      const bytes = Buffer.from(entropy, 'hex');
+      assert.strictEqual(entropyToMnemonic(bytes), mnemonic);
+      assert.ok(mnemonicToEntropy(mnemonic).equals(bytes));
+      assert.ok(validateMnemonic(mnemonic));
+      const derived = mnemonicToSeedSync(mnemonic, VECTORS.passphrase);
+      assert.strictEqual(derived.toString('hex'), seed);
+      assert.strictEqual(fromSeed(derived).toBase58(), xprv);
+    });
+  }
 });

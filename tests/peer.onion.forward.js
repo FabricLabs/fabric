@@ -1,0 +1,1550 @@
+'use strict';
+
+const assert = require('assert');
+const Key = require('../types/key');
+const Message = require('../types/message');
+const Peer = require('../types/peer');
+const { offlinePeerSettings } = require('./helpers/peer');
+const {
+  xOnlyFromKey,
+  wrapOnionPath,
+  tryDecodeForward,
+  P2P_FORWARD_MAX_HOPS
+} = require('../functions/fabricOnion');
+const SIGNING_TAGS = require('../functions/signingTags');
+
+function wireMock (writes) {
+  return {
+    _writeFabric (buf) { writes.push(buf); },
+    destroy () {}
+  };
+}
+
+describe('Peer P2P_FORWARD onion', function () {
+  it('peels when nextPeer is local and delivers inner chat', function () {
+    const originKey = new Key();
+    // Peer derives Identity.fabricKey from the seed; nextPeer must be that key's
+    // x-only id (not the master Key from the same mnemonic).
+    const peer = new Peer(offlinePeerSettings());
+    const localX = xOnlyFromKey(peer.key);
+    const addr = '127.0.0.1:9100';
+    peer.connections[addr] = wireMock([]);
+    peer.peers[addr] = { id: 'relay', publicKey: originKey.public.encodeCompressed('hex') };
+
+    const payload = Message.fromVector(['P2P_CHAT_MESSAGE', 'dest-only']);
+    payload.signWithKey(originKey);
+    const outer = wrapOnionPath({
+      path: [localX],
+      payload,
+      key: originKey
+    });
+
+    const peels = [];
+    const chats = [];
+    peer.on('onion:peel', (d) => peels.push(d));
+    peer.on('chat', (body) => chats.push(body));
+    peer._handleFabricMessage(outer.toBuffer(), { name: addr }, null);
+
+    assert.ok(peels.length >= 1, 'expected onion:peel');
+    assert.ok(chats.length >= 1, 'expected chat delivery');
+    assert.strictEqual(chats[0].text, 'dest-only');
+  });
+
+  it('forwards bit-identical outer to next hop when nextPeer is remote', function () {
+    const relay = new Peer(offlinePeerSettings());
+    const originKey = new Key();
+    const nextKey = new Key();
+    const fromAddr = '127.0.0.1:9200';
+    const nextAddr = '127.0.0.1:9201';
+    const nextWrites = [];
+
+    relay.connections[fromAddr] = wireMock([]);
+    relay.connections[nextAddr] = wireMock(nextWrites);
+    relay.peers[fromAddr] = { id: 'a', publicKey: originKey.public.encodeCompressed('hex') };
+    relay.peers[nextAddr] = { id: 'b', publicKey: nextKey.public.encodeCompressed('hex') };
+
+    const payload = Message.fromVector(['P2P_CHAT_MESSAGE', 'fwd']);
+    payload.signWithKey(originKey);
+    // Layer aimed at nextKey (not local relay) — dumb forward path
+    const outer = wrapOnionPath({
+      path: [xOnlyFromKey(nextKey)],
+      payload,
+      key: originKey
+    });
+
+    const forwards = [];
+    relay.on('onion:forward', (d) => forwards.push(d));
+    relay._handleFabricMessage(outer.toBuffer(), { name: fromAddr }, null);
+
+    assert.strictEqual(forwards.length, 1);
+    assert.strictEqual(forwards[0].nextHop, nextAddr);
+    assert.strictEqual(nextWrites.length, 1);
+    assert.ok(nextWrites[0].equals(outer.toBuffer()));
+  });
+
+  it('sendOnion writes only to the first hop', function () {
+    const origin = new Peer(offlinePeerSettings());
+    const r1Key = new Key();
+    const destKey = new Key();
+    const r1Addr = '127.0.0.1:9300';
+    const otherAddr = '127.0.0.1:9301';
+    const r1Writes = [];
+    const otherWrites = [];
+
+    origin.connections[r1Addr] = wireMock(r1Writes);
+    origin.connections[otherAddr] = wireMock(otherWrites);
+    origin.peers[r1Addr] = { id: 'r1', publicKey: r1Key.public.encodeCompressed('hex') };
+    origin.peers[otherAddr] = { id: 'other', publicKey: new Key().public.encodeCompressed('hex') };
+
+    const payload = Message.fromVector(['P2P_CHAT_MESSAGE', 'private-path']);
+    payload.signWithKey(origin.key);
+
+    const ok = origin.sendOnion(
+      [xOnlyFromKey(r1Key), xOnlyFromKey(destKey)],
+      payload
+    );
+    assert.strictEqual(ok, true);
+    assert.strictEqual(r1Writes.length, 1);
+    assert.strictEqual(otherWrites.length, 0);
+
+    const outer = Message.fromBuffer(r1Writes[0]);
+    assert.strictEqual(outer.type, 'P2P_FORWARD');
+    const fields = tryDecodeForward(outer);
+    assert.ok(fields);
+    assert.strictEqual(fields.nextPeer.toString('hex'), xOnlyFromKey(r1Key).toString('hex'));
+  });
+
+  it('three-hop peel chain: R1 peels then forwards to R2', function () {
+    const originKey = new Key();
+    const r1 = new Peer(offlinePeerSettings());
+    const r2Key = new Key();
+    const destKey = new Key();
+
+    const fromAddr = '127.0.0.1:9400';
+    const r2Addr = '127.0.0.1:9401';
+    const r2Writes = [];
+
+    r1.connections[fromAddr] = wireMock([]);
+    r1.connections[r2Addr] = wireMock(r2Writes);
+    r1.peers[fromAddr] = { id: 'src', publicKey: originKey.public.encodeCompressed('hex') };
+    r1.peers[r2Addr] = { id: 'r2', publicKey: r2Key.public.encodeCompressed('hex') };
+
+    const payload = Message.fromVector(['P2P_CHAT_MESSAGE', 'multi']);
+    payload.signWithKey(originKey);
+    const outer = wrapOnionPath({
+      path: [xOnlyFromKey(r1.key), xOnlyFromKey(r2Key), xOnlyFromKey(destKey)],
+      payload,
+      key: originKey
+    });
+
+    r1._handleFabricMessage(outer.toBuffer(), { name: fromAddr }, null);
+
+    assert.strictEqual(r2Writes.length, 1);
+    const mid = Message.fromBuffer(r2Writes[0]);
+    assert.strictEqual(mid.type, 'P2P_FORWARD');
+    const midFields = tryDecodeForward(mid);
+    assert.strictEqual(midFields.nextPeer.toString('hex'), xOnlyFromKey(r2Key).toString('hex'));
+  });
+
+  it('peeled bad-signature inner does not hard-disconnect the last hop', function () {
+    const destKey = new Key();
+    const relayKey = new Key();
+    const peer = new Peer(offlinePeerSettings({
+      key: { mnemonic: destKey.mnemonic }
+    }));
+    const addr = '127.0.0.1:9500';
+    let destroyed = false;
+    peer.connections[addr] = {
+      _writeFabric () {},
+      destroy () { destroyed = true; }
+    };
+    peer._addressToId[addr] = 'honest-relay';
+    peer._state.peers = {
+      'honest-relay': {
+        id: 'honest-relay',
+        address: addr,
+        score: 200,
+        publicKey: relayKey.public.encodeCompressed('hex')
+      }
+    };
+    peer.peers[addr] = { id: 'honest-relay', publicKey: relayKey.public.encodeCompressed('hex') };
+
+    const payload = Message.fromVector(['P2P_CHAT_MESSAGE', 'tampered']);
+    payload.signWithKey(new Key());
+    const wire = Buffer.from(payload.toBuffer());
+    // Corrupt AMP signature so verify fails after peel.
+    if (wire.length > 80) wire[wire.length - 1] ^= 0xff;
+
+    const outer = wrapOnionPath({
+      path: [xOnlyFromKey(peer.key)],
+      payload: Message.fromBuffer(wire),
+      key: relayKey
+    });
+
+    peer._handleFabricMessage(outer.toBuffer(), { name: addr }, null);
+
+    assert.strictEqual(destroyed, false, 'must not destroy honest last-hop connection');
+    assert.strictEqual(peer._isPeerBanned(addr), false);
+    assert.ok(peer.connections[addr], 'last-hop connection must remain');
+    assert.strictEqual(peer._state.peers['honest-relay'].score, 200, 'must not derank last hop');
+  });
+
+  it('peeled bad P2P_SESSION_OPEN does not hard-disconnect the last hop', function () {
+    const destKey = new Key();
+    const relayKey = new Key();
+    const peer = new Peer(offlinePeerSettings({
+      key: { mnemonic: destKey.mnemonic }
+    }));
+    const addr = '127.0.0.1:9502';
+    let destroyed = false;
+    peer.connections[addr] = {
+      _writeFabric () {},
+      destroy () { destroyed = true; }
+    };
+    peer._addressToId[addr] = 'honest-relay-session';
+    peer._state.peers = {
+      'honest-relay-session': {
+        id: 'honest-relay-session',
+        address: addr,
+        score: 190,
+        publicKey: relayKey.public.encodeCompressed('hex')
+      }
+    };
+    peer.peers[addr] = {
+      id: 'honest-relay-session',
+      publicKey: relayKey.public.encodeCompressed('hex')
+    };
+
+    // Minimal session open missing actor key material → session-key violation.
+    const payload = Message.fromLegacyBody('P2P_SESSION_OPEN', {
+      type: 'P2P_SESSION_OPEN',
+      actor: { id: 'attacker' },
+      object: { counterparty: 'x', solution: 'y' }
+    }).signWithKey(new Key());
+
+    const outer = wrapOnionPath({
+      path: [xOnlyFromKey(peer.key)],
+      payload,
+      key: relayKey
+    });
+
+    peer._handleFabricMessage(outer.toBuffer(), { name: addr }, null);
+
+    assert.strictEqual(destroyed, false);
+    assert.strictEqual(peer._isPeerBanned(addr), false);
+    assert.strictEqual(peer._state.peers['honest-relay-session'].score, 190);
+  });
+
+  it('peeled nested P2P_RELAY beyond nest cap does not hard-disconnect last hop', function () {
+    const destKey = new Key();
+    const relayKey = new Key();
+    const peer = new Peer(offlinePeerSettings({
+      key: { mnemonic: destKey.mnemonic },
+      peerScore: { maxRelayNestDepth: 1 }
+    }));
+    const addr = '127.0.0.1:9503';
+    let destroyed = false;
+    peer.connections[addr] = {
+      _writeFabric () {},
+      destroy () { destroyed = true; }
+    };
+    peer._addressToId[addr] = 'honest-relay-nest';
+    peer._state.peers = {
+      'honest-relay-nest': {
+        id: 'honest-relay-nest',
+        address: addr,
+        score: 175,
+        publicKey: relayKey.public.encodeCompressed('hex')
+      }
+    };
+    peer.peers[addr] = {
+      id: 'honest-relay-nest',
+      publicKey: relayKey.public.encodeCompressed('hex')
+    };
+
+    const attacker = new Key();
+    const leaf = Message.fromLegacyBody('P2P_PING', { nest: true }).signWithKey(attacker);
+    const mid = Message.fromVector(['P2P_RELAY', leaf.toBuffer()]).signWithKey(attacker);
+    const nested = Message.fromVector(['P2P_RELAY', mid.toBuffer()]).signWithKey(attacker);
+
+    const outer = wrapOnionPath({
+      path: [xOnlyFromKey(peer.key)],
+      payload: nested,
+      key: relayKey
+    });
+
+    peer._handleFabricMessage(outer.toBuffer(), { name: addr }, null);
+
+    assert.strictEqual(destroyed, false);
+    assert.strictEqual(peer._isPeerBanned(addr), false);
+    assert.strictEqual(peer._state.peers['honest-relay-nest'].score, 175);
+  });
+
+  it('valid peeled P2P_SESSION_OFFER does not rebind last-hop identity', function () {
+    const destKey = new Key();
+    const relayKey = new Key();
+    const attackerKey = new Key();
+    const peer = new Peer(offlinePeerSettings({
+      key: { mnemonic: destKey.mnemonic }
+    }));
+    const addr = '127.0.0.1:9504';
+    const writes = [];
+    peer.connections[addr] = wireMock(writes);
+    peer._addressToId[addr] = 'honest-relay-bind';
+    const relayPub = relayKey.public.encodeCompressed('hex');
+    peer._state.peers = {
+      'honest-relay-bind': {
+        id: 'honest-relay-bind',
+        address: addr,
+        score: 200,
+        publicKey: relayPub
+      }
+    };
+    peer.peers[addr] = { id: 'honest-relay-bind', publicKey: relayPub };
+
+    const attackerId = 'attacker-session-id';
+    const proof = peer._sessionKeyProofMessage(attackerId, attackerKey.pubkey, attackerKey.pubkey);
+    const payload = Message.fromLegacyBody('P2P_SESSION_OFFER', {
+      type: 'P2P_SESSION_OFFER',
+      actor: {
+        id: attackerId,
+        pubkey: attackerKey.pubkey,
+        parentPubkey: attackerKey.pubkey,
+        parentSignature: attackerKey.signSchnorr(proof, SIGNING_TAGS.SESSION_KEY).toString('hex')
+      },
+      object: { challenge: 'peel-rebind' }
+    }).signWithKey(attackerKey);
+
+    const outer = wrapOnionPath({
+      path: [xOnlyFromKey(peer.key)],
+      payload,
+      key: relayKey
+    });
+
+    peer._handleFabricMessage(outer.toBuffer(), { name: addr }, null);
+
+    assert.strictEqual(peer._addressToId[addr], 'honest-relay-bind');
+    assert.strictEqual(peer.peers[addr].publicKey, relayPub);
+    assert.strictEqual(writes.length, 0, 'must not SESSION_OPEN-reply on peel');
+    assert.strictEqual(peer._state.peers['honest-relay-bind'].publicKey, relayPub);
+  });
+
+  it('peeled chat delivers locally without mesh-relaying under last hop', function () {
+    const destKey = new Key();
+    const originKey = new Key();
+    const peer = new Peer(offlinePeerSettings({
+      key: { mnemonic: destKey.mnemonic },
+      chat: { maxRelaysPerOriginPerMinute: 1 }
+    }));
+    const addr = '127.0.0.1:9505';
+    const otherAddr = '127.0.0.1:9506';
+    const otherWrites = [];
+    peer.connections[addr] = wireMock([]);
+    peer.connections[otherAddr] = wireMock(otherWrites);
+    peer.peers[addr] = { id: 'relay', publicKey: originKey.public.encodeCompressed('hex') };
+    peer.peers[otherAddr] = { id: 'other', publicKey: new Key().public.encodeCompressed('hex') };
+
+    const payload = Message.fromVector(['P2P_CHAT_MESSAGE', 'peel-local-only']);
+    payload.signWithKey(originKey);
+    const outer = wrapOnionPath({
+      path: [xOnlyFromKey(peer.key)],
+      payload,
+      key: originKey
+    });
+
+    const chats = [];
+    peer.on('chat', (body) => chats.push(body));
+    peer._handleFabricMessage(outer.toBuffer(), { name: addr }, null);
+
+    assert.strictEqual(chats.length, 1);
+    assert.strictEqual(chats[0].text, 'peel-local-only');
+    assert.strictEqual(otherWrites.length, 0, 'must not mesh-relay peeled chat');
+  });
+
+  it('peeled P2P_PEERING_OFFER does not enqueue candidates or mesh-relay', function () {
+    const destKey = new Key();
+    const originKey = new Key();
+    const peer = new Peer(offlinePeerSettings({
+      key: { mnemonic: destKey.mnemonic }
+    }));
+    const addr = '127.0.0.1:9507';
+    const otherAddr = '127.0.0.1:9508';
+    const otherWrites = [];
+    peer.connections[addr] = wireMock([]);
+    peer.connections[otherAddr] = wireMock(otherWrites);
+    peer.peers[addr] = { id: 'relay', publicKey: originKey.public.encodeCompressed('hex') };
+    peer.peers[otherAddr] = { id: 'other', publicKey: new Key().public.encodeCompressed('hex') };
+
+    const beforeQueue = (peer.candidates && peer.candidates.length) || 0;
+    const payload = Message.fromLegacyBody('P2P_PEERING_OFFER', {
+      type: 'P2P_PEERING_OFFER',
+      object: {
+        transport: 'fabric',
+        host: '203.0.113.9',
+        port: 17777,
+        peeringHop: 5
+      }
+    }).signWithKey(originKey);
+
+    const outer = wrapOnionPath({
+      path: [xOnlyFromKey(peer.key)],
+      payload,
+      key: originKey
+    });
+
+    const offers = [];
+    peer.on('peeringOffer', (d) => offers.push(d));
+    peer._handleFabricMessage(outer.toBuffer(), { name: addr }, null);
+
+    assert.ok(offers.length >= 1, 'expect local peeringOffer observe');
+    assert.strictEqual(offers[0].peeledForward, true);
+    const afterQueue = (peer.candidates && peer.candidates.length) || 0;
+    assert.strictEqual(afterQueue, beforeQueue, 'must not enqueue peel dial targets');
+    assert.ok(!peer._candidateKeys.has('203.0.113.9:17777'));
+    assert.strictEqual(otherWrites.length, 0, 'must not mesh-relay peeled peering offer');
+  });
+
+  it('peeled body-hash mismatch does not hard-disconnect the last hop', function () {
+    const destKey = new Key();
+    const relayKey = new Key();
+    const peer = new Peer(offlinePeerSettings({
+      key: { mnemonic: destKey.mnemonic }
+    }));
+    const addr = '127.0.0.1:9501';
+    let destroyed = false;
+    peer.connections[addr] = {
+      _writeFabric () {},
+      destroy () { destroyed = true; }
+    };
+    peer._addressToId[addr] = 'honest-relay-2';
+    peer._state.peers = {
+      'honest-relay-2': {
+        id: 'honest-relay-2',
+        address: addr,
+        score: 180,
+        publicKey: relayKey.public.encodeCompressed('hex')
+      }
+    };
+    peer.peers[addr] = { id: 'honest-relay-2', publicKey: relayKey.public.encodeCompressed('hex') };
+
+    const payload = Message.fromVector(['P2P_CHAT_MESSAGE', 'hash-bad']).signWithKey(new Key());
+    const buf = Buffer.from(payload.toBuffer());
+    // Flip a body byte after the 208-byte header so header.hash mismatches.
+    if (buf.length > 208) buf[208] ^= 0xff;
+
+    const outer = wrapOnionPath({
+      path: [xOnlyFromKey(peer.key)],
+      payload: Message.fromBuffer(buf),
+      key: relayKey
+    });
+
+    peer._handleFabricMessage(outer.toBuffer(), { name: addr }, null);
+
+    assert.strictEqual(destroyed, false);
+    assert.strictEqual(peer._isPeerBanned(addr), false);
+    assert.strictEqual(peer._state.peers['honest-relay-2'].score, 180);
+  });
+
+  it('drops P2P_FORWARD with ttl=0 (no peel, no forward)', function () {
+    const peer = new Peer(offlinePeerSettings());
+    const originKey = new Key();
+    const fromAddr = '127.0.0.1:9600';
+    const nextWrites = [];
+    peer.connections[fromAddr] = wireMock([]);
+    peer.connections['127.0.0.1:9601'] = wireMock(nextWrites);
+    peer.peers[fromAddr] = { id: 'src', publicKey: originKey.public.encodeCompressed('hex') };
+
+    const inner = Message.fromVector(['P2P_CHAT_MESSAGE', 'ttl0']).signWithKey(originKey).toBuffer();
+    const outer = Message.fromFields('P2P_FORWARD', {
+      nextPeer: xOnlyFromKey(peer.key),
+      ttl: 0,
+      inner
+    }).signWithKey(originKey);
+
+    const peels = [];
+    const forwards = [];
+    peer.on('onion:peel', (d) => peels.push(d));
+    peer.on('onion:forward', (d) => forwards.push(d));
+    peer._handleFabricMessage(outer.toBuffer(), { name: fromAddr }, null);
+
+    assert.strictEqual(peels.length, 0);
+    assert.strictEqual(forwards.length, 0);
+    assert.strictEqual(nextWrites.length, 0);
+  });
+
+  it('refuses bounce of P2P_FORWARD back to origin', function () {
+    const relay = new Peer(offlinePeerSettings());
+    const originKey = new Key();
+    const nextKey = new Key();
+    const fromAddr = '127.0.0.1:9610';
+    const fromWrites = [];
+    relay.connections[fromAddr] = wireMock(fromWrites);
+    relay.peers[fromAddr] = { id: 'src', publicKey: nextKey.public.encodeCompressed('hex') };
+
+    const payload = Message.fromVector(['P2P_CHAT_MESSAGE', 'bounce']).signWithKey(originKey);
+    const outer = wrapOnionPath({
+      path: [xOnlyFromKey(nextKey)],
+      payload,
+      key: originKey
+    });
+
+    const forwards = [];
+    relay.on('onion:forward', (d) => forwards.push(d));
+    relay._handleFabricMessage(outer.toBuffer(), { name: fromAddr }, null);
+
+    assert.strictEqual(forwards.length, 0);
+    assert.strictEqual(fromWrites.length, 0, 'must not write bounce back to origin');
+  });
+
+  it('emits onion:undeliverable when next hop is missing', function () {
+    const relay = new Peer(offlinePeerSettings());
+    const originKey = new Key();
+    const missingKey = new Key();
+    const fromAddr = '127.0.0.1:9620';
+    relay.connections[fromAddr] = wireMock([]);
+    relay.peers[fromAddr] = { id: 'src', publicKey: originKey.public.encodeCompressed('hex') };
+
+    const payload = Message.fromVector(['P2P_CHAT_MESSAGE', 'gone']).signWithKey(originKey);
+    const outer = wrapOnionPath({
+      path: [xOnlyFromKey(missingKey)],
+      payload,
+      key: originKey
+    });
+
+    const misses = [];
+    relay.on('onion:undeliverable', (d) => misses.push(d));
+    relay._handleFabricMessage(outer.toBuffer(), { name: fromAddr }, null);
+
+    assert.strictEqual(misses.length, 1);
+    assert.strictEqual(misses[0].reason, 'next-hop-missing');
+    assert.strictEqual(misses[0].nextPeer, xOnlyFromKey(missingKey).toString('hex'));
+    assert.strictEqual(relay._isPeerBanned(fromAddr), false);
+  });
+
+  it('sendOnion fails on empty path and missing first hop', function () {
+    const peer = new Peer(offlinePeerSettings());
+    const r1Key = new Key();
+    const payload = Message.fromVector(['P2P_CHAT_MESSAGE', 'x']).signWithKey(peer.key);
+
+    const warnings = [];
+    const undeliverable = [];
+    peer.on('warning', (w) => warnings.push(String(w)));
+    peer.on('onion:undeliverable', (d) => undeliverable.push(d));
+
+    assert.strictEqual(peer.sendOnion([], payload), false);
+    assert.ok(warnings.some((w) => /empty path/i.test(w)));
+
+    assert.strictEqual(peer.sendOnion([xOnlyFromKey(r1Key)], payload), false);
+    assert.ok(undeliverable.some((d) => d.reason === 'first-hop-missing'));
+  });
+
+  it('sendOnion wrap failure returns false for oversized path', function () {
+    const peer = new Peer(offlinePeerSettings());
+    const path = [];
+    for (let i = 0; i < P2P_FORWARD_MAX_HOPS + 1; i++) path.push(xOnlyFromKey(new Key()));
+    const payload = Message.fromVector(['P2P_CHAT_MESSAGE', 'big']).signWithKey(peer.key);
+    const warnings = [];
+    peer.on('warning', (w) => warnings.push(String(w)));
+    assert.strictEqual(peer.sendOnion(path, payload), false);
+    assert.ok(warnings.some((w) => /wrap failed/i.test(w)));
+  });
+
+  it('peeled forbidden CONTRACT_MESSAGE ops do not cut last hop', function () {
+    const destKey = new Key();
+    const relayKey = new Key();
+    const owner = new Key();
+    const attacker = new Key();
+    const peer = new Peer(offlinePeerSettings({
+      key: { mnemonic: destKey.mnemonic }
+    }));
+    const addr = '127.0.0.1:9630';
+    let destroyed = false;
+    peer.connections[addr] = {
+      _writeFabric () {},
+      destroy () { destroyed = true; }
+    };
+    peer._addressToId[addr] = 'honest-relay-ops';
+    peer._state.peers = {
+      'honest-relay-ops': {
+        id: 'honest-relay-ops',
+        address: addr,
+        score: 160,
+        publicKey: relayKey.public.encodeCompressed('hex')
+      }
+    };
+    peer.peers[addr] = {
+      id: 'honest-relay-ops',
+      publicKey: relayKey.public.encodeCompressed('hex')
+    };
+    peer._state.content.contracts = { c1: { value: 1 } };
+    peer._mergeContractPatchAllowList('c1', {
+      parties: [String(owner.pubkey).toLowerCase()]
+    }, String(owner.pubkey).toLowerCase());
+
+    const payload = Message.fromLegacyBody('CONTRACT_MESSAGE', {
+      contract: 'c1',
+      ops: [{ op: 'replace', path: '/value', value: 99 }]
+    }).signWithKey(attacker);
+
+    const outer = wrapOnionPath({
+      path: [xOnlyFromKey(peer.key)],
+      payload,
+      key: relayKey
+    });
+
+    peer._handleFabricMessage(outer.toBuffer(), { name: addr }, null);
+
+    assert.strictEqual(peer._state.content.contracts.c1.value, 1);
+    assert.strictEqual(destroyed, false);
+    assert.strictEqual(peer._isPeerBanned(addr), false);
+    assert.strictEqual(peer._state.peers['honest-relay-ops'].score, 160);
+  });
+
+  it('peeled P2P_PEER_ALIAS does not overlay last-hop nickname or mesh-relay', function () {
+    const destKey = new Key();
+    const originKey = new Key();
+    const peer = new Peer(offlinePeerSettings({
+      key: { mnemonic: destKey.mnemonic }
+    }));
+    const addr = '127.0.0.1:9650';
+    const otherAddr = '127.0.0.1:9651';
+    const otherWrites = [];
+    peer.connections[addr] = wireMock([]);
+    peer.connections[otherAddr] = wireMock(otherWrites);
+    peer.peers[addr] = {
+      id: 'honest-relay-alias',
+      publicKey: originKey.public.encodeCompressed('hex')
+    };
+    peer._addressToId[addr] = 'honest-relay-alias';
+    peer._state.peers = {
+      'honest-relay-alias': {
+        id: 'honest-relay-alias',
+        address: addr,
+        score: 140,
+        publicKey: originKey.public.encodeCompressed('hex'),
+        alias: 'relay-nick'
+      }
+    };
+    peer.connections[addr]._alias = 'relay-nick';
+
+    const attacker = new Key();
+    const payload = Message.fromVector(['P2P_PEER_ALIAS', 'attacker-nick']).signWithKey(attacker);
+    const outer = wrapOnionPath({
+      path: [xOnlyFromKey(peer.key)],
+      payload,
+      key: originKey
+    });
+
+    const aliases = [];
+    peer.on('peerAlias', (d) => aliases.push(d));
+    peer._handleFabricMessage(outer.toBuffer(), { name: addr }, null);
+
+    assert.ok(aliases.length >= 1);
+    assert.strictEqual(aliases[0].alias, 'attacker-nick');
+    assert.strictEqual(aliases[0].peeledForward, true);
+    assert.strictEqual(peer.connections[addr]._alias, 'relay-nick');
+    assert.strictEqual(peer._state.peers['honest-relay-alias'].alias, 'relay-nick');
+    assert.strictEqual(peer._state.peers['honest-relay-alias'].address, addr);
+    assert.strictEqual(otherWrites.length, 0, 'must not mesh-relay peeled alias');
+  });
+
+  it('peeled P2P_PEER_GOSSIP observes locally without budget burn or mesh-relay', function () {
+    const destKey = new Key();
+    const originKey = new Key();
+    const peer = new Peer(offlinePeerSettings({
+      key: { mnemonic: destKey.mnemonic },
+      gossip: { maxRelaysPerOriginPerMinute: 1 }
+    }));
+    const addr = '127.0.0.1:9660';
+    const otherAddr = '127.0.0.1:9661';
+    const otherWrites = [];
+    peer.connections[addr] = wireMock([]);
+    peer.connections[otherAddr] = wireMock(otherWrites);
+    peer.peers[addr] = { id: 'relay', publicKey: originKey.public.encodeCompressed('hex') };
+
+    const payload = Message.fromLegacyBody('P2P_PEER_GOSSIP', {
+      type: 'P2P_PEER_GOSSIP',
+      object: { peer: 'deadbeef', gossipHop: 5 }
+    }).signWithKey(originKey);
+
+    const outer = wrapOnionPath({
+      path: [xOnlyFromKey(peer.key)],
+      payload,
+      key: originKey
+    });
+
+    const gossips = [];
+    peer.on('peeringGossip', (d) => gossips.push(d));
+    peer._handleFabricMessage(outer.toBuffer(), { name: addr }, null);
+
+    assert.ok(gossips.length >= 1);
+    assert.strictEqual(gossips[0].peeledForward, true);
+    assert.strictEqual(peer._gossipRelayByOrigin.has(addr), false, 'must not burn last-hop gossip budget');
+    assert.strictEqual(otherWrites.length, 0, 'must not mesh-relay peeled gossip');
+  });
+
+  it('peeled inners do not debit last-hop wire-traffic budget', function () {
+    const destKey = new Key();
+    const relayKey = new Key();
+    const peer = new Peer(offlinePeerSettings({
+      key: { mnemonic: destKey.mnemonic },
+      wireTraffic: {
+        maxCreditsPerWindow: 50,
+        defaultCreditCost: 1,
+        forwardCreditCost: 4,
+        overLimitPenalty: 40
+      }
+    }));
+    const addr = '127.0.0.1:9670';
+    peer.connections[addr] = wireMock([]);
+    peer._addressToId[addr] = 'honest-relay-budget';
+    peer._state.peers = {
+      'honest-relay-budget': {
+        id: 'honest-relay-budget',
+        address: addr,
+        score: 200,
+        publicKey: relayKey.public.encodeCompressed('hex')
+      }
+    };
+    peer.peers[addr] = {
+      id: 'honest-relay-budget',
+      publicKey: relayKey.public.encodeCompressed('hex')
+    };
+
+    // 12 outers × 4 credits = 48 ≤ 50. If inners also charged (+1 each), total 60 → derank.
+    for (let i = 0; i < 12; i++) {
+      const payload = Message.fromVector(['P2P_CHAT_MESSAGE', `budget-${i}-${Date.now()}`])
+        .signWithKey(new Key());
+      const outer = wrapOnionPath({
+        path: [xOnlyFromKey(peer.key)],
+        payload,
+        key: relayKey
+      });
+      peer._handleFabricMessage(outer.toBuffer(), { name: addr }, null);
+    }
+
+    assert.strictEqual(peer._state.peers['honest-relay-budget'].score, 200);
+    assert.strictEqual(peer._isPeerBanned(addr), false);
+  });
+
+  it('peeled P2P_PEER_ANNOUNCE does not enqueue dial candidates', function () {
+    const destKey = new Key();
+    const originKey = new Key();
+    const peer = new Peer(offlinePeerSettings({
+      key: { mnemonic: destKey.mnemonic },
+      constraints: { peers: { max: 32 } }
+    }));
+    const addr = '127.0.0.1:9680';
+    peer.connections[addr] = wireMock([]);
+    peer.peers[addr] = { publicKey: originKey.public.encodeCompressed('hex') };
+    const before = (peer.candidates && peer.candidates.length) || 0;
+
+    const payload = Message.fromLegacyBody('P2P_PEER_ANNOUNCE', {
+      type: 'P2P_PEER_ANNOUNCE',
+      object: { host: '198.51.100.200', port: 17777 }
+    }).signWithKey(originKey);
+
+    const outer = wrapOnionPath({
+      path: [xOnlyFromKey(peer.key)],
+      payload,
+      key: originKey
+    });
+    const announces = [];
+    peer.on('peerAnnounce', (d) => announces.push(d));
+    peer._handleFabricMessage(outer.toBuffer(), { name: addr }, null);
+
+    assert.ok(announces.length >= 1);
+    assert.strictEqual(announces[0].peeledForward, true);
+    assert.strictEqual((peer.candidates && peer.candidates.length) || 0, before);
+    assert.ok(!peer._candidateKeys.has('198.51.100.200:17777'));
+  });
+
+  it('peeled CONTRACT_PUBLISH hijack does not derank last hop', function () {
+    const destKey = new Key();
+    const relayKey = new Key();
+    const owner = new Key();
+    const attacker = new Key();
+    const peer = new Peer(offlinePeerSettings({
+      key: { mnemonic: destKey.mnemonic }
+    }));
+    const addr = '127.0.0.1:9690';
+    peer.connections[addr] = wireMock([]);
+    peer._addressToId[addr] = 'honest-relay-cpub';
+    peer._state.peers = {
+      'honest-relay-cpub': {
+        id: 'honest-relay-cpub',
+        address: addr,
+        score: 300,
+        publicKey: relayKey.public.encodeCompressed('hex')
+      }
+    };
+    peer.peers[addr] = {
+      id: 'honest-relay-cpub',
+      publicKey: relayKey.public.encodeCompressed('hex')
+    };
+
+    const contract = { id: 'peel-cpub', state: { v: 1 }, parties: [String(owner.pubkey).toLowerCase()] };
+    // Seed first-writer claim without pin-checking the TCP hop (owner ≠ relay).
+    const claim = peer._claimLogicalRegistration(
+      'CONTRACT_PUBLISH', contract, String(owner.pubkey).toLowerCase());
+    assert.strictEqual(claim.duplicate, false);
+    peer._registerContract(contract, String(owner.pubkey).toLowerCase());
+    const scoreAfterFirst = peer._state.peers['honest-relay-cpub'].score;
+
+    // Re-signed duplicate via onion peel — must not hijack-penalize the relay.
+    const hijack = Message.fromLegacyBody('CONTRACT_PUBLISH', contract).signWithKey(attacker);
+    const outer = wrapOnionPath({
+      path: [xOnlyFromKey(peer.key)],
+      payload: hijack,
+      key: relayKey
+    });
+    peer._handleFabricMessage(outer.toBuffer(), { name: addr }, null);
+
+    assert.strictEqual(peer._state.peers['honest-relay-cpub'].score, scoreAfterFirst);
+  });
+
+  it('undecodable P2P_FORWARD body is dropped', function () {
+    const peer = new Peer(offlinePeerSettings());
+    const fromAddr = '127.0.0.1:9640';
+    peer.connections[fromAddr] = wireMock([]);
+    // Valid AMP envelope with wrong body shape for P2P_FORWARD.
+    const bogus = Message.fromVector(['P2P_FORWARD', 'not-a-field-body']).signWithKey(peer.key);
+    const peels = [];
+    peer.on('onion:peel', (d) => peels.push(d));
+    peer._handleFabricMessage(bogus.toBuffer(), { name: fromAddr }, null);
+    assert.strictEqual(peels.length, 0);
+    assert.strictEqual(tryDecodeForward(bogus), null);
+  });
+
+  it('peeled CONTRACT_MESSAGE / PROPOSAL / BitcoinBlock do not mesh-relay under last hop', function () {
+    const { buildContractProposalPayload } = require('../functions/contractProposal');
+    const destKey = new Key();
+    const relayKey = new Key();
+    const author = new Key();
+    const peer = new Peer(offlinePeerSettings({
+      key: { mnemonic: destKey.mnemonic }
+    }));
+    const addr = '127.0.0.1:9701';
+    const otherAddr = '127.0.0.1:9702';
+    const otherWrites = [];
+    peer.connections[addr] = wireMock([]);
+    peer.connections[otherAddr] = wireMock(otherWrites);
+    peer.peers[addr] = {
+      id: 'honest-relay-flood',
+      publicKey: relayKey.public.encodeCompressed('hex')
+    };
+
+    const cases = [];
+
+    // CONTRACT_MESSAGE (no ops — emit + would-have-relayed)
+    cases.push(Message.fromLegacyBody('CONTRACT_MESSAGE', {
+      contract: 'peel-cm-1',
+      ops: []
+    }).signWithKey(author));
+
+    // CONTRACT_PROPOSAL
+    const leaf = Message.fromVector(['P2P_CHAT_MESSAGE', 'leaf']).signWithKey(author);
+    const proposal = buildContractProposalPayload({
+      contractId: 'peel-cp-1',
+      messages: [leaf],
+      statePatch: []
+    });
+    cases.push(Message.fromLegacyBody('CONTRACT_PROPOSAL', proposal).signWithKey(author));
+
+    // BitcoinBlock tip
+    cases.push(Message.fromLegacyBody('BitcoinBlock', {
+      hash: 'ab'.repeat(32),
+      height: 42
+    }).signWithKey(author));
+
+    for (const payload of cases) {
+      otherWrites.length = 0;
+      const outer = wrapOnionPath({
+        path: [xOnlyFromKey(peer.key)],
+        payload,
+        key: relayKey
+      });
+      peer._handleFabricMessage(outer.toBuffer(), { name: addr }, null);
+      assert.strictEqual(
+        otherWrites.length,
+        0,
+        `peeled ${payload.type} must not mesh-relay under last hop`
+      );
+    }
+  });
+
+  it('P2P_RELAY-unwrapped CONTRACT_MESSAGE does not second-flood the inner', function () {
+    const destKey = new Key();
+    const forwarder = new Key();
+    const author = new Key();
+    const peer = new Peer(offlinePeerSettings({
+      key: { mnemonic: destKey.mnemonic }
+    }));
+    const addr = '127.0.0.1:9710';
+    const otherAddr = '127.0.0.1:9711';
+    const otherWrites = [];
+    peer.connections[addr] = wireMock([]);
+    peer.connections[otherAddr] = wireMock(otherWrites);
+    // Foreign-signed RELAY: pin is forwarder, AMP author is different → relayedAsIs.
+    peer.peers[addr] = {
+      id: 'honest-relay-inner',
+      publicKey: forwarder.public.encodeCompressed('hex')
+    };
+
+    const inner = Message.fromLegacyBody('CONTRACT_MESSAGE', {
+      contract: 'relay-cm-1',
+      ops: []
+    }).signWithKey(author);
+    const outer = Message.fromVector(['P2P_RELAY', inner.toBuffer()]).signWithKey(author);
+
+    peer._handleFabricMessage(outer.toBuffer(), { name: addr }, null);
+
+    // Outer RELAY may fan out bit-identical; no additional first-class CONTRACT_MESSAGE flood.
+    for (const buf of otherWrites) {
+      const m = Message.fromBuffer(buf);
+      assert.strictEqual(
+        m.type,
+        'P2P_RELAY',
+        'mesh forward must be the outer RELAY only, not unwrapped CONTRACT_MESSAGE'
+      );
+    }
+  });
+
+  it('peeled DocumentRequest does not fulfill or mesh-relay under last hop', function () {
+    const destKey = new Key();
+    const relayKey = new Key();
+    const author = new Key();
+    const peer = new Peer(offlinePeerSettings({
+      key: { mnemonic: destKey.mnemonic },
+      autoFulfillDocumentRequests: true
+    }));
+    const addr = '127.0.0.1:9720';
+    const otherAddr = '127.0.0.1:9721';
+    const relayWrites = [];
+    const otherWrites = [];
+    peer.connections[addr] = wireMock(relayWrites);
+    peer.connections[otherAddr] = wireMock(otherWrites);
+    peer.peers[addr] = {
+      id: 'honest-relay-docreq',
+      publicKey: relayKey.public.encodeCompressed('hex')
+    };
+
+    peer._state.content.documents = peer._state.content.documents || {};
+    peer._state.content.documents['peel-held-doc'] = 'secret-body';
+
+    const events = [];
+    peer.on('documentRequest', (ev) => events.push(ev));
+
+    const payload = Message.fromLegacyBody('DocumentRequest', {
+      document: 'peel-held-doc'
+    }).signWithKey(author);
+    const outer = wrapOnionPath({
+      path: [xOnlyFromKey(peer.key)],
+      payload,
+      key: relayKey
+    });
+    peer._handleFabricMessage(outer.toBuffer(), { name: addr }, null);
+
+    assert.ok(events.length >= 1, 'expected local documentRequest observe');
+    assert.strictEqual(events[0].localObserveOnly, true);
+    assert.strictEqual(events[0].pendingKey, null);
+    // No P2P_FILE_SEND (or anything) to the honest last hop.
+    assert.strictEqual(relayWrites.length, 0, 'must not fulfill to TCP last hop');
+    assert.strictEqual(otherWrites.length, 0, 'must not mesh-relay peeled DocumentRequest');
+  });
+
+  it('P2P_RELAY-unwrapped DocumentRequest does not second-flood or fulfill last hop', function () {
+    const destKey = new Key();
+    const forwarder = new Key();
+    const author = new Key();
+    const peer = new Peer(offlinePeerSettings({
+      key: { mnemonic: destKey.mnemonic },
+      autoFulfillDocumentRequests: true
+    }));
+    const addr = '127.0.0.1:9730';
+    const otherAddr = '127.0.0.1:9731';
+    const relayWrites = [];
+    const otherWrites = [];
+    peer.connections[addr] = wireMock(relayWrites);
+    peer.connections[otherAddr] = wireMock(otherWrites);
+    peer.peers[addr] = {
+      id: 'honest-relay-docreq-relay',
+      publicKey: forwarder.public.encodeCompressed('hex')
+    };
+
+    peer._state.content.documents = peer._state.content.documents || {};
+    peer._state.content.documents['relay-held-doc'] = 'secret-body';
+
+    const innerHeld = Message.fromLegacyBody('DocumentRequest', {
+      document: 'relay-held-doc'
+    }).signWithKey(author);
+    const outerHeld = Message.fromVector(['P2P_RELAY', innerHeld.toBuffer()]).signWithKey(author);
+    peer._handleFabricMessage(outerHeld.toBuffer(), { name: addr }, null);
+    assert.strictEqual(relayWrites.length, 0, 'foreign RELAY must not fulfill to last hop');
+
+    // Missing doc: outer may flood; inner must not appear as first-class DocumentRequest.
+    relayWrites.length = 0;
+    otherWrites.length = 0;
+    const innerMiss = Message.fromLegacyBody('DocumentRequest', {
+      document: 'missing-via-relay'
+    }).signWithKey(author);
+    const outerMiss = Message.fromVector(['P2P_RELAY', innerMiss.toBuffer()]).signWithKey(author);
+    peer._handleFabricMessage(outerMiss.toBuffer(), { name: addr }, null);
+    for (const buf of otherWrites) {
+      const m = Message.fromBuffer(buf);
+      assert.strictEqual(
+        m.type,
+        'P2P_RELAY',
+        'mesh forward must be outer RELAY only, not unwrapped DocumentRequest'
+      );
+    }
+  });
+
+  it('self-signed P2P_RELAY DocumentRequest may fulfill TCP author (no second flood)', function () {
+    const destKey = new Key();
+    const author = new Key();
+    const peer = new Peer(offlinePeerSettings({
+      key: { mnemonic: destKey.mnemonic },
+      autoFulfillDocumentRequests: true
+    }));
+    const addr = '127.0.0.1:9740';
+    const otherAddr = '127.0.0.1:9741';
+    const authorWrites = [];
+    const otherWrites = [];
+    peer.connections[addr] = wireMock(authorWrites);
+    peer.connections[otherAddr] = wireMock(otherWrites);
+    // Pin matches AMP author ⇒ self-signed RELAY (not relayedAsIs).
+    peer.peers[addr] = {
+      id: 'author-self-relay',
+      publicKey: author.public.encodeCompressed('hex')
+    };
+    peer._state.content.documents = peer._state.content.documents || {};
+    peer._state.content.documents['self-relay-doc'] = 'ok-body';
+
+    const inner = Message.fromLegacyBody('DocumentRequest', {
+      document: 'self-relay-doc'
+    }).signWithKey(author);
+    const outer = Message.fromVector(['P2P_RELAY', inner.toBuffer()]).signWithKey(author);
+    peer._handleFabricMessage(outer.toBuffer(), { name: addr }, null);
+
+    assert.ok(authorWrites.length >= 1, 'self-signed RELAY author may receive fulfill');
+    const fulfill = Message.fromBuffer(authorWrites[authorWrites.length - 1]);
+    assert.strictEqual(fulfill.type, 'P2P_FILE_SEND');
+    for (const buf of otherWrites) {
+      const m = Message.fromBuffer(buf);
+      assert.notStrictEqual(
+        m.type,
+        'DocumentRequest',
+        'must not second-flood unwrapped DocumentRequest'
+      );
+      assert.notStrictEqual(m.type, 'DOCUMENT_REQUEST');
+    }
+  });
+});
+
+const {
+  chatTextOf,
+  chatActorIdOf,
+  formatChatLogLine,
+  sanitizeChatDisplayField
+} = require('../functions/fabricChatText');
+
+describe('fabricChatText', function () {
+  it('reads Peer { text } first, then Hub object.content / application body', function () {
+    assert.strictEqual(chatTextOf({ text: 'mesh' }), 'mesh');
+    assert.strictEqual(chatTextOf({ object: { content: 'hub' } }), 'hub');
+    assert.strictEqual(chatTextOf({ object: { body: 'app' } }), 'app');
+    assert.strictEqual(chatTextOf('plain'), 'plain');
+    assert.strictEqual(chatTextOf({ text: '  ' }), '');
+  });
+
+  it('prefers AMP signer over actor.id and x-only-normalizes compressed keys', function () {
+    const compressed = '02' + 'aa'.repeat(32);
+    const xonly = 'aa'.repeat(32);
+    assert.strictEqual(
+      chatActorIdOf({ actor: { id: 'other' } }, { signer: compressed }),
+      xonly
+    );
+    assert.strictEqual(chatActorIdOf({ actor: { id: xonly } }), xonly);
+  });
+
+  it('formats TUI/Hub-style log lines with alias or truncated id', function () {
+    assert.strictEqual(formatChatLogLine('aa'.repeat(32), 'neorion', 'hi'), '[neorion]: hi');
+    assert.strictEqual(
+      formatChatLogLine('abcdefghij', null, 'yo'),
+      '[@abcdefghij]: yo'
+    );
+    assert.strictEqual(
+      formatChatLogLine('abcdefghijklmnop', null, 'z', (id) => id.slice(0, 4)),
+      '[@abcd]: z'
+    );
+    assert.strictEqual(formatChatLogLine(null, '  ', 'plain'), '[@]: plain');
+  });
+
+  it('strips Blessed tags and control characters from alias/text', function () {
+    assert.strictEqual(sanitizeChatDisplayField('hi{bold}x{/bold}'), 'hiboldx/bold');
+    assert.strictEqual(
+      formatChatLogLine('aa'.repeat(32), '{red-fg}evil{/red-fg}', 'ok\u0007{tag}'),
+      '[red-fgevil/red-fg]: oktag'
+    );
+  });
+});
+
+const {
+  CHAT_SURFACE,
+  classifyChatSurface,
+  isPublicMeshShoutbox,
+  isConfidentialChatSurface,
+  chatSurfaceLabel
+} = require('../functions/fabricChatKind');
+const {
+  ONION_CHAT_SEAL_TYPE,
+  isOnionChatSeal,
+  sealOnionChatText,
+  tryOpenOnionChatText,
+  onionPathRecipientXOnly
+} = require('../functions/onionChatSeal');
+
+describe('fabricChatKind', function () {
+  it('classifies cleartext UTF-8 as public shoutbox', function () {
+    assert.strictEqual(classifyChatSurface('hello mesh'), CHAT_SURFACE.SHOUTBOX);
+    assert.ok(isPublicMeshShoutbox('hello mesh'));
+    assert.ok(!isConfidentialChatSurface('hello mesh'));
+    assert.match(chatSurfaceLabel(CHAT_SURFACE.SHOUTBOX), /Public/i);
+  });
+
+  it('classifies a missing body as unknown, not shoutbox', function () {
+    assert.strictEqual(classifyChatSurface(null), CHAT_SURFACE.UNKNOWN);
+    assert.strictEqual(classifyChatSurface(undefined), CHAT_SURFACE.UNKNOWN);
+    assert.ok(!isPublicMeshShoutbox(null));
+    assert.ok(!isPublicMeshShoutbox(undefined));
+  });
+
+  it('classifies onion-sealed bodies as confidential', function () {
+    const tip = new Key();
+    const sealed = sealOnionChatText('secret', tip.pubkey);
+    assert.strictEqual(classifyChatSurface(sealed), CHAT_SURFACE.ONION_SEAL);
+    assert.ok(isConfidentialChatSurface(sealed));
+    assert.ok(!isPublicMeshShoutbox(sealed));
+  });
+
+  it('classifies GroupChat objects with and without seals', function () {
+    assert.strictEqual(
+      classifyChatSurface({ body: 'hi' }, { appType: 'GroupChat' }),
+      CHAT_SURFACE.CONTRACT_CLEARTEXT
+    );
+    assert.strictEqual(
+      classifyChatSurface({
+        type: 'GroupChat',
+        seal: {
+          scheme: 'aes-256-gcm-participant-v1',
+          ephemeralPub: 'aa',
+          wraps: [],
+          nonce: 'bb',
+          ciphertext: 'cc'
+        },
+        body: ''
+      }),
+      CHAT_SURFACE.GROUP_SEAL
+    );
+  });
+});
+
+describe('@fabric/core onionChatSeal', function () {
+  it('seals to recipient and opens only with matching key', function () {
+    const dest = new Key();
+    const other = new Key();
+    const wire = sealOnionChatText('secret-hop', dest.pubkey);
+    assert.ok(isOnionChatSeal(wire));
+    assert.ok(wire.includes(ONION_CHAT_SEAL_TYPE));
+    assert.ok(!wire.includes('secret-hop'));
+
+    const ok = tryOpenOnionChatText(wire, { keyOrPrivate: dest });
+    assert.strictEqual(ok.sealed, true);
+    assert.strictEqual(ok.opened, true);
+    assert.strictEqual(ok.text, 'secret-hop');
+
+    const bad = tryOpenOnionChatText(wire, { keyOrPrivate: other });
+    assert.strictEqual(bad.sealed, true);
+    assert.strictEqual(bad.opened, false);
+    assert.strictEqual(bad.text, null);
+  });
+
+  it('onionPathRecipientXOnly uses path tip', function () {
+    const a = new Key();
+    const b = new Key();
+    const tip = onionPathRecipientXOnly([
+      xOnlyFromKey(a).toString('hex'),
+      xOnlyFromKey(b).toString('hex')
+    ]);
+    assert.strictEqual(tip, xOnlyFromKey(b).toString('hex'));
+
+    const compressed = Buffer.from(b.public.encodeCompressed('hex'), 'hex');
+    assert.strictEqual(onionPathRecipientXOnly([compressed]), xOnlyFromKey(b).toString('hex'));
+    assert.strictEqual(onionPathRecipientXOnly([xOnlyFromKey(b)]), xOnlyFromKey(b).toString('hex'));
+  });
+
+  it('Peer peels sealed onion chat and emits plaintext', function () {
+    const destKey = new Key();
+    const originKey = new Key();
+    const peer = new Peer(offlinePeerSettings({
+      key: { mnemonic: destKey.mnemonic }
+    }));
+    const addr = '127.0.0.1:9300';
+    peer.connections[addr] = { _writeFabric () {}, destroy () {} };
+    peer.peers[addr] = { id: 'relay', publicKey: originKey.public.encodeCompressed('hex') };
+
+    // Seal to the Peer's Fabric protocol pubkey (Identity#fabricKey), not BIP44 master.
+    const sealed = sealOnionChatText('sealed-via-onion', peer.key.pubkey);
+    const payload = Message.fromVector(['P2P_CHAT_MESSAGE', sealed]);
+    payload.signWithKey(originKey);
+    const outer = wrapOnionPath({
+      path: [xOnlyFromKey(peer.key)],
+      payload,
+      key: originKey
+    });
+
+    const chats = [];
+    peer.on('chat', (body, meta) => chats.push({ body, meta }));
+    peer._handleFabricMessage(outer.toBuffer(), { name: addr }, null);
+
+    assert.strictEqual(chats.length, 1);
+    assert.strictEqual(chats[0].body.text, 'sealed-via-onion');
+    assert.strictEqual(chats[0].body.onionSealed, true);
+    assert.strictEqual(chats[0].meta.onionSealed, true);
+  });
+
+  it('Peer drops sealed chat it cannot open', function () {
+    const destKey = new Key();
+    const wrongPeer = new Peer(offlinePeerSettings());
+    const originKey = new Key();
+    const addr = '127.0.0.1:9301';
+    wrongPeer.connections[addr] = { _writeFabric () {}, destroy () {} };
+    wrongPeer.peers[addr] = { id: 'relay', publicKey: originKey.public.encodeCompressed('hex') };
+
+    const sealed = sealOnionChatText('not-for-you', destKey.pubkey);
+    const payload = Message.fromVector(['P2P_CHAT_MESSAGE', sealed]);
+    payload.signWithKey(originKey);
+    const outer = wrapOnionPath({
+      path: [xOnlyFromKey(wrongPeer.key)],
+      payload,
+      key: originKey
+    });
+
+    const chats = [];
+    wrongPeer.on('chat', (body) => chats.push(body));
+    wrongPeer._handleFabricMessage(outer.toBuffer(), { name: addr }, null);
+    assert.strictEqual(chats.length, 0);
+  });
+
+  it('multi-hop: curious relay can recurse to chat body but sees ciphertext only', function () {
+    const originKey = new Key();
+    const relay = new Peer(offlinePeerSettings());
+    const destKey = new Key();
+    const dest = new Peer(offlinePeerSettings({ key: { mnemonic: destKey.mnemonic } }));
+    const fromAddr = '127.0.0.1:9310';
+    const destAddr = '127.0.0.1:9311';
+    const destWrites = [];
+
+    relay.connections[fromAddr] = { _writeFabric () {}, destroy () {} };
+    relay.connections[destAddr] = {
+      _writeFabric (buf) { destWrites.push(buf); },
+      destroy () {}
+    };
+    relay.peers[fromAddr] = { id: 'src', publicKey: originKey.public.encodeCompressed('hex') };
+    relay.peers[destAddr] = { id: 'dest', publicKey: dest.key.public.encodeCompressed('hex') };
+
+    const plaintext = 'multi-hop-secret';
+    const sealed = sealOnionChatText(plaintext, dest.key.pubkey);
+    const payload = Message.fromVector(['P2P_CHAT_MESSAGE', sealed]).signWithKey(originKey);
+    const outer = wrapOnionPath({
+      path: [xOnlyFromKey(relay.key), xOnlyFromKey(dest.key)],
+      payload,
+      key: originKey
+    });
+
+    const relayChats = [];
+    relay.on('chat', (body) => relayChats.push(body));
+    relay._handleFabricMessage(outer.toBuffer(), { name: fromAddr }, null);
+
+    assert.strictEqual(relayChats.length, 0, 'relay must not emit chat on mid-hop peel');
+    assert.strictEqual(destWrites.length, 1);
+
+    // Snooping relay: recurse nested P2P_FORWARD inners until the application Message.
+    let cursor = Message.fromBuffer(destWrites[0]);
+    for (let i = 0; i < 8; i++) {
+      const fields = tryDecodeForward(cursor);
+      if (!fields) break;
+      cursor = Message.fromBuffer(fields.inner);
+    }
+    assert.strictEqual(cursor.type, 'P2P_CHAT_MESSAGE');
+    const snooped = cursor.data.toString('utf8');
+    assert.ok(isOnionChatSeal(snooped));
+    assert.ok(!snooped.includes(plaintext));
+    assert.strictEqual(tryOpenOnionChatText(snooped, { keyOrPrivate: relay.key }).opened, false);
+
+    const tipChats = [];
+    dest.connections[destAddr] = { _writeFabric () {}, destroy () {} };
+    dest.peers[destAddr] = { id: 'relay', publicKey: relay.key.public.encodeCompressed('hex') };
+    dest.on('chat', (body) => tipChats.push(body));
+    dest._handleFabricMessage(destWrites[0], { name: destAddr }, null);
+    assert.strictEqual(tipChats.length, 1);
+    assert.strictEqual(tipChats[0].text, plaintext);
+    assert.strictEqual(tipChats[0].onionSealed, true);
+  });
+
+  it('mesh flood P2P_CHAT_MESSAGE stays cleartext (no onion seal path)', function () {
+    const peer = new Peer(offlinePeerSettings());
+    const author = new Key();
+    const addr = '127.0.0.1:9320';
+    const peersWrites = [];
+    peer.connections[addr] = {
+      _writeFabric (buf) { peersWrites.push(buf); },
+      destroy () {}
+    };
+    peer.peers[addr] = { id: 'neighbor', publicKey: author.public.encodeCompressed('hex') };
+    peer._addressToId[addr] = 'neighbor';
+    peer._state.peers = {
+      neighbor: {
+        id: 'neighbor',
+        address: addr,
+        score: 100,
+        publicKey: author.public.encodeCompressed('hex')
+      }
+    };
+
+    const clear = 'mesh-cleartext-hello';
+    const msg = Message.fromVector(['P2P_CHAT_MESSAGE', clear]).signWithKey(author);
+    const chats = [];
+    peer.on('chat', (body, meta) => chats.push({ body, meta }));
+    peer._handleFabricMessage(msg.toBuffer(), { name: addr }, null);
+
+    assert.strictEqual(chats.length, 1);
+    assert.strictEqual(chats[0].body.text, clear);
+    assert.ok(!chats[0].body.onionSealed);
+    assert.strictEqual(isOnionChatSeal(clear), false);
+  });
+});
+
+const {
+  SEAL_SCHEME,
+  SEAL_SCHEME_PARTICIPANT,
+  sortedMemberXOnlys,
+  deriveTimelineCipherKey,
+  sealGroupChatBody,
+  sealParticipantGroupChatBody,
+  openGroupChatBody,
+  isSealedGroupChat,
+  isParticipantSealedGroupChat
+} = require('../functions/groupChatSeal');
+const { pubkeyXOnly } = require('../functions/pubkey');
+
+describe('@fabric/core groupChatSeal', function () {
+  const a = new Key();
+  const b = new Key();
+  const contractId = 'a'.repeat(64);
+  const digest = require('crypto').createHash('sha256').update('tip-content').digest('hex');
+
+  it('sortedMemberXOnlys normalizes compressed and x-only', function () {
+    const xa = pubkeyXOnly(a.pubkey);
+    assert.ok(xa && xa.length === 64);
+    assert.strictEqual(pubkeyXOnly(`02${xa}`), xa);
+    assert.strictEqual(pubkeyXOnly(`03${xa}`), xa);
+    const list = sortedMemberXOnlys([b.pubkey, a.pubkey, xa, 'nope']);
+    assert.strictEqual(list.length, 2);
+    assert.ok(list.includes(xa));
+    assert.ok(list.includes(pubkeyXOnly(b.pubkey)));
+    assert.deepStrictEqual(list, list.slice().sort());
+  });
+
+  it('deriveTimelineCipherKey is deterministic for same tip+members', function () {
+    const opts = {
+      contractId,
+      clock: 7,
+      stateDigest: digest,
+      memberPubkeys: [a.pubkey, b.pubkey]
+    };
+    const k1 = deriveTimelineCipherKey(opts);
+    const k2 = deriveTimelineCipherKey({
+      ...opts,
+      memberPubkeys: [b.pubkey, a.pubkey]
+    });
+    assert.ok(Buffer.isBuffer(k1) && k1.length === 32);
+    assert.strictEqual(k1.toString('hex'), k2.toString('hex'));
+  });
+
+  it('deriveTimelineCipherKey changes when tip or roster changes', function () {
+    const base = {
+      contractId,
+      clock: 7,
+      stateDigest: digest,
+      memberPubkeys: [a.pubkey, b.pubkey]
+    };
+    const k0 = deriveTimelineCipherKey(base);
+    const kClock = deriveTimelineCipherKey({ ...base, clock: 8 });
+    const c = new Key();
+    const kMembers = deriveTimelineCipherKey({
+      ...base,
+      memberPubkeys: [a.pubkey, b.pubkey, c.pubkey]
+    });
+    assert.notStrictEqual(k0.toString('hex'), kClock.toString('hex'));
+    assert.notStrictEqual(k0.toString('hex'), kMembers.toString('hex'));
+  });
+
+  it('deriveTimelineCipherKey rejects missing or non-integer clocks', function () {
+    const base = {
+      contractId,
+      stateDigest: digest,
+      memberPubkeys: [a.pubkey]
+    };
+    assert.throws(() => deriveTimelineCipherKey({ ...base }), /non-negative integer/);
+    assert.throws(() => deriveTimelineCipherKey({ ...base, clock: null }), /non-negative integer/);
+    assert.throws(() => deriveTimelineCipherKey({ ...base, clock: 'nope' }), /non-negative integer/);
+    assert.throws(() => deriveTimelineCipherKey({ ...base, clock: 1.5 }), /non-negative integer/);
+    assert.throws(() => deriveTimelineCipherKey({ ...base, clock: -1 }), /non-negative integer/);
+    const ok = deriveTimelineCipherKey({ ...base, clock: 0 });
+    assert.ok(Buffer.isBuffer(ok) && ok.length === 32);
+  });
+
+  it('seal/open round-trip (v1 tip)', function () {
+    const tip = {
+      contractId,
+      clock: 2,
+      stateDigest: digest,
+      memberPubkeys: [a.pubkey, b.pubkey]
+    };
+    const seal = sealGroupChatBody({ body: 'hello sealed group', ...tip });
+    assert.strictEqual(seal.scheme, SEAL_SCHEME);
+    assert.strictEqual(seal.basisClock, 2);
+    assert.ok(isSealedGroupChat({ seal }));
+    const plain = openGroupChatBody(seal, tip);
+    assert.strictEqual(plain, 'hello sealed group');
+  });
+
+  it('open fails on wrong tip clock', function () {
+    const tip = {
+      contractId,
+      clock: 2,
+      stateDigest: digest,
+      memberPubkeys: [a.pubkey, b.pubkey]
+    };
+    const seal = sealGroupChatBody({ body: 'secret', ...tip });
+    assert.throws(() => openGroupChatBody(seal, { ...tip, clock: 3 }), /clock/);
+  });
+
+  it('open fails on wrong stateDigest, roster, or tampered ciphertext', function () {
+    const tip = {
+      contractId,
+      clock: 2,
+      stateDigest: digest,
+      memberPubkeys: [a.pubkey, b.pubkey]
+    };
+    const seal = sealGroupChatBody({ body: 'secret', ...tip });
+
+    const otherDigest = require('crypto').createHash('sha256').update('other-tip').digest('hex');
+    assert.throws(
+      () => openGroupChatBody(seal, { ...tip, stateDigest: otherDigest }),
+      /stateDigest/
+    );
+
+    // Same clock/digest but different roster → different HKDF salt → AES-GCM auth fail.
+    const c = new Key();
+    assert.throws(
+      () => openGroupChatBody(seal, {
+        ...tip,
+        memberPubkeys: [a.pubkey, b.pubkey, c.pubkey]
+      }),
+      /auth|Unsupported state|bad decrypt|unable to authenticate/i
+    );
+
+    const ct = Buffer.from(seal.ciphertext, 'base64');
+    ct[0] ^= 0xff;
+    const tamperedSeal = { ...seal, ciphertext: ct.toString('base64') };
+    assert.throws(
+      () => openGroupChatBody(tamperedSeal, tip),
+      /auth|Unsupported state|bad decrypt|unable to authenticate/i
+    );
+  });
+
+  it('participant seal opens for each member and not for outsiders', function () {
+    const seal = sealParticipantGroupChatBody({
+      body: 'hub-blind ops',
+      memberPubkeys: [a.pubkey, b.pubkey],
+      contractId,
+      clock: 9,
+      stateDigest: digest
+    });
+    assert.strictEqual(seal.scheme, SEAL_SCHEME_PARTICIPANT);
+    assert.ok(isParticipantSealedGroupChat(seal));
+    assert.ok(isSealedGroupChat({ seal }));
+    assert.ok(Array.isArray(seal.wraps) && seal.wraps.length === 2);
+    assert.ok(seal.ephemeralPub);
+    // Tip fields on the seal are bound as AES-GCM AAD (not key material).
+    assert.strictEqual(seal.basisClock, 9);
+    assert.strictEqual(seal.contractId, contractId);
+    assert.strictEqual(seal.stateDigest, digest);
+
+    assert.throws(
+      () => sealParticipantGroupChatBody({
+        body: 'x',
+        memberPubkeys: [a.pubkey],
+        clock: -1
+      }),
+      /non-negative integer/
+    );
+    assert.throws(
+      () => sealParticipantGroupChatBody({
+        body: 'x',
+        memberPubkeys: [a.pubkey],
+        clock: 1.5
+      }),
+      /non-negative integer/
+    );
+    assert.throws(
+      () => sealParticipantGroupChatBody({
+        body: 'x',
+        memberPubkeys: [a.pubkey],
+        clock: 'nope'
+      }),
+      /non-negative integer/
+    );
+
+    assert.strictEqual(
+      openGroupChatBody(seal, { keyOrPrivate: a }),
+      'hub-blind ops'
+    );
+    assert.strictEqual(
+      openGroupChatBody(seal, { keyOrPrivate: b }),
+      'hub-blind ops'
+    );
+
+    const outsider = new Key();
+    assert.throws(
+      () => openGroupChatBody(seal, { keyOrPrivate: outsider }),
+      /no wrap/
+    );
+
+    // Cut-and-paste across contract id fails AAD auth even with a valid wrap key.
+    assert.throws(
+      () => openGroupChatBody({ ...seal, contractId: 'b'.repeat(64) }, { keyOrPrivate: a }),
+      /auth|Unsupported state|bad decrypt|unable to authenticate/i
+    );
+  });
+
+  it('participant seal does not use tip HKDF (hub tip holders stay blind)', function () {
+    const seal = sealGroupChatBody({
+      mode: 'participant',
+      body: 'still secret',
+      memberPubkeys: [a.pubkey, b.pubkey],
+      contractId,
+      clock: 1,
+      stateDigest: digest
+    });
+    // ECDH wrap opens without supplying tip opts; tip holders without privkeys stay blind.
+    assert.ok(a.xprv, 'fixture Key must expose xprv for the wrap-only open path');
+    assert.strictEqual(
+      openGroupChatBody(seal, { keyOrPrivate: { xprv: a.xprv } }),
+      'still secret'
+    );
+  });
+});

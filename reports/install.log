@@ -1,19 +1,11 @@
 $ npm i
+npm notice run @fabric/core@0.1.0 install
+npm notice run node scripts/install-native.js
+[@fabric/core] Skipping native addon build (JS is the canonical protocol). Optional: FABRIC_BUILD_NATIVE=1 or npm run build:c
 
-> @fabric/core@0.1.0-RC1 install
-> node scripts/install-native.js
+added 308 packages, and audited 309 packages in 13s
 
-
-  CXX(target) Release/obj.target/fabric/src/binding.o
-  CC(target) Release/obj.target/fabric/src/crypto.o
-  CC(target) Release/obj.target/fabric/src/protocol.o
-  CC(target) Release/obj.target/fabric/src/noise.o
-  CC(target) Release/obj.target/fabric/src/p2p.o
-  SOLINK_MODULE(target) Release/fabric.node
-
-added 685 packages, and audited 686 packages in 23s
-
-111 packages are looking for funding
+54 packages are looking for funding
   run `npm fund` for details
 
 found 0 vulnerabilities

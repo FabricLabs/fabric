@@ -2,14 +2,14 @@
 
 // External Dependencies
 const merge = require('lodash.merge');
-const networks = require('bitcoinjs-lib/src/networks');
+const { networks: bitcoinNetworks, payments } = require('bitcoinjs-lib');
 
 // Mnemonics
 const ecc = require('./ecc');
-const BIP32 = require('../functions/bip32').default;
-const { DEFAULT_NETWORK: BIP32_DEFAULT_NETWORK } = require('../functions/bip32');
+const BIP32 = require('./key/bip32').default;
+const { DEFAULT_NETWORK: BIP32_DEFAULT_NETWORK } = require('./key/bip32');
 const bip32 = new BIP32(ecc);
-const bip39 = require('../functions/bip39');
+const bip39 = require('./key/bip39');
 
 // Types
 const Key = require('./key');
@@ -21,6 +21,40 @@ const Hash256 = require('./hash256');
 const Service = require('./service');
 const Secret = require('./secret');
 const State = require('./state');
+const accountKeys = require('./wallet/accountKeys');
+const walletWatch = require('./wallet/walletTransactionWatch');
+const bip21 = require('./wallet/bip21');
+const bip86 = require('./wallet/bip86');
+const {
+  buildWatchSet,
+  classifyWalletTransaction,
+  BITCOIN_MESSAGE_TYPES
+} = walletWatch;
+const {
+  isMainnetNetwork,
+  bitcoinPurposeDerivationPath,
+  bitcoinReceiveDerivationPath
+} = require('../constants');
+
+/**
+ * bitcoinjs-lib parameters for a Fabric network name (signet and testnet4 share testnet's).
+ * @private
+ * @param {string} network
+ */
+function bitcoinNetworkFor (network) {
+  if (network === 'regtest') return bitcoinNetworks.regtest;
+  return isMainnetNetwork(network) ? bitcoinNetworks.bitcoin : bitcoinNetworks.testnet;
+}
+
+/**
+ * {@link Key} network name for a Fabric network name.
+ * @private
+ * @param {string} network
+ */
+function keyNetworkFor (network) {
+  if (network === 'regtest') return 'regtest';
+  return isMainnetNetwork(network) ? 'main' : 'testnet';
+}
 
 /**
  * Manage keys and track their balances.
@@ -63,7 +97,7 @@ class Wallet extends Service {
     }, settings);
 
     // Get network configuration
-    this.network = networks[this.settings.network] || networks.mainnet;
+    this.network = bitcoinNetworkFor(this.settings.network);
 
     this.database = null;
     this.account = null;
@@ -74,7 +108,7 @@ class Wallet extends Service {
     this.seed = null;
 
     // Initialize key management
-    this.key = new Key(this.settings.key);
+    this.key = new Key(Object.assign({}, this.settings.key, { network: keyNetworkFor(this.settings.network) }));
     this.seed = this.key.seed;
 
     this.wallet = {
@@ -89,6 +123,16 @@ class Wallet extends Service {
     this.transactions = new Collection();
     this.txids = new Collection();
     this.outputs = new Collection();
+
+    // Multi-seed keyring: primary `this.key` plus additional seeds in `_seeds`.
+    // Watch set covers addresses derived from every loaded seed/key.
+    this._seeds = new Map();
+    this._watch = {
+      addresses: new Map(),
+      paymentHashes: new Map()
+    };
+    /** @type {Set.<string>} */
+    this._emittedWalletTxKeys = new Set(); // txid:kind already emitted (block + mempool may both see the same tx)
 
     // Encrypted Storage
     this.secrets = new Collection({
@@ -124,8 +168,17 @@ class Wallet extends Service {
       outputs: {},
       addressIndex: 0,
       addresses: {},
-      lastUsedIndex: -1
+      lastUsedIndex: -1,
+      seeds: {}
     });
+
+    // Register the primary key into the shared key collection + watch window.
+    try {
+      if (this.key && this.key.pubkey) {
+        this.loadKey(this.key, ['primary']);
+      }
+      this._registerDerivedAddresses(this.key, { seedId: 'primary', labels: ['primary'] });
+    } catch (_) { /* primary may be pubkey-only in some tests */ }
 
     return this;
   }
@@ -190,7 +243,13 @@ class Wallet extends Service {
     });
   }
 
-  derive (path = `m/7777'/7777'/0'/0/0`) {
+  /**
+   * Derive a key; the default is the first SegWit receive key of account 0
+   * on the wallet's network (`m/84'/{0|1}'/0'/0/0`).
+   * @param {string} [path]
+   */
+  derive (path) {
+    if (path == null) path = bitcoinReceiveDerivationPath(0, 0, this.settings.network);
     const derived = this.key.derive(path);
     return {
       privateKey: derived.private,
@@ -223,11 +282,7 @@ class Wallet extends Service {
             ]
           }
         ],
-        master: {
-          private: this.key.master.privateKey.toString('hex'),
-          public: this.key.master.publicKey.toString('hex')
-        },
-        seed: this.key.seed,
+        // Only the master xprv: the mnemonic and raw private hex are never written.
         xprv: this.key.master.toBase58()
       },
       version: this.version
@@ -293,7 +348,249 @@ class Wallet extends Service {
     this._state.content.keys[pubkey] = item;
     this.keys.set(`/${pubkey}`, item);
 
+    try {
+      if (typeof key.toBitcoinAddress === 'function') {
+        const addr = key.toBitcoinAddress();
+        if (addr) this.watchAddress(addr, { pubkey, labels: item.labels, source: 'loadKey' });
+      }
+    } catch (_) { /* watch is best-effort */ }
+
     return item;
+  }
+
+  /**
+   * Load an additional BIP39 seed into this wallet's key collection (does not
+   * replace the primary `this.key`). Addresses derived from the seed are watched.
+   * @param {string} phrase BIP39 mnemonic
+   * @param {Array<string>} [labels=[]]
+   * @param {object} [opts]
+   * @param {number} [opts.addressWindow] receive indices to watch (default gapLimit)
+   * @returns {{ seedId: string, xpub: string, labels: string[] }}
+   */
+  loadSeed (phrase, labels = [], opts = {}) {
+    if (typeof phrase !== 'string') throw new Error('Seed must be a string.');
+    const trimmed = phrase.trim().replace(/\s+/g, ' ');
+    if (!bip39.validateMnemonic(trimmed)) {
+      throw new Error('Seed must be a valid BIP39 mnemonic phrase.');
+    }
+    const key = new Key({
+      seed: trimmed,
+      network: keyNetworkFor(this.settings.network),
+      passphrase: opts.passphrase || ''
+    });
+    const xpub = key.xpub || key.pubkey;
+    if (!xpub) throw new Error('Could not derive xpub from seed.');
+    const seedId = Hash256.digest(Buffer.from(String(xpub), 'utf8')).toString('hex').slice(0, 32);
+    const labelList = Array.isArray(labels) ? labels.slice() : [];
+    this._seeds.set(seedId, { key, xpub, labels: labelList });
+    this._state.seeds[seedId] = { xpub, labels: labelList, loadedAt: Date.now() };
+    try {
+      this.loadKey(key, labelList.concat(['seed', seedId]));
+    } catch (_) { /* pubkey registration may fail for some key modes */ }
+    this._registerDerivedAddresses(key, {
+      seedId,
+      labels: labelList,
+      count: opts.addressWindow != null ? Number(opts.addressWindow) : this.settings.gapLimit
+    });
+    this.emit('seedLoaded', { seedId, xpub, labels: labelList });
+    return { seedId, xpub, labels: labelList };
+  }
+
+  /**
+   * @returns {Array<{ seedId: string, xpub: string, labels: string[] }>}
+   */
+  listSeeds () {
+    const rows = [];
+    for (const [seedId, row] of this._seeds.entries()) {
+      rows.push({ seedId, xpub: row.xpub, labels: row.labels || [] });
+    }
+    if (this.key && this.key.xpub) {
+      rows.unshift({
+        seedId: 'primary',
+        xpub: this.key.xpub,
+        labels: ['primary']
+      });
+    }
+    return rows;
+  }
+
+  /**
+   * Watch a Bitcoin address for wallet-associated transactions.
+   * @param {string} address
+   * @param {object} [meta]
+   */
+  watchAddress (address, meta = {}) {
+    const addr = String(address || '').trim();
+    if (!addr) return null;
+    const prev = this._watch.addresses.get(addr) || {};
+    const next = Object.assign({}, prev, meta, { address: addr });
+    this._watch.addresses.set(addr, next);
+    if (!this._state.addresses[addr]) {
+      this._state.addresses[addr] = {
+        index: meta.index != null ? meta.index : -1,
+        used: false,
+        seedId: meta.seedId || null
+      };
+    }
+    return next;
+  }
+
+  /**
+   * Watch an HTLC payment hash (SHA256 preimage) so claim witnesses are detected.
+   * @param {string} paymentHashHex
+   * @param {object} [meta]
+   */
+  watchPaymentHash (paymentHashHex, meta = {}) {
+    const h = String(paymentHashHex || '').trim().toLowerCase();
+    if (!/^[0-9a-f]{64}$/.test(h)) throw new Error('paymentHashHex must be 64 hex chars');
+    const prev = this._watch.paymentHashes.get(h) || {};
+    const next = Object.assign({}, prev, meta, { paymentHashHex: h });
+    this._watch.paymentHashes.set(h, next);
+    return next;
+  }
+
+  /**
+   * Watch an inventory HTLC offer (payment address + payment hash + optional settlement).
+   * @param {object} htlc
+   */
+  watchHtlc (htlc = {}) {
+    const address = htlc.paymentAddress || htlc.address;
+    const paymentHashHex = htlc.paymentHashHex || htlc.contentHashHex;
+    if (address) {
+      this.watchAddress(address, {
+        kind: 'htlc',
+        settlementId: htlc.settlementId || null,
+        paymentHashHex: paymentHashHex || null,
+        documentId: htlc.documentId || null
+      });
+    }
+    if (paymentHashHex) {
+      this.watchPaymentHash(paymentHashHex, {
+        settlementId: htlc.settlementId || null,
+        documentId: htlc.documentId || null,
+        address: address || null
+      });
+    }
+    return this.getWatchSet();
+  }
+
+  /**
+   * @returns {object} watch set snapshot
+   */
+  getWatchSet () {
+    return buildWatchSet(this);
+  }
+
+  /**
+   * Derive and watch a window of addresses for a key on the wallet's network:
+   * SegWit on `m/84'/{coin}'/0'`, Taproot on `m/86'/{coin}'/0'`, and standard
+   * on `m/44'/{coin}'/0'`, receive and change chains — the same set as
+   * {@link Wallet.walletDescriptors}.
+   * @param {Key} key
+   * @param {object} [opts]
+   */
+  _registerDerivedAddresses (key, opts = {}) {
+    if (!key || !key.master || typeof key.master.derivePath !== 'function') return;
+    const count = Math.max(1, Math.round(Number(opts.count != null ? opts.count : this.settings.gapLimit) || 20));
+    const seedId = opts.seedId || null;
+    const labels = opts.labels || [];
+    const network = this.network;
+    const scripts = [
+      { purpose: 84, type: 'p2wpkh', address: (pubkey) => payments.p2wpkh({ pubkey, network }).address },
+      { purpose: bip86.BIP86_PURPOSE, type: 'p2tr', address: (pubkey) => bip86.address(pubkey, network) },
+      { purpose: 44, type: 'p2pkh', address: (pubkey) => payments.p2pkh({ pubkey, network }).address }
+    ];
+    for (const { purpose, type, address } of scripts) {
+      for (const change of [0, 1]) {
+        for (let i = 0; i < count; i++) {
+          const path = bitcoinPurposeDerivationPath(purpose, 0, change, i, this.settings.network);
+          const pubkey = Buffer.from(key.master.derivePath(path).publicKey);
+          this.watchAddress(address(pubkey), { seedId, index: i, type, labels, change });
+        }
+      }
+    }
+  }
+
+  /**
+   * Ingest a Bitcoin transaction (verbose RPC object or raw hex) and emit when related.
+   * @param {object|string} txOrHex
+   * @param {object} [context] { tip, height, source }
+   * @returns {object} classification
+   */
+  ingestBitcoinTransaction (txOrHex, context = {}) {
+    const watchSet = this.getWatchSet();
+    const classified = classifyWalletTransaction(txOrHex, watchSet);
+    if (!classified.related) return classified;
+
+    const txid = classified.txid;
+    const emitKey = txid ? `${txid}:${classified.kind}` : null;
+    if (emitKey && this._emittedWalletTxKeys.has(emitKey)) {
+      return Object.assign({}, classified, { duplicate: true });
+    }
+    if (emitKey) {
+      this._emittedWalletTxKeys.add(emitKey);
+      if (this._emittedWalletTxKeys.size > 4000) {
+        // Bound memory: drop oldest half by recreating from the newest entries.
+        this._emittedWalletTxKeys = new Set([...this._emittedWalletTxKeys].slice(-2000));
+      }
+    }
+
+    if (txid) {
+      this._state.transactions[txid] = Object.assign({}, classified, {
+        tip: context.tip || null,
+        height: context.height != null ? context.height : null,
+        source: context.source || 'ingest',
+        seenAt: Date.now()
+      });
+      this._state.content.transactions[txid] = this._state.transactions[txid];
+      for (const addr of classified.matchedAddresses) {
+        if (this._state.addresses[addr]) {
+          this._state.addresses[addr].used = true;
+          this._state.addresses[addr].lastUsed = Date.now();
+        }
+      }
+    }
+
+    const event = Object.assign({}, classified, {
+      tip: context.tip || null,
+      height: context.height != null ? context.height : null,
+      source: context.source || 'ingest'
+    });
+    this.emit('walletTransaction', event);
+    if (classified.kind === 'htlc_claim') this.emit('htlcClaim', event);
+    else if (classified.kind === 'htlc_funding') this.emit('htlcFunding', event);
+    else if (classified.kind === 'htlc_refund') this.emit('htlcRefund', event);
+    else if (classified.kind === 'receive' || classified.kind === 'payment' || classified.kind === 'coinbase') {
+      this.emit('payment', event);
+    }
+    return classified;
+  }
+
+  /**
+   * Process a new block tip (optionally with verbosity-2 `tx` / `transactions`).
+   * @param {object} block
+   * @returns {object[]} related classifications
+   */
+  ingestBitcoinBlock (block = {}) {
+    const tip = block.tip || block.hash || block.id || null;
+    const height = block.height != null ? block.height : null;
+    const txs = block.tx || block.transactions || [];
+    const out = [];
+    const seen = new Set();
+    for (const tx of txs) {
+      const classified = this.ingestBitcoinTransaction(tx, { tip, height, source: 'block' });
+      if (classified && classified.related && classified.txid && !seen.has(classified.txid)) {
+        seen.add(classified.txid);
+        out.push(classified);
+      }
+    }
+    this.emit('block', {
+      tip,
+      height,
+      related: out.length,
+      messageTypes: BITCOIN_MESSAGE_TYPES
+    });
+    return out;
   }
 
   /**
@@ -312,8 +609,17 @@ class Wallet extends Service {
     this.marshall.agents.push(listener);
 
     emitter.on('transaction', async function trustedHandler (msg) {
-      if (this.settings.verbosity >= 5) console.log('[FABRIC:WALLET]', 'Received transaction from trusted event emitter:', msg);
-      await wallet.addTransactionToWallet(msg);
+      if (wallet.settings.verbosity >= 5) console.log('[FABRIC:WALLET]', 'Received transaction from trusted event emitter:', msg);
+      if (msg && (msg.hex || msg.txid || msg.vout)) {
+        wallet.ingestBitcoinTransaction(msg, { source: 'trusted-transaction' });
+      } else {
+        await wallet.addTransactionToWallet(msg);
+      }
+    });
+
+    emitter.on('block', async function trustedBlockHandler (block) {
+      if (wallet.settings.verbosity >= 5) console.log('[FABRIC:WALLET]', 'Received block from trusted event emitter:', block);
+      await wallet.ingestBitcoinBlock(block);
     });
 
     return this;
@@ -343,11 +649,17 @@ class Wallet extends Service {
   async _processServiceMessage (msg) {
     switch (msg['@type']) {
       case 'BitcoinBlock':
-        this.processBitcoinBlock(msg['@data']);
+      case 'BitcoinBlockHash':
+        this.processBitcoinBlock(msg['@data'] || msg);
         break;
       case 'BitcoinTransaction':
-        // TODO: validate destination is this wallet
-        this.addTransactionToWallet(msg['@data']);
+      case 'BitcoinTransactionHash':
+        if (msg['@data'] && (msg['@data'].hex || msg['@data'].content)) {
+          const payload = msg['@data'].hex || msg['@data'].content || msg['@data'];
+          this.ingestBitcoinTransaction(payload, { source: msg['@type'] });
+        } else {
+          this.addTransactionToWallet(msg['@data']);
+        }
         break;
       default:
         if (this.settings.verbosity >= 4 || this.settings.debug) {
@@ -359,13 +671,32 @@ class Wallet extends Service {
 
   async processBitcoinBlock (block) {
     if (this.settings.verbosity >= 4) console.log('[FABRIC:WALLET]', 'Processing block:', block);
-    if (!block.block) return 0;
-    for (let i = 0; i < block.block.hashes.length; i++) {
-      const txid = block.block.hashes[i].toString('hex');
-      // ATTN: Eric
-      // TODO: process transaction
-      if (this.settings.verbosity >= 5) console.log('found txid in block:', txid);
+    if (!block) return [];
+    // Verbosity-2 style: full txs present
+    if (block.tx || block.transactions) {
+      return this.ingestBitcoinBlock(block);
     }
+    // Legacy SPV-ish: block.block.hashes
+    if (block.block && Array.isArray(block.block.hashes)) {
+      const tip = block.hash || block.tip || null;
+      const related = [];
+      for (let i = 0; i < block.block.hashes.length; i++) {
+        const txid = block.block.hashes[i].toString('hex');
+        if (this.settings.verbosity >= 5) console.log('found txid in block:', txid);
+        related.push({ txid, related: false, kind: 'unknown' });
+      }
+      this.emit('block', { tip, related: 0, txids: related.map((r) => r.txid) });
+      return related;
+    }
+    // Tip-only notification from ZMQ hashblock — still emit so listeners wake up.
+    return this.ingestBitcoinBlock(block);
+  }
+
+  async _scanBlockForTransactions (block) {
+    if (this.settings.verbosity >= 5 || this.settings.debug) {
+      console.log('[AUDIT]', 'Scanning block for transactions:', block);
+    }
+    return this.ingestBitcoinBlock(block || {});
   }
 
   async _attachTXID (txid) {
@@ -478,6 +809,10 @@ class Wallet extends Service {
     return Address.fromScripthash(redeemScript.hash160());
   }
 
+  /**
+   * @deprecated Legacy bcoin-style HTLC for channels — not the document-market P2TR profile.
+   * Use `@fabric/core/types/htlc` instead.
+   */
   async createHTLC (contract) {
     // if (!contract.asset) throw new Error('Contract parameter "asset" is required.');
     if (!contract.amount) throw new Error('Contract parameter "amount" is required.');
@@ -654,6 +989,10 @@ class Wallet extends Service {
     return this;
   }
 
+  /**
+   * Next unused receive address; see {@link Wallet#receiveAddress}.
+   * @returns {Promise<string>}
+   */
   async getUnusedAddress () {
     return this.receiveAddress();
   }
@@ -827,13 +1166,6 @@ class Wallet extends Service {
     return inputRefund;
   }
 
-  async _scanBlockForTransactions (block) {
-    if (this.settings.verbosity >= 5 || this.settings.debug) {
-      console.log('[AUDIT]', 'Scanning block for transactions:', block);
-    }
-    return [];
-  }
-
   async _scanChainForTransactions (chain) {
     if (this.settings.verbosity >= 5 || this.settings.debug) {
       console.log('[AUDIT]', 'Scanning chain for transactions:', chain);
@@ -915,8 +1247,8 @@ class Wallet extends Service {
     const index = typeof this.index === 'number' ? this.index : 0;
     this.index = index + 1;
 
-    // Use a standard BIP44 path with the index
-    const path = `m/44'/0'/0'/0/${index}`;
+    // SegWit receive path on the wallet's network — never the Fabric identity.
+    const path = bitcoinReceiveDerivationPath(0, index, this.settings.network);
     const pair = this.key.derive(path);
 
     const keypair = {
@@ -974,7 +1306,7 @@ class Wallet extends Service {
       await this._load();
     } else {
       // Legacy fallback for runtimes that initialize directly from key settings.
-      this.key = new Key({ seed: phrase });
+      this.key = new Key({ seed: phrase, network: keyNetworkFor(this.settings.network) });
       this.seed = this.key.seed;
     }
     return this.seed;
@@ -984,9 +1316,18 @@ class Wallet extends Service {
     return this.database.close();
   }
 
+  /**
+   * Next BIP-86 Taproot receive address of account 0 (`m/86'/{coin}'/0'/0/i`),
+   * recorded in the wallet's address book and watched.
+   * @returns {Promise<string>}
+   */
   async receiveAddress () {
-    const keypair = await this.generateCleanKeyPair();
-    return keypair.public.toString('hex');
+    const index = Number.isSafeInteger(this._state.addressIndex) ? this._state.addressIndex : 0;
+    const { address } = Wallet.deriveTaprootAddress(this.key, { change: 0, index, network: this.settings.network });
+    this._state.addressIndex = index + 1;
+    this._state.addresses[address] = { index, type: 'p2tr', change: 0, used: false };
+    this.watchAddress(address, { seedId: 'primary', index, type: 'p2tr', change: 0, labels: ['receive'] });
+    return address;
   }
 
   // Add method to check gap limit
@@ -1046,15 +1387,65 @@ class Wallet extends Service {
   }
 
   /**
-   * L1 / hub document purchase binding: same 64-char hex as hub `CreatePurchaseInvoice` / HTLC `contentHash`.
+   * Envelope (legacy / unsealed) payment hash. Prefer {@link Wallet.resolveDocumentContentHashHex}
+   * when sealed meta or a content key may apply.
    * @param {string} documentId
    * @param {object} parsed Whitelisted document fields (see {@link Peer#_buildDocumentParsedForPublish}).
    * @returns {string}
    */
+  /**
+   * BIP-86 Taproot address of a key with private derivation
+   * (`m/86'/{coin}'/account'/change/index`).
+   * @param {Key} key Key holding a master that can derive hardened children.
+   * @param {Object} [options]
+   * @param {number} [options.account=0]
+   * @param {number} [options.change=0]
+   * @param {number} [options.index=0]
+   * @param {string} [options.network='mainnet'] Fabric network name.
+   * @returns {{ address: string, path: string, publicKey: string, outputKey: string }}
+   */
+  static deriveTaprootAddress (key, options = {}) {
+    if (!key || !key.master || typeof key.master.derivePath !== 'function') {
+      throw new Error('a key with a master is required to derive BIP-86 addresses');
+    }
+    const network = options.network || 'mainnet';
+    const path = bip86.path(options.account || 0, options.change || 0, options.index || 0, network);
+    const publicKey = Buffer.from(key.master.derivePath(path).publicKey);
+    return {
+      address: bip86.address(publicKey, bitcoinNetworkFor(network)),
+      path,
+      publicKey: publicKey.toString('hex'),
+      outputKey: bip86.outputKey(publicKey).toString('hex')
+    };
+  }
+
   static purchaseContentHashHex (documentId, parsed) {
-    const { purchaseContentHashHex: hashFn } = require('../functions/publishedDocumentEnvelope');
-    return hashFn(documentId, parsed);
+    return require('../functions/documentPaymentHash').purchaseContentHashHex(documentId, parsed);
+  }
+
+  /**
+   * Single path for buy / HTLC `contentHashHex` (sealed | envelope | blob).
+   * @param {object} opts see {@link module:functions/documentPaymentHash.resolveDocumentContentHashHex}
+   * @returns {{ contentHashHex: string, binding: string }}
+   */
+  static resolveDocumentContentHashHex (opts) {
+    return require('../functions/documentPaymentHash').resolveDocumentContentHashHex(opts);
   }
 }
+
+// One seed, many accounts: identity, wallet, and cosigner keys per (account, network), and the sealed vault.
+Object.assign(Wallet, accountKeys);
+Wallet.Accounts = accountKeys;
+
+// Which transactions and blocks concern a wallet.
+Wallet.Watch = walletWatch;
+
+// BIP-21 `bitcoin:` URIs.
+Wallet.BIP21 = bip21;
+Wallet.encodeBitcoinUri = bip21.encodeBitcoinUri;
+Wallet.parseBitcoinUri = bip21.parseBitcoinUri;
+
+// BIP-86 Taproot (key path only).
+Wallet.BIP86 = bip86;
 
 module.exports = Wallet;

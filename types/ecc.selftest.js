@@ -1,8 +1,13 @@
 'use strict';
 
 /**
- * Lightweight ECC sanity check for real browsers (see types/ecc.js).
- * @param {object} ecc — exports from types/ecc.js
+ * @fileoverview Lightweight ECC sanity check for real browsers (see types/ecc.js).
+ * @module types/ecc.selftest
+ */
+
+/**
+ * Run a small sign/verify round-trip against an `ecc` binding.
+ * @param {object} ecc exports from types/ecc.js
  */
 module.exports = function runFabricEccSelftest (ecc) {
   try {

@@ -5,6 +5,7 @@ const assert = require('assert');
 const bip39 = require('../functions/bip39');
 const BIP32 = require('../functions/bip32').default;
 const ecc = require('../types/ecc');
+const { FABRIC_KEY_DERIVATION_PATH, bitcoinReceiveDerivationPath, fabricIdentityDerivationPath, fabricIdentityAccountPath, fabricCoinTypeForNetwork, resolveFabricIdentityCoinType, FABRIC_COIN_TYPE_MAINNET, FABRIC_COIN_TYPE_TESTNET } = require('../constants');
 let nobleSecp256k1 = null;
 try {
   nobleSecp256k1 = require('@noble/curves/secp256k1.js');
@@ -30,33 +31,70 @@ describe('@fabric/core/types/identity', function () {
       assert.ok(identity);
     });
 
-    it('provides the correct public key for a known seed phrase', function () {
-      // Create identity and compute actual pubkey
+    it('provides the Fabric-path public key for a known seed phrase', function () {
       const identity = new Identity({
         seed: SAMPLE.seed
       });
       const actualPubkey = identity.pubkey;
 
-      // Compute expected pubkey using bip32 + noble curves
       const seed = bip39.mnemonicToSeedSync(SAMPLE.seed);
       const root = new BIP32(ecc).fromSeed(seed);
+      const child = root.derivePath(FABRIC_KEY_DERIVATION_PATH);
       const expectedPubkey = Buffer.from(
-        secp256k1.getPublicKey(root.privateKey, true)
+        secp256k1.getPublicKey(child.privateKey, true)
       ).toString('hex');
 
       assert.ok(identity);
+      assert.equal(identity.derivation, FABRIC_KEY_DERIVATION_PATH);
       assert.equal(actualPubkey, expectedPubkey);
+      // Master pubkey must differ from Fabric identity pubkey.
+      const masterPubkey = Buffer.from(
+        secp256k1.getPublicKey(root.privateKey, true)
+      ).toString('hex');
+      assert.notEqual(actualPubkey, masterPubkey);
     });
 
-    it('can derive child keys', function () {
-      // Create identity and compute actual child key
+    it('keeps Bitcoin fund paths on coin type 0 from the master', function () {
+      const identity = new Identity({ seed: SAMPLE.seed });
+      const fundPath = bitcoinReceiveDerivationPath(0, 0);
+      const fund = identity.master.derive(fundPath);
+      assert.ok(fund.pubkey);
+      assert.notEqual(fund.pubkey, identity.pubkey);
+      assert.match(fundPath, /^m\/84'\/0'\//);
+    });
+
+    it('uses coin type 7778 by default and 7777 on mainnet', function () {
+      assert.strictEqual(fabricCoinTypeForNetwork('regtest'), FABRIC_COIN_TYPE_TESTNET);
+      assert.strictEqual(fabricCoinTypeForNetwork('testnet'), FABRIC_COIN_TYPE_TESTNET);
+      assert.strictEqual(fabricCoinTypeForNetwork('signet'), FABRIC_COIN_TYPE_TESTNET);
+      assert.strictEqual(fabricCoinTypeForNetwork('mainnet'), FABRIC_COIN_TYPE_MAINNET);
+      assert.strictEqual(resolveFabricIdentityCoinType('regtest'), FABRIC_COIN_TYPE_TESTNET);
+      assert.strictEqual(resolveFabricIdentityCoinType('mainnet'), FABRIC_COIN_TYPE_MAINNET);
+      assert.strictEqual(resolveFabricIdentityCoinType(7777), FABRIC_COIN_TYPE_MAINNET);
+      assert.strictEqual(resolveFabricIdentityCoinType(), FABRIC_COIN_TYPE_TESTNET);
+      assert.strictEqual(fabricIdentityDerivationPath(0, 0), FABRIC_KEY_DERIVATION_PATH);
+      assert.strictEqual(fabricIdentityDerivationPath(0, 0, 'mainnet'), "m/7777'/7777'/0'/0/0");
+      assert.strictEqual(fabricIdentityAccountPath(0), "m/7777'/7778'/0'");
+      assert.strictEqual(fabricIdentityAccountPath(0, 'mainnet'), "m/7777'/7777'/0'");
+      assert.strictEqual(
+        fabricIdentityDerivationPath(2, 3, 'regtest'),
+        fabricIdentityAccountPath(2, 'regtest') + '/0/3'
+      );
+
+      const reg = new Identity({ seed: SAMPLE.seed, network: 'regtest' });
+      const main = new Identity({ seed: SAMPLE.seed, network: 'mainnet' });
+      assert.strictEqual(reg.derivation, "m/7777'/7778'/0'/0/0");
+      assert.strictEqual(main.derivation, "m/7777'/7777'/0'/0/0");
+      assert.notEqual(reg.pubkey, main.pubkey);
+    });
+
+    it('can derive child keys from the master', function () {
       const identity = new Identity({
         seed: SAMPLE.seed
       });
       const actualChild = identity.key.derive('m/0');
       const actualChildPubkey = actualChild.pubkey;
 
-      // Compute expected child key using bip32 (shim expects 'bytes' for Buffer/Uint8Array)
       const seed = bip39.mnemonicToSeedSync(SAMPLE.seed);
       const root = new BIP32(ecc).fromSeed(seed);
       const child = root.derivePath('m/0');
@@ -69,28 +107,244 @@ describe('@fabric/core/types/identity', function () {
       assert.notEqual(actualChildPubkey, identity.pubkey);
     });
 
-    it('can sign and verify messages', function () {
-      // Create identity and compute actual signature
+    it('can sign and verify messages with the Fabric key', function () {
       const identity = new Identity({
         seed: SAMPLE.seed
       });
       const message = 'Hello, Fabric!';
       const actualSignature = identity.sign(message);
-      const actualVerified = identity.key.verify(message, actualSignature);
+      const actualVerified = identity.fabricKey.verify(message, actualSignature);
 
-      // Basic sanity checks on signature format and verification
       const seed = bip39.mnemonicToSeedSync(SAMPLE.seed);
       const root = new BIP32(ecc).fromSeed(seed);
-      const msgHash = crypto.createHash('sha256').update(Buffer.from(message)).digest();
-      const expectedSig = nobleSchnorr.sign(msgHash, root.privateKey);
+      const fabricNode = root.derivePath(FABRIC_KEY_DERIVATION_PATH);
+      const msgHash = require('../functions/taggedHash')('Fabric/Sign', Buffer.from(message));
+      const expectedSig = nobleSchnorr.sign(msgHash, fabricNode.privateKey, Buffer.alloc(32));
       const xOnlyPubkey = Buffer.from(
-        secp256k1.getPublicKey(root.privateKey, true)
+        secp256k1.getPublicKey(fabricNode.privateKey, true)
       ).slice(1); // drop prefix for x-only
       const expectedVerified = nobleSchnorr.verify(expectedSig, msgHash, xOnlyPubkey);
+      const actualBytes = Buffer.isBuffer(actualSignature)
+        ? actualSignature
+        : Buffer.from(actualSignature);
 
       assert.ok(actualSignature);
       assert.equal(actualVerified, true);
       assert.equal(actualVerified, expectedVerified);
+      assert.ok(actualBytes.equals(Buffer.from(expectedSig)),
+        'Identity.sign must match noble BIP340 over taggedHash("Fabric/Sign") with zero auxRand');
     });
+  });
+});
+
+const {
+  IdentityLock,
+  clampLockTimeoutMinutes,
+  lockTimeoutMinutesToMs,
+  DEFAULT_LOCK_TIMEOUT_MINUTES,
+  MAX_LOCK_TIMEOUT_MINUTES
+} = require('../functions/identityLock');
+
+function fakeClock () {
+  let now = 1_000_000;
+  const timers = new Map();
+  let nextId = 1;
+  return {
+    now: () => now,
+    advance (ms) {
+      now += ms;
+      for (const [id, t] of [...timers.entries()]) {
+        if (t.fireAt <= now) {
+          timers.delete(id);
+          t.fn();
+        }
+      }
+    },
+    setTimeout (fn, ms) {
+      const id = nextId++;
+      timers.set(id, { fn, fireAt: now + ms });
+      return id;
+    },
+    clearTimeout (id) {
+      timers.delete(id);
+    }
+  };
+}
+
+describe('@fabric/core/functions/identityLock', function () {
+  it('clamps timeout minutes (0 disables)', function () {
+    assert.strictEqual(clampLockTimeoutMinutes(0), 0);
+    assert.strictEqual(clampLockTimeoutMinutes(-3), DEFAULT_LOCK_TIMEOUT_MINUTES);
+    assert.strictEqual(clampLockTimeoutMinutes(99999), MAX_LOCK_TIMEOUT_MINUTES);
+    assert.strictEqual(lockTimeoutMinutesToMs(0), 0);
+    assert.strictEqual(lockTimeoutMinutesToMs(1), 60 * 1000);
+  });
+
+  it('holds a payload only while unlocked', function () {
+    const lock = new IdentityLock({ timeoutMinutes: 0 });
+    assert.strictEqual(lock.locked, true);
+    lock.unlock({ xprv: 'secret' });
+    assert.strictEqual(lock.locked, false);
+    assert.deepStrictEqual(lock.peek(), { xprv: 'secret' });
+    lock.lock();
+    assert.strictEqual(lock.locked, true);
+    assert.strictEqual(lock.peek(), null);
+  });
+
+  it('auto-locks after idle timeout and resets on touch', function () {
+    const clock = fakeClock();
+    const lock = new IdentityLock({
+      timeoutMs: 50,
+      now: clock.now,
+      setTimeout: clock.setTimeout,
+      clearTimeout: clock.clearTimeout
+    });
+    const events = [];
+    lock.on('lock', () => events.push('lock'));
+    lock.on('unlock', () => events.push('unlock'));
+    lock.on('touch', () => events.push('touch'));
+
+    lock.unlock({ ok: true });
+    clock.advance(40);
+    assert.strictEqual(lock.locked, false);
+    lock.touch();
+    clock.advance(40);
+    assert.strictEqual(lock.locked, false, 'touch should reset the idle timer');
+    clock.advance(20);
+    assert.strictEqual(lock.locked, true);
+    assert.deepStrictEqual(events, ['unlock', 'touch', 'lock']);
+  });
+
+  it('setTimeoutMinutes(0) disables auto-lock', function () {
+    const clock = fakeClock();
+    const lock = new IdentityLock({
+      timeoutMs: 10,
+      now: clock.now,
+      setTimeout: clock.setTimeout,
+      clearTimeout: clock.clearTimeout
+    });
+    lock.unlock({ ok: true });
+    lock.setTimeoutMinutes(0);
+    clock.advance(1000);
+    assert.strictEqual(lock.locked, false);
+    assert.strictEqual(lock.timeoutMinutes, 0);
+  });
+
+  it('unref()s the idle timer so Node can exit', function () {
+    const lock = new IdentityLock({ timeoutMinutes: 30 });
+    lock.unlock({ ok: true });
+    assert.ok(lock._timer);
+    assert.strictEqual(typeof lock._timer.unref, 'function');
+    assert.strictEqual(lock._timer.hasRef(), false);
+    lock.lock();
+  });
+});
+
+const Key = require('../types/key');
+const {
+  fabricIdentityIdFromPubkeyHex,
+  buildFabricIdentitySignedPayload,
+  verifyIdentitySchnorr
+} = require('../functions/fabricIdentitySchnorr');
+const TEST_TAG = 'Fabric/Test';
+
+describe('@fabric/core/types/key tagged Schnorr', function () {
+  it('signs and verifies only under the same tag', function () {
+    const key = new Key();
+    const sig = key.signSchnorr('hello', 'Fabric/One');
+    assert.strictEqual(key.verifySchnorr('hello', sig, 'Fabric/One'), true);
+    assert.strictEqual(key.verifySchnorr('hello', sig, 'Fabric/Two'), false);
+  });
+
+  it('refuses to sign or verify without a Fabric purpose tag', function () {
+    const key = new Key();
+    assert.throws(() => key.signSchnorr('hello'), /tag required/);
+    assert.throws(() => key.signSchnorr('hello', 'Nostr'), /tag required/);
+    const sig = key.signSchnorr('hello', 'Fabric/One');
+    assert.throws(() => key.verifySchnorr('hello', sig), /tag required/);
+  });
+
+  it('a signature over plain sha256 (Nostr, legacy) does not verify', function () {
+    const priv = crypto.randomBytes(32);
+    const key = new Key({ private: priv.toString('hex') });
+    const untagged = nobleSchnorr.sign(crypto.createHash('sha256').update('hello').digest(), priv, Buffer.alloc(32));
+    assert.strictEqual(key.verifySchnorr('hello', Buffer.from(untagged), 'Fabric/One'), false);
+  });
+
+  it('Key#sign uses the generic Fabric/Sign tag', function () {
+    const key = new Key();
+    const sig = key.sign('hello');
+    assert.strictEqual(key.verify('hello', sig), true);
+    assert.strictEqual(key.verifySchnorr('hello', sig, Key.SIGN_TAG), true);
+    assert.strictEqual(key.verifySchnorr('hello', sig, 'Fabric/Other'), false);
+  });
+});
+
+describe('@fabric/core/functions/fabricIdentitySchnorr', function () {
+  it('signs and verifies with Identity.fabricKey under a tag', function () {
+    const ident = new Identity(new Key());
+    const message = 'fabric:test:1';
+    const payload = buildFabricIdentitySignedPayload(ident, message, TEST_TAG);
+    assert.strictEqual(payload.pubkeyHex, ident.fabricKey.pubkey);
+    assert.strictEqual(payload.identity.id, ident.id);
+    const verified = verifyIdentitySchnorr(
+      message,
+      payload.signature,
+      payload.pubkeyHex,
+      payload.identity,
+      TEST_TAG
+    );
+    assert.strictEqual(verified.ok, true);
+    assert.strictEqual(verified.identityId, ident.id);
+    assert.strictEqual(fabricIdentityIdFromPubkeyHex(payload.pubkeyHex), ident.id);
+    const otherTag = verifyIdentitySchnorr(message, payload.signature, payload.pubkeyHex, payload.identity, 'Fabric/Other');
+    assert.strictEqual(otherTag.ok, false);
+    const noTag = verifyIdentitySchnorr(message, payload.signature, payload.pubkeyHex, payload.identity);
+    assert.strictEqual(noTag.ok, false);
+    assert.throws(() => buildFabricIdentitySignedPayload(ident, message), /tag required/);
+  });
+
+  it('signs Passport-style leaf private + fabric-path xpub', function () {
+    const ident = new Identity(new Key());
+    const fabric = ident.fabricKey;
+    const priv = Buffer.isBuffer(fabric.private)
+      ? fabric.private.toString('hex')
+      : String(fabric.private);
+    const message = 'fabric:test:leaf';
+    const payload = buildFabricIdentitySignedPayload({
+      privateKeyHex: priv,
+      xpub: fabric.xpub
+    }, message, TEST_TAG);
+    assert.strictEqual(payload.pubkeyHex, fabric.pubkey);
+    const verified = verifyIdentitySchnorr(
+      message,
+      payload.signature,
+      payload.pubkeyHex,
+      payload.identity,
+      TEST_TAG
+    );
+    assert.strictEqual(verified.ok, true);
+  });
+
+  it('rejects a tampered signature', function () {
+    const ident = new Identity(new Key());
+    const message = 'fabric:test:1';
+    const payload = buildFabricIdentitySignedPayload(ident, message, TEST_TAG);
+    const flipped = payload.signature.replace(/[0-9a-f]$/, (c) => (c === '0' ? '1' : '0'));
+    const verified = verifyIdentitySchnorr(
+      message,
+      flipped,
+      payload.pubkeyHex,
+      payload.identity,
+      TEST_TAG
+    );
+    assert.strictEqual(verified.ok, false);
+  });
+
+  it('rejects truncated or non-hex pubkey bytes', function () {
+    assert.throws(() => fabricIdentityIdFromPubkeyHex('02aa' + 'zz'), /invalid pubkey|66 hex/i);
+    assert.throws(() => fabricIdentityIdFromPubkeyHex('02aa'), /66 hex/i);
+    assert.throws(() => fabricIdentityIdFromPubkeyHex('0'), /invalid pubkey|66 hex/i);
+    assert.throws(() => fabricIdentityIdFromPubkeyHex(''), /Missing pubkey/i);
   });
 });

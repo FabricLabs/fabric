@@ -34,15 +34,15 @@
         <pre class="prettyprint source linenums"><code>'use strict';
 
 // External Dependencies
-const BN = require('bn.js');
 const merge = require('lodash.merge');
-const networks = require('bitcoinjs-lib/src/networks');
+const { networks: bitcoinNetworks, payments } = require('bitcoinjs-lib');
 
 // Mnemonics
 const ecc = require('./ecc');
-const BIP32 = require('bip32').default;
+const BIP32 = require('./key/bip32').default;
+const { DEFAULT_NETWORK: BIP32_DEFAULT_NETWORK } = require('./key/bip32');
 const bip32 = new BIP32(ecc);
-const bip39 = require('bip39');
+const bip39 = require('./key/bip39');
 
 // Types
 const Key = require('./key');
@@ -54,6 +54,40 @@ const Hash256 = require('./hash256');
 const Service = require('./service');
 const Secret = require('./secret');
 const State = require('./state');
+const accountKeys = require('./wallet/accountKeys');
+const walletWatch = require('./wallet/walletTransactionWatch');
+const bip21 = require('./wallet/bip21');
+const bip86 = require('./wallet/bip86');
+const {
+  buildWatchSet,
+  classifyWalletTransaction,
+  BITCOIN_MESSAGE_TYPES
+} = walletWatch;
+const {
+  isMainnetNetwork,
+  bitcoinPurposeDerivationPath,
+  bitcoinReceiveDerivationPath
+} = require('../constants');
+
+/**
+ * bitcoinjs-lib parameters for a Fabric network name (signet and testnet4 share testnet's).
+ * @private
+ * @param {string} network
+ */
+function bitcoinNetworkFor (network) {
+  if (network === 'regtest') return bitcoinNetworks.regtest;
+  return isMainnetNetwork(network) ? bitcoinNetworks.bitcoin : bitcoinNetworks.testnet;
+}
+
+/**
+ * {@link Key} network name for a Fabric network name.
+ * @private
+ * @param {string} network
+ */
+function keyNetworkFor (network) {
+  if (network === 'regtest') return 'regtest';
+  return isMainnetNetwork(network) ? 'main' : 'testnet';
+}
 
 /**
  * Manage keys and track their balances.
@@ -96,7 +130,7 @@ class Wallet extends Service {
     }, settings);
 
     // Get network configuration
-    this.network = networks[this.settings.network] || networks.mainnet;
+    this.network = bitcoinNetworkFor(this.settings.network);
 
     this.database = null;
     this.account = null;
@@ -107,7 +141,7 @@ class Wallet extends Service {
     this.seed = null;
 
     // Initialize key management
-    this.key = new Key(this.settings.key);
+    this.key = new Key(Object.assign({}, this.settings.key, { network: keyNetworkFor(this.settings.network) }));
     this.seed = this.key.seed;
 
     this.wallet = {
@@ -122,6 +156,16 @@ class Wallet extends Service {
     this.transactions = new Collection();
     this.txids = new Collection();
     this.outputs = new Collection();
+
+    // Multi-seed keyring: primary `this.key` plus additional seeds in `_seeds`.
+    // Watch set covers addresses derived from every loaded seed/key.
+    this._seeds = new Map();
+    this._watch = {
+      addresses: new Map(),
+      paymentHashes: new Map()
+    };
+    /** @type {Set.&lt;string>} */
+    this._emittedWalletTxKeys = new Set(); // txid:kind already emitted (block + mempool may both see the same tx)
 
     // Encrypted Storage
     this.secrets = new Collection({
@@ -157,8 +201,17 @@ class Wallet extends Service {
       outputs: {},
       addressIndex: 0,
       addresses: {},
-      lastUsedIndex: -1
+      lastUsedIndex: -1,
+      seeds: {}
     });
+
+    // Register the primary key into the shared key collection + watch window.
+    try {
+      if (this.key &amp;&amp; this.key.pubkey) {
+        this.loadKey(this.key, ['primary']);
+      }
+      this._registerDerivedAddresses(this.key, { seedId: 'primary', labels: ['primary'] });
+    } catch (_) { /* primary may be pubkey-only in some tests */ }
 
     return this;
   }
@@ -188,10 +241,10 @@ class Wallet extends Service {
    * @param {String} passphrase BIP 39 passphrase for key derivation.
    * @returns {FabricSeed} The seed object.
    */
-  static createSeed (passphrase = '') {
+  static createSeed (_passphrase = '') {
     const mnemonic = bip39.generateMnemonic();
     const seed = bip39.mnemonicToSeedSync(mnemonic);
-    const root = bip32.fromSeed(seed);
+    const root = bip32.fromSeed(seed, BIP32_DEFAULT_NETWORK);
     return {
       phrase: mnemonic,
       master: root.privateKey.toString('hex'),
@@ -206,15 +259,30 @@ class Wallet extends Service {
    * @returns {Wallet} Instance of the wallet.
    */
   static fromSeed (seed) {
+    if (!seed || typeof seed !== 'object' || typeof seed.phrase !== 'string') {
+      throw new Error('Seed object must provide a mnemonic phrase string.');
+    }
+
+    const phrase = seed.phrase.trim().replace(/\s+/g, ' ');
+    if (!bip39.validateMnemonic(phrase)) {
+      throw new Error('Seed phrase must be a valid BIP39 mnemonic.');
+    }
+
     return new Wallet({
       key: {
-        seed: seed.phrase,
+        seed: phrase,
         passphrase: ''
       }
     });
   }
 
-  derive (path = `m/7777'/7777'/0'/0/0`) {
+  /**
+   * Derive a key; the default is the first SegWit receive key of account 0
+   * on the wallet's network (`m/84'/{0|1}'/0'/0/0`).
+   * @param {string} [path]
+   */
+  derive (path) {
+    if (path == null) path = bitcoinReceiveDerivationPath(0, 0, this.settings.network);
     const derived = this.key.derive(path);
     return {
       privateKey: derived.private,
@@ -247,18 +315,14 @@ class Wallet extends Service {
             ]
           }
         ],
-        master: {
-          private: this.key.master.privateKey.toString('hex'),
-          public: this.key.master.publicKey.toString('hex')
-        },
-        seed: this.key.seed,
+        // Only the master xprv: the mnemonic and raw private hex are never written.
         xprv: this.key.master.toBase58()
       },
       version: this.version
     };
   }
 
-  loadTransaction (transaction, labels = []) {
+  loadTransaction (transaction, _labels = []) {
     if (!transaction) throw new Error('You must provide a transaction.');
     if (!transaction.id) throw new Error('The transaction must have a "id" property.');
 
@@ -284,6 +348,285 @@ class Wallet extends Service {
   }
 
   /**
+   * Register a key with optional labels.
+   * Accepts a Key instance, pubkey hex string, or object-like key input.
+   * @param {Key|String|Object} input Key material to load.
+   * @param {Array&lt;String>} [labels=[]] Optional labels.
+   * @returns {Object} Stored key descriptor.
+   */
+  loadKey (input, labels = []) {
+    let key = null;
+
+    if (input instanceof Key) {
+      key = input;
+    } else if (input &amp;&amp; typeof input === 'object' &amp;&amp; (input.pubkey || input.public)) {
+      key = this.publicKeyFromString(input.pubkey || input.public);
+    } else if (typeof input === 'string' || Buffer.isBuffer(input) || (typeof Uint8Array !== 'undefined' &amp;&amp; input instanceof Uint8Array)) {
+      key = this.publicKeyFromString(input);
+    } else if (input &amp;&amp; typeof input === 'object') {
+      key = this.publicKeyFromString(input);
+    } else {
+      throw new Error('Invalid key input.');
+    }
+
+    const pubkey = key.pubkey;
+    if (!pubkey || typeof pubkey !== 'string') throw new Error('Could not derive pubkey from key input.');
+
+    const item = {
+      pubkey,
+      labels: Array.isArray(labels) ? labels : []
+    };
+
+    this._state.keys[pubkey] = item;
+    this._state.content.keys[pubkey] = item;
+    this.keys.set(`/${pubkey}`, item);
+
+    try {
+      if (typeof key.toBitcoinAddress === 'function') {
+        const addr = key.toBitcoinAddress();
+        if (addr) this.watchAddress(addr, { pubkey, labels: item.labels, source: 'loadKey' });
+      }
+    } catch (_) { /* watch is best-effort */ }
+
+    return item;
+  }
+
+  /**
+   * Load an additional BIP39 seed into this wallet's key collection (does not
+   * replace the primary `this.key`). Addresses derived from the seed are watched.
+   * @param {string} phrase BIP39 mnemonic
+   * @param {Array&lt;string>} [labels=[]]
+   * @param {object} [opts]
+   * @param {number} [opts.addressWindow] receive indices to watch (default gapLimit)
+   * @returns {{ seedId: string, xpub: string, labels: string[] }}
+   */
+  loadSeed (phrase, labels = [], opts = {}) {
+    if (typeof phrase !== 'string') throw new Error('Seed must be a string.');
+    const trimmed = phrase.trim().replace(/\s+/g, ' ');
+    if (!bip39.validateMnemonic(trimmed)) {
+      throw new Error('Seed must be a valid BIP39 mnemonic phrase.');
+    }
+    const key = new Key({
+      seed: trimmed,
+      network: keyNetworkFor(this.settings.network),
+      passphrase: opts.passphrase || ''
+    });
+    const xpub = key.xpub || key.pubkey;
+    if (!xpub) throw new Error('Could not derive xpub from seed.');
+    const seedId = Hash256.digest(Buffer.from(String(xpub), 'utf8')).toString('hex').slice(0, 32);
+    const labelList = Array.isArray(labels) ? labels.slice() : [];
+    this._seeds.set(seedId, { key, xpub, labels: labelList });
+    this._state.seeds[seedId] = { xpub, labels: labelList, loadedAt: Date.now() };
+    try {
+      this.loadKey(key, labelList.concat(['seed', seedId]));
+    } catch (_) { /* pubkey registration may fail for some key modes */ }
+    this._registerDerivedAddresses(key, {
+      seedId,
+      labels: labelList,
+      count: opts.addressWindow != null ? Number(opts.addressWindow) : this.settings.gapLimit
+    });
+    this.emit('seedLoaded', { seedId, xpub, labels: labelList });
+    return { seedId, xpub, labels: labelList };
+  }
+
+  /**
+   * @returns {Array&lt;{ seedId: string, xpub: string, labels: string[] }>}
+   */
+  listSeeds () {
+    const rows = [];
+    for (const [seedId, row] of this._seeds.entries()) {
+      rows.push({ seedId, xpub: row.xpub, labels: row.labels || [] });
+    }
+    if (this.key &amp;&amp; this.key.xpub) {
+      rows.unshift({
+        seedId: 'primary',
+        xpub: this.key.xpub,
+        labels: ['primary']
+      });
+    }
+    return rows;
+  }
+
+  /**
+   * Watch a Bitcoin address for wallet-associated transactions.
+   * @param {string} address
+   * @param {object} [meta]
+   */
+  watchAddress (address, meta = {}) {
+    const addr = String(address || '').trim();
+    if (!addr) return null;
+    const prev = this._watch.addresses.get(addr) || {};
+    const next = Object.assign({}, prev, meta, { address: addr });
+    this._watch.addresses.set(addr, next);
+    if (!this._state.addresses[addr]) {
+      this._state.addresses[addr] = {
+        index: meta.index != null ? meta.index : -1,
+        used: false,
+        seedId: meta.seedId || null
+      };
+    }
+    return next;
+  }
+
+  /**
+   * Watch an HTLC payment hash (SHA256 preimage) so claim witnesses are detected.
+   * @param {string} paymentHashHex
+   * @param {object} [meta]
+   */
+  watchPaymentHash (paymentHashHex, meta = {}) {
+    const h = String(paymentHashHex || '').trim().toLowerCase();
+    if (!/^[0-9a-f]{64}$/.test(h)) throw new Error('paymentHashHex must be 64 hex chars');
+    const prev = this._watch.paymentHashes.get(h) || {};
+    const next = Object.assign({}, prev, meta, { paymentHashHex: h });
+    this._watch.paymentHashes.set(h, next);
+    return next;
+  }
+
+  /**
+   * Watch an inventory HTLC offer (payment address + payment hash + optional settlement).
+   * @param {object} htlc
+   */
+  watchHtlc (htlc = {}) {
+    const address = htlc.paymentAddress || htlc.address;
+    const paymentHashHex = htlc.paymentHashHex || htlc.contentHashHex;
+    if (address) {
+      this.watchAddress(address, {
+        kind: 'htlc',
+        settlementId: htlc.settlementId || null,
+        paymentHashHex: paymentHashHex || null,
+        documentId: htlc.documentId || null
+      });
+    }
+    if (paymentHashHex) {
+      this.watchPaymentHash(paymentHashHex, {
+        settlementId: htlc.settlementId || null,
+        documentId: htlc.documentId || null,
+        address: address || null
+      });
+    }
+    return this.getWatchSet();
+  }
+
+  /**
+   * @returns {object} watch set snapshot
+   */
+  getWatchSet () {
+    return buildWatchSet(this);
+  }
+
+  /**
+   * Derive and watch a window of addresses for a key on the wallet's network:
+   * SegWit on `m/84'/{coin}'/0'`, Taproot on `m/86'/{coin}'/0'`, and standard
+   * on `m/44'/{coin}'/0'`, receive and change chains — the same set as
+   * {@link Wallet.walletDescriptors}.
+   * @param {Key} key
+   * @param {object} [opts]
+   */
+  _registerDerivedAddresses (key, opts = {}) {
+    if (!key || !key.master || typeof key.master.derivePath !== 'function') return;
+    const count = Math.max(1, Math.round(Number(opts.count != null ? opts.count : this.settings.gapLimit) || 20));
+    const seedId = opts.seedId || null;
+    const labels = opts.labels || [];
+    const network = this.network;
+    const scripts = [
+      { purpose: 84, type: 'p2wpkh', address: (pubkey) => payments.p2wpkh({ pubkey, network }).address },
+      { purpose: bip86.BIP86_PURPOSE, type: 'p2tr', address: (pubkey) => bip86.address(pubkey, network) },
+      { purpose: 44, type: 'p2pkh', address: (pubkey) => payments.p2pkh({ pubkey, network }).address }
+    ];
+    for (const { purpose, type, address } of scripts) {
+      for (const change of [0, 1]) {
+        for (let i = 0; i &lt; count; i++) {
+          const path = bitcoinPurposeDerivationPath(purpose, 0, change, i, this.settings.network);
+          const pubkey = Buffer.from(key.master.derivePath(path).publicKey);
+          this.watchAddress(address(pubkey), { seedId, index: i, type, labels, change });
+        }
+      }
+    }
+  }
+
+  /**
+   * Ingest a Bitcoin transaction (verbose RPC object or raw hex) and emit when related.
+   * @param {object|string} txOrHex
+   * @param {object} [context] { tip, height, source }
+   * @returns {object} classification
+   */
+  ingestBitcoinTransaction (txOrHex, context = {}) {
+    const watchSet = this.getWatchSet();
+    const classified = classifyWalletTransaction(txOrHex, watchSet);
+    if (!classified.related) return classified;
+
+    const txid = classified.txid;
+    const emitKey = txid ? `${txid}:${classified.kind}` : null;
+    if (emitKey &amp;&amp; this._emittedWalletTxKeys.has(emitKey)) {
+      return Object.assign({}, classified, { duplicate: true });
+    }
+    if (emitKey) {
+      this._emittedWalletTxKeys.add(emitKey);
+      if (this._emittedWalletTxKeys.size > 4000) {
+        // Bound memory: drop oldest half by recreating from the newest entries.
+        this._emittedWalletTxKeys = new Set([...this._emittedWalletTxKeys].slice(-2000));
+      }
+    }
+
+    if (txid) {
+      this._state.transactions[txid] = Object.assign({}, classified, {
+        tip: context.tip || null,
+        height: context.height != null ? context.height : null,
+        source: context.source || 'ingest',
+        seenAt: Date.now()
+      });
+      this._state.content.transactions[txid] = this._state.transactions[txid];
+      for (const addr of classified.matchedAddresses) {
+        if (this._state.addresses[addr]) {
+          this._state.addresses[addr].used = true;
+          this._state.addresses[addr].lastUsed = Date.now();
+        }
+      }
+    }
+
+    const event = Object.assign({}, classified, {
+      tip: context.tip || null,
+      height: context.height != null ? context.height : null,
+      source: context.source || 'ingest'
+    });
+    this.emit('walletTransaction', event);
+    if (classified.kind === 'htlc_claim') this.emit('htlcClaim', event);
+    else if (classified.kind === 'htlc_funding') this.emit('htlcFunding', event);
+    else if (classified.kind === 'htlc_refund') this.emit('htlcRefund', event);
+    else if (classified.kind === 'receive' || classified.kind === 'payment' || classified.kind === 'coinbase') {
+      this.emit('payment', event);
+    }
+    return classified;
+  }
+
+  /**
+   * Process a new block tip (optionally with verbosity-2 `tx` / `transactions`).
+   * @param {object} block
+   * @returns {object[]} related classifications
+   */
+  ingestBitcoinBlock (block = {}) {
+    const tip = block.tip || block.hash || block.id || null;
+    const height = block.height != null ? block.height : null;
+    const txs = block.tx || block.transactions || [];
+    const out = [];
+    const seen = new Set();
+    for (const tx of txs) {
+      const classified = this.ingestBitcoinTransaction(tx, { tip, height, source: 'block' });
+      if (classified &amp;&amp; classified.related &amp;&amp; classified.txid &amp;&amp; !seen.has(classified.txid)) {
+        seen.add(classified.txid);
+        out.push(classified);
+      }
+    }
+    this.emit('block', {
+      tip,
+      height,
+      related: out.length,
+      messageTypes: BITCOIN_MESSAGE_TYPES
+    });
+    return out;
+  }
+
+  /**
    * Start the wallet, including listening for transactions.
    */
   start () {
@@ -299,8 +642,17 @@ class Wallet extends Service {
     this.marshall.agents.push(listener);
 
     emitter.on('transaction', async function trustedHandler (msg) {
-      if (this.settings.verbosity >= 5) console.log('[FABRIC:WALLET]', 'Received transaction from trusted event emitter:', msg);
-      await wallet.addTransactionToWallet(msg);
+      if (wallet.settings.verbosity >= 5) console.log('[FABRIC:WALLET]', 'Received transaction from trusted event emitter:', msg);
+      if (msg &amp;&amp; (msg.hex || msg.txid || msg.vout)) {
+        wallet.ingestBitcoinTransaction(msg, { source: 'trusted-transaction' });
+      } else {
+        await wallet.addTransactionToWallet(msg);
+      }
+    });
+
+    emitter.on('block', async function trustedBlockHandler (block) {
+      if (wallet.settings.verbosity >= 5) console.log('[FABRIC:WALLET]', 'Received block from trusted event emitter:', block);
+      await wallet.ingestBitcoinBlock(block);
     });
 
     return this;
@@ -320,44 +672,79 @@ class Wallet extends Service {
       case 'ServiceMessage':
         return this._processServiceMessage(msg['@data']);
       default:
-        return console.warn('[FABRIC:WALLET]', `Unhandled message type: ${msg['@type']}`);
+        if (this.settings.verbosity >= 4 || this.settings.debug) {
+          this.emit('warning', `[FABRIC:WALLET] Unhandled message type: ${msg['@type']}`);
+        }
+        return null;
     }
   }
 
   async _processServiceMessage (msg) {
     switch (msg['@type']) {
       case 'BitcoinBlock':
-        this.processBitcoinBlock(msg['@data']);
+      case 'BitcoinBlockHash':
+        this.processBitcoinBlock(msg['@data'] || msg);
         break;
       case 'BitcoinTransaction':
-        // TODO: validate destination is this wallet
-        this.addTransactionToWallet(msg['@data']);
+      case 'BitcoinTransactionHash':
+        if (msg['@data'] &amp;&amp; (msg['@data'].hex || msg['@data'].content)) {
+          const payload = msg['@data'].hex || msg['@data'].content || msg['@data'];
+          this.ingestBitcoinTransaction(payload, { source: msg['@type'] });
+        } else {
+          this.addTransactionToWallet(msg['@data']);
+        }
         break;
       default:
-        return console.warn('[FABRIC:WALLET]', `Unhandled message type: ${msg['@type']}`);
+        if (this.settings.verbosity >= 4 || this.settings.debug) {
+          this.emit('warning', `[FABRIC:WALLET] Unhandled message type: ${msg['@type']}`);
+        }
+        return null;
     }
   }
 
   async processBitcoinBlock (block) {
     if (this.settings.verbosity >= 4) console.log('[FABRIC:WALLET]', 'Processing block:', block);
-    if (!block.block) return 0;
-    for (let i = 0; i &lt; block.block.hashes.length; i++) {
-      const txid = block.block.hashes[i].toString('hex');
-      // ATTN: Eric
-      // TODO: process transaction
-      console.log('found txid in block:', txid);
+    if (!block) return [];
+    // Verbosity-2 style: full txs present
+    if (block.tx || block.transactions) {
+      return this.ingestBitcoinBlock(block);
     }
+    // Legacy SPV-ish: block.block.hashes
+    if (block.block &amp;&amp; Array.isArray(block.block.hashes)) {
+      const tip = block.hash || block.tip || null;
+      const related = [];
+      for (let i = 0; i &lt; block.block.hashes.length; i++) {
+        const txid = block.block.hashes[i].toString('hex');
+        if (this.settings.verbosity >= 5) console.log('found txid in block:', txid);
+        related.push({ txid, related: false, kind: 'unknown' });
+      }
+      this.emit('block', { tip, related: 0, txids: related.map((r) => r.txid) });
+      return related;
+    }
+    // Tip-only notification from ZMQ hashblock — still emit so listeners wake up.
+    return this.ingestBitcoinBlock(block);
+  }
+
+  async _scanBlockForTransactions (block) {
+    if (this.settings.verbosity >= 5 || this.settings.debug) {
+      console.log('[AUDIT]', 'Scanning block for transactions:', block);
+    }
+    return this.ingestBitcoinBlock(block || {});
   }
 
   async _attachTXID (txid) {
-    // TODO: check that `txid` is a proper TXID
+    if (typeof txid !== 'string' || !/^[0-9a-fA-F]{64}$/.test(txid)) {
+      throw new Error('txid must be a 64-character hex string');
+    }
     let txp = await this.txids.create(txid);
     if (this.settings.verbosity >= 5) console.log('[AUDIT]', `Attached TXID ${txid} to Wallet ID ${this.id}, result:`, txp);
     return txp;
   }
 
   async _handleFabricTransaction (tx) {
-    console.log('[FABRIC:WALLET]', 'Handling Fabric Transaction:', tx);
+    if (this.settings.verbosity >= 5) {
+      console.log('[FABRIC:WALLET]', 'Handling Fabric Transaction:', tx);
+    }
   }
 
   async addTransactionToWallet (transaction) {
@@ -455,6 +842,10 @@ class Wallet extends Service {
     return Address.fromScripthash(redeemScript.hash160());
   }
 
+  /**
+   * @deprecated Legacy bcoin-style HTLC for channels — not the document-market P2TR profile.
+   * Use `@fabric/core/types/htlc` instead.
+   */
   async createHTLC (contract) {
     // if (!contract.asset) throw new Error('Contract parameter "asset" is required.');
     if (!contract.amount) throw new Error('Contract parameter "amount" is required.');
@@ -464,7 +855,9 @@ class Wallet extends Service {
       // sha256
       // -> pubkey
       contract.counterparty = await this.ring.getPublicKey();
-      console.log('contract counterparty artificially generated:', contract.counterparty);
+      if (this.settings.verbosity >= 5 || this.settings.debug) {
+        console.log('contract counterparty artificially generated:', contract.counterparty);
+      }
     }
 
     let leftover = contract.amount % this.settings.decimals;
@@ -472,18 +865,21 @@ class Wallet extends Service {
 
     let partials = [];
     // TODO: remove short-circuit
-    let cb = await this._generateFakeCoinbase(contract.amount);
-    let mtx = new MTX();
+    await this._generateFakeCoinbase(contract.amount);
     let script = new Script();
 
     let secret = await this.generateSecret();
     let image = Buffer.from(secret.hash);
 
-    console.log('secret generated:', secret);
-    console.log('image of secret:', image);
+    if (this.settings.verbosity >= 5 || this.settings.debug) {
+      console.log('secret generated:', secret);
+      console.log('image of secret:', image);
+    }
 
     let refund = await this.ring.getPublicKey();
-    console.log('refund:', refund);
+    if (this.settings.verbosity >= 5 || this.settings.debug) {
+      console.log('refund:', refund);
+    }
 
     script.pushSym('OP_IF');
     script.pushSym('OP_SHA256');
@@ -505,8 +901,10 @@ class Wallet extends Service {
       partials.push(script);
     }
 
-    console.log('parts:', partials);
-    console.log('leftover:', leftover);
+    if (this.settings.verbosity >= 5 || this.settings.debug) {
+      console.log('parts:', partials);
+      console.log('leftover:', leftover);
+    }
 
     let entity = new Actor({
       comment: 'List of transactions to validate.',
@@ -523,7 +921,9 @@ class Wallet extends Service {
     const entity = await this.secrets.create({
       hash: secret.hash
     });
-    console.log('created secret:', entity);
+    if (this.settings.verbosity >= 5 || this.settings.debug) {
+      console.log('created secret:', entity);
+    }
     return entity;
   }
 
@@ -531,13 +931,11 @@ class Wallet extends Service {
     if (!address) throw new Error(`Parameter "address" is required.`);
     if (!amount) throw new Error(`Parameter "amount" is required.`);
 
-    let bn = new BN(amount + '', 10);
     // TODO: labeled keypairs
-    let clean = await this.generateCleanKeyPair();
     let change = await this.generateCleanKeyPair();
 
     let mtx = new MTX();
-    let cb = await this._generateFakeCoinbase(amount);
+    await this._generateFakeCoinbase(amount);
 
     mtx.addOutput({
       address: address,
@@ -571,14 +969,13 @@ class Wallet extends Service {
   balanceFromState (state) {
     if (!state.transactions) throw new Error('State does not provide a `transactions` property.');
     if (!state.transactions.length) return 0;
-    return state.transactions.reduce((acc, obj, i) => {
+    return state.transactions.reduce((acc, obj, _i) => {
       if (!acc.value) acc.value = 0;
       acc.value += obj.value;
     });
   }
 
   getFeeForInput (coin, address, keyring, rate) {
-    let fundingTarget = 100000000; // 1 BTC (arbitrary for purposes of this function)
     let testMTX = new MTX();
 
     // TODO: restore swap code, abstract input types
@@ -601,7 +998,9 @@ class Wallet extends Service {
   }
 
   _handleWalletTransaction (tx) {
-    console.log('[BRIDGE:WALLET]', 'incoming transaction:', tx);
+    if (this.settings.verbosity >= 5) {
+      console.log('[BRIDGE:WALLET]', 'incoming transaction:', tx);
+    }
   }
 
   _getDepositAddress () {
@@ -623,6 +1022,10 @@ class Wallet extends Service {
     return this;
   }
 
+  /**
+   * Next unused receive address; see {@link Wallet#receiveAddress}.
+   * @returns {Promise&lt;string>}
+   */
   async getUnusedAddress () {
     return this.receiveAddress();
   }
@@ -642,8 +1045,10 @@ class Wallet extends Service {
    */
   async _sign (tx) {
     let signature = await tx.sign(this.keyring);
-    console.log('signing tx:', tx);
-    console.log('signing sig:', signature);
+    if (this.settings.verbosity >= 5 || this.settings.debug) {
+      console.log('signing tx:', tx);
+      console.log('signing sig:', signature);
+    }
     return Object.assign({}, tx, { signature });
   }
 
@@ -671,7 +1076,9 @@ class Wallet extends Service {
   }
 
   async _createFromFreshSeed (passphrase = '') {
-    console.log('creating fresh seed with passphrase:', passphrase);
+    if (this.settings.verbosity >= 5) {
+      console.log('creating fresh seed with passphrase:', passphrase ? '[REDACTED]' : '');
+    }
     const key = new Key({ passphrase: passphrase });
     return {
       phrase: key.mnemonic,
@@ -682,14 +1089,21 @@ class Wallet extends Service {
   }
 
   async _importSeed (seed) {
-    let mnemonic = new Mnemonic(seed);
-    return this._loadSeed(mnemonic.toString());
+    if (typeof seed !== 'string') {
+      throw new Error('Seed must be a string.');
+    }
+
+    const phrase = seed.trim().replace(/\s+/g, ' ');
+    if (!bip39.validateMnemonic(phrase)) {
+      throw new Error('Seed must be a valid BIP39 mnemonic phrase.');
+    }
+
+    return this._loadSeed(phrase);
   }
 
   async _getBondAddress () {
     await this._load();
 
-    let script = new Script();
     let clean = await this.generateCleanKeyPair();
 
     if (this.settings.verbosity >= 5) console.log('[AUDIT]', 'getting bond address, clean:', clean);
@@ -709,13 +1123,14 @@ class Wallet extends Service {
 
   async _getSpendableOutput (target, amount = 0) {
     let self = this;
-    let key = null;
     let out = null;
     let mtx = new MTX();
 
     await this._load();
 
-    console.log('funding transaction with coins:', this._state.utxos);
+    if (this.settings.verbosity >= 5 || this.settings.debug) {
+      console.log('funding transaction with coins:', this._state.utxos);
+    }
 
     // INSERT 1 Output
     mtx.addOutput({
@@ -729,10 +1144,11 @@ class Wallet extends Service {
       changeAddress: self.ring.getAddress()
     });
 
-    console.log('out:', out);
-
-    console.trace('created mutable transaction:', mtx);
-    console.trace('created immutable transaction:', mtx.toTX());
+    if (this.settings.verbosity >= 5 || this.settings.debug) {
+      console.log('out:', out);
+      console.trace('created mutable transaction:', mtx);
+      console.trace('created immutable transaction:', mtx.toTX());
+    }
 
     return {
       tx: mtx.toTX(),
@@ -783,18 +1199,15 @@ class Wallet extends Service {
     return inputRefund;
   }
 
-  async _scanBlockForTransactions (block) {
-    console.log('[AUDIT]', 'Scanning block for transactions:', block);
-    let found = [];
-  }
-
   async _scanChainForTransactions (chain) {
-    console.log('[AUDIT]', 'Scanning chain for transactions:', chain);
+    if (this.settings.verbosity >= 5 || this.settings.debug) {
+      console.log('[AUDIT]', 'Scanning chain for transactions:', chain);
+    }
 
     let transactions = [];
 
     for (let i = 0; i &lt; chain.blocks.length; i++) {
-      transactions.concat(await this._scanBlockForTransactions(chain.blocks[i]));
+      transactions = transactions.concat(await this._scanBlockForTransactions(chain.blocks[i]));
     }
 
     return transactions;
@@ -867,8 +1280,8 @@ class Wallet extends Service {
     const index = typeof this.index === 'number' ? this.index : 0;
     this.index = index + 1;
 
-    // Use a standard BIP44 path with the index
-    const path = `m/44'/0'/0'/0/${index}`;
+    // SegWit receive path on the wallet's network — never the Fabric identity.
+    const path = bitcoinReceiveDerivationPath(0, index, this.settings.network);
     const pair = this.key.derive(path);
 
     const keypair = {
@@ -912,8 +1325,23 @@ class Wallet extends Service {
   }
 
   async _loadSeed (seed) {
-    this.settings.key = { seed };
-    await this._load();
+    if (typeof seed !== 'string') {
+      throw new Error('Seed must be a string.');
+    }
+
+    const phrase = seed.trim().replace(/\s+/g, ' ');
+    if (!bip39.validateMnemonic(phrase)) {
+      throw new Error('Seed must be a valid BIP39 mnemonic phrase.');
+    }
+
+    this.settings.key = { seed: phrase };
+    if (typeof this._load === 'function') {
+      await this._load();
+    } else {
+      // Legacy fallback for runtimes that initialize directly from key settings.
+      this.key = new Key({ seed: phrase, network: keyNetworkFor(this.settings.network) });
+      this.seed = this.key.seed;
+    }
     return this.seed;
   }
 
@@ -921,9 +1349,18 @@ class Wallet extends Service {
     return this.database.close();
   }
 
+  /**
+   * Next BIP-86 Taproot receive address of account 0 (`m/86'/{coin}'/0'/0/i`),
+   * recorded in the wallet's address book and watched.
+   * @returns {Promise&lt;string>}
+   */
   async receiveAddress () {
-    const keypair = await this.generateCleanKeyPair();
-    return keypair.public.toString('hex');
+    const index = Number.isSafeInteger(this._state.addressIndex) ? this._state.addressIndex : 0;
+    const { address } = Wallet.deriveTaprootAddress(this.key, { change: 0, index, network: this.settings.network });
+    this._state.addressIndex = index + 1;
+    this._state.addresses[address] = { index, type: 'p2tr', change: 0, used: false };
+    this.watchAddress(address, { seedId: 'primary', index, type: 'p2tr', change: 0, labels: ['receive'] });
+    return address;
   }
 
   // Add method to check gap limit
@@ -981,7 +1418,68 @@ class Wallet extends Service {
     }
     return addresses;
   }
+
+  /**
+   * Envelope (legacy / unsealed) payment hash. Prefer {@link Wallet.resolveDocumentContentHashHex}
+   * when sealed meta or a content key may apply.
+   * @param {string} documentId
+   * @param {object} parsed Whitelisted document fields (see {@link Peer#_buildDocumentParsedForPublish}).
+   * @returns {string}
+   */
+  /**
+   * BIP-86 Taproot address of a key with private derivation
+   * (`m/86'/{coin}'/account'/change/index`).
+   * @param {Key} key Key holding a master that can derive hardened children.
+   * @param {Object} [options]
+   * @param {number} [options.account=0]
+   * @param {number} [options.change=0]
+   * @param {number} [options.index=0]
+   * @param {string} [options.network='mainnet'] Fabric network name.
+   * @returns {{ address: string, path: string, publicKey: string, outputKey: string }}
+   */
+  static deriveTaprootAddress (key, options = {}) {
+    if (!key || !key.master || typeof key.master.derivePath !== 'function') {
+      throw new Error('a key with a master is required to derive BIP-86 addresses');
+    }
+    const network = options.network || 'mainnet';
+    const path = bip86.path(options.account || 0, options.change || 0, options.index || 0, network);
+    const publicKey = Buffer.from(key.master.derivePath(path).publicKey);
+    return {
+      address: bip86.address(publicKey, bitcoinNetworkFor(network)),
+      path,
+      publicKey: publicKey.toString('hex'),
+      outputKey: bip86.outputKey(publicKey).toString('hex')
+    };
+  }
+
+  static purchaseContentHashHex (documentId, parsed) {
+    return require('../functions/documentPaymentHash').purchaseContentHashHex(documentId, parsed);
+  }
+
+  /**
+   * Single path for buy / HTLC `contentHashHex` (sealed | envelope | blob).
+   * @param {object} opts see {@link module:functions/documentPaymentHash.resolveDocumentContentHashHex}
+   * @returns {{ contentHashHex: string, binding: string }}
+   */
+  static resolveDocumentContentHashHex (opts) {
+    return require('../functions/documentPaymentHash').resolveDocumentContentHashHex(opts);
+  }
 }
+
+// One seed, many accounts: identity, wallet, and cosigner keys per (account, network), and the sealed vault.
+Object.assign(Wallet, accountKeys);
+Wallet.Accounts = accountKeys;
+
+// Which transactions and blocks concern a wallet.
+Wallet.Watch = walletWatch;
+
+// BIP-21 `bitcoin:` URIs.
+Wallet.BIP21 = bip21;
+Wallet.encodeBitcoinUri = bip21.encodeBitcoinUri;
+Wallet.parseBitcoinUri = bip21.parseBitcoinUri;
+
+// BIP-86 Taproot (key path only).
+Wallet.BIP86 = bip86;
 
 module.exports = Wallet;
 </code></pre>
@@ -993,69 +1491,303 @@ module.exports = Wallet;
   </div>
   <nav>
     <h2><a href="index.html">Home</a></h2>
+    <h3>Modules</h3>
+    <ul>
+      <li><a href="module-types_bech32_bech32.html">types/bech32/bech32</a></li>
+      <li><a href="module-types_bech32_fabricPaymentBech32.html">types/bech32/fabricPaymentBech32</a></li>
+      <li><a href="module-types_delegation.html">types/delegation</a></li>
+      <li><a href="module-types_key_base58.html">types/key/base58</a></li>
+      <li><a href="module-types_key_bip32.html">types/key/bip32</a></li>
+      <li><a href="module-types_key_bip39.html">types/key/bip39</a></li>
+      <li><a href="module-types_key_bip49.html">types/key/bip49</a></li>
+      <li><a href="module-types_key_bip85.html">types/key/bip85</a></li>
+      <li><a href="module-types_key_fabricKeyMaterial.html">types/key/fabricKeyMaterial</a></li>
+      <li><a href="module-types_key_keyHasPrivateSigningMaterial.html">types/key/keyHasPrivateSigningMaterial</a></li>
+      <li><a href="module-types_key_pubkey.html">types/key/pubkey</a></li>
+      <li><a href="module-types_key_signingTags.html">types/key/signingTags</a></li>
+      <li><a href="module-types_typetree.html">types/typetree</a></li>
+      <li><a href="module-types_wallet_accountKeys.html">types/wallet/accountKeys</a></li>
+      <li><a href="module-types_wallet_bip21.html">types/wallet/bip21</a></li>
+      <li><a href="module-types_wallet_bip86.html">types/wallet/bip86</a></li>
+      <li><a href="module-types_witness_adaptor.html">types/witness/adaptor</a></li>
+      <li><a href="module-types_witness_bls.html">types/witness/bls</a></li>
+      <li><a href="module-types_witness_dleq.html">types/witness/dleq</a></li>
+      <li><a href="module-types_witness_musig2.html">types/witness/musig2</a></li>
+      <li><a href="module-types_witness_musig2Adaptor.html">types/witness/musig2Adaptor</a></li>
+      <li><a href="module-types_witness_musig2Session.html">types/witness/musig2Session</a></li>
+      <li><a href="types_ecc.html#.module:selftest">types/ecc.selftest</a></li>
+    </ul>
     <h3>Classes</h3>
     <ul>
       <li><a href="Actor.html">Actor</a></li>
+      <li><a href="Beacon.html">Beacon</a></li>
       <li><a href="Bitcoin.html">Bitcoin</a></li>
-      <li><a href="CLI.html">CLI</a></li>
+      <li><a href="Block.html">Block</a></li>
+      <li><a href="Bond.html">Bond</a></li>
+      <li><a href="Book.html">Book</a></li>
       <li><a href="Chain.html">Chain</a></li>
+      <li><a href="Challenge.html">Challenge</a></li>
       <li><a href="Channel.html">Channel</a></li>
+      <li><a href="ChannelBook.html">ChannelBook</a></li>
+      <li><a href="ChannelSession.html">ChannelSession</a></li>
       <li><a href="Circuit.html">Circuit</a></li>
+      <li><a href="Coinjoin.html">Coinjoin</a></li>
+      <li><a href="CoinjoinBook.html">CoinjoinBook</a></li>
+      <li><a href="CoinjoinMakerRound.html">CoinjoinMakerRound</a></li>
+      <li><a href="CoinjoinTakerRound.html">CoinjoinTakerRound</a></li>
       <li><a href="Collection.html">Collection</a></li>
+      <li><a href="Component.html">Component</a></li>
+      <li><a href="Contract.html">Contract</a></li>
+      <li><a href="Disk.html">Disk</a></li>
+      <li><a href="Document.html">Document</a></li>
+      <li><a href="DocumentBlobTransferBook.html">DocumentBlobTransferBook</a></li>
+      <li><a href="DocumentBook.html">DocumentBook</a></li>
+      <li><a href="EncryptedPromise.html">EncryptedPromise</a></li>
+      <li><a href="Entity.html">Entity</a></li>
+      <li><a href="Entity.Transition.html">Transition</a></li>
       <li><a href="Environment.html">Environment</a></li>
       <li><a href="Fabric.html">Fabric</a></li>
-      <li><a href="FabricShell.html">FabricShell</a></li>
       <li><a href="Federation.html">Federation</a></li>
+      <li><a href="FidelityVerifier.html">FidelityVerifier</a></li>
       <li><a href="Filesystem.html">Filesystem</a></li>
+      <li><a href="FraudProof.html">FraudProof</a></li>
       <li><a href="HKDF.html">HKDF</a></li>
       <li><a href="Hash256.html">Hash256</a></li>
+      <li><a href="Htlc.html">Htlc</a></li>
       <li><a href="Identity.html">Identity</a></li>
       <li><a href="Interface.html">Interface</a></li>
       <li><a href="Key.html">Key</a></li>
       <li><a href="Ledger.html">Ledger</a></li>
       <li><a href="Lightning.html">Lightning</a></li>
+      <li><a href="LiquidityBook.html">LiquidityBook</a></li>
       <li><a href="Logger.html">Logger</a></li>
       <li><a href="Machine.html">Machine</a></li>
+      <li><a href="Market.html">Market</a></li>
       <li><a href="Message.html">Message</a></li>
+      <li><a href="OrderBook.html">OrderBook</a></li>
       <li><a href="Peer.html">Peer</a></li>
+      <li><a href="PodleBlacklist.html">PodleBlacklist</a></li>
+      <li><a href="Policy.html">Policy</a></li>
+      <li><a href="Program.html">Program</a></li>
       <li><a href="Reader.html">Reader</a></li>
       <li><a href="Redis.html">Redis</a></li>
       <li><a href="Remote.html">Remote</a></li>
+      <li><a href="Resolutions.html">Resolutions</a></li>
       <li><a href="Resource.html">Resource</a></li>
+      <li><a href="RoundRobin.html">RoundRobin</a></li>
       <li><a href="Scribe.html">Scribe</a></li>
       <li><a href="Script.html">Script</a></li>
+      <li><a href="Secret.html">Secret</a></li>
       <li><a href="Service.html">Service</a></li>
       <li><a href="Session.html">Session</a></li>
+      <li><a href="SetupTui.html">SetupTui</a></li>
+      <li><a href="SignedBook.html">SignedBook</a></li>
       <li><a href="State.html">State</a></li>
       <li><a href="Store.html">Store</a></li>
+      <li><a href="Swap.html">Swap</a></li>
+      <li><a href="global.html#Text">Text</a></li>
       <li><a href="Token.html">Token</a></li>
       <li><a href="Tree.html">Tree</a></li>
       <li><a href="Vector.html">Vector</a></li>
       <li><a href="Wallet.html">Wallet</a></li>
+      <li><a href="Watchtower.html">Watchtower</a></li>
       <li><a href="Worker.html">Worker</a></li>
       <li><a href="ZMQ.html">ZMQ</a></li>
+      <li><a href="module-types_delegation-Delegation.html">Delegation</a></li>
+      <li><a href="module-types_key_bip32-BIP32Factory.html">BIP32Factory</a></li>
+      <li><a href="module-types_witness_musig2-InvalidContributionError.html">InvalidContributionError</a></li>
     </ul>
     <h3>Global</h3>
     <ul>
-      <li><a href="global.html#BEACON_EPOCH_SIGNING_KIND">BEACON_EPOCH_SIGNING_KIND</a></li>
-      <li><a href="global.html#FRIENDLY_TYPE_BY_WIRE">FRIENDLY_TYPE_BY_WIRE</a></li>
-      <li><a href="global.html#WIRE_TYPE_DECODE_ORDER">WIRE_TYPE_DECODE_ORDER</a></li>
-      <li><a href="global.html#crypto">crypto</a></li>
-      <li><a href="global.html#epochCommitmentDigestHex">epochCommitmentDigestHex</a></li>
-      <li><a href="global.html#explorerBaseUrl">explorerBaseUrl</a></li>
-      <li><a href="global.html#friendlyTypeFromWire">friendlyTypeFromWire</a></li>
-      <li><a href="global.html#gossip">gossip</a></li>
-      <li><a href="global.html#isAllZero32">isAllZero32</a></li>
-      <li><a href="global.html#jsonSafe">jsonSafe</a></li>
-      <li><a href="global.html#p2pAddNodes">p2pAddNodes</a></li>
-      <li><a href="global.html#p2pAddNodesAllowMainnet">p2pAddNodesAllowMainnet</a></li>
-      <li><a href="global.html#parseDistributedManifestV1">parseDistributedManifestV1</a></li>
-      <li><a href="global.html#peerDebugDerivedPublicSummary">peerDebugDerivedPublicSummary</a></li>
-      <li><a href="global.html#signingStringForBeaconEpoch">signingStringForBeaconEpoch</a></li>
-      <li><a href="global.html#stableStringify">stableStringify</a></li>
-      <li><a href="global.html#verifyFederationWitnessOnMessage">verifyFederationWitnessOnMessage</a></li>
-      <li><a href="global.html#wireTraffic">wireTraffic</a></li>
-      <li><a href="global.html#wireTypeFromFriendly">wireTypeFromFriendly</a></li>
+      <li><a href="global.html#ASK_TYPE">ASK_TYPE</a></li>
+      <li><a href="global.html#BID_CLOCK_SKEW_SECONDS">BID_CLOCK_SKEW_SECONDS</a></li>
+      <li><a href="global.html#BID_TYPE">BID_TYPE</a></li>
+      <li><a href="global.html#BITCOIN_MESSAGE_TYPES">BITCOIN_MESSAGE_TYPES</a></li>
+      <li><a href="global.html#CHANNEL_BODY_TYPES">CHANNEL_BODY_TYPES</a></li>
+      <li><a href="global.html#CHANNEL_DEFAULTS">CHANNEL_DEFAULTS</a></li>
+      <li><a href="global.html#CLTV_TIMESTAMP_THRESHOLD">CLTV_TIMESTAMP_THRESHOLD</a></li>
+      <li><a href="global.html#DEFAULT_BID_TTL_SECONDS">DEFAULT_BID_TTL_SECONDS</a></li>
+      <li><a href="global.html#DEFAULT_FEE_SATS">DEFAULT_FEE_SATS</a></li>
+      <li><a href="global.html#DEFAULT_INVOICE_EXPIRY_SECONDS">DEFAULT_INVOICE_EXPIRY_SECONDS</a></li>
+      <li><a href="global.html#DEFAULT_INVOICE_MARGIN_SECONDS">DEFAULT_INVOICE_MARGIN_SECONDS</a></li>
+      <li><a href="global.html#DEFAULT_MAX_SIGNS">DEFAULT_MAX_SIGNS</a></li>
+      <li><a href="global.html#DEFAULT_MIN_CLAIM_BLOCKS">DEFAULT_MIN_CLAIM_BLOCKS</a></li>
+      <li><a href="global.html#DEFAULT_MIN_CONFIRMATIONS">DEFAULT_MIN_CONFIRMATIONS</a></li>
+      <li><a href="global.html#DEFAULT_MIN_EQUAL_OUTPUTS">DEFAULT_MIN_EQUAL_OUTPUTS</a></li>
+      <li><a href="global.html#DEFAULT_WEIGHTS">DEFAULT_WEIGHTS</a></li>
+      <li><a href="global.html#DEPRECATED_WIRE_TYPES">DEPRECATED_WIRE_TYPES</a></li>
+      <li><a href="global.html#DUST_SATS">DUST_SATS</a></li>
+      <li><a href="global.html#EXIT_KINDS">EXIT_KINDS</a></li>
+      <li><a href="global.html#EXIT_SIGNATURE_TYPE">EXIT_SIGNATURE_TYPE</a></li>
+      <li><a href="global.html#FIDELITY_LOCKTIME_GRID">FIDELITY_LOCKTIME_GRID</a></li>
+      <li><a href="global.html#FIDELITY_MAX_CERT_BLOCKS">FIDELITY_MAX_CERT_BLOCKS</a></li>
+      <li><a href="global.html#FIELD_BODIES_VERSION">FIELD_BODIES_VERSION</a></li>
+      <li><a href="global.html#GCM_TAG_BYTES">GCM_TAG_BYTES</a></li>
+      <li><a href="global.html#HOP_PENALTY_MS">HOP_PENALTY_MS</a></li>
+      <li><a href="global.html#INPUT_HEADROOM">INPUT_HEADROOM</a></li>
+      <li><a href="global.html#LEAF_VERSION">LEAF_VERSION</a></li>
+      <li><a href="global.html#LOCKTIME_SLACK_BLOCKS">LOCKTIME_SLACK_BLOCKS</a></li>
+      <li><a href="global.html#LOCKTIME_THRESHOLD">LOCKTIME_THRESHOLD</a></li>
+      <li><a href="global.html#MAX_EVIDENCE">MAX_EVIDENCE</a></li>
+      <li><a href="global.html#MAX_FEE_PPM">MAX_FEE_PPM</a></li>
+      <li><a href="global.html#MAX_LOCKTIME">MAX_LOCKTIME</a></li>
+      <li><a href="global.html#MAX_MAKERS">MAX_MAKERS</a></li>
+      <li><a href="global.html#MAX_MAKER_INPUTS">MAX_MAKER_INPUTS</a></li>
+      <li><a href="global.html#MAX_OFFERS">MAX_OFFERS</a></li>
+      <li><a href="global.html#MAX_PREMIUM_PPM">MAX_PREMIUM_PPM</a></li>
+      <li><a href="global.html#MAX_PROVIDERS">MAX_PROVIDERS</a></li>
+      <li><a href="global.html#MAX_PSBT_CHARS">MAX_PSBT_CHARS</a></li>
+      <li><a href="global.html#MAX_REFUND_LOCK_BLOCKS">MAX_REFUND_LOCK_BLOCKS</a></li>
+      <li><a href="global.html#MAX_SETTLED_CREDITS">MAX_SETTLED_CREDITS</a></li>
+      <li><a href="global.html#MAX_TRANSFERS">MAX_TRANSFERS</a></li>
+      <li><a href="global.html#MIN_COINJOIN_SATS">MIN_COINJOIN_SATS</a></li>
+      <li><a href="global.html#MIN_INVOICE_EXPIRY_SECONDS">MIN_INVOICE_EXPIRY_SECONDS</a></li>
+      <li><a href="global.html#MIN_REFUND_LOCK_BLOCKS">MIN_REFUND_LOCK_BLOCKS</a></li>
+      <li><a href="global.html#PODLE_BLACKLIST_SIZE">PODLE_BLACKLIST_SIZE</a></li>
+      <li><a href="global.html#PODLE_MAX_INDEX">PODLE_MAX_INDEX</a></li>
+      <li><a href="global.html#PODLE_MIN_AGE_CONFS">PODLE_MIN_AGE_CONFS</a></li>
+      <li><a href="global.html#PODLE_MIN_VALUE_PCT">PODLE_MIN_VALUE_PCT</a></li>
+      <li><a href="global.html#PODLE_TAG">PODLE_TAG</a></li>
+      <li><a href="global.html#ROUND_TYPES">ROUND_TYPES</a></li>
+      <li><a href="global.html#SCORE_INVENTORY_ONLY">SCORE_INVENTORY_ONLY</a></li>
+      <li><a href="global.html#SCORE_MAX">SCORE_MAX</a></li>
+      <li><a href="global.html#SCORE_UNKNOWN">SCORE_UNKNOWN</a></li>
+      <li><a href="global.html#SEALED_TYPE">SEALED_TYPE</a></li>
+      <li><a href="global.html#SEAL_NAMESPACE">SEAL_NAMESPACE</a></li>
+      <li><a href="global.html#SIGNER_FIELD">SIGNER_FIELD</a></li>
+      <li><a href="global.html#TAPROOT_INTERNAL_NUMS">TAPROOT_INTERNAL_NUMS</a></li>
+      <li><a href="global.html#TELEMETRY_TYPE">TELEMETRY_TYPE</a></li>
+      <li><a href="global.html#TELEMETRY_VERSION">TELEMETRY_VERSION</a></li>
+      <li><a href="global.html#UNSAFE_PATH_TOKENS">UNSAFE_PATH_TOKENS</a></li>
+      <li><a href="global.html#WALLET_TX_KINDS">WALLET_TX_KINDS</a></li>
+      <li><a href="global.html#WEIGHT_OVERHEAD">WEIGHT_OVERHEAD</a></li>
+      <li><a href="global.html#YEAR_BLOCKS">YEAR_BLOCKS</a></li>
+      <li><a href="global.html#assertMonotoneBudget">assertMonotoneBudget</a></li>
+      <li><a href="global.html#bitcoin">bitcoin</a></li>
+      <li><a href="global.html#bodyId">bodyId</a></li>
+      <li><a href="global.html#broadcastSettled">broadcastSettled</a></li>
+      <li><a href="global.html#buildContractTaproot">buildContractTaproot</a></li>
+      <li><a href="global.html#buildEscrow">buildEscrow</a></li>
+      <li><a href="global.html#buildFederationVaultFromPolicy">buildFederationVaultFromPolicy</a></li>
+      <li><a href="global.html#buildFidelity">buildFidelity</a></li>
+      <li><a href="global.html#buildForwardedDocumentRequest">buildForwardedDocumentRequest</a></li>
+      <li><a href="global.html#buildHashlockLeaf">buildHashlockLeaf</a></li>
+      <li><a href="global.html#buildHashlockTapscript">buildHashlockTapscript</a></li>
+      <li><a href="global.html#buildPsbt">buildPsbt</a></li>
+      <li><a href="global.html#buildScriptLeaf">buildScriptLeaf</a></li>
+      <li><a href="global.html#buildSpendLeaf">buildSpendLeaf</a></li>
+      <li><a href="global.html#buildWatchSet">buildWatchSet</a></li>
+      <li><a href="global.html#checkPodleUtxo">checkPodleUtxo</a></li>
+      <li><a href="global.html#classifyWalletTransaction">classifyWalletTransaction</a></li>
+      <li><a href="global.html#codec">codec</a></li>
+      <li><a href="global.html#compileLeaves">compileLeaves</a></li>
+      <li><a href="global.html#composePolicyWithRunHashlock">composePolicyWithRunHashlock</a></li>
+      <li><a href="global.html#composeTaprootTree">composeTaprootTree</a></li>
+      <li><a href="global.html#computeRelayFee">computeRelayFee</a></li>
+      <li><a href="global.html#contractMessageIndex">contractMessageIndex</a></li>
+      <li><a href="global.html#contractMessageMatches">contractMessageMatches</a></li>
+      <li><a href="global.html#createBlobMerkleTree">createBlobMerkleTree</a></li>
+      <li><a href="global.html#createDocumentPurchaseSession">createDocumentPurchaseSession</a></li>
+      <li><a href="global.html#describePsbt">describePsbt</a></li>
+      <li><a href="global.html#descriptorPrivateKey">descriptorPrivateKey</a></li>
+      <li><a href="global.html#envelopeRecipient">envelopeRecipient</a></li>
+      <li><a href="global.html#estimateVsize">estimateVsize</a></li>
+      <li><a href="global.html#evaluateTierWhen">evaluateTierWhen</a></li>
+      <li><a href="global.html#expireHeight">expireHeight</a></li>
+      <li><a href="global.html#fidelityLocktimes">fidelityLocktimes</a></li>
+      <li><a href="global.html#fidelityPath">fidelityPath</a></li>
+      <li><a href="global.html#fidelityValue">fidelityValue</a></li>
+      <li><a href="global.html#finalize">finalize</a></li>
+      <li><a href="global.html#finalizeHashlockPsbt">finalizeHashlockPsbt</a></li>
+      <li><a href="global.html#finalizeSpendPsbt">finalizeSpendPsbt</a></li>
+      <li><a href="global.html#findSession">findSession</a></li>
+      <li><a href="global.html#fromContractMessage">fromContractMessage</a></li>
+      <li><a href="global.html#generatePodle">generatePodle</a></li>
+      <li><a href="global.html#hashlockFromProgramRun">hashlockFromProgramRun</a></li>
+      <li><a href="global.html#invoiceAmountMsat">invoiceAmountMsat</a></li>
+      <li><a href="global.html#isDuplicateSettlement">isDuplicateSettlement</a></li>
+      <li><a href="global.html#isValidFidelityLocktime">isValidFidelityLocktime</a></li>
+      <li><a href="global.html#l1GiverTerms">l1GiverTerms</a></li>
+      <li><a href="global.html#leafScripts">leafScripts</a></li>
+      <li><a href="global.html#listRefundCandidates">listRefundCandidates</a></li>
+      <li><a href="global.html#lockFrom">lockFrom</a></li>
+      <li><a href="global.html#makerChange">makerChange</a></li>
+      <li><a href="global.html#makerFee">makerFee</a></li>
+      <li><a href="global.html#memoryChain">memoryChain</a></li>
+      <li><a href="global.html#memoryWallet">memoryWallet</a></li>
+      <li><a href="global.html#mergeMakerSignatures">mergeMakerSignatures</a></li>
+      <li><a href="global.html#nextPodleIndex">nextPodleIndex</a></li>
+      <li><a href="global.html#normalizeAuth">normalizeAuth</a></li>
+      <li><a href="global.html#normalizeCancel">normalizeCancel</a></li>
+      <li><a href="global.html#normalizeContractSpendPolicy">normalizeContractSpendPolicy</a></li>
+      <li><a href="global.html#normalizeExtraLeafSpecs">normalizeExtraLeafSpecs</a></li>
+      <li><a href="global.html#normalizeFidelity">normalizeFidelity</a></li>
+      <li><a href="global.html#normalizeFill">normalizeFill</a></li>
+      <li><a href="global.html#normalizeFillAck">normalizeFillAck</a></li>
+      <li><a href="global.html#normalizeFunded">normalizeFunded</a></li>
+      <li><a href="global.html#normalizeHashlockSpec">normalizeHashlockSpec</a></li>
+      <li><a href="global.html#normalizeIoAuth">normalizeIoAuth</a></li>
+      <li><a href="global.html#normalizeLeaf">normalizeLeaf</a></li>
+      <li><a href="global.html#normalizeLock">normalizeLock</a></li>
+      <li><a href="global.html#normalizeOffer">normalizeOffer</a></li>
+      <li><a href="global.html#normalizeOrder">normalizeOrder</a></li>
+      <li><a href="global.html#normalizeSig">normalizeSig</a></li>
+      <li><a href="global.html#normalizeTake">normalizeTake</a></li>
+      <li><a href="global.html#normalizeTakeAccept">normalizeTakeAccept</a></li>
+      <li><a href="global.html#normalizeTx">normalizeTx</a></li>
+      <li><a href="global.html#offerKey">offerKey</a></li>
+      <li><a href="global.html#openFiling">openFiling</a></li>
+      <li><a href="global.html#openRoundMessage">openRoundMessage</a></li>
+      <li><a href="global.html#paginateInventoryItems">paginateInventoryItems</a></li>
+      <li><a href="global.html#parseXOnlyPubkeysFromSpendScript">parseXOnlyPubkeysFromSpendScript</a></li>
+      <li><a href="global.html#planCoinjoin">planCoinjoin</a></li>
+      <li><a href="global.html#podleCommitment">podleCommitment</a></li>
+      <li><a href="global.html#podleGenerator">podleGenerator</a></li>
+      <li><a href="global.html#policyAfterDecay">policyAfterDecay</a></li>
+      <li><a href="global.html#prepareDecayMigrationPsbt">prepareDecayMigrationPsbt</a></li>
+      <li><a href="global.html#prepareFidelityRedeem">prepareFidelityRedeem</a></li>
+      <li><a href="global.html#prepareHashlockWithdrawalPsbt">prepareHashlockWithdrawalPsbt</a></li>
+      <li><a href="global.html#prepareTierWithdrawalPsbt">prepareTierWithdrawalPsbt</a></li>
+      <li><a href="global.html#quote">quote</a></li>
+      <li><a href="global.html#randomNonce">randomNonce</a></li>
+      <li><a href="global.html#randomPrivateKey">randomPrivateKey</a></li>
+      <li><a href="global.html#randomRoundId">randomRoundId</a></li>
+      <li><a href="global.html#rememberSettlement">rememberSettlement</a></li>
+      <li><a href="global.html#roleFor">roleFor</a></li>
+      <li><a href="global.html#roles">roles</a></li>
+      <li><a href="global.html#routePath">routePath</a></li>
+      <li><a href="global.html#scriptTreeFromLeaves">scriptTreeFromLeaves</a></li>
+      <li><a href="global.html#sealRoundMessage">sealRoundMessage</a></li>
+      <li><a href="global.html#selectActiveTiers">selectActiveTiers</a></li>
+      <li><a href="global.html#sellerDedupeKey">sellerDedupeKey</a></li>
+      <li><a href="global.html#settlementDedupeKey">settlementDedupeKey</a></li>
+      <li><a href="global.html#signFidelityCertificate">signFidelityCertificate</a></li>
+      <li><a href="global.html#signFidelityRedeem">signFidelityRedeem</a></li>
+      <li><a href="global.html#signKeyPathInputs">signKeyPathInputs</a></li>
+      <li><a href="global.html#signOwnership">signOwnership</a></li>
+      <li><a href="global.html#signingString">signingString</a></li>
+      <li><a href="global.html#spendAddress">spendAddress</a></li>
+      <li><a href="global.html#synthesizeDefaultLadder">synthesizeDefaultLadder</a></li>
+      <li><a href="global.html#taprootKeyPath">taprootKeyPath</a></li>
+      <li><a href="global.html#taprootOutputPrivateKey">taprootOutputPrivateKey</a></li>
+      <li><a href="global.html#tierWhenPath">tierWhenPath</a></li>
+      <li><a href="global.html#timelockMature">timelockMature</a></li>
+      <li><a href="global.html#toContractMessage">toContractMessage</a></li>
+      <li><a href="global.html#toIntegerSats">toIntegerSats</a></li>
+      <li><a href="global.html#unsignedTxid">unsignedTxid</a></li>
+      <li><a href="global.html#validateEscrow">validateEscrow</a></li>
+      <li><a href="global.html#validateFill">validateFill</a></li>
+      <li><a href="global.html#validateForMaker">validateForMaker</a></li>
+      <li><a href="global.html#validateForTaker">validateForTaker</a></li>
+      <li><a href="global.html#validateInvoice">validateInvoice</a></li>
+      <li><a href="global.html#validateTake">validateTake</a></li>
+      <li><a href="global.html#validateTakeAccept">validateTakeAccept</a></li>
+      <li><a href="global.html#verifyBlobPath">verifyBlobPath</a></li>
+      <li><a href="global.html#verifyFidelity">verifyFidelity</a></li>
+      <li><a href="global.html#verifyFidelityCertificate">verifyFidelityCertificate</a></li>
+      <li><a href="global.html#verifyOwnership">verifyOwnership</a></li>
+      <li><a href="global.html#verifyPodle">verifyPodle</a></li>
+      <li><a href="global.html#weightsForProximity">weightsForProximity</a></li>
     </ul>
   </nav>
   <br class="clear" />

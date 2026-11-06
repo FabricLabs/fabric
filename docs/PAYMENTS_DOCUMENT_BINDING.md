@@ -1,27 +1,65 @@
 # Document publish envelope & L1 payment binding
-This module is the **single source of truth** for hashing a stored document record into:
 
-1. A canonical Fabric **`DocumentPublish`** `Message` (full `toBuffer()` bytes).
-2. A **32-byte preimage** = `SHA256` of those bytes.
-3. A **payment / content hash** (hex) = `SHA256` preimage — used by **hub.fabric.pub** for `CreatePurchaseInvoice` / `ClaimPurchase` and inventory **P2TR HTLC** `paymentHash`.
+**Buy / HTLC commitment (single path):** [`functions/documentPaymentHash.js`](../functions/documentPaymentHash.js) → `resolveDocumentContentHashHex`. Wire field: **`contentHashHex`**.
 
-## API (`@fabric/core/functions/publishedDocumentEnvelope`)
+## Legacy unsealed envelope (unsigned only)
+
+Helpers in [`publishedDocumentEnvelope.js`](../functions/publishedDocumentEnvelope.js):
+
+1. The **`DOCUMENT_PUBLISH`** field frame (`documentPublishMessage`) as AMP bytes from **`documentPublishEnvelopeBuffer`** — **author and signature fields all zeros**. Byte layout: [bip-fabric-file-exchange.md](./bip-fabric-file-exchange.md#unsealed-commitments).
+2. **32-byte preimage** = `SHA256(those unsigned bytes)`.
+3. **`purchaseContentHashHex`** = `SHA256(preimage)`.
+
+Peer gossips the same frame signed, so the gossiped bytes are the envelope with bytes 40–71 (author) and 144–207 (signature) filled in.
+
+**Footgun eliminated:** do **not** hash a Schnorr-**signed** gossip `DocumentPublish` `toBuffer()`. Signing changes the author and signature and diverges from the payment commitment. `assertUnsignedDocumentPublishEnvelope` / `inventoryHtlcPreimage32FromEnvelopeBuffer` **throw** if either region is non-zero.
+
+The envelope's whitelisted fields omit timestamps (`created` / `edited`) and lineage so Hub store vs Peer rebuild stay aligned.
+
+## AMP header `preimage` (Lightning-style)
+
+On Fabric **Messages**, wire `preimage` is a **payment secret**, not a body hash (body integrity is header `hash` = double-SHA256(body)):
+
+| Frame | `preimage` |
+|-------|------------|
+| Public / default | all zeros |
+| Inventory HTLC / Circuit hop | explicit 32-byte secret (`payment_hash = SHA256(preimage)`) |
+
+Same separation as Lightning HTLC chains: multi-hop Fabric Circuits need independent secrets per hop; stuffing `SHA256(body)` into `preimage` would collide with that model. See [`MESSAGE_BODY.md`](MESSAGE_BODY.md).
+
+## Per-blob commitments
+Every document is advertised as a **`DocumentBlobIndex`** (Tree merkle over blob leaves):
+
+- Small files → one content blob listed in `blobs[]`
+- Large files → many wire-sized blobs (default chunk ≤ AMP `MAX_MESSAGE_SIZE` budget — ~24 KiB raw per blob with the 32 KiB body cap)
+- `blobHashHex` = `SHA256(blob bytes)` (ciphertext bytes when sealed)
+- `merkleRootHex` = Fabric [`Tree`](../types/tree.js) root over those leaf hashes
+- **Priced / sealed:** inventory `contentHash` = `SHA256(K)` via [`documentSealedExchange`](../functions/documentSealedExchange.js); seller reveals `K` only after payment-hash match (Fabric) **or** by claiming the HTLC on-chain (buyer `/claimwatch` extracts `K` from the claim witness)
+- **Per-blob sealed trees** ([`types/document.js`](../types/document.js)): one key `K_i` per blob, `paymentHashHex_i = SHA256(K_i)`. Over a **payment channel** the seller fulfills the HTLC with `K_i` itself (`ChannelBook({ preimageFor })`, `Peer#sealedBlobPreimageForPaymentHash`); the buyer learns the key from the `ChannelHtlcFulfill` and opens the held ciphertext (`Peer#openSealedBlobWithKey`). The channel HTLC **is** the payment-hash binding — no separate key-reveal body, and the key can never be clawed back because the HTLC settles atomically with its disclosure.
+- **Buyer-side reassembly** is keyed by `documentId | merkleRootHex`; frames whose root / `blobTotal` / origin disagree with that row (or with the purchase's `expectTransfer`) are rejected, and each held part keeps the seller's raw signed `P2P_FILE_SEND` frame for `wrong-bytes` fraud proofs ([`L1_DOCUMENT_EXCHANGE.md`](L1_DOCUMENT_EXCHANGE.md)).
+- **Unsealed per-blob:** `Document.blobPaymentHash` tagged hash — see [`types/document.js`](../types/document.js)
+- **Refund:** after `refundLocktimeHeight`, buyer `/refund` spends the CLTV leaf if the sale never completed
+
+When the full leaf list will not fit one AMP body, the index is compacted (`leavesInline: false`) and carries only the Tree root; leaves are recovered from verified blob frames.
+
+Hop budgets for private relay nest with monotone `maxSats` ([`types/documentBook.js`](../types/documentBook.js)).
+
+## API (`@fabric/core/functions/*`)
 | Export | Purpose |
 |--------|---------|
-| `documentPublishEnvelopeBuffer(docIdNorm, parsed)` | Raw AMP message bytes |
-| `inventoryHtlcPreimage32(docIdNorm, parsed)` | 32-byte Buffer |
-| `purchaseContentHashHex(docIdNorm, parsed)` | Hex string for invoice binding |
-| `whitelistedDocumentFields`, `fabricCanonicalJson` | Building blocks / tests |
+| `documentPaymentHash` | **`resolveDocumentContentHashHex`**, alias normalize, re-exports |
+| `publishedDocumentEnvelope` | Unsigned envelope + legacy `purchaseContentHashHex` |
+| `Htlc` (`types/htlc`) | P2TR build / fund hints / claim+refund PSBTs / `extractPreimage` / `refundMature` / `validateOffer` |
+| `documentSealedExchange` | AES-GCM seal; `paymentHashHexFromKey`; sealed sale helpers |
+| `DocumentBook` | Offer book, purchase sessions, private request relay |
+| `walletTransactionWatch` | Block/mempool classification against multi-seed wallet watch set |
+| `Wallet.loadSeed` / `watchHtlc` / `ingestBitcoinBlock` | Key collection + on-chain watch |
 
 ## Consumption
-- **hub.fabric.pub** — `require('@fabric/core/functions/publishedDocumentEnvelope')` or `require('../functions/publishedDocumentEnvelope')` (shim).
-- **@fabric/http** — No runtime dependency required; HTTP servers relay payloads built upstream.
-
-## Tests
-- `tests/l1.document.exchange.expectations.js` — envelope preimage, `purchaseContentHashHex`, Peer inventory / `documentPublish`, P0 gossip-vs-envelope gap.
-- `tests/fabric.l1.document.network.js` — network publish + hash visibility.
+- **hub.fabric.pub** — `functions/documentPaymentHash.js` → `@fabric/core` (invoice, inventory HTLC, HTTP 402).
+- **@fabric/http** — `X-Fabric-Payment-Request` `documentOffer.contentHashHex` must be the resolved commitment (never file `sha256`).
 
 ## See also
-- [L1 document exchange (priorities & expectations)](L1_DOCUMENT_EXCHANGE.md) — backlog and regression matrix.
-- [hub.fabric.pub `INVENTORY_HTLC_ONCHAIN.md`](https://github.com/FabricLabs/hub.fabric.pub/blob/main/INVENTORY_HTLC_ONCHAIN.md) (on-chain reference)
-- [hub `PAYMENTS_PROTOCOL.md`](https://github.com/FabricLabs/hub.fabric.pub/blob/main/PAYMENTS_PROTOCOL.md)
+- [L1 document exchange](L1_DOCUMENT_EXCHANGE.md)
+- [BIP draft: content-addressed file exchange](bip-fabric-file-exchange.md)
+- [hub `INVENTORY_HTLC_ONCHAIN.md`](https://github.com/FabricLabs/hub.fabric.pub/blob/main/INVENTORY_HTLC_ONCHAIN.md)

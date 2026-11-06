@@ -82,7 +82,7 @@ describe('peering (cross-implementation)', function () {
   });
 
   describe('JS ↔ JS message handling', function () {
-    it('server parses and handles GenericMessage from wire buffer (simulates C→JS or JS→JS)', function () {
+    it('server parses first-class UTF-8 P2P_CHAT_MESSAGE from wire buffer', function () {
       const server = new Peer({ listen: false, peersDb: null });
       const clientKey = new Key();
       const connAddress = '127.0.0.1:9999';
@@ -90,8 +90,7 @@ describe('peering (cross-implementation)', function () {
       server.connections[connAddress] = { _writeFabric: () => {}, destroy: () => {} };
       server.peers[connAddress] = { id: 'client-1', publicKey: clientKey.pubkey };
 
-      const content = { type: 'P2P_CHAT_MESSAGE', object: { text: 'hello from wire' } };
-      const msg = Message.fromVector(['P2P_BASE_MESSAGE', JSON.stringify(content)]);
+      const msg = Message.fromVector(['P2P_CHAT_MESSAGE', 'hello from wire']);
       msg.signWithKey(clientKey);
 
       let chatReceived = null;
@@ -100,7 +99,7 @@ describe('peering (cross-implementation)', function () {
       server._handleFabricMessage(msg.toBuffer(), { name: connAddress }, null);
 
       assert.ok(chatReceived);
-      assert.strictEqual(chatReceived.object.text, 'hello from wire');
+      assert.strictEqual(chatReceived.text, 'hello from wire');
       peers.push(server);
     });
 
@@ -112,8 +111,7 @@ describe('peering (cross-implementation)', function () {
       server.connections[connAddress] = { _writeFabric: () => {}, destroy: () => {} };
       server.peers[connAddress] = { id: 'client-1', publicKey: clientKey.pubkey };
 
-      const content = { type: 'P2P_CHAT_MESSAGE', object: { text: 'signed' } };
-      const msg = Message.fromVector(['P2P_BASE_MESSAGE', JSON.stringify(content)]);
+      const msg = Message.fromVector(['P2P_CHAT_MESSAGE', 'signed']);
       msg.signWithKey(clientKey);
 
       let chatReceived = null;
@@ -122,14 +120,62 @@ describe('peering (cross-implementation)', function () {
       server._handleFabricMessage(msg.toBuffer(), { name: connAddress }, null);
 
       assert.ok(chatReceived);
-      const restored = Message.fromBuffer(msg.toBuffer());
-      assert.ok(restored.verifyWithKey(new Key({ public: clientKey.pubkey })));
+      assert.ok(Message.fromBuffer(msg.toBuffer()).verifyWithKey(new Key({ public: clientKey.pubkey })));
       peers.push(server);
     });
 
-    it('rejects message with incorrect body hash (wire integrity)', function () {
+    it('drops chat when the AMP signature does not verify', function () {
+      const server = new Peer({ listen: false, peersDb: null });
+      const clientKey = new Key();
+      const connAddress = '127.0.0.1:9998';
+      server.connections[connAddress] = { _writeFabric: () => {}, destroy: () => {} };
+      server.peers[connAddress] = { id: 'client-1', publicKey: clientKey.pubkey };
+      server._addressToId[connAddress] = 'sig-peer';
+      server._state.peers = {
+        'sig-peer': { id: 'sig-peer', address: connAddress, score: 200, publicKey: clientKey.pubkey }
+      };
+
+      const msg = Message.fromVector(['P2P_CHAT_MESSAGE', 'signed']).signWithKey(clientKey);
+      const buf = Buffer.from(msg.toBuffer());
+      // Flip a signature byte in the AMP header (bytes 8–71).
+      buf[16] ^= 0xff;
+
+      let chatReceived = null;
+      server.once('chat', (m) => { chatReceived = m; });
+      server._handleFabricMessage(buf, { name: connAddress }, null);
+      assert.strictEqual(chatReceived, null);
+      peers.push(server);
+    });
+
+    it('rejects an on-wire body-hash mismatch (XORed payload bytes)', function () {
       const peer = new Peer({ listen: false, peersDb: null });
-      const msg = Message.fromVector(['P2P_BASE_MESSAGE', JSON.stringify({ type: 'P2P_CHAT_MESSAGE', object: { text: 'x' } })]);
+      const origin = '127.0.0.1:9997';
+      peer.connections[origin] = { _writeFabric: () => {}, destroy: () => {} };
+      peer.peers[origin] = { id: 'p', publicKey: peer.key.pubkey };
+      peer._addressToId[origin] = 'bh-peer';
+      peer._state.peers = {
+        'bh-peer': { id: 'bh-peer', address: origin, score: 200, publicKey: peer.key.pubkey }
+      };
+
+      const msg = Message.fromVector(['P2P_CHAT_MESSAGE', 'x']).signWithKey(peer.key);
+      const buf = Buffer.from(msg.toBuffer());
+      if (buf.length > 208) buf[208] ^= 0xff;
+
+      let chatReceived = null;
+      let warned = false;
+      peer.once('chat', (m) => { chatReceived = m; });
+      peer.on('warning', (w) => {
+        if (/body hash mismatch/i.test(String(w))) warned = true;
+      });
+      peer._handleFabricMessage(buf, { name: origin }, null);
+      assert.ok(warned, 'expected warning when on-wire body hash does not match payload');
+      assert.strictEqual(chatReceived, null);
+      peers.push(peer);
+    });
+
+    it('compares parsed header hash after Message.fromBuffer (post-parse oracle)', function () {
+      const peer = new Peer({ listen: false, peersDb: null });
+      const msg = Message.fromVector(['P2P_CHAT_MESSAGE', 'x']);
       msg.signWithKey(peer.key);
       const buf = msg.toBuffer();
 
