@@ -45,8 +45,10 @@ const ZMQ_TOPIC_CASES = Object.freeze({
   rawtx: 'BitcoinTransaction',
   hashtx: 'BitcoinTransactionHash'
 });
-/** Recently seen ZMQ txids kept for `rawtx` / `hashtx` dedupe. */
+/** Max txids kept for `rawtx` / `hashtx` pair dedupe. */
 const ZMQ_TXID_MEMORY = 4096;
+/** Default window in which a `rawtx` / `hashtx` pair counts as one admission. */
+const ZMQ_TX_DEDUPE_MS = 30 * 1000;
 const Collection = require('../types/collection');
 const Entity = require('../types/entity');
 const Key = require('../types/key');
@@ -1702,12 +1704,15 @@ class Bitcoin extends Service {
         }
         case 'BitcoinTransactionHash': {
           const txid = hexContent;
-          // `rawtx` for the same transaction may already have been handled.
-          if (txid && this._zmqTxSeen(txid)) break;
-          if (txid && this.settings.walletWatchMempool !== false) {
+          // `rawtx` for this admission may already have been handled.
+          if (!txid || this._zmqTxRecent(txid)) break;
+          if (this.settings.walletWatchMempool !== false) {
             try {
               const verbose = await this._makeRPCRequest('getrawtransaction', [txid, true]);
-              if (verbose) {
+              // Mark only once this path delivered: a failed fetch leaves `rawtx` to do it.
+              // Re-check after the await in case `rawtx` won the race.
+              if (verbose && !this._zmqTxRecent(txid)) {
+                this._zmqTxMark(txid);
                 if (verbose.hex) this.broadcastWatchtower([verbose.hex]).catch(() => {});
                 this.emit('transaction', Object.assign({}, verbose, { source: 'BitcoinTransactionHash' }));
                 if (this.wallet && typeof this.wallet.ingestBitcoinTransaction === 'function') {
@@ -1776,8 +1781,9 @@ class Bitcoin extends Service {
             try {
               txid = require('bitcoinjs-lib').Transaction.fromHex(rawHex).getId();
             } catch (_) { /* not a transaction: handled as unparsed below */ }
-            // `hashtx` for the same transaction may already have been handled.
-            if (rawHex && !(txid && this._zmqTxSeen(txid))) {
+            // `hashtx` for this admission may already have been handled.
+            if (rawHex && !(txid && this._zmqTxRecent(txid))) {
+              if (txid) this._zmqTxMark(txid);
               this.broadcastWatchtower([rawHex]).catch(() => {});
               const event = { hex: rawHex, source: 'BitcoinTransaction' };
               if (txid) event.txid = txid;
@@ -1805,20 +1811,44 @@ class Bitcoin extends Service {
   }
 
   /**
-   * Record a txid seen on ZMQ; true when it was already seen. bitcoind publishes
-   * both `rawtx` and `hashtx` for every transaction, so each is handled once.
+   * Whether a txid was delivered by ZMQ within the pair window. bitcoind
+   * publishes `rawtx` and `hashtx` for every mempool admission; the window
+   * (`settings.zmqTxDedupeMs`, default 30 s) collapses that pair without
+   * suppressing a later admission of the same transaction (evicted, then
+   * re-accepted), which notifies again.
    * @private
    * @param {string} txid
    * @returns {boolean}
    */
-  _zmqTxSeen (txid) {
-    if (!this._zmqTxids) this._zmqTxids = new Set();
+  _zmqTxRecent (txid) {
+    const at = this._zmqTxids ? this._zmqTxids.get(String(txid).toLowerCase()) : undefined;
+    return at !== undefined && (Date.now() - at) < this._zmqTxDedupeMs();
+  }
+
+  /**
+   * Record that a txid's admission was delivered (see {@link Bitcoin#_zmqTxRecent}).
+   * Entries older than the window are dropped; the map is also size-bounded.
+   * @private
+   * @param {string} txid
+   */
+  _zmqTxMark (txid) {
+    if (!this._zmqTxids) this._zmqTxids = new Map();
+    const now = Date.now();
     const key = String(txid).toLowerCase();
-    if (this._zmqTxids.has(key)) return true;
-    this._zmqTxids.add(key);
-    // Bounded: drop the oldest once past the cap (Sets iterate in insertion order).
-    if (this._zmqTxids.size > ZMQ_TXID_MEMORY) this._zmqTxids.delete(this._zmqTxids.values().next().value);
-    return false;
+    this._zmqTxids.delete(key);
+    this._zmqTxids.set(key, now);
+    const windowMs = this._zmqTxDedupeMs();
+    // Maps iterate in insertion order, so the oldest entries come first.
+    for (const [k, at] of this._zmqTxids) {
+      if (this._zmqTxids.size <= ZMQ_TXID_MEMORY && now - at < windowMs) break;
+      this._zmqTxids.delete(k);
+    }
+  }
+
+  /** @private */
+  _zmqTxDedupeMs () {
+    const ms = Number(this.settings.zmqTxDedupeMs);
+    return Number.isFinite(ms) && ms >= 0 ? ms : ZMQ_TX_DEDUPE_MS;
   }
 
   async _startZMQ () {

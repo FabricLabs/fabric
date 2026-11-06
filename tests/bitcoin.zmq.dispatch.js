@@ -85,4 +85,57 @@ describe('Bitcoin ZMQ dispatch', function () {
     assert.strictEqual(events.length, 1);
     assert.strictEqual(calls.filter((m) => m === 'getrawtransaction').length, 1);
   });
+
+  it('a failed hashtx fetch leaves rawtx to deliver the transaction', async function () {
+    const { svc } = service();
+    svc._makeRPCRequest = async (method) => {
+      if (method === 'getrawtransaction') throw new Error('rpc down');
+      return null;
+    };
+    const tx = sampleTx();
+    const events = [];
+    svc.on('transaction', (t) => events.push(t));
+    await svc._handleZMQMessage(['hashtx', Buffer.from(tx.getId(), 'hex')]);
+    await svc._handleZMQMessage(['rawtx', Buffer.from(tx.toHex(), 'hex')]);
+    assert.strictEqual(events.length, 1);
+    assert.strictEqual(events[0].source, 'BitcoinTransaction');
+  });
+
+  it('with mempool watching off, hashtx does not suppress rawtx', async function () {
+    const { svc } = service();
+    svc.settings.walletWatchMempool = false;
+    const tx = sampleTx();
+    const events = [];
+    svc.on('transaction', (t) => events.push(t));
+    await svc._handleZMQMessage(['hashtx', Buffer.from(tx.getId(), 'hex')]);
+    await svc._handleZMQMessage(['rawtx', Buffer.from(tx.toHex(), 'hex')]);
+    assert.strictEqual(events.length, 1);
+  });
+
+  it('a later admission of the same transaction notifies again after the pair window', async function () {
+    const { svc } = service();
+    svc.settings.zmqTxDedupeMs = 20;
+    const tx = sampleTx();
+    const events = [];
+    svc.on('transaction', (t) => events.push(t));
+    await svc._handleZMQMessage(['rawtx', Buffer.from(tx.toHex(), 'hex')]);
+    await svc._handleZMQMessage(['rawtx', Buffer.from(tx.toHex(), 'hex')]);
+    assert.strictEqual(events.length, 1, 'same admission within the window');
+    await new Promise((r) => setTimeout(r, 30));
+    await svc._handleZMQMessage(['rawtx', Buffer.from(tx.toHex(), 'hex')]);
+    assert.strictEqual(events.length, 2, 're-admission after the window');
+  });
+
+  it('services/zmq passes a block too big for a frame as raw bytes without throwing', function () {
+    const ZMQ = require('../services/zmq');
+    const zmq = new ZMQ();
+    const out = [];
+    zmq.on('message', (m) => out.push(m));
+    zmq.on('warning', () => {});
+    const big = Buffer.alloc(100 * 1024, 1);
+    assert.doesNotThrow(() => zmq._handleSocketMessage(Buffer.from('rawblock'), big));
+    assert.ok(Array.isArray(out[0]) && out[0][0] === 'rawblock' && out[0][1].length === big.length);
+    zmq._handleSocketMessage(Buffer.from('hashblock'), Buffer.alloc(32, 2));
+    assert.strictEqual(out[1].type, 'BITCOIN_BLOCK_HASH');
+  });
 });

@@ -509,11 +509,17 @@ describe('@fabric/core/services/bitcoin', function () {
           throw new Error(`unexpected method ${method}`);
         };
 
-        await btc._handleZMQMessage({
-          type: 'BitcoinTransaction',
-          data: Buffer.from('{}', 'utf8')
-        });
+        // What services/zmq emits for `rawtx`: a field-body Message of a real transaction.
+        const bitcoinjs = require('bitcoinjs-lib');
+        const tx = new bitcoinjs.Transaction();
+        tx.addInput(Buffer.alloc(32, 7), 0);
+        tx.addOutput(Buffer.from('0014' + '11'.repeat(20), 'hex'), BigInt(1000));
+        const events = [];
+        btc.broadcastWatchtower = async () => {};
+        btc.on('transaction', (event) => events.push(event));
+        await btc._handleZMQMessage(Message.fromLegacyBody('BitcoinTransaction', { content: tx.toHex() }));
 
+        assert.deepStrictEqual(events, [{ hex: tx.toHex(), source: 'BitcoinTransaction', txid: tx.getId() }]);
         assert.deepStrictEqual(btc._state.balances.mine.trusted, { trusted: 10.5 });
         assert.strictEqual(committed, 1);
       });

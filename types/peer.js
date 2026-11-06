@@ -44,7 +44,7 @@ const {
   PEER_MUSIG_SESSION_TTL_MS,
   HEADER_SIZE,
   MAX_MESSAGE_SIZE,
-  LEGACY_MAX_FRAME_BYTES,
+  MAX_FRAME_BYTES,
   NOISE_HANDSHAKE_MAX_BYTES,
   MAX_DOCUMENT_ID_LENGTH,
   INVENTORY_RESPONSE_PAGE_BYTES,
@@ -3090,9 +3090,10 @@ class Peer extends Service {
     if (wire.length > maxWire) {
       this.emit('warning',
         `[FABRIC:PEER] Dropping oversized frame (${wire.length} > ${maxWire}) from ${originName || 'unknown'}`);
-      // Senders clamp to our advertised cap, and unannounced peers to the legacy 4096 bytes,
-      // so anything over both is a protocol violation (C fabricd: "oversize body").
-      if (wire.length > Math.max(maxWire, LEGACY_MAX_FRAME_BYTES) && delivery.allowTcpOriginSideEffects) {
+      // A frame over our own (possibly lowered) cap may be honest: the sender may not
+      // have our session cap yet and assumes MAX_FRAME_BYTES. Only a frame over the
+      // protocol maximum is a violation (C fabricd: "oversize body").
+      if (wire.length > MAX_FRAME_BYTES && delivery.allowTcpOriginSideEffects) {
         this._applyPeerMisbehavior(scoreOrigin, 'oversize-frame', {
           penalty: Number(ps.oversizeFramePenalty) || PEER_SCORE_OVERSIZE_FRAME_PENALTY,
           disconnect: delivery.hardDisconnect
@@ -3976,6 +3977,13 @@ class Peer extends Service {
     switch (msg.type) {
       default:
         this.emit('debug', `Unhandled Generic Message: ${msg.type}`);
+        // Point-to-point app bodies (never mesh-relayed here): the app decides whether to forward.
+        this.emit('generic', {
+          type: msg.type,
+          body: msg,
+          origin,
+          signer: signerPubkeyHex || null
+        });
         break;
       case 'SIDECHAIN_STATE_PATCH': {
         const body = msg.object || msg;
@@ -4574,15 +4582,15 @@ class Peer extends Service {
 
   /**
    * Tie a NOISE pair to its TCP socket: a destroyed decrypt side (limit broken, handshake
-   * timeout, decrypt failure) destroys the socket. The remote frame cap starts at the
-   * legacy 4096 bytes until its session message advertises `maxFrameBytes`.
+   * timeout, decrypt failure) destroys the socket. The remote frame cap starts at
+   * {@link MAX_FRAME_BYTES}; a smaller `maxFrameBytes` in its session message lowers it.
    * @param {Object} noiseStream noise-protocol-stream duplex pair
    * @param {Object} socket
    * @returns {void}
    */
   _bindNoiseTransportToSocket (noiseStream, socket) {
     if (!noiseStream || !noiseStream.decrypt || !socket) return;
-    noiseStream._fabricRemoteMaxFrameBytes = LEGACY_MAX_FRAME_BYTES;
+    noiseStream._fabricRemoteMaxFrameBytes = MAX_FRAME_BYTES;
     noiseStream.decrypt.once('close', () => {
       if (!socket.destroyed && typeof socket.destroy === 'function') socket.destroy();
     });
@@ -4615,7 +4623,8 @@ class Peer extends Service {
 
   /**
    * Record the frame cap a remote advertised in `P2P_SESSION_OFFER` / `P2P_SESSION_OPEN`
-   * (`object.maxFrameBytes`). Absent or invalid = legacy 4096-byte peer.
+   * (`object.maxFrameBytes`). Absent or invalid = {@link MAX_FRAME_BYTES}; there is no
+   * smaller default for peers that don't advertise one.
    * @param {string} connAddress
    * @param {Object} sessionObject Session message `object`
    * @returns {number} Cap now used for frames sent to that connection
@@ -4624,8 +4633,8 @@ class Peer extends Service {
     this._recordRemoteFieldBodies(connAddress, sessionObject);
     const advertised = Number(sessionObject && sessionObject.maxFrameBytes);
     const cap = (Number.isInteger(advertised) && advertised > HEADER_SIZE)
-      ? Math.min(advertised, HEADER_SIZE + MAX_MESSAGE_SIZE)
-      : LEGACY_MAX_FRAME_BYTES;
+      ? Math.min(advertised, MAX_FRAME_BYTES)
+      : MAX_FRAME_BYTES;
     const socket = connAddress && this.connections ? this.connections[connAddress] : null;
     if (!socket) return cap;
     socket._fabricRemoteMaxFrameBytes = cap;
@@ -5589,8 +5598,7 @@ class Peer extends Service {
       }
       const reply = Message.fromLegacyBody('P2P_FILE_SEND', fileObj);
       reply.signWithKey(this.key);
-      // `false` = refused (closed stream, or over a legacy peer's frame cap).
-      if (conn._writeFabric(reply.toBuffer()) !== false) wrote += 1;
+      if (this._writeDocumentFrame(conn, reply.toBuffer(), documentId, peerAddress)) wrote += 1;
     }
     if (wrote > 0 && opts.revealKey && sealedMeta && sealedMeta.keyHex) {
       this._sendDocumentContentKeyReveal(documentId, peerAddress, {
@@ -5646,6 +5654,27 @@ class Peer extends Service {
   }
 
   /**
+   * Write one document blob frame. A frame over the cap the remote advertised
+   * is refused with a `documentDeliveryRefused` event (the document's blobs are
+   * never re-split for a smaller cap); a closed stream returns false as before.
+   * @private
+   * @param {Object} conn Connection with `_writeFabric`
+   * @param {Buffer} buf Signed frame
+   * @param {string} documentId
+   * @param {string} peerAddress
+   * @returns {boolean} whether the frame was written
+   */
+  _writeDocumentFrame (conn, buf, documentId, peerAddress) {
+    const remoteCap = conn._fabricRemoteMaxFrameBytes;
+    if (Number.isInteger(remoteCap) && buf.length > remoteCap) {
+      this.emit('documentDeliveryRefused', { documentId, peerAddress, frameBytes: buf.length, remoteCap });
+      this.emit('warning', `[FABRIC:PEER] Not delivering ${documentId} to ${peerAddress}: ${buf.length}-byte blob frame over its frame cap ${remoteCap}`);
+      return false;
+    }
+    return conn._writeFabric(buf) !== false;
+  }
+
+  /**
    * Send per-blob sealed ciphertext frames (and, when authorized, one key
    * reveal per blob) from a {@link Document}.
    * @param {Document} doc
@@ -5669,7 +5698,7 @@ class Peer extends Service {
       if (opts.routeId) fileObj.routeId = String(opts.routeId);
       const reply = Message.fromLegacyBody('P2P_FILE_SEND', fileObj);
       reply.signWithKey(this.key);
-      if (conn._writeFabric(reply.toBuffer()) !== false) sent.push(fileObj.blobIndex);
+      if (this._writeDocumentFrame(conn, reply.toBuffer(), documentId, peerAddress)) sent.push(fileObj.blobIndex);
     }
     if (opts.revealKey) {
       for (const blobIndex of sent) this._sendSealedBlobKeyReveal(doc, documentId, peerAddress, blobIndex, opts);
