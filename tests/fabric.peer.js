@@ -1134,7 +1134,7 @@ describe('@fabric/core/types/peer', function () {
         assert.strictEqual(relayed, 0);
         assert.ok(written && written.length);
         const back = Message.fromBuffer(written);
-        const body = JSON.parse(back.data);
+        const body = Message.tryParseLegacyBody(back).value;
         assert.strictEqual(back.type, 'P2P_FILE_SEND');
         assert.strictEqual(body.name, 'doc-held');
         assert.strictEqual(Buffer.from(body.body, 'base64').toString('utf8'), 'payload-bytes');
@@ -1166,14 +1166,14 @@ describe('@fabric/core/types/peer', function () {
         assert.strictEqual(received.buffer.toString('utf8'), payload);
 
         // Tamper one frame after the fact: direct ingest of wrong body.
-        const badMsg = Message.fromVector(['P2P_FILE_SEND', JSON.stringify({
+        const badMsg = Message.fromLegacyBody('P2P_FILE_SEND', {
           name: 'doc-evil',
           body: Buffer.alloc(1200, 1).toString('base64'),
           blobIndex: 0,
           blobTotal: 2,
           blobHashHex: '11'.repeat(32),
           merkleRootHex: '22'.repeat(32)
-        })]);
+        });
         badMsg.signWithKey(seller.key);
         buyer._handleFabricMessage(badMsg.toBuffer(), { name: 'seller:1' }, null);
         assert.ok(rejected && /hash mismatch|rejected/i.test(String(rejected.error || 'rejected')));
@@ -1306,7 +1306,7 @@ describe('@fabric/core/types/peer', function () {
             paymentHashHex: sale.paymentHashHex
           }
         };
-        const junkMsg = Message.fromVector(['GenericMessage', JSON.stringify(junkBody)]).signWithKey(attacker);
+        const junkMsg = Message.fromLegacyBody('DOCUMENT_KEY_REVEAL', junkBody).signWithKey(attacker);
         buyer._handleFabricMessage(junkMsg.toBuffer(), { name: 'attacker:1' }, null);
         assert.ok(warned >= 1);
         assert.strictEqual(opened, null);
@@ -1322,7 +1322,7 @@ describe('@fabric/core/types/peer', function () {
           iv: sale.encryption.iv,
           plaintextSha256: sale.plaintextSha256
         });
-        const goodMsg = Message.fromVector(['GenericMessage', JSON.stringify(good)]).signWithKey(seller);
+        const goodMsg = Message.fromLegacyBody('DOCUMENT_KEY_REVEAL', good).signWithKey(seller);
         buyer._handleFabricMessage(goodMsg.toBuffer(), { name: 'seller:1' }, null);
         assert.ok(opened && opened.opened);
         assert.strictEqual(opened.buffer.toString('utf8'), 'cooperative-secret');
@@ -1735,7 +1735,7 @@ describe('@fabric/core/types/peer', function () {
         };
         assert.strictEqual(peer.sendDocumentFileToPeer('d1', 'p1'), true);
         const wire = Message.fromBuffer(written);
-        const inner = JSON.parse(wire.data);
+        const inner = Message.tryParseLegacyBody(wire).value;
         assert.strictEqual(wire.type, 'P2P_FILE_SEND');
         assert.strictEqual(inner.name, 'd1');
         assert.strictEqual(Buffer.from(inner.body, 'base64').toString('utf8'), 'zz');
@@ -2383,14 +2383,23 @@ describe('@fabric/core/types/peer', function () {
             actor: { id, pubkey: malloryKey.pubkey, parentPubkey: malloryKey.pubkey, parentSignature: malloryKey.signSchnorr(proof, SIGNING_TAGS.SESSION_KEY).toString('hex') },
             object
           };
-          return Message.fromVector([type, JSON.stringify(content)]).signWithKey(malloryKey).toBuffer();
+          // Field layout: a JSON body of a session type is dropped before session validation.
+          return Message.fromLegacyBody(type, content).signWithKey(malloryKey).toBuffer();
         };
         const sessions = [];
+        const warnings = [];
         peer.on('peer:session', (s) => sessions.push(s));
+        peer.on('warning', (w) => warnings.push(String(w)));
         peer._handleFabricMessage(frame('P2P_SESSION_OFFER', victimId, { challenge: 'cafebabe' }), { name: connAddress }, null);
-        peer._handleFabricMessage(frame('P2P_SESSION_OPEN', fabricIdOf(malloryKey), { initiator: peer.identity.id, counterparty: victimId, solution: 'x' }), { name: connAddress }, null);
+        assert.ok(warnings.some((w) => /session-key:claimed id is not the parent key's id/.test(w)), `offer refused for its id: ${JSON.stringify(warnings)}`);
+        // The refused offer banned that address; the OPEN arrives on another.
+        const openAddress = '127.0.0.1:9997';
+        peer.connections[openAddress] = { _writeFabric: () => {} };
+        peer._handleFabricMessage(frame('P2P_SESSION_OPEN', fabricIdOf(malloryKey), { initiator: peer.identity.id, counterparty: victimId, solution: 'x' }), { name: openAddress }, null);
+        assert.ok(warnings.some((w) => /session-key:counterparty is not the signer's id/.test(w)), `open refused for its counterparty: ${JSON.stringify(warnings)}`);
         assert.deepStrictEqual(sessions, []);
         assert.strictEqual(peer._addressToId[connAddress], undefined);
+        assert.strictEqual(peer._addressToId[openAddress], undefined);
       });
 
       it('rejects and de-ranks P2P_SESSION_OFFER when key claim is unsigned', function () {

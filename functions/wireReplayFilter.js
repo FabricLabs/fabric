@@ -1,11 +1,13 @@
 'use strict';
 
 /**
- * Remembers wire-envelope hashes for a time window, independent of how many
- * frames arrive: two Bloom filter generations, rotated when the current one is
- * full or older than `maxAgeMs`. A flood can't push a hash out early (the
- * Peer's exact FIFO cache can be flushed by 10k frames); the price of a full
- * filter is a rare false "seen", which drops a frame, never a replay accepted.
+ * Remembers wire-envelope hashes across two Bloom filter generations, rotated
+ * when the current one is full (`capacity`) or older than `maxAgeMs`; the
+ * previous one is dropped `2 × maxAgeMs` after it started. That outlasts the
+ * Peer's exact FIFO cache (flushed by 10k frames), but capacity still bounds
+ * it: about `2 × capacity` distinct frames rotate a hash out, however soon.
+ * The price of a full filter is a rare false "seen", which drops a frame,
+ * never a replay accepted.
  *
  * The wire header has no timestamp or sequence number, so frames older than
  * two generations can still be replayed; closing that needs a signed field in

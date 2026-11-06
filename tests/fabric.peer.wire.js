@@ -4,13 +4,13 @@ const assert = require('assert');
 const net = require('net');
 const { PassThrough } = require('stream');
 
+const Document = require('../types/document');
 const Message = require('../types/message');
 const Peer = require('../types/peer');
 const {
   HEADER_SIZE,
   MAX_MESSAGE_SIZE,
   MAX_FRAME_BYTES,
-  LEGACY_MAX_FRAME_BYTES,
   MAX_DOCUMENT_ID_LENGTH,
   INVENTORY_RESPONSE_PAGE_BYTES
 } = require('../constants');
@@ -123,11 +123,13 @@ describe('@fabric/core Peer wire limits', function () {
       return writes;
     }
 
-    for (const [label, cap] of [['full-size', MAX_FRAME_BYTES], ['legacy', LEGACY_MAX_FRAME_BYTES]]) {
+    // A peer may advertise a cap below ours; pages must fit either.
+    for (const [label, cap] of [['full-size', MAX_FRAME_BYTES], ['small-cap', 4096]]) {
       it(`pages fit a ${label} peer's frame cap and merge to the original items`, function () {
         const peer = offlinePeer();
         const writes = collect(peer, '127.0.0.1:1', cap);
-        const items = smallItems(150).concat([sealedLikeItem('sealed', 300)]);
+        // The sealed item is larger than one full-size page, so it must be sliced.
+        const items = smallItems(150).concat([sealedLikeItem('sealed', 700)]);
         assert.strictEqual(peer._sendLocalInventoryDocumentsWireResponse('127.0.0.1:1', items), true);
         assert.ok(writes.length > 1);
         for (const buf of writes) assert.ok(buf.length <= cap, `${buf.length} > ${cap}`);
@@ -157,7 +159,7 @@ describe('@fabric/core Peer wire limits', function () {
 
     it('sends one empty page when allowEmpty is set', function () {
       const peer = offlinePeer();
-      const writes = collect(peer, '127.0.0.1:3', LEGACY_MAX_FRAME_BYTES);
+      const writes = collect(peer, '127.0.0.1:3', 4096);
       assert.strictEqual(peer._sendLocalInventoryDocumentsWireResponse('127.0.0.1:3', [], { allowEmpty: true }), true);
       const pages = parsePages(writes);
       assert.strictEqual(pages.length, 1);
@@ -171,21 +173,90 @@ describe('@fabric/core Peer wire limits', function () {
       return { encrypt: new PassThrough(), decrypt: new PassThrough() };
     }
 
-    it('treats a session without maxFrameBytes as a legacy 4096-byte peer', function () {
+    it('treats a session without maxFrameBytes as a full-size peer', function () {
       const peer = offlinePeer();
       const stream = noisePair();
       peer.connections['127.0.0.1:9'] = { _noiseClient: stream };
-      assert.strictEqual(peer._recordRemoteFrameCap('127.0.0.1:9', { challenge: 'x' }), LEGACY_MAX_FRAME_BYTES);
-      assert.strictEqual(stream._fabricRemoteMaxFrameBytes, LEGACY_MAX_FRAME_BYTES);
-
-      const warnings = [];
-      peer.on('warning', (w) => warnings.push(String(w)));
+      assert.strictEqual(peer._recordRemoteFrameCap('127.0.0.1:9', { challenge: 'x' }), MAX_FRAME_BYTES);
+      assert.strictEqual(stream._fabricRemoteMaxFrameBytes, MAX_FRAME_BYTES);
       const sent = [];
       stream.encrypt.on('data', (chunk) => sent.push(chunk.length));
-      assert.strictEqual(peer._writeFabric(frameOfBodyBytes(LEGACY_MAX_FRAME_BYTES - HEADER_SIZE), stream), true);
-      assert.strictEqual(peer._writeFabric(frameOfBodyBytes(LEGACY_MAX_FRAME_BYTES - HEADER_SIZE + 1), stream), false);
+      assert.strictEqual(peer._writeFabric(frameOfBodyBytes(MAX_MESSAGE_SIZE), stream), true);
+      assert.deepStrictEqual(sent, [MAX_FRAME_BYTES]);
+    });
+
+    it('a full-size frame fits one Noise transport message', function () {
+      const { NOISE_MAX_MESSAGE_BYTES, NOISE_MAC_BYTES } = require('../constants');
+      assert.ok(MAX_FRAME_BYTES + NOISE_MAC_BYTES <= NOISE_MAX_MESSAGE_BYTES);
+      assert.strictEqual(frameOfBodyBytes(MAX_MESSAGE_SIZE).length, MAX_FRAME_BYTES);
+    });
+
+    it('refuses frames over a smaller cap the remote advertised', function () {
+      const peer = offlinePeer();
+      const stream = noisePair();
+      peer.connections['127.0.0.1:11'] = { _noiseClient: stream };
+      assert.strictEqual(peer._recordRemoteFrameCap('127.0.0.1:11', { maxFrameBytes: 4096 }), 4096);
+      const warnings = [];
+      peer.on('warning', (w) => warnings.push(String(w)));
+      assert.strictEqual(peer._writeFabric(frameOfBodyBytes(4096 - HEADER_SIZE), stream), true);
+      assert.strictEqual(peer._writeFabric(frameOfBodyBytes(4096 - HEADER_SIZE + 1), stream), false);
       assert.ok(warnings.some((w) => w.includes('over remote frame cap 4096')), warnings.join(' | '));
-      assert.deepStrictEqual(sent, [LEGACY_MAX_FRAME_BYTES]);
+    });
+
+    it('emits documentDeliveryRefused when a blob frame exceeds the cap a peer advertised', function () {
+      const peer = offlinePeer();
+      const writes = [];
+      peer.connections['127.0.0.1:12'] = {
+        _fabricRemoteMaxFrameBytes: 4096,
+        _writeFabric (buf) { writes.push(buf); return true; }
+      };
+      peer._publishDocument('doc-cap', 'x'.repeat(20000), 0);
+      writes.length = 0; // publishing announces the document; only the delivery counts here
+      const refused = [];
+      peer.on('documentDeliveryRefused', (ev) => refused.push(ev));
+      peer.on('warning', () => {});
+      assert.strictEqual(peer._sendP2pFileSendToPeer('doc-cap', '127.0.0.1:12'), false);
+      assert.strictEqual(writes.length, 0);
+      assert.ok(refused.length >= 1);
+      assert.strictEqual(refused[0].documentId, 'doc-cap');
+      assert.strictEqual(refused[0].remoteCap, 4096);
+      assert.ok(refused[0].frameBytes > 4096);
+    });
+
+    it('refuses a many-blob document once per peer, not once per blob', function () {
+      const peer = offlinePeer();
+      const writes = [];
+      peer.connections['127.0.0.1:13'] = {
+        _fabricRemoteMaxFrameBytes: 4096,
+        _writeFabric (buf) { writes.push(buf); return true; }
+      };
+      peer._state.content.documents = { 'doc-many': 'y'.repeat(4 * Document.CHUNK_BYTES) };
+      const refused = [];
+      const warnings = [];
+      peer.on('documentDeliveryRefused', (ev) => refused.push(ev));
+      peer.on('warning', (w) => warnings.push(String(w)));
+      assert.strictEqual(peer._sendP2pFileSendToPeer('doc-many', '127.0.0.1:13'), false);
+      assert.strictEqual(writes.length, 0);
+      assert.strictEqual(refused.length, 1);
+      assert.strictEqual(warnings.filter((w) => w.includes('Not delivering doc-many')).length, 1);
+    });
+
+    it('refuses a sealed many-blob document once per peer', function () {
+      const peer = offlinePeer();
+      const writes = [];
+      peer.connections['127.0.0.1:14'] = {
+        _fabricRemoteMaxFrameBytes: 4096,
+        _writeFabric (buf) { writes.push(buf); return true; }
+      };
+      const doc = Document.seal(Buffer.alloc(3 * Document.SEALED_CHUNK_BYTES, 5));
+      assert.ok(doc.blobs.length > 1);
+      const refused = [];
+      peer.on('documentDeliveryRefused', (ev) => refused.push(ev));
+      peer.on('warning', () => {});
+      assert.strictEqual(peer._sendSealedBlobsToPeer(doc, 'doc-sealed', '127.0.0.1:14', { revealKey: true }), false);
+      assert.strictEqual(writes.length, 0);
+      assert.strictEqual(refused.length, 1);
+      assert.strictEqual(refused[0].documentId, 'doc-sealed');
     });
 
     it('clamps an advertised cap to MAX_FRAME_BYTES', function () {
@@ -193,7 +264,7 @@ describe('@fabric/core Peer wire limits', function () {
       const stream = noisePair();
       peer.connections['127.0.0.1:10'] = { _noiseHandler: stream };
       assert.strictEqual(peer._recordRemoteFrameCap('127.0.0.1:10', { maxFrameBytes: 10 * MAX_FRAME_BYTES }), MAX_FRAME_BYTES);
-      assert.strictEqual(peer._recordRemoteFrameCap('127.0.0.1:10', { maxFrameBytes: 'big' }), LEGACY_MAX_FRAME_BYTES);
+      assert.strictEqual(peer._recordRemoteFrameCap('127.0.0.1:10', { maxFrameBytes: 'big' }), MAX_FRAME_BYTES);
       assert.strictEqual(peer._recordRemoteFrameCap('127.0.0.1:10', { maxFrameBytes: 8192 }), 8192);
       assert.strictEqual(stream._fabricRemoteMaxFrameBytes, 8192);
     });

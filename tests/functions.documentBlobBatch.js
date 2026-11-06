@@ -36,10 +36,10 @@ describe('document L1 batches', function () {
     assert.strictEqual(fraud.fraud, true);
   });
 
-  it('packs a maximum file into 1458 batches of 128', function () {
+  it('packs a maximum file into 1025 batches of 128', function () {
     const batches = Math.ceil(MAX_DOCUMENT_BLOBS / DOCUMENT_L1_BATCH_BLOBS);
     assert.strictEqual(DOCUMENT_L1_BATCH_BLOBS, 128);
-    assert.strictEqual(batches, 1458);
+    assert.strictEqual(batches, 1025);
   });
 
   it('refuses a 716-sat L1 offer at 4 sat/vB before funding', function () {

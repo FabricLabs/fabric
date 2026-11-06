@@ -36,6 +36,19 @@ const Watchtower = require('../services/watchtower');
 
 // Types
 const Actor = require('../types/actor');
+const Message = require('../types/message');
+
+/** bitcoind ZMQ topic → `_handleZMQMessage` case. */
+const ZMQ_TOPIC_CASES = Object.freeze({
+  rawblock: 'BitcoinBlock',
+  hashblock: 'BitcoinBlockHash',
+  rawtx: 'BitcoinTransaction',
+  hashtx: 'BitcoinTransactionHash'
+});
+/** Max txids kept for `rawtx` / `hashtx` pair dedupe. */
+const ZMQ_TXID_MEMORY = 4096;
+/** Default window in which a `rawtx` / `hashtx` pair counts as one admission. */
+const ZMQ_TX_DEDUPE_MS = 30 * 1000;
 const Collection = require('../types/collection');
 const Entity = require('../types/entity');
 const Key = require('../types/key');
@@ -1656,39 +1669,50 @@ class Bitcoin extends Service {
   async _handleZMQMessage (msg) {
     let topic, content;
 
-    // Handle both raw ZMQ messages and Message objects
+    // Handle both raw ZMQ messages ([topic, bytes]) and Message objects (`services/zmq`).
     if (Array.isArray(msg)) {
-      // Raw ZMQ message format
-      topic = msg[0].toString();
-      content = msg[1];
+      topic = ZMQ_TOPIC_CASES[String(msg[0])] || String(msg[0]);
+      const bytes = msg[1];
+      content = { content: bytes instanceof Uint8Array ? Buffer.from(bytes).toString('hex') : String(bytes || '') };
     } else if (msg && typeof msg === 'object') {
-      // Message object format
-      topic = msg.type;
-      content = msg.data;
+      // `msg.type` is the wire name (BITCOIN_BLOCK_HASH); the cases use the
+      // friendly name. The body is a field layout holding `{ content }`.
+      topic = msg.friendlyType || msg.type;
+      const parsed = typeof msg.toBuffer === 'function' ? Message.tryParseLegacyBody(msg) : null;
+      content = parsed && parsed.ok ? parsed.value : msg.data;
     } else {
       this.emit('error', `[BITCOIN] Invalid message format: ${JSON.stringify(msg)}`);
       return;
     }
+    const hexContent = content && typeof content === 'object' && typeof content.content === 'string'
+      ? content.content
+      : null;
 
-    if (this.settings.debug) this.emit('debug', '[ZMQ] Received message on topic:', topic, 'Message length:', content && (Buffer.isBuffer(content) ? content.length : (typeof content === 'object' ? JSON.stringify(content).length : String(content).length)));
+    if (this.settings.debug) this.emit('debug', '[ZMQ] Received message on topic:', topic, 'Message length:', hexContent ? hexContent.length / 2 : 0);
 
     try {
       switch (topic) {
         case 'BitcoinBlock': {
-          const rawHex = (content && typeof content === 'object' && content.content)
-            ? content.content
-            : (typeof content === 'string' ? content : null);
-          if (rawHex) this.emit('block', { raw: rawHex, source: 'BitcoinBlock' });
+          // `hashblock` drives `block` (tip, height, transactions). The raw block
+          // arrives for the same tip, so it gets its own event instead of a second `block`.
+          if (hexContent && hexContent.length >= 160) {
+            const header = Buffer.from(hexContent.slice(0, 160), 'hex');
+            const hash = Buffer.from(bitcoin.crypto.hash256(header)).reverse().toString('hex');
+            this.emit('rawBlock', { raw: hexContent, hash, source: 'BitcoinBlock' });
+          }
           break;
         }
         case 'BitcoinTransactionHash': {
-          const txid = (content && typeof content === 'object' && content.content)
-            ? content.content
-            : null;
-          if (txid && this.settings.walletWatchMempool !== false) {
+          const txid = hexContent;
+          // `rawtx` for this admission may already have been handled.
+          if (!txid || this._zmqTxRecent(txid)) break;
+          if (this.settings.walletWatchMempool !== false) {
             try {
               const verbose = await this._makeRPCRequest('getrawtransaction', [txid, true]);
-              if (verbose) {
+              // Mark only once this path delivered: a failed fetch leaves `rawtx` to do it.
+              // Re-check after the await in case `rawtx` won the race.
+              if (verbose && !this._zmqTxRecent(txid)) {
+                this._zmqTxMark(txid);
                 if (verbose.hex) this.broadcastWatchtower([verbose.hex]).catch(() => {});
                 this.emit('transaction', Object.assign({}, verbose, { source: 'BitcoinTransactionHash' }));
                 if (this.wallet && typeof this.wallet.ingestBitcoinTransaction === 'function') {
@@ -1704,9 +1728,8 @@ class Bitcoin extends Service {
           break;
         }
         case 'BitcoinBlockHash': {
-          const blockHashHex = (content && typeof content === 'object' && content.content)
-            ? content.content
-            : (JSON.parse(Buffer.isBuffer(content) ? content.toString() : String(content))).content;
+          const blockHashHex = hexContent;
+          if (!blockHashHex) break;
           let height = null;
           let supplyAmount = null;
           try {
@@ -1753,16 +1776,17 @@ class Bitcoin extends Service {
         }
         case 'BitcoinTransaction': {
           try {
-            const rawHex = (content && typeof content === 'object' && content.content)
-              ? content.content
-              : null;
-            if (rawHex) {
+            const rawHex = hexContent;
+            let txid = null;
+            try {
+              txid = require('bitcoinjs-lib').Transaction.fromHex(rawHex).getId();
+            } catch (_) { /* not a transaction: handled as unparsed below */ }
+            // `hashtx` for this admission may already have been handled.
+            if (rawHex && !(txid && this._zmqTxRecent(txid))) {
+              if (txid) this._zmqTxMark(txid);
               this.broadcastWatchtower([rawHex]).catch(() => {});
               const event = { hex: rawHex, source: 'BitcoinTransaction' };
-              try {
-                const bitcoinjs = require('bitcoinjs-lib');
-                event.txid = bitcoinjs.Transaction.fromHex(rawHex).getId();
-              } catch (_) { /* ignore parse */ }
+              if (txid) event.txid = txid;
               this.emit('transaction', event);
               if (this.wallet && typeof this.wallet.ingestBitcoinTransaction === 'function') {
                 this.wallet.ingestBitcoinTransaction(rawHex, { source: 'BitcoinTransaction' });
@@ -1781,9 +1805,50 @@ class Bitcoin extends Service {
         default:
           if (this.settings.verbosity >= 5) this.emit('debug', `[AUDIT] Unknown ZMQ topic: ${topic}`);
       }
-    } catch {
-      //', `Could not process ZMQ message: ${exception}`);
+    } catch (exception) {
+      this.emit('warning', `[FABRIC:BITCOIN] Could not process ZMQ ${topic}: ${exception && exception.message ? exception.message : exception}`);
     }
+  }
+
+  /**
+   * Whether a txid was delivered by ZMQ within the pair window. bitcoind
+   * publishes `rawtx` and `hashtx` for every mempool admission; the window
+   * (`settings.zmqTxDedupeMs`, default 30 s) collapses that pair without
+   * suppressing a later admission of the same transaction (evicted, then
+   * re-accepted), which notifies again.
+   * @private
+   * @param {string} txid
+   * @returns {boolean}
+   */
+  _zmqTxRecent (txid) {
+    const at = this._zmqTxids ? this._zmqTxids.get(String(txid).toLowerCase()) : undefined;
+    return at !== undefined && (Date.now() - at) < this._zmqTxDedupeMs();
+  }
+
+  /**
+   * Record that a txid's admission was delivered (see {@link Bitcoin#_zmqTxRecent}).
+   * Entries older than the window are dropped; the map is also size-bounded.
+   * @private
+   * @param {string} txid
+   */
+  _zmqTxMark (txid) {
+    if (!this._zmqTxids) this._zmqTxids = new Map();
+    const now = Date.now();
+    const key = String(txid).toLowerCase();
+    this._zmqTxids.delete(key);
+    this._zmqTxids.set(key, now);
+    const windowMs = this._zmqTxDedupeMs();
+    // Maps iterate in insertion order, so the oldest entries come first.
+    for (const [k, at] of this._zmqTxids) {
+      if (this._zmqTxids.size <= ZMQ_TXID_MEMORY && now - at < windowMs) break;
+      this._zmqTxids.delete(k);
+    }
+  }
+
+  /** @private */
+  _zmqTxDedupeMs () {
+    const ms = Number(this.settings.zmqTxDedupeMs);
+    return Number.isFinite(ms) && ms >= 0 ? ms : ZMQ_TX_DEDUPE_MS;
   }
 
   async _startZMQ () {

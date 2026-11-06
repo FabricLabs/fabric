@@ -128,12 +128,14 @@ resolve unchanged. `npm run check:downstream` resolves every
 | Constant | Value | Notes |
 |----------|-------|-------|
 | `HEADER_SIZE` | 208 bytes | AMP header |
-| `MAX_MESSAGE_SIZE` | 32768 bytes | AMP body cap (32 KiB; was 3888 = `4096 − HEADER_SIZE` before 2026-10-14) |
-| `MAX_FRAME_BYTES` | 32976 bytes | `HEADER_SIZE + MAX_MESSAGE_SIZE`; fits one Noise transport message (65535 − 16 MAC) |
+| `MAX_FRAME_BYTES` | 65519 bytes | Largest frame one Noise transport message carries (`NOISE_MAX_MESSAGE_BYTES` 65535 − `NOISE_MAC_BYTES` 16); was 32976 before 2026-11-05 |
+| `MAX_MESSAGE_SIZE` | 65311 bytes | AMP body cap, `MAX_FRAME_BYTES − HEADER_SIZE` |
+| `DOCUMENT_CHUNK_BYTES` / `DOCUMENT_SEALED_CHUNK_BYTES` | 32768 bytes | Document blob size (32 KiB); a blob's `P2P_FILE_SEND` field frame fits one AMP frame |
 | `MACHINE_MAX_MEMORY` | ≈3.8 MiB | `MAX_MEMORY_ALLOC × MACHINE_MEMORY_PAGE_SIZE` (3888, independent of the wire cap); allocated on first access by `Machine` |
 
-Peers drop frames shorter than `HEADER_SIZE` or longer than `HEADER_SIZE +
-MAX_MESSAGE_SIZE` before parse/crypto. Per-origin relay budgets (chat, gossip,
+Peers drop frames shorter than `HEADER_SIZE` or longer than `MAX_FRAME_BYTES`
+before parse/crypto. A peer that advertises no `maxFrameBytes` is assumed to take
+`MAX_FRAME_BYTES`; there is no smaller legacy default. Per-origin relay budgets (chat, gossip,
 inventory) are peer settings — not global throughput caps. `Machine` enforces
 `MACHINE_MAX_MEMORY` as a heap budget only — it does **not** provide VM
 isolation or gas metering (see [PUBLIC_API](#out-of-scope-for-stable-api) /

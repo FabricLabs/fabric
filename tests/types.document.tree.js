@@ -2,17 +2,17 @@
 
 const assert = require('assert');
 const crypto = require('crypto');
-const { MAX_MESSAGE_SIZE } = require('../constants');
+const { HEADER_SIZE, MAX_MESSAGE_SIZE } = require('../constants');
 const Document = require('../types/document');
 const DocumentBlobTransferBook = require('../types/documentBlobTransferBook');
 
 const sha = (s) => crypto.createHash('sha256').update(String(s)).digest('hex');
 
 describe('Document blob tree', function () {
-  it('defaults chunk size under AMP body budget', function () {
+  it('defaults to 32 KiB blobs, inside the AMP body budget', function () {
+    assert.strictEqual(Document.CHUNK_BYTES, 32 * 1024);
+    assert.strictEqual(Document.SEALED_CHUNK_BYTES, 32 * 1024);
     assert.ok(Document.CHUNK_BYTES < MAX_MESSAGE_SIZE);
-    assert.ok(Document.CHUNK_BYTES <= Math.floor(MAX_MESSAGE_SIZE * 0.75));
-    assert.strictEqual(Document.CHUNK_BYTES, Document.CHUNK_BYTES);
   });
 
   it('always emits an index — single blob for small files', function () {
@@ -63,7 +63,7 @@ describe('Document blob tree', function () {
       MAX_DOCUMENT_BYTES,
       MAX_DOCUMENT_BLOBS,
       DOCUMENT_SEALED_PLAINTEXT_BYTES,
-      DOCUMENT_SEALED_FRAME_OVERHEAD
+      MAX_FRAME_BYTES
     } = require('../constants');
     assert.strictEqual(MAX_DOCUMENT_BYTES, 0xFFFFFFFF);
     assert.strictEqual(Document.MAX_BYTES, MAX_DOCUMENT_BYTES);
@@ -90,7 +90,7 @@ describe('Document blob tree', function () {
       }
       if (len > proofLen) proofLen = len;
     }
-    const body = 'A'.repeat(Math.ceil(Document.SEALED_CHUNK_BYTES / 3) * 4);
+    const body = Buffer.alloc(Document.SEALED_CHUNK_BYTES, 0x41).toString('base64');
     const frame = {
       name: 'ab'.repeat(32),
       body,
@@ -107,9 +107,10 @@ describe('Document blob tree', function () {
       convergence: 'public',
       proof: Array.from({ length: proofLen }, () => '12'.repeat(32))
     };
-    const json = JSON.stringify(frame);
-    assert.ok(Buffer.byteLength(json) <= MAX_MESSAGE_SIZE);
-    assert.ok(Buffer.byteLength(json) - body.length <= DOCUMENT_SEALED_FRAME_OVERHEAD);
+    // The largest sealed blob frame, deepest proof included, fits one frame.
+    const Message = require('../types/message');
+    const wire = Message.fromLegacyBody('P2P_FILE_SEND', frame).toBuffer();
+    assert.ok(wire.length <= MAX_FRAME_BYTES, `${wire.length} > ${MAX_FRAME_BYTES}`);
   });
 
   it('refuses to split into more than MAX_DOCUMENT_BLOBS blobs before hashing any', function () {
@@ -133,8 +134,8 @@ describe('Document blob tree', function () {
 
   it('Document.compactBlobIndex drops leaves when over budget', function () {
     const many = [];
-    // Enough leaves (~120 B each) to exceed the 32 KiB body cap.
-    const LEAVES = 400;
+    // Enough leaves (~120 B each) to exceed the ~64 KiB body cap.
+    const LEAVES = 800;
     for (let i = 0; i < LEAVES; i++) {
       many.push({
         index: i,
@@ -402,9 +403,9 @@ describe('Document blob tree', function () {
       assert.ok(doc.blobTotal > 4096, 'needs a 13-node proof');
       const frame = doc.fileSendObjects({ indexes: [0] })[0];
       assert.strictEqual(frame.proof.length, 13);
-      const bytes = Buffer.byteLength(JSON.stringify(frame));
-      assert.ok(bytes <= MAX_MESSAGE_SIZE, `${bytes} > ${MAX_MESSAGE_SIZE}`);
-      assert.ok(Math.ceil(Document.SEALED_CHUNK_BYTES / 3) * 4 + Document.SEALED_FRAME_OVERHEAD <= MAX_MESSAGE_SIZE);
+      const Message = require('../types/message');
+      const bytes = Message.fromLegacyBody('P2P_FILE_SEND', frame).toBuffer().length;
+      assert.ok(bytes <= HEADER_SIZE + MAX_MESSAGE_SIZE, `${bytes} > ${HEADER_SIZE + MAX_MESSAGE_SIZE}`);
     });
   });
 });

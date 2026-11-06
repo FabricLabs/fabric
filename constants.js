@@ -305,19 +305,18 @@ const VERSION_NUMBER = 0x01;
 /* magic, version, parent, author, type, size, hash, preimage, signature — then body */
 const HEADER_SIZE = 208;
 const LARGE_COLLECTION_SIZE = 10; // TODO: test with 1,000,000
-/** Max AMP body bytes (32 KiB). Wire frame = `HEADER_SIZE + MAX_MESSAGE_SIZE` = 32976 B,
- * which fits one Noise transport message (65535 − 16-byte MAC). Keep in sync with
- * `FABRIC_MAX_MESSAGE_BODY` in `src/constants.h`. Historical: `4096 − HEADER_SIZE` = 3888. */
-const MAX_MESSAGE_SIZE = 32768;
-/** Max bytes of one AMP frame on the wire (header + body). */
-const MAX_FRAME_BYTES = HEADER_SIZE + MAX_MESSAGE_SIZE;
-/** Frame cap assumed for peers that do not advertise `maxFrameBytes` in their session
- * message (pre-32 KiB JS peers drop larger frames; pre-32 KiB C fabricd disconnects). */
-const LEGACY_MAX_FRAME_BYTES = 4096;
-/** Body cap matching {@link LEGACY_MAX_FRAME_BYTES}. */
-const LEGACY_MAX_MESSAGE_SIZE = LEGACY_MAX_FRAME_BYTES - HEADER_SIZE;
 /** Max bytes of one length-prefixed Noise message (handshake or transport). */
 const NOISE_MAX_MESSAGE_BYTES = 65535;
+/** Poly1305 tag on every Noise transport message. */
+const NOISE_MAC_BYTES = 16;
+/** Max bytes of one AMP frame on the wire (header + body): the largest plaintext one
+ * Noise transport message carries (65535 − 16 = 65519 B). Each frame is one Noise
+ * message, so this must never exceed `NOISE_MAX_MESSAGE_BYTES − NOISE_MAC_BYTES`.
+ * Keep in sync with `FABRIC_MAX_FRAME_BYTES` in `src/constants.h`. */
+const MAX_FRAME_BYTES = NOISE_MAX_MESSAGE_BYTES - NOISE_MAC_BYTES;
+/** Max AMP body bytes: {@link MAX_FRAME_BYTES} minus the header (65311 B). Keep in sync
+ * with `FABRIC_MAX_MESSAGE_BODY` in `src/constants.h`. */
+const MAX_MESSAGE_SIZE = MAX_FRAME_BYTES - HEADER_SIZE;
 /** Bytes a remote may send before the Noise handshake completes (XX needs < 200). */
 const NOISE_HANDSHAKE_MAX_BYTES = 64 * 1024;
 /** Time a remote has to complete the Noise handshake before the socket is destroyed. */
@@ -360,6 +359,10 @@ const GENERIC_LIST_TYPE = 3235170158;
 const SIDECHAIN_STATE_PATCH_TYPE = 997;
 const DOCUMENT_PUBLISH_TYPE = 998;
 const DOCUMENT_REQUEST_TYPE = 999;
+/** Sealed document delivery: content-key reveal, per-blob quote, blob batch (directed; typed fields). */
+const DOCUMENT_KEY_REVEAL_TYPE = 1000;
+const DOCUMENT_BLOB_QUOTE_TYPE = 1001;
+const DOCUMENT_BLOB_BATCH_TYPE = 1002;
 const JSON_CALL_TYPE = 16000;
 const PATCH_MESSAGE_TYPE = 1024;
 /** Contract negotiation: batched Fabric messages + chain Merkle root + JSON Patch (RFC 6902) — see docs/CONTRACT_PROPOSAL.md */
@@ -467,30 +470,16 @@ const DOCUMENT_L1_BATCH_BLOBS = 128;
  * CPFP the claim output.
  */
 const HTLC_MINIMUM_SATS = BITCOIN_DUST_SATS + HTLC_CLAIM_VBYTES;
-/**
- * Bytes kept beside the base64 body of an unsealed `P2P_FILE_SEND`.
- * Chunk size is `floor((MAX_MESSAGE_SIZE − this) × 3/4)`.
- */
-const DOCUMENT_FILE_SEND_OVERHEAD = 640;
-/**
- * Bytes kept beside the base64 body of a sealed `P2P_FILE_SEND`, including a
- * full inclusion proof. At the FAT file cap that proof is 18 siblings and the
- * JSON beside the body is 1,716 bytes, inside this reserve, so the sealed
- * chunk stays 23,040 bytes.
- */
-const DOCUMENT_SEALED_FRAME_OVERHEAD = 2048;
 /** AES-GCM tag appended to each sealed blob. Plaintext per sealed chunk is the ciphertext chunk minus this. */
 const DOCUMENT_GCM_TAG_BYTES = 16;
-/** Unsealed plaintext (and ciphertext) bytes in one blob. */
-const DOCUMENT_CHUNK_BYTES = Math.max(
-  256,
-  Math.floor((MAX_MESSAGE_SIZE - DOCUMENT_FILE_SEND_OVERHEAD) * 3 / 4)
-);
-/** Sealed ciphertext bytes in one blob. */
-const DOCUMENT_SEALED_CHUNK_BYTES = Math.max(
-  256,
-  Math.floor((MAX_MESSAGE_SIZE - DOCUMENT_SEALED_FRAME_OVERHEAD) * 3 / 4)
-);
+/**
+ * Unsealed plaintext (and ciphertext) bytes in one blob: 32 KiB. A
+ * `P2P_FILE_SEND` field frame carries the blob as raw bytes beside its index,
+ * hashes and inclusion proof, well inside {@link MAX_FRAME_BYTES}.
+ */
+const DOCUMENT_CHUNK_BYTES = 32 * 1024;
+/** Sealed ciphertext bytes in one blob (32 KiB, same as unsealed). */
+const DOCUMENT_SEALED_CHUNK_BYTES = 32 * 1024;
 /** Sealed plaintext bytes in one blob. */
 const DOCUMENT_SEALED_PLAINTEXT_BYTES = DOCUMENT_SEALED_CHUNK_BYTES - DOCUMENT_GCM_TAG_BYTES;
 /**
@@ -776,9 +765,8 @@ module.exports = {
   MAX_FRAME_SIZE,
   MAX_MEMORY_ALLOC,
   MAX_MESSAGE_SIZE,
-  LEGACY_MAX_FRAME_BYTES,
-  LEGACY_MAX_MESSAGE_SIZE,
   NOISE_MAX_MESSAGE_BYTES,
+  NOISE_MAC_BYTES,
   NOISE_HANDSHAKE_MAX_BYTES,
   NOISE_HANDSHAKE_TIMEOUT_MS,
   MAX_DOCUMENT_ID_LENGTH,
@@ -847,8 +835,6 @@ module.exports = {
   HTLC_CLAIM_LOCK_MARGIN_BLOCKS,
   DOCUMENT_L1_BATCH_BLOBS,
   HTLC_MINIMUM_SATS,
-  DOCUMENT_FILE_SEND_OVERHEAD,
-  DOCUMENT_SEALED_FRAME_OVERHEAD,
   DOCUMENT_GCM_TAG_BYTES,
   DOCUMENT_CHUNK_BYTES,
   DOCUMENT_SEALED_CHUNK_BYTES,
@@ -924,6 +910,9 @@ module.exports = {
   SIDECHAIN_STATE_PATCH_TYPE,
   DOCUMENT_PUBLISH_TYPE,
   DOCUMENT_REQUEST_TYPE,
+  DOCUMENT_KEY_REVEAL_TYPE,
+  DOCUMENT_BLOB_QUOTE_TYPE,
+  DOCUMENT_BLOB_BATCH_TYPE,
   JSON_CALL_TYPE,
   PATCH_MESSAGE_TYPE,
   CONTRACT_PROPOSAL_TYPE,

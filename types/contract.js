@@ -1423,8 +1423,9 @@ class Contract extends Service {
       validators: []
     };
 
-    // First message (genesis)
-    const PACKET_CONTRACT_GENESIS = Message.fromVector(['CONTRACT_GENESIS', JSON.stringify({
+    // First message (genesis). A stored record, not sent: `P2P_BASE_MESSAGE` is
+    // what the unregistered `CONTRACT_GENESIS` name always resolved to.
+    const PACKET_CONTRACT_GENESIS = Message.fromVector(['P2P_BASE_MESSAGE', JSON.stringify({
       type: 'CONTRACT_GENESIS',
       object: {
         input: input

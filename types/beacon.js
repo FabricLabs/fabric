@@ -31,15 +31,18 @@ const BEACON_CHAIN_PATH = 'beacon/CHAIN';
 const MAX_REMEMBERED_CANCELLED_ROUNDS = 1024;
 
 /**
- * Id of a stored epoch entry: double-SHA256 of the epoch's canonical JSON.
- * Epochs are kept in `beacon/CHAIN`, never sent as frames, so no Message is
- * built. Older entries keep the ids they were stored with.
+ * Id of a stored epoch entry: double-SHA256 of the epoch's canonical JSON, taken
+ * over the payload as `beacon/CHAIN` stores it (JSON drops an unset field, which
+ * canonical JSON would hash as `null`). Epochs are never sent as frames, so no
+ * Message is built. Older entries keep the ids they were stored with.
  * @private
  * @param {object} payload
  * @returns {string}
  */
 function epochEntryId (payload) {
-  return Hash256.doubleDigest(fabricCanonicalJson(payload));
+  // Canonical JSON first, so a Symbol or BigInt still fails closed rather than vanishing.
+  fabricCanonicalJson(payload);
+  return Hash256.doubleDigest(fabricCanonicalJson(fabricCanonicalJson.jsonSafe(payload)));
 }
 
 /**

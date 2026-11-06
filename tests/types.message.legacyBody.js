@@ -632,7 +632,7 @@ describe('Message legacy bodies', function () {
 
     it('types without a layout keep JSON bodies', function () {
       const receiver = new Peer(offlinePeerSettings());
-      receiver._handleFabricMessage(jsonFrame('P2P_CHAIN_SYNC_REQUEST', { tip: 'ab' }).toBuffer(), { name: 'a' });
+      receiver._handleFabricMessage(jsonFrame('GenericMessage', { type: 'Example', object: {} }).toBuffer(), { name: 'a' });
       assert.deepStrictEqual(receiver.jsonBodyCounts(), {});
     });
 

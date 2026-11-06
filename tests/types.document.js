@@ -27,7 +27,7 @@ function sealedSends (seller, documentId, opts = {}) {
   seller.connections.buyer = { _writeFabric: (buf) => written.push(buf) };
   seller._sendP2pFileSendToPeer(documentId, 'buyer', Object.assign({ revealKey: false, settlementId: 's' }, opts));
   const sends = written.map((buf) => Message.fromBuffer(buf)).filter((m) => m.type === 'P2P_FILE_SEND');
-  return { sends, bodies: sends.map((m) => JSON.parse(m.body)) };
+  return { sends, bodies: sends.map((m) => Message.tryParseLegacyBody(m).value) };
 }
 
 describe('types/document (sealed blob tree)', function () {
@@ -154,7 +154,7 @@ describe('types/document (sealed blob tree)', function () {
     const Message = require('../types/message');
     const frames = written.map((buf) => Message.fromBuffer(buf));
     const sends = frames.filter((m) => m.type === 'P2P_FILE_SEND');
-    const reveals = frames.filter((m) => m.type === 'GENERIC_MESSAGE' || m.type === 'GenericMessage');
+    const reveals = frames.filter((m) => m.type === 'DOCUMENT_KEY_REVEAL');
     assert.strictEqual(sends.length, 2);
     assert.strictEqual(reveals.length, 2);
 
@@ -180,7 +180,7 @@ describe('types/document (sealed blob tree)', function () {
     const opened = [];
     buyer.on('documentBlobOpened', (ev) => opened.push(ev.blobIndex));
     for (const m of sends) {
-      const r = buyer._ingestP2pFileSend({ object: JSON.parse(m.body) }, { name: 'seller' }, m);
+      const r = buyer._ingestP2pFileSend({ object: Message.tryParseLegacyBody(m).value }, { name: 'seller' }, m);
       assert.strictEqual(r.status, 'awaiting_key');
       assert.strictEqual(r.perBlob, true);
     }
@@ -190,7 +190,7 @@ describe('types/document (sealed blob tree)', function () {
     assert.strictEqual(located.blobIndex, 1);
     assert.strictEqual(located.frameHex, sends[1].toBuffer().toString('hex'), 'raw signed frame kept per blob');
     for (const m of reveals) {
-      const body = JSON.parse(m.body);
+      const body = Message.tryParseLegacyBody(m).value;
       const r = buyer._handleDocumentContentKeyReveal(body.object, { name: 'seller' });
       assert.ok(r.ok, r.error);
     }
@@ -212,7 +212,7 @@ describe('types/document (sealed blob tree)', function () {
     assert.ok(seller._sendP2pFileSendToPeer(documentId, 'buyer', { revealKey: false, settlementId: 's' }));
     const Message = require('../types/message');
     const sends = written.map((buf) => Message.fromBuffer(buf)).filter((m) => m.type === 'P2P_FILE_SEND');
-    const bodies = sends.map((m) => JSON.parse(m.body));
+    const bodies = sends.map((m) => Message.tryParseLegacyBody(m).value);
     assert.strictEqual(bodies.length, 2);
     const refused = (patch) => {
       const r = buyer._ingestP2pFileSend({ object: Object.assign({}, bodies[0], patch) }, { name: 'mallory' });
@@ -266,7 +266,7 @@ describe('types/document (sealed blob tree)', function () {
     seller.connections['buyer'] = { _writeFabric: (buf) => written.push(buf) };
     seller._sendP2pFileSendToPeer(documentId, 'buyer', { revealKey: false, settlementId: 's' });
     const Message = require('../types/message');
-    const bodies = written.map((buf) => Message.fromBuffer(buf)).filter((m) => m.type === 'P2P_FILE_SEND').map((m) => JSON.parse(m.body));
+    const bodies = written.map((buf) => Message.fromBuffer(buf)).filter((m) => m.type === 'P2P_FILE_SEND').map((m) => Message.tryParseLegacyBody(m).value);
     const expect = (peer, index) => {
       const blobHashHexes = [];
       const paymentHashHexes = [];
@@ -318,21 +318,21 @@ describe('types/document (sealed blob tree)', function () {
     const b = framesFor(2048);
     // Budget fits one ~2 KiB row (ciphertext + its retained frame), not two.
     const buyer = new Peer({ listen: false, maxPendingSealedBytes: 8 * 1024 });
-    assert.strictEqual(buyer._ingestP2pFileSend({ object: JSON.parse(a[0].body) }, { name: 'seller' }, a[0]).status, 'awaiting_key');
+    assert.strictEqual(buyer._ingestP2pFileSend({ object: Message.tryParseLegacyBody(a[0]).value }, { name: 'seller' }, a[0]).status, 'awaiting_key');
     assert.ok(Buffer.isBuffer([...Object.values(buyer.pendingSealedBlobs)[0].parts.values()][0].frame), 'retained frame is a Buffer, not hex');
-    assert.strictEqual(buyer._ingestP2pFileSend({ object: JSON.parse(b[0].body) }, { name: 'seller' }, b[0]).status, 'awaiting_key');
+    assert.strictEqual(buyer._ingestP2pFileSend({ object: Message.tryParseLegacyBody(b[0]).value }, { name: 'seller' }, b[0]).status, 'awaiting_key');
     assert.strictEqual(Object.keys(buyer.pendingSealedBlobs).length, 1, 'oldest row evicted to stay under budget');
-    assert.ok(Object.keys(buyer.pendingSealedBlobs)[0].startsWith(JSON.parse(b[0].body).name));
+    assert.ok(Object.keys(buyer.pendingSealedBlobs)[0].startsWith(Message.tryParseLegacyBody(b[0]).value.name));
     // A single frame larger than the whole budget is refused outright.
     const tiny = new Peer({ listen: false, maxPendingSealedBytes: 64 });
-    const r = tiny._ingestP2pFileSend({ object: JSON.parse(a[0].body) }, { name: 'seller' }, a[0]);
+    const r = tiny._ingestP2pFileSend({ object: Message.tryParseLegacyBody(a[0]).value }, { name: 'seller' }, a[0]);
     assert.strictEqual(r.status, 'reject');
     assert.match(r.error, /budget/);
     // Rows that never complete expire.
     const ttl = new Peer({ listen: false, pendingSealedTtlMs: 1000 });
-    ttl._ingestP2pFileSend({ object: JSON.parse(a[0].body) }, { name: 'seller' }, a[0]);
+    ttl._ingestP2pFileSend({ object: Message.tryParseLegacyBody(a[0]).value }, { name: 'seller' }, a[0]);
     for (const row of Object.values(ttl.pendingSealedBlobs)) row.created -= 5000;
-    ttl._ingestP2pFileSend({ object: JSON.parse(b[0].body) }, { name: 'seller' }, b[0]);
+    ttl._ingestP2pFileSend({ object: Message.tryParseLegacyBody(b[0]).value }, { name: 'seller' }, b[0]);
     assert.strictEqual(Object.keys(ttl.pendingSealedBlobs).length, 1);
   });
 
@@ -509,7 +509,8 @@ describe('types/document (sealed blob tree)', function () {
       const quoteMsgs = written.map((buf) => Message.fromBuffer(buf));
       assert.strictEqual(quoteMsgs.length, 2);
       for (let i = 0; i < 2; i++) {
-        assert.strictEqual(JSON.parse(quoteMsgs[i].body).type, BLOB_QUOTE_TYPE);
+        assert.strictEqual(quoteMsgs[i].type, 'DOCUMENT_BLOB_QUOTE');
+        assert.strictEqual(Message.tryParseLegacyBody(quoteMsgs[i]).value.type, BLOB_QUOTE_TYPE);
         assert.strictEqual(quotes[i].keyHashHex, doc.paymentHashFor(i));
         assert.notStrictEqual(quotes[i].paymentHashHex, doc.paymentHashFor(i));
         assert.strictEqual(quotes[i].amountSats, RATE);
@@ -532,7 +533,7 @@ describe('types/document (sealed blob tree)', function () {
 
       const buyer = new Peer({ listen: false });
       for (let i = 0; i < sends.length; i++) buyer._ingestP2pFileSend({ object: bodies[i] }, { name: 'seller' }, sends[i]);
-      for (const m of quoteMsgs) assert.ok(buyer._ingestSealedBlobQuote(JSON.parse(m.body).object, { name: 'seller' }, m).ok);
+      for (const m of quoteMsgs) assert.ok(buyer._ingestSealedBlobQuote(Message.tryParseLegacyBody(m).value.object, { name: 'seller' }, m).ok);
       const opened = [];
       let received = null;
       buyer.on('documentBlobOpened', (ev) => opened.push(ev));
@@ -553,7 +554,7 @@ describe('types/document (sealed blob tree)', function () {
       const { sends, bodies } = sealedSends(seller, documentId);
       const { quote } = seller.quoteSealedBlob({ documentId, blobIndex: 0 });
       const lie = Object.assign({}, quote, { wrappedKeyHex: crypto.randomBytes(32).toString('hex') });
-      const msg = Message.fromVector(['GenericMessage', JSON.stringify({ type: BLOB_QUOTE_TYPE, object: lie })]);
+      const msg = Message.fromLegacyBody('DOCUMENT_BLOB_QUOTE', { type: BLOB_QUOTE_TYPE, object: lie });
       msg.signWithKey(seller.key);
 
       const buyer = new Peer({ listen: false });

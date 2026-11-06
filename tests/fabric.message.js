@@ -64,13 +64,12 @@ describe('@fabric/core/types/message', function () {
       assert.strictEqual(Message instanceof Function, true);
     });
 
-    it('caps the body at 32 KiB and keeps one frame inside one Noise message', function () {
+    it('caps a frame at the largest one Noise message carries', function () {
       const { MAX_FRAME_BYTES } = require('../constants');
       const NOISE_MESSAGE_SIZE = 65535; // noise-protocol-stream MESSAGE_SIZE
       const NOISE_MAC_BYTES = 16;
-      assert.strictEqual(MAX_MESSAGE_SIZE, 32 * 1024);
-      assert.strictEqual(MAX_FRAME_BYTES, HEADER_SIZE + MAX_MESSAGE_SIZE);
-      assert.ok(MAX_FRAME_BYTES <= NOISE_MESSAGE_SIZE - NOISE_MAC_BYTES);
+      assert.strictEqual(MAX_FRAME_BYTES, NOISE_MESSAGE_SIZE - NOISE_MAC_BYTES);
+      assert.strictEqual(MAX_MESSAGE_SIZE, MAX_FRAME_BYTES - HEADER_SIZE);
       assert.strictEqual(Message.MAX_MESSAGE_SIZE, MAX_MESSAGE_SIZE);
     });
 

@@ -51,7 +51,6 @@ const {
   MAX_DOCUMENT_BYTES,
   DOCUMENT_CHUNK_BYTES,
   DOCUMENT_SEALED_CHUNK_BYTES,
-  DOCUMENT_SEALED_FRAME_OVERHEAD,
   DOCUMENT_GCM_TAG_BYTES
 } = require('../constants');
 const State = require('./state');
@@ -68,7 +67,6 @@ const {
 // exactly the number of sealed plaintext chunks in a 2^32 − 1 byte file.
 const DEFAULT_BLOB_CHUNK_BYTES = DOCUMENT_CHUNK_BYTES;
 const SEALED_BLOB_CHUNK_BYTES = DOCUMENT_SEALED_CHUNK_BYTES;
-const SEALED_FRAME_JSON_OVERHEAD = DOCUMENT_SEALED_FRAME_OVERHEAD;
 
 const BLOB_INDEX_TYPE = 'DocumentBlobIndex';
 const BLOB_MERKLE_ALGO = 'DocumentTree';
@@ -1361,7 +1359,6 @@ Document.GCM_TAG_BYTES = GCM_TAG_BYTES;
 
 Document.CHUNK_BYTES = DEFAULT_BLOB_CHUNK_BYTES;
 Document.SEALED_CHUNK_BYTES = SEALED_BLOB_CHUNK_BYTES;
-Document.SEALED_FRAME_OVERHEAD = SEALED_FRAME_JSON_OVERHEAD;
 Document.MAX_BYTES = MAX_DOCUMENT_BYTES;
 Document.checkFileSize = assertDocumentByteLength;
 Document.BLOB_INDEX_TYPE = BLOB_INDEX_TYPE;

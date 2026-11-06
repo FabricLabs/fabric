@@ -77,7 +77,7 @@ function buildMarket (opts = {}) {
   function ingest (written, seller) {
     for (const buf of written) {
       const m = Message.fromBuffer(buf);
-      const body = JSON.parse(m.body);
+      const body = Message.tryParseLegacyBody(m).value;
       if (m.type === 'P2P_FILE_SEND') buyer._ingestP2pFileSend({ object: body }, { name: seller }, m);
       else if (body.type === 'DocumentBlobQuote') buyer._ingestSealedBlobQuote(ctl.mutateQuote ? ctl.mutateQuote(body.object) : body.object, { name: seller }, m);
       else buyer._handleDocumentContentKeyReveal(ctl.mutateReveal ? ctl.mutateReveal(body.object) : body.object, { name: seller });
@@ -286,7 +286,7 @@ describe('services/market (Phase 4 channel rail)', function () {
       for (const buf of written) {
         const msg = Message.fromBuffer(buf);
         assert.strictEqual(msg.type, 'P2P_FILE_SEND');
-        m.buyer._ingestP2pFileSend({ object: JSON.parse(msg.body) }, { name: 'alpha' }, msg);
+        m.buyer._ingestP2pFileSend({ object: Message.tryParseLegacyBody(msg).value }, { name: 'alpha' }, msg);
       }
       return true;
     };
@@ -1113,7 +1113,7 @@ describe('services/market (convergent de-dup)', function () {
       seller._sendSealedBlobsToPeer(seller._getSealedBlobDocument(id), id, 'buyer', { settlementId: 't', blobIndex: reqOpts.blobIndex, revealKey: true });
       for (const buf of written) {
         const m = Message.fromBuffer(buf);
-        const body = JSON.parse(m.body);
+        const body = Message.tryParseLegacyBody(m).value;
         if (m.type === 'P2P_FILE_SEND') buyer._ingestP2pFileSend({ object: body }, { name: 'alpha' }, m);
         else buyer._handleDocumentContentKeyReveal(body.object, { name: 'alpha' });
       }
@@ -1241,7 +1241,7 @@ describe('services/market (credit rail: pay after verify)', function () {
       seller._sendSealedBlobsToPeer(seller._getSealedBlobDocument(id), id, 'buyer', { settlementId: 't', blobIndex: reqOpts.blobIndex, revealKey });
       for (const buf of written) {
         const m = Message.fromBuffer(buf);
-        const body = JSON.parse(m.body);
+        const body = Message.tryParseLegacyBody(m).value;
         if (m.type === 'P2P_FILE_SEND') buyer._ingestP2pFileSend({ object: body }, { name: 'alpha' }, m);
         else {
           const reveal = ctl.badKey(Number(reqOpts.blobIndex)) ? Object.assign({}, body.object, { keyHex: crypto.randomBytes(32).toString('hex') }) : body.object;
