@@ -44,7 +44,7 @@ const {
   PEER_MUSIG_SESSION_TTL_MS,
   HEADER_SIZE,
   MAX_MESSAGE_SIZE,
-  LEGACY_MAX_FRAME_BYTES,
+  MAX_FRAME_BYTES,
   NOISE_HANDSHAKE_MAX_BYTES,
   MAX_DOCUMENT_ID_LENGTH,
   INVENTORY_RESPONSE_PAGE_BYTES,
@@ -76,6 +76,18 @@ const musig2Session = require('./witness/musig2Session');
 const sidechainState = require('../functions/sidechainState');
 const { epochCommitmentDigestHex } = require('../functions/beaconFederationSigning');
 const Federation = require('./federation');
+
+/** Sealed document delivery wire type → the inner `type` its generic handler dispatches on. */
+const SEALED_DELIVERY_INNER_TYPE_BY_WIRE = Object.freeze({
+  DOCUMENT_KEY_REVEAL: 'DocumentContentKeyReveal',
+  DOCUMENT_BLOB_QUOTE: 'DocumentBlobQuote',
+  DOCUMENT_BLOB_BATCH: 'DocumentBlobBatch'
+});
+/** Those inner types: refused inside a `GenericMessage` / `P2P_BASE_MESSAGE` carrier. */
+const SEALED_DELIVERY_INNER_TYPES = new Set(Object.values(SEALED_DELIVERY_INNER_TYPE_BY_WIRE));
+
+/** Session-advertised level of field-body support (`object.fieldBodies`). */
+const FIELD_BODIES_VERSION = 1;
 const {
   aggregatePeerBandwidth,
   peerBandwidthSnapshot,
@@ -83,9 +95,15 @@ const {
   recordPeerBandwidth
 } = require('../functions/peerBandwidth');
 
-/** @private Max UTF-8 code units for first-class P2P_CHAT_MESSAGE body (text only). */
+/**
+ * Max UTF-8 code units for first-class P2P_CHAT_MESSAGE body (text only).
+ * @private
+ */
 const P2P_CHAT_MAX_CHARS = 2000;
-/** @private Max UTF-8 code units for first-class P2P_PEER_ALIAS body (nickname). */
+/**
+ * Max UTF-8 code units for first-class P2P_PEER_ALIAS body (nickname).
+ * @private
+ */
 const P2P_PEER_ALIAS_MAX_CHARS = 64;
 
 /**
@@ -196,6 +214,7 @@ const crypto = require('crypto');
 const { Level } = require('level');
 const stream = require('stream');
 const manager = require('fast-json-patch');
+const WireReplayFilter = require('../functions/wireReplayFilter');
 const noise = require('../functions/noiseProtocolStream');
 const merge = require('lodash.merge');
 const { EventEmitter } = require('events');
@@ -216,7 +235,9 @@ const {
   contentHashHexFromObject
 } = require('../functions/documentPaymentHash');
 const {
-  normalizeFabricDocumentOfferEnvelopeForHandlers
+  normalizeFabricDocumentOfferEnvelopeForHandlers,
+  isDocumentInventoryRequestType,
+  isDocumentInventoryResponseType
 } = require('../functions/publishedDocumentEnvelope');
 const Htlc = require('./htlc');
 const { resolveFabricPeerInterface } = require('../functions/fabricListenInterface');
@@ -262,6 +283,7 @@ const Actor = require('./actor');
 const Document = require('./document');
 const Hash256 = require('./hash256');
 const Identity = require('./identity');
+const Bech32 = require('./bech32');
 const Key = require('./key');
 const Machine = require('./machine');
 const Message = require('./message');
@@ -509,7 +531,10 @@ class Peer extends Service {
         maxHops: GOSSIP_MAX_HOPS,
         maxRelaysPerOriginPerMinute: GOSSIP_MAX_RELAYS_PER_ORIGIN_PER_MINUTE,
         maxPayloadCache: GOSSIP_MAX_PAYLOAD_CACHE,
-        maxWireHashCache: PEER_MAX_WIRE_HASH_CACHE
+        maxWireHashCache: PEER_MAX_WIRE_HASH_CACHE,
+        // Time-window replay filter behind the FIFO cache (`functions/wireReplayFilter`);
+        // `false` turns it off, an object overrides its settings.
+        replayFilter: {}
       },
       // Mesh chat amplify controls (local `chat` event still fires when limited).
       chat: {
@@ -713,6 +738,10 @@ class Peer extends Service {
     /** Wire-envelope dedup (SHA-256 of full buffer); FIFO-capped via {@link Peer#_rememberWireHash}. */
     this.messages = {};
     this._wireHashOrder = [];
+    /** Wire hashes seen within a time window, so flooding the FIFO cache cannot reopen a replay. */
+    this._wireReplayFilter = (this.settings.gossip && this.settings.gossip.replayFilter === false)
+      ? null
+      : new WireReplayFilter((this.settings.gossip && this.settings.gossip.replayFilter) || {});
     /**
      * Logical first-writer-wins registrations (content-addressed keys).
      * Catches re-signed duplicates of CONTRACT_PUBLISH / DOCUMENT_PUBLISH / etc.
@@ -811,6 +840,7 @@ class Peer extends Service {
     }
     this.messages[hash] = true;
     this._wireHashOrder.push(hash);
+    if (this._wireReplayFilter) this._wireReplayFilter.add(hash);
   }
 
   /**
@@ -2388,7 +2418,7 @@ class Peer extends Service {
 
   /**
    * Sign and send `P2P_FLUSH_CHAIN` to all connected peers with registry score &gt; threshold.
-   * Body JSON: `{ snapshotBlockHash, network?, label? }`.
+   * Body `{ snapshotBlockHash, network?, label? }`, sent as `P2P_FLUSH_CHAIN` fields.
    *
    * **Receivers** (see `P2P_FLUSH_CHAIN` handler) require **both**:
    * 1. Sender pubkey in {@link Peer#settings.flushChainAuthorizedPubkeys} (non-empty allowlist), and
@@ -2400,9 +2430,8 @@ class Peer extends Service {
    * @returns {number} number of sockets written
    */
   sendFlushChainToTrustedPeers (object) {
-    const body = JSON.stringify(object && typeof object === 'object' ? object : {});
-    const msg = Message.fromVector(['P2P_FLUSH_CHAIN', body]).signWithKey(this.key);
-    const buf = msg.toBuffer();
+    const body = object && typeof object === 'object' && !Array.isArray(object) ? object : {};
+    const buf = Message.fromLegacyBody('P2P_FLUSH_CHAIN', body).signWithKey(this.key).toBuffer();
     const threshold = Number(this.settings.flushChainMinTrustedScore) || 800;
     let n = 0;
     for (const id in this.connections) {
@@ -2431,7 +2460,9 @@ class Peer extends Service {
       },
       object: {
         challenge: crypto.randomBytes(8).toString('hex'),
-        maxFrameBytes: this._localMaxFrameBytes()
+        maxFrameBytes: this._localMaxFrameBytes(),
+        // Rides in the layout's `extra`, so older decoders keep working.
+        fieldBodies: FIELD_BODIES_VERSION
       }
     };
 
@@ -2833,6 +2864,12 @@ class Peer extends Service {
       this._punishPeerForSessionKeyViolation(originName, 'claimed child key does not match signer', punishOpts);
       return false;
     }
+    // A Fabric id is the hash of its key: an offer may not claim another key's id.
+    const ownIds = ['02', '03'].map((parity) => new Bech32({ hrp: 'id', content: Hash256.digest(Buffer.from(`${parity}${claimedParent}`, 'hex')) }).toString());
+    if (!ownIds.includes(peerId)) {
+      this._punishPeerForSessionKeyViolation(originName, 'claimed id is not the parent key\'s id', punishOpts);
+      return false;
+    }
 
     const proofMsg = this._sessionKeyProofMessage(peerId, claimedChild, claimedParent);
     let ok = false;
@@ -2964,6 +3001,73 @@ class Peer extends Service {
    * @param {boolean} [options.peeledForward] true when delivered via {@link Peer#_handleP2PForward} peel
    * @returns {Peer} Instance of the Peer.
    */
+  /**
+   * Count an inbound deprecated opcode; warn on the first of each type and on
+   * every 100th after, so a misbehaving sender can't flood the log.
+   * @private
+   * @param {string} type
+   * @param {object|null} origin
+   */
+  _countDeprecatedWireType (type, origin) {
+    if (!this._deprecatedWireCounts) this._deprecatedWireCounts = {};
+    const n = (this._deprecatedWireCounts[type] || 0) + 1;
+    this._deprecatedWireCounts[type] = n;
+    if (n === 1 || n % 100 === 0) {
+      const from = origin && origin.name ? origin.name : 'unknown';
+      this.emit('warning', `[FABRIC:PEER] Deprecated wire type ${type} from ${from} (seen ${n}); ignored`);
+    }
+  }
+
+  /**
+   * Whether `message` is a JSON body of a type with a field layout
+   * (`Message.LEGACY_BODY_TYPES`), which the wire no longer accepts
+   * (docs/MESSAGE_BODY_MIGRATION.md Phase 5). Stored frames are read with
+   * `Message.tryParseLegacyBody`, which still accepts JSON.
+   * @private
+   * @param {Message} message
+   * @returns {boolean}
+   */
+  _isRefusedJsonBody (message) {
+    const name = Message.canonicalTypeName(message.type);
+    if (!name || !Message.LEGACY_BODY_TYPES.includes(name)) return false;
+    const body = message.raw && message.raw.data;
+    if (!body || !body.length) return false;
+    const parsed = Message.tryParseMessageBody(message);
+    return parsed.ok && parsed.encoding === 'json';
+  }
+
+  /**
+   * Count a refused JSON body; warn on the first of each type and every 100th.
+   * @private
+   * @param {string} type
+   * @param {object|null} origin
+   */
+  _countJsonBody (type, origin) {
+    if (!this._jsonBodyCounts) this._jsonBodyCounts = {};
+    const n = (this._jsonBodyCounts[type] || 0) + 1;
+    this._jsonBodyCounts[type] = n;
+    if (n === 1 || n % 100 === 0) {
+      const from = origin && origin.name ? origin.name : 'unknown';
+      this.emit('warning', `[FABRIC:PEER] Dropped JSON body of ${type} from ${from} (seen ${n}); send fields (Message.fromLegacyBody)`);
+    }
+  }
+
+  /**
+   * Refused JSON bodies of field-layout types since start, by wire name.
+   * @returns {Object<string, number>}
+   */
+  jsonBodyCounts () {
+    return Object.assign({}, this._jsonBodyCounts || {});
+  }
+
+  /**
+   * Inbound deprecated opcodes seen since start, by wire name.
+   * @returns {Object<string, number>}
+   */
+  deprecatedWireTypeCounts () {
+    return Object.assign({}, this._deprecatedWireCounts || {});
+  }
+
   _handleFabricMessage (buffer, origin = null, socket = null, options = null) {
     const opts = (options && typeof options === 'object') ? options : {};
     const originName = (origin && origin.name) ? origin.name : null;
@@ -2986,9 +3090,10 @@ class Peer extends Service {
     if (wire.length > maxWire) {
       this.emit('warning',
         `[FABRIC:PEER] Dropping oversized frame (${wire.length} > ${maxWire}) from ${originName || 'unknown'}`);
-      // Senders clamp to our advertised cap, and unannounced peers to the legacy 4096 bytes,
-      // so anything over both is a protocol violation (C fabricd: "oversize body").
-      if (wire.length > Math.max(maxWire, LEGACY_MAX_FRAME_BYTES) && delivery.allowTcpOriginSideEffects) {
+      // A frame over our own (possibly lowered) cap may be honest: the sender may not
+      // have our session cap yet and assumes MAX_FRAME_BYTES. Only a frame over the
+      // protocol maximum is a violation (C fabricd: "oversize body").
+      if (wire.length > MAX_FRAME_BYTES && delivery.allowTcpOriginSideEffects) {
         this._applyPeerMisbehavior(scoreOrigin, 'oversize-frame', {
           penalty: Number(ps.oversizeFramePenalty) || PEER_SCORE_OVERSIZE_FRAME_PENALTY,
           disconnect: delivery.hardDisconnect
@@ -3023,7 +3128,7 @@ class Peer extends Service {
     if (this.settings.debug) this.emit('debug', `Got Fabric message: ${message}`);
 
     // Have we seen this exact wire envelope before? (silent — no score change)
-    if (this.messages[hash]) {
+    if (this.messages[hash] || (this._wireReplayFilter && this._wireReplayFilter.has(hash))) {
       return this;
     }
 
@@ -3099,11 +3204,20 @@ class Peer extends Service {
       }
     }
 
+    if (this._isRefusedJsonBody(message)) {
+      this._countJsonBody(message.type, origin);
+      return this;
+    }
+
     if (this.settings.debug) this.emit('debug', `Message author: ${message.raw.signature.toString('hex')}`);
     if (this.settings.debug) this.emit('debug', `Message signature: ${message.raw.signature.toString('hex')}`);
 
     switch (message.type) {
       default:
+        if (Message.DEPRECATED_WIRE_TYPES.includes(message.type)) {
+          this._countDeprecatedWireType(message.type, origin);
+          break;
+        }
         this.emit('debug', `Unhandled message type: ${message.type}`);
         break;
       case 'P2P_MUSIG_START':
@@ -3165,8 +3279,8 @@ class Peer extends Service {
       case 'BitcoinBlock': {
         // Chain-tip gossip: relay so sparse meshes learn Bitcoin network tip.
         // Logical tip claim stops re-signed copies of the same tip from re-emitting / re-relaying.
-        const rawBb = messageDataToString(message.data);
-        const prBb = tryParseWireJsonBody(rawBb);
+        // JSON or field body (Message.tryParseLegacyBody reads both).
+        const prBb = Message.tryParseLegacyBody(message);
         if (prBb.ok && prBb.value && typeof prBb.value === 'object' && !Array.isArray(prBb.value)) {
           const claimBb = this._claimLogicalRegistrationOrPunish(
             message.type, prBb.value, signerPubkeyHex, scoreOrigin);
@@ -3177,7 +3291,12 @@ class Peer extends Service {
             break;
           }
         }
-        this.emit('bitcoinBlock', { message, origin, socket });
+        this.emit('bitcoinBlock', {
+          message,
+          origin,
+          socket,
+          object: prBb.ok && prBb.value && typeof prBb.value === 'object' ? prBb.value : null
+        });
         // Peel / RELAY unwrap: outer envelope already floods — never mesh-relay the inner tip.
         if (origin && origin.name && delivery.allowMeshRelay) {
           this.relayFrom(origin.name, message);
@@ -3188,8 +3307,7 @@ class Peer extends Service {
       case 'ChainSyncRequest':
         if (!origin || !origin.name) break;
         {
-          const raw = messageDataToString(message.data);
-          const pr = tryParseWireJsonBody(raw);
+          const pr = Message.tryParseLegacyBody(message);
           if (!pr.ok || pr.value === null || typeof pr.value !== 'object' || Array.isArray(pr.value)) {
             this.emit('warning', `[FABRIC:PEER] CHAIN_SYNC_REQUEST parse failed: ${pr.ok ? 'invalid body' : pr.error.message}`);
             break;
@@ -3227,10 +3345,9 @@ class Peer extends Service {
           }
           break;
         }
-        const rawFc = messageDataToString(message.data);
-        const prFc = tryParseWireJsonBody(rawFc);
+        const prFc = Message.tryParseLegacyBody(message);
         if (!prFc.ok) {
-          this.emit('warning', `[FABRIC:PEER] FLUSH_CHAIN JSON parse failed: ${prFc.error.message}`);
+          this.emit('warning', `[FABRIC:PEER] FLUSH_CHAIN parse failed: ${prFc.error.message}`);
           break;
         }
         const object = prFc.value;
@@ -3488,8 +3605,7 @@ class Peer extends Service {
         break;
       case 'CONTRACT_PROPOSAL':
       case 'ContractProposal': {
-        const rawCp = messageDataToString(message.data);
-        const prCp = tryParseWireJsonBody(rawCp);
+        const prCp = Message.tryParseLegacyBody(message);
         if (!prCp.ok || prCp.value === null || typeof prCp.value !== 'object' || Array.isArray(prCp.value)) {
           this.emit('warning', `[FABRIC:PEER] CONTRACT_PROPOSAL parse failed: ${prCp.ok ? 'invalid body' : prCp.error.message}`);
           break;
@@ -3544,12 +3660,33 @@ class Peer extends Service {
             this.emit('warning', '[FABRIC:PEER] Generic message body must be a JSON object');
             break;
           }
+          if (SEALED_DELIVERY_INNER_TYPES.has(bodyGm.type)) {
+            this.emit('warning', `[FABRIC:PEER] ${bodyGm.type} inside ${message.type} dropped: send it as its own field frame`);
+            break;
+          }
           this._handleGenericMessage(bodyGm, origin, socket, message, Object.assign({}, opts, {
             genericCarrier: true
           }));
         }
 
         break;
+      // Sealed document delivery: field frames whose legacy shape is the
+      // `{ type, object }` body the generic handlers already dispatch on.
+      case 'DOCUMENT_KEY_REVEAL':
+      case 'DOCUMENT_BLOB_QUOTE':
+      case 'DOCUMENT_BLOB_BATCH': {
+        const prSd = Message.tryParseLegacyBody(message);
+        if (!prSd.ok || !prSd.value || typeof prSd.value !== 'object') {
+          this.emit('warning', `[FABRIC:PEER] ${message.type} parse failed: ${prSd.ok ? 'invalid body' : prSd.error.message}`);
+          break;
+        }
+        const innerSd = SEALED_DELIVERY_INNER_TYPE_BY_WIRE[message.type];
+        const bodySd = prSd.value.object && typeof prSd.value.object === 'object'
+          ? Object.assign({}, prSd.value, { type: innerSd })
+          : { type: innerSd, object: prSd.value };
+        this._handleGenericMessage(bodySd, origin, socket, message, opts);
+        break;
+      }
       // Lightning AMP types (0x2000+). Channel ops stay local; announcements may relay.
       case 'LIGHTNING_WARNING':
       case 'LightningWarning':
@@ -3634,15 +3771,18 @@ class Peer extends Service {
       this.relayFrom(originName, wireMessage, socket);
       return true;
     }
-    const innerType = (payload && payload.type === 'INVENTORY_REQUEST')
+    // Only inventory reaches here without its original frame; it is rebuilt as
+    // fields. Anything else has no field layout to rebuild into, so it is not relayed.
+    const jsonType = payload && typeof payload.type === 'string' ? payload.type : '';
+    const innerType = isDocumentInventoryRequestType(jsonType)
       ? 'P2P_INVENTORY_REQUEST'
-      : (payload && payload.type === 'INVENTORY_RESPONSE')
-          ? 'P2P_INVENTORY_RESPONSE'
-          : 'P2P_BASE_MESSAGE';
-    const inner = (innerType === 'P2P_BASE_MESSAGE')
-      ? Message.fromVector([innerType, JSON.stringify(payload)])
-      : Message.fromLegacyBody(innerType,
-        (payload && payload.object && typeof payload.object === 'object' && !Array.isArray(payload.object)) ? payload.object : {});
+      : (isDocumentInventoryResponseType(jsonType) ? 'P2P_INVENTORY_RESPONSE' : null);
+    if (!innerType) {
+      this.emit('warning', `[FABRIC:PEER] Not relaying ${jsonType || 'untyped'} payload without its original frame`);
+      return false;
+    }
+    const inner = Message.fromLegacyBody(innerType,
+      (payload && payload.object && typeof payload.object === 'object' && !Array.isArray(payload.object)) ? payload.object : {});
     const innerBuffer = inner.signWithKey(this.key).toBuffer();
     return this._relayWirePayload(originName, innerBuffer, socket);
   }
@@ -3719,6 +3859,12 @@ class Peer extends Service {
 
     // Emit peer event
     this.emit('peer', this.peers[connAddress]);
+    this.emit('peer:session', {
+      address: connAddress,
+      id: peerId,
+      publicKey: signerPubkeyHex,
+      direction: 'inbound'
+    });
 
     // Send session open event
     const keyClaim = this._buildSessionKeyExchangeClaim(this.identity.id);
@@ -3735,7 +3881,8 @@ class Peer extends Service {
         initiator: message.actor.id,
         counterparty: this.identity.id,
         solution: message.object.challenge,
-        maxFrameBytes: this._localMaxFrameBytes()
+        maxFrameBytes: this._localMaxFrameBytes(),
+        fieldBodies: FIELD_BODIES_VERSION
       }
     };
 
@@ -3761,6 +3908,10 @@ class Peer extends Service {
       const sessionClaim = this._validateSessionKeyExchangeClaim(
         message, signerPubkeyHex, origin && origin.name, { peeledForward: opts.peeledForward === true });
       if (!sessionClaim) return this;
+      if (openPeerId !== sessionClaim.peerId) {
+        this._punishPeerForSessionKeyViolation(origin && origin.name, 'counterparty is not the signer\'s id', { peeledForward: opts.peeledForward === true });
+        return this;
+      }
     }
     // Hairpin: OPEN signed with our own key (SESSION_OFFER path should catch first).
     // Note: object.initiator === our id is normal when we dialed and they accepted.
@@ -3787,7 +3938,13 @@ class Peer extends Service {
     });
     this._addressToId[origin.name] = openPeerId;
     this._recordRemoteFrameCap(origin.name, message.object);
-    // Don't emit peer event here - it's already emitted in P2P_SESSION_OFFER
+    // `peer` stays offer-side only; `peer:session` fires on both sides of the handshake.
+    this.emit('peer:session', {
+      address: origin.name,
+      id: openPeerId,
+      publicKey: signerPubkeyHex,
+      direction: 'outbound'
+    });
     return this;
   }
 
@@ -3820,6 +3977,13 @@ class Peer extends Service {
     switch (msg.type) {
       default:
         this.emit('debug', `Unhandled Generic Message: ${msg.type}`);
+        // Point-to-point app bodies (never mesh-relayed here): the app decides whether to forward.
+        this.emit('generic', {
+          type: msg.type,
+          body: msg,
+          origin,
+          signer: signerPubkeyHex || null
+        });
         break;
       case 'SIDECHAIN_STATE_PATCH': {
         const body = msg.object || msg;
@@ -3966,7 +4130,8 @@ class Peer extends Service {
           this._relayGenericPayload(origin && origin.name, msg, socket, wireMessage);
         }
         break;
-      case 'DocumentContentKeyReveal': {
+      case 'DocumentContentKeyReveal':
+      case 'DOCUMENT_KEY_REVEAL': {
         const reveal = (msg && msg.object) ? msg.object : msg;
         // Fail closed before claim / reverse-relay: public paymentHashHex alone must
         // not burn the logical slot or launder junk toward the buyer.
@@ -3985,7 +4150,7 @@ class Peer extends Service {
               type: KEY_REVEAL_TYPE,
               object: Object.assign({}, reveal, { routeId: route.prevRouteId || reveal.routeId })
             };
-            const fwdMsg = Message.fromVector(['GenericMessage', JSON.stringify(fwdBody)]);
+            const fwdMsg = Message.fromLegacyBody('DOCUMENT_KEY_REVEAL', fwdBody);
             fwdMsg.signWithKey(this.key);
             this.connections[prev]._writeFabric(fwdMsg.toBuffer());
             this.emit('documentRelayReturn', {
@@ -4013,7 +4178,8 @@ class Peer extends Service {
         }
         break;
       }
-      case BLOB_QUOTE_TYPE: {
+      case BLOB_QUOTE_TYPE:
+      case 'DOCUMENT_BLOB_QUOTE': {
         const quote = (msg && msg.object) ? msg.object : msg;
         if (!isWellFormedBlobQuote(quote)) {
           this.emit('warning', '[FABRIC:PEER] DocumentBlobQuote rejected: malformed');
@@ -4025,10 +4191,10 @@ class Peer extends Service {
           if (prev && this.connections[prev] && this.connections[prev]._writeFabric &&
               !(origin && origin.name === prev)) {
             // Re-signed by this relay: the buyer's fraud evidence names the relay.
-            const fwdMsg = Message.fromVector(['GenericMessage', JSON.stringify({
+            const fwdMsg = Message.fromLegacyBody('DOCUMENT_BLOB_QUOTE', {
               type: BLOB_QUOTE_TYPE,
               object: Object.assign({}, quote, { routeId: route.prevRouteId || quote.routeId })
-            })]);
+            });
             fwdMsg.signWithKey(this.key);
             this.connections[prev]._writeFabric(fwdMsg.toBuffer());
             break;
@@ -4037,7 +4203,8 @@ class Peer extends Service {
         this._ingestSealedBlobQuote(quote, origin, wireMessage);
         break;
       }
-      case BLOB_BATCH_TYPE: {
+      case BLOB_BATCH_TYPE:
+      case 'DOCUMENT_BLOB_BATCH': {
         const batch = (msg && msg.object) ? msg.object : msg;
         if (!isWellFormedBlobBatch(batch)) {
           this.emit('warning', '[FABRIC:PEER] DocumentBlobBatch rejected: malformed');
@@ -4415,15 +4582,15 @@ class Peer extends Service {
 
   /**
    * Tie a NOISE pair to its TCP socket: a destroyed decrypt side (limit broken, handshake
-   * timeout, decrypt failure) destroys the socket. The remote frame cap starts at the
-   * legacy 4096 bytes until its session message advertises `maxFrameBytes`.
+   * timeout, decrypt failure) destroys the socket. The remote frame cap starts at
+   * {@link MAX_FRAME_BYTES}; a smaller `maxFrameBytes` in its session message lowers it.
    * @param {Object} noiseStream noise-protocol-stream duplex pair
    * @param {Object} socket
    * @returns {void}
    */
   _bindNoiseTransportToSocket (noiseStream, socket) {
     if (!noiseStream || !noiseStream.decrypt || !socket) return;
-    noiseStream._fabricRemoteMaxFrameBytes = LEGACY_MAX_FRAME_BYTES;
+    noiseStream._fabricRemoteMaxFrameBytes = MAX_FRAME_BYTES;
     noiseStream.decrypt.once('close', () => {
       if (!socket.destroyed && typeof socket.destroy === 'function') socket.destroy();
     });
@@ -4440,17 +4607,34 @@ class Peer extends Service {
   }
 
   /**
+   * Record whether a remote parses field bodies for every legacy-JSON opcode
+   * (`object.fieldBodies` in its session message). Absent = an older peer
+   * that parses `P2P_FLUSH_CHAIN` and the like as JSON only.
+   * @param {string} connAddress
+   * @param {Object} sessionObject Session message `object`
+   * @returns {boolean}
+   */
+  _recordRemoteFieldBodies (connAddress, sessionObject) {
+    const supported = Number(sessionObject && sessionObject.fieldBodies) >= FIELD_BODIES_VERSION;
+    const socket = connAddress && this.connections ? this.connections[connAddress] : null;
+    if (socket) socket._fabricRemoteFieldBodies = supported;
+    return supported;
+  }
+
+  /**
    * Record the frame cap a remote advertised in `P2P_SESSION_OFFER` / `P2P_SESSION_OPEN`
-   * (`object.maxFrameBytes`). Absent or invalid = legacy 4096-byte peer.
+   * (`object.maxFrameBytes`). Absent or invalid = {@link MAX_FRAME_BYTES}; there is no
+   * smaller default for peers that don't advertise one.
    * @param {string} connAddress
    * @param {Object} sessionObject Session message `object`
    * @returns {number} Cap now used for frames sent to that connection
    */
   _recordRemoteFrameCap (connAddress, sessionObject) {
+    this._recordRemoteFieldBodies(connAddress, sessionObject);
     const advertised = Number(sessionObject && sessionObject.maxFrameBytes);
     const cap = (Number.isInteger(advertised) && advertised > HEADER_SIZE)
-      ? Math.min(advertised, HEADER_SIZE + MAX_MESSAGE_SIZE)
-      : LEGACY_MAX_FRAME_BYTES;
+      ? Math.min(advertised, MAX_FRAME_BYTES)
+      : MAX_FRAME_BYTES;
     const socket = connAddress && this.connections ? this.connections[connAddress] : null;
     if (!socket) return cap;
     socket._fabricRemoteMaxFrameBytes = cap;
@@ -5173,7 +5357,8 @@ class Peer extends Service {
    * @param {string} opts.documentId
    * @param {number} opts.start
    * @param {number} opts.end
-   * @param {number} [opts.amountSats]
+   * @param {number} [opts.amountSats] Ask above the listed price (rate × blobs). It never lowers it: a lower, non-finite, or negative amount quotes the listed price.
+   * @param {number} [opts.maxSats] The buyer's ceiling: a price above it is refused, and no quote is kept.
    * @returns {{ ok: boolean, batch: (Object|undefined), error: (string|undefined) }}
    */
   quoteSealedBatch (opts = {}) {
@@ -5190,7 +5375,12 @@ class Peer extends Service {
       if (!leaf || !keyHex) return { ok: false, error: `unknown blob index ${i}` };
       blobs.push({ blobIndex: i, blobHashHex: leaf.blobHashHex, keyHex });
     }
-    const price = opts.amountSats != null ? Math.floor(Number(opts.amountSats)) : this._sealedBlobPriceSats(documentId) * blobs.length;
+    const listed = this._sealedBlobPriceSats(documentId) * blobs.length;
+    if (!Number.isSafeInteger(listed) || listed < 0) return { ok: false, error: 'bad listed price' };
+    const asked = opts.amountSats != null ? Math.floor(Number(opts.amountSats)) : NaN;
+    const price = Number.isSafeInteger(asked) && asked > listed ? asked : listed;
+    const ceiling = opts.maxSats != null ? Number(opts.maxSats) : NaN;
+    if (Number.isFinite(ceiling) && price > ceiling) return { ok: false, error: 'price above maxSats' };
     const { batch, secretHex } = createBlobBatch({
       documentId,
       merkleRootHex: doc.merkleRootHex,
@@ -5406,10 +5596,11 @@ class Peer extends Service {
         fileObj.iv = sealedMeta.encryption && sealedMeta.encryption.iv;
         fileObj.scheme = sealedMeta.encryption && sealedMeta.encryption.scheme;
       }
-      const reply = Message.fromVector(['P2P_FILE_SEND', JSON.stringify(fileObj)]);
+      const reply = Message.fromLegacyBody('P2P_FILE_SEND', fileObj);
       reply.signWithKey(this.key);
-      // `false` = refused (closed stream, or over a legacy peer's frame cap).
-      if (conn._writeFabric(reply.toBuffer()) !== false) wrote += 1;
+      const buf = reply.toBuffer();
+      if (this._refuseDocumentFrame(conn, buf, documentId, peerAddress)) break;
+      if (conn._writeFabric(buf) !== false) wrote += 1;
     }
     if (wrote > 0 && opts.revealKey && sealedMeta && sealedMeta.keyHex) {
       this._sendDocumentContentKeyReveal(documentId, peerAddress, {
@@ -5453,7 +5644,7 @@ class Peer extends Service {
       return false;
     }
     if (opts.routeId) body.object.routeId = String(opts.routeId);
-    const msg = Message.fromVector(['GenericMessage', JSON.stringify(body)]);
+    const msg = Message.fromLegacyBody('DOCUMENT_KEY_REVEAL', body);
     msg.signWithKey(this.key);
     if (conn._writeFabric(msg.toBuffer()) === false) return false;
     this.emit('documentContentKeyRevealed', {
@@ -5461,6 +5652,26 @@ class Peer extends Service {
       peerAddress,
       paymentHashHex: sealedMeta.paymentHashHex
     });
+    return true;
+  }
+
+  /**
+   * Refuse a document blob frame over the cap the remote advertised, with one
+   * `documentDeliveryRefused` event and warning (the document's blobs are never
+   * re-split for a smaller cap). Callers stop sending that document to that
+   * peer on refusal: its other full-size blobs would be refused the same way.
+   * @private
+   * @param {Object} conn Connection with `_writeFabric`
+   * @param {Buffer} buf Signed frame
+   * @param {string} documentId
+   * @param {string} peerAddress
+   * @returns {boolean} whether the frame was refused
+   */
+  _refuseDocumentFrame (conn, buf, documentId, peerAddress) {
+    const remoteCap = conn._fabricRemoteMaxFrameBytes;
+    if (!Number.isInteger(remoteCap) || buf.length <= remoteCap) return false;
+    this.emit('documentDeliveryRefused', { documentId, peerAddress, frameBytes: buf.length, remoteCap });
+    this.emit('warning', `[FABRIC:PEER] Not delivering ${documentId} to ${peerAddress}: ${buf.length}-byte blob frame over its frame cap ${remoteCap}`);
     return true;
   }
 
@@ -5486,9 +5697,11 @@ class Peer extends Service {
     const sent = [];
     for (const fileObj of frames) {
       if (opts.routeId) fileObj.routeId = String(opts.routeId);
-      const reply = Message.fromVector(['P2P_FILE_SEND', JSON.stringify(fileObj)]);
+      const reply = Message.fromLegacyBody('P2P_FILE_SEND', fileObj);
       reply.signWithKey(this.key);
-      if (conn._writeFabric(reply.toBuffer()) !== false) sent.push(fileObj.blobIndex);
+      const buf = reply.toBuffer();
+      if (this._refuseDocumentFrame(conn, buf, documentId, peerAddress)) break;
+      if (conn._writeFabric(buf) !== false) sent.push(fileObj.blobIndex);
     }
     if (opts.revealKey) {
       for (const blobIndex of sent) this._sendSealedBlobKeyReveal(doc, documentId, peerAddress, blobIndex, opts);
@@ -5517,7 +5730,7 @@ class Peer extends Service {
       return false;
     }
     if (opts.routeId) body.object.routeId = String(opts.routeId);
-    const msg = Message.fromVector(['GenericMessage', JSON.stringify(body)]);
+    const msg = Message.fromLegacyBody('DOCUMENT_KEY_REVEAL', body);
     msg.signWithKey(this.key);
     if (conn._writeFabric(msg.toBuffer()) === false) return false;
     this.emit('documentContentKeyRevealed', {
@@ -5822,7 +6035,10 @@ class Peer extends Service {
     return candidates.length === 1 ? candidates[0] : null;
   }
 
-  /** @private bytes held by one pending sealed row (ciphertext + retained frames) */
+  /**
+   * bytes held by one pending sealed row (ciphertext + retained frames)
+   * @private
+   */
   static _sealedRowBytes (row) {
     let total = 0;
     for (const p of row.parts.values()) {
@@ -5833,7 +6049,10 @@ class Peer extends Service {
     return total;
   }
 
-  /** @private global byte budget for `pendingSealedBlobs` */
+  /**
+   * global byte budget for `pendingSealedBlobs`
+   * @private
+   */
   _pendingSealedBudget () {
     const budgetSetting = Number(this.settings.maxPendingSealedBytes);
     return Number.isFinite(budgetSetting) && budgetSetting > 0 ? budgetSetting : PEER_MAX_PENDING_SEALED_BYTES;
@@ -6021,7 +6240,10 @@ class Peer extends Service {
     }
   }
 
-  /** @private `convergence` claimed by a frame: 'public' | 'scoped' | null */
+  /**
+   * `convergence` claimed by a frame: 'public' | 'scoped' | null
+   * @private
+   */
   static _frameConvergence (obj) {
     const c = obj && obj.convergence;
     return c === 'public' || c === 'scoped' ? c : null;
@@ -6859,7 +7081,9 @@ class Peer extends Service {
     }
     if (row.parsed && row.parsed.quote === true && this._getSealedBlobDocument(row.documentId)) {
       if (row.parsed.batchEnd != null) {
-        this._sendSealedBlobBatch(row.documentId, Number(row.parsed.blobIndex), Number(row.parsed.batchEnd), row.peerAddress, { routeId: row.parsed.routeId, amountSats: row.parsed.maxSats });
+        // A refused batch quote (listed total above the buyer's maxSats) sends nothing; keep the request.
+        const quoted = this._sendSealedBlobBatch(row.documentId, Number(row.parsed.blobIndex), Number(row.parsed.batchEnd), row.peerAddress, { routeId: row.parsed.routeId, amountSats: row.parsed.maxSats, maxSats: row.parsed.maxSats });
+        if (!quoted) return { ok: false, error: 'batch quote refused (listed price above maxSats)' };
       } else {
         this._sendSealedBlobQuote(row.documentId, Number(row.parsed.blobIndex), row.peerAddress, { routeId: row.parsed.routeId });
       }
@@ -6986,7 +7210,7 @@ class Peer extends Service {
     }
     const object = Object.assign({}, out.quote);
     if (opts.routeId) object.routeId = String(opts.routeId);
-    const msg = Message.fromVector(['GenericMessage', JSON.stringify({ type: BLOB_QUOTE_TYPE, object })]);
+    const msg = Message.fromLegacyBody('DOCUMENT_BLOB_QUOTE', { type: BLOB_QUOTE_TYPE, object });
     msg.signWithKey(this.key);
     conn._writeFabric(msg.toBuffer());
     this.emit('documentBlobQuoted', { documentId, blobIndex, peerAddress, paymentHashHex: out.quote.paymentHashHex, amountSats: out.quote.amountSats });
@@ -7001,14 +7225,14 @@ class Peer extends Service {
   _sendSealedBlobBatch (documentId, start, end, peerAddress, opts = {}) {
     const conn = peerAddress && this.connections[peerAddress];
     if (!conn || !conn._writeFabric) return null;
-    const out = this.quoteSealedBatch({ documentId, start, end, amountSats: opts.amountSats });
+    const out = this.quoteSealedBatch({ documentId, start, end, amountSats: opts.amountSats, maxSats: opts.maxSats });
     if (!out.ok) {
       this.emit('warning', `[FABRIC:PEER] blob batch failed for ${documentId}#${start}-${end}: ${out.error}`);
       return null;
     }
     const object = Object.assign({}, out.batch);
     if (opts.routeId) object.routeId = String(opts.routeId);
-    const msg = Message.fromVector(['GenericMessage', JSON.stringify({ type: BLOB_BATCH_TYPE, object })]);
+    const msg = Message.fromLegacyBody('DOCUMENT_BLOB_BATCH', { type: BLOB_BATCH_TYPE, object });
     msg.signWithKey(this.key);
     conn._writeFabric(msg.toBuffer());
     this.emit('documentBlobBatch', { documentId, start, end, peerAddress, paymentHashHex: out.batch.paymentHashHex });
@@ -7570,7 +7794,7 @@ class Peer extends Service {
     }
     if (parsed.quote === true && this._getSealedBlobDocument(docId)) {
       if (parsed.batchEnd != null) {
-        this._sendSealedBlobBatch(docId, Number(parsed.blobIndex), Number(parsed.batchEnd), origin.name, { routeId: parsed.routeId, amountSats: parsed.maxSats });
+        this._sendSealedBlobBatch(docId, Number(parsed.blobIndex), Number(parsed.batchEnd), origin.name, { routeId: parsed.routeId, amountSats: parsed.maxSats, maxSats: parsed.maxSats });
       } else {
         this._sendSealedBlobQuote(docId, Number(parsed.blobIndex), origin.name, { routeId: parsed.routeId });
       }
@@ -7710,7 +7934,7 @@ class Peer extends Service {
       routeId: route.prevRouteId || routeId,
       relayedBy: this.id || null
     });
-    const msg = Message.fromVector(['P2P_FILE_SEND', JSON.stringify(fwd)]);
+    const msg = Message.fromLegacyBody('P2P_FILE_SEND', fwd);
     msg.signWithKey(this.key);
     this.connections[prev]._writeFabric(msg.toBuffer());
     this.emit('documentRelayReturn', {
@@ -8575,5 +8799,8 @@ class Swarm extends Actor {
 
 module.exports = Peer;
 module.exports.Swarm = Swarm;
-/** @private Test/debug helper — never log private material. */
+/**
+ * Test/debug helper — never log private material.
+ * @private
+ */
 Peer.debugDerivedPublicSummary = peerDebugDerivedPublicSummary;

@@ -194,31 +194,31 @@ describe('@fabric/core gossip-relay Peer (mocked mesh)', function () {
 
     cases.push(Message.fromVector(['P2P_CHAT_MESSAGE', 'shoutbox']).signWithKey(author));
     cases.push(Message.fromVector(['P2P_PEER_ALIAS', 'Neo']).signWithKey(author));
-    cases.push(Message.fromVector(['P2P_PEER_GOSSIP', JSON.stringify({
+    cases.push(Message.fromLegacyBody('P2P_PEER_GOSSIP', {
       host: '198.51.100.9',
       port: 7777,
       gossipHop: 5,
       nonce: 'g-relay'
-    })]).signWithKey(author));
-    cases.push(Message.fromVector(['P2P_PEERING_OFFER', JSON.stringify({
+    }).signWithKey(author));
+    cases.push(Message.fromLegacyBody('P2P_PEERING_OFFER', {
       host: '198.51.100.10',
       port: 7777,
       peeringHop: 5,
       transport: 'fabric'
-    })]).signWithKey(author));
+    }).signWithKey(author));
 
     const ownerPub = String(author.pubkey).toLowerCase();
-    cases.push(Message.fromVector(['CONTRACT_PUBLISH', JSON.stringify({
+    cases.push(Message.fromLegacyBody('CONTRACT_PUBLISH', {
       name: 'GossipRelayContract',
       version: 1,
       parties: [ownerPub],
       state: {}
-    })]).signWithKey(author));
-    cases.push(Message.fromVector(['CONTRACT_MESSAGE', JSON.stringify({
+    }).signWithKey(author));
+    cases.push(Message.fromLegacyBody('CONTRACT_MESSAGE', {
       contract: 'ns-relay-1',
       type: 'GroupChat',
       ops: []
-    })]).signWithKey(author));
+    }).signWithKey(author));
 
     const leaf = Message.fromVector(['P2P_CHAT_MESSAGE', 'proposal-leaf']).signWithKey(author);
     const proposal = buildContractProposalPayload({
@@ -226,16 +226,16 @@ describe('@fabric/core gossip-relay Peer (mocked mesh)', function () {
       messages: [leaf],
       statePatch: []
     });
-    cases.push(Message.fromVector(['CONTRACT_PROPOSAL', JSON.stringify(proposal)]).signWithKey(author));
+    cases.push(Message.fromLegacyBody('CONTRACT_PROPOSAL', proposal).signWithKey(author));
 
-    cases.push(Message.fromVector(['BITCOIN_BLOCK', JSON.stringify({
+    cases.push(Message.fromLegacyBody('BITCOIN_BLOCK', {
       hash: 'ab'.repeat(32),
       height: 100
-    })]).signWithKey(author));
-    cases.push(Message.fromVector(['DOCUMENT_REQUEST', JSON.stringify({
+    }).signWithKey(author));
+    cases.push(Message.fromLegacyBody('DOCUMENT_REQUEST', {
       document: 'missing-doc',
       id: 'missing-doc'
-    })]).signWithKey(author));
+    }).signWithKey(author));
 
     const inner = Message.fromVector(['P2P_CHAT_MESSAGE', 'inside-relay']).signWithKey(author);
     cases.push(Message.fromVector(['P2P_RELAY', inner.toBuffer()]).signWithKey(author));
@@ -255,12 +255,12 @@ describe('@fabric/core gossip-relay Peer (mocked mesh)', function () {
     const author = new Key();
     const origin = '127.0.0.1:9100';
     const directed = [
-      Message.fromVector(['P2P_PING', JSON.stringify({ created: new Date().toISOString() })]).signWithKey(author),
-      Message.fromVector(['P2P_SESSION_OFFER', JSON.stringify({
+      Message.fromLegacyBody('P2P_PING', { created: new Date().toISOString() }).signWithKey(author),
+      Message.fromLegacyBody('P2P_SESSION_OFFER', {
         type: 'P2P_SESSION_OFFER',
         actor: { id: 'x' },
         object: { challenge: 'c' }
-      })]).signWithKey(author),
+      }).signWithKey(author),
       Message.fromVector(['P2P_FILE_SEND', JSON.stringify({
         documentId: 'blob',
         chunk: 0,
@@ -306,7 +306,7 @@ describe('@fabric/core gossip-relay Peer (mocked mesh)', function () {
       parties: [ownerPub],
       state: { v: 1 }
     };
-    const wire = Message.fromVector(['CONTRACT_PUBLISH', JSON.stringify(definition)])
+    const wire = Message.fromLegacyBody('CONTRACT_PUBLISH', definition)
       .signWithKey(author)
       .toBuffer();
     let publishes = 0;

@@ -165,6 +165,27 @@ describe('Peer P2P_FLUSH_CHAIN', function () {
     assert.strictEqual(writes[0].id, '127.0.0.1:2');
   });
 
+  it('sendFlushChainToTrustedPeers sends fields to every trusted peer, advertised or not', function () {
+    const sent = {};
+    const peer = createPeer();
+    peers.push(peer);
+    for (const port of [3, 4]) {
+      peer.connections[`127.0.0.1:${port}`] = { _writeFabric: (buf) => { sent[port] = Message.fromBuffer(buf); } };
+      peer._state.peers[`pk_${port}`] = { id: `pk_${port}`, address: `127.0.0.1:${port}`, score: 900 };
+      peer._addressToId[`127.0.0.1:${port}`] = `pk_${port}`;
+    }
+    assert.strictEqual(peer._recordRemoteFieldBodies('127.0.0.1:3', { maxFrameBytes: 9000, fieldBodies: 1 }), true);
+    assert.strictEqual(peer._recordRemoteFieldBodies('127.0.0.1:4', { maxFrameBytes: 9000 }), false);
+    const body = { snapshotBlockHash: '0'.repeat(64), network: 'playnet' };
+    assert.strictEqual(peer.sendFlushChainToTrustedPeers(body), 2);
+    // Peer sends no JSON bodies: a peer without `fieldBodies` gets the same field frame.
+    for (const port of [3, 4]) {
+      const parsed = Message.tryParseLegacyBody(sent[port]);
+      assert.strictEqual(parsed.encoding, 'fields', String(port));
+      assert.strictEqual(parsed.value.snapshotBlockHash, body.snapshotBlockHash);
+    }
+  });
+
   it('relayFromTrustedPeers skips low-score peers and origin', function () {
     const writes = [];
     const peer = createPeer();
@@ -207,7 +228,7 @@ describe('Peer P2P_FLUSH_CHAIN', function () {
     let relayedFrom = null;
     peer.on('bitcoinBlock', (ev) => events.push(ev));
     peer.relayFrom = function (originName) { relayedFrom = originName; };
-    const msg = Message.fromVector(['BITCOIN_BLOCK', JSON.stringify({ tip: 'abc' })]);
+    const msg = Message.fromLegacyBody('BITCOIN_BLOCK', { tip: 'abc' });
     msg.signWithKey(peer.key);
     peer._handleFabricMessage(msg.toBuffer(), { name: '127.0.0.1:9' }, null);
     assert.strictEqual(events.length, 1);
@@ -219,7 +240,7 @@ describe('Peer P2P_FLUSH_CHAIN', function () {
     peers.push(peer);
     let seen = null;
     peer.once('chainSyncRequest', (ev) => { seen = ev; });
-    const msg = Message.fromVector(['P2P_CHAIN_SYNC_REQUEST', JSON.stringify({ tip: '1234' })]);
+    const msg = Message.fromLegacyBody('P2P_CHAIN_SYNC_REQUEST', { tip: '1234' });
     msg.signWithKey(peer.key);
     peer._handleFabricMessage(msg.toBuffer(), { name: '127.0.0.1:10' }, null);
     assert.ok(seen);
@@ -260,7 +281,7 @@ describe('Peer P2P_FLUSH_CHAIN', function () {
     peers.push(peer);
     const warns = [];
     peer.on('warning', (w) => warns.push(String(w)));
-    const msg = Message.fromVector(['P2P_FLUSH_CHAIN', JSON.stringify({ snapshotBlockHash: 'a'.repeat(64) })]);
+    const msg = Message.fromLegacyBody('P2P_FLUSH_CHAIN', { snapshotBlockHash: 'a'.repeat(64) });
     msg.signWithKey(peer.key);
     peer._handleFabricMessage(msg.toBuffer(), { name: '127.0.0.1:11' }, null);
     assert.ok(warns.some((w) => w.includes('flushChainAuthorizedPubkeys is empty')));
@@ -274,7 +295,7 @@ describe('Peer P2P_FLUSH_CHAIN', function () {
     peer.peers['127.0.0.1:empty'] = { publicKey: peer.key.pubkey };
     peer._state.peers = { x: { id: 'x', address: '127.0.0.1:empty', score: 900 } };
     peer._addressToId['127.0.0.1:empty'] = 'x';
-    const msg = Message.fromVector(['P2P_FLUSH_CHAIN', JSON.stringify({ snapshotBlockHash: 'a'.repeat(64) })]);
+    const msg = Message.fromLegacyBody('P2P_FLUSH_CHAIN', { snapshotBlockHash: 'a'.repeat(64) });
     msg.signWithKey(peer.key);
     peer._handleFabricMessage(msg.toBuffer(), { name: '127.0.0.1:empty' }, null);
     assert.ok(warns.some((w) => w.includes('flushChainAuthorizedPubkeys is empty')));
@@ -291,7 +312,7 @@ describe('Peer P2P_FLUSH_CHAIN', function () {
     peer.peers['127.0.0.1:na'] = { publicKey: peer.key.pubkey };
     peer._state.peers = { x: { id: 'x', address: '127.0.0.1:na', score: 900 } };
     peer._addressToId['127.0.0.1:na'] = 'x';
-    const msg = Message.fromVector(['P2P_FLUSH_CHAIN', JSON.stringify({ snapshotBlockHash: 'a'.repeat(64) })]);
+    const msg = Message.fromLegacyBody('P2P_FLUSH_CHAIN', { snapshotBlockHash: 'a'.repeat(64) });
     msg.signWithKey(peer.key);
     peer._handleFabricMessage(msg.toBuffer(), { name: '127.0.0.1:na' }, null);
     assert.ok(warns.some((w) => w.includes('not in flushChainAuthorizedPubkeys')));
@@ -311,7 +332,7 @@ describe('Peer P2P_FLUSH_CHAIN', function () {
     };
     peer._addressToId['127.0.0.1:12'] = 'good';
 
-    const m1 = Message.fromVector(['P2P_FLUSH_CHAIN', JSON.stringify({ snapshotBlockHash: 'a'.repeat(64) })]);
+    const m1 = Message.fromLegacyBody('P2P_FLUSH_CHAIN', { snapshotBlockHash: 'a'.repeat(64) });
     m1.signWithKey(peer.key);
     peer._handleFabricMessage(m1.toBuffer(), { name: '127.0.0.1:12' }, null);
     assert.ok(debugs.some((d) => d.includes('sender score')));
@@ -321,9 +342,9 @@ describe('Peer P2P_FLUSH_CHAIN', function () {
     const m2 = Message.fromVector(['P2P_FLUSH_CHAIN', '{not-json']);
     m2.signWithKey(peer.key);
     peer._handleFabricMessage(m2.toBuffer(), { name: '127.0.0.1:12' }, null);
-    assert.ok(warns.some((w) => w.includes('JSON parse failed')));
+    assert.ok(warns.some((w) => w.includes('FLUSH_CHAIN parse failed')));
 
-    const m3 = Message.fromVector(['P2P_FLUSH_CHAIN', JSON.stringify({ snapshotBlockHash: 'bad' })]);
+    const m3 = Message.fromLegacyBody('P2P_FLUSH_CHAIN', { snapshotBlockHash: 'bad' });
     m3.signWithKey(peer.key);
     peer._handleFabricMessage(m3.toBuffer(), { name: '127.0.0.1:12' }, null);
     assert.ok(warns.some((w) => w.includes('invalid snapshotBlockHash')));
@@ -340,7 +361,7 @@ describe('Peer P2P_FLUSH_CHAIN', function () {
     peer._addressToId['127.0.0.1:14'] = 't2';
     const events = [];
     peer.on('flushChain', (ev) => events.push(ev));
-    const msg = Message.fromVector(['FlushChain', JSON.stringify({ snapshotBlockHash: 'c'.repeat(64) })]);
+    const msg = Message.fromLegacyBody('FlushChain', { snapshotBlockHash: 'c'.repeat(64) });
     msg.signWithKey(peer.key);
     peer._handleFabricMessage(msg.toBuffer(), { name: '127.0.0.1:14' }, null);
     assert.strictEqual(events.length, 1);
@@ -362,7 +383,7 @@ describe('Peer P2P_FLUSH_CHAIN', function () {
     peer.relayFromTrustedPeers = function (origin, _message, threshold) {
       relayed = { origin, threshold };
     };
-    const msg = Message.fromVector(['P2P_FLUSH_CHAIN', JSON.stringify({ snapshotBlockHash: 'B'.repeat(64), network: 'regtest' })]);
+    const msg = Message.fromLegacyBody('P2P_FLUSH_CHAIN', { snapshotBlockHash: 'B'.repeat(64), network: 'regtest' });
     msg.signWithKey(peer.key);
     peer._handleFabricMessage(msg.toBuffer(), { name: '127.0.0.1:13' }, null);
     assert.strictEqual(events.length, 1);
@@ -380,7 +401,7 @@ describe('Peer P2P_FLUSH_CHAIN', function () {
     };
     const events = [];
     peer.on('flushChain', (ev) => events.push(ev));
-    const msg = Message.fromVector(['P2P_FLUSH_CHAIN', JSON.stringify({ snapshotBlockHash: 'd'.repeat(64) })]);
+    const msg = Message.fromLegacyBody('P2P_FLUSH_CHAIN', { snapshotBlockHash: 'd'.repeat(64) });
     msg.signWithKey(peer.key);
     peer._handleFabricMessage(msg.toBuffer(), { name: '127.0.0.1:15' }, null);
     assert.strictEqual(events.length, 1);
@@ -407,7 +428,7 @@ describe('Peer P2P_FLUSH_CHAIN', function () {
     peer.on('flushChain', (ev) => events.push(ev));
     peer.on('debug', (d) => debugs.push(String(d)));
 
-    const msg = Message.fromVector(['P2P_FLUSH_CHAIN', JSON.stringify({ snapshotBlockHash: 'e'.repeat(64) })]);
+    const msg = Message.fromLegacyBody('P2P_FLUSH_CHAIN', { snapshotBlockHash: 'e'.repeat(64) });
     msg.signWithKey(peer.key);
     peer._handleFabricMessage(msg.toBuffer(), { name: connAddress }, null);
 

@@ -111,7 +111,10 @@ function xOnlyKey (v) {
   return /^[0-9a-f]{64}$/.test(s) ? s : null;
 }
 
-/** @private non-negative safe integer, else 0 */
+/**
+ * non-negative safe integer, else 0
+ * @private
+ */
 function count (v) {
   const n = Number(v);
   return Number.isSafeInteger(n) && n > 0 ? n : 0;
@@ -129,25 +132,37 @@ function priceOf (v) {
   return Number.isFinite(n) && n >= 0 && n <= Number.MAX_SAFE_INTEGER ? Math.floor(n) : NaN;
 }
 
-/** @private unix seconds, from `now` (seconds) or the clock */
+/**
+ * unix seconds, from `now` (seconds) or the clock
+ * @private
+ */
 function nowSeconds (now) {
   return now != null && Number.isFinite(Number(now)) ? Math.floor(Number(now)) : Math.floor(Date.now() / 1000);
 }
 
-/** @private a decoded u64 as a safe integer, else null */
+/**
+ * a decoded u64 as a safe integer, else null
+ * @private
+ */
 function safeInteger (v) {
   if (typeof v === 'bigint') return v <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(v) : null;
   const n = Number(v);
   return Number.isSafeInteger(n) && n >= 0 ? n : null;
 }
 
-/** @private a decoded bytes32 as hex, or null when all zero (an open selector) */
+/**
+ * a decoded bytes32 as hex, or null when all zero (an open selector)
+ * @private
+ */
 function selectorHex (buf) {
   if (!Buffer.isBuffer(buf) || buf.length !== 32 || buf.equals(Buffer.alloc(32))) return null;
   return buf.toString('hex');
 }
 
-/** @private a Message from a Message or raw frame, else null */
+/**
+ * a Message from a Message or raw frame, else null
+ * @private
+ */
 function asMessage (message) {
   if (message instanceof Message) return message;
   if (Buffer.isBuffer(message) || message instanceof Uint8Array) {
@@ -156,20 +171,29 @@ function asMessage (message) {
   return null;
 }
 
-/** @private a wire document id: 1..MAX_DOCUMENT_ID_LENGTH characters after trim */
+/**
+ * a wire document id: 1..MAX_DOCUMENT_ID_LENGTH characters after trim
+ * @private
+ */
 function documentIdOf (v) {
   const s = typeof v === 'string' ? v.trim() : '';
   return s.length > 0 && s.length <= MAX_DOCUMENT_ID_LENGTH ? s : null;
 }
 
-/** @private an advertised blob total in [1, MAX_DOCUMENT_BLOBS], else null */
+/**
+ * an advertised blob total in [1, MAX_DOCUMENT_BLOBS], else null
+ * @private
+ */
 function blobTotalOf (v) {
   if (v == null) return null;
   const n = Number(v);
   return Number.isSafeInteger(n) && n >= 1 && n <= MAX_DOCUMENT_BLOBS ? n : null;
 }
 
-/** @private a ranking input clamped to [0, MAX_SAFE_INTEGER] (NaN is 0) */
+/**
+ * a ranking input clamped to [0, MAX_SAFE_INTEGER] (NaN is 0)
+ * @private
+ */
 function rankInput (v) {
   const n = Number(v);
   if (Number.isNaN(n) || n <= 0) return 0;
@@ -208,13 +232,25 @@ class DocumentBook extends Book {
       nodeId: null,
       verifyOfferLeaves: null
     }, settings));
-    /** @type {Map<string, object>} sellerId → provider telemetry */
+    /**
+     * sellerId → provider telemetry
+     * @type {Map<string, object>}
+     */
     this._providers = new Map();
-    /** @type {Map<string, object>} x-only key → `{ penalties, lastPenaltyKind }` (never cleared) */
+    /**
+     * x-only key → `{ penalties, lastPenaltyKind }` (never cleared)
+     * @type {Map<string, object>}
+     */
     this._keyPenalties = new Map();
-    /** @type {Map<string, Set<string>>} sellerId → x-only AMP signer keys seen on its offers */
+    /**
+     * sellerId → x-only AMP signer keys seen on its offers
+     * @type {Map<string, Set<string>>}
+     */
     this._sellerKeys = new Map();
-    /** @type {Set<string>} fraud-proof evidence ids already counted */
+    /**
+     * fraud-proof evidence ids already counted
+     * @type {Set<string>}
+     */
     this._evidence = new Set();
   }
 
@@ -1173,6 +1209,9 @@ class DocumentBook extends Book {
    * @param {number} [opts.blobIndex]
    * @param {number} [opts.maxSats]
    * @param {number} [opts.minPaidSats] drop paid offers below this (free offers stay)
+   * @param {boolean} [opts.paidSealedOnly] `true`: drop every paid unsealed
+   *   offer, even when no sealed offer is left. Unset: drop paid unsealed
+   *   offers only while a sealed offer remains after the other filters.
    * @param {string[]} [opts.excludeSellers]
    * @param {string} [opts.merkleRootHex] only offers for this tree root
    * @param {Object} [opts.weights]
@@ -1196,8 +1235,9 @@ class DocumentBook extends Book {
    * @param {boolean} [opts.singleKey] legacy whole-document key: lock one seller
    * @param {number} [opts.maxSats] per-blob ceiling
    * @param {number} [opts.minPaidSats] drop paid offers below this (free offers stay)
-   * @param {boolean} [opts.paidSealedOnly] drop every paid unsealed offer (paid
-   *   unsealed offers always go while a sealed one is listed)
+   * @param {boolean} [opts.paidSealedOnly] `true`: drop every paid unsealed
+   *   offer, even when no sealed offer is left. Unset: drop paid unsealed
+   *   offers only while a sealed offer remains after the other filters.
    * @param {string[]} [opts.excludeSellers]
    * @param {string} [opts.merkleRootHex] only offers for this tree root; when
    *   omitted the plan still stays on **one** root (the first pick's), so

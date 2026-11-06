@@ -5,7 +5,7 @@
  * their canonical leaf hashes, optional parent chain root, RFC 6902 `statePatch`, and
  * optional PSBT reference(s) for on-chain legs (see hub `psbtFabric.js`).
  *
- * Wire type: `Message.fromVector(['ContractProposal', JSON.stringify(payload)])` → opcode {@link CONTRACT_PROPOSAL_TYPE}.
+ * Wire type: `Message.fromLegacyBody('CONTRACT_PROPOSAL', payload)` (keyed field layout) → opcode {@link CONTRACT_PROPOSAL_TYPE}.
  */
 
 const crypto = require('crypto');
@@ -150,13 +150,21 @@ function applyStatePatch (document, patch) {
 
 /**
  * Create and optionally sign a ContractProposal {@link Message}.
+ *
+ * A proposal is signed by its author and relayed unchanged, so it can't be
+ * re-encoded for each peer on the way. Receivers parse both encodings; an
+ * author that must still reach peers which read proposals as JSON only
+ * passes `encoding: 'json'`.
  * @param {import('../types/key')} key
  * @param {Object} opts passed to {@link buildContractProposalPayload}
+ * @param {string} [opts.encoding='fields'] `fields`, or `json` for older receivers.
  */
 function createContractProposalMessage (key, opts = {}) {
-  const payload = buildContractProposalPayload(opts);
-  const body = JSON.stringify(payload);
-  const msg = Message.fromVector(['ContractProposal', body]);
+  const { encoding, ...payloadOpts } = opts;
+  const payload = buildContractProposalPayload(payloadOpts);
+  const msg = encoding === 'json'
+    ? Message.fromVector(['CONTRACT_PROPOSAL', JSON.stringify(payload)])
+    : Message.fromLegacyBody('CONTRACT_PROPOSAL', payload);
   if (key) msg.signWithKey(key);
   return msg;
 }

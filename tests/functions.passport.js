@@ -90,7 +90,7 @@ describe('@fabric/core/functions/passport', function () {
     }
     assert.strictEqual(Message.canonicalTypeCode('PassportAssertion'), PASSPORT_ASSERTION);
     assert.strictEqual(Message.canonicalTypeName(0x4230), null);
-    // Retired: delegated sign-ins are DELEGATION_REQUESTs (functions/delegation).
+    // Retired: delegated sign-ins are DELEGATION_REQUESTs (types/delegation).
     assert.strictEqual(Message.getBodySchema('PASSPORT_SIGN_REQUEST'), null);
     assert.strictEqual(classifyGossipWireType('PASSPORT_SIGN_REQUEST'), 'hub');
   });

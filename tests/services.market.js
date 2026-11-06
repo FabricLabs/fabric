@@ -77,7 +77,7 @@ function buildMarket (opts = {}) {
   function ingest (written, seller) {
     for (const buf of written) {
       const m = Message.fromBuffer(buf);
-      const body = JSON.parse(m.body);
+      const body = Message.tryParseLegacyBody(m).value;
       if (m.type === 'P2P_FILE_SEND') buyer._ingestP2pFileSend({ object: body }, { name: seller }, m);
       else if (body.type === 'DocumentBlobQuote') buyer._ingestSealedBlobQuote(ctl.mutateQuote ? ctl.mutateQuote(body.object) : body.object, { name: seller }, m);
       else buyer._handleDocumentContentKeyReveal(ctl.mutateReveal ? ctl.mutateReveal(body.object) : body.object, { name: seller });
@@ -286,7 +286,7 @@ describe('services/market (Phase 4 channel rail)', function () {
       for (const buf of written) {
         const msg = Message.fromBuffer(buf);
         assert.strictEqual(msg.type, 'P2P_FILE_SEND');
-        m.buyer._ingestP2pFileSend({ object: JSON.parse(msg.body) }, { name: 'alpha' }, msg);
+        m.buyer._ingestP2pFileSend({ object: Message.tryParseLegacyBody(msg).value }, { name: 'alpha' }, msg);
       }
       return true;
     };
@@ -1113,7 +1113,7 @@ describe('services/market (convergent de-dup)', function () {
       seller._sendSealedBlobsToPeer(seller._getSealedBlobDocument(id), id, 'buyer', { settlementId: 't', blobIndex: reqOpts.blobIndex, revealKey: true });
       for (const buf of written) {
         const m = Message.fromBuffer(buf);
-        const body = JSON.parse(m.body);
+        const body = Message.tryParseLegacyBody(m).value;
         if (m.type === 'P2P_FILE_SEND') buyer._ingestP2pFileSend({ object: body }, { name: 'alpha' }, m);
         else buyer._handleDocumentContentKeyReveal(body.object, { name: 'alpha' });
       }
@@ -1241,7 +1241,7 @@ describe('services/market (credit rail: pay after verify)', function () {
       seller._sendSealedBlobsToPeer(seller._getSealedBlobDocument(id), id, 'buyer', { settlementId: 't', blobIndex: reqOpts.blobIndex, revealKey });
       for (const buf of written) {
         const m = Message.fromBuffer(buf);
-        const body = JSON.parse(m.body);
+        const body = Message.tryParseLegacyBody(m).value;
         if (m.type === 'P2P_FILE_SEND') buyer._ingestP2pFileSend({ object: body }, { name: 'alpha' }, m);
         else {
           const reveal = ctl.badKey(Number(reqOpts.blobIndex)) ? Object.assign({}, body.object, { keyHex: crypto.randomBytes(32).toString('hex') }) : body.object;
@@ -1268,8 +1268,34 @@ describe('services/market (credit rail: pay after verify)', function () {
     market.attach({ peer: buyer, channels: buyerBook });
     const received = [];
     buyer.on('documentReceived', (ev) => received.push(ev.buffer));
-    return { plain, doc, buyer, seller, book, market, buyerBook, sellerBook, channel: opened.session, pump, ctl, received, documentId: pub.documentId };
+    return { plain, doc, buyer, seller, book, market, buyerBook, sellerBook, sellerKey, channel: opened.session, pump, ctl, received, documentId: pub.documentId };
   }
+
+  it('picks the credit channel by the serving peer, never by a sellerPubkey the offer names', function () {
+    const m = build();
+    const offer = { sealed: true, creditRateSats: CREDIT, paymentModes: ['htlc', 'credit'] };
+    assert.ok(m.buyerBook.sessionFor('mallory', m.sellerKey.pub), 'the named key has an open channel');
+    assert.strictEqual(m.market._creditFor(Object.assign({}, offer, { sellerId: 'mallory', sellerPubkey: m.sellerKey.pub })), null);
+    assert.strictEqual(m.market._channelFor(Object.assign({}, offer, { sellerId: 'mallory', sellerPubkey: m.sellerKey.pub }), 1), null);
+    assert.ok(m.market._creditFor(Object.assign({}, offer, { sellerId: 'alpha' })));
+  });
+
+  it('binds the channel to the verified signer (x-only or compressed), with no seller-id fallback', function () {
+    const m = build();
+    const offer = { sealed: true, creditRateSats: CREDIT, paymentModes: ['htlc', 'credit'] };
+    const x = m.sellerKey.pub.slice(2);
+    const other = crypto.randomBytes(32).toString('hex');
+    assert.ok(m.market._channelFor(Object.assign({}, offer, { sellerId: 'unknown', ampSignerPubkey: x }), 1), 'x-only signer finds its channel');
+    assert.ok(m.market._creditFor(Object.assign({}, offer, { sellerId: 'unknown', ampSignerPubkey: m.sellerKey.pub })), 'compressed signer finds its channel');
+    assert.strictEqual(m.market._channelFor(Object.assign({}, offer, { sellerId: 'alpha', ampSignerPubkey: other }), 1), null, 'alias of another key is refused');
+    assert.strictEqual(m.market._creditFor(Object.assign({}, offer, { sellerId: 'alpha', ampSignerPubkey: other })), null);
+  });
+
+  it('settles a channel HTLC only on the channel the session opened on', function () {
+    const m = build();
+    const session = { rail: 'channel', sellerId: 'alpha', sellerPubkeyHex: m.sellerKey.pub, channelId: 'not-a-channel', amountSats: 1, paymentHashHex: crypto.randomBytes(32).toString('hex') };
+    assert.deepStrictEqual(m.market._settleOverChannel(session), { status: 'unavailable', reason: 'channel not open' });
+  });
 
   it('advertises the credit price with paymentModes; private documents cannot take credit', function () {
     const m = build();

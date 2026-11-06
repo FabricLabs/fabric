@@ -20,10 +20,10 @@ receives in its own store, so its history replays as a
 Authority comes only from the recipient's own grants. A rendezvous or mailbox
 carries frames and decides nothing.
 
-Code: `functions/delegation` (frames, pure), `types/delegation` (one
+Code: `types/delegation` (frame builders and readers as statics; one
 participant's state), `@fabric/http` `functions/fabricDelegationHttp`
-(rendezvous), `functions/fabricDelegationMailbox`, `functions/fabricDelegate`
-(loopback answers), and `functions/fabricDelegationClient`.
+(rendezvous and mailbox), `functions/fabricDelegate` (loopback answers),
+and `functions/fabricDelegationClient`.
 
 Delegation replaces `PASSPORT_SIGN_REQUEST` (`0x4242`, retired: no schema,
 refused by readers, number reserved), the `IdentityCrossSign` /
@@ -42,9 +42,9 @@ carry only `issuedAt`. Clocks may differ by 30 seconds.
 | `DELEGATION_LINK_OFFER` | `0x4243` | `pubkey`, `origin` (the rendezvous), `label`, `network`, `commitment`, `issuedAt`, `expiresAt` |
 | `DELEGATION_LINK_ANSWER` | `0x4244` | `pubkey`, `offer` (hash), `nonce`, `label`, `issuedAt`, `expiresAt` |
 | `DELEGATION_LINK_REVEAL` | `0x4245` | `answer` (hash), `nonce`, `issuedAt`, `expiresAt` |
-| `DELEGATION_GRANT` | `0x4246` | `pubkey`, `grantee`, `link`, `scopes`, `origins`, `networks`, `cosigner`, `cosignerProof`, `extensionOrigin`, `label`, `issuedAt` |
+| `DELEGATION_GRANT` | `0x4246` | `pubkey`, `grantee`, `link`, `scopes`, `origins`, `networks`, `cosigner`, `cosignerProof`, `extensionOrigin`, `label`, `issuedAt`, optional `peers` |
 | `DELEGATION_REVOKE` | `0x4247` | `grant` (hash), `issuedAt` |
-| `DELEGATION_REQUEST` | `0x4248` | `pubkey`, `target`, `grant` (hash), `nonce`, `request` (inner frame), `origin`, `account`, `disclose`, `purpose`, `issuedAt`, `expiresAt` |
+| `DELEGATION_REQUEST` | `0x4248` | `pubkey`, `target`, `grant` (hash), `nonce`, `request` (inner frame), `origin`, `account`, `disclose`, `purpose`, `issuedAt`, `expiresAt`, optional `sessionKey` (peer sign-ins) |
 | `DELEGATION_RESULT` | `0x4249` | `request` (hash), `answer` (frame) or `refusal`, `rule`, `issuedAt` |
 | `DELEGATION_MAILBOX_FETCH` | `0x424A` | `pubkey`, `since`, `nonce`, `issuedAt`, `expiresAt` |
 
@@ -79,8 +79,12 @@ empty for a key the user already knew). `scopes` is any of:
 | `federation` | A signature on a `FederationInvite` or `FederationWithdrawalRequest` |
 | `message` | The grantor's signature on an unsigned `GENERIC_MESSAGE`, `P2P_CHAT_MESSAGE`, or `CHAT_MESSAGE` |
 
-`origins` limits Passport sign-ins to those sites; `networks` limits the
-network. A grant may disclose the grantor's cosigner key (BIP87) with a core
+`origins` limits Passport sign-ins to those sites; `peers` limits peer
+sign-ins (Passport v3) to those peer pubkeys, and a grant that lists `peers`
+covers no site sign-ins; `networks` limits the network. A peer sign-in
+request carries the requester's `sessionKey`, and the delegate's assertion
+names it, so the session belongs to the requester ([PASSPORT.md](PASSPORT.md)
+"Peer sessions"). A grant may disclose the grantor's cosigner key (BIP87) with a core
 `cosignerProof` under scope `delegation:<grantee>:<link or ->:<issuedAt>`, so
 the grantee can build a shared wallet from it. `extensionOrigin` records
 Passport's `chrome-extension://` or `moz-extension://` origin; desktop
@@ -95,7 +99,10 @@ requester. The target checks it against its own grants (`authorize`): the
 grant exists, was made by the target to this requester, isn't revoked, covers
 the scope, and allows the origin and network. A federation withdrawal names
 only its federation, so under a network-limited grant the target resolves the
-network from its own federation record (`networkOf`), or refuses.
+network from its own federation record (`networkOf`), or refuses. Its
+`destinationAddress` must be 14–90 letters and digits and its `amountSats` and
+`feeSats` whole, non-negative sats, since the co-sign prompt shows them as
+written; any other withdrawal request is refused before anyone sees it.
 
 - **Passport.** The inner frame is the site's `PASSPORT_CHALLENGE`. `origin`
   is what the requester (Passport) saw and must equal the challenge's;
@@ -151,7 +158,7 @@ returned result wherever the request came from. Writes are serialized.
 - **Rendezvous** (`/delegations`): `POST /delegations { frame }` takes an
   offer and returns its link id; `POST /delegations/:id/frames { frame }` the
   next frame in order; `GET /delegations/:id` the frames so far; `DELETE`
-  ends it. Each frame is checked with `functions/delegation` and stored until
+  ends it. Each frame is checked with `types/delegation` and stored until
   it expires.
 - **Mailbox** (`/services/delegation/mailbox`): `POST { frame }` takes
   requests, results, grants, and revokes addressed to a pubkey, capped and
