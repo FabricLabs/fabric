@@ -47,15 +47,30 @@ const { contentHashHexFromObject } = require('../functions/documentPaymentHash')
 /** @private */
 const HEX64 = /^[0-9a-f]{64}$/i;
 
-/** @private statuses whose amount is reserved (nothing paid, or payment outcome unknown) */
+/**
+ * statuses whose amount is reserved (nothing paid, or payment outcome unknown)
+ * @private
+ */
 const RESERVED_STATUSES = ['open', 'quote_pending', 'awaiting_funding', 'funding', 'funding_unknown', 'channel_pending'];
-/** @private statuses whose amount sits in an unresolved HTLC */
+/**
+ * statuses whose amount sits in an unresolved HTLC
+ * @private
+ */
 const LOCKED_STATUSES = ['delivery_pending', 'settling', 'refund_pending'];
-/** @private statuses that may still receive the blob key */
+/**
+ * statuses that may still receive the blob key
+ * @private
+ */
 const KEY_STATUSES = ['delivery_pending', 'settling', 'refund_pending', 'claimed'];
-/** @private statuses before any payment went out (prepay = verify-before-pay) */
+/**
+ * statuses before any payment went out (prepay = verify-before-pay)
+ * @private
+ */
 const PREPAY_STATUSES = ['open', 'quote_pending'];
-/** @private sessions that block another purchase of the same blob */
+/**
+ * sessions that block another purchase of the same blob
+ * @private
+ */
 const BLOCKING_STATUSES = RESERVED_STATUSES.concat(['delivery_pending', 'settling']);
 
 /**
@@ -83,7 +98,10 @@ function sellerDedupeKey (session = {}) {
   return `${DocumentBook.settlementDedupeKey(session)}|${String(session.sellerId || session.seller || '')}`;
 }
 
-/** @private a budget in whole sats: anything that is not a finite, safe amount is 0 */
+/**
+ * a budget in whole sats: anything that is not a finite, safe amount is 0
+ * @private
+ */
 function budgetOf (sats) {
   const n = Math.floor(Number(sats));
   return Number.isSafeInteger(n) && n > 0 ? n : 0;
@@ -98,7 +116,10 @@ function ownRecord (map, key) {
   return Object.prototype.hasOwnProperty.call(map, key) ? map[key] : undefined;
 }
 
-/** @private own-property write (`map['__proto__'] = v` would set the prototype) */
+/**
+ * own-property write (`map['__proto__'] = v` would set the prototype)
+ * @private
+ */
 function setRecord (map, key, value) {
   Object.defineProperty(map, key, { value, enumerable: true, writable: true, configurable: true });
 }
@@ -109,7 +130,10 @@ function errorMessage (e) {
 }
 
 /** @private */
-/** @private 64-hex x-only form of an x-only or compressed key, else null. */
+/**
+ * 64-hex x-only form of an x-only or compressed key, else null.
+ * @private
+ */
 function xOnlyHex (key) {
   const hex = String(key || '').trim().toLowerCase();
   if (/^[0-9a-f]{64}$/.test(hex)) return hex;
@@ -136,7 +160,10 @@ function marketNetwork (name) {
   throw new Error(`Market: network "${n || String(name)}" refused`);
 }
 
-/** @private origin name from a Peer event origin (object or string) */
+/**
+ * origin name from a Peer event origin (object or string)
+ * @private
+ */
 function originName (origin) {
   if (!origin) return null;
   if (typeof origin === 'object') return origin.name || origin.address || origin.id || null;
@@ -308,7 +335,10 @@ class Market extends Service {
     return this._tip;
   }
 
-  /** @private HTLC helpers know regtest / testnet / signet address params only */
+  /**
+   * HTLC helpers know regtest / testnet / signet address params only
+   * @private
+   */
   _htlcNetwork () {
     return this.settings.network === 'testnet4' ? 'testnet' : this.settings.network;
   }
@@ -380,7 +410,10 @@ class Market extends Service {
     return remote === x ? channel : null;
   }
 
-  /** @private the channel session a purchase was opened on, by its `channelId` */
+  /**
+   * the channel session a purchase was opened on, by its `channelId`
+   * @private
+   */
   _channelOf (session) {
     if (!this._channels || !session.channelId) return null;
     const byId = typeof this._channels.get === 'function'
@@ -501,7 +534,10 @@ class Market extends Service {
     return session;
   }
 
-  /** @private channel watchdog actions for our HTLCs (on-chain timeout / claim) */
+  /**
+   * channel watchdog actions for our HTLCs (on-chain timeout / claim)
+   * @private
+   */
   _onChannelAction (action) {
     if (!action || !action.htlcId) return;
     const session = Object.values(this._state.content.sessions).find((s) => s.rail === 'channel' && String(s.channelId) === String(action.channelId) && String(s.channelHtlcId) === String(action.htlcId));
@@ -624,7 +660,10 @@ class Market extends Service {
     this._bound = null;
   }
 
-  /** @private the ciphertext may land after the channel already revealed K_i */
+  /**
+   * the ciphertext may land after the channel already revealed K_i
+   * @private
+   */
   _onCiphertextReceived (ev) {
     if (!ev || !ev.documentId) return;
     for (const s of this._sessionsFor(ev.documentId, ev.blobIndex)) {
@@ -923,7 +962,10 @@ class Market extends Service {
     return { ok: true, plan, costSats, blobTotal, merkleRootHex: roots.size ? [...roots][0] : (want.merkleRootHex || null) };
   }
 
-  /** @private this seller holds a dedupe key (paid, or maybe paid) for the blob */
+  /**
+   * this seller holds a dedupe key (paid, or maybe paid) for the blob
+   * @private
+   */
   _sellerPaidFor (documentId, blobIndex, offer) {
     const probe = {
       documentId,
@@ -1106,7 +1148,10 @@ class Market extends Service {
    * @param {{ plan: Map<number, Object>, blobTotal: number, costSats: number }} planned
    * @returns {Promise<Object[]>} opened sessions
    */
-  /** @private smallest L1 output the configured feerate can still claim to taproot */
+  /**
+   * smallest L1 output the configured feerate can still claim to taproot
+   * @private
+   */
   _l1MinimumSats () {
     try {
       return Htlc.minimumForFeerate(this.settings.claimFeerate);
@@ -1343,7 +1388,10 @@ class Market extends Service {
     return session;
   }
 
-  /** @private settlement id holding a dedupe key, or null */
+  /**
+   * settlement id holding a dedupe key, or null
+   * @private
+   */
   _dedupeOwner (key) {
     if (!this.paidSettlements.has(key)) return null;
     const owner = this.paidSettlements.get(key);
@@ -1397,7 +1445,10 @@ class Market extends Service {
     return this._htlcFor({ sellerHex, buyerHex, paymentHashHex: contentHashHex, lock: Number(lock), amountSats, documentId, offerAddress });
   }
 
-  /** @private buyer-bound HTLC for one payment hash */
+  /**
+   * buyer-bound HTLC for one payment hash
+   * @private
+   */
   _htlcFor (opts) {
     try {
       const verdict = Htlc.validateOffer({
@@ -1582,7 +1633,10 @@ class Market extends Service {
       !!session.merkleRootHex && session.blobIndex != null && !!this.peer && typeof this.peer.requestDocument === 'function';
   }
 
-  /** @private pin the blob we are buying so the Peer refuses anything else at that index */
+  /**
+   * pin the blob we are buying so the Peer refuses anything else at that index
+   * @private
+   */
   _expect (session) {
     const peer = this.peer;
     if (!peer || !peer.blobTransfers || !session.merkleRootHex) return;
@@ -1838,7 +1892,10 @@ class Market extends Service {
     return this._payOnce(session);
   }
 
-  /** @private one `pay` call; any doubt leaves the session `funding_unknown` */
+  /**
+   * one `pay` call; any doubt leaves the session `funding_unknown`
+   * @private
+   */
   async _payOnce (session) {
     session.status = 'funding';
     session.payAttempts = (session.payAttempts || 0) + 1;
@@ -1997,7 +2054,10 @@ class Market extends Service {
     return session;
   }
 
-  /** @private hand the want back to the scheduler when nothing else works on it */
+  /**
+   * hand the want back to the scheduler when nothing else works on it
+   * @private
+   */
   _wantBack (session, reason) {
     const want = ownRecord(this._state.content.wants, session.documentId);
     if (!want || want.status !== 'buying') return;
@@ -2005,12 +2065,18 @@ class Market extends Service {
     want.lastError = reason;
   }
 
-  /** @private a session other than `except` is still working on the document */
+  /**
+   * a session other than `except` is still working on the document
+   * @private
+   */
   _wantLive (documentId, except = null) {
     return Object.values(this._state.content.sessions).some((s) => s.documentId === documentId && s !== except && BLOCKING_STATUSES.includes(s.status));
   }
 
-  /** @private terminal state with its budget outcome already applied */
+  /**
+   * terminal state with its budget outcome already applied
+   * @private
+   */
   _finish (session, status, ev = {}) {
     session.status = status;
     session.completedAt = this._now();
@@ -2135,7 +2201,10 @@ class Market extends Service {
     } catch (_) { /* malformed inventory bodies are ignored */ }
   }
 
-  /** @private sessions that may still receive the blob key */
+  /**
+   * sessions that may still receive the blob key
+   * @private
+   */
   _sessionsFor (documentId, blobIndex) {
     return Object.values(this._state.content.sessions).filter((s) => {
       if (s.documentId !== documentId) return false;
@@ -2381,7 +2450,10 @@ class Market extends Service {
     return { ok: true, psbtBase64, txHex, txid };
   }
 
-  /** @private 32-byte buyer refund key matching the HTLC, or null */
+  /**
+   * 32-byte buyer refund key matching the HTLC, or null
+   * @private
+   */
   _refundKeyFor (session) {
     const want = session.htlc && session.htlc.buyerRefundPubkey ? String(session.htlc.buyerRefundPubkey).toLowerCase() : null;
     const candidates = [this.settings.refundPrivateKey, this.peer && this.peer.key && this.peer.key.private];

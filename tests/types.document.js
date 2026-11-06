@@ -625,11 +625,18 @@ describe('types/document (sealed blob tree)', function () {
       const seller = new Peer({ listen: false });
       const doc = Document.seal(crypto.randomBytes(5000), { chunkBytes: 2048 });
       const { documentId } = seller.publishSealedDocument(doc, { rateSats: RATE });
+      // A connected buyer, so the refusal comes from the quote and not a missing socket.
+      const written = [];
+      seller.connections.buyer = { _writeFabric: (buf) => written.push(buf) };
       seller.pendingDocumentRequests.r1 = { documentId, peerAddress: 'buyer', parsed: { quote: true, blobIndex: 0, batchEnd: 2, maxSats: RATE * 3 - 1 } };
       const out = seller.approveDocumentRequest('r1');
       assert.strictEqual(out.ok, false);
       assert.match(out.error, /batch quote refused/);
       assert.ok(seller.pendingDocumentRequests.r1, 'the request stays pending');
+      assert.strictEqual(written.length, 0, 'no frame goes out');
+      seller.pendingDocumentRequests.r1.parsed.maxSats = RATE * 3;
+      assert.strictEqual(seller.approveDocumentRequest('r1').ok, true);
+      assert.ok(written.length > 0, 'the quote within maxSats goes out');
     });
   });
 

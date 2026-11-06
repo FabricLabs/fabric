@@ -144,6 +144,15 @@ function compressed (pubkey) {
 }
 
 /** @private */
+function sameNetwork (a, b) {
+  try {
+    return normalizeAccountNetwork(a) === normalizeAccountNetwork(b);
+  } catch (_) {
+    return false;
+  }
+}
+
+/** @private */
 function assertSigningKey (key) {
   if (!key || !key.private || typeof key.signSchnorrHash !== 'function') {
     throw new TypeError('a private signing Key is required');
@@ -205,13 +214,14 @@ function checkIssued (issuedAt, options = {}) {
 /**
  * Label as shown and signed: no control or bidi characters, at most 64 characters.
  * @param {string} label
+ * @param {number} [max] Longest kept (purposes and refusals keep 140).
  * @returns {string}
  */
-function cleanLabel (label) {
+function cleanLabel (label, max = DELEGATION_MAX_LABEL) {
   return String(label == null ? '' : label)
     .replace(/[\u0000-\u001f\u007f-\u009f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, '')
     .trim()
-    .slice(0, DELEGATION_MAX_LABEL);
+    .slice(0, max);
 }
 
 /**
@@ -228,6 +238,24 @@ function withdrawalBodyError (body) {
   }
   for (const field of ['amountSats', 'feeSats']) {
     if (!Number.isSafeInteger(body[field]) || body[field] < 0) return `malformed withdrawal request: ${field}`;
+  }
+  return null;
+}
+
+const FEDERATION_ID = /^[0-9a-f]{64}$/;
+
+/**
+ * Federation members accept only canonical ids (`Federation.verifySender`,
+ * `verifyWithdrawalRequest`): a lowercase 64-hex federation id that is also the
+ * contract, and a lowercase 64-hex request id on withdrawal messages.
+ * @param {Object} body federation message body
+ * @returns {string|null}
+ */
+function federationIdsError (body) {
+  if (typeof body.federationId !== 'string' || !FEDERATION_ID.test(body.federationId)) return `malformed ${body.type}: federationId`;
+  if (body.contract !== body.federationId) return `malformed ${body.type}: contract must be the federation id`;
+  if (/^FederationWithdrawal/.test(body.type) && (typeof body.requestId !== 'string' || !FEDERATION_ID.test(body.requestId))) {
+    return `malformed ${body.type}: requestId`;
   }
   return null;
 }
@@ -273,6 +301,20 @@ function normalizeOrigins (value) {
     const origin = normalizeOrigin(item);
     if (!origin) throw new TypeError(`invalid origin: ${item}`);
     if (!out.includes(origin)) out.push(origin);
+  }
+  return out.sort();
+}
+
+/**
+ * Compressed peer pubkeys a `passport` grant is limited to (v3 peer sign-ins).
+ * @private
+ */
+function normalizePeers (value) {
+  const out = [];
+  for (const item of list(value)) {
+    const peer = compressed(item);
+    if (!peer) throw new TypeError(`invalid peer: ${item}`);
+    if (!out.includes(peer)) out.push(peer);
   }
   return out.sort();
 }
@@ -593,6 +635,7 @@ function grantCosignerScope (grant) {
  * @param {string} params.grantee Compressed pubkey.
  * @param {string[]} params.scopes Any of {@link DELEGATION_SCOPES}.
  * @param {string[]} [params.origins] Limit `passport` requests to these sites.
+ * @param {string[]} [params.peers] Limit `passport` peer sign-ins (v3) to these peer pubkeys.
  * @param {string[]} [params.networks] Limit requests to these networks.
  * @param {string} [params.link] Reveal hash of the pairing it follows.
  * @param {Key} [params.cosignerKey] Disclose this participant's cosigner key.
@@ -611,6 +654,7 @@ function createGrant (params = {}, key) {
   const scopes = normalizeScopes(params.scopes);
   if (!scopes.length) throw new TypeError('createGrant: at least one scope required');
   const origins = normalizeOrigins(params.origins);
+  const peers = normalizePeers(params.peers);
   const networks = normalizeNetworks(params.networks);
   const link = params.link ? String(params.link).toLowerCase() : '';
   if (link && !HEX32.test(link)) throw new TypeError('createGrant: link must be a reveal hash');
@@ -639,7 +683,8 @@ function createGrant (params = {}, key) {
     cosignerProof: proof,
     extensionOrigin,
     label: cleanLabel(params.label),
-    issuedAt: BigInt(issuedAt)
+    issuedAt: BigInt(issuedAt),
+    peers: peers.join(',')
   });
   message.signWithKey(key);
   return { message, uri: encodeFabricUri(message), hash: frameHash(message), scopes };
@@ -649,7 +694,7 @@ function createGrant (params = {}, key) {
  * Read a `DELEGATION_GRANT`, checking its cosigner proof.
  * @param {string|Buffer|Message} input
  * @param {{ now: (number|undefined) }} [options]
- * @returns {{ ok: true, grant: { grantor: string, grantee: string, link: (string|null), scopes: string[], origins: string[], networks: string[], cosigner: (string|null), extensionOrigin: (string|null), label: string, issuedAt: number }, author: string, hash: string, buffer: Buffer }|{ ok: false, error: string }}
+ * @returns {{ ok: true, grant: { grantor: string, grantee: string, link: (string|null), scopes: string[], origins: string[], peers: string[], networks: string[], cosigner: (string|null), extensionOrigin: (string|null), label: string, issuedAt: number }, author: string, hash: string, buffer: Buffer }|{ ok: false, error: string }}
  */
 function readGrant (input, options = {}) {
   const decoded = decodeFrame(input, ['DELEGATION_GRANT']);
@@ -664,10 +709,12 @@ function readGrant (input, options = {}) {
   if (grantee.slice(2) === grantor.slice(2)) return { ok: false, error: 'a key cannot grant itself' };
   let scopes;
   let origins;
+  let peers;
   let networks;
   try {
     scopes = normalizeScopes(fields.scopes);
     origins = normalizeOrigins(fields.origins);
+    peers = normalizePeers(fields.peers);
     networks = normalizeNetworks(fields.networks);
   } catch (err) {
     return { ok: false, error: err.message };
@@ -698,7 +745,7 @@ function readGrant (input, options = {}) {
   }
   return {
     ok: true,
-    grant: { grantor, grantee, link: link || null, scopes, origins, networks, cosigner, extensionOrigin, label: cleanLabel(fields.label), issuedAt },
+    grant: { grantor, grantee, link: link || null, scopes, origins, peers, networks, cosigner, extensionOrigin, label: cleanLabel(fields.label), issuedAt },
     author: decoded.author,
     hash: sha256(decoded.buffer).toString('hex'),
     buffer: decoded.buffer
@@ -752,7 +799,10 @@ function readRevoke (input, options = {}) {
   return { ok: true, revoke: { grant, issuedAt }, author: decoded.author, hash: sha256(decoded.buffer).toString('hex'), buffer: decoded.buffer };
 }
 
-/** @private Parse a CONTRACT_MESSAGE body (legacy JSON or `{ contract, payload }` fields). */
+/**
+ * Parse a CONTRACT_MESSAGE body (legacy JSON or `{ contract, payload }` fields).
+ * @private
+ */
 function contractBody (message) {
   const parsed = Message.tryParseMessageBody(message);
   if (!parsed.ok) return null;
@@ -787,6 +837,8 @@ function readInnerFrame (buffer, options = {}) {
     if (!decoded.signed) return { ok: false, error: 'a federation message must be signed by its sender' };
     const body = contractBody(decoded.message);
     if (!body || !FEDERATION_REQUEST_TYPES.includes(body.type)) return { ok: false, error: 'only federation invites and withdrawal requests can be delegated' };
+    const idsError = federationIdsError(body);
+    if (idsError) return { ok: false, error: idsError };
     if (body.type === 'FederationWithdrawalRequest') {
       const error = withdrawalBodyError(body);
       if (error) return { ok: false, error };
@@ -807,7 +859,10 @@ function readInnerFrame (buffer, options = {}) {
  * @param {string} params.target Compressed pubkey of the participant asked.
  * @param {string} params.grant Hash of the target's grant to this key.
  * @param {string|Buffer|Message} params.request The frame to sign.
- * @param {string} [params.origin] The origin this participant saw (Passport challenges).
+ * @param {string} [params.origin] The origin this participant saw (Passport
+ *   challenges; for a v3 peer challenge, the page that asked, when there is one).
+ * @param {string} [params.sessionKey] v3 peer challenges: the session key the
+ *   target's assertion names (this participant holds its private key).
  * @param {number} [params.account=0] Account index the target signs with.
  * @param {string[]} [params.disclose] What the user agreed to share (Passport challenges).
  * @param {string} [params.purpose] Short text shown to the target's user.
@@ -828,12 +883,25 @@ function createRequest (params = {}, key) {
   if (!inner.ok) throw new Error(`createRequest: ${inner.error}`);
   let origin = '';
   let disclose = [];
+  let sessionKey = '';
   const issuedAt = Number.isFinite(params.now) ? params.now : Date.now();
   let expiresAt = issuedAt + clampTtl(params.ttlMs, DELEGATION_REQUEST_TTL_MS, DELEGATION_REQUEST_MAX_TTL_MS);
   if (inner.scope === 'passport') {
-    origin = normalizeOrigin(params.origin);
-    if (!origin) throw new TypeError('createRequest: the origin this participant saw is required');
-    if (inner.challenge.origin !== origin) throw new Error('createRequest: the challenge names a different origin');
+    const peerMode = !!inner.challenge.peer;
+    if (params.origin || !peerMode) {
+      origin = normalizeOrigin(params.origin);
+      if (!origin) throw new TypeError('createRequest: the origin this participant saw is required');
+    }
+    if (inner.challenge.origin && origin && inner.challenge.origin !== origin) {
+      throw new Error('createRequest: the challenge names a different origin');
+    }
+    if (!peerMode && inner.challenge.origin !== origin) throw new Error('createRequest: the challenge names a different origin');
+    if (peerMode) {
+      sessionKey = compressed(params.sessionKey);
+      if (!sessionKey) throw new TypeError('createRequest: a peer sign-in needs a compressed sessionKey');
+    } else if (params.sessionKey) {
+      throw new Error('createRequest: sessionKey applies to peer sign-ins only');
+    }
     disclose = list(params.disclose);
     for (const item of disclose) {
       if (!PASSPORT_DISCLOSURES.includes(item)) throw new TypeError(`createRequest: unknown disclosure ${item}`);
@@ -854,9 +922,10 @@ function createRequest (params = {}, key) {
     origin,
     account,
     disclose: disclose.join(','),
-    purpose: params.purpose != null ? cleanLabel(String(params.purpose)).slice(0, DELEGATION_MAX_PURPOSE) : '',
+    purpose: params.purpose != null ? cleanLabel(String(params.purpose), DELEGATION_MAX_PURPOSE) : '',
     issuedAt: BigInt(issuedAt),
-    expiresAt: BigInt(expiresAt)
+    expiresAt: BigInt(expiresAt),
+    sessionKey
   });
   message.signWithKey(key);
   return { message, uri: encodeFabricUri(message), hash: frameHash(message), nonce, scope: inner.scope, expiresAt };
@@ -867,7 +936,7 @@ function createRequest (params = {}, key) {
  * ask is {@link authorize}'s check, against the target's own grants.
  * @param {string|Buffer|Message} input
  * @param {{ now: (number|undefined) }} [options]
- * @returns {{ ok: true, request: { requester: string, target: string, grant: string, nonce: string, origin: (string|null), account: number, disclose: string[], purpose: string, issuedAt: number, expiresAt: number }, scope: string, inner: object, author: string, hash: string, buffer: Buffer }|{ ok: false, error: string }}
+ * @returns {{ ok: true, request: { requester: string, target: string, grant: string, nonce: string, origin: (string|null), sessionKey: (string|null), account: number, disclose: string[], purpose: string, issuedAt: number, expiresAt: number }, scope: string, inner: object, author: string, hash: string, buffer: Buffer }|{ ok: false, error: string }}
  */
 function readRequest (input, options = {}) {
   const decoded = decodeFrame(input, ['DELEGATION_REQUEST']);
@@ -892,10 +961,22 @@ function readRequest (input, options = {}) {
   if (!inner.ok) return inner;
   let origin = null;
   let disclose = [];
+  let sessionKey = null;
   if (inner.scope === 'passport') {
-    origin = normalizeOrigin(fields.origin);
-    if (!origin) return { ok: false, error: 'invalid origin' };
-    if (inner.challenge.origin !== origin) return { ok: false, error: 'the challenge names a different origin' };
+    const peerMode = !!inner.challenge.peer;
+    if (fields.origin || !peerMode) {
+      origin = normalizeOrigin(fields.origin);
+      if (!origin) return { ok: false, error: 'invalid origin' };
+    }
+    if (peerMode ? (inner.challenge.origin && origin && inner.challenge.origin !== origin) : inner.challenge.origin !== origin) {
+      return { ok: false, error: 'the challenge names a different origin' };
+    }
+    if (peerMode) {
+      sessionKey = compressed(fields.sessionKey);
+      if (!sessionKey) return { ok: false, error: 'a peer sign-in request needs a sessionKey' };
+    } else if (fields.sessionKey) {
+      return { ok: false, error: 'sessionKey applies to peer sign-ins only' };
+    }
     if (expiresAt > inner.challenge.expiresAt) return { ok: false, error: 'request outlives its challenge' };
     disclose = list(fields.disclose);
     for (const item of disclose) {
@@ -903,8 +984,8 @@ function readRequest (input, options = {}) {
         return { ok: false, error: `the challenge did not ask for ${item}` };
       }
     }
-  } else if (fields.origin || fields.disclose) {
-    return { ok: false, error: 'origin and disclose apply to Passport challenges only' };
+  } else if (fields.origin || fields.disclose || fields.sessionKey) {
+    return { ok: false, error: 'origin, disclose, and sessionKey apply to Passport challenges only' };
   }
   const account = Number(fields.account);
   if (!Number.isInteger(account) || account < 0 || account >= 0x80000000) return { ok: false, error: 'invalid account' };
@@ -912,7 +993,7 @@ function readRequest (input, options = {}) {
   if (purpose.length > DELEGATION_MAX_PURPOSE) return { ok: false, error: 'purpose too long' };
   return {
     ok: true,
-    request: { requester, target, grant, nonce, origin, account, disclose, purpose: cleanLabel(purpose), issuedAt, expiresAt },
+    request: { requester, target, grant, nonce, origin, sessionKey, account, disclose, purpose: cleanLabel(purpose, DELEGATION_MAX_PURPOSE), issuedAt, expiresAt },
     scope: inner.scope,
     inner,
     author: decoded.author,
@@ -942,12 +1023,30 @@ function authorize (read, grants = [], options = {}) {
   if (grant.grantor.slice(2) !== read.request.target.slice(2)) return { ok: false, error: 'the grant is not this participant\'s' };
   if (grant.grantee.slice(2) !== read.author) return { ok: false, error: 'the grant is for another participant' };
   if (!grant.scopes.includes(read.scope)) return { ok: false, error: `the grant does not cover ${read.scope}` };
-  if (read.scope === 'passport' && grant.origins.length && !grant.origins.includes(read.inner.challenge.origin)) {
-    return { ok: false, error: `the grant does not cover ${read.inner.challenge.origin}` };
+  if (read.scope === 'passport') {
+    const challenge = read.inner.challenge;
+    // The origin is what the requester saw, never what a peer's challenge
+    // claims: a grant limited to origins needs the requester to report one it
+    // lists. (`readRequest` already refuses a request whose origin differs
+    // from the challenge's when both name one.)
+    const origin = read.request.origin;
+    if (grant.origins.length && (!origin || !grant.origins.includes(origin))) {
+      return { ok: false, error: `the grant does not cover ${origin || 'a sign-in without a reported origin'}` };
+    }
+    const peers = grant.peers || [];
+    if (peers.length && (!challenge.peer || !peers.includes(challenge.peer))) {
+      return { ok: false, error: `the grant does not cover ${challenge.peer ? `peer ${challenge.peer}` : 'site sign-ins'}` };
+    }
   }
   if (grant.networks.length) {
     let network = read.inner.network;
-    if (!network && typeof options.networkOf === 'function') network = options.networkOf(read) || null;
+    if (read.scope === 'federation' && read.inner.type === 'FederationWithdrawalRequest') {
+      // A withdrawal spends a federation the host already holds: its network
+      // is the host's record, never the body's own claim.
+      const held = typeof options.networkOf === 'function' ? options.networkOf(read) || null : null;
+      if (network && held && !sameNetwork(network, held)) return { ok: false, error: `the withdrawal names ${network} and the federation is on ${held}` };
+      network = held;
+    } else if (!network && typeof options.networkOf === 'function') network = options.networkOf(read) || null;
     // A listed network is an allowlist, not a hint. A challenge that omits
     // network, and every message frame, would otherwise be signed for whatever
     // network the host passes.
@@ -988,7 +1087,7 @@ function createResult (params = {}, key) {
   const request = String(params.request || '').toLowerCase();
   if (!HEX32.test(request)) throw new TypeError('createResult: request hash required');
   const answer = params.answer != null ? frameBuffer(params.answer) : Buffer.alloc(0);
-  const refusal = params.refusal != null ? cleanLabel(String(params.refusal)).slice(0, DELEGATION_MAX_PURPOSE) : '';
+  const refusal = params.refusal != null ? cleanLabel(String(params.refusal), DELEGATION_MAX_PURPOSE) : '';
   if (!answer.length && !refusal) throw new TypeError('createResult: an answer or a refusal is required');
   if (answer.length && refusal) throw new TypeError('createResult: an answer and a refusal are exclusive');
   const issuedAt = Number.isFinite(params.now) ? params.now : Date.now();
@@ -1144,7 +1243,9 @@ function notificationFor (read, context = {}) {
   let title = 'Sign a message';
   let summary = read.request.purpose || '';
   if (read.scope === 'passport') {
-    const host = new URL(read.inner.challenge.origin).host;
+    const challenge = read.inner.challenge;
+    const origin = read.request.origin || challenge.origin;
+    const host = origin ? new URL(origin).host : `peer ${challenge.peer.slice(2, 10)}…`;
     title = `Sign in to ${host}`;
     summary = read.inner.challenge.purpose || summary || `${label} asks you to sign in to ${host} for it.`;
   } else if (read.scope === 'federation') {
@@ -1158,7 +1259,7 @@ function notificationFor (read, context = {}) {
       title = body.name ? `Join the shared wallet "${cleanLabel(body.name)}"` : 'Join a shared wallet';
       const validators = body.descriptor && Array.isArray(body.descriptor.validators) ? body.descriptor.validators.length : 0;
       const threshold = body.descriptor && body.descriptor.threshold;
-      summary = threshold ? `${threshold} of ${validators} signers.` : summary;
+      summary = Number.isSafeInteger(threshold) && threshold > 0 ? `${threshold} of ${validators} signers.` : summary;
     }
   } else if (!summary) {
     summary = `${label} asks you to sign a ${read.inner.type} message.`;
@@ -1200,6 +1301,7 @@ function answerPassport (read, params = {}, key) {
     wallet: params.wallet,
     cosignerKey: params.cosignerKey,
     device: read.request.requester,
+    sessionKey: read.request.sessionKey || undefined,
     now: params.now
   }, key);
 }
@@ -1217,6 +1319,52 @@ function answerMessage (read, key) {
 }
 
 /**
+ * Why an answer frame does not answer a request, or null when it does: a
+ * Passport assertion over the request's challenge and origin, the request's
+ * own message signed, or a federation reply for the same federation.
+ * @param {Object} read An `ok` {@link readRequest} result.
+ * @param {string|Buffer|Message} answer The answer frame.
+ * @returns {string|null}
+ */
+function answerError (read, answer) {
+  if (!read || !read.ok) return 'unreadable request';
+  // Only a frame its author signed answers a request; an unsigned copy does not.
+  let decoded = null;
+  try {
+    decoded = decodeFrame(Buffer.from(frameBuffer(answer)), null);
+  } catch (_) {}
+  if (!decoded || !decoded.ok) return `unreadable answer${decoded && decoded.error ? `: ${decoded.error}` : ''}`;
+  const message = decoded.message;
+  const inner = read.inner;
+  if (read.scope === 'passport') {
+    if (message.type !== 'PASSPORT_ASSERTION') return 'a passport request is answered with an assertion';
+    const fields = message.toFields() || {};
+    if (Buffer.from(fields.challengeHash || []).toString('hex') !== inner.hash) return 'the assertion is for another challenge';
+    if (normalizeOrigin(fields.origin) !== (read.request.origin || inner.challenge.origin || null)) return 'the assertion is for another origin';
+    if ((String(fields.sessionKey || '').toLowerCase() || null) !== (read.request.sessionKey || null)) return 'the assertion names another session key';
+    return null;
+  }
+  if (read.scope === 'message') {
+    const asked = Message.fromBuffer(Buffer.from(inner.buffer));
+    if (message.type !== asked.type || !message.bodyBuffer.equals(asked.bodyBuffer)) return 'the answer signs another message';
+    return null;
+  }
+  if (read.scope === 'federation') {
+    const reply = message.type === 'CONTRACT_MESSAGE' ? contractBody(message) : null;
+    const expected = inner.body.type === 'FederationInvite' ? 'FederationInviteResponse' : 'FederationWithdrawalSignature';
+    if (!reply || reply.type !== expected) return `a ${inner.body.type} is answered with a ${expected}`;
+    const idsError = federationIdsError(reply);
+    if (idsError) return idsError;
+    if (reply.federationId !== inner.body.federationId) return 'the answer is for another federation';
+    if (inner.body.type === 'FederationWithdrawalRequest' && reply.requestId !== inner.body.requestId) {
+      return 'the answer is for another withdrawal';
+    }
+    return null;
+  }
+  return `unknown scope ${read.scope}`;
+}
+
+/**
  * The kind of frame `input` is, when it is a delegation frame.
  * @param {string|Buffer|Message} input
  * @returns {string|null}
@@ -1230,7 +1378,10 @@ function delegationType (input) {
   }
 }
 
-/** @private Frame builders and readers, also published as statics on `Delegation`. */
+/**
+ * Frame builders and readers, also published as statics on `Delegation`.
+ * @private
+ */
 const delegation = {
   DELEGATION_VERSION,
   DELEGATION_SCOPES,
@@ -1270,6 +1421,7 @@ const delegation = {
   notificationFor,
   answerPassport,
   answerMessage,
+  answerError,
   delegationType
 };
 
@@ -1369,7 +1521,10 @@ class Delegation extends EventEmitter {
     return this;
   }
 
-  /** @private Run `fn` alone, then persist. */
+  /**
+   * Run `fn` alone, then persist.
+   * @private
+   */
   _serial (fn) {
     const run = this._queue.then(async () => {
       await this.load();
@@ -1678,11 +1833,14 @@ class Delegation extends EventEmitter {
       if (!auth.ok) throw new Error(auth.error);
       const made = delegation.createResult(Object.assign({ request: hash, now: this._now() }, fields), this.key);
       if (fields.answer) {
-        const read = delegation.readResult(made.message, this._opts());
-        if (!read.ok) throw new Error(read.error);
-        if (!this._signers(state, 'given', item.grant).has(read.result.answer.author)) {
+        const answered = delegation.readResult(made.message, this._opts());
+        if (!answered.ok) throw new Error(answered.error);
+        if (!this._signers(state, 'given', item.grant).has(answered.result.answer.author)) {
           throw new Error('the answer must be signed by this participant\'s identity or granted cosigner key');
         }
+        // The requester runs the same check; an answer it would refuse is never recorded.
+        const mismatch = answerError(read, answered.result.answer.buffer);
+        if (mismatch) throw new Error(mismatch);
       }
       item.status = status;
       item.result = made.message.toBuffer().toString('hex');
@@ -1823,6 +1981,11 @@ class Delegation extends EventEmitter {
       if (target && read.author !== target) return { ok: false, error: 'the result is not from the participant asked' };
       if (read.result.answer && !this._signers(state, 'received', out.grant, read.author).has(read.result.answer.author)) {
         return { ok: false, error: 'the answer is not signed by the participant asked' };
+      }
+      if (read.result.answer) {
+        const asked = delegation.readRequest(Buffer.from(out.hex, 'hex'), Object.assign({}, this._opts(), { now: out.at }));
+        const mismatch = asked.ok ? answerError(asked, read.result.answer.buffer) : `the request no longer reads: ${asked.error}`;
+        if (mismatch) return { ok: false, error: mismatch };
       }
       if (out.status !== 'sent') return { ok: true, type: 'DELEGATION_RESULT', request: read.result.request, duplicate: true };
       out.status = read.result.answer ? 'signed' : 'declined';

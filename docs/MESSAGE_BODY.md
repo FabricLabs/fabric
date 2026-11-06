@@ -83,6 +83,10 @@ API: `types/message.js` body codec helpers (`Message.encodeBody` /
 - **Legacy:** object bodies without a registered schema still
   `JSON.stringify` (deprecated transitional path for GenericMessage and
   unmigrated types). New opcodes **must** ship a field schema.
+- **Required on the wire:** Peer drops JSON bodies of every type in
+  `Message.LEGACY_BODY_TYPES` (counted in `Peer#jsonBodyCounts()`; there is
+  no opt-out). Send them with `Message.fromLegacyBody`.
+  Stored JSON frames still parse with `Message.tryParseLegacyBody`.
 - **Opaque UTF-8 exceptions:** `P2P_CHAT_MESSAGE` and `P2P_PEER_ALIAS` use the
   body bytes as the UTF-8 text / nickname itself (no field schema, no JSON).
   Build with `Message.fromVector(['P2P_CHAT_MESSAGE', text])` (string body).
@@ -134,12 +138,12 @@ Notes:
 
 Core's own senders use fields: keepalive ping/pong, `Contract#deploy` /
 `Contract#commit`, and `buildSignedSidechainPatchMessage`. Everything else
-still sends JSON, and JSON bodies of all eight types are still accepted. The
+still sends JSON. Since Phase 5 a Peer drops JSON bodies of all of them on the wire. The
 remaining phases are in [MESSAGE_BODY_MIGRATION.md](./MESSAGE_BODY_MIGRATION.md).
 
 ### Keyed layouts (session, inventory, documents)
 
-Seven more opcodes map through the same statics, with a layout built from one
+Thirteen more opcodes map through the same statics, with a layout built from one
 key table per type (`KEYED_LAYOUTS` in `types/message.js`), so the schema and
 the mapping cannot drift:
 
@@ -163,6 +167,11 @@ the mapping cannot drift:
 | `P2P_DOCUMENT_PUBLISH` | `hash`, `rate`, `contentHash`, `contentHashHex`, `binding` |
 | `DOCUMENT_PUBLISH` | `contentBase64` (sent as raw `bytes`), `id`, `mime`, `name`, `revision`, `sha256`, `size` |
 | `DOCUMENT_REQUEST` | `document`, `id`, `maxSats`, `relayHop`, `routeId`, `blobIndex`, `batchEnd`, `blobTotal`, `quote`, `credit`, `creditRef`, `contentHashHex` |
+| `BITCOIN_BLOCK` | `tip`, `height`, `network`, `at`, `hash`, `blockHash`, `content` (raw block, `hex` → bytes) |
+| `BITCOIN_BLOCK_HASH` / `BITCOIN_TRANSACTION_HASH` | `content` (32 bytes) |
+| `BITCOIN_TRANSACTION` | `content` (raw transaction, `hex` → bytes) |
+| `CONTRACT_PROPOSAL` | `version`, `contractId`, `chain.{parentRoot, merkleRoot, leafHashes}`, `statePatch`, `messages` (JSON, so the Merkle check reads the same values), `psbt.proposalBase64` (bytes) |
+| `P2P_FLUSH_CHAIN` | `snapshotBlockHash`, `network`, `label` |
 
 Hashes (`…Hex`, `contentHash`) are 32 raw bytes behind a length prefix, so an
 absent one costs 4 bytes. Integers are `u8` (hops, TTL), `u32` (indexes,
@@ -187,6 +196,15 @@ never from the bytes received, so every copy of a document has the same
 purchase hash and registration key. Peer gossips that same frame signed: only
 the author and signature differ. The content travels as raw bytes, about a
 quarter smaller than base64.
+
+`hex` is a key kind for lowercase even-length hex of any size, stored as raw
+bytes (half the size of the hex text).
+
+Peer reads `BITCOIN_BLOCK`, `CONTRACT_PROPOSAL` and `P2P_FLUSH_CHAIN` in
+either encoding; the `bitcoinBlock` event now carries the parsed `object`.
+Core sends `CONTRACT_PROPOSAL` (`createContractProposalMessage`) and
+`P2P_FLUSH_CHAIN` as fields. The ZMQ service builds Bitcoin messages locally
+and does not put them on the wire, so it is unchanged.
 
 `P2P_SESSION_ACK` has no layout: no code sends one and nothing reads it.
 `P2P_FILE_SEND` waits on the repricing question in the migration plan.

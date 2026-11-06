@@ -40,7 +40,10 @@ function makerOf (key) {
   return key.slice(key.indexOf(':') + 1);
 }
 
-/** @private a non-negative count setting, else `fallback` */
+/**
+ * a non-negative count setting, else `fallback`
+ * @private
+ */
 function limitOf (value, fallback) {
   const n = Number(value);
   return value == null || Number.isNaN(n) || n < 0 ? fallback : n;

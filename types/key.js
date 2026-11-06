@@ -143,14 +143,17 @@ const Actor = require('./actor');
 const Hash256 = require('./hash256');
 const taggedHash = Hash256.tagged;
 
-/** @private Tag for the generic `Key#sign` / `Key#verify` pair. */
+/**
+ * Tag for the generic `Key#sign` / `Key#verify` pair.
+ * @private
+ */
 const KEY_SIGN_TAG = SIGNING_TAGS.SIGN;
 const SCHNORR_TAG_PATTERN = /^Fabric\/[A-Za-z0-9/._-]{1,96}$/;
 
 /**
- * @private
  * BIP340 tagged hash of a message for one purpose. Fabric signs no
  * untagged message: the tag must name a Fabric purpose (`Fabric/…`).
+ * @private
  */
 function schnorrMessageHash (msg, tag) {
   if (typeof tag !== 'string' || !SCHNORR_TAG_PATTERN.test(tag)) {

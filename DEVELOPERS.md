@@ -330,6 +330,7 @@ Core's `functions/` helpers are folding into the Types that own them. The rules:
 - **Code moves to the Type**, as statics or a static namespace (`Witness.MuSig2`). A large implementation may live in a module beside the Type (`types/key/bip32.js`, like `types/bitcoin/`), exposed only through the Type.
 - **`functions/<name>.js` becomes a shim** that re-exports from the Type (pattern: `functions/messageBodyCodec.js`), plus a `.d.ts` shim where one exists today.
 - **Every path keeps working.** `./functions/*` is exported as a wildcard, so every path is public. The paths frozen in [PUBLIC_API.md](PUBLIC_API.md) stay frozen, and shims stay for at least the 0.1 line.
+- **Unreleased helpers move without a shim.** A `functions/` module added since the last published release has no installed users, so it moves into its Type and the old path is deleted (as `functions/delegation` was).
 - **`Peer` is already over 8,000 lines.** Peer-bound helpers go to smaller homes where they fit (`Message`, `Session`); the rest become `Peer` statics backed by modules in `types/peer/`.
 - **Leaves stay leaves:** `bytes`, `fabricCanonicalJson`, `wireJson`, `_sortKeys`, `oxfordJoin`, `truncateMiddle`, `json`, `fabricNativeAccel` (the native loader), `sipa/*` (vendored), and `passport` (its own spec).
 - **Each step ends with** `npm run ci` green (old tests run unchanged through the shims, new tests against the Types), `npm run check:downstream` passing, and `PUBLIC_API.md` and the CHANGELOG updated.

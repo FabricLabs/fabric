@@ -257,3 +257,81 @@ own routes (goon.vc) use it too.
   of its own rules.
 - **Server-held signing power**: a login is a session scoped to one site. A
   delegate signs with its own keys only, under grants its user made.
+
+## Peer sessions (v3)
+Signing in to a site (v2, above) ties a login to a web origin the relying
+party has to pin. A **peer session** signs in to a *peer*, named by its
+Fabric identity key. No origin is pinned; the peer's key is the audience. Use
+it wherever the same peer is reached from more than one origin, or with no
+web origin at all.
+
+Core defines only the frames and their checks. It says nothing about
+transports: carrying them over WebSockets or HTTP, authorizing HTTP requests,
+and the page protocol are in `@fabric/http` (`docs/PASSPORT_PEER.md`).
+
+### Who vouches for what
+| Question | Answered by |
+|---|---|
+| Which peer is this? | The peer's signature on its challenge, checked against the key the signer expected (or shown to the user and trusted on first use) |
+| Is the challenge fresh? | The signer's own `clientNonce`, echoed in the signed challenge |
+| Who may act as the user? | Only the holder of the session key the assertion named. The signer generates it and never hands it out |
+
+### Frames
+All carry `v: 3`, travel only between the signer and the peer, and are never
+relayed on the mesh (gossip class `session`).
+
+| Frame | Opcode | From | Fields |
+|---|---|---|---|
+| `PASSPORT_CONNECT` | `0x424B` | signer, unsigned | `clientNonce`, `issuedAt`, `expiresAt`, optional `peer` (expected key), `origin` (the page that asked, if any), `request` |
+| `PASSPORT_CHALLENGE` | `0x4240` | peer, **signed** | the v2 fields, plus `peer` (= author), `clientNonce`, optional `homes` (origins the peer says it serves, at most 16); `origin` may be empty |
+| `PASSPORT_ASSERTION` | `0x4241` | identity, signed | the v2 fields, plus `peer` (the audience) and `sessionKey` (compressed pubkey, never the identity key) |
+| `PASSPORT_SESSION` | `0x424C` | peer, signed | `sessionId`, `assertionHash`, `pubkey`, `identityId`, `sessionKey`, `issuedAt`, `expiresAt` (default 24 hours, at most 30 days) |
+| `PASSPORT_RESUME` | `0x424D` | session key, signed | `sessionId`, `peer`, `nonce`, `challengeHash`, `issuedAt`, `expiresAt` |
+| `PASSPORT_REFUSED` | `0x424E` | peer, signed | `answers` (sha256 of the refused frame), `error`, `issuedAt` |
+
+The v3 fields are trailing optional fields, so v2 frames encode byte for byte
+as before. A v2 reader refuses `v: 3`, and the readers here refuse a v2 frame
+that carries peer fields.
+
+### Flow
+1. The signer sends `PASSPORT_CONNECT` with a fresh `clientNonce`.
+2. The peer answers with a challenge it signs. The signer checks the author
+   is the `peer` it expected and that `clientNonce` is its own.
+3. The user approves. The signer generates a session key and signs the
+   assertion with the identity key, naming the peer and the session key.
+4. The peer spends the challenge it issued for that exchange, verifies the
+   assertion against its own key (`verifyAssertion(..., { peer })`), and
+   answers with `PASSPORT_SESSION`.
+5. From then on, a frame whose verified author is the session key speaks for
+   the identity on that peer, until the session expires.
+6. Later, the signer can answer a fresh challenge with `PASSPORT_RESUME`,
+   signed by the session key, to re-bind the session without the user.
+
+A cosigner proof in a v3 assertion is scoped
+`passport:peer:<peer>:<challengeHash>`.
+
+Code: `functions/passport` (`createConnect`, `createPeerChallenge`,
+`signAssertion`, `verifyAssertion`, `createPeerSession`, `createResume`,
+`createRefusal` and their readers).
+
+### Delegated peer sign-ins
+A `DELEGATION_REQUEST` may embed a v3 challenge. It must carry the requester's
+`sessionKey`, and `origin` is optional. The delegate's assertion names that
+session key, so the session belongs to the requester, not to the delegate. A
+grant may list `peers` (compressed pubkeys) to limit `passport` scope to those
+peers; a grant that lists `peers` covers no v2 site sign-ins. A grant's
+`origins` still apply, to the page origin the requester reported.
+
+### What this protects against
+- **A relay in the middle** can forward the frames, but it can't sign as the
+  session key, so it can't speak for the user. An assertion lifted into
+  another exchange fails, because that exchange's challenge has another
+  nonce.
+- **A spoofed peer** can't sign the expected key's challenge. A signer that
+  meets a peer for the first time without its key must show the key before
+  signing.
+- **Replay**: each challenge is spent on first use; a resume answers a fresh
+  challenge.
+- **Not covered**: confidentiality of whatever carries the frames, and how a
+  signer decides which page may use a session. Both are the transport's and
+  the signer's (`@fabric/http`, Passport).
