@@ -5598,7 +5598,9 @@ class Peer extends Service {
       }
       const reply = Message.fromLegacyBody('P2P_FILE_SEND', fileObj);
       reply.signWithKey(this.key);
-      if (this._writeDocumentFrame(conn, reply.toBuffer(), documentId, peerAddress)) wrote += 1;
+      const buf = reply.toBuffer();
+      if (this._refuseDocumentFrame(conn, buf, documentId, peerAddress)) break;
+      if (conn._writeFabric(buf) !== false) wrote += 1;
     }
     if (wrote > 0 && opts.revealKey && sealedMeta && sealedMeta.keyHex) {
       this._sendDocumentContentKeyReveal(documentId, peerAddress, {
@@ -5654,24 +5656,23 @@ class Peer extends Service {
   }
 
   /**
-   * Write one document blob frame. A frame over the cap the remote advertised
-   * is refused with a `documentDeliveryRefused` event (the document's blobs are
-   * never re-split for a smaller cap); a closed stream returns false as before.
+   * Refuse a document blob frame over the cap the remote advertised, with one
+   * `documentDeliveryRefused` event and warning (the document's blobs are never
+   * re-split for a smaller cap). Callers stop sending that document to that
+   * peer on refusal: its other full-size blobs would be refused the same way.
    * @private
    * @param {Object} conn Connection with `_writeFabric`
    * @param {Buffer} buf Signed frame
    * @param {string} documentId
    * @param {string} peerAddress
-   * @returns {boolean} whether the frame was written
+   * @returns {boolean} whether the frame was refused
    */
-  _writeDocumentFrame (conn, buf, documentId, peerAddress) {
+  _refuseDocumentFrame (conn, buf, documentId, peerAddress) {
     const remoteCap = conn._fabricRemoteMaxFrameBytes;
-    if (Number.isInteger(remoteCap) && buf.length > remoteCap) {
-      this.emit('documentDeliveryRefused', { documentId, peerAddress, frameBytes: buf.length, remoteCap });
-      this.emit('warning', `[FABRIC:PEER] Not delivering ${documentId} to ${peerAddress}: ${buf.length}-byte blob frame over its frame cap ${remoteCap}`);
-      return false;
-    }
-    return conn._writeFabric(buf) !== false;
+    if (!Number.isInteger(remoteCap) || buf.length <= remoteCap) return false;
+    this.emit('documentDeliveryRefused', { documentId, peerAddress, frameBytes: buf.length, remoteCap });
+    this.emit('warning', `[FABRIC:PEER] Not delivering ${documentId} to ${peerAddress}: ${buf.length}-byte blob frame over its frame cap ${remoteCap}`);
+    return true;
   }
 
   /**
@@ -5698,7 +5699,9 @@ class Peer extends Service {
       if (opts.routeId) fileObj.routeId = String(opts.routeId);
       const reply = Message.fromLegacyBody('P2P_FILE_SEND', fileObj);
       reply.signWithKey(this.key);
-      if (this._writeDocumentFrame(conn, reply.toBuffer(), documentId, peerAddress)) sent.push(fileObj.blobIndex);
+      const buf = reply.toBuffer();
+      if (this._refuseDocumentFrame(conn, buf, documentId, peerAddress)) break;
+      if (conn._writeFabric(buf) !== false) sent.push(fileObj.blobIndex);
     }
     if (opts.revealKey) {
       for (const blobIndex of sent) this._sendSealedBlobKeyReveal(doc, documentId, peerAddress, blobIndex, opts);

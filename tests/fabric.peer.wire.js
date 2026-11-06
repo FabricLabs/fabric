@@ -4,6 +4,7 @@ const assert = require('assert');
 const net = require('net');
 const { PassThrough } = require('stream');
 
+const Document = require('../types/document');
 const Message = require('../types/message');
 const Peer = require('../types/peer');
 const {
@@ -220,6 +221,42 @@ describe('@fabric/core Peer wire limits', function () {
       assert.strictEqual(refused[0].documentId, 'doc-cap');
       assert.strictEqual(refused[0].remoteCap, 4096);
       assert.ok(refused[0].frameBytes > 4096);
+    });
+
+    it('refuses a many-blob document once per peer, not once per blob', function () {
+      const peer = offlinePeer();
+      const writes = [];
+      peer.connections['127.0.0.1:13'] = {
+        _fabricRemoteMaxFrameBytes: 4096,
+        _writeFabric (buf) { writes.push(buf); return true; }
+      };
+      peer._state.content.documents = { 'doc-many': 'y'.repeat(4 * Document.CHUNK_BYTES) };
+      const refused = [];
+      const warnings = [];
+      peer.on('documentDeliveryRefused', (ev) => refused.push(ev));
+      peer.on('warning', (w) => warnings.push(String(w)));
+      assert.strictEqual(peer._sendP2pFileSendToPeer('doc-many', '127.0.0.1:13'), false);
+      assert.strictEqual(writes.length, 0);
+      assert.strictEqual(refused.length, 1);
+      assert.strictEqual(warnings.filter((w) => w.includes('Not delivering doc-many')).length, 1);
+    });
+
+    it('refuses a sealed many-blob document once per peer', function () {
+      const peer = offlinePeer();
+      const writes = [];
+      peer.connections['127.0.0.1:14'] = {
+        _fabricRemoteMaxFrameBytes: 4096,
+        _writeFabric (buf) { writes.push(buf); return true; }
+      };
+      const doc = Document.seal(Buffer.alloc(3 * Document.SEALED_CHUNK_BYTES, 5));
+      assert.ok(doc.blobs.length > 1);
+      const refused = [];
+      peer.on('documentDeliveryRefused', (ev) => refused.push(ev));
+      peer.on('warning', () => {});
+      assert.strictEqual(peer._sendSealedBlobsToPeer(doc, 'doc-sealed', '127.0.0.1:14', { revealKey: true }), false);
+      assert.strictEqual(writes.length, 0);
+      assert.strictEqual(refused.length, 1);
+      assert.strictEqual(refused[0].documentId, 'doc-sealed');
     });
 
     it('clamps an advertised cap to MAX_FRAME_BYTES', function () {
