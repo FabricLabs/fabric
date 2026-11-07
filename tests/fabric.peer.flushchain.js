@@ -165,7 +165,7 @@ describe('Peer P2P_FLUSH_CHAIN', function () {
     assert.strictEqual(writes[0].id, '127.0.0.1:2');
   });
 
-  it('sendFlushChainToTrustedPeers sends fields to every trusted peer, advertised or not', function () {
+  it('sendFlushChainToTrustedPeers sends signed JSON to every trusted peer for mixed-version relay paths', function () {
     const sent = {};
     const peer = createPeer();
     peers.push(peer);
@@ -178,13 +178,59 @@ describe('Peer P2P_FLUSH_CHAIN', function () {
     assert.strictEqual(peer._recordRemoteFieldBodies('127.0.0.1:4', { maxFrameBytes: 9000 }), false);
     const body = { snapshotBlockHash: '0'.repeat(64), network: 'playnet' };
     assert.strictEqual(peer.sendFlushChainToTrustedPeers(body), 2);
-    // Peer sends no JSON bodies: a peer without `fieldBodies` gets the same field frame.
+    // Capability on the first hop cannot describe every downstream relay.
     for (const port of [3, 4]) {
       const parsed = Message.tryParseLegacyBody(sent[port]);
-      assert.strictEqual(parsed.encoding, 'fields', String(port));
+      assert.strictEqual(parsed.encoding, 'json', String(port));
+      assert.ok(sent[port].verifyWithKey(peer.key));
       assert.strictEqual(parsed.value.snapshotBlockHash, body.snapshotBlockHash);
     }
   });
+
+  for (const encoding of ['json', 'fields']) {
+    it(`preserves the authorized ${encoding} frame across a differently pinned relay`, function () {
+      const author = createPeer();
+      const relay = createPeer({ flushChainAuthorizedPubkeys: [author.key.pubkey] });
+      const receiver = createPeer({ flushChainAuthorizedPubkeys: [author.key.pubkey] });
+      peers.push(author, relay, receiver);
+      const source = '127.0.0.1:30';
+      const target = '127.0.0.1:31';
+      relay.peers[source] = { publicKey: author.key.pubkey };
+      receiver.peers[target] = { publicKey: relay.key.pubkey };
+      relay._state.peers[source] = { score: 900 };
+      receiver._state.peers[target] = { score: 900 };
+      relay._state.peers[target] = { score: 900 };
+      const body = { snapshotBlockHash: 'a'.repeat(64), network: 'regtest' };
+      const message = (encoding === 'json'
+        ? Message.fromVector(['P2P_FLUSH_CHAIN', JSON.stringify(body)])
+        : Message.fromLegacyBody('P2P_FLUSH_CHAIN', body)).signWithKey(author.key);
+      const wire = message.toBuffer();
+      let forwarded;
+      relay.connections[target] = {
+        _fabricRemoteFieldBodies: encoding === 'fields',
+        _writeFabric: (buffer) => {
+          forwarded = buffer;
+          receiver._handleFabricMessage(buffer, { name: target });
+        }
+      };
+      const events = [];
+      receiver.on('flushChain', (event) => events.push(event));
+      relay._handleFabricMessage(wire, { name: source });
+      assert.deepStrictEqual(forwarded, wire);
+      assert.strictEqual(events.length, 1);
+      assert.ok(events[0].message.verifyWithKey(author.key));
+      assert.deepStrictEqual(events[0].object, body);
+
+      // A valid relay signature cannot replace the authorized author's signature.
+      const unauthorized = Message.fromVector(['P2P_FLUSH_CHAIN', JSON.stringify({ snapshotBlockHash: 'b'.repeat(64) })]).signWithKey(relay.key);
+      receiver._handleFabricMessage(unauthorized.toBuffer(), { name: target });
+      assert.strictEqual(events.length, 1);
+      const tampered = Buffer.from(wire);
+      tampered[tampered.length - 1] ^= 1;
+      receiver._handleFabricMessage(tampered, { name: target });
+      assert.strictEqual(events.length, 1);
+    });
+  }
 
   it('relayFromTrustedPeers skips low-score peers and origin', function () {
     const writes = [];

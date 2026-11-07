@@ -2344,18 +2344,22 @@ class Peer extends Service {
    * @param {string|null} origin - Connection key to skip (inbound sender), or null when originating locally.
    * @param {Message|Buffer} message
    * @param {number} [minScoreExclusive] - Override trust threshold (relay if peer score &gt; this value).
+   * @returns {number} Number of sockets written.
    */
   relayFromTrustedPeers (origin, message, minScoreExclusive = null) {
     const threshold = (minScoreExclusive != null && Number.isFinite(Number(minScoreExclusive)))
       ? Number(minScoreExclusive)
       : (Number(this.settings.flushChainMinTrustedScore) || 800);
     const buf = Buffer.isBuffer(message) ? message : message.toBuffer();
+    let sent = 0;
     for (const id in this.connections) {
       if (origin && id === origin) continue;
       const score = this._registryScoreForConnectionAddress(id);
       if (!(score > threshold)) continue;
       this.connections[id]._writeFabric(buf);
+      sent++;
     }
+    return sent;
   }
 
   /**
@@ -2418,7 +2422,7 @@ class Peer extends Service {
 
   /**
    * Sign and send `P2P_FLUSH_CHAIN` to all connected peers with registry score &gt; threshold.
-   * Body `{ snapshotBlockHash, network?, label? }`, sent as `P2P_FLUSH_CHAIN` fields.
+   * Body `{ snapshotBlockHash, network?, label? }`, sent as signed JSON for legacy relays.
    *
    * **Receivers** (see `P2P_FLUSH_CHAIN` handler) require **both**:
    * 1. Sender pubkey in {@link Peer#settings.flushChainAuthorizedPubkeys} (non-empty allowlist), and
@@ -2431,15 +2435,11 @@ class Peer extends Service {
    */
   sendFlushChainToTrustedPeers (object) {
     const body = object && typeof object === 'object' && !Array.isArray(object) ? object : {};
-    const buf = Message.fromLegacyBody('P2P_FLUSH_CHAIN', body).signWithKey(this.key).toBuffer();
-    const threshold = Number(this.settings.flushChainMinTrustedScore) || 800;
-    let n = 0;
-    for (const id in this.connections) {
-      if (!(this._registryScoreForConnectionAddress(id) > threshold)) continue;
-      this.connections[id]._writeFabric(buf);
-      n++;
-    }
-    return n;
+    // Even a field-capable next hop may relay to a JSON-only peer. Choose JSON
+    // at the author: relays cannot transcode signed bodies without losing the
+    // authorized sender's signature. Forward the same bytes at every hop.
+    const message = Message.fromVector(['P2P_FLUSH_CHAIN', JSON.stringify(body)]).signWithKey(this.key);
+    return this.relayFromTrustedPeers(null, message);
   }
 
   subscribe (_path) {
@@ -3021,6 +3021,7 @@ class Peer extends Service {
   /**
    * Whether `message` is a JSON body of a type with a field layout
    * (`Message.LEGACY_BODY_TYPES`), which the wire no longer accepts
+   * except for FLUSH_CHAIN compatibility across mixed-version relay paths
    * (docs/MESSAGE_BODY_MIGRATION.md Phase 5). Stored frames are read with
    * `Message.tryParseLegacyBody`, which still accepts JSON.
    * @private
@@ -3029,6 +3030,8 @@ class Peer extends Service {
    */
   _isRefusedJsonBody (message) {
     const name = Message.canonicalTypeName(message.type);
+    // FLUSH_CHAIN retains JSON compatibility across mixed-version relay paths.
+    if (name === 'P2P_FLUSH_CHAIN') return false;
     if (!name || !Message.LEGACY_BODY_TYPES.includes(name)) return false;
     const body = message.raw && message.raw.data;
     if (!body || !body.length) return false;
@@ -3177,6 +3180,8 @@ class Peer extends Service {
     const peerKey = origin && (origin.name != null ? origin.name : origin);
     const peerRecord = peerKey && this.peers[peerKey];
     const relayAsIs = peeledForward
+      // FLUSH_CHAIN is forwarded with the authorized original author intact.
+      || Message.canonicalTypeName(message.type) === 'P2P_FLUSH_CHAIN'
       || isRelayAsIsWireType(message.type)
       || isRelayAsIsWireType(message.friendlyType)
       || isRelayAsIsGenericCarrier(message);
