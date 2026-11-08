@@ -4330,7 +4330,10 @@ class Peer extends Service {
           contract: publishedId,
           object: msg.object,
           origin,
-          signer: signerPubkeyHex || null
+          signer: signerPubkeyHex || null,
+          // Signed frame, so apps can keep the publish in a contract's history.
+          wireMessage: wireMessage || null,
+          messageId: wireMessage && wireMessage.id ? wireMessage.id : null
         });
         // Peel / RELAY unwrap: deliver locally only (outer envelope already floods).
         if (delivery.allowMeshRelay && origin && origin.name && wireMessage) {
