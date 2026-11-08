@@ -52,6 +52,7 @@ shared catalog of document metadata. Pack names such as `chat.catalog` and
 | `MessageReceived` | Phase-1 delivery ACK for **any** sync-tracked wire frame — stored/relayed as `CONTRACT_MESSAGE`; 2PC sidecar only (does not advance tip clock) |
 | `MessageReceipt` | Phase-2 BIP340 receipt over message / content hash — same path; tip digest unchanged |
 | `DocumentList` | Compact document catalog (id, name, mime, size, optional merkle and price). No file bytes. Chunked to one AMP body. Fold by id, newest `observedAt` wins |
+| `DocumentRevision` | One version of an editable document under a `DocumentContract`; header `parent` is the replaced revision's frame id. Older versions keep their own ids. See [DOCUMENT_REVISIONS.md](DOCUMENT_REVISIONS.md) |
 | `ContractMessage` | Generic `ops` (RFC6902) commit from `Contract#commit`; Peer applies the ops to its copy of the contract state |
 
 ### Wire encoding

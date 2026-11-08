@@ -1,6 +1,10 @@
 # `@fabric/core` Changelog
 Recent changes to Fabric Core.
 
+## 2026-11-08
+- **Editable documents as contracts** (`functions/documentRevisions`, [docs/DOCUMENT_REVISIONS.md](docs/DOCUMENT_REVISIONS.md)). A `DocumentContract` publish names the editors; each edit is a signed `DocumentRevision` contract message (new `CONTRACT_BODY_TYPES` entry) whose header `parent` is the replaced revision's frame id. Versions keep their own document ids. `foldDocumentRevisions` folds frames in any order, keeping forks; `documentProvenance` / `verifyDocumentProvenance` give and check one version's history (publish through that revision, no later edits) as a `FabricMessageCollection`.
+- **`Peer` `contract:publish` carries the signed frame** (`wireMessage`, `messageId`), as `contract:message` does, so an app can keep a publish in a contract's history.
+
 ## 2026-11-05
 - **`Peer` drops replays the FIFO cache has forgotten.** Wire hashes also go into a rotating Bloom filter (`functions/wireReplayFilter`: two generations of 500k hashes; the current one rotates when full or 24h old, and the previous one is kept until 48h after it started), so flooding the 10k-entry cache no longer reopens a replay; a false "seen" can only drop a frame, never accept a replay. `gossip.replayFilter: false` turns it off. A hash is still forgotten by capacity: about one million distinct frames rotate it out of both generations, which can take well under 24h. Frames older than two generations are still accepted: the header has no timestamp or sequence number, which needs a new message version.
 - **Delegated federation frames carry canonical ids, compared exactly.** A delegated request and its answer must each have a lowercase 64-hex `federationId` equal to `contract`, and withdrawal messages a lowercase 64-hex `requestId`, as `Federation.verifySender` and `verifyWithdrawalRequest` require; `answerError` then compares the ids exactly. A padded, uppercase or missing id is refused before it can be recorded as an answer.
