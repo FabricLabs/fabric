@@ -7,7 +7,7 @@
  * CONTRACT_PUBLISH. Chaos peers always use ephemeral keys so floods never
  * mint Accept tokens or impersonate the suite operator.
  *
- * Does not send P2P_FLUSH_CHAIN, P2P_FILE_SEND, or GHSA advisory documents.
+ * Does not send P2P_FILE_SEND or GHSA advisory documents.
  */
 
 const crypto = require('crypto');
@@ -269,7 +269,7 @@ function planPlaynetChaosBlast (opts = {}) {
     iterations,
     conditions: selected,
     useOperatorKey: false,
-    forbiddenWire: ['P2P_FLUSH_CHAIN', 'P2P_FILE_SEND'],
+    forbiddenWire: ['P2P_FILE_SEND'],
     reportName: String(opts.reportName || process.env.FABRIC_CHAOS_REPORT ||
       (isolated
         ? 'playnet-chaos-neighbors-isolated.json'

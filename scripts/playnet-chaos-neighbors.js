@@ -12,7 +12,7 @@
  *   FABRIC_PLAYNET_CHAOS=1 npm run playnet:chaos
  *   npm run playnet:chaos:isolated   # ephemeral loopback hub (Phase A; no public dial)
  *
- * Forbidden on the wire: P2P_FLUSH_CHAIN, P2P_FILE_SEND, GHSA advisory dumps.
+ * Forbidden on the wire: P2P_FILE_SEND, GHSA advisory dumps.
  */
 
 const fs = require('fs');

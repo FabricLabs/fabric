@@ -171,7 +171,6 @@ the mapping cannot drift:
 | `BITCOIN_BLOCK_HASH` / `BITCOIN_TRANSACTION_HASH` | `content` (32 bytes) |
 | `BITCOIN_TRANSACTION` | `content` (raw transaction, `hex` → bytes) |
 | `CONTRACT_PROPOSAL` | `version`, `contractId`, `chain.{parentRoot, merkleRoot, leafHashes}`, `statePatch`, `messages` (JSON, so the Merkle check reads the same values), `psbt.proposalBase64` (bytes) |
-| `P2P_FLUSH_CHAIN` | `snapshotBlockHash`, `network`, `label` |
 
 Hashes (`…Hex`, `contentHash`) are 32 raw bytes behind a length prefix, so an
 absent one costs 4 bytes. Integers are `u8` (hops, TTL), `u32` (indexes,
@@ -200,10 +199,10 @@ quarter smaller than base64.
 `hex` is a key kind for lowercase even-length hex of any size, stored as raw
 bytes (half the size of the hex text).
 
-Peer reads `BITCOIN_BLOCK`, `CONTRACT_PROPOSAL` and `P2P_FLUSH_CHAIN` in
+Peer reads `BITCOIN_BLOCK` and `CONTRACT_PROPOSAL` in
 either encoding; the `bitcoinBlock` event now carries the parsed `object`.
-Core sends `CONTRACT_PROPOSAL` (`createContractProposalMessage`) and
-`P2P_FLUSH_CHAIN` as fields. The ZMQ service builds Bitcoin messages locally
+Core sends `CONTRACT_PROPOSAL` (`createContractProposalMessage`) as
+fields. The ZMQ service builds Bitcoin messages locally
 and does not put them on the wire, so it is unchanged.
 
 `P2P_SESSION_ACK` has no layout: no code sends one and nothing reads it.

@@ -88,6 +88,20 @@ describe('functions/walletTransactionWatch', function () {
     assert.strictEqual(classified.settlementId, 'settlement-1');
   });
 
+  it('matches a watched receive address from raw transaction hex', function () {
+    const addr = bitcoin.payments.p2wpkh({ hash: Buffer.alloc(20, 7), network: bitcoin.networks.regtest }).address;
+    const elsewhere = bitcoin.payments.p2wpkh({ hash: Buffer.alloc(20, 8), network: bitcoin.networks.regtest }).address;
+    const tx = new bitcoin.Transaction();
+    tx.addInput(Buffer.alloc(32, 1), 0);
+    tx.addOutput(bitcoin.address.toOutputScript(addr, bitcoin.networks.regtest), 50000n);
+    const watchSet = buildWatchSet({}, { addresses: [addr] });
+    const classified = classifyWalletTransaction(tx.toHex(), watchSet);
+    assert.strictEqual(classified.related, true);
+    assert.deepStrictEqual(classified.matchedAddresses, [addr]);
+    const other = buildWatchSet({}, { addresses: [elsewhere] });
+    assert.strictEqual(classifyWalletTransaction(tx.toHex(), other).related, false);
+  });
+
   it('scans verbosity-2 blocks for related txs', function () {
     const addr = 'bcrt1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh';
     const watchSet = buildWatchSet({}, { addresses: [addr] });

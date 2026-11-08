@@ -49,6 +49,16 @@ const ZMQ_TOPIC_CASES = Object.freeze({
 const ZMQ_TXID_MEMORY = 4096;
 /** Default window in which a `rawtx` / `hashtx` pair counts as one admission. */
 const ZMQ_TX_DEDUPE_MS = 30 * 1000;
+/** Per-transaction topics, paused during initial block download. */
+const ZMQ_TX_TOPICS = Object.freeze(['rawtx', 'hashtx']);
+/** Default interval between initial-block-download checks while it lasts. */
+const ZMQ_IBD_POLL_MS = 30 * 1000;
+/** Default wait for a `rawtx` before a lone `hashtx` is fetched over RPC. */
+const ZMQ_HASHTX_GRACE_MS = 250;
+/** Default minimum interval between wallet balance reads driven by `rawtx`. */
+const BALANCE_REFRESH_MS = 2000;
+/** Default cap on concurrent RPC connections to bitcoind. */
+const RPC_MAX_SOCKETS = 16;
 const Collection = require('../types/collection');
 const Entity = require('../types/entity');
 const Key = require('../types/key');
@@ -537,11 +547,7 @@ class Bitcoin extends Service {
       port: 8333, // P2P port
       rpcport: 8332, // RPC port
       interval: 60000, // 10 * 60 * 1000, // every 10 minutes, write a checkpoint
-      verbosity: 2,
-      // When true, flushChainToSnapshot is allowed on mainnet (dangerous).
-      flushChainAllowUnsafeNetworks: false,
-      // Safety cap for invalidateblock steps when rewinding to a snapshot tip.
-      flushChainMaxSteps: 100000
+      verbosity: 2
     }, settings);
 
     const netNorm = this._normalizeChainName(this.settings.network || 'mainnet');
@@ -961,11 +967,34 @@ class Bitcoin extends Service {
     return candidates;
   }
 
+  /**
+   * Keep-alive agent shared by every RPC client of this service. Its socket
+   * cap (`settings.rpcMaxSockets`, default 16) queues bursts here instead of
+   * opening a connection per call, which overflows bitcoind's work queue and
+   * leaves the host's ephemeral ports in TIME_WAIT.
+   * @private
+   * @param {boolean} [secure] HTTPS rather than HTTP.
+   * @returns {import('http').Agent}
+   */
+  _rpcAgent (secure = false) {
+    const key = secure ? '_rpcHttpsAgent' : '_rpcHttpAgent';
+    if (!this[key]) {
+      const max = Number(this.settings.rpcMaxSockets);
+      const lib = secure ? require('https') : require('http');
+      this[key] = new lib.Agent({
+        keepAlive: true,
+        maxSockets: Number.isFinite(max) && max > 0 ? max : RPC_MAX_SOCKETS
+      });
+    }
+    return this[key];
+  }
+
   _createRPCClientForCandidate (candidate) {
     const config = {
       host: candidate.host,
       port: Number(candidate.rpcport),
-      timeout: 2500
+      timeout: 2500,
+      agent: this._rpcAgent(candidate.secure === true)
     };
 
     if (candidate.username && candidate.password) {
@@ -1707,23 +1736,10 @@ class Bitcoin extends Service {
           // `rawtx` for this admission may already have been handled.
           if (!txid || this._zmqTxRecent(txid)) break;
           if (this.settings.walletWatchMempool !== false) {
-            try {
-              const verbose = await this._makeRPCRequest('getrawtransaction', [txid, true]);
-              // Mark only once this path delivered: a failed fetch leaves `rawtx` to do it.
-              // Re-check after the await in case `rawtx` won the race.
-              if (verbose && !this._zmqTxRecent(txid)) {
-                this._zmqTxMark(txid);
-                if (verbose.hex) this.broadcastWatchtower([verbose.hex]).catch(() => {});
-                this.emit('transaction', Object.assign({}, verbose, { source: 'BitcoinTransactionHash' }));
-                if (this.wallet && typeof this.wallet.ingestBitcoinTransaction === 'function') {
-                  this.wallet.ingestBitcoinTransaction(verbose, { source: 'BitcoinTransactionHash' });
-                }
-              }
-            } catch (e) {
-              if (this.settings.debug) {
-                this.emit('debug', `[FABRIC:BITCOIN] mempool tx fetch ${txid}: ${e.message || e}`);
-              }
-            }
+            // bitcoind sends `rawtx` for the same admission; give it a moment
+            // to arrive before paying an RPC for what it already carries.
+            if (this._zmqReceives('rawtx')) this._deferHashTx(txid);
+            else await this._fetchHashTx(txid);
           }
           break;
         }
@@ -1792,11 +1808,7 @@ class Bitcoin extends Service {
                 this.wallet.ingestBitcoinTransaction(rawHex, { source: 'BitcoinTransaction' });
               }
             }
-            const balance = await this._makeRPCRequest('getbalances', []).catch(() => null);
-            if (balance != null) {
-              this._state.balances.mine.trusted = balance;
-              this.commit();
-            }
+            await this._refreshBalancesSoon();
           } catch (e) {
             if (this.settings.debug) this.emit('debug', `[FABRIC:BITCOIN] ZMQ BitcoinTransaction handler: ${e.message || e}`);
           }
@@ -1851,6 +1863,147 @@ class Bitcoin extends Service {
     return Number.isFinite(ms) && ms >= 0 ? ms : ZMQ_TX_DEDUPE_MS;
   }
 
+  /**
+   * A non-negative number setting, else the default.
+   * @private
+   */
+  _msSetting (name, fallback) {
+    const ms = Number(this.settings[name]);
+    return Number.isFinite(ms) && ms >= 0 ? ms : fallback;
+  }
+
+  /**
+   * Whether the ZMQ subscriber is receiving a topic right now.
+   * @private
+   * @param {string} name bitcoind topic (`rawtx`, …).
+   */
+  _zmqReceives (name) {
+    const zmq = this.zmq;
+    if (!zmq || !zmq.settings || !Array.isArray(zmq.settings.subscriptions)) return false;
+    return zmq.settings.subscriptions.includes(name) && !(Array.isArray(zmq.paused) && zmq.paused.includes(name));
+  }
+
+  /**
+   * Fetch a mempool transaction announced by `hashtx` and deliver it, unless
+   * `rawtx` delivered it first.
+   * @private
+   * @param {string} txid
+   */
+  async _fetchHashTx (txid) {
+    try {
+      const verbose = await this._makeRPCRequest('getrawtransaction', [txid, true]);
+      // Mark only once this path delivered: a failed fetch leaves `rawtx` to do it.
+      // Re-check after the await in case `rawtx` won the race.
+      if (verbose && !this._zmqTxRecent(txid)) {
+        this._zmqTxMark(txid);
+        if (verbose.hex) this.broadcastWatchtower([verbose.hex]).catch(() => {});
+        this.emit('transaction', Object.assign({}, verbose, { source: 'BitcoinTransactionHash' }));
+        if (this.wallet && typeof this.wallet.ingestBitcoinTransaction === 'function') {
+          this.wallet.ingestBitcoinTransaction(verbose, { source: 'BitcoinTransactionHash' });
+        }
+      }
+    } catch (e) {
+      if (this.settings.debug) {
+        this.emit('debug', `[FABRIC:BITCOIN] mempool tx fetch ${txid}: ${e.message || e}`);
+      }
+    }
+  }
+
+  /**
+   * Hold a `hashtx` for `settings.zmqHashTxGraceMs` (default 250 ms); only
+   * txids its `rawtx` didn't deliver by then are fetched, one at a time.
+   * @private
+   * @param {string} txid
+   */
+  _deferHashTx (txid) {
+    if (!this._zmqHashTxPending) this._zmqHashTxPending = new Set();
+    if (this._zmqHashTxPending.size >= ZMQ_TXID_MEMORY) return;
+    this._zmqHashTxPending.add(String(txid).toLowerCase());
+    if (this._zmqHashTxTimer) return;
+    this._zmqHashTxTimer = setTimeout(async () => {
+      this._zmqHashTxTimer = null;
+      const txids = Array.from(this._zmqHashTxPending);
+      this._zmqHashTxPending.clear();
+      for (const id of txids) {
+        if (!this._zmqTxRecent(id)) await this._fetchHashTx(id);
+      }
+    }, this._msSetting('zmqHashTxGraceMs', ZMQ_HASHTX_GRACE_MS));
+    if (typeof this._zmqHashTxTimer.unref === 'function') this._zmqHashTxTimer.unref();
+  }
+
+  /**
+   * Read wallet balances after a transaction, at most once per
+   * `settings.balanceRefreshMs` (default 2 s): the first read runs at once,
+   * later ones inside the window share one trailing read.
+   * @private
+   * @returns {Promise<void>}
+   */
+  _refreshBalancesSoon () {
+    if (this._balanceRefresh) {
+      // A read already under way may predate this transaction: read once more after it.
+      if (this._balanceRefreshRunning) this._balanceRefreshAgain = true;
+      return this._balanceRefresh;
+    }
+    const windowMs = this._msSetting('balanceRefreshMs', BALANCE_REFRESH_MS);
+    const wait = Math.max(0, windowMs - (Date.now() - (this._balanceRefreshAt || 0)));
+    this._balanceRefresh = new Promise((resolve) => {
+      const run = async () => {
+        this._balanceRefreshTimer = null;
+        this._balanceRefreshRunning = true;
+        this._balanceRefreshAt = Date.now();
+        const balance = await this._makeRPCRequest('getbalances', []).catch(() => null);
+        if (balance != null) {
+          this._state.balances.mine.trusted = balance;
+          this.commit();
+        }
+        this._balanceRefreshRunning = false;
+        this._balanceRefresh = null;
+        resolve();
+        if (this._balanceRefreshAgain && !this._zmqIbdStopped) {
+          this._balanceRefreshAgain = false;
+          this._refreshBalancesSoon().catch(() => {});
+        }
+      };
+      if (wait === 0) {
+        run();
+        return;
+      }
+      this._balanceRefreshTimer = setTimeout(run, wait);
+      if (typeof this._balanceRefreshTimer.unref === 'function') this._balanceRefreshTimer.unref();
+    });
+    return this._balanceRefresh;
+  }
+
+  /**
+   * bitcoind publishes `rawtx` / `hashtx` for every transaction of every block
+   * it connects: thousands a second during initial block download, none of
+   * them mempool news. While the node is in IBD those topics are paused (the
+   * publisher stops sending them) and IBD is checked again every
+   * `settings.zmqIbdPollMs` (default 30 s); once it is over they resume and
+   * balances are read once. Unknown (RPC unreachable) leaves them as they are.
+   * @private
+   */
+  async _gateZMQTransactions () {
+    if (!this.zmq || typeof this.zmq.pause !== 'function') return;
+    let ibd = null;
+    try {
+      const info = await this._makeRPCRequest('getblockchaininfo', [], { retries: 0 });
+      if (info && typeof info.initialblockdownload === 'boolean') ibd = info.initialblockdownload;
+    } catch (_) { /* unknown */ }
+    if (ibd === true && this.zmq.pause(ZMQ_TX_TOPICS).length) {
+      this.emit('log', '[FABRIC:BITCOIN] Initial block download: transaction notifications paused until the node catches up');
+    } else if (ibd === false && this.zmq.resume(ZMQ_TX_TOPICS).length) {
+      this.emit('log', '[FABRIC:BITCOIN] Initial block download complete: transaction notifications resumed');
+      this._refreshBalancesSoon().catch(() => {});
+    }
+    if (ibd === false || this._zmqIbdStopped) return;
+    this._zmqIbdTimer = setTimeout(() => {
+      this._zmqIbdTimer = null;
+      this._gateZMQTransactions().catch(() => {});
+    }, this._msSetting('zmqIbdPollMs', ZMQ_IBD_POLL_MS));
+    if (typeof this._zmqIbdTimer.unref === 'function') this._zmqIbdTimer.unref();
+  }
+
   async _startZMQ () {
     if (this.settings.verbosity >= 5) this.emit('debug', '[AUDIT] Starting ZMQ service...');
     this.zmq.on('log', (msg) => {
@@ -1872,6 +2025,8 @@ class Bitcoin extends Service {
     });
 
     await this.zmq.start();
+    this._zmqIbdStopped = false;
+    await this._gateZMQTransactions();
     if (this.settings.debug) this.emit('debug', '[AUDIT] ZMQ Started.');
   }
 
@@ -2188,7 +2343,8 @@ class Bitcoin extends Service {
         port: port,
         timeout: 300000, // 5 minute timeout for heavy operations
         headers: { Authorization: `Basic ${Buffer.from(auth, 'utf8').toString('base64')}` },
-        path: `/wallet/${wallet}`
+        path: `/wallet/${wallet}`,
+        agent: this._rpcAgent(!!this.settings.secure)
       };
 
       let walletRpc;
@@ -2249,83 +2405,6 @@ class Bitcoin extends Service {
       if (this.settings.debug) this.emit('debug', `[FABRIC:BITCOIN] Error requesting best block hash: ${error.message}`);
       throw error;
     }
-  }
-
-  /**
-   * Rewind the attached Bitcoin Core node to a known-good tip by repeatedly calling `invalidateblock`
-   * on the current best block until `getbestblockhash` matches `snapshotBlockHash`.
-   * Allowed on regtest, playnet, signet, testnet, testnet4 unless settings.flushChainAllowUnsafeNetworks.
-   * @param {string} snapshotBlockHash - 64-char hex block hash to keep as the active tip.
-   * @returns {Promise<{ ok: boolean, steps: number, snapshotBlockHash: string }>}
-   */
-  async flushChainToSnapshot (snapshotBlockHash) {
-    const run = () => this._flushChainToSnapshotBody(snapshotBlockHash);
-    const p = (this._flushChainQueue || Promise.resolve())
-      .catch(() => {})
-      .then(run);
-    this._flushChainQueue = p.catch(() => {});
-    return p;
-  }
-
-  /**
-   * @private
-   */
-  async _flushChainToSnapshotBody (snapshotBlockHash) {
-    const hex = String(snapshotBlockHash || '').trim().toLowerCase();
-    if (!/^[0-9a-f]{64}$/.test(hex)) {
-      throw new Error('flushChainToSnapshot: snapshotBlockHash must be 64 hex characters');
-    }
-    const net = this._normalizeChainName(this.settings.network || 'mainnet');
-    const allowed =
-      net === 'regtest' ||
-      net === 'playnet' ||
-      net === 'signet' ||
-      net === 'testnet' ||
-      net === 'testnet4';
-    if (!allowed && !this.settings.flushChainAllowUnsafeNetworks) {
-      throw new Error(`flushChainToSnapshot: not allowed for network "${net}" (set flushChainAllowUnsafeNetworks to override)`);
-    }
-    const maxSteps = (typeof this.settings.flushChainMaxSteps === 'number' && this.settings.flushChainMaxSteps > 0)
-      ? this.settings.flushChainMaxSteps
-      : 100000;
-
-    try {
-      await this._makeRPCRequest('getblockheader', [hex]);
-    } catch (err) {
-      const msg = err && err.message ? String(err.message) : String(err);
-      throw new Error(`flushChainToSnapshot: snapshot block not known to node (${msg})`);
-    }
-
-    let cursor = String(await this._makeRPCRequest('getbestblockhash', [])).trim().toLowerCase();
-    let reachable = false;
-    for (let i = 0; i < maxSteps; i++) {
-      if (cursor === hex) {
-        reachable = true;
-        break;
-      }
-      const header = await this._makeRPCRequest('getblockheader', [cursor]);
-      const prev = header && header.previousblockhash
-        ? String(header.previousblockhash).trim().toLowerCase()
-        : null;
-      if (!prev) break;
-      cursor = prev;
-    }
-    if (!reachable) {
-      throw new Error('flushChainToSnapshot: snapshot is not an ancestor of the active tip');
-    }
-
-    let steps = 0;
-    while (steps < maxSteps) {
-      const best = String(await this._makeRPCRequest('getbestblockhash', [])).trim().toLowerCase();
-      if (best === hex) {
-        const out = { ok: true, steps, snapshotBlockHash: hex };
-        this.emit('message', { type: 'BitcoinFlushChain', data: out });
-        return out;
-      }
-      await this._makeRPCRequest('invalidateblock', [best]);
-      steps++;
-    }
-    throw new Error(`flushChainToSnapshot: exceeded flushChainMaxSteps=${maxSteps} before reaching snapshot`);
   }
 
   async _requestBlockHeader (hash) {
@@ -3208,7 +3287,8 @@ class Bitcoin extends Service {
       const config = {
         host: '127.0.0.1',
         port: this.settings.rpcport,
-        timeout: 300000 // 5 minute timeout for heavy operations
+        timeout: 300000, // 5 minute timeout for heavy operations
+        agent: this._rpcAgent()
       };
 
       const auth = `${this.settings.username}:${this.settings.password}`;
@@ -3333,7 +3413,8 @@ class Bitcoin extends Service {
         host: host,
         port: port,
         // Keep RPC timeout modest so CLI stays responsive even if bitcoind is slow/offline
-        timeout: 15000
+        timeout: 15000,
+        agent: this._rpcAgent(protocol === 'https')
       };
 
       if (this.settings.username && this.settings.password) {
@@ -3422,10 +3503,21 @@ class Bitcoin extends Service {
       await this.wallet.stop();
     }
 
+    this._zmqIbdStopped = true;
+    for (const timer of ['_zmqIbdTimer', '_zmqHashTxTimer', '_balanceRefreshTimer']) {
+      if (this[timer]) clearTimeout(this[timer]);
+      this[timer] = null;
+    }
+    this._balanceRefresh = null;
+    this._balanceRefreshAgain = false;
+
     // Stop the ZMQ service
     if (this.zmq) {
       if (this.settings.debug) this.emit('debug', '[FABRIC:BITCOIN] Stopping ZMQ...');
       await this.zmq.stop();
+    }
+    for (const agent of [this._rpcHttpAgent, this._rpcHttpsAgent]) {
+      if (agent) agent.destroy();
     }
 
     // Kill the Bitcoin node process if it exists

@@ -75,15 +75,125 @@ describe('Bitcoin ZMQ dispatch', function () {
     assert.ok(!calls.includes('getrawtransaction'), 'hashtx after rawtx does not refetch');
   });
 
-  it('hashtx first fetches the transaction once; the later rawtx is skipped', async function () {
+  it('hashtx first waits for its rawtx instead of fetching the transaction', async function () {
     const { svc, calls } = service();
+    svc.settings.zmqHashTxGraceMs = 10;
     const tx = sampleTx();
     const events = [];
     svc.on('transaction', (t) => events.push(t));
     await svc._handleZMQMessage(['hashtx', Buffer.from(tx.getId(), 'hex')]);
     await svc._handleZMQMessage(Message.fromLegacyBody('BitcoinTransaction', { content: tx.toHex() }));
+    await new Promise((r) => setTimeout(r, 30));
+    assert.strictEqual(events.length, 1);
+    assert.strictEqual(events[0].source, 'BitcoinTransaction');
+    assert.ok(!calls.includes('getrawtransaction'));
+  });
+
+  it('a hashtx whose rawtx never comes is fetched once after the grace', async function () {
+    const { svc, calls } = service();
+    svc.settings.zmqHashTxGraceMs = 10;
+    const tx = sampleTx();
+    const events = [];
+    svc.on('transaction', (t) => events.push(t));
+    await svc._handleZMQMessage(['hashtx', Buffer.from(tx.getId(), 'hex')]);
+    await svc._handleZMQMessage(['hashtx', Buffer.from(tx.getId(), 'hex')]);
+    assert.strictEqual(events.length, 0, 'nothing fetched inside the grace');
+    await new Promise((r) => setTimeout(r, 30));
+    assert.strictEqual(events.length, 1);
+    assert.strictEqual(events[0].source, 'BitcoinTransactionHash');
+    assert.strictEqual(calls.filter((m) => m === 'getrawtransaction').length, 1);
+  });
+
+  it('without a rawtx subscription, hashtx fetches at once', async function () {
+    const { svc, calls } = service();
+    svc.zmq.settings.subscriptions = ['hashblock', 'hashtx'];
+    const tx = sampleTx();
+    const events = [];
+    svc.on('transaction', (t) => events.push(t));
+    await svc._handleZMQMessage(['hashtx', Buffer.from(tx.getId(), 'hex')]);
     assert.strictEqual(events.length, 1);
     assert.strictEqual(calls.filter((m) => m === 'getrawtransaction').length, 1);
+  });
+
+  it('a burst of rawtx reads balances once, then once more after the window', async function () {
+    const { svc, calls } = service();
+    svc.settings.balanceRefreshMs = 30;
+    for (let i = 0; i < 50; i++) {
+      const tx = sampleTx();
+      tx.addOutput(Buffer.from('0014' + '22'.repeat(20), 'hex'), BigInt(i + 1));
+      svc._handleZMQMessage(['rawtx', Buffer.from(tx.toHex(), 'hex')]);
+    }
+    await new Promise((r) => setImmediate(r));
+    assert.strictEqual(calls.filter((m) => m === 'getbalances').length, 1, 'leading read only');
+    await new Promise((r) => setTimeout(r, 60));
+    assert.strictEqual(calls.filter((m) => m === 'getbalances').length, 2, 'one trailing read');
+  });
+
+  it('pauses transaction topics during initial block download and resumes after', async function () {
+    const { svc, calls } = service();
+    svc.settings.zmqIbdPollMs = 10;
+    let ibd = true;
+    const rpc = svc._makeRPCRequest;
+    svc._makeRPCRequest = async (method, params) => {
+      if (method === 'getblockchaininfo') return { initialblockdownload: ibd };
+      return rpc(method, params);
+    };
+    const paused = new Set();
+    svc.zmq.socket = { subscribe: (n) => paused.delete(n), unsubscribe: (n) => paused.add(n) };
+    await svc._gateZMQTransactions();
+    assert.deepStrictEqual(Array.from(paused).sort(), ['hashtx', 'rawtx']);
+    assert.ok(!svc._zmqReceives('rawtx'));
+    ibd = false;
+    await new Promise((r) => setTimeout(r, 40));
+    assert.strictEqual(paused.size, 0);
+    assert.ok(svc._zmqReceives('rawtx'));
+    assert.ok(calls.includes('getbalances'), 'balances read once caught up');
+    assert.strictEqual(svc._zmqIbdTimer, null, 'stops checking after IBD');
+  });
+
+  it('services/zmq start leaves paused topics unsubscribed', async function () {
+    const ZMQ = require('../services/zmq');
+    const zmq = new ZMQ();
+    const subscribed = [];
+    zmq.connect = async function () {
+      this.socket = { subscribe: (n) => subscribed.push(n), unsubscribe () {} };
+      return this;
+    };
+    assert.deepStrictEqual(zmq.pause(['rawtx', 'nope']), ['rawtx']);
+    await zmq.start();
+    assert.deepStrictEqual(subscribed, ['hashblock', 'rawblock', 'hashtx']);
+    assert.deepStrictEqual(zmq.resume(['rawtx']), ['rawtx']);
+    assert.deepStrictEqual(subscribed, ['hashblock', 'rawblock', 'hashtx', 'rawtx']);
+    assert.deepStrictEqual(zmq.paused, []);
+  });
+
+  it('RPC clients share a capped keep-alive agent', async function () {
+    const http = require('http');
+    let connections = 0;
+    const server = http.createServer((req, res) => {
+      let body = '';
+      req.on('data', (c) => { body += c; });
+      req.on('end', () => {
+        const { id } = JSON.parse(body);
+        setTimeout(() => {
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify({ jsonrpc: '2.0', id, result: 1 }));
+        }, 2);
+      });
+    });
+    server.on('connection', () => { connections++; });
+    await new Promise((r) => server.listen(0, '127.0.0.1', r));
+    const svc = new Bitcoin({ network: 'regtest', mode: 'rpc', managed: false, rpcMaxSockets: 4 });
+    try {
+      const client = svc._createRPCClientForCandidate({ host: '127.0.0.1', rpcport: server.address().port });
+      const call = () => new Promise((resolve, reject) => client.request('getblockcount', [], (err, out) => (err ? reject(err) : resolve(out.result))));
+      const results = await Promise.all(Array.from({ length: 100 }, call));
+      assert.strictEqual(results.length, 100);
+      assert.ok(connections <= 4, `${connections} connections for 100 calls`);
+    } finally {
+      svc._rpcAgent().destroy();
+      await new Promise((r) => server.close(r));
+    }
   });
 
   it('a failed hashtx fetch leaves rawtx to deliver the transaction', async function () {

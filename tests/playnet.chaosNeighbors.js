@@ -69,7 +69,7 @@ describe('playnet chaos neighbors (unit)', function () {
     assert.strictEqual(plan.production, false);
     assert.deepStrictEqual(plan.targets, DEFAULT_LOCAL_PEERS.slice());
     assert.strictEqual(plan.useOperatorKey, false);
-    assert.ok(plan.forbiddenWire.includes('P2P_FLUSH_CHAIN'));
+    assert.ok(plan.forbiddenWire.includes('P2P_FILE_SEND'));
     assert.ok(plan.forbiddenWire.includes('P2P_FILE_SEND'));
     assert.strictEqual(plan.dominant.noisyNeighbors.neverOperatorKey, true);
   });

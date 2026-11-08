@@ -39,6 +39,31 @@ function normalizeAddress (addr) {
   return String(addr || '').trim();
 }
 
+/** @private Networks a raw output script is rendered for; only watched strings match. */
+const OUTPUT_SCRIPT_NETWORKS = Object.freeze([
+  bitcoin.networks.bitcoin,
+  bitcoin.networks.testnet,
+  bitcoin.networks.regtest
+]);
+
+/**
+ * Every address a raw output script reads as. A raw transaction names no
+ * network, and each network renders the script differently, so the watch set
+ * picks the one it holds.
+ * @private
+ * @param {Buffer|Uint8Array} script
+ * @returns {string[]}
+ */
+function addressesFromOutputScript (script) {
+  const out = [];
+  for (const network of OUTPUT_SCRIPT_NETWORKS) {
+    try {
+      out.push(normalizeAddress(bitcoin.address.fromOutputScript(script, network)));
+    } catch (_) {}
+  }
+  return [...new Set(out.filter(Boolean))];
+}
+
 function addressesFromScriptPubKey (spk) {
   if (!spk || typeof spk !== 'object') return [];
   const out = [];
@@ -187,7 +212,16 @@ function classifyWalletTransaction (txOrHex, watchSet) {
           coinbase: inp.hash.every((b) => b === 0) && inp.index === 0xffffffff,
           txinwitness: (inp.witness || []).map((w) => w.toString('hex'))
         })),
-        vout: [],
+        // Outputs decoded from the raw bytes: without them a raw `rawtx`
+        // notification matches no watched address and a payment is missed.
+        vout: tx.outs.map((out, n) => ({
+          n,
+          value: Number(out.value) / 1e8,
+          scriptPubKey: {
+            hex: Buffer.from(out.script).toString('hex'),
+            addresses: addressesFromOutputScript(out.script)
+          }
+        })),
         locktime: tx.locktime
       };
     } catch (_) {

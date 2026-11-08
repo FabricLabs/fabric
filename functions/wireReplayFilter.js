@@ -93,8 +93,15 @@ class WireReplayFilter {
   add (hex) {
     if (typeof hex !== 'string' || hex.length < 16) return;
     this._rotateIfDue();
-    for (const p of this._positions(hex)) this._current.bits[p >>> 3] |= (1 << (p & 7));
-    this._current.count++;
+    // Only a hash new to this generation counts toward rotation: repeats of
+    // one frame (fan-out, replays) must not age older hashes out early.
+    let fresh = false;
+    for (const p of this._positions(hex)) {
+      const mask = 1 << (p & 7);
+      if (!(this._current.bits[p >>> 3] & mask)) fresh = true;
+      this._current.bits[p >>> 3] |= mask;
+    }
+    if (fresh) this._current.count++;
   }
 }
 

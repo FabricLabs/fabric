@@ -111,7 +111,7 @@ Codes from [`constants.js`](constants.js). Full catalog: [`MESSAGES.md`](MESSAGE
 | `0x44` | 68 | `P2P_MESSAGE_RECEIPT` | Ack / receipt | ❌ No |
 | `0x45` | 69 | `P2P_FORWARD` | Directed onion hop (`nextPeer` + `ttl` + `inner`) | ⚠️ Conditional |
 | `0x55` | 85 | `P2P_CHAIN_SYNC_REQUEST` | Chain sync request | ⚠️ Conditional |
-| `0x56` | 86 | `P2P_FLUSH_CHAIN` | Trusted tip rewind / flush | ⚠️ Conditional |
+| `0x56` | 86 | *(reserved)* | Retired `P2P_FLUSH_CHAIN`; decodes as unknown, never relayed | ❌ No |
 | `0x57` | 87 | `P2P_INVENTORY_REQUEST` | Inventory request | ⚠️ Conditional |
 | `0x58` | 88 | `P2P_INVENTORY_RESPONSE` | Inventory response | ⚠️ Conditional |
 | `0x59` | 89 | `P2P_FILE_SEND` | Document / blob transfer | ⚠️ Conditional |

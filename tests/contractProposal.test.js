@@ -34,14 +34,11 @@ describe('functions/contractProposal', function () {
     assert.strictEqual(v.ok, true, v.error);
   });
 
-  it('createContractProposalMessage can encode JSON for receivers that read proposals as JSON only', function () {
+  it('createContractProposalMessage refuses JSON, which peers drop unread', function () {
     const key = new Key();
     const inner = Message.fromVector(['P2P_CHAT_MESSAGE', 'o7']).signWithKey(key);
-    const msg = createContractProposalMessage(key, { messages: [inner], contractId: 'c1', encoding: 'json' });
-    assert.strictEqual(msg.type, 'CONTRACT_PROPOSAL');
-    const parsed = JSON.parse(msg.body);
-    assert.strictEqual(parsed.contractId, 'c1');
-    assert.strictEqual(parsed.encoding, undefined, 'the option is not part of the payload');
+    assert.throws(() => createContractProposalMessage(key, { messages: [inner], contractId: 'c1', encoding: 'json' }), /sent as fields/);
+    const msg = createContractProposalMessage(key, { messages: [inner], contractId: 'c1', encoding: 'fields' });
     assert.strictEqual(Message.tryParseLegacyBody(Message.fromBuffer(msg.toBuffer())).value.contractId, 'c1');
   });
 

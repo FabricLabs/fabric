@@ -106,8 +106,8 @@ describe('@fabric/core/types/machine', function () {
 
     it('compileOpcodeContract accepts newline-delimited opcode bodies', function () {
       const machine = new Machine(false);
-      const lines = machine.compileOpcodeContract('OP_DUP\nOP_HASH160\nP2P_FLUSH_CHAIN');
-      assert.deepStrictEqual(lines, ['OP_DUP', 'OP_HASH160', 'P2P_FLUSH_CHAIN']);
+      const lines = machine.compileOpcodeContract('OP_DUP\nOP_HASH160\nP2P_CHAIN_SYNC_REQUEST');
+      assert.deepStrictEqual(lines, ['OP_DUP', 'OP_HASH160', 'P2P_CHAIN_SYNC_REQUEST']);
     });
 
     it('compileOpcodeContract rejects unknown opcode symbols', function () {

@@ -452,6 +452,20 @@ describe('@fabric/core Peer gossip / peering production network', function () {
       }
     });
 
+    it('P2P_RELAY never floods a Passport or delegation frame, even nested', function () {
+      const { peer, edges } = meshPeer(3);
+      const attacker = new Key();
+      const origin = '127.0.0.1:8100';
+      const passportish = Message.fromVector(['PASSPORT_CHALLENGE', 'x']);
+      const once = Message.fromVector(['P2P_RELAY', passportish.toBuffer()]).signWithKey(attacker);
+      const twice = Message.fromVector(['P2P_RELAY', once.toBuffer()]).signWithKey(attacker);
+      for (const outer of [once, twice]) peer._handleFabricMessage(outer.toBuffer(), { name: origin }, null);
+      for (const [addr, writes] of Object.entries(edges)) {
+        if (addr === origin) continue;
+        assert.ok(!writes.some((w) => Message.fromBuffer(w).type === 'P2P_RELAY'), `flooded to ${addr}`);
+      }
+    });
+
     it('foreign-signed P2P_RELAY peering offer does not enqueue or burn budget', function () {
       const { peer, edges } = meshPeer(2, {
         peering: { maxRelaysPerOriginPerMinute: 1 },

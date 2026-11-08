@@ -59,7 +59,7 @@ const Actor = require('./actor');
 const Message = require('./message');
 const { encodeFabricUri, decodeFabricUri } = require('../functions/fabricUri');
 const { normalizeAccountNetwork, cosignerProof, verifyCosignerProof } = require('../functions/accountKeys');
-const { normalizeOrigin, readChallenge, signAssertion, PASSPORT_DISCLOSURES } = require('../functions/passport');
+const { normalizeOrigin, readChallenge, signAssertion, verifyAssertion, PASSPORT_DISCLOSURES } = require('../functions/passport');
 const {
   DELEGATION_LINK_MAX_TTL_MS,
   DELEGATION_REQUEST_MAX_TTL_MS
@@ -67,6 +67,12 @@ const {
 
 /** Protocol version carried in every frame. */
 const DELEGATION_VERSION = 1;
+/**
+ * Version of a grant that limits `peers`. Restrictions are never optional
+ * trailing fields an older reader could skip: such a grant carries this
+ * version, which readers without the field refuse.
+ */
+const DELEGATION_GRANT_PEERS_VERSION = 2;
 /** What a grant may allow. */
 const DELEGATION_SCOPES = Object.freeze(['identity', 'passport', 'federation', 'message']);
 /** Default lifetime of a pairing frame or a mailbox read. */
@@ -82,6 +88,37 @@ const DELEGATION_MAX_PURPOSE = 140;
 const FEDERATION_REQUEST_TYPES = Object.freeze(['FederationInvite', 'FederationWithdrawalRequest']);
 /** Frame types a `message` grant lets the grantee have signed (never protocol frames). */
 const MESSAGE_SCOPE_TYPES = Object.freeze(['GENERIC_MESSAGE', 'P2P_CHAT_MESSAGE', 'CHAT_MESSAGE']);
+/**
+ * GENERIC_MESSAGE body types Peer (`Peer#_handleGenericMessage`) or a Fabric
+ * app acts on as protocol. A `message` grant never gets the user's signature
+ * on one of these, nor on any body named like a registered wire type.
+ */
+const GENERIC_PROTOCOL_BODY_TYPES = Object.freeze([
+  'SIDECHAIN_STATE_PATCH',
+  'FederationSignRequest',
+  'FederationSignResponse',
+  'INVENTORY_REQUEST',
+  'INVENTORY_RESPONSE',
+  'DocumentContentKeyReveal',
+  'DOCUMENT_KEY_REVEAL',
+  'DOCUMENT_BLOB_QUOTE',
+  'DOCUMENT_BLOB_BATCH',
+  'CONTRACT_PUBLISH',
+  'CONTRACT_MESSAGE',
+  'P2P_SESSION_OFFER',
+  'P2P_SESSION_OPEN',
+  'P2P_CHAT_MESSAGE',
+  'P2P_STATE_ANNOUNCE',
+  'P2P_PEER_GOSSIP',
+  'P2P_PEERING_OFFER',
+  'P2P_PING',
+  'P2P_PONG',
+  'P2P_PEER_ALIAS'
+]);
+/** @private */
+const GENERIC_PROTOCOL_PREFIX = /^(federation|delegation|passport|contract|document|inventory|sidechain|bitcoin|beacon|p2p_)/i;
+/** @private */
+const MESSAGE_PREVIEW_CHARS = 140;
 
 /** @private */
 const COMMIT_TAG = 'fabric-pairing:2:commit';
@@ -672,7 +709,7 @@ function createGrant (params = {}, key) {
     proof = cosignerProof(params.cosignerKey, { identityPubkey: pubkey, scope: grantCosignerScope({ grantee, link, issuedAt }) });
   }
   const message = Message.fromFields('DELEGATION_GRANT', {
-    v: DELEGATION_VERSION,
+    v: peers.length ? DELEGATION_GRANT_PEERS_VERSION : DELEGATION_VERSION,
     pubkey,
     grantee,
     link,
@@ -701,7 +738,8 @@ function readGrant (input, options = {}) {
   if (!decoded.ok) return decoded;
   const fields = decoded.message.toFields();
   if (!fields) return { ok: false, error: 'malformed DELEGATION_GRANT body' };
-  if (Number(fields.v) !== DELEGATION_VERSION) return { ok: false, error: `unsupported delegation version ${fields.v}` };
+  const version = Number(fields.v);
+  if (version !== DELEGATION_VERSION && version !== DELEGATION_GRANT_PEERS_VERSION) return { ok: false, error: `unsupported delegation version ${fields.v}` };
   const grantor = compressed(fields.pubkey);
   if (!grantor || grantor.slice(2) !== decoded.author) return { ok: false, error: 'pubkey does not match the frame author' };
   const grantee = compressed(fields.grantee);
@@ -720,6 +758,7 @@ function readGrant (input, options = {}) {
     return { ok: false, error: err.message };
   }
   if (!scopes.length) return { ok: false, error: 'grant has no scope' };
+  if (version === DELEGATION_GRANT_PEERS_VERSION && !peers.length) return { ok: false, error: 'a peer-limited grant names no peers' };
   const link = String(fields.link || '');
   if (link && !HEX32.test(link)) return { ok: false, error: 'invalid link' };
   const issuedAt = toMillis(fields.issuedAt);
@@ -808,13 +847,62 @@ function contractBody (message) {
   if (!parsed.ok) return null;
   let value = parsed.value;
   if (parsed.encoding === 'fields' && typeof value.payload === 'string') {
+    let payload;
     try {
-      value = Object.assign({ contract: value.contract }, JSON.parse(value.payload));
+      payload = JSON.parse(value.payload);
     } catch (_) {
       return null;
     }
+    if (!payload || typeof payload !== 'object') return null;
+    // The envelope names the contract; a payload naming another is refused.
+    if (payload.contract != null && payload.contract !== value.contract) return null;
+    value = Object.assign({}, payload, { contract: value.contract });
   }
   return value && typeof value === 'object' ? value : null;
+}
+
+/**
+ * The protocol type a carrier body names, if any: a JSON body whose `type`
+ * Peer or an app would act on as protocol.
+ * @private
+ * @param {Message} message
+ * @returns {string|null}
+ */
+function genericProtocolType (message) {
+  let value = null;
+  try {
+    value = JSON.parse(message.bodyBuffer.toString('utf8'));
+  } catch (_) {
+    return null;
+  }
+  if (!value || typeof value !== 'object') return null;
+  const named = typeof value.type === 'string' ? value.type : (typeof value['@type'] === 'string' ? value['@type'] : null);
+  if (!named) return null;
+  if (GENERIC_PROTOCOL_BODY_TYPES.includes(named) || GENERIC_PROTOCOL_PREFIX.test(named)) return named;
+  if (Message.canonicalTypeCode(named) != null) return named;
+  return null;
+}
+
+/**
+ * What a message request would sign, as short plain text for the prompt.
+ * @private
+ * @param {Message} message
+ * @returns {string}
+ */
+function messagePreview (message) {
+  let text = message.bodyBuffer.toString('utf8');
+  try {
+    const value = JSON.parse(text);
+    if (value && typeof value === 'object') {
+      const content = typeof value.content === 'string' ? value.content
+        : (typeof value.text === 'string' ? value.text
+          : (typeof value.body === 'string' ? value.body : null));
+      text = content != null ? content : JSON.stringify(value);
+    }
+  } catch (_) {}
+  // eslint-disable-next-line no-control-regex
+  text = text.replace(/[\u0000-\u001f\u007f\u200b-\u200f\u202a-\u202e\u2066-\u2069]+/g, ' ').trim();
+  return text.length > MESSAGE_PREVIEW_CHARS ? `${text.slice(0, MESSAGE_PREVIEW_CHARS - 1)}…` : text;
 }
 
 /**
@@ -848,7 +936,9 @@ function readInnerFrame (buffer, options = {}) {
   }
   if (MESSAGE_SCOPE_TYPES.includes(decoded.type)) {
     if (decoded.signed) return { ok: false, error: 'a message to sign must be unsigned' };
-    return { ok: true, scope: 'message', type: decoded.type, hash, author: null, buffer: decoded.buffer, network: null };
+    const protocolType = genericProtocolType(decoded.message);
+    if (protocolType) return { ok: false, error: `a message grant cannot sign a ${protocolType} body` };
+    return { ok: true, scope: 'message', type: decoded.type, hash, author: null, buffer: decoded.buffer, network: null, preview: messagePreview(decoded.message) };
   }
   return { ok: false, error: `${decoded.type} frames cannot be delegated` };
 }
@@ -1033,9 +1123,13 @@ function authorize (read, grants = [], options = {}) {
     if (grant.origins.length && (!origin || !grant.origins.includes(origin))) {
       return { ok: false, error: `the grant does not cover ${origin || 'a sign-in without a reported origin'}` };
     }
+    // A peer sign-in (v3) is bound to the peer's key, never to a reported
+    // origin: only a grant that lists that peer covers it.
     const peers = grant.peers || [];
-    if (peers.length && (!challenge.peer || !peers.includes(challenge.peer))) {
-      return { ok: false, error: `the grant does not cover ${challenge.peer ? `peer ${challenge.peer}` : 'site sign-ins'}` };
+    if (challenge.peer) {
+      if (!peers.includes(challenge.peer)) return { ok: false, error: `the grant does not cover peer ${challenge.peer}` };
+    } else if (peers.length) {
+      return { ok: false, error: 'the grant does not cover site sign-ins' };
     }
   }
   if (grant.networks.length) {
@@ -1245,9 +1339,13 @@ function notificationFor (read, context = {}) {
   if (read.scope === 'passport') {
     const challenge = read.inner.challenge;
     const origin = read.request.origin || challenge.origin;
-    const host = origin ? new URL(origin).host : `peer ${challenge.peer.slice(2, 10)}…`;
+    const site = origin ? new URL(origin).host : null;
+    // A peer sign-in is named by the peer key it binds, not by an origin the
+    // requester reports.
+    const host = challenge.peer ? `peer ${challenge.peer.slice(2, 10)}…` : site;
     title = `Sign in to ${host}`;
-    summary = read.inner.challenge.purpose || summary || `${label} asks you to sign in to ${host} for it.`;
+    const reported = challenge.peer && site ? ` (reported as ${site})` : '';
+    summary = `${challenge.purpose || summary || `${label} asks you to sign in to ${host} for it.`}${reported}`;
   } else if (read.scope === 'federation') {
     const body = read.inner.body;
     if (body.type === 'FederationWithdrawalRequest') {
@@ -1261,6 +1359,12 @@ function notificationFor (read, context = {}) {
       const threshold = body.descriptor && body.descriptor.threshold;
       summary = Number.isSafeInteger(threshold) && threshold > 0 ? `${threshold} of ${validators} signers.` : summary;
     }
+  } else if (read.scope === 'message') {
+    // The prompt shows what is signed, not only the requester's own words.
+    const preview = read.inner.preview || messagePreview(Message.fromBuffer(Buffer.from(read.inner.buffer)));
+    summary = summary
+      ? `${summary}\nMessage: ${preview}`
+      : `${label} asks you to sign: ${preview}`;
   } else if (!summary) {
     summary = `${label} asks you to sign a ${read.inner.type} message.`;
   }
@@ -1324,9 +1428,11 @@ function answerMessage (read, key) {
  * own message signed, or a federation reply for the same federation.
  * @param {Object} read An `ok` {@link readRequest} result.
  * @param {string|Buffer|Message} answer The answer frame.
+ * @param {Object} [options]
+ * @param {number} [options.now] Check the assertion window at this time (default: when it was signed).
  * @returns {string|null}
  */
-function answerError (read, answer) {
+function answerError (read, answer, options = {}) {
   if (!read || !read.ok) return 'unreadable request';
   // Only a frame its author signed answers a request; an unsigned copy does not.
   let decoded = null;
@@ -1342,11 +1448,25 @@ function answerError (read, answer) {
     if (Buffer.from(fields.challengeHash || []).toString('hex') !== inner.hash) return 'the assertion is for another challenge';
     if (normalizeOrigin(fields.origin) !== (read.request.origin || inner.challenge.origin || null)) return 'the assertion is for another origin';
     if ((String(fields.sessionKey || '').toLowerCase() || null) !== (read.request.sessionKey || null)) return 'the assertion names another session key';
+    const challenge = inner.challenge;
+    // Checked as of when it was signed unless the caller gives a time: a
+    // late answer is still an answer, a malformed one is not.
+    const verified = verifyAssertion(decoded.buffer, {
+      origin: read.request.origin || challenge.origin,
+      peer: challenge.peer || null,
+      nonce: challenge.nonce,
+      challengeHash: inner.hash,
+      network: challenge.network || null,
+      allow: challenge.request || [],
+      now: Number.isFinite(options.now) ? options.now : toMillis(fields.issuedAt)
+    });
+    if (!verified.ok) return `the assertion does not verify: ${verified.error}`;
     return null;
   }
   if (read.scope === 'message') {
     const asked = Message.fromBuffer(Buffer.from(inner.buffer));
     if (message.type !== asked.type || !message.bodyBuffer.equals(asked.bodyBuffer)) return 'the answer signs another message';
+    if (message.parent !== asked.parent) return 'the answer chains under another parent';
     return null;
   }
   if (read.scope === 'federation') {
@@ -1390,6 +1510,7 @@ const delegation = {
   DELEGATION_CLOCK_SKEW_MS,
   FEDERATION_REQUEST_TYPES,
   MESSAGE_SCOPE_TYPES,
+  GENERIC_PROTOCOL_BODY_TYPES,
   frameHash,
   xOnly,
   cleanLabel,

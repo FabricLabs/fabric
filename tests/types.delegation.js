@@ -562,6 +562,28 @@ describe('@fabric/core/types/delegation frames', function () {
       assert.throws(() => d.createRequest({ target: HUB.identity.pubkey, grant: grant.hash, request: signedChat, now: NOW }, PASSPORT.identity.key), /unsigned/);
     });
 
+    it('message scope never signs a protocol body, and the prompt shows the message', function () {
+      const grant = d.readGrant(hubGrant().uri, { now: NOW });
+      for (const type of ['FederationSignRequest', 'SIDECHAIN_STATE_PATCH', 'INVENTORY_RESPONSE', 'DocumentContentKeyReveal', 'DelegationGrant', 'BITCOIN_BLOCK']) {
+        const carrier = Message.fromVector(['GENERIC_MESSAGE', JSON.stringify({ type, object: {} })]);
+        assert.throws(() => d.createRequest({ target: HUB.identity.pubkey, grant: grant.hash, request: carrier, purpose: 'say hi', now: NOW }, PASSPORT.identity.key), /cannot sign/, type);
+      }
+      const hello = Message.fromVector(['GENERIC_MESSAGE', JSON.stringify({ type: 'Greeting', content: 'hello\u202efrom the hub' })]);
+      const read = d.readRequest(d.createRequest({ target: HUB.identity.pubkey, grant: grant.hash, request: hello, purpose: 'say hi', now: NOW }, PASSPORT.identity.key).uri, { now: NOW + 1 });
+      assert.strictEqual(read.ok, true, read.error);
+      const prompt = d.notificationFor(read);
+      assert.match(prompt.summary, /say hi\nMessage: hello from the hub/);
+    });
+
+    it('every body type Peer dispatches from a generic carrier is refused under a message grant', function () {
+      const source = require('fs').readFileSync(require('path').join(__dirname, '../types/peer.js'), 'utf8');
+      const start = source.indexOf('  _handleGenericMessage (');
+      const end = source.indexOf('\n  }\n', source.indexOf('switch (msg.type)', start));
+      const cases = [...source.slice(start, end).matchAll(/case '([A-Za-z_]+)':/g)].map((m) => m[1]);
+      assert.ok(cases.length > 5);
+      for (const type of cases) assert.ok(d.GENERIC_PROTOCOL_BODY_TYPES.includes(type), type);
+    });
+
     it('requests expire; results refuse an answer with a refusal', function () {
       const grant = d.readGrant(hubGrant().uri, { now: NOW });
       const chat = Message.fromVector(['P2P_CHAT_MESSAGE', 'later']);

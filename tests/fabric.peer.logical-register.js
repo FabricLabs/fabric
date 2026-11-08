@@ -62,7 +62,7 @@ describe('@fabric/core Peer logical first-writer-wins registration', function ()
     );
     assert.strictEqual(
       peer._logicalRegistrationKey('FlushChain', { snapshotBlockHash: 'CD'.repeat(32) }),
-      `flush:${'cd'.repeat(32)}`
+      null
     );
     const signer = 'ee'.repeat(32);
     assert.strictEqual(

@@ -93,11 +93,9 @@ is the largest remaining piece of the schema work: 26 named body types in
    `console.log`s in `Store`, `Wallet` and `Remote` print whole values or
    transactions when verbosity is raised, and `Remote#executeMethod` logs every
    call regardless of verbosity.
-4. **A flush-chain sender can emit frames other Peers drop.** The uncommitted
-   change in `Peer#sendFlushChainToTrustedPeers` sends JSON to sockets without
-   `_fabricRemoteFieldBodies`. Since Phase 5 a Peer on this core drops JSON
-   `P2P_FLUSH_CHAIN` bodies, so that fallback only reaches old cores. Decide
-   whether old-core interop is intended before committing it.
+4. **Resolved: flush-chain removed.** `P2P_FLUSH_CHAIN` and
+   `Peer#sendFlushChainToTrustedPeers` were removed from the V1 protocol;
+   opcode `0x56` is reserved and decodes as unknown.
 5. **Senders on deprecated opcodes are dead.** `Remote#executeMethod`
    (`P2P_CALL`), `Interface#_handleStateChange` (`P2P_TRANSACTION`),
    `Peer#_requestStateFromAllPeers` (`P2P_STATE_REQUEST`) and the `Service`
@@ -143,7 +141,7 @@ is the largest remaining piece of the schema work: 26 named body types in
 
 | Status | Count | Opcodes |
 |---|---:|---|
-| Fields required on the wire (JSON dropped) | 21 | `P2P_PING`, `P2P_PONG`, `P2P_FLUSH_CHAIN`, `P2P_INVENTORY_REQUEST`, `P2P_INVENTORY_RESPONSE`, `P2P_DOCUMENT_PUBLISH`, `P2P_PEER_ANNOUNCE`, `P2P_SESSION_OFFER`, `P2P_SESSION_OPEN`, `CONTRACT_PUBLISH`, `CONTRACT_MESSAGE`, `P2P_PEER_GOSSIP`, `P2P_PEERING_OFFER`, `CONTRACT_PROPOSAL`, `SIDECHAIN_STATE_PATCH`, `DOCUMENT_PUBLISH`, `DOCUMENT_REQUEST`, `BITCOIN_BLOCK`, `BITCOIN_BLOCK_HASH`, `BITCOIN_TRANSACTION`, `BITCOIN_TRANSACTION_HASH` |
+| Fields required on the wire (JSON dropped) | 20 | `P2P_PING`, `P2P_PONG`, `P2P_INVENTORY_REQUEST`, `P2P_INVENTORY_RESPONSE`, `P2P_DOCUMENT_PUBLISH`, `P2P_PEER_ANNOUNCE`, `P2P_SESSION_OFFER`, `P2P_SESSION_OPEN`, `CONTRACT_PUBLISH`, `CONTRACT_MESSAGE`, `P2P_PEER_GOSSIP`, `P2P_PEERING_OFFER`, `CONTRACT_PROPOSAL`, `SIDECHAIN_STATE_PATCH`, `DOCUMENT_PUBLISH`, `DOCUMENT_REQUEST`, `BITCOIN_BLOCK`, `BITCOIN_BLOCK_HASH`, `BITCOIN_TRANSACTION`, `BITCOIN_TRANSACTION_HASH` |
 | Fields only (no JSON mapping) | 23 | `P2P_FORWARD`, `P2P_DOCUMENT_BID`, `P2P_DOCUMENT_ASK`, `P2P_MUSIG_START`, `P2P_MUSIG_ACCEPT`, `P2P_MUSIG_RECEIVE_COUNTER`, `P2P_MUSIG_SEND_PROPOSAL`, `P2P_MUSIG_REPLY_TO_PROPOSAL`, `P2P_MUSIG_ACCEPT_PROPOSAL`, `PASSPORT_CHALLENGE`, `PASSPORT_ASSERTION`, `DELEGATION_LINK_OFFER`, `DELEGATION_LINK_ANSWER`, `DELEGATION_LINK_REVEAL`, `DELEGATION_GRANT`, `DELEGATION_REVOKE`, `DELEGATION_REQUEST`, `DELEGATION_RESULT`, `DELEGATION_MAILBOX_FETCH`, `PASSPORT_CONNECT`, `PASSPORT_SESSION`, `PASSPORT_RESUME`, `PASSPORT_REFUSED` |
 | Raw bytes by design | 3 | `P2P_RELAY`, `P2P_PEER_ALIAS`, `P2P_CHAT_MESSAGE` |
 | JSON at the edge by design | 5 | `P2P_MESSAGE_RECEIPT`, `CHAT_MESSAGE`, `JSON_PATCH`, `GENERIC_MESSAGE`, `JSON_CALL` |
@@ -162,7 +160,7 @@ Within each group, rows are sorted by grade, then size.
 | Type | Class | Lines | Tests | Grade | Body schema | Implementation and weaknesses |
 |---|---|---:|---:|:-:|---|---|
 | `message.js` | `Message` ← Actor | 3221 | 80 | A | defines | Wire oracle: 93 opcodes, 44 with field schemas, keyed layouts, legacy JSON mapping. Constructor still `JSON.stringify`s plain objects and `fromVector` maps unknown names to `P2P_BASE_MESSAGE` without an error, so a mistyped name produces a JSON frame silently. |
-| `peer.js` | `Peer` ← Service | 8749 | 43 | B | mixed | 8.7k-line monolith (TCP, Noise, gossip, documents, inventory, HTLC, MuSig, onion, flush). Drops JSON bodies of the 21 field-layout types. Still sends JSON for `P2P_FILE_SEND`, `GenericMessage` carriers and the inner `P2P_BASE_MESSAGE` envelope. `sendFlushChainToTrustedPeers` now has an uncommitted per-socket JSON fallback (`_fabricRemoteFieldBodies`) that a Phase-5 receiver drops. 14 empty `catch` blocks. 20 `LIGHTNING_*` opcodes referenced, none decoded. |
+| `peer.js` | `Peer` ← Service | 8749 | 43 | B | mixed | 8.7k-line monolith (TCP, Noise, gossip, documents, inventory, HTLC, MuSig, onion). Drops JSON bodies of the 20 field-layout types. Still sends JSON for `P2P_FILE_SEND`, `GenericMessage` carriers and the inner `P2P_BASE_MESSAGE` envelope. 14 empty `catch` blocks. 20 `LIGHTNING_*` opcodes referenced, none decoded. |
 | `session.js` | `Session` ← Entity | 215 | 2 | C | n/a | Session lifecycle object; `TypedMessage`, encrypt/decrypt helpers. Superseded by Peer's Noise session + `P2P_SESSION_*` handshake; one test. |
 | `reader.js` | `Reader` ← EventEmitter | 142 | 1 | C | n/a | Marked `@deprecated`: byte-stream frame scanner kept for compatibility. Prefer Peer / Message ingest. |
 | `codec.js` | `Codec` | 75 | 1 | C | n/a | Small encode/decode wrapper; one test; not used by the wire path. |
@@ -323,7 +321,6 @@ Within each group, rows are sorted by grade, then size.
   `require()` with a read. Add a test that constructs every exported type.
 - Remove the value from the `Store#_POST` failure log, and make
   `Remote#executeMethod` respect verbosity.
-- Decide the `P2P_FLUSH_CHAIN` JSON fallback (finding 4) before it is committed.
 - Delete or rewire the four deprecated-opcode senders (finding 5).
 - Make `Message.fromVector` / the constructor throw for an object body on a
   field-layout type (finding 7).

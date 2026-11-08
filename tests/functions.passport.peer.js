@@ -229,7 +229,11 @@ describe('@fabric/core/functions/passport peer sessions (v3)', function () {
     assert.strictEqual(read.ok, true, read.error);
     assert.strictEqual(read.request.sessionKey, SESSION.pubkey);
     assert.strictEqual(d.authorize(read, [grant]).ok, true, d.authorize(read, [grant]).error);
-    assert.match(d.notificationFor(read).title, /app\.example/);
+    // The prompt names the peer key it binds; the reported origin is only a note.
+    const prompt = d.notificationFor(read);
+    assert.match(prompt.title, new RegExp(`peer ${PEER.pubkey.slice(2, 10)}`));
+    assert.match(prompt.summary, /reported as app\.example/);
+    assert.strictEqual(grant.grant.peers.length, 1);
 
     const a = d.answerPassport(read, { signer: 'hub', network: 'regtest', now: NOW + 50 }, DESK.identity.key);
     assert.strictEqual(d.answerError(read, a.uri), null);
@@ -253,6 +257,17 @@ describe('@fabric/core/functions/passport peer sessions (v3)', function () {
     assert.strictEqual(unreported.ok, true, unreported.error);
     assert.match(d.authorize(unreported, [limited]).error, /without a reported origin/);
     const reported = d.readRequest(d.createRequest({ target: DESK.identity.pubkey, grant: limited.hash, request: claimed.uri, origin: 'https://app.example', sessionKey: SESSION.pubkey, now: NOW + 30 }, PASSPORT_KEY).uri, { now: NOW + 40 });
-    assert.strictEqual(d.authorize(reported, [limited]).ok, true);
+    // A reported origin never stands in for the peer: a grant without that
+    // peer listed does not sign a peer session, whatever origin it names.
+    assert.match(d.authorize(reported, [limited]).error, /does not cover peer/);
+  });
+
+  it('a peer-limited grant carries version 2, so readers without peers refuse it', function () {
+    const limited = d.createGrant({ grantee: USER.identity.key.pubkey, scopes: ['passport'], peers: [PEER.pubkey], now: NOW }, DESK.identity.key);
+    assert.strictEqual(Number(limited.message.toFields().v), 2);
+    const open = d.createGrant({ grantee: USER.identity.key.pubkey, scopes: ['passport'], now: NOW }, DESK.identity.key);
+    assert.strictEqual(Number(open.message.toFields().v), 1);
+    assert.strictEqual(d.readGrant(limited.uri, { now: NOW }).ok, true);
+    assert.strictEqual(d.readGrant(open.uri, { now: NOW }).ok, true);
   });
 });

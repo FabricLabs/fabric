@@ -622,6 +622,21 @@ describe('types/document (sealed blob tree)', function () {
       assert.strictEqual(seller._sealedBlobQuotes.size, 1, 'only the quote within maxSats is kept');
     });
 
+    it('batch quotes expire, stay under maxSealedBlobQuotes, and refuse an oversized range', function () {
+      const seller = new Peer({ listen: false, maxSealedBlobQuotes: 3, maxSealedBlobBatchBlobs: 2 });
+      const doc = Document.seal(crypto.randomBytes(5000), { chunkBytes: 2048 });
+      const { documentId } = seller.publishSealedDocument(doc, { rateSats: RATE });
+      const first = seller.quoteSealedBatch({ documentId, start: 0, end: 1 });
+      assert.ok(first.ok, first.error);
+      assert.ok(first.batch.expiresAt > Date.now(), 'a batch quote has an expiry');
+      for (let i = 0; i < 10; i++) assert.ok(seller.quoteSealedBatch({ documentId, start: 0, end: 1 }).ok);
+      assert.strictEqual(seller._sealedBlobQuotes.size, 3);
+      assert.strictEqual(seller._sealedBlobQuotes.has(first.batch.paymentHashHex), false, 'the oldest quote is dropped');
+      const wide = seller.quoteSealedBatch({ documentId, start: 0, end: 2 });
+      assert.strictEqual(wide.ok, false);
+      assert.match(wide.error, /over 2 blobs/);
+    });
+
     it('approving a batch request whose quote is refused reports it and keeps the request', function () {
       const seller = new Peer({ listen: false });
       const doc = Document.seal(crypto.randomBytes(5000), { chunkBytes: 2048 });

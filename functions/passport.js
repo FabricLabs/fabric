@@ -571,6 +571,8 @@ function walletDisclosure (wallet, network) {
  * @param {{ segwit: { xpub: string }, standard: { xpub: string } }} [params.wallet] Needed to disclose `wallet`.
  * @param {Key} [params.cosignerKey] Needed to disclose `cosigner`.
  * @param {string} [params.device] Compressed pubkey of the participant that asked (delegated sign-ins).
+ * @param {string} [params.clientNonce] v3: the nonce this client sent in its connect; a
+ *   challenge carrying another is refused, so one connection's challenge is not signed for another.
  * @param {number} [params.ttlMs]
  * @param {number} [params.now]
  * @param {Key} key The identity's private key.
@@ -583,7 +585,7 @@ function signAssertion (params = {}, key) {
     origin = normalizeOrigin(params.origin);
     if (!origin) throw new TypeError('signAssertion: http(s) origin required');
   }
-  const read = readChallenge(params.challenge, { now: params.now, peer: params.peer });
+  const read = readChallenge(params.challenge, { now: params.now, peer: params.peer, clientNonce: params.clientNonce });
   if (!read.ok) throw new Error(`signAssertion: ${read.error}`);
   const challenge = read.challenge;
   const peerMode = challenge.v === PASSPORT_PEER_VERSION;

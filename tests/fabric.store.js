@@ -56,6 +56,29 @@ describe('@fabric/core/types/store', function () {
       assert.ok(store.codec);
     });
 
+    it('remove deletes a key from Level and memory; _DELETE uses it', async function () {
+      const removed = [];
+      const store = new Store({ persistent: false });
+      await store.set('/things/a', { n: 1 });
+      await store.set('/things/b', { n: 2 });
+      store.db = { del: async (k) => { removed.push(k); }, put: async () => {} };
+      store.settings.persistent = true;
+      assert.strictEqual(await store._DELETE('/things/a'), null);
+      assert.deepStrictEqual(removed, ['/things/a']);
+      assert.strictEqual(store._state.content.things.a, undefined);
+      assert.deepStrictEqual(store._state.content.things.b, { n: 2 });
+      assert.strictEqual(await store.remove('/things/missing'), null);
+    });
+
+    it('refuses a non-index key beneath an array', async function () {
+      const store = new Store({ persistent: false });
+      await store.set('/list', [1, 2]);
+      await assert.rejects(store.set('/list/length', 0), /non-index key under an array/);
+      await assert.rejects(store.set('/list/name/x', 1), /non-index key under an array/);
+      await store.set('/list/1', 3);
+      assert.deepStrictEqual(store._state.content.list, [1, 3]);
+    });
+
     it('flush is a no-op when Level is not open', async function () {
       const store = new Store({ persistent: false });
       const out = await store.flush();

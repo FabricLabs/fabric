@@ -23,7 +23,6 @@ const {
   P2P_INSTRUCTION,
   P2P_BASE_MESSAGE,
   P2P_CHAIN_SYNC_REQUEST,
-  P2P_FLUSH_CHAIN,
   P2P_INVENTORY_REQUEST,
   P2P_INVENTORY_RESPONSE,
   P2P_FILE_SEND,
@@ -347,7 +346,6 @@ const WIRE_TYPE_DECODE_ORDER = Object.freeze([
   [P2P_PONG, 'P2P_PONG'],
   [P2P_GENERIC, 'P2P_GENERIC'],
   [P2P_CHAIN_SYNC_REQUEST, 'P2P_CHAIN_SYNC_REQUEST'],
-  [P2P_FLUSH_CHAIN, 'P2P_FLUSH_CHAIN'],
   [P2P_INVENTORY_REQUEST, 'P2P_INVENTORY_REQUEST'],
   [P2P_INVENTORY_RESPONSE, 'P2P_INVENTORY_RESPONSE'],
   [P2P_FILE_SEND, 'P2P_FILE_SEND'],
@@ -470,7 +468,6 @@ const LEGACY_MESSAGE_TYPE_ALIASES = Object.freeze({
   IdentityRequest: P2P_IDENT_REQUEST,
   IdentityResponse: P2P_IDENT_RESPONSE,
   ChainSyncRequest: P2P_CHAIN_SYNC_REQUEST,
-  FlushChain: P2P_FLUSH_CHAIN,
   InventoryRequest: P2P_INVENTORY_REQUEST,
   InventoryResponse: P2P_INVENTORY_RESPONSE,
   PeerAlias: P2P_PEER_ALIAS,
@@ -1329,8 +1326,9 @@ Object.defineProperty(Message.prototype, 'type', {
     // frame nobody handles; it now throws.
     const code = typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 0xffffffff
       ? value
-      : this.types[value];
-    if (code == null) {
+      : (typeof value === 'string' && Object.prototype.hasOwnProperty.call(this.types, value) ? this.types[value] : null);
+    // Inherited names (`toString`, `constructor`) are not types.
+    if (!Number.isInteger(code)) {
       throw new TypeError(`Unknown message type: ${value}`);
     }
     if (typeof value === 'number') value = CANONICAL_WIRE_TYPE_BY_OPCODE[value] || value;
@@ -2137,14 +2135,6 @@ const KEYED_LAYOUTS = Object.freeze({
       { path: 'psbt.proposalBase64', field: 'psbt', kind: 'base64' }
     ]
   },
-  P2P_FLUSH_CHAIN: {
-    envelope: false,
-    keys: [
-      { path: 'snapshotBlockHash', field: 'snapshotBlockHash', kind: 'hex32' },
-      { path: 'network', field: 'network', kind: 'string' },
-      { path: 'label', field: 'label', kind: 'string' }
-    ]
-  },
   // Hub resync (`{ v, reason, requester, at }`) or CLI (`{ tip }`).
   P2P_CHAIN_SYNC_REQUEST: {
     envelope: true,
@@ -2289,11 +2279,6 @@ const SCHEMA_BITCOIN_TRANSACTION_HASH = keyedSchema(KEYED_LAYOUTS.BITCOIN_TRANSA
  * @private
  */
 const SCHEMA_CONTRACT_PROPOSAL = keyedSchema(KEYED_LAYOUTS.CONTRACT_PROPOSAL);
-/**
- * Operator chain flush to a snapshot block.
- * @private
- */
-const SCHEMA_P2P_FLUSH_CHAIN = keyedSchema(KEYED_LAYOUTS.P2P_FLUSH_CHAIN);
 /** @private Ask a peer to replay its catalog and chain log. */
 const SCHEMA_P2P_CHAIN_SYNC_REQUEST = keyedSchema(KEYED_LAYOUTS.P2P_CHAIN_SYNC_REQUEST);
 /** @private One document blob, raw bytes. */
@@ -2441,7 +2426,6 @@ function tryParseMessageBody (message) {
     [BITCOIN_TRANSACTION_TYPE, 'BITCOIN_TRANSACTION', 'BitcoinTransaction', SCHEMA_BITCOIN_TRANSACTION],
     [BITCOIN_TRANSACTION_HASH_TYPE, 'BITCOIN_TRANSACTION_HASH', 'BitcoinTransactionHash', SCHEMA_BITCOIN_TRANSACTION_HASH],
     [CONTRACT_PROPOSAL_TYPE, 'CONTRACT_PROPOSAL', 'ContractProposal', SCHEMA_CONTRACT_PROPOSAL],
-    [P2P_FLUSH_CHAIN, 'P2P_FLUSH_CHAIN', 'FlushChain', SCHEMA_P2P_FLUSH_CHAIN],
     [P2P_CHAIN_SYNC_REQUEST, 'P2P_CHAIN_SYNC_REQUEST', 'ChainSyncRequest', SCHEMA_P2P_CHAIN_SYNC_REQUEST],
     [P2P_FILE_SEND, 'P2P_FILE_SEND', 'FileSend', SCHEMA_P2P_FILE_SEND],
     [DOCUMENT_KEY_REVEAL_TYPE, 'DOCUMENT_KEY_REVEAL', 'DocumentContentKeyReveal', SCHEMA_DOCUMENT_KEY_REVEAL],
@@ -2516,7 +2500,6 @@ const LEGACY_BODY_TYPES = Object.freeze([
   'BITCOIN_TRANSACTION',
   'BITCOIN_TRANSACTION_HASH',
   'CONTRACT_PROPOSAL',
-  'P2P_FLUSH_CHAIN',
   'P2P_CHAIN_SYNC_REQUEST',
   'P2P_FILE_SEND',
   'DOCUMENT_KEY_REVEAL',

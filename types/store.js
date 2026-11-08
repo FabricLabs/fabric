@@ -281,8 +281,7 @@ class Store extends Actor {
   }
 
   async _DELETE (key) {
-    await this._PUT(key, null);
-    return null;
+    return this.remove(key);
   }
 
   async _PATCH (key, patch) {
@@ -405,8 +404,10 @@ class Store extends Actor {
       console.log('Could not POST:', key, value, E);
       // Undo what this post already wrote, so a reopen never lists an item
       // whose entity or collection record is missing.
-      if (entityWritten) await self._PUT(`/entities/${state.id}`, null).catch(() => {});
-      if (listWritten) await self._PUT(key, existingList === undefined ? null : existingList).catch(() => {});
+      if (entityWritten) await self.remove(`/entities/${state.id}`).catch(() => {});
+      if (listWritten) {
+        await (existingList === undefined ? self.remove(key) : self._PUT(key, existingList)).catch(() => {});
+      }
       return false;
     }
 
@@ -559,13 +560,29 @@ class Store extends Actor {
    * @param       {Mixed} value Content to store at `key`.
    */
   async set (key, value) {
-    // Writes under one top-level key run in call order, so a parent and its
-    // children never race and Level and memory agree on the last write. The
-    // write is queued before any await, so `stop` sees it.
+    return this._enqueueWrite(key, async () => this._set(key, value, await this.getRouteInfo(key)));
+  }
+
+  /**
+   * Remove `key` from Level and from memory. A missing key is not an error.
+   * @param {String} key Address of the information.
+   * @returns {Promise<null>}
+   */
+  async remove (key) {
+    return this._enqueueWrite(key, async () => this._remove(await this.getRouteInfo(key)));
+  }
+
+  /**
+   * Writes under one top-level key run in call order, so a parent and its
+   * children never race and Level and memory agree on the last write. The
+   * write is queued before any await, so `stop` sees it.
+   * @private
+   */
+  _enqueueWrite (key, run) {
     const lane = routePath(key).split('/')[1] || '';
     if (!this._writes) this._writes = new Map();
     const previous = this._writes.get(lane) || Promise.resolve();
-    const write = previous.catch(() => {}).then(async () => this._set(key, value, await this.getRouteInfo(key)));
+    const write = previous.catch(() => {}).then(run);
     const tail = write.catch(() => {});
     this._writes.set(lane, tail);
     tail.then(() => {
@@ -588,15 +605,21 @@ class Store extends Actor {
     }
     if (tokens.some((token) => UNSAFE_PATH_TOKENS.has(token))) return `${path} names a reserved key`;
     const beneath = `${path} is beneath a value that is not an object`;
+    // Under an array only an element index is a child: `length` or a name
+    // would persist to Level and then fail (or truncate) in memory.
+    const notIndex = (token) => !/^(0|[1-9][0-9]{0,8})$/.test(token);
     let node = this._state.content;
     for (let i = 0; i < tokens.length - 1; i++) {
       if (node === null || typeof node !== 'object') return beneath;
+      if (Array.isArray(node) && notIndex(tokens[i])) return `${path} names a non-index key under an array`;
       if (!Object.prototype.hasOwnProperty.call(node, tokens[i])) {
         return (await this._persistedParentIsScalar(tokens, i)) ? beneath : null;
       }
       node = node[tokens[i]];
     }
-    return (node === null || typeof node !== 'object') ? beneath : null;
+    if (node === null || typeof node !== 'object') return beneath;
+    if (Array.isArray(node) && tokens.length && notIndex(tokens[tokens.length - 1])) return `${path} names a non-index key under an array`;
+    return null;
   }
 
   /**
@@ -620,6 +643,25 @@ class Store extends Actor {
       if (value === null || typeof value !== 'object') return true;
     }
     return false;
+  }
+
+  /** @private */
+  async _remove (route) {
+    if (this.db && this.settings.persistent !== false) {
+      try {
+        await this.db.del(route.path);
+      } catch (E) {
+        if (!isLevelNotFound(E)) {
+          if (this.settings.strict) throw E;
+          console.error('[FABRIC:STORE]', 'Could not remove key:', route.path, E);
+        }
+      }
+    }
+    if (pointer.has(this._state.content, route.path)) pointer.remove(this._state.content, route.path);
+    delete this._state.indices[route.index];
+    delete this._state.metadata[route.index];
+    this.commit();
+    return null;
   }
 
   /** @private */

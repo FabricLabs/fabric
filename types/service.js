@@ -560,7 +560,7 @@ class Service extends Actor {
 
   /**
    * Register a single opcode entry in the service registry.
-   * @param {string} name Opcode symbol (e.g. `OP_SHA256`, `P2P_FLUSH_CHAIN`)
+   * @param {string} name Opcode symbol (e.g. `OP_SHA256`, `P2P_CHAIN_SYNC_REQUEST`)
    * @param {Object} [definition]
    * @returns {Object}
    */
@@ -591,7 +591,7 @@ class Service extends Actor {
   /**
    * Register a newline-delimited opcode contract.
    * Contract body example:
-   * `OP_DUP\nOP_HASH160\nP2P_FLUSH_CHAIN`
+   * `OP_DUP\nOP_HASH160\nP2P_CHAIN_SYNC_REQUEST`
    * @param {string} name Contract label
    * @param {string} body Newline-delimited opcode list
    * @param {Object} [meta]
