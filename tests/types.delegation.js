@@ -669,12 +669,15 @@ describe('@fabric/core/types/delegation frames', function () {
 
   describe('mailbox', function () {
     it('fetch frames prove the key; frames name their recipient', function () {
-      const fetch = d.createMailboxFetch({ since: 3, now: NOW }, PASSPORT.identity.key);
-      const read = d.readMailboxFetch(fetch.uri, { now: NOW + 1 });
+      const purpose = d.MAILBOX_FETCH_PURPOSES.delegation;
+      const fetch = d.createMailboxFetch({ origin: 'https://hub.example/', purpose, since: 3, now: NOW }, PASSPORT.identity.key);
+      const read = d.readMailboxFetch(fetch.uri, { origin: 'https://hub.example', purpose, now: NOW + 1 });
       assert.strictEqual(read.ok, true, read.error);
       assert.strictEqual(read.pubkey, PASSPORT.identity.pubkey);
+      assert.strictEqual(read.origin, 'https://hub.example');
+      assert.strictEqual(read.purpose, purpose);
       assert.strictEqual(read.since, 3);
-      assert.match(d.readMailboxFetch(fetch.uri, { now: NOW + 10 * 60 * 1000 }).error, /expired/);
+      assert.match(d.readMailboxFetch(fetch.uri, { origin: 'https://hub.example', purpose, now: NOW + 10 * 60 * 1000 }).error, /expired/);
 
       const g = hubGrant();
       assert.strictEqual(d.mailboxAddress(g.uri).to, PASSPORT.identity.pubkey);
@@ -683,6 +686,22 @@ describe('@fabric/core/types/delegation frames', function () {
       assert.strictEqual(d.mailboxAddress(revoke.uri, { to: PASSPORT.identity.pubkey }).to, PASSPORT.identity.pubkey);
       assert.strictEqual(d.delegationType(g.uri), 'DELEGATION_GRANT');
       assert.strictEqual(d.delegationType(challenge().uri), null);
+    });
+
+    it('fetch frames are good only on the Hub and for the use they were signed for', function () {
+      const { delegation, cancel, federation } = d.MAILBOX_FETCH_PURPOSES;
+      const fetch = d.createMailboxFetch({ origin: 'https://hub.example', purpose: delegation, now: NOW }, PASSPORT.identity.key);
+      const at = { now: NOW + 1 };
+      assert.strictEqual(d.readMailboxFetch(fetch.uri, Object.assign({ origin: ['https://other.example', 'https://hub.example'], purpose: delegation }, at)).ok, true);
+      assert.match(d.readMailboxFetch(fetch.uri, Object.assign({ origin: 'https://other.example', purpose: delegation }, at)).error, /another origin/);
+      assert.match(d.readMailboxFetch(fetch.uri, Object.assign({ origin: 'https://hub.example', purpose: cancel }, at)).error, /another purpose/);
+      assert.match(d.readMailboxFetch(fetch.uri, Object.assign({ origin: 'https://hub.example', purpose: federation }, at)).error, /another purpose/);
+      assert.match(d.readMailboxFetch(fetch.uri, Object.assign({ purpose: delegation }, at)).error, /origin and purpose/);
+      assert.match(d.readMailboxFetch(fetch.uri, Object.assign({ origin: 'https://hub.example' }, at)).error, /origin and purpose/);
+      assert.match(d.readMailboxFetch(fetch.uri, at).error, /origin and purpose/);
+      assert.throws(() => d.createMailboxFetch({ purpose: delegation }, PASSPORT.identity.key), /origin is required/);
+      assert.throws(() => d.createMailboxFetch({ origin: 'https://hub.example' }, PASSPORT.identity.key), /purpose is required/);
+      assert.throws(() => d.createMailboxFetch({ origin: 'https://hub.example', purpose: 'Not A Purpose' }, PASSPORT.identity.key), /purpose is required/);
     });
   });
 });

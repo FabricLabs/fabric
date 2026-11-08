@@ -2,6 +2,7 @@
 Recent changes to Fabric Core.
 
 ## 2026-11-08
+- **Mailbox read proofs name their Hub and use (breaking wire change).** `DELEGATION_MAILBOX_FETCH` adds `origin` and `purpose` after `pubkey`; `createMailboxFetch` requires both, and `readMailboxFetch` requires the server's origin (or list) and the purpose it checks (`MAILBOX_FETCH_PURPOSES`: `delegation-mailbox`, `delegation-cancel`, `federation-mailbox`), refusing a proof for any other and any read that names neither. A proof sent to one Hub or route can no longer be replayed at another before its nonce is spent there.
 - **Editable documents as contracts** (`functions/documentRevisions`, [docs/DOCUMENT_REVISIONS.md](docs/DOCUMENT_REVISIONS.md)). A `DocumentContract` publish names the editors; each edit is a signed `DocumentRevision` contract message (new `CONTRACT_BODY_TYPES` entry) whose header `parent` is the replaced revision's frame id. Versions keep their own document ids. `foldDocumentRevisions` folds frames in any order, keeping forks; `documentProvenance` / `verifyDocumentProvenance` give and check one version's history (publish through that revision, no later edits) as a `FabricMessageCollection`.
 - **`Peer` `contract:publish` carries the signed frame** (`wireMessage`, `messageId`), as `contract:message` does, so an app can keep a publish in a contract's history.
 

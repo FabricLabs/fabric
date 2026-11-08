@@ -82,6 +82,17 @@ const DELEGATION_CLOCK_SKEW_MS = 30 * 1000;
 /** Longest label or purpose text. */
 const DELEGATION_MAX_LABEL = 64;
 const DELEGATION_MAX_PURPOSE = 140;
+/**
+ * Uses a mailbox read proof is signed for: reading delegation mail, cancelling
+ * a pairing on a rendezvous, reading a Hub's federation mailbox.
+ */
+const MAILBOX_FETCH_PURPOSES = Object.freeze({
+  delegation: 'delegation-mailbox',
+  cancel: 'delegation-cancel',
+  federation: 'federation-mailbox'
+});
+/** @private */
+const MAILBOX_PURPOSE = /^[a-z][a-z0-9-]{0,47}$/;
 /** Federation message types a delegate may be asked to answer. */
 const FEDERATION_REQUEST_TYPES = Object.freeze(['FederationInvite', 'FederationWithdrawalRequest']);
 /** Frame types a `message` grant lets the grantee have signed (never protocol frames). */
@@ -323,6 +334,11 @@ function list (value) {
   if (value == null || value === '') return [];
   const items = Array.isArray(value) ? value : String(value).split(',');
   return items.map((item) => String(item).trim()).filter(Boolean);
+}
+
+/** @private */
+function mailboxPurpose (value) {
+  return typeof value === 'string' && MAILBOX_PURPOSE.test(value) ? value : null;
 }
 
 /** @private */
@@ -1269,8 +1285,10 @@ function readResult (input, options = {}) {
 }
 
 /**
- * Prove this key may read its mailbox.
- * @param {Object} [params]
+ * Prove this key may read its mailbox on one Hub, for one use.
+ * @param {Object} params
+ * @param {string} params.origin Origin of the Hub the proof is sent to.
+ * @param {string} params.purpose One of `MAILBOX_FETCH_PURPOSES` (or another lowercase name a server checks).
  * @param {number} [params.since] Mailbox sequence to read after.
  * @param {number} [params.ttlMs]
  * @param {number} [params.now]
@@ -1279,12 +1297,18 @@ function readResult (input, options = {}) {
  */
 function createMailboxFetch (params = {}, key) {
   assertSigningKey(key);
+  const origin = normalizeOrigin(params.origin);
+  if (!origin) throw new TypeError('createMailboxFetch: origin is required');
+  const purpose = mailboxPurpose(params.purpose);
+  if (!purpose) throw new TypeError('createMailboxFetch: purpose is required');
   const issuedAt = Number.isFinite(params.now) ? params.now : Date.now();
   const expiresAt = issuedAt + clampTtl(params.ttlMs, DELEGATION_LINK_TTL_MS, DELEGATION_LINK_MAX_TTL_MS);
   const nonce = randomHex32();
   const message = Message.fromFields('DELEGATION_MAILBOX_FETCH', {
     v: DELEGATION_VERSION,
     pubkey: keyPubkey(key),
+    origin,
+    purpose,
     since: BigInt(Math.max(0, Math.floor(Number(params.since) || 0))),
     nonce: Buffer.from(nonce, 'hex'),
     issuedAt: BigInt(issuedAt),
@@ -1295,12 +1319,26 @@ function createMailboxFetch (params = {}, key) {
 }
 
 /**
- * Read a `DELEGATION_MAILBOX_FETCH`. Spending the nonce once is the mailbox's job.
+ * Read a `DELEGATION_MAILBOX_FETCH` for this server. The caller names the
+ * origins it answers on and the use it is checking; a proof for another Hub
+ * or another use is refused, and so is any read that names neither, so a
+ * proof can never be replayed elsewhere. Spending the nonce once is the
+ * mailbox's job, after this check.
  * @param {string|Buffer|Message} input
- * @param {{ now: (number|undefined) }} [options]
- * @returns {{ ok: true, pubkey: string, since: number, nonce: string, expiresAt: number }|{ ok: false, error: string }}
+ * @param {Object} options
+ * @param {(string|string[])} options.origin This server's origin, or the list it answers on.
+ * @param {string} options.purpose The use being checked (`MAILBOX_FETCH_PURPOSES`).
+ * @param {number} [options.now]
+ * @returns {{ ok: true, pubkey: string, origin: string, purpose: string, since: number, nonce: string, expiresAt: number }|{ ok: false, error: string }}
  */
 function readMailboxFetch (input, options = {}) {
+  const origins = [];
+  for (const item of list(options.origin)) {
+    const origin = normalizeOrigin(item);
+    if (origin && !origins.includes(origin)) origins.push(origin);
+  }
+  const purpose = mailboxPurpose(options.purpose);
+  if (!origins.length || !purpose) return { ok: false, error: 'mailbox read needs this server\'s origin and purpose' };
   const decoded = decodeFrame(input, ['DELEGATION_MAILBOX_FETCH']);
   if (!decoded.ok) return decoded;
   const fields = decoded.message.toFields();
@@ -1308,13 +1346,16 @@ function readMailboxFetch (input, options = {}) {
   if (Number(fields.v) !== DELEGATION_VERSION) return { ok: false, error: `unsupported delegation version ${fields.v}` };
   const pubkey = compressed(fields.pubkey);
   if (!pubkey || pubkey.slice(2) !== decoded.author) return { ok: false, error: 'pubkey does not match the frame author' };
+  const origin = normalizeOrigin(fields.origin);
+  if (!origin || !origins.includes(origin)) return { ok: false, error: 'mailbox read is for another origin' };
+  if (fields.purpose !== purpose) return { ok: false, error: 'mailbox read is for another purpose' };
   const issuedAt = toMillis(fields.issuedAt);
   const expiresAt = toMillis(fields.expiresAt);
   const windowError = checkWindow(issuedAt, expiresAt, DELEGATION_LINK_MAX_TTL_MS, options);
   if (windowError) return { ok: false, error: `mailbox read ${windowError}` };
   const nonce = hexOf(fields.nonce);
   if (!HEX32.test(nonce) || nonce === ZERO32) return { ok: false, error: 'missing nonce' };
-  return { ok: true, pubkey, since: toMillis(fields.since), nonce, expiresAt };
+  return { ok: true, pubkey, origin, purpose, since: toMillis(fields.since), nonce, expiresAt };
 }
 
 /**
@@ -1547,6 +1588,7 @@ const delegation = {
   FEDERATION_REQUEST_TYPES,
   MESSAGE_SCOPE_TYPES,
   GENERIC_PROTOCOL_BODY_TYPES,
+  MAILBOX_FETCH_PURPOSES,
   frameHash,
   xOnly,
   cleanLabel,

@@ -697,6 +697,9 @@ later protocol version removes them. <code>P2P_BASE_MESSAGE</code> and
 <dt><a href="#FIELD_BODIES_VERSION">FIELD_BODIES_VERSION</a></dt>
 <dd><p>Session-advertised level of field-body support (<code>object.fieldBodies</code>).</p>
 </dd>
+<dt><a href="#PEER_SEALED_BLOB_FUNDED_RETENTION_MS">PEER_SEALED_BLOB_FUNDED_RETENTION_MS</a></dt>
+<dd><p>Default time a funded sealed-blob quote keeps its secret while its HTLC settles.</p>
+</dd>
 <dt><a href="#TAPROOT_INTERNAL_NUMS">TAPROOT_INTERNAL_NUMS</a></dt>
 <dd><p>BIP341-style NUMS x-only internal key (script-path spend only).</p>
 </dd>
@@ -752,6 +755,21 @@ invoice, at the default block time.</p>
 </dd>
 <dt><a href="#ZMQ_TX_DEDUPE_MS">ZMQ_TX_DEDUPE_MS</a></dt>
 <dd><p>Default window in which a <code>rawtx</code> / <code>hashtx</code> pair counts as one admission.</p>
+</dd>
+<dt><a href="#ZMQ_TX_TOPICS">ZMQ_TX_TOPICS</a></dt>
+<dd><p>Per-transaction topics, paused during initial block download.</p>
+</dd>
+<dt><a href="#ZMQ_IBD_POLL_MS">ZMQ_IBD_POLL_MS</a></dt>
+<dd><p>Default interval between initial-block-download checks while it lasts.</p>
+</dd>
+<dt><a href="#ZMQ_HASHTX_GRACE_MS">ZMQ_HASHTX_GRACE_MS</a></dt>
+<dd><p>Default wait for a <code>rawtx</code> before a lone <code>hashtx</code> is fetched over RPC.</p>
+</dd>
+<dt><a href="#BALANCE_REFRESH_MS">BALANCE_REFRESH_MS</a></dt>
+<dd><p>Default minimum interval between wallet balance reads driven by <code>rawtx</code>.</p>
+</dd>
+<dt><a href="#RPC_MAX_SOCKETS">RPC_MAX_SOCKETS</a></dt>
+<dd><p>Default cap on concurrent RPC connections to bitcoind.</p>
 </dd>
 <dt><del><a href="#Text">Text</a></del></dt>
 <dd></dd>
@@ -1127,6 +1145,10 @@ named by <code>signerField</code> over <a href="#signingString">signingString</a
 <dt><a href="#routePath">routePath()</a></dt>
 <dd><p><code>path</code> as an absolute JSON Pointer path.</p>
 </dd>
+<dt><a href="#isArrayIndex">isArrayIndex()</a></dt>
+<dd><p>Under an array only an element index is a child: <code>length</code> or a name would
+persist to Level and then fail (or truncate) in memory.</p>
+</dd>
 <dt><a href="#normalizeOrder">normalizeOrder(input)</a> ⇒ <code>Object</code></dt>
 <dd></dd>
 <dt><a href="#normalizeCancel">normalizeCancel(input)</a> ⇒ <code>Object</code></dt>
@@ -1335,6 +1357,7 @@ Events: `request` `{ hash, read, notification }`, `result` `{ hash, request, rea
     * [~DELEGATION_REQUEST_TTL_MS](#module_types/delegation..DELEGATION_REQUEST_TTL_MS)
     * [~DELEGATION_CLOCK_SKEW_MS](#module_types/delegation..DELEGATION_CLOCK_SKEW_MS)
     * [~DELEGATION_MAX_LABEL](#module_types/delegation..DELEGATION_MAX_LABEL)
+    * [~MAILBOX_FETCH_PURPOSES](#module_types/delegation..MAILBOX_FETCH_PURPOSES)
     * [~FEDERATION_REQUEST_TYPES](#module_types/delegation..FEDERATION_REQUEST_TYPES)
     * [~MESSAGE_SCOPE_TYPES](#module_types/delegation..MESSAGE_SCOPE_TYPES)
     * [~GENERIC_PROTOCOL_BODY_TYPES](#module_types/delegation..GENERIC_PROTOCOL_BODY_TYPES)
@@ -1363,8 +1386,8 @@ Events: `request` `{ hash, read, notification }`, `result` `{ hash, request, rea
     * [~authorize(read, grants, [options])](#module_types/delegation..authorize) ⇒ <code>Object</code> \| <code>Object</code>
     * [~createResult(params, key)](#module_types/delegation..createResult) ⇒ <code>Object</code>
     * [~readResult(input, [options])](#module_types/delegation..readResult) ⇒ <code>Object</code> \| <code>Object</code>
-    * [~createMailboxFetch([params], key)](#module_types/delegation..createMailboxFetch) ⇒ <code>Object</code>
-    * [~readMailboxFetch(input, [options])](#module_types/delegation..readMailboxFetch) ⇒ <code>Object</code> \| <code>Object</code>
+    * [~createMailboxFetch(params, key)](#module_types/delegation..createMailboxFetch) ⇒ <code>Object</code>
+    * [~readMailboxFetch(input, options)](#module_types/delegation..readMailboxFetch) ⇒ <code>Object</code> \| <code>Object</code>
     * [~mailboxAddress(input, [hints])](#module_types/delegation..mailboxAddress) ⇒ <code>Object</code> \| <code>Object</code>
     * [~identityPeers(self, grants, [revoked])](#module_types/delegation..identityPeers) ⇒ <code>Array.&lt;string&gt;</code>
     * [~notificationFor(read, [context])](#module_types/delegation..notificationFor) ⇒ <code>Object</code>
@@ -1902,6 +1925,13 @@ Allowed clock difference between participants.
 Longest label or purpose text.
 
 **Kind**: inner constant of [<code>types/delegation</code>](#module_types/delegation)  
+<a name="module_types/delegation..MAILBOX_FETCH_PURPOSES"></a>
+
+### types/delegation~MAILBOX\_FETCH\_PURPOSES
+Uses a mailbox read proof is signed for: reading delegation mail, cancelling
+a pairing on a rendezvous, reading a Hub's federation mailbox.
+
+**Kind**: inner constant of [<code>types/delegation</code>](#module_types/delegation)  
 <a name="module_types/delegation..FEDERATION_REQUEST_TYPES"></a>
 
 ### types/delegation~FEDERATION\_REQUEST\_TYPES
@@ -2211,6 +2241,7 @@ Ask `target` to sign one frame, under the grant it made to this key.
 | params.request | <code>string</code> \| <code>Buffer</code> \| [<code>Message</code>](#Message) |  | The frame to sign. |
 | [params.origin] | <code>string</code> |  | The origin this participant saw (Passport   challenges; for a v3 peer challenge, the page that asked, when there is one). |
 | [params.sessionKey] | <code>string</code> |  | v3 peer challenges: the session key the   target's assertion names (this participant holds its private key). |
+| [params.clientNonce] | <code>string</code> |  | v3 peer challenges: the `clientNonce`   this participant sent the peer; the challenge must echo it. |
 | [params.account] | <code>number</code> | <code>0</code> | Account index the target signs with. |
 | [params.disclose] | <code>Array.&lt;string&gt;</code> |  | What the user agreed to share (Passport challenges). |
 | [params.purpose] | <code>string</code> |  | Short text shown to the target's user. |
@@ -2280,14 +2311,16 @@ whether it answers the request is the requester's check.
 
 <a name="module_types/delegation..createMailboxFetch"></a>
 
-### types/delegation~createMailboxFetch([params], key) ⇒ <code>Object</code>
-Prove this key may read its mailbox.
+### types/delegation~createMailboxFetch(params, key) ⇒ <code>Object</code>
+Prove this key may read its mailbox on one Hub, for one use.
 
 **Kind**: inner method of [<code>types/delegation</code>](#module_types/delegation)  
 
 | Param | Type | Description |
 | --- | --- | --- |
-| [params] | <code>Object</code> |  |
+| params | <code>Object</code> |  |
+| params.origin | <code>string</code> | Origin of the Hub the proof is sent to. |
+| params.purpose | <code>string</code> | One of `MAILBOX_FETCH_PURPOSES` (or another lowercase name a server checks). |
 | [params.since] | <code>number</code> | Mailbox sequence to read after. |
 | [params.ttlMs] | <code>number</code> |  |
 | [params.now] | <code>number</code> |  |
@@ -2295,15 +2328,22 @@ Prove this key may read its mailbox.
 
 <a name="module_types/delegation..readMailboxFetch"></a>
 
-### types/delegation~readMailboxFetch(input, [options]) ⇒ <code>Object</code> \| <code>Object</code>
-Read a `DELEGATION_MAILBOX_FETCH`. Spending the nonce once is the mailbox's job.
+### types/delegation~readMailboxFetch(input, options) ⇒ <code>Object</code> \| <code>Object</code>
+Read a `DELEGATION_MAILBOX_FETCH` for this server. The caller names the
+origins it answers on and the use it is checking; a proof for another Hub
+or another use is refused, and so is any read that names neither, so a
+proof can never be replayed elsewhere. Spending the nonce once is the
+mailbox's job, after this check.
 
 **Kind**: inner method of [<code>types/delegation</code>](#module_types/delegation)  
 
-| Param | Type |
-| --- | --- |
-| input | <code>string</code> \| <code>Buffer</code> \| [<code>Message</code>](#Message) | 
-| [options] | <code>Object</code> | 
+| Param | Type | Description |
+| --- | --- | --- |
+| input | <code>string</code> \| <code>Buffer</code> \| [<code>Message</code>](#Message) |  |
+| options | <code>Object</code> |  |
+| options.origin | <code>string</code> \| <code>Array.&lt;string&gt;</code> | This server's origin, or the list it answers on. |
+| options.purpose | <code>string</code> | The use being checked (`MAILBOX_FETCH_PURPOSES`). |
+| [options.now] | <code>number</code> |  |
 
 <a name="module_types/delegation..mailboxAddress"></a>
 
@@ -15717,6 +15757,7 @@ see [Message](#Message) wire vs friendly names and <code>constants</code> opcode
     * [.sealedBlobPreimageForPaymentHash(paymentHashHex, [htlc])](#Peer+sealedBlobPreimageForPaymentHash) ⇒ <code>Object</code> \| <code>null</code>
     * [.quoteSealedBlob(opts)](#Peer+quoteSealedBlob) ⇒ <code>Object</code>
     * [.quoteSealedBatch(opts)](#Peer+quoteSealedBatch) ⇒ <code>Object</code>
+    * [.settleSealedBlobQuote(paymentHashHex)](#Peer+settleSealedBlobQuote) ⇒ <code>boolean</code>
     * [._getSealedBlobDocument(documentId)](#Peer+_getSealedBlobDocument) ⇒ [<code>Document</code>](#Document) \| <code>null</code>
     * [.getDocumentBuffer(documentId)](#Peer+getDocumentBuffer) ⇒ <code>Buffer</code> \| <code>null</code>
     * [._sendP2pFileSendToPeer(documentId, peerAddress, [opts])](#Peer+_sendP2pFileSendToPeer) ⇒ <code>boolean</code>
@@ -16672,6 +16713,12 @@ no amount check is possible; settlement code must always pass it. With
 `sealedBlobPaymentMode: 'perBuyer'` static hashes are never fulfilled
 (that would publish `K_i`).
 
+A live quote that an HTLC paying its full price is checked against is
+pinned: it outlives its `expiresAt` and is never evicted, so the secret
+is still there when the HTLC settles. It is dropped by
+[settleSealedBlobQuote](#Peer+settleSealedBlobQuote) or after `sealedBlobFundedRetentionMs`
+(default 7 days).
+
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
 **Returns**: <code>Object</code> \| <code>null</code> - `keyHex` is the preimage (kept for callers written against static hashes).  
 
@@ -16716,6 +16763,19 @@ not written onto the public inventory item.
 | [opts.amountSats] | <code>number</code> | Ask above the listed price (rate × blobs). It never lowers it: a lower, non-finite, or negative amount quotes the listed price. |
 | [opts.maxSats] | <code>number</code> | The buyer's ceiling: a price above it is refused, and no quote is kept. |
 | [opts.ttlMs] | <code>number</code> | default `sealedBlobQuoteTtlMs` (1 h); the quote expires after it. |
+
+<a name="Peer+settleSealedBlobQuote"></a>
+
+### peer.settleSealedBlobQuote(paymentHashHex) ⇒ <code>boolean</code>
+Seller: the HTLC for a funded quote has settled (or failed for good), so
+its secret is no longer needed.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+**Returns**: <code>boolean</code> - Whether a quote was dropped.  
+
+| Param | Type |
+| --- | --- |
+| paymentHashHex | <code>string</code> | 
 
 <a name="Peer+_getSealedBlobDocument"></a>
 
@@ -17776,6 +17836,7 @@ Parse an Object into a corresponding Fabric state.
     * [.sealedBlobPreimageForPaymentHash(paymentHashHex, [htlc])](#Peer+sealedBlobPreimageForPaymentHash) ⇒ <code>Object</code> \| <code>null</code>
     * [.quoteSealedBlob(opts)](#Peer+quoteSealedBlob) ⇒ <code>Object</code>
     * [.quoteSealedBatch(opts)](#Peer+quoteSealedBatch) ⇒ <code>Object</code>
+    * [.settleSealedBlobQuote(paymentHashHex)](#Peer+settleSealedBlobQuote) ⇒ <code>boolean</code>
     * [._getSealedBlobDocument(documentId)](#Peer+_getSealedBlobDocument) ⇒ [<code>Document</code>](#Document) \| <code>null</code>
     * [.getDocumentBuffer(documentId)](#Peer+getDocumentBuffer) ⇒ <code>Buffer</code> \| <code>null</code>
     * [._sendP2pFileSendToPeer(documentId, peerAddress, [opts])](#Peer+_sendP2pFileSendToPeer) ⇒ <code>boolean</code>
@@ -18731,6 +18792,12 @@ no amount check is possible; settlement code must always pass it. With
 `sealedBlobPaymentMode: 'perBuyer'` static hashes are never fulfilled
 (that would publish `K_i`).
 
+A live quote that an HTLC paying its full price is checked against is
+pinned: it outlives its `expiresAt` and is never evicted, so the secret
+is still there when the HTLC settles. It is dropped by
+[settleSealedBlobQuote](#Peer+settleSealedBlobQuote) or after `sealedBlobFundedRetentionMs`
+(default 7 days).
+
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
 **Returns**: <code>Object</code> \| <code>null</code> - `keyHex` is the preimage (kept for callers written against static hashes).  
 
@@ -18775,6 +18842,19 @@ not written onto the public inventory item.
 | [opts.amountSats] | <code>number</code> | Ask above the listed price (rate × blobs). It never lowers it: a lower, non-finite, or negative amount quotes the listed price. |
 | [opts.maxSats] | <code>number</code> | The buyer's ceiling: a price above it is refused, and no quote is kept. |
 | [opts.ttlMs] | <code>number</code> | default `sealedBlobQuoteTtlMs` (1 h); the quote expires after it. |
+
+<a name="Peer+settleSealedBlobQuote"></a>
+
+### peer.settleSealedBlobQuote(paymentHashHex) ⇒ <code>boolean</code>
+Seller: the HTLC for a funded quote has settled (or failed for good), so
+its secret is no longer needed.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+**Returns**: <code>boolean</code> - Whether a quote was dropped.  
+
+| Param | Type |
+| --- | --- |
+| paymentHashHex | <code>string</code> | 
 
 <a name="Peer+_getSealedBlobDocument"></a>
 
@@ -24707,6 +24787,7 @@ Manage keys and track their balances.
     * [new Wallet([settings])](#new_Wallet_new)
     * _instance_
         * [._emittedWalletTxKeys](#Wallet+_emittedWalletTxKeys) : <code>Set.&lt;string&gt;</code>
+        * [._ownedOutpoints](#Wallet+_ownedOutpoints) : <code>Map.&lt;string, object&gt;</code>
         * [.derive([path])](#Wallet+derive)
         * [.loadKey(input, [labels])](#Wallet+loadKey) ⇒ <code>Object</code>
         * [.loadSeed(phrase, [labels], [opts])](#Wallet+loadSeed) ⇒ <code>Object</code>
@@ -24752,6 +24833,10 @@ Create an instance of a [Wallet](#Wallet).
 <a name="Wallet+_emittedWalletTxKeys"></a>
 
 ### wallet.\_emittedWalletTxKeys : <code>Set.&lt;string&gt;</code>
+**Kind**: instance property of [<code>Wallet</code>](#Wallet)  
+<a name="Wallet+_ownedOutpoints"></a>
+
+### wallet.\_ownedOutpoints : <code>Map.&lt;string, object&gt;</code>
 **Kind**: instance property of [<code>Wallet</code>](#Wallet)  
 <a name="Wallet+derive"></a>
 
@@ -27650,10 +27735,13 @@ Connect and subscribe to ZeroMQ publishers.
 
 * [ZMQ](#ZMQ)
     * [new ZMQ([settings])](#new_ZMQ_new)
+    * [.paused](#ZMQ+paused) ⇒ <code>Array.&lt;String&gt;</code>
     * [._emitErrorSafe()](#ZMQ+_emitErrorSafe)
     * [._handleSocketMessage(topic, message)](#ZMQ+_handleSocketMessage)
     * [.start()](#ZMQ+start) ⇒ [<code>ZMQ</code>](#ZMQ)
     * [.stop()](#ZMQ+stop) ⇒ [<code>ZMQ</code>](#ZMQ)
+    * [.pause(names)](#ZMQ+pause) ⇒ <code>Array.&lt;String&gt;</code>
+    * [.resume(names)](#ZMQ+resume) ⇒ <code>Array.&lt;String&gt;</code>
 
 <a name="new_ZMQ_new"></a>
 
@@ -27668,6 +27756,11 @@ Creates an instance of a ZeroMQ subscriber.
 | [settings.host] | <code>String</code> | Host for the ZMQ publisher. |
 | [settings.port] | <code>Number</code> | Remote ZeroMQ service port. |
 
+<a name="ZMQ+paused"></a>
+
+### zmQ.paused ⇒ <code>Array.&lt;String&gt;</code>
+**Kind**: instance property of [<code>ZMQ</code>](#ZMQ)  
+**Returns**: <code>Array.&lt;String&gt;</code> - Topics currently paused.  
 <a name="ZMQ+_emitErrorSafe"></a>
 
 ### zmQ.\_emitErrorSafe()
@@ -27701,6 +27794,31 @@ Closes the connection to the ZMQ publisher.
 
 **Kind**: instance method of [<code>ZMQ</code>](#ZMQ)  
 **Returns**: [<code>ZMQ</code>](#ZMQ) - Instance of the service.  
+<a name="ZMQ+pause"></a>
+
+### zmQ.pause(names) ⇒ <code>Array.&lt;String&gt;</code>
+Stop receiving the named topics. The publisher filters them, so nothing
+for them crosses the socket. Kept across reconnects until [resume](#ZMQ+resume).
+
+**Kind**: instance method of [<code>ZMQ</code>](#ZMQ)  
+**Returns**: <code>Array.&lt;String&gt;</code> - The topics newly paused.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| names | <code>Array.&lt;String&gt;</code> | Topics from `settings.subscriptions`. |
+
+<a name="ZMQ+resume"></a>
+
+### zmQ.resume(names) ⇒ <code>Array.&lt;String&gt;</code>
+Receive topics paused by [pause](#ZMQ+pause) again.
+
+**Kind**: instance method of [<code>ZMQ</code>](#ZMQ)  
+**Returns**: <code>Array.&lt;String&gt;</code> - The topics newly resumed.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| names | <code>Array.&lt;String&gt;</code> | Topics to resume. |
+
 <a name="Scribe"></a>
 
 ## ~~Scribe~~
@@ -28038,6 +28156,12 @@ Those inner types: refused inside a `GenericMessage` / `P2P_BASE_MESSAGE` carrie
 Session-advertised level of field-body support (`object.fieldBodies`).
 
 **Kind**: global constant  
+<a name="PEER_SEALED_BLOB_FUNDED_RETENTION_MS"></a>
+
+## PEER\_SEALED\_BLOB\_FUNDED\_RETENTION\_MS
+Default time a funded sealed-blob quote keeps its secret while its HTLC settles.
+
+**Kind**: global constant  
 <a name="TAPROOT_INTERNAL_NUMS"></a>
 
 ## TAPROOT\_INTERNAL\_NUMS
@@ -28146,6 +28270,36 @@ Max txids kept for `rawtx` / `hashtx` pair dedupe.
 
 ## ZMQ\_TX\_DEDUPE\_MS
 Default window in which a `rawtx` / `hashtx` pair counts as one admission.
+
+**Kind**: global constant  
+<a name="ZMQ_TX_TOPICS"></a>
+
+## ZMQ\_TX\_TOPICS
+Per-transaction topics, paused during initial block download.
+
+**Kind**: global constant  
+<a name="ZMQ_IBD_POLL_MS"></a>
+
+## ZMQ\_IBD\_POLL\_MS
+Default interval between initial-block-download checks while it lasts.
+
+**Kind**: global constant  
+<a name="ZMQ_HASHTX_GRACE_MS"></a>
+
+## ZMQ\_HASHTX\_GRACE\_MS
+Default wait for a `rawtx` before a lone `hashtx` is fetched over RPC.
+
+**Kind**: global constant  
+<a name="BALANCE_REFRESH_MS"></a>
+
+## BALANCE\_REFRESH\_MS
+Default minimum interval between wallet balance reads driven by `rawtx`.
+
+**Kind**: global constant  
+<a name="RPC_MAX_SOCKETS"></a>
+
+## RPC\_MAX\_SOCKETS
+Default cap on concurrent RPC connections to bitcoind.
 
 **Kind**: global constant  
 <a name="Text"></a>
@@ -30012,6 +30166,13 @@ Check a body's shape and its author's BIP340 signature.
 
 ## routePath()
 `path` as an absolute JSON Pointer path.
+
+**Kind**: global function  
+<a name="isArrayIndex"></a>
+
+## isArrayIndex()
+Under an array only an element index is a child: `length` or a name would
+persist to Level and then fail (or truncate) in memory.
 
 **Kind**: global function  
 <a name="normalizeOrder"></a>
