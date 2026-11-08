@@ -683,7 +683,7 @@ still fit one <code>CONTRACT_MESSAGE</code> under <code>MAX_MESSAGE_SIZE</code> 
 <dd><p>BIP65: lock values at or above this are unix times, not heights.</p>
 </dd>
 <dt><a href="#DEPRECATED_WIRE_TYPES">DEPRECATED_WIRE_TYPES</a></dt>
-<dd><p>Registered opcodes nothing sends or handles (docs/MESSAGE_BODY_MIGRATION.md
+<dd><p>Registered opcodes nothing sends or handles (docs/MESSAGE_BODY.md, Migration
 Phase 4). They still decode; Peer counts and warns when one arrives, and a
 later protocol version removes them. <code>P2P_BASE_MESSAGE</code> and
 <code>P2P_CHAIN_SYNC_REQUEST</code> are still in use and are not listed.</p>
@@ -28014,7 +28014,7 @@ BIP65: lock values at or above this are unix times, not heights.
 <a name="DEPRECATED_WIRE_TYPES"></a>
 
 ## DEPRECATED\_WIRE\_TYPES
-Registered opcodes nothing sends or handles (docs/MESSAGE_BODY_MIGRATION.md
+Registered opcodes nothing sends or handles (docs/MESSAGE_BODY.md, Migration
 Phase 4). They still decode; Peer counts and warns when one arrives, and a
 later protocol version removes them. `P2P_BASE_MESSAGE` and
 `P2P_CHAIN_SYNC_REQUEST` are still in use and are not listed.

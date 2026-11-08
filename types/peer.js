@@ -70,8 +70,8 @@ const {
   isOnionChatSeal,
   tryOpenOnionChatText
 } = require('../functions/onionChatSeal');
-const { individualPk } = require('./witness/musig2');
-const musig2Session = require('./witness/musig2Session');
+const { individualPk } = require('../functions/musig2');
+const musig2Session = require('../functions/musig2Session');
 const sidechainState = require('../functions/sidechainState');
 const { epochCommitmentDigestHex } = require('../functions/beaconFederationSigning');
 const Federation = require('./federation');
@@ -382,8 +382,8 @@ function meshDeliveryContext (opts = {}, originName = null) {
 }
 
 const Contract = require('./contract');
-const { normalizePeerPubkeyHex } = require('./key/pubkey');
-const SIGNING_TAGS = require('./key/signingTags');
+const { normalizePeerPubkeyHex } = require('../functions/pubkey');
+const SIGNING_TAGS = require('../functions/signingTags');
 
 /**
  * Outer / generic types whose local registration side-effects are first-writer-wins.
@@ -2888,7 +2888,7 @@ class Peer extends Service {
   /**
    * Whether `message` is a JSON body of a type with a field layout
    * (`Message.LEGACY_BODY_TYPES`), which the wire no longer accepts
-   * (docs/MESSAGE_BODY_MIGRATION.md Phase 5). Stored frames are read with
+   * (docs/MESSAGE_BODY.md, Migration, Phase 5). Stored frames are read with
    * `Message.tryParseLegacyBody`, which still accepts JSON.
    * @private
    * @param {Message} message

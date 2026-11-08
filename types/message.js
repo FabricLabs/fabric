@@ -2444,7 +2444,7 @@ function tryParseMessageBody (message) {
 // Legacy JSON bodies <-> typed field bodies, for the protocol opcodes whose
 // field schemas are registered above. Senders use `Message.fromLegacyBody`;
 // receivers use `Message.tryParseLegacyBody` so handlers keep seeing the JSON
-// shape whichever encoding the peer sent (docs/MESSAGE_BODY_MIGRATION.md).
+// shape whichever encoding the peer sent (docs/MESSAGE_BODY.md, Migration).
 /** @private */
 const SIDECHAIN_PATCH_KIND = 'SidechainStatePatch';
 /** @private */
@@ -2455,7 +2455,7 @@ const MAX_UINT32 = (2 ** 32) - 1;
 const MAX_PORT = 65535;
 
 /**
- * Registered opcodes nothing sends or handles (docs/MESSAGE_BODY_MIGRATION.md
+ * Registered opcodes nothing sends or handles (docs/MESSAGE_BODY.md, Migration
  * Phase 4). They still decode; Peer counts and warns when one arrives, and a
  * later protocol version removes them. `P2P_BASE_MESSAGE` and
  * `P2P_CHAIN_SYNC_REQUEST` are still in use and are not listed.

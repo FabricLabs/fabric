@@ -12,7 +12,7 @@
  */
 
 const { secp256k1 } = require('@noble/curves/secp256k1.js');
-const musig2 = require('./musig2');
+const musig2 = require('../../functions/musig2');
 const adaptor = require('./adaptor');
 
 const Point = secp256k1.Point;
@@ -39,7 +39,7 @@ function toInt (buf) {
  * @param {Array<boolean>} isXonly
  * @param {Buffer} msg
  * @param {Buffer} adaptorPoint 33-byte compressed T
- * @returns {object} session context for {@link module:types/witness/musig2}
+ * @returns {object} session context for {@link module:functions/musig2}
  */
 function sessionContext (aggnonce, pubkeys, tweaks, isXonly, msg, adaptorPoint) {
   return musig2.sessionContext(aggnonce, pubkeys, tweaks, isXonly, msg, requireAdaptor(adaptorPoint));

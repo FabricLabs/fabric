@@ -5,7 +5,6 @@ names from `Message.WIRE_TYPE_DECODE_ORDER`) and defines the **Program +
 manifest** shape that lets Fabric-speaking peers derive a **common state** —
 a list of fields and their values — across the network.
 
-Companion diagram: [`contracts/protocol.dot`](../contracts/protocol.dot).  
 Opcode catalog: [`MESSAGES.md`](../MESSAGES.md).  
 Execution model: [`DISTRIBUTED_EXECUTION.md`](./DISTRIBUTED_EXECUTION.md), [`PROGRAM.md`](./PROGRAM.md).
 

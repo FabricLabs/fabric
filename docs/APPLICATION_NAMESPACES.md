@@ -75,7 +75,7 @@ read either encoding with `Message.tryParseLegacyBody(message)`. Peer events
 apps the same object for both encodings, but the two encodings of one body are
 different frames with different hashes. Accumulate dedups by frame hash and
 orders by it, so a sender should pick one encoding per frame and keep it; see
-[MESSAGE_BODY_MIGRATION.md](./MESSAGE_BODY_MIGRATION.md#risks).
+[MESSAGE_BODY.md](./MESSAGE_BODY.md#risks).
 
 
 **Multi-origin accumulate:** publisher and participants ingest the same signed

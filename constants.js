@@ -157,7 +157,7 @@ function bitcoinChangeDerivationPath (account = 0, index = 0, networkOrCoinType)
 /**
  * BIP-43 purpose path for Bitcoin funds: m/{purpose}'/{coin}'/account'/{0|1}/index
  * Account wallets hand out addresses from BIP-84 and also watch BIP-86 Taproot
- * and BIP-44 (see `types/wallet/accountKeys.js`); BIP-87 names the multisig
+ * and BIP-44 (see `functions/accountKeys.js`); BIP-87 names the multisig
  * cosigner key.
  *
  * @param {number} purpose 44 (p2pkh), 49 (p2sh-p2wpkh), 84 (p2wpkh), 86 (p2tr), or 87 (multisig)

@@ -6,10 +6,10 @@ const { networks: bitcoinNetworks, payments } = require('bitcoinjs-lib');
 
 // Mnemonics
 const ecc = require('./ecc');
-const BIP32 = require('./key/bip32').default;
-const { DEFAULT_NETWORK: BIP32_DEFAULT_NETWORK } = require('./key/bip32');
+const BIP32 = require('../functions/bip32').default;
+const { DEFAULT_NETWORK: BIP32_DEFAULT_NETWORK } = require('../functions/bip32');
 const bip32 = new BIP32(ecc);
-const bip39 = require('./key/bip39');
+const bip39 = require('../functions/bip39');
 
 // Types
 const Key = require('./key');
@@ -21,9 +21,9 @@ const Hash256 = require('./hash256');
 const Service = require('./service');
 const Secret = require('./secret');
 const State = require('./state');
-const accountKeys = require('./wallet/accountKeys');
-const walletWatch = require('./wallet/walletTransactionWatch');
-const bip21 = require('./wallet/bip21');
+const accountKeys = require('../functions/accountKeys');
+const walletWatch = require('../functions/walletTransactionWatch');
+const bip21 = require('../functions/bip21');
 const bip86 = require('./wallet/bip86');
 const {
   buildWatchSet,
