@@ -215,6 +215,33 @@ describe('@fabric/core functions/documentRevisions', function () {
     assert.match(malformed.reason, /64-hex/);
   });
 
+  it('checks a content hash against the signed sha256 before the identifier, in any case', function () {
+    const c = makeContract();
+    function signed (sha256) {
+      const body = revisions.buildDocumentRevisionBody({
+        contract: c.contract,
+        document: { id: sha('identifier'), name: 'notes.txt', mime: 'text/plain' },
+        revision: 1
+      });
+      body.sha256 = sha256;
+      const message = Message.fromLegacyBody('CONTRACT_MESSAGE', body);
+      message.parent = c.publish.id;
+      message.signWithKey(editor);
+      return revisions.documentProvenance([c.publish, message].map((m) => m.toBuffer()), sha('identifier'));
+    }
+
+    const distinct = signed(sha('content'));
+    assert.strictEqual(revisions.verifyDocumentProvenance(distinct, { sha256: sha('content') }).ok, true);
+    assert.match(revisions.verifyDocumentProvenance(distinct, { sha256: sha('identifier') }).reason, /does not match/);
+
+    const upper = signed(sha('content').toUpperCase());
+    assert.strictEqual(revisions.verifyDocumentProvenance(upper, { sha256: sha('content') }).ok, true);
+
+    const malformed = revisions.verifyDocumentProvenance(signed('not-a-digest'), { sha256: sha('identifier') });
+    assert.strictEqual(malformed.ok, false);
+    assert.match(malformed.reason, /revision sha256/);
+  });
+
   it('parses frames into publish and revision views', function () {
     const c = chain();
     const pub = revisions.parseDocumentContractFrame(c.publish.toBuffer());
