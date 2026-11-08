@@ -81,7 +81,9 @@ const CONTRACT_BODY_TYPES = Object.freeze({
    * Compact catalog of documents (metadata only). Product pack names stay in
    * each app; this is the shared list those catalogs can carry.
    */
-  DocumentList: 'DocumentList'
+  DocumentList: 'DocumentList',
+  /** One version of an editable document (`DocumentContract`); see functions/documentRevisions. */
+  DocumentRevision: 'DocumentRevision'
 });
 
 /**

@@ -23,8 +23,8 @@ Read **[VISION.md](VISION.md)** first for what Fabric is building, how **`@fabri
 ## Quick Start
 See also [`QUICKSTART.md`][quickstart-guide] for up-to-date instructions.
 
-0. `nvm use 26.12.1` (install [`nvm`][nvm-official] if needed; matches `.nvmrc` / `package.json` engines)
-0b. Ensure **npm 12+** (`npm -v`). Node 26.12.1 ships npm 11.x — upgrade with `npm install -g npm@12` (or newer) before installing. **`@fabric/core` keeps npm’s default `allow-git=none`** (no git deps). Only downstream packages that install Fabric from GitHub (Hub / `@fabric/http` / app peers) should set **`.npmrc` `allow-git=all`** for nested commit-SHA fetches — do not add that opt-in here.
+0. `nvm use 26.13.0` (install [`nvm`][nvm-official] if needed; matches `.nvmrc` / `package.json` engines)
+0b. Ensure **npm 12+** (`npm -v`). Node 26.13.0 ships npm 11.x — upgrade with `npm install -g npm@12` (or newer) before installing. **`@fabric/core` keeps npm’s default `allow-git=none`** (no git deps). Only downstream packages that install Fabric from GitHub (Hub / `@fabric/http` / app peers) should set **`.npmrc` `allow-git=all`** for nested commit-SHA fetches — do not add that opt-in here.
 1. From a clone of this repo: `npm install` (or `npm install -g @fabric/core` to put `fabric` on your `PATH`).
 2. (optional) `fabric setup` to view / generate / backup / restore the local master key (`~/.fabric/wallet.json` is password-sealed JSON by default; TTY opens a lightweight TUI with unlock / lock / idle timeout)
 3. (optional) `fabric keygen` to generate a new master key without saving to disk (ephemeral)
@@ -44,7 +44,7 @@ Working from a **git checkout** (not the global package) is best when you are ch
 | `assets/` | **Generated** browser bundles; rebuild with `npm run build` after type changes. |
 
 ## Development workflow
-- **Node:** engines field in `package.json` is authoritative (currently Node 26.12.1).
+- **Node:** engines field in `package.json` is authoritative (currently Node 26.13.0).
 - **Unit tests:** `npm test` — runs Mocha recursively under `tests/`.
 - **Lint:** `npm run lint` / `npm run lint:fix` (Semistandard).
 - **API reference:** `npm run make:api` writes `API.md` from JSDoc (see `scripts/list-jsdoc-type-files.js` for which `types/*.js` files are included).
@@ -62,7 +62,7 @@ Use this repo as a **library** or run the **`fabric`** CLI in environments you c
 
 | Step | Where |
 |------|--------|
-| Node **26.12.1** (see `.nvmrc`), `npm ci`, **`npm run ci`** | [`docs/PRODUCTION.md`](docs/PRODUCTION.md) |
+| Node **26.13.0** (see `.nvmrc`), `npm ci`, **`npm run ci`** | [`docs/PRODUCTION.md`](docs/PRODUCTION.md) |
 | Public leaf API + scoped RC claim | [`PUBLIC_API.md`](PUBLIC_API.md) |
 | Completion / privacy / security matrix | [`docs/PRODUCTION.md`](docs/PRODUCTION.md), [`PRIVACY.md`](PRIVACY.md), [`SECURITY.md`](SECURITY.md), [`AUDIT.md`](AUDIT.md) |
 | Version tag, changelog, Hub & fabric-http bumps | [`docs/PRODUCTION.md`](docs/PRODUCTION.md) (§ Release checklist) |
@@ -327,9 +327,10 @@ Other **`Store`** subclasses add domain behavior — for example **`Datastore`**
 ### Moving `functions/` into Types
 Core's `functions/` helpers are folding into the Types that own them. The rules:
 
-- **Code moves to the Type**, as statics or a static namespace (`Witness.MuSig2`). A large implementation may live in a module beside the Type (`types/key/bip32.js`, like `types/bitcoin/`), exposed only through the Type.
-- **`functions/<name>.js` becomes a shim** that re-exports from the Type (pattern: `functions/messageBodyCodec.js`), plus a `.d.ts` shim where one exists today.
+- **The Type exposes the helper**, as statics or a static namespace (`Witness.MuSig2`). A helper that already has a `functions/<name>.js` module keeps its code there and the Type requires it (`Key.BIP32` is `functions/bip32`); a new implementation may live in a module beside the Type (`types/wallet/bip86.js`, like `types/bitcoin/`). One module per helper, never a copy plus a re-export.
+- **Code that moved into a Type file** leaves `functions/<name>.js` as a shim that re-exports from the Type (pattern: `functions/messageBodyCodec.js`), plus a `.d.ts` shim where one exists today.
 - **Every path keeps working.** `./functions/*` is exported as a wildcard, so every path is public. The paths frozen in [PUBLIC_API.md](PUBLIC_API.md) stay frozen, and shims stay for at least the 0.1 line.
+- **Unreleased helpers move without a shim.** A `functions/` module added since the last published release has no installed users, so it moves into its Type and the old path is deleted (as `functions/delegation` was).
 - **`Peer` is already over 8,000 lines.** Peer-bound helpers go to smaller homes where they fit (`Message`, `Session`); the rest become `Peer` statics backed by modules in `types/peer/`.
 - **Leaves stay leaves:** `bytes`, `fabricCanonicalJson`, `wireJson`, `_sortKeys`, `oxfordJoin`, `truncateMiddle`, `json`, `fabricNativeAccel` (the native loader), `sipa/*` (vendored), and `passport` (its own spec).
 - **Each step ends with** `npm run ci` green (old tests run unchanged through the shims, new tests against the Types), `npm run check:downstream` passing, and `PUBLIC_API.md` and the CHANGELOG updated.
@@ -381,7 +382,7 @@ Canonical map of `types/` and `services/` across **`@fabric/core`**, **`@fabric/
 | Last reviewed | 2026-08-15 |
 | Trees scanned | `types/` + `services/` (Passport: `src/types/`, `src/background/`, `src/crypto/`, `src/utils/`) |
 | Local checkouts | `~/fabric-clean`, `~/fabric-http`, `~/hub.fabric.pub`, `~/fabric-browser-extension`, `~/star-citizen-live` (`~/goon.vc` insight only) |
-| Crypto lift | Delegation frames and identity Schnorr live in `@fabric/core` (`functions/delegation`, `types/delegation`, `functions/fabricIdentitySchnorr`). HTTP / Hub / GoonCitizen / Passport use them directly. |
+| Crypto lift | Delegation frames and identity Schnorr live in `@fabric/core` (`types/delegation`, `functions/fabricIdentitySchnorr`). HTTP / Hub / GoonCitizen / Passport use them directly. |
 | Core `npm test` | 2026-08-14: gossip-network `verifiedPubkey` expect fixed; remaining work is identity lift + OUTSTANDING queue (not this suite fail). |
 
 ---
@@ -542,7 +543,7 @@ Payoff vs risk for *sharing* an API. Implement only with owner go-ahead; small P
 
 | Rank | Slice | Home | Payoff | Risk | Notes |
 |------|-------|------|--------|------|-------|
-| 1 | **Delegation** (pairing, grants, requests; replaced IdentityCrossSign and device-link) | **core** `functions/delegation` + `types/delegation` ([docs/DELEGATION.md](docs/DELEGATION.md)) | High | Low | Every participant builds a `Delegation` on its own key and store; do not fork frame code. |
+| 1 | **Delegation** (pairing, grants, requests; replaced IdentityCrossSign and device-link) | **core** `types/delegation` ([docs/DELEGATION.md](docs/DELEGATION.md)) | High | Low | Every participant builds a `Delegation` on its own key and store; do not fork frame code. |
 | 2 | **Passport + delegation transport** | **http** (`passportHttp`, `fabricDelegationHttp`, `fabricDelegationMailbox`, `fabricDelegate`) | High | Low–med | GC/Passport/Hub must wrap http; do not fork verify. |
 | 3 | **Passport Key → core Key** | **core** Key | High (crypto) | Med | Drop elliptic class; keep `IKey` UI state in Passport. |
 | 4 | **Retire Hub Queue/Worker forks** | **core** | Med | Low | Runtime already uses core Worker. |
@@ -624,7 +625,7 @@ Not a ship list. Owner go-ahead still required. Detail for Core also lives in [O
 - Existing OUTSTANDING items: type-tree keep/remove, `messageHex` laziness, `contractId` → `contractIdentifier`, genesis journal cap, blinded-execution scaffold, third-party review of peer/HTLC.
 
 #### Follow-up Core PR (new files)
-`functions/fabricIdentitySchnorr.js` and its tests in `tests/fabric.identity.js` are already on #185; the IdentityCrossSign leaves were since replaced by delegation (`functions/delegation.js`, `types/delegation.js`). Pin or `npm link` core in http / Hub / Passport / GoonCitizen. Sidecar `.d.ts` files were dropped for the GitHub 150-file review cap.
+`functions/fabricIdentitySchnorr.js` and its tests in `tests/fabric.identity.js` are already on #185; the IdentityCrossSign leaves were since replaced by delegation (`types/delegation.js`). Pin or `npm link` core in http / Hub / Passport / GoonCitizen. Sidecar `.d.ts` files were dropped for the GitHub 150-file review cap.
 
 #### Pending tests (not failures)
 - 3× Lightning `_makeRPCRequest` (JSON-RPC line-delimited / error / timeout) — skipped unit stubs.

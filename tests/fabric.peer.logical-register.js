@@ -62,7 +62,7 @@ describe('@fabric/core Peer logical first-writer-wins registration', function ()
     );
     assert.strictEqual(
       peer._logicalRegistrationKey('FlushChain', { snapshotBlockHash: 'CD'.repeat(32) }),
-      `flush:${'cd'.repeat(32)}`
+      null
     );
     const signer = 'ee'.repeat(32);
     assert.strictEqual(
@@ -104,9 +104,9 @@ describe('@fabric/core Peer logical first-writer-wins registration', function ()
     peer.on('contract:publish', () => { publishes++; });
     peer.relayFrom = function () { relays++; };
 
-    const wireOwner = Message.fromVector(['CONTRACT_PUBLISH', JSON.stringify(definition)])
+    const wireOwner = Message.fromLegacyBody('CONTRACT_PUBLISH', definition)
       .signWithKey(owner);
-    const wireAttacker = Message.fromVector(['CONTRACT_PUBLISH', JSON.stringify(definition)])
+    const wireAttacker = Message.fromLegacyBody('CONTRACT_PUBLISH', definition)
       .signWithKey(attacker);
 
     peer._handleGenericMessage({
@@ -205,15 +205,15 @@ describe('@fabric/core Peer logical first-writer-wins registration', function ()
     peer.on('bitcoinBlock', () => { emits++; });
     peer.relayFrom = function () { relays++; };
 
-    const w1 = Message.fromVector(['BitcoinBlock', JSON.stringify(payload)]).signWithKey(k1);
-    const w2 = Message.fromVector(['BitcoinBlock', JSON.stringify(payload)]).signWithKey(k2);
+    const w1 = Message.fromLegacyBody('BitcoinBlock', payload).signWithKey(k1);
+    const w2 = Message.fromLegacyBody('BitcoinBlock', payload).signWithKey(k2);
     peer._handleFabricMessage(w1.toBuffer(), { name: 'p1' }, null);
     peer._handleFabricMessage(w2.toBuffer(), { name: 'p2' }, null);
     assert.strictEqual(emits, 1);
     assert.strictEqual(relays, 1);
 
     const next = { tip: 'cd'.repeat(32), height: 101, network: 'regtest' };
-    const w3 = Message.fromVector(['BitcoinBlock', JSON.stringify(next)]).signWithKey(k1);
+    const w3 = Message.fromLegacyBody('BitcoinBlock', next).signWithKey(k1);
     peer._handleFabricMessage(w3.toBuffer(), { name: 'p1' }, null);
     assert.strictEqual(emits, 2);
   });

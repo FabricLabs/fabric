@@ -17,7 +17,7 @@ const {
   emptyChaosCrashReport,
   classifyChaosPeerError,
   chaosMessageBody
-} = require('../../scripts/lib/playnetChaosNeighbors');
+} = require('../../scripts/playnet-chaos-neighbors');
 const {
   hubBaseSettings,
   waitUntil,

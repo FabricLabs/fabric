@@ -24,7 +24,7 @@ describe('scripts/check-downstream-imports', function () {
   it('resolves paths that exist in core and refuses ones that do not', function () {
     assert.strictEqual(resolvesInCore('types/key'), true);
     assert.strictEqual(resolvesInCore('constants'), true);
-    assert.strictEqual(resolvesInCore('functions/playnetChaosNeighbors'), true);
+    assert.strictEqual(resolvesInCore('functions/fabricUri'), true);
     assert.strictEqual(resolvesInCore('functions/fabricSiteLogin'), false);
     assert.strictEqual(resolvesInCore('../package.json'), false);
   });

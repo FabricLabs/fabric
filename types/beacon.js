@@ -19,15 +19,31 @@
 const merge = require('lodash.merge');
 
 const Actor = require('./actor');
-const Message = require('./message');
+const Hash256 = require('./hash256');
 const Chain = require('./chain');
+const fabricCanonicalJson = require('../functions/fabricCanonicalJson');
 const beaconFederationSigning = require('../functions/beaconFederationSigning');
-const bls = require('./witness/bls');
+const bls = require('../functions/bls');
 const Federation = require('./federation');
 
 const SATS_PER_BTC = 100_000_000;
 const BEACON_CHAIN_PATH = 'beacon/CHAIN';
 const MAX_REMEMBERED_CANCELLED_ROUNDS = 1024;
+
+/**
+ * Id of a stored epoch entry: double-SHA256 of the epoch's canonical JSON, taken
+ * over the payload as `beacon/CHAIN` stores it (JSON drops an unset field, which
+ * canonical JSON would hash as `null`). Epochs are never sent as frames, so no
+ * Message is built. Older entries keep the ids they were stored with.
+ * @private
+ * @param {object} payload
+ * @returns {string}
+ */
+function epochEntryId (payload) {
+  // Canonical JSON first, so a Symbol or BigInt still fails closed rather than vanishing.
+  fabricCanonicalJson(payload);
+  return Hash256.doubleDigest(fabricCanonicalJson(fabricCanonicalJson.jsonSafe(payload)));
+}
 
 /**
  * @param {object} round
@@ -329,9 +345,7 @@ class Beacon extends Actor {
 
   _buildEpochEntry (epochBase, witnessOverride = null) {
     const fullEpoch = this._mergeSidechainIntoEpoch(epochBase);
-    const message = Message.fromVector(['BEACON_EPOCH', JSON.stringify(fullEpoch)]);
-    if (this.key && this.key.private) message.signWithKey(this.key);
-    const entry = { type: 'BEACON_EPOCH', payload: fullEpoch, id: message.id || null };
+    const entry = { type: 'BEACON_EPOCH', payload: fullEpoch, id: epochEntryId(fullEpoch) };
     const witness = witnessOverride || this._makeFederationWitnessForEpoch(fullEpoch);
     if (witness) entry.federationWitness = witness;
     return entry;
@@ -345,9 +359,7 @@ class Beacon extends Actor {
    * @private
    */
   _appendSealedEpoch (payload, witness = null) {
-    const message = Message.fromVector(['BEACON_EPOCH', JSON.stringify(payload)]);
-    if (this.key && this.key.private) message.signWithKey(this.key);
-    const entry = { type: 'BEACON_EPOCH', payload, id: message.id || null };
+    const entry = { type: 'BEACON_EPOCH', payload, id: epochEntryId(payload) };
     if (witness) entry.federationWitness = witness;
     this._epochChain.append(entry);
     return entry;

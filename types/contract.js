@@ -24,9 +24,9 @@ const Token = require('./token');
 // Fabric Functions
 const { LOG_TYPES, CONTRACT_BODY_TYPES } = require('../functions/applicationNamespaces');
 const { fabricCanonicalJson } = require('../functions/fabricCanonicalJson');
-const { pubkeyXOnly, pubkeyCompressed, normalizePeerPubkeyHex } = require('./key/pubkey');
+const { pubkeyXOnly, pubkeyCompressed, normalizePeerPubkeyHex } = require('../functions/pubkey');
 const { sortPubkeysBip67 } = require('../functions/bip67');
-const SIGNING_TAGS = require('./key/signingTags');
+const SIGNING_TAGS = require('../functions/signingTags');
 
 // @private
 function sha256hex (s) {
@@ -1423,8 +1423,9 @@ class Contract extends Service {
       validators: []
     };
 
-    // First message (genesis)
-    const PACKET_CONTRACT_GENESIS = Message.fromVector(['CONTRACT_GENESIS', JSON.stringify({
+    // First message (genesis). A stored record, not sent: `P2P_BASE_MESSAGE` is
+    // what the unregistered `CONTRACT_GENESIS` name always resolved to.
+    const PACKET_CONTRACT_GENESIS = Message.fromVector(['P2P_BASE_MESSAGE', JSON.stringify({
       type: 'CONTRACT_GENESIS',
       object: {
         input: input

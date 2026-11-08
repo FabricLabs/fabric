@@ -111,7 +111,7 @@ Codes from [`constants.js`](constants.js). Full catalog: [`MESSAGES.md`](MESSAGE
 | `0x44` | 68 | `P2P_MESSAGE_RECEIPT` | Ack / receipt | ❌ No |
 | `0x45` | 69 | `P2P_FORWARD` | Directed onion hop (`nextPeer` + `ttl` + `inner`) | ⚠️ Conditional |
 | `0x55` | 85 | `P2P_CHAIN_SYNC_REQUEST` | Chain sync request | ⚠️ Conditional |
-| `0x56` | 86 | `P2P_FLUSH_CHAIN` | Trusted tip rewind / flush | ⚠️ Conditional |
+| `0x56` | 86 | *(reserved)* | Retired `P2P_FLUSH_CHAIN`; decodes as unknown, never relayed | ❌ No |
 | `0x57` | 87 | `P2P_INVENTORY_REQUEST` | Inventory request | ⚠️ Conditional |
 | `0x58` | 88 | `P2P_INVENTORY_RESPONSE` | Inventory response | ⚠️ Conditional |
 | `0x59` | 89 | `P2P_FILE_SEND` | Document / blob transfer | ⚠️ Conditional |
@@ -161,7 +161,7 @@ Several application types use codes **outside** this range (see [`constants.js`]
 | `0x424A` | 16970 | `DELEGATION_MAILBOX_FETCH` † | Proves the reader holds the key a mailbox serves | ❌ No |
 | `0x81`-`0x8F` (legacy draft) | … | CHAT / ACCEPT / REJECT / PAYMENT_* | Not all registered in `constants.js` — see Remaining work | ⚠️ Varies |
 
-The Passport and delegation types travel as `fabric:<frame>` strings between a page, Passport, a rendezvous or mailbox, and a delegate (`functions/fabricUri`, `functions/passport`, `functions/delegation`; specs in [docs/PASSPORT.md](docs/PASSPORT.md) and [docs/DELEGATION.md](docs/DELEGATION.md)), not over the mesh: `Peer` has no handler for them and does not relay them. They replace the earlier site-login types `0x4230`–`0x4232`, which are no longer known and are refused. Like the MuSig rows they are JS-only for now — `src/constants.h` does not list them.
+The Passport and delegation types travel as `fabric:<frame>` strings between a page, Passport, a rendezvous or mailbox, and a delegate (`functions/fabricUri`, `functions/passport`, `types/delegation`; specs in [docs/PASSPORT.md](docs/PASSPORT.md) and [docs/DELEGATION.md](docs/DELEGATION.md)), not over the mesh: `Peer` has no handler for them and does not relay them. They replace the earlier site-login types `0x4230`–`0x4232`, which are no longer known and are refused. Like the MuSig rows they are JS-only for now — `src/constants.h` does not list them.
 
 ### Bitcoin Integration Types
 
@@ -443,7 +443,7 @@ Implementations SHOULD:
 - **Header size**: 208 bytes
 - **Backward Compatibility**: Not guaranteed for future versions
 - **Forward Compatibility**: Unknown message types should be handled as observe-only (`UNKNOWN_MESSAGE`), not aliased to `P2P_BASE_MESSAGE`
-- **Upgrade / fork class**: See [docs/FORKS.md](docs/FORKS.md) (soft- vs hard-fork-like changes across AMP, Beacon digests, and Taproot identity)
+- **Upgrade / fork class**: See [PROTOCOL.md § Forks](PROTOCOL.md#forks-hard-vs-soft) (soft- vs hard-fork-like changes across AMP, Beacon digests, and Taproot identity)
 
 ---
 

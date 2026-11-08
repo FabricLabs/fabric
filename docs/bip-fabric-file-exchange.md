@@ -108,9 +108,9 @@ A buyer selects the commitment from the offer: `sealed` (encryption scheme `aes-
 
 ### Chunking
 
-- **Chunk size.** `chunk_bytes = floor((MAX_MESSAGE_SIZE − overhead) × 3/4)` so the base64 body plus JSON fields fits one message. Fabric uses `MAX_MESSAGE_SIZE = 32768` with `overhead = 640` for unsealed chunks (24,096 bytes) and `overhead = 2048` for sealed chunks, which also carry an IV, payment hash, and inclusion proof (23,040 bytes). The chunk size is fixed per document; only the last chunk may be shorter. An empty file is one empty chunk.
-- **Limits.** A document is at most 2^32 − 1 bytes, the maximum file size of both FAT16 and FAT32 (each stores file size as an unsigned 32-bit count). At the sealed plaintext chunk that is `MAX_DOCUMENT_BLOBS` chunks (186,544 at the 23,040-byte sealed chunk). Receivers SHOULD bound incomplete transfers (Fabric: 64 at once, 8 per origin, a pending budget large enough for one such file, expired after 10 minutes).
-- **`file_send` fields.** `documentId`, `name`, `body` (base64 chunk bytes), `blobIndex` (0-based), `blobTotal`, `blobHashHex` (chunk id), `merkleRootHex` (document id); sealed chunks add `iv`, `scheme`, `paymentHashHex`, and `proof` (the inclusion proof, a hex list). Receivers MUST check `SHA256(body) = blobHashHex` and the proof against `merkleRootHex` before storing a chunk.
+- **Chunk size.** 32,768 bytes (32 KiB) for unsealed and sealed chunks; a sealed chunk's plaintext is 32,752 bytes (the chunk minus the 16-byte GCM tag). `file_send` carries the chunk as raw bytes in a field body, so the chunk, its fields and the deepest inclusion proof fit one 65,519-byte AMP frame. The chunk size is fixed per document; only the last chunk may be shorter. An empty file is one empty chunk.
+- **Limits.** A document is at most 2^32 − 1 bytes, the maximum file size of both FAT16 and FAT32 (each stores file size as an unsigned 32-bit count). At the sealed plaintext chunk that is `MAX_DOCUMENT_BLOBS` chunks (131,137 at 32,752 bytes). Receivers SHOULD bound incomplete transfers (Fabric: 64 at once, 8 per origin, a pending budget large enough for one such file, expired after 10 minutes).
+- **`file_send` fields.** `documentId`, `name`, `body` (chunk bytes; base64 in the JSON view), `blobIndex` (0-based), `blobTotal`, `blobHashHex` (chunk id), `merkleRootHex` (document id); sealed chunks add `iv`, `scheme`, `paymentHashHex`, and `proof` (the inclusion proof, a hex list). Receivers MUST check `SHA256(body) = blobHashHex` and the proof against `merkleRootHex` before storing a chunk.
 - **Resume.** Each chunk is independently addressed, verified, and (when priced) paid. A buyer resumes by sending `document_request` again for the indices it lacks; a seller MUST serve any listed index on its own. No session state is required.
 
 ### Document tree
@@ -191,7 +191,7 @@ Type decided: Standards Track (Applications layer).
 
 ## Appendix A: Test vectors
 
-Full vectors: [`tests/vectors/bip-fabric-file-exchange.json`](../tests/vectors/bip-fabric-file-exchange.json), checked by `tests/functions.bipFileExchange.js` both against the library and against the formulas above recomputed from SHA-256 alone. Selected values:
+Full vectors: [`tests/vectors/bip-fabric-file-exchange.json`](../tests/vectors/bip-fabric-file-exchange.json), checked by `tests/functions.bip39.js` (the file exchange suite) both against the library and against the formulas above recomputed from SHA-256 alone. Selected values:
 
 **Convergent seal, plaintext `"hello fabric"`, public scope:** see `convergent[1]`. Empty plaintext:
 
