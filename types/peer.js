@@ -87,6 +87,8 @@ const SEALED_DELIVERY_INNER_TYPES = new Set(Object.values(SEALED_DELIVERY_INNER_
 
 /** Session-advertised level of field-body support (`object.fieldBodies`). */
 const FIELD_BODIES_VERSION = 1;
+/** Default time a funded sealed-blob quote keeps its secret while its HTLC settles. */
+const PEER_SEALED_BLOB_FUNDED_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 const {
   aggregatePeerBandwidth,
   peerBandwidthSnapshot,
@@ -3131,9 +3133,10 @@ class Peer extends Service {
               relayedAsIs: softRelayOrigin
             });
             // Only the outermost received envelope is mesh-flooded (bit-identical),
-            // and never one carrying a Passport or delegation frame: those are
-            // point to point, and a relay would carry them past their audience.
-            if (!opts.skipRelayFlood && !this._relayCarriesPointToPoint(inner, nestCap)) {
+            // and only when every frame inside is well formed, signed, and a
+            // registered type, and none is a Passport or delegation frame: those
+            // are point to point, and a relay would carry them past their audience.
+            if (!opts.skipRelayFlood && this._relayMayFlood(inner, nestCap)) {
               this.relayFrom(origin.name, message, socket);
             }
           }
@@ -3758,30 +3761,40 @@ class Peer extends Service {
   }
 
   /**
-   * Does a P2P_RELAY body (through nested relays, up to `nestCap`) carry a
-   * frame that is never flooded? An unreadable inner frame counts as one.
+   * May this P2P_RELAY body be mesh-flooded? At every nesting level (up to
+   * `nestCap`) the inner frame must decode to exactly its declared size, match
+   * its body hash, carry a valid author signature, and be a registered,
+   * non-deprecated opcode; and the innermost frame must not be a Passport or
+   * delegation frame, which are point to point.
    * @private
    * @param {Buffer} inner
    * @param {number} nestCap
    * @returns {boolean}
    */
-  _relayCarriesPointToPoint (inner, nestCap) {
+  _relayMayFlood (inner, nestCap) {
     let buffer = inner;
     for (let depth = 0; depth <= nestCap; depth++) {
-      let type = null;
+      if (!Buffer.isBuffer(buffer) || buffer.length < HEADER_SIZE) return false;
+      let decoded = null;
       try {
-        const decoded = Message.fromBuffer(buffer);
-        type = decoded && decoded.type;
-        if (type === 'P2P_RELAY') {
-          buffer = decoded.raw && Buffer.isBuffer(decoded.raw.data) ? decoded.raw.data : Buffer.alloc(0);
-          continue;
-        }
+        decoded = Message.fromBuffer(buffer);
       } catch (_) {
-        return true;
+        return false;
       }
-      return typeof type !== 'string' || /^(PASSPORT|DELEGATION)_/.test(type);
+      if (!decoded || !decoded.raw || !Buffer.isBuffer(decoded.raw.type)) return false;
+      const body = Buffer.isBuffer(decoded.raw.data) ? decoded.raw.data : Buffer.alloc(0);
+      if (HEADER_SIZE + body.length !== buffer.length) return false;
+      const expected = Buffer.isBuffer(decoded.raw.hash) ? decoded.raw.hash.toString('hex') : decoded.raw.hash;
+      if (Hash256.doubleDigest(body) !== expected) return false;
+      if (!this._verifiedFabricSignerPubkeyHex(decoded)) return false;
+      if (!Message.isRegisteredType(decoded.raw.type.readUInt32BE(0))) return false;
+      const type = decoded.type;
+      if (typeof type !== 'string' || Message.DEPRECATED_WIRE_TYPES.includes(type)) return false;
+      if (/^(PASSPORT|DELEGATION)_/.test(type)) return false;
+      if (type !== 'P2P_RELAY') return true;
+      buffer = body;
     }
-    return true;
+    return false;
   }
 
   _handleGenericMessage (message, origin = null, socket = null, wireMessage = null, options = null) {
@@ -5089,6 +5102,12 @@ class Peer extends Service {
    * no amount check is possible; settlement code must always pass it. With
    * `sealedBlobPaymentMode: 'perBuyer'` static hashes are never fulfilled
    * (that would publish `K_i`).
+   *
+   * A live quote that an HTLC paying its full price is checked against is
+   * pinned: it outlives its `expiresAt` and is never evicted, so the secret
+   * is still there when the HTLC settles. It is dropped by
+   * {@link Peer#settleSealedBlobQuote} or after `sealedBlobFundedRetentionMs`
+   * (default 7 days).
    * @param {string} paymentHashHex
    * @param {Object} [htlc] `{ amountSats, expireAfter?, expireHeight? }`
    * @returns {{ documentId: string, blobIndex: number, preimageHex: string, keyHex: string, perBuyer: boolean, priceSats: number }|null}
@@ -5101,11 +5120,13 @@ class Peer extends Service {
     if (htlc && !(paid >= 0)) return null;
     const quote = this._sealedBlobQuotes.get(ph);
     if (quote) {
-      if (quote.expiresAt && Date.now() > quote.expiresAt) {
+      const now = Date.now();
+      if (this._sealedBlobQuoteLapsed(quote, now)) {
         this._sealedBlobQuotes.delete(ph);
         return null;
       }
       if (paid != null && paid < quote.priceSats) return null;
+      if (paid != null && !quote.fundedAt) quote.fundedAt = now;
       return { documentId: quote.documentId, blobIndex: quote.blobIndex, preimageHex: quote.secretHex, keyHex: quote.secretHex, perBuyer: true, priceSats: quote.priceSats };
     }
     if (this.settings.sealedBlobPaymentMode === 'perBuyer') return null;
@@ -5151,6 +5172,7 @@ class Peer extends Service {
     const leaf = Number.isInteger(blobIndex) ? doc.blob(blobIndex) : null;
     const keyHex = leaf ? doc.keyFor(blobIndex) : null;
     if (!leaf || !keyHex) return { ok: false, error: 'unknown blob index' };
+    if (!this._reserveSealedBlobQuoteSlot()) return { ok: false, error: 'too many funded quotes waiting to settle' };
     const ttlSetting = Number(opts.ttlMs || this.settings.sealedBlobQuoteTtlMs);
     const ttl = Number.isFinite(ttlSetting) && ttlSetting > 0 ? ttlSetting : 60 * 60 * 1000;
     const priceSats = this._sealedBlobPriceSats(documentId);
@@ -5164,7 +5186,6 @@ class Peer extends Service {
       amountSats: priceSats,
       expiresAt
     });
-    this._reserveSealedBlobQuoteSlot();
     this._sealedBlobQuotes.set(quote.paymentHashHex, {
       documentId,
       blobIndex,
@@ -5212,6 +5233,7 @@ class Peer extends Service {
     const price = Number.isSafeInteger(asked) && asked > listed ? asked : listed;
     const ceiling = opts.maxSats != null ? Number(opts.maxSats) : NaN;
     if (Number.isFinite(ceiling) && price > ceiling) return { ok: false, error: 'price above maxSats' };
+    if (!this._reserveSealedBlobQuoteSlot()) return { ok: false, error: 'too many funded quotes waiting to settle' };
     const ttlSetting = Number(opts.ttlMs || this.settings.sealedBlobQuoteTtlMs);
     const ttl = Number.isFinite(ttlSetting) && ttlSetting > 0 ? ttlSetting : 60 * 60 * 1000;
     const { batch, secretHex } = createBlobBatch({
@@ -5221,7 +5243,6 @@ class Peer extends Service {
       amountSats: price,
       expiresAt: Date.now() + ttl
     });
-    this._reserveSealedBlobQuoteSlot();
     this._sealedBlobQuotes.set(batch.paymentHashHex, {
       documentId,
       blobIndex: start,
@@ -5235,21 +5256,54 @@ class Peer extends Service {
   }
 
   /**
-   * Seller: drop expired quotes, then the oldest, until one more fits under
-   * `maxSealedBlobQuotes`. Every kept quote holds a preimage, so a peer asking
-   * again and again cannot grow the table.
+   * Seller: the HTLC for a funded quote has settled (or failed for good), so
+   * its secret is no longer needed.
+   * @param {string} paymentHashHex
+   * @returns {boolean} Whether a quote was dropped.
+   */
+  settleSealedBlobQuote (paymentHashHex) {
+    const ph = String(paymentHashHex || '').toLowerCase();
+    return /^[0-9a-f]{64}$/.test(ph) ? this._sealedBlobQuotes.delete(ph) : false;
+  }
+
+  /**
+   * Is a quote past use? An unfunded quote lapses at `expiresAt`; a funded
+   * one `sealedBlobFundedRetentionMs` (default 7 days) after it was funded.
    * @private
+   * @param {Object} quote
+   * @param {number} now
+   * @returns {boolean}
+   */
+  _sealedBlobQuoteLapsed (quote, now) {
+    if (quote.fundedAt) {
+      const setting = Number(this.settings.sealedBlobFundedRetentionMs);
+      const retention = Number.isFinite(setting) && setting > 0 ? setting : PEER_SEALED_BLOB_FUNDED_RETENTION_MS;
+      return now > quote.fundedAt + retention;
+    }
+    return !!(quote.expiresAt && now > quote.expiresAt);
+  }
+
+  /**
+   * Seller: drop lapsed quotes, then the oldest unfunded ones, until one more
+   * fits under `maxSealedBlobQuotes`. Every kept quote holds a preimage, so a
+   * peer asking again and again cannot grow the table. Funded quotes are
+   * never evicted: when they alone fill the table, no new quote is made.
+   * @private
+   * @returns {boolean} Whether a slot is free.
    */
   _reserveSealedBlobQuoteSlot () {
     const now = Date.now();
     for (const [h, q] of this._sealedBlobQuotes) {
-      if (q.expiresAt && now > q.expiresAt) this._sealedBlobQuotes.delete(h);
+      if (this._sealedBlobQuoteLapsed(q, now)) this._sealedBlobQuotes.delete(h);
     }
     const capSetting = Number(this.settings.maxSealedBlobQuotes);
     const cap = Number.isFinite(capSetting) && capSetting > 0 ? capSetting : 4096;
-    while (this._sealedBlobQuotes.size >= cap) {
-      this._sealedBlobQuotes.delete(this._sealedBlobQuotes.keys().next().value);
+    if (this._sealedBlobQuotes.size < cap) return true;
+    for (const [h, q] of this._sealedBlobQuotes) {
+      if (this._sealedBlobQuotes.size < cap) break;
+      if (!q.fundedAt) this._sealedBlobQuotes.delete(h);
     }
+    return this._sealedBlobQuotes.size < cap;
   }
 
   /**
@@ -5265,8 +5319,9 @@ class Peer extends Service {
         if (hit && hit.documentId === documentId) this._sealedBlobByPaymentHash.delete(b.paymentHashHex);
       }
     }
+    // A funded quote stays until it settles: its buyer has already paid.
     for (const [h, q] of this._sealedBlobQuotes) {
-      if (q.documentId === documentId) this._sealedBlobQuotes.delete(h);
+      if (q.documentId === documentId && !q.fundedAt) this._sealedBlobQuotes.delete(h);
     }
     this._sealedBlobSecrets.delete(documentId);
   }

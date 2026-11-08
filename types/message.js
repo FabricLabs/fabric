@@ -1875,7 +1875,7 @@ const SCHEMA_DELEGATION_LINK_REVEAL = Object.freeze([
 ]);
 /**
  * Lets `grantee` ask the author to sign. Comma lists for `scopes`,
- * `origins`, `networks`; `link` is the reveal hash hex (or empty);
+ * `origins`, `networks`, `peers` (empty: no peer sign-ins); `link` is the reveal hash hex (or empty);
  * `cosigner` / `cosignerProof` disclose the author's BIP87 key.
  * @private
  */
@@ -1892,7 +1892,7 @@ const SCHEMA_DELEGATION_GRANT = Object.freeze([
   { name: 'extensionOrigin', type: 'string' },
   { name: 'label', type: 'string' },
   { name: 'issuedAt', type: 'u64' },
-  { name: 'peers', type: 'string', optional: true }
+  { name: 'peers', type: 'string' }
 ]);
 /**
  * `grant` is the sha256 of the grant frame being withdrawn.
@@ -1906,7 +1906,8 @@ const SCHEMA_DELEGATION_REVOKE = Object.freeze([
 /**
  * Ask `target` to sign the embedded `request` frame under its grant
  * `grant` (sha256 of the grant frame). `origin` / `disclose` apply to
- * Passport challenges.
+ * Passport challenges; `sessionKey` and `clientNonce` (the one its requester
+ * sent the peer) apply to peer sign-ins and are empty otherwise.
  * @private
  */
 const SCHEMA_DELEGATION_REQUEST = Object.freeze([
@@ -1922,7 +1923,8 @@ const SCHEMA_DELEGATION_REQUEST = Object.freeze([
   { name: 'purpose', type: 'string' },
   { name: 'issuedAt', type: 'u64' },
   { name: 'expiresAt', type: 'u64' },
-  { name: 'sessionKey', type: 'string', optional: true }
+  { name: 'sessionKey', type: 'string' },
+  { name: 'clientNonce', type: 'string' }
 ]);
 /**
  * Either `answer` (a frame) or `refusal` (text) is set; `rule` names the rule that decided.

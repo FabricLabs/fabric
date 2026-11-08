@@ -1330,7 +1330,6 @@ Events: `request` `{ hash, read, notification }`, `result` `{ hash, request, rea
         * [.receive(input, [context])](#module_types/delegation..Delegation+receive) ⇒ <code>Promise.&lt;object&gt;</code>
         * [.frames()](#module_types/delegation..Delegation+frames) ⇒ <code>Promise.&lt;Array.&lt;object&gt;&gt;</code>
     * [~DELEGATION_VERSION](#module_types/delegation..DELEGATION_VERSION)
-    * [~DELEGATION_GRANT_PEERS_VERSION](#module_types/delegation..DELEGATION_GRANT_PEERS_VERSION)
     * [~DELEGATION_SCOPES](#module_types/delegation..DELEGATION_SCOPES)
     * [~DELEGATION_LINK_TTL_MS](#module_types/delegation..DELEGATION_LINK_TTL_MS)
     * [~DELEGATION_REQUEST_TTL_MS](#module_types/delegation..DELEGATION_REQUEST_TTL_MS)
@@ -1868,15 +1867,9 @@ Every frame this participant sent or received, oldest first, as
 <a name="module_types/delegation..DELEGATION_VERSION"></a>
 
 ### types/delegation~DELEGATION\_VERSION
-Protocol version carried in every frame.
-
-**Kind**: inner constant of [<code>types/delegation</code>](#module_types/delegation)  
-<a name="module_types/delegation..DELEGATION_GRANT_PEERS_VERSION"></a>
-
-### types/delegation~DELEGATION\_GRANT\_PEERS\_VERSION
-Version of a grant that limits `peers`. Restrictions are never optional
-trailing fields an older reader could skip: such a grant carries this
-version, which readers without the field refuse.
+Protocol version carried in every frame. Restrictions (a grant's `peers`,
+a request's `sessionKey` and `clientNonce`) are required fields, empty when
+unused, never optional trailing fields a reader could skip.
 
 **Kind**: inner constant of [<code>types/delegation</code>](#module_types/delegation)  
 <a name="module_types/delegation..DELEGATION_SCOPES"></a>

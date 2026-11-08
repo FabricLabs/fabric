@@ -133,6 +133,8 @@ class Wallet extends Service {
     };
     /** @type {Set.<string>} */
     this._emittedWalletTxKeys = new Set(); // txid:kind already emitted (block + mempool may both see the same tx)
+    /** @type {Map.<string, object>} */
+    this._ownedOutpoints = new Map(); // txid:vout → { address } paid to the wallet, so a raw spend of one is a spend
 
     // Encrypted Storage
     this.secrets = new Collection({
@@ -521,6 +523,7 @@ class Wallet extends Service {
     const watchSet = this.getWatchSet();
     const classified = classifyWalletTransaction(txOrHex, watchSet);
     if (!classified.related) return classified;
+    this._rememberOwnedOutputs(classified.ownedOutputs);
 
     const txid = classified.txid;
     const emitKey = txid ? `${txid}:${classified.kind}` : null;
@@ -564,6 +567,26 @@ class Wallet extends Service {
       this.emit('payment', event);
     }
     return classified;
+  }
+
+  /**
+   * Remember outputs paid to the wallet, oldest dropped past
+   * `ownedOutpointMemory` (default 10000). Spent ones are kept, so a spend
+   * seen again (mempool, then block) reads the same.
+   * @private
+   * @param {object[]} outputs `{ txid, vout, address }`
+   */
+  _rememberOwnedOutputs (outputs = []) {
+    const cap = Math.max(1, Math.floor(Number(this.settings.ownedOutpointMemory) || 10000));
+    for (const out of outputs) {
+      if (!out || !out.txid || out.vout == null || !out.address) continue;
+      const key = `${String(out.txid).toLowerCase()}:${Number(out.vout)}`;
+      this._ownedOutpoints.delete(key);
+      this._ownedOutpoints.set(key, { address: out.address });
+    }
+    while (this._ownedOutpoints.size > cap) {
+      this._ownedOutpoints.delete(this._ownedOutpoints.keys().next().value);
+    }
   }
 
   /**

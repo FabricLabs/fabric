@@ -1005,7 +1005,20 @@ class Bitcoin extends Service {
     return (candidate.secure === true) ? jayson.https(config) : jayson.http(config);
   }
 
+  /**
+   * Point a client built before `stop()` at the live agent: a destroyed one
+   * would leave it with no capped pool to share.
+   * @private
+   * @param {Object} client jayson client.
+   */
+  _refreshRPCAgent (client) {
+    const options = client && client.options;
+    if (!options || !options.agent || !this._rpcRetiredAgents || !this._rpcRetiredAgents.has(options.agent)) return;
+    options.agent = this._rpcAgent(options.agent instanceof require('https').Agent);
+  }
+
   _requestWithRPCClient (client, method, params = []) {
+    this._refreshRPCAgent(client);
     return new Promise((resolve, reject) => {
       client.request(method, params, (err, response) => {
         if (err) return reject(err);
@@ -1889,17 +1902,17 @@ class Bitcoin extends Service {
    * @private
    * @param {string} txid
    */
-  async _fetchHashTx (txid) {
+  async _fetchHashTx (txid, source = 'BitcoinTransactionHash') {
     try {
       const verbose = await this._makeRPCRequest('getrawtransaction', [txid, true]);
       // Mark only once this path delivered: a failed fetch leaves `rawtx` to do it.
-      // Re-check after the await in case `rawtx` won the race.
-      if (verbose && !this._zmqTxRecent(txid)) {
+      // Re-check after the await in case `rawtx` won the race, or the service stopped.
+      if (verbose && !this._zmqIbdStopped && !this._zmqTxRecent(txid)) {
         this._zmqTxMark(txid);
         if (verbose.hex) this.broadcastWatchtower([verbose.hex]).catch(() => {});
-        this.emit('transaction', Object.assign({}, verbose, { source: 'BitcoinTransactionHash' }));
+        this.emit('transaction', Object.assign({}, verbose, { source }));
         if (this.wallet && typeof this.wallet.ingestBitcoinTransaction === 'function') {
-          this.wallet.ingestBitcoinTransaction(verbose, { source: 'BitcoinTransactionHash' });
+          this.wallet.ingestBitcoinTransaction(verbose, { source });
         }
       }
     } catch (e) {
@@ -1911,24 +1924,126 @@ class Bitcoin extends Service {
 
   /**
    * Hold a `hashtx` for `settings.zmqHashTxGraceMs` (default 250 ms); only
-   * txids its `rawtx` didn't deliver by then are fetched, one at a time.
+   * txids its `rawtx` didn't deliver by then are fetched.
    * @private
    * @param {string} txid
    */
   _deferHashTx (txid) {
-    if (!this._zmqHashTxPending) this._zmqHashTxPending = new Set();
-    if (this._zmqHashTxPending.size >= ZMQ_TXID_MEMORY) return;
-    this._zmqHashTxPending.add(String(txid).toLowerCase());
-    if (this._zmqHashTxTimer) return;
-    this._zmqHashTxTimer = setTimeout(async () => {
-      this._zmqHashTxTimer = null;
-      const txids = Array.from(this._zmqHashTxPending);
-      this._zmqHashTxPending.clear();
-      for (const id of txids) {
-        if (!this._zmqTxRecent(id)) await this._fetchHashTx(id);
+    this._queueHashTx(txid, Date.now() + this._msSetting('zmqHashTxGraceMs', ZMQ_HASHTX_GRACE_MS));
+  }
+
+  /**
+   * Queue a txid for one fetch at `due` (ms). Queued and in-flight txids
+   * together never exceed `ZMQ_TXID_MEMORY`; one drainer fetches them in order.
+   * @private
+   * @param {string} txid
+   * @param {number} due
+   * @returns {boolean} Whether it was queued.
+   */
+  _queueHashTx (txid, due) {
+    if (this._zmqIbdStopped) return false;
+    if (!this._zmqHashTxPending) this._zmqHashTxPending = new Map();
+    const id = String(txid).toLowerCase();
+    if (this._zmqHashTxPending.has(id) || this._zmqHashTxInFlight === id) return false;
+    const inFlight = this._zmqHashTxInFlight ? 1 : 0;
+    if (this._zmqHashTxPending.size + inFlight >= ZMQ_TXID_MEMORY) return false;
+    this._zmqHashTxPending.set(id, due);
+    this._drainHashTx();
+    return true;
+  }
+
+  /**
+   * The single drainer of the hashtx queue: waits for each txid's grace, skips
+   * those `rawtx` delivered, and fetches the rest one at a time. It stops
+   * while the service is stopped or the transaction topics are paused.
+   * @private
+   */
+  _drainHashTx () {
+    if (this._zmqHashTxDraining) return;
+    this._zmqHashTxDraining = true;
+    const run = async () => {
+      try {
+        while (this._zmqHashTxPending && this._zmqHashTxPending.size && !this._zmqIbdStopped && !this._zmqTxPaused()) {
+          const [id, due] = this._zmqHashTxPending.entries().next().value;
+          const wait = due - Date.now();
+          if (wait > 0) {
+            await new Promise((resolve) => {
+              this._zmqHashTxWake = resolve;
+              this._zmqHashTxTimer = setTimeout(resolve, wait);
+              if (typeof this._zmqHashTxTimer.unref === 'function') this._zmqHashTxTimer.unref();
+            });
+            this._zmqHashTxTimer = null;
+            this._zmqHashTxWake = null;
+            continue;
+          }
+          this._zmqHashTxPending.delete(id);
+          if (this._zmqTxRecent(id)) continue;
+          this._zmqHashTxInFlight = id;
+          try {
+            await this._fetchHashTx(id);
+          } finally {
+            this._zmqHashTxInFlight = null;
+          }
+        }
+      } finally {
+        this._zmqHashTxDraining = false;
       }
-    }, this._msSetting('zmqHashTxGraceMs', ZMQ_HASHTX_GRACE_MS));
-    if (typeof this._zmqHashTxTimer.unref === 'function') this._zmqHashTxTimer.unref();
+    };
+    run().catch(() => {});
+  }
+
+  /**
+   * Drop every queued hashtx fetch and wake the drainer so it exits.
+   * @private
+   */
+  _clearHashTxQueue () {
+    if (this._zmqHashTxPending) this._zmqHashTxPending.clear();
+    if (this._zmqHashTxTimer) clearTimeout(this._zmqHashTxTimer);
+    this._zmqHashTxTimer = null;
+    const wake = this._zmqHashTxWake;
+    this._zmqHashTxWake = null;
+    if (wake) wake();
+  }
+
+  /**
+   * Whether the per-transaction topics are paused (initial block download).
+   * @private
+   * @returns {boolean}
+   */
+  _zmqTxPaused () {
+    const paused = this.zmq && Array.isArray(this.zmq.paused) ? this.zmq.paused : [];
+    return ZMQ_TX_TOPICS.some((name) => paused.includes(name));
+  }
+
+  /**
+   * After initial block download, queue every mempool transaction ZMQ has not
+   * delivered: they were admitted while the topics were paused. They go to
+   * the same bounded queue as `hashtx`, so the wallet and the watchtower see them.
+   * @private
+   * @returns {Promise<number>} How many were queued.
+   */
+  async _reconcileMempool () {
+    if (this.settings.walletWatchMempool === false) return 0;
+    const generation = this._zmqIbdGeneration;
+    let txids = null;
+    try {
+      txids = await this._makeRPCRequest('getrawmempool', [false], { retries: 0 });
+    } catch (_) {
+      return 0;
+    }
+    if (this._zmqIbdStopped || generation !== this._zmqIbdGeneration || !Array.isArray(txids)) return 0;
+    let queued = 0;
+    let dropped = 0;
+    const now = Date.now();
+    for (const txid of txids) {
+      if (typeof txid !== 'string' || !/^[0-9a-f]{64}$/i.test(txid) || this._zmqTxRecent(txid)) continue;
+      if (this._queueHashTx(txid, now)) queued++;
+      else dropped++;
+    }
+    if (queued || dropped) {
+      this.emit('log', `[FABRIC:BITCOIN] Mempool reconciled after initial block download: ${queued} transactions queued${dropped ? `, ${dropped} over the queue limit` : ''}`);
+    }
+    return queued;
   }
 
   /**
@@ -1947,17 +2062,20 @@ class Bitcoin extends Service {
     const windowMs = this._msSetting('balanceRefreshMs', BALANCE_REFRESH_MS);
     const wait = Math.max(0, windowMs - (Date.now() - (this._balanceRefreshAt || 0)));
     this._balanceRefresh = new Promise((resolve) => {
+      this._balanceRefreshResolve = resolve;
       const run = async () => {
         this._balanceRefreshTimer = null;
         this._balanceRefreshRunning = true;
         this._balanceRefreshAt = Date.now();
         const balance = await this._makeRPCRequest('getbalances', []).catch(() => null);
-        if (balance != null) {
-          this._state.balances.mine.trusted = balance;
+        // The same shape `_syncBalances` stores: the whole `getbalances` result.
+        if (balance && typeof balance === 'object' && balance.mine && !this._zmqIbdStopped) {
+          this._state.balances = balance;
           this.commit();
         }
         this._balanceRefreshRunning = false;
         this._balanceRefresh = null;
+        this._balanceRefreshResolve = null;
         resolve();
         if (this._balanceRefreshAgain && !this._zmqIbdStopped) {
           this._balanceRefreshAgain = false;
@@ -1978,28 +2096,37 @@ class Bitcoin extends Service {
    * bitcoind publishes `rawtx` / `hashtx` for every transaction of every block
    * it connects: thousands a second during initial block download, none of
    * them mempool news. While the node is in IBD those topics are paused (the
-   * publisher stops sending them) and IBD is checked again every
-   * `settings.zmqIbdPollMs` (default 30 s); once it is over they resume and
-   * balances are read once. Unknown (RPC unreachable) leaves them as they are.
+   * publisher stops sending them) and queued hashtx fetches are dropped. IBD
+   * is checked every `settings.zmqIbdPollMs` (default 30 s) for as long as
+   * the service runs, so a node that falls back into IBD (restart, reindex)
+   * pauses them again. Once it is over they resume, the mempool is
+   * reconciled, and balances are read once. Unknown (RPC unreachable) leaves
+   * them as they are. A check that answers after `stop()` changes nothing.
    * @private
    */
   async _gateZMQTransactions () {
-    if (!this.zmq || typeof this.zmq.pause !== 'function') return;
+    if (!this.zmq || typeof this.zmq.pause !== 'function' || this._zmqIbdStopped) return;
+    const generation = this._zmqIbdGeneration;
     let ibd = null;
     try {
       const info = await this._makeRPCRequest('getblockchaininfo', [], { retries: 0 });
       if (info && typeof info.initialblockdownload === 'boolean') ibd = info.initialblockdownload;
     } catch (_) { /* unknown */ }
-    if (ibd === true && this.zmq.pause(ZMQ_TX_TOPICS).length) {
-      this.emit('log', '[FABRIC:BITCOIN] Initial block download: transaction notifications paused until the node catches up');
+    if (this._zmqIbdStopped || generation !== this._zmqIbdGeneration) return;
+    if (ibd === true) {
+      if (this.zmq.pause(ZMQ_TX_TOPICS).length) {
+        this.emit('log', '[FABRIC:BITCOIN] Initial block download: transaction notifications paused until the node catches up');
+      }
+      this._clearHashTxQueue();
     } else if (ibd === false && this.zmq.resume(ZMQ_TX_TOPICS).length) {
       this.emit('log', '[FABRIC:BITCOIN] Initial block download complete: transaction notifications resumed');
+      this._reconcileMempool().catch(() => {});
       this._refreshBalancesSoon().catch(() => {});
     }
-    if (ibd === false || this._zmqIbdStopped) return;
+    if (this._zmqIbdTimer) clearTimeout(this._zmqIbdTimer);
     this._zmqIbdTimer = setTimeout(() => {
       this._zmqIbdTimer = null;
-      this._gateZMQTransactions().catch(() => {});
+      if (generation === this._zmqIbdGeneration) this._gateZMQTransactions().catch(() => {});
     }, this._msSetting('zmqIbdPollMs', ZMQ_IBD_POLL_MS));
     if (typeof this._zmqIbdTimer.unref === 'function') this._zmqIbdTimer.unref();
   }
@@ -2024,9 +2151,12 @@ class Bitcoin extends Service {
       this.emit('debug', '[ZMQ] Disconnected from Bitcoin node');
     });
 
-    await this.zmq.start();
+    // Check IBD before subscribing: topics paused now are never subscribed,
+    // so a node still downloading blocks sends no per-transaction flood.
     this._zmqIbdStopped = false;
+    this._zmqIbdGeneration = (this._zmqIbdGeneration || 0) + 1;
     await this._gateZMQTransactions();
+    await this.zmq.start();
     if (this.settings.debug) this.emit('debug', '[AUDIT] ZMQ Started.');
   }
 
@@ -2300,6 +2430,7 @@ class Bitcoin extends Service {
   _makeRPCRequestOnce (method, params = []) {
     return new Promise((resolve, reject) => {
       if (!this.rpc) return reject(new Error('RPC manager does not exist'));
+      this._refreshRPCAgent(this.rpc);
       this.rpc.request(method, params, (err, response) => {
         if (err) {
           if (this.settings.debug) this.emit('debug', `[FABRIC:BITCOIN] RPC error for ${method}(${params.join(', ')}): ${err.message || err}`);
@@ -3504,20 +3635,32 @@ class Bitcoin extends Service {
     }
 
     this._zmqIbdStopped = true;
-    for (const timer of ['_zmqIbdTimer', '_zmqHashTxTimer', '_balanceRefreshTimer']) {
+    this._zmqIbdGeneration = (this._zmqIbdGeneration || 0) + 1;
+    this._clearHashTxQueue();
+    for (const timer of ['_zmqIbdTimer', '_balanceRefreshTimer']) {
       if (this[timer]) clearTimeout(this[timer]);
       this[timer] = null;
     }
+    // A trailing refresh that will never run still settles for its callers.
+    const settle = this._balanceRefreshResolve;
+    this._balanceRefreshResolve = null;
     this._balanceRefresh = null;
     this._balanceRefreshAgain = false;
+    if (settle) settle();
 
     // Stop the ZMQ service
     if (this.zmq) {
       if (this.settings.debug) this.emit('debug', '[FABRIC:BITCOIN] Stopping ZMQ...');
       await this.zmq.stop();
     }
-    for (const agent of [this._rpcHttpAgent, this._rpcHttpsAgent]) {
-      if (agent) agent.destroy();
+    // A destroyed agent opens no sockets; `_rpcAgent` builds a fresh one on the next start.
+    for (const key of ['_rpcHttpAgent', '_rpcHttpsAgent']) {
+      if (this[key]) {
+        this[key].destroy();
+        if (!this._rpcRetiredAgents) this._rpcRetiredAgents = new WeakSet();
+        this._rpcRetiredAgents.add(this[key]);
+      }
+      this[key] = null;
     }
 
     // Kill the Bitcoin node process if it exists

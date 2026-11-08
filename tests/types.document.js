@@ -637,6 +637,69 @@ describe('types/document (sealed blob tree)', function () {
       assert.match(wide.error, /over 2 blobs/);
     });
 
+    it('an expired batch quote gives no preimage and is pruned by the next quote', function () {
+      const seller = new Peer({ listen: false, maxSealedBlobQuotes: 3 });
+      const doc = Document.seal(crypto.randomBytes(5000), { chunkBytes: 2048 });
+      const { documentId } = seller.publishSealedDocument(doc, { rateSats: RATE });
+      const old = seller.quoteSealedBatch({ documentId, start: 0, end: 1 }).batch;
+      const live = seller.quoteSealedBatch({ documentId, start: 0, end: 1 }).batch;
+      seller._sealedBlobQuotes.get(old.paymentHashHex).expiresAt = Date.now() - 1;
+      assert.strictEqual(seller.sealedBlobPreimageForPaymentHash(old.paymentHashHex, { amountSats: RATE * 2 }), null);
+      assert.strictEqual(seller._sealedBlobQuotes.has(old.paymentHashHex), false, 'read drops it');
+      const stale = seller.quoteSealedBatch({ documentId, start: 0, end: 1 }).batch;
+      seller._sealedBlobQuotes.get(stale.paymentHashHex).expiresAt = Date.now() - 1;
+      assert.ok(seller.quoteSealedBatch({ documentId, start: 0, end: 1 }).ok);
+      assert.strictEqual(seller._sealedBlobQuotes.has(stale.paymentHashHex), false, 'quoting prunes expired quotes');
+      assert.strictEqual(seller._sealedBlobQuotes.has(live.paymentHashHex), true, 'live quotes stay');
+    });
+
+    it('a funded quote survives expiry and eviction until it settles or its retention passes', function () {
+      const seller = new Peer({ listen: false, maxSealedBlobQuotes: 3 });
+      const doc = Document.seal(crypto.randomBytes(3000), { chunkBytes: 2048 });
+      const { documentId } = seller.publishSealedDocument(doc, { rateSats: RATE });
+      const funded = seller.quoteSealedBlob({ documentId, blobIndex: 0 }).quote;
+      const batch = seller.quoteSealedBatch({ documentId, start: 0, end: 1 }).batch;
+      // An underpaying HTLC pins nothing; a fully paying one pins the quote.
+      assert.strictEqual(seller.sealedBlobPreimageForPaymentHash(funded.paymentHashHex, { amountSats: RATE - 1 }), null);
+      assert.strictEqual(seller._sealedBlobQuotes.get(funded.paymentHashHex).fundedAt, undefined);
+      const secret = seller.sealedBlobPreimageForPaymentHash(funded.paymentHashHex, { amountSats: RATE }).preimageHex;
+      assert.ok(seller.sealedBlobPreimageForPaymentHash(batch.paymentHashHex, { amountSats: batch.amountSats }));
+      for (let i = 0; i < 5; i++) assert.ok(seller.quoteSealedBlob({ documentId, blobIndex: 1 }).ok);
+      assert.strictEqual(seller._sealedBlobQuotes.size, 3);
+      seller._sealedBlobQuotes.get(funded.paymentHashHex).expiresAt = Date.now() - 1;
+      const later = seller.sealedBlobPreimageForPaymentHash(funded.paymentHashHex, { amountSats: RATE });
+      assert.ok(later, 'evicted or expired, the funded quote is still there');
+      assert.strictEqual(later.preimageHex, secret);
+      assert.ok(seller.sealedBlobPreimageForPaymentHash(batch.paymentHashHex, { amountSats: batch.amountSats }));
+      // Unpublishing keeps a quote a buyer already paid.
+      seller._forgetSealedBlobDocument(documentId);
+      assert.strictEqual(seller._sealedBlobQuotes.size, 2);
+
+      assert.strictEqual(seller.settleSealedBlobQuote(funded.paymentHashHex), true);
+      assert.strictEqual(seller.settleSealedBlobQuote(funded.paymentHashHex), false);
+      assert.strictEqual(seller.sealedBlobPreimageForPaymentHash(funded.paymentHashHex, { amountSats: RATE }), null);
+      seller.settings.sealedBlobFundedRetentionMs = 1000;
+      seller._sealedBlobQuotes.get(batch.paymentHashHex).fundedAt = Date.now() - 2000;
+      assert.strictEqual(seller.sealedBlobPreimageForPaymentHash(batch.paymentHashHex, { amountSats: batch.amountSats }), null, 'retention passed');
+    });
+
+    it('a table full of funded quotes refuses new quotes instead of evicting them', function () {
+      const seller = new Peer({ listen: false, maxSealedBlobQuotes: 2 });
+      const doc = Document.seal(crypto.randomBytes(5000), { chunkBytes: 2048 });
+      const { documentId } = seller.publishSealedDocument(doc, { rateSats: RATE });
+      const paid = [0, 1].map((i) => seller.quoteSealedBlob({ documentId, blobIndex: i }).quote);
+      for (const q of paid) assert.ok(seller.sealedBlobPreimageForPaymentHash(q.paymentHashHex, { amountSats: RATE }));
+      const blob = seller.quoteSealedBlob({ documentId, blobIndex: 2 });
+      assert.strictEqual(blob.ok, false);
+      assert.match(blob.error, /funded quotes/);
+      const range = seller.quoteSealedBatch({ documentId, start: 0, end: 1 });
+      assert.strictEqual(range.ok, false);
+      assert.match(range.error, /funded quotes/);
+      for (const q of paid) assert.ok(seller.sealedBlobPreimageForPaymentHash(q.paymentHashHex, { amountSats: RATE }), 'paid quotes kept');
+      seller.settleSealedBlobQuote(paid[0].paymentHashHex);
+      assert.ok(seller.quoteSealedBlob({ documentId, blobIndex: 2 }).ok, 'a settled quote frees its slot');
+    });
+
     it('approving a batch request whose quote is refused reports it and keeps the request', function () {
       const seller = new Peer({ listen: false });
       const doc = Document.seal(crypto.randomBytes(5000), { chunkBytes: 2048 });

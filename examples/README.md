@@ -1,5 +1,5 @@
 # Fabric Examples
-Short programs that show the current JavaScript library. The supported path is this repository: [VISION.md](../VISION.md), [QUICKSTART.md](../QUICKSTART.md), and [DEVELOPERS.md](../DEVELOPERS.md). Install from the repository root (`npm install`, Node.js 26.12.1). No C build is required for these scripts.
+Short programs that show the current JavaScript library. The supported path is this repository: [VISION.md](../VISION.md), [QUICKSTART.md](../QUICKSTART.md), and [DEVELOPERS.md](../DEVELOPERS.md). Install from the repository root (`npm install`, Node.js 26.13.0). No C build is required for these scripts.
 
 The map of core, `@fabric/http`, and `@fabric/hub` is [TUTORIALS.md](TUTORIALS.md). Scroll-driven pictures are in [gossip-network/](gossip-network/index.html).
 

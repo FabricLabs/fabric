@@ -39,7 +39,27 @@ function normalizeAddress (addr) {
   return String(addr || '').trim();
 }
 
-/** @private Networks a raw output script is rendered for; only watched strings match. */
+/**
+ * The key an address is watched under. Bech32 is case-insensitive (all upper
+ * or all lower case), so it is keyed in lower case; Base58 is case-sensitive
+ * and keyed as written.
+ * @param {string} addr
+ * @returns {string}
+ */
+function watchKey (addr) {
+  const n = normalizeAddress(addr);
+  if (!/^[a-z0-9]+1[a-z0-9]+$/i.test(n)) return n;
+  const lower = n.toLowerCase();
+  if (n !== lower && n !== n.toUpperCase()) return n;
+  try {
+    bitcoin.address.fromBech32(lower);
+    return lower;
+  } catch (_) {
+    return n;
+  }
+}
+
+/** @private Networks a raw script is read for when the watch set names none. */
 const OUTPUT_SCRIPT_NETWORKS = Object.freeze([
   bitcoin.networks.bitcoin,
   bitcoin.networks.testnet,
@@ -47,21 +67,80 @@ const OUTPUT_SCRIPT_NETWORKS = Object.freeze([
 ]);
 
 /**
- * Every address a raw output script reads as. A raw transaction names no
- * network, and each network renders the script differently, so the watch set
- * picks the one it holds.
+ * bitcoinjs-lib parameters for a network: a bitcoinjs network object as is,
+ * or a Fabric network name (signet and testnet4 share testnet's).
+ * @private
+ * @param {object|string} network
+ * @returns {object|null}
+ */
+function bitcoinNetwork (network) {
+  if (network && typeof network === 'object' && typeof network.bech32 === 'string') return network;
+  if (typeof network !== 'string' || !network) return null;
+  if (network === 'regtest') return bitcoin.networks.regtest;
+  if (network === 'mainnet' || network === 'main' || network === 'bitcoin') return bitcoin.networks.bitcoin;
+  return bitcoin.networks.testnet;
+}
+
+/** @private */
+function scriptNetworks (network) {
+  return network ? [network] : OUTPUT_SCRIPT_NETWORKS;
+}
+
+/**
+ * Every address a raw output script reads as on `network`. A raw transaction
+ * names no network, and testnet and regtest render one SegWit script as two
+ * addresses, so only the watch set's network is read; with none, every
+ * network is (only watched strings match).
  * @private
  * @param {Buffer|Uint8Array} script
+ * @param {object|null} [network]
  * @returns {string[]}
  */
-function addressesFromOutputScript (script) {
+function addressesFromOutputScript (script, network = null) {
   const out = [];
-  for (const network of OUTPUT_SCRIPT_NETWORKS) {
+  for (const net of scriptNetworks(network)) {
     try {
-      out.push(normalizeAddress(bitcoin.address.fromOutputScript(script, network)));
+      out.push(normalizeAddress(bitcoin.address.fromOutputScript(script, net)));
     } catch (_) {}
   }
   return [...new Set(out.filter(Boolean))];
+}
+
+/**
+ * Addresses a raw input spends from, read from its witness or script: a
+ * Taproot script path (leaf + control block), a P2WSH witness script, a
+ * P2WPKH or P2PKH public key. A Taproot key-path spend names nothing.
+ * @private
+ * @param {Buffer[]} witness
+ * @param {Buffer} [scriptSig]
+ * @param {object|null} [network]
+ * @returns {string[]}
+ */
+function addressesFromInput (witness, scriptSig, network = null) {
+  const out = [];
+  const tries = [];
+  if (Array.isArray(witness) && witness.length) {
+    tries.push((net) => bitcoin.payments.p2tr({ witness, network: net }).address);
+    tries.push((net) => bitcoin.payments.p2wsh({ witness, network: net }).address);
+    tries.push((net) => bitcoin.payments.p2wpkh({ witness, network: net }).address);
+  }
+  if (scriptSig && scriptSig.length) {
+    tries.push((net) => bitcoin.payments.p2pkh({ input: scriptSig, network: net }).address);
+  }
+  for (const net of scriptNetworks(network)) {
+    for (const read of tries) {
+      try {
+        const addr = read(net);
+        if (addr) out.push(normalizeAddress(addr));
+      } catch (_) {}
+    }
+  }
+  return [...new Set(out)];
+}
+
+/** @private `txid:vout` of an input or output. */
+function outpointKey (txid, vout) {
+  return `${String(txid || '').toLowerCase()}:${Number(vout)}`;
 }
 
 function addressesFromScriptPubKey (spk) {
@@ -74,12 +153,14 @@ function addressesFromScriptPubKey (spk) {
   return out.filter(Boolean);
 }
 
-function pushWatchAddress (addresses, htlcAddresses, addr, meta) {
+function pushWatchAddress (watchSet, addr, meta) {
   const n = normalizeAddress(addr);
   if (!n) return;
-  addresses.add(n);
+  const key = watchKey(n);
+  watchSet.addresses.add(key);
+  if (!watchSet.registered.has(key)) watchSet.registered.set(key, n);
   if (meta && (meta.kind === 'htlc' || meta.paymentHashHex || meta.settlementId)) {
-    htlcAddresses.set(n, Object.assign({}, meta, { address: n }));
+    watchSet.htlcAddresses.set(key, Object.assign({}, meta, { address: watchSet.registered.get(key) }));
   }
 }
 
@@ -94,55 +175,92 @@ function forEachAddressMap (mapOrObj, fn) {
 
 /**
  * Build a watch-set snapshot from wallet state + explicit extras.
+ *
+ * `addresses` and `htlcAddresses` are keyed by {@link watchKey};
+ * `registered` maps each key back to the address as first registered.
+ * `network` (the wallet's, or `extras.network`) is the only one raw scripts
+ * are read for. `outpoints` (`txid:vout` → `{ address }`) are outputs the
+ * wallet already saw paid to it, so a raw spend of one is recognized.
  * @param {object} [walletLike]
  * @param {object} [extras]
  */
 function buildWatchSet (walletLike = {}, extras = {}) {
-  const addresses = new Set();
-  const paymentHashes = new Map();
-  const htlcAddresses = new Map();
+  const watchSet = {
+    addresses: new Set(),
+    paymentHashes: new Map(),
+    htlcAddresses: new Map(),
+    registered: new Map(),
+    outpoints: new Map(),
+    network: bitcoinNetwork(extras.network) || bitcoinNetwork(walletLike.network)
+  };
 
   const stateAddrs = (walletLike._state && walletLike._state.addresses) || walletLike.addresses || {};
-  forEachAddressMap(stateAddrs, (addr, meta) => pushWatchAddress(addresses, htlcAddresses, addr, meta));
+  forEachAddressMap(stateAddrs, (addr, meta) => pushWatchAddress(watchSet, addr, meta));
 
   const watch = walletLike._watch || walletLike.watch || {};
-  forEachAddressMap(watch.addresses, (addr, meta) => pushWatchAddress(addresses, htlcAddresses, addr, meta));
+  forEachAddressMap(watch.addresses, (addr, meta) => pushWatchAddress(watchSet, addr, meta));
 
   if (watch.paymentHashes instanceof Map) {
     for (const [hash, meta] of watch.paymentHashes.entries()) {
-      paymentHashes.set(String(hash).toLowerCase(), meta || {});
+      watchSet.paymentHashes.set(String(hash).toLowerCase(), meta || {});
     }
   }
 
   if (Array.isArray(extras.addresses)) {
-    for (const a of extras.addresses) pushWatchAddress(addresses, htlcAddresses, a, null);
+    for (const a of extras.addresses) pushWatchAddress(watchSet, a, null);
   }
-  forEachAddressMap(extras.htlcAddresses, (addr, meta) => pushWatchAddress(addresses, htlcAddresses, addr, meta));
+  forEachAddressMap(extras.htlcAddresses, (addr, meta) => pushWatchAddress(watchSet, addr, meta));
   if (extras.paymentHashes && typeof extras.paymentHashes === 'object') {
     for (const hash of Object.keys(extras.paymentHashes)) {
-      paymentHashes.set(String(hash).toLowerCase(), extras.paymentHashes[hash] || {});
+      watchSet.paymentHashes.set(String(hash).toLowerCase(), extras.paymentHashes[hash] || {});
     }
   }
 
-  return { addresses, paymentHashes, htlcAddresses };
+  for (const source of [walletLike._ownedOutpoints, extras.outpoints]) {
+    forEachAddressMap(source, (outpoint, meta) => {
+      if (meta && meta.address) watchSet.outpoints.set(String(outpoint).toLowerCase(), meta);
+    });
+  }
+
+  return watchSet;
 }
 
-function collectAddressesFromVerboseTx (verboseTx) {
+/**
+ * Output and input addresses of a transaction. An input's addresses come
+ * from its verbose `prevout`, then from its witness or script on `network`,
+ * then from a watched outpoint it spends.
+ * @param {object} verboseTx
+ * @param {object} [watchSet]
+ */
+function collectAddressesFromVerboseTx (verboseTx, watchSet = {}) {
   const outputs = [];
   const inputs = [];
   for (const v of (verboseTx && verboseTx.vout) || []) {
     outputs.push(...addressesFromScriptPubKey(v && v.scriptPubKey));
   }
   for (const vin of (verboseTx && verboseTx.vin) || []) {
-    if (!vin || vin.coinbase) continue;
-    if (vin.prevout && vin.prevout.scriptPubKey) {
-      inputs.push(...addressesFromScriptPubKey(vin.prevout.scriptPubKey));
-    }
+    inputs.push(...inputAddresses(vin, watchSet));
   }
   const uniq = (arr) => [...new Set(arr.filter(Boolean))];
   const outU = uniq(outputs);
   const inU = uniq(inputs);
   return { outputs: outU, inputs: inU, all: uniq([...outU, ...inU]) };
+}
+
+/** @private Addresses one input spends from. */
+function inputAddresses (vin, watchSet = {}) {
+  if (!vin || vin.coinbase) return [];
+  const out = [];
+  if (vin.prevout && vin.prevout.scriptPubKey) out.push(...addressesFromScriptPubKey(vin.prevout.scriptPubKey));
+  const witness = (vin.txinwitness || vin.witness || []).map((w) => Buffer.isBuffer(w) ? w : Buffer.from(String(w), 'hex'));
+  const sigHex = vin.scriptSig && typeof vin.scriptSig === 'object' ? vin.scriptSig.hex : vin.scriptSig;
+  const scriptSig = typeof sigHex === 'string' && sigHex ? Buffer.from(sigHex, 'hex') : null;
+  out.push(...addressesFromInput(witness, scriptSig, watchSet.network || null));
+  if (vin.txid != null && vin.vout != null && watchSet.outpoints) {
+    const owned = watchSet.outpoints.get(outpointKey(vin.txid, vin.vout));
+    if (owned) out.push(normalizeAddress(owned.address));
+  }
+  return out;
 }
 
 function isCoinbaseTx (verboseTx) {
@@ -193,6 +311,7 @@ function classifyWalletTransaction (txOrHex, watchSet) {
     txid: null,
     addresses: [],
     matchedAddresses: [],
+    ownedOutputs: [],
     paymentHashHex: null,
     preimageHex: null,
     settlementId: null,
@@ -210,7 +329,10 @@ function classifyWalletTransaction (txOrHex, watchSet) {
         hex,
         vin: tx.ins.map((inp) => ({
           coinbase: inp.hash.every((b) => b === 0) && inp.index === 0xffffffff,
-          txinwitness: (inp.witness || []).map((w) => w.toString('hex'))
+          txid: Buffer.from(inp.hash).reverse().toString('hex'),
+          vout: inp.index,
+          scriptSig: { hex: Buffer.from(inp.script || []).toString('hex') },
+          txinwitness: (inp.witness || []).map((w) => Buffer.from(w).toString('hex'))
         })),
         // Outputs decoded from the raw bytes: without them a raw `rawtx`
         // notification matches no watched address and a payment is missed.
@@ -219,7 +341,7 @@ function classifyWalletTransaction (txOrHex, watchSet) {
           value: Number(out.value) / 1e8,
           scriptPubKey: {
             hex: Buffer.from(out.script).toString('hex'),
-            addresses: addressesFromOutputScript(out.script)
+            addresses: addressesFromOutputScript(out.script, watchSet.network || null)
           }
         })),
         locktime: tx.locktime
@@ -234,22 +356,41 @@ function classifyWalletTransaction (txOrHex, watchSet) {
     return empty;
   }
 
+  const watched = (a) => !!watchSet.addresses && watchSet.addresses.has(watchKey(a));
+  const registered = (a) => (watchSet.registered && watchSet.registered.get(watchKey(a))) || normalizeAddress(a);
+  const htlcFor = (a) => (watchSet.htlcAddresses && watchSet.htlcAddresses.get(watchKey(a))) || null;
+
   const txid = verbose.txid || verbose.hash || null;
-  const addrInfo = collectAddressesFromVerboseTx(verbose);
-  const matchedAddresses = addrInfo.all.filter((a) => watchSet.addresses && watchSet.addresses.has(a));
+  const addrInfo = collectAddressesFromVerboseTx(verbose, watchSet);
+  const matchedAddresses = [...new Set(addrInfo.all.filter(watched).map(registered))];
+  const ownedOutputs = [];
+  for (let i = 0; i < ((verbose && verbose.vout) || []).length; i++) {
+    const v = verbose.vout[i];
+    const hit = addressesFromScriptPubKey(v && v.scriptPubKey).find(watched);
+    if (!hit) continue;
+    const value = Number(v.value);
+    ownedOutputs.push({
+      txid,
+      vout: v.n != null ? Number(v.n) : i,
+      address: registered(hit),
+      valueSats: Number.isFinite(value) ? Math.round(value * 1e8) : null
+    });
+  }
 
   let kind = isCoinbaseTx(verbose) ? 'coinbase' : 'unknown';
   let paymentHashHex = null;
   let preimageHex = null;
   let settlementId = null;
 
-  const htlcHit = matchedAddresses
-    .map((a) => watchSet.htlcAddresses && watchSet.htlcAddresses.get(a))
-    .find(Boolean);
+  // An input spending a watched HTLC is a refund unless it reveals the
+  // preimage (a claim); an output paying one is a funding.
+  const htlcSpent = addrInfo.inputs.map(htlcFor).find(Boolean);
+  const htlcPaid = addrInfo.outputs.map(htlcFor).find(Boolean);
+  const htlcHit = htlcSpent || htlcPaid;
   if (htlcHit) {
     paymentHashHex = htlcHit.paymentHashHex || null;
     settlementId = htlcHit.settlementId || null;
-    kind = 'htlc_funding';
+    kind = htlcSpent ? 'htlc_refund' : 'htlc_funding';
   }
 
   const hashCandidates = new Set();
@@ -269,18 +410,12 @@ function classifyWalletTransaction (txOrHex, watchSet) {
     }
   }
 
-  if (kind === 'htlc_funding' && Number(verbose.locktime) > 0 && !preimageHex) {
-    kind = 'htlc_refund';
-  }
-
-  if (kind === 'unknown' || kind === 'coinbase') {
-    if (matchedAddresses.length && addrInfo.outputs.some((a) => watchSet.addresses.has(a))) {
-      kind = kind === 'coinbase' ? 'coinbase' : 'receive';
-    } else if (matchedAddresses.length && addrInfo.inputs.some((a) => watchSet.addresses.has(a))) {
-      kind = 'spend';
-    } else if (matchedAddresses.length) {
-      kind = 'payment';
-    }
+  // A transaction spending the wallet's own coins is a spend, even when its
+  // change comes back to a watched address.
+  if (kind === 'unknown') {
+    if (addrInfo.inputs.some(watched)) kind = 'spend';
+    else if (addrInfo.outputs.some(watched)) kind = 'receive';
+    else if (matchedAddresses.length) kind = 'payment';
   }
 
   const related = matchedAddresses.length > 0 ||
@@ -292,6 +427,7 @@ function classifyWalletTransaction (txOrHex, watchSet) {
     txid,
     addresses: addrInfo.all,
     matchedAddresses,
+    ownedOutputs,
     paymentHashHex,
     preimageHex,
     settlementId,
@@ -314,6 +450,7 @@ module.exports = {
   WALLET_TX_KINDS,
   isKnownBitcoinMessageType,
   normalizeAddress,
+  watchKey,
   buildWatchSet,
   collectAddressesFromVerboseTx,
   isCoinbaseTx,

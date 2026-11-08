@@ -158,7 +158,10 @@ class ZMQ extends Service {
    */
   async stop () {
     this.status = 'STOPPING';
-    if (this.socket) this.socket.close();
+    const socket = this.socket;
+    // Pause and resume after stop only record topics; a closed socket is never touched.
+    this.socket = null;
+    if (socket) socket.close();
     this.status = 'STOPPED';
     return this;
   }

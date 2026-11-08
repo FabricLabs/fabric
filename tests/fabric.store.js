@@ -61,7 +61,12 @@ describe('@fabric/core/types/store', function () {
       const store = new Store({ persistent: false });
       await store.set('/things/a', { n: 1 });
       await store.set('/things/b', { n: 2 });
-      store.db = { del: async (k) => { removed.push(k); }, put: async () => {} };
+      store.db = {
+        get: async () => undefined,
+        put: async () => {},
+        keys: async function * () {},
+        batch: async (ops) => { for (const op of ops) if (op.type === 'del') removed.push(op.key); }
+      };
       store.settings.persistent = true;
       assert.strictEqual(await store._DELETE('/things/a'), null);
       assert.deepStrictEqual(removed, ['/things/a']);
@@ -77,6 +82,110 @@ describe('@fabric/core/types/store', function () {
       await assert.rejects(store.set('/list/name/x', 1), /non-index key under an array/);
       await store.set('/list/1', 3);
       assert.deepStrictEqual(store._state.content.list, [1, 3]);
+    });
+
+    it('refuses to remove a reserved key or a non-index key under an array', async function () {
+      const store = new Store({ persistent: false });
+      await store.set('/list', [1, 2]);
+      await store.set('/things/a', 1);
+      for (const key of ['/__proto__', '/things/__proto__', '/a/constructor/prototype']) {
+        await assert.rejects(store.remove(key), /reserved key/);
+      }
+      await assert.rejects(store.remove('/list/length'), /non-index key under an array/);
+      await assert.rejects(store.remove('/list/name/x'), /non-index key under an array/);
+      assert.deepStrictEqual(store._state.content.list, [1, 2]);
+      await store.remove('/list/0');
+      assert.deepStrictEqual(store._state.content.list, [2]);
+    });
+
+    it('refuses to remove a non-index key under an array stored before a reopen', async function () {
+      const batches = [];
+      const store = new Store({ strict: true });
+      // Memory is empty, as after a restart; Level still holds `/list` as an array.
+      store.db = {
+        get: async (key) => (key === '/list' ? JSON.stringify([1, 2]) : undefined),
+        keys: async function * () {},
+        batch: async (ops) => { batches.push(ops); }
+      };
+      await assert.rejects(store.remove('/list/length'), /non-index key under an array/);
+      assert.deepStrictEqual(batches, []);
+      await store.remove('/list/1');
+      assert.deepStrictEqual(batches[0], [
+        { type: 'del', key: '/list/1' },
+        { type: 'put', key: '/list', value: JSON.stringify([1]) }
+      ]);
+    });
+
+    it('a write under a persisted array parent needs an index token', async function () {
+      const puts = [];
+      const store = new Store({ strict: true });
+      store.db = { get: async (key) => (key === '/list' ? JSON.stringify([1, 2]) : undefined), put: async (key) => { puts.push(key); } };
+      await assert.rejects(store.set('/list/length', 0), /non-index key under an array/);
+      await assert.rejects(store.set('/list/name/x', 1), /non-index key under an array/);
+      assert.deepStrictEqual(puts, []);
+      await store.set('/list/1', 3);
+      assert.deepStrictEqual(puts, ['/list/1']);
+    });
+
+    it('a removed key and everything beneath it stay removed after a reopen', async function () {
+      const fs = require('fs');
+      const path = `./stores/test-store-remove-${process.pid}-${Date.now()}`;
+      const open = async () => {
+        const store = new Store({ path, persistent: true, strict: true });
+        await store.start();
+        return store;
+      };
+      try {
+        let store = await open();
+        await store.set('/tree', { a: { b: 1 }, keep: true });
+        await store.set('/tree/a/c', { x: 2 });
+        await store.set('/tree/a/c/d', 3);
+        await store.set('/tree/other', 4);
+        await store.set('/treehouse', 5);
+        await store.remove('/tree/a');
+        await store.stop();
+
+        store = await open();
+        assert.strictEqual(await store.get('/tree/a/c/d'), null, 'descendant key deleted');
+        assert.strictEqual(await store.get('/tree/a/c'), null);
+        assert.strictEqual(await store.get('/tree/a'), null);
+        assert.deepStrictEqual(await store.get('/tree'), { keep: true }, 'ancestor rewritten without the child');
+        assert.strictEqual(await store.get('/tree/a'), null, 'a hydrated ancestor brings nothing back');
+        assert.strictEqual(await store.get('/tree/other'), 4, 'siblings stay');
+        assert.strictEqual(await store.get('/treehouse'), 5, 'a key sharing the prefix stays');
+        await store.stop();
+      } finally {
+        fs.rmSync(path, { recursive: true, force: true });
+      }
+    });
+
+    it('a failed first post removes the list instead of writing null', async function () {
+      const disk = new Map();
+      const store = new Store({ strict: true, persistent: true });
+      store.db = {
+        get: async (key) => disk.get(key),
+        put: async (key, value) => {
+          if (key.startsWith('/collections/')) throw new Error('disk full');
+          disk.set(key, value);
+        },
+        keys: async function * () {},
+        batch: async (ops) => { for (const op of ops) op.type === 'del' ? disk.delete(op.key) : disk.set(op.key, op.value); }
+      };
+      assert.strictEqual(await store._POST('/widgets', { n: 0 }), false);
+      assert.strictEqual(disk.has('/widgets'), false, 'nothing persisted for the list');
+      assert.strictEqual(await store._GET('/widgets'), null);
+      assert.ok(![...disk.keys()].some((k) => k.startsWith('/entities/')), 'the entity is gone too');
+    });
+
+    it('a post whose list cannot be read writes nothing, even when not strict', async function () {
+      const puts = [];
+      const store = new Store({ persistent: true });
+      store.db = {
+        get: async (key) => { if (key === '/widgets') throw new Error('disk gone'); },
+        put: async (key) => { puts.push(key); }
+      };
+      assert.strictEqual(await store._POST('/widgets', { n: 0 }), false);
+      assert.deepStrictEqual(puts, [], 'an unreadable list is not taken for an empty one');
     });
 
     it('flush is a no-op when Level is not open', async function () {

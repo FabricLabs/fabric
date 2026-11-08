@@ -388,6 +388,16 @@ describe('@fabric/core/types/delegation frames', function () {
       assert.strictEqual(back.result.answer.author, HUB.identity.pubkey.slice(2));
     });
 
+    it('an assertion that outlives its challenge does not answer the request', function () {
+      const grant = d.readGrant(hubGrant({ origins: [SITE] }).uri, { now: NOW });
+      const c = challenge();
+      const read = d.readRequest(d.createRequest({ target: HUB.identity.pubkey, grant: grant.hash, request: c.uri, origin: SITE, now: NOW + 100 }, PASSPORT.identity.key).uri, { now: NOW + 200 });
+      const a = d.answerPassport(read, { signer: 'hub', network: 'regtest', now: NOW + 300 }, HUB.identity.key);
+      assert.strictEqual(d.answerError(read, a.uri), null);
+      const late = Message.fromFields('PASSPORT_ASSERTION', Object.assign({}, a.message.toFields(), { expiresAt: BigInt(c.expiresAt + 1000) })).signWithKey(HUB.identity.key);
+      assert.match(d.answerError(read, late.toBuffer()), /outlives its challenge/);
+    });
+
     it('authorization comes only from the target\'s grants', function () {
       const grant = d.readGrant(hubGrant({ origins: ['https://hub.fabric.pub'], networks: ['regtest'] }).uri, { now: NOW });
       const c = challenge();
@@ -538,7 +548,9 @@ describe('@fabric/core/types/delegation frames', function () {
           disclose: '',
           purpose: '',
           issuedAt: BigInt(NOW),
-          expiresAt: BigInt(NOW + 60 * 1000)
+          expiresAt: BigInt(NOW + 60 * 1000),
+          sessionKey: '',
+          clientNonce: ''
         }).signWithKey(PASSPORT.identity.key);
         const read = d.readRequest(raw.toBuffer(), { now: NOW + 1 });
         assert.strictEqual(read.ok, false);
@@ -572,16 +584,75 @@ describe('@fabric/core/types/delegation frames', function () {
       const read = d.readRequest(d.createRequest({ target: HUB.identity.pubkey, grant: grant.hash, request: hello, purpose: 'say hi', now: NOW }, PASSPORT.identity.key).uri, { now: NOW + 1 });
       assert.strictEqual(read.ok, true, read.error);
       const prompt = d.notificationFor(read);
-      assert.match(prompt.summary, /say hi\nMessage: hello from the hub/);
+      // The body's type leads the preview, so a typed body never reads as plain chat.
+      assert.match(prompt.summary, /say hi\nMessage: \[Greeting\] hello from the hub/);
+    });
+
+    it('message scope refuses padded, numeric, aliased, and mixed-case protocol types in type or @type', function () {
+      const grant = d.readGrant(hubGrant().uri, { now: NOW });
+      const ask = (body) => () => d.createRequest({ target: HUB.identity.pubkey, grant: grant.hash, request: Message.fromVector(['GENERIC_MESSAGE', JSON.stringify(body)]), now: NOW }, PASSPORT.identity.key);
+      const refused = [
+        { type: ' INVENTORY_RESPONSE' },
+        { type: 'INVENTORY_RESPONSE\n' },
+        { type: 'inventory_response' },
+        { type: 'Sidechain_State_Patch' },
+        { type: 'federationsignrequest' },
+        { type: 0x4247 },
+        { type: 1001 },
+        { type: '1001' },
+        { '@type': ' DOCUMENT_KEY_REVEAL ' },
+        { '@type': 'p2p_peer_gossip' },
+        { type: 'Greeting', '@type': 'INVENTORY_REQUEST' }
+      ];
+      for (const body of refused) assert.throws(ask(body), /cannot sign/, JSON.stringify(body));
+      for (const body of [{ type: 'Greeting', content: 'hi' }, { content: 'hi' }, { type: null, content: 'hi' }]) {
+        assert.doesNotThrow(ask(body), JSON.stringify(body));
+      }
     });
 
     it('every body type Peer dispatches from a generic carrier is refused under a message grant', function () {
       const source = require('fs').readFileSync(require('path').join(__dirname, '../types/peer.js'), 'utf8');
-      const start = source.indexOf('  _handleGenericMessage (');
-      const end = source.indexOf('\n  }\n', source.indexOf('switch (msg.type)', start));
-      const cases = [...source.slice(start, end).matchAll(/case '([A-Za-z_]+)':/g)].map((m) => m[1]);
-      assert.ok(cases.length > 5);
-      for (const type of cases) assert.ok(d.GENERIC_PROTOCOL_BODY_TYPES.includes(type), type);
+      const method = source.indexOf('  _handleGenericMessage (');
+      assert.ok(method > 0, '_handleGenericMessage not found');
+      const open = source.indexOf('{', source.indexOf('switch (msg.type)', method));
+      assert.ok(open > method, 'dispatch switch not found');
+      // Walk the switch body by brace depth, skipping strings, templates, and
+      // comments, and keep every `case` label at the switch's own depth.
+      const labels = [];
+      let depth = 0;
+      let i = open;
+      for (; i < source.length; i++) {
+        const ch = source[i];
+        const next = source[i + 1];
+        if (ch === '/' && next === '/') { i = source.indexOf('\n', i); continue; }
+        if (ch === '/' && next === '*') { i = source.indexOf('*/', i) + 1; continue; }
+        if (ch === '\'' || ch === '"' || ch === '`') {
+          for (i++; i < source.length && source[i] !== ch; i++) if (source[i] === '\\') i++;
+          continue;
+        }
+        if (ch === '{') depth++;
+        else if (ch === '}' && --depth === 0) break;
+        else if (depth === 1 && /\bcase\s/.test(source.slice(i, i + 5)) && !/[\w$]/.test(source[i - 1])) {
+          const colon = source.indexOf(':', i);
+          labels.push(source.slice(i + 5, colon).trim());
+        }
+      }
+      assert.ok(depth === 0 && i < source.length, 'dispatch switch never closes');
+      assert.ok(labels.length > 5, `only ${labels.length} cases found`);
+      const grant = d.readGrant(hubGrant().uri, { now: NOW });
+      // Constant labels are the sealed-exchange body types Peer imports.
+      const book = require('../functions/documentSealedExchange');
+      for (const label of labels) {
+        let type = null;
+        if (/^'[^']+'$/.test(label)) type = label.slice(1, -1);
+        else if (/^[A-Z_]+$/.test(label) && typeof book[label] === 'string') type = book[label];
+        assert.ok(type, `case ${label} is neither a string literal nor a known constant`);
+        assert.ok(d.GENERIC_PROTOCOL_BODY_TYPES.includes(type), type);
+        for (const variant of [type, ` ${type} `, type.toLowerCase(), type.toUpperCase()]) {
+          const carrier = Message.fromVector(['GENERIC_MESSAGE', JSON.stringify({ type: variant, object: {} })]);
+          assert.throws(() => d.createRequest({ target: HUB.identity.pubkey, grant: grant.hash, request: carrier, now: NOW }, PASSPORT.identity.key), /cannot sign/, JSON.stringify(variant));
+        }
+      }
     });
 
     it('requests expire; results refuse an answer with a refusal', function () {

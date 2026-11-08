@@ -222,12 +222,14 @@ describe('@fabric/core/functions/passport peer sessions (v3)', function () {
     assert.strictEqual(grant.ok, true, grant.error);
     assert.deepStrictEqual(grant.grant.peers, [PEER.pubkey]);
 
-    const { challenge } = handshake({ challenge: { origin: null } });
-    assert.throws(() => d.createRequest({ target: DESK.identity.pubkey, grant: grant.hash, request: challenge.uri, now: NOW + 30 }, PASSPORT_KEY), /sessionKey/);
-    const req = d.createRequest({ target: DESK.identity.pubkey, grant: grant.hash, request: challenge.uri, origin: 'https://app.example', sessionKey: SESSION.pubkey, now: NOW + 30 }, PASSPORT_KEY);
+    const { connect, challenge } = handshake({ challenge: { origin: null } });
+    const clientNonce = connect.clientNonce;
+    assert.throws(() => d.createRequest({ target: DESK.identity.pubkey, grant: grant.hash, request: challenge.uri, clientNonce, now: NOW + 30 }, PASSPORT_KEY), /sessionKey/);
+    const req = d.createRequest({ target: DESK.identity.pubkey, grant: grant.hash, request: challenge.uri, origin: 'https://app.example', sessionKey: SESSION.pubkey, clientNonce, now: NOW + 30 }, PASSPORT_KEY);
     const read = d.readRequest(req.uri, { now: NOW + 40 });
     assert.strictEqual(read.ok, true, read.error);
     assert.strictEqual(read.request.sessionKey, SESSION.pubkey);
+    assert.strictEqual(read.request.clientNonce, clientNonce);
     assert.strictEqual(d.authorize(read, [grant]).ok, true, d.authorize(read, [grant]).error);
     // The prompt names the peer key it binds; the reported origin is only a note.
     const prompt = d.notificationFor(read);
@@ -244,7 +246,7 @@ describe('@fabric/core/functions/passport peer sessions (v3)', function () {
 
     // The same grant does not cover another peer, or a site sign-in.
     const elsewhere = handshake({ peerKey: IMPOSTOR }).challenge;
-    const readElsewhere = d.readRequest(d.createRequest({ target: DESK.identity.pubkey, grant: grant.hash, request: elsewhere.uri, sessionKey: SESSION.pubkey, now: NOW + 30 }, PASSPORT_KEY).uri, { now: NOW + 40 });
+    const readElsewhere = d.readRequest(d.createRequest({ target: DESK.identity.pubkey, grant: grant.hash, request: elsewhere.uri, sessionKey: SESSION.pubkey, clientNonce: elsewhere.clientNonce, now: NOW + 30 }, PASSPORT_KEY).uri, { now: NOW + 40 });
     assert.match(d.authorize(readElsewhere, [grant]).error, /does not cover peer/);
     const site = createChallenge({ origin: 'https://app.example', network: 'regtest', now: NOW });
     const readSite = d.readRequest(d.createRequest({ target: DESK.identity.pubkey, grant: grant.hash, request: site.uri, origin: 'https://app.example', now: NOW + 30 }, PASSPORT_KEY).uri, { now: NOW + 40 });
@@ -253,21 +255,58 @@ describe('@fabric/core/functions/passport peer sessions (v3)', function () {
     // An origin-limited grant needs the origin the requester saw, not the peer's claim.
     const limited = d.readGrant(d.createGrant({ grantee: PASSPORT_KEY.pubkey, scopes: ['passport'], origins: ['https://app.example'], now: NOW + 1 }, DESK.identity.key).uri, { now: NOW + 2 });
     const claimed = handshake({ challenge: { origin: 'https://app.example' } }).challenge;
-    const unreported = d.readRequest(d.createRequest({ target: DESK.identity.pubkey, grant: limited.hash, request: claimed.uri, sessionKey: SESSION.pubkey, now: NOW + 30 }, PASSPORT_KEY).uri, { now: NOW + 40 });
+    const unreported = d.readRequest(d.createRequest({ target: DESK.identity.pubkey, grant: limited.hash, request: claimed.uri, sessionKey: SESSION.pubkey, clientNonce: claimed.clientNonce, now: NOW + 30 }, PASSPORT_KEY).uri, { now: NOW + 40 });
     assert.strictEqual(unreported.ok, true, unreported.error);
     assert.match(d.authorize(unreported, [limited]).error, /without a reported origin/);
-    const reported = d.readRequest(d.createRequest({ target: DESK.identity.pubkey, grant: limited.hash, request: claimed.uri, origin: 'https://app.example', sessionKey: SESSION.pubkey, now: NOW + 30 }, PASSPORT_KEY).uri, { now: NOW + 40 });
+    const reported = d.readRequest(d.createRequest({ target: DESK.identity.pubkey, grant: limited.hash, request: claimed.uri, origin: 'https://app.example', sessionKey: SESSION.pubkey, clientNonce: claimed.clientNonce, now: NOW + 30 }, PASSPORT_KEY).uri, { now: NOW + 40 });
     // A reported origin never stands in for the peer: a grant without that
     // peer listed does not sign a peer session, whatever origin it names.
     assert.match(d.authorize(reported, [limited]).error, /does not cover peer/);
   });
 
-  it('a peer-limited grant carries version 2, so readers without peers refuse it', function () {
-    const limited = d.createGrant({ grantee: USER.identity.key.pubkey, scopes: ['passport'], peers: [PEER.pubkey], now: NOW }, DESK.identity.key);
-    assert.strictEqual(Number(limited.message.toFields().v), 2);
-    const open = d.createGrant({ grantee: USER.identity.key.pubkey, scopes: ['passport'], now: NOW }, DESK.identity.key);
-    assert.strictEqual(Number(open.message.toFields().v), 1);
-    assert.strictEqual(d.readGrant(limited.uri, { now: NOW }).ok, true);
-    assert.strictEqual(d.readGrant(open.uri, { now: NOW }).ok, true);
+  it('a peer sign-in request names the clientNonce the challenge echoes', function () {
+    const PASSPORT_KEY = USER.identity.key;
+    const grant = d.readGrant(d.createGrant({ grantee: PASSPORT_KEY.pubkey, scopes: ['passport'], peers: [PEER.pubkey], now: NOW }, DESK.identity.key).uri, { now: NOW });
+    const { connect, challenge } = handshake({ challenge: { origin: null } });
+    const base = { target: DESK.identity.pubkey, grant: grant.hash, request: challenge.uri, sessionKey: SESSION.pubkey, now: NOW + 30 };
+    assert.throws(() => d.createRequest(base, PASSPORT_KEY), /clientNonce/);
+    const other = createConnect({ peer: PEER.pubkey, now: NOW }).clientNonce;
+    assert.throws(() => d.createRequest(Object.assign({ clientNonce: other }, base), PASSPORT_KEY), /different clientNonce/);
+    const site = createChallenge({ origin: 'https://app.example', network: 'regtest', now: NOW });
+    assert.throws(() => d.createRequest({ target: DESK.identity.pubkey, grant: grant.hash, request: site.uri, origin: 'https://app.example', clientNonce: connect.clientNonce, now: NOW + 30 }, PASSPORT_KEY), /peer sign-ins only/);
+
+    const made = d.createRequest(Object.assign({ clientNonce: connect.clientNonce }, base), PASSPORT_KEY);
+    const fields = made.message.toFields();
+    const resign = (changes) => Message.fromFields('DELEGATION_REQUEST', Object.assign({}, fields, changes)).signWithKey(PASSPORT_KEY);
+    assert.strictEqual(Number(fields.v), d.DELEGATION_VERSION);
+    assert.match(d.readRequest(resign({ clientNonce: '' }).toBuffer(), { now: NOW + 40 }).error, /needs a clientNonce/);
+    assert.match(d.readRequest(resign({ clientNonce: other }).toBuffer(), { now: NOW + 40 }).error, /different clientNonce/);
+    assert.match(d.readRequest(resign({ v: 2 }).toBuffer(), { now: NOW + 40 }).error, /unsupported delegation version/);
+    // A site sign-in carries the same fields, empty.
+    const siteRequest = d.createRequest({ target: DESK.identity.pubkey, grant: grant.hash, request: site.uri, origin: 'https://app.example', now: NOW + 30 }, PASSPORT_KEY);
+    const siteFields = siteRequest.message.toFields();
+    assert.strictEqual(Number(siteFields.v), d.DELEGATION_VERSION);
+    assert.strictEqual(siteFields.sessionKey, '');
+    assert.strictEqual(siteFields.clientNonce, '');
+  });
+
+  it('restrictions are required fields: a request or grant without them does not decode', function () {
+    const PASSPORT_KEY = USER.identity.key;
+    const grant = d.createGrant({ grantee: PASSPORT_KEY.pubkey, scopes: ['passport'], peers: [PEER.pubkey], now: NOW }, DESK.identity.key);
+    const open = d.createGrant({ grantee: PASSPORT_KEY.pubkey, scopes: ['passport'], now: NOW }, DESK.identity.key);
+    assert.strictEqual(Number(grant.message.toFields().v), d.DELEGATION_VERSION);
+    assert.strictEqual(Number(open.message.toFields().v), d.DELEGATION_VERSION);
+    assert.strictEqual(open.message.toFields().peers, '');
+    assert.deepStrictEqual(d.readGrant(open.uri, { now: NOW }).grant.peers, []);
+    const site = createChallenge({ origin: 'https://app.example', network: 'regtest', now: NOW });
+    const request = d.createRequest({ target: DESK.identity.pubkey, grant: open.hash, request: site.uri, origin: 'https://app.example', now: NOW + 30 }, PASSPORT_KEY);
+    // The same frames with the last (empty) field cut off, signed again.
+    for (const [type, made, read] of [['DELEGATION_GRANT', open, d.readGrant], ['DELEGATION_REQUEST', request, d.readRequest]]) {
+      const whole = Message.fromVector([type, made.message.raw.data]).signWithKey(PASSPORT_KEY);
+      const cut = Message.fromVector([type, made.message.raw.data.slice(0, -2)]).signWithKey(PASSPORT_KEY);
+      assert.doesNotMatch(String(read(whole.toBuffer(), { now: NOW + 40 }).error), /malformed/);
+      assert.match(read(cut.toBuffer(), { now: NOW + 40 }).error, new RegExp(`malformed ${type} body`));
+    }
+    assert.strictEqual(grant.message.toFields().peers, PEER.pubkey);
   });
 });

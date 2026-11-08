@@ -5,7 +5,10 @@ Snapshot of every file under `types/` (110 files, 64,812 lines) on branch
 uncommitted changes included. Each type is graded for production use, grouped
 by area, and checked for whether the message bodies it sends or reads use
 field schemas (see [docs/MESSAGE_BODY.md](../docs/MESSAGE_BODY.md) and
-[docs/MESSAGE_BODY_MIGRATION.md](../docs/MESSAGE_BODY_MIGRATION.md)).
+[docs/MESSAGE_BODY_MIGRATION.md](../docs/MESSAGE_BODY_MIGRATION.md)). The
+wire counts were refreshed from the registry after the merge with
+`feature/passport` (2026-11-08), which gave `P2P_CHAIN_SYNC_REQUEST`,
+`P2P_FILE_SEND` and the three sealed-delivery types field layouts.
 
 ## How this was measured
 
@@ -57,14 +60,14 @@ file loads the module, not that its code is never exercised indirectly.
 | D — dormant or broken | 3 | 0 | 1 | 2 | 0 | 4 | 9 | **19** |
 | Total | 8 | 29 | 15 | 11 | 11 | 13 | 23 | **110** |
 
-**Schema adoption.** Of the 93 registered opcodes, 44 have field schemas: 21
-require fields on the wire (a Peer drops their JSON bodies) and 23 were
-field-only from the start. 8 keep raw or JSON bodies by design, 7 are still
-JSON with no schema, 14 are deprecated, and 20 Lightning opcodes are reserved
-without a codec. Among the 110 types, the 27 that send or read frames break
-down as: 4 fully on fields, 2 reading only schema'd frames, 14 using
-`CONTRACT_MESSAGE` with a canonical-JSON payload, 3 mixed, and 4 still sending
-JSON (1 with no schema yet, 2 on deprecated opcodes, 1 local only).
+**Schema adoption.** Of the 95 registered opcodes, 48 have field schemas: 25
+require fields on the wire (`Message.LEGACY_BODY_TYPES`; a Peer drops their
+JSON bodies) and 23 were field-only from the start. 8 keep raw or JSON bodies
+by design, 5 are still JSON with no schema, 14 are deprecated, and 20
+Lightning opcodes are reserved without a codec. Among the 110 types, the 27
+that send or read frames break down as: 4 fully on fields, 3 reading only
+schema'd frames, 14 using `CONTRACT_MESSAGE` with a canonical-JSON payload,
+3 mixed, and 3 still sending JSON (2 on deprecated opcodes, 1 local only).
 
 **Content bodies are only half migrated.** Every application protocol in core
 (channels, coinjoin, swaps, federations, bonds, resolutions, storage
@@ -101,11 +104,12 @@ is the largest remaining piece of the schema work: 26 named body types in
    `Peer#_requestStateFromAllPeers` (`P2P_STATE_REQUEST`) and the `Service`
    heartbeat (`P2P_GENERIC`) build frames on opcodes that receivers now count
    and ignore. Remove them or move them onto live types.
-6. **`P2P_FILE_SEND` is the main JSON frame left on the hot path.** Document
-   blobs travel as JSON + base64 (`Document`, `DocumentBlobTransferBook`,
-   `Peer`). The schema waits on the repricing question (migration open
-   question 4). `P2P_CHAIN_SYNC_REQUEST`, `P2P_BASE_MESSAGE` carriers and
-   `PASSPORT_SIGN_REQUEST` are the other live JSON bodies.
+6. **The live JSON bodies left are carriers and one Passport frame.**
+   `P2P_FILE_SEND` now carries document blobs as raw bytes (base64 only in
+   the JSON mapping), and `P2P_CHAIN_SYNC_REQUEST` and the sealed-delivery
+   frames have layouts. `P2P_BASE_MESSAGE` carriers and
+   `PASSPORT_SIGN_REQUEST` are still JSON; whether the smaller blob frames
+   should reprice documents is migration open question 4.
 7. **`Message` still has silent fallbacks.** The constructor
    `JSON.stringify`s plain objects even when a schema exists, and
    `fromVector` turns an unknown name into `P2P_BASE_MESSAGE`. A typo or a
@@ -141,11 +145,11 @@ is the largest remaining piece of the schema work: 26 named body types in
 
 | Status | Count | Opcodes |
 |---|---:|---|
-| Fields required on the wire (JSON dropped) | 20 | `P2P_PING`, `P2P_PONG`, `P2P_INVENTORY_REQUEST`, `P2P_INVENTORY_RESPONSE`, `P2P_DOCUMENT_PUBLISH`, `P2P_PEER_ANNOUNCE`, `P2P_SESSION_OFFER`, `P2P_SESSION_OPEN`, `CONTRACT_PUBLISH`, `CONTRACT_MESSAGE`, `P2P_PEER_GOSSIP`, `P2P_PEERING_OFFER`, `CONTRACT_PROPOSAL`, `SIDECHAIN_STATE_PATCH`, `DOCUMENT_PUBLISH`, `DOCUMENT_REQUEST`, `BITCOIN_BLOCK`, `BITCOIN_BLOCK_HASH`, `BITCOIN_TRANSACTION`, `BITCOIN_TRANSACTION_HASH` |
+| Fields required on the wire (JSON dropped) | 25 | `P2P_PING`, `P2P_PONG`, `P2P_INVENTORY_REQUEST`, `P2P_INVENTORY_RESPONSE`, `P2P_DOCUMENT_PUBLISH`, `P2P_PEER_ANNOUNCE`, `P2P_SESSION_OFFER`, `P2P_SESSION_OPEN`, `CONTRACT_PUBLISH`, `CONTRACT_MESSAGE`, `P2P_PEER_GOSSIP`, `P2P_PEERING_OFFER`, `CONTRACT_PROPOSAL`, `SIDECHAIN_STATE_PATCH`, `DOCUMENT_PUBLISH`, `DOCUMENT_REQUEST`, `BITCOIN_BLOCK`, `BITCOIN_BLOCK_HASH`, `BITCOIN_TRANSACTION`, `BITCOIN_TRANSACTION_HASH`, `P2P_CHAIN_SYNC_REQUEST`, `P2P_FILE_SEND`, `DOCUMENT_KEY_REVEAL`, `DOCUMENT_BLOB_QUOTE`, `DOCUMENT_BLOB_BATCH` |
 | Fields only (no JSON mapping) | 23 | `P2P_FORWARD`, `P2P_DOCUMENT_BID`, `P2P_DOCUMENT_ASK`, `P2P_MUSIG_START`, `P2P_MUSIG_ACCEPT`, `P2P_MUSIG_RECEIVE_COUNTER`, `P2P_MUSIG_SEND_PROPOSAL`, `P2P_MUSIG_REPLY_TO_PROPOSAL`, `P2P_MUSIG_ACCEPT_PROPOSAL`, `PASSPORT_CHALLENGE`, `PASSPORT_ASSERTION`, `DELEGATION_LINK_OFFER`, `DELEGATION_LINK_ANSWER`, `DELEGATION_LINK_REVEAL`, `DELEGATION_GRANT`, `DELEGATION_REVOKE`, `DELEGATION_REQUEST`, `DELEGATION_RESULT`, `DELEGATION_MAILBOX_FETCH`, `PASSPORT_CONNECT`, `PASSPORT_SESSION`, `PASSPORT_RESUME`, `PASSPORT_REFUSED` |
 | Raw bytes by design | 3 | `P2P_RELAY`, `P2P_PEER_ALIAS`, `P2P_CHAT_MESSAGE` |
 | JSON at the edge by design | 5 | `P2P_MESSAGE_RECEIPT`, `CHAT_MESSAGE`, `JSON_PATCH`, `GENERIC_MESSAGE`, `JSON_CALL` |
-| JSON, no schema yet | 7 | `P2P_INSTRUCTION`, `P2P_BASE_MESSAGE`, `P2P_STATE_COMMITTMENT`, `P2P_CHAIN_SYNC_REQUEST`, `P2P_FILE_SEND`, `P2P_SESSION_ACK`, `PASSPORT_SIGN_REQUEST` |
+| JSON, no schema yet | 5 | `P2P_INSTRUCTION`, `P2P_BASE_MESSAGE`, `P2P_STATE_COMMITTMENT`, `P2P_SESSION_ACK`, `PASSPORT_SIGN_REQUEST` |
 | Deprecated (decode only, counted) | 14 | `P2P_IDENT_REQUEST`, `SESSION_START`, `BLOCK_CANDIDATE`, `PEER_CANDIDATE`, `P2P_IDENT_RESPONSE`, `P2P_START_CHAIN`, `P2P_STATE_REQUEST`, `P2P_STATE_ROOT`, `P2P_STATE_CHANGE`, `P2P_TRANSACTION`, `P2P_CALL`, `P2P_GENERIC`, `LOG_MESSAGE`, `GENERIC_LIST` |
 | Lightning, reserved (no codec) | 20 | `LIGHTNING_INIT` … `LIGHTNING_PONG` (`0x2000`–`0x2013`) |
 
@@ -159,8 +163,8 @@ Within each group, rows are sorted by grade, then size.
 
 | Type | Class | Lines | Tests | Grade | Body schema | Implementation and weaknesses |
 |---|---|---:|---:|:-:|---|---|
-| `message.js` | `Message` ← Actor | 3221 | 80 | A | defines | Wire oracle: 93 opcodes, 44 with field schemas, keyed layouts, legacy JSON mapping. Constructor still `JSON.stringify`s plain objects and `fromVector` maps unknown names to `P2P_BASE_MESSAGE` without an error, so a mistyped name produces a JSON frame silently. |
-| `peer.js` | `Peer` ← Service | 8749 | 43 | B | mixed | 8.7k-line monolith (TCP, Noise, gossip, documents, inventory, HTLC, MuSig, onion). Drops JSON bodies of the 20 field-layout types. Still sends JSON for `P2P_FILE_SEND`, `GenericMessage` carriers and the inner `P2P_BASE_MESSAGE` envelope. 14 empty `catch` blocks. 20 `LIGHTNING_*` opcodes referenced, none decoded. |
+| `message.js` | `Message` ← Actor | 3221 | 80 | A | defines | Wire oracle: 95 opcodes, 48 with field schemas, keyed layouts, legacy JSON mapping. Constructor still `JSON.stringify`s plain objects and `fromVector` maps unknown names to `P2P_BASE_MESSAGE` without an error, so a mistyped name produces a JSON frame silently. |
+| `peer.js` | `Peer` ← Service | 8749 | 43 | B | mixed | 8.7k-line monolith (TCP, Noise, gossip, documents, inventory, HTLC, MuSig, onion). Drops JSON bodies of the 25 field-layout types. Still sends JSON for `GenericMessage` carriers and the inner `P2P_BASE_MESSAGE` envelope. 14 empty `catch` blocks. 20 `LIGHTNING_*` opcodes referenced, none decoded. |
 | `session.js` | `Session` ← Entity | 215 | 2 | C | n/a | Session lifecycle object; `TypedMessage`, encrypt/decrypt helpers. Superseded by Peer's Noise session + `P2P_SESSION_*` handshake; one test. |
 | `reader.js` | `Reader` ← EventEmitter | 142 | 1 | C | n/a | Marked `@deprecated`: byte-stream frame scanner kept for compatibility. Prefer Peer / Message ingest. |
 | `codec.js` | `Codec` | 75 | 1 | C | n/a | Small encode/decode wrapper; one test; not used by the wire path. |
@@ -268,11 +272,11 @@ Within each group, rows are sorted by grade, then size.
 
 | Type | Class | Lines | Tests | Grade | Body schema | Implementation and weaknesses |
 |---|---|---:|---:|:-:|---|---|
-| `document.js` | `Document` ← State | 1370 | 14 | A | mixed | Sealed blob tree, inclusion proofs; 14 tests. Blobs ride `P2P_FILE_SEND`, which has no schema yet (Phase 3 open question 4). |
+| `document.js` | `Document` ← State | 1370 | 14 | A | mixed | Sealed blob tree, inclusion proofs; 14 tests. Blobs ride `P2P_FILE_SEND` as raw bytes; the blob index it advertises is a JSON string inside inventory fields. |
 | `tree.js` | `Tree` ← Actor | 594 | 2 | A | n/a | Merkle tree with inclusion and non-inclusion proofs. |
 | `documentBook.js` | `DocumentBook` ← Book | 1714 | 14 | B | fields | Ranked offer book and provider telemetry; reads `P2P_DOCUMENT_BID/ASK`, `DOCUMENT_REQUEST`, inventory responses (all schema'd); inventory `items` stay one JSON field. |
 | `store.js` | `Store` ← Actor | 889 | 3 | B | n/a | LevelDB + encrypted settings; 16 empty methods. `_POST` failure path `console.log`s the key and value unconditionally (line ~405), which can leak stored secrets. |
-| `documentBlobTransferBook.js` | `DocumentBlobTransferBook` | 645 | 5 | B | JSON | Buyer-side `P2P_FILE_SEND` reassembly; that frame is still JSON + base64. |
+| `documentBlobTransferBook.js` | `DocumentBlobTransferBook` | 645 | 5 | B | fields (inbound) | Buyer-side `P2P_FILE_SEND` reassembly; the frame carries raw bytes, which the JSON mapping hands it as base64. |
 | `collection.js` | `Collection` ← Stack | 536 | 1 | B | n/a | 11 TODOs (`list()` should return an Array, no validation/signing of results); 8 empty methods. |
 | `filesystem.js` | `Filesystem` ← Actor | 488 | 1 | B | n/a (local) | 18 synchronous fs calls on the publish path; `COMMIT` is now a plain record (Phase 4). One test file. |
 | `logger.js` | `Logger` ← Actor | 117 | 1 | C | n/a | Append-to-file logger with sync fs. |
@@ -327,9 +331,9 @@ Within each group, rows are sorted by grade, then size.
 
 **Schema work after RC1**
 
-- Settle open question 4 and give `P2P_FILE_SEND` a layout: raw blob bytes
-  instead of base64 is the largest bandwidth win left.
-- Give `P2P_CHAIN_SYNC_REQUEST` and `PASSPORT_SIGN_REQUEST` keyed layouts.
+- Settle open question 4: whether raw-byte `P2P_FILE_SEND` frames reprice
+  documents.
+- Give `PASSPORT_SIGN_REQUEST` a keyed layout.
 - Plan inner field layouts for the `CONTRACT_MESSAGE` body types (channel,
   coinjoin, swap, federation first). Each needs a signing-string decision:
   keep signing canonical JSON rebuilt from the decoded fields, or sign the
