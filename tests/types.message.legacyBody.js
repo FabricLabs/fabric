@@ -579,8 +579,6 @@ describe('Message legacy bodies', function () {
       assert.deepStrictEqual(roundTrip('BitcoinTransaction', { content: 'ABC' }), { content: 'ABC' });
       assert.deepStrictEqual(roundTrip('BitcoinBlockHash', { content: HASH }), { content: HASH });
       assert.deepStrictEqual(roundTrip('BitcoinTransactionHash', { content: HASH }), { content: HASH });
-      const flush = { snapshotBlockHash: HASH, network: 'regtest', label: 'reset' };
-      assert.deepStrictEqual(roundTrip('P2P_FLUSH_CHAIN', flush), flush);
     });
 
     it('stores raw block and transaction bytes, not hex text', function () {
@@ -632,7 +630,7 @@ describe('Message legacy bodies', function () {
 
     it('types without a layout keep JSON bodies', function () {
       const receiver = new Peer(offlinePeerSettings());
-      receiver._handleFabricMessage(jsonFrame('P2P_CHAIN_SYNC_REQUEST', { tip: 'ab' }).toBuffer(), { name: 'a' });
+      receiver._handleFabricMessage(jsonFrame('GenericMessage', { type: 'Example', object: {} }).toBuffer(), { name: 'a' });
       assert.deepStrictEqual(receiver.jsonBodyCounts(), {});
     });
 

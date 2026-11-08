@@ -23,8 +23,8 @@ Read **[VISION.md](VISION.md)** first for what Fabric is building, how **`@fabri
 ## Quick Start
 See also [`QUICKSTART.md`][quickstart-guide] for up-to-date instructions.
 
-0. `nvm use 26.12.1` (install [`nvm`][nvm-official] if needed; matches `.nvmrc` / `package.json` engines)
-0b. Ensure **npm 12+** (`npm -v`). Node 26.12.1 ships npm 11.x — upgrade with `npm install -g npm@12` (or newer) before installing. **`@fabric/core` keeps npm’s default `allow-git=none`** (no git deps). Only downstream packages that install Fabric from GitHub (Hub / `@fabric/http` / app peers) should set **`.npmrc` `allow-git=all`** for nested commit-SHA fetches — do not add that opt-in here.
+0. `nvm use 26.13.0` (install [`nvm`][nvm-official] if needed; matches `.nvmrc` / `package.json` engines)
+0b. Ensure **npm 12+** (`npm -v`). Node 26.13.0 ships npm 11.x — upgrade with `npm install -g npm@12` (or newer) before installing. **`@fabric/core` keeps npm’s default `allow-git=none`** (no git deps). Only downstream packages that install Fabric from GitHub (Hub / `@fabric/http` / app peers) should set **`.npmrc` `allow-git=all`** for nested commit-SHA fetches — do not add that opt-in here.
 1. From a clone of this repo: `npm install` (or `npm install -g @fabric/core` to put `fabric` on your `PATH`).
 2. (optional) `fabric setup` to view / generate / backup / restore the local master key (`~/.fabric/wallet.json` is password-sealed JSON by default; TTY opens a lightweight TUI with unlock / lock / idle timeout)
 3. (optional) `fabric keygen` to generate a new master key without saving to disk (ephemeral)
@@ -44,7 +44,7 @@ Working from a **git checkout** (not the global package) is best when you are ch
 | `assets/` | **Generated** browser bundles; rebuild with `npm run build` after type changes. |
 
 ## Development workflow
-- **Node:** engines field in `package.json` is authoritative (currently Node 26.12.1).
+- **Node:** engines field in `package.json` is authoritative (currently Node 26.13.0).
 - **Unit tests:** `npm test` — runs Mocha recursively under `tests/`.
 - **Lint:** `npm run lint` / `npm run lint:fix` (Semistandard).
 - **API reference:** `npm run make:api` writes `API.md` from JSDoc (see `scripts/list-jsdoc-type-files.js` for which `types/*.js` files are included).
@@ -62,7 +62,7 @@ Use this repo as a **library** or run the **`fabric`** CLI in environments you c
 
 | Step | Where |
 |------|--------|
-| Node **26.12.1** (see `.nvmrc`), `npm ci`, **`npm run ci`** | [`docs/PRODUCTION.md`](docs/PRODUCTION.md) |
+| Node **26.13.0** (see `.nvmrc`), `npm ci`, **`npm run ci`** | [`docs/PRODUCTION.md`](docs/PRODUCTION.md) |
 | Public leaf API + scoped RC claim | [`PUBLIC_API.md`](PUBLIC_API.md) |
 | Completion / privacy / security matrix | [`docs/PRODUCTION.md`](docs/PRODUCTION.md), [`PRIVACY.md`](PRIVACY.md), [`SECURITY.md`](SECURITY.md), [`AUDIT.md`](AUDIT.md) |
 | Version tag, changelog, Hub & fabric-http bumps | [`docs/PRODUCTION.md`](docs/PRODUCTION.md) (§ Release checklist) |
@@ -327,8 +327,8 @@ Other **`Store`** subclasses add domain behavior — for example **`Datastore`**
 ### Moving `functions/` into Types
 Core's `functions/` helpers are folding into the Types that own them. The rules:
 
-- **Code moves to the Type**, as statics or a static namespace (`Witness.MuSig2`). A large implementation may live in a module beside the Type (`types/key/bip32.js`, like `types/bitcoin/`), exposed only through the Type.
-- **`functions/<name>.js` becomes a shim** that re-exports from the Type (pattern: `functions/messageBodyCodec.js`), plus a `.d.ts` shim where one exists today.
+- **The Type exposes the helper**, as statics or a static namespace (`Witness.MuSig2`). A helper that already has a `functions/<name>.js` module keeps its code there and the Type requires it (`Key.BIP32` is `functions/bip32`); a new implementation may live in a module beside the Type (`types/wallet/bip86.js`, like `types/bitcoin/`). One module per helper, never a copy plus a re-export.
+- **Code that moved into a Type file** leaves `functions/<name>.js` as a shim that re-exports from the Type (pattern: `functions/messageBodyCodec.js`), plus a `.d.ts` shim where one exists today.
 - **Every path keeps working.** `./functions/*` is exported as a wildcard, so every path is public. The paths frozen in [PUBLIC_API.md](PUBLIC_API.md) stay frozen, and shims stay for at least the 0.1 line.
 - **Unreleased helpers move without a shim.** A `functions/` module added since the last published release has no installed users, so it moves into its Type and the old path is deleted (as `functions/delegation` was).
 - **`Peer` is already over 8,000 lines.** Peer-bound helpers go to smaller homes where they fit (`Message`, `Session`); the rest become `Peer` statics backed by modules in `types/peer/`.

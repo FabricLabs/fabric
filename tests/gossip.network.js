@@ -59,7 +59,7 @@ describe('@fabric/core gossip network catalog', function () {
     assert.strictEqual(classifyGossipWireType('DocumentRequest'), 'flood');
     assert.strictEqual(classifyGossipWireType('ContractProposal'), 'flood');
     assert.strictEqual(classifyGossipWireType('INVENTORY_REQUEST'), 'opt-in');
-    assert.strictEqual(classifyGossipWireType('FlushChain'), 'trusted');
+    assert.strictEqual(classifyGossipWireType('FlushChain'), 'unknown');
     assert.strictEqual(classifyGossipWireType('MusigStart'), 'directed');
     assert.strictEqual(classifyGossipWireType('not-a-type'), 'unknown');
   });

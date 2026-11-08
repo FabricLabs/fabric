@@ -316,7 +316,8 @@ Code: `functions/passport` (`createConnect`, `createPeerChallenge`,
 
 ### Delegated peer sign-ins
 A `DELEGATION_REQUEST` may embed a v3 challenge. It must carry the requester's
-`sessionKey`, and `origin` is optional. The delegate's assertion names that
+`sessionKey` and the `clientNonce` the requester sent the peer (which the
+challenge echoes), and `origin` is optional. The delegate's assertion names that
 session key, so the session belongs to the requester, not to the delegate. A
 grant may list `peers` (compressed pubkeys) to limit `passport` scope to those
 peers; a grant that lists `peers` covers no v2 site sign-ins. A grant's

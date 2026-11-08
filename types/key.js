@@ -121,22 +121,22 @@ function secpPointToRawBytes (point, compressed = true) {
   throw new Error('Unsupported secp256k1 Point API');
 }
 
-const base58 = require('./key/base58');
+const base58 = require('../functions/base58');
 const { encodeCheck, decodeCheck } = base58;
-const bip39 = require('./key/bip39');
-const keyMaterial = require('./key/fabricKeyMaterial');
+const bip39 = require('../functions/bip39');
+const keyMaterial = require('../functions/fabricKeyMaterial');
 const { parseRawSeedHex, classifyFabricKeyMaterial } = keyMaterial;
-const bip32Module = require('./key/bip32');
+const bip32Module = require('../functions/bip32');
 const BIP32 = bip32Module.default;
 const BIP32_DEFAULT_NETWORK = bip32Module.DEFAULT_NETWORK;
-const bip49 = require('./key/bip49');
-const bip85 = require('./key/bip85');
-const pubkeyHelpers = require('./key/pubkey');
-const keyHasPrivateSigningMaterial = require('./key/keyHasPrivateSigningMaterial');
-const SIGNING_TAGS = require('./key/signingTags');
+const bip49 = require('../functions/bip49');
+const bip85 = require('../functions/bip85');
+const pubkeyHelpers = require('../functions/pubkey');
+const keyHasPrivateSigningMaterial = require('../functions/keyHasPrivateSigningMaterial');
+const SIGNING_TAGS = require('../functions/signingTags');
 const { payments } = require('bitcoinjs-lib');
 const { p2shP2wpkhPayment } = bip49;
-const { encodeSegwitAddress } = require('./bech32/bech32');
+const { encodeSegwitAddress } = require('../functions/bech32');
 
 // Fabric Dependencies
 const Actor = require('./actor');

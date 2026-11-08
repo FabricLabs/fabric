@@ -683,13 +683,22 @@ still fit one <code>CONTRACT_MESSAGE</code> under <code>MAX_MESSAGE_SIZE</code> 
 <dd><p>BIP65: lock values at or above this are unix times, not heights.</p>
 </dd>
 <dt><a href="#DEPRECATED_WIRE_TYPES">DEPRECATED_WIRE_TYPES</a></dt>
-<dd><p>Registered opcodes nothing sends or handles (docs/MESSAGE_BODY_MIGRATION.md
+<dd><p>Registered opcodes nothing sends or handles (docs/MESSAGE_BODY.md, Migration
 Phase 4). They still decode; Peer counts and warns when one arrives, and a
 later protocol version removes them. <code>P2P_BASE_MESSAGE</code> and
 <code>P2P_CHAIN_SYNC_REQUEST</code> are still in use and are not listed.</p>
 </dd>
+<dt><a href="#SEALED_DELIVERY_INNER_TYPE_BY_WIRE">SEALED_DELIVERY_INNER_TYPE_BY_WIRE</a></dt>
+<dd><p>Sealed document delivery wire type → the inner <code>type</code> its generic handler dispatches on.</p>
+</dd>
+<dt><a href="#SEALED_DELIVERY_INNER_TYPES">SEALED_DELIVERY_INNER_TYPES</a></dt>
+<dd><p>Those inner types: refused inside a <code>GenericMessage</code> / <code>P2P_BASE_MESSAGE</code> carrier.</p>
+</dd>
 <dt><a href="#FIELD_BODIES_VERSION">FIELD_BODIES_VERSION</a></dt>
 <dd><p>Session-advertised level of field-body support (<code>object.fieldBodies</code>).</p>
+</dd>
+<dt><a href="#PEER_SEALED_BLOB_FUNDED_RETENTION_MS">PEER_SEALED_BLOB_FUNDED_RETENTION_MS</a></dt>
+<dd><p>Default time a funded sealed-blob quote keeps its secret while its HTLC settles.</p>
 </dd>
 <dt><a href="#TAPROOT_INTERNAL_NUMS">TAPROOT_INTERNAL_NUMS</a></dt>
 <dd><p>BIP341-style NUMS x-only internal key (script-path spend only).</p>
@@ -738,8 +747,38 @@ invoice, at the default block time.</p>
 <dt><a href="#SIGNER_FIELD">SIGNER_FIELD</a></dt>
 <dd><p>Which field carries each body&#39;s author key.</p>
 </dd>
+<dt><a href="#ZMQ_TOPIC_CASES">ZMQ_TOPIC_CASES</a></dt>
+<dd><p>bitcoind ZMQ topic → <code>_handleZMQMessage</code> case.</p>
+</dd>
+<dt><a href="#ZMQ_TXID_MEMORY">ZMQ_TXID_MEMORY</a></dt>
+<dd><p>Max txids kept for <code>rawtx</code> / <code>hashtx</code> pair dedupe.</p>
+</dd>
+<dt><a href="#ZMQ_TX_DEDUPE_MS">ZMQ_TX_DEDUPE_MS</a></dt>
+<dd><p>Default window in which a <code>rawtx</code> / <code>hashtx</code> pair counts as one admission.</p>
+</dd>
+<dt><a href="#ZMQ_TX_TOPICS">ZMQ_TX_TOPICS</a></dt>
+<dd><p>Per-transaction topics, paused during initial block download.</p>
+</dd>
+<dt><a href="#ZMQ_IBD_POLL_MS">ZMQ_IBD_POLL_MS</a></dt>
+<dd><p>Default interval between initial-block-download checks while it lasts.</p>
+</dd>
+<dt><a href="#ZMQ_HASHTX_GRACE_MS">ZMQ_HASHTX_GRACE_MS</a></dt>
+<dd><p>Default wait for a <code>rawtx</code> before a lone <code>hashtx</code> is fetched over RPC.</p>
+</dd>
+<dt><a href="#BALANCE_REFRESH_MS">BALANCE_REFRESH_MS</a></dt>
+<dd><p>Default minimum interval between wallet balance reads driven by <code>rawtx</code>.</p>
+</dd>
+<dt><a href="#RPC_MAX_SOCKETS">RPC_MAX_SOCKETS</a></dt>
+<dd><p>Default cap on concurrent RPC connections to bitcoind.</p>
+</dd>
 <dt><del><a href="#Text">Text</a></del></dt>
 <dd></dd>
+<dt><a href="#ZMQ_MESSAGE_TYPES">ZMQ_MESSAGE_TYPES</a></dt>
+<dd><p>bitcoind topic → message type for the field-encoded form.</p>
+</dd>
+<dt><a href="#ZMQ_MAX_FIELD_HEX">ZMQ_MAX_FIELD_HEX</a></dt>
+<dd><p>Hex characters that fit a field body beside its <code>present</code> / <code>extra</code> fields.</p>
+</dd>
 </dl>
 
 ## Functions
@@ -1106,6 +1145,10 @@ named by <code>signerField</code> over <a href="#signingString">signingString</a
 <dt><a href="#routePath">routePath()</a></dt>
 <dd><p><code>path</code> as an absolute JSON Pointer path.</p>
 </dd>
+<dt><a href="#isArrayIndex">isArrayIndex()</a></dt>
+<dd><p>Under an array only an element index is a child: <code>length</code> or a name would
+persist to Level and then fail (or truncate) in memory.</p>
+</dd>
 <dt><a href="#normalizeOrder">normalizeOrder(input)</a> ⇒ <code>Object</code></dt>
 <dd></dd>
 <dt><a href="#normalizeCancel">normalizeCancel(input)</a> ⇒ <code>Object</code></dt>
@@ -1314,8 +1357,10 @@ Events: `request` `{ hash, read, notification }`, `result` `{ hash, request, rea
     * [~DELEGATION_REQUEST_TTL_MS](#module_types/delegation..DELEGATION_REQUEST_TTL_MS)
     * [~DELEGATION_CLOCK_SKEW_MS](#module_types/delegation..DELEGATION_CLOCK_SKEW_MS)
     * [~DELEGATION_MAX_LABEL](#module_types/delegation..DELEGATION_MAX_LABEL)
+    * [~MAILBOX_FETCH_PURPOSES](#module_types/delegation..MAILBOX_FETCH_PURPOSES)
     * [~FEDERATION_REQUEST_TYPES](#module_types/delegation..FEDERATION_REQUEST_TYPES)
     * [~MESSAGE_SCOPE_TYPES](#module_types/delegation..MESSAGE_SCOPE_TYPES)
+    * [~GENERIC_PROTOCOL_BODY_TYPES](#module_types/delegation..GENERIC_PROTOCOL_BODY_TYPES)
     * [~frameHash(frame)](#module_types/delegation..frameHash) ⇒ <code>string</code>
     * [~xOnly(pubkey)](#module_types/delegation..xOnly) ⇒ <code>string</code> \| <code>null</code>
     * [~cleanLabel(label, [max])](#module_types/delegation..cleanLabel) ⇒ <code>string</code>
@@ -1341,14 +1386,14 @@ Events: `request` `{ hash, read, notification }`, `result` `{ hash, request, rea
     * [~authorize(read, grants, [options])](#module_types/delegation..authorize) ⇒ <code>Object</code> \| <code>Object</code>
     * [~createResult(params, key)](#module_types/delegation..createResult) ⇒ <code>Object</code>
     * [~readResult(input, [options])](#module_types/delegation..readResult) ⇒ <code>Object</code> \| <code>Object</code>
-    * [~createMailboxFetch([params], key)](#module_types/delegation..createMailboxFetch) ⇒ <code>Object</code>
-    * [~readMailboxFetch(input, [options])](#module_types/delegation..readMailboxFetch) ⇒ <code>Object</code> \| <code>Object</code>
+    * [~createMailboxFetch(params, key)](#module_types/delegation..createMailboxFetch) ⇒ <code>Object</code>
+    * [~readMailboxFetch(input, options)](#module_types/delegation..readMailboxFetch) ⇒ <code>Object</code> \| <code>Object</code>
     * [~mailboxAddress(input, [hints])](#module_types/delegation..mailboxAddress) ⇒ <code>Object</code> \| <code>Object</code>
     * [~identityPeers(self, grants, [revoked])](#module_types/delegation..identityPeers) ⇒ <code>Array.&lt;string&gt;</code>
     * [~notificationFor(read, [context])](#module_types/delegation..notificationFor) ⇒ <code>Object</code>
     * [~answerPassport(read, params, key)](#module_types/delegation..answerPassport) ⇒ <code>Object</code>
     * [~answerMessage(read, key)](#module_types/delegation..answerMessage) ⇒ [<code>Message</code>](#Message)
-    * [~answerError(read, answer)](#module_types/delegation..answerError) ⇒ <code>string</code> \| <code>null</code>
+    * [~answerError(read, answer, [options])](#module_types/delegation..answerError) ⇒ <code>string</code> \| <code>null</code>
     * [~delegationType(input)](#module_types/delegation..delegationType) ⇒ <code>string</code> \| <code>null</code>
 
 <a name="module_types/delegation..Delegation"></a>
@@ -1845,7 +1890,9 @@ Every frame this participant sent or received, oldest first, as
 <a name="module_types/delegation..DELEGATION_VERSION"></a>
 
 ### types/delegation~DELEGATION\_VERSION
-Protocol version carried in every frame.
+Protocol version carried in every frame. Restrictions (a grant's `peers`,
+a request's `sessionKey` and `clientNonce`) are required fields, empty when
+unused, never optional trailing fields a reader could skip.
 
 **Kind**: inner constant of [<code>types/delegation</code>](#module_types/delegation)  
 <a name="module_types/delegation..DELEGATION_SCOPES"></a>
@@ -1878,6 +1925,13 @@ Allowed clock difference between participants.
 Longest label or purpose text.
 
 **Kind**: inner constant of [<code>types/delegation</code>](#module_types/delegation)  
+<a name="module_types/delegation..MAILBOX_FETCH_PURPOSES"></a>
+
+### types/delegation~MAILBOX\_FETCH\_PURPOSES
+Uses a mailbox read proof is signed for: reading delegation mail, cancelling
+a pairing on a rendezvous, reading a Hub's federation mailbox.
+
+**Kind**: inner constant of [<code>types/delegation</code>](#module_types/delegation)  
 <a name="module_types/delegation..FEDERATION_REQUEST_TYPES"></a>
 
 ### types/delegation~FEDERATION\_REQUEST\_TYPES
@@ -1888,6 +1942,14 @@ Federation message types a delegate may be asked to answer.
 
 ### types/delegation~MESSAGE\_SCOPE\_TYPES
 Frame types a `message` grant lets the grantee have signed (never protocol frames).
+
+**Kind**: inner constant of [<code>types/delegation</code>](#module_types/delegation)  
+<a name="module_types/delegation..GENERIC_PROTOCOL_BODY_TYPES"></a>
+
+### types/delegation~GENERIC\_PROTOCOL\_BODY\_TYPES
+GENERIC_MESSAGE body types Peer (`Peer#_handleGenericMessage`) or a Fabric
+app acts on as protocol. A `message` grant never gets the user's signature
+on one of these, nor on any body named like a registered wire type.
 
 **Kind**: inner constant of [<code>types/delegation</code>](#module_types/delegation)  
 <a name="module_types/delegation..frameHash"></a>
@@ -2179,6 +2241,7 @@ Ask `target` to sign one frame, under the grant it made to this key.
 | params.request | <code>string</code> \| <code>Buffer</code> \| [<code>Message</code>](#Message) |  | The frame to sign. |
 | [params.origin] | <code>string</code> |  | The origin this participant saw (Passport   challenges; for a v3 peer challenge, the page that asked, when there is one). |
 | [params.sessionKey] | <code>string</code> |  | v3 peer challenges: the session key the   target's assertion names (this participant holds its private key). |
+| [params.clientNonce] | <code>string</code> |  | v3 peer challenges: the `clientNonce`   this participant sent the peer; the challenge must echo it. |
 | [params.account] | <code>number</code> | <code>0</code> | Account index the target signs with. |
 | [params.disclose] | <code>Array.&lt;string&gt;</code> |  | What the user agreed to share (Passport challenges). |
 | [params.purpose] | <code>string</code> |  | Short text shown to the target's user. |
@@ -2248,14 +2311,16 @@ whether it answers the request is the requester's check.
 
 <a name="module_types/delegation..createMailboxFetch"></a>
 
-### types/delegation~createMailboxFetch([params], key) ⇒ <code>Object</code>
-Prove this key may read its mailbox.
+### types/delegation~createMailboxFetch(params, key) ⇒ <code>Object</code>
+Prove this key may read its mailbox on one Hub, for one use.
 
 **Kind**: inner method of [<code>types/delegation</code>](#module_types/delegation)  
 
 | Param | Type | Description |
 | --- | --- | --- |
-| [params] | <code>Object</code> |  |
+| params | <code>Object</code> |  |
+| params.origin | <code>string</code> | Origin of the Hub the proof is sent to. |
+| params.purpose | <code>string</code> | One of `MAILBOX_FETCH_PURPOSES` (or another lowercase name a server checks). |
 | [params.since] | <code>number</code> | Mailbox sequence to read after. |
 | [params.ttlMs] | <code>number</code> |  |
 | [params.now] | <code>number</code> |  |
@@ -2263,15 +2328,22 @@ Prove this key may read its mailbox.
 
 <a name="module_types/delegation..readMailboxFetch"></a>
 
-### types/delegation~readMailboxFetch(input, [options]) ⇒ <code>Object</code> \| <code>Object</code>
-Read a `DELEGATION_MAILBOX_FETCH`. Spending the nonce once is the mailbox's job.
+### types/delegation~readMailboxFetch(input, options) ⇒ <code>Object</code> \| <code>Object</code>
+Read a `DELEGATION_MAILBOX_FETCH` for this server. The caller names the
+origins it answers on and the use it is checking; a proof for another Hub
+or another use is refused, and so is any read that names neither, so a
+proof can never be replayed elsewhere. Spending the nonce once is the
+mailbox's job, after this check.
 
 **Kind**: inner method of [<code>types/delegation</code>](#module_types/delegation)  
 
-| Param | Type |
-| --- | --- |
-| input | <code>string</code> \| <code>Buffer</code> \| [<code>Message</code>](#Message) | 
-| [options] | <code>Object</code> | 
+| Param | Type | Description |
+| --- | --- | --- |
+| input | <code>string</code> \| <code>Buffer</code> \| [<code>Message</code>](#Message) |  |
+| options | <code>Object</code> |  |
+| options.origin | <code>string</code> \| <code>Array.&lt;string&gt;</code> | This server's origin, or the list it answers on. |
+| options.purpose | <code>string</code> | The use being checked (`MAILBOX_FETCH_PURPOSES`). |
+| [options.now] | <code>number</code> |  |
 
 <a name="module_types/delegation..mailboxAddress"></a>
 
@@ -2347,7 +2419,7 @@ Sign a `message`-scope request's frame as this key.
 
 <a name="module_types/delegation..answerError"></a>
 
-### types/delegation~answerError(read, answer) ⇒ <code>string</code> \| <code>null</code>
+### types/delegation~answerError(read, answer, [options]) ⇒ <code>string</code> \| <code>null</code>
 Why an answer frame does not answer a request, or null when it does: a
 Passport assertion over the request's challenge and origin, the request's
 own message signed, or a federation reply for the same federation.
@@ -2358,6 +2430,8 @@ own message signed, or a federation reply for the same federation.
 | --- | --- | --- |
 | read | <code>Object</code> | An `ok` [readRequest](readRequest) result. |
 | answer | <code>string</code> \| <code>Buffer</code> \| [<code>Message</code>](#Message) | The answer frame. |
+| [options] | <code>Object</code> |  |
+| [options.now] | <code>number</code> | Check the assertion window at this time (default: when it was signed). |
 
 <a name="module_types/delegation..delegationType"></a>
 
@@ -3438,7 +3512,7 @@ Register a single opcode entry in the service registry.
 
 | Param | Type | Description |
 | --- | --- | --- |
-| name | <code>string</code> | Opcode symbol (e.g. `OP_SHA256`, `P2P_FLUSH_CHAIN`) |
+| name | <code>string</code> | Opcode symbol (e.g. `OP_SHA256`, `P2P_CHAIN_SYNC_REQUEST`) |
 | [definition] | <code>Object</code> |  |
 
 <a name="Service+defineBitcoinOpcode"></a>
@@ -3470,7 +3544,7 @@ Register Fabric opcode metadata.
 ### bond.defineOpcodeContract(name, body, [meta]) ⇒ <code>Object</code>
 Register a newline-delimited opcode contract.
 Contract body example:
-`OP_DUP\nOP_HASH160\nP2P_FLUSH_CHAIN`
+`OP_DUP\nOP_HASH160\nP2P_CHAIN_SYNC_REQUEST`
 
 **Kind**: instance method of [<code>Bond</code>](#Bond)  
 
@@ -8405,7 +8479,7 @@ Register a single opcode entry in the service registry.
 
 | Param | Type | Description |
 | --- | --- | --- |
-| name | <code>string</code> | Opcode symbol (e.g. `OP_SHA256`, `P2P_FLUSH_CHAIN`) |
+| name | <code>string</code> | Opcode symbol (e.g. `OP_SHA256`, `P2P_CHAIN_SYNC_REQUEST`) |
 | [definition] | <code>Object</code> |  |
 
 <a name="Service+defineBitcoinOpcode"></a>
@@ -8437,7 +8511,7 @@ Register Fabric opcode metadata.
 ### contract.defineOpcodeContract(name, body, [meta]) ⇒ <code>Object</code>
 Register a newline-delimited opcode contract.
 Contract body example:
-`OP_DUP\nOP_HASH160\nP2P_FLUSH_CHAIN`
+`OP_DUP\nOP_HASH160\nP2P_CHAIN_SYNC_REQUEST`
 
 **Kind**: instance method of [<code>Contract</code>](#Contract)  
 
@@ -10624,7 +10698,7 @@ Register a single opcode entry in the service registry.
 
 | Param | Type | Description |
 | --- | --- | --- |
-| name | <code>string</code> | Opcode symbol (e.g. `OP_SHA256`, `P2P_FLUSH_CHAIN`) |
+| name | <code>string</code> | Opcode symbol (e.g. `OP_SHA256`, `P2P_CHAIN_SYNC_REQUEST`) |
 | [definition] | <code>Object</code> |  |
 
 <a name="Service+defineBitcoinOpcode"></a>
@@ -10656,7 +10730,7 @@ Register Fabric opcode metadata.
 ### fabric.defineOpcodeContract(name, body, [meta]) ⇒ <code>Object</code>
 Register a newline-delimited opcode contract.
 Contract body example:
-`OP_DUP\nOP_HASH160\nP2P_FLUSH_CHAIN`
+`OP_DUP\nOP_HASH160\nP2P_CHAIN_SYNC_REQUEST`
 
 **Kind**: instance method of [<code>Fabric</code>](#Fabric)  
 
@@ -11125,7 +11199,7 @@ Register a single opcode entry in the service registry.
 
 | Param | Type | Description |
 | --- | --- | --- |
-| name | <code>string</code> | Opcode symbol (e.g. `OP_SHA256`, `P2P_FLUSH_CHAIN`) |
+| name | <code>string</code> | Opcode symbol (e.g. `OP_SHA256`, `P2P_CHAIN_SYNC_REQUEST`) |
 | [definition] | <code>Object</code> |  |
 
 <a name="Service+defineBitcoinOpcode"></a>
@@ -11157,7 +11231,7 @@ Register Fabric opcode metadata.
 ### fabric.defineOpcodeContract(name, body, [meta]) ⇒ <code>Object</code>
 Register a newline-delimited opcode contract.
 Contract body example:
-`OP_DUP\nOP_HASH160\nP2P_FLUSH_CHAIN`
+`OP_DUP\nOP_HASH160\nP2P_CHAIN_SYNC_REQUEST`
 
 **Kind**: instance method of [<code>Fabric</code>](#Fabric)  
 
@@ -14801,6 +14875,7 @@ JSON bridging is <strong>@fabric/http</strong>. See <code>docs/MESSAGE_BODY.md</
         * [._readObject(input)](#Actor+_readObject) ⇒ <code>Object</code>
     * _static_
         * [.fromFields(type, [fields], [opts])](#Message.fromFields) ⇒ [<code>Message</code>](#Message)
+        * [.isRegisteredType(type)](#Message.isRegisteredType) ⇒ <code>boolean</code>
 
 <a name="new_Message_new"></a>
 
@@ -15109,6 +15184,17 @@ Build a Message whose body is encoded from a registered field schema (V1).
 | type | <code>string</code> \| <code>number</code> |  | Wire or friendly type name (or opcode). |
 | [fields] | <code>object</code> | <code>{}</code> | Named fields matching the schema. |
 | [opts] | <code>object</code> | <code>{}</code> | Extra Message constructor options (`signer`, `sensitive`, …). |
+
+<a name="Message.isRegisteredType"></a>
+
+### Message.isRegisteredType(type) ⇒ <code>boolean</code>
+Whether `type` is a registered wire name, friendly alias, or opcode.
+
+**Kind**: static method of [<code>Message</code>](#Message)  
+
+| Param | Type |
+| --- | --- |
+| type | <code>string</code> \| <code>number</code> | 
 
 <a name="Message"></a>
 
@@ -15149,6 +15235,7 @@ Build a Message whose body is encoded from a registered field schema (V1).
         * [._readObject(input)](#Actor+_readObject) ⇒ <code>Object</code>
     * _static_
         * [.fromFields(type, [fields], [opts])](#Message.fromFields) ⇒ [<code>Message</code>](#Message)
+        * [.isRegisteredType(type)](#Message.isRegisteredType) ⇒ <code>boolean</code>
 
 <a name="new_Message_new"></a>
 
@@ -15457,6 +15544,17 @@ Build a Message whose body is encoded from a registered field schema (V1).
 | type | <code>string</code> \| <code>number</code> |  | Wire or friendly type name (or opcode). |
 | [fields] | <code>object</code> | <code>{}</code> | Named fields matching the schema. |
 | [opts] | <code>object</code> | <code>{}</code> | Extra Message constructor options (`signer`, `sensitive`, …). |
+
+<a name="Message.isRegisteredType"></a>
+
+### Message.isRegisteredType(type) ⇒ <code>boolean</code>
+Whether `type` is a registered wire name, friendly alias, or opcode.
+
+**Kind**: static method of [<code>Message</code>](#Message)  
+
+| Param | Type |
+| --- | --- |
+| type | <code>string</code> \| <code>number</code> | 
 
 <a name="OrderBook"></a>
 
@@ -15583,7 +15681,6 @@ see [Message](#Message) wire vs friendly names and <code>constants</code> opcode
     * [._documentBids](#Peer+_documentBids)
     * [._documentBidRoutes](#Peer+_documentBidRoutes)
     * [._documentBidRelayRate](#Peer+_documentBidRelayRate)
-    * [._inboundNoiseStaticPubkeyByAddress](#Peer+_inboundNoiseStaticPubkeyByAddress)
     * [.messages](#Peer+messages)
     * [._wireReplayFilter](#Peer+_wireReplayFilter)
     * [._logicalRegisterOnce](#Peer+_logicalRegisterOnce) : <code>Map.&lt;string, {type: string, signer: (string\|null), at: number}&gt;</code>
@@ -15633,15 +15730,10 @@ see [Message](#Message) wire vs friendly names and <code>constants</code> opcode
     * [.sendOnion(path, payload)](#Peer+sendOnion) ⇒ <code>boolean</code>
     * [.startMusig2([opts])](#Peer+startMusig2) ⇒ <code>object</code> \| <code>null</code>
     * [.getMusig2Session(sessionId)](#Peer+getMusig2Session) ⇒ <code>object</code> \| <code>null</code>
-    * [.relayFromTrustedPeers(origin, message, [minScoreExclusive])](#Peer+relayFromTrustedPeers)
-    * [._registryScoreForConnectionAddress(connAddress)](#Peer+_registryScoreForConnectionAddress) ⇒ <code>number</code>
-    * [._registryScoreForFlushChainSender(connAddress, senderPubkeyHex)](#Peer+_registryScoreForFlushChainSender) ⇒ <code>number</code>
-    * [.sendFlushChainToTrustedPeers(object)](#Peer+sendFlushChainToTrustedPeers) ⇒ <code>number</code>
     * [._connect(target)](#Peer+_connect)
     * [._announceAlias(alias, [origin], [_socket])](#Peer+_announceAlias)
     * [._loadPeerRegistry()](#Peer+_loadPeerRegistry) ⇒ <code>Promise.&lt;void&gt;</code>
     * [._savePeerRegistry()](#Peer+_savePeerRegistry)
-    * [._flushChainSenderPubkeyHex()](#Peer+_flushChainSenderPubkeyHex)
     * [._upsertPeerRegistry(address, [updates])](#Peer+_upsertPeerRegistry)
     * [._fillPeerSlots()](#Peer+_fillPeerSlots) ⇒ [<code>Peer</code>](#Peer)
     * [.jsonBodyCounts()](#Peer+jsonBodyCounts) ⇒ <code>Object.&lt;string, number&gt;</code>
@@ -15665,6 +15757,7 @@ see [Message](#Message) wire vs friendly names and <code>constants</code> opcode
     * [.sealedBlobPreimageForPaymentHash(paymentHashHex, [htlc])](#Peer+sealedBlobPreimageForPaymentHash) ⇒ <code>Object</code> \| <code>null</code>
     * [.quoteSealedBlob(opts)](#Peer+quoteSealedBlob) ⇒ <code>Object</code>
     * [.quoteSealedBatch(opts)](#Peer+quoteSealedBatch) ⇒ <code>Object</code>
+    * [.settleSealedBlobQuote(paymentHashHex)](#Peer+settleSealedBlobQuote) ⇒ <code>boolean</code>
     * [._getSealedBlobDocument(documentId)](#Peer+_getSealedBlobDocument) ⇒ [<code>Document</code>](#Document) \| <code>null</code>
     * [.getDocumentBuffer(documentId)](#Peer+getDocumentBuffer) ⇒ <code>Buffer</code> \| <code>null</code>
     * [._sendP2pFileSendToPeer(documentId, peerAddress, [opts])](#Peer+_sendP2pFileSendToPeer) ⇒ <code>boolean</code>
@@ -15878,12 +15971,6 @@ Bids relayed here: bid id → `{ bid, prevHop, asks }` (the only route state; ne
 
 ### peer.\_documentBidRelayRate
 `host:port` → `{ windowStart, count }` for bids flooded onward.
-
-**Kind**: instance property of [<code>Peer</code>](#Peer)  
-<a name="Peer+_inboundNoiseStaticPubkeyByAddress"></a>
-
-### peer.\_inboundNoiseStaticPubkeyByAddress
-Inbound address -> NOISE static pubkey hex (FLUSH_CHAIN allowlist only; never for AMP verify).
 
 **Kind**: instance property of [<code>Peer</code>](#Peer)  
 <a name="Peer+messages"></a>
@@ -16346,67 +16433,6 @@ Public MuSig2 session snapshot (no secret nonce).
 | --- | --- |
 | sessionId | <code>Buffer</code> \| <code>string</code> | 
 
-<a name="Peer+relayFromTrustedPeers"></a>
-
-### peer.relayFromTrustedPeers(origin, message, [minScoreExclusive])
-Relay an AMP message only to connected peers whose persistent registry score is strictly greater than
-[Peer#settings.flushChainMinTrustedScore](Peer#settings.flushChainMinTrustedScore) (default 800). Used for `P2P_FLUSH_CHAIN`.
-
-**Kind**: instance method of [<code>Peer</code>](#Peer)  
-
-| Param | Type | Default | Description |
-| --- | --- | --- | --- |
-| origin | <code>string</code> \| <code>null</code> |  | Connection key to skip (inbound sender), or null when originating locally. |
-| message | [<code>Message</code>](#Message) \| <code>Buffer</code> |  |  |
-| [minScoreExclusive] | <code>number</code> | <code></code> | Override trust threshold (relay if peer score &gt; this value). |
-
-<a name="Peer+_registryScoreForConnectionAddress"></a>
-
-### peer.\_registryScoreForConnectionAddress(connAddress) ⇒ <code>number</code>
-Best-effort registry score for a live connection key (`host:port`), using mapped Fabric id when known.
-
-**Kind**: instance method of [<code>Peer</code>](#Peer)  
-
-| Param | Type |
-| --- | --- |
-| connAddress | <code>string</code> | 
-
-<a name="Peer+_registryScoreForFlushChainSender"></a>
-
-### peer.\_registryScoreForFlushChainSender(connAddress, senderPubkeyHex) ⇒ <code>number</code>
-FLUSH_CHAIN trust score bound to verified sender key.
-
-Prevents trusting attacker-controlled `P2P_SESSION_OFFER.actor.id` aliases
-by refusing `_addressToId`-mapped scores unless that mapped registry entry
-is explicitly bound to the same verified sender pubkey.
-
-**Kind**: instance method of [<code>Peer</code>](#Peer)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| connAddress | <code>string</code> |  |
-| senderPubkeyHex | <code>string</code> | verified sender pubkey hex (from NOISE/static or trusted peer record) |
-
-<a name="Peer+sendFlushChainToTrustedPeers"></a>
-
-### peer.sendFlushChainToTrustedPeers(object) ⇒ <code>number</code>
-Sign and send `P2P_FLUSH_CHAIN` to all connected peers with registry score &gt; threshold.
-Body `{ snapshotBlockHash, network?, label? }`, sent as `P2P_FLUSH_CHAIN` fields to peers
-that advertised `fieldBodies` in their session message, and as JSON to older peers.
-
-**Receivers** (see `P2P_FLUSH_CHAIN` handler) require **both**:
-1. Sender pubkey in [Peer#settings.flushChainAuthorizedPubkeys](Peer#settings.flushChainAuthorizedPubkeys) (non-empty allowlist), and
-2. Registry score above [Peer#settings.flushChainMinTrustedScore](Peer#settings.flushChainMinTrustedScore).
-Registry score bumps on `P2P_PONG` only when that pong answers an outbound ping on the same
-connection (`_fabricPingOutstanding`), so unsolicited pongs cannot inflate trust alone.
-
-**Kind**: instance method of [<code>Peer</code>](#Peer)  
-**Returns**: <code>number</code> - number of sockets written  
-
-| Param | Type |
-| --- | --- |
-| object | <code>Object</code> | 
-
 <a name="Peer+_connect"></a>
 
 ### peer.\_connect(target)
@@ -16443,12 +16469,6 @@ Uses classic-level in Node, browser-level (IndexedDB) in browser.
 
 ### peer.\_savePeerRegistry()
 Persist peer registry to LevelDB (debounced).
-
-**Kind**: instance method of [<code>Peer</code>](#Peer)  
-<a name="Peer+_flushChainSenderPubkeyHex"></a>
-
-### peer.\_flushChainSenderPubkeyHex()
-FLUSH_CHAIN sender hex: [Peer#peers](Peer#peers)[addr].publicKey if set, else inbound NOISE static (allowlist must match).
 
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
 <a name="Peer+_upsertPeerRegistry"></a>
@@ -16520,8 +16540,8 @@ NOISE transport limits from settings (absolute handshake deadline + pre-handshak
 
 ### peer.\_bindNoiseTransportToSocket(noiseStream, socket) ⇒ <code>void</code>
 Tie a NOISE pair to its TCP socket: a destroyed decrypt side (limit broken, handshake
-timeout, decrypt failure) destroys the socket. The remote frame cap starts at the
-legacy 4096 bytes until its session message advertises `maxFrameBytes`.
+timeout, decrypt failure) destroys the socket. The remote frame cap starts at
+[MAX_FRAME_BYTES](MAX_FRAME_BYTES); a smaller `maxFrameBytes` in its session message lowers it.
 
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
 
@@ -16541,7 +16561,7 @@ Local AMP frame cap (header + `maxMessageSize` body) — what this node accepts 
 ### peer.\_recordRemoteFieldBodies(connAddress, sessionObject) ⇒ <code>boolean</code>
 Record whether a remote parses field bodies for every legacy-JSON opcode
 (`object.fieldBodies` in its session message). Absent = an older peer
-that parses `P2P_FLUSH_CHAIN` and the like as JSON only.
+that parses legacy-JSON opcodes as JSON only.
 
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
 
@@ -16554,7 +16574,8 @@ that parses `P2P_FLUSH_CHAIN` and the like as JSON only.
 
 ### peer.\_recordRemoteFrameCap(connAddress, sessionObject) ⇒ <code>number</code>
 Record the frame cap a remote advertised in `P2P_SESSION_OFFER` / `P2P_SESSION_OPEN`
-(`object.maxFrameBytes`). Absent or invalid = legacy 4096-byte peer.
+(`object.maxFrameBytes`). Absent or invalid = [MAX_FRAME_BYTES](MAX_FRAME_BYTES); there is no
+smaller default for peers that don't advertise one.
 
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
 **Returns**: <code>number</code> - Cap now used for frames sent to that connection  
@@ -16692,6 +16713,12 @@ no amount check is possible; settlement code must always pass it. With
 `sealedBlobPaymentMode: 'perBuyer'` static hashes are never fulfilled
 (that would publish `K_i`).
 
+A live quote that an HTLC paying its full price is checked against is
+pinned: it outlives its `expiresAt` and is never evicted, so the secret
+is still there when the HTLC settles. It is dropped by
+[settleSealedBlobQuote](#Peer+settleSealedBlobQuote) or after `sealedBlobFundedRetentionMs`
+(default 7 days).
+
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
 **Returns**: <code>Object</code> \| <code>null</code> - `keyHex` is the preimage (kept for callers written against static hashes).  
 
@@ -16735,6 +16762,20 @@ not written onto the public inventory item.
 | opts.end | <code>number</code> |  |
 | [opts.amountSats] | <code>number</code> | Ask above the listed price (rate × blobs). It never lowers it: a lower, non-finite, or negative amount quotes the listed price. |
 | [opts.maxSats] | <code>number</code> | The buyer's ceiling: a price above it is refused, and no quote is kept. |
+| [opts.ttlMs] | <code>number</code> | default `sealedBlobQuoteTtlMs` (1 h); the quote expires after it. |
+
+<a name="Peer+settleSealedBlobQuote"></a>
+
+### peer.settleSealedBlobQuote(paymentHashHex) ⇒ <code>boolean</code>
+Seller: the HTLC for a funded quote has settled (or failed for good), so
+its secret is no longer needed.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+**Returns**: <code>boolean</code> - Whether a quote was dropped.  
+
+| Param | Type |
+| --- | --- |
+| paymentHashHex | <code>string</code> | 
 
 <a name="Peer+_getSealedBlobDocument"></a>
 
@@ -17279,7 +17320,7 @@ already listed there.
 
 ### peer.\_startFabricPingKeepalive(socket, encryptWrite)
 Periodic P2P_PING and track expected P2P_PONG replies so registry score cannot be
-self-inflated by unsolicited pongs (see FLUSH_CHAIN trust gate).
+self-inflated by unsolicited pongs.
 
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
 
@@ -17434,7 +17475,7 @@ Register a single opcode entry in the service registry.
 
 | Param | Type | Description |
 | --- | --- | --- |
-| name | <code>string</code> | Opcode symbol (e.g. `OP_SHA256`, `P2P_FLUSH_CHAIN`) |
+| name | <code>string</code> | Opcode symbol (e.g. `OP_SHA256`, `P2P_CHAIN_SYNC_REQUEST`) |
 | [definition] | <code>Object</code> |  |
 
 <a name="Service+defineBitcoinOpcode"></a>
@@ -17466,7 +17507,7 @@ Register Fabric opcode metadata.
 ### peer.defineOpcodeContract(name, body, [meta]) ⇒ <code>Object</code>
 Register a newline-delimited opcode contract.
 Contract body example:
-`OP_DUP\nOP_HASH160\nP2P_FLUSH_CHAIN`
+`OP_DUP\nOP_HASH160\nP2P_CHAIN_SYNC_REQUEST`
 
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
 
@@ -17719,7 +17760,6 @@ Parse an Object into a corresponding Fabric state.
     * [._documentBids](#Peer+_documentBids)
     * [._documentBidRoutes](#Peer+_documentBidRoutes)
     * [._documentBidRelayRate](#Peer+_documentBidRelayRate)
-    * [._inboundNoiseStaticPubkeyByAddress](#Peer+_inboundNoiseStaticPubkeyByAddress)
     * [.messages](#Peer+messages)
     * [._wireReplayFilter](#Peer+_wireReplayFilter)
     * [._logicalRegisterOnce](#Peer+_logicalRegisterOnce) : <code>Map.&lt;string, {type: string, signer: (string\|null), at: number}&gt;</code>
@@ -17769,15 +17809,10 @@ Parse an Object into a corresponding Fabric state.
     * [.sendOnion(path, payload)](#Peer+sendOnion) ⇒ <code>boolean</code>
     * [.startMusig2([opts])](#Peer+startMusig2) ⇒ <code>object</code> \| <code>null</code>
     * [.getMusig2Session(sessionId)](#Peer+getMusig2Session) ⇒ <code>object</code> \| <code>null</code>
-    * [.relayFromTrustedPeers(origin, message, [minScoreExclusive])](#Peer+relayFromTrustedPeers)
-    * [._registryScoreForConnectionAddress(connAddress)](#Peer+_registryScoreForConnectionAddress) ⇒ <code>number</code>
-    * [._registryScoreForFlushChainSender(connAddress, senderPubkeyHex)](#Peer+_registryScoreForFlushChainSender) ⇒ <code>number</code>
-    * [.sendFlushChainToTrustedPeers(object)](#Peer+sendFlushChainToTrustedPeers) ⇒ <code>number</code>
     * [._connect(target)](#Peer+_connect)
     * [._announceAlias(alias, [origin], [_socket])](#Peer+_announceAlias)
     * [._loadPeerRegistry()](#Peer+_loadPeerRegistry) ⇒ <code>Promise.&lt;void&gt;</code>
     * [._savePeerRegistry()](#Peer+_savePeerRegistry)
-    * [._flushChainSenderPubkeyHex()](#Peer+_flushChainSenderPubkeyHex)
     * [._upsertPeerRegistry(address, [updates])](#Peer+_upsertPeerRegistry)
     * [._fillPeerSlots()](#Peer+_fillPeerSlots) ⇒ [<code>Peer</code>](#Peer)
     * [.jsonBodyCounts()](#Peer+jsonBodyCounts) ⇒ <code>Object.&lt;string, number&gt;</code>
@@ -17801,6 +17836,7 @@ Parse an Object into a corresponding Fabric state.
     * [.sealedBlobPreimageForPaymentHash(paymentHashHex, [htlc])](#Peer+sealedBlobPreimageForPaymentHash) ⇒ <code>Object</code> \| <code>null</code>
     * [.quoteSealedBlob(opts)](#Peer+quoteSealedBlob) ⇒ <code>Object</code>
     * [.quoteSealedBatch(opts)](#Peer+quoteSealedBatch) ⇒ <code>Object</code>
+    * [.settleSealedBlobQuote(paymentHashHex)](#Peer+settleSealedBlobQuote) ⇒ <code>boolean</code>
     * [._getSealedBlobDocument(documentId)](#Peer+_getSealedBlobDocument) ⇒ [<code>Document</code>](#Document) \| <code>null</code>
     * [.getDocumentBuffer(documentId)](#Peer+getDocumentBuffer) ⇒ <code>Buffer</code> \| <code>null</code>
     * [._sendP2pFileSendToPeer(documentId, peerAddress, [opts])](#Peer+_sendP2pFileSendToPeer) ⇒ <code>boolean</code>
@@ -18014,12 +18050,6 @@ Bids relayed here: bid id → `{ bid, prevHop, asks }` (the only route state; ne
 
 ### peer.\_documentBidRelayRate
 `host:port` → `{ windowStart, count }` for bids flooded onward.
-
-**Kind**: instance property of [<code>Peer</code>](#Peer)  
-<a name="Peer+_inboundNoiseStaticPubkeyByAddress"></a>
-
-### peer.\_inboundNoiseStaticPubkeyByAddress
-Inbound address -> NOISE static pubkey hex (FLUSH_CHAIN allowlist only; never for AMP verify).
 
 **Kind**: instance property of [<code>Peer</code>](#Peer)  
 <a name="Peer+messages"></a>
@@ -18482,67 +18512,6 @@ Public MuSig2 session snapshot (no secret nonce).
 | --- | --- |
 | sessionId | <code>Buffer</code> \| <code>string</code> | 
 
-<a name="Peer+relayFromTrustedPeers"></a>
-
-### peer.relayFromTrustedPeers(origin, message, [minScoreExclusive])
-Relay an AMP message only to connected peers whose persistent registry score is strictly greater than
-[Peer#settings.flushChainMinTrustedScore](Peer#settings.flushChainMinTrustedScore) (default 800). Used for `P2P_FLUSH_CHAIN`.
-
-**Kind**: instance method of [<code>Peer</code>](#Peer)  
-
-| Param | Type | Default | Description |
-| --- | --- | --- | --- |
-| origin | <code>string</code> \| <code>null</code> |  | Connection key to skip (inbound sender), or null when originating locally. |
-| message | [<code>Message</code>](#Message) \| <code>Buffer</code> |  |  |
-| [minScoreExclusive] | <code>number</code> | <code></code> | Override trust threshold (relay if peer score &gt; this value). |
-
-<a name="Peer+_registryScoreForConnectionAddress"></a>
-
-### peer.\_registryScoreForConnectionAddress(connAddress) ⇒ <code>number</code>
-Best-effort registry score for a live connection key (`host:port`), using mapped Fabric id when known.
-
-**Kind**: instance method of [<code>Peer</code>](#Peer)  
-
-| Param | Type |
-| --- | --- |
-| connAddress | <code>string</code> | 
-
-<a name="Peer+_registryScoreForFlushChainSender"></a>
-
-### peer.\_registryScoreForFlushChainSender(connAddress, senderPubkeyHex) ⇒ <code>number</code>
-FLUSH_CHAIN trust score bound to verified sender key.
-
-Prevents trusting attacker-controlled `P2P_SESSION_OFFER.actor.id` aliases
-by refusing `_addressToId`-mapped scores unless that mapped registry entry
-is explicitly bound to the same verified sender pubkey.
-
-**Kind**: instance method of [<code>Peer</code>](#Peer)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| connAddress | <code>string</code> |  |
-| senderPubkeyHex | <code>string</code> | verified sender pubkey hex (from NOISE/static or trusted peer record) |
-
-<a name="Peer+sendFlushChainToTrustedPeers"></a>
-
-### peer.sendFlushChainToTrustedPeers(object) ⇒ <code>number</code>
-Sign and send `P2P_FLUSH_CHAIN` to all connected peers with registry score &gt; threshold.
-Body `{ snapshotBlockHash, network?, label? }`, sent as `P2P_FLUSH_CHAIN` fields to peers
-that advertised `fieldBodies` in their session message, and as JSON to older peers.
-
-**Receivers** (see `P2P_FLUSH_CHAIN` handler) require **both**:
-1. Sender pubkey in [Peer#settings.flushChainAuthorizedPubkeys](Peer#settings.flushChainAuthorizedPubkeys) (non-empty allowlist), and
-2. Registry score above [Peer#settings.flushChainMinTrustedScore](Peer#settings.flushChainMinTrustedScore).
-Registry score bumps on `P2P_PONG` only when that pong answers an outbound ping on the same
-connection (`_fabricPingOutstanding`), so unsolicited pongs cannot inflate trust alone.
-
-**Kind**: instance method of [<code>Peer</code>](#Peer)  
-**Returns**: <code>number</code> - number of sockets written  
-
-| Param | Type |
-| --- | --- |
-| object | <code>Object</code> | 
-
 <a name="Peer+_connect"></a>
 
 ### peer.\_connect(target)
@@ -18579,12 +18548,6 @@ Uses classic-level in Node, browser-level (IndexedDB) in browser.
 
 ### peer.\_savePeerRegistry()
 Persist peer registry to LevelDB (debounced).
-
-**Kind**: instance method of [<code>Peer</code>](#Peer)  
-<a name="Peer+_flushChainSenderPubkeyHex"></a>
-
-### peer.\_flushChainSenderPubkeyHex()
-FLUSH_CHAIN sender hex: [Peer#peers](Peer#peers)[addr].publicKey if set, else inbound NOISE static (allowlist must match).
 
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
 <a name="Peer+_upsertPeerRegistry"></a>
@@ -18656,8 +18619,8 @@ NOISE transport limits from settings (absolute handshake deadline + pre-handshak
 
 ### peer.\_bindNoiseTransportToSocket(noiseStream, socket) ⇒ <code>void</code>
 Tie a NOISE pair to its TCP socket: a destroyed decrypt side (limit broken, handshake
-timeout, decrypt failure) destroys the socket. The remote frame cap starts at the
-legacy 4096 bytes until its session message advertises `maxFrameBytes`.
+timeout, decrypt failure) destroys the socket. The remote frame cap starts at
+[MAX_FRAME_BYTES](MAX_FRAME_BYTES); a smaller `maxFrameBytes` in its session message lowers it.
 
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
 
@@ -18677,7 +18640,7 @@ Local AMP frame cap (header + `maxMessageSize` body) — what this node accepts 
 ### peer.\_recordRemoteFieldBodies(connAddress, sessionObject) ⇒ <code>boolean</code>
 Record whether a remote parses field bodies for every legacy-JSON opcode
 (`object.fieldBodies` in its session message). Absent = an older peer
-that parses `P2P_FLUSH_CHAIN` and the like as JSON only.
+that parses legacy-JSON opcodes as JSON only.
 
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
 
@@ -18690,7 +18653,8 @@ that parses `P2P_FLUSH_CHAIN` and the like as JSON only.
 
 ### peer.\_recordRemoteFrameCap(connAddress, sessionObject) ⇒ <code>number</code>
 Record the frame cap a remote advertised in `P2P_SESSION_OFFER` / `P2P_SESSION_OPEN`
-(`object.maxFrameBytes`). Absent or invalid = legacy 4096-byte peer.
+(`object.maxFrameBytes`). Absent or invalid = [MAX_FRAME_BYTES](MAX_FRAME_BYTES); there is no
+smaller default for peers that don't advertise one.
 
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
 **Returns**: <code>number</code> - Cap now used for frames sent to that connection  
@@ -18828,6 +18792,12 @@ no amount check is possible; settlement code must always pass it. With
 `sealedBlobPaymentMode: 'perBuyer'` static hashes are never fulfilled
 (that would publish `K_i`).
 
+A live quote that an HTLC paying its full price is checked against is
+pinned: it outlives its `expiresAt` and is never evicted, so the secret
+is still there when the HTLC settles. It is dropped by
+[settleSealedBlobQuote](#Peer+settleSealedBlobQuote) or after `sealedBlobFundedRetentionMs`
+(default 7 days).
+
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
 **Returns**: <code>Object</code> \| <code>null</code> - `keyHex` is the preimage (kept for callers written against static hashes).  
 
@@ -18871,6 +18841,20 @@ not written onto the public inventory item.
 | opts.end | <code>number</code> |  |
 | [opts.amountSats] | <code>number</code> | Ask above the listed price (rate × blobs). It never lowers it: a lower, non-finite, or negative amount quotes the listed price. |
 | [opts.maxSats] | <code>number</code> | The buyer's ceiling: a price above it is refused, and no quote is kept. |
+| [opts.ttlMs] | <code>number</code> | default `sealedBlobQuoteTtlMs` (1 h); the quote expires after it. |
+
+<a name="Peer+settleSealedBlobQuote"></a>
+
+### peer.settleSealedBlobQuote(paymentHashHex) ⇒ <code>boolean</code>
+Seller: the HTLC for a funded quote has settled (or failed for good), so
+its secret is no longer needed.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+**Returns**: <code>boolean</code> - Whether a quote was dropped.  
+
+| Param | Type |
+| --- | --- |
+| paymentHashHex | <code>string</code> | 
 
 <a name="Peer+_getSealedBlobDocument"></a>
 
@@ -19415,7 +19399,7 @@ already listed there.
 
 ### peer.\_startFabricPingKeepalive(socket, encryptWrite)
 Periodic P2P_PING and track expected P2P_PONG replies so registry score cannot be
-self-inflated by unsolicited pongs (see FLUSH_CHAIN trust gate).
+self-inflated by unsolicited pongs.
 
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
 
@@ -19570,7 +19554,7 @@ Register a single opcode entry in the service registry.
 
 | Param | Type | Description |
 | --- | --- | --- |
-| name | <code>string</code> | Opcode symbol (e.g. `OP_SHA256`, `P2P_FLUSH_CHAIN`) |
+| name | <code>string</code> | Opcode symbol (e.g. `OP_SHA256`, `P2P_CHAIN_SYNC_REQUEST`) |
 | [definition] | <code>Object</code> |  |
 
 <a name="Service+defineBitcoinOpcode"></a>
@@ -19602,7 +19586,7 @@ Register Fabric opcode metadata.
 ### peer.defineOpcodeContract(name, body, [meta]) ⇒ <code>Object</code>
 Register a newline-delimited opcode contract.
 Contract body example:
-`OP_DUP\nOP_HASH160\nP2P_FLUSH_CHAIN`
+`OP_DUP\nOP_HASH160\nP2P_CHAIN_SYNC_REQUEST`
 
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
 
@@ -21553,6 +21537,7 @@ so commits and encryption options match the rest of the stack.
     * [._POST(key, value)](#Store+_POST) ⇒ <code>Promise</code>
     * [.get(key)](#Store+get) ⇒ <code>Promise</code>
     * [.set(key, value)](#Store+set)
+    * [.remove(key)](#Store+remove) ⇒ <code>Promise.&lt;null&gt;</code>
     * [.trust(source)](#Store+trust) ⇒ [<code>Store</code>](#Store)
     * [.del(key)](#Store+del)
     * [.flush()](#Store+flush)
@@ -21660,6 +21645,17 @@ Set a `key` to a specific `value`.
 | --- | --- | --- |
 | key | <code>String</code> | Address of the information. |
 | value | <code>Mixed</code> | Content to store at `key`. |
+
+<a name="Store+remove"></a>
+
+### resource.remove(key) ⇒ <code>Promise.&lt;null&gt;</code>
+Remove `key` from Level and from memory. A missing key is not an error.
+
+**Kind**: instance method of [<code>Resource</code>](#Resource)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| key | <code>String</code> | Address of the information. |
 
 <a name="Store+trust"></a>
 
@@ -22074,7 +22070,7 @@ Register a single opcode entry in the service registry.
 
 | Param | Type | Description |
 | --- | --- | --- |
-| name | <code>string</code> | Opcode symbol (e.g. `OP_SHA256`, `P2P_FLUSH_CHAIN`) |
+| name | <code>string</code> | Opcode symbol (e.g. `OP_SHA256`, `P2P_CHAIN_SYNC_REQUEST`) |
 | [definition] | <code>Object</code> |  |
 
 <a name="Service+defineBitcoinOpcode"></a>
@@ -22106,7 +22102,7 @@ Register Fabric opcode metadata.
 ### service.defineOpcodeContract(name, body, [meta]) ⇒ <code>Object</code>
 Register a newline-delimited opcode contract.
 Contract body example:
-`OP_DUP\nOP_HASH160\nP2P_FLUSH_CHAIN`
+`OP_DUP\nOP_HASH160\nP2P_CHAIN_SYNC_REQUEST`
 
 **Kind**: instance method of [<code>Service</code>](#Service)  
 
@@ -22510,7 +22506,7 @@ Register a single opcode entry in the service registry.
 
 | Param | Type | Description |
 | --- | --- | --- |
-| name | <code>string</code> | Opcode symbol (e.g. `OP_SHA256`, `P2P_FLUSH_CHAIN`) |
+| name | <code>string</code> | Opcode symbol (e.g. `OP_SHA256`, `P2P_CHAIN_SYNC_REQUEST`) |
 | [definition] | <code>Object</code> |  |
 
 <a name="Service+defineBitcoinOpcode"></a>
@@ -22542,7 +22538,7 @@ Register Fabric opcode metadata.
 ### service.defineOpcodeContract(name, body, [meta]) ⇒ <code>Object</code>
 Register a newline-delimited opcode contract.
 Contract body example:
-`OP_DUP\nOP_HASH160\nP2P_FLUSH_CHAIN`
+`OP_DUP\nOP_HASH160\nP2P_CHAIN_SYNC_REQUEST`
 
 **Kind**: instance method of [<code>Service</code>](#Service)  
 
@@ -23590,6 +23586,7 @@ encrypted values; [openEncrypted](#Store.openEncrypted) matches Hub/shell keysto
         * [._POST(key, value)](#Store+_POST) ⇒ <code>Promise</code>
         * [.get(key)](#Store+get) ⇒ <code>Promise</code>
         * [.set(key, value)](#Store+set)
+        * [.remove(key)](#Store+remove) ⇒ <code>Promise.&lt;null&gt;</code>
         * [.trust(source)](#Store+trust) ⇒ [<code>Store</code>](#Store)
         * [.del(key)](#Store+del)
         * [.flush()](#Store+flush)
@@ -23681,6 +23678,17 @@ Set a `key` to a specific `value`.
 | --- | --- | --- |
 | key | <code>String</code> | Address of the information. |
 | value | <code>Mixed</code> | Content to store at `key`. |
+
+<a name="Store+remove"></a>
+
+### store.remove(key) ⇒ <code>Promise.&lt;null&gt;</code>
+Remove `key` from Level and from memory. A missing key is not an error.
+
+**Kind**: instance method of [<code>Store</code>](#Store)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| key | <code>String</code> | Address of the information. |
 
 <a name="Store+trust"></a>
 
@@ -23876,6 +23884,7 @@ Settings object for a [Store](#Store) with [Codec](Codec) at-rest encryption
         * [._POST(key, value)](#Store+_POST) ⇒ <code>Promise</code>
         * [.get(key)](#Store+get) ⇒ <code>Promise</code>
         * [.set(key, value)](#Store+set)
+        * [.remove(key)](#Store+remove) ⇒ <code>Promise.&lt;null&gt;</code>
         * [.trust(source)](#Store+trust) ⇒ [<code>Store</code>](#Store)
         * [.del(key)](#Store+del)
         * [.flush()](#Store+flush)
@@ -23967,6 +23976,17 @@ Set a `key` to a specific `value`.
 | --- | --- | --- |
 | key | <code>String</code> | Address of the information. |
 | value | <code>Mixed</code> | Content to store at `key`. |
+
+<a name="Store+remove"></a>
+
+### store.remove(key) ⇒ <code>Promise.&lt;null&gt;</code>
+Remove `key` from Level and from memory. A missing key is not an error.
+
+**Kind**: instance method of [<code>Store</code>](#Store)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| key | <code>String</code> | Address of the information. |
 
 <a name="Store+trust"></a>
 
@@ -24767,6 +24787,7 @@ Manage keys and track their balances.
     * [new Wallet([settings])](#new_Wallet_new)
     * _instance_
         * [._emittedWalletTxKeys](#Wallet+_emittedWalletTxKeys) : <code>Set.&lt;string&gt;</code>
+        * [._ownedOutpoints](#Wallet+_ownedOutpoints) : <code>Map.&lt;string, object&gt;</code>
         * [.derive([path])](#Wallet+derive)
         * [.loadKey(input, [labels])](#Wallet+loadKey) ⇒ <code>Object</code>
         * [.loadSeed(phrase, [labels], [opts])](#Wallet+loadSeed) ⇒ <code>Object</code>
@@ -24812,6 +24833,10 @@ Create an instance of a [Wallet](#Wallet).
 <a name="Wallet+_emittedWalletTxKeys"></a>
 
 ### wallet.\_emittedWalletTxKeys : <code>Set.&lt;string&gt;</code>
+**Kind**: instance property of [<code>Wallet</code>](#Wallet)  
+<a name="Wallet+_ownedOutpoints"></a>
+
+### wallet.\_ownedOutpoints : <code>Map.&lt;string, object&gt;</code>
 **Kind**: instance property of [<code>Wallet</code>](#Wallet)  
 <a name="Wallet+derive"></a>
 
@@ -25397,7 +25422,6 @@ Manages interaction with the Bitcoin network.
         * [.getBlockInfo(hashOrHeight)](#Bitcoin+getBlockInfo) ⇒ <code>Promise.&lt;Object&gt;</code>
         * [.getTransactionInfo(txid)](#Bitcoin+getTransactionInfo) ⇒ <code>Promise.&lt;Object&gt;</code>
         * [.getAddressInfo(address)](#Bitcoin+getAddressInfo) ⇒ <code>Promise.&lt;Object&gt;</code>
-        * [.flushChainToSnapshot(snapshotBlockHash)](#Bitcoin+flushChainToSnapshot) ⇒ <code>Promise.&lt;{ok: boolean, steps: number, snapshotBlockHash: string}&gt;</code>
         * [._requestBlockAtHeight(height)](#Bitcoin+_requestBlockAtHeight) ⇒ <code>Object</code>
         * [._createContractProposal(options)](#Bitcoin+_createContractProposal) ⇒ <code>ContractProposal</code>
         * [._buildPSBT(options)](#Bitcoin+_buildPSBT) ⇒ <code>PSBT</code>
@@ -25650,19 +25674,6 @@ Requires `explorerBaseUrl` (Core has no generic address index over RPC alone).
 | --- | --- | --- |
 | address | <code>String</code> | Bitcoin address. |
 
-<a name="Bitcoin+flushChainToSnapshot"></a>
-
-### bitcoin.flushChainToSnapshot(snapshotBlockHash) ⇒ <code>Promise.&lt;{ok: boolean, steps: number, snapshotBlockHash: string}&gt;</code>
-Rewind the attached Bitcoin Core node to a known-good tip by repeatedly calling `invalidateblock`
-on the current best block until `getbestblockhash` matches `snapshotBlockHash`.
-Allowed on regtest, playnet, signet, testnet, testnet4 unless settings.flushChainAllowUnsafeNetworks.
-
-**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| snapshotBlockHash | <code>string</code> | 64-char hex block hash to keep as the active tip. |
-
 <a name="Bitcoin+_requestBlockAtHeight"></a>
 
 ### bitcoin.\_requestBlockAtHeight(height) ⇒ <code>Object</code>
@@ -25887,7 +25898,7 @@ Register a single opcode entry in the service registry.
 
 | Param | Type | Description |
 | --- | --- | --- |
-| name | <code>string</code> | Opcode symbol (e.g. `OP_SHA256`, `P2P_FLUSH_CHAIN`) |
+| name | <code>string</code> | Opcode symbol (e.g. `OP_SHA256`, `P2P_CHAIN_SYNC_REQUEST`) |
 | [definition] | <code>Object</code> |  |
 
 <a name="Service+defineBitcoinOpcode"></a>
@@ -25921,7 +25932,7 @@ Register Fabric opcode metadata.
 ### bitcoin.defineOpcodeContract(name, body, [meta]) ⇒ <code>Object</code>
 Register a newline-delimited opcode contract.
 Contract body example:
-`OP_DUP\nOP_HASH160\nP2P_FLUSH_CHAIN`
+`OP_DUP\nOP_HASH160\nP2P_CHAIN_SYNC_REQUEST`
 
 **Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
 **Overrides**: [<code>defineOpcodeContract</code>](#Service+defineOpcodeContract)  
@@ -27143,7 +27154,7 @@ Register a single opcode entry in the service registry.
 
 | Param | Type | Description |
 | --- | --- | --- |
-| name | <code>string</code> | Opcode symbol (e.g. `OP_SHA256`, `P2P_FLUSH_CHAIN`) |
+| name | <code>string</code> | Opcode symbol (e.g. `OP_SHA256`, `P2P_CHAIN_SYNC_REQUEST`) |
 | [definition] | <code>Object</code> |  |
 
 <a name="Service+defineBitcoinOpcode"></a>
@@ -27175,7 +27186,7 @@ Register Fabric opcode metadata.
 ### text.defineOpcodeContract(name, body, [meta]) ⇒ <code>Object</code>
 Register a newline-delimited opcode contract.
 Contract body example:
-`OP_DUP\nOP_HASH160\nP2P_FLUSH_CHAIN`
+`OP_DUP\nOP_HASH160\nP2P_CHAIN_SYNC_REQUEST`
 
 **Kind**: instance method of [<code>Text</code>](#Text)  
 
@@ -27724,9 +27735,13 @@ Connect and subscribe to ZeroMQ publishers.
 
 * [ZMQ](#ZMQ)
     * [new ZMQ([settings])](#new_ZMQ_new)
+    * [.paused](#ZMQ+paused) ⇒ <code>Array.&lt;String&gt;</code>
     * [._emitErrorSafe()](#ZMQ+_emitErrorSafe)
+    * [._handleSocketMessage(topic, message)](#ZMQ+_handleSocketMessage)
     * [.start()](#ZMQ+start) ⇒ [<code>ZMQ</code>](#ZMQ)
     * [.stop()](#ZMQ+stop) ⇒ [<code>ZMQ</code>](#ZMQ)
+    * [.pause(names)](#ZMQ+pause) ⇒ <code>Array.&lt;String&gt;</code>
+    * [.resume(names)](#ZMQ+resume) ⇒ <code>Array.&lt;String&gt;</code>
 
 <a name="new_ZMQ_new"></a>
 
@@ -27741,12 +27756,30 @@ Creates an instance of a ZeroMQ subscriber.
 | [settings.host] | <code>String</code> | Host for the ZMQ publisher. |
 | [settings.port] | <code>Number</code> | Remote ZeroMQ service port. |
 
+<a name="ZMQ+paused"></a>
+
+### zmQ.paused ⇒ <code>Array.&lt;String&gt;</code>
+**Kind**: instance property of [<code>ZMQ</code>](#ZMQ)  
+**Returns**: <code>Array.&lt;String&gt;</code> - Topics currently paused.  
 <a name="ZMQ+_emitErrorSafe"></a>
 
 ### zmQ.\_emitErrorSafe()
 Avoid process crash when nothing listens for `error` (Node EventEmitter default).
 
 **Kind**: instance method of [<code>ZMQ</code>](#ZMQ)  
+<a name="ZMQ+_handleSocketMessage"></a>
+
+### zmQ.\_handleSocketMessage(topic, message)
+One bitcoind notification: emit it as a field-body `Message`, or as the raw
+`[topic, bytes]` pair when the codec can't hold it. Never throws.
+
+**Kind**: instance method of [<code>ZMQ</code>](#ZMQ)  
+
+| Param | Type |
+| --- | --- |
+| topic | <code>Buffer</code> | 
+| message | <code>Buffer</code> | 
+
 <a name="ZMQ+start"></a>
 
 ### zmQ.start() ⇒ [<code>ZMQ</code>](#ZMQ)
@@ -27761,6 +27794,31 @@ Closes the connection to the ZMQ publisher.
 
 **Kind**: instance method of [<code>ZMQ</code>](#ZMQ)  
 **Returns**: [<code>ZMQ</code>](#ZMQ) - Instance of the service.  
+<a name="ZMQ+pause"></a>
+
+### zmQ.pause(names) ⇒ <code>Array.&lt;String&gt;</code>
+Stop receiving the named topics. The publisher filters them, so nothing
+for them crosses the socket. Kept across reconnects until [resume](#ZMQ+resume).
+
+**Kind**: instance method of [<code>ZMQ</code>](#ZMQ)  
+**Returns**: <code>Array.&lt;String&gt;</code> - The topics newly paused.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| names | <code>Array.&lt;String&gt;</code> | Topics from `settings.subscriptions`. |
+
+<a name="ZMQ+resume"></a>
+
+### zmQ.resume(names) ⇒ <code>Array.&lt;String&gt;</code>
+Receive topics paused by [pause](#ZMQ+pause) again.
+
+**Kind**: instance method of [<code>ZMQ</code>](#ZMQ)  
+**Returns**: <code>Array.&lt;String&gt;</code> - The topics newly resumed.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| names | <code>Array.&lt;String&gt;</code> | Topics to resume. |
+
 <a name="Scribe"></a>
 
 ## ~~Scribe~~
@@ -28074,16 +28132,34 @@ BIP65: lock values at or above this are unix times, not heights.
 <a name="DEPRECATED_WIRE_TYPES"></a>
 
 ## DEPRECATED\_WIRE\_TYPES
-Registered opcodes nothing sends or handles (docs/MESSAGE_BODY_MIGRATION.md
+Registered opcodes nothing sends or handles (docs/MESSAGE_BODY.md, Migration
 Phase 4). They still decode; Peer counts and warns when one arrives, and a
 later protocol version removes them. `P2P_BASE_MESSAGE` and
 `P2P_CHAIN_SYNC_REQUEST` are still in use and are not listed.
+
+**Kind**: global constant  
+<a name="SEALED_DELIVERY_INNER_TYPE_BY_WIRE"></a>
+
+## SEALED\_DELIVERY\_INNER\_TYPE\_BY\_WIRE
+Sealed document delivery wire type → the inner `type` its generic handler dispatches on.
+
+**Kind**: global constant  
+<a name="SEALED_DELIVERY_INNER_TYPES"></a>
+
+## SEALED\_DELIVERY\_INNER\_TYPES
+Those inner types: refused inside a `GenericMessage` / `P2P_BASE_MESSAGE` carrier.
 
 **Kind**: global constant  
 <a name="FIELD_BODIES_VERSION"></a>
 
 ## FIELD\_BODIES\_VERSION
 Session-advertised level of field-body support (`object.fieldBodies`).
+
+**Kind**: global constant  
+<a name="PEER_SEALED_BLOB_FUNDED_RETENTION_MS"></a>
+
+## PEER\_SEALED\_BLOB\_FUNDED\_RETENTION\_MS
+Default time a funded sealed-blob quote keeps its secret while its HTLC settles.
 
 **Kind**: global constant  
 <a name="TAPROOT_INTERNAL_NUMS"></a>
@@ -28176,6 +28252,54 @@ BOLT11 default expiry when the invoice names none.
 
 ## SIGNER\_FIELD
 Which field carries each body's author key.
+
+**Kind**: global constant  
+<a name="ZMQ_TOPIC_CASES"></a>
+
+## ZMQ\_TOPIC\_CASES
+bitcoind ZMQ topic → `_handleZMQMessage` case.
+
+**Kind**: global constant  
+<a name="ZMQ_TXID_MEMORY"></a>
+
+## ZMQ\_TXID\_MEMORY
+Max txids kept for `rawtx` / `hashtx` pair dedupe.
+
+**Kind**: global constant  
+<a name="ZMQ_TX_DEDUPE_MS"></a>
+
+## ZMQ\_TX\_DEDUPE\_MS
+Default window in which a `rawtx` / `hashtx` pair counts as one admission.
+
+**Kind**: global constant  
+<a name="ZMQ_TX_TOPICS"></a>
+
+## ZMQ\_TX\_TOPICS
+Per-transaction topics, paused during initial block download.
+
+**Kind**: global constant  
+<a name="ZMQ_IBD_POLL_MS"></a>
+
+## ZMQ\_IBD\_POLL\_MS
+Default interval between initial-block-download checks while it lasts.
+
+**Kind**: global constant  
+<a name="ZMQ_HASHTX_GRACE_MS"></a>
+
+## ZMQ\_HASHTX\_GRACE\_MS
+Default wait for a `rawtx` before a lone `hashtx` is fetched over RPC.
+
+**Kind**: global constant  
+<a name="BALANCE_REFRESH_MS"></a>
+
+## BALANCE\_REFRESH\_MS
+Default minimum interval between wallet balance reads driven by `rawtx`.
+
+**Kind**: global constant  
+<a name="RPC_MAX_SOCKETS"></a>
+
+## RPC\_MAX\_SOCKETS
+Default cap on concurrent RPC connections to bitcoind.
 
 **Kind**: global constant  
 <a name="Text"></a>
@@ -28349,7 +28473,7 @@ Register a single opcode entry in the service registry.
 
 | Param | Type | Description |
 | --- | --- | --- |
-| name | <code>string</code> | Opcode symbol (e.g. `OP_SHA256`, `P2P_FLUSH_CHAIN`) |
+| name | <code>string</code> | Opcode symbol (e.g. `OP_SHA256`, `P2P_CHAIN_SYNC_REQUEST`) |
 | [definition] | <code>Object</code> |  |
 
 <a name="Service+defineBitcoinOpcode"></a>
@@ -28381,7 +28505,7 @@ Register Fabric opcode metadata.
 ### text.defineOpcodeContract(name, body, [meta]) ⇒ <code>Object</code>
 Register a newline-delimited opcode contract.
 Contract body example:
-`OP_DUP\nOP_HASH160\nP2P_FLUSH_CHAIN`
+`OP_DUP\nOP_HASH160\nP2P_CHAIN_SYNC_REQUEST`
 
 **Kind**: instance method of [<code>Text</code>](#Text)  
 
@@ -28659,6 +28783,18 @@ Join a list with an Oxford comma (delegates to [module:functions/oxfordJoin](mod
 | --- | --- |
 | list | <code>Array.&lt;string&gt;</code> | 
 
+<a name="ZMQ_MESSAGE_TYPES"></a>
+
+## ZMQ\_MESSAGE\_TYPES
+bitcoind topic → message type for the field-encoded form.
+
+**Kind**: global constant  
+<a name="ZMQ_MAX_FIELD_HEX"></a>
+
+## ZMQ\_MAX\_FIELD\_HEX
+Hex characters that fit a field body beside its `present` / `extra` fields.
+
+**Kind**: global constant  
 <a name="lockFrom"></a>
 
 ## lockFrom()
@@ -30030,6 +30166,13 @@ Check a body's shape and its author's BIP340 signature.
 
 ## routePath()
 `path` as an absolute JSON Pointer path.
+
+**Kind**: global function  
+<a name="isArrayIndex"></a>
+
+## isArrayIndex()
+Under an array only an element index is a child: `length` or a name would
+persist to Level and then fail (or truncate) in memory.
 
 **Kind**: global function  
 <a name="normalizeOrder"></a>

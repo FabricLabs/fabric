@@ -53,8 +53,7 @@ const sidechainState = require('@fabric/core/functions/sidechainState');
 
 Store paths: `sidechain/STATE`, `sidechain/SNAPSHOTS`, `sidechain/JOURNAL`.
 
-**Opcode catalog + common-state Program:** [NETWORK_STATE_PROGRAM.md](./NETWORK_STATE_PROGRAM.md),
-diagram [`contracts/protocol.dot`](../contracts/protocol.dot).
+**Opcode catalog + common-state Program:** [NETWORK_STATE_PROGRAM.md](./NETWORK_STATE_PROGRAM.md).
 
 **Chain digests may feed** the document / app state snapshots; raw gossip is never
 Beacon authority.

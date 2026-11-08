@@ -10,7 +10,7 @@ const {
   chaosMessageBody,
   DEFAULT_PLAYNET_PEERS,
   DEFAULT_LOCAL_PEERS
-} = require('../scripts/lib/playnetChaosNeighbors');
+} = require('../scripts/playnet-chaos-neighbors');
 
 describe('playnet chaos neighbors (unit)', function () {
   it('lists all network conditions used for crash capture', function () {
@@ -46,7 +46,7 @@ describe('playnet chaos neighbors (unit)', function () {
   });
 
   it('plans short-term local lead and long-term hub.fabric.pub management', function () {
-    const { planPlaynetLeadCapture } = require('../scripts/lib/playnetChaosNeighbors');
+    const { planPlaynetLeadCapture } = require('../scripts/playnet-chaos-neighbors');
     const local = planPlaynetLeadCapture({ horizon: 'local-lead' });
     assert.strictEqual(local.networkAlwaysExists, true);
     assert.strictEqual(local.horizon, 'local-lead');
@@ -69,7 +69,7 @@ describe('playnet chaos neighbors (unit)', function () {
     assert.strictEqual(plan.production, false);
     assert.deepStrictEqual(plan.targets, DEFAULT_LOCAL_PEERS.slice());
     assert.strictEqual(plan.useOperatorKey, false);
-    assert.ok(plan.forbiddenWire.includes('P2P_FLUSH_CHAIN'));
+    assert.ok(plan.forbiddenWire.includes('P2P_FILE_SEND'));
     assert.ok(plan.forbiddenWire.includes('P2P_FILE_SEND'));
     assert.strictEqual(plan.dominant.noisyNeighbors.neverOperatorKey, true);
   });

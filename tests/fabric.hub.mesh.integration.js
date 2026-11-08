@@ -106,10 +106,10 @@ describe('@fabric/core Hub mesh integration', function () {
       sock._writeFabric(inv.toBuffer());
 
       // First-class opcode — P2P_FILE_SEND must not escalate from P2P_BASE_MESSAGE.
-      const file = Message.fromVector(['P2P_FILE_SEND', JSON.stringify({
+      const file = Message.fromLegacyBody('P2P_FILE_SEND', {
         name: docId,
         body: body.toString('base64')
-      })]);
+      });
       file.signWithKey(hub.key);
       sock._writeFabric(file.toBuffer());
     });

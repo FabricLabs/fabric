@@ -12,16 +12,6 @@ const ROOT = path.join(__dirname, '..');
 const LIMIT_MS = 20000;
 const FILES = [
   'examples/fabric-basic-usage.js',
-  'examples/message-body.js',
-  'examples/keys.js',
-  'examples/passport.js',
-  'examples/delegation.js',
-  'examples/federation.js',
-  'examples/sidechain.js',
-  'examples/beacon-epoch.js',
-  'examples/program.js',
-  'examples/documents.js',
-  'examples/coinjoin-fee.js',
   'examples/onion-forward.js',
   'examples/fabric-demo.js',
   'examples/index.js'

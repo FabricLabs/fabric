@@ -42,11 +42,11 @@ carry only `issuedAt`. Clocks may differ by 30 seconds.
 | `DELEGATION_LINK_OFFER` | `0x4243` | `pubkey`, `origin` (the rendezvous), `label`, `network`, `commitment`, `issuedAt`, `expiresAt` |
 | `DELEGATION_LINK_ANSWER` | `0x4244` | `pubkey`, `offer` (hash), `nonce`, `label`, `issuedAt`, `expiresAt` |
 | `DELEGATION_LINK_REVEAL` | `0x4245` | `answer` (hash), `nonce`, `issuedAt`, `expiresAt` |
-| `DELEGATION_GRANT` | `0x4246` | `pubkey`, `grantee`, `link`, `scopes`, `origins`, `networks`, `cosigner`, `cosignerProof`, `extensionOrigin`, `label`, `issuedAt`, optional `peers` |
+| `DELEGATION_GRANT` | `0x4246` | `pubkey`, `grantee`, `link`, `scopes`, `origins`, `networks`, `cosigner`, `cosignerProof`, `extensionOrigin`, `label`, `issuedAt`, `peers` |
 | `DELEGATION_REVOKE` | `0x4247` | `grant` (hash), `issuedAt` |
-| `DELEGATION_REQUEST` | `0x4248` | `pubkey`, `target`, `grant` (hash), `nonce`, `request` (inner frame), `origin`, `account`, `disclose`, `purpose`, `issuedAt`, `expiresAt`, optional `sessionKey` (peer sign-ins) |
+| `DELEGATION_REQUEST` | `0x4248` | `pubkey`, `target`, `grant` (hash), `nonce`, `request` (inner frame), `origin`, `account`, `disclose`, `purpose`, `issuedAt`, `expiresAt`, `sessionKey`, `clientNonce` (both empty except for peer sign-ins) |
 | `DELEGATION_RESULT` | `0x4249` | `request` (hash), `answer` (frame) or `refusal`, `rule`, `issuedAt` |
-| `DELEGATION_MAILBOX_FETCH` | `0x424A` | `pubkey`, `since`, `nonce`, `issuedAt`, `expiresAt` |
+| `DELEGATION_MAILBOX_FETCH` | `0x424A` | `pubkey`, `origin`, `purpose`, `since`, `nonce`, `issuedAt`, `expiresAt` |
 
 A frame's hash is sha256 of its wire bytes. The link id is the offer's hash.
 
@@ -81,10 +81,14 @@ empty for a key the user already knew). `scopes` is any of:
 
 `origins` limits Passport sign-ins to those sites; `peers` limits peer
 sign-ins (Passport v3) to those peer pubkeys, and a grant that lists `peers`
-covers no site sign-ins; `networks` limits the network. A peer sign-in
-request carries the requester's `sessionKey`, and the delegate's assertion
-names it, so the session belongs to the requester ([PASSPORT.md](PASSPORT.md)
-"Peer sessions"). A grant may disclose the grantor's cosigner key (BIP87) with a core
+covers no site sign-ins; an empty `peers` covers no peer sign-ins;
+`networks` limits the network. A peer sign-in request carries the
+requester's `sessionKey` and the `clientNonce` the requester sent the peer,
+which the challenge must echo. The delegate's assertion names the session key
+and signs only that challenge, so the session belongs to the requester's own
+connection ([PASSPORT.md](PASSPORT.md) "Peer sessions"). Restrictions are
+required fields, empty when unused, never optional trailing fields a reader
+could skip; every frame is version 1. A grant may disclose the grantor's cosigner key (BIP87) with a core
 `cosignerProof` under scope `delegation:<grantee>:<link or ->:<issuedAt>`, so
 the grantee can build a shared wallet from it. `extensionOrigin` records
 Passport's `chrome-extension://` or `moz-extension://` origin; desktop
@@ -164,7 +168,12 @@ returned result wherever the request came from. Writes are serialized.
   requests, results, grants, and revokes addressed to a pubkey, capped and
   rate-limited per address. `GET` returns them after a fresh
   `DELEGATION_MAILBOX_FETCH` in the `X-Fabric-Mailbox` header, whose nonce is
-  spent once.
+  spent once. A proof names the Hub it is for (`origin`) and its use
+  (`purpose`, one of `MAILBOX_FETCH_PURPOSES`: `delegation-mailbox`,
+  `delegation-cancel` for `DELETE /delegations/:id`, `federation-mailbox` for
+  a Hub's federation mailbox). `readMailboxFetch` needs the server's origins
+  and the purpose it checks, and refuses a proof for any other, so a proof
+  sent to one Hub or route can't be replayed at another.
 - **Delegate** (loopback): `POST /services/delegation/requests { frame }` and
   `/services/delegation/links { frame }` for Passport on the same machine. The
   host's `decide(request)` hook answers `sign`, `decline`, or `notify`.
@@ -181,3 +190,6 @@ returned result wherever the request came from. Writes are serialized.
 - **A revoked delegate**: its requests are refused once the revoke arrives.
 - **A mailbox reading someone else's frames**: reads need a fresh frame
   signed by the mailbox owner.
+- **A Hub replaying a reader's proof**: the proof names one origin and one
+  purpose, so a Hub that receives it can't spend it on another Hub's mailbox
+  or turn a read into a pairing cancel.

@@ -4,7 +4,7 @@ See also [DEVELOPERS.md](DEVELOPERS.md) (repo layout, tests) and [docs/PRODUCTIO
 ## Release posture
 - **Target:** `0.1.0` reference client — not a production-hardened VM claim
   ([PUBLIC_API.md](PUBLIC_API.md), [AUDIT.md](AUDIT.md)).
-- **Gate:** `npm run ci` on Node **26.12.1**. Tag **core before** bumping Hub / http.
+- **Gate:** `npm run ci` on Node **26.13.0**. Tag **core before** bumping Hub / http.
 - Do not paper over AUDIT “known gaps” or expand protocol surface for RC without
   owner go-ahead.
 
@@ -196,6 +196,25 @@ Before merging a new Fabric agent:
 - do not abbreviate in APIs; `documentId` should be `documentIdentifier`
 
 ## JSDoc (for `npm run make:api`)
+**Run `node scripts/check-jsdoc.js` after touching any doc comment** in `types/**`,
+`services/`, `schemata/` or `settings/deprecations.js`, when that local-only
+script is present (it is not in the repository or `npm run ci`). It parses
+everything `make:api` and `make:docs` document and fails on any jsdoc `ERROR`
+or `WARNING`. Never land a change it rejects.
+
+Type expressions are Closure syntax, not TypeScript. These break the build:
+
+| Breaks | Write instead |
+|--------|---------------|
+| `{{ a?: T }}` | `{{ a: (T\|undefined) }}`, or `{Object}` + `@param {T} [opts.a]` |
+| `{import('x').Y}` | `{Y}` / `{x.Y}` (a name, not an import) |
+| `{ReturnType<typeof f>}`, `{keyof T}`, other TS operators | `{Object}` with a description |
+| `@private Some prose` (prose on the tag line) | prose first, then a bare `@private` line |
+| `@private` followed by the description lines | description first, `@private` last |
+| `/** @type {T} prose */` | prose line above, then `@type {T}` |
+
+A one-line `/** @private note */` counts too: expand it to a block.
+
 `jsdoc2md` / Closure parser reject TypeScript optional property syntax inside
 tags. When documenting optional option bags:
 
@@ -219,3 +238,9 @@ workflow → API reference).
 settings fields should use `//` comments, not `/** @type */` blocks (those
 become Global symbols). Mark module-private helpers/constants `@private` so
 they do not appear on `docs/global.html` / `API.md` Globals.
+
+## Fabric ecosystem workflow (shared)
+This repo is **1 of 6 — @fabric/core (no Fabric deps; never add HTTP)** in the Fabric dependency order. Before installing or testing:
+- **Install** with `npm run report:install` (fresh lock, latest Git pins; log in `reports/install.log`).
+- **Strictly serial:** one install or test run at a time across all Fabric repos, top down (core → http → discord → hub → passport → star-citizen). Stop on upstream failure.
+- **Consolidate** into common APIs; Core messaging stays free of HTTP, HTTP is an adapter.

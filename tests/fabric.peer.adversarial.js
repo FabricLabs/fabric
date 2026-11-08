@@ -1182,6 +1182,51 @@ describe('@fabric/core RC1 PR-review coverage', function () {
     assert.strictEqual(wasDestroyed(), false);
   });
 
+  it('retired opcode 0x56 (FLUSH_CHAIN) is unknown: no event, no relay, no rewind', function () {
+    const peer = offlinePeer();
+    const origin = '127.0.0.1:retired-flush';
+    const author = new Key();
+    const wasDestroyed = seedScore(peer, origin, 'peer-retired-flush', 1000, author.pubkey);
+    const relayed = [];
+    peer.connections['127.0.0.1:retired-flush-neighbor'] = wireConn(relayed);
+    const emitted = [];
+    const emit = peer.emit.bind(peer);
+    peer.emit = function (name, ...args) {
+      if (!['debug', 'warning', 'log'].includes(name)) emitted.push(name);
+      return emit(name, ...args);
+    };
+    const body = JSON.stringify({ snapshotBlockHash: 'ab'.repeat(32), network: 'regtest' });
+    const wire = Message.fromVector([0x56, Buffer.from(body)]).signWithKey(author);
+    assert.strictEqual(Message.fromBuffer(wire.toBuffer()).type, 'UNKNOWN_MESSAGE');
+    peer._handleFabricMessage(wire.toBuffer(), { name: origin }, null);
+    assert.deepStrictEqual(emitted.filter((name) => /flush/i.test(name)), []);
+    assert.strictEqual(relayed.length, 0);
+    assert.strictEqual(peer._state.peers['peer-retired-flush'].score, 1000);
+    assert.strictEqual(wasDestroyed(), false);
+    assert.strictEqual(typeof peer.sendFlushChainToTrustedPeers, 'undefined');
+    assert.strictEqual(typeof peer.relayFromTrustedPeers, 'undefined');
+  });
+
+  it('an inherited property name is not a message type', function () {
+    const m = Message.fromVector(['P2P_PING', '{}']);
+    for (const name of ['toString', 'constructor', '__proto__', 'hasOwnProperty']) {
+      assert.throws(() => { m.type = name; }, /Unknown message type/, name);
+    }
+    assert.strictEqual(m.type, 'P2P_PING');
+  });
+
+  it('no decode name, alias, or gossip row claims retired opcode 0x56', function () {
+    const constants = require('../constants');
+    const { GOSSIP_NETWORK_TYPES, lookupGossipType } = require('../functions/gossipNetwork');
+    assert.strictEqual(constants.P2P_FLUSH_CHAIN, undefined);
+    assert.ok(!Object.values(constants).includes(0x56));
+    assert.strictEqual(lookupGossipType(0x56), null);
+    assert.strictEqual(lookupGossipType('FlushChain'), null);
+    assert.ok(!GOSSIP_NETWORK_TYPES.some((row) => row.opcode === 0x56));
+    assert.throws(() => Message.fromVector(['P2P_FLUSH_CHAIN', '{}']), /Unknown message type/);
+    assert.throws(() => Message.fromVector(['FlushChain', '{}']), /Unknown message type/);
+  });
+
   it('JSON GenericMessage claiming CONTRACT_MESSAGE does not escalate opcode', function () {
     const peer = offlinePeer();
     const origin = '127.0.0.1:wave1-generic';

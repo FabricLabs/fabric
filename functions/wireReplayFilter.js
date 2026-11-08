@@ -1,11 +1,14 @@
 'use strict';
 
 /**
- * Remembers wire-envelope hashes for a time window, independent of how many
- * frames arrive: two Bloom filter generations, rotated when the current one is
- * full or older than `maxAgeMs`. A flood can't push a hash out early (the
- * Peer's exact FIFO cache can be flushed by 10k frames); the price of a full
- * filter is a rare false "seen", which drops a frame, never a replay accepted.
+ * Remembers wire-envelope hashes across two Bloom filter generations, rotated
+ * when the current one is full (`capacity` hashes, or as many bits set as
+ * `capacity` hashes set on average) or older than `maxAgeMs`; the
+ * previous one is dropped `2 × maxAgeMs` after it started. That outlasts the
+ * Peer's exact FIFO cache (flushed by 10k frames), but capacity still bounds
+ * it: about `2 × capacity` distinct frames rotate a hash out, however soon.
+ * The price of a full filter is a rare false "seen", which drops a frame,
+ * never a replay accepted.
  *
  * The wire header has no timestamp or sequence number, so frames older than
  * two generations can still be replayed; closing that needs a signed field in
@@ -33,8 +36,14 @@ class WireReplayFilter {
     const s = Object.assign({}, DEFAULTS, settings);
     this.capacity = Math.max(1, Math.floor(Number(s.capacity) || DEFAULTS.capacity));
     const p = Number(s.falsePositiveRate) > 0 && Number(s.falsePositiveRate) < 1 ? Number(s.falsePositiveRate) : DEFAULTS.falsePositiveRate;
-    this.bits = Math.max(64, Math.ceil(-this.capacity * Math.log(p) / (Math.LN2 * Math.LN2)));
+    // Past 0.5 a full generation would call most new frames seen.
+    this.falsePositiveRate = Math.min(0.5, p);
+    this.bits = Math.max(64, Math.ceil(-this.capacity * Math.log(this.falsePositiveRate) / (Math.LN2 * Math.LN2)));
     this.hashes = Math.max(1, Math.min(32, Math.round((this.bits / this.capacity) * Math.LN2)));
+    // Bits a generation sets, on average, by `capacity` hashes; always below
+    // every bit. A false "seen" adds no count, so the count alone could stall
+    // short of capacity while the bits fill up; the fill rotates it instead.
+    this.maxSetBits = this.bits * (1 - Math.exp(-this.hashes * this.capacity / this.bits));
     this.maxAgeMs = Number(s.maxAgeMs) > 0 ? Number(s.maxAgeMs) : DEFAULTS.maxAgeMs;
     this._now = typeof s.now === 'function' ? s.now : Date.now;
     this._current = this._generation();
@@ -43,7 +52,7 @@ class WireReplayFilter {
 
   /** @private */
   _generation () {
-    return { bits: new Uint8Array(Math.ceil(this.bits / 8)), count: 0, since: this._now() };
+    return { bits: new Uint8Array(Math.ceil(this.bits / 8)), count: 0, set: 0, since: this._now() };
   }
 
   /**
@@ -67,7 +76,8 @@ class WireReplayFilter {
 
   /** @private */
   _rotateIfDue () {
-    if (this._current.count >= this.capacity || this._now() - this._current.since >= this.maxAgeMs) {
+    const full = this._current.count >= this.capacity || this._current.set >= this.maxSetBits;
+    if (full || this._now() - this._current.since >= this.maxAgeMs) {
       this._previous = this._current;
       this._current = this._generation();
     }
@@ -91,8 +101,17 @@ class WireReplayFilter {
   add (hex) {
     if (typeof hex !== 'string' || hex.length < 16) return;
     this._rotateIfDue();
-    for (const p of this._positions(hex)) this._current.bits[p >>> 3] |= (1 << (p & 7));
-    this._current.count++;
+    // Only a hash new to this generation counts toward rotation: repeats of
+    // one frame (fan-out, replays) must not age older hashes out early.
+    let fresh = false;
+    for (const p of this._positions(hex)) {
+      const mask = 1 << (p & 7);
+      if (this._current.bits[p >>> 3] & mask) continue;
+      fresh = true;
+      this._current.bits[p >>> 3] |= mask;
+      this._current.set++;
+    }
+    if (fresh) this._current.count++;
   }
 }
 

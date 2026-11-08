@@ -11,7 +11,6 @@
  * - `flood` — public `relayFrom` after AMP validate (bit-identical)
  * - `envelope` — `P2P_RELAY` outer flood (inner is local-observe)
  * - `opt-in` — flood only when Peer settings enable it (inventory)
- * - `trusted` — not public; `relayFromTrustedPeers` / allow-list
  * - `directed` — hop-by-hop (`P2P_FORWARD`, file send, MuSig2)
  * - `session` — TCP/NOISE control (ping, session offer/open)
  * - `observe` — local emit / originator broadcast; Peer does not mesh-flood
@@ -35,12 +34,14 @@ const {
   SIDECHAIN_STATE_PATCH_TYPE,
   DOCUMENT_PUBLISH_TYPE,
   DOCUMENT_REQUEST_TYPE,
+  DOCUMENT_KEY_REVEAL_TYPE,
+  DOCUMENT_BLOB_QUOTE_TYPE,
+  DOCUMENT_BLOB_BATCH_TYPE,
   BLOCK_CANDIDATE,
   P2P_PING,
   P2P_PONG,
   P2P_GENERIC,
   P2P_CHAIN_SYNC_REQUEST,
-  P2P_FLUSH_CHAIN,
   P2P_INVENTORY_REQUEST,
   P2P_INVENTORY_RESPONSE,
   P2P_FILE_SEND,
@@ -148,12 +149,14 @@ const GOSSIP_NETWORK_TYPES = Object.freeze([
   row('SIDECHAIN_STATE_PATCH', SIDECHAIN_STATE_PATCH_TYPE, 'observe', 'contracts', ['SidechainStatePatch']),
   row('DOCUMENT_PUBLISH', DOCUMENT_PUBLISH_TYPE, 'observe', 'documents', ['DocumentPublish']),
   row('DOCUMENT_REQUEST', DOCUMENT_REQUEST_TYPE, 'flood', 'documents', ['DocumentRequest']),
+  row('DOCUMENT_KEY_REVEAL', DOCUMENT_KEY_REVEAL_TYPE, 'directed', 'documents', ['DocumentContentKeyReveal']),
+  row('DOCUMENT_BLOB_QUOTE', DOCUMENT_BLOB_QUOTE_TYPE, 'directed', 'documents', ['DocumentBlobQuote']),
+  row('DOCUMENT_BLOB_BATCH', DOCUMENT_BLOB_BATCH_TYPE, 'directed', 'documents', ['DocumentBlobBatch']),
   row('BLOCK_CANDIDATE', BLOCK_CANDIDATE, 'observe', 'legacy', ['BlockCandidate']),
   row('P2P_PING', P2P_PING, 'session', 'keepalive', ['Ping']),
   row('P2P_PONG', P2P_PONG, 'session', 'keepalive', ['Pong']),
   row('P2P_GENERIC', P2P_GENERIC, 'observe', 'legacy', ['Generic']),
   row('P2P_CHAIN_SYNC_REQUEST', P2P_CHAIN_SYNC_REQUEST, 'observe', 'mesh', ['ChainSyncRequest']),
-  row('P2P_FLUSH_CHAIN', P2P_FLUSH_CHAIN, 'trusted', 'playnet', ['FlushChain']),
   row('P2P_INVENTORY_REQUEST', P2P_INVENTORY_REQUEST, 'opt-in', 'documents', ['InventoryRequest', 'INVENTORY_REQUEST']),
   row('P2P_INVENTORY_RESPONSE', P2P_INVENTORY_RESPONSE, 'opt-in', 'documents', ['InventoryResponse', 'INVENTORY_RESPONSE']),
   row('P2P_FILE_SEND', P2P_FILE_SEND, 'directed', 'documents', ['FileSend']),
@@ -324,8 +327,6 @@ const FIRST_CLASS_OPCODE_ONLY_TYPES = new Set([
   'INVENTORY_RESPONSE',
   'P2P_FILE_SEND',
   'P2P_DOCUMENT_PUBLISH',
-  'P2P_FLUSH_CHAIN',
-  'FlushChain',
   'BitcoinBlock',
   'BITCOIN_BLOCK'
 ]);
@@ -354,8 +355,7 @@ function classifyGossipWireType (type) {
 
 /**
  * True when Peer mesh-floods this type on the public gossip network
- * (`flood` or the `P2P_RELAY` envelope). Opt-in inventory and trusted
- * `FLUSH_CHAIN` are excluded.
+ * (`flood` or the `P2P_RELAY` envelope). Opt-in inventory is excluded.
  *
  * @param {string|number|null|undefined} type
  * @returns {boolean}
