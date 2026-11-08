@@ -206,7 +206,7 @@ Type expressions are Closure syntax, not TypeScript. These break the build:
 
 | Breaks | Write instead |
 |--------|---------------|
-| `{{ a?: T }}` | `{{ a: (T\|undefined) }}`, or `{Object}` + `@param {T} [opts.a]` |
+| `{{ a?: T }}` | `{Object}` + `@param {T} [opts.a]` (`{{ a: (T\|undefined) }}` still requires `a`) |
 | `{import('x').Y}` | `{Y}` / `{x.Y}` (a name, not an import) |
 | `{ReturnType<typeof f>}`, `{keyof T}`, other TS operators | `{Object}` with a description |
 | `@private Some prose` (prose on the tag line) | prose first, then a bare `@private` line |

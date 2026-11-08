@@ -33,7 +33,9 @@ Nothing is compatible with them.
 ## Frames
 Every frame is a Fabric wire `Message` with a typed body, signed by its author
 (BIP340), carried as a `fabric:` string, and never flooded on the mesh. Every
-body carries `v: 1`. Link frames and mailbox reads live at most 3 minutes;
+body carries `v: 1`, except `DELEGATION_MAILBOX_FETCH`, which carries `v: 2`
+(`MAILBOX_FETCH_VERSION`) since it gained `origin` and `purpose`; a reader
+refuses any other version before decoding the body. Link frames and mailbox reads live at most 3 minutes;
 requests at most 24 hours (default 10 minutes); grants, revokes, and results
 carry only `issuedAt`. Clocks may differ by 30 seconds.
 

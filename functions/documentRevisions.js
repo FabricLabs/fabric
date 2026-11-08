@@ -359,7 +359,8 @@ function revisionView (parsed) {
     parent: parsed.parent,
     hash: parsed.hash
   };
-  if (b.sha256) out.sha256 = b.sha256;
+  // Kept even when empty: a signed `sha256: ''` is a malformed commitment, not a missing one.
+  if (b.sha256 != null) out.sha256 = b.sha256;
   if (b.merkleRootHex) out.merkleRootHex = b.merkleRootHex;
   if (b.size != null) out.size = b.size;
   if (b.note) out.note = b.note;
@@ -560,7 +561,7 @@ function documentProvenance (frames, documentIdentifier, opts = {}) {
  * @param {Object} [expect]
  * @param {string} [expect.documentIdentifier]
  * @param {string} [expect.contractId]
- * @param {string} [expect.sha256] Content digest the last revision must commit to (its `sha256`, or a 64-hex identifier when it has none); refused when it doesn't.
+ * @param {string} [expect.sha256] Content digest the last revision must commit to (its `sha256`, or a 64-hex identifier when it has none); refused when it doesn't, and an empty string is refused as malformed.
  * @returns {{ ok: boolean, reason?: string, contractId?: string, documentIdentifier?: string, revision?: number, definition?: object, revisions?: object[] }}
  */
 function verifyDocumentProvenance (provenance, expect = {}) {
@@ -585,7 +586,7 @@ function verifyDocumentProvenance (provenance, expect = {}) {
   if (expect.documentIdentifier != null && expected !== head.documentIdentifier) {
     return { ok: false, reason: 'provenance is for another document' };
   }
-  if (expect.sha256 != null && expect.sha256 !== '') {
+  if (expect.sha256 != null) {
     const sha = hex64(expect.sha256);
     if (!sha) return { ok: false, reason: 'expected sha256 is not a 64-hex digest' };
     // A revision commits to content through `sha256`, or, without one, through an identifier that is that digest.

@@ -1352,6 +1352,7 @@ Events: `request` `{ hash, read, notification }`, `result` `{ hash, request, rea
         * [.receive(input, [context])](#module_types/delegation..Delegation+receive) ⇒ <code>Promise.&lt;object&gt;</code>
         * [.frames()](#module_types/delegation..Delegation+frames) ⇒ <code>Promise.&lt;Array.&lt;object&gt;&gt;</code>
     * [~DELEGATION_VERSION](#module_types/delegation..DELEGATION_VERSION)
+    * [~MAILBOX_FETCH_VERSION](#module_types/delegation..MAILBOX_FETCH_VERSION)
     * [~DELEGATION_SCOPES](#module_types/delegation..DELEGATION_SCOPES)
     * [~DELEGATION_LINK_TTL_MS](#module_types/delegation..DELEGATION_LINK_TTL_MS)
     * [~DELEGATION_REQUEST_TTL_MS](#module_types/delegation..DELEGATION_REQUEST_TTL_MS)
@@ -1893,6 +1894,14 @@ Every frame this participant sent or received, oldest first, as
 Protocol version carried in every frame. Restrictions (a grant's `peers`,
 a request's `sessionKey` and `clientNonce`) are required fields, empty when
 unused, never optional trailing fields a reader could skip.
+
+**Kind**: inner constant of [<code>types/delegation</code>](#module_types/delegation)  
+<a name="module_types/delegation..MAILBOX_FETCH_VERSION"></a>
+
+### types/delegation~MAILBOX\_FETCH\_VERSION
+Version of `DELEGATION_MAILBOX_FETCH` bodies. Version 2 added `origin` and
+`purpose` after `pubkey`, so each side refuses the other's layout instead of
+reading its fields at the wrong offsets.
 
 **Kind**: inner constant of [<code>types/delegation</code>](#module_types/delegation)  
 <a name="module_types/delegation..DELEGATION_SCOPES"></a>
@@ -16714,10 +16723,11 @@ no amount check is possible; settlement code must always pass it. With
 (that would publish `K_i`).
 
 A live quote that an HTLC paying its full price is checked against is
-pinned: it outlives its `expiresAt` and is never evicted, so the secret
-is still there when the HTLC settles. It is dropped by
-[settleSealedBlobQuote](#Peer+settleSealedBlobQuote) or after `sealedBlobFundedRetentionMs`
-(default 7 days).
+pinned: it outlives its `expiresAt` and the quote cap. It is dropped by
+[settleSealedBlobQuote](#Peer+settleSealedBlobQuote), or `sealedBlobFundedRetentionMs`
+(default 7 days) after it was funded even if the HTLC is still open, and
+a later lookup then returns `null`. Keep the returned preimage for HTLCs
+that may outlast that.
 
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
 **Returns**: <code>Object</code> \| <code>null</code> - `keyHex` is the preimage (kept for callers written against static hashes).  
@@ -18793,10 +18803,11 @@ no amount check is possible; settlement code must always pass it. With
 (that would publish `K_i`).
 
 A live quote that an HTLC paying its full price is checked against is
-pinned: it outlives its `expiresAt` and is never evicted, so the secret
-is still there when the HTLC settles. It is dropped by
-[settleSealedBlobQuote](#Peer+settleSealedBlobQuote) or after `sealedBlobFundedRetentionMs`
-(default 7 days).
+pinned: it outlives its `expiresAt` and the quote cap. It is dropped by
+[settleSealedBlobQuote](#Peer+settleSealedBlobQuote), or `sealedBlobFundedRetentionMs`
+(default 7 days) after it was funded even if the HTLC is still open, and
+a later lookup then returns `null`. Keep the returned preimage for HTLCs
+that may outlast that.
 
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
 **Returns**: <code>Object</code> \| <code>null</code> - `keyHex` is the preimage (kept for callers written against static hashes).  

@@ -213,6 +213,9 @@ describe('@fabric/core functions/documentRevisions', function () {
     const malformed = revisions.verifyDocumentProvenance(provenance, { sha256: 'not-a-digest' });
     assert.strictEqual(malformed.ok, false);
     assert.match(malformed.reason, /64-hex/);
+    const empty = revisions.verifyDocumentProvenance(provenance, { sha256: '' });
+    assert.strictEqual(empty.ok, false);
+    assert.match(empty.reason, /expected sha256/);
   });
 
   it('checks a content hash against the signed sha256 before the identifier, in any case', function () {
@@ -240,6 +243,10 @@ describe('@fabric/core functions/documentRevisions', function () {
     const malformed = revisions.verifyDocumentProvenance(signed('not-a-digest'), { sha256: sha('identifier') });
     assert.strictEqual(malformed.ok, false);
     assert.match(malformed.reason, /revision sha256/);
+
+    const empty = revisions.verifyDocumentProvenance(signed(''), { sha256: sha('identifier') });
+    assert.strictEqual(empty.ok, false, 'an empty signed sha256 does not fall back to the identifier');
+    assert.match(empty.reason, /revision sha256/);
   });
 
   it('parses frames into publish and revision views', function () {
