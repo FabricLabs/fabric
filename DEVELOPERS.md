@@ -7,9 +7,11 @@ There is a lot to cover when building decentralized applications on Fabric, so g
 - [Repository layout](#repository-layout)
 - [Development workflow](#development-workflow)
 - [Bitcoin service](#bitcoin-service-servicesbitcoin)
+- [Lightning BOLTs, RPC map & Hub desktop (`npm link`)](#lightning-bolts-rpc-map--hub-desktop-npm-link)
 - [Message types](#message-types-typesmessage)
 - [Architecture](#architecture)
 - [Storage](#storage-typesstore)
+- [Moving `functions/` into Types](#moving-functions-into-types)
 - [Reference links](#reference-links)
 - [Production & release](#production--release)
 - [Core types (reference)](#core-types-reference)
@@ -21,30 +23,33 @@ Read **[VISION.md](VISION.md)** first for what Fabric is building, how **`@fabri
 ## Quick Start
 See also [`QUICKSTART.md`][quickstart-guide] for up-to-date instructions.
 
-0. `nvm use 24.14.1` (install [`nvm`][nvm-official] if needed; matches `.nvmrc` / `package.json` engines)
-1. From a clone of this repo: `npm install` (or `npm install -g @fabric/core` to put `fabric` on your `PATH`)
-2. (optional) `fabric setup` to generate a master key and local config
+0. `nvm use 26.13.0` (install [`nvm`][nvm-official] if needed; matches `.nvmrc` / `package.json` engines)
+0b. Ensure **npm 12+** (`npm -v`). Node 26.13.0 ships npm 11.x — upgrade with `npm install -g npm@12` (or newer) before installing. **`@fabric/core` keeps npm’s default `allow-git=none`** (no git deps). Only downstream packages that install Fabric from GitHub (Hub / `@fabric/http` / app peers) should set **`.npmrc` `allow-git=all`** for nested commit-SHA fetches — do not add that opt-in here.
+1. From a clone of this repo: `npm install` (or `npm install -g @fabric/core` to put `fabric` on your `PATH`).
+2. (optional) `fabric setup` to view / generate / backup / restore the local master key (`~/.fabric/wallet.json` is password-sealed JSON by default; TTY opens a lightweight TUI with unlock / lock / idle timeout)
 3. (optional) `fabric keygen` to generate a new master key without saving to disk (ephemeral)
-4. Run `fabric` — the CLI entry is wired through `types/cli.js` and extends **`Service.FabricShell`**
+4. Run `fabric` — the CLI entry is wired through `types/cli.js` and extends **`Service.FabricShell`**. **Contracts** (HTLCs, document sessions, programs, shell packs, …) are documented in **[docs/CONTRACTS.md](docs/CONTRACTS.md)**; terminal UX in **[docs/CLI.md](docs/CLI.md)**.
 
 Working from a **git checkout** (not the global package) is best when you are changing `@fabric/core` itself; use `npm link` or `npm install ../fabric` from downstream packages (Hub, HTTP server) as described in the repo README.
 
 ## Repository layout
 | Path | Role |
 |------|------|
-| `types/` | ES6 **classes** — `Actor`, `Peer`, `Service`, `Store`, `Message`, etc. CommonJS (`require`) throughout. |
+| `types/` | ES6 **classes** — `Actor`, `Peer`, `Service`, `Store`, `Message`, etc. CommonJS (`require`) throughout. Cross-package homes: **[Types & services layering](#types--services-layering-suite)**. |
 | `services/` | Long-running **integrations** (Bitcoin RPC, Lightning stubs, ZMQ, …) built on `Service`. |
 | `contracts/` | Language snippets, traces, and tooling (e.g. type dependency graph). |
-| `scripts/` | CLI entrypoints, doc helpers (`list-jsdoc-type-files.js`, `remove-legacy-types.sh`). |
+| `scripts/` | CLI entrypoints, doc helpers (`list-jsdoc-type-files.js`, `remove-legacy-types.sh`). **`functions/fabricMessageCollection.js`** collects / replays AMP `FabricMessageCollection` documents (`functions/fabricMessageCollection.js`). |
 | `tests/` | Mocha suites; run with `npm test`. |
 | `settings/` | Default and environment-specific config; `settings/deprecations.js` holds legacy aliases. |
 | `assets/` | **Generated** browser bundles; rebuild with `npm run build` after type changes. |
 
 ## Development workflow
-- **Node:** engines field in `package.json` is authoritative (currently Node 22.x).
+- **Node:** engines field in `package.json` is authoritative (currently Node 26.13.0).
 - **Unit tests:** `npm test` — runs Mocha recursively under `tests/`.
 - **Lint:** `npm run lint` / `npm run lint:fix` (Semistandard).
 - **API reference:** `npm run make:api` writes `API.md` from JSDoc (see `scripts/list-jsdoc-type-files.js` for which `types/*.js` files are included).
+  - **JSDoc for Closure / jsdoc2md:** do **not** use TypeScript-only optional object syntax in tags (`{ genesis?: object }` fails with `Invalid type expression`). Prefer `@param {Object} [opts]` plus `@param {Object} [opts.genesis] …`. Put prose **above** `@type {…}` (or in a separate line) — `@type` does not allow a trailing description. Keep tags Closure-compatible so `make:api` / `make:docs` stay green.
+  - **Avoid Global pollution:** use `@fileoverview` / `@module` for file prose (bare blocks attach to the next `const`/`require` and become Global docs). Prefer `//` over `/** @type */` inside settings object literals. Mark private helpers/constants `@private` so they stay off `docs/global.html`.
 - **HTML docs:** `npm run make:docs` (runs `make:api` first, then **`scripts/clean-jsdoc-html.js`** — removes all **`docs/**/*.html`** and JSDoc template dirs **`docs/fonts`**, **`docs/scripts`**, **`docs/styles`**, **`docs/public`** so stale pages and duplicate assets do not accumulate, then JSDoc writes under `docs/`).
 - **Historical / one-off Markdown:** see **`docs/NON_CANONICAL.md`** — root-level “completion” and analysis files are not the same tier as **VISION.md** or **`docs/README.md`**.
 - **Native addon (`fabric.node`):** it is **not** `require()`’d unless **`FABRIC_NATIVE_DOUBLE_SHA256=1`**; message body double-SHA256 uses **@noble/hashes** by default. Enable that env var when exercising the C **`doubleSha256`** export.
@@ -57,16 +62,21 @@ Use this repo as a **library** or run the **`fabric`** CLI in environments you c
 
 | Step | Where |
 |------|--------|
-| Node **24.14.1** (see `.nvmrc`), `npm ci`, **`npm run ci`** | [`docs/PRODUCTION.md`](docs/PRODUCTION.md) |
-| Completion / privacy / security matrix | [`docs/PRODUCTION-CHECKLIST.md`](docs/PRODUCTION-CHECKLIST.md), [`PRIVACY.md`](PRIVACY.md), [`SECURITY.md`](SECURITY.md) |
-| Version tag, changelog, Hub & fabric-http bumps | [`docs/RELEASE_CHECKLIST.md`](docs/RELEASE_CHECKLIST.md) |
+| Node **26.13.0** (see `.nvmrc`), `npm ci`, **`npm run ci`** | [`docs/PRODUCTION.md`](docs/PRODUCTION.md) |
+| Public leaf API + scoped RC claim | [`PUBLIC_API.md`](PUBLIC_API.md) |
+| Completion / privacy / security matrix | [`docs/PRODUCTION.md`](docs/PRODUCTION.md), [`PRIVACY.md`](PRIVACY.md), [`SECURITY.md`](SECURITY.md), [`AUDIT.md`](AUDIT.md) |
+| Version tag, changelog, Hub & fabric-http bumps | [`docs/PRODUCTION.md`](docs/PRODUCTION.md) (§ Release checklist) |
 | Operator privacy model | [`PRIVACY.md`](PRIVACY.md) |
 | Vulnerability process | [`SECURITY.md`](SECURITY.md) |
 
-**Build scripts:** `npm run build` runs `make:all`, which still has **placeholder** `make:service` / `make:app` / `make:lib` steps. The **release gate for quality is `npm run ci`** (full Mocha suite), not a successful `npm run build`. Track operator and bundle readiness in [`docs/PRODUCTION-CHECKLIST.md`](docs/PRODUCTION-CHECKLIST.md) and [`docs/PRODUCTION.md`](docs/PRODUCTION.md).
+**Build scripts:** `npm run build` runs `make:all`, which still has **placeholder** `make:service` / `make:app` / `make:lib` steps. The **release gate for quality is `npm run ci`** (full Mocha suite), not a successful `npm run build`. Track operator and bundle readiness in [`docs/PRODUCTION.md`](docs/PRODUCTION.md).
 
 ## Core Types (reference)
-These live under `types/*.js` (CommonJS). The **`Fabric`** facade (`types/fabric.js`) re-exports many of them for quick experiments; production code usually imports a **leaf** type.
+These live under `types/*.js` (CommonJS). The **`Fabric`** facade (`types/fabric.js`) re-exports many of them for quick experiments; production code **must** import a **leaf** type from the frozen map in **[PUBLIC_API.md](PUBLIC_API.md)**.
+
+**Beacon** (`types/beacon`): L1-tied epoch chain sealing `sidechain` / `contracts` digests (Hub re-exports as `contracts/beacon.js`).
+
+**Sidechain document** (`functions/sidechainState` + `documentRegistrySidechain`): logical `sidechain/STATE` + journal/snapshots/tip restore. Wire updates use typed `SIDECHAIN_STATE_PATCH` fields; RFC6902 JSON is an `@fabric/http` edge transform. See [docs/DISTRIBUTED_EXECUTION.md](docs/DISTRIBUTED_EXECUTION.md). Network-wide field map + Program: [docs/NETWORK_STATE_PROGRAM.md](docs/NETWORK_STATE_PROGRAM.md); wire diagram [`contracts/protocol.dot`](contracts/protocol.dot).
 
 | Type | Role |
 |------|------|
@@ -83,6 +93,27 @@ Regenerate **`API.md`** with `npm run make:api` after JSDoc changes. Experimenta
 
 ## Bitcoin service (`services/bitcoin`)
 RPC is the **source of truth** when a node is connected.  Optional HTTP fallback for block, transaction, and address-index reads is configured only via `bitcoin.explorerBaseUrl` or `FABRIC_EXPLORER_URL` (an **origin**, not a path). If unset, those helpers stay RPC-only or fail closed with a clear error — `@fabric/core` does not default to any public explorer.
+
+## Lightning: BOLTs, RPC map & Hub desktop (`npm link`)
+
+| Doc | Purpose |
+|-----|---------|
+| [docs/BOLT_COMPATIBILITY.md](docs/BOLT_COMPATIBILITY.md) | Checklist: **BOLT #1–#12** vs delegated to `lightningd` vs exposed on `Lightning` |
+| [docs/FABRIC_LIGHTNING_OFFERS.md](docs/FABRIC_LIGHTNING_OFFERS.md) | Fabric **markets** (commerce / P2P) vs **BOLT12**; **`Lightning.Bolt12`** |
+| [docs/FABRIC_PAYMENT_BECH32.md](docs/FABRIC_PAYMENT_BECH32.md) | **`fa1…`** bech32m Fabric-routed payments; **`Lightning.FabricPayment`** |
+| [docs/LIGHTNING_COMPAT.md](docs/LIGHTNING_COMPAT.md) | Core Lightning **JSON-RPC** ↔ Fabric method names |
+
+**Programmatic:** `require('@fabric/core/services/lightning').DOCS` lists Markdown paths (`fabricLightningMarkets` and `fabricLightningOffers` are the same file); **`Lightning.Bolt12`** re-exports `functions/lightningBolt12.js` (`FabricLightningMarketRole` / `FabricLightningOfferRole`); **`Lightning.Bolt12Semantics`** re-exports `functions/bolt12Semantics.js` (BIP-340 scope for **`decode`**, recurrence TLV helpers); **`Lightning.FabricPayment`** re-exports `functions/fabricPaymentBech32.js` (`fa1…` encode/decode and **`classifyPaymentEncodingString`**).
+
+### Manual test: `@fabric/hub` desktop + local `@fabric/core` / `@fabric/http`
+
+After changing **`@fabric/core`**, you can exercise the stack from the **`@fabric/hub`** package (Electron / desktop; e.g. sibling clone `hub.fabric.pub`) by linking local packages. Typical order:
+
+1. **This repo (`@fabric/core`):** `npm link` — registers the global link for `@fabric/core`.
+2. **`@fabric/http`** (sibling clone): `npm link @fabric/core` then `npm link` — HTTP server depends on core; second `npm link` publishes `@fabric/http` globally.
+3. **Hub (`@fabric/hub`):** `npm link @fabric/core` and `npm link @fabric/http` — resolves both to your working trees.
+
+Then start the Hub desktop app (see Hub’s `package.json`, e.g. `build:desktop` / Electron scripts). Verify Lightning UI or HTTP mutations against your linked core. To unlink later: `npm unlink @fabric/core` / `@fabric/http` in Hub and HTTP, then reinstall published versions as needed.
 
 ## Message types (`types/message`)
 `P2P_MESSAGE_RECEIPT` (`constants.P2P_MESSAGE_RECEIPT`, `0x44`) is the on-wire type for server acknowledgements of an inbound WebSocket/P2P message (payload JSON uses `@type: Receipt`). It is distinct from `GenericMessage` so clients can discriminate without parsing the body first.
@@ -107,11 +138,15 @@ The `@fabric/core` library consists of these major areas:
 Files here feed the default **inventory** for packaged releases. When using `@fabric/http`’s server, many assets are served from `/` (configurable). Use this tree for **generated** binaries, WASM, and bundled UI — avoid committing large binaries unless they are part of the release process.
 
 ##### 0.1 Inventory
-For the `0.1` line, focus is Lightning-oriented document exchange. Operators running `fabric chat` can:
+For the `0.1` line, focus is **consenting peer file exchange** plus **ranked L1 document markets**. Operators running `fabric` / `fabric chat` can:
 
-1. Load a file into local inventory: `/import <filename>`
-2. Publish to peers: `/publish <documentID> <rate>`
-3. Request from the network: `/request <documentID> <rate>`
+1. `/import` → `/publish <id> <rateSats>`
+2. `/inventory [peer] [btc]` → `/offers [id]` (rank by price/latency/score)
+3. Unpaid: `/request` → seller `/approve`; paid: `/buy` → pay → `/confirm <settlementId> <txid>`
+4. Private relay fees: `/relayfees`; budgeted requests rewrite hops with fee skim
+5. Large files: multi-blob offers and reassembly (see L1 doc)
+
+Details: [`docs/L1_DOCUMENT_EXCHANGE.md`](docs/L1_DOCUMENT_EXCHANGE.md); BIP: [`docs/bip-fabric-file-exchange.md`](docs/bip-fabric-file-exchange.md).
 
 When this surface is stable and well tested, the project can tag `0.1.0-RC1` and move toward a security audit.
 
@@ -150,7 +185,7 @@ The Fabric CLI (`npm i -g @fabric/core`) is the reference shell. Discussion happ
 #### 3. Resources
 Fabric’s decentralized “web” is built around the **Resource** type: a committed agreement to deliver data (often with payment), frequently using HTLC-style flows on the chosen L2.
 
-These are sometimes called **Application Resource Contracts (ARCs)** — the allowed storylines for a contract.
+These are sometimes called **Application Resource Contracts (ARCs)** — the allowed storylines for a contract. Wire + tip + spend: [`docs/CONTRACTS.md`](docs/CONTRACTS.md#application-resource-contracts-arc).
 
 ##### Example resource
 `resources/document.json`:
@@ -289,10 +324,24 @@ Other **`Store`** subclasses add domain behavior — for example **`Datastore`**
 - Removed standalone modules (unused or superseded): **`aggregator`**, **`consensus`**, **`mempool`**, **`swap`**, **`value`**, **`walker`**. See **`scripts/remove-legacy-types.sh`**.
 - Removed **`types/stash.js`** (legacy `Vector` + localforage); use **`Store`** or app-specific caches instead.
 
+### Moving `functions/` into Types
+Core's `functions/` helpers are folding into the Types that own them. The rules:
+
+- **The Type exposes the helper**, as statics or a static namespace (`Witness.MuSig2`). A helper that already has a `functions/<name>.js` module keeps its code there and the Type requires it (`Key.BIP32` is `functions/bip32`); a new implementation may live in a module beside the Type (`types/wallet/bip86.js`, like `types/bitcoin/`). One module per helper, never a copy plus a re-export.
+- **Code that moved into a Type file** leaves `functions/<name>.js` as a shim that re-exports from the Type (pattern: `functions/messageBodyCodec.js`), plus a `.d.ts` shim where one exists today.
+- **Every path keeps working.** `./functions/*` is exported as a wildcard, so every path is public. The paths frozen in [PUBLIC_API.md](PUBLIC_API.md) stay frozen, and shims stay for at least the 0.1 line.
+- **Unreleased helpers move without a shim.** A `functions/` module added since the last published release has no installed users, so it moves into its Type and the old path is deleted (as `functions/delegation` was).
+- **`Peer` is already over 8,000 lines.** Peer-bound helpers go to smaller homes where they fit (`Message`, `Session`); the rest become `Peer` statics backed by modules in `types/peer/`.
+- **Leaves stay leaves:** `bytes`, `fabricCanonicalJson`, `wireJson`, `_sortKeys`, `oxfordJoin`, `truncateMiddle`, `json`, `fabricNativeAccel` (the native loader), `sipa/*` (vendored), and `passport` (its own spec).
+- **Each step ends with** `npm run ci` green (old tests run unchanged through the shims, new tests against the Types), `npm run check:downstream` passing, and `PUBLIC_API.md` and the CHANGELOG updated.
+
 ## Reference links
 | Link | Description |
 |------|-------------|
 | [QUICKSTART.md][quickstart-guide] | Install and first commands |
+| [docs/CONTRACTS.md](docs/CONTRACTS.md) | Contracts as interfaces; Hub registry (Hub publishes first) |
+| [docs/FEDERATED_SETTLEMENT.md](docs/FEDERATED_SETTLEMENT.md) | Two-way peg, destination lock, privacy / instruments tracks |
+| [docs/CLI.md](docs/CLI.md) | Terminal `/contracts`, refunds, verbosity |
 | [AGENTS.md](AGENTS.md) | Agent services, lifecycle, workers |
 | [SECURITY.md](SECURITY.md) | Disclosure process, release hygiene |
 
@@ -322,3 +371,280 @@ Short list of documentation improvements (edit here as items land):
 - [ ] Commit and Publish
 
 [quickstart-guide]: QUICKSTART.md
+
+## Types & services layering (suite)
+Canonical map of `types/` and `services/` across **`@fabric/core`**, **`@fabric/http`**, **`@fabric/hub`**, **`@fabric/passport`**, and **GoonCitizen**. Use this before adding a new class, subclassing Hub, or copying an identity/session helper.
+
+**This file is not a ship list.** Owner go-ahead is still required. Core class-count reduction lives in **[PRODUCTION_MARCH.md](docs/PRODUCTION_MARCH.md)**; this file is the *cross-package* home for overlapping APIs.
+
+| Field | Value |
+|-------|--------|
+| Last reviewed | 2026-08-15 |
+| Trees scanned | `types/` + `services/` (Passport: `src/types/`, `src/background/`, `src/crypto/`, `src/utils/`) |
+| Local checkouts | `~/fabric-clean`, `~/fabric-http`, `~/hub.fabric.pub`, `~/fabric-browser-extension`, `~/star-citizen-live` (`~/goon.vc` insight only) |
+| Crypto lift | Delegation frames and identity Schnorr live in `@fabric/core` (`types/delegation`, `functions/fabricIdentitySchnorr`). HTTP / Hub / GoonCitizen / Passport use them directly. |
+| Core `npm test` | 2026-08-14: gossip-network `verifiedPubkey` expect fixed; remaining work is identity lift + OUTSTANDING queue (not this suite fail). |
+
+---
+
+### How future agents should use this
+1. **Name collision ≠ same type.** Same export name in two packages is usually a stub, a UI twin, or a legacy fork. Check the [collision table](#name-collisions) first.
+2. **Prefer `functions/` re-exports over new classes.** Shared wire/session helpers already lift into `@fabric/http` (and Hub re-exports them). See [success pattern](#success-pattern).
+3. **Compose, do not subclass Hub** for a new application. GoonCitizen `LiveRelay` is the live app; `StarCitizen extends Hub` is legacy.
+4. After you add, delete, or re-home a type/service, update this file in the **same PR** ([refresh procedure](#refresh-procedure)).
+
+---
+
+### Layering (who owns what)
+```text
+@fabric/core          protocol primitives + chain integrations
+  types/              Actor, Service, Store, Peer, Message, Key, Identity,
+                      Chain, Contract, Federation, Collection, Resource, Wallet, …
+  services/           Bitcoin, Lightning (primary); ZMQ, Redis, MQTT, Text, …
+
+@fabric/http          HTTP / WebSocket / SPA / browser surface
+  types/              HTTPServer, SPA, Site, App, Compiler (webpack), Bridge,
+                      Sandbox, Remote (HTTP subclass), Resource (HTTP verbs)
+  functions/          site-login, device-link, peering HTTP, chat normalize,
+                      httpSharedMode, federation invite, oracle attestation
+  (no services/)
+
+@fabric/hub           rendezvous operator (reference app)
+  services/hub.js     orchestrator: Peer + HTTPServer + Bitcoin + Beacon + RPC
+  services/           Payjoin, Peering, Setup, Fabric (HTTP Remote), Email, Challenge
+  types/              thin SPA/Site/Compiler skins; LightningChannel; BridgeMessageCollection
+
+@fabric/passport      browser extension wallet / identity chrome
+  src/types/          UI interfaces + incomplete Key fork (do not grow)
+  (no services/)      Hub is a HTTP/WS client, not a class dependency
+
+GoonCitizen           application (star-citizen-live)
+  services/LiveRelay  what npm start runs (EventEmitter, own HTTP)
+  services/           FabricNetwork (Peer adapter), Chat/Group/Mission/Payout/Snapshot
+  types/              Store façade over core Store; Group/Mission domain types
+```
+
+**Require graph (do not invert):**
+```text
+core  ◄──  http  ◄──  hub
+                ◄──  passport (Key/Message/site-login clients)
+                ◄──  GoonCitizen (Peer, Store, http functions)
+hub   ◄──  GoonCitizen (Bitcoin proxy, identityCluster re-export, Hub HTTP)
+hub   ◄──  goon.vc GoonVC extends Hub   (hosted edge; insight only)
+```
+
+Core never `require`s `@fabric/http` or `@fabric/hub`.
+
+---
+
+### Success pattern
+Shared *behavior* that is not a protocol class belongs in **`@fabric/http/functions/*`** (browser-safe when possible) or **`@fabric/core/functions/*`** (crypto / AMP / contract). Downstream packages **re-export** the same function object.
+
+Hub already guards this with `tests/liftedApis.exports.test.js` (allowlist, `httpSharedMode`, device-link Origin helpers, oracle attestation, pubkey, chat normalize). GoonCitizen does the same for several http helpers (`functions/httpSharedMode.js`, `passportRelyingParty.js`, `fabricDeviceLinkProtocol.js`, …).
+
+**Do this:**
+```js
+module.exports = require('@fabric/http/functions/httpSharedMode');
+```
+
+**Do not do this:** copy the file into a second repo, or add a new `types/Foo.js` that collides with core `Foo`.
+
+---
+
+### Name collisions
+
+| Name | Canonical | Other copy | Relation | Action |
+|------|-----------|------------|----------|--------|
+| **Identity** | core `types/identity.js` (Actor, BIP32) | http `types/identity.js` (12-line Key stub) | stub | delete/rename http stub; callers use core |
+| **Key** | core `types/key.js` (Schnorr) | Passport `src/types/key.ts` (elliptic, stub `toBech32`) | incomplete fork | Passport should use core Key |
+| **Wallet** | core `types/wallet.js` | http `types/wallet.js` (legacy bcoin) | duplicate | keep core; migrate/rename http |
+| **Peer** | core `types/peer.js` (~5k LOC AMP/TCP) | http `types/peer.js` (PeerJS stub) | stub | delete http stub |
+| **Swarm** | core `Peer.Swarm` | http `types/swarm.js` (documented no-op) | stub | delete http stub |
+| **Channel** | core `types/channel.js` (payment) | http `types/channel.js` (`<fabric-channel>` UI) | name only | rename http element |
+| **Compiler** | core `types/compiler.js` (JS/minsc AST) | http `types/compiler.js` (webpack SPA); Hub/goon subclass http | different jobs | keep both; document as HTTPCompiler vs contract compiler |
+| **Router** | core `types/router.js` (chat `!commands`) | http `types/router.js` (path-to-regexp) | name only | rename if touching |
+| **Remote** | core `types/remote.js` (base WS) | http `types/remote.js` **extends** core | healthy subclass | keep |
+| **Resource** | core `types/resource.js` (Store) | http `types/resource.js` **extends** Fabric.Resource | healthy subclass | keep |
+| **Component** | core `types/component.js` (dead stub, broken `super`) | http `types/component.js` (real custom element) | core dead | delete/ignore core stub; UI lives in http |
+| **Hub** | **hub** `services/hub.js` (~14k LOC Service) | http `types/hub.js` (Oracle + Express toy) | **naming trap** | deprecate/rename http (`LegacyHttpHub`); never merge |
+| **Queue** | core `types/queue.js` | Hub `types/queue.js` (richer, unused at runtime) | stale fork | Hub runtime uses core Worker; delete or re-export core |
+| **Worker** | core `types/worker.js` | Hub `types/worker.js` | stale fork | hub.js requires **core** Worker |
+| **Challenge** | core `types/challenge.js` (State) | Hub `services/challenge.js` (storage-contract cadence) | name only | leave; different jobs |
+| **Store** | core `types/store.js` (Actor, async paths) | GoonCitizen `types/Store.js` (**composes** core) | healthy façade | do not merge into core |
+| **SPA / Site / Compiler** | http types | Hub + goon.vc thin `_renderWith` skins | healthy extend | skins stay in apps |
+| **Fabric** | core `types/fabric.js` (facade Service) | Hub `services/fabric.js` (HTTP Remote sync) | name only | leave |
+
+---
+
+### Per-package inventory
+#### `@fabric/core` — `types/` (protocol spine)
+**Keep as the public spine** (aligns with PRODUCTION_MARCH + `types/fabric.js` statics): `Actor`, `Service` (+ `FabricShell`), `Store`, `Peer` (+ `Peer.Swarm`), `Message`, `Key`, `Identity`, `Chain`, `Block`, `Contract`, `Federation`, `Collection`, `Resource`, `State`, `Machine`, `Program`, `Circuit`, `Wallet`, `Worker`, `Remote`, `Hash256`, `Entity` (+ `Transition`), `Tree`, `Beacon`, `Filesystem`.
+
+**Services (keep):** `services/bitcoin.js`, `services/lightning.js`. Others (`zmq`, `redis`, `mqtt`, `text`/`txt`, `exchange`, `local`, `turntable`) are integrations — do not reimplement in Hub or GoonCitizen.
+
+**Message collections:** `functions/fabricMessageCollection.js` is the share/replay helper for ordered AMP hex (journals, Discord packs, catch-up). `collectionTipId` is the parent for the next frame in that log. GoonCitizen re-exports it; do not fork a second JSON-as-canonical log. Hub `messages/*.json` stays an activity log. **Document lists:** `functions/documentList.js` is the shared compact catalog (`DocumentList`). Apps keep their own pack names and share gates.
+
+**Core stubs / low-value leaves** (do not copy downstream): `types/component.js`, `types/network.js`, `types/observer.js`, `types/transaction.js`. Class-count work: PRODUCTION_MARCH (`Scribe` is already a deprecation alias).
+
+#### `@fabric/http` — `types/` (HTTP/SPA only)
+
+**Stay in http:** `server` (`HTTPServer`), `spa`, `site`, `app`, `compiler` (webpack), `bridge`, `sandbox`, `browser`, `client`, `element`, `avatar`, `JSONCall`, `distributedExecutionHttp`, `resource` (HTTP verbs), `remote` (HTTP client).
+
+**Delete or stop exporting when touching:** `identity.js`, `peer.js`, `swarm.js` stubs. **Rename if touching:** `channel.js` (UI), `hub.js` (legacy Oracle hub).
+
+Package main (`types/web.js`) exports `Server`, `Client`, `SPA`, `Avatar` — not the stubs.
+
+#### `@fabric/hub` — operator
+
+| File | Verdict |
+|------|---------|
+| `services/hub.js` | Keep as orchestrator; carve more *Hub-only* services (Payjoin/Peering/Setup pattern). Do not fold into core or http. |
+| `services/payjoin.js` | Hub-only BIP77/78 |
+| `services/peering.js` | Hub HTTP + OracleAttestation (uses http functions) |
+| `services/setup.js` | Admin token bootstrap |
+| `services/fabric.js` | HTTP Remote sync — keep name locally, do not confuse with core `Fabric` |
+| `services/email.js`, `challenge.js` | Hub-only |
+| `types/spa.js`, `site.js`, `compiler.js` | Thin skins over http — keep |
+| `types/lightningChannel.js` | Extends core Channel — keep until a second LN UI needs it in core |
+| `types/bridgeMessageCollection.js` | Hub WS message map — keep |
+| `types/queue.js`, `worker.js` | Stale forks — delete or re-export core |
+
+#### `@fabric/passport` — extension
+
+No top-level `types/` or `services/`. Treat as a **client** of core Key/Message and http site-login / device-link.
+
+| Path | Verdict |
+|------|---------|
+| `src/types/key.ts` | **Do not grow.** Incomplete elliptic Key; `toBech32()` is a stub. Target: `@fabric/core/types/key`. |
+| `src/types/identity.ts` | UI `IIdentity` / chain allowlist — not core Identity. Keep local. |
+| `src/background/encryptedDatastore.ts` | chrome.storage AES-GCM — parallel to `Store.openEncrypted`, not a merge candidate. |
+| `src/background/delegation.ts` | A core `Delegation` (`@fabric/core/types/delegation`) on the encrypted datastore — no protocol code of its own. |
+| `src/utils/fabricSiteMessage.ts` | Client of http — keep as a client. |
+| `src/fabric/bitcoinService.ts` | Hub HTTP Bitcoin client — keep. |
+
+#### GoonCitizen — application
+
+| File | Verdict |
+|------|---------|
+| `services/LiveRelay.js` | **What runs.** EventEmitter + REST/dashboard. Do not extend Hub. |
+| `services/FabricNetwork.js` | Constructs core `Peer`; app `CONTRACT_MESSAGE` conveniences. Adapter, not a second Peer. |
+| `services/ChatManager.js` / `GroupManager.js` / `MissionManager.js` / `PayoutManager.js` / `SnapshotManager.js` | Application. Share wire helpers only (chat normalize, federation invite JSON). |
+| `types/Store.js` | Composes core Store; sync `get/put/all/del` on `/collections/<name>`. Correct. Extract a generic façade only if a second consumer appears. |
+| `types/Group.js`, `Mission.js`, `MissionApplication.js` | Domain; Group wraps core `Federation`. |
+| `services/StarCitizen.js` | **Legacy** `extends Hub`. mocha/history only. Do not use as a template. |
+| `types/StarCitizenAPI.js` | Legacy stub. Not LiveRelay. |
+
+**goon.vc (insight):** `GoonSPA` / `GoonSite` / `HTMLCompiler` mirror Hub skins over http. `GoonVC extends Hub` is the hosted-edge pattern — not a model for new desktop apps.
+
+---
+
+### Common API slices (ranked)
+Payoff vs risk for *sharing* an API. Implement only with owner go-ahead; small PRs; re-export, don’t copy.
+
+| Rank | Slice | Home | Payoff | Risk | Notes |
+|------|-------|------|--------|------|-------|
+| 1 | **Delegation** (pairing, grants, requests; replaced IdentityCrossSign and device-link) | **core** `types/delegation` ([docs/DELEGATION.md](docs/DELEGATION.md)) | High | Low | Every participant builds a `Delegation` on its own key and store; do not fork frame code. |
+| 2 | **Passport + delegation transport** | **http** (`passportHttp`, `fabricDelegationHttp`, `fabricDelegationMailbox`, `fabricDelegate`) | High | Low–med | GC/Passport/Hub must wrap http; do not fork verify. |
+| 3 | **Passport Key → core Key** | **core** Key | High (crypto) | Med | Drop elliptic class; keep `IKey` UI state in Passport. |
+| 4 | **Retire Hub Queue/Worker forks** | **core** | Med | Low | Runtime already uses core Worker. |
+| 5 | **httpSharedMode** | **http** (already) | Med | Low | Hub + GC re-export; keep the test that they are the same function. |
+| 6 | **Rename http `types/hub.js`** | **http** | Med (docs trap) | Low | Product Hub is `@fabric/hub`. |
+| 7 | **CollectionStore façade** | optional core helper | Med if 2nd consumer | Med | Today only GoonCitizen `types/Store.js`. |
+| 8 | **AppPeerSession** (identity → Peer, message log, peering offer) | core or http helper | Med | Med–high | Extract from FabricNetwork *without* GC publish methods. |
+| 9 | **Document inventory item / publish envelope** | core (`publishedDocumentEnvelope`) + http shapes | Med | Med | Hub document market vs GC `localDocuments` / offers stay separate catalogs. |
+| 10 | **SPA Compiler factory** | http | Low | Low | Hub/goon skins stay in apps. |
+| 11 | **Carve `services/hub.js`** | hub services | High long-term | **High** | Continue Payjoin/Peering/Setup; no big-bang. |
+| 12 | **LightningChannel → core** | hub until 2nd consumer | Low | Low | |
+
+---
+
+### Do not consolidate
+
+These look like duplicates and are not:
+
+| Temptation | Why not |
+|------------|---------|
+| Merge **LiveRelay** into Hub / subclass Hub for GoonCitizen | Different products. LiveRelay is the live entry. `StarCitizen extends Hub` is legacy. |
+| Collapse **FabricNetwork** into **Peer** | Adapter + app message types. Peer stays protocol. |
+| Put **ChatManager** in core/Hub | Discord keys, local tags, bridged rails are app-specific. Share `fabricChatNormalize` only. |
+| Merge GoonCitizen **Store** into core **Store** | Sync collection façade vs async path Store. Composition is the point. |
+| Merge http **Compiler** into core **Compiler** | Webpack/HTML vs minsc/JS AST. |
+| Merge http **Channel** into core **Channel** | UI element vs payment channel. |
+| Fold Hub **Payjoin / Bitcoin UI / Beacon** into core | Operator rendezvous. Core already has `services/bitcoin` + `types/beacon`. |
+| New `@fabric/app-peer` package | Extra pin surface. Prefer a function module in core/http first. |
+| Invert requires (core → http) | Breaks the library/CLI story. |
+
+---
+
+### Healthy subclass edges (copy this pattern)
+
+```text
+http.Resource     →  core Resource (Fabric.Resource)
+http.Remote       →  core Remote
+http.JSONCall     →  core Message
+Hub.LightningChannel → core Channel
+Hub.SPA/Site/Compiler → http SPA/Site/Compiler
+GoonCitizen.Store    composes core Store  (does not extend)
+GoonCitizen.FabricNetwork  constructs core Peer
+GoonCitizen.Group    uses core Federation
+GoonCitizen.Mission  extends core Entity
+```
+
+If a new type does not fit one of: **extend the layer below**, **compose it**, or **stay application-only** — stop and update this file instead of inventing a parallel class.
+
+---
+
+### Refresh procedure
+
+When types/services change in any of the five trees, run this in the same change:
+
+1. `rg '^(class |module\\.exports)' types services` (Passport: `src/types` + `src/background`) in each checkout.
+2. Confirm `require('@fabric/…')` still matches the [require graph](#layering-who-owns-what). New core `require('@fabric/http')` is a bug.
+3. Update the [collision table](#name-collisions) if you add or delete a same-named export.
+4. If you lift a helper, add a Hub/GoonCitizen re-export **and** a same-function assertion (see `tests/liftedApis.exports.test.js`).
+5. Bump **Last reviewed** at the top. Do not fork this document into Hub or GoonCitizen — point at it.
+
+**Sibling paths on this machine:**
+
+| Package | Checkout |
+|---------|----------|
+| `@fabric/core` | `/Users/eric/fabric-clean` |
+| `@fabric/http` | `/Users/eric/fabric-http` |
+| `@fabric/hub` | `/Users/eric/hub.fabric.pub` |
+| `@fabric/passport` | `/Users/eric/fabric-browser-extension` |
+| GoonCitizen | `/Users/eric/star-citizen-live` |
+| goon.vc (insight) | `/Users/eric/goon.vc` |
+
+---
+
+### Remaining work
+Not a ship list. Owner go-ahead still required. Detail for Core also lives in [OUTSTANDING.md](docs/OUTSTANDING.md).
+
+#### Core [#183](https://github.com/FabricLabs/fabric/pull/183) (edit existing PR files only)
+- **Do not add** identity leaves, this file, or `package.json` smoke `require()`s for those leaves (CodeRabbit ~150-file cap; smoke would fail without the files).
+- Existing OUTSTANDING items: type-tree keep/remove, `messageHex` laziness, `contractId` → `contractIdentifier`, genesis journal cap, blinded-execution scaffold, third-party review of peer/HTLC.
+
+#### Follow-up Core PR (new files)
+`functions/fabricIdentitySchnorr.js` and its tests in `tests/fabric.identity.js` are already on #185; the IdentityCrossSign leaves were since replaced by delegation (`types/delegation.js`). Pin or `npm link` core in http / Hub / Passport / GoonCitizen. Sidecar `.d.ts` files were dropped for the GitHub 150-file review cap.
+
+#### Pending tests (not failures)
+- 3× Lightning `_makeRPCRequest` (JSON-RPC line-delimited / error / timeout) — skipped unit stubs.
+- 1× `dials configured peers and emits CONTRACT_PUBLISH` (`tests/fabric.hub.mesh.integration.js` — `playnet contract publish live`) — skipped unless a live mnemonic is configured.
+
+#### Downstream (already edited in those repos)
+Keep the re-exports. Remaining ranked slices: site-login possession-proof (http/Hub), Passport Key class, Hub Queue/Worker delete, CollectionStore only if a second consumer appears.
+
+---
+
+### Related docs
+
+| Doc | Role |
+|-----|------|
+| [OUTSTANDING.md](docs/OUTSTANDING.md) | Core security queue + suite status |
+| [PRODUCTION_MARCH.md](docs/PRODUCTION_MARCH.md) | Core *class count* keep/fold/remove |
+| [DEVELOPERS.md](DEVELOPERS.md) | Core `types/` vs `services/` layout, Store, Fabric facade |
+| [AGENTS.md](AGENTS.md) | Agent lifecycle (`Service` start/stop) |
+| Hub `docs/PRODUCTION_MARCH.md` | Copy of core march + Hub RC scope |
+| Hub `tests/liftedApis.exports.test.js` | Re-export contract for shared functions |
+| GoonCitizen `AGENTS.md` §3–§4 | What LiveRelay actually runs |
+| GoonCitizen `DECISIONS.md` D-009/D-010/D-011/D-013 | Why Fabric conventions, Peer, site-login, device-link exist |

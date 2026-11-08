@@ -1,0 +1,1215 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <title>Source: types/witness/musig2.js &middot; Docs</title>
+  <script src="scripts/prettify/prettify.js"> </script>
+  <script src="scripts/prettify/lang-css.js"> </script>
+  <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+  <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+  <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+  <script>
+    window.dataLayer = window.dataLayer || [];
+
+    function gtag() {
+      dataLayer.push(arguments);
+    }
+    gtag('js', new Date());
+    gtag('config', 'G-09Y57FL980');
+  </script>
+</head>
+
+<body>
+  <div id="main">
+    <h1 class="page-title">Source: types/witness/musig2.js</h1>
+
+
+
+
+    <section>
+      <article>
+        <pre class="prettyprint source linenums"><code>/**
+ * BIP-327 MuSig2 (n-of-n Schnorr). Official vectors:
+ * https://github.com/bitcoin/bips/tree/master/bip-0327/vectors
+ *
+ * MuSig2 is **n-of-n only**. t-of-n Bitcoin spends stay Taproot script-path
+ * (`OP_CHECKSIGADD`). Off-chain Beacon / GroupChange stay independent BIP-340
+ * signature counts. Interactive `P2P_MUSIG_*` mesh sessions live in
+ * {@link module:functions/musig2Session} and are dispatched by {@link Peer}.
+ *
+ * @fileoverview BIP-327 MuSig2.
+ * @module types/witness/musig2
+ */
+'use strict';
+
+const crypto = require('crypto');
+const { secp256k1, schnorr: schnorrModule } = require('@noble/curves/secp256k1.js');
+const taggedHash = require('../hash256').tagged;
+const { toUint8Flexible, toBuffer } = require('../../functions/bytes');
+
+const SecpPoint = secp256k1.ProjectivePoint || secp256k1.Point;
+const N = (secp256k1.CURVE &amp;&amp; secp256k1.CURVE.n) ||
+  (secp256k1.Point &amp;&amp; secp256k1.Point.Fn &amp;&amp; secp256k1.Point.Fn.ORDER);
+const nobleSchnorr = schnorrModule &amp;&amp; typeof schnorrModule.verify === 'function'
+  ? schnorrModule
+  : (schnorrModule &amp;&amp; schnorrModule.schnorr) || schnorrModule;
+
+/**
+ * @param {Buffer|Uint8Array} bytes
+ * @returns {object}
+ * @private
+ */
+function fromBytes (bytes) {
+  if (!SecpPoint) throw new Error('Unsupported noble secp256k1 Point API');
+  const u8 = toUint8Flexible(bytes, 65);
+  if (typeof SecpPoint.fromBytes === 'function') return SecpPoint.fromBytes(u8);
+  if (typeof SecpPoint.fromHex === 'function') {
+    return SecpPoint.fromHex(Buffer.from(u8).toString('hex'));
+  }
+  throw new Error('Unsupported noble secp256k1 Point API');
+}
+
+/**
+ * @param {object} P
+ * @param {boolean} [compressed]
+ * @returns {Uint8Array}
+ * @private
+ */
+function toRawBytesLocal (P, compressed = true) {
+  if (!P) throw new Error('Missing point');
+  if (typeof P.toRawBytes === 'function') return P.toRawBytes(compressed);
+  if (typeof P.toBytes === 'function') {
+    if (compressed) return P.toBytes();
+    const affine = typeof P.toAffine === 'function' ? P.toAffine() : null;
+    if (!affine || typeof affine.x !== 'bigint' || typeof affine.y !== 'bigint') {
+      throw new Error('Point.toAffine() unavailable for uncompressed encoding');
+    }
+    const x = Buffer.from(affine.x.toString(16).padStart(64, '0'), 'hex');
+    const y = Buffer.from(affine.y.toString(16).padStart(64, '0'), 'hex');
+    return Buffer.concat([Buffer.from([0x04]), x, y]);
+  }
+  throw new Error('Unsupported point serialization');
+}
+
+/**
+ * @param {object} P
+ * @returns {number}
+ * @private
+ */
+function getYParity (P) {
+  const y = (P &amp;&amp; typeof P.y === 'bigint')
+    ? P.y
+    : (P &amp;&amp; typeof P.toAffine === 'function' ? P.toAffine().y : null);
+  if (typeof y !== 'bigint') throw new Error('Unable to determine point y-parity');
+  return (y &amp; 1n) ? 1 : 0;
+}
+
+const ZERO33 = Buffer.alloc(33);
+
+class InvalidContributionError extends Error {
+  /**
+   * @param {number|null} signer
+   * @param {string} contrib pubkey | pubnonce | aggnonce | psig | aggothernonce
+   */
+  constructor (signer, contrib) {
+    super(`Invalid MuSig2 contribution (${contrib})` +
+      (signer == null ? '' : ` from signer ${signer}`));
+    this.name = 'InvalidContributionError';
+    this.signer = signer;
+    this.contrib = contrib;
+  }
+}
+
+class ValueError extends Error {
+  constructor (message) {
+    super(message);
+    this.name = 'ValueError';
+  }
+}
+
+/**
+ * @param {number} threshold
+ * @param {number} n
+ * @returns {boolean}
+ */
+function musig2IsNOfN (threshold, n) {
+  const t = Number(threshold);
+  const count = Number(n);
+  return Number.isInteger(t) &amp;&amp; Number.isInteger(count) &amp;&amp; count >= 2 &amp;&amp; t === count;
+}
+
+/**
+ * @param {bigint} x
+ * @returns {Buffer}
+ * @private
+ */
+function bytesFromInt (x) {
+  let hex = x.toString(16);
+  if (hex.length % 2) hex = '0' + hex;
+  return Buffer.from(hex.padStart(64, '0'), 'hex');
+}
+
+/**
+ * @param {Buffer} b
+ * @returns {bigint}
+ * @private
+ */
+function intFromBytes (b) {
+  const hex = Buffer.from(b).toString('hex');
+  if (!hex) return 0n;
+  return BigInt('0x' + hex);
+}
+
+/**
+ * @param {Buffer} a
+ * @param {Buffer} b
+ * @returns {Buffer}
+ * @private
+ */
+function bytesXor (a, b) {
+  const out = Buffer.alloc(a.length);
+  for (let i = 0; i &lt; a.length; i++) out[i] = a[i] ^ b[i];
+  return out;
+}
+
+/**
+ * @param {*} P
+ * @returns {boolean}
+ * @private
+ */
+function isInfinite (P) {
+  if (!P) return true;
+  if (SecpPoint &amp;&amp; SecpPoint.ZERO &amp;&amp; typeof P.equals === 'function') {
+    return P.equals(SecpPoint.ZERO);
+  }
+  return false;
+}
+
+/**
+ * @param {*} P
+ * @returns {boolean}
+ * @private
+ */
+function hasEvenY (P) {
+  return getYParity(P) === 0;
+}
+
+/**
+ * @param {*} P
+ * @returns {Buffer} 32-byte x
+ * @private
+ */
+function xbytes (P) {
+  const c = Buffer.from(toRawBytesLocal(P, true));
+  return c.subarray(1, 33);
+}
+
+/**
+ * @param {*} P
+ * @returns {Buffer} 33-byte compressed
+ * @private
+ */
+function cbytes (P) {
+  return Buffer.from(toRawBytesLocal(P, true));
+}
+
+/**
+ * @param {*|null} P
+ * @returns {Buffer}
+ * @private
+ */
+function cbytesExt (P) {
+  if (isInfinite(P)) return Buffer.from(ZERO33);
+  return cbytes(P);
+}
+
+/**
+ * @param {*|null} P
+ * @returns {*|null}
+ * @private
+ */
+function pointNegate (P) {
+  if (isInfinite(P)) return P;
+  if (typeof P.negate === 'function') return P.negate();
+  return P.multiply(N - 1n);
+}
+
+/**
+ * @param {*|null} P
+ * @param {bigint} k
+ * @returns {*|null}
+ * @private
+ */
+function pointMul (P, k) {
+  if (isInfinite(P)) return null;
+  let s = k % N;
+  if (s &lt; 0n) s += N;
+  if (s === 0n) return null;
+  return P.multiply(s);
+}
+
+/**
+ * @param {*|null} P1
+ * @param {*|null} P2
+ * @returns {*|null}
+ * @private
+ */
+function pointAdd (P1, P2) {
+  if (isInfinite(P1)) return isInfinite(P2) ? null : P2;
+  if (isInfinite(P2)) return P1;
+  const R = P1.add(P2);
+  return isInfinite(R) ? null : R;
+}
+
+/**
+ * @param {Buffer} x 33-byte compressed
+ * @returns {*}
+ * @private
+ */
+function cpoint (x) {
+  const buf = toBuffer(x);
+  if (buf.length !== 33) {
+    throw new ValueError('x is not a valid compressed point.');
+  }
+  if (buf[0] !== 0x02 &amp;&amp; buf[0] !== 0x03) {
+    throw new ValueError('x is not a valid compressed point.');
+  }
+  try {
+    return fromBytes(buf);
+  } catch {
+    throw new ValueError('x is not a valid compressed point.');
+  }
+}
+
+/**
+ * @param {Buffer} x
+ * @returns {*|null}
+ * @private
+ */
+function cpointExt (x) {
+  const buf = toBuffer(x);
+  if (buf.equals(ZERO33)) return null;
+  return cpoint(buf);
+}
+
+/**
+ * @param {Buffer} seckey
+ * @returns {Buffer}
+ */
+function individualPk (seckey) {
+  const d0 = intFromBytes(toBuffer(seckey));
+  if (!(d0 >= 1n &amp;&amp; d0 &lt;= N - 1n)) {
+    throw new ValueError('The secret key must be an integer in the range 1..n-1.');
+  }
+  const P = SecpPoint.BASE.multiply(d0);
+  return cbytes(P);
+}
+
+/**
+ * Lexicographic sort of compressed encodings (BIP-327 KeySort). Does not
+ * require valid curve points — the official vectors include an invalid key.
+ *
+ * @param {Array&lt;Buffer|Uint8Array|string>} pubkeys
+ * @returns {Array&lt;Buffer>}
+ */
+function keySort (pubkeys) {
+  if (!Array.isArray(pubkeys)) throw new TypeError('pubkeys must be an array');
+  return pubkeys.map((pk) => Buffer.from(toBuffer(pk))).sort(Buffer.compare);
+}
+
+/**
+ * @param {Array&lt;Buffer>} pubkeys
+ * @returns {Buffer}
+ * @private
+ */
+function hashKeys (pubkeys) {
+  return taggedHash('KeyAgg list', Buffer.concat(pubkeys.map((pk) => toBuffer(pk))));
+}
+
+/**
+ * @param {Array&lt;Buffer>} pubkeys
+ * @returns {Buffer}
+ * @private
+ */
+function getSecondKey (pubkeys) {
+  const first = toBuffer(pubkeys[0]);
+  for (let j = 1; j &lt; pubkeys.length; j++) {
+    const pk = toBuffer(pubkeys[j]);
+    if (!pk.equals(first)) return pk;
+  }
+  return Buffer.alloc(33);
+}
+
+/**
+ * @param {Array&lt;Buffer>} pubkeys
+ * @param {Buffer} pk_
+ * @param {Buffer} pk2
+ * @returns {bigint}
+ * @private
+ */
+function keyAggCoeffInternal (pubkeys, pk_, pk2) {
+  const L = hashKeys(pubkeys);
+  const pk = toBuffer(pk_);
+  if (pk.equals(toBuffer(pk2))) return 1n;
+  return intFromBytes(taggedHash('KeyAgg coefficient', Buffer.concat([L, pk]))) % N;
+}
+
+/**
+ * @param {Array&lt;Buffer>} pubkeys
+ * @param {Buffer} pk_
+ * @returns {bigint}
+ */
+function keyAggCoeff (pubkeys, pk_) {
+  return keyAggCoeffInternal(pubkeys, pk_, getSecondKey(pubkeys));
+}
+
+/**
+ * @param {Array&lt;Buffer|Uint8Array|string>} pubkeys
+ * @returns {{ Q: object, gacc: bigint, tacc: bigint }}
+ */
+function keyAgg (pubkeys) {
+  if (!Array.isArray(pubkeys) || !pubkeys.length) {
+    throw new TypeError('keyAgg requires a non-empty pubkey list');
+  }
+  const keys = pubkeys.map((pk) => Buffer.from(toBuffer(pk)));
+  const pk2 = getSecondKey(keys);
+  let Q = null;
+  for (let i = 0; i &lt; keys.length; i++) {
+    let P;
+    try {
+      P = cpoint(keys[i]);
+    } catch (err) {
+      if (err instanceof ValueError) throw new InvalidContributionError(i, 'pubkey');
+      throw err;
+    }
+    const a = keyAggCoeffInternal(keys, keys[i], pk2);
+    Q = pointAdd(Q, pointMul(P, a));
+  }
+  if (isInfinite(Q)) {
+    throw new Error('keyAgg: aggregate is infinity');
+  }
+  return { Q, gacc: 1n, tacc: 0n };
+}
+
+/**
+ * @param {{ Q: object, gacc: bigint, tacc: bigint }} keyaggCtx
+ * @returns {Buffer} 32-byte x-only
+ */
+function getXonlyPk (keyaggCtx) {
+  return xbytes(keyaggCtx.Q);
+}
+
+/**
+ * @param {{ Q: object, gacc: bigint, tacc: bigint }} keyaggCtx
+ * @param {Buffer|string} tweak
+ * @param {boolean} isXonly
+ * @returns {{ Q: object, gacc: bigint, tacc: bigint }}
+ */
+function applyTweak (keyaggCtx, tweak, isXonly) {
+  const tBuf = toBuffer(tweak);
+  if (tBuf.length !== 32) {
+    throw new ValueError('The tweak must be a 32-byte array.');
+  }
+  const { Q, gacc, tacc } = keyaggCtx;
+  const g = (isXonly &amp;&amp; !hasEvenY(Q)) ? (N - 1n) : 1n;
+  const t = intFromBytes(tBuf);
+  if (t >= N) throw new ValueError('The tweak must be less than n.');
+  const Gt = t === 0n ? null : SecpPoint.BASE.multiply(t);
+  const Q_ = pointAdd(pointMul(Q, g), Gt);
+  if (isInfinite(Q_)) {
+    throw new ValueError('The result of tweaking cannot be infinity.');
+  }
+  return {
+    Q: Q_,
+    gacc: (g * gacc) % N,
+    tacc: (t + g * tacc) % N
+  };
+}
+
+/**
+ * @param {Array&lt;Buffer>} pubkeys
+ * @param {Array&lt;Buffer>} tweaks
+ * @param {Array&lt;boolean>} isXonly
+ * @returns {{ Q: object, gacc: bigint, tacc: bigint }}
+ */
+function keyAggAndTweak (pubkeys, tweaks, isXonly) {
+  const tw = tweaks || [];
+  const xo = isXonly || [];
+  if (tw.length !== xo.length) {
+    throw new ValueError('The `tweaks` and `is_xonly` arrays must have the same length.');
+  }
+  let ctx = keyAgg(pubkeys);
+  for (let i = 0; i &lt; tw.length; i++) {
+    ctx = applyTweak(ctx, tw[i], !!xo[i]);
+  }
+  return ctx;
+}
+
+/**
+ * @param {Buffer} rand
+ * @param {Buffer} pk
+ * @param {Buffer} aggpk
+ * @param {number} i
+ * @param {Buffer} msgPrefixed
+ * @param {Buffer} extraIn
+ * @returns {bigint}
+ * @private
+ */
+function nonceHash (rand, pk, aggpk, i, msgPrefixed, extraIn) {
+  const buf = Buffer.concat([
+    rand,
+    Buffer.from([pk.length]),
+    pk,
+    Buffer.from([aggpk.length]),
+    aggpk,
+    msgPrefixed,
+    Buffer.from([
+      (extraIn.length >>> 24) &amp; 0xff,
+      (extraIn.length >>> 16) &amp; 0xff,
+      (extraIn.length >>> 8) &amp; 0xff,
+      extraIn.length &amp; 0xff
+    ]),
+    extraIn,
+    Buffer.from([i])
+  ]);
+  return intFromBytes(taggedHash('MuSig/nonce', buf));
+}
+
+/**
+ * @param {Buffer} rand_
+ * @param {Buffer|null} sk
+ * @param {Buffer} pk
+ * @param {Buffer|null} aggpk
+ * @param {Buffer|null} msg
+ * @param {Buffer|null} extraIn
+ * @returns {{ secnonce: Buffer, pubnonce: Buffer }}
+ */
+function nonceGenInternal (rand_, sk, pk, aggpk, msg, extraIn) {
+  const pkBuf = toBuffer(pk);
+  let rand = toBuffer(rand_);
+  if (sk != null) {
+    rand = bytesXor(toBuffer(sk), taggedHash('MuSig/aux', rand));
+  }
+  const agg = aggpk == null ? Buffer.alloc(0) : toBuffer(aggpk);
+  let msgPrefixed;
+  if (msg == null) {
+    msgPrefixed = Buffer.from([0x00]);
+  } else {
+    const m = toBuffer(msg);
+    const len = Buffer.alloc(8);
+    len.writeBigUInt64BE(BigInt(m.length));
+    msgPrefixed = Buffer.concat([Buffer.from([0x01]), len, m]);
+  }
+  const extra = extraIn == null ? Buffer.alloc(0) : toBuffer(extraIn);
+  const k1 = nonceHash(rand, pkBuf, agg, 0, msgPrefixed, extra) % N;
+  const k2 = nonceHash(rand, pkBuf, agg, 1, msgPrefixed, extra) % N;
+  if (k1 === 0n || k2 === 0n) throw new Error('nonceGen: zero nonce scalar');
+  const Rs1 = SecpPoint.BASE.multiply(k1);
+  const Rs2 = SecpPoint.BASE.multiply(k2);
+  return {
+    secnonce: Buffer.concat([bytesFromInt(k1), bytesFromInt(k2), pkBuf]),
+    pubnonce: Buffer.concat([cbytes(Rs1), cbytes(Rs2)])
+  };
+}
+
+/**
+ * @param {Buffer|null} sk
+ * @param {Buffer} pk
+ * @param {Buffer|null} aggpk
+ * @param {Buffer|null} msg
+ * @param {Buffer|null} extraIn
+ * @returns {{ secnonce: Buffer, pubnonce: Buffer }}
+ */
+function nonceGen (sk, pk, aggpk, msg, extraIn) {
+  if (sk != null &amp;&amp; toBuffer(sk).length !== 32) {
+    throw new ValueError('The optional byte array sk must have length 32.');
+  }
+  if (aggpk != null &amp;&amp; toBuffer(aggpk).length !== 32) {
+    throw new ValueError('The optional byte array aggpk must have length 32.');
+  }
+  return nonceGenInternal(crypto.randomBytes(32), sk, pk, aggpk, msg, extraIn);
+}
+
+/**
+ * @param {Array&lt;Buffer|string>} pubnonces
+ * @returns {Buffer} 66-byte aggnonce
+ */
+function nonceAgg (pubnonces) {
+  if (!Array.isArray(pubnonces) || !pubnonces.length) {
+    throw new TypeError('nonceAgg requires pubnonces');
+  }
+  const parts = [];
+  for (let j = 0; j &lt; 2; j++) {
+    let Rj = null;
+    for (let i = 0; i &lt; pubnonces.length; i++) {
+      const pn = toBuffer(pubnonces[i]);
+      let Rij;
+      try {
+        Rij = cpoint(pn.subarray(j * 33, (j + 1) * 33));
+      } catch (err) {
+        if (err instanceof ValueError) throw new InvalidContributionError(i, 'pubnonce');
+        throw err;
+      }
+      Rj = pointAdd(Rj, Rij);
+    }
+    parts.push(cbytesExt(Rj));
+  }
+  return Buffer.concat(parts);
+}
+
+/**
+ * @param {Buffer} aggnonce
+ * @param {Array&lt;Buffer>} pubkeys
+ * @param {Array&lt;Buffer>} tweaks
+ * @param {Array&lt;boolean>} isXonly
+ * @param {Buffer} msg
+ * @param {Buffer} [adaptor] 33-byte compressed adaptor point T; the session then
+ *   makes a pre-signature that `T`'s secret completes (secp256k1-zkp `musig_nonce_process`)
+ * @returns {object}
+ */
+function sessionContext (aggnonce, pubkeys, tweaks, isXonly, msg, adaptor) {
+  let T = null;
+  if (adaptor != null) {
+    T = Buffer.from(toBuffer(adaptor));
+    cpoint(T);
+  }
+  return {
+    aggnonce: toBuffer(aggnonce),
+    pubkeys: pubkeys.map((pk) => Buffer.from(toBuffer(pk))),
+    tweaks: (tweaks || []).map((t) => Buffer.from(toBuffer(t))),
+    isXonly: (isXonly || []).map((v) => !!v),
+    msg: toBuffer(msg),
+    adaptor: T
+  };
+}
+
+/**
+ * @param {object} sessionCtx
+ * @returns {{ Q: object, gacc: bigint, tacc: bigint, b: bigint, R: object, e: bigint }}
+ *   With an adaptor, `R` is the final nonce (R1 + T) + b·R2.
+ */
+function getSessionValues (sessionCtx) {
+  const { aggnonce, pubkeys, tweaks, isXonly, msg } = sessionCtx;
+  const { Q, gacc, tacc } = keyAggAndTweak(pubkeys, tweaks, isXonly);
+  let R1;
+  let R2;
+  try {
+    R1 = cpointExt(aggnonce.subarray(0, 33));
+    R2 = cpointExt(aggnonce.subarray(33, 66));
+  } catch (err) {
+    if (err instanceof ValueError) throw new InvalidContributionError(null, 'aggnonce');
+    throw err;
+  }
+  let nonceBytes = aggnonce;
+  if (sessionCtx.adaptor) {
+    R1 = pointAdd(R1, cpoint(sessionCtx.adaptor));
+    nonceBytes = Buffer.concat([cbytesExt(R1), aggnonce.subarray(33, 66)]);
+  }
+  const b = intFromBytes(taggedHash(
+    'MuSig/noncecoef',
+    Buffer.concat([nonceBytes, xbytes(Q), msg])
+  )) % N;
+  let R_ = pointAdd(R1, pointMul(R2, b));
+  const R = isInfinite(R_) ? SecpPoint.BASE : R_;
+  const e = intFromBytes(taggedHash(
+    'BIP0340/challenge',
+    Buffer.concat([xbytes(R), xbytes(Q), msg])
+  )) % N;
+  return { Q, gacc, tacc, b, R, e };
+}
+
+/**
+ * @param {object} sessionCtx
+ * @param {*} P
+ * @returns {bigint}
+ * @private
+ */
+function getSessionKeyAggCoeff (sessionCtx, P) {
+  const pk = cbytes(P);
+  const found = sessionCtx.pubkeys.some((p) => toBuffer(p).equals(pk));
+  if (!found) {
+    throw new ValueError('The signer\'s pubkey must be included in the list of pubkeys.');
+  }
+  return keyAggCoeff(sessionCtx.pubkeys, pk);
+}
+
+/**
+ * Zero the secret nonce after use (BIP-327). Mutates `secnonce` in place.
+ *
+ * @param {Buffer} secnonce 97-byte (k1 || k2 || pk)
+ * @param {Buffer} sk
+ * @param {object} sessionCtx
+ * @returns {Buffer} 32-byte partial signature
+ */
+function sign (secnonce, sk, sessionCtx) {
+  const sn = toBuffer(secnonce);
+  const k1_ = intFromBytes(sn.subarray(0, 32));
+  const k2_ = intFromBytes(sn.subarray(32, 64));
+  const pkPart = Buffer.from(sn.subarray(64, 97));
+  // BIP-327: never reuse a secret nonce, including after a later session-ctx throw.
+  if (Buffer.isBuffer(secnonce)) secnonce.fill(0);
+  else sn.fill(0);
+  const { Q, gacc, b, R, e } = getSessionValues(sessionCtx);
+  if (!(k1_ > 0n &amp;&amp; k1_ &lt; N)) {
+    throw new ValueError('first secnonce value is out of range.');
+  }
+  if (!(k2_ > 0n &amp;&amp; k2_ &lt; N)) {
+    throw new ValueError('second secnonce value is out of range.');
+  }
+  const k1 = hasEvenY(R) ? k1_ : (N - k1_);
+  const k2 = hasEvenY(R) ? k2_ : (N - k2_);
+  const d_ = intFromBytes(toBuffer(sk));
+  if (!(d_ > 0n &amp;&amp; d_ &lt; N)) {
+    throw new ValueError('secret key value is out of range.');
+  }
+  const P = SecpPoint.BASE.multiply(d_);
+  const pk = cbytes(P);
+  if (!pk.equals(pkPart)) {
+    throw new ValueError('Public key does not match nonce_gen argument');
+  }
+  const a = getSessionKeyAggCoeff(sessionCtx, P);
+  const g = hasEvenY(Q) ? 1n : (N - 1n);
+  const d = (g * gacc * d_) % N;
+  const s = (k1 + b * k2 + e * a * d) % N;
+  const psig = bytesFromInt(s);
+  const Rs1 = SecpPoint.BASE.multiply(k1_);
+  const Rs2 = SecpPoint.BASE.multiply(k2_);
+  const pubnonce = Buffer.concat([cbytes(Rs1), cbytes(Rs2)]);
+  if (!partialSigVerifyInternal(psig, pubnonce, pk, sessionCtx)) {
+    throw new Error('sign: partial signature failed self-check');
+  }
+  return psig;
+}
+
+/**
+ * @param {Buffer} psig
+ * @param {Buffer} pubnonce
+ * @param {Buffer} pk
+ * @param {object} sessionCtx
+ * @returns {boolean}
+ */
+function partialSigVerifyInternal (psig, pubnonce, pk, sessionCtx) {
+  const { Q, gacc, b, R, e } = getSessionValues(sessionCtx);
+  const s = intFromBytes(toBuffer(psig));
+  if (!(s > 0n &amp;&amp; s &lt; N)) return false;
+  const pn = toBuffer(pubnonce);
+  const Rs1 = cpoint(pn.subarray(0, 33));
+  const Rs2 = cpoint(pn.subarray(33, 66));
+  const ReS_ = pointAdd(Rs1, pointMul(Rs2, b));
+  const ReS = hasEvenY(R) ? ReS_ : pointNegate(ReS_);
+  const P = cpoint(pk);
+  const a = getSessionKeyAggCoeff(sessionCtx, P);
+  const g = hasEvenY(Q) ? 1n : (N - 1n);
+  const g_ = (g * gacc) % N;
+  const lhs = SecpPoint.BASE.multiply(s);
+  const rhs = pointAdd(ReS, pointMul(P, (e * a * g_) % N));
+  if (isInfinite(rhs)) return false;
+  return lhs.equals(rhs);
+}
+
+/**
+ * @param {Buffer} psig
+ * @param {Array&lt;Buffer>} pubnonces
+ * @param {Array&lt;Buffer>} pubkeys
+ * @param {Array&lt;Buffer>} tweaks
+ * @param {Array&lt;boolean>} isXonly
+ * @param {Buffer} msg
+ * @param {number} i
+ * @param {Buffer} [adaptor] 33-byte adaptor point of an adaptor session
+ * @returns {boolean}
+ */
+function partialSigVerify (psig, pubnonces, pubkeys, tweaks, isXonly, msg, i, adaptor) {
+  if (pubnonces.length !== pubkeys.length) {
+    throw new ValueError('The `pubnonces` and `pubkeys` arrays must have the same length.');
+  }
+  const aggnonce = nonceAgg(pubnonces);
+  const sessionCtx = sessionContext(aggnonce, pubkeys, tweaks, isXonly, msg, adaptor);
+  return partialSigVerifyInternal(psig, pubnonces[i], pubkeys[i], sessionCtx);
+}
+
+/**
+ * @param {Array&lt;Buffer>} psigs
+ * @param {object} sessionCtx
+ * @returns {Buffer} 64-byte BIP-340 signature
+ */
+function partialSigAgg (psigs, sessionCtx) {
+  const { Q, tacc, R, e } = getSessionValues(sessionCtx);
+  let s = 0n;
+  for (let i = 0; i &lt; psigs.length; i++) {
+    const si = intFromBytes(toBuffer(psigs[i]));
+    if (si >= N) throw new InvalidContributionError(i, 'psig');
+    s = (s + si) % N;
+  }
+  const g = hasEvenY(Q) ? 1n : (N - 1n);
+  s = (s + e * g * tacc) % N;
+  return Buffer.concat([xbytes(R), bytesFromInt(s)]);
+}
+
+/**
+ * @param {Buffer} sk_
+ * @param {Buffer} aggothernonce
+ * @param {Buffer} aggpk
+ * @param {Buffer} msg
+ * @param {number} i
+ * @returns {bigint}
+ * @private
+ */
+function detNonceHash (sk_, aggothernonce, aggpk, msg, i) {
+  const len = Buffer.alloc(8);
+  len.writeBigUInt64BE(BigInt(msg.length));
+  const buf = Buffer.concat([
+    sk_,
+    aggothernonce,
+    aggpk,
+    len,
+    msg,
+    Buffer.from([i])
+  ]);
+  return intFromBytes(taggedHash('MuSig/deterministic/nonce', buf));
+}
+
+/**
+ * @param {Buffer} sk
+ * @param {Buffer} aggothernonce
+ * @param {Array&lt;Buffer>} pubkeys
+ * @param {Array&lt;Buffer>} tweaks
+ * @param {Array&lt;boolean>} isXonly
+ * @param {Buffer} msg
+ * @param {Buffer|null} rand
+ * @param {Buffer} [adaptor] 33-byte adaptor point; the partial signature is then
+ *   a pre-signature share of that adaptor session
+ * @returns {{ pubnonce: Buffer, psig: Buffer }}
+ */
+function deterministicSign (sk, aggothernonce, pubkeys, tweaks, isXonly, msg, rand, adaptor) {
+  const skBuf = toBuffer(sk);
+  const sk_ = rand != null
+    ? bytesXor(skBuf, taggedHash('MuSig/aux', toBuffer(rand)))
+    : skBuf;
+  const aggpk = getXonlyPk(keyAggAndTweak(pubkeys, tweaks, isXonly));
+  const m = toBuffer(msg);
+  const other = toBuffer(aggothernonce);
+  // Sessions that differ only in the adaptor must not share a nonce. T is folded
+  // into the others' R1, which leaves the nonce equal only for identical sessions.
+  let nonceInput = other;
+  if (adaptor != null) {
+    let R1;
+    try {
+      R1 = cpointExt(other.subarray(0, 33));
+      cpointExt(other.subarray(33, 66));
+    } catch (err) {
+      if (err instanceof ValueError) throw new InvalidContributionError(null, 'aggothernonce');
+      throw err;
+    }
+    nonceInput = Buffer.concat([cbytesExt(pointAdd(R1, cpoint(toBuffer(adaptor)))), other.subarray(33, 66)]);
+  }
+  const k1 = detNonceHash(sk_, nonceInput, aggpk, m, 0) % N;
+  const k2 = detNonceHash(sk_, nonceInput, aggpk, m, 1) % N;
+  if (k1 === 0n || k2 === 0n) throw new Error('deterministicSign: zero nonce');
+  const Rs1 = SecpPoint.BASE.multiply(k1);
+  const Rs2 = SecpPoint.BASE.multiply(k2);
+  const pubnonce = Buffer.concat([cbytes(Rs1), cbytes(Rs2)]);
+  const secnonce = Buffer.concat([bytesFromInt(k1), bytesFromInt(k2), individualPk(skBuf)]);
+  let aggnonce;
+  try {
+    aggnonce = nonceAgg([pubnonce, other]);
+  } catch (err) {
+    if (err instanceof InvalidContributionError) {
+      throw new InvalidContributionError(null, 'aggothernonce');
+    }
+    throw err;
+  }
+  const sessionCtx = sessionContext(aggnonce, pubkeys, tweaks, isXonly, m, adaptor);
+  const psig = sign(secnonce, skBuf, sessionCtx);
+  return { pubnonce, psig };
+}
+
+/**
+ * Convenience: x-only MuSig2 aggregate of compressed pubkeys (no tweaks).
+ *
+ * @param {Array&lt;Buffer|string>} pubkeys
+ * @returns {Buffer} 32-byte x-only
+ */
+function aggregateXonly (pubkeys, opts = {}) {
+  const keys = opts.sort === false ? pubkeys : keySort(pubkeys);
+  return getXonlyPk(keyAgg(keys));
+}
+
+/**
+ * BIP-340 verify of an aggregated signature against keys we compute (never
+ * trust a caller-supplied aggregate). `message` is hashed with SHA-256 unless
+ * it is already 32 bytes.
+ *
+ * @param {Buffer|string} message
+ * @param {Buffer|string} signature 64-byte Schnorr
+ * @param {Array&lt;Buffer|string>} pubkeys compressed participants
+ * @param {Buffer|string} [claimedAggregate] compressed or x-only; must match
+ * @returns {boolean}
+ */
+function verifyAggregatedSchnorr (message, signature, pubkeys, claimedAggregate) {
+  if (!Array.isArray(pubkeys) || pubkeys.length &lt; 1) return false;
+  const xonly = aggregateXonly(pubkeys);
+  if (claimedAggregate != null) {
+    const claimed = toBuffer(claimedAggregate);
+    let claimedX;
+    if (claimed.length === 32) claimedX = claimed;
+    else if (claimed.length === 33) claimedX = claimed.subarray(1, 33);
+    else return false;
+    if (!claimedX.equals(xonly)) return false;
+  }
+  let msg = toBuffer(message);
+  if (msg.length !== 32) {
+    msg = crypto.createHash('sha256').update(msg).digest();
+  }
+  const sig = toBuffer(signature);
+  if (sig.length !== 64) return false;
+  try {
+    return nobleSchnorr.verify(sig, msg, xonly);
+  } catch {
+    return false;
+  }
+}
+
+module.exports = {
+  InvalidContributionError,
+  ValueError,
+  musig2IsNOfN,
+  individualPk,
+  keySort,
+  keyAgg,
+  getXonlyPk,
+  applyTweak,
+  keyAggAndTweak,
+  keyAggCoeff,
+  nonceGen,
+  nonceGenInternal,
+  nonceAgg,
+  sessionContext,
+  getSessionValues,
+  sign,
+  partialSigVerify,
+  partialSigVerifyInternal,
+  partialSigAgg,
+  deterministicSign,
+  aggregateXonly,
+  verifyAggregatedSchnorr
+};
+</code></pre>
+      </article>
+    </section>
+
+
+
+  </div>
+  <nav>
+    <h2><a href="index.html">Home</a></h2>
+    <h3>Modules</h3>
+    <ul>
+      <li><a href="module-types_bech32_bech32.html">types/bech32/bech32</a></li>
+      <li><a href="module-types_bech32_fabricPaymentBech32.html">types/bech32/fabricPaymentBech32</a></li>
+      <li><a href="module-types_delegation.html">types/delegation</a></li>
+      <li><a href="module-types_key_base58.html">types/key/base58</a></li>
+      <li><a href="module-types_key_bip32.html">types/key/bip32</a></li>
+      <li><a href="module-types_key_bip39.html">types/key/bip39</a></li>
+      <li><a href="module-types_key_bip49.html">types/key/bip49</a></li>
+      <li><a href="module-types_key_bip85.html">types/key/bip85</a></li>
+      <li><a href="module-types_key_fabricKeyMaterial.html">types/key/fabricKeyMaterial</a></li>
+      <li><a href="module-types_key_keyHasPrivateSigningMaterial.html">types/key/keyHasPrivateSigningMaterial</a></li>
+      <li><a href="module-types_key_pubkey.html">types/key/pubkey</a></li>
+      <li><a href="module-types_key_signingTags.html">types/key/signingTags</a></li>
+      <li><a href="module-types_typetree.html">types/typetree</a></li>
+      <li><a href="module-types_wallet_accountKeys.html">types/wallet/accountKeys</a></li>
+      <li><a href="module-types_wallet_bip21.html">types/wallet/bip21</a></li>
+      <li><a href="module-types_wallet_bip86.html">types/wallet/bip86</a></li>
+      <li><a href="module-types_witness_adaptor.html">types/witness/adaptor</a></li>
+      <li><a href="module-types_witness_bls.html">types/witness/bls</a></li>
+      <li><a href="module-types_witness_dleq.html">types/witness/dleq</a></li>
+      <li><a href="module-types_witness_musig2.html">types/witness/musig2</a></li>
+      <li><a href="module-types_witness_musig2Adaptor.html">types/witness/musig2Adaptor</a></li>
+      <li><a href="module-types_witness_musig2Session.html">types/witness/musig2Session</a></li>
+      <li><a href="types_ecc.html#.module:selftest">types/ecc.selftest</a></li>
+    </ul>
+    <h3>Classes</h3>
+    <ul>
+      <li><a href="Actor.html">Actor</a></li>
+      <li><a href="Beacon.html">Beacon</a></li>
+      <li><a href="Bitcoin.html">Bitcoin</a></li>
+      <li><a href="Block.html">Block</a></li>
+      <li><a href="Bond.html">Bond</a></li>
+      <li><a href="Book.html">Book</a></li>
+      <li><a href="Chain.html">Chain</a></li>
+      <li><a href="Challenge.html">Challenge</a></li>
+      <li><a href="Channel.html">Channel</a></li>
+      <li><a href="ChannelBook.html">ChannelBook</a></li>
+      <li><a href="ChannelSession.html">ChannelSession</a></li>
+      <li><a href="Circuit.html">Circuit</a></li>
+      <li><a href="Coinjoin.html">Coinjoin</a></li>
+      <li><a href="CoinjoinBook.html">CoinjoinBook</a></li>
+      <li><a href="CoinjoinMakerRound.html">CoinjoinMakerRound</a></li>
+      <li><a href="CoinjoinTakerRound.html">CoinjoinTakerRound</a></li>
+      <li><a href="Collection.html">Collection</a></li>
+      <li><a href="Component.html">Component</a></li>
+      <li><a href="Contract.html">Contract</a></li>
+      <li><a href="Disk.html">Disk</a></li>
+      <li><a href="Document.html">Document</a></li>
+      <li><a href="DocumentBlobTransferBook.html">DocumentBlobTransferBook</a></li>
+      <li><a href="DocumentBook.html">DocumentBook</a></li>
+      <li><a href="EncryptedPromise.html">EncryptedPromise</a></li>
+      <li><a href="Entity.html">Entity</a></li>
+      <li><a href="Entity.Transition.html">Transition</a></li>
+      <li><a href="Environment.html">Environment</a></li>
+      <li><a href="Fabric.html">Fabric</a></li>
+      <li><a href="Federation.html">Federation</a></li>
+      <li><a href="FidelityVerifier.html">FidelityVerifier</a></li>
+      <li><a href="Filesystem.html">Filesystem</a></li>
+      <li><a href="FraudProof.html">FraudProof</a></li>
+      <li><a href="HKDF.html">HKDF</a></li>
+      <li><a href="Hash256.html">Hash256</a></li>
+      <li><a href="Htlc.html">Htlc</a></li>
+      <li><a href="Identity.html">Identity</a></li>
+      <li><a href="Interface.html">Interface</a></li>
+      <li><a href="Key.html">Key</a></li>
+      <li><a href="Ledger.html">Ledger</a></li>
+      <li><a href="Lightning.html">Lightning</a></li>
+      <li><a href="LiquidityBook.html">LiquidityBook</a></li>
+      <li><a href="Logger.html">Logger</a></li>
+      <li><a href="Machine.html">Machine</a></li>
+      <li><a href="Market.html">Market</a></li>
+      <li><a href="Message.html">Message</a></li>
+      <li><a href="OrderBook.html">OrderBook</a></li>
+      <li><a href="Peer.html">Peer</a></li>
+      <li><a href="PodleBlacklist.html">PodleBlacklist</a></li>
+      <li><a href="Policy.html">Policy</a></li>
+      <li><a href="Program.html">Program</a></li>
+      <li><a href="Reader.html">Reader</a></li>
+      <li><a href="Redis.html">Redis</a></li>
+      <li><a href="Remote.html">Remote</a></li>
+      <li><a href="Resolutions.html">Resolutions</a></li>
+      <li><a href="Resource.html">Resource</a></li>
+      <li><a href="RoundRobin.html">RoundRobin</a></li>
+      <li><a href="Scribe.html">Scribe</a></li>
+      <li><a href="Script.html">Script</a></li>
+      <li><a href="Secret.html">Secret</a></li>
+      <li><a href="Service.html">Service</a></li>
+      <li><a href="Session.html">Session</a></li>
+      <li><a href="SetupTui.html">SetupTui</a></li>
+      <li><a href="SignedBook.html">SignedBook</a></li>
+      <li><a href="State.html">State</a></li>
+      <li><a href="Store.html">Store</a></li>
+      <li><a href="Swap.html">Swap</a></li>
+      <li><a href="global.html#Text">Text</a></li>
+      <li><a href="Token.html">Token</a></li>
+      <li><a href="Tree.html">Tree</a></li>
+      <li><a href="Vector.html">Vector</a></li>
+      <li><a href="Wallet.html">Wallet</a></li>
+      <li><a href="Watchtower.html">Watchtower</a></li>
+      <li><a href="Worker.html">Worker</a></li>
+      <li><a href="ZMQ.html">ZMQ</a></li>
+      <li><a href="module-types_delegation-Delegation.html">Delegation</a></li>
+      <li><a href="module-types_key_bip32-BIP32Factory.html">BIP32Factory</a></li>
+      <li><a href="module-types_witness_musig2-InvalidContributionError.html">InvalidContributionError</a></li>
+    </ul>
+    <h3>Global</h3>
+    <ul>
+      <li><a href="global.html#ASK_TYPE">ASK_TYPE</a></li>
+      <li><a href="global.html#BID_CLOCK_SKEW_SECONDS">BID_CLOCK_SKEW_SECONDS</a></li>
+      <li><a href="global.html#BID_TYPE">BID_TYPE</a></li>
+      <li><a href="global.html#BITCOIN_MESSAGE_TYPES">BITCOIN_MESSAGE_TYPES</a></li>
+      <li><a href="global.html#CHANNEL_BODY_TYPES">CHANNEL_BODY_TYPES</a></li>
+      <li><a href="global.html#CHANNEL_DEFAULTS">CHANNEL_DEFAULTS</a></li>
+      <li><a href="global.html#CLTV_TIMESTAMP_THRESHOLD">CLTV_TIMESTAMP_THRESHOLD</a></li>
+      <li><a href="global.html#DEFAULT_BID_TTL_SECONDS">DEFAULT_BID_TTL_SECONDS</a></li>
+      <li><a href="global.html#DEFAULT_FEE_SATS">DEFAULT_FEE_SATS</a></li>
+      <li><a href="global.html#DEFAULT_INVOICE_EXPIRY_SECONDS">DEFAULT_INVOICE_EXPIRY_SECONDS</a></li>
+      <li><a href="global.html#DEFAULT_INVOICE_MARGIN_SECONDS">DEFAULT_INVOICE_MARGIN_SECONDS</a></li>
+      <li><a href="global.html#DEFAULT_MAX_SIGNS">DEFAULT_MAX_SIGNS</a></li>
+      <li><a href="global.html#DEFAULT_MIN_CLAIM_BLOCKS">DEFAULT_MIN_CLAIM_BLOCKS</a></li>
+      <li><a href="global.html#DEFAULT_MIN_CONFIRMATIONS">DEFAULT_MIN_CONFIRMATIONS</a></li>
+      <li><a href="global.html#DEFAULT_MIN_EQUAL_OUTPUTS">DEFAULT_MIN_EQUAL_OUTPUTS</a></li>
+      <li><a href="global.html#DEFAULT_WEIGHTS">DEFAULT_WEIGHTS</a></li>
+      <li><a href="global.html#DEPRECATED_WIRE_TYPES">DEPRECATED_WIRE_TYPES</a></li>
+      <li><a href="global.html#DUST_SATS">DUST_SATS</a></li>
+      <li><a href="global.html#EXIT_KINDS">EXIT_KINDS</a></li>
+      <li><a href="global.html#EXIT_SIGNATURE_TYPE">EXIT_SIGNATURE_TYPE</a></li>
+      <li><a href="global.html#FIDELITY_LOCKTIME_GRID">FIDELITY_LOCKTIME_GRID</a></li>
+      <li><a href="global.html#FIDELITY_MAX_CERT_BLOCKS">FIDELITY_MAX_CERT_BLOCKS</a></li>
+      <li><a href="global.html#FIELD_BODIES_VERSION">FIELD_BODIES_VERSION</a></li>
+      <li><a href="global.html#GCM_TAG_BYTES">GCM_TAG_BYTES</a></li>
+      <li><a href="global.html#HOP_PENALTY_MS">HOP_PENALTY_MS</a></li>
+      <li><a href="global.html#INPUT_HEADROOM">INPUT_HEADROOM</a></li>
+      <li><a href="global.html#LEAF_VERSION">LEAF_VERSION</a></li>
+      <li><a href="global.html#LOCKTIME_SLACK_BLOCKS">LOCKTIME_SLACK_BLOCKS</a></li>
+      <li><a href="global.html#LOCKTIME_THRESHOLD">LOCKTIME_THRESHOLD</a></li>
+      <li><a href="global.html#MAX_EVIDENCE">MAX_EVIDENCE</a></li>
+      <li><a href="global.html#MAX_FEE_PPM">MAX_FEE_PPM</a></li>
+      <li><a href="global.html#MAX_LOCKTIME">MAX_LOCKTIME</a></li>
+      <li><a href="global.html#MAX_MAKERS">MAX_MAKERS</a></li>
+      <li><a href="global.html#MAX_MAKER_INPUTS">MAX_MAKER_INPUTS</a></li>
+      <li><a href="global.html#MAX_OFFERS">MAX_OFFERS</a></li>
+      <li><a href="global.html#MAX_PREMIUM_PPM">MAX_PREMIUM_PPM</a></li>
+      <li><a href="global.html#MAX_PROVIDERS">MAX_PROVIDERS</a></li>
+      <li><a href="global.html#MAX_PSBT_CHARS">MAX_PSBT_CHARS</a></li>
+      <li><a href="global.html#MAX_REFUND_LOCK_BLOCKS">MAX_REFUND_LOCK_BLOCKS</a></li>
+      <li><a href="global.html#MAX_SETTLED_CREDITS">MAX_SETTLED_CREDITS</a></li>
+      <li><a href="global.html#MAX_TRANSFERS">MAX_TRANSFERS</a></li>
+      <li><a href="global.html#MIN_COINJOIN_SATS">MIN_COINJOIN_SATS</a></li>
+      <li><a href="global.html#MIN_INVOICE_EXPIRY_SECONDS">MIN_INVOICE_EXPIRY_SECONDS</a></li>
+      <li><a href="global.html#MIN_REFUND_LOCK_BLOCKS">MIN_REFUND_LOCK_BLOCKS</a></li>
+      <li><a href="global.html#PODLE_BLACKLIST_SIZE">PODLE_BLACKLIST_SIZE</a></li>
+      <li><a href="global.html#PODLE_MAX_INDEX">PODLE_MAX_INDEX</a></li>
+      <li><a href="global.html#PODLE_MIN_AGE_CONFS">PODLE_MIN_AGE_CONFS</a></li>
+      <li><a href="global.html#PODLE_MIN_VALUE_PCT">PODLE_MIN_VALUE_PCT</a></li>
+      <li><a href="global.html#PODLE_TAG">PODLE_TAG</a></li>
+      <li><a href="global.html#ROUND_TYPES">ROUND_TYPES</a></li>
+      <li><a href="global.html#SCORE_INVENTORY_ONLY">SCORE_INVENTORY_ONLY</a></li>
+      <li><a href="global.html#SCORE_MAX">SCORE_MAX</a></li>
+      <li><a href="global.html#SCORE_UNKNOWN">SCORE_UNKNOWN</a></li>
+      <li><a href="global.html#SEALED_TYPE">SEALED_TYPE</a></li>
+      <li><a href="global.html#SEAL_NAMESPACE">SEAL_NAMESPACE</a></li>
+      <li><a href="global.html#SIGNER_FIELD">SIGNER_FIELD</a></li>
+      <li><a href="global.html#TAPROOT_INTERNAL_NUMS">TAPROOT_INTERNAL_NUMS</a></li>
+      <li><a href="global.html#TELEMETRY_TYPE">TELEMETRY_TYPE</a></li>
+      <li><a href="global.html#TELEMETRY_VERSION">TELEMETRY_VERSION</a></li>
+      <li><a href="global.html#UNSAFE_PATH_TOKENS">UNSAFE_PATH_TOKENS</a></li>
+      <li><a href="global.html#WALLET_TX_KINDS">WALLET_TX_KINDS</a></li>
+      <li><a href="global.html#WEIGHT_OVERHEAD">WEIGHT_OVERHEAD</a></li>
+      <li><a href="global.html#YEAR_BLOCKS">YEAR_BLOCKS</a></li>
+      <li><a href="global.html#assertMonotoneBudget">assertMonotoneBudget</a></li>
+      <li><a href="global.html#bitcoin">bitcoin</a></li>
+      <li><a href="global.html#bodyId">bodyId</a></li>
+      <li><a href="global.html#broadcastSettled">broadcastSettled</a></li>
+      <li><a href="global.html#buildContractTaproot">buildContractTaproot</a></li>
+      <li><a href="global.html#buildEscrow">buildEscrow</a></li>
+      <li><a href="global.html#buildFederationVaultFromPolicy">buildFederationVaultFromPolicy</a></li>
+      <li><a href="global.html#buildFidelity">buildFidelity</a></li>
+      <li><a href="global.html#buildForwardedDocumentRequest">buildForwardedDocumentRequest</a></li>
+      <li><a href="global.html#buildHashlockLeaf">buildHashlockLeaf</a></li>
+      <li><a href="global.html#buildHashlockTapscript">buildHashlockTapscript</a></li>
+      <li><a href="global.html#buildPsbt">buildPsbt</a></li>
+      <li><a href="global.html#buildScriptLeaf">buildScriptLeaf</a></li>
+      <li><a href="global.html#buildSpendLeaf">buildSpendLeaf</a></li>
+      <li><a href="global.html#buildWatchSet">buildWatchSet</a></li>
+      <li><a href="global.html#checkPodleUtxo">checkPodleUtxo</a></li>
+      <li><a href="global.html#classifyWalletTransaction">classifyWalletTransaction</a></li>
+      <li><a href="global.html#codec">codec</a></li>
+      <li><a href="global.html#compileLeaves">compileLeaves</a></li>
+      <li><a href="global.html#composePolicyWithRunHashlock">composePolicyWithRunHashlock</a></li>
+      <li><a href="global.html#composeTaprootTree">composeTaprootTree</a></li>
+      <li><a href="global.html#computeRelayFee">computeRelayFee</a></li>
+      <li><a href="global.html#contractMessageIndex">contractMessageIndex</a></li>
+      <li><a href="global.html#contractMessageMatches">contractMessageMatches</a></li>
+      <li><a href="global.html#createBlobMerkleTree">createBlobMerkleTree</a></li>
+      <li><a href="global.html#createDocumentPurchaseSession">createDocumentPurchaseSession</a></li>
+      <li><a href="global.html#describePsbt">describePsbt</a></li>
+      <li><a href="global.html#descriptorPrivateKey">descriptorPrivateKey</a></li>
+      <li><a href="global.html#envelopeRecipient">envelopeRecipient</a></li>
+      <li><a href="global.html#estimateVsize">estimateVsize</a></li>
+      <li><a href="global.html#evaluateTierWhen">evaluateTierWhen</a></li>
+      <li><a href="global.html#expireHeight">expireHeight</a></li>
+      <li><a href="global.html#fidelityLocktimes">fidelityLocktimes</a></li>
+      <li><a href="global.html#fidelityPath">fidelityPath</a></li>
+      <li><a href="global.html#fidelityValue">fidelityValue</a></li>
+      <li><a href="global.html#finalize">finalize</a></li>
+      <li><a href="global.html#finalizeHashlockPsbt">finalizeHashlockPsbt</a></li>
+      <li><a href="global.html#finalizeSpendPsbt">finalizeSpendPsbt</a></li>
+      <li><a href="global.html#findSession">findSession</a></li>
+      <li><a href="global.html#fromContractMessage">fromContractMessage</a></li>
+      <li><a href="global.html#generatePodle">generatePodle</a></li>
+      <li><a href="global.html#hashlockFromProgramRun">hashlockFromProgramRun</a></li>
+      <li><a href="global.html#invoiceAmountMsat">invoiceAmountMsat</a></li>
+      <li><a href="global.html#isDuplicateSettlement">isDuplicateSettlement</a></li>
+      <li><a href="global.html#isValidFidelityLocktime">isValidFidelityLocktime</a></li>
+      <li><a href="global.html#l1GiverTerms">l1GiverTerms</a></li>
+      <li><a href="global.html#leafScripts">leafScripts</a></li>
+      <li><a href="global.html#listRefundCandidates">listRefundCandidates</a></li>
+      <li><a href="global.html#lockFrom">lockFrom</a></li>
+      <li><a href="global.html#makerChange">makerChange</a></li>
+      <li><a href="global.html#makerFee">makerFee</a></li>
+      <li><a href="global.html#memoryChain">memoryChain</a></li>
+      <li><a href="global.html#memoryWallet">memoryWallet</a></li>
+      <li><a href="global.html#mergeMakerSignatures">mergeMakerSignatures</a></li>
+      <li><a href="global.html#nextPodleIndex">nextPodleIndex</a></li>
+      <li><a href="global.html#normalizeAuth">normalizeAuth</a></li>
+      <li><a href="global.html#normalizeCancel">normalizeCancel</a></li>
+      <li><a href="global.html#normalizeContractSpendPolicy">normalizeContractSpendPolicy</a></li>
+      <li><a href="global.html#normalizeExtraLeafSpecs">normalizeExtraLeafSpecs</a></li>
+      <li><a href="global.html#normalizeFidelity">normalizeFidelity</a></li>
+      <li><a href="global.html#normalizeFill">normalizeFill</a></li>
+      <li><a href="global.html#normalizeFillAck">normalizeFillAck</a></li>
+      <li><a href="global.html#normalizeFunded">normalizeFunded</a></li>
+      <li><a href="global.html#normalizeHashlockSpec">normalizeHashlockSpec</a></li>
+      <li><a href="global.html#normalizeIoAuth">normalizeIoAuth</a></li>
+      <li><a href="global.html#normalizeLeaf">normalizeLeaf</a></li>
+      <li><a href="global.html#normalizeLock">normalizeLock</a></li>
+      <li><a href="global.html#normalizeOffer">normalizeOffer</a></li>
+      <li><a href="global.html#normalizeOrder">normalizeOrder</a></li>
+      <li><a href="global.html#normalizeSig">normalizeSig</a></li>
+      <li><a href="global.html#normalizeTake">normalizeTake</a></li>
+      <li><a href="global.html#normalizeTakeAccept">normalizeTakeAccept</a></li>
+      <li><a href="global.html#normalizeTx">normalizeTx</a></li>
+      <li><a href="global.html#offerKey">offerKey</a></li>
+      <li><a href="global.html#openFiling">openFiling</a></li>
+      <li><a href="global.html#openRoundMessage">openRoundMessage</a></li>
+      <li><a href="global.html#paginateInventoryItems">paginateInventoryItems</a></li>
+      <li><a href="global.html#parseXOnlyPubkeysFromSpendScript">parseXOnlyPubkeysFromSpendScript</a></li>
+      <li><a href="global.html#planCoinjoin">planCoinjoin</a></li>
+      <li><a href="global.html#podleCommitment">podleCommitment</a></li>
+      <li><a href="global.html#podleGenerator">podleGenerator</a></li>
+      <li><a href="global.html#policyAfterDecay">policyAfterDecay</a></li>
+      <li><a href="global.html#prepareDecayMigrationPsbt">prepareDecayMigrationPsbt</a></li>
+      <li><a href="global.html#prepareFidelityRedeem">prepareFidelityRedeem</a></li>
+      <li><a href="global.html#prepareHashlockWithdrawalPsbt">prepareHashlockWithdrawalPsbt</a></li>
+      <li><a href="global.html#prepareTierWithdrawalPsbt">prepareTierWithdrawalPsbt</a></li>
+      <li><a href="global.html#quote">quote</a></li>
+      <li><a href="global.html#randomNonce">randomNonce</a></li>
+      <li><a href="global.html#randomPrivateKey">randomPrivateKey</a></li>
+      <li><a href="global.html#randomRoundId">randomRoundId</a></li>
+      <li><a href="global.html#rememberSettlement">rememberSettlement</a></li>
+      <li><a href="global.html#roleFor">roleFor</a></li>
+      <li><a href="global.html#roles">roles</a></li>
+      <li><a href="global.html#routePath">routePath</a></li>
+      <li><a href="global.html#scriptTreeFromLeaves">scriptTreeFromLeaves</a></li>
+      <li><a href="global.html#sealRoundMessage">sealRoundMessage</a></li>
+      <li><a href="global.html#selectActiveTiers">selectActiveTiers</a></li>
+      <li><a href="global.html#sellerDedupeKey">sellerDedupeKey</a></li>
+      <li><a href="global.html#settlementDedupeKey">settlementDedupeKey</a></li>
+      <li><a href="global.html#signFidelityCertificate">signFidelityCertificate</a></li>
+      <li><a href="global.html#signFidelityRedeem">signFidelityRedeem</a></li>
+      <li><a href="global.html#signKeyPathInputs">signKeyPathInputs</a></li>
+      <li><a href="global.html#signOwnership">signOwnership</a></li>
+      <li><a href="global.html#signingString">signingString</a></li>
+      <li><a href="global.html#spendAddress">spendAddress</a></li>
+      <li><a href="global.html#synthesizeDefaultLadder">synthesizeDefaultLadder</a></li>
+      <li><a href="global.html#taprootKeyPath">taprootKeyPath</a></li>
+      <li><a href="global.html#taprootOutputPrivateKey">taprootOutputPrivateKey</a></li>
+      <li><a href="global.html#tierWhenPath">tierWhenPath</a></li>
+      <li><a href="global.html#timelockMature">timelockMature</a></li>
+      <li><a href="global.html#toContractMessage">toContractMessage</a></li>
+      <li><a href="global.html#toIntegerSats">toIntegerSats</a></li>
+      <li><a href="global.html#unsignedTxid">unsignedTxid</a></li>
+      <li><a href="global.html#validateEscrow">validateEscrow</a></li>
+      <li><a href="global.html#validateFill">validateFill</a></li>
+      <li><a href="global.html#validateForMaker">validateForMaker</a></li>
+      <li><a href="global.html#validateForTaker">validateForTaker</a></li>
+      <li><a href="global.html#validateInvoice">validateInvoice</a></li>
+      <li><a href="global.html#validateTake">validateTake</a></li>
+      <li><a href="global.html#validateTakeAccept">validateTakeAccept</a></li>
+      <li><a href="global.html#verifyBlobPath">verifyBlobPath</a></li>
+      <li><a href="global.html#verifyFidelity">verifyFidelity</a></li>
+      <li><a href="global.html#verifyFidelityCertificate">verifyFidelityCertificate</a></li>
+      <li><a href="global.html#verifyOwnership">verifyOwnership</a></li>
+      <li><a href="global.html#verifyPodle">verifyPodle</a></li>
+      <li><a href="global.html#weightsForProximity">weightsForProximity</a></li>
+    </ul>
+  </nav>
+  <br class="clear" />
+  <footer><a href="https://github.com/FabricLabs/fabric">git://</a> &middot; <a href="https://chat.fabric.pub/#/room/#hub:fabric.pub">Community</a></footer>
+  <script type="text/javascript">
+    prettyPrint();
+  </script>
+  <script src="scripts/linenumber.js"></script>
+</body>
+
+</html>

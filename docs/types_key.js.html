@@ -41,20 +41,52 @@
 'use strict';
 
 // Constants
-const {
-  BITCOIN_KEY_DERIVATION_PATH,
-  FABRIC_KEY_DERIVATION_PATH,
-  LIGHTNING_KEY_DERIVATION_PATH,
-  BECH32M_CHARSET
-} = require('../constants');
+const { FABRIC_KEY_DERIVATION_PATH, bitcoinCoinTypeForNetwork } = require('../constants');
 
 // Node Modules
 const crypto = require('crypto');
 const EventEmitter = require('events').EventEmitter;
+const { sha256 } = require('@noble/hashes/sha2.js');
 
-// Deterministic Random
-// TODO: remove
-const Generator = require('arbitrary').default.Generator;
+/**
+ * Deterministic bit stream for {@link Key#bit}. Replaces the `arbitrary` npm package, whose published
+ * `main` is a browserify bundle (`docs/dist/index.js`) that breaks under webpack (nested `require`).
+ * Internal helper — omitted from published API / dev docs.
+ * @ignore
+ */
+function createKeyBitGenerator (seedQ) {
+  const seed = Buffer.alloc(4);
+  seed.writeUInt32BE(seedQ >>> 0, 0);
+  let counter = 0;
+  let pool = Buffer.from(sha256(Buffer.concat([
+    Buffer.from('fabric/key/bitgen/v1', 'utf8'),
+    seed
+  ])));
+  let offset = 0;
+
+  return {
+    next: {
+      bits (n) {
+        let out = 0;
+        for (let i = 0; i &lt; n; i++) {
+          if ((offset >> 3) >= pool.length) {
+            const tail = Buffer.alloc(4);
+            tail.writeUInt32BE(counter >>> 0, 0);
+            counter = (counter + 1) >>> 0;
+            pool = Buffer.from(sha256(Buffer.concat([pool, tail])));
+            offset = 0;
+          }
+          const byteIndex = offset >> 3;
+          const bitInByte = offset &amp; 7;
+          offset++;
+          const bit = (pool[byteIndex] >> (7 - bitInByte)) &amp; 1;
+          out = (out &lt;&lt; 1) | bit;
+        }
+        return out;
+      }
+    }
+  };
+}
 
 // Dependencies
 // TODO: remove all external dependencies
@@ -62,6 +94,23 @@ const BN = require('bn.js');
 const ecc = require('./ecc');
 const { secp256k1, schnorr: nobleSchnorr } = require('@noble/curves/secp256k1.js');
 const SecpPoint = secp256k1.ProjectivePoint || secp256k1.Point;
+
+function privateKeyToBuffer (privkey) {
+  if (Buffer.isBuffer(privkey)) return privkey;
+  if (BN.isBN(privkey)) return Buffer.from(privkey.toString(16).padStart(64, '0'), 'hex');
+  if (typeof privkey === 'string') {
+    if (!/^[0-9a-fA-F]{1,64}$/.test(privkey)) throw new Error('Invalid private key format');
+    return Buffer.from(privkey.padStart(64, '0'), 'hex');
+  }
+  if (ArrayBuffer.isView(privkey) &amp;&amp; !(privkey instanceof DataView) &amp;&amp; privkey.byteLength === 32) {
+    // Uint8Array and other typed-array views from upgraded deps (bip32/ecpair).
+    return Buffer.from(privkey);
+  }
+  if (Array.isArray(privkey) &amp;&amp; privkey.length === 32 &amp;&amp; privkey.every((x) => Number.isInteger(x) &amp;&amp; x >= 0 &amp;&amp; x &lt;= 255)) {
+    return Buffer.from(privkey);
+  }
+  throw new Error('Invalid private key format');
+}
 
 function secpPointFromPublicKey (pubkey) {
   const bytes = Buffer.isBuffer(pubkey) ? pubkey : Buffer.from(pubkey);
@@ -81,7 +130,7 @@ function secpPointFromPublicKey (pubkey) {
 }
 
 function secpPointFromPrivateKey (privkey) {
-  const bytes = Buffer.isBuffer(privkey) ? privkey : Buffer.from(privkey);
+  const bytes = privateKeyToBuffer(privkey);
   // noble-curves v1
   if (secp256k1.ProjectivePoint &amp;&amp; typeof secp256k1.ProjectivePoint.fromPrivateKey === 'function') {
     return secp256k1.ProjectivePoint.fromPrivateKey(bytes);
@@ -105,19 +154,93 @@ function secpPointToRawBytes (point, compressed = true) {
   throw new Error('Unsupported secp256k1 Point API');
 }
 
-const base58 = require('bs58check');
-const payments = require('bitcoinjs-lib/src/payments');
+const base58 = require('./key/base58');
+const { encodeCheck, decodeCheck } = base58;
+const bip39 = require('./key/bip39');
+const keyMaterial = require('./key/fabricKeyMaterial');
+const { parseRawSeedHex, classifyFabricKeyMaterial } = keyMaterial;
+const bip32Module = require('./key/bip32');
+const BIP32 = bip32Module.default;
+const BIP32_DEFAULT_NETWORK = bip32Module.DEFAULT_NETWORK;
+const bip49 = require('./key/bip49');
+const bip85 = require('./key/bip85');
+const pubkeyHelpers = require('./key/pubkey');
+const keyHasPrivateSigningMaterial = require('./key/keyHasPrivateSigningMaterial');
+const SIGNING_TAGS = require('./key/signingTags');
+const { payments } = require('bitcoinjs-lib');
+const { p2shP2wpkhPayment } = bip49;
+const { encodeSegwitAddress } = require('./bech32/bech32');
 
 // Fabric Dependencies
 const Actor = require('./actor');
 const Hash256 = require('./hash256');
+const taggedHash = Hash256.tagged;
 
-// Simple Key Management
-const BIP32 = require('bip32').default;
-const bip39 = require('bip39');
+/**
+ * Tag for the generic `Key#sign` / `Key#verify` pair.
+ * @private
+ */
+const KEY_SIGN_TAG = SIGNING_TAGS.SIGN;
+const SCHNORR_TAG_PATTERN = /^Fabric\/[A-Za-z0-9/._-]{1,96}$/;
+
+/**
+ * BIP340 tagged hash of a message for one purpose. Fabric signs no
+ * untagged message: the tag must name a Fabric purpose (`Fabric/…`).
+ * @private
+ */
+function schnorrMessageHash (msg, tag) {
+  if (typeof tag !== 'string' || !SCHNORR_TAG_PATTERN.test(tag)) {
+    throw new Error('Schnorr signing tag required (e.g. "Fabric/IdentityCrossSign")');
+  }
+  let buffer;
+  if (Buffer.isBuffer(msg)) buffer = msg;
+  else if (msg instanceof Uint8Array) buffer = Buffer.from(msg);
+  else if (typeof msg === 'string') buffer = Buffer.from(msg, 'utf8');
+  else throw new Error('Message must be a Buffer or string');
+  return taggedHash(tag, buffer);
+}
 
 // NOTE: see also @fabric/passport
 // expect a bech32m identifier using prefix "id"
+
+function bip32NetworkFromKeySettings (settings) {
+  const name = settings.network === 'regtest' ? 'regtest' : settings.network;
+  const raw = settings.networks[name] || settings.networks.mainnet;
+  return {
+    messagePrefix: raw.messagePrefix,
+    bech32: raw.bech32,
+    bip32: raw.bip32,
+    pubKeyHash: raw.pubKeyHash,
+    scriptHash: raw.scriptHash,
+    wif: raw.wif
+  };
+}
+
+/**
+ * Address and WIF parameters for a Key's network. Signet and testnet4 use
+ * testnet's, playnet is regtest. An unknown name throws rather than falling
+ * back to mainnet.
+ * @private
+ */
+function addressNetworkFromKeySettings (settings) {
+  const name = String(settings.network || 'main');
+  const nets = settings.networks;
+  switch (name) {
+    case 'main':
+    case 'mainnet':
+      return nets.mainnet;
+    case 'testnet':
+    case 'testnet3':
+    case 'testnet4':
+    case 'signet':
+      return nets.testnet;
+    case 'regtest':
+    case 'playnet':
+      return nets.regtest;
+    default:
+      throw new Error(`Unsupported network: ${name}`);
+  }
+}
 
 /**
  * Represents a cryptographic key.
@@ -130,7 +253,8 @@ class Key extends EventEmitter {
    * create it from a known public key.
    * @param {Object} [settings] Initialization for the key.
    * @param {String} [settings.network] Network string.
-   * @param {String} [settings.seed] Mnemonic seed for initializing the key.
+   * @param {String} [settings.seed] Raw BIP32 seed hex (16–64 bytes) or a legacy BIP39 mnemonic.
+   * @param {String} [settings.mnemonic] BIP39 mnemonic (preferred over putting words in `seed`).
    * @param {String} [settings.public] Public key in hex.
    * @param {String} [settings.private] Private key in hex.
    * @param {String} [settings.wif] WIF-encoded private key.
@@ -155,6 +279,7 @@ class Key extends EventEmitter {
       bits: 256,
       hd: true,
       seed: null,
+      mnemonic: null,
       passphrase: '',
       password: null,
       index: 0,
@@ -206,7 +331,6 @@ class Key extends EventEmitter {
     }, input);
 
     this.bip32 = new BIP32(ecc);
-    this._bech32mCharset = BECH32M_CHARSET;
 
     this.clock = 0;
     this.master = null;
@@ -218,7 +342,21 @@ class Key extends EventEmitter {
     if (this.settings.mnemonic) {
       this._mode = 'FROM_MNEMONIC';
     } else if (this.settings.seed) {
-      this._mode = 'FROM_SEED';
+      const raw = this.settings.seed;
+      if (Buffer.isBuffer(raw) || raw instanceof Uint8Array) {
+        this._mode = 'FROM_SEED';
+      } else {
+        const classified = classifyFabricKeyMaterial(raw);
+        if (classified.kind === 'xprv') {
+          this._mode = 'FROM_XPRV';
+          this.settings.xprv = classified.xprv;
+        } else if (classified.kind === 'mnemonic') {
+          this._mode = 'FROM_MNEMONIC';
+          this.settings.mnemonic = classified.mnemonic;
+        } else {
+          this._mode = 'FROM_SEED';
+        }
+      }
     } else if (this.settings.wif) {
       this._mode = 'FROM_WIF';
     } else if (this.settings.private) {
@@ -239,27 +377,35 @@ class Key extends EventEmitter {
     switch (this._mode) {
       case 'FROM_MNEMONIC':
         seed = bip39.mnemonicToSeedSync(this.settings.mnemonic, this.settings.passphrase);
-        root = this.bip32.fromSeed(seed);
-        this.seed = this.settings.seed;
+        root = this.bip32.fromSeed(seed, bip32NetworkFromKeySettings(this.settings));
+        this.seed = this.settings.mnemonic;
         this.xprv = root.toBase58();
         this.xpub = root.neutered().toBase58();
         this.master = root;
         this._point = secpPointFromPrivateKey(root.privateKey);
         this.status = 'seeded';
         break;
-      case 'FROM_SEED':
-        // TODO: allow setting of raw seed (deprecates passing a mnemonic in the `seed` property)
-        seed = bip39.mnemonicToSeedSync(this.settings.seed, this.settings.passphrase);
-        root = this.bip32.fromSeed(seed);
-        this.seed = this.settings.seed;
+      case 'FROM_SEED': {
+        const rawSeed = parseRawSeedHex(this.settings.seed);
+        if (rawSeed) {
+          seed = rawSeed;
+          this.seed = rawSeed.toString('hex');
+        } else if (Buffer.isBuffer(this.settings.seed) || this.settings.seed instanceof Uint8Array) {
+          throw new Error('Seed must be 16–64 bytes');
+        } else {
+          seed = bip39.mnemonicToSeedSync(this.settings.seed, this.settings.passphrase);
+          this.seed = this.settings.seed;
+        }
+        root = this.bip32.fromSeed(seed, bip32NetworkFromKeySettings(this.settings));
         this.xprv = root.toBase58();
         this.xpub = root.neutered().toBase58();
         this.master = root;
         this._point = secpPointFromPrivateKey(root.privateKey);
+        this.status = 'seeded';
         break;
+      }
       case 'FROM_WIF':
-        const decoded = base58.decode(this.settings.wif);
-        const version = decoded[0];
+        const decoded = decodeCheck(this.settings.wif);
         const privateKey = decoded.slice(1, 33);
         const isCompressed = decoded.length === 34 &amp;&amp; decoded[33] === 0x01;
         this._point = secpPointFromPrivateKey(privateKey);
@@ -293,7 +439,7 @@ class Key extends EventEmitter {
         this.mnemonic = bip39.generateMnemonic();
         // TODO: set property `seed` as the actual derived seed, not the seed phrase
         const interim = bip39.mnemonicToSeedSync(this.mnemonic);
-        this.master = this.bip32.fromSeed(interim);
+        this.master = this.bip32.fromSeed(interim, bip32NetworkFromKeySettings(this.settings));
         this.xprv = this.master.toBase58();
         this.xpub = this.master.neutered().toBase58();
         this._point = secpPointFromPrivateKey(this.master.privateKey);
@@ -302,7 +448,7 @@ class Key extends EventEmitter {
 
     // Read the pair (for modes that use master, set private from master)
     if (!this.private &amp;&amp; this.master &amp;&amp; this.master.privateKey) {
-      this.private = this.master.privateKey;
+      this.private = privateKeyToBuffer(this.master.privateKey);
     }
     // Adapt noble-curves point to the minimal interface used elsewhere.
     this.public = {
@@ -333,7 +479,7 @@ class Key extends EventEmitter {
     // TODO: consider using sha256(masterprivkey) or sha256(sha256(...))?
     this._starseed = Hash256.digest(this.pubkeyhash).toString('hex');
     this.q = parseInt(this._starseed.substring(0, 4), 16);
-    this.generator = new Generator(this.q);
+    this.generator = createKeyBitGenerator(this.q);
 
     this['@data'] = {
       type: 'Key',
@@ -369,7 +515,7 @@ class Key extends EventEmitter {
     const mnemonic = bip39.entropyToMnemonic(seed);
     const seedBuffer = bip39.mnemonicToSeedSync(mnemonic);
     const bip32 = new BIP32(ecc);
-    const master = bip32.fromSeed(seedBuffer);
+    const master = bip32.fromSeed(seedBuffer, BIP32_DEFAULT_NETWORK);
     const key = new Key();
     key.seed = mnemonic;
     key.private = master.privateKey.toString('hex');
@@ -427,7 +573,7 @@ class Key extends EventEmitter {
 
   deriveAddress (index = 0, change = 0, type = 'p2pkh') {
     const key = this.deriveKeyPair(index, change);
-    const network = this.settings.network === 'regtest' ? this.settings.networks.testnet : this.settings.networks[this.settings.network];
+    const network = addressNetworkFromKeySettings(this.settings);
 
     switch (type) {
       case 'p2pkh':
@@ -448,132 +594,41 @@ class Key extends EventEmitter {
           publicKey: key.publicKey,
           privateKey: key.privateKey
         };
-      case 'p2tr':
-        // For p2tr, we need to use the x-only pubkey (first 32 bytes after the prefix)
-        const pubkeyBuffer = Buffer.from(key.publicKey, 'hex');
-        const xOnlyPubkey = pubkeyBuffer.slice(1, 33); // Remove prefix byte and take next 32 bytes
-
-        // Generate taproot address using bech32m encoding
-        const commitHash = crypto.createHash('sha256')
-          .update(Buffer.concat([xOnlyPubkey, Buffer.alloc(32)]))
-          .digest();
-        const tweakResult = ecc.xOnlyPointAddTweak(xOnlyPubkey, commitHash);
+      case 'p2sh-p2wpkh':
+      case 'p2shp2wpkh': {
+        const nested = p2shP2wpkhPayment({
+          pubkey: Buffer.from(key.publicKey, 'hex'),
+          network: network
+        });
+        return {
+          address: nested.address,
+          publicKey: key.publicKey,
+          privateKey: key.privateKey
+        };
+      }
+      case 'p2tr': {
+        // BIP-341 key-path only (BIP-86): Q = P + int(taggedHash('TapTweak', P_x))·G
+        const xOnlyPubkey = Buffer.from(key.publicKey, 'hex').subarray(1, 33);
+        const tweakResult = ecc.xOnlyPointAddTweak(xOnlyPubkey, taggedHash('TapTweak', xOnlyPubkey));
         if (!tweakResult) throw new Error('Invalid tweak');
 
-        // Use the correct network prefix for bech32m
-        let hrp;
-        switch (this.settings.network) {
-          case 'main':
-            hrp = 'bc';
-            break;
-          case 'testnet':
-            hrp = 'tb';
-            break;
-          case 'regtest':
-            hrp = 'bcrt';
-            break;
-          default:
-            throw new Error(`Unsupported network: ${this.settings.network}`);
-        }
-
-        const address = this._encodeBech32m(tweakResult.xOnlyPubkey, hrp);
+        const address = encodeSegwitAddress(network.bech32, 1, Buffer.from(tweakResult.xOnlyPubkey));
+        if (!address) throw new Error('Invalid program');
 
         return {
           address: address,
           publicKey: key.publicKey,
           privateKey: key.privateKey
         };
+      }
       default:
         throw new Error(`Unsupported address type: ${type}`);
     }
   }
 
-  _encodeBech32m (data, hrp) {
-    // Witness version 1 for P2TR
-    const version = [1];
-    // Convert witness program to 5-bit words
-    const program = this._convertBits(Array.from(data), 8, 5, true);
-    if (!program) throw new Error('Invalid program');
-
-    // Combine version and program
-    const words = version.concat(program);
-
-    // Generate checksum
-    const chk = this._bech32mCreateChecksum(hrp, words);
-
-    // Return final address
-    return hrp + '1' + words.map(x => this._bech32mCharset[x]).join('') + chk;
-  }
-
-  _convertBits (data, fromBits, toBits, pad) {
-    let acc = 0;
-    let bits = 0;
-    const maxv = (1 &lt;&lt; toBits) - 1;
-    const result = [];
-
-    for (let i = 0; i &lt; data.length; i++) {
-      const value = data[i];
-      if (value &lt; 0 || value >> fromBits !== 0) {
-        return null;
-      }
-      acc = (acc &lt;&lt; fromBits) | value;
-      bits += fromBits;
-      while (bits >= toBits) {
-        bits -= toBits;
-        result.push((acc >> bits) &amp; maxv);
-      }
-    }
-
-    if (pad) {
-      if (bits > 0) {
-        result.push((acc &lt;&lt; (toBits - bits)) &amp; maxv);
-      }
-    } else if (bits >= fromBits || ((acc &lt;&lt; (toBits - bits)) &amp; maxv)) {
-      return null;
-    }
-
-    return result;
-  }
-
-  _bech32mCreateChecksum (hrp, data) {
-    const values = this._bech32mExpandHrp(hrp).concat(data).concat([0, 0, 0, 0, 0, 0]);
-    const polymod = this._bech32mPolymod(values) ^ 0x2bc830a3;
-    const ret = [];
-    for (let i = 0; i &lt; 6; i++) {
-      ret.push((polymod >> 5 * (5 - i)) &amp; 31);
-    }
-    return ret.map(x => this._bech32mCharset[x]).join('');
-  }
-
-  _bech32mExpandHrp (hrp) {
-    const ret = [];
-    for (let i = 0; i &lt; hrp.length; i++) {
-      ret.push(hrp.charCodeAt(i) >> 5);
-    }
-    ret.push(0);
-    for (let i = 0; i &lt; hrp.length; i++) {
-      ret.push(hrp.charCodeAt(i) &amp; 31);
-    }
-    return ret;
-  }
-
-  _bech32mPolymod (values) {
-    const GEN = [0x3b6a57b2, 0x26508e6d, 0x1ea119fa, 0x3d4233dd, 0x2a1462b3];
-    let chk = 1;
-    for (let i = 0; i &lt; values.length; i++) {
-      const top = chk >> 25;
-      chk = ((chk &amp; 0x1ffffff) &lt;&lt; 5) ^ values[i];
-      for (let j = 0; j &lt; 5; j++) {
-        if ((top >> j) &amp; 1) {
-          chk ^= GEN[j];
-        }
-      }
-    }
-    return chk;
-  }
-
   deriveKeyPair (addressID = 0, change = 0) {
-    const path = `m/${this.purpose}'/0'/${this.account}'/${change}/${addressID}`;
+    const coin = bitcoinCoinTypeForNetwork(this.settings.network);
+    const path = `m/${this.purpose}'/${coin}'/${this.account}'/${change}/${addressID}`;
     const derived = this.master.derivePath(path);
     const pubBytes = secp256k1.getPublicKey(derived.privateKey, true);
     return {
@@ -583,6 +638,11 @@ class Key extends EventEmitter {
   }
 
   encrypt (value) {
+    if (!this.private) {
+      if (this.settings.debug) console.error('[FABRIC:KEY]', 'Cannot encrypt without private key');
+      return null;
+    }
+
     try {
       const ivbuff = crypto.randomBytes(16);
       // Derive a 32-byte key from the private key using SHA-256
@@ -593,19 +653,29 @@ class Key extends EventEmitter {
       let encrypted = cipher.update(value, 'utf8', 'hex');
       encrypted += cipher.final('hex');
       return ivbuff.toString('hex') + ':' + encrypted;
-    } catch (exception) {
-      console.error('err:', exception);
+    } catch {
+      if (this.settings.debug) console.error('[FABRIC:KEY]', 'Encryption failed');
       return null;
     }
   }
 
   decrypt (text) {
     if (!text) return null;
+    if (!this.private) {
+      if (this.settings.debug) console.error('[FABRIC:KEY]', 'Cannot decrypt without private key');
+      return null;
+    }
     if (text instanceof Buffer) text = text.toString('utf8');
 
     try {
+      if (typeof text !== 'string' || !text.includes(':')) return null;
       const parts = text.split(':');
-      const iv = Buffer.from(parts.shift(), 'hex');
+      const ivHex = parts.shift();
+      if (!/^[0-9a-fA-F]{32}$/.test(ivHex || '')) return null;
+      const blobHex = parts.join(':');
+      if (!blobHex || !/^[0-9a-fA-F]+$/.test(blobHex)) return null;
+
+      const iv = Buffer.from(ivHex, 'hex');
       const blob = Buffer.from(parts.join(':'), 'hex');
       // Use the same key derivation as encrypt
       const key = crypto.createHash('sha256')
@@ -615,63 +685,45 @@ class Key extends EventEmitter {
       let decrypted = decipher.update(blob, 'hex', 'utf8');
       decrypted += decipher.final('utf8');
       return decrypted;
-    } catch (exception) {
-      console.error('err:', exception);
+    } catch {
+      if (this.settings.debug) console.error('[FABRIC:KEY]', 'Decryption failed');
       return null;
     }
   }
 
-  _sign (msg) {
-    if (typeof msg !== 'string') msg = JSON.stringify(msg);
-    return this.signSchnorr(msg);
+  _sign (msg, tag = KEY_SIGN_TAG) {
+    if (typeof msg !== 'string' &amp;&amp; !(msg instanceof Uint8Array)) msg = JSON.stringify(msg);
+    return this.signSchnorr(msg, tag);
   }
 
-  _verify (msg, sig) {
-    return this.verifySchnorr(msg, sig);
+  _verify (msg, sig, tag = KEY_SIGN_TAG) {
+    if (typeof msg !== 'string' &amp;&amp; !(msg instanceof Uint8Array)) msg = JSON.stringify(msg);
+    return this.verifySchnorr(msg, sig, tag);
   }
 
   /**
    * Verify a message's signature.
    * @param {Buffer|String} msg - The message that was signed
    * @param {Buffer|String} sig - The signature to verify
+   * @param {String} [tag] Purpose tag (default `Fabric/Sign`)
    * @returns {Boolean} Whether the signature is valid
    */
-  verify (msg, sig) {
-    return this._verify(msg, sig);
+  verify (msg, sig, tag) {
+    return this._verify(msg, sig, tag);
   }
 
   /**
-   * Signs a message using Schnorr signatures (BIP340).
+   * Signs a message using Schnorr signatures (BIP340) over
+   * `taggedHash(tag, msg)`. Every purpose has its own tag, so a signature
+   * made for one purpose never verifies for another (or as a Taproot
+   * sighash, or as a Nostr event).
    * @param {Buffer|String} msg - The message to sign
+   * @param {String} tag - Purpose tag, e.g. `Fabric/IdentityCrossSign`
    * @returns {Buffer} The signature
    */
-  signSchnorr (msg) {
-    // console.debug('signing schnorr:', msg, this.settings);
+  signSchnorr (msg, tag) {
     if (!this.private) throw new Error('Cannot sign without private key');
-
-    // Convert message to Buffer if it's a string
-    const messageBuffer = Buffer.isBuffer(msg) ? msg : Buffer.from(msg);
-
-    // Create message hash
-    const messageHash = crypto.createHash('sha256').update(messageBuffer).digest();
-
-    // Get private key as 32-byte buffer
-    let privateKeyBuffer;
-    if (Buffer.isBuffer(this.private)) {
-      privateKeyBuffer = this.private;
-    } else if (BN.isBN(this.private)) {
-      privateKeyBuffer = Buffer.from(this.private.toString(16).padStart(64, '0'), 'hex');
-    } else if (typeof this.private === 'string') {
-      privateKeyBuffer = Buffer.from(this.private.padStart(64, '0'), 'hex');
-    } else {
-      throw new Error('Invalid private key format');
-    }
-
-    // Sign using noble-curves Schnorr (BIP340). Zero auxRand for deterministic signatures.
-    const signature = nobleSchnorr.sign(messageHash, privateKeyBuffer, Buffer.alloc(32));
-
-    // Ensure we return a Buffer
-    return Buffer.isBuffer(signature) ? signature : Buffer.from(signature);
+    return this.signSchnorrHash(schnorrMessageHash(msg, tag));
   }
 
   /**
@@ -682,52 +734,33 @@ class Key extends EventEmitter {
    */
   signSchnorrHash (messageHash) {
     if (!this.private) throw new Error('Cannot sign without private key');
-    if (!Buffer.isBuffer(messageHash) || messageHash.length !== 32) {
+    // bitcoinjs-lib 7 crypto helpers return Uint8Array; accept Buffer or Uint8Array.
+    const hash = Buffer.isBuffer(messageHash)
+      ? messageHash
+      : (messageHash instanceof Uint8Array ? Buffer.from(messageHash) : null);
+    if (!hash || hash.length !== 32) {
       throw new Error('Message hash must be a 32-byte Buffer');
     }
 
     // Get private key as 32-byte buffer
-    let privateKeyBuffer;
-    if (Buffer.isBuffer(this.private)) {
-      privateKeyBuffer = this.private;
-    } else if (BN.isBN(this.private)) {
-      privateKeyBuffer = Buffer.from(this.private.toString(16).padStart(64, '0'), 'hex');
-    } else if (typeof this.private === 'string') {
-      privateKeyBuffer = Buffer.from(this.private.padStart(64, '0'), 'hex');
-    } else {
-      throw new Error('Invalid private key format');
-    }
+    const privateKeyBuffer = privateKeyToBuffer(this.private);
 
     // Sign using noble-curves Schnorr (BIP340). Zero auxRand for deterministic signatures.
-    const signature = nobleSchnorr.sign(messageHash, privateKeyBuffer, Buffer.alloc(32));
+    const signature = nobleSchnorr.sign(hash, privateKeyBuffer, Buffer.alloc(32));
 
     // Ensure we return a Buffer
     return Buffer.isBuffer(signature) ? signature : Buffer.from(signature);
   }
 
   /**
-   * Verifies a Schnorr signature (BIP340).
+   * Verifies a BIP340 Schnorr signature over `taggedHash(tag, msg)`.
    * @param {Buffer|String} msg - The message that was signed
    * @param {Buffer} sig - The signature to verify
+   * @param {String} tag - Purpose tag the signer used
    * @returns {Boolean} Whether the signature is valid
    */
-  verifySchnorr (msg, sig) {
-    // Convert message to Buffer if it's a string
-    const messageBuffer = Buffer.isBuffer(msg) ? msg : Buffer.from(msg);
-
-    // Create message hash
-    const messageHash = crypto.createHash('sha256').update(messageBuffer).digest();
-
-    // Get x-only public key (32 bytes) from compressed public key (33 bytes)
-    // For Schnorr, we only need the x coordinate (first 32 bytes after the prefix)
-    const compressedPubkey = Buffer.from(this.public.encodeCompressed('hex'), 'hex');
-    const xOnlyPubkey = compressedPubkey.slice(1); // Remove the prefix byte
-
-    // Ensure signature is a Buffer
-    const sigBuffer = Buffer.isBuffer(sig) ? sig : Buffer.from(sig);
-
-    // Verify using noble-curves Schnorr (BIP340)
-    return nobleSchnorr.verify(sigBuffer, messageHash, xOnlyPubkey);
+  verifySchnorr (msg, sig, tag) {
+    return this.verifySchnorrHash(schnorrMessageHash(msg, tag), sig);
   }
 
   /**
@@ -738,7 +771,10 @@ class Key extends EventEmitter {
    * @returns {Boolean} Whether the signature is valid
    */
   verifySchnorrHash (messageHash, sig) {
-    if (!Buffer.isBuffer(messageHash) || messageHash.length !== 32) {
+    const hash = Buffer.isBuffer(messageHash)
+      ? messageHash
+      : (messageHash instanceof Uint8Array ? Buffer.from(messageHash) : null);
+    if (!hash || hash.length !== 32) {
       throw new Error('Message hash must be a 32-byte Buffer');
     }
 
@@ -750,12 +786,17 @@ class Key extends EventEmitter {
     const sigBuffer = Buffer.isBuffer(sig) ? sig : Buffer.from(sig);
 
     // Verify using noble-curves Schnorr (BIP340)
-    return nobleSchnorr.verify(sigBuffer, messageHash, xOnlyPubkey);
+    return nobleSchnorr.verify(sigBuffer, hash, xOnlyPubkey);
   }
 
   commit () {
     const reference = { ...this.state };
     const state = new Actor(reference);
+    const commit = {
+      type: 'KeyCommit',
+      hash: state.id,
+      signatures: []
+    };
 
     // Store current state's hash
     this._state.hash = state.id;
@@ -772,20 +813,26 @@ class Key extends EventEmitter {
    * @param {Buffer} data Buffer of data to sign.
    * @returns {Buffer} Resulting signature (64 bytes).
    */
-  sign (msg) {
-    return this._sign(msg);
+  sign (msg, tag) {
+    return this._sign(msg, tag);
   }
 
   derive (path = this.settings.derivation) {
     if (!this.master) throw new Error('You cannot derive without a master key.  Provide a seed phrase or an xprv.');
 
     const derived = this.master.derivePath(path);
-    const options = {
+    // Prefer extended keys so Key initializes as FROM_XPRV/FROM_XPUB (keeps .xpub for
+    // Fabric protocol identity login / watch-only). Raw private+public alone loses xpub.
+    if (derived.privateKey &amp;&amp; typeof derived.toBase58 === 'function') {
+      return new Key({ xprv: derived.toBase58() });
+    }
+    if (typeof derived.neutered === 'function') {
+      return new Key({ xpub: derived.neutered().toBase58() });
+    }
+    return new Key({
       private: derived.privateKey.toString('hex'),
       public: derived.publicKey.toString('hex')
-    };
-
-    return new Key(options);
+    });
   }
 
   /**
@@ -794,8 +841,14 @@ class Key extends EventEmitter {
    * to prevent sensitive data from remaining in memory.
    */
   secure () {
+    // Update state before clearing key material, so commit can still be signed.
+    this._state.status = 'secured';
+    this.commit();
+
     // Clear sensitive key material
-    Buffer.write(this.private, 0, this.private.length);
+    if (Buffer.isBuffer(this.private)) {
+      this.private.fill(0);
+    }
 
     // Null out sensitive properties
     this.private = null;
@@ -805,11 +858,6 @@ class Key extends EventEmitter {
 
     // Clear any derived keys
     this.xprv = null;
-
-    // Update state
-    this._state.status = 'secured';
-
-    this.commit();
 
     return this;
   }
@@ -830,24 +878,9 @@ class Key extends EventEmitter {
    */
   toWIF () {
     if (!this.private) throw new Error('Cannot export WIF without private key');
-    let privateKeyBuffer;
+    const privateKeyBuffer = privateKeyToBuffer(this.private);
 
-    if (Buffer.isBuffer(this.private)) {
-      privateKeyBuffer = this.private;
-    } else if (this.private &amp;&amp; typeof this.private.length === 'number' &amp;&amp; this.private.length === 32) {
-      // Uint8Array or other byte-like (e.g. from bs58check.decode)
-      privateKeyBuffer = Buffer.from(this.private);
-    } else if (BN.isBN(this.private)) {
-      privateKeyBuffer = Buffer.from(this.private.toString(16).padStart(64, '0'), 'hex');
-    } else if (typeof this.private === 'string') {
-      privateKeyBuffer = Buffer.from(this.private.padStart(64, '0'), 'hex');
-    } else {
-      throw new Error('Invalid private key format');
-    }
-
-    const network = this.settings.network === 'regtest'
-      ? this.settings.networks.testnet
-      : this.settings.networks[this.settings.network] || this.settings.networks.mainnet;
+    const network = addressNetworkFromKeySettings(this.settings);
 
     const prefix = Buffer.from([network.wif]);
     const payload = Buffer.concat([
@@ -856,19 +889,12 @@ class Key extends EventEmitter {
       Buffer.from([0x01])
     ]);
 
-    const firstHash = crypto.createHash('sha256').update(payload).digest();
-    const secondHash = crypto.createHash('sha256').update(firstHash).digest();
-    const checksum = secondHash.slice(0, 4);
-    const combined = Buffer.concat([payload, checksum]);
-
-    return base58.encode(combined);
+    return encodeCheck(payload);
   }
 
   toBitcoinAddress () {
     if (!this.public) throw new Error('Cannot derive Bitcoin address without public key');
-    const network = this.settings.network === 'regtest'
-      ? this.settings.networks.testnet
-      : this.settings.networks[this.settings.network] || this.settings.networks.mainnet;
+    const network = addressNetworkFromKeySettings(this.settings);
 
     const p2pkh = payments.p2pkh({
       pubkey: Buffer.from(this.public.encode('hex'), 'hex'),
@@ -878,6 +904,37 @@ class Key extends EventEmitter {
     return p2pkh.address;
   }
 }
+
+Key.SIGN_TAG = KEY_SIGN_TAG;
+Key.TAGS = SIGNING_TAGS;
+Key.schnorrMessageHash = schnorrMessageHash;
+
+// BIP-32 HD keys (`fromSeed`, `fromBase58`, `HDNode`, `DEFAULT_NETWORK`; `default` is the bip32-style factory).
+Key.BIP32 = bip32Module;
+Key.HDNode = bip32Module.HDNode;
+
+// BIP-39 mnemonics, on the `Key.Mnemonic(entropy)` factory.
+Key.Mnemonic.WORD_COUNTS = bip39.MNEMONIC_WORD_COUNTS;
+Key.Mnemonic.wordlist = bip39.defaultWordlist;
+Key.Mnemonic.generate = bip39.generateMnemonic;
+Key.Mnemonic.validate = bip39.validateMnemonic;
+Key.Mnemonic.fromEntropy = bip39.entropyToMnemonic;
+Key.Mnemonic.toEntropy = bip39.mnemonicToEntropy;
+Key.Mnemonic.toSeed = bip39.mnemonicToSeed;
+Key.Mnemonic.toSeedSync = bip39.mnemonicToSeedSync;
+
+Key.BIP49 = bip49;
+Key.BIP85 = bip85;
+Key.Base58 = base58;
+
+// FABRIC_XPRV / FABRIC_SEED / FABRIC_MNEMONIC classification.
+Key.Material = keyMaterial;
+
+Key.pubkeyXOnly = pubkeyHelpers.pubkeyXOnly;
+Key.pubkeyCompressed = pubkeyHelpers.pubkeyCompressed;
+Key.pubkeysMatch = pubkeyHelpers.pubkeysMatch;
+Key.normalizePeerPubkeyHex = pubkeyHelpers.normalizePeerPubkeyHex;
+Key.hasPrivateSigningMaterial = keyHasPrivateSigningMaterial;
 
 module.exports = Key;
 </code></pre>
@@ -889,69 +946,303 @@ module.exports = Key;
   </div>
   <nav>
     <h2><a href="index.html">Home</a></h2>
+    <h3>Modules</h3>
+    <ul>
+      <li><a href="module-types_bech32_bech32.html">types/bech32/bech32</a></li>
+      <li><a href="module-types_bech32_fabricPaymentBech32.html">types/bech32/fabricPaymentBech32</a></li>
+      <li><a href="module-types_delegation.html">types/delegation</a></li>
+      <li><a href="module-types_key_base58.html">types/key/base58</a></li>
+      <li><a href="module-types_key_bip32.html">types/key/bip32</a></li>
+      <li><a href="module-types_key_bip39.html">types/key/bip39</a></li>
+      <li><a href="module-types_key_bip49.html">types/key/bip49</a></li>
+      <li><a href="module-types_key_bip85.html">types/key/bip85</a></li>
+      <li><a href="module-types_key_fabricKeyMaterial.html">types/key/fabricKeyMaterial</a></li>
+      <li><a href="module-types_key_keyHasPrivateSigningMaterial.html">types/key/keyHasPrivateSigningMaterial</a></li>
+      <li><a href="module-types_key_pubkey.html">types/key/pubkey</a></li>
+      <li><a href="module-types_key_signingTags.html">types/key/signingTags</a></li>
+      <li><a href="module-types_typetree.html">types/typetree</a></li>
+      <li><a href="module-types_wallet_accountKeys.html">types/wallet/accountKeys</a></li>
+      <li><a href="module-types_wallet_bip21.html">types/wallet/bip21</a></li>
+      <li><a href="module-types_wallet_bip86.html">types/wallet/bip86</a></li>
+      <li><a href="module-types_witness_adaptor.html">types/witness/adaptor</a></li>
+      <li><a href="module-types_witness_bls.html">types/witness/bls</a></li>
+      <li><a href="module-types_witness_dleq.html">types/witness/dleq</a></li>
+      <li><a href="module-types_witness_musig2.html">types/witness/musig2</a></li>
+      <li><a href="module-types_witness_musig2Adaptor.html">types/witness/musig2Adaptor</a></li>
+      <li><a href="module-types_witness_musig2Session.html">types/witness/musig2Session</a></li>
+      <li><a href="types_ecc.html#.module:selftest">types/ecc.selftest</a></li>
+    </ul>
     <h3>Classes</h3>
     <ul>
       <li><a href="Actor.html">Actor</a></li>
+      <li><a href="Beacon.html">Beacon</a></li>
       <li><a href="Bitcoin.html">Bitcoin</a></li>
-      <li><a href="CLI.html">CLI</a></li>
+      <li><a href="Block.html">Block</a></li>
+      <li><a href="Bond.html">Bond</a></li>
+      <li><a href="Book.html">Book</a></li>
       <li><a href="Chain.html">Chain</a></li>
+      <li><a href="Challenge.html">Challenge</a></li>
       <li><a href="Channel.html">Channel</a></li>
+      <li><a href="ChannelBook.html">ChannelBook</a></li>
+      <li><a href="ChannelSession.html">ChannelSession</a></li>
       <li><a href="Circuit.html">Circuit</a></li>
+      <li><a href="Coinjoin.html">Coinjoin</a></li>
+      <li><a href="CoinjoinBook.html">CoinjoinBook</a></li>
+      <li><a href="CoinjoinMakerRound.html">CoinjoinMakerRound</a></li>
+      <li><a href="CoinjoinTakerRound.html">CoinjoinTakerRound</a></li>
       <li><a href="Collection.html">Collection</a></li>
+      <li><a href="Component.html">Component</a></li>
+      <li><a href="Contract.html">Contract</a></li>
+      <li><a href="Disk.html">Disk</a></li>
+      <li><a href="Document.html">Document</a></li>
+      <li><a href="DocumentBlobTransferBook.html">DocumentBlobTransferBook</a></li>
+      <li><a href="DocumentBook.html">DocumentBook</a></li>
+      <li><a href="EncryptedPromise.html">EncryptedPromise</a></li>
+      <li><a href="Entity.html">Entity</a></li>
+      <li><a href="Entity.Transition.html">Transition</a></li>
       <li><a href="Environment.html">Environment</a></li>
       <li><a href="Fabric.html">Fabric</a></li>
-      <li><a href="FabricShell.html">FabricShell</a></li>
       <li><a href="Federation.html">Federation</a></li>
+      <li><a href="FidelityVerifier.html">FidelityVerifier</a></li>
       <li><a href="Filesystem.html">Filesystem</a></li>
+      <li><a href="FraudProof.html">FraudProof</a></li>
       <li><a href="HKDF.html">HKDF</a></li>
       <li><a href="Hash256.html">Hash256</a></li>
+      <li><a href="Htlc.html">Htlc</a></li>
       <li><a href="Identity.html">Identity</a></li>
       <li><a href="Interface.html">Interface</a></li>
       <li><a href="Key.html">Key</a></li>
       <li><a href="Ledger.html">Ledger</a></li>
       <li><a href="Lightning.html">Lightning</a></li>
+      <li><a href="LiquidityBook.html">LiquidityBook</a></li>
       <li><a href="Logger.html">Logger</a></li>
       <li><a href="Machine.html">Machine</a></li>
+      <li><a href="Market.html">Market</a></li>
       <li><a href="Message.html">Message</a></li>
+      <li><a href="OrderBook.html">OrderBook</a></li>
       <li><a href="Peer.html">Peer</a></li>
+      <li><a href="PodleBlacklist.html">PodleBlacklist</a></li>
+      <li><a href="Policy.html">Policy</a></li>
+      <li><a href="Program.html">Program</a></li>
       <li><a href="Reader.html">Reader</a></li>
       <li><a href="Redis.html">Redis</a></li>
       <li><a href="Remote.html">Remote</a></li>
+      <li><a href="Resolutions.html">Resolutions</a></li>
       <li><a href="Resource.html">Resource</a></li>
+      <li><a href="RoundRobin.html">RoundRobin</a></li>
       <li><a href="Scribe.html">Scribe</a></li>
       <li><a href="Script.html">Script</a></li>
+      <li><a href="Secret.html">Secret</a></li>
       <li><a href="Service.html">Service</a></li>
       <li><a href="Session.html">Session</a></li>
+      <li><a href="SetupTui.html">SetupTui</a></li>
+      <li><a href="SignedBook.html">SignedBook</a></li>
       <li><a href="State.html">State</a></li>
       <li><a href="Store.html">Store</a></li>
+      <li><a href="Swap.html">Swap</a></li>
+      <li><a href="global.html#Text">Text</a></li>
       <li><a href="Token.html">Token</a></li>
       <li><a href="Tree.html">Tree</a></li>
       <li><a href="Vector.html">Vector</a></li>
       <li><a href="Wallet.html">Wallet</a></li>
+      <li><a href="Watchtower.html">Watchtower</a></li>
       <li><a href="Worker.html">Worker</a></li>
       <li><a href="ZMQ.html">ZMQ</a></li>
+      <li><a href="module-types_delegation-Delegation.html">Delegation</a></li>
+      <li><a href="module-types_key_bip32-BIP32Factory.html">BIP32Factory</a></li>
+      <li><a href="module-types_witness_musig2-InvalidContributionError.html">InvalidContributionError</a></li>
     </ul>
     <h3>Global</h3>
     <ul>
-      <li><a href="global.html#BEACON_EPOCH_SIGNING_KIND">BEACON_EPOCH_SIGNING_KIND</a></li>
-      <li><a href="global.html#FRIENDLY_TYPE_BY_WIRE">FRIENDLY_TYPE_BY_WIRE</a></li>
-      <li><a href="global.html#WIRE_TYPE_DECODE_ORDER">WIRE_TYPE_DECODE_ORDER</a></li>
-      <li><a href="global.html#crypto">crypto</a></li>
-      <li><a href="global.html#epochCommitmentDigestHex">epochCommitmentDigestHex</a></li>
-      <li><a href="global.html#explorerBaseUrl">explorerBaseUrl</a></li>
-      <li><a href="global.html#friendlyTypeFromWire">friendlyTypeFromWire</a></li>
-      <li><a href="global.html#gossip">gossip</a></li>
-      <li><a href="global.html#isAllZero32">isAllZero32</a></li>
-      <li><a href="global.html#jsonSafe">jsonSafe</a></li>
-      <li><a href="global.html#p2pAddNodes">p2pAddNodes</a></li>
-      <li><a href="global.html#p2pAddNodesAllowMainnet">p2pAddNodesAllowMainnet</a></li>
-      <li><a href="global.html#parseDistributedManifestV1">parseDistributedManifestV1</a></li>
-      <li><a href="global.html#peerDebugDerivedPublicSummary">peerDebugDerivedPublicSummary</a></li>
-      <li><a href="global.html#signingStringForBeaconEpoch">signingStringForBeaconEpoch</a></li>
-      <li><a href="global.html#stableStringify">stableStringify</a></li>
-      <li><a href="global.html#verifyFederationWitnessOnMessage">verifyFederationWitnessOnMessage</a></li>
-      <li><a href="global.html#wireTraffic">wireTraffic</a></li>
-      <li><a href="global.html#wireTypeFromFriendly">wireTypeFromFriendly</a></li>
+      <li><a href="global.html#ASK_TYPE">ASK_TYPE</a></li>
+      <li><a href="global.html#BID_CLOCK_SKEW_SECONDS">BID_CLOCK_SKEW_SECONDS</a></li>
+      <li><a href="global.html#BID_TYPE">BID_TYPE</a></li>
+      <li><a href="global.html#BITCOIN_MESSAGE_TYPES">BITCOIN_MESSAGE_TYPES</a></li>
+      <li><a href="global.html#CHANNEL_BODY_TYPES">CHANNEL_BODY_TYPES</a></li>
+      <li><a href="global.html#CHANNEL_DEFAULTS">CHANNEL_DEFAULTS</a></li>
+      <li><a href="global.html#CLTV_TIMESTAMP_THRESHOLD">CLTV_TIMESTAMP_THRESHOLD</a></li>
+      <li><a href="global.html#DEFAULT_BID_TTL_SECONDS">DEFAULT_BID_TTL_SECONDS</a></li>
+      <li><a href="global.html#DEFAULT_FEE_SATS">DEFAULT_FEE_SATS</a></li>
+      <li><a href="global.html#DEFAULT_INVOICE_EXPIRY_SECONDS">DEFAULT_INVOICE_EXPIRY_SECONDS</a></li>
+      <li><a href="global.html#DEFAULT_INVOICE_MARGIN_SECONDS">DEFAULT_INVOICE_MARGIN_SECONDS</a></li>
+      <li><a href="global.html#DEFAULT_MAX_SIGNS">DEFAULT_MAX_SIGNS</a></li>
+      <li><a href="global.html#DEFAULT_MIN_CLAIM_BLOCKS">DEFAULT_MIN_CLAIM_BLOCKS</a></li>
+      <li><a href="global.html#DEFAULT_MIN_CONFIRMATIONS">DEFAULT_MIN_CONFIRMATIONS</a></li>
+      <li><a href="global.html#DEFAULT_MIN_EQUAL_OUTPUTS">DEFAULT_MIN_EQUAL_OUTPUTS</a></li>
+      <li><a href="global.html#DEFAULT_WEIGHTS">DEFAULT_WEIGHTS</a></li>
+      <li><a href="global.html#DEPRECATED_WIRE_TYPES">DEPRECATED_WIRE_TYPES</a></li>
+      <li><a href="global.html#DUST_SATS">DUST_SATS</a></li>
+      <li><a href="global.html#EXIT_KINDS">EXIT_KINDS</a></li>
+      <li><a href="global.html#EXIT_SIGNATURE_TYPE">EXIT_SIGNATURE_TYPE</a></li>
+      <li><a href="global.html#FIDELITY_LOCKTIME_GRID">FIDELITY_LOCKTIME_GRID</a></li>
+      <li><a href="global.html#FIDELITY_MAX_CERT_BLOCKS">FIDELITY_MAX_CERT_BLOCKS</a></li>
+      <li><a href="global.html#FIELD_BODIES_VERSION">FIELD_BODIES_VERSION</a></li>
+      <li><a href="global.html#GCM_TAG_BYTES">GCM_TAG_BYTES</a></li>
+      <li><a href="global.html#HOP_PENALTY_MS">HOP_PENALTY_MS</a></li>
+      <li><a href="global.html#INPUT_HEADROOM">INPUT_HEADROOM</a></li>
+      <li><a href="global.html#LEAF_VERSION">LEAF_VERSION</a></li>
+      <li><a href="global.html#LOCKTIME_SLACK_BLOCKS">LOCKTIME_SLACK_BLOCKS</a></li>
+      <li><a href="global.html#LOCKTIME_THRESHOLD">LOCKTIME_THRESHOLD</a></li>
+      <li><a href="global.html#MAX_EVIDENCE">MAX_EVIDENCE</a></li>
+      <li><a href="global.html#MAX_FEE_PPM">MAX_FEE_PPM</a></li>
+      <li><a href="global.html#MAX_LOCKTIME">MAX_LOCKTIME</a></li>
+      <li><a href="global.html#MAX_MAKERS">MAX_MAKERS</a></li>
+      <li><a href="global.html#MAX_MAKER_INPUTS">MAX_MAKER_INPUTS</a></li>
+      <li><a href="global.html#MAX_OFFERS">MAX_OFFERS</a></li>
+      <li><a href="global.html#MAX_PREMIUM_PPM">MAX_PREMIUM_PPM</a></li>
+      <li><a href="global.html#MAX_PROVIDERS">MAX_PROVIDERS</a></li>
+      <li><a href="global.html#MAX_PSBT_CHARS">MAX_PSBT_CHARS</a></li>
+      <li><a href="global.html#MAX_REFUND_LOCK_BLOCKS">MAX_REFUND_LOCK_BLOCKS</a></li>
+      <li><a href="global.html#MAX_SETTLED_CREDITS">MAX_SETTLED_CREDITS</a></li>
+      <li><a href="global.html#MAX_TRANSFERS">MAX_TRANSFERS</a></li>
+      <li><a href="global.html#MIN_COINJOIN_SATS">MIN_COINJOIN_SATS</a></li>
+      <li><a href="global.html#MIN_INVOICE_EXPIRY_SECONDS">MIN_INVOICE_EXPIRY_SECONDS</a></li>
+      <li><a href="global.html#MIN_REFUND_LOCK_BLOCKS">MIN_REFUND_LOCK_BLOCKS</a></li>
+      <li><a href="global.html#PODLE_BLACKLIST_SIZE">PODLE_BLACKLIST_SIZE</a></li>
+      <li><a href="global.html#PODLE_MAX_INDEX">PODLE_MAX_INDEX</a></li>
+      <li><a href="global.html#PODLE_MIN_AGE_CONFS">PODLE_MIN_AGE_CONFS</a></li>
+      <li><a href="global.html#PODLE_MIN_VALUE_PCT">PODLE_MIN_VALUE_PCT</a></li>
+      <li><a href="global.html#PODLE_TAG">PODLE_TAG</a></li>
+      <li><a href="global.html#ROUND_TYPES">ROUND_TYPES</a></li>
+      <li><a href="global.html#SCORE_INVENTORY_ONLY">SCORE_INVENTORY_ONLY</a></li>
+      <li><a href="global.html#SCORE_MAX">SCORE_MAX</a></li>
+      <li><a href="global.html#SCORE_UNKNOWN">SCORE_UNKNOWN</a></li>
+      <li><a href="global.html#SEALED_TYPE">SEALED_TYPE</a></li>
+      <li><a href="global.html#SEAL_NAMESPACE">SEAL_NAMESPACE</a></li>
+      <li><a href="global.html#SIGNER_FIELD">SIGNER_FIELD</a></li>
+      <li><a href="global.html#TAPROOT_INTERNAL_NUMS">TAPROOT_INTERNAL_NUMS</a></li>
+      <li><a href="global.html#TELEMETRY_TYPE">TELEMETRY_TYPE</a></li>
+      <li><a href="global.html#TELEMETRY_VERSION">TELEMETRY_VERSION</a></li>
+      <li><a href="global.html#UNSAFE_PATH_TOKENS">UNSAFE_PATH_TOKENS</a></li>
+      <li><a href="global.html#WALLET_TX_KINDS">WALLET_TX_KINDS</a></li>
+      <li><a href="global.html#WEIGHT_OVERHEAD">WEIGHT_OVERHEAD</a></li>
+      <li><a href="global.html#YEAR_BLOCKS">YEAR_BLOCKS</a></li>
+      <li><a href="global.html#assertMonotoneBudget">assertMonotoneBudget</a></li>
+      <li><a href="global.html#bitcoin">bitcoin</a></li>
+      <li><a href="global.html#bodyId">bodyId</a></li>
+      <li><a href="global.html#broadcastSettled">broadcastSettled</a></li>
+      <li><a href="global.html#buildContractTaproot">buildContractTaproot</a></li>
+      <li><a href="global.html#buildEscrow">buildEscrow</a></li>
+      <li><a href="global.html#buildFederationVaultFromPolicy">buildFederationVaultFromPolicy</a></li>
+      <li><a href="global.html#buildFidelity">buildFidelity</a></li>
+      <li><a href="global.html#buildForwardedDocumentRequest">buildForwardedDocumentRequest</a></li>
+      <li><a href="global.html#buildHashlockLeaf">buildHashlockLeaf</a></li>
+      <li><a href="global.html#buildHashlockTapscript">buildHashlockTapscript</a></li>
+      <li><a href="global.html#buildPsbt">buildPsbt</a></li>
+      <li><a href="global.html#buildScriptLeaf">buildScriptLeaf</a></li>
+      <li><a href="global.html#buildSpendLeaf">buildSpendLeaf</a></li>
+      <li><a href="global.html#buildWatchSet">buildWatchSet</a></li>
+      <li><a href="global.html#checkPodleUtxo">checkPodleUtxo</a></li>
+      <li><a href="global.html#classifyWalletTransaction">classifyWalletTransaction</a></li>
+      <li><a href="global.html#codec">codec</a></li>
+      <li><a href="global.html#compileLeaves">compileLeaves</a></li>
+      <li><a href="global.html#composePolicyWithRunHashlock">composePolicyWithRunHashlock</a></li>
+      <li><a href="global.html#composeTaprootTree">composeTaprootTree</a></li>
+      <li><a href="global.html#computeRelayFee">computeRelayFee</a></li>
+      <li><a href="global.html#contractMessageIndex">contractMessageIndex</a></li>
+      <li><a href="global.html#contractMessageMatches">contractMessageMatches</a></li>
+      <li><a href="global.html#createBlobMerkleTree">createBlobMerkleTree</a></li>
+      <li><a href="global.html#createDocumentPurchaseSession">createDocumentPurchaseSession</a></li>
+      <li><a href="global.html#describePsbt">describePsbt</a></li>
+      <li><a href="global.html#descriptorPrivateKey">descriptorPrivateKey</a></li>
+      <li><a href="global.html#envelopeRecipient">envelopeRecipient</a></li>
+      <li><a href="global.html#estimateVsize">estimateVsize</a></li>
+      <li><a href="global.html#evaluateTierWhen">evaluateTierWhen</a></li>
+      <li><a href="global.html#expireHeight">expireHeight</a></li>
+      <li><a href="global.html#fidelityLocktimes">fidelityLocktimes</a></li>
+      <li><a href="global.html#fidelityPath">fidelityPath</a></li>
+      <li><a href="global.html#fidelityValue">fidelityValue</a></li>
+      <li><a href="global.html#finalize">finalize</a></li>
+      <li><a href="global.html#finalizeHashlockPsbt">finalizeHashlockPsbt</a></li>
+      <li><a href="global.html#finalizeSpendPsbt">finalizeSpendPsbt</a></li>
+      <li><a href="global.html#findSession">findSession</a></li>
+      <li><a href="global.html#fromContractMessage">fromContractMessage</a></li>
+      <li><a href="global.html#generatePodle">generatePodle</a></li>
+      <li><a href="global.html#hashlockFromProgramRun">hashlockFromProgramRun</a></li>
+      <li><a href="global.html#invoiceAmountMsat">invoiceAmountMsat</a></li>
+      <li><a href="global.html#isDuplicateSettlement">isDuplicateSettlement</a></li>
+      <li><a href="global.html#isValidFidelityLocktime">isValidFidelityLocktime</a></li>
+      <li><a href="global.html#l1GiverTerms">l1GiverTerms</a></li>
+      <li><a href="global.html#leafScripts">leafScripts</a></li>
+      <li><a href="global.html#listRefundCandidates">listRefundCandidates</a></li>
+      <li><a href="global.html#lockFrom">lockFrom</a></li>
+      <li><a href="global.html#makerChange">makerChange</a></li>
+      <li><a href="global.html#makerFee">makerFee</a></li>
+      <li><a href="global.html#memoryChain">memoryChain</a></li>
+      <li><a href="global.html#memoryWallet">memoryWallet</a></li>
+      <li><a href="global.html#mergeMakerSignatures">mergeMakerSignatures</a></li>
+      <li><a href="global.html#nextPodleIndex">nextPodleIndex</a></li>
+      <li><a href="global.html#normalizeAuth">normalizeAuth</a></li>
+      <li><a href="global.html#normalizeCancel">normalizeCancel</a></li>
+      <li><a href="global.html#normalizeContractSpendPolicy">normalizeContractSpendPolicy</a></li>
+      <li><a href="global.html#normalizeExtraLeafSpecs">normalizeExtraLeafSpecs</a></li>
+      <li><a href="global.html#normalizeFidelity">normalizeFidelity</a></li>
+      <li><a href="global.html#normalizeFill">normalizeFill</a></li>
+      <li><a href="global.html#normalizeFillAck">normalizeFillAck</a></li>
+      <li><a href="global.html#normalizeFunded">normalizeFunded</a></li>
+      <li><a href="global.html#normalizeHashlockSpec">normalizeHashlockSpec</a></li>
+      <li><a href="global.html#normalizeIoAuth">normalizeIoAuth</a></li>
+      <li><a href="global.html#normalizeLeaf">normalizeLeaf</a></li>
+      <li><a href="global.html#normalizeLock">normalizeLock</a></li>
+      <li><a href="global.html#normalizeOffer">normalizeOffer</a></li>
+      <li><a href="global.html#normalizeOrder">normalizeOrder</a></li>
+      <li><a href="global.html#normalizeSig">normalizeSig</a></li>
+      <li><a href="global.html#normalizeTake">normalizeTake</a></li>
+      <li><a href="global.html#normalizeTakeAccept">normalizeTakeAccept</a></li>
+      <li><a href="global.html#normalizeTx">normalizeTx</a></li>
+      <li><a href="global.html#offerKey">offerKey</a></li>
+      <li><a href="global.html#openFiling">openFiling</a></li>
+      <li><a href="global.html#openRoundMessage">openRoundMessage</a></li>
+      <li><a href="global.html#paginateInventoryItems">paginateInventoryItems</a></li>
+      <li><a href="global.html#parseXOnlyPubkeysFromSpendScript">parseXOnlyPubkeysFromSpendScript</a></li>
+      <li><a href="global.html#planCoinjoin">planCoinjoin</a></li>
+      <li><a href="global.html#podleCommitment">podleCommitment</a></li>
+      <li><a href="global.html#podleGenerator">podleGenerator</a></li>
+      <li><a href="global.html#policyAfterDecay">policyAfterDecay</a></li>
+      <li><a href="global.html#prepareDecayMigrationPsbt">prepareDecayMigrationPsbt</a></li>
+      <li><a href="global.html#prepareFidelityRedeem">prepareFidelityRedeem</a></li>
+      <li><a href="global.html#prepareHashlockWithdrawalPsbt">prepareHashlockWithdrawalPsbt</a></li>
+      <li><a href="global.html#prepareTierWithdrawalPsbt">prepareTierWithdrawalPsbt</a></li>
+      <li><a href="global.html#quote">quote</a></li>
+      <li><a href="global.html#randomNonce">randomNonce</a></li>
+      <li><a href="global.html#randomPrivateKey">randomPrivateKey</a></li>
+      <li><a href="global.html#randomRoundId">randomRoundId</a></li>
+      <li><a href="global.html#rememberSettlement">rememberSettlement</a></li>
+      <li><a href="global.html#roleFor">roleFor</a></li>
+      <li><a href="global.html#roles">roles</a></li>
+      <li><a href="global.html#routePath">routePath</a></li>
+      <li><a href="global.html#scriptTreeFromLeaves">scriptTreeFromLeaves</a></li>
+      <li><a href="global.html#sealRoundMessage">sealRoundMessage</a></li>
+      <li><a href="global.html#selectActiveTiers">selectActiveTiers</a></li>
+      <li><a href="global.html#sellerDedupeKey">sellerDedupeKey</a></li>
+      <li><a href="global.html#settlementDedupeKey">settlementDedupeKey</a></li>
+      <li><a href="global.html#signFidelityCertificate">signFidelityCertificate</a></li>
+      <li><a href="global.html#signFidelityRedeem">signFidelityRedeem</a></li>
+      <li><a href="global.html#signKeyPathInputs">signKeyPathInputs</a></li>
+      <li><a href="global.html#signOwnership">signOwnership</a></li>
+      <li><a href="global.html#signingString">signingString</a></li>
+      <li><a href="global.html#spendAddress">spendAddress</a></li>
+      <li><a href="global.html#synthesizeDefaultLadder">synthesizeDefaultLadder</a></li>
+      <li><a href="global.html#taprootKeyPath">taprootKeyPath</a></li>
+      <li><a href="global.html#taprootOutputPrivateKey">taprootOutputPrivateKey</a></li>
+      <li><a href="global.html#tierWhenPath">tierWhenPath</a></li>
+      <li><a href="global.html#timelockMature">timelockMature</a></li>
+      <li><a href="global.html#toContractMessage">toContractMessage</a></li>
+      <li><a href="global.html#toIntegerSats">toIntegerSats</a></li>
+      <li><a href="global.html#unsignedTxid">unsignedTxid</a></li>
+      <li><a href="global.html#validateEscrow">validateEscrow</a></li>
+      <li><a href="global.html#validateFill">validateFill</a></li>
+      <li><a href="global.html#validateForMaker">validateForMaker</a></li>
+      <li><a href="global.html#validateForTaker">validateForTaker</a></li>
+      <li><a href="global.html#validateInvoice">validateInvoice</a></li>
+      <li><a href="global.html#validateTake">validateTake</a></li>
+      <li><a href="global.html#validateTakeAccept">validateTakeAccept</a></li>
+      <li><a href="global.html#verifyBlobPath">verifyBlobPath</a></li>
+      <li><a href="global.html#verifyFidelity">verifyFidelity</a></li>
+      <li><a href="global.html#verifyFidelityCertificate">verifyFidelityCertificate</a></li>
+      <li><a href="global.html#verifyOwnership">verifyOwnership</a></li>
+      <li><a href="global.html#verifyPodle">verifyPodle</a></li>
+      <li><a href="global.html#weightsForProximity">weightsForProximity</a></li>
     </ul>
   </nav>
   <br class="clear" />

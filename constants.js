@@ -9,6 +9,12 @@
 // Networking and Environment
 const PEER_PORT = 7777;
 const MAX_PEERS = 32;
+/**
+ * Bitcoin L1 reference bandwidth: one ~1 MiB block every ~10 minutes.
+ * Fabric P2P uses this as the node-wide target window, split across {@link MAX_PEERS}.
+ */
+const BITCOIN_L1_BLOCK_BYTES = 1024 * 1024;
+const BITCOIN_L1_BLOCK_INTERVAL_MS = 10 * 60 * 1000;
 const PRECISION = 100;
 
 // Fabric Core
@@ -16,18 +22,309 @@ const FABRIC_USER_AGENT = 'Fabric Core 0.1.0 (@fabric/core#v0.1.0-RC1)';
 const BITCOIN_NETWORK = 'mainnet';
 const BITCOIN_GENESIS = '000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f';
 const BITCOIN_GENESIS_ROOT = '4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b';
-const FABRIC_KEY_DERIVATION_PATH = "m/44'/7777'/0'/0/0";
+/** Purpose level of Fabric identity paths (`m/7777'/…`), apart from BIP44 funds. */
+const FABRIC_IDENTITY_PURPOSE = 7777;
+/**
+ * Fabric protocol identity coin types (the `F'` level, not Bitcoin funds).
+ * - **7777** — Bitcoin **mainnet** identities
+ * - **7778** — all other networks (testnet, signet, regtest, and unspecified)
+ */
+const FABRIC_COIN_TYPE_MAINNET = 7777;
+const FABRIC_COIN_TYPE_TESTNET = 7778;
+/** Default Fabric coin type (non-mainnet / development). Alias of {@link FABRIC_COIN_TYPE_TESTNET}. */
+const FABRIC_COIN_TYPE = FABRIC_COIN_TYPE_TESTNET;
+/** Default Fabric identity path (non-mainnet): m/7777'/7778'/0'/0/0 */
+const FABRIC_KEY_DERIVATION_PATH = `m/${FABRIC_IDENTITY_PURPOSE}'/${FABRIC_COIN_TYPE_TESTNET}'/0'/0/0`;
+/** Mainnet Fabric identity path: m/7777'/7777'/0'/0/0 */
+const FABRIC_KEY_DERIVATION_PATH_MAINNET = `m/${FABRIC_IDENTITY_PURPOSE}'/${FABRIC_COIN_TYPE_MAINNET}'/0'/0/0`;
+/** BIP44 coin type for Bitcoin funds on mainnet (receive / change). */
+const BITCOIN_COIN_TYPE = 0;
+/** BIP44 coin type for Bitcoin funds on testnet, signet, and regtest. */
+const BITCOIN_COIN_TYPE_TESTNET = 1;
+/** First mainnet SegWit receive key, account 0 (funds — never Fabric identity). */
+const BITCOIN_KEY_DERIVATION_PATH = "m/84'/0'/0'/0/0";
+
+/**
+ * Resolve Fabric identity coin type for a Bitcoin / Fabric network name.
+ * Mainnet → 7777; everything else (incl. empty / unknown) → 7778.
+ * @param {string|null|undefined} network
+ * @returns {number}
+ */
+function fabricCoinTypeForNetwork (network) {
+  return isMainnetNetwork(network) ? FABRIC_COIN_TYPE_MAINNET : FABRIC_COIN_TYPE_TESTNET;
+}
+
+/**
+ * True for the names Bitcoin mainnet goes by (`main`, `mainnet`, `bitcoin`, `livenet`).
+ * @param {string|null|undefined} network
+ * @returns {boolean}
+ */
+function isMainnetNetwork (network) {
+  const n = String(network == null ? '' : network).trim().toLowerCase();
+  return n === 'main' || n === 'mainnet' || n === 'bitcoin' || n === 'livenet';
+}
+
+/**
+ * BIP44 coin type for Bitcoin funds on a network: 0 on mainnet, 1 elsewhere.
+ * @param {string|null|undefined} network
+ * @returns {number}
+ */
+function bitcoinCoinTypeForNetwork (network) {
+  return isMainnetNetwork(network) ? BITCOIN_COIN_TYPE : BITCOIN_COIN_TYPE_TESTNET;
+}
+
+/**
+ * Resolve a Bitcoin coin type from a network name or explicit integer.
+ * Omit / empty → 0 (mainnet, the default network).
+ * @param {string|number} [networkOrCoinType]
+ * @returns {number}
+ * @private
+ */
+function resolveBitcoinCoinType (networkOrCoinType) {
+  if (typeof networkOrCoinType === 'number') {
+    return assertBip32ChildIndex(networkOrCoinType, 'coinType');
+  }
+  if (networkOrCoinType != null && String(networkOrCoinType).trim() !== '') {
+    return bitcoinCoinTypeForNetwork(networkOrCoinType);
+  }
+  return BITCOIN_COIN_TYPE;
+}
+
+/**
+ * Resolve Fabric identity coin type from a network name or explicit integer.
+ * Omit / empty → 7778. Mainnet names → 7777. Explicit integers are BIP32 child
+ * indices (not restricted to 7777/7778).
+ * @param {string|number} [networkOrCoinType]
+ * @returns {number}
+ */
+function resolveFabricIdentityCoinType (networkOrCoinType) {
+  if (typeof networkOrCoinType === 'number') {
+    return assertBip32ChildIndex(networkOrCoinType, 'coinType');
+  }
+  if (networkOrCoinType != null && String(networkOrCoinType).trim() !== '') {
+    return fabricCoinTypeForNetwork(networkOrCoinType);
+  }
+  return FABRIC_COIN_TYPE_TESTNET;
+}
+
+/**
+ * Fabric identity path: m/7777'/{7777|7778}'/account'/0/index
+ * @param {number} [account=0]
+ * @param {number} [index=0]
+ * @param {string|number} [networkOrCoinType] Network name (`mainnet` / `regtest` / …)
+ *   or an explicit coin type integer. Omit for default non-mainnet (7778).
+ * @returns {string}
+ */
+function fabricIdentityDerivationPath (account = 0, index = 0, networkOrCoinType) {
+  const i = assertBip32ChildIndex(index, 'index');
+  return `${fabricIdentityAccountPath(account, networkOrCoinType)}/0/${i}`;
+}
+
+/**
+ * Fabric identity account node: m/7777'/{7777|7778}'/account'
+ * @param {number} [account=0]
+ * @param {string|number} [networkOrCoinType] Network name or explicit coin type.
+ * @returns {string}
+ */
+function fabricIdentityAccountPath (account = 0, networkOrCoinType) {
+  const a = assertBip32ChildIndex(account, 'account');
+  const coin = resolveFabricIdentityCoinType(networkOrCoinType);
+  return `m/${FABRIC_IDENTITY_PURPOSE}'/${coin}'/${a}'`;
+}
+
+/**
+ * Bitcoin SegWit receive path (BIP84 external chain): m/84'/{coin}'/account'/0/index
+ * @param {number} [account=0]
+ * @param {number} [index=0]
+ * @param {string|number} [networkOrCoinType] Network name or explicit coin type; omit for mainnet.
+ * @returns {string}
+ */
+function bitcoinReceiveDerivationPath (account = 0, index = 0, networkOrCoinType) {
+  return bitcoinPurposeDerivationPath(84, account, 0, index, networkOrCoinType);
+}
+
+/**
+ * Bitcoin SegWit change path (BIP84 internal chain): m/84'/{coin}'/account'/1/index
+ * @param {number} [account=0]
+ * @param {number} [index=0]
+ * @param {string|number} [networkOrCoinType] Network name or explicit coin type; omit for mainnet.
+ * @returns {string}
+ */
+function bitcoinChangeDerivationPath (account = 0, index = 0, networkOrCoinType) {
+  return bitcoinPurposeDerivationPath(84, account, 1, index, networkOrCoinType);
+}
+
+/**
+ * BIP-43 purpose path for Bitcoin funds: m/{purpose}'/{coin}'/account'/{0|1}/index
+ * Account wallets hand out addresses from BIP-84 and also watch BIP-86 Taproot
+ * and BIP-44 (see `functions/accountKeys.js`); BIP-87 names the multisig
+ * cosigner key.
+ *
+ * @param {number} purpose 44 (p2pkh), 49 (p2sh-p2wpkh), 84 (p2wpkh), 86 (p2tr), or 87 (multisig)
+ * @param {number} [account=0]
+ * @param {number} [change=0] 0 = receive, 1 = change
+ * @param {number} [index=0]
+ * @param {string|number} [networkOrCoinType] Network name (coin 0 on mainnet, 1 elsewhere)
+ *   or an explicit coin type. Omit for coin 0.
+ * @returns {string}
+ * @private
+ */
+function bitcoinPurposeDerivationPath (purpose, account = 0, change = 0, index = 0, networkOrCoinType) {
+  const c = assertBip32ChildIndex(change, 'change');
+  const i = assertBip32ChildIndex(index, 'index');
+  if (c !== 0 && c !== 1) {
+    throw new RangeError('BIP32 change chain must be 0 (receive) or 1 (change)');
+  }
+  return `${bitcoinAccountDerivationPath(purpose, account, networkOrCoinType)}/${c}/${i}`;
+}
+
+/**
+ * BIP-43 account node for Bitcoin funds: m/{purpose}'/{coin}'/account'
+ * @param {number} purpose
+ * @param {number} [account=0]
+ * @param {string|number} [networkOrCoinType] Network name or explicit coin type; omit for coin 0.
+ * @returns {string}
+ */
+function bitcoinAccountDerivationPath (purpose, account = 0, networkOrCoinType) {
+  const p = assertBip32ChildIndex(purpose, 'purpose');
+  const a = assertBip32ChildIndex(account, 'account');
+  const coin = resolveBitcoinCoinType(networkOrCoinType);
+  return `m/${p}'/${coin}'/${a}'`;
+}
+
+/**
+ * BIP-87 multisig cosigner key for an account: m/87'/{coin}'/account'/0/0
+ * @param {number} [account=0]
+ * @param {string|number} [networkOrCoinType]
+ * @returns {string}
+ */
+function bitcoinCosignerDerivationPath (account = 0, networkOrCoinType) {
+  return bitcoinPurposeDerivationPath(87, account, 0, 0, networkOrCoinType);
+}
+
+/** BIP-49 wrapped SegWit receive: m/49'/0'/account'/0/index */
+function bitcoinBip49ReceiveDerivationPath (account = 0, index = 0) {
+  return bitcoinPurposeDerivationPath(49, account, 0, index);
+}
+
+/** BIP-49 wrapped SegWit change: m/49'/0'/account'/1/index */
+function bitcoinBip49ChangeDerivationPath (account = 0, index = 0) {
+  return bitcoinPurposeDerivationPath(49, account, 1, index);
+}
+
+/** BIP-84 native SegWit receive: m/84'/0'/account'/0/index */
+function bitcoinBip84ReceiveDerivationPath (account = 0, index = 0) {
+  return bitcoinPurposeDerivationPath(84, account, 0, index);
+}
+
+/** BIP-84 native SegWit change: m/84'/0'/account'/1/index */
+function bitcoinBip84ChangeDerivationPath (account = 0, index = 0) {
+  return bitcoinPurposeDerivationPath(84, account, 1, index);
+}
+
+/** BIP-86 Taproot receive: m/86'/0'/account'/0/index */
+function bitcoinBip86ReceiveDerivationPath (account = 0, index = 0) {
+  return bitcoinPurposeDerivationPath(86, account, 0, index);
+}
+
+/** BIP-86 Taproot change: m/86'/0'/account'/1/index */
+function bitcoinBip86ChangeDerivationPath (account = 0, index = 0) {
+  return bitcoinPurposeDerivationPath(86, account, 1, index);
+}
+
+/**
+ * BIP-48 multisig path: m/48'/0'/account'/script_type'/{0|1}/index
+ * script_type 1 = p2sh-p2wsh, 2 = p2wsh (recommended default). Path templates
+ * only — group/federation vaults do not switch to these by default.
+ *
+ * @param {number} scriptType
+ * @param {number} [account=0]
+ * @param {number} [change=0]
+ * @param {number} [index=0]
+ * @returns {string}
+ * @private
+ */
+function bitcoinBip48DerivationPath (scriptType, account = 0, change = 0, index = 0) {
+  const st = assertBip32ChildIndex(scriptType, 'scriptType');
+  if (st !== 1 && st !== 2) {
+    throw new RangeError('BIP48 script_type must be 1 (p2sh-p2wsh) or 2 (p2wsh)');
+  }
+  const a = assertBip32ChildIndex(account, 'account');
+  const c = assertBip32ChildIndex(change, 'change');
+  const i = assertBip32ChildIndex(index, 'index');
+  if (c !== 0 && c !== 1) {
+    throw new RangeError('BIP32 change chain must be 0 (receive) or 1 (change)');
+  }
+  return `m/48'/${BITCOIN_COIN_TYPE}'/${a}'/${st}'/${c}/${i}`;
+}
+
+/** BIP-48 nested SegWit multisig receive: m/48'/0'/account'/1'/0/index */
+function bitcoinBip48P2shP2wshReceiveDerivationPath (account = 0, index = 0) {
+  return bitcoinBip48DerivationPath(1, account, 0, index);
+}
+
+/** BIP-48 nested SegWit multisig change: m/48'/0'/account'/1'/1/index */
+function bitcoinBip48P2shP2wshChangeDerivationPath (account = 0, index = 0) {
+  return bitcoinBip48DerivationPath(1, account, 1, index);
+}
+
+/** BIP-48 native SegWit multisig receive: m/48'/0'/account'/2'/0/index */
+function bitcoinBip48P2wshReceiveDerivationPath (account = 0, index = 0) {
+  return bitcoinBip48DerivationPath(2, account, 0, index);
+}
+
+/** BIP-48 native SegWit multisig change: m/48'/0'/account'/2'/1/index */
+function bitcoinBip48P2wshChangeDerivationPath (account = 0, index = 0) {
+  return bitcoinBip48DerivationPath(2, account, 1, index);
+}
+
+/**
+ * BIP32 child index domain: finite integer in [0, 0x7fffffff].
+ * @param {*} value
+ * @param {string} label
+ * @returns {number}
+ */
+function assertBip32ChildIndex (value, label = 'index') {
+  const n = Number(value);
+  if (!Number.isFinite(n) || !Number.isInteger(n) || n < 0 || n > 0x7fffffff) {
+    throw new RangeError(`BIP32 ${label} must be an integer in [0, 0x7fffffff]`);
+  }
+  return n;
+}
+
 const FIXTURE_SEED = 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about';
 const FIXTURE_XPUB = 'xpub661MyMwAqRbcF6GygV6Q6XAg8dqhPvDuhYHGniequi6HMbYhNNH5XC13Np3qRANHVD2mmnNGtMGBfDT69s2ovpHLr7q8syoAuyWqtRGEsYQ';
 const FIXTURE_XPRV = 'xprv9s21ZrQH143K2cCWaTZPjPDwac1CzTW4LKMfzLFEMNZJUoDYppxpyPgZXY7CZkjefGJTrTyqKnMrM4RG6nGn7Q9cwjHggCtn3CdFGJahaWY';
 
 // Message Constants
 const MAGIC_BYTES = 0xC0D3F33D;
-const VERSION_NUMBER = 0x02; // bumped for 208-byte header (optional preimage field)
+/** Wire protocol version for `@fabric/core` 0.1.x pre-release (`0x01`).
+ * 208-byte header (incl. Lightning-style `preimage`) is the V1 frame under this version —
+ * not a bump to `0x02`. Keep in sync with `FABRIC_MESSAGE_VERSION` in `src/constants.h`. */
+const VERSION_NUMBER = 0x01;
 /* magic, version, parent, author, type, size, hash, preimage, signature — then body */
 const HEADER_SIZE = 208;
 const LARGE_COLLECTION_SIZE = 10; // TODO: test with 1,000,000
-const MAX_MESSAGE_SIZE = 4096 - HEADER_SIZE;
+/** Max bytes of one length-prefixed Noise message (handshake or transport). */
+const NOISE_MAX_MESSAGE_BYTES = 65535;
+/** Poly1305 tag on every Noise transport message. */
+const NOISE_MAC_BYTES = 16;
+/** Max bytes of one AMP frame on the wire (header + body): the largest plaintext one
+ * Noise transport message carries (65535 − 16 = 65519 B). Each frame is one Noise
+ * message, so this must never exceed `NOISE_MAX_MESSAGE_BYTES − NOISE_MAC_BYTES`.
+ * Keep in sync with `FABRIC_MAX_FRAME_BYTES` in `src/constants.h`. */
+const MAX_FRAME_BYTES = NOISE_MAX_MESSAGE_BYTES - NOISE_MAC_BYTES;
+/** Max AMP body bytes: {@link MAX_FRAME_BYTES} minus the header (65311 B). Keep in sync
+ * with `FABRIC_MAX_MESSAGE_BODY` in `src/constants.h`. */
+const MAX_MESSAGE_SIZE = MAX_FRAME_BYTES - HEADER_SIZE;
+/** Bytes a remote may send before the Noise handshake completes (XX needs < 200). */
+const NOISE_HANDSHAKE_MAX_BYTES = 64 * 1024;
+/** Time a remote has to complete the Noise handshake before the socket is destroyed. */
+const NOISE_HANDSHAKE_TIMEOUT_MS = 15000;
+/** Max characters in a document id carried on the wire (keeps `P2P_FILE_SEND` under the frame cap). */
+const MAX_DOCUMENT_ID_LENGTH = 128;
+/** Byte budget for the items of one `P2P_INVENTORY_RESPONSE` page (JSON body under `MAX_MESSAGE_SIZE`). */
+const INVENTORY_RESPONSE_PAGE_BYTES = MAX_MESSAGE_SIZE - 2048;
 /** Max UTF-16 code units accepted for `JSON.parse` of locally persisted JSON (LevelDB peer registry, CLI STATE file). */
 const PERSISTED_JSON_MAX_CHARS = 2 * 1024 * 1024;
 
@@ -39,12 +336,16 @@ const MAX_TX_PER_BLOCK = 4;
 const MAX_CHANNEL_VALUE = 100000000;
 
 // Machine Constraints
-const MACHINE_MAX_MEMORY = MAX_MEMORY_ALLOC * MAX_MESSAGE_SIZE;
-const MAX_CHAT_MESSAGE_LENGTH = 2048;
+/** VM memory page; independent of the wire cap (the pre-32 KiB `MAX_MESSAGE_SIZE`). */
+const MACHINE_MEMORY_PAGE_SIZE = 3888;
+/** Bytes of `Machine#memory` (≈3.8 MiB), allocated on first access. */
+const MACHINE_MAX_MEMORY = MAX_MEMORY_ALLOC * MACHINE_MEMORY_PAGE_SIZE;
+/** Matches Peer `P2P_CHAT_MAX_CHARS` so TUI send is not dropped on the mesh. */
+const MAX_CHAT_MESSAGE_LENGTH = 2000;
 
 // Playnet
-const FABRIC_PLAYNET_ADDRESS = ''; // deposit address (P2TR)
-const FABRIC_PLAYNET_ORIGIN = ''; // block hash of first deploy
+const FABRIC_PLAYNET_ADDRESS = ''; // unset until a published playnet P2TR deposit address is chosen
+const FABRIC_PLAYNET_ORIGIN = ''; // unset until first playnet deploy block hash is sealed
 
 // FABRIC ONLY
 const BITCOIN_BLOCK_TYPE = 21000;
@@ -54,12 +355,18 @@ const BITCOIN_TRANSACTION_HASH_TYPE = 22100;
 const GENERIC_MESSAGE_TYPE = 15103;
 const LOG_MESSAGE_TYPE = 3235156080;
 const GENERIC_LIST_TYPE = 3235170158;
+/** Sidechain registry / state update (typed fields; HTTP may map RFC6902 ↔ fields). */
+const SIDECHAIN_STATE_PATCH_TYPE = 997;
 const DOCUMENT_PUBLISH_TYPE = 998;
 const DOCUMENT_REQUEST_TYPE = 999;
+/** Sealed document delivery: content-key reveal, per-blob quote, blob batch (directed; typed fields). */
+const DOCUMENT_KEY_REVEAL_TYPE = 1000;
+const DOCUMENT_BLOB_QUOTE_TYPE = 1001;
+const DOCUMENT_BLOB_BATCH_TYPE = 1002;
 const JSON_CALL_TYPE = 16000;
 const PATCH_MESSAGE_TYPE = 1024;
 /** Contract negotiation: batched Fabric messages + chain Merkle root + JSON Patch (RFC 6902) — see docs/CONTRACT_PROPOSAL.md */
-const CONTRACT_PROPOSAL_TYPE = 138; // 0x8A (POLICY.md / FABRIC_MESSAGE_TYPE_CONSOLIDATION)
+const CONTRACT_PROPOSAL_TYPE = 138; // 0x8A (POLICY.md / MESSAGES.md)
 
 // Opcodes
 const OP_CYCLE = '00';
@@ -78,14 +385,19 @@ const OP_RETURN = '6a';
 const OP_EQUALVERIFY = '88';
 const OP_SEPARATOR = 'ab';
 
-// Bech32m
-const BECH32M_CHARSET = 'qpzry9x8gf2tvdw0s3jn54khce6mua7l';
-
 // Peering
 const P2P_PORT = 7777;
 // Gossip and peering discovery (WebRTC + Fabric P2P)
-const P2P_PEER_GOSSIP = 'P2P_PEER_GOSSIP'; // Gossip known peers for cross-cluster discovery
-const P2P_PEERING_OFFER = 'P2P_PEERING_OFFER'; // Peer needs more connections; gossiped until fulfilled
+/** First-class wire opcode: gossip known peers for cross-cluster discovery. */
+const P2P_PEER_GOSSIP = 0x61;
+/** First-class wire opcode: peer needs more connections; relayed until fulfilled. */
+const P2P_PEERING_OFFER = 0x62;
+/** First-class wire opcode: a signed bid to buy one document chunk, flooded to find sellers. */
+const P2P_DOCUMENT_BID = 0x63;
+/** First-class wire opcode: a seller's signed answer to a bid, routed back along the bid's path. */
+const P2P_DOCUMENT_ASK = 0x64;
+/** Furthest a bid's `expiresAt` may be from now; also bounds how long relays keep its route. */
+const DOCUMENT_BID_MAX_TTL_SECONDS = 60 * 60;
 /** Max gossip relays per logical hop (anti amplification). */
 const GOSSIP_MAX_HOPS = 5;
 /** Per-origin relay budget per rolling minute (anti flood). */
@@ -98,15 +410,133 @@ const PEERING_OFFER_MAX_RELAYS_PER_ORIGIN_PER_MINUTE = 60;
 const PEERING_OFFER_MAX_PAYLOAD_CACHE = 50000;
 /** Max queued connection candidates from {@link P2P_PEERING_OFFER} (FIFO eviction). */
 const PEER_MAX_CANDIDATES_QUEUE = 128;
+/**
+ * Minimum delay before {@link Peer#_fillPeerSlots} redials the same candidate.
+ * Immediate requeue plus `connections:close` was a tight ECONNREFUSED loop.
+ */
+const PEER_CANDIDATE_RETRY_MS = 60000;
 /** Max wire-hash dedup entries in {@link Peer} (bounded memory). */
 const PEER_MAX_WIRE_HASH_CACHE = 10000;
+/**
+ * Max logical first-writer-wins registration keys in {@link Peer}
+ * (CONTRACT_PUBLISH / DOCUMENT_PUBLISH / CONTRACT_PROPOSAL / announces /
+ * BitcoinBlock tip / peer alias / key reveal).
+ * Distinct from wire-hash dedup: catches re-signed copies of the same body.
+ */
+const PEER_MAX_LOGICAL_REGISTER_CACHE = 10000;
+
+/** Default Peer registry-score penalties (Bitcoin Core–style misbehavior). */
+const PEER_SCORE_BODY_HASH_MISMATCH_PENALTY = 100;
+const PEER_SCORE_INVALID_SIGNATURE_PENALTY = 100;
+const PEER_SCORE_SIGNER_PIN_MISMATCH_PENALTY = 100;
+/** Frame larger than this node's advertised cap (protocol violation; same as C fabricd "oversize body"). */
+const PEER_SCORE_OVERSIZE_FRAME_PENALTY = 100;
+const PEER_SCORE_SESSION_KEY_VIOLATION_PENALTY = 240;
+const PEER_SCORE_CONTRACT_OPS_FORBIDDEN_PENALTY = 80;
+const PEER_SCORE_LOGICAL_REGISTER_HIJACK_PENALTY = 40;
+const PEER_SCORE_LOGICAL_REGISTER_DUPLICATE_PENALTY = 8;
+const PEER_SCORE_LOGICAL_REGISTER_DUPLICATE_WINDOW_MS = 60000;
+/** Max nested {@link P2P_RELAY} unwrap depth (outermost counts as 0). */
+const PEER_MAX_RELAY_NEST_DEPTH = 2;
+/** Default TTL for hard-misbehavior bans (pubkey + connection address). */
+const PEER_BAN_TTL_MS = 15 * 60 * 1000;
+/** Inbound credit cost for {@link P2P_RELAY} mesh flood envelopes. */
+const PEER_RELAY_CREDIT_COST = 8;
+const PEER_SCORE_RELAY_NEST_EXCEEDED_PENALTY = 60;
+/** Max chat mesh relays per origin per rolling minute (local emit still happens). */
+const CHAT_MAX_RELAYS_PER_ORIGIN_PER_MINUTE = 30;
+/** Max sealed ciphertext rows awaiting key reveal on a Peer. */
+const PEER_MAX_PENDING_SEALED_DELIVERIES = 32;
+/** Smallest standard output on Bitcoin mainnet (P2PKH dust at the default relay fee); anything smaller is non-standard. */
+const BITCOIN_DUST_SATS = 546;
+/** Size budget for a single-input HTLC claim or timeout spend (measured 162 vB for the tapscript claim leaf to a P2TR address). */
+const HTLC_CLAIM_VBYTES = 170;
+/** Measured virtual size of that claim. Fees use this; {@link HTLC_CLAIM_VBYTES} stays the budget. */
+const HTLC_CLAIM_MEASURED_VBYTES = 162;
+/** Taproot dust at Bitcoin Core's 3 sat/vB dust rate (43-byte output + 67-byte witness estimate). */
+const HTLC_P2TR_DUST_SATS = 330;
+/** Confirmations of the funding transaction before the seller may claim (`c`). */
+const HTLC_CLAIM_CONFIRMATIONS = 1;
+/** Blocks the seller's claim must finish before the refund lock (`d`). */
+const HTLC_CLAIM_SAFETY_BLOCKS = 6;
+/** Extra blocks the buyer leaves between funding and the refund lock. */
+const HTLC_CLAIM_LOCK_MARGIN_BLOCKS = 1;
+/** Consecutive sealed blobs one mainnet L1 HTLC pays for. */
+const DOCUMENT_L1_BATCH_BLOBS = 128;
+/**
+ * Smallest payment an HTLC may carry (channel or L1): its claim pays at least
+ * 1 sat/vB and still leaves a non-dust output, so the preimage holder can
+ * always collect on chain. Raise `htlcMinimumSats` for fee-spike margin, or
+ * CPFP the claim output.
+ */
+const HTLC_MINIMUM_SATS = BITCOIN_DUST_SATS + HTLC_CLAIM_VBYTES;
+/** AES-GCM tag appended to each sealed blob. Plaintext per sealed chunk is the ciphertext chunk minus this. */
+const DOCUMENT_GCM_TAG_BYTES = 16;
+/**
+ * Unsealed plaintext (and ciphertext) bytes in one blob: 32 KiB. A
+ * `P2P_FILE_SEND` field frame carries the blob as raw bytes beside its index,
+ * hashes and inclusion proof, well inside {@link MAX_FRAME_BYTES}.
+ */
+const DOCUMENT_CHUNK_BYTES = 32 * 1024;
+/** Sealed ciphertext bytes in one blob (32 KiB, same as unsealed). */
+const DOCUMENT_SEALED_CHUNK_BYTES = 32 * 1024;
+/** Sealed plaintext bytes in one blob. */
+const DOCUMENT_SEALED_PLAINTEXT_BYTES = DOCUMENT_SEALED_CHUNK_BYTES - DOCUMENT_GCM_TAG_BYTES;
+/**
+ * Maximum document size, in bytes.
+ * FAT16 and FAT32 both store file size as an unsigned 32-bit count. Microsoft
+ * documents each maximum as 2^32 − 1 bytes (4,294,967,295). The two limits
+ * are equal, so the lower one is this value exactly.
+ */
+const MAX_DOCUMENT_BYTES = 0xFFFFFFFF;
+/**
+ * Blobs one maximum-size document needs. Sealed plaintext chunks are the
+ * smaller of the two chunk sizes, so this count is
+ * `ceil(MAX_DOCUMENT_BYTES / DOCUMENT_SEALED_PLAINTEXT_BYTES)`. The last
+ * chunk is short; a file of `MAX_DOCUMENT_BYTES + 1` still fits in this many
+ * sealed chunks and is refused by the byte cap.
+ */
+const MAX_DOCUMENT_BLOBS = Math.ceil(MAX_DOCUMENT_BYTES / Math.min(DOCUMENT_CHUNK_BYTES, DOCUMENT_SEALED_PLAINTEXT_BYTES));
+/** Max blobs (parts) accepted for one per-blob sealed tree (`blobTotal` cap). */
+const PEER_MAX_SEALED_BLOB_PARTS = MAX_DOCUMENT_BLOBS;
+/** Alternate frames kept per held sealed blob (same ciphertext, another payment hash or IV). Bounds memory only: purchase pins (payment hash, advertised IV, seller origin) are what keep poisoned frames from blocking the paid delivery. */
+const PEER_MAX_SEALED_BLOB_ALTERNATES = 4;
+/**
+ * Global byte budget across every pending sealed row (ciphertext + one
+ * retained frame per blob). A full sealed tree can be larger than this;
+ * the cap is what stops one peer from pinning gigabytes of unsolicited
+ * frames. Nothing is allocated until frames arrive. Per origin the default
+ * is a quarter of this.
+ */
+const PEER_MAX_PENDING_SEALED_BYTES = 256 * 1024 * 1024;
+/** Byte budget for opened convergent chunks a Peer keeps so a chunk another document shares is not bought again. */
+const PEER_MAX_HELD_CHUNK_BYTES = 64 * 1024 * 1024;
+/** Pending sealed rows that never complete are dropped this long after their first frame. */
+const PEER_PENDING_SEALED_TTL_MS = 60 * 60 * 1000;
+/** Max private DocumentRequest reverse-route entries. */
+const PEER_MAX_DOCUMENT_RELAY_ROUTES = 256;
+/** Max bid routes (bid id → previous hop) a Peer keeps for routing asks back. */
+const PEER_MAX_DOCUMENT_BID_ROUTES = 4096;
+/** Max bids per origin per rolling minute that a Peer floods onward. */
+const DOCUMENT_BID_MAX_RELAYS_PER_ORIGIN_PER_MINUTE = 30;
+/** Max asks a Peer takes (or routes back) per bid, one per seller. */
+const PEER_MAX_ASKS_PER_DOCUMENT_BID = 32;
+/** Max concurrent BIP-327 `P2P_MUSIG_*` sessions on a Peer (FIFO eviction). */
+const PEER_MAX_MUSIG_SESSIONS = 32;
+/** Idle TTL for a MuSig2 session before secret nonces are wiped. */
+const PEER_MUSIG_SESSION_TTL_MS = 10 * 60 * 1000;
+/**
+ * Max RFC6902 patch batches retained on {@link Service#history} (FIFO).
+ * Unbounded history plus full-state commit snapshots OOMed Hub under reconnects.
+ */
+const SERVICE_COMMIT_HISTORY_MAX = 256;
 const P2P_GENERIC = 0x80; // 128 in decimal
 const P2P_IDENT_REQUEST = 0x01; // 1, or the identity
 const P2P_IDENT_RESPONSE = 0x11;
 const P2P_ROOT = 0x00000000;
-const P2P_PING = 0x00000012; // same ID as Lightning (18)
-const P2P_PONG = 0x00000013; // same ID as Lightning (19)
-const P2P_INSTRUCTION = 0x00000020; // TODO: select w/ no overlap
+const P2P_PING = 0x00000012;
+const P2P_PONG = 0x00000013;
+const P2P_INSTRUCTION = 0x00000020;
 const P2P_START_CHAIN = 0x00000021;
 const P2P_STATE_REQUEST = 0x00000029; // TODO: select w/ no overlap
 const P2P_STATE_ROOT = 0x00000030; // TODO: select w/ no overlap
@@ -115,11 +545,15 @@ const P2P_STATE_COMMITTMENT = 0x00000032; // TODO: select w/ no overlap
 const P2P_STATE_CHANGE = 0x00000033; // TODO: select w/ no overlap
 const P2P_TRANSACTION = 0x00000039; // TODO: select w/ no overlap
 const P2P_CALL = 0x00000042;
-const P2P_RELAY = 0x00000043; // Relay envelope for onion routing; preserves original message + signature
+const P2P_RELAY = 0x00000043; // Mesh flood envelope: body = raw inner Message bytes (not directed onion)
 const P2P_MESSAGE_RECEIPT = 0x00000044; // Ack/receipt for a processed inbound message (WebSocket / P2P)
+/** Directed onion hop: field body `{ nextPeer, ttl, inner }` — see `functions/fabricOnion.js`. */
+const P2P_FORWARD = 0x00000045;
+/** Max nested `P2P_FORWARD` hops an originator may build (path length). */
+const P2P_FORWARD_MAX_HOPS = 8;
 const P2P_CHAIN_SYNC_REQUEST = 0x55;
-/** Playnet / federation: rewind bitcoind to a known-good tip; relay only to highly trusted peers. */
-const P2P_FLUSH_CHAIN = 0x56;
+// 0x56 was P2P_FLUSH_CHAIN (a trusted-peer chain rewind). Removed from the V1
+// protocol; the opcode stays reserved, is never reassigned, and decodes as unknown.
 const P2P_INVENTORY_REQUEST = 0x57;
 const P2P_INVENTORY_RESPONSE = 0x58;
 const P2P_FILE_SEND = 0x59;
@@ -137,6 +571,51 @@ const P2P_MUSIG_RECEIVE_COUNTER = 0x4222;
 const P2P_MUSIG_SEND_PROPOSAL = 0x4223;
 const P2P_MUSIG_REPLY_TO_PROPOSAL = 0x4224;
 const P2P_MUSIG_ACCEPT_PROPOSAL = 0x4225;
+/**
+ * Passport v2 sign-in frames, carried as `fabric:<frame>` strings between a
+ * page, a browser extension, and a desktop app — never relayed on the mesh.
+ * See `functions/passport.js` and `docs/PASSPORT.md`.
+ */
+const PASSPORT_CHALLENGE = 0x4240;
+const PASSPORT_ASSERTION = 0x4241;
+/**
+ * Retired: a desktop app is now asked with a `DELEGATION_REQUEST`. The opcode
+ * stays reserved and readers refuse it.
+ */
+const PASSPORT_SIGN_REQUEST = 0x4242;
+/** Longest lifetime any Passport frame may ask for. */
+const PASSPORT_MAX_TTL_MS = 3 * 60 * 1000;
+/**
+ * Delegation frames: pairing two key holders, grants that let one ask the
+ * other to sign, and the requests and results themselves. Carried as
+ * `fabric:<frame>` strings through a rendezvous / mailbox, never relayed on
+ * the mesh. See `types/delegation.js` and `docs/DELEGATION.md`.
+ */
+const DELEGATION_LINK_OFFER = 0x4243;
+const DELEGATION_LINK_ANSWER = 0x4244;
+const DELEGATION_LINK_REVEAL = 0x4245;
+const DELEGATION_GRANT = 0x4246;
+const DELEGATION_REVOKE = 0x4247;
+const DELEGATION_REQUEST = 0x4248;
+const DELEGATION_RESULT = 0x4249;
+const DELEGATION_MAILBOX_FETCH = 0x424A;
+/**
+ * Passport peer sessions (v3): sign in to a peer named by its key, over a
+ * connection the signer opened. `PASSPORT_CONNECT` asks for a challenge,
+ * `PASSPORT_SESSION` confirms a session key, `PASSPORT_RESUME` re-binds one
+ * on a new connection, `PASSPORT_REFUSED` says why the peer would not. Sent
+ * only on that connection, never relayed.
+ */
+const PASSPORT_CONNECT = 0x424B;
+const PASSPORT_SESSION = 0x424C;
+const PASSPORT_RESUME = 0x424D;
+const PASSPORT_REFUSED = 0x424E;
+/** Longest lifetime of a peer session. */
+const PASSPORT_SESSION_MAX_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+/** Longest lifetime of a pairing frame or a mailbox read (interactive). */
+const DELEGATION_LINK_MAX_TTL_MS = 3 * 60 * 1000;
+/** Longest lifetime of a delegation request (it may wait in a notification inbox). */
+const DELEGATION_REQUEST_MAX_TTL_MS = 24 * 60 * 60 * 1000;
 
 // Message Types
 const PEER_CANDIDATE = 0x09;
@@ -145,40 +624,36 @@ const BLOCK_CANDIDATE = 0x03;
 
 const SESSION_START = 0x02;
 const CHAT_MESSAGE = 0x67;
+/** First-class peer chat frame (author-signed, relayed verbatim). Body = raw UTF-8 text only (no JSON). Author is AMP header + signature. */
+const P2P_CHAT_MESSAGE = 0x68;
 
 // Lightning
 const LIGHTNING_TEST_HEADER = 'D0520C6E';
 const LIGHTNING_PROTOCOL_H_INIT = 'Noise_XK_secp256k1_ChaChaPoly_SHA256';
 const LIGHTNING_PROTOCOL_PROLOGUE = 'lightning';
 
-// Lightning BOLT Message Types (subset)
-// Setup & Control
-const LIGHTNING_WARNING = 0x00000001; // 1
-const LIGHTNING_INIT = 0x00000010; // 16
-const LIGHTNING_ERROR = 0x00000011; // 17
-const LIGHTNING_PING = 0x00000012; // 18 (alias of P2P_PING)
-const LIGHTNING_PONG = 0x00000013; // 19 (alias of P2P_PONG)
-
-// Channel Management
-const LIGHTNING_OPEN_CHANNEL = 0x00000020; // 32
-const LIGHTNING_ACCEPT_CHANNEL = 0x00000021; // 33
-const LIGHTNING_FUNDING_CREATED = 0x00000022; // 34
-const LIGHTNING_FUNDING_SIGNED = 0x00000023; // 35
-const LIGHTNING_CHANNEL_READY = 0x00000024; // 36
-const LIGHTNING_SHUTDOWN = 0x00000026; // 38
-const LIGHTNING_CLOSING_SIGNED = 0x00000027; // 39
-
-// Payment Messages
-const LIGHTNING_UPDATE_ADD_HTLC = 0x00000080; // 128
-const LIGHTNING_UPDATE_FULFILL_HTLC = 0x00000082; // 130
-const LIGHTNING_UPDATE_FAIL_HTLC = 0x00000083; // 131
-const LIGHTNING_COMMITMENT_SIGNED = 0x00000084; // 132
-const LIGHTNING_REVOKE_AND_ACK = 0x00000085; // 133
-
-// Gossip Protocol
-const LIGHTNING_CHANNEL_ANNOUNCEMENT = 0x00000100; // 256
-const LIGHTNING_NODE_ANNOUNCEMENT = 0x00000101; // 257
-const LIGHTNING_CHANNEL_UPDATE = 0x00000102; // 258
+// Lightning AMP types (0x2000–0x2FFF). Not BOLT-on-the-wire numbers —
+// those live in lightningd. See POLICY.md Lightning Network Types.
+const LIGHTNING_INIT = 0x2000;
+const LIGHTNING_ERROR = 0x2001;
+const LIGHTNING_OPEN_CHANNEL = 0x2002;
+const LIGHTNING_ACCEPT_CHANNEL = 0x2003;
+const LIGHTNING_FUNDING_CREATED = 0x2004;
+const LIGHTNING_FUNDING_SIGNED = 0x2005;
+const LIGHTNING_CHANNEL_READY = 0x2006;
+const LIGHTNING_SHUTDOWN = 0x2007;
+const LIGHTNING_CLOSING_SIGNED = 0x2008;
+const LIGHTNING_UPDATE_ADD_HTLC = 0x2009;
+const LIGHTNING_UPDATE_FULFILL_HTLC = 0x200A;
+const LIGHTNING_UPDATE_FAIL_HTLC = 0x200B;
+const LIGHTNING_COMMITMENT_SIGNED = 0x200C;
+const LIGHTNING_REVOKE_AND_ACK = 0x200D;
+const LIGHTNING_CHANNEL_ANNOUNCEMENT = 0x200E;
+const LIGHTNING_NODE_ANNOUNCEMENT = 0x200F;
+const LIGHTNING_CHANNEL_UPDATE = 0x2010;
+const LIGHTNING_WARNING = 0x2011;
+const LIGHTNING_PING = 0x2012;
+const LIGHTNING_PONG = 0x2013;
 
 // Lightning BMM
 const LIGHTNING_BMM_HEADER = 'D0520C6E';
@@ -199,12 +674,44 @@ const INPUT_HINT = 'Press the "i" key to begin typing.';
 module.exports = {
   PEER_PORT,
   MAX_PEERS,
+  BITCOIN_L1_BLOCK_BYTES,
+  BITCOIN_L1_BLOCK_INTERVAL_MS,
   PRECISION,
   BITCOIN_NETWORK,
   BITCOIN_GENESIS,
   BITCOIN_GENESIS_HASH: BITCOIN_GENESIS,
   BITCOIN_GENESIS_ROOT,
   FABRIC_KEY_DERIVATION_PATH,
+  FABRIC_KEY_DERIVATION_PATH_MAINNET,
+  FABRIC_IDENTITY_PURPOSE,
+  FABRIC_COIN_TYPE,
+  FABRIC_COIN_TYPE_MAINNET,
+  FABRIC_COIN_TYPE_TESTNET,
+  BITCOIN_COIN_TYPE,
+  BITCOIN_COIN_TYPE_TESTNET,
+  BITCOIN_KEY_DERIVATION_PATH,
+  isMainnetNetwork,
+  bitcoinCoinTypeForNetwork,
+  bitcoinAccountDerivationPath,
+  bitcoinPurposeDerivationPath,
+  bitcoinCosignerDerivationPath,
+  fabricCoinTypeForNetwork,
+  resolveFabricIdentityCoinType,
+  fabricIdentityDerivationPath,
+  fabricIdentityAccountPath,
+  bitcoinReceiveDerivationPath,
+  bitcoinChangeDerivationPath,
+  bitcoinBip49ReceiveDerivationPath,
+  bitcoinBip49ChangeDerivationPath,
+  bitcoinBip84ReceiveDerivationPath,
+  bitcoinBip84ChangeDerivationPath,
+  bitcoinBip86ReceiveDerivationPath,
+  bitcoinBip86ChangeDerivationPath,
+  bitcoinBip48P2shP2wshReceiveDerivationPath,
+  bitcoinBip48P2shP2wshChangeDerivationPath,
+  bitcoinBip48P2wshReceiveDerivationPath,
+  bitcoinBip48P2wshChangeDerivationPath,
+  assertBip32ChildIndex,
   FABRIC_USER_AGENT,
   FIXTURE_SEED,
   FIXTURE_XPUB,
@@ -220,9 +727,9 @@ module.exports = {
   LARGE_COLLECTION_SIZE,
   BLOCK_CANDIDATE,
   CHAT_MESSAGE,
+  P2P_CHAT_MESSAGE,
   INPUT_HINT,
   ZERO_LENGTH_PLAINTEXT,
-  BECH32M_CHARSET,
   FABRIC_PLAYNET_ADDRESS,
   FABRIC_PLAYNET_ORIGIN,
   LIGHTNING_TEST_HEADER,
@@ -254,9 +761,17 @@ module.exports = {
   LIGHTNING_PARENT_SIDEBLOCK_HASH,
   HTTP_HEADER_CONTENT_TYPE,
   MAGIC_BYTES,
+  MAX_FRAME_BYTES,
   MAX_FRAME_SIZE,
   MAX_MEMORY_ALLOC,
   MAX_MESSAGE_SIZE,
+  NOISE_MAX_MESSAGE_BYTES,
+  NOISE_MAC_BYTES,
+  NOISE_HANDSHAKE_MAX_BYTES,
+  NOISE_HANDSHAKE_TIMEOUT_MS,
+  MAX_DOCUMENT_ID_LENGTH,
+  INVENTORY_RESPONSE_PAGE_BYTES,
+  MACHINE_MEMORY_PAGE_SIZE,
   PERSISTED_JSON_MAX_CHARS,
   MAX_STACK_HEIGHT,
   MAX_CHANNEL_VALUE,
@@ -279,6 +794,10 @@ module.exports = {
   P2P_GENERIC,
   P2P_PEER_GOSSIP,
   P2P_PEERING_OFFER,
+  P2P_DOCUMENT_BID,
+  P2P_DOCUMENT_ASK,
+  DOCUMENT_BID_MAX_TTL_SECONDS,
+  DOCUMENT_BID_MAX_RELAYS_PER_ORIGIN_PER_MINUTE,
   GOSSIP_MAX_HOPS,
   GOSSIP_MAX_RELAYS_PER_ORIGIN_PER_MINUTE,
   GOSSIP_MAX_PAYLOAD_CACHE,
@@ -286,11 +805,53 @@ module.exports = {
   PEERING_OFFER_MAX_RELAYS_PER_ORIGIN_PER_MINUTE,
   PEERING_OFFER_MAX_PAYLOAD_CACHE,
   PEER_MAX_CANDIDATES_QUEUE,
+  PEER_CANDIDATE_RETRY_MS,
   PEER_MAX_WIRE_HASH_CACHE,
+  PEER_MAX_LOGICAL_REGISTER_CACHE,
+  PEER_SCORE_BODY_HASH_MISMATCH_PENALTY,
+  PEER_SCORE_INVALID_SIGNATURE_PENALTY,
+  PEER_SCORE_SIGNER_PIN_MISMATCH_PENALTY,
+  PEER_SCORE_SESSION_KEY_VIOLATION_PENALTY,
+  PEER_SCORE_CONTRACT_OPS_FORBIDDEN_PENALTY,
+  PEER_SCORE_LOGICAL_REGISTER_HIJACK_PENALTY,
+  PEER_SCORE_LOGICAL_REGISTER_DUPLICATE_PENALTY,
+  PEER_SCORE_LOGICAL_REGISTER_DUPLICATE_WINDOW_MS,
+  PEER_MAX_RELAY_NEST_DEPTH,
+  PEER_BAN_TTL_MS,
+  PEER_RELAY_CREDIT_COST,
+  PEER_SCORE_RELAY_NEST_EXCEEDED_PENALTY,
+  PEER_SCORE_OVERSIZE_FRAME_PENALTY,
+  CHAT_MAX_RELAYS_PER_ORIGIN_PER_MINUTE,
+  PEER_MAX_PENDING_SEALED_DELIVERIES,
+  PEER_MAX_PENDING_SEALED_BYTES,
+  PEER_MAX_HELD_CHUNK_BYTES,
+  PEER_PENDING_SEALED_TTL_MS,
+  BITCOIN_DUST_SATS,
+  HTLC_CLAIM_VBYTES,
+  HTLC_CLAIM_MEASURED_VBYTES,
+  HTLC_P2TR_DUST_SATS,
+  HTLC_CLAIM_CONFIRMATIONS,
+  HTLC_CLAIM_SAFETY_BLOCKS,
+  HTLC_CLAIM_LOCK_MARGIN_BLOCKS,
+  DOCUMENT_L1_BATCH_BLOBS,
+  HTLC_MINIMUM_SATS,
+  DOCUMENT_GCM_TAG_BYTES,
+  DOCUMENT_CHUNK_BYTES,
+  DOCUMENT_SEALED_CHUNK_BYTES,
+  DOCUMENT_SEALED_PLAINTEXT_BYTES,
+  MAX_DOCUMENT_BYTES,
+  MAX_DOCUMENT_BLOBS,
+  PEER_MAX_SEALED_BLOB_PARTS,
+  PEER_MAX_SEALED_BLOB_ALTERNATES,
+  PEER_MAX_DOCUMENT_RELAY_ROUTES,
+  PEER_MAX_DOCUMENT_BID_ROUTES,
+  PEER_MAX_ASKS_PER_DOCUMENT_BID,
+  PEER_MAX_MUSIG_SESSIONS,
+  PEER_MUSIG_SESSION_TTL_MS,
+  SERVICE_COMMIT_HISTORY_MAX,
   P2P_IDENT_REQUEST,
   P2P_IDENT_RESPONSE,
   P2P_CHAIN_SYNC_REQUEST,
-  P2P_FLUSH_CHAIN,
   P2P_INVENTORY_REQUEST,
   P2P_INVENTORY_RESPONSE,
   P2P_FILE_SEND,
@@ -316,6 +877,8 @@ module.exports = {
   P2P_CALL,
   P2P_RELAY,
   P2P_MESSAGE_RECEIPT,
+  P2P_FORWARD,
+  P2P_FORWARD_MAX_HOPS,
   P2P_SESSION_ACK,
   P2P_MUSIG_START,
   P2P_MUSIG_ACCEPT,
@@ -323,9 +886,32 @@ module.exports = {
   P2P_MUSIG_SEND_PROPOSAL,
   P2P_MUSIG_REPLY_TO_PROPOSAL,
   P2P_MUSIG_ACCEPT_PROPOSAL,
+  PASSPORT_CHALLENGE,
+  PASSPORT_ASSERTION,
+  PASSPORT_SIGN_REQUEST,
+  PASSPORT_MAX_TTL_MS,
+  DELEGATION_LINK_OFFER,
+  DELEGATION_LINK_ANSWER,
+  DELEGATION_LINK_REVEAL,
+  DELEGATION_GRANT,
+  DELEGATION_REVOKE,
+  DELEGATION_REQUEST,
+  DELEGATION_RESULT,
+  DELEGATION_MAILBOX_FETCH,
+  PASSPORT_CONNECT,
+  PASSPORT_SESSION,
+  PASSPORT_RESUME,
+  PASSPORT_REFUSED,
+  PASSPORT_SESSION_MAX_TTL_MS,
+  DELEGATION_LINK_MAX_TTL_MS,
+  DELEGATION_REQUEST_MAX_TTL_MS,
   PEER_CANDIDATE,
+  SIDECHAIN_STATE_PATCH_TYPE,
   DOCUMENT_PUBLISH_TYPE,
   DOCUMENT_REQUEST_TYPE,
+  DOCUMENT_KEY_REVEAL_TYPE,
+  DOCUMENT_BLOB_QUOTE_TYPE,
+  DOCUMENT_BLOB_BATCH_TYPE,
   JSON_CALL_TYPE,
   PATCH_MESSAGE_TYPE,
   CONTRACT_PROPOSAL_TYPE,

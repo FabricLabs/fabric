@@ -39,12 +39,11 @@ const {
   FABRIC_USER_AGENT
 } = require('../constants');
 
-const OP_TRACE = require('../contracts/trace');
-
 // Dependencies
 const crypto = require('crypto');
 const children = require('child_process');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 
 // External Dependencies
@@ -55,18 +54,18 @@ const fetch = require('cross-fetch');
 
 // crypto support libraries
 // Use noble-curves-backed ECC shim instead of tiny-secp256k1
-const ECPairFactory = require('ecpair').default;
 const ecc = require('../types/ecc');
 const bip65 = require('bip65');
 const bip68 = require('bip68');
-const ECPair = ECPairFactory(ecc);
 const bitcoin = require('bitcoinjs-lib');
+const { sortInputs, sortOutputs } = require('../functions/bip69');
 
 // Initialize bitcoinjs-lib with the ECC library
 bitcoin.initEccLib(ecc);
 
 // Services
 const ZMQ = require('../services/zmq');
+const Watchtower = require('../services/watchtower');
 
 // Types
 const Actor = require('../types/actor');
@@ -74,7 +73,6 @@ const Collection = require('../types/collection');
 const Entity = require('../types/entity');
 const Key = require('../types/key');
 const Service = require('../types/service');
-const State = require('../types/state');
 const Wallet = require('../types/wallet');
 
 // Special Types (internal to Bitcoin)
@@ -88,11 +86,410 @@ function redactSensitiveCommandArg (arg) {
   );
 }
 
+const SATS_PER_BTC = 10 ** 8;
+// Internal: max |sats - round(sats)| allowed for BTC -> sats conversion
+// (reject fractional satoshis while tolerating float noise).
+const SAT_ADJ_EPS = 1 / (10 ** 6);
+
+/**
+ * PSBT output values are integer satoshis. Reject float BTC leftovers.
+ * @param {bigint|number|string} value
+ * @returns {bigint}
+ */
+function toIntegerSats (value) {
+  if (typeof value === 'bigint') {
+    if (value &lt; 0n) throw new Error('Output value must be a non-negative integer satoshi count');
+    return value;
+  }
+  if (typeof value !== 'number' &amp;&amp; typeof value !== 'string') {
+    throw new Error('Output value must be a non-negative integer satoshi count');
+  }
+  if (typeof value === 'string' &amp;&amp; value.trim() === '') {
+    throw new Error('Output value must be a non-negative integer satoshi count');
+  }
+  const n = typeof value === 'number' ? value : Number(value);
+  if (!Number.isInteger(n) || !Number.isSafeInteger(n) || n &lt; 0) {
+    throw new Error('Output value must be a non-negative integer satoshi count');
+  }
+  return BigInt(n);
+}
+
+// Internal: reject absurd cookie path lengths before filesystem reads.
+const BITCOIN_COOKIE_PATH_MAX_LEN = 4096;
+
+// Internal allowlist: Bitcoin Core chain directory names under -datadir.
+const BITCOIND_CHAIN_FOLDER_NAMES = new Set(['regtest', 'testnet3', 'testnet4', 'signet']);
+
+/**
+ * Classify bitcoind stderr. Core writes fatal bind/lock failures as `Error: …`.
+ * @private
+ * @param {string} line
+ * @returns {boolean}
+ */
+function shouldTreatBitcoinStderrAsError (line) {
+  const text = String(line || '').trim().toLowerCase();
+  if (!text) return false;
+  return (
+    text.startsWith('error:') ||
+    text.includes(' error: ') ||
+    text.includes('fatal') ||
+    text.includes('exception')
+  );
+}
+
+/**
+ * Buffer bitcoind stderr and emit complete lines.
+ * @private
+ * @param {Bitcoin} service
+ * @param {Buffer|string} chunk
+ * @returns {void}
+ */
+function appendBitcoinStderrChunk (service, chunk) {
+  if (!service._bitcoindStderrBuf) service._bitcoindStderrBuf = '';
+  service._bitcoindStderrBuf += chunk.toString('utf8');
+  const parts = service._bitcoindStderrBuf.split(/\r?\n/);
+  service._bitcoindStderrBuf = parts.pop() || '';
+  for (const raw of parts) {
+    const line = raw.trim();
+    if (!line) continue;
+    if (shouldTreatBitcoinStderrAsError(line)) {
+      service._emitErrorSafe(`[FABRIC:BITCOIN] ${line}`);
+      continue;
+    }
+    if (service.settings.debug) service.emit('debug', `[FABRIC:BITCOIN] ${line}`);
+  }
+}
+
+/**
+ * Flush a trailing bitcoind stderr fragment (no final newline).
+ * @private
+ * @param {Bitcoin} service
+ * @returns {void}
+ */
+function flushBitcoinStderrBuffer (service) {
+  if (!service._bitcoindStderrBuf) return;
+  const line = service._bitcoindStderrBuf.trim();
+  service._bitcoindStderrBuf = '';
+  if (!line) return;
+  if (shouldTreatBitcoinStderrAsError(line)) {
+    service._emitErrorSafe(`[FABRIC:BITCOIN] ${line}`);
+    return;
+  }
+  if (service.settings.debug) service.emit('debug', `[FABRIC:BITCOIN] ${line}`);
+}
+
+// Internal helper: append fixed path components under baseAbs and reject traversal.
+function cookiePathUnderDatadirBase (baseAbs, parts) {
+  // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal
+  const root = path.resolve(baseAbs);
+  let cur = root;
+  for (const part of parts) {
+    // `part` is allowlisted (chain dir name or `.cookie`); traversal is checked via `relative` below.
+    // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal
+    cur = path.resolve(cur, part);
+  }
+  const rel = path.relative(root, cur);
+  if (rel.startsWith('..' + path.sep) || rel === '..' || path.isAbsolute(rel)) {
+    return null;
+  }
+  return cur;
+}
+
+/**
+ * Constraints hint for cookie / store probe paths (e.g. pruned mainnet).
+ * @typedef {Object} BitcoinCookieProbeConstraints
+ * @property {Object} [storage]
+ * @property {number} [storage.size]
+ */
+
+/**
+ * Options for {@link Bitcoin.buildLocalCookieProbePaths}.
+ * @typedef {Object} BitcoinLocalCookieProbeOpts
+ * @property {string} [network]
+ * @property {string} [envCookieFile]
+ * @property {string} [settingsDatadir]
+ * @property {BitcoinCookieProbeConstraints} [constraints]
+ */
+
+/**
+ * Options for {@link Bitcoin.buildRegtestCookiePathList}.
+ * @typedef {Object} BitcoinRegtestCookieOpts
+ * @property {string} [envCookieFile]
+ * @property {string} [settingsDatadir]
+ */
+
 /**
  * Manages interaction with the Bitcoin network.
  * @augments Service
  */
 class Bitcoin extends Service {
+  /**
+   * Bitcoin Core chain data subdirectory under {@code -datadir} (empty string for mainnet cookie at datadir root).
+   * Matches Core layout: `regtest/`, `testnet3/`, `signet/`, `testnet4/`, or root for mainnet.
+   * @param {string} network Fabric network name (mainnet, testnet, regtest, signet, testnet4, playnet, …).
+   * @returns {string}
+   */
+  static bitcoindChainDataDirSegment (network) {
+    const n = String(network || 'mainnet').toLowerCase();
+    if (n === 'regtest' || n === 'playnet') return 'regtest';
+    if (n === 'testnet') return 'testnet3';
+    if (n === 'testnet4') return 'testnet4';
+    if (n === 'signet') return 'signet';
+    return '';
+  }
+
+  /**
+   * Resolve a configured bitcoind datadir for local cookie discovery. Relative paths are cwd-anchored
+   * and must not escape the project root; absolute paths are normalized as-is.
+   * @param {string} datadir
+   * @returns {string|null}
+   */
+  static resolveBitcoinDatadirForLocalAccess (datadir) {
+    if (datadir == null || typeof datadir !== 'string') return null;
+    const trimmed = datadir.trim();
+    if (!trimmed || trimmed.includes('\0') || trimmed.length > BITCOIN_COOKIE_PATH_MAX_LEN) return null;
+    let abs;
+    if (path.isAbsolute(trimmed)) {
+      abs = path.normalize(trimmed);
+    } else {
+      // Relative: containment enforced by `path.relative` check below (cannot escape cwd).
+      // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal
+      abs = path.resolve(process.cwd(), trimmed);
+    }
+    if (!path.isAbsolute(trimmed)) {
+      const root = path.resolve(process.cwd());
+      const rel = path.relative(root, abs);
+      if (rel === '' || rel.startsWith('..' + path.sep) || path.isAbsolute(rel)) {
+        return null;
+      }
+    }
+    return abs;
+  }
+
+  /**
+   * Resolve {@code FABRIC_BITCOIN_COOKIE_FILE}-style paths: normalize, bound length, and keep relative paths
+   * inside the process cwd (absolute paths allowed for explicit operator overrides).
+   * @param {string} filePath
+   * @returns {string|null}
+   */
+  static resolveBitcoinCookieFileForLocalRead (filePath) {
+    if (filePath == null || typeof filePath !== 'string') return null;
+    const trimmed = filePath.trim();
+    if (!trimmed || trimmed.includes('\0') || trimmed.length > BITCOIN_COOKIE_PATH_MAX_LEN) return null;
+    let abs;
+    if (path.isAbsolute(trimmed)) {
+      abs = path.normalize(trimmed);
+    } else {
+      // Relative: containment enforced by `path.relative` check below (cannot escape cwd).
+      // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal
+      abs = path.resolve(process.cwd(), trimmed);
+    }
+    if (!path.isAbsolute(trimmed)) {
+      const root = path.resolve(process.cwd());
+      const rel = path.relative(root, abs);
+      if (rel === '' || rel.startsWith('..' + path.sep) || path.isAbsolute(rel)) {
+        return null;
+      }
+    }
+    return abs;
+  }
+
+  /**
+   * Read Bitcoin Core {@code .cookie} (user:password) using async I/O. Path must already be resolved/normalized.
+   * @param {string} cookiePath
+   * @returns {Promise&lt;{ username: string, password: string }|null>}
+   */
+  static async tryReadRpcCookieFileCredentials (cookiePath) {
+    if (typeof cookiePath !== 'string' || !cookiePath.trim()) return null;
+    const p = path.normalize(cookiePath.trim());
+    if (p.includes('\0') || p.length > BITCOIN_COOKIE_PATH_MAX_LEN) return null;
+    try {
+      const raw = (await fs.promises.readFile(p, 'utf8')).trim();
+      const colon = raw.indexOf(':');
+      if (colon === -1) return null;
+      return { username: raw.slice(0, colon), password: raw.slice(colon + 1) };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * `.cookie` path under a resolved bitcoind datadir root for the given Fabric network.
+   * @param {string} datadirRoot Absolute or project-relative resolved datadir (Core {@code -datadir} value).
+   * @param {string} network
+   * @returns {string}
+   */
+  static cookiePathForBitcoind (datadirRoot, network) {
+    const seg = Bitcoin.bitcoindChainDataDirSegment(network);
+    // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal
+    const base = path.resolve(datadirRoot);
+    if (!seg) {
+      const p = cookiePathUnderDatadirBase(base, ['.cookie']);
+      if (!p) throw new Error('[FABRIC:BITCOIN] invalid datadir for cookie path');
+      return p;
+    }
+    if (!BITCOIND_CHAIN_FOLDER_NAMES.has(seg)) {
+      throw new Error(`[FABRIC:BITCOIN] internal: unexpected chain dir ${seg}`);
+    }
+    const p = cookiePathUnderDatadirBase(base, [seg, '.cookie']);
+    if (!p) throw new Error('[FABRIC:BITCOIN] invalid datadir for cookie path');
+    return p;
+  }
+
+  /**
+   * Cookie file under explicit chain subdirectory (empty string = mainnet-style datadir/.cookie only).
+   * Prefer {@link #cookiePathForBitcoind} when you have a Fabric network name.
+   * @param {string} datadirRoot
+   * @param {string} chainSubdir e.g. `regtest`, `signet`, or `''`
+   * @returns {string}
+   */
+  static cookiePathForChainSubtree (datadirRoot, chainSubdir) {
+    const s = chainSubdir == null ? '' : String(chainSubdir);
+    // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal
+    const base = path.resolve(datadirRoot);
+    if (!s) {
+      const p = cookiePathUnderDatadirBase(base, ['.cookie']);
+      if (!p) throw new Error('[FABRIC:BITCOIN] invalid datadir for cookie path');
+      return p;
+    }
+    if (!BITCOIND_CHAIN_FOLDER_NAMES.has(s)) {
+      throw new Error(`[FABRIC:BITCOIN] unsupported chain subdirectory: ${s}`);
+    }
+    const p = cookiePathUnderDatadirBase(base, [s, '.cookie']);
+    if (!p) throw new Error('[FABRIC:BITCOIN] invalid datadir for cookie path');
+    return p;
+  }
+
+  /**
+   * Typical `stores/…` paths under the project for the network (for cookie discovery before node spawn).
+   * @param {string} network
+   * @param {BitcoinCookieProbeConstraints} [constraints]
+   * @returns {string[]}
+   */
+  static defaultStoresRelativeDirsForProbe (network, constraints) {
+    const n = String(network || 'mainnet').toLowerCase();
+    switch (n) {
+      case 'regtest':
+        return ['stores/bitcoin-regtest'];
+      case 'playnet':
+        return ['stores/bitcoin-playnet'];
+      case 'testnet':
+        return ['stores/bitcoin-testnet'];
+      case 'testnet4':
+        return ['stores/bitcoin-testnet4'];
+      case 'signet':
+        return ['stores/bitcoin-signet'];
+      case 'mainnet':
+      default: {
+        const dirs = ['stores/bitcoin-mainnet'];
+        if (constraints &amp;&amp; constraints.storage &amp;&amp; constraints.storage.size) {
+          dirs.push('stores/bitcoin-mainnet-pruned');
+        }
+        return dirs;
+      }
+    }
+  }
+
+  /**
+   * Ordered local cookie paths to probe for RPC (env override, project stores, Electron mirror, ~/.bitcoin, optional settings datadir).
+   * @param {BitcoinLocalCookieProbeOpts} opts
+   * @returns {string[]}
+   */
+  static buildLocalCookieProbePaths (opts = {}) {
+    const { network, envCookieFile, settingsDatadir, constraints } = opts;
+    const net = String(network || 'mainnet').toLowerCase();
+    const list = [];
+    if (envCookieFile) {
+      const resolvedEnv = Bitcoin.resolveBitcoinCookieFileForLocalRead(String(envCookieFile));
+      if (resolvedEnv) list.push(resolvedEnv);
+    }
+    const cwd = process.cwd();
+    const mainPruned = Boolean(constraints &amp;&amp; constraints.storage &amp;&amp; constraints.storage.size);
+    const pushProjectStore = (storeReldir) => {
+      // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal
+      list.push(Bitcoin.cookiePathForBitcoind(path.resolve(cwd, storeReldir), net));
+    };
+    switch (net) {
+      case 'regtest':
+        pushProjectStore('stores/bitcoin-regtest');
+        break;
+      case 'playnet':
+        pushProjectStore('stores/bitcoin-playnet');
+        break;
+      case 'testnet':
+        pushProjectStore('stores/bitcoin-testnet');
+        break;
+      case 'testnet4':
+        pushProjectStore('stores/bitcoin-testnet4');
+        break;
+      case 'signet':
+        pushProjectStore('stores/bitcoin-signet');
+        break;
+      default:
+        pushProjectStore('stores/bitcoin-mainnet');
+        if (mainPruned) pushProjectStore('stores/bitcoin-mainnet-pruned');
+    }
+    if (process.platform === 'darwin') {
+      const hd = os.homedir();
+      const pushElectronStore = (folderName) => {
+        // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal
+        const electronRoot = path.join(hd, 'Library/Application Support/Electron/stores', folderName);
+        list.push(Bitcoin.cookiePathForBitcoind(electronRoot, net));
+      };
+      switch (net) {
+        case 'regtest':
+          pushElectronStore('bitcoin-regtest');
+          break;
+        case 'playnet':
+          pushElectronStore('bitcoin-playnet');
+          break;
+        case 'testnet':
+          pushElectronStore('bitcoin-testnet');
+          break;
+        case 'testnet4':
+          pushElectronStore('bitcoin-testnet4');
+          break;
+        case 'signet':
+          pushElectronStore('bitcoin-signet');
+          break;
+        default:
+          pushElectronStore('bitcoin-mainnet');
+          if (mainPruned) pushElectronStore('bitcoin-mainnet-pruned');
+      }
+    }
+    {
+      // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal
+      const homeData = path.join(os.homedir(), '.bitcoin');
+      list.push(Bitcoin.cookiePathForBitcoind(homeData, net));
+    }
+    if (settingsDatadir &amp;&amp; typeof settingsDatadir === 'string' &amp;&amp; settingsDatadir.trim()) {
+      const resolved = Bitcoin.resolveBitcoinDatadirForLocalAccess(settingsDatadir);
+      if (resolved) list.push(Bitcoin.cookiePathForBitcoind(resolved, net));
+    }
+    return list;
+  }
+
+  /**
+   * Parent directory name of `.cookie` (for probe logging).
+   * @param {string} cookiePath
+   * @returns {string}
+   */
+  static parentDirNameForCookieProbe (cookiePath) {
+    if (typeof cookiePath !== 'string' || !cookiePath) return 'unknown';
+    const parts = cookiePath.split(/[/\\]/).filter(Boolean);
+    if (parts.length &lt; 2) return parts[0] || 'unknown';
+    return parts[parts.length - 2];
+  }
+
+  /**
+   * @deprecated Use {@link #buildLocalCookieProbePaths} with `network: 'regtest'`.
+   * @param {BitcoinRegtestCookieOpts} opts
+   * @returns {string[]}
+   */
+  static buildRegtestCookiePathList (opts = {}) {
+    return Bitcoin.buildLocalCookieProbePaths({ ...opts, network: 'regtest' });
+  }
+
   /**
    * Creates an instance of the Bitcoin service.
    * @param {Object} [settings] Map of configuration options for the Bitcoin service.
@@ -123,7 +520,7 @@ class Bitcoin extends Service {
       spv: {
         port: 18332
       },
-      /** Optional HTTP origin for block/tx/address REST fallback (e.g. a Hub). Null = RPC only. */
+      // Optional HTTP origin for block/tx/address REST fallback (e.g. a Hub). Null = RPC only.
       explorerBaseUrl: null,
       zmq: {
         host: 'localhost',
@@ -151,19 +548,20 @@ class Bitcoin extends Service {
       servers: [],
       targets: [],
       peers: [],
-      /**
-       * After RPC is ready, call `addnode &lt;host:port> add` for each entry (outbound P2P only).
-       * Used for LAN "playnet" regtest sync. Ignored on mainnet unless {@link p2pAddNodesAllowMainnet} is true.
-       * @type {string[]}
-       */
+      // After RPC is ready, call `addnode &lt;host:port> add` for each entry (outbound P2P only).
+      // Used for LAN "playnet" regtest sync. Ignored on mainnet unless p2pAddNodesAllowMainnet is true.
       p2pAddNodes: [],
-      /** When true, {@link p2pAddNodes} is applied even on mainnet (private deployments only). */
+      // When true, p2pAddNodes is applied even on mainnet (private deployments only).
       p2pAddNodesAllowMainnet: false,
       host: '127.0.0.1',
       port: 8333, // P2P port
       rpcport: 8332, // RPC port
       interval: 60000, // 10 * 60 * 1000, // every 10 minutes, write a checkpoint
-      verbosity: 2
+      verbosity: 2,
+      // When true, flushChainToSnapshot is allowed on mainnet (dangerous).
+      flushChainAllowUnsafeNetworks: false,
+      // Safety cap for invalidateblock steps when rewinding to a snapshot tip.
+      flushChainMaxSteps: 100000
     }, settings);
 
     const netNorm = this._normalizeChainName(this.settings.network || 'mainnet');
@@ -257,6 +655,14 @@ class Bitcoin extends Service {
     }); */
 
     this.zmq = new ZMQ({ ...this.settings.zmq, key: { xprv: this._rootKey.xprv } });
+    // Every node that runs Bitcoin watches its own filings and those of
+    // clients the host admits. `settings.watchtower === false` turns it off.
+    this.watchtower = this.settings.watchtower === false
+      ? null
+      : new Watchtower({
+        localPrivateKey: this._rootKey &amp;&amp; this._rootKey.private,
+        admit: typeof this.settings.watchtowerAdmit === 'function' ? this.settings.watchtowerAdmit : null
+      });
 
     // Define Bitcoin P2P Messages
     this.define('VersionPacket', { type: 0 });
@@ -392,6 +798,7 @@ class Bitcoin extends Service {
   _getDefaultRPCPort (network = 'mainnet') {
     switch (network) {
       case 'regtest':
+      case 'playnet':
         return 18443;
       case 'testnet':
         return 18332;
@@ -407,6 +814,7 @@ class Bitcoin extends Service {
   _getDefaultP2PPort (network = 'mainnet') {
     switch (network) {
       case 'regtest':
+      case 'playnet':
         return 18444;
       case 'testnet':
         return 18333;
@@ -438,22 +846,37 @@ class Bitcoin extends Service {
     }
   }
 
+  _rpcHostHasSingleNumericPortSuffix (host) {
+    const s = String(host).trim();
+    if (s.startsWith('[')) return false;
+    const first = s.indexOf(':');
+    const last = s.lastIndexOf(':');
+    if (first === -1 || first !== last) return false;
+    return /^\d+$/.test(s.slice(last + 1));
+  }
+
   _normalizeRPCHost (value) {
     if (!value) return '127.0.0.1';
     const host = String(value).trim();
     if (!host) return '127.0.0.1';
 
-    // bitcoin.conf may specify rpcbind/rpcconnect as host:port.
-    if (host.includes(':') &amp;&amp; !host.startsWith('[') &amp;&amp; host.split(':').length === 2) {
-      return host.split(':')[0];
+    if (host.startsWith('[')) {
+      const close = host.indexOf(']');
+      if (close !== -1) return host.slice(0, close + 1);
+      return host;
+    }
+
+    if (this._rpcHostHasSingleNumericPortSuffix(host)) {
+      return host.slice(0, host.lastIndexOf(':'));
     }
 
     return host;
   }
 
-  _buildRPCProbeCandidates () {
+  async _buildRPCProbeCandidates () {
     const candidates = [];
     const seen = new Set();
+    const cookiePathsTried = new Set();
 
     const pushCandidate = (candidate) => {
       if (!candidate || !candidate.host || !candidate.rpcport) return;
@@ -474,6 +897,34 @@ class Bitcoin extends Service {
       seen.add(key);
       candidates.push(normalized);
     };
+
+    // Cookie-auth probes when no explicit RPC user/pass (mainnet, testnet*, signet, regtest, playnet, …).
+    if (!this.settings.username &amp;&amp; !this.settings.password) {
+      const net = this.settings.network || 'mainnet';
+      const rpcport = Number(this.settings.rpcport) || this._getDefaultRPCPort(net);
+      const host = this._normalizeRPCHost(this.settings.host || '127.0.0.1');
+      const cookiePaths = Bitcoin.buildLocalCookieProbePaths({
+        network: net,
+        envCookieFile: process.env.FABRIC_BITCOIN_COOKIE_FILE,
+        settingsDatadir: this.settings.datadir,
+        constraints: this.settings.constraints
+      });
+      for (const cookiePath of cookiePaths) {
+        if (!cookiePath || cookiePathsTried.has(cookiePath)) continue;
+        cookiePathsTried.add(cookiePath);
+        const creds = await Bitcoin.tryReadRpcCookieFileCredentials(cookiePath);
+        if (!creds) continue;
+        pushCandidate({
+          source: `cookie:${Bitcoin.parentDirNameForCookieProbe(cookiePath)}`,
+          host,
+          rpcport,
+          network: net,
+          username: creds.username,
+          password: creds.password,
+          secure: false
+        });
+      }
+    }
 
     if (Array.isArray(this.settings.rpcProbeCandidates)) {
       for (const candidate of this.settings.rpcProbeCandidates) {
@@ -557,7 +1008,7 @@ class Bitcoin extends Service {
   }
 
   async _detectExistingBitcoind () {
-    const candidates = this._buildRPCProbeCandidates();
+    const candidates = await this._buildRPCProbeCandidates();
 
     for (const candidate of candidates) {
       try {
@@ -568,6 +1019,18 @@ class Bitcoin extends Service {
         ]);
 
         const detectedNetwork = this._normalizeChainName(chainInfo.chain || candidate.network);
+        const targetNetwork = this._normalizeChainName(this.settings.network || 'mainnet');
+
+        // Never reuse a daemon from a different chain.
+        if (detectedNetwork &amp;&amp; targetNetwork &amp;&amp; detectedNetwork !== targetNetwork) {
+          if (this.settings.debug) {
+            this.emit(
+              'debug',
+              `[FABRIC:BITCOIN] Ignoring external ${detectedNetwork} daemon while target network is ${targetNetwork}`
+            );
+          }
+          continue;
+        }
         if (this.settings.debug) {
           this.emit(
             'debug',
@@ -614,7 +1077,7 @@ class Bitcoin extends Service {
       try {
         bitcoin.address.toOutputScript(address, network);
         return true;
-      } catch (e) {
+      } catch {
         return false;
       }
 
@@ -644,8 +1107,8 @@ class Bitcoin extends Service {
       this._checkAllTargetBalances()
     ]).catch((exception) => {
       self.emit('error', `Unable to synchronize: ${exception}`);
-    }).then((output) => {
-      // self.emit('log', `Tick output: ${JSON.stringify(output, null, '  ')}`);
+    }).then((_output) => {
+      // self.emit('log', `Tick output: ${JSON.stringify(_output, null, '  ')}`);
 
       const beat = {
         clock: self._clock,
@@ -697,8 +1160,22 @@ class Bitcoin extends Service {
     if (!message.amount) throw new Error('Message must provide an amount.');
     if (!message.destination) throw new Error('Message must provide a destination.');
 
-    if (message.amount instanceof String) {
-      message.amount = message.amount.fixed().toPrecision(8); // TODO: evaluate precision behavior
+    if (typeof message.amount === 'number' &amp;&amp; Number.isFinite(message.amount)) {
+      const sats = message.amount * SATS_PER_BTC;
+      const rounded = Math.round(sats);
+      if (!Number.isFinite(sats) || Math.abs(sats - rounded) > SAT_ADJ_EPS) {
+        throw new Error('Message amount must be a multiple of 1 satoshi (at most 8 decimal places in BTC).');
+      }
+      message.amount = (rounded / SATS_PER_BTC).toFixed(8);
+    } else if (typeof message.amount === 'string' || message.amount instanceof String) {
+      const parsed = Number(message.amount instanceof String ? message.amount.valueOf() : message.amount);
+      if (!Number.isFinite(parsed)) throw new Error('Message amount must be numeric.');
+      const sats = parsed * SATS_PER_BTC;
+      const rounded = Math.round(sats);
+      if (!Number.isFinite(sats) || Math.abs(sats - rounded) > SAT_ADJ_EPS) {
+        throw new Error('Message amount must be a multiple of 1 satoshi (at most 8 decimal places in BTC).');
+      }
+      message.amount = (rounded / SATS_PER_BTC).toFixed(8);
     }
 
     const actor = new Actor(message);
@@ -733,7 +1210,7 @@ class Bitcoin extends Service {
     if (!(obj.transactions instanceof Array)) throw new Error('Block must provide transactions as an Array.');
 
     for (const tx of obj.transactions) {
-      let transaction = await this.transactions.create(tx);
+      await this.transactions.create(tx);
     }
 
     let entity = new Entity(obj);
@@ -779,8 +1256,6 @@ class Bitcoin extends Service {
 
   async _registerBlock (obj) {
     let result = null;
-    let state = new State(obj);
-    let transform = [state.id, state.render()];
     let prior = null;
 
     // TODO: ensure all appropriate fields, valid block
@@ -933,7 +1408,7 @@ class Bitcoin extends Service {
       raw: msg.toRaw().toString('hex')
     };
 
-    let block = await this.blocks.create(template);
+    await this.blocks.create(template);
   }
 
   async _handleConnectMessage (entry, block) {
@@ -1002,16 +1477,31 @@ class Bitcoin extends Service {
     return 1;
   }
 
+  _keyNetworkNameForWif () {
+    const n = this._normalizeChainName(this.settings.network || 'mainnet');
+    // Playnet runs against regtest-style bitcoind (WIF/bech32 prefixes match regtest, not mainnet).
+    if (n === 'playnet') return 'regtest';
+    if (n === 'signet' || n === 'testnet4') return 'testnet';
+    if (n === 'mainnet' || n === 'testnet' || n === 'regtest') return n;
+    return 'mainnet';
+  }
+
   async _dumpKeyPair (address) {
     const wif = await this._makeRPCRequest('dumpprivkey', [address]);
-    const pair = ECPair.fromWIF(wif, this.networks[this.settings.network]);
-    return pair;
+    const k = Key.fromWIF(wif, { network: this._keyNetworkNameForWif() });
+    const priv = k.private;
+    const pubHex = k.public.encodeCompressed('hex');
+    return {
+      privateKey: Buffer.isBuffer(priv) ? priv : Buffer.from(priv, 'hex'),
+      publicKey: Buffer.from(pubHex, 'hex')
+    };
   }
 
   async _dumpPrivateKey (address) {
     const wif = await this._makeRPCRequest('dumpprivkey', [address]);
-    const pair = ECPair.fromWIF(wif, this.networks[this.settings.network]);
-    return pair.privateKey;
+    const k = Key.fromWIF(wif, { network: this._keyNetworkNameForWif() });
+    const priv = k.private;
+    return Buffer.isBuffer(priv) ? priv : Buffer.from(priv, 'hex');
   }
 
   async _loadPrivateKey (key) {
@@ -1156,16 +1646,14 @@ class Bitcoin extends Service {
 
   async _connectToSeedNodes () {
     for (let i = 0; i &lt; this.settings.seeds.length; i++) {
-      let node = this.settings.seeds[i];
-      this.connect(node);
+      this.connect(this.settings.seeds[i]);
     }
   }
 
   async _connectToEdgeNodes () {
     let bitcoin = this;
 
-    for (let id in this.settings.nodes) {
-      let node = this.settings.nodes[id];
+    for (const _id in this.settings.nodes) {
       let peer = bcoin.Peer.fromOptions({
         network: this.settings.network,
         agent: this.UAString,
@@ -1219,32 +1707,104 @@ class Bitcoin extends Service {
 
     try {
       switch (topic) {
-        case 'BitcoinBlock':
-        case 'BitcoinTransactionHash':
+        case 'BitcoinBlock': {
+          const rawHex = (content &amp;&amp; typeof content === 'object' &amp;&amp; content.content)
+            ? content.content
+            : (typeof content === 'string' ? content : null);
+          if (rawHex) this.emit('block', { raw: rawHex, source: 'BitcoinBlock' });
           break;
+        }
+        case 'BitcoinTransactionHash': {
+          const txid = (content &amp;&amp; typeof content === 'object' &amp;&amp; content.content)
+            ? content.content
+            : null;
+          if (txid &amp;&amp; this.settings.walletWatchMempool !== false) {
+            try {
+              const verbose = await this._makeRPCRequest('getrawtransaction', [txid, true]);
+              if (verbose) {
+                if (verbose.hex) this.broadcastWatchtower([verbose.hex]).catch(() => {});
+                this.emit('transaction', Object.assign({}, verbose, { source: 'BitcoinTransactionHash' }));
+                if (this.wallet &amp;&amp; typeof this.wallet.ingestBitcoinTransaction === 'function') {
+                  this.wallet.ingestBitcoinTransaction(verbose, { source: 'BitcoinTransactionHash' });
+                }
+              }
+            } catch (e) {
+              if (this.settings.debug) {
+                this.emit('debug', `[FABRIC:BITCOIN] mempool tx fetch ${txid}: ${e.message || e}`);
+              }
+            }
+          }
+          break;
+        }
         case 'BitcoinBlockHash': {
           const blockHashHex = (content &amp;&amp; typeof content === 'object' &amp;&amp; content.content)
             ? content.content
             : (JSON.parse(Buffer.isBuffer(content) ? content.toString() : String(content))).content;
-          const supply = await this._makeRPCRequest('gettxoutsetinfo', []);
-          this._state.content.height = supply.height;
-          this._state.content.tip = blockHashHex;
-          this._state.content.supply = supply.total_amount;
-          this.commit();
-          this.emit('block', {
+          let height = null;
+          let supplyAmount = null;
+          try {
+            const supply = await this._makeRPCRequest('gettxoutsetinfo', []);
+            height = supply.height;
+            supplyAmount = supply.total_amount;
+            this._state.content.height = supply.height;
+            this._state.content.tip = blockHashHex;
+            this._state.content.supply = supply.total_amount;
+            this.commit();
+          } catch (e) {
+            if (this.settings.debug) this.emit('debug', `[FABRIC:BITCOIN] tip supply: ${e.message || e}`);
+          }
+
+          let verboseBlock = null;
+          try {
+            verboseBlock = await this._makeRPCRequest('getblock', [blockHashHex, 2]);
+            if (verboseBlock &amp;&amp; verboseBlock.height != null) height = verboseBlock.height;
+          } catch (e) {
+            if (this.settings.debug) {
+              this.emit('debug', `[FABRIC:BITCOIN] getblock(${blockHashHex},2): ${e.message || e}`);
+            }
+          }
+
+          const payload = {
             tip: blockHashHex,
-            height: supply.height,
-            supply: supply.total_amount
-          });
+            hash: blockHashHex,
+            height,
+            supply: supplyAmount,
+            tx: (verboseBlock &amp;&amp; verboseBlock.tx) || [],
+            source: 'BitcoinBlockHash'
+          };
+          const watchHexes = payload.tx.map((tx) => tx &amp;&amp; tx.hex).filter(Boolean);
+          if (watchHexes.length) this.broadcastWatchtower(watchHexes).catch(() => {});
+          this.emit('block', payload);
+          if (this.wallet &amp;&amp; typeof this.wallet.ingestBitcoinBlock === 'function') {
+            try {
+              this.wallet.ingestBitcoinBlock(payload);
+            } catch (e) {
+              this.emit('warning', `[FABRIC:BITCOIN] wallet block ingest: ${e.message || e}`);
+            }
+          }
           break;
         }
         case 'BitcoinTransaction': {
           try {
+            const rawHex = (content &amp;&amp; typeof content === 'object' &amp;&amp; content.content)
+              ? content.content
+              : null;
+            if (rawHex) {
+              this.broadcastWatchtower([rawHex]).catch(() => {});
+              const event = { hex: rawHex, source: 'BitcoinTransaction' };
+              try {
+                const bitcoinjs = require('bitcoinjs-lib');
+                event.txid = bitcoinjs.Transaction.fromHex(rawHex).getId();
+              } catch (_) { /* ignore parse */ }
+              this.emit('transaction', event);
+              if (this.wallet &amp;&amp; typeof this.wallet.ingestBitcoinTransaction === 'function') {
+                this.wallet.ingestBitcoinTransaction(rawHex, { source: 'BitcoinTransaction' });
+              }
+            }
             const balance = await this._makeRPCRequest('getbalances', []).catch(() => null);
             if (balance != null) {
               this._state.balances.mine.trusted = balance;
               this.commit();
-              this.emit('transaction', { balance: this._state.balances.mine.trusted });
             }
           } catch (e) {
             if (this.settings.debug) this.emit('debug', `[FABRIC:BITCOIN] ZMQ BitcoinTransaction handler: ${e.message || e}`);
@@ -1254,7 +1814,7 @@ class Bitcoin extends Service {
         default:
           if (this.settings.verbosity >= 5) this.emit('debug', `[AUDIT] Unknown ZMQ topic: ${topic}`);
       }
-    } catch (exception) {
+    } catch {
       //', `Could not process ZMQ message: ${exception}`);
     }
   }
@@ -1327,12 +1887,15 @@ class Bitcoin extends Service {
     if (this.rpc) {
       try {
         await this._loadWallet(this.walletName);
-        const info = await this._makeRPCRequest('getnetworkinfo');
-        const version = parseInt(info.version);
-        const address = await this._makeWalletRequest('getnewaddress', [
-          '', // label
-          version >= 240000 ? 'legacy' : 'legacy' // address type
-        ], this.walletName);
+        // Taproot: the cheapest input to spend later. Segwit only where the
+        // wallet can't make one (Core before 22, or a non-descriptor wallet).
+        let address = null;
+        try {
+          address = await this._makeWalletRequest('getnewaddress', ['', 'bech32m'], this.walletName);
+        } catch (taprootError) {
+          if (this.settings.debug) this.emit('debug', `[FABRIC:BITCOIN] No Taproot address (${taprootError.message || taprootError}); using segwit`);
+          address = await this._makeWalletRequest('getnewaddress', ['', 'bech32'], this.walletName);
+        }
 
         if (!address) throw new Error('No address returned from getnewaddress');
         return address;
@@ -1340,37 +1903,23 @@ class Bitcoin extends Service {
       if (this.settings.debug) this.emit('debug', `[FABRIC:BITCOIN] Error getting unused address: ${error.message || error}`);
         throw error;
       }
-    } else if (this.settings.key || this._rootKey) {
-      // In fabric mode, derive from a Key instance; settings.key may be plain config.
-      const keySource = (this.settings.key &amp;&amp; typeof this.settings.key.deriveAddress === 'function')
-        ? this.settings.key
-        : this._rootKey;
-      const target = keySource.deriveAddress(this.settings.state.walletIndex);
-      // Increment the index for next time
-      this.settings.state.walletIndex++;
-      // Track the address
-      this.settings.state.addresses[target.address] = {
-        index: this.settings.state.walletIndex - 1,
-        transactions: []
-      };
-      return target.address;
-    } else {
-      // If no key is provided, generate a new key for regtest
-      const key = new Key({
-        network: this.settings.network,
-        purpose: 44,
-        account: 0,
-        index: this.settings.state.walletIndex
-      });
-      this.settings.key = key;
-      const target = key.deriveAddress(this.settings.state.walletIndex);
-      this.settings.state.walletIndex++;
-      this.settings.state.addresses[target.address] = {
-        index: this.settings.state.walletIndex - 1,
-        transactions: []
-      };
-      return target.address;
     }
+
+    // Without bitcoind: BIP-86 Taproot (`m/86'/{coin}'/0'/0/i`) from a Key
+    // instance (settings.key may be plain config), else a new key.
+    let keySource = (this.settings.key &amp;&amp; typeof this.settings.key.deriveAddress === 'function')
+      ? this.settings.key
+      : this._rootKey;
+    if (!keySource &amp;&amp; !this.settings.key) {
+      keySource = new Key({ network: this.settings.network });
+      this.settings.key = keySource;
+    }
+    if (!keySource) throw new Error('No key to derive a receive address from (settings.key is not a Key)');
+    const index = this.settings.state.walletIndex;
+    const { address } = Wallet.deriveTaprootAddress(keySource, { index, network: this.settings.network });
+    this.settings.state.walletIndex++;
+    this.settings.state.addresses[address] = { index, transactions: [] };
+    return address;
   }
 
   async append (raw) {
@@ -1598,7 +2147,6 @@ class Bitcoin extends Service {
       if (!this.rpc) return reject(new Error('RPC manager does not exist'));
 
       // Reuse existing RPC config but change the URL to target the specific wallet
-      const protocol = this.settings.secure ? 'https' : 'http';
       const host = this.settings.host;
       const port = this.settings.rpcport;
       const auth = `${this.settings.username}:${this.settings.password}`;
@@ -1647,7 +2195,7 @@ class Bitcoin extends Service {
 
   async _checkAllTargetBalances () {
     for (let i = 0; i &lt; this.settings.targets.length; i++) {
-      const balance = await this._getBalanceForAddress(this.settings.targets[i]);
+      await this._getBalanceForAddress(this.settings.targets[i]);
     }
   }
 
@@ -1671,6 +2219,83 @@ class Bitcoin extends Service {
     }
   }
 
+  /**
+   * Rewind the attached Bitcoin Core node to a known-good tip by repeatedly calling `invalidateblock`
+   * on the current best block until `getbestblockhash` matches `snapshotBlockHash`.
+   * Allowed on regtest, playnet, signet, testnet, testnet4 unless settings.flushChainAllowUnsafeNetworks.
+   * @param {string} snapshotBlockHash - 64-char hex block hash to keep as the active tip.
+   * @returns {Promise&lt;{ ok: boolean, steps: number, snapshotBlockHash: string }>}
+   */
+  async flushChainToSnapshot (snapshotBlockHash) {
+    const run = () => this._flushChainToSnapshotBody(snapshotBlockHash);
+    const p = (this._flushChainQueue || Promise.resolve())
+      .catch(() => {})
+      .then(run);
+    this._flushChainQueue = p.catch(() => {});
+    return p;
+  }
+
+  /**
+   * @private
+   */
+  async _flushChainToSnapshotBody (snapshotBlockHash) {
+    const hex = String(snapshotBlockHash || '').trim().toLowerCase();
+    if (!/^[0-9a-f]{64}$/.test(hex)) {
+      throw new Error('flushChainToSnapshot: snapshotBlockHash must be 64 hex characters');
+    }
+    const net = this._normalizeChainName(this.settings.network || 'mainnet');
+    const allowed =
+      net === 'regtest' ||
+      net === 'playnet' ||
+      net === 'signet' ||
+      net === 'testnet' ||
+      net === 'testnet4';
+    if (!allowed &amp;&amp; !this.settings.flushChainAllowUnsafeNetworks) {
+      throw new Error(`flushChainToSnapshot: not allowed for network "${net}" (set flushChainAllowUnsafeNetworks to override)`);
+    }
+    const maxSteps = (typeof this.settings.flushChainMaxSteps === 'number' &amp;&amp; this.settings.flushChainMaxSteps > 0)
+      ? this.settings.flushChainMaxSteps
+      : 100000;
+
+    try {
+      await this._makeRPCRequest('getblockheader', [hex]);
+    } catch (err) {
+      const msg = err &amp;&amp; err.message ? String(err.message) : String(err);
+      throw new Error(`flushChainToSnapshot: snapshot block not known to node (${msg})`);
+    }
+
+    let cursor = String(await this._makeRPCRequest('getbestblockhash', [])).trim().toLowerCase();
+    let reachable = false;
+    for (let i = 0; i &lt; maxSteps; i++) {
+      if (cursor === hex) {
+        reachable = true;
+        break;
+      }
+      const header = await this._makeRPCRequest('getblockheader', [cursor]);
+      const prev = header &amp;&amp; header.previousblockhash
+        ? String(header.previousblockhash).trim().toLowerCase()
+        : null;
+      if (!prev) break;
+      cursor = prev;
+    }
+    if (!reachable) {
+      throw new Error('flushChainToSnapshot: snapshot is not an ancestor of the active tip');
+    }
+
+    let steps = 0;
+    while (steps &lt; maxSteps) {
+      const best = String(await this._makeRPCRequest('getbestblockhash', [])).trim().toLowerCase();
+      if (best === hex) {
+        const out = { ok: true, steps, snapshotBlockHash: hex };
+        this.emit('message', { type: 'BitcoinFlushChain', data: out });
+        return out;
+      }
+      await this._makeRPCRequest('invalidateblock', [best]);
+      steps++;
+    }
+    throw new Error(`flushChainToSnapshot: exceeded flushChainMaxSteps=${maxSteps} before reaching snapshot`);
+  }
+
   async _requestBlockHeader (hash) {
     return this._makeRPCRequest('getblockheader', [hash]);
   }
@@ -1683,7 +2308,7 @@ class Bitcoin extends Service {
     return this._makeRPCRequest('getblock', [hash]);
   }
 
-  async _getMempool (hash) {
+  async _getMempool (_hash) {
     return this._makeRPCRequest('getrawmempool');
   }
 
@@ -1859,6 +2484,7 @@ class Bitcoin extends Service {
 
   /**
    * Create a Partially-Signed Bitcoin Transaction (PSBT).
+   * Vin/vout are BIP-69 sorted before they are added (unsigned construction only).
    * @param {Object} options Parameters for the PSBT.
    * @returns {PSBT} Instance of the PSBT.
    */
@@ -1872,53 +2498,66 @@ class Bitcoin extends Service {
       throw new Error(`Invalid network: ${this.settings.network}`);
     }
 
-    // Calculate total input amount
-    let inputAmount = 0;
+    // Calculate total input amount (reserved for fee / change logic)
+    let _inputAmount = 0;
     for (const input of options.inputs) {
       const utxo = await this._makeRPCRequest('gettxout', [input.txid, input.vout]);
       if (utxo) {
-        inputAmount += utxo.value * 100000000; // Convert BTC to satoshis
+        _inputAmount += utxo.value * SATS_PER_BTC; // Convert BTC to satoshis
       }
     }
 
-    // Calculate total output amount
-    let outputAmount = 0;
+    // Calculate total output amount (reserved for fee / change logic)
+    let _outputAmount = 0;
     for (const output of options.outputs) {
-      outputAmount += output.value;
+      _outputAmount += output.value;
     }
 
     // TODO: add change output
 
-    // Create the PSBT
-    const psbt = new bitcoin.Psbt({ network });
-
-    for (let i = 0; i &lt; options.inputs.length; i++) {
-      const input = options.inputs[i];
-      const data = {
-        hash: input.txid,
-        index: input.vout,
-        sequence: 0xffffffff
-      };
-
-      psbt.addInput(data);
-    }
-
+    const sortedInputs = sortInputs(options.inputs.map((input) => Object.assign({}, input)));
+    const preparedOutputs = [];
     for (let i = 0; i &lt; options.outputs.length; i++) {
       const output = options.outputs[i];
+      let sats;
+      try {
+        sats = toIntegerSats(output.value);
+      } catch (e) {
+        throw new Error(`Invalid output value for ${output.address}: ${e.message}`);
+      }
       try {
         const script = bitcoin.address.toOutputScript(output.address, network);
-        const data = {
+        preparedOutputs.push({
+          address: output.address,
           script,
-          value: output.value
-        };
-
-        psbt.addOutput(data);
+          value: sats
+        });
       } catch (e) {
         if (this.settings.debug) {
-          if (this.settings.debug) this.emit('debug', `[FABRIC:BITCOIN] Failed to add output: ${e.message}`);
+          this.emit('debug', `[FABRIC:BITCOIN] Failed to add output: ${e.message}`);
         }
         throw new Error(`Invalid address ${output.address}: ${e.message}`);
       }
+    }
+    const sortedOutputs = sortOutputs(preparedOutputs);
+
+    const psbt = new bitcoin.Psbt({ network });
+
+    for (let i = 0; i &lt; sortedInputs.length; i++) {
+      const input = sortedInputs[i];
+      psbt.addInput({
+        hash: input.txid,
+        index: input.vout,
+        sequence: -1 >>> 0
+      });
+    }
+
+    for (let i = 0; i &lt; sortedOutputs.length; i++) {
+      const output = sortedOutputs[i];
+      psbt.addOutput({
+        script: output.script,
+        value: output.value
+      });
     }
 
     return psbt;
@@ -1949,6 +2588,39 @@ class Bitcoin extends Service {
 
   async _spendRawTX (raw) {
     return this._makeRPCRequest('sendrawtransaction', [ raw ]);
+  }
+
+  /**
+   * Broadcast justice transactions for any revoked commitment in `txHexes`.
+   * A filing is dropped only once every one of its transactions is accepted
+   * or already settled. A prefix that does not decrypt is ignored.
+   * @param {string[]} txHexes raw transactions (block or mempool)
+   * @returns {Promise&lt;string[]>} justice transactions submitted
+   */
+  async broadcastWatchtower (txHexes) {
+    const tower = this.watchtower;
+    if (!tower || !txHexes || !txHexes.length) return [];
+    const hits = tower.match(txHexes);
+    const sent = [];
+    for (const hit of hits) {
+      let keep = false;
+      for (const txHex of hit.transactions) {
+        try {
+          await this._spendRawTX(txHex);
+          sent.push(txHex);
+        } catch (e) {
+          if (Watchtower.broadcastSettled(e)) {
+            sent.push(txHex);
+          } else {
+            keep = true;
+            const msg = e &amp;&amp; e.message ? e.message : String(e);
+            this.emit('warning', `[FABRIC:BITCOIN] watchtower broadcast: ${msg}`);
+          }
+        }
+      }
+      if (!keep) tower.drop(hit.client, hit.hint);
+    }
+    return sent;
   }
 
   async _syncBestBlock () {
@@ -2136,7 +2808,17 @@ class Bitcoin extends Service {
         ];
 
         // Wait for all checks to complete
-        const results = await Promise.all(checks);
+        const [chainInfo] = await Promise.all(checks);
+
+        const detectedNetwork = this._normalizeChainName(chainInfo &amp;&amp; chainInfo.chain);
+        const targetNetwork = this._normalizeChainName(this.settings.network || 'mainnet');
+        if (detectedNetwork &amp;&amp; targetNetwork &amp;&amp; detectedNetwork !== targetNetwork) {
+          this.emit(
+            'warning',
+            `[FABRIC:BITCOIN] RPC endpoint chain mismatch: detected=${detectedNetwork} expected=${targetNetwork}`
+          );
+          return false;
+        }
 
         if (this.settings.debug) {
           this.emit('debug', '[FABRIC:BITCOIN] Successfully connected to bitcoind');
@@ -2167,8 +2849,9 @@ class Bitcoin extends Service {
 
   _defaultBitcoinP2pPort (network) {
     const n = String(network || '').toLowerCase();
-    if (n === 'regtest') return 18444;
-    if (n === 'testnet' || n === 'testnet4') return 18333;
+    if (n === 'regtest' || n === 'playnet') return 18444;
+    if (n === 'testnet') return 18333;
+    if (n === 'testnet4') return 48333;
     if (n === 'signet') return 38333;
     return 8333;
   }
@@ -2225,10 +2908,28 @@ class Bitcoin extends Service {
         this.emit('log', `[FABRIC:BITCOIN] addnode ${cmd} ${addr}`);
       } catch (e) {
         const msg = e &amp;&amp; e.message ? e.message : String(e);
+        if (cmd === 'add' &amp;&amp; (/-23\b/.test(msg) || /already added/i.test(msg))) {
+          done.push(addr);
+          if (this.settings &amp;&amp; this.settings.debug) {
+            this.emit('log', `[FABRIC:BITCOIN] addnode ${addr} already present`);
+          }
+          continue;
+        }
         this.emit('warning', `[FABRIC:BITCOIN] addnode failed ${addr}: ${msg}`);
       }
     }
     return done;
+  }
+
+  /**
+   * Emit `error` only when a listener is present. Node's EventEmitter throws
+   * `ERR_UNHANDLED_ERROR` otherwise, which mocha reports as a second `done()`.
+   * @param {*} msg
+   * @returns {void}
+   */
+  _emitErrorSafe (msg) {
+    if (this.listenerCount('error') > 0) this.emit('error', msg);
+    else this.emit('warning', msg);
   }
 
   async createLocalNode () {
@@ -2271,7 +2972,7 @@ class Bitcoin extends Service {
     switch (this.settings.network) {
       default:
       case 'mainnet':
-        datadir = (this.settings.constraints.storage.size) ? './stores/bitcoin-pruned' : './stores/bitcoin';
+        datadir = (this.settings.constraints.storage.size) ? './stores/bitcoin-mainnet-pruned' : './stores/bitcoin-mainnet';
         break;
       case 'testnet':
         datadir = './stores/bitcoin-testnet';
@@ -2285,14 +2986,16 @@ class Bitcoin extends Service {
         datadir = './stores/bitcoin-signet';
         params.push('-signet');
         break;
+      // No fee estimates without real traffic; fall back to the 1 sat/vB relay floor.
       case 'regtest':
         datadir = './stores/bitcoin-regtest';
         params.push('-regtest');
-        params.push('-fallbackfee=1.0');
-        params.push('-maxtxfee=1.1');
+        params.push('-fallbackfee=0.00001');
         break;
       case 'playnet':
         datadir = './stores/bitcoin-playnet';
+        params.push('-regtest');
+        params.push('-fallbackfee=0.00001');
         break;
     }
 
@@ -2309,7 +3012,8 @@ class Bitcoin extends Service {
     this.settings.datadir = datadir; // for downstream users accessing the settings property, e.g. for lightning nodes
 
     // If storage constraints are set, prune the blockchain
-    if (this.settings.network !== 'regtest' &amp;&amp; this.settings.constraints.storage.size) {
+    const chain = this._normalizeChainName(this.settings.network || 'mainnet');
+    if (chain !== 'regtest' &amp;&amp; chain !== 'playnet' &amp;&amp; this.settings.constraints.storage.size) {
       params.push(`-prune=${this.settings.constraints.storage.size}`);
     } else {
       params.push(`-txindex`);
@@ -2348,11 +3052,15 @@ class Bitcoin extends Service {
         if (this.settings.debug) this.emit('debug', `[FABRIC:BITCOIN] ${line}`);
       });
 
+      this._bitcoindStderrBuf = '';
       child.stderr.on('data', (data) => {
-        const line = data.toString('utf8').trim();
-        if (!line) return;
-        // Route bitcoind stderr into Fabric's error channel instead of terminal stderr
-        this.emit('error', `[FABRIC:BITCOIN] ${line}`);
+        appendBitcoinStderrChunk(this, data);
+      });
+      child.stderr.on('end', () => {
+        flushBitcoinStderrBuffer(this);
+      });
+      child.stderr.on('close', () => {
+        flushBitcoinStderrBuffer(this);
       });
 
       child.on('close', (code) => {
@@ -2362,10 +3070,7 @@ class Bitcoin extends Service {
       });
 
       child.on('error', (err) => {
-        // Route child process errors into Fabric's error channel; avoid writing to stderr.
-        this.emit('error', `[FABRIC:BITCOIN] Bitcoin Core process error: ${err.message || err}`);
-        // Attempt to restart the process
-        // this._restartBitcoind();
+        this._emitErrorSafe(`[FABRIC:BITCOIN] Bitcoin Core process error: ${err.message || err}`);
       });
 
       // Fail fast if the process exits/errors immediately after spawn.
@@ -2409,7 +3114,7 @@ class Bitcoin extends Service {
               this._nodeProcess.on('close', () => resolve());
             });
           } catch (e) {
-            this.emit('error', `[FABRIC:BITCOIN] Error during cleanup: ${e.message || e}`);
+            this._emitErrorSafe(`[FABRIC:BITCOIN] Error during cleanup: ${e.message || e}`);
           }
         }
       };
@@ -2422,14 +3127,14 @@ class Bitcoin extends Service {
         // Only handle errors from this service's child process
         if (err.source === 'bitcoin' || (this._nodeProcess &amp;&amp; err.pid === this._nodeProcess.pid)) {
           // Avoid console.trace to keep TUI clean; surface via error channel instead.
-          this.emit('error', `[FABRIC:BITCOIN] Uncaught exception from Bitcoin service: ${err.message || err}`);
+          this._emitErrorSafe(`[FABRIC:BITCOIN] Uncaught exception from Bitcoin service: ${err.message || err}`);
           // await cleanup();
         }
       };
-      this._errorHandlers.unhandledRejection = async (reason, promise) => {
+      this._errorHandlers.unhandledRejection = async (reason, _promise) => {
         // Only handle rejections from this service's operations
         if (reason.source === 'bitcoin' || (this._nodeProcess &amp;&amp; reason.pid === this._nodeProcess.pid)) {
-          this.emit('error', '[FABRIC:BITCOIN] Unhandled rejection from Bitcoin service');
+          this._emitErrorSafe('[FABRIC:BITCOIN] Unhandled rejection from Bitcoin service');
           // await cleanup();
         }
       };
@@ -2443,32 +3148,22 @@ class Bitcoin extends Service {
 
       // When using cookie auth, wait for bitcoind to create the cookie file then read credentials
       if (useCookieAuth) {
-        const chainSubdir = (() => {
-          const n = (this.settings.network || '').toLowerCase();
-          if (n === 'regtest') return 'regtest';
-          if (n === 'testnet') return 'testnet3';
-          if (n === 'signet') return 'signet';
-          return '';
-        })();
-        const cookiePath = path.resolve(process.cwd(), datadir, chainSubdir, '.cookie');
+        const datadirRoot = Bitcoin.resolveBitcoinDatadirForLocalAccess(datadir);
+        if (!datadirRoot) {
+          throw new Error(`[FABRIC:BITCOIN] Invalid or unsafe datadir for cookie auth: ${datadir}`);
+        }
+        const cookiePath = Bitcoin.cookiePathForBitcoind(datadirRoot, this.settings.network);
         const cookieTimeoutMs = 15000;
         const cookiePollMs = 100;
         const cookieDeadline = Date.now() + cookieTimeoutMs;
         while (Date.now() &lt; cookieDeadline) {
-          try {
-            if (fs.existsSync(cookiePath)) {
-              const raw = fs.readFileSync(cookiePath, 'utf8').trim();
-              const colon = raw.indexOf(':');
-              if (colon !== -1) {
-                this.settings.username = raw.slice(0, colon);
-                this.settings.password = raw.slice(colon + 1);
-                this.settings.authority = `http://127.0.0.1:${this.settings.rpcport}`;
-                if (this.settings.debug) this.emit('debug', '[FABRIC:BITCOIN] Read RPC credentials from cookie file');
-                break;
-              }
-            }
-          } catch (e) {
-            // ignore read errors, keep polling
+          const creds = await Bitcoin.tryReadRpcCookieFileCredentials(cookiePath);
+          if (creds) {
+            this.settings.username = creds.username;
+            this.settings.password = creds.password;
+            this.settings.authority = `http://127.0.0.1:${this.settings.rpcport}`;
+            if (this.settings.debug) this.emit('debug', '[FABRIC:BITCOIN] Read RPC credentials from cookie file');
+            break;
           }
           await new Promise(r => setTimeout(r, cookiePollMs));
         }
@@ -2499,26 +3194,17 @@ class Bitcoin extends Service {
       const rpcport = this.settings.rpcport || 18443;
       this.settings.authority = `http://${host}:${rpcport}`;
       if (!this.settings.username || !this.settings.password) {
-        const chainSubdir = (() => {
-          const n = (this.settings.network || '').toLowerCase();
-          if (n === 'regtest') return 'regtest';
-          if (n === 'testnet') return 'testnet3';
-          if (n === 'signet') return 'signet';
-          return '';
-        })();
-        const cookiePath = path.resolve(process.cwd(), datadir, chainSubdir, '.cookie');
-        try {
-          if (fs.existsSync(cookiePath)) {
-            const raw = fs.readFileSync(cookiePath, 'utf8').trim();
-            const colon = raw.indexOf(':');
-            if (colon !== -1) {
-              this.settings.username = raw.slice(0, colon);
-              this.settings.password = raw.slice(colon + 1);
-              if (this.settings.debug) this.emit('debug', '[FABRIC:BITCOIN] Read RPC credentials from cookie file (unmanaged)');
-            }
+        const datadirRootUnmanaged = Bitcoin.resolveBitcoinDatadirForLocalAccess(datadir);
+        const cookiePathUnmanaged = datadirRootUnmanaged
+          ? Bitcoin.cookiePathForBitcoind(datadirRootUnmanaged, this.settings.network)
+          : null;
+        if (cookiePathUnmanaged) {
+          const credsUnmanaged = await Bitcoin.tryReadRpcCookieFileCredentials(cookiePathUnmanaged);
+          if (credsUnmanaged) {
+            this.settings.username = credsUnmanaged.username;
+            this.settings.password = credsUnmanaged.password;
+            if (this.settings.debug) this.emit('debug', '[FABRIC:BITCOIN] Read RPC credentials from cookie file (unmanaged)');
           }
-        } catch (e) {
-          // Cookie not available
         }
         if (!this.settings.username || !this.settings.password) {
           this.settings.username = `fabric_${crypto.randomBytes(8).toString('hex')}`;
@@ -2537,7 +3223,12 @@ class Bitcoin extends Service {
     this.emit('debug', `[SERVICES:BITCOIN] Starting for network "${this.settings.network}"...`);
     this.status = 'STARTING';
 
-    const existingBitcoindFound = await this._detectExistingBitcoind();
+    const shouldProbeExternalNode = !(
+      this.settings.enforceIsolatedRegtest &amp;&amp;
+      this.settings.managed &amp;&amp;
+      this.settings.network === 'regtest'
+    );
+    const existingBitcoindFound = shouldProbeExternalNode ? await this._detectExistingBitcoind() : false;
     if (existingBitcoindFound &amp;&amp; this.settings.managed) {
       this.emit('log', '[FABRIC:BITCOIN] Existing bitcoind detected; not starting another managed instance');
       this.settings.managed = false;
@@ -2556,7 +3247,7 @@ class Bitcoin extends Service {
       this.peer.on('error', this._handlePeerError.bind(this));
       this.peer.on('packet', this._handlePeerPacket.bind(this));
       this.peer.on('open', () => {
-        let block = this.peer.getBlock([this.network.genesis.hash]);
+        this.peer.getBlock([this.network.genesis.hash]);
       });
     }
 
@@ -2764,69 +3455,303 @@ module.exports = Bitcoin;
   </div>
   <nav>
     <h2><a href="index.html">Home</a></h2>
+    <h3>Modules</h3>
+    <ul>
+      <li><a href="module-types_bech32_bech32.html">types/bech32/bech32</a></li>
+      <li><a href="module-types_bech32_fabricPaymentBech32.html">types/bech32/fabricPaymentBech32</a></li>
+      <li><a href="module-types_delegation.html">types/delegation</a></li>
+      <li><a href="module-types_key_base58.html">types/key/base58</a></li>
+      <li><a href="module-types_key_bip32.html">types/key/bip32</a></li>
+      <li><a href="module-types_key_bip39.html">types/key/bip39</a></li>
+      <li><a href="module-types_key_bip49.html">types/key/bip49</a></li>
+      <li><a href="module-types_key_bip85.html">types/key/bip85</a></li>
+      <li><a href="module-types_key_fabricKeyMaterial.html">types/key/fabricKeyMaterial</a></li>
+      <li><a href="module-types_key_keyHasPrivateSigningMaterial.html">types/key/keyHasPrivateSigningMaterial</a></li>
+      <li><a href="module-types_key_pubkey.html">types/key/pubkey</a></li>
+      <li><a href="module-types_key_signingTags.html">types/key/signingTags</a></li>
+      <li><a href="module-types_typetree.html">types/typetree</a></li>
+      <li><a href="module-types_wallet_accountKeys.html">types/wallet/accountKeys</a></li>
+      <li><a href="module-types_wallet_bip21.html">types/wallet/bip21</a></li>
+      <li><a href="module-types_wallet_bip86.html">types/wallet/bip86</a></li>
+      <li><a href="module-types_witness_adaptor.html">types/witness/adaptor</a></li>
+      <li><a href="module-types_witness_bls.html">types/witness/bls</a></li>
+      <li><a href="module-types_witness_dleq.html">types/witness/dleq</a></li>
+      <li><a href="module-types_witness_musig2.html">types/witness/musig2</a></li>
+      <li><a href="module-types_witness_musig2Adaptor.html">types/witness/musig2Adaptor</a></li>
+      <li><a href="module-types_witness_musig2Session.html">types/witness/musig2Session</a></li>
+      <li><a href="types_ecc.html#.module:selftest">types/ecc.selftest</a></li>
+    </ul>
     <h3>Classes</h3>
     <ul>
       <li><a href="Actor.html">Actor</a></li>
+      <li><a href="Beacon.html">Beacon</a></li>
       <li><a href="Bitcoin.html">Bitcoin</a></li>
-      <li><a href="CLI.html">CLI</a></li>
+      <li><a href="Block.html">Block</a></li>
+      <li><a href="Bond.html">Bond</a></li>
+      <li><a href="Book.html">Book</a></li>
       <li><a href="Chain.html">Chain</a></li>
+      <li><a href="Challenge.html">Challenge</a></li>
       <li><a href="Channel.html">Channel</a></li>
+      <li><a href="ChannelBook.html">ChannelBook</a></li>
+      <li><a href="ChannelSession.html">ChannelSession</a></li>
       <li><a href="Circuit.html">Circuit</a></li>
+      <li><a href="Coinjoin.html">Coinjoin</a></li>
+      <li><a href="CoinjoinBook.html">CoinjoinBook</a></li>
+      <li><a href="CoinjoinMakerRound.html">CoinjoinMakerRound</a></li>
+      <li><a href="CoinjoinTakerRound.html">CoinjoinTakerRound</a></li>
       <li><a href="Collection.html">Collection</a></li>
+      <li><a href="Component.html">Component</a></li>
+      <li><a href="Contract.html">Contract</a></li>
+      <li><a href="Disk.html">Disk</a></li>
+      <li><a href="Document.html">Document</a></li>
+      <li><a href="DocumentBlobTransferBook.html">DocumentBlobTransferBook</a></li>
+      <li><a href="DocumentBook.html">DocumentBook</a></li>
+      <li><a href="EncryptedPromise.html">EncryptedPromise</a></li>
+      <li><a href="Entity.html">Entity</a></li>
+      <li><a href="Entity.Transition.html">Transition</a></li>
       <li><a href="Environment.html">Environment</a></li>
       <li><a href="Fabric.html">Fabric</a></li>
-      <li><a href="FabricShell.html">FabricShell</a></li>
       <li><a href="Federation.html">Federation</a></li>
+      <li><a href="FidelityVerifier.html">FidelityVerifier</a></li>
       <li><a href="Filesystem.html">Filesystem</a></li>
+      <li><a href="FraudProof.html">FraudProof</a></li>
       <li><a href="HKDF.html">HKDF</a></li>
       <li><a href="Hash256.html">Hash256</a></li>
+      <li><a href="Htlc.html">Htlc</a></li>
       <li><a href="Identity.html">Identity</a></li>
       <li><a href="Interface.html">Interface</a></li>
       <li><a href="Key.html">Key</a></li>
       <li><a href="Ledger.html">Ledger</a></li>
       <li><a href="Lightning.html">Lightning</a></li>
+      <li><a href="LiquidityBook.html">LiquidityBook</a></li>
       <li><a href="Logger.html">Logger</a></li>
       <li><a href="Machine.html">Machine</a></li>
+      <li><a href="Market.html">Market</a></li>
       <li><a href="Message.html">Message</a></li>
+      <li><a href="OrderBook.html">OrderBook</a></li>
       <li><a href="Peer.html">Peer</a></li>
+      <li><a href="PodleBlacklist.html">PodleBlacklist</a></li>
+      <li><a href="Policy.html">Policy</a></li>
+      <li><a href="Program.html">Program</a></li>
       <li><a href="Reader.html">Reader</a></li>
       <li><a href="Redis.html">Redis</a></li>
       <li><a href="Remote.html">Remote</a></li>
+      <li><a href="Resolutions.html">Resolutions</a></li>
       <li><a href="Resource.html">Resource</a></li>
+      <li><a href="RoundRobin.html">RoundRobin</a></li>
       <li><a href="Scribe.html">Scribe</a></li>
       <li><a href="Script.html">Script</a></li>
+      <li><a href="Secret.html">Secret</a></li>
       <li><a href="Service.html">Service</a></li>
       <li><a href="Session.html">Session</a></li>
+      <li><a href="SetupTui.html">SetupTui</a></li>
+      <li><a href="SignedBook.html">SignedBook</a></li>
       <li><a href="State.html">State</a></li>
       <li><a href="Store.html">Store</a></li>
+      <li><a href="Swap.html">Swap</a></li>
+      <li><a href="global.html#Text">Text</a></li>
       <li><a href="Token.html">Token</a></li>
       <li><a href="Tree.html">Tree</a></li>
       <li><a href="Vector.html">Vector</a></li>
       <li><a href="Wallet.html">Wallet</a></li>
+      <li><a href="Watchtower.html">Watchtower</a></li>
       <li><a href="Worker.html">Worker</a></li>
       <li><a href="ZMQ.html">ZMQ</a></li>
+      <li><a href="module-types_delegation-Delegation.html">Delegation</a></li>
+      <li><a href="module-types_key_bip32-BIP32Factory.html">BIP32Factory</a></li>
+      <li><a href="module-types_witness_musig2-InvalidContributionError.html">InvalidContributionError</a></li>
     </ul>
     <h3>Global</h3>
     <ul>
-      <li><a href="global.html#BEACON_EPOCH_SIGNING_KIND">BEACON_EPOCH_SIGNING_KIND</a></li>
-      <li><a href="global.html#FRIENDLY_TYPE_BY_WIRE">FRIENDLY_TYPE_BY_WIRE</a></li>
-      <li><a href="global.html#WIRE_TYPE_DECODE_ORDER">WIRE_TYPE_DECODE_ORDER</a></li>
-      <li><a href="global.html#crypto">crypto</a></li>
-      <li><a href="global.html#epochCommitmentDigestHex">epochCommitmentDigestHex</a></li>
-      <li><a href="global.html#explorerBaseUrl">explorerBaseUrl</a></li>
-      <li><a href="global.html#friendlyTypeFromWire">friendlyTypeFromWire</a></li>
-      <li><a href="global.html#gossip">gossip</a></li>
-      <li><a href="global.html#isAllZero32">isAllZero32</a></li>
-      <li><a href="global.html#jsonSafe">jsonSafe</a></li>
-      <li><a href="global.html#p2pAddNodes">p2pAddNodes</a></li>
-      <li><a href="global.html#p2pAddNodesAllowMainnet">p2pAddNodesAllowMainnet</a></li>
-      <li><a href="global.html#parseDistributedManifestV1">parseDistributedManifestV1</a></li>
-      <li><a href="global.html#peerDebugDerivedPublicSummary">peerDebugDerivedPublicSummary</a></li>
-      <li><a href="global.html#signingStringForBeaconEpoch">signingStringForBeaconEpoch</a></li>
-      <li><a href="global.html#stableStringify">stableStringify</a></li>
-      <li><a href="global.html#verifyFederationWitnessOnMessage">verifyFederationWitnessOnMessage</a></li>
-      <li><a href="global.html#wireTraffic">wireTraffic</a></li>
-      <li><a href="global.html#wireTypeFromFriendly">wireTypeFromFriendly</a></li>
+      <li><a href="global.html#ASK_TYPE">ASK_TYPE</a></li>
+      <li><a href="global.html#BID_CLOCK_SKEW_SECONDS">BID_CLOCK_SKEW_SECONDS</a></li>
+      <li><a href="global.html#BID_TYPE">BID_TYPE</a></li>
+      <li><a href="global.html#BITCOIN_MESSAGE_TYPES">BITCOIN_MESSAGE_TYPES</a></li>
+      <li><a href="global.html#CHANNEL_BODY_TYPES">CHANNEL_BODY_TYPES</a></li>
+      <li><a href="global.html#CHANNEL_DEFAULTS">CHANNEL_DEFAULTS</a></li>
+      <li><a href="global.html#CLTV_TIMESTAMP_THRESHOLD">CLTV_TIMESTAMP_THRESHOLD</a></li>
+      <li><a href="global.html#DEFAULT_BID_TTL_SECONDS">DEFAULT_BID_TTL_SECONDS</a></li>
+      <li><a href="global.html#DEFAULT_FEE_SATS">DEFAULT_FEE_SATS</a></li>
+      <li><a href="global.html#DEFAULT_INVOICE_EXPIRY_SECONDS">DEFAULT_INVOICE_EXPIRY_SECONDS</a></li>
+      <li><a href="global.html#DEFAULT_INVOICE_MARGIN_SECONDS">DEFAULT_INVOICE_MARGIN_SECONDS</a></li>
+      <li><a href="global.html#DEFAULT_MAX_SIGNS">DEFAULT_MAX_SIGNS</a></li>
+      <li><a href="global.html#DEFAULT_MIN_CLAIM_BLOCKS">DEFAULT_MIN_CLAIM_BLOCKS</a></li>
+      <li><a href="global.html#DEFAULT_MIN_CONFIRMATIONS">DEFAULT_MIN_CONFIRMATIONS</a></li>
+      <li><a href="global.html#DEFAULT_MIN_EQUAL_OUTPUTS">DEFAULT_MIN_EQUAL_OUTPUTS</a></li>
+      <li><a href="global.html#DEFAULT_WEIGHTS">DEFAULT_WEIGHTS</a></li>
+      <li><a href="global.html#DEPRECATED_WIRE_TYPES">DEPRECATED_WIRE_TYPES</a></li>
+      <li><a href="global.html#DUST_SATS">DUST_SATS</a></li>
+      <li><a href="global.html#EXIT_KINDS">EXIT_KINDS</a></li>
+      <li><a href="global.html#EXIT_SIGNATURE_TYPE">EXIT_SIGNATURE_TYPE</a></li>
+      <li><a href="global.html#FIDELITY_LOCKTIME_GRID">FIDELITY_LOCKTIME_GRID</a></li>
+      <li><a href="global.html#FIDELITY_MAX_CERT_BLOCKS">FIDELITY_MAX_CERT_BLOCKS</a></li>
+      <li><a href="global.html#FIELD_BODIES_VERSION">FIELD_BODIES_VERSION</a></li>
+      <li><a href="global.html#GCM_TAG_BYTES">GCM_TAG_BYTES</a></li>
+      <li><a href="global.html#HOP_PENALTY_MS">HOP_PENALTY_MS</a></li>
+      <li><a href="global.html#INPUT_HEADROOM">INPUT_HEADROOM</a></li>
+      <li><a href="global.html#LEAF_VERSION">LEAF_VERSION</a></li>
+      <li><a href="global.html#LOCKTIME_SLACK_BLOCKS">LOCKTIME_SLACK_BLOCKS</a></li>
+      <li><a href="global.html#LOCKTIME_THRESHOLD">LOCKTIME_THRESHOLD</a></li>
+      <li><a href="global.html#MAX_EVIDENCE">MAX_EVIDENCE</a></li>
+      <li><a href="global.html#MAX_FEE_PPM">MAX_FEE_PPM</a></li>
+      <li><a href="global.html#MAX_LOCKTIME">MAX_LOCKTIME</a></li>
+      <li><a href="global.html#MAX_MAKERS">MAX_MAKERS</a></li>
+      <li><a href="global.html#MAX_MAKER_INPUTS">MAX_MAKER_INPUTS</a></li>
+      <li><a href="global.html#MAX_OFFERS">MAX_OFFERS</a></li>
+      <li><a href="global.html#MAX_PREMIUM_PPM">MAX_PREMIUM_PPM</a></li>
+      <li><a href="global.html#MAX_PROVIDERS">MAX_PROVIDERS</a></li>
+      <li><a href="global.html#MAX_PSBT_CHARS">MAX_PSBT_CHARS</a></li>
+      <li><a href="global.html#MAX_REFUND_LOCK_BLOCKS">MAX_REFUND_LOCK_BLOCKS</a></li>
+      <li><a href="global.html#MAX_SETTLED_CREDITS">MAX_SETTLED_CREDITS</a></li>
+      <li><a href="global.html#MAX_TRANSFERS">MAX_TRANSFERS</a></li>
+      <li><a href="global.html#MIN_COINJOIN_SATS">MIN_COINJOIN_SATS</a></li>
+      <li><a href="global.html#MIN_INVOICE_EXPIRY_SECONDS">MIN_INVOICE_EXPIRY_SECONDS</a></li>
+      <li><a href="global.html#MIN_REFUND_LOCK_BLOCKS">MIN_REFUND_LOCK_BLOCKS</a></li>
+      <li><a href="global.html#PODLE_BLACKLIST_SIZE">PODLE_BLACKLIST_SIZE</a></li>
+      <li><a href="global.html#PODLE_MAX_INDEX">PODLE_MAX_INDEX</a></li>
+      <li><a href="global.html#PODLE_MIN_AGE_CONFS">PODLE_MIN_AGE_CONFS</a></li>
+      <li><a href="global.html#PODLE_MIN_VALUE_PCT">PODLE_MIN_VALUE_PCT</a></li>
+      <li><a href="global.html#PODLE_TAG">PODLE_TAG</a></li>
+      <li><a href="global.html#ROUND_TYPES">ROUND_TYPES</a></li>
+      <li><a href="global.html#SCORE_INVENTORY_ONLY">SCORE_INVENTORY_ONLY</a></li>
+      <li><a href="global.html#SCORE_MAX">SCORE_MAX</a></li>
+      <li><a href="global.html#SCORE_UNKNOWN">SCORE_UNKNOWN</a></li>
+      <li><a href="global.html#SEALED_TYPE">SEALED_TYPE</a></li>
+      <li><a href="global.html#SEAL_NAMESPACE">SEAL_NAMESPACE</a></li>
+      <li><a href="global.html#SIGNER_FIELD">SIGNER_FIELD</a></li>
+      <li><a href="global.html#TAPROOT_INTERNAL_NUMS">TAPROOT_INTERNAL_NUMS</a></li>
+      <li><a href="global.html#TELEMETRY_TYPE">TELEMETRY_TYPE</a></li>
+      <li><a href="global.html#TELEMETRY_VERSION">TELEMETRY_VERSION</a></li>
+      <li><a href="global.html#UNSAFE_PATH_TOKENS">UNSAFE_PATH_TOKENS</a></li>
+      <li><a href="global.html#WALLET_TX_KINDS">WALLET_TX_KINDS</a></li>
+      <li><a href="global.html#WEIGHT_OVERHEAD">WEIGHT_OVERHEAD</a></li>
+      <li><a href="global.html#YEAR_BLOCKS">YEAR_BLOCKS</a></li>
+      <li><a href="global.html#assertMonotoneBudget">assertMonotoneBudget</a></li>
+      <li><a href="global.html#bitcoin">bitcoin</a></li>
+      <li><a href="global.html#bodyId">bodyId</a></li>
+      <li><a href="global.html#broadcastSettled">broadcastSettled</a></li>
+      <li><a href="global.html#buildContractTaproot">buildContractTaproot</a></li>
+      <li><a href="global.html#buildEscrow">buildEscrow</a></li>
+      <li><a href="global.html#buildFederationVaultFromPolicy">buildFederationVaultFromPolicy</a></li>
+      <li><a href="global.html#buildFidelity">buildFidelity</a></li>
+      <li><a href="global.html#buildForwardedDocumentRequest">buildForwardedDocumentRequest</a></li>
+      <li><a href="global.html#buildHashlockLeaf">buildHashlockLeaf</a></li>
+      <li><a href="global.html#buildHashlockTapscript">buildHashlockTapscript</a></li>
+      <li><a href="global.html#buildPsbt">buildPsbt</a></li>
+      <li><a href="global.html#buildScriptLeaf">buildScriptLeaf</a></li>
+      <li><a href="global.html#buildSpendLeaf">buildSpendLeaf</a></li>
+      <li><a href="global.html#buildWatchSet">buildWatchSet</a></li>
+      <li><a href="global.html#checkPodleUtxo">checkPodleUtxo</a></li>
+      <li><a href="global.html#classifyWalletTransaction">classifyWalletTransaction</a></li>
+      <li><a href="global.html#codec">codec</a></li>
+      <li><a href="global.html#compileLeaves">compileLeaves</a></li>
+      <li><a href="global.html#composePolicyWithRunHashlock">composePolicyWithRunHashlock</a></li>
+      <li><a href="global.html#composeTaprootTree">composeTaprootTree</a></li>
+      <li><a href="global.html#computeRelayFee">computeRelayFee</a></li>
+      <li><a href="global.html#contractMessageIndex">contractMessageIndex</a></li>
+      <li><a href="global.html#contractMessageMatches">contractMessageMatches</a></li>
+      <li><a href="global.html#createBlobMerkleTree">createBlobMerkleTree</a></li>
+      <li><a href="global.html#createDocumentPurchaseSession">createDocumentPurchaseSession</a></li>
+      <li><a href="global.html#describePsbt">describePsbt</a></li>
+      <li><a href="global.html#descriptorPrivateKey">descriptorPrivateKey</a></li>
+      <li><a href="global.html#envelopeRecipient">envelopeRecipient</a></li>
+      <li><a href="global.html#estimateVsize">estimateVsize</a></li>
+      <li><a href="global.html#evaluateTierWhen">evaluateTierWhen</a></li>
+      <li><a href="global.html#expireHeight">expireHeight</a></li>
+      <li><a href="global.html#fidelityLocktimes">fidelityLocktimes</a></li>
+      <li><a href="global.html#fidelityPath">fidelityPath</a></li>
+      <li><a href="global.html#fidelityValue">fidelityValue</a></li>
+      <li><a href="global.html#finalize">finalize</a></li>
+      <li><a href="global.html#finalizeHashlockPsbt">finalizeHashlockPsbt</a></li>
+      <li><a href="global.html#finalizeSpendPsbt">finalizeSpendPsbt</a></li>
+      <li><a href="global.html#findSession">findSession</a></li>
+      <li><a href="global.html#fromContractMessage">fromContractMessage</a></li>
+      <li><a href="global.html#generatePodle">generatePodle</a></li>
+      <li><a href="global.html#hashlockFromProgramRun">hashlockFromProgramRun</a></li>
+      <li><a href="global.html#invoiceAmountMsat">invoiceAmountMsat</a></li>
+      <li><a href="global.html#isDuplicateSettlement">isDuplicateSettlement</a></li>
+      <li><a href="global.html#isValidFidelityLocktime">isValidFidelityLocktime</a></li>
+      <li><a href="global.html#l1GiverTerms">l1GiverTerms</a></li>
+      <li><a href="global.html#leafScripts">leafScripts</a></li>
+      <li><a href="global.html#listRefundCandidates">listRefundCandidates</a></li>
+      <li><a href="global.html#lockFrom">lockFrom</a></li>
+      <li><a href="global.html#makerChange">makerChange</a></li>
+      <li><a href="global.html#makerFee">makerFee</a></li>
+      <li><a href="global.html#memoryChain">memoryChain</a></li>
+      <li><a href="global.html#memoryWallet">memoryWallet</a></li>
+      <li><a href="global.html#mergeMakerSignatures">mergeMakerSignatures</a></li>
+      <li><a href="global.html#nextPodleIndex">nextPodleIndex</a></li>
+      <li><a href="global.html#normalizeAuth">normalizeAuth</a></li>
+      <li><a href="global.html#normalizeCancel">normalizeCancel</a></li>
+      <li><a href="global.html#normalizeContractSpendPolicy">normalizeContractSpendPolicy</a></li>
+      <li><a href="global.html#normalizeExtraLeafSpecs">normalizeExtraLeafSpecs</a></li>
+      <li><a href="global.html#normalizeFidelity">normalizeFidelity</a></li>
+      <li><a href="global.html#normalizeFill">normalizeFill</a></li>
+      <li><a href="global.html#normalizeFillAck">normalizeFillAck</a></li>
+      <li><a href="global.html#normalizeFunded">normalizeFunded</a></li>
+      <li><a href="global.html#normalizeHashlockSpec">normalizeHashlockSpec</a></li>
+      <li><a href="global.html#normalizeIoAuth">normalizeIoAuth</a></li>
+      <li><a href="global.html#normalizeLeaf">normalizeLeaf</a></li>
+      <li><a href="global.html#normalizeLock">normalizeLock</a></li>
+      <li><a href="global.html#normalizeOffer">normalizeOffer</a></li>
+      <li><a href="global.html#normalizeOrder">normalizeOrder</a></li>
+      <li><a href="global.html#normalizeSig">normalizeSig</a></li>
+      <li><a href="global.html#normalizeTake">normalizeTake</a></li>
+      <li><a href="global.html#normalizeTakeAccept">normalizeTakeAccept</a></li>
+      <li><a href="global.html#normalizeTx">normalizeTx</a></li>
+      <li><a href="global.html#offerKey">offerKey</a></li>
+      <li><a href="global.html#openFiling">openFiling</a></li>
+      <li><a href="global.html#openRoundMessage">openRoundMessage</a></li>
+      <li><a href="global.html#paginateInventoryItems">paginateInventoryItems</a></li>
+      <li><a href="global.html#parseXOnlyPubkeysFromSpendScript">parseXOnlyPubkeysFromSpendScript</a></li>
+      <li><a href="global.html#planCoinjoin">planCoinjoin</a></li>
+      <li><a href="global.html#podleCommitment">podleCommitment</a></li>
+      <li><a href="global.html#podleGenerator">podleGenerator</a></li>
+      <li><a href="global.html#policyAfterDecay">policyAfterDecay</a></li>
+      <li><a href="global.html#prepareDecayMigrationPsbt">prepareDecayMigrationPsbt</a></li>
+      <li><a href="global.html#prepareFidelityRedeem">prepareFidelityRedeem</a></li>
+      <li><a href="global.html#prepareHashlockWithdrawalPsbt">prepareHashlockWithdrawalPsbt</a></li>
+      <li><a href="global.html#prepareTierWithdrawalPsbt">prepareTierWithdrawalPsbt</a></li>
+      <li><a href="global.html#quote">quote</a></li>
+      <li><a href="global.html#randomNonce">randomNonce</a></li>
+      <li><a href="global.html#randomPrivateKey">randomPrivateKey</a></li>
+      <li><a href="global.html#randomRoundId">randomRoundId</a></li>
+      <li><a href="global.html#rememberSettlement">rememberSettlement</a></li>
+      <li><a href="global.html#roleFor">roleFor</a></li>
+      <li><a href="global.html#roles">roles</a></li>
+      <li><a href="global.html#routePath">routePath</a></li>
+      <li><a href="global.html#scriptTreeFromLeaves">scriptTreeFromLeaves</a></li>
+      <li><a href="global.html#sealRoundMessage">sealRoundMessage</a></li>
+      <li><a href="global.html#selectActiveTiers">selectActiveTiers</a></li>
+      <li><a href="global.html#sellerDedupeKey">sellerDedupeKey</a></li>
+      <li><a href="global.html#settlementDedupeKey">settlementDedupeKey</a></li>
+      <li><a href="global.html#signFidelityCertificate">signFidelityCertificate</a></li>
+      <li><a href="global.html#signFidelityRedeem">signFidelityRedeem</a></li>
+      <li><a href="global.html#signKeyPathInputs">signKeyPathInputs</a></li>
+      <li><a href="global.html#signOwnership">signOwnership</a></li>
+      <li><a href="global.html#signingString">signingString</a></li>
+      <li><a href="global.html#spendAddress">spendAddress</a></li>
+      <li><a href="global.html#synthesizeDefaultLadder">synthesizeDefaultLadder</a></li>
+      <li><a href="global.html#taprootKeyPath">taprootKeyPath</a></li>
+      <li><a href="global.html#taprootOutputPrivateKey">taprootOutputPrivateKey</a></li>
+      <li><a href="global.html#tierWhenPath">tierWhenPath</a></li>
+      <li><a href="global.html#timelockMature">timelockMature</a></li>
+      <li><a href="global.html#toContractMessage">toContractMessage</a></li>
+      <li><a href="global.html#toIntegerSats">toIntegerSats</a></li>
+      <li><a href="global.html#unsignedTxid">unsignedTxid</a></li>
+      <li><a href="global.html#validateEscrow">validateEscrow</a></li>
+      <li><a href="global.html#validateFill">validateFill</a></li>
+      <li><a href="global.html#validateForMaker">validateForMaker</a></li>
+      <li><a href="global.html#validateForTaker">validateForTaker</a></li>
+      <li><a href="global.html#validateInvoice">validateInvoice</a></li>
+      <li><a href="global.html#validateTake">validateTake</a></li>
+      <li><a href="global.html#validateTakeAccept">validateTakeAccept</a></li>
+      <li><a href="global.html#verifyBlobPath">verifyBlobPath</a></li>
+      <li><a href="global.html#verifyFidelity">verifyFidelity</a></li>
+      <li><a href="global.html#verifyFidelityCertificate">verifyFidelityCertificate</a></li>
+      <li><a href="global.html#verifyOwnership">verifyOwnership</a></li>
+      <li><a href="global.html#verifyPodle">verifyPodle</a></li>
+      <li><a href="global.html#weightsForProximity">weightsForProximity</a></li>
     </ul>
   </nav>
   <br class="clear" />

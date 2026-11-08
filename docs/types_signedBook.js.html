@@ -1,0 +1,798 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <title>Source: types/signedBook.js &middot; Docs</title>
+  <script src="scripts/prettify/prettify.js"> </script>
+  <script src="scripts/prettify/lang-css.js"> </script>
+  <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+  <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+  <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+  <script>
+    window.dataLayer = window.dataLayer || [];
+
+    function gtag() {
+      dataLayer.push(arguments);
+    }
+    gtag('js', new Date());
+    gtag('config', 'G-09Y57FL980');
+  </script>
+</head>
+
+<body>
+  <div id="main">
+    <h1 class="page-title">Source: types/signedBook.js</h1>
+
+
+
+
+    <section>
+      <article>
+        <pre class="prettyprint source linenums"><code>'use strict';
+
+/**
+ * @fileoverview Locally held book of signed, expiring maker entries
+ * (coinjoin offers, liquidity orders). Makers gossip signed bodies; each node
+ * verifies and keeps its own book. This class holds what every such market
+ * shares: signed ingest, signed cancels (remembered so a replayed entry stays
+ * dead), expiry pruning, and dropping a maker. Subclasses supply the codec
+ * and body types; {@link OrderBook} adds the maker market views.
+ *
+ * {@link SignedBook.codec} builds a market's body codec: normalize, canonical
+ * signing bytes, body id, BIP340 sign and verify. `types/coinjoin` and
+ * `types/swap` carry their own as `Coinjoin` / `Swap` statics.
+ */
+
+const crypto = require('crypto');
+const ecc = require('./ecc');
+const { stableStringify, jsonSafe } = require('../functions/fabricCanonicalJson');
+const Book = require('./book');
+
+/**
+ * Cancels remembered so a replayed entry stays dead.
+ * @private
+ */
+const MAX_CANCELLED = 10000;
+/**
+ * Cancels one key may hold for entries this book has not seen. Anyone can
+ * sign those, so they are capped per signer and evicted first.
+ * @private
+ */
+const MAX_PENDING_CANCELS_PER_MAKER = 100;
+
+/** @private */
+function cancelKey (entryId, makerPubkey) {
+  return `${entryId}:${makerPubkey}`;
+}
+
+/** @private */
+function makerOf (key) {
+  return key.slice(key.indexOf(':') + 1);
+}
+
+/**
+ * a non-negative count setting, else `fallback`
+ * @private
+ */
+function limitOf (value, fallback) {
+  const n = Number(value);
+  return value == null || Number.isNaN(n) || n &lt; 0 ? fallback : n;
+}
+
+/**
+ * Canonical signing bytes: the body without `signature`.
+ * @param {Object} body
+ * @returns {string}
+ */
+function signingString (body) {
+  const copy = Object.assign({}, body);
+  delete copy.signature;
+  return stableStringify(jsonSafe(copy));
+}
+
+/**
+ * Stable id of a body: SHA-256 hex of {@link signingString}. Entries, takes,
+ * and accepts are referenced by it.
+ * @param {Object} body
+ * @returns {string}
+ */
+function bodyId (body) {
+  return crypto.createHash('sha256').update(signingString(body)).digest('hex');
+}
+
+/** @returns {string} 16 random bytes as hex */
+function randomNonce () {
+  return crypto.randomBytes(16).toString('hex');
+}
+
+/**
+ * Body codec for one signed market: every body is a JSON object with a
+ * `type`, normalized by that type's normalizer and BIP340-signed by the key
+ * named by `signerField` over {@link signingString}.
+ * @param {Object} spec
+ * @param {string} spec.name prefix of thrown messages (`coinjoin`)
+ * @param {number} spec.version accepted `version` of incoming bodies
+ * @param {Map&lt;string, Function>} spec.normalizers body type → `(fields) → body` (throws on bad input)
+ * @param {Object} spec.signerField body type → field holding the author's compressed key
+ * @returns {Object} `{ toBody, fromBody, signingString, bodyId, pubkeyFromPrivate, signBody, verifyBody, randomNonce }`
+ */
+function codec (spec) {
+  const { name, version, normalizers, signerField } = spec;
+  const fail = (message) => {
+    throw new Error(`${name}: ${message}`);
+  };
+
+  const privOf = (signer) => {
+    let priv;
+    if (Buffer.isBuffer(signer) || signer instanceof Uint8Array) {
+      priv = Buffer.from(signer);
+    } else {
+      const s = String(signer == null ? '' : signer).trim().toLowerCase().replace(/^0x/, '');
+      if (!/^[0-9a-f]{64}$/.test(s)) fail('private key must be 64 hex characters');
+      priv = Buffer.from(s, 'hex');
+    }
+    if (priv.length !== 32 || !ecc.isPrivate(priv)) fail('invalid private key');
+    return priv;
+  };
+
+  /**
+   * Build a normalized body of the given type (unsigned unless `fields.signature`).
+   * @param {string} type
+   * @param {Object} fields
+   * @returns {Object}
+   */
+  const toBody = (type, fields = {}) => {
+    const normalize = normalizers.get(type);
+    if (!normalize) fail(`unknown body type ${type}`);
+    return normalize(fields);
+  };
+
+  /**
+   * Rehydrate a `CONTRACT_MESSAGE` body; `null` for other types or malformed bodies.
+   * @param {Object} body
+   * @returns {Object|null}
+   */
+  const fromBody = (body) => {
+    const normalize = body &amp;&amp; typeof body === 'object' ? normalizers.get(body.type) : null;
+    if (!normalize) return null;
+    if (body.version != null &amp;&amp; Number(body.version) !== version) return null;
+    try {
+      return normalize(body);
+    } catch {
+      return null;
+    }
+  };
+
+  /**
+   * Compressed public key for a 32-byte private key.
+   * @param {Buffer|string} priv32
+   * @returns {string} 66 hex characters
+   */
+  const pubkeyFromPrivate = (priv32) => {
+    return Buffer.from(ecc.pointFromScalar(privOf(priv32), true)).toString('hex');
+  };
+
+  /**
+   * Normalize and BIP340-sign a body. The signer must own the body's author key.
+   * @param {Object} body
+   * @param {Buffer|string} priv32
+   * @returns {Object} normalized body with `signature`
+   */
+  const signBody = (body, priv32) => {
+    const unsigned = toBody(body.type, Object.assign({}, body, { signature: undefined }));
+    const priv = privOf(priv32);
+    const field = signerField[unsigned.type];
+    if (pubkeyFromPrivate(priv) !== unsigned[field]) fail(`signing key does not match ${field}`);
+    const hash = crypto.createHash('sha256').update(signingString(unsigned)).digest();
+    const sig = Buffer.from(ecc.signSchnorr(hash, priv)).toString('hex');
+    return Object.assign(unsigned, { signature: sig });
+  };
+
+  /**
+   * Check a body's shape and its author's BIP340 signature.
+   * @param {Object} body
+   * @returns {{ ok: boolean, reason: (string|null), body: (Object|null), id: (string|null) }}
+   */
+  const verifyBody = (body) => {
+    const normalized = fromBody(body);
+    if (!normalized) return { ok: false, reason: 'malformed body', body: null, id: null };
+    if (!normalized.signature) return { ok: false, reason: 'unsigned body', body: normalized, id: null };
+    const xonly = Buffer.from(normalized[signerField[normalized.type]], 'hex').subarray(1);
+    const hash = crypto.createHash('sha256').update(signingString(normalized)).digest();
+    let ok = false;
+    try {
+      ok = ecc.verifySchnorr(hash, xonly, Buffer.from(normalized.signature, 'hex'));
+    } catch {
+      ok = false;
+    }
+    if (!ok) return { ok: false, reason: 'bad signature', body: normalized, id: null };
+    return { ok: true, reason: null, body: normalized, id: bodyId(normalized) };
+  };
+
+  return Object.freeze({
+    toBody,
+    fromBody,
+    signingString,
+    bodyId,
+    pubkeyFromPrivate,
+    signBody,
+    verifyBody,
+    randomNonce
+  });
+}
+
+class SignedBook extends Book {
+  /**
+   * @param {Object} [settings]
+   * @param {string} [settings.network='regtest'] only entries for this network are held
+   * @param {number} [settings.maxCancelled=10000]
+   * @param {number} [settings.maxPendingCancelsPerMaker=100] cancels per key for entries not held
+   * @param {Function} [settings.now] clock in ms (tests)
+   * @param {Object} spec what the subclass trades
+   * @param {Object} spec.codec the market's {@link SignedBook.codec}
+   * @param {string} spec.entryType body type of an entry (e.g. `CoinjoinOffer`)
+   * @param {string} spec.cancelType body type of a cancel
+   * @param {string} spec.field row field holding the verified body (`offer`, `order`)
+   * @param {string} spec.idField cancel body field naming the entry (`offerId`, `orderId`)
+   * @param {string} spec.noun used in reasons (`offer expired`, `duplicate order`)
+   * @param {string} [spec.capacitySetting='maxEntries'] setting holding the row cap
+   */
+  constructor (settings = {}, spec = {}) {
+    super(Object.assign({
+      network: 'regtest',
+      maxCancelled: MAX_CANCELLED,
+      maxPendingCancelsPerMaker: MAX_PENDING_CANCELS_PER_MAKER
+    }, settings));
+    this.settings.network = String(this.settings.network).toLowerCase();
+    this.settings.maxCancelled = limitOf(this.settings.maxCancelled, MAX_CANCELLED);
+    this.settings.maxPendingCancelsPerMaker = limitOf(this.settings.maxPendingCancelsPerMaker, MAX_PENDING_CANCELS_PER_MAKER);
+    this._spec = Object.freeze(Object.assign({ capacitySetting: 'maxEntries' }, spec));
+    // `entryId:makerPubkey` → the cancelled entry's `expiresAt`, or null while it is not held
+    this._cancelled = new Map();
+    // maker → keys of its cancels for entries not held
+    this._pendingCancels = new Map();
+    // maker → keys of all its remembered cancels, oldest first
+    this._makerCancels = new Map();
+    this._seq = 0;
+  }
+
+  /** @returns {number} */
+  get capacity () {
+    return this.settings[this._spec.capacitySetting];
+  }
+
+  /**
+   * The verified body held in a row.
+   * @private
+   */
+  _body (row) {
+    return row[this._spec.field];
+  }
+
+  /**
+   * Verify and hold a signed entry body.
+   * @protected
+   * @param {Object} body
+   * @returns {{ ok: boolean, id: (string|null), reason: (string|null), duplicate: (boolean|undefined) }}
+   */
+  _ingestSigned (body) {
+    const { codec, entryType, field, noun } = this._spec;
+    if (!body || body.type !== entryType) return { ok: false, id: null, reason: `not a ${entryType}` };
+    const v = codec.verifyBody(body);
+    if (!v.ok) return { ok: false, id: null, reason: v.reason };
+    const entry = v.body;
+    if (entry.network !== this.settings.network) return { ok: false, id: v.id, reason: 'wrong network' };
+    if (entry.expiresAt &lt;= this.now()) return { ok: false, id: v.id, reason: `${noun} expired` };
+    const cancelled = cancelKey(v.id, entry.makerPubkey);
+    if (this._cancelled.has(cancelled)) {
+      this._confirmCancel(cancelled, entry.expiresAt);
+      return { ok: false, id: v.id, reason: `${noun} cancelled` };
+    }
+    if (this.has(v.id)) return { ok: false, id: v.id, reason: `duplicate ${noun}`, duplicate: true };
+    this.prune();
+    this._beforeInsert(entry);
+    this._insert(v.id, { id: v.id, [field]: entry, seq: ++this._seq });
+    return { ok: true, id: v.id, reason: null };
+  }
+
+  /**
+   * Hook run before a verified entry is inserted (e.g. per-maker caps).
+   * @protected
+   * @param {Object} _entry verified body
+   */
+  _beforeInsert (_entry) {}
+
+  /**
+   * Apply a signed cancel from the entry's maker. A cancel for an entry not
+   * held yet is remembered with its signer, so the entry cannot arrive later
+   * from that maker; another key's cancel never blocks it.
+   * @param {Object} body
+   * @returns {{ ok: boolean, id: (string|null), reason: (string|null) }}
+   */
+  cancel (body) {
+    const { codec, cancelType, idField } = this._spec;
+    if (!body || body.type !== cancelType) return { ok: false, id: null, reason: `not a ${cancelType}` };
+    const v = codec.verifyBody(body);
+    if (!v.ok) return { ok: false, id: null, reason: v.reason };
+    const entryId = v.body[idField];
+    const makerPubkey = v.body.makerPubkey;
+    const held = this._row(entryId);
+    if (held &amp;&amp; this._body(held).makerPubkey !== makerPubkey) return { ok: false, id: entryId, reason: 'cancel is not from the maker' };
+    this._delete(entryId);
+    this._rememberCancelled(entryId, makerPubkey, held ? this._body(held).expiresAt : null);
+    return { ok: true, id: entryId, reason: null };
+  }
+
+  /** @private */
+  _rememberCancelled (entryId, makerPubkey, expiresAt) {
+    const key = cancelKey(entryId, makerPubkey);
+    if (this._cancelled.has(key)) {
+      if (expiresAt != null) this._confirmCancel(key, expiresAt);
+      return;
+    }
+    if (expiresAt == null) {
+      const pending = this._pendingCancels.get(makerPubkey);
+      if (pending &amp;&amp; pending.size >= this.settings.maxPendingCancelsPerMaker) {
+        this._forgetCancel(pending.values().next().value);
+      }
+    }
+    if (this._cancelled.size >= this.settings.maxCancelled) this._evictCancel(makerPubkey);
+    this._cancelled.set(key, expiresAt);
+    if (!this._makerCancels.has(makerPubkey)) this._makerCancels.set(makerPubkey, new Set());
+    this._makerCancels.get(makerPubkey).add(key);
+    if (expiresAt == null) {
+      if (!this._pendingCancels.has(makerPubkey)) this._pendingCancels.set(makerPubkey, new Set());
+      this._pendingCancels.get(makerPubkey).add(key);
+    }
+  }
+
+  /**
+   * The cancelled entry is known now: keep the cancel until it expires.
+   * @private
+   */
+  _confirmCancel (key, expiresAt) {
+    this._cancelled.set(key, expiresAt);
+    this._dropPending(key);
+  }
+
+  /** @private */
+  _forgetCancel (key) {
+    this._cancelled.delete(key);
+    this._dropPending(key);
+    const maker = makerOf(key);
+    const keys = this._makerCancels.get(maker);
+    if (keys &amp;&amp; keys.delete(key) &amp;&amp; !keys.size) this._makerCancels.delete(maker);
+  }
+
+  /** @private */
+  _dropPending (key) {
+    const maker = makerOf(key);
+    const pending = this._pendingCancels.get(maker);
+    if (pending &amp;&amp; pending.delete(key) &amp;&amp; !pending.size) this._pendingCancels.delete(maker);
+  }
+
+  /**
+   * Make room for one cancel: drop cancels whose entry expired, else the
+   * oldest cancel for an entry never held, else the oldest cancel of the
+   * signer holding the most, counting the cancel being added (on a tie, the
+   * incoming signer, else the latest such signer). Anyone can post and
+   * cancel their own entries, so evicting the oldest cancel would let one
+   * key flush another maker's cancel and replay its entry; this way a flood
+   * evicts the flooder's own cancels, and a Sybil flood needs one key per
+   * remembered cancel.
+   * @private
+   * @param {string} [incoming] signer of the cancel being added
+   */
+  _evictCancel (incoming = null) {
+    const now = this.now();
+    for (const [key, expiresAt] of this._cancelled) {
+      if (expiresAt != null &amp;&amp; expiresAt &lt;= now) this._forgetCancel(key);
+    }
+    if (this._cancelled.size &lt; this.settings.maxCancelled) return;
+    for (const [key, expiresAt] of this._cancelled) {
+      if (expiresAt == null) return this._forgetCancel(key);
+    }
+    let victim = null;
+    let victimMaker = null;
+    let most = -1;
+    for (const [maker, keys] of this._makerCancels) {
+      const count = keys.size + (maker === incoming ? 1 : 0);
+      if (count > most || (count === most &amp;&amp; victimMaker !== incoming)) {
+        victim = keys;
+        victimMaker = maker;
+        most = count;
+      }
+    }
+    if (victim) return this._forgetCancel(victim.values().next().value);
+    this._cancelled.delete(this._cancelled.keys().next().value);
+  }
+
+  /**
+   * Drop expired entries.
+   * @returns {number} entries removed
+   */
+  prune () {
+    const now = this.now();
+    const n = this._forget((row) => this._body(row).expiresAt &lt;= now);
+    if (n) this._afterPrune();
+    return n;
+  }
+
+  /**
+   * Hook run after {@link SignedBook#prune} removed entries.
+   * @protected
+   */
+  _afterPrune () {}
+
+  /**
+   * Drop every entry from one maker (disconnect, fraud, failed settlement).
+   * @param {string} makerPubkey
+   * @returns {number} entries removed
+   */
+  forgetMaker (makerPubkey) {
+    const key = String(makerPubkey || '').toLowerCase();
+    const n = this._forget((row) => this._body(row).makerPubkey === key);
+    this._afterForget(key);
+    return n;
+  }
+
+  /**
+   * Hook run after {@link SignedBook#forgetMaker}.
+   * @protected
+   * @param {string} _makerPubkey lowercased
+   */
+  _afterForget (_makerPubkey) {}
+
+  /**
+   * @param {string} id
+   * @returns {Object|null} a copy of the entry body
+   */
+  get (id) {
+    const row = this._row(String(id || ''));
+    return row ? Object.assign({}, this._body(row)) : null;
+  }
+
+  /**
+   * Unexpired rows matching `predicate`, in arrival order.
+   * @protected
+   * @param {Function} [predicate] `(entry, row) → boolean`
+   * @returns {Object[]} rows `{ id, [field], seq }`
+   */
+  _liveRows (predicate) {
+    const now = this.now();
+    return this._list((row) => {
+      const entry = this._body(row);
+      return entry.expiresAt > now &amp;&amp; (!predicate || predicate(entry, row));
+    }).sort((a, b) => a.seq - b.seq);
+  }
+}
+
+module.exports = SignedBook;
+module.exports.SignedBook = SignedBook;
+module.exports.codec = codec;
+module.exports.signingString = signingString;
+module.exports.bodyId = bodyId;
+module.exports.randomNonce = randomNonce;
+module.exports.cancelKey = cancelKey;
+module.exports.MAX_CANCELLED = MAX_CANCELLED;
+module.exports.MAX_PENDING_CANCELS_PER_MAKER = MAX_PENDING_CANCELS_PER_MAKER;
+</code></pre>
+      </article>
+    </section>
+
+
+
+  </div>
+  <nav>
+    <h2><a href="index.html">Home</a></h2>
+    <h3>Modules</h3>
+    <ul>
+      <li><a href="module-types_bech32_bech32.html">types/bech32/bech32</a></li>
+      <li><a href="module-types_bech32_fabricPaymentBech32.html">types/bech32/fabricPaymentBech32</a></li>
+      <li><a href="module-types_delegation.html">types/delegation</a></li>
+      <li><a href="module-types_key_base58.html">types/key/base58</a></li>
+      <li><a href="module-types_key_bip32.html">types/key/bip32</a></li>
+      <li><a href="module-types_key_bip39.html">types/key/bip39</a></li>
+      <li><a href="module-types_key_bip49.html">types/key/bip49</a></li>
+      <li><a href="module-types_key_bip85.html">types/key/bip85</a></li>
+      <li><a href="module-types_key_fabricKeyMaterial.html">types/key/fabricKeyMaterial</a></li>
+      <li><a href="module-types_key_keyHasPrivateSigningMaterial.html">types/key/keyHasPrivateSigningMaterial</a></li>
+      <li><a href="module-types_key_pubkey.html">types/key/pubkey</a></li>
+      <li><a href="module-types_key_signingTags.html">types/key/signingTags</a></li>
+      <li><a href="module-types_typetree.html">types/typetree</a></li>
+      <li><a href="module-types_wallet_accountKeys.html">types/wallet/accountKeys</a></li>
+      <li><a href="module-types_wallet_bip21.html">types/wallet/bip21</a></li>
+      <li><a href="module-types_wallet_bip86.html">types/wallet/bip86</a></li>
+      <li><a href="module-types_witness_adaptor.html">types/witness/adaptor</a></li>
+      <li><a href="module-types_witness_bls.html">types/witness/bls</a></li>
+      <li><a href="module-types_witness_dleq.html">types/witness/dleq</a></li>
+      <li><a href="module-types_witness_musig2.html">types/witness/musig2</a></li>
+      <li><a href="module-types_witness_musig2Adaptor.html">types/witness/musig2Adaptor</a></li>
+      <li><a href="module-types_witness_musig2Session.html">types/witness/musig2Session</a></li>
+      <li><a href="types_ecc.html#.module:selftest">types/ecc.selftest</a></li>
+    </ul>
+    <h3>Classes</h3>
+    <ul>
+      <li><a href="Actor.html">Actor</a></li>
+      <li><a href="Beacon.html">Beacon</a></li>
+      <li><a href="Bitcoin.html">Bitcoin</a></li>
+      <li><a href="Block.html">Block</a></li>
+      <li><a href="Bond.html">Bond</a></li>
+      <li><a href="Book.html">Book</a></li>
+      <li><a href="Chain.html">Chain</a></li>
+      <li><a href="Challenge.html">Challenge</a></li>
+      <li><a href="Channel.html">Channel</a></li>
+      <li><a href="ChannelBook.html">ChannelBook</a></li>
+      <li><a href="ChannelSession.html">ChannelSession</a></li>
+      <li><a href="Circuit.html">Circuit</a></li>
+      <li><a href="Coinjoin.html">Coinjoin</a></li>
+      <li><a href="CoinjoinBook.html">CoinjoinBook</a></li>
+      <li><a href="CoinjoinMakerRound.html">CoinjoinMakerRound</a></li>
+      <li><a href="CoinjoinTakerRound.html">CoinjoinTakerRound</a></li>
+      <li><a href="Collection.html">Collection</a></li>
+      <li><a href="Component.html">Component</a></li>
+      <li><a href="Contract.html">Contract</a></li>
+      <li><a href="Disk.html">Disk</a></li>
+      <li><a href="Document.html">Document</a></li>
+      <li><a href="DocumentBlobTransferBook.html">DocumentBlobTransferBook</a></li>
+      <li><a href="DocumentBook.html">DocumentBook</a></li>
+      <li><a href="EncryptedPromise.html">EncryptedPromise</a></li>
+      <li><a href="Entity.html">Entity</a></li>
+      <li><a href="Entity.Transition.html">Transition</a></li>
+      <li><a href="Environment.html">Environment</a></li>
+      <li><a href="Fabric.html">Fabric</a></li>
+      <li><a href="Federation.html">Federation</a></li>
+      <li><a href="FidelityVerifier.html">FidelityVerifier</a></li>
+      <li><a href="Filesystem.html">Filesystem</a></li>
+      <li><a href="FraudProof.html">FraudProof</a></li>
+      <li><a href="HKDF.html">HKDF</a></li>
+      <li><a href="Hash256.html">Hash256</a></li>
+      <li><a href="Htlc.html">Htlc</a></li>
+      <li><a href="Identity.html">Identity</a></li>
+      <li><a href="Interface.html">Interface</a></li>
+      <li><a href="Key.html">Key</a></li>
+      <li><a href="Ledger.html">Ledger</a></li>
+      <li><a href="Lightning.html">Lightning</a></li>
+      <li><a href="LiquidityBook.html">LiquidityBook</a></li>
+      <li><a href="Logger.html">Logger</a></li>
+      <li><a href="Machine.html">Machine</a></li>
+      <li><a href="Market.html">Market</a></li>
+      <li><a href="Message.html">Message</a></li>
+      <li><a href="OrderBook.html">OrderBook</a></li>
+      <li><a href="Peer.html">Peer</a></li>
+      <li><a href="PodleBlacklist.html">PodleBlacklist</a></li>
+      <li><a href="Policy.html">Policy</a></li>
+      <li><a href="Program.html">Program</a></li>
+      <li><a href="Reader.html">Reader</a></li>
+      <li><a href="Redis.html">Redis</a></li>
+      <li><a href="Remote.html">Remote</a></li>
+      <li><a href="Resolutions.html">Resolutions</a></li>
+      <li><a href="Resource.html">Resource</a></li>
+      <li><a href="RoundRobin.html">RoundRobin</a></li>
+      <li><a href="Scribe.html">Scribe</a></li>
+      <li><a href="Script.html">Script</a></li>
+      <li><a href="Secret.html">Secret</a></li>
+      <li><a href="Service.html">Service</a></li>
+      <li><a href="Session.html">Session</a></li>
+      <li><a href="SetupTui.html">SetupTui</a></li>
+      <li><a href="SignedBook.html">SignedBook</a></li>
+      <li><a href="State.html">State</a></li>
+      <li><a href="Store.html">Store</a></li>
+      <li><a href="Swap.html">Swap</a></li>
+      <li><a href="global.html#Text">Text</a></li>
+      <li><a href="Token.html">Token</a></li>
+      <li><a href="Tree.html">Tree</a></li>
+      <li><a href="Vector.html">Vector</a></li>
+      <li><a href="Wallet.html">Wallet</a></li>
+      <li><a href="Watchtower.html">Watchtower</a></li>
+      <li><a href="Worker.html">Worker</a></li>
+      <li><a href="ZMQ.html">ZMQ</a></li>
+      <li><a href="module-types_delegation-Delegation.html">Delegation</a></li>
+      <li><a href="module-types_key_bip32-BIP32Factory.html">BIP32Factory</a></li>
+      <li><a href="module-types_witness_musig2-InvalidContributionError.html">InvalidContributionError</a></li>
+    </ul>
+    <h3>Global</h3>
+    <ul>
+      <li><a href="global.html#ASK_TYPE">ASK_TYPE</a></li>
+      <li><a href="global.html#BID_CLOCK_SKEW_SECONDS">BID_CLOCK_SKEW_SECONDS</a></li>
+      <li><a href="global.html#BID_TYPE">BID_TYPE</a></li>
+      <li><a href="global.html#BITCOIN_MESSAGE_TYPES">BITCOIN_MESSAGE_TYPES</a></li>
+      <li><a href="global.html#CHANNEL_BODY_TYPES">CHANNEL_BODY_TYPES</a></li>
+      <li><a href="global.html#CHANNEL_DEFAULTS">CHANNEL_DEFAULTS</a></li>
+      <li><a href="global.html#CLTV_TIMESTAMP_THRESHOLD">CLTV_TIMESTAMP_THRESHOLD</a></li>
+      <li><a href="global.html#DEFAULT_BID_TTL_SECONDS">DEFAULT_BID_TTL_SECONDS</a></li>
+      <li><a href="global.html#DEFAULT_FEE_SATS">DEFAULT_FEE_SATS</a></li>
+      <li><a href="global.html#DEFAULT_INVOICE_EXPIRY_SECONDS">DEFAULT_INVOICE_EXPIRY_SECONDS</a></li>
+      <li><a href="global.html#DEFAULT_INVOICE_MARGIN_SECONDS">DEFAULT_INVOICE_MARGIN_SECONDS</a></li>
+      <li><a href="global.html#DEFAULT_MAX_SIGNS">DEFAULT_MAX_SIGNS</a></li>
+      <li><a href="global.html#DEFAULT_MIN_CLAIM_BLOCKS">DEFAULT_MIN_CLAIM_BLOCKS</a></li>
+      <li><a href="global.html#DEFAULT_MIN_CONFIRMATIONS">DEFAULT_MIN_CONFIRMATIONS</a></li>
+      <li><a href="global.html#DEFAULT_MIN_EQUAL_OUTPUTS">DEFAULT_MIN_EQUAL_OUTPUTS</a></li>
+      <li><a href="global.html#DEFAULT_WEIGHTS">DEFAULT_WEIGHTS</a></li>
+      <li><a href="global.html#DEPRECATED_WIRE_TYPES">DEPRECATED_WIRE_TYPES</a></li>
+      <li><a href="global.html#DUST_SATS">DUST_SATS</a></li>
+      <li><a href="global.html#EXIT_KINDS">EXIT_KINDS</a></li>
+      <li><a href="global.html#EXIT_SIGNATURE_TYPE">EXIT_SIGNATURE_TYPE</a></li>
+      <li><a href="global.html#FIDELITY_LOCKTIME_GRID">FIDELITY_LOCKTIME_GRID</a></li>
+      <li><a href="global.html#FIDELITY_MAX_CERT_BLOCKS">FIDELITY_MAX_CERT_BLOCKS</a></li>
+      <li><a href="global.html#FIELD_BODIES_VERSION">FIELD_BODIES_VERSION</a></li>
+      <li><a href="global.html#GCM_TAG_BYTES">GCM_TAG_BYTES</a></li>
+      <li><a href="global.html#HOP_PENALTY_MS">HOP_PENALTY_MS</a></li>
+      <li><a href="global.html#INPUT_HEADROOM">INPUT_HEADROOM</a></li>
+      <li><a href="global.html#LEAF_VERSION">LEAF_VERSION</a></li>
+      <li><a href="global.html#LOCKTIME_SLACK_BLOCKS">LOCKTIME_SLACK_BLOCKS</a></li>
+      <li><a href="global.html#LOCKTIME_THRESHOLD">LOCKTIME_THRESHOLD</a></li>
+      <li><a href="global.html#MAX_EVIDENCE">MAX_EVIDENCE</a></li>
+      <li><a href="global.html#MAX_FEE_PPM">MAX_FEE_PPM</a></li>
+      <li><a href="global.html#MAX_LOCKTIME">MAX_LOCKTIME</a></li>
+      <li><a href="global.html#MAX_MAKERS">MAX_MAKERS</a></li>
+      <li><a href="global.html#MAX_MAKER_INPUTS">MAX_MAKER_INPUTS</a></li>
+      <li><a href="global.html#MAX_OFFERS">MAX_OFFERS</a></li>
+      <li><a href="global.html#MAX_PREMIUM_PPM">MAX_PREMIUM_PPM</a></li>
+      <li><a href="global.html#MAX_PROVIDERS">MAX_PROVIDERS</a></li>
+      <li><a href="global.html#MAX_PSBT_CHARS">MAX_PSBT_CHARS</a></li>
+      <li><a href="global.html#MAX_REFUND_LOCK_BLOCKS">MAX_REFUND_LOCK_BLOCKS</a></li>
+      <li><a href="global.html#MAX_SETTLED_CREDITS">MAX_SETTLED_CREDITS</a></li>
+      <li><a href="global.html#MAX_TRANSFERS">MAX_TRANSFERS</a></li>
+      <li><a href="global.html#MIN_COINJOIN_SATS">MIN_COINJOIN_SATS</a></li>
+      <li><a href="global.html#MIN_INVOICE_EXPIRY_SECONDS">MIN_INVOICE_EXPIRY_SECONDS</a></li>
+      <li><a href="global.html#MIN_REFUND_LOCK_BLOCKS">MIN_REFUND_LOCK_BLOCKS</a></li>
+      <li><a href="global.html#PODLE_BLACKLIST_SIZE">PODLE_BLACKLIST_SIZE</a></li>
+      <li><a href="global.html#PODLE_MAX_INDEX">PODLE_MAX_INDEX</a></li>
+      <li><a href="global.html#PODLE_MIN_AGE_CONFS">PODLE_MIN_AGE_CONFS</a></li>
+      <li><a href="global.html#PODLE_MIN_VALUE_PCT">PODLE_MIN_VALUE_PCT</a></li>
+      <li><a href="global.html#PODLE_TAG">PODLE_TAG</a></li>
+      <li><a href="global.html#ROUND_TYPES">ROUND_TYPES</a></li>
+      <li><a href="global.html#SCORE_INVENTORY_ONLY">SCORE_INVENTORY_ONLY</a></li>
+      <li><a href="global.html#SCORE_MAX">SCORE_MAX</a></li>
+      <li><a href="global.html#SCORE_UNKNOWN">SCORE_UNKNOWN</a></li>
+      <li><a href="global.html#SEALED_TYPE">SEALED_TYPE</a></li>
+      <li><a href="global.html#SEAL_NAMESPACE">SEAL_NAMESPACE</a></li>
+      <li><a href="global.html#SIGNER_FIELD">SIGNER_FIELD</a></li>
+      <li><a href="global.html#TAPROOT_INTERNAL_NUMS">TAPROOT_INTERNAL_NUMS</a></li>
+      <li><a href="global.html#TELEMETRY_TYPE">TELEMETRY_TYPE</a></li>
+      <li><a href="global.html#TELEMETRY_VERSION">TELEMETRY_VERSION</a></li>
+      <li><a href="global.html#UNSAFE_PATH_TOKENS">UNSAFE_PATH_TOKENS</a></li>
+      <li><a href="global.html#WALLET_TX_KINDS">WALLET_TX_KINDS</a></li>
+      <li><a href="global.html#WEIGHT_OVERHEAD">WEIGHT_OVERHEAD</a></li>
+      <li><a href="global.html#YEAR_BLOCKS">YEAR_BLOCKS</a></li>
+      <li><a href="global.html#assertMonotoneBudget">assertMonotoneBudget</a></li>
+      <li><a href="global.html#bitcoin">bitcoin</a></li>
+      <li><a href="global.html#bodyId">bodyId</a></li>
+      <li><a href="global.html#broadcastSettled">broadcastSettled</a></li>
+      <li><a href="global.html#buildContractTaproot">buildContractTaproot</a></li>
+      <li><a href="global.html#buildEscrow">buildEscrow</a></li>
+      <li><a href="global.html#buildFederationVaultFromPolicy">buildFederationVaultFromPolicy</a></li>
+      <li><a href="global.html#buildFidelity">buildFidelity</a></li>
+      <li><a href="global.html#buildForwardedDocumentRequest">buildForwardedDocumentRequest</a></li>
+      <li><a href="global.html#buildHashlockLeaf">buildHashlockLeaf</a></li>
+      <li><a href="global.html#buildHashlockTapscript">buildHashlockTapscript</a></li>
+      <li><a href="global.html#buildPsbt">buildPsbt</a></li>
+      <li><a href="global.html#buildScriptLeaf">buildScriptLeaf</a></li>
+      <li><a href="global.html#buildSpendLeaf">buildSpendLeaf</a></li>
+      <li><a href="global.html#buildWatchSet">buildWatchSet</a></li>
+      <li><a href="global.html#checkPodleUtxo">checkPodleUtxo</a></li>
+      <li><a href="global.html#classifyWalletTransaction">classifyWalletTransaction</a></li>
+      <li><a href="global.html#codec">codec</a></li>
+      <li><a href="global.html#compileLeaves">compileLeaves</a></li>
+      <li><a href="global.html#composePolicyWithRunHashlock">composePolicyWithRunHashlock</a></li>
+      <li><a href="global.html#composeTaprootTree">composeTaprootTree</a></li>
+      <li><a href="global.html#computeRelayFee">computeRelayFee</a></li>
+      <li><a href="global.html#contractMessageIndex">contractMessageIndex</a></li>
+      <li><a href="global.html#contractMessageMatches">contractMessageMatches</a></li>
+      <li><a href="global.html#createBlobMerkleTree">createBlobMerkleTree</a></li>
+      <li><a href="global.html#createDocumentPurchaseSession">createDocumentPurchaseSession</a></li>
+      <li><a href="global.html#describePsbt">describePsbt</a></li>
+      <li><a href="global.html#descriptorPrivateKey">descriptorPrivateKey</a></li>
+      <li><a href="global.html#envelopeRecipient">envelopeRecipient</a></li>
+      <li><a href="global.html#estimateVsize">estimateVsize</a></li>
+      <li><a href="global.html#evaluateTierWhen">evaluateTierWhen</a></li>
+      <li><a href="global.html#expireHeight">expireHeight</a></li>
+      <li><a href="global.html#fidelityLocktimes">fidelityLocktimes</a></li>
+      <li><a href="global.html#fidelityPath">fidelityPath</a></li>
+      <li><a href="global.html#fidelityValue">fidelityValue</a></li>
+      <li><a href="global.html#finalize">finalize</a></li>
+      <li><a href="global.html#finalizeHashlockPsbt">finalizeHashlockPsbt</a></li>
+      <li><a href="global.html#finalizeSpendPsbt">finalizeSpendPsbt</a></li>
+      <li><a href="global.html#findSession">findSession</a></li>
+      <li><a href="global.html#fromContractMessage">fromContractMessage</a></li>
+      <li><a href="global.html#generatePodle">generatePodle</a></li>
+      <li><a href="global.html#hashlockFromProgramRun">hashlockFromProgramRun</a></li>
+      <li><a href="global.html#invoiceAmountMsat">invoiceAmountMsat</a></li>
+      <li><a href="global.html#isDuplicateSettlement">isDuplicateSettlement</a></li>
+      <li><a href="global.html#isValidFidelityLocktime">isValidFidelityLocktime</a></li>
+      <li><a href="global.html#l1GiverTerms">l1GiverTerms</a></li>
+      <li><a href="global.html#leafScripts">leafScripts</a></li>
+      <li><a href="global.html#listRefundCandidates">listRefundCandidates</a></li>
+      <li><a href="global.html#lockFrom">lockFrom</a></li>
+      <li><a href="global.html#makerChange">makerChange</a></li>
+      <li><a href="global.html#makerFee">makerFee</a></li>
+      <li><a href="global.html#memoryChain">memoryChain</a></li>
+      <li><a href="global.html#memoryWallet">memoryWallet</a></li>
+      <li><a href="global.html#mergeMakerSignatures">mergeMakerSignatures</a></li>
+      <li><a href="global.html#nextPodleIndex">nextPodleIndex</a></li>
+      <li><a href="global.html#normalizeAuth">normalizeAuth</a></li>
+      <li><a href="global.html#normalizeCancel">normalizeCancel</a></li>
+      <li><a href="global.html#normalizeContractSpendPolicy">normalizeContractSpendPolicy</a></li>
+      <li><a href="global.html#normalizeExtraLeafSpecs">normalizeExtraLeafSpecs</a></li>
+      <li><a href="global.html#normalizeFidelity">normalizeFidelity</a></li>
+      <li><a href="global.html#normalizeFill">normalizeFill</a></li>
+      <li><a href="global.html#normalizeFillAck">normalizeFillAck</a></li>
+      <li><a href="global.html#normalizeFunded">normalizeFunded</a></li>
+      <li><a href="global.html#normalizeHashlockSpec">normalizeHashlockSpec</a></li>
+      <li><a href="global.html#normalizeIoAuth">normalizeIoAuth</a></li>
+      <li><a href="global.html#normalizeLeaf">normalizeLeaf</a></li>
+      <li><a href="global.html#normalizeLock">normalizeLock</a></li>
+      <li><a href="global.html#normalizeOffer">normalizeOffer</a></li>
+      <li><a href="global.html#normalizeOrder">normalizeOrder</a></li>
+      <li><a href="global.html#normalizeSig">normalizeSig</a></li>
+      <li><a href="global.html#normalizeTake">normalizeTake</a></li>
+      <li><a href="global.html#normalizeTakeAccept">normalizeTakeAccept</a></li>
+      <li><a href="global.html#normalizeTx">normalizeTx</a></li>
+      <li><a href="global.html#offerKey">offerKey</a></li>
+      <li><a href="global.html#openFiling">openFiling</a></li>
+      <li><a href="global.html#openRoundMessage">openRoundMessage</a></li>
+      <li><a href="global.html#paginateInventoryItems">paginateInventoryItems</a></li>
+      <li><a href="global.html#parseXOnlyPubkeysFromSpendScript">parseXOnlyPubkeysFromSpendScript</a></li>
+      <li><a href="global.html#planCoinjoin">planCoinjoin</a></li>
+      <li><a href="global.html#podleCommitment">podleCommitment</a></li>
+      <li><a href="global.html#podleGenerator">podleGenerator</a></li>
+      <li><a href="global.html#policyAfterDecay">policyAfterDecay</a></li>
+      <li><a href="global.html#prepareDecayMigrationPsbt">prepareDecayMigrationPsbt</a></li>
+      <li><a href="global.html#prepareFidelityRedeem">prepareFidelityRedeem</a></li>
+      <li><a href="global.html#prepareHashlockWithdrawalPsbt">prepareHashlockWithdrawalPsbt</a></li>
+      <li><a href="global.html#prepareTierWithdrawalPsbt">prepareTierWithdrawalPsbt</a></li>
+      <li><a href="global.html#quote">quote</a></li>
+      <li><a href="global.html#randomNonce">randomNonce</a></li>
+      <li><a href="global.html#randomPrivateKey">randomPrivateKey</a></li>
+      <li><a href="global.html#randomRoundId">randomRoundId</a></li>
+      <li><a href="global.html#rememberSettlement">rememberSettlement</a></li>
+      <li><a href="global.html#roleFor">roleFor</a></li>
+      <li><a href="global.html#roles">roles</a></li>
+      <li><a href="global.html#routePath">routePath</a></li>
+      <li><a href="global.html#scriptTreeFromLeaves">scriptTreeFromLeaves</a></li>
+      <li><a href="global.html#sealRoundMessage">sealRoundMessage</a></li>
+      <li><a href="global.html#selectActiveTiers">selectActiveTiers</a></li>
+      <li><a href="global.html#sellerDedupeKey">sellerDedupeKey</a></li>
+      <li><a href="global.html#settlementDedupeKey">settlementDedupeKey</a></li>
+      <li><a href="global.html#signFidelityCertificate">signFidelityCertificate</a></li>
+      <li><a href="global.html#signFidelityRedeem">signFidelityRedeem</a></li>
+      <li><a href="global.html#signKeyPathInputs">signKeyPathInputs</a></li>
+      <li><a href="global.html#signOwnership">signOwnership</a></li>
+      <li><a href="global.html#signingString">signingString</a></li>
+      <li><a href="global.html#spendAddress">spendAddress</a></li>
+      <li><a href="global.html#synthesizeDefaultLadder">synthesizeDefaultLadder</a></li>
+      <li><a href="global.html#taprootKeyPath">taprootKeyPath</a></li>
+      <li><a href="global.html#taprootOutputPrivateKey">taprootOutputPrivateKey</a></li>
+      <li><a href="global.html#tierWhenPath">tierWhenPath</a></li>
+      <li><a href="global.html#timelockMature">timelockMature</a></li>
+      <li><a href="global.html#toContractMessage">toContractMessage</a></li>
+      <li><a href="global.html#toIntegerSats">toIntegerSats</a></li>
+      <li><a href="global.html#unsignedTxid">unsignedTxid</a></li>
+      <li><a href="global.html#validateEscrow">validateEscrow</a></li>
+      <li><a href="global.html#validateFill">validateFill</a></li>
+      <li><a href="global.html#validateForMaker">validateForMaker</a></li>
+      <li><a href="global.html#validateForTaker">validateForTaker</a></li>
+      <li><a href="global.html#validateInvoice">validateInvoice</a></li>
+      <li><a href="global.html#validateTake">validateTake</a></li>
+      <li><a href="global.html#validateTakeAccept">validateTakeAccept</a></li>
+      <li><a href="global.html#verifyBlobPath">verifyBlobPath</a></li>
+      <li><a href="global.html#verifyFidelity">verifyFidelity</a></li>
+      <li><a href="global.html#verifyFidelityCertificate">verifyFidelityCertificate</a></li>
+      <li><a href="global.html#verifyOwnership">verifyOwnership</a></li>
+      <li><a href="global.html#verifyPodle">verifyPodle</a></li>
+      <li><a href="global.html#weightsForProximity">weightsForProximity</a></li>
+    </ul>
+  </nav>
+  <br class="clear" />
+  <footer><a href="https://github.com/FabricLabs/fabric">git://</a> &middot; <a href="https://chat.fabric.pub/#/room/#hub:fabric.pub">Community</a></footer>
+  <script type="text/javascript">
+    prettyPrint();
+  </script>
+  <script src="scripts/linenumber.js"></script>
+</body>
+
+</html>

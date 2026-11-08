@@ -14,13 +14,41 @@
 #define MSG_NOSIGNAL 0
 #endif
 
-/* Blocking write of exactly n bytes */
+#ifndef FABRIC_NOISE_IO_TIMEOUT_MS
+#define FABRIC_NOISE_IO_TIMEOUT_MS 30000
+#endif
+
+/* Wait until fd is readable or timeout (ms). Returns >0 ready, 0 timeout, <0 error. */
+static int noise_wait_fd(int fd, int write_side, int timeout_ms)
+{
+  fd_set fds;
+  struct timeval tv;
+  FD_ZERO(&fds);
+  FD_SET(fd, &fds);
+  tv.tv_sec = timeout_ms / 1000;
+  tv.tv_usec = (timeout_ms % 1000) * 1000;
+  if (write_side)
+    return select(fd + 1, NULL, &fds, NULL, &tv);
+  return select(fd + 1, &fds, NULL, NULL, &tv);
+}
+
+/* Blocking write of exactly n bytes (fails closed on timeout). */
 static ssize_t noise_write_all(int fd, const uint8_t *p, size_t n)
 {
   size_t off = 0;
   while (off < n)
   {
+    int ready = noise_wait_fd(fd, 1, FABRIC_NOISE_IO_TIMEOUT_MS);
+    if (ready == 0)
+    {
+      errno = ETIMEDOUT;
+      return -1;
+    }
+    if (ready < 0)
+      return -1;
     ssize_t s = send(fd, p + off, n - off, MSG_NOSIGNAL);
+    if (s < 0 && (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK))
+      continue;
     if (s <= 0)
       return s;
     off += (size_t)s;
@@ -28,13 +56,23 @@ static ssize_t noise_write_all(int fd, const uint8_t *p, size_t n)
   return (ssize_t)off;
 }
 
-/* Blocking read of exactly n bytes */
+/* Blocking read of exactly n bytes (fails closed on timeout / stall). */
 static ssize_t noise_read_all(int fd, uint8_t *p, size_t n)
 {
   size_t off = 0;
   while (off < n)
   {
+    int ready = noise_wait_fd(fd, 0, FABRIC_NOISE_IO_TIMEOUT_MS);
+    if (ready == 0)
+    {
+      errno = ETIMEDOUT;
+      return -1;
+    }
+    if (ready < 0)
+      return -1;
     ssize_t r = recv(fd, p + off, n - off, 0);
+    if (r < 0 && (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK))
+      continue;
     if (r <= 0)
       return r;
     off += (size_t)r;
@@ -220,9 +258,12 @@ int noise_perform_xx_handshake(int sock,
     return -1;
   }
 
-  int orig_flags = fcntl(sock, F_GETFL, 0);
-  if (orig_flags >= 0)
-    (void)fcntl(sock, F_SETFL, orig_flags & ~O_NONBLOCK);
+  /* Keep caller socket flags. Frame I/O uses select()+timeout (no indefinite block). */
+  struct timeval hs_tv;
+  hs_tv.tv_sec = 30;
+  hs_tv.tv_usec = 0;
+  (void)setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &hs_tv, sizeof(hs_tv));
+  (void)setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, &hs_tv, sizeof(hs_tv));
 
   uint8_t buf[4096];
   int complete = 0;
@@ -240,21 +281,17 @@ int noise_perform_xx_handshake(int sock,
       {
         fprintf(stderr, "[noise] write_message failed\n");
         noise_handshakestate_free(hs);
-        if (orig_flags >= 0)
-          (void)fcntl(sock, F_SETFL, orig_flags);
         return -1;
       }
       if (fabric_noise_write_frame(sock, mb.data, mb.size) != 0)
       {
         fprintf(stderr, "[noise] write frame failed\n");
         noise_handshakestate_free(hs);
-        if (orig_flags >= 0)
-          (void)fcntl(sock, F_SETFL, orig_flags);
         return -1;
       }
+      continue;
     }
 
-    action = noise_handshakestate_get_action(hs);
     if (action == NOISE_ACTION_READ_MESSAGE)
     {
       size_t need = 0;
@@ -262,8 +299,6 @@ int noise_perform_xx_handshake(int sock,
       {
         fprintf(stderr, "[noise] read frame failed\n");
         noise_handshakestate_free(hs);
-        if (orig_flags >= 0)
-          (void)fcntl(sock, F_SETFL, orig_flags);
         return -1;
       }
       NoiseBuffer mb;
@@ -274,30 +309,28 @@ int noise_perform_xx_handshake(int sock,
       {
         fprintf(stderr, "[noise] read_message failed\n");
         noise_handshakestate_free(hs);
-        if (orig_flags >= 0)
-          (void)fcntl(sock, F_SETFL, orig_flags);
         return -1;
       }
+      continue;
     }
 
-    action = noise_handshakestate_get_action(hs);
     if (action == NOISE_ACTION_SPLIT)
     {
       if (noise_handshakestate_split(hs, out_send, out_recv) != NOISE_ERROR_NONE)
       {
         fprintf(stderr, "[noise] split failed\n");
         noise_handshakestate_free(hs);
-        if (orig_flags >= 0)
-          (void)fcntl(sock, F_SETFL, orig_flags);
         return -1;
       }
       complete = 1;
       break;
     }
-  }
 
-  if (orig_flags >= 0)
-    (void)fcntl(sock, F_SETFL, orig_flags);
+    /* FAILED / NONE / unknown — do not spin forever. */
+    fprintf(stderr, "[noise] handshake stalled action=%d\n", action);
+    noise_handshakestate_free(hs);
+    return -1;
+  }
 
   noise_handshakestate_free(hs);
   return complete ? 0 : -1;

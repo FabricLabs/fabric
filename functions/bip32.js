@@ -123,6 +123,7 @@ class HDNode {
       throw new Error('Invalid index');
     }
     if (!Number.isInteger(i) || i < 0 || i > (2 ** 32) - 1) throw new Error('Invalid index');
+    if (this.depth >= 255) throw new Error('Invalid derivation: BIP-32 depth must not exceed 255');
     const hardened = i >= HARDENED_OFFSET;
 
     if (this.privateKey) {

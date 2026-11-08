@@ -75,5 +75,15 @@ describe('@fabric/core/types/session', function () {
 
       test();
     });
+
+    it('encrypt/decrypt throw — Session is not a confidentiality layer', function () {
+      const session = new Session({
+        key: new Key({
+          private: '1111111111111111111111111111111111111111111111111111111111111111'
+        })
+      });
+      assert.throws(() => session.encrypt('x'), /Session.encrypt is unsupported/);
+      assert.throws(() => session.decrypt('x'), /Session.decrypt is unsupported/);
+    });
   });
 });

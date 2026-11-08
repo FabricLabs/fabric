@@ -19,6 +19,16 @@ describe('@fabric/core/types/state', function () {
       assert.equal(Fabric.State instanceof Function, true);
     });
 
+    it('exposes "@allocation" as a lazy, non-enumerable buffer', function () {
+      const { MAX_MESSAGE_SIZE } = require('../constants');
+      const state = new State(SAMPLE_DATA);
+      const descriptor = Object.getOwnPropertyDescriptor(state, '@allocation');
+      assert.ok(descriptor && typeof descriptor.get === 'function', 'accessor, not an eager buffer');
+      assert.strictEqual(descriptor.enumerable, false);
+      assert.strictEqual(state['@allocation'].length, MAX_MESSAGE_SIZE);
+      assert.strictEqual(state['@allocation'], state['@allocation']);
+    });
+
     it('provides a stable "@id" attribute for equivalent input', function () {
       const a = new Fabric.State(SAMPLE_DATA);
       const b = new Fabric.State(SAMPLE_DATA);

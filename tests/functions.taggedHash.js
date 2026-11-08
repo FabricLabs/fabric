@@ -8,8 +8,14 @@ describe('functions/taggedHash', function () {
     const tag = 'Fabric/Message';
     const data = Buffer.from('hello');
     const h = taggedHash(tag, data);
+    const crypto = require('crypto');
+    const tagHash = crypto.createHash('sha256').update(tag, 'utf8').digest();
+    const expected = crypto.createHash('sha256')
+      .update(Buffer.concat([tagHash, tagHash, data]))
+      .digest();
     assert.ok(Buffer.isBuffer(h));
     assert.strictEqual(h.length, 32);
+    assert.ok(h.equals(expected));
   });
 
   it('accepts Buffer tag', function () {

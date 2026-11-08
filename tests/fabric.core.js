@@ -33,9 +33,13 @@ describe('@fabric/core/types/fabric', function () {
     assert.strictEqual(Fabric.sha256(buf), expected);
   });
 
-  it('Fabric.random returns a number', function () {
+  it('Fabric.random returns a number in [0, 1)', function () {
     const r = Fabric.random();
     assert.strictEqual(typeof r, 'number');
+    assert.ok(r >= 0 && r < 1);
+    const samples = new Set();
+    for (let i = 0; i < 8; i++) samples.add(Fabric.random());
+    assert.ok(samples.size > 1);
   });
 
   it('registry exposes local service', function () {

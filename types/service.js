@@ -26,6 +26,7 @@ const Key = require('./key');
 const Message = require('./message');
 const Resource = require('./resource');
 const Store = require('./store');
+const { SERVICE_COMMIT_HISTORY_MAX } = require('../constants');
 const {
   createDefaultOpcodeRegistry,
   defineOpcode: defineOpcodeEntry,
@@ -559,7 +560,7 @@ class Service extends Actor {
 
   /**
    * Register a single opcode entry in the service registry.
-   * @param {string} name Opcode symbol (e.g. `OP_SHA256`, `P2P_FLUSH_CHAIN`)
+   * @param {string} name Opcode symbol (e.g. `OP_SHA256`, `P2P_CHAIN_SYNC_REQUEST`)
    * @param {Object} [definition]
    * @returns {Object}
    */
@@ -590,7 +591,7 @@ class Service extends Actor {
   /**
    * Register a newline-delimited opcode contract.
    * Contract body example:
-   * `OP_DUP\nOP_HASH160\nP2P_FLUSH_CHAIN`
+   * `OP_DUP\nOP_HASH160\nP2P_CHAIN_SYNC_REQUEST`
    * @param {string} name Contract label
    * @param {string} body Newline-delimited opcode list
    * @param {Object} [meta]
@@ -1075,11 +1076,19 @@ class Service extends Actor {
     return this;
   }
 
+  /**
+   * Record outstanding JSON Patch deltas and emit a compact commitment id.
+   * Does **not** wrap {@link Service#state} in a new {@link Actor} — that
+   * JSON-cloned the entire tree on every write/connect and OOMed Hub.
+   * @returns {String} 32-byte commitment id
+   */
   commit () {
     // this.emit('debug', `[FABRIC:SERVICE] Committing ${OP_TRACE()}`);
+    let patches = [];
     if (PATCHES_ENABLED && this.observer) {
       try {
-        const patches = manager.generate(this.observer);
+        const generated = manager.generate(this.observer);
+        patches = Array.isArray(generated) ? generated : [];
         if (patches.length) {
           this.history.push(patches);
           this.emit('patches', patches);
@@ -1089,15 +1098,24 @@ class Service extends Actor {
       }
     }
 
+    const maxRaw = this.settings && this.settings.commitHistoryMax;
+    const max = (typeof maxRaw === 'number' && Number.isFinite(maxRaw) && maxRaw >= 0)
+      ? Math.floor(maxRaw)
+      : SERVICE_COMMIT_HISTORY_MAX;
+    while (this.history.length > max) this.history.shift();
+
+    const clock = (this._clock | 0);
     const commit = new Actor({
       type: 'Commit',
-      state: this.state
+      clock: clock,
+      patchCount: patches.length
     });
+    const id = commit.id;
 
-    this.emit('commit', { ...commit.toObject(), id: commit.id });
+    this.emit('commit', { type: 'Commit', clock: clock, id: id, patchCount: patches.length });
     // this.emit('state', this.state);
 
-    return commit.id;
+    return id;
   }
 
   async _handleBitcoinCommit (commit) {
@@ -1242,19 +1260,45 @@ class Service extends Actor {
   }
 
   async _applyChanges (changes) {
-    let result = null;
+    let result = { ok: false, error: 'not applied' };
+    const requireCap = this.settings && this.settings.requirePatchCapability === true;
+    const hasCap = !!(this.settings && this.settings.patchCapability);
+    if (requireCap && !hasCap) {
+      const msg = 'Service patch requires settings.patchCapability when requirePatchCapability is set';
+      if (this.listenerCount('error') > 0) this.emit('error', new Error(msg));
+      return { ok: false, error: msg };
+    }
+
+    const ops = Array.isArray(changes) ? changes : [];
+    const sensitive = /\/(mnemonic|seed|xprv|privateKey|private|passphrase)(\/|$)/i;
+    for (const operation of ops) {
+      const pointers = [];
+      if (operation && operation.path != null) pointers.push(['path', String(operation.path)]);
+      // RFC6902 copy/move read through `from`; guard both so a move from
+      // /mnemonic to /public cannot leak credentials into Service.state.
+      if (operation && operation.from != null) pointers.push(['from', String(operation.from)]);
+      for (const [kind, pointer] of pointers) {
+        if (sensitive.test(pointer)) {
+          const msg = 'Service patch refused sensitive ' + kind + ': ' + pointer;
+          if (this.listenerCount('error') > 0) this.emit('error', new Error(msg));
+          return { ok: false, error: msg };
+        }
+      }
+    }
 
     try {
-      // TODO: allow configurable validators
-      // Mutate canonical state — do not applyPatch(this.state): the getter returns a
-      // shallow copy each time, so replacing _state.content with that copy breaks nested
-      // references after subscribe() / _applyChanges().
-      manager.applyPatch(this._state.content, changes, function isValid () {
-        // TODO: invalidate changes without appropriate capability token
+      manager.applyPatch(this._state.content, ops, function isValid () {
         return true;
       }, true /* mutate doc (1st param) */);
+      result = { ok: true };
     } catch (exception) {
-      console.error(`Could not apply changes: ${exception.message || exception}`);
+      const msg = exception.message || String(exception);
+      console.error(`Could not apply changes: ${msg}`);
+      result = { ok: false, error: msg };
+      if (this.listenerCount('error') > 0) {
+        this.emit('error', exception instanceof Error ? exception : new Error(msg));
+      }
+      return result;
     }
 
     this.commit();
@@ -1629,9 +1673,16 @@ class FabricShell extends Service {
     this.services[name].on('message', function (msg) {
       self._appendMessage(`@services/${name} -- <FabricServiceMessage>(${typeof msg}) ${JSON.stringify(msg, null, '  ')}`);
       switch (msg['@type']) {
-        case 'ChatMessage':
-          self.node.relayFrom(self.node.id, Message.fromVector(['ChatMessage', JSON.stringify(msg)]));
+        case 'ChatMessage': {
+          const { chatTextOf } = require('../functions/fabricChatText');
+          const text = chatTextOf(msg) || chatTextOf(msg.object) || '';
+          if (text.trim()) {
+            const packet = Message.fromVector(['P2P_CHAT_MESSAGE', String(text)]);
+            if (self.node.key) packet.signWithKey(self.node.key);
+            self.node.relayFrom(self.node.id, packet);
+          }
           break;
+        }
         default:
           break;
       }

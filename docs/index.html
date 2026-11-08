@@ -58,9 +58,11 @@
           <li><a href="#repository-layout">Repository layout</a></li>
           <li><a href="#development-workflow">Development workflow</a></li>
           <li><a href="#bitcoin-service-servicesbitcoin">Bitcoin service</a></li>
+          <li><a href="#lightning-bolts-rpc-map--hub-desktop-npm-link">Lightning BOLTs, RPC map &amp; Hub desktop (<code>npm link</code>)</a></li>
           <li><a href="#message-types-typesmessage">Message types</a></li>
           <li><a href="#architecture">Architecture</a></li>
           <li><a href="#storage-typesstore">Storage</a></li>
+          <li><a href="#moving-functions-into-types">Moving <code>functions/</code> into Types</a></li>
           <li><a href="#reference-links">Reference links</a></li>
           <li><a href="#production--release">Production &amp; release</a></li>
           <li><a href="#core-types-reference">Core types (reference)</a></li>
@@ -71,11 +73,12 @@
         <h2>Quick Start</h2>
         <p>See also <a href="QUICKSTART.md"><code>QUICKSTART.md</code></a> for up-to-date instructions.</p>
         <ol start="0">
-          <li><code>nvm use 22.14.0</code> (install <a href="https://nvm.sh"><code>nvm</code></a> if needed)</li>
-          <li>From a clone of this repo: <code>npm install</code> (or <code>npm install -g @fabric/core</code> to put <code>fabric</code> on your <code>PATH</code>)</li>
-          <li>(optional) <code>fabric setup</code> to generate a master key and local config</li>
+          <li><code>nvm use 26.12.1</code> (install <a href="https://nvm.sh"><code>nvm</code></a> if needed; matches <code>.nvmrc</code> / <code>package.json</code> engines)
+            0b. Ensure <strong>npm 12+</strong> (<code>npm -v</code>). Node 26.12.1 ships npm 11.x — upgrade with <code>npm install -g npm@12</code> (or newer) before installing. <strong><code>@fabric/core</code> keeps npm’s default <code>allow-git=none</code></strong> (no git deps). Only downstream packages that install Fabric from GitHub (Hub / <code>@fabric/http</code> / app peers) should set <strong><code>.npmrc</code> <code>allow-git=all</code></strong> for nested commit-SHA fetches — do not add that opt-in here.</li>
+          <li>From a clone of this repo: <code>npm install</code> (or <code>npm install -g @fabric/core</code> to put <code>fabric</code> on your <code>PATH</code>).</li>
+          <li>(optional) <code>fabric setup</code> to view / generate / backup / restore the local master key (<code>~/.fabric/wallet.json</code> is password-sealed JSON by default; TTY opens a lightweight TUI with unlock / lock / idle timeout)</li>
           <li>(optional) <code>fabric keygen</code> to generate a new master key without saving to disk (ephemeral)</li>
-          <li>Run <code>fabric</code> — the CLI entry is wired through <code>types/cli.js</code> and extends <strong><code>Service.FabricShell</code></strong></li>
+          <li>Run <code>fabric</code> — the CLI entry is wired through <code>types/cli.js</code> and extends <strong><code>Service.FabricShell</code></strong>. <strong>Contracts</strong> (HTLCs, document sessions, programs, shell packs, …) are documented in <strong><a href="docs/CONTRACTS.md">docs/CONTRACTS.md</a></strong>; terminal UX in <strong><a href="docs/CLI.md">docs/CLI.md</a></strong>.</li>
         </ol>
         <p>Working from a <strong>git checkout</strong> (not the global package) is best when you are changing <code>@fabric/core</code> itself; use <code>npm link</code> or <code>npm install ../fabric</code> from downstream packages (Hub, HTTP server) as described in the repo README.</p>
         <h2>Repository layout</h2>
@@ -89,7 +92,7 @@
           <tbody>
             <tr>
               <td><code>types/</code></td>
-              <td>ES6 <strong>classes</strong> — <code>Actor</code>, <code>Peer</code>, <code>Service</code>, <code>Store</code>, <code>Message</code>, etc. CommonJS (<code>require</code>) throughout.</td>
+              <td>ES6 <strong>classes</strong> — <code>Actor</code>, <code>Peer</code>, <code>Service</code>, <code>Store</code>, <code>Message</code>, etc. CommonJS (<code>require</code>) throughout. Cross-package homes: <strong><a href="#types--services-layering-suite">Types &amp; services layering</a></strong>.</td>
             </tr>
             <tr>
               <td><code>services/</code></td>
@@ -101,7 +104,7 @@
             </tr>
             <tr>
               <td><code>scripts/</code></td>
-              <td>CLI entrypoints, doc helpers (<code>list-jsdoc-type-files.js</code>, <code>remove-legacy-types.sh</code>).</td>
+              <td>CLI entrypoints, doc helpers (<code>list-jsdoc-type-files.js</code>, <code>remove-legacy-types.sh</code>). <strong><code>functions/fabricMessageCollection.js</code></strong> collects / replays AMP <code>FabricMessageCollection</code> documents (<code>functions/fabricMessageCollection.js</code>).</td>
             </tr>
             <tr>
               <td><code>tests/</code></td>
@@ -119,10 +122,15 @@
         </table>
         <h2>Development workflow</h2>
         <ul>
-          <li><strong>Node:</strong> engines field in <code>package.json</code> is authoritative (currently Node 22.x).</li>
+          <li><strong>Node:</strong> engines field in <code>package.json</code> is authoritative (currently Node 26.12.1).</li>
           <li><strong>Unit tests:</strong> <code>npm test</code> — runs Mocha recursively under <code>tests/</code>.</li>
           <li><strong>Lint:</strong> <code>npm run lint</code> / <code>npm run lint:fix</code> (Semistandard).</li>
-          <li><strong>API reference:</strong> <code>npm run make:api</code> writes <code>API.md</code> from JSDoc (see <code>scripts/list-jsdoc-type-files.js</code> for which <code>types/*.js</code> files are included).</li>
+          <li><strong>API reference:</strong> <code>npm run make:api</code> writes <code>API.md</code> from JSDoc (see <code>scripts/list-jsdoc-type-files.js</code> for which <code>types/*.js</code> files are included).
+            <ul>
+              <li><strong>JSDoc for Closure / jsdoc2md:</strong> do <strong>not</strong> use TypeScript-only optional object syntax in tags (<code>{ genesis?: object }</code> fails with <code>Invalid type expression</code>). Prefer <code>@param {Object} [opts]</code> plus <code>@param {Object} [opts.genesis] …</code>. Put prose <strong>above</strong> <code>@type {…}</code> (or in a separate line) — <code>@type</code> does not allow a trailing description. Keep tags Closure-compatible so <code>make:api</code> / <code>make:docs</code> stay green.</li>
+              <li><strong>Avoid Global pollution:</strong> use <code>@fileoverview</code> / <code>@module</code> for file prose (bare blocks attach to the next <code>const</code>/<code>require</code> and become Global docs). Prefer <code>//</code> over <code>/** @type */</code> inside settings object literals. Mark private helpers/constants <code>@private</code> so they stay off <code>docs/global.html</code>.</li>
+            </ul>
+          </li>
           <li><strong>HTML docs:</strong> <code>npm run make:docs</code> (runs <code>make:api</code> first, then <strong><code>scripts/clean-jsdoc-html.js</code></strong> — removes all <strong><code>docs/**/*.html</code></strong> and JSDoc template dirs <strong><code>docs/fonts</code></strong>, <strong><code>docs/scripts</code></strong>, <strong><code>docs/styles</code></strong>, <strong><code>docs/public</code></strong> so stale pages and duplicate assets do not accumulate, then JSDoc writes under <code>docs/</code>).</li>
           <li><strong>Historical / one-off Markdown:</strong> see <strong><code>docs/NON_CANONICAL.md</code></strong> — root-level “completion” and analysis files are not the same tier as <strong>VISION.md</strong> or <strong><code>docs/README.md</code></strong>.</li>
           <li><strong>Native addon (<code>fabric.node</code>):</strong> it is <strong>not</strong> <code>require()</code>’d unless <strong><code>FABRIC_NATIVE_DOUBLE_SHA256=1</code></strong>; message body double-SHA256 uses <strong>@noble/hashes</strong> by default. Enable that env var when exercising the C <strong><code>doubleSha256</code></strong> export.</li>
@@ -140,16 +148,20 @@
           </thead>
           <tbody>
             <tr>
-              <td>Node <strong>22.14.x</strong>, <code>npm ci</code>, <strong><code>npm run ci</code></strong></td>
+              <td>Node <strong>26.12.1</strong> (see <code>.nvmrc</code>), <code>npm ci</code>, <strong><code>npm run ci</code></strong></td>
               <td><a href="docs/PRODUCTION.md"><code>docs/PRODUCTION.md</code></a></td>
             </tr>
             <tr>
+              <td>Public leaf API + scoped RC claim</td>
+              <td><a href="PUBLIC_API.md"><code>PUBLIC_API.md</code></a></td>
+            </tr>
+            <tr>
               <td>Completion / privacy / security matrix</td>
-              <td><a href="docs/PRODUCTION-CHECKLIST.md"><code>docs/PRODUCTION-CHECKLIST.md</code></a>, <a href="PRIVACY.md"><code>PRIVACY.md</code></a>, <a href="SECURITY.md"><code>SECURITY.md</code></a></td>
+              <td><a href="docs/PRODUCTION.md"><code>docs/PRODUCTION.md</code></a>, <a href="PRIVACY.md"><code>PRIVACY.md</code></a>, <a href="SECURITY.md"><code>SECURITY.md</code></a>, <a href="AUDIT.md"><code>AUDIT.md</code></a></td>
             </tr>
             <tr>
               <td>Version tag, changelog, Hub &amp; fabric-http bumps</td>
-              <td><a href="docs/RELEASE_CHECKLIST.md"><code>docs/RELEASE_CHECKLIST.md</code></a></td>
+              <td><a href="docs/PRODUCTION.md"><code>docs/PRODUCTION.md</code></a> (§ Release checklist)</td>
             </tr>
             <tr>
               <td>Operator privacy model</td>
@@ -161,9 +173,11 @@
             </tr>
           </tbody>
         </table>
-        <p><strong>Build scripts:</strong> <code>npm run build</code> runs <code>make:all</code>, which still has <strong>placeholder</strong> <code>make:service</code> / <code>make:app</code> / <code>make:lib</code> steps. The <strong>release gate for quality is <code>npm run ci</code></strong> (full Mocha suite), not a successful <code>npm run build</code>. Track operator and bundle readiness in <a href="docs/PRODUCTION-CHECKLIST.md"><code>docs/PRODUCTION-CHECKLIST.md</code></a> and <a href="docs/PRODUCTION.md"><code>docs/PRODUCTION.md</code></a>.</p>
+        <p><strong>Build scripts:</strong> <code>npm run build</code> runs <code>make:all</code>, which still has <strong>placeholder</strong> <code>make:service</code> / <code>make:app</code> / <code>make:lib</code> steps. The <strong>release gate for quality is <code>npm run ci</code></strong> (full Mocha suite), not a successful <code>npm run build</code>. Track operator and bundle readiness in <a href="docs/PRODUCTION.md"><code>docs/PRODUCTION.md</code></a>.</p>
         <h2>Core Types (reference)</h2>
-        <p>These live under <code>types/*.js</code> (CommonJS). The <strong><code>Fabric</code></strong> facade (<code>types/fabric.js</code>) re-exports many of them for quick experiments; production code usually imports a <strong>leaf</strong> type.</p>
+        <p>These live under <code>types/*.js</code> (CommonJS). The <strong><code>Fabric</code></strong> facade (<code>types/fabric.js</code>) re-exports many of them for quick experiments; production code <strong>must</strong> import a <strong>leaf</strong> type from the frozen map in <strong><a href="PUBLIC_API.md">PUBLIC_API.md</a></strong>.</p>
+        <p><strong>Beacon</strong> (<code>types/beacon</code>): L1-tied epoch chain sealing <code>sidechain</code> / <code>contracts</code> digests (Hub re-exports as <code>contracts/beacon.js</code>).</p>
+        <p><strong>Sidechain document</strong> (<code>functions/sidechainState</code> + <code>documentRegistrySidechain</code>): logical <code>sidechain/STATE</code> + journal/snapshots/tip restore. Wire updates use typed <code>SIDECHAIN_STATE_PATCH</code> fields; RFC6902 JSON is an <code>@fabric/http</code> edge transform. See <a href="docs/DISTRIBUTED_EXECUTION.md">docs/DISTRIBUTED_EXECUTION.md</a>. Network-wide field map + Program: <a href="docs/NETWORK_STATE_PROGRAM.md">docs/NETWORK_STATE_PROGRAM.md</a>; wire diagram <a href="contracts/protocol.dot"><code>contracts/protocol.dot</code></a>.</p>
         <table>
           <thead>
             <tr>
@@ -209,6 +223,42 @@
         <p>Regenerate <strong><code>API.md</code></strong> with <code>npm run make:api</code> after JSDoc changes. Experimental or legacy-only files may be omitted via <strong><code>scripts/list-jsdoc-type-files.js</code></strong>.</p>
         <h2>Bitcoin service (<code>services/bitcoin</code>)</h2>
         <p>RPC is the <strong>source of truth</strong> when a node is connected. Optional HTTP fallback for block, transaction, and address-index reads is configured only via <code>bitcoin.explorerBaseUrl</code> or <code>FABRIC_EXPLORER_URL</code> (an <strong>origin</strong>, not a path). If unset, those helpers stay RPC-only or fail closed with a clear error — <code>@fabric/core</code> does not default to any public explorer.</p>
+        <h2>Lightning: BOLTs, RPC map &amp; Hub desktop (<code>npm link</code>)</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Doc</th>
+              <th>Purpose</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><a href="docs/BOLT_COMPATIBILITY.md">docs/BOLT_COMPATIBILITY.md</a></td>
+              <td>Checklist: <strong>BOLT #1–#12</strong> vs delegated to <code>lightningd</code> vs exposed on <code>Lightning</code></td>
+            </tr>
+            <tr>
+              <td><a href="docs/FABRIC_LIGHTNING_OFFERS.md">docs/FABRIC_LIGHTNING_OFFERS.md</a></td>
+              <td>Fabric <strong>markets</strong> (commerce / P2P) vs <strong>BOLT12</strong>; <strong><code>Lightning.Bolt12</code></strong></td>
+            </tr>
+            <tr>
+              <td><a href="docs/FABRIC_PAYMENT_BECH32.md">docs/FABRIC_PAYMENT_BECH32.md</a></td>
+              <td><strong><code>fa1…</code></strong> bech32m Fabric-routed payments; <strong><code>Lightning.FabricPayment</code></strong></td>
+            </tr>
+            <tr>
+              <td><a href="docs/LIGHTNING_COMPAT.md">docs/LIGHTNING_COMPAT.md</a></td>
+              <td>Core Lightning <strong>JSON-RPC</strong> ↔ Fabric method names</td>
+            </tr>
+          </tbody>
+        </table>
+        <p><strong>Programmatic:</strong> <code>require('@fabric/core/services/lightning').DOCS</code> lists Markdown paths (<code>fabricLightningMarkets</code> and <code>fabricLightningOffers</code> are the same file); <strong><code>Lightning.Bolt12</code></strong> re-exports <code>functions/lightningBolt12.js</code> (<code>FabricLightningMarketRole</code> / <code>FabricLightningOfferRole</code>); <strong><code>Lightning.Bolt12Semantics</code></strong> re-exports <code>functions/bolt12Semantics.js</code> (BIP-340 scope for <strong><code>decode</code></strong>, recurrence TLV helpers); <strong><code>Lightning.FabricPayment</code></strong> re-exports <code>functions/fabricPaymentBech32.js</code> (<code>fa1…</code> encode/decode and <strong><code>classifyPaymentEncodingString</code></strong>).</p>
+        <h3>Manual test: <code>@fabric/hub</code> desktop + local <code>@fabric/core</code> / <code>@fabric/http</code></h3>
+        <p>After changing <strong><code>@fabric/core</code></strong>, you can exercise the stack from the <strong><code>@fabric/hub</code></strong> package (Electron / desktop; e.g. sibling clone <code>hub.fabric.pub</code>) by linking local packages. Typical order:</p>
+        <ol>
+          <li><strong>This repo (<code>@fabric/core</code>):</strong> <code>npm link</code> — registers the global link for <code>@fabric/core</code>.</li>
+          <li><strong><code>@fabric/http</code></strong> (sibling clone): <code>npm link @fabric/core</code> then <code>npm link</code> — HTTP server depends on core; second <code>npm link</code> publishes <code>@fabric/http</code> globally.</li>
+          <li><strong>Hub (<code>@fabric/hub</code>):</strong> <code>npm link @fabric/core</code> and <code>npm link @fabric/http</code> — resolves both to your working trees.</li>
+        </ol>
+        <p>Then start the Hub desktop app (see Hub’s <code>package.json</code>, e.g. <code>build:desktop</code> / Electron scripts). Verify Lightning UI or HTTP mutations against your linked core. To unlink later: <code>npm unlink @fabric/core</code> / <code>@fabric/http</code> in Hub and HTTP, then reinstall published versions as needed.</p>
         <h2>Message types (<code>types/message</code>)</h2>
         <p><code>P2P_MESSAGE_RECEIPT</code> (<code>constants.P2P_MESSAGE_RECEIPT</code>, <code>0x44</code>) is the on-wire type for server acknowledgements of an inbound WebSocket/P2P message (payload JSON uses <code>@type: Receipt</code>). It is distinct from <code>GenericMessage</code> so clients can discriminate without parsing the body first.</p>
         <h2>Architecture</h2>
@@ -228,12 +278,15 @@
         <h4>0. Assets</h4>
         <p>Files here feed the default <strong>inventory</strong> for packaged releases. When using <code>@fabric/http</code>’s server, many assets are served from <code>/</code> (configurable). Use this tree for <strong>generated</strong> binaries, WASM, and bundled UI — avoid committing large binaries unless they are part of the release process.</p>
         <h5>0.1 Inventory</h5>
-        <p>For the <code>0.1</code> line, focus is Lightning-oriented document exchange. Operators running <code>fabric chat</code> can:</p>
+        <p>For the <code>0.1</code> line, focus is <strong>consenting peer file exchange</strong> plus <strong>ranked L1 document markets</strong>. Operators running <code>fabric</code> / <code>fabric chat</code> can:</p>
         <ol>
-          <li>Load a file into local inventory: <code>/import &lt;filename&gt;</code></li>
-          <li>Publish to peers: <code>/publish &lt;documentID&gt; &lt;rate&gt;</code></li>
-          <li>Request from the network: <code>/request &lt;documentID&gt; &lt;rate&gt;</code></li>
+          <li><code>/import</code> → <code>/publish &lt;id&gt; &lt;rateSats&gt;</code></li>
+          <li><code>/inventory [peer] [btc]</code> → <code>/offers [id]</code> (rank by price/latency/score)</li>
+          <li>Unpaid: <code>/request</code> → seller <code>/approve</code>; paid: <code>/buy</code> → pay → <code>/confirm &lt;settlementId&gt; &lt;txid&gt;</code></li>
+          <li>Private relay fees: <code>/relayfees</code>; budgeted requests rewrite hops with fee skim</li>
+          <li>Large files: multi-blob offers and reassembly (see L1 doc)</li>
         </ol>
+        <p>Details: <a href="docs/L1_DOCUMENT_EXCHANGE.md"><code>docs/L1_DOCUMENT_EXCHANGE.md</code></a>; BIP: <a href="docs/bip-fabric-file-exchange.md"><code>docs/bip-fabric-file-exchange.md</code></a>.</p>
         <p>When this surface is stable and well tested, the project can tag <code>0.1.0-RC1</code> and move toward a security audit.</p>
         <h5>0.2 Roadmap</h5>
         <p>See <a href="https://github.com/FabricLabs/fabric/projects/1">the official Fabric roadmap</a> for planned work.</p>
@@ -255,7 +308,7 @@
         <p>The Fabric CLI (<code>npm i -g @fabric/core</code>) is the reference shell. Discussion happens in <a href="https://dev.fabric.pub">Grove</a> and <a href="https://github.com/FabricLabs/fabric/discussions">GitHub Discussions</a>.</p>
         <h4>3. Resources</h4>
         <p>Fabric’s decentralized “web” is built around the <strong>Resource</strong> type: a committed agreement to deliver data (often with payment), frequently using HTLC-style flows on the chosen L2.</p>
-        <p>These are sometimes called <strong>Application Resource Contracts (ARCs)</strong> — the allowed storylines for a contract.</p>
+        <p>These are sometimes called <strong>Application Resource Contracts (ARCs)</strong> — the allowed storylines for a contract. Wire + tip + spend: <a href="docs/CONTRACTS.md#application-resource-contracts-arc"><code>docs/CONTRACTS.md</code></a>.</p>
         <h5>Example resource</h5>
         <p><code>resources/document.json</code>:</p>
         <pre class="prettyprint source lang-json"><code>{
@@ -369,6 +422,17 @@ console.log('Signature (hex):', signature.toString('hex'));
           <li>Removed standalone modules (unused or superseded): <strong><code>aggregator</code></strong>, <strong><code>consensus</code></strong>, <strong><code>mempool</code></strong>, <strong><code>swap</code></strong>, <strong><code>value</code></strong>, <strong><code>walker</code></strong>. See <strong><code>scripts/remove-legacy-types.sh</code></strong>.</li>
           <li>Removed <strong><code>types/stash.js</code></strong> (legacy <code>Vector</code> + localforage); use <strong><code>Store</code></strong> or app-specific caches instead.</li>
         </ul>
+        <h3>Moving <code>functions/</code> into Types</h3>
+        <p>Core's <code>functions/</code> helpers are folding into the Types that own them. The rules:</p>
+        <ul>
+          <li><strong>Code moves to the Type</strong>, as statics or a static namespace (<code>Witness.MuSig2</code>). A large implementation may live in a module beside the Type (<code>types/key/bip32.js</code>, like <code>types/bitcoin/</code>), exposed only through the Type.</li>
+          <li><strong><code>functions/&lt;name&gt;.js</code> becomes a shim</strong> that re-exports from the Type (pattern: <code>functions/messageBodyCodec.js</code>), plus a <code>.d.ts</code> shim where one exists today.</li>
+          <li><strong>Every path keeps working.</strong> <code>./functions/*</code> is exported as a wildcard, so every path is public. The paths frozen in <a href="PUBLIC_API.md">PUBLIC_API.md</a> stay frozen, and shims stay for at least the 0.1 line.</li>
+          <li><strong>Unreleased helpers move without a shim.</strong> A <code>functions/</code> module added since the last published release has no installed users, so it moves into its Type and the old path is deleted (as <code>functions/delegation</code> was).</li>
+          <li><strong><code>Peer</code> is already over 8,000 lines.</strong> Peer-bound helpers go to smaller homes where they fit (<code>Message</code>, <code>Session</code>); the rest become <code>Peer</code> statics backed by modules in <code>types/peer/</code>.</li>
+          <li><strong>Leaves stay leaves:</strong> <code>bytes</code>, <code>fabricCanonicalJson</code>, <code>wireJson</code>, <code>_sortKeys</code>, <code>oxfordJoin</code>, <code>truncateMiddle</code>, <code>json</code>, <code>fabricNativeAccel</code> (the native loader), <code>sipa/*</code> (vendored), and <code>passport</code> (its own spec).</li>
+          <li><strong>Each step ends with</strong> <code>npm run ci</code> green (old tests run unchanged through the shims, new tests against the Types), <code>npm run check:downstream</code> passing, and <code>PUBLIC_API.md</code> and the CHANGELOG updated.</li>
+        </ul>
         <h2>Reference links</h2>
         <table>
           <thead>
@@ -381,6 +445,18 @@ console.log('Signature (hex):', signature.toString('hex'));
             <tr>
               <td><a href="QUICKSTART.md">QUICKSTART.md</a></td>
               <td>Install and first commands</td>
+            </tr>
+            <tr>
+              <td><a href="docs/CONTRACTS.md">docs/CONTRACTS.md</a></td>
+              <td>Contracts as interfaces; Hub registry (Hub publishes first)</td>
+            </tr>
+            <tr>
+              <td><a href="docs/FEDERATED_SETTLEMENT.md">docs/FEDERATED_SETTLEMENT.md</a></td>
+              <td>Two-way peg, destination lock, privacy / instruments tracks</td>
+            </tr>
+            <tr>
+              <td><a href="docs/CLI.md">docs/CLI.md</a></td>
+              <td>Terminal <code>/contracts</code>, refunds, verbosity</td>
             </tr>
             <tr>
               <td><a href="AGENTS.md">AGENTS.md</a></td>
@@ -407,6 +483,651 @@ console.log('Signature (hex):', signature.toString('hex'));
           <li>[ ] Remove TODOs</li>
           <li>[ ] Commit and Publish</li>
         </ul>
+        <h2>Types &amp; services layering (suite)</h2>
+        <p>Canonical map of <code>types/</code> and <code>services/</code> across <strong><code>@fabric/core</code></strong>, <strong><code>@fabric/http</code></strong>, <strong><code>@fabric/hub</code></strong>, <strong><code>@fabric/passport</code></strong>, and <strong>GoonCitizen</strong>. Use this before adding a new class, subclassing Hub, or copying an identity/session helper.</p>
+        <p><strong>This file is not a ship list.</strong> Owner go-ahead is still required. Core class-count reduction lives in <strong><a href="docs/PRODUCTION_MARCH.md">PRODUCTION_MARCH.md</a></strong>; this file is the <em>cross-package</em> home for overlapping APIs.</p>
+        <table>
+          <thead>
+            <tr>
+              <th>Field</th>
+              <th>Value</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Last reviewed</td>
+              <td>2026-08-15</td>
+            </tr>
+            <tr>
+              <td>Trees scanned</td>
+              <td><code>types/</code> + <code>services/</code> (Passport: <code>src/types/</code>, <code>src/background/</code>, <code>src/crypto/</code>, <code>src/utils/</code>)</td>
+            </tr>
+            <tr>
+              <td>Local checkouts</td>
+              <td><code>~/fabric-clean</code>, <code>~/fabric-http</code>, <code>~/hub.fabric.pub</code>, <code>~/fabric-browser-extension</code>, <code>~/star-citizen-live</code> (<code>~/goon.vc</code> insight only)</td>
+            </tr>
+            <tr>
+              <td>Crypto lift</td>
+              <td>Delegation frames and identity Schnorr live in <code>@fabric/core</code> (<code>types/delegation</code>, <code>functions/fabricIdentitySchnorr</code>). HTTP / Hub / GoonCitizen / Passport use them directly.</td>
+            </tr>
+            <tr>
+              <td>Core <code>npm test</code></td>
+              <td>2026-08-14: gossip-network <code>verifiedPubkey</code> expect fixed; remaining work is identity lift + OUTSTANDING queue (not this suite fail).</td>
+            </tr>
+          </tbody>
+        </table>
+        <hr>
+        <h3>How future agents should use this</h3>
+        <ol>
+          <li><strong>Name collision ≠ same type.</strong> Same export name in two packages is usually a stub, a UI twin, or a legacy fork. Check the <a href="#name-collisions">collision table</a> first.</li>
+          <li><strong>Prefer <code>functions/</code> re-exports over new classes.</strong> Shared wire/session helpers already lift into <code>@fabric/http</code> (and Hub re-exports them). See <a href="#success-pattern">success pattern</a>.</li>
+          <li><strong>Compose, do not subclass Hub</strong> for a new application. GoonCitizen <code>LiveRelay</code> is the live app; <code>StarCitizen extends Hub</code> is legacy.</li>
+          <li>After you add, delete, or re-home a type/service, update this file in the <strong>same PR</strong> (<a href="#refresh-procedure">refresh procedure</a>).</li>
+        </ol>
+        <hr>
+        <h3>Layering (who owns what)</h3>
+        <pre class="prettyprint source lang-text"><code>@fabric/core          protocol primitives + chain integrations
+  types/              Actor, Service, Store, Peer, Message, Key, Identity,
+                      Chain, Contract, Federation, Collection, Resource, Wallet, …
+  services/           Bitcoin, Lightning (primary); ZMQ, Redis, MQTT, Text, …
+
+@fabric/http          HTTP / WebSocket / SPA / browser surface
+  types/              HTTPServer, SPA, Site, App, Compiler (webpack), Bridge,
+                      Sandbox, Remote (HTTP subclass), Resource (HTTP verbs)
+  functions/          site-login, device-link, peering HTTP, chat normalize,
+                      httpSharedMode, federation invite, oracle attestation
+  (no services/)
+
+@fabric/hub           rendezvous operator (reference app)
+  services/hub.js     orchestrator: Peer + HTTPServer + Bitcoin + Beacon + RPC
+  services/           Payjoin, Peering, Setup, Fabric (HTTP Remote), Email, Challenge
+  types/              thin SPA/Site/Compiler skins; LightningChannel; BridgeMessageCollection
+
+@fabric/passport      browser extension wallet / identity chrome
+  src/types/          UI interfaces + incomplete Key fork (do not grow)
+  (no services/)      Hub is a HTTP/WS client, not a class dependency
+
+GoonCitizen           application (star-citizen-live)
+  services/LiveRelay  what npm start runs (EventEmitter, own HTTP)
+  services/           FabricNetwork (Peer adapter), Chat/Group/Mission/Payout/Snapshot
+  types/              Store façade over core Store; Group/Mission domain types
+</code></pre>
+        <p><strong>Require graph (do not invert):</strong></p>
+        <pre class="prettyprint source lang-text"><code>core  ◄──  http  ◄──  hub
+                ◄──  passport (Key/Message/site-login clients)
+                ◄──  GoonCitizen (Peer, Store, http functions)
+hub   ◄──  GoonCitizen (Bitcoin proxy, identityCluster re-export, Hub HTTP)
+hub   ◄──  goon.vc GoonVC extends Hub   (hosted edge; insight only)
+</code></pre>
+        <p>Core never <code>require</code>s <code>@fabric/http</code> or <code>@fabric/hub</code>.</p>
+        <hr>
+        <h3>Success pattern</h3>
+        <p>Shared <em>behavior</em> that is not a protocol class belongs in <strong><code>@fabric/http/functions/*</code></strong> (browser-safe when possible) or <strong><code>@fabric/core/functions/*</code></strong> (crypto / AMP / contract). Downstream packages <strong>re-export</strong> the same function object.</p>
+        <p>Hub already guards this with <code>tests/liftedApis.exports.test.js</code> (allowlist, <code>httpSharedMode</code>, device-link Origin helpers, oracle attestation, pubkey, chat normalize). GoonCitizen does the same for several http helpers (<code>functions/httpSharedMode.js</code>, <code>passportRelyingParty.js</code>, <code>fabricDeviceLinkProtocol.js</code>, …).</p>
+        <p><strong>Do this:</strong></p>
+        <pre class="prettyprint source lang-js"><code>module.exports = require('@fabric/http/functions/httpSharedMode');
+</code></pre>
+        <p><strong>Do not do this:</strong> copy the file into a second repo, or add a new <code>types/Foo.js</code> that collides with core <code>Foo</code>.</p>
+        <hr>
+        <h3>Name collisions</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Canonical</th>
+              <th>Other copy</th>
+              <th>Relation</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Identity</strong></td>
+              <td>core <code>types/identity.js</code> (Actor, BIP32)</td>
+              <td>http <code>types/identity.js</code> (12-line Key stub)</td>
+              <td>stub</td>
+              <td>delete/rename http stub; callers use core</td>
+            </tr>
+            <tr>
+              <td><strong>Key</strong></td>
+              <td>core <code>types/key.js</code> (Schnorr)</td>
+              <td>Passport <code>src/types/key.ts</code> (elliptic, stub <code>toBech32</code>)</td>
+              <td>incomplete fork</td>
+              <td>Passport should use core Key</td>
+            </tr>
+            <tr>
+              <td><strong>Wallet</strong></td>
+              <td>core <code>types/wallet.js</code></td>
+              <td>http <code>types/wallet.js</code> (legacy bcoin)</td>
+              <td>duplicate</td>
+              <td>keep core; migrate/rename http</td>
+            </tr>
+            <tr>
+              <td><strong>Peer</strong></td>
+              <td>core <code>types/peer.js</code> (~5k LOC AMP/TCP)</td>
+              <td>http <code>types/peer.js</code> (PeerJS stub)</td>
+              <td>stub</td>
+              <td>delete http stub</td>
+            </tr>
+            <tr>
+              <td><strong>Swarm</strong></td>
+              <td>core <code>Peer.Swarm</code></td>
+              <td>http <code>types/swarm.js</code> (documented no-op)</td>
+              <td>stub</td>
+              <td>delete http stub</td>
+            </tr>
+            <tr>
+              <td><strong>Channel</strong></td>
+              <td>core <code>types/channel.js</code> (payment)</td>
+              <td>http <code>types/channel.js</code> (<code>&lt;fabric-channel&gt;</code> UI)</td>
+              <td>name only</td>
+              <td>rename http element</td>
+            </tr>
+            <tr>
+              <td><strong>Compiler</strong></td>
+              <td>core <code>types/compiler.js</code> (JS/minsc AST)</td>
+              <td>http <code>types/compiler.js</code> (webpack SPA); Hub/goon subclass http</td>
+              <td>different jobs</td>
+              <td>keep both; document as HTTPCompiler vs contract compiler</td>
+            </tr>
+            <tr>
+              <td><strong>Router</strong></td>
+              <td>core <code>types/router.js</code> (chat <code>!commands</code>)</td>
+              <td>http <code>types/router.js</code> (path-to-regexp)</td>
+              <td>name only</td>
+              <td>rename if touching</td>
+            </tr>
+            <tr>
+              <td><strong>Remote</strong></td>
+              <td>core <code>types/remote.js</code> (base WS)</td>
+              <td>http <code>types/remote.js</code> <strong>extends</strong> core</td>
+              <td>healthy subclass</td>
+              <td>keep</td>
+            </tr>
+            <tr>
+              <td><strong>Resource</strong></td>
+              <td>core <code>types/resource.js</code> (Store)</td>
+              <td>http <code>types/resource.js</code> <strong>extends</strong> Fabric.Resource</td>
+              <td>healthy subclass</td>
+              <td>keep</td>
+            </tr>
+            <tr>
+              <td><strong>Component</strong></td>
+              <td>core <code>types/component.js</code> (dead stub, broken <code>super</code>)</td>
+              <td>http <code>types/component.js</code> (real custom element)</td>
+              <td>core dead</td>
+              <td>delete/ignore core stub; UI lives in http</td>
+            </tr>
+            <tr>
+              <td><strong>Hub</strong></td>
+              <td><strong>hub</strong> <code>services/hub.js</code> (~14k LOC Service)</td>
+              <td>http <code>types/hub.js</code> (Oracle + Express toy)</td>
+              <td><strong>naming trap</strong></td>
+              <td>deprecate/rename http (<code>LegacyHttpHub</code>); never merge</td>
+            </tr>
+            <tr>
+              <td><strong>Queue</strong></td>
+              <td>core <code>types/queue.js</code></td>
+              <td>Hub <code>types/queue.js</code> (richer, unused at runtime)</td>
+              <td>stale fork</td>
+              <td>Hub runtime uses core Worker; delete or re-export core</td>
+            </tr>
+            <tr>
+              <td><strong>Worker</strong></td>
+              <td>core <code>types/worker.js</code></td>
+              <td>Hub <code>types/worker.js</code></td>
+              <td>stale fork</td>
+              <td>hub.js requires <strong>core</strong> Worker</td>
+            </tr>
+            <tr>
+              <td><strong>Challenge</strong></td>
+              <td>core <code>types/challenge.js</code> (State)</td>
+              <td>Hub <code>services/challenge.js</code> (storage-contract cadence)</td>
+              <td>name only</td>
+              <td>leave; different jobs</td>
+            </tr>
+            <tr>
+              <td><strong>Store</strong></td>
+              <td>core <code>types/store.js</code> (Actor, async paths)</td>
+              <td>GoonCitizen <code>types/Store.js</code> (<strong>composes</strong> core)</td>
+              <td>healthy façade</td>
+              <td>do not merge into core</td>
+            </tr>
+            <tr>
+              <td><strong>SPA / Site / Compiler</strong></td>
+              <td>http types</td>
+              <td>Hub + goon.vc thin <code>_renderWith</code> skins</td>
+              <td>healthy extend</td>
+              <td>skins stay in apps</td>
+            </tr>
+            <tr>
+              <td><strong>Fabric</strong></td>
+              <td>core <code>types/fabric.js</code> (facade Service)</td>
+              <td>Hub <code>services/fabric.js</code> (HTTP Remote sync)</td>
+              <td>name only</td>
+              <td>leave</td>
+            </tr>
+          </tbody>
+        </table>
+        <hr>
+        <h3>Per-package inventory</h3>
+        <h4><code>@fabric/core</code> — <code>types/</code> (protocol spine)</h4>
+        <p><strong>Keep as the public spine</strong> (aligns with PRODUCTION_MARCH + <code>types/fabric.js</code> statics): <code>Actor</code>, <code>Service</code> (+ <code>FabricShell</code>), <code>Store</code>, <code>Peer</code> (+ <code>Peer.Swarm</code>), <code>Message</code>, <code>Key</code>, <code>Identity</code>, <code>Chain</code>, <code>Block</code>, <code>Contract</code>, <code>Federation</code>, <code>Collection</code>, <code>Resource</code>, <code>State</code>, <code>Machine</code>, <code>Program</code>, <code>Circuit</code>, <code>Wallet</code>, <code>Worker</code>, <code>Remote</code>, <code>Hash256</code>, <code>Entity</code> (+ <code>Transition</code>), <code>Tree</code>, <code>Beacon</code>, <code>Filesystem</code>.</p>
+        <p><strong>Services (keep):</strong> <code>services/bitcoin.js</code>, <code>services/lightning.js</code>. Others (<code>zmq</code>, <code>redis</code>, <code>mqtt</code>, <code>text</code>/<code>txt</code>, <code>exchange</code>, <code>local</code>, <code>turntable</code>) are integrations — do not reimplement in Hub or GoonCitizen.</p>
+        <p><strong>Message collections:</strong> <code>functions/fabricMessageCollection.js</code> is the share/replay helper for ordered AMP hex (journals, Discord packs, catch-up). <code>collectionTipId</code> is the parent for the next frame in that log. GoonCitizen re-exports it; do not fork a second JSON-as-canonical log. Hub <code>messages/*.json</code> stays an activity log. <strong>Document lists:</strong> <code>functions/documentList.js</code> is the shared compact catalog (<code>DocumentList</code>). Apps keep their own pack names and share gates.</p>
+        <p><strong>Core stubs / low-value leaves</strong> (do not copy downstream): <code>types/component.js</code>, <code>types/network.js</code>, <code>types/observer.js</code>, <code>types/transaction.js</code>. Class-count work: PRODUCTION_MARCH (<code>Scribe</code> is already a deprecation alias).</p>
+        <h4><code>@fabric/http</code> — <code>types/</code> (HTTP/SPA only)</h4>
+        <p><strong>Stay in http:</strong> <code>server</code> (<code>HTTPServer</code>), <code>spa</code>, <code>site</code>, <code>app</code>, <code>compiler</code> (webpack), <code>bridge</code>, <code>sandbox</code>, <code>browser</code>, <code>client</code>, <code>element</code>, <code>avatar</code>, <code>JSONCall</code>, <code>distributedExecutionHttp</code>, <code>resource</code> (HTTP verbs), <code>remote</code> (HTTP client).</p>
+        <p><strong>Delete or stop exporting when touching:</strong> <code>identity.js</code>, <code>peer.js</code>, <code>swarm.js</code> stubs. <strong>Rename if touching:</strong> <code>channel.js</code> (UI), <code>hub.js</code> (legacy Oracle hub).</p>
+        <p>Package main (<code>types/web.js</code>) exports <code>Server</code>, <code>Client</code>, <code>SPA</code>, <code>Avatar</code> — not the stubs.</p>
+        <h4><code>@fabric/hub</code> — operator</h4>
+        <table>
+          <thead>
+            <tr>
+              <th>File</th>
+              <th>Verdict</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>services/hub.js</code></td>
+              <td>Keep as orchestrator; carve more <em>Hub-only</em> services (Payjoin/Peering/Setup pattern). Do not fold into core or http.</td>
+            </tr>
+            <tr>
+              <td><code>services/payjoin.js</code></td>
+              <td>Hub-only BIP77/78</td>
+            </tr>
+            <tr>
+              <td><code>services/peering.js</code></td>
+              <td>Hub HTTP + OracleAttestation (uses http functions)</td>
+            </tr>
+            <tr>
+              <td><code>services/setup.js</code></td>
+              <td>Admin token bootstrap</td>
+            </tr>
+            <tr>
+              <td><code>services/fabric.js</code></td>
+              <td>HTTP Remote sync — keep name locally, do not confuse with core <code>Fabric</code></td>
+            </tr>
+            <tr>
+              <td><code>services/email.js</code>, <code>challenge.js</code></td>
+              <td>Hub-only</td>
+            </tr>
+            <tr>
+              <td><code>types/spa.js</code>, <code>site.js</code>, <code>compiler.js</code></td>
+              <td>Thin skins over http — keep</td>
+            </tr>
+            <tr>
+              <td><code>types/lightningChannel.js</code></td>
+              <td>Extends core Channel — keep until a second LN UI needs it in core</td>
+            </tr>
+            <tr>
+              <td><code>types/bridgeMessageCollection.js</code></td>
+              <td>Hub WS message map — keep</td>
+            </tr>
+            <tr>
+              <td><code>types/queue.js</code>, <code>worker.js</code></td>
+              <td>Stale forks — delete or re-export core</td>
+            </tr>
+          </tbody>
+        </table>
+        <h4><code>@fabric/passport</code> — extension</h4>
+        <p>No top-level <code>types/</code> or <code>services/</code>. Treat as a <strong>client</strong> of core Key/Message and http site-login / device-link.</p>
+        <table>
+          <thead>
+            <tr>
+              <th>Path</th>
+              <th>Verdict</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>src/types/key.ts</code></td>
+              <td><strong>Do not grow.</strong> Incomplete elliptic Key; <code>toBech32()</code> is a stub. Target: <code>@fabric/core/types/key</code>.</td>
+            </tr>
+            <tr>
+              <td><code>src/types/identity.ts</code></td>
+              <td>UI <code>IIdentity</code> / chain allowlist — not core Identity. Keep local.</td>
+            </tr>
+            <tr>
+              <td><code>src/background/encryptedDatastore.ts</code></td>
+              <td>chrome.storage AES-GCM — parallel to <code>Store.openEncrypted</code>, not a merge candidate.</td>
+            </tr>
+            <tr>
+              <td><code>src/background/delegation.ts</code></td>
+              <td>A core <code>Delegation</code> (<code>@fabric/core/types/delegation</code>) on the encrypted datastore — no protocol code of its own.</td>
+            </tr>
+            <tr>
+              <td><code>src/utils/fabricSiteMessage.ts</code></td>
+              <td>Client of http — keep as a client.</td>
+            </tr>
+            <tr>
+              <td><code>src/fabric/bitcoinService.ts</code></td>
+              <td>Hub HTTP Bitcoin client — keep.</td>
+            </tr>
+          </tbody>
+        </table>
+        <h4>GoonCitizen — application</h4>
+        <table>
+          <thead>
+            <tr>
+              <th>File</th>
+              <th>Verdict</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>services/LiveRelay.js</code></td>
+              <td><strong>What runs.</strong> EventEmitter + REST/dashboard. Do not extend Hub.</td>
+            </tr>
+            <tr>
+              <td><code>services/FabricNetwork.js</code></td>
+              <td>Constructs core <code>Peer</code>; app <code>CONTRACT_MESSAGE</code> conveniences. Adapter, not a second Peer.</td>
+            </tr>
+            <tr>
+              <td><code>services/ChatManager.js</code> / <code>GroupManager.js</code> / <code>MissionManager.js</code> / <code>PayoutManager.js</code> / <code>SnapshotManager.js</code></td>
+              <td>Application. Share wire helpers only (chat normalize, federation invite JSON).</td>
+            </tr>
+            <tr>
+              <td><code>types/Store.js</code></td>
+              <td>Composes core Store; sync <code>get/put/all/del</code> on <code>/collections/&lt;name&gt;</code>. Correct. Extract a generic façade only if a second consumer appears.</td>
+            </tr>
+            <tr>
+              <td><code>types/Group.js</code>, <code>Mission.js</code>, <code>MissionApplication.js</code></td>
+              <td>Domain; Group wraps core <code>Federation</code>.</td>
+            </tr>
+            <tr>
+              <td><code>services/StarCitizen.js</code></td>
+              <td><strong>Legacy</strong> <code>extends Hub</code>. mocha/history only. Do not use as a template.</td>
+            </tr>
+            <tr>
+              <td><code>types/StarCitizenAPI.js</code></td>
+              <td>Legacy stub. Not LiveRelay.</td>
+            </tr>
+          </tbody>
+        </table>
+        <p><strong>goon.vc (insight):</strong> <code>GoonSPA</code> / <code>GoonSite</code> / <code>HTMLCompiler</code> mirror Hub skins over http. <code>GoonVC extends Hub</code> is the hosted-edge pattern — not a model for new desktop apps.</p>
+        <hr>
+        <h3>Common API slices (ranked)</h3>
+        <p>Payoff vs risk for <em>sharing</em> an API. Implement only with owner go-ahead; small PRs; re-export, don’t copy.</p>
+        <table>
+          <thead>
+            <tr>
+              <th>Rank</th>
+              <th>Slice</th>
+              <th>Home</th>
+              <th>Payoff</th>
+              <th>Risk</th>
+              <th>Notes</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>1</td>
+              <td><strong>Delegation</strong> (pairing, grants, requests; replaced IdentityCrossSign and device-link)</td>
+              <td><strong>core</strong> <code>types/delegation</code> (<a href="docs/DELEGATION.md">docs/DELEGATION.md</a>)</td>
+              <td>High</td>
+              <td>Low</td>
+              <td>Every participant builds a <code>Delegation</code> on its own key and store; do not fork frame code.</td>
+            </tr>
+            <tr>
+              <td>2</td>
+              <td><strong>Passport + delegation transport</strong></td>
+              <td><strong>http</strong> (<code>passportHttp</code>, <code>fabricDelegationHttp</code>, <code>fabricDelegationMailbox</code>, <code>fabricDelegate</code>)</td>
+              <td>High</td>
+              <td>Low–med</td>
+              <td>GC/Passport/Hub must wrap http; do not fork verify.</td>
+            </tr>
+            <tr>
+              <td>3</td>
+              <td><strong>Passport Key → core Key</strong></td>
+              <td><strong>core</strong> Key</td>
+              <td>High (crypto)</td>
+              <td>Med</td>
+              <td>Drop elliptic class; keep <code>IKey</code> UI state in Passport.</td>
+            </tr>
+            <tr>
+              <td>4</td>
+              <td><strong>Retire Hub Queue/Worker forks</strong></td>
+              <td><strong>core</strong></td>
+              <td>Med</td>
+              <td>Low</td>
+              <td>Runtime already uses core Worker.</td>
+            </tr>
+            <tr>
+              <td>5</td>
+              <td><strong>httpSharedMode</strong></td>
+              <td><strong>http</strong> (already)</td>
+              <td>Med</td>
+              <td>Low</td>
+              <td>Hub + GC re-export; keep the test that they are the same function.</td>
+            </tr>
+            <tr>
+              <td>6</td>
+              <td><strong>Rename http <code>types/hub.js</code></strong></td>
+              <td><strong>http</strong></td>
+              <td>Med (docs trap)</td>
+              <td>Low</td>
+              <td>Product Hub is <code>@fabric/hub</code>.</td>
+            </tr>
+            <tr>
+              <td>7</td>
+              <td><strong>CollectionStore façade</strong></td>
+              <td>optional core helper</td>
+              <td>Med if 2nd consumer</td>
+              <td>Med</td>
+              <td>Today only GoonCitizen <code>types/Store.js</code>.</td>
+            </tr>
+            <tr>
+              <td>8</td>
+              <td><strong>AppPeerSession</strong> (identity → Peer, message log, peering offer)</td>
+              <td>core or http helper</td>
+              <td>Med</td>
+              <td>Med–high</td>
+              <td>Extract from FabricNetwork <em>without</em> GC publish methods.</td>
+            </tr>
+            <tr>
+              <td>9</td>
+              <td><strong>Document inventory item / publish envelope</strong></td>
+              <td>core (<code>publishedDocumentEnvelope</code>) + http shapes</td>
+              <td>Med</td>
+              <td>Med</td>
+              <td>Hub document market vs GC <code>localDocuments</code> / offers stay separate catalogs.</td>
+            </tr>
+            <tr>
+              <td>10</td>
+              <td><strong>SPA Compiler factory</strong></td>
+              <td>http</td>
+              <td>Low</td>
+              <td>Low</td>
+              <td>Hub/goon skins stay in apps.</td>
+            </tr>
+            <tr>
+              <td>11</td>
+              <td><strong>Carve <code>services/hub.js</code></strong></td>
+              <td>hub services</td>
+              <td>High long-term</td>
+              <td><strong>High</strong></td>
+              <td>Continue Payjoin/Peering/Setup; no big-bang.</td>
+            </tr>
+            <tr>
+              <td>12</td>
+              <td><strong>LightningChannel → core</strong></td>
+              <td>hub until 2nd consumer</td>
+              <td>Low</td>
+              <td>Low</td>
+              <td></td>
+            </tr>
+          </tbody>
+        </table>
+        <hr>
+        <h3>Do not consolidate</h3>
+        <p>These look like duplicates and are not:</p>
+        <table>
+          <thead>
+            <tr>
+              <th>Temptation</th>
+              <th>Why not</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Merge <strong>LiveRelay</strong> into Hub / subclass Hub for GoonCitizen</td>
+              <td>Different products. LiveRelay is the live entry. <code>StarCitizen extends Hub</code> is legacy.</td>
+            </tr>
+            <tr>
+              <td>Collapse <strong>FabricNetwork</strong> into <strong>Peer</strong></td>
+              <td>Adapter + app message types. Peer stays protocol.</td>
+            </tr>
+            <tr>
+              <td>Put <strong>ChatManager</strong> in core/Hub</td>
+              <td>Discord keys, local tags, bridged rails are app-specific. Share <code>fabricChatNormalize</code> only.</td>
+            </tr>
+            <tr>
+              <td>Merge GoonCitizen <strong>Store</strong> into core <strong>Store</strong></td>
+              <td>Sync collection façade vs async path Store. Composition is the point.</td>
+            </tr>
+            <tr>
+              <td>Merge http <strong>Compiler</strong> into core <strong>Compiler</strong></td>
+              <td>Webpack/HTML vs minsc/JS AST.</td>
+            </tr>
+            <tr>
+              <td>Merge http <strong>Channel</strong> into core <strong>Channel</strong></td>
+              <td>UI element vs payment channel.</td>
+            </tr>
+            <tr>
+              <td>Fold Hub <strong>Payjoin / Bitcoin UI / Beacon</strong> into core</td>
+              <td>Operator rendezvous. Core already has <code>services/bitcoin</code> + <code>types/beacon</code>.</td>
+            </tr>
+            <tr>
+              <td>New <code>@fabric/app-peer</code> package</td>
+              <td>Extra pin surface. Prefer a function module in core/http first.</td>
+            </tr>
+            <tr>
+              <td>Invert requires (core → http)</td>
+              <td>Breaks the library/CLI story.</td>
+            </tr>
+          </tbody>
+        </table>
+        <hr>
+        <h3>Healthy subclass edges (copy this pattern)</h3>
+        <pre class="prettyprint source lang-text"><code>http.Resource     →  core Resource (Fabric.Resource)
+http.Remote       →  core Remote
+http.JSONCall     →  core Message
+Hub.LightningChannel → core Channel
+Hub.SPA/Site/Compiler → http SPA/Site/Compiler
+GoonCitizen.Store    composes core Store  (does not extend)
+GoonCitizen.FabricNetwork  constructs core Peer
+GoonCitizen.Group    uses core Federation
+GoonCitizen.Mission  extends core Entity
+</code></pre>
+        <p>If a new type does not fit one of: <strong>extend the layer below</strong>, <strong>compose it</strong>, or <strong>stay application-only</strong> — stop and update this file instead of inventing a parallel class.</p>
+        <hr>
+        <h3>Refresh procedure</h3>
+        <p>When types/services change in any of the five trees, run this in the same change:</p>
+        <ol>
+          <li><code>rg '^(class |module\\.exports)' types services</code> (Passport: <code>src/types</code> + <code>src/background</code>) in each checkout.</li>
+          <li>Confirm <code>require('@fabric/…')</code> still matches the <a href="#layering-who-owns-what">require graph</a>. New core <code>require('@fabric/http')</code> is a bug.</li>
+          <li>Update the <a href="#name-collisions">collision table</a> if you add or delete a same-named export.</li>
+          <li>If you lift a helper, add a Hub/GoonCitizen re-export <strong>and</strong> a same-function assertion (see <code>tests/liftedApis.exports.test.js</code>).</li>
+          <li>Bump <strong>Last reviewed</strong> at the top. Do not fork this document into Hub or GoonCitizen — point at it.</li>
+        </ol>
+        <p><strong>Sibling paths on this machine:</strong></p>
+        <table>
+          <thead>
+            <tr>
+              <th>Package</th>
+              <th>Checkout</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>@fabric/core</code></td>
+              <td><code>/Users/eric/fabric-clean</code></td>
+            </tr>
+            <tr>
+              <td><code>@fabric/http</code></td>
+              <td><code>/Users/eric/fabric-http</code></td>
+            </tr>
+            <tr>
+              <td><code>@fabric/hub</code></td>
+              <td><code>/Users/eric/hub.fabric.pub</code></td>
+            </tr>
+            <tr>
+              <td><code>@fabric/passport</code></td>
+              <td><code>/Users/eric/fabric-browser-extension</code></td>
+            </tr>
+            <tr>
+              <td>GoonCitizen</td>
+              <td><code>/Users/eric/star-citizen-live</code></td>
+            </tr>
+            <tr>
+              <td>goon.vc (insight)</td>
+              <td><code>/Users/eric/goon.vc</code></td>
+            </tr>
+          </tbody>
+        </table>
+        <hr>
+        <h3>Remaining work</h3>
+        <p>Not a ship list. Owner go-ahead still required. Detail for Core also lives in <a href="docs/OUTSTANDING.md">OUTSTANDING.md</a>.</p>
+        <h4>Core <a href="https://github.com/FabricLabs/fabric/pull/183">#183</a> (edit existing PR files only)</h4>
+        <ul>
+          <li><strong>Do not add</strong> identity leaves, this file, or <code>package.json</code> smoke <code>require()</code>s for those leaves (CodeRabbit ~150-file cap; smoke would fail without the files).</li>
+          <li>Existing OUTSTANDING items: type-tree keep/remove, <code>messageHex</code> laziness, <code>contractId</code> → <code>contractIdentifier</code>, genesis journal cap, blinded-execution scaffold, third-party review of peer/HTLC.</li>
+        </ul>
+        <h4>Follow-up Core PR (new files)</h4>
+        <p><code>functions/fabricIdentitySchnorr.js</code> and its tests in <code>tests/fabric.identity.js</code> are already on #185; the IdentityCrossSign leaves were since replaced by delegation (<code>types/delegation.js</code>). Pin or <code>npm link</code> core in http / Hub / Passport / GoonCitizen. Sidecar <code>.d.ts</code> files were dropped for the GitHub 150-file review cap.</p>
+        <h4>Pending tests (not failures)</h4>
+        <ul>
+          <li>3× Lightning <code>_makeRPCRequest</code> (JSON-RPC line-delimited / error / timeout) — skipped unit stubs.</li>
+          <li>1× <code>dials configured peers and emits CONTRACT_PUBLISH</code> (<code>tests/fabric.hub.mesh.integration.js</code> — <code>playnet contract publish live</code>) — skipped unless a live mnemonic is configured.</li>
+        </ul>
+        <h4>Downstream (already edited in those repos)</h4>
+        <p>Keep the re-exports. Remaining ranked slices: site-login possession-proof (http/Hub), Passport Key class, Hub Queue/Worker delete, CollectionStore only if a second consumer appears.</p>
+        <hr>
+        <h3>Related docs</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>Doc</th>
+              <th>Role</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><a href="docs/OUTSTANDING.md">OUTSTANDING.md</a></td>
+              <td>Core security queue + suite status</td>
+            </tr>
+            <tr>
+              <td><a href="docs/PRODUCTION_MARCH.md">PRODUCTION_MARCH.md</a></td>
+              <td>Core <em>class count</em> keep/fold/remove</td>
+            </tr>
+            <tr>
+              <td><a href="DEVELOPERS.md">DEVELOPERS.md</a></td>
+              <td>Core <code>types/</code> vs <code>services/</code> layout, Store, Fabric facade</td>
+            </tr>
+            <tr>
+              <td><a href="AGENTS.md">AGENTS.md</a></td>
+              <td>Agent lifecycle (<code>Service</code> start/stop)</td>
+            </tr>
+            <tr>
+              <td>Hub <code>docs/PRODUCTION_MARCH.md</code></td>
+              <td>Copy of core march + Hub RC scope</td>
+            </tr>
+            <tr>
+              <td>Hub <code>tests/liftedApis.exports.test.js</code></td>
+              <td>Re-export contract for shared functions</td>
+            </tr>
+            <tr>
+              <td>GoonCitizen <code>AGENTS.md</code> §3–§4</td>
+              <td>What LiveRelay actually runs</td>
+            </tr>
+            <tr>
+              <td>GoonCitizen <code>DECISIONS.md</code> D-009/D-010/D-011/D-013</td>
+              <td>Why Fabric conventions, Peer, site-login, device-link exist</td>
+            </tr>
+          </tbody>
+        </table>
       </article>
     </section>
 
@@ -414,72 +1135,3270 @@ console.log('Signature (hex):', signature.toString('hex'));
 
 
 
+
+
+
+
+    <section>
+
+      <header>
+
+        <h2>services/market.js</h2>
+
+
+      </header>
+
+      <article>
+        <div class="container-overview">
+
+
+          <div class="description">Consumer budget agent for the Fabric document market.
+
+            A `Market` holds a sats budget and a list of wanted documents (by id,
+            optionally Tree root + blob total). On each `tick()` it refreshes peer
+            inventories (filtered by `merkleRootHex` / `maxSats`), asks the local
+            `DocumentBook` for the cheapest / fastest / most reliable blob plan,
+            and — when the plan fits `perPlanMaxSats` and the remaining budget — opens
+            one purchase session per blob (`createDocumentPurchaseSession`, one HTLC per
+            seller per blob). Only sealed blobs are bought for sats: an unsealed seller
+            could claim the payment without delivering, so unsealed blobs are taken only
+            when free. Paid sealed blobs are verified before paying: the seller's
+            free ciphertext must be held and committed by the root. With `quotes`, a
+            per-buyer `DocumentBlobQuote` replaces the static payment hash; that is not
+            atomic (the wrapped key can only be checked once the seller claims), so it
+            is opt-in. The session is then funded on a payment channel or through the
+            injected `pay` callback (L1 HTLC), confirmed with `verify`, and the paid
+            `DocumentRequest` goes out. Delivery, refund, and fraud outcomes feed back
+            into the offer book's local telemetry.
+
+            Budget: every sat is in exactly one bucket — `reservedSats` (committed to
+            a session that has not paid yet, including fundings whose outcome is
+            unknown), `lockedSats` (paid into an HTLC that is not resolved: delivery
+            pending, timed out awaiting refund, channel HTLC in flight), `spentSats`
+            (delivered, claimed, or fulfilled). `spentSats + reservedSats + lockedSats
+            <= budgetSats` always holds; sats return to the budget only once an HTLC provably cannot pay out (refund confirmed, channel HTLC failed, or funding definitively absent past `fundingSafetyMs`). Follows the Fabric Agent contract: `start()` / `stop()` / `tick()`, state under `_state.content`, `debug` / `error` events. No wire changes: it only drives existing `Peer` / `ChannelBook` methods and existing message types.</div>
+
+
+
+
+
+              <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                <dt class="tag-source">Source:</dt>
+                <dd class="tag-source">
+                  <ul class="dummy">
+                    <li>
+                      <a href="services_market.js.html">services/market.js</a>, <a href="services_market.js.html#line3">line 3</a>
+                    </li>
+                  </ul>
+                </dd>
+
+
+
+
+
+
+
+              </dl>
+
+
+
+
+          </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+      </article>
+
+    </section>
+
+
+
+
+
+
+
+    <section>
+
+      <header>
+
+        <h2>services/watchtower.js</h2>
+
+
+      </header>
+
+      <article>
+        <div class="container-overview">
+
+
+          <div class="description">Watchtower. Every Fabric node files penalty transactions for
+            its own channels and accepts the same filings from clients already
+            registered with it. A filing is per-output justice transactions, encrypted
+            under the commitment txid and indexed by the first 16 bytes of that txid.
+            Seeing the commitment decrypts the filing; a prefix that does not decrypt
+            is left alone. The store never holds a channel key.</div>
+
+
+
+
+
+          <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            <dt class="tag-source">Source:</dt>
+            <dd class="tag-source">
+              <ul class="dummy">
+                <li>
+                  <a href="services_watchtower.js.html">services/watchtower.js</a>, <a href="services_watchtower.js.html#line3">line 3</a>
+                </li>
+              </ul>
+            </dd>
+
+
+
+
+
+
+
+          </dl>
+
+
+
+
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+      </article>
+
+    </section>
+
+
+
+
+
+
+
+    <section>
+
+      <header>
+
+        <h2>types/actor.js</h2>
+
+
+      </header>
+
+      <article>
+        <div class="container-overview">
+
+
+          <div class="description">Base <strong>Actor</strong> type for Fabric: JSON-shaped state, JSON Patch commits, and a
+            content-derived <strong>id</strong>.
+
+            <p><strong>State</strong> — <code>_state.content</code> is observed with <code>fast-json-patch</code>.
+              <a href="Actor.html#commit">Actor#commit</a> turns observer diffs into Actor#history entries and emits <code>commit</code> plus
+              <code>message</code> with <code>type: 'ActorMessage'</code> / <code>data.type: 'Changes'</code>.
+            </p>
+
+            <p><strong>Identity</strong> — Actor#id is a SHA256 digest (hex) of the 32-byte preimage buffer;
+              Actor#preimage is SHA256(UTF-8) of the pretty-printed <a href="Actor.html#toGenericMessage">Actor#toGenericMessage</a>
+              <code>{ type, object }</code> with sorted keys (<a href="Actor.html#toObject">Actor#toObject</a>). Implementation uses Hash256.compute.
+              Treat <code>id</code> as a <strong>content address</strong> for that state shape, not an arbitrary application string hash.
+            </p>
+
+            <p><strong>Relationship to <a href="Message.html">Message</a></strong> — <code>Message</code> extends <code>Actor</code> and implements
+              <strong>AMP</strong> (wire headers, opcodes, Schnorr <code>Fabric/Message</code>). Downstream apps that only need a stable
+              storage key should not label that key <code>Actor#id</code> unless it is produced by this type.
+            </p>
+
+            <p>Narrative docs: <strong>DEVELOPERS.md</strong> (section <em>Actor and Message</em>) and this file’s class JSDoc are
+              kept in sync; <code>npm run make:docs</code> embeds DEVELOPERS.md as the HTML home page, while Actor.html is generated
+              from here.</p>
+          </div>
+
+
+
+
+
+          <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            <dt class="tag-source">Source:</dt>
+            <dd class="tag-source">
+              <ul class="dummy">
+                <li>
+                  <a href="types_actor.js.html">types/actor.js</a>, <a href="types_actor.js.html#line3">line 3</a>
+                </li>
+              </ul>
+            </dd>
+
+
+
+
+
+
+
+          </dl>
+
+
+
+
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+      </article>
+
+    </section>
+
+
+
+
+
+
+
+    <section>
+
+      <header>
+
+        <h2>types/beacon.js</h2>
+
+
+      </header>
+
+      <article>
+        <div class="container-overview">
+
+
+          <div class="description">Beacon — L1-tied epoch chain that seals sidechain / contracts digests.
+
+            Regtest: `createEpoch()` mines one block (`generatetoaddress`) then appends
+            a `BEACON_EPOCH` entry. Non-regtest: `recordEpochFromBlock` follows tips.
+
+            Hub product wiring lives in hub.fabric.pub `contracts/beacon.js` (extends this
+            type). Ready-round retry finalize is implemented here so Hub and CLI share it.
+
+            Federation rounds seal in clock order: a round seals only directly on top of
+            the sealed tip (`clock === tip.clock + 1`, higher L1 height). Rounds above a
+            reorg, rounds left below the sealed tip, and rounds older than
+            `federationRoundTtlMs` are cancelled (`federation:round-cancelled`); late
+            signatures for them are refused.</div>
+
+
+
+
+
+          <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            <dt class="tag-source">Source:</dt>
+            <dd class="tag-source">
+              <ul class="dummy">
+                <li>
+                  <a href="types_beacon.js.html">types/beacon.js</a>, <a href="types_beacon.js.html#line3">line 3</a>
+                </li>
+              </ul>
+            </dd>
+
+
+
+
+
+
+
+          </dl>
+
+
+
+
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+      </article>
+
+    </section>
+
+
+
+
+
+
+
+    <section>
+
+      <header>
+
+        <h2>types/block.js</h2>
+
+
+      </header>
+
+      <article>
+        <div class="container-overview">
+
+
+          <div class="description">Bitcoin-shaped Block: parent-linked header + merkle of leaves, with optional
+            PoW (`nonce`/`bits`), Elements-style federation signatures, and arbitrary `data`.</div>
+
+
+
+
+
+          <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            <dt class="tag-source">Source:</dt>
+            <dd class="tag-source">
+              <ul class="dummy">
+                <li>
+                  <a href="types_block.js.html">types/block.js</a>, <a href="types_block.js.html#line3">line 3</a>
+                </li>
+              </ul>
+            </dd>
+
+
+
+
+
+            <dt class="tag-see">See:</dt>
+            <dd class="tag-see">
+              <ul>
+                <li>docs/CHAIN.md</li>
+              </ul>
+            </dd>
+
+
+
+          </dl>
+
+
+
+
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+      </article>
+
+    </section>
+
+
+
+
+
+
+
+    <section>
+
+      <header>
+
+        <h2>types/bond.js</h2>
+
+
+      </header>
+
+      <article>
+        <div class="container-overview">
+
+
+          <div class="description">Bonds: coins locked in P2TR outputs whose spend paths enforce
+            a promise. <a href="Bond.html">Bond</a> builds the publisher bounty and provider deposit of
+            the document market, and the fidelity bond of the coinjoin market
+            (`Bond.buildFidelity`, certificates, chain verification, JoinMarket's bond
+            value, `Bond.FidelityVerifier`).</div>
+
+
+
+
+
+          <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            <dt class="tag-source">Source:</dt>
+            <dd class="tag-source">
+              <ul class="dummy">
+                <li>
+                  <a href="types_bond.js.html">types/bond.js</a>, <a href="types_bond.js.html#line3">line 3</a>
+                </li>
+              </ul>
+            </dd>
+
+
+
+
+
+
+
+          </dl>
+
+
+
+
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+      </article>
+
+    </section>
+
+
+
+
+
+
+
+    <section>
+
+      <header>
+
+        <h2>types/book.js</h2>
+
+
+      </header>
+
+      <article>
+        <div class="container-overview">
+
+
+          <div class="description">Capped, keyed, insertion-ordered row store at the root of the
+            locally held books: <a href="SignedBook.html">SignedBook</a> → <a href="OrderBook.html">OrderBook</a>
+            (`types/coinjoinBook`, `types/liquidityBook`), `types/documentBook`, and
+            `types/channelBook`. Rows live in a `Map` so arrival order is iteration
+            order; past the capacity the oldest row goes. Subclasses own the row shape
+            and the public vocabulary (offers, orders, sessions); this class only keeps
+            the rows. A book is an <a href="Actor.html">Actor</a> whose content is just its type name:
+            settings (clocks, keys) and rows stay out of Actor state.</div>
+
+
+
+
+
+          <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            <dt class="tag-source">Source:</dt>
+            <dd class="tag-source">
+              <ul class="dummy">
+                <li>
+                  <a href="types_book.js.html">types/book.js</a>, <a href="types_book.js.html#line3">line 3</a>
+                </li>
+              </ul>
+            </dd>
+
+
+
+
+
+
+
+          </dl>
+
+
+
+
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+      </article>
+
+    </section>
+
+
+
+
+
+
+
+    <section>
+
+      <header>
+
+        <h2>types/chain.js</h2>
+
+
+      </header>
+
+      <article>
+        <div class="container-overview">
+
+
+          <div class="description">Chain — ledger of Bitcoin-shaped Blocks with consensus policy:
+
+            - `pow` (default) — parent-linked playnet / Bitcoin-style Block + mempool
+            - `federation` — linear tip; Elements-style k-of-n block signatures (Beacon)
+            - `gossip` — content-addressed data blocks; merge = union by block id
+
+            Statechain document helpers (`functions/sidechainState`) hold the sealed JSON
+            document. Digests feed that document / Beacon sidechain heads; raw gossip is
+            never Beacon authority.</div>
+
+
+
+
+
+          <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            <dt class="tag-source">Source:</dt>
+            <dd class="tag-source">
+              <ul class="dummy">
+                <li>
+                  <a href="types_chain.js.html">types/chain.js</a>, <a href="types_chain.js.html#line3">line 3</a>
+                </li>
+              </ul>
+            </dd>
+
+
+
+
+
+            <dt class="tag-see">See:</dt>
+            <dd class="tag-see">
+              <ul>
+                <li>docs/CHAIN.md</li>
+
+                <li>docs/DISTRIBUTED_EXECUTION.md</li>
+              </ul>
+            </dd>
+
+
+
+          </dl>
+
+
+
+
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+      </article>
+
+    </section>
+
+
+
+
+
+
+
+    <section>
+
+      <header>
+
+        <h2>types/channelBook.js</h2>
+
+
+      </header>
+
+      <article>
+        <div class="container-overview">
+
+
+          <div class="description">The host's registry of payment channel sessions: a
+            <a href="Book.html">Book</a> whose rows are `Channel.Session`s keyed by channel id.
+            Unlike the market books it never evicts — a full book refuses new channels.
+          </div>
+
+
+
+
+
+          <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            <dt class="tag-source">Source:</dt>
+            <dd class="tag-source">
+              <ul class="dummy">
+                <li>
+                  <a href="types_channelBook.js.html">types/channelBook.js</a>, <a href="types_channelBook.js.html#line3">line 3</a>
+                </li>
+              </ul>
+            </dd>
+
+
+
+
+
+
+
+          </dl>
+
+
+
+
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+      </article>
+
+    </section>
+
+
+
+
+
+
+
+    <section>
+
+      <header>
+
+        <h2>types/coinjoin.js</h2>
+
+
+      </header>
+
+      <article>
+        <div class="container-overview">
+
+
+          <div class="description">L1:L1 coinjoin market. Makers gossip signed
+            `CoinjoinOffer` bodies offering their UTXOs for a fee; a taker picks
+            several makers and builds **one** transaction in which every participant
+            receives an output of the same `amountSats` (plus change), so observers
+            cannot tell which input paid which equal output. The transaction is valid
+            only once every party has signed, so nobody is committed before anyone
+            else and there is no free option; a maker who stalls is dropped and the
+            round rebuilt. PoDLE commitments (`Coinjoin.generatePodle`, after
+            JoinMarket) stop takers from opening rounds just to learn maker UTXOs, and
+            fidelity bonds (<a href="Bond.html">Bond</a>) let takers weight makers by locked capital.
+
+            Every input and output is P2TR key-path, the transaction is version 2
+            with `nLockTime` at the chain tip, and inputs / outputs are BIP-69 sorted.
+
+            Bodies travel as `CONTRACT_MESSAGE` JSON. Offers and cancels are public;
+            round messages (`CoinjoinFill` … `CoinjoinSig`) are sealed to the
+            counterparty with `Coinjoin.sealRoundMessage`. Each body is BIP340-signed by
+            its author over the canonical body without `signature`.
+
+            PoDLE: `P = q·G` is a taker UTXO's (even-y) output key, `J_i` a
+            nothing-up-my-sleeve generator for index `i` (0–2), `P2 = q·J_i`, and the
+            commitment `SHA256(P2)`. The reveal names the UTXO and carries `P`, `P2`,
+            and a DLEQ proof that `log_G(P) = log_J(P2)`. Each UTXO yields only
+            `PODLE_MAX_INDEX` commitments and makers remember used ones
+            (`Coinjoin.PodleBlacklist`), so a taker who aborts rounds to learn maker
+            UTXOs burns its own coins' tries. See `docs/COINJOIN_MARKET.md`.</div>
+
+
+
+
+
+          <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            <dt class="tag-source">Source:</dt>
+            <dd class="tag-source">
+              <ul class="dummy">
+                <li>
+                  <a href="types_coinjoin.js.html">types/coinjoin.js</a>, <a href="types_coinjoin.js.html#line3">line 3</a>
+                </li>
+              </ul>
+            </dd>
+
+
+
+
+
+
+
+          </dl>
+
+
+
+
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+      </article>
+
+    </section>
+
+
+
+
+
+
+
+    <section>
+
+      <header>
+
+        <h2>types/coinjoinBook.js</h2>
+
+
+      </header>
+
+      <article>
+        <div class="container-overview">
+
+
+          <div class="description">Locally held offer book for the L1:L1 coinjoin market
+            (<a href="Coinjoin.html">Coinjoin</a>). Makers gossip signed `CoinjoinOffer` bodies; each
+            node verifies and keeps its own book. A taker draws makers at random with
+            <a href="CoinjoinBook.html#choose">CoinjoinBook#choose</a>: fee is a hard limit, not a ranking (always
+            taking the cheapest makers would let one cheap Sybil fill every round), and
+            the draw is weighted by fidelity bond value so identities backed by locked
+            coins are picked more often. Bonds are checked on chain with
+            <a href="CoinjoinBook.html#refreshBonds">CoinjoinBook#refreshBonds</a>; a bond outpoint claimed by two makers
+            counts for neither.
+          </div>
+
+
+
+
+
+          <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            <dt class="tag-source">Source:</dt>
+            <dd class="tag-source">
+              <ul class="dummy">
+                <li>
+                  <a href="types_coinjoinBook.js.html">types/coinjoinBook.js</a>, <a href="types_coinjoinBook.js.html#line3">line 3</a>
+                </li>
+              </ul>
+            </dd>
+
+
+
+
+
+
+
+          </dl>
+
+
+
+
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+      </article>
+
+    </section>
+
+
+
+
+
+
+
+    <section>
+
+      <header>
+
+        <h2>types/coinjoinRound.js</h2>
+
+
+      </header>
+
+      <article>
+        <div class="container-overview">
+
+
+          <div class="description">State machines for one coinjoin round, on <a href="Coinjoin.html">Coinjoin</a>.
+            The taker runs one <a href="CoinjoinTakerRound.html">CoinjoinTakerRound</a> across all its makers; each
+            maker runs one <a href="CoinjoinMakerRound.html">CoinjoinMakerRound</a> per fill. They exchange sealed
+            round messages (`Coinjoin.sealRoundMessage` envelopes) over any transport — Fabric
+            `CONTRACT_MESSAGE` direct to the peer, or `P2P_FORWARD` to hide the
+            taker's address. Every method that talks returns the envelopes to send;
+            nothing here touches the network.
+
+            Taker: `new → filled → authed → built → signed → broadcast`, or `aborted`
+            Maker: `new → acked → ioauthed → signed`, or `aborted`
+
+            The taker's key is fresh for each round, so makers do not learn who it is.
+            Fills are sealed to the maker's offer key; the maker answers with a fresh
+            seal key for the rest of the round. A maker that does not answer in time is
+            dropped and the transaction rebuilt without it (<a href="CoinjoinTakerRound.html#rebuild">CoinjoinTakerRound#rebuild</a>),
+            as long as `minMakers` remain; the caller should exclude it from later rounds.
+
+            Chain and wallet access go through adapters (<a href="CoinjoinTakerRound.html#.bitcoinAdapter">CoinjoinTakerRound.bitcoinAdapter</a>,
+            <a href="CoinjoinTakerRound.html#.walletAdapter">CoinjoinTakerRound.walletAdapter</a>) so the machines run without daemons in tests.
+          </div>
+
+
+
+
+
+          <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            <dt class="tag-source">Source:</dt>
+            <dd class="tag-source">
+              <ul class="dummy">
+                <li>
+                  <a href="types_coinjoinRound.js.html">types/coinjoinRound.js</a>, <a href="types_coinjoinRound.js.html#line3">line 3</a>
+                </li>
+              </ul>
+            </dd>
+
+
+
+
+
+
+
+          </dl>
+
+
+
+
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+      </article>
+
+    </section>
+
+
+
+
+
+
+
+    <section>
+
+      <header>
+
+        <h2>types/datastore.js</h2>
+
+
+      </header>
+
+      <article>
+        <div class="container-overview">
+
+
+          <div class="description">Ledger-adjacent <a href="Store.html">Store</a> extension. Consolidation with <a href="Store.html">Store</a>
+            is planned (single persistence surface + optional ledger facet); left as-is until that
+            design is scheduled.</div>
+
+
+
+
+
+          <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            <dt class="tag-source">Source:</dt>
+            <dd class="tag-source">
+              <ul class="dummy">
+                <li>
+                  <a href="types_datastore.js.html">types/datastore.js</a>, <a href="types_datastore.js.html#line3">line 3</a>
+                </li>
+              </ul>
+            </dd>
+
+
+
+
+
+
+
+          </dl>
+
+
+
+
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+      </article>
+
+    </section>
+
+
+
+
+
+
+
+    <section>
+
+      <header>
+
+        <h2>types/distributedExecution.js</h2>
+
+
+      </header>
+
+      <article>
+        <div class="container-overview">
+
+
+          <div class="description">@deprecated Not a Fabric type. Prefer:
+            - `functions/fabricCanonicalJson` (jsonSafe / stableStringify)
+            - `functions/beaconFederationSigning` (epoch signing / federation verify)
+            - `functions/fabricProgramManifest` / `Machine.parseManifest` (manifest v1)
+            - `types/program` + `types/machine` for execution
+
+            Thin re-export kept for one release so Hub / older requires keep working.</div>
+
+
+
+
+
+          <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            <dt class="tag-source">Source:</dt>
+            <dd class="tag-source">
+              <ul class="dummy">
+                <li>
+                  <a href="types_distributedExecution.js.html">types/distributedExecution.js</a>, <a href="types_distributedExecution.js.html#line3">line 3</a>
+                </li>
+              </ul>
+            </dd>
+
+
+
+
+
+
+
+          </dl>
+
+
+
+
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+      </article>
+
+    </section>
+
+
+
+
+
+
+
+    <section>
+
+      <header>
+
+        <h2>types/document.js</h2>
+
+
+      </header>
+
+      <article>
+        <div class="container-overview">
+
+
+          <div class="description">Sealed blob-tree document.
+
+            A Fabric <a href="Document.html">Document</a> is a Merkle tree over wire-sized blobs. The
+            statics split content into blobs (`Document.split`), build and check the
+            tree and its inclusion proofs, advertise the `DocumentBlobIndex`, and
+            reassemble verified blobs; `DocumentBlobTransferBook` collects them off the
+            wire. When sealed, **every blob has its own
+            key** `K_i`; the per-blob payment hash is `SHA256(K_i)` and the blob hash is
+            `SHA256(ciphertext_i)`. Chunk-level sealing is therefore the only sealing: a
+            one-blob document is indistinguishable from any other blob on the wire.
+
+            The record a Document exposes to the network (`record()`, `inventoryItem()`)
+            carries **only hashes** — blob hashes, payment hashes, the Tree root, the
+            publisher key when known. Human-readable metadata (title, URL, MIME) belongs
+            in a separately sealed **manifest blob** (`Document.encodeManifest`) bought
+            like any other chunk. See `docs/L1_DOCUMENT_EXCHANGE.md`.
+
+            Per-blob key reveal reuses the existing `DocumentContentKeyReveal` body
+            (`functions/documentSealedExchange.js` `buildKeyRevealMessage`) once per blob
+            — the same message, more of them. No new opcodes.
+
+            **Document tree** (`Document.rootHex`): domain-separated SHA-256.
+            `leaf_i = H(0x00 || blobHash_i || paymentHash_i || iv_i)` (32 + 32 + 12
+            bytes; zeros when unsealed), `node = H(0x01 || left || right)`, an odd last
+            node is promoted unchanged, and the root is
+            `H(0x02 || uint32be(blobTotal) || treeRoot)`. The root therefore commits the
+            blob count (no CVE-2012-2459 twins), every blob's payment hash `SHA256(K_i)`
+            (the AES key commitment that closes AES-GCM's non-key-committing gap), and
+            its IV, so a frame carries a short inclusion proof and a buyer verifies the
+            free ciphertext (and the pinned key hash and IV) before paying. When the
+            full leaf list will not fit in one AMP body, the advertised index carries
+            only the root (`leavesInline: false`).
+
+            **Convergent by default.** `seal` derives each `K_i` (and its IV) from the
+            blob's plaintext, so the same bytes seal to the same blob hash, payment
+            hash, and root for every seller: a chunk two files (or two sellers) share is
+            one chunk, bought once and served by anyone holding it. Opening checks that
+            the key really is the content-derived one. `{ private: true }` keeps random
+            per-blob keys (no de-duplication, no confirmation-of-file exposure);
+            `convergenceSecret` scopes de-duplication to those who hold the secret.</div>
+
+
+
+
+
+          <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            <dt class="tag-source">Source:</dt>
+            <dd class="tag-source">
+              <ul class="dummy">
+                <li>
+                  <a href="types_document.js.html">types/document.js</a>, <a href="types_document.js.html#line3">line 3</a>
+                </li>
+              </ul>
+            </dd>
+
+
+
+
+
+
+
+          </dl>
+
+
+
+
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+      </article>
+
+    </section>
+
+
+
+
+
+
+
+    <section>
+
+      <header>
+
+        <h2>types/documentBlobTransferBook.js</h2>
+
+
+      </header>
+
+      <article>
+        <div class="container-overview">
+
+
+          <div class="description">Buyer-side reassembly of indexed `P2P_FILE_SEND` blob frames
+            into a <a href="Document.html">Document</a>: purchase expectations, per-origin quotas, and
+            verify-before-pay for sealed per-blob frames.</div>
+
+
+
+
+
+          <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            <dt class="tag-source">Source:</dt>
+            <dd class="tag-source">
+              <ul class="dummy">
+                <li>
+                  <a href="types_documentBlobTransferBook.js.html">types/documentBlobTransferBook.js</a>, <a href="types_documentBlobTransferBook.js.html#line3">line 3</a>
+                </li>
+              </ul>
+            </dd>
+
+
+
+
+
+
+
+          </dl>
+
+
+
+
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+      </article>
+
+    </section>
+
+
+
+
+
+
+
+    <section>
+
+      <header>
+
+        <h2>types/documentBook.js</h2>
+
+
+      </header>
+
+      <article>
+        <div class="container-overview">
+
+
+          <div class="description">Ranked, locally-held document / blob offer book with
+            per-provider telemetry. The book is the consumer-side "chunk index":
+            blob hash → ranked providers, where ranking folds in locally measured
+            inventory round-trip time, delivery outcomes, refunds, and fraud-proof
+            penalties. Nothing here is gossiped — reputation is local (see
+            `docs/L1_DOCUMENT_EXCHANGE.md`); `exportTelemetry()` is shaped so the
+            record could be signed and shared later without migration.
+
+            The module also carries the rest of the document market around the book:
+            purchase session records (<a href="global.html#createDocumentPurchaseSession">createDocumentPurchaseSession</a>), private
+            `DocumentRequest` relay fees (<a href="global.html#buildForwardedDocumentRequest">buildForwardedDocumentRequest</a>), and
+            inventory paging (<a href="global.html#paginateInventoryItems">paginateInventoryItems</a>) for the sell side.</div>
+
+
+
+
+
+          <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            <dt class="tag-source">Source:</dt>
+            <dd class="tag-source">
+              <ul class="dummy">
+                <li>
+                  <a href="types_documentBook.js.html">types/documentBook.js</a>, <a href="types_documentBook.js.html#line3">line 3</a>
+                </li>
+              </ul>
+            </dd>
+
+
+
+
+
+
+
+          </dl>
+
+
+
+
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+      </article>
+
+    </section>
+
+
+
+
+
+
+
+    <section>
+
+      <header>
+
+        <h2>types/federation.js</h2>
+
+
+      </header>
+
+      <article>
+        <div class="container-overview">
+
+
+          <div class="description">Federations: k-of-n signer sets and their Bitcoin vaults.
+
+            The <a href="Federation.html">Federation</a> instance tracks members and signs as a set. The
+            statics are the whole federation toolkit shared by Hub, GoonCitizen, and
+            Passport:
+
+            - **Validator sets:** one entry per signing key, default threshold.
+            - **Pre-sign gates:** refuse to sign epochs or withdrawals until local state
+            and the reserve ledger still agree.
+            - **Reserve ledger:** explicit-amount peg-in / peg-out accounting under
+            `/federationReserve` in sidechain content.
+            - **Named federations:** a canonical descriptor (validators, threshold,
+            network, publisher, ladder) whose hash is the federation id, the Taproot
+            vault every member derives from it, withdrawals through the k-of-n
+            authority leaf, and the `CONTRACT_MESSAGE` bodies members exchange.</div>
+
+
+
+
+
+          <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            <dt class="tag-source">Source:</dt>
+            <dd class="tag-source">
+              <ul class="dummy">
+                <li>
+                  <a href="types_federation.js.html">types/federation.js</a>, <a href="types_federation.js.html#line3">line 3</a>
+                </li>
+              </ul>
+            </dd>
+
+
+
+
+
+
+
+          </dl>
+
+
+
+
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+      </article>
+
+    </section>
+
+
+
+
+
+
+
+    <section>
+
+      <header>
+
+        <h2>types/htlc.js</h2>
+
+
+      </header>
+
+      <article>
+        <div class="container-overview">
+
+
+          <div class="description">P2TR (BIP 341) script-path hash time-locked contract: one
+            output, two leaves, over the NUMS internal key (no key-path spend).
+
+            - Claim: `OP_SHA256 <paymentHash> OP_EQUALVERIFY <claimX> OP_CHECKSIG`
+                (the preimage plus the claimer's Schnorr signature)
+                - Refund: `<lock> OP_CHECKLOCKTIMEVERIFY OP_DROP <refundX> OP_CHECKSIG`
+                    (the refunder's signature once the chain reaches `lock`)
+
+                    Leaves come from <a href="Policy.html">Policy</a> (`buildHashlockLeaf`, `buildSpendLeaf`,
+                    `composeTaprootTree`), so an HTLC is one composition of the contract tree
+                    builders. Inventory sales, document-offer escrow, fidelity
+                    bonds, channels, and liquidity swaps all use this one shape.
+
+                    **Payment hash / preimage (binding):** for document sales always go through
+                    `functions/documentPaymentHash` (`resolveDocumentContentHashHex`).
+                    - **Sealed (priced):** preimage = content key `K`; paymentHash = SHA256(K).
+                    - **Legacy unsealed envelope:** preimage = SHA256(**unsigned**
+                    `documentPublishEnvelopeBuffer` bytes) — never a Schnorr-signed gossip
+                    frame; paymentHash = SHA256(preimage) (`purchaseContentHashHex`).
+
+                    Browser-safe: no `fs` / `net` (the Hub bundles it for in-browser claims).</div>
+
+
+
+
+
+          <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            <dt class="tag-source">Source:</dt>
+            <dd class="tag-source">
+              <ul class="dummy">
+                <li>
+                  <a href="types_htlc.js.html">types/htlc.js</a>, <a href="types_htlc.js.html#line3">line 3</a>
+                </li>
+              </ul>
+            </dd>
+
+
+
+
+
+
+
+          </dl>
+
+
+
+
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+      </article>
+
+    </section>
+
+
+
+
+
+
+
+    <section>
+
+      <header>
+
+        <h2>types/liquidityBook.js</h2>
+
+
+      </header>
+
+      <article>
+        <div class="container-overview">
+
+
+          <div class="description">Locally held order book for the L1/L2 liquidity swap market
+            (bodies and codec: `types/swap`). Makers gossip signed `LiquidityOrder` bodies;
+            each node verifies and keeps its own book — there is no central matcher.
+            A taker walks the book by price-time priority with <a href="LiquidityBook.html#fill">LiquidityBook#fill</a>
+            and settles each fill with its maker (a <a href="Swap.html">Swap</a>). The mid
+            premium and spread from <a href="LiquidityBook.html#index">LiquidityBook#index</a> are the market's priced
+            view of which layer's liquidity is scarcer: a positive mid means L1 sats
+            trade above L2 sats.</div>
+
+
+
+
+
+          <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            <dt class="tag-source">Source:</dt>
+            <dd class="tag-source">
+              <ul class="dummy">
+                <li>
+                  <a href="types_liquidityBook.js.html">types/liquidityBook.js</a>, <a href="types_liquidityBook.js.html#line3">line 3</a>
+                </li>
+              </ul>
+            </dd>
+
+
+
+
+
+
+
+          </dl>
+
+
+
+
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+      </article>
+
+    </section>
+
+
+
+
+
+
+
+    <section>
+
+      <header>
+
+        <h2>types/orderBook.js</h2>
+
+
+      </header>
+
+      <article>
+        <div class="container-overview">
+
+
+          <div class="description">A <a href="SignedBook.html">SignedBook</a> of maker entries a taker shops from:
+            coinjoin offers (`types/coinjoinBook`) and liquidity orders
+            (`types/liquidityBook`). Adds the market views both share: public
+            <a href="OrderBook.html#ingest">OrderBook#ingest</a>, an optional cap on live entries per maker, the
+            live makers, and a filtered, ordered <a href="OrderBook.html#list">OrderBook#list</a>. Subclasses
+            narrow the listing with <a href="OrderBook.html#_matches">OrderBook#_matches</a>, order it with
+            <a href="OrderBook.html#_compare">OrderBook#_compare</a>, and shape each row with <a href="OrderBook.html#_view">OrderBook#_view</a>.
+          </div>
+
+
+
+
+
+          <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            <dt class="tag-source">Source:</dt>
+            <dd class="tag-source">
+              <ul class="dummy">
+                <li>
+                  <a href="types_orderBook.js.html">types/orderBook.js</a>, <a href="types_orderBook.js.html#line3">line 3</a>
+                </li>
+              </ul>
+            </dd>
+
+
+
+
+
+
+
+          </dl>
+
+
+
+
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+      </article>
+
+    </section>
+
+
+
+
+
+
+
+    <section>
+
+      <header>
+
+        <h2>types/policy.js</h2>
+
+
+      </header>
+
+      <article>
+        <div class="container-overview">
+
+
+          <div class="description">Spend policies: how coins locked to a Fabric contract can be
+            spent, compiled to one P2TR (BIP 341) output.
+
+            A policy is a failover ladder of tiers. Each tier is k-of-n keys
+            (tapscript leaves), optionally behind a CSV / CLTV `after` lock; `until`
+            expires a tier off-chain and, in `migrate` / `both` decay modes, schedules
+            a migration leaf to the child policy. A tier may also carry an off-chain
+            `when` predicate (`tipClockGte`, `statePathEq`; unknown ops fail closed, so
+            PSBT preparation stops). Hashlock leaves (a Program run commitment, an HTLC
+            claim) and arbitrary script leaves compose into the same tree
+            (Policy.composeTaprootTree); adding a leaf changes the address.
+
+            A Program-run hashlock (Policy.withRunHashlock) also requires a
+            Schnorr signature from `run.pubkeyHex`; a preimage-only leaf (anyone who
+            learns the preimage can spend) needs an explicit `allowPreimageOnly: true`.
+            That guard lives in `withRunHashlock` only: a `{ hashlock }` without
+            `pubkeyHex` passed straight to `composeTaprootTree` still builds a
+            preimage-only leaf unless it sets `hashlock.requirePubkey: true`.
+
+            <a href="Policy.html">Policy</a> holds one normalized policy, with its address and tier
+            selection as instance methods; the leaf builders, PSBT preparation and
+            finalization, the federation vault, and the lock helpers are statics, used
+            by <a href="Contract.html">Contract</a>, <a href="Federation.html">Federation</a>, <a href="Bond.html">Bond</a>, <a href="Htlc.html">Htlc</a>,
+            <a href="Channel.html">Channel</a>, and <a href="Resolutions.html">Resolutions</a>.
+          </div>
+
+
+
+
+
+          <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            <dt class="tag-source">Source:</dt>
+            <dd class="tag-source">
+              <ul class="dummy">
+                <li>
+                  <a href="types_policy.js.html">types/policy.js</a>, <a href="types_policy.js.html#line3">line 3</a>
+                </li>
+              </ul>
+            </dd>
+
+
+
+
+
+            <dt class="tag-see">See:</dt>
+            <dd class="tag-see">
+              <ul>
+                <li>docs/CONTRACTS.md</li>
+
+                <li>docs/DISTRIBUTED_EXECUTION.md</li>
+
+                <li>docs/PROGRAM.md</li>
+              </ul>
+            </dd>
+
+
+
+          </dl>
+
+
+
+
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+      </article>
+
+    </section>
+
+
+
+
+
+
+
+    <section>
+
+      <header>
+
+        <h2>types/program.js</h2>
+
+
+      </header>
+
+      <article>
+        <div class="container-overview">
+
+
+          <div class="description">Multi-language Program — executable artifact for <a href="Machine.html">Machine</a>, with optional
+            L1 Bitcoin redeem scaffolding for `bitcoin-script`.
+
+            Languages: `fabric-opcodes` | `javascript` | `bitcoin-script` are RC-supported.
+            `solidity` | `asm` remain listed for forward compatibility but `compile()` returns
+            `{ ok: false }` until Compiler frontends land — do not claim they execute.</div>
+
+
+
+
+
+          <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            <dt class="tag-source">Source:</dt>
+            <dd class="tag-source">
+              <ul class="dummy">
+                <li>
+                  <a href="types_program.js.html">types/program.js</a>, <a href="types_program.js.html#line3">line 3</a>
+                </li>
+              </ul>
+            </dd>
+
+
+
+
+
+            <dt class="tag-see">See:</dt>
+            <dd class="tag-see">
+              <ul>
+                <li>docs/PROGRAM.md</li>
+              </ul>
+            </dd>
+
+
+
+          </dl>
+
+
+
+
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+      </article>
+
+    </section>
+
+
+
+
+
+
+
+    <section>
+
+      <header>
+
+        <h2>types/resolutions.js</h2>
+
+
+      </header>
+
+      <article>
+        <div class="container-overview">
+
+
+          <div class="description">State tree of pre-signed, timelocked exits for a Fabric
+            contract whose state advances off-chain (payment channels, provider
+            deposits, …). A state is **resolvable** when every exit it depends on
+            carries all required signatures, so either party can close it on L1 without
+            the counterparty's cooperation. Contracts refuse to treat a state as live
+            until it is resolvable — "lack of response" then always has an on-chain
+            answer (BOLT 2's funding_signed-before-broadcast, generalised).</div>
+
+
+
+
+
+          <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            <dt class="tag-source">Source:</dt>
+            <dd class="tag-source">
+              <ul class="dummy">
+                <li>
+                  <a href="types_resolutions.js.html">types/resolutions.js</a>, <a href="types_resolutions.js.html#line3">line 3</a>
+                </li>
+              </ul>
+            </dd>
+
+
+
+
+
+
+
+          </dl>
+
+
+
+
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+      </article>
+
+    </section>
+
+
+
+
+
+
+
+    <section>
+
+      <header>
+
+        <h2>types/setup.js</h2>
+
+
+      </header>
+
+      <article>
+        <div class="container-overview">
+
+
+          <div class="description">Thin Blessed adapter over module:functions/fabricSetup.</div>
+
+
+
+
+
+          <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            <dt class="tag-source">Source:</dt>
+            <dd class="tag-source">
+              <ul class="dummy">
+                <li>
+                  <a href="types_setup.js.html">types/setup.js</a>, <a href="types_setup.js.html#line3">line 3</a>
+                </li>
+              </ul>
+            </dd>
+
+
+
+
+
+
+
+          </dl>
+
+
+
+
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+      </article>
+
+    </section>
+
+
+
+
+
+
+
+    <section>
+
+      <header>
+
+        <h2>types/signedBook.js</h2>
+
+
+      </header>
+
+      <article>
+        <div class="container-overview">
+
+
+          <div class="description">Locally held book of signed, expiring maker entries
+            (coinjoin offers, liquidity orders). Makers gossip signed bodies; each node
+            verifies and keeps its own book. This class holds what every such market
+            shares: signed ingest, signed cancels (remembered so a replayed entry stays
+            dead), expiry pruning, and dropping a maker. Subclasses supply the codec
+            and body types; <a href="OrderBook.html">OrderBook</a> adds the maker market views.
+
+            SignedBook.codec builds a market's body codec: normalize, canonical
+            signing bytes, body id, BIP340 sign and verify. `types/coinjoin` and
+            `types/swap` carry their own as `Coinjoin` / `Swap` statics.</div>
+
+
+
+
+
+          <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            <dt class="tag-source">Source:</dt>
+            <dd class="tag-source">
+              <ul class="dummy">
+                <li>
+                  <a href="types_signedBook.js.html">types/signedBook.js</a>, <a href="types_signedBook.js.html#line3">line 3</a>
+                </li>
+              </ul>
+            </dd>
+
+
+
+
+
+
+
+          </dl>
+
+
+
+
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+      </article>
+
+    </section>
+
+
+
+
+
+
+
+    <section>
+
+      <header>
+
+        <h2>types/swap.js</h2>
+
+
+      </header>
+
+      <article>
+        <div class="container-overview">
+
+
+          <div class="description">**Swap** — one fill of the L1/L2 liquidity market, plus the
+            market's pure helpers as statics.
+
+            One instrument, **L1/L2**, priced as `premiumPpm` — 1 L1 sat =
+            `(1 + premiumPpm / 1e6)` L2 sats. An **ask** sells L1 for L2, a **bid** buys
+            L1 with L2; best bid is the highest premium, best ask the lowest. A take
+            settles atomically through one SHA256 payment hash shared by a P2TR HTLC on
+            L1 (`types/htlc`) and a BOLT11 invoice on L2: the party giving L1 owns the
+            preimage, funds the HTLC first, and is paid by invoice; paying the invoice
+            reveals the preimage that claims the HTLC.
+
+            Bodies travel as `CONTRACT_MESSAGE` JSON (`LiquidityOrder`,
+            `LiquidityOrderCancel`, `LiquidityTake`, `LiquidityTakeAccept`,
+            `LiquiditySwapFunded`), each BIP340-signed by its author over the canonical
+            body without `signature`. Makers' orders are kept by `types/liquidityBook`.
+
+            Each side of a fill runs its own `Swap`: `new → proposed → accepted →
+            prepaid? → l1Funded → l2Paid → l1Claimed`, or `refunded` / `aborted`.
+            Chain and Lightning access go through adapters (see <a href="Swap.html#.bitcoinAdapter">Swap.bitcoinAdapter</a>
+            and <a href="Swap.html#.lightningAdapter">Swap.lightningAdapter</a>) so the machine runs without daemons in
+            tests. See `docs/LIQUIDITY_MARKET.md`.</div>
+
+
+
+
+
+          <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            <dt class="tag-source">Source:</dt>
+            <dd class="tag-source">
+              <ul class="dummy">
+                <li>
+                  <a href="types_swap.js.html">types/swap.js</a>, <a href="types_swap.js.html#line3">line 3</a>
+                </li>
+              </ul>
+            </dd>
+
+
+
+
+
+
+
+          </dl>
+
+
+
+
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+      </article>
+
+    </section>
+
+
+
   </div>
   <nav>
     <h2><a href="index.html">Home</a></h2>
+    <h3>Modules</h3>
+    <ul>
+      <li><a href="module-types_bech32_bech32.html">types/bech32/bech32</a></li>
+      <li><a href="module-types_bech32_fabricPaymentBech32.html">types/bech32/fabricPaymentBech32</a></li>
+      <li><a href="module-types_delegation.html">types/delegation</a></li>
+      <li><a href="module-types_key_base58.html">types/key/base58</a></li>
+      <li><a href="module-types_key_bip32.html">types/key/bip32</a></li>
+      <li><a href="module-types_key_bip39.html">types/key/bip39</a></li>
+      <li><a href="module-types_key_bip49.html">types/key/bip49</a></li>
+      <li><a href="module-types_key_bip85.html">types/key/bip85</a></li>
+      <li><a href="module-types_key_fabricKeyMaterial.html">types/key/fabricKeyMaterial</a></li>
+      <li><a href="module-types_key_keyHasPrivateSigningMaterial.html">types/key/keyHasPrivateSigningMaterial</a></li>
+      <li><a href="module-types_key_pubkey.html">types/key/pubkey</a></li>
+      <li><a href="module-types_key_signingTags.html">types/key/signingTags</a></li>
+      <li><a href="module-types_typetree.html">types/typetree</a></li>
+      <li><a href="module-types_wallet_accountKeys.html">types/wallet/accountKeys</a></li>
+      <li><a href="module-types_wallet_bip21.html">types/wallet/bip21</a></li>
+      <li><a href="module-types_wallet_bip86.html">types/wallet/bip86</a></li>
+      <li><a href="module-types_witness_adaptor.html">types/witness/adaptor</a></li>
+      <li><a href="module-types_witness_bls.html">types/witness/bls</a></li>
+      <li><a href="module-types_witness_dleq.html">types/witness/dleq</a></li>
+      <li><a href="module-types_witness_musig2.html">types/witness/musig2</a></li>
+      <li><a href="module-types_witness_musig2Adaptor.html">types/witness/musig2Adaptor</a></li>
+      <li><a href="module-types_witness_musig2Session.html">types/witness/musig2Session</a></li>
+      <li><a href="types_ecc.html#.module:selftest">types/ecc.selftest</a></li>
+    </ul>
     <h3>Classes</h3>
     <ul>
       <li><a href="Actor.html">Actor</a></li>
+      <li><a href="Beacon.html">Beacon</a></li>
       <li><a href="Bitcoin.html">Bitcoin</a></li>
-      <li><a href="CLI.html">CLI</a></li>
+      <li><a href="Block.html">Block</a></li>
+      <li><a href="Bond.html">Bond</a></li>
+      <li><a href="Book.html">Book</a></li>
       <li><a href="Chain.html">Chain</a></li>
+      <li><a href="Challenge.html">Challenge</a></li>
       <li><a href="Channel.html">Channel</a></li>
+      <li><a href="ChannelBook.html">ChannelBook</a></li>
+      <li><a href="ChannelSession.html">ChannelSession</a></li>
       <li><a href="Circuit.html">Circuit</a></li>
+      <li><a href="Coinjoin.html">Coinjoin</a></li>
+      <li><a href="CoinjoinBook.html">CoinjoinBook</a></li>
+      <li><a href="CoinjoinMakerRound.html">CoinjoinMakerRound</a></li>
+      <li><a href="CoinjoinTakerRound.html">CoinjoinTakerRound</a></li>
       <li><a href="Collection.html">Collection</a></li>
+      <li><a href="Component.html">Component</a></li>
+      <li><a href="Contract.html">Contract</a></li>
+      <li><a href="Disk.html">Disk</a></li>
+      <li><a href="Document.html">Document</a></li>
+      <li><a href="DocumentBlobTransferBook.html">DocumentBlobTransferBook</a></li>
+      <li><a href="DocumentBook.html">DocumentBook</a></li>
+      <li><a href="EncryptedPromise.html">EncryptedPromise</a></li>
+      <li><a href="Entity.html">Entity</a></li>
+      <li><a href="Entity.Transition.html">Transition</a></li>
       <li><a href="Environment.html">Environment</a></li>
       <li><a href="Fabric.html">Fabric</a></li>
-      <li><a href="FabricShell.html">FabricShell</a></li>
       <li><a href="Federation.html">Federation</a></li>
+      <li><a href="FidelityVerifier.html">FidelityVerifier</a></li>
       <li><a href="Filesystem.html">Filesystem</a></li>
+      <li><a href="FraudProof.html">FraudProof</a></li>
       <li><a href="HKDF.html">HKDF</a></li>
       <li><a href="Hash256.html">Hash256</a></li>
+      <li><a href="Htlc.html">Htlc</a></li>
       <li><a href="Identity.html">Identity</a></li>
       <li><a href="Interface.html">Interface</a></li>
       <li><a href="Key.html">Key</a></li>
       <li><a href="Ledger.html">Ledger</a></li>
       <li><a href="Lightning.html">Lightning</a></li>
+      <li><a href="LiquidityBook.html">LiquidityBook</a></li>
       <li><a href="Logger.html">Logger</a></li>
       <li><a href="Machine.html">Machine</a></li>
+      <li><a href="Market.html">Market</a></li>
       <li><a href="Message.html">Message</a></li>
+      <li><a href="OrderBook.html">OrderBook</a></li>
       <li><a href="Peer.html">Peer</a></li>
+      <li><a href="PodleBlacklist.html">PodleBlacklist</a></li>
+      <li><a href="Policy.html">Policy</a></li>
+      <li><a href="Program.html">Program</a></li>
       <li><a href="Reader.html">Reader</a></li>
       <li><a href="Redis.html">Redis</a></li>
       <li><a href="Remote.html">Remote</a></li>
+      <li><a href="Resolutions.html">Resolutions</a></li>
       <li><a href="Resource.html">Resource</a></li>
+      <li><a href="RoundRobin.html">RoundRobin</a></li>
       <li><a href="Scribe.html">Scribe</a></li>
       <li><a href="Script.html">Script</a></li>
+      <li><a href="Secret.html">Secret</a></li>
       <li><a href="Service.html">Service</a></li>
       <li><a href="Session.html">Session</a></li>
+      <li><a href="SetupTui.html">SetupTui</a></li>
+      <li><a href="SignedBook.html">SignedBook</a></li>
       <li><a href="State.html">State</a></li>
       <li><a href="Store.html">Store</a></li>
+      <li><a href="Swap.html">Swap</a></li>
+      <li><a href="global.html#Text">Text</a></li>
       <li><a href="Token.html">Token</a></li>
       <li><a href="Tree.html">Tree</a></li>
       <li><a href="Vector.html">Vector</a></li>
       <li><a href="Wallet.html">Wallet</a></li>
+      <li><a href="Watchtower.html">Watchtower</a></li>
       <li><a href="Worker.html">Worker</a></li>
       <li><a href="ZMQ.html">ZMQ</a></li>
+      <li><a href="module-types_delegation-Delegation.html">Delegation</a></li>
+      <li><a href="module-types_key_bip32-BIP32Factory.html">BIP32Factory</a></li>
+      <li><a href="module-types_witness_musig2-InvalidContributionError.html">InvalidContributionError</a></li>
     </ul>
     <h3>Global</h3>
     <ul>
-      <li><a href="global.html#BEACON_EPOCH_SIGNING_KIND">BEACON_EPOCH_SIGNING_KIND</a></li>
-      <li><a href="global.html#FRIENDLY_TYPE_BY_WIRE">FRIENDLY_TYPE_BY_WIRE</a></li>
-      <li><a href="global.html#WIRE_TYPE_DECODE_ORDER">WIRE_TYPE_DECODE_ORDER</a></li>
-      <li><a href="global.html#crypto">crypto</a></li>
-      <li><a href="global.html#epochCommitmentDigestHex">epochCommitmentDigestHex</a></li>
-      <li><a href="global.html#explorerBaseUrl">explorerBaseUrl</a></li>
-      <li><a href="global.html#friendlyTypeFromWire">friendlyTypeFromWire</a></li>
-      <li><a href="global.html#gossip">gossip</a></li>
-      <li><a href="global.html#isAllZero32">isAllZero32</a></li>
-      <li><a href="global.html#jsonSafe">jsonSafe</a></li>
-      <li><a href="global.html#p2pAddNodes">p2pAddNodes</a></li>
-      <li><a href="global.html#p2pAddNodesAllowMainnet">p2pAddNodesAllowMainnet</a></li>
-      <li><a href="global.html#parseDistributedManifestV1">parseDistributedManifestV1</a></li>
-      <li><a href="global.html#peerDebugDerivedPublicSummary">peerDebugDerivedPublicSummary</a></li>
-      <li><a href="global.html#signingStringForBeaconEpoch">signingStringForBeaconEpoch</a></li>
-      <li><a href="global.html#stableStringify">stableStringify</a></li>
-      <li><a href="global.html#verifyFederationWitnessOnMessage">verifyFederationWitnessOnMessage</a></li>
-      <li><a href="global.html#wireTraffic">wireTraffic</a></li>
-      <li><a href="global.html#wireTypeFromFriendly">wireTypeFromFriendly</a></li>
+      <li><a href="global.html#ASK_TYPE">ASK_TYPE</a></li>
+      <li><a href="global.html#BID_CLOCK_SKEW_SECONDS">BID_CLOCK_SKEW_SECONDS</a></li>
+      <li><a href="global.html#BID_TYPE">BID_TYPE</a></li>
+      <li><a href="global.html#BITCOIN_MESSAGE_TYPES">BITCOIN_MESSAGE_TYPES</a></li>
+      <li><a href="global.html#CHANNEL_BODY_TYPES">CHANNEL_BODY_TYPES</a></li>
+      <li><a href="global.html#CHANNEL_DEFAULTS">CHANNEL_DEFAULTS</a></li>
+      <li><a href="global.html#CLTV_TIMESTAMP_THRESHOLD">CLTV_TIMESTAMP_THRESHOLD</a></li>
+      <li><a href="global.html#DEFAULT_BID_TTL_SECONDS">DEFAULT_BID_TTL_SECONDS</a></li>
+      <li><a href="global.html#DEFAULT_FEE_SATS">DEFAULT_FEE_SATS</a></li>
+      <li><a href="global.html#DEFAULT_INVOICE_EXPIRY_SECONDS">DEFAULT_INVOICE_EXPIRY_SECONDS</a></li>
+      <li><a href="global.html#DEFAULT_INVOICE_MARGIN_SECONDS">DEFAULT_INVOICE_MARGIN_SECONDS</a></li>
+      <li><a href="global.html#DEFAULT_MAX_SIGNS">DEFAULT_MAX_SIGNS</a></li>
+      <li><a href="global.html#DEFAULT_MIN_CLAIM_BLOCKS">DEFAULT_MIN_CLAIM_BLOCKS</a></li>
+      <li><a href="global.html#DEFAULT_MIN_CONFIRMATIONS">DEFAULT_MIN_CONFIRMATIONS</a></li>
+      <li><a href="global.html#DEFAULT_MIN_EQUAL_OUTPUTS">DEFAULT_MIN_EQUAL_OUTPUTS</a></li>
+      <li><a href="global.html#DEFAULT_WEIGHTS">DEFAULT_WEIGHTS</a></li>
+      <li><a href="global.html#DEPRECATED_WIRE_TYPES">DEPRECATED_WIRE_TYPES</a></li>
+      <li><a href="global.html#DUST_SATS">DUST_SATS</a></li>
+      <li><a href="global.html#EXIT_KINDS">EXIT_KINDS</a></li>
+      <li><a href="global.html#EXIT_SIGNATURE_TYPE">EXIT_SIGNATURE_TYPE</a></li>
+      <li><a href="global.html#FIDELITY_LOCKTIME_GRID">FIDELITY_LOCKTIME_GRID</a></li>
+      <li><a href="global.html#FIDELITY_MAX_CERT_BLOCKS">FIDELITY_MAX_CERT_BLOCKS</a></li>
+      <li><a href="global.html#FIELD_BODIES_VERSION">FIELD_BODIES_VERSION</a></li>
+      <li><a href="global.html#GCM_TAG_BYTES">GCM_TAG_BYTES</a></li>
+      <li><a href="global.html#HOP_PENALTY_MS">HOP_PENALTY_MS</a></li>
+      <li><a href="global.html#INPUT_HEADROOM">INPUT_HEADROOM</a></li>
+      <li><a href="global.html#LEAF_VERSION">LEAF_VERSION</a></li>
+      <li><a href="global.html#LOCKTIME_SLACK_BLOCKS">LOCKTIME_SLACK_BLOCKS</a></li>
+      <li><a href="global.html#LOCKTIME_THRESHOLD">LOCKTIME_THRESHOLD</a></li>
+      <li><a href="global.html#MAX_EVIDENCE">MAX_EVIDENCE</a></li>
+      <li><a href="global.html#MAX_FEE_PPM">MAX_FEE_PPM</a></li>
+      <li><a href="global.html#MAX_LOCKTIME">MAX_LOCKTIME</a></li>
+      <li><a href="global.html#MAX_MAKERS">MAX_MAKERS</a></li>
+      <li><a href="global.html#MAX_MAKER_INPUTS">MAX_MAKER_INPUTS</a></li>
+      <li><a href="global.html#MAX_OFFERS">MAX_OFFERS</a></li>
+      <li><a href="global.html#MAX_PREMIUM_PPM">MAX_PREMIUM_PPM</a></li>
+      <li><a href="global.html#MAX_PROVIDERS">MAX_PROVIDERS</a></li>
+      <li><a href="global.html#MAX_PSBT_CHARS">MAX_PSBT_CHARS</a></li>
+      <li><a href="global.html#MAX_REFUND_LOCK_BLOCKS">MAX_REFUND_LOCK_BLOCKS</a></li>
+      <li><a href="global.html#MAX_SETTLED_CREDITS">MAX_SETTLED_CREDITS</a></li>
+      <li><a href="global.html#MAX_TRANSFERS">MAX_TRANSFERS</a></li>
+      <li><a href="global.html#MIN_COINJOIN_SATS">MIN_COINJOIN_SATS</a></li>
+      <li><a href="global.html#MIN_INVOICE_EXPIRY_SECONDS">MIN_INVOICE_EXPIRY_SECONDS</a></li>
+      <li><a href="global.html#MIN_REFUND_LOCK_BLOCKS">MIN_REFUND_LOCK_BLOCKS</a></li>
+      <li><a href="global.html#PODLE_BLACKLIST_SIZE">PODLE_BLACKLIST_SIZE</a></li>
+      <li><a href="global.html#PODLE_MAX_INDEX">PODLE_MAX_INDEX</a></li>
+      <li><a href="global.html#PODLE_MIN_AGE_CONFS">PODLE_MIN_AGE_CONFS</a></li>
+      <li><a href="global.html#PODLE_MIN_VALUE_PCT">PODLE_MIN_VALUE_PCT</a></li>
+      <li><a href="global.html#PODLE_TAG">PODLE_TAG</a></li>
+      <li><a href="global.html#ROUND_TYPES">ROUND_TYPES</a></li>
+      <li><a href="global.html#SCORE_INVENTORY_ONLY">SCORE_INVENTORY_ONLY</a></li>
+      <li><a href="global.html#SCORE_MAX">SCORE_MAX</a></li>
+      <li><a href="global.html#SCORE_UNKNOWN">SCORE_UNKNOWN</a></li>
+      <li><a href="global.html#SEALED_TYPE">SEALED_TYPE</a></li>
+      <li><a href="global.html#SEAL_NAMESPACE">SEAL_NAMESPACE</a></li>
+      <li><a href="global.html#SIGNER_FIELD">SIGNER_FIELD</a></li>
+      <li><a href="global.html#TAPROOT_INTERNAL_NUMS">TAPROOT_INTERNAL_NUMS</a></li>
+      <li><a href="global.html#TELEMETRY_TYPE">TELEMETRY_TYPE</a></li>
+      <li><a href="global.html#TELEMETRY_VERSION">TELEMETRY_VERSION</a></li>
+      <li><a href="global.html#UNSAFE_PATH_TOKENS">UNSAFE_PATH_TOKENS</a></li>
+      <li><a href="global.html#WALLET_TX_KINDS">WALLET_TX_KINDS</a></li>
+      <li><a href="global.html#WEIGHT_OVERHEAD">WEIGHT_OVERHEAD</a></li>
+      <li><a href="global.html#YEAR_BLOCKS">YEAR_BLOCKS</a></li>
+      <li><a href="global.html#assertMonotoneBudget">assertMonotoneBudget</a></li>
+      <li><a href="global.html#bitcoin">bitcoin</a></li>
+      <li><a href="global.html#bodyId">bodyId</a></li>
+      <li><a href="global.html#broadcastSettled">broadcastSettled</a></li>
+      <li><a href="global.html#buildContractTaproot">buildContractTaproot</a></li>
+      <li><a href="global.html#buildEscrow">buildEscrow</a></li>
+      <li><a href="global.html#buildFederationVaultFromPolicy">buildFederationVaultFromPolicy</a></li>
+      <li><a href="global.html#buildFidelity">buildFidelity</a></li>
+      <li><a href="global.html#buildForwardedDocumentRequest">buildForwardedDocumentRequest</a></li>
+      <li><a href="global.html#buildHashlockLeaf">buildHashlockLeaf</a></li>
+      <li><a href="global.html#buildHashlockTapscript">buildHashlockTapscript</a></li>
+      <li><a href="global.html#buildPsbt">buildPsbt</a></li>
+      <li><a href="global.html#buildScriptLeaf">buildScriptLeaf</a></li>
+      <li><a href="global.html#buildSpendLeaf">buildSpendLeaf</a></li>
+      <li><a href="global.html#buildWatchSet">buildWatchSet</a></li>
+      <li><a href="global.html#checkPodleUtxo">checkPodleUtxo</a></li>
+      <li><a href="global.html#classifyWalletTransaction">classifyWalletTransaction</a></li>
+      <li><a href="global.html#codec">codec</a></li>
+      <li><a href="global.html#compileLeaves">compileLeaves</a></li>
+      <li><a href="global.html#composePolicyWithRunHashlock">composePolicyWithRunHashlock</a></li>
+      <li><a href="global.html#composeTaprootTree">composeTaprootTree</a></li>
+      <li><a href="global.html#computeRelayFee">computeRelayFee</a></li>
+      <li><a href="global.html#contractMessageIndex">contractMessageIndex</a></li>
+      <li><a href="global.html#contractMessageMatches">contractMessageMatches</a></li>
+      <li><a href="global.html#createBlobMerkleTree">createBlobMerkleTree</a></li>
+      <li><a href="global.html#createDocumentPurchaseSession">createDocumentPurchaseSession</a></li>
+      <li><a href="global.html#describePsbt">describePsbt</a></li>
+      <li><a href="global.html#descriptorPrivateKey">descriptorPrivateKey</a></li>
+      <li><a href="global.html#envelopeRecipient">envelopeRecipient</a></li>
+      <li><a href="global.html#estimateVsize">estimateVsize</a></li>
+      <li><a href="global.html#evaluateTierWhen">evaluateTierWhen</a></li>
+      <li><a href="global.html#expireHeight">expireHeight</a></li>
+      <li><a href="global.html#fidelityLocktimes">fidelityLocktimes</a></li>
+      <li><a href="global.html#fidelityPath">fidelityPath</a></li>
+      <li><a href="global.html#fidelityValue">fidelityValue</a></li>
+      <li><a href="global.html#finalize">finalize</a></li>
+      <li><a href="global.html#finalizeHashlockPsbt">finalizeHashlockPsbt</a></li>
+      <li><a href="global.html#finalizeSpendPsbt">finalizeSpendPsbt</a></li>
+      <li><a href="global.html#findSession">findSession</a></li>
+      <li><a href="global.html#fromContractMessage">fromContractMessage</a></li>
+      <li><a href="global.html#generatePodle">generatePodle</a></li>
+      <li><a href="global.html#hashlockFromProgramRun">hashlockFromProgramRun</a></li>
+      <li><a href="global.html#invoiceAmountMsat">invoiceAmountMsat</a></li>
+      <li><a href="global.html#isDuplicateSettlement">isDuplicateSettlement</a></li>
+      <li><a href="global.html#isValidFidelityLocktime">isValidFidelityLocktime</a></li>
+      <li><a href="global.html#l1GiverTerms">l1GiverTerms</a></li>
+      <li><a href="global.html#leafScripts">leafScripts</a></li>
+      <li><a href="global.html#listRefundCandidates">listRefundCandidates</a></li>
+      <li><a href="global.html#lockFrom">lockFrom</a></li>
+      <li><a href="global.html#makerChange">makerChange</a></li>
+      <li><a href="global.html#makerFee">makerFee</a></li>
+      <li><a href="global.html#memoryChain">memoryChain</a></li>
+      <li><a href="global.html#memoryWallet">memoryWallet</a></li>
+      <li><a href="global.html#mergeMakerSignatures">mergeMakerSignatures</a></li>
+      <li><a href="global.html#nextPodleIndex">nextPodleIndex</a></li>
+      <li><a href="global.html#normalizeAuth">normalizeAuth</a></li>
+      <li><a href="global.html#normalizeCancel">normalizeCancel</a></li>
+      <li><a href="global.html#normalizeContractSpendPolicy">normalizeContractSpendPolicy</a></li>
+      <li><a href="global.html#normalizeExtraLeafSpecs">normalizeExtraLeafSpecs</a></li>
+      <li><a href="global.html#normalizeFidelity">normalizeFidelity</a></li>
+      <li><a href="global.html#normalizeFill">normalizeFill</a></li>
+      <li><a href="global.html#normalizeFillAck">normalizeFillAck</a></li>
+      <li><a href="global.html#normalizeFunded">normalizeFunded</a></li>
+      <li><a href="global.html#normalizeHashlockSpec">normalizeHashlockSpec</a></li>
+      <li><a href="global.html#normalizeIoAuth">normalizeIoAuth</a></li>
+      <li><a href="global.html#normalizeLeaf">normalizeLeaf</a></li>
+      <li><a href="global.html#normalizeLock">normalizeLock</a></li>
+      <li><a href="global.html#normalizeOffer">normalizeOffer</a></li>
+      <li><a href="global.html#normalizeOrder">normalizeOrder</a></li>
+      <li><a href="global.html#normalizeSig">normalizeSig</a></li>
+      <li><a href="global.html#normalizeTake">normalizeTake</a></li>
+      <li><a href="global.html#normalizeTakeAccept">normalizeTakeAccept</a></li>
+      <li><a href="global.html#normalizeTx">normalizeTx</a></li>
+      <li><a href="global.html#offerKey">offerKey</a></li>
+      <li><a href="global.html#openFiling">openFiling</a></li>
+      <li><a href="global.html#openRoundMessage">openRoundMessage</a></li>
+      <li><a href="global.html#paginateInventoryItems">paginateInventoryItems</a></li>
+      <li><a href="global.html#parseXOnlyPubkeysFromSpendScript">parseXOnlyPubkeysFromSpendScript</a></li>
+      <li><a href="global.html#planCoinjoin">planCoinjoin</a></li>
+      <li><a href="global.html#podleCommitment">podleCommitment</a></li>
+      <li><a href="global.html#podleGenerator">podleGenerator</a></li>
+      <li><a href="global.html#policyAfterDecay">policyAfterDecay</a></li>
+      <li><a href="global.html#prepareDecayMigrationPsbt">prepareDecayMigrationPsbt</a></li>
+      <li><a href="global.html#prepareFidelityRedeem">prepareFidelityRedeem</a></li>
+      <li><a href="global.html#prepareHashlockWithdrawalPsbt">prepareHashlockWithdrawalPsbt</a></li>
+      <li><a href="global.html#prepareTierWithdrawalPsbt">prepareTierWithdrawalPsbt</a></li>
+      <li><a href="global.html#quote">quote</a></li>
+      <li><a href="global.html#randomNonce">randomNonce</a></li>
+      <li><a href="global.html#randomPrivateKey">randomPrivateKey</a></li>
+      <li><a href="global.html#randomRoundId">randomRoundId</a></li>
+      <li><a href="global.html#rememberSettlement">rememberSettlement</a></li>
+      <li><a href="global.html#roleFor">roleFor</a></li>
+      <li><a href="global.html#roles">roles</a></li>
+      <li><a href="global.html#routePath">routePath</a></li>
+      <li><a href="global.html#scriptTreeFromLeaves">scriptTreeFromLeaves</a></li>
+      <li><a href="global.html#sealRoundMessage">sealRoundMessage</a></li>
+      <li><a href="global.html#selectActiveTiers">selectActiveTiers</a></li>
+      <li><a href="global.html#sellerDedupeKey">sellerDedupeKey</a></li>
+      <li><a href="global.html#settlementDedupeKey">settlementDedupeKey</a></li>
+      <li><a href="global.html#signFidelityCertificate">signFidelityCertificate</a></li>
+      <li><a href="global.html#signFidelityRedeem">signFidelityRedeem</a></li>
+      <li><a href="global.html#signKeyPathInputs">signKeyPathInputs</a></li>
+      <li><a href="global.html#signOwnership">signOwnership</a></li>
+      <li><a href="global.html#signingString">signingString</a></li>
+      <li><a href="global.html#spendAddress">spendAddress</a></li>
+      <li><a href="global.html#synthesizeDefaultLadder">synthesizeDefaultLadder</a></li>
+      <li><a href="global.html#taprootKeyPath">taprootKeyPath</a></li>
+      <li><a href="global.html#taprootOutputPrivateKey">taprootOutputPrivateKey</a></li>
+      <li><a href="global.html#tierWhenPath">tierWhenPath</a></li>
+      <li><a href="global.html#timelockMature">timelockMature</a></li>
+      <li><a href="global.html#toContractMessage">toContractMessage</a></li>
+      <li><a href="global.html#toIntegerSats">toIntegerSats</a></li>
+      <li><a href="global.html#unsignedTxid">unsignedTxid</a></li>
+      <li><a href="global.html#validateEscrow">validateEscrow</a></li>
+      <li><a href="global.html#validateFill">validateFill</a></li>
+      <li><a href="global.html#validateForMaker">validateForMaker</a></li>
+      <li><a href="global.html#validateForTaker">validateForTaker</a></li>
+      <li><a href="global.html#validateInvoice">validateInvoice</a></li>
+      <li><a href="global.html#validateTake">validateTake</a></li>
+      <li><a href="global.html#validateTakeAccept">validateTakeAccept</a></li>
+      <li><a href="global.html#verifyBlobPath">verifyBlobPath</a></li>
+      <li><a href="global.html#verifyFidelity">verifyFidelity</a></li>
+      <li><a href="global.html#verifyFidelityCertificate">verifyFidelityCertificate</a></li>
+      <li><a href="global.html#verifyOwnership">verifyOwnership</a></li>
+      <li><a href="global.html#verifyPodle">verifyPodle</a></li>
+      <li><a href="global.html#weightsForProximity">weightsForProximity</a></li>
     </ul>
   </nav>
   <br class="clear" />

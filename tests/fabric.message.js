@@ -18,13 +18,32 @@ const {
   P2P_STATE_CHANGE,
   P2P_TRANSACTION,
   P2P_CALL,
-  P2P_MESSAGE_RECEIPT
+  P2P_MESSAGE_RECEIPT,
+  P2P_GENERIC,
+  P2P_START_CHAIN,
+  P2P_SESSION_ACK,
+  LIGHTNING_WARNING,
+  LIGHTNING_INIT,
+  LIGHTNING_ERROR,
+  LIGHTNING_PING,
+  LIGHTNING_PONG,
+  LIGHTNING_OPEN_CHANNEL,
+  LIGHTNING_ACCEPT_CHANNEL,
+  LIGHTNING_UPDATE_ADD_HTLC
 } = require('../constants');
 
 const Message = require('../types/message');
 const Key = require('../types/key');
 const Hash256 = require('../types/hash256');
 const assert = require('assert');
+const fs = require('fs');
+const {
+  OUTPUT_PATH,
+  CATALOG_BEGIN,
+  CATALOG_END,
+  collectCatalog,
+  catalogBlock
+} = Message.wireCatalog;
 
 // Create a key with a private key for signing
 const key = new Key({
@@ -45,6 +64,48 @@ describe('@fabric/core/types/message', function () {
       assert.strictEqual(Message instanceof Function, true);
     });
 
+    it('caps a frame at the largest one Noise message carries', function () {
+      const { MAX_FRAME_BYTES } = require('../constants');
+      const NOISE_MESSAGE_SIZE = 65535; // noise-protocol-stream MESSAGE_SIZE
+      const NOISE_MAC_BYTES = 16;
+      assert.strictEqual(MAX_FRAME_BYTES, NOISE_MESSAGE_SIZE - NOISE_MAC_BYTES);
+      assert.strictEqual(MAX_MESSAGE_SIZE, MAX_FRAME_BYTES - HEADER_SIZE);
+      assert.strictEqual(Message.MAX_MESSAGE_SIZE, MAX_MESSAGE_SIZE);
+    });
+
+    it('toBuffer throws when a fromVector (JSON) frame exceeds MAX_FRAME_BYTES', function () {
+      const { MAX_FRAME_BYTES } = require('../constants');
+      const body = JSON.stringify({ blob: 'x'.repeat(MAX_MESSAGE_SIZE) });
+      const msg = Message.fromVector(['GenericMessage', body]);
+      assert.ok(msg.asRaw().length > MAX_FRAME_BYTES);
+      assert.throws(() => msg.toBuffer(), (err) => err instanceof RangeError && /MAX_FRAME_BYTES/.test(err.message));
+      assert.strictEqual(Message.MAX_FRAME_BYTES, MAX_FRAME_BYTES);
+    });
+
+    it('round-trips a body at exactly MAX_MESSAGE_SIZE', function () {
+      // AMP bodies carry no inline length prefix — the body length lives in the
+      // header `size` field — so a MAX_MESSAGE_SIZE-byte payload is the limit
+      // exactly. Build it from bytes (not characters) so multi-byte UTF-8 cannot
+      // make the test lie about the wire size.
+      const payload = Buffer.alloc(MAX_MESSAGE_SIZE, 'x');
+      assert.strictEqual(Buffer.byteLength(payload), MAX_MESSAGE_SIZE);
+      const full = Message.fromVector(['P2P_BASE_MESSAGE', payload.toString('utf8')]);
+      const buf = full.toBuffer();
+      assert.strictEqual(buf.length, HEADER_SIZE + MAX_MESSAGE_SIZE);
+      assert.strictEqual(Buffer.from(full.raw.size).readUInt32BE(0), MAX_MESSAGE_SIZE, 'header size field equals the body byte length');
+      const parsed = Message.fromBuffer(buf);
+      assert.strictEqual(parsed.raw.data.length, MAX_MESSAGE_SIZE);
+      assert.ok(parsed.raw.data.equals(payload));
+    });
+
+    it('a multi-byte body is bounded by bytes, not characters', function () {
+      const chars = Math.floor(MAX_MESSAGE_SIZE / 3); // '€' is 3 bytes in UTF-8
+      const text = '€'.repeat(chars);
+      const m = Message.fromVector(['P2P_BASE_MESSAGE', text]);
+      assert.strictEqual(m.raw.data.length, Buffer.byteLength(text, 'utf8'));
+      assert.ok(m.raw.data.length <= MAX_MESSAGE_SIZE);
+    });
+
     it('can compose from a vector', async function prove () {
       const message = Message.fromVector(['Call', JSON.stringify(example.data)]);
       const literal = message.toObject();
@@ -61,6 +122,25 @@ describe('@fabric/core/types/message', function () {
       assert.strictEqual(message.type, 'P2P_CALL');
     });
 
+    it('chains parent to the previous signed Message.id (genesis is zeros)', function () {
+      const genesis = Message.fromVector(['P2P_CHAT_MESSAGE', 'first']);
+      assert.strictEqual(genesis.parent, Message.ZERO_PARENT);
+      assert.ok(Message.isZeroParent(genesis.parent));
+      genesis.signWithKey(key);
+
+      const child = Message.fromVector(['P2P_CHAT_MESSAGE', 'second', genesis]);
+      assert.strictEqual(child.parent, genesis.id);
+      child.signWithKey(key);
+      assert.ok(child.verifyWithKey(key));
+
+      const restored = Message.fromBuffer(child.toBuffer());
+      assert.strictEqual(restored.parent, genesis.id);
+      assert.ok(restored.verifyWithKey(key));
+
+      restored.parent = Message.ZERO_PARENT;
+      assert.ok(!restored.verifyWithKey(key));
+    });
+
     it('exposes wireType, friendlyType, and JSON-oriented toObject().type', function () {
       const m = Message.fromVector(['Call', JSON.stringify(example.data)]);
       assert.strictEqual(m.wireType, 'P2P_CALL');
@@ -74,6 +154,70 @@ describe('@fabric/core/types/message', function () {
     it('static helpers convert friendly ↔ wire', function () {
       assert.strictEqual(Message.wireTypeFromFriendly('ChatMessage'), 'CHAT_MESSAGE');
       assert.strictEqual(Message.friendlyTypeFromWire('CHAT_MESSAGE'), 'ChatMessage');
+    });
+
+    it('typeEquals / canonicalType* unify opcode, wire name, and friendly alias', function () {
+      const { P2P_PEER_GOSSIP, P2P_PEERING_OFFER } = require('../constants');
+      assert.strictEqual(Message.canonicalTypeName(P2P_PEER_GOSSIP), 'P2P_PEER_GOSSIP');
+      assert.strictEqual(Message.canonicalTypeCode('P2P_PEER_GOSSIP'), P2P_PEER_GOSSIP);
+      assert.strictEqual(Message.canonicalTypeCode('PeerGossip'), P2P_PEER_GOSSIP);
+      assert.ok(Message.typeEquals(P2P_PEER_GOSSIP, 'P2P_PEER_GOSSIP'));
+      assert.ok(Message.typeEquals('PeerGossip', P2P_PEER_GOSSIP));
+      assert.ok(Message.typeEquals(P2P_PEERING_OFFER, 'P2P_PEERING_OFFER'));
+      assert.ok(!Message.typeEquals(P2P_PEER_GOSSIP, P2P_PEERING_OFFER));
+      // Unregistered Hub/WebRTC alias: exact string match only
+      assert.ok(Message.typeEquals('webrtc-peer-gossip', 'webrtc-peer-gossip'));
+      assert.ok(!Message.typeEquals('webrtc-peer-gossip', P2P_PEER_GOSSIP));
+    });
+
+    it('P2P_CHAT_MESSAGE is a first-class opcode (roundtrips distinct from CHAT_MESSAGE)', function () {
+      const m = Message.fromVector(['P2P_CHAT_MESSAGE', 'hello world']);
+      assert.strictEqual(m.type, 'P2P_CHAT_MESSAGE');
+      const restored = Message.fromBuffer(m.toBuffer());
+      assert.strictEqual(restored.type, 'P2P_CHAT_MESSAGE');
+      assert.strictEqual(String(restored.data || restored.raw.data.toString('utf8')), 'hello world');
+      // Not collapsed into P2P_BASE_MESSAGE, and distinct from legacy CHAT_MESSAGE.
+      assert.notStrictEqual(restored.type, 'P2P_BASE_MESSAGE');
+      assert.notStrictEqual(restored.type, 'CHAT_MESSAGE');
+    });
+
+    it('P2P_PEER_GOSSIP and P2P_PEERING_OFFER are first-class opcodes (not P2P_BASE_MESSAGE)', function () {
+      const gossip = Message.fromVector(['P2P_PEER_GOSSIP', JSON.stringify({ host: '1.2.3.4', port: 9000 })]);
+      assert.strictEqual(gossip.type, 'P2P_PEER_GOSSIP');
+      assert.strictEqual(Message.fromBuffer(gossip.toBuffer()).type, 'P2P_PEER_GOSSIP');
+
+      const offer = Message.fromVector(['PeeringOffer', JSON.stringify({
+        host: '5.6.7.8', port: 7777, transport: 'fabric'
+      })]);
+      assert.strictEqual(offer.type, 'P2P_PEERING_OFFER');
+      assert.strictEqual(Message.fromBuffer(offer.toBuffer()).type, 'P2P_PEERING_OFFER');
+    });
+
+    it('GenericMessage encodes as GENERIC_MESSAGE (15103), not P2P_BASE_MESSAGE', function () {
+      const body = JSON.stringify({ type: 'Tombstone', object: { documentId: 'd1' } });
+      const m = Message.fromVector(['GenericMessage', body]);
+      assert.strictEqual(m.type, 'GENERIC_MESSAGE');
+      assert.strictEqual(m.friendlyType, 'GenericMessage');
+      const restored = Message.fromBuffer(m.toBuffer());
+      assert.strictEqual(restored.type, 'GENERIC_MESSAGE');
+      assert.notStrictEqual(restored.type, 'P2P_BASE_MESSAGE');
+      const code = parseInt(restored.raw.type.toString('hex'), 16);
+      assert.strictEqual(code, require('../constants').GENERIC_MESSAGE_TYPE);
+    });
+
+    it('P2P_CONTRACT_* names encode to canonical contract opcodes', function () {
+      const cases = [
+        ['P2P_CONTRACT_PUBLISH', 'CONTRACT_PUBLISH'],
+        ['P2P_CONTRACT_MESSAGE', 'CONTRACT_MESSAGE'],
+        ['P2P_CONTRACT_PROPOSAL', 'CONTRACT_PROPOSAL']
+      ];
+      for (const [alias, canonical] of cases) {
+        const m = Message.fromVector([alias, JSON.stringify({ contract: 'x' })]);
+        assert.strictEqual(m.type, canonical, `${alias} should encode as ${canonical}`);
+        const restored = Message.fromBuffer(m.toBuffer());
+        assert.strictEqual(restored.type, canonical);
+        assert.notStrictEqual(restored.type, 'P2P_BASE_MESSAGE');
+      }
     });
 
     it('can compose from an object literal', async function prove () {
@@ -114,6 +258,30 @@ describe('@fabric/core/types/message', function () {
       assert.strictEqual(body['@actor'], 'deadbeef');
     });
 
+    it('fromRaw copies a Uint8Array view without sibling ArrayBuffer bytes', function () {
+      const message = Message.fromVector(['Call', JSON.stringify(example.data)]);
+      message.signWithKey(key);
+      const raw = message.toBuffer();
+      const pad = 24;
+      const padded = Buffer.concat([Buffer.alloc(pad, 0xaa), raw, Buffer.alloc(pad, 0xbb)]);
+      const view = new Uint8Array(padded.buffer, padded.byteOffset + pad, raw.length);
+      const restored = Message.fromRaw(view);
+      assert.ok(restored);
+      assert.strictEqual(restored.type, message.type);
+      assert.ok(restored.verifyWithKey(key));
+      const hashOnWire = raw.subarray(80, 112).toString('hex');
+      const hashAfter = Buffer.isBuffer(restored.raw.hash)
+        ? restored.raw.hash.toString('hex')
+        : restored.raw.hash;
+      assert.strictEqual(hashAfter, hashOnWire);
+      assert.ok(Buffer.from(restored.toBuffer()).equals(raw));
+
+      const dv = new DataView(padded.buffer, padded.byteOffset + pad, raw.length);
+      const fromView = Message.fromRaw(dv);
+      assert.strictEqual(fromView.type, message.type);
+      assert.ok(fromView.verifyWithKey(key));
+    });
+
     it('fromBuffer keeps header hash bytes from wire (body integrity field)', function () {
       const message = Message.fromVector(['Call', JSON.stringify(example.data)]);
       message.signWithKey(key);
@@ -127,16 +295,16 @@ describe('@fabric/core/types/message', function () {
       assert.strictEqual(Hash256.doubleDigest(restored.raw.data), hashOnWire);
     });
 
-    it('public messages carry SHA256(body) in preimage; sensitive blanks preimage; explicit preimage overrides', function () {
+    it('public messages leave preimage zero; sensitive stays zero; explicit HTLC preimage overrides', function () {
       const bodyJson = JSON.stringify(example.data);
-      const expectedCommit = Hash256.digest(Buffer.from(bodyJson));
 
       const pub = Message.fromVector(['Call', bodyJson]);
       pub.signWithKey(key);
-      assert.ok(pub.preimage);
-      assert.strictEqual(pub.preimage.toString('hex'), expectedCommit);
+      assert.strictEqual(pub.preimage, null);
       const lit = pub.toObject();
-      assert.strictEqual(lit.headers.preimage, expectedCommit);
+      assert.strictEqual(lit.headers.preimage, null);
+      // Body integrity remains on hash (double-SHA256), not preimage.
+      assert.strictEqual(Hash256.doubleDigest(Buffer.from(bodyJson)), lit.headers.hash);
 
       const sens = new Message({
         type: 'Call',
@@ -158,6 +326,14 @@ describe('@fabric/core/types/message', function () {
       const back = Message.fromBuffer(priv.toBuffer());
       assert.strictEqual(back.preimage.toString('hex'), secret.toString('hex'));
       assert.ok(back.verifyWithKey(key));
+
+      // Setting body after an explicit preimage must not invent SHA256(body).
+      const hop = Message.fromVector(['Call', bodyJson]);
+      hop.preimage = secret;
+      hop.data = JSON.stringify({ ...example.data, n: 2 });
+      assert.strictEqual(hop.preimage.toString('hex'), secret.toString('hex'));
+      hop.sensitive = true;
+      assert.strictEqual(hop.preimage, null);
     });
   });
 
@@ -253,6 +429,72 @@ describe('@fabric/core/types/message', function () {
       assert.ok(message);
       assert.strictEqual(restored.id, message.id);
     });
+
+    it('fromFields / toFields round-trips P2P_PING field body', function () {
+      const m = Message.fromFields('P2P_PING', { nonce: '42' });
+      assert.strictEqual(m.type, 'P2P_PING');
+      assert.ok(Buffer.isBuffer(m.bodyBuffer));
+      assert.deepStrictEqual(m.toFields(), { nonce: '42' });
+      const restored = Message.fromBuffer(m.toBuffer());
+      assert.deepStrictEqual(restored.toFields(), { nonce: '42' });
+    });
+
+    it('fromFields / toFields round-trips CONTRACT_PUBLISH and CONTRACT_MESSAGE', function () {
+      const definition = JSON.stringify({ name: 'msg-fields', members: { signers: [], threshold: 1 } });
+      const pub = Message.fromFields('CONTRACT_PUBLISH', { definition });
+      assert.deepStrictEqual(pub.toFields(), { definition });
+      assert.deepStrictEqual(Message.fromBuffer(pub.toBuffer()).toFields(), { definition });
+
+      const payload = JSON.stringify({ type: 'GroupChange', object: { action: 'member.add' } });
+      const cm = Message.fromFields('CONTRACT_MESSAGE', {
+        contract: 'cc'.repeat(32),
+        payload
+      });
+      assert.deepStrictEqual(cm.toFields(), {
+        contract: 'cc'.repeat(32),
+        payload,
+        recipient: '',
+        ref: '',
+        slot: ''
+      });
+    });
+
+    it('fromVector accepts an explicit parent hex as the third element', function () {
+      const parentHex = 'ab'.repeat(32);
+      const m = Message.fromVector(['P2P_CHAT_MESSAGE', 'hello', parentHex]);
+      assert.strictEqual(m.parent, parentHex);
+      assert.strictEqual(Message.fromBuffer(m.toBuffer()).parent, parentHex);
+    });
+
+    it('toVector round-trips non-zero parent through fromVector', function () {
+      const genesis = Message.fromVector(['P2P_CHAT_MESSAGE', 'first']).signWithKey(key);
+      const child = Message.fromVector(['P2P_CHAT_MESSAGE', 'second', genesis]).signWithKey(key);
+
+      const childVec = child.toVector();
+      assert.strictEqual(childVec.length, 3);
+      assert.strictEqual(childVec[2], genesis.id);
+
+      const restored = Message.fromVector(childVec);
+      assert.strictEqual(restored.parent, genesis.id);
+      assert.strictEqual(restored.type, child.type);
+      assert.strictEqual(String(restored.data), 'second');
+
+      const genesisVec = genesis.toVector();
+      assert.strictEqual(genesisVec.length, 2);
+      assert.strictEqual(Message.fromVector(genesisVec).parent, Message.ZERO_PARENT);
+    });
+
+    it('fromFields throws when no schema is registered', function () {
+      assert.throws(() => Message.fromFields('GENERIC_MESSAGE', { x: 1 }), /no body schema/);
+    });
+
+    it('toFields returns null for truncated peer body bytes', function () {
+      const m = Message.fromFields('P2P_PING', { nonce: '1710000000000' });
+      const full = Buffer.from(m.raw.data);
+      m.raw.data = full.subarray(0, Math.max(0, full.length - 1));
+      m.raw.size.writeUInt32BE(m.raw.data.length);
+      assert.strictEqual(m.toFields(), null);
+    });
   });
 
   describe('verifyWithKey()', function () {
@@ -290,5 +532,147 @@ describe('@fabric/core/types/message', function () {
       assert.strictEqual(literal.headers.hash, 'd3595887441da0b0ac8bdb05c8b85b2e4fbad11c43dbbf4ce8b6ec27d7cd0646');
       assert.strictEqual(message.type, 'P2P_GENERIC');
     });
+  });
+});
+
+describe('@fabric/core AMP opcode catalog', function () {
+  it('every WIRE_TYPE_DECODE_ORDER opcode is unique', function () {
+    const seen = Object.create(null);
+    for (const pair of Message.WIRE_TYPE_DECODE_ORDER) {
+      const code = pair[0];
+      const name = pair[1];
+      if (typeof code !== 'number' || !Number.isFinite(code)) continue;
+      assert.strictEqual(seen[code], undefined, `duplicate opcode ${code}: ${seen[code]} and ${name}`);
+      seen[code] = name;
+      assert.strictEqual(Message.canonicalTypeName(code), name);
+    }
+  });
+
+  it('Fabric low numbers are not Lightning AMP opcodes', function () {
+    const fabric = [
+      [P2P_IDENT_REQUEST, 'P2P_IDENT_REQUEST'],
+      [P2P_IDENT_RESPONSE, 'P2P_IDENT_RESPONSE'],
+      [P2P_PING, 'P2P_PING'],
+      [P2P_PONG, 'P2P_PONG'],
+      [P2P_INSTRUCTION, 'P2P_INSTRUCTION'],
+      [P2P_START_CHAIN, 'P2P_START_CHAIN'],
+      [P2P_GENERIC, 'P2P_GENERIC'],
+      [P2P_STATE_COMMITTMENT, 'P2P_STATE_COMMITTMENT'],
+      [P2P_SESSION_ACK, 'P2P_SESSION_ACK']
+    ];
+    for (const row of fabric) {
+      assert.strictEqual(Message.canonicalTypeName(row[0]), row[1]);
+      assert.ok(row[0] < 0x2000 || row[0] === P2P_SESSION_ACK);
+    }
+    assert.strictEqual(P2P_SESSION_ACK, 0x4200);
+  });
+
+  it('Lightning AMP types occupy 0x2000–0x2013 and round-trip by name', function () {
+    const rows = [
+      ['LightningInit', LIGHTNING_INIT, 'LIGHTNING_INIT'],
+      ['LightningError', LIGHTNING_ERROR, 'LIGHTNING_ERROR'],
+      ['OpenChannel', LIGHTNING_OPEN_CHANNEL, 'LIGHTNING_OPEN_CHANNEL'],
+      ['AcceptChannel', LIGHTNING_ACCEPT_CHANNEL, 'LIGHTNING_ACCEPT_CHANNEL'],
+      ['UpdateAddHTLC', LIGHTNING_UPDATE_ADD_HTLC, 'LIGHTNING_UPDATE_ADD_HTLC'],
+      ['LightningWarning', LIGHTNING_WARNING, 'LIGHTNING_WARNING'],
+      ['LightningPing', LIGHTNING_PING, 'LIGHTNING_PING'],
+      ['LightningPong', LIGHTNING_PONG, 'LIGHTNING_PONG']
+    ];
+    for (const row of rows) {
+      assert.ok(row[1] >= 0x2000 && row[1] <= 0x2013, row[0]);
+      const msg = Message.fromVector([row[0], 'x']);
+      assert.strictEqual(msg.type, row[2]);
+      assert.strictEqual(Message.fromBuffer(msg.toBuffer()).type, row[2]);
+      assert.strictEqual(Message.canonicalTypeName(row[1]), row[2]);
+    }
+  });
+
+  it('PeerInstruction round-trips as P2P_INSTRUCTION, not OpenChannel', function () {
+    const msg = Message.fromVector(['PeerInstruction', 'x']);
+    assert.strictEqual(msg.type, 'P2P_INSTRUCTION');
+    assert.strictEqual(Message.fromBuffer(msg.toBuffer()).type, 'P2P_INSTRUCTION');
+    assert.notStrictEqual(P2P_INSTRUCTION, LIGHTNING_OPEN_CHANNEL);
+    const open = Message.fromVector(['OpenChannel', 'x']);
+    assert.strictEqual(open.type, 'LIGHTNING_OPEN_CHANNEL');
+  });
+});
+
+describe('MESSAGES.md wire catalog', function () {
+  it('matches live WIRE_TYPE_DECODE_ORDER', function () {
+    const rows = collectCatalog();
+    assert.strictEqual(rows.length, Message.WIRE_TYPE_DECODE_ORDER.length);
+    for (let i = 0; i < rows.length; i++) {
+      const pair = Message.WIRE_TYPE_DECODE_ORDER[i];
+      assert.strictEqual(rows[i].opcode, pair[0], rows[i].name);
+      assert.strictEqual(rows[i].name, pair[1]);
+    }
+    const seen = Object.create(null);
+    for (const row of rows) {
+      assert.strictEqual(seen[row.opcode], undefined, `duplicate opcode ${row.opcode}`);
+      seen[row.opcode] = row.name;
+    }
+    const ping = rows.find((row) => row.name === 'P2P_PING');
+    assert.ok(ping && ping.aliases.indexOf('Ping') !== -1);
+    const instruction = rows.find((row) => row.name === 'P2P_INSTRUCTION');
+    assert.ok(instruction && instruction.aliases.indexOf('PeerInstruction') !== -1);
+    const publish = rows.find((row) => row.name === 'CONTRACT_PUBLISH');
+    assert.ok(publish && publish.aliases.indexOf('P2P_CONTRACT_PUBLISH') !== -1);
+    const actual = fs.readFileSync(OUTPUT_PATH, 'utf8');
+    const start = actual.indexOf(CATALOG_BEGIN);
+    const stop = actual.indexOf(CATALOG_END);
+    assert.ok(start >= 0 && stop > start, 'MESSAGES.md catalog markers');
+    assert.strictEqual(actual.slice(start, stop + CATALOG_END.length), catalogBlock(rows));
+  });
+});
+
+describe('@fabric/core/types/message statics', function () {
+  it('fromLegacyBody round-trips through tryParseLegacyBody', function () {
+    const body = { host: 'hub.fabric.pub', port: 7777, gossipHop: 3, pubkey: 'ab'.repeat(33) };
+    const message = Message.fromLegacyBody('P2P_PEER_GOSSIP', body).signWithKey(new Key());
+    const parsed = Message.tryParseLegacyBody(Message.fromBuffer(message.toBuffer()));
+    assert.strictEqual(parsed.ok, true);
+    assert.strictEqual(parsed.encoding, 'fields');
+    assert.deepStrictEqual(parsed.value, body);
+    assert.throws(() => Message.fromLegacyBody('GenericMessage', {}), /fromLegacyBody: no field mapping/);
+  });
+
+  it('padDigits left-pads with zeros and never truncates', function () {
+    assert.strictEqual(Message.padDigits('1', 8), '00000001');
+    assert.strictEqual(Message.padDigits(255, 3), '255');
+    assert.strictEqual(Message.padDigits('123456789', 8), '123456789');
+  });
+
+  it('HEADER_OFFSETS tile the header and match parseRawMessage', function () {
+    const ranges = Object.values(Message.HEADER_OFFSETS);
+    assert.strictEqual(ranges[0][0], 0);
+    for (let i = 1; i < ranges.length; i++) assert.strictEqual(ranges[i][0], ranges[i - 1][1]);
+    assert.strictEqual(ranges[ranges.length - 1][1], HEADER_SIZE);
+
+    const key = new Key();
+    const message = Message.fromVector(['P2P_CHAT_MESSAGE', 'hello']);
+    message.parent = 'ab'.repeat(32);
+    message.signWithKey(key);
+    const buffer = message.toBuffer();
+    const raw = Message.parseRawMessage(buffer);
+    for (const [name, [start, end]] of Object.entries(Message.HEADER_OFFSETS)) {
+      assert.ok(raw[name].equals(buffer.subarray(start, end)), name);
+    }
+    assert.ok(raw.data.equals(buffer.subarray(HEADER_SIZE)));
+    assert.strictEqual(Message.fromBuffer(buffer).parent, 'ab'.repeat(32));
+  });
+
+  it('verifyFrameAuthor reports the signer of a frame', function () {
+    const key = new Key();
+    const message = Message.fromVector(['P2P_CHAT_MESSAGE', 'hello']).signWithKey(key);
+    const frame = message.toBuffer();
+    const result = Message.verifyFrameAuthor(frame.toString('hex'));
+    assert.strictEqual(result.ok, true);
+    assert.strictEqual(result.author, Buffer.from(key.pubkey, 'hex').subarray(1).toString('hex'));
+    assert.strictEqual(result.parent, Message.ZERO_PARENT);
+
+    const tampered = Buffer.from(frame);
+    tampered[tampered.length - 1] ^= 1;
+    assert.strictEqual(Message.verifyFrameAuthor(tampered).ok, false);
+    assert.strictEqual(Message.verifyFrameAuthor('zz').ok, false);
   });
 });

@@ -10,7 +10,6 @@ const {
 // Internal Dependencies
 const os = require('os');
 const path = require('path');
-const fs = require('fs');
 const EventEmitter = require('events').EventEmitter;
 
 // External Dependencies
@@ -33,7 +32,15 @@ const Key = require('./key');
 
 // Functions
 const truncateMiddle = require('../functions/truncateMiddle');
+const { chatTextOf, chatActorIdOf, formatChatLogLine } = require('../functions/fabricChatText');
 const { tryParsePersistedJson, tryParseWireJson, messageDataToString } = require('../functions/wireJson');
+const { CliDocumentExchange } = require('../functions/cliDocumentExchange');
+const { findSession, listRefundCandidates } = require('./documentBook');
+const {
+  CLI_CONTRACTS,
+  resolveEnabledContracts,
+  findCliContract
+} = require('../functions/cliContracts');
 
 // Services
 const Bitcoin = require('../services/bitcoin');
@@ -130,12 +137,17 @@ class CLI extends FabricShell {
 
     // Assign Settings
     this.settings = merge({
-      debug: true,
+      debug: false,
+      verbosity: 1,
       ephemeral: false,
       listen: false,
       peering: true,
       render: true,
       services: [],
+      /** Per-contract CLI surface enable overrides: `{ explorer: false, debug: true }`. */
+      cliContracts: {},
+      /** Explicit disable list of CLI contract ids. `core` cannot be disabled. */
+      cliContractsDisabled: [],
       network: bitcoinSettings.network,
       interval: 1000,
       port: 7777, // Default port
@@ -205,8 +217,35 @@ class CLI extends FabricShell {
     this.aliases = {};
     this.channels = {};
     this.commands = {};
+    /** @type {Map<string, object>} id → CLI contract descriptor (+ enabled) */
+    this.cliContracts = new Map();
+    /** @type {Map<string, string>} command → contract id */
+    this._commandOwners = new Map();
     this.contracts = {};
-    this.documents = {};
+    /**
+     * Canonical headless document-exchange surface (CLI packs `documents` +
+     * `documents-market`). Blessed handlers below are thin adapters.
+     * @see functions/cliDocumentExchange.js
+     * @see docs/L1_DOCUMENT_EXCHANGE.md
+     */
+    this.documentExchange = new CliDocumentExchange({
+      getPeer: () => this.node,
+      getBitcoin: () => this.bitcoin,
+      getWallet: () => this.wallet,
+      getFilesystem: () => this.fs,
+      getSettings: () => this.settings,
+      getNetworkName: () => (this.settings && this.settings.network) || 'regtest',
+      onNotice: (msg) => this._appendMessage(msg),
+      onWarning: (msg) => this._appendWarning(msg)
+    });
+    this.documents = this.documentExchange.documents;
+    /** Last remote inventory catalogs keyed by peer address. */
+    this.remoteInventories = this.documentExchange.remoteInventories;
+    this.offerBook = this.documentExchange.offerBook;
+    /** @type {Map<string, object>} */
+    this.purchaseSessions = this.documentExchange.purchaseSessions;
+    /** Paid (documentId|blobIndex|contentHash) keys — blocks double-pay. */
+    this.paidSettlements = this.documentExchange.paidSettlements;
     this.elements = {};
     this.peers = {};
     this.requests = {};
@@ -301,20 +340,22 @@ class CLI extends FabricShell {
       networking: true, // Ensure networking is always enabled
       state: state,
       upnp: this.settings.upnp,
-      key: this.identity.settings
+      key: this.identity.settings,
+      // Consenting peer file exchange (CLI): serve catalog; do not auto-send on request.
+      serveLocalDocumentInventory: this.settings.serveLocalDocumentInventory !== false,
+      announceDocumentsOnPeerConnect: this.settings.announceDocumentsOnPeerConnect !== false,
+      autoFulfillDocumentRequests: this.settings.autoFulfillDocumentRequests === true,
+      relayPrivateDocumentRequests: this.settings.relayPrivateDocumentRequests !== false,
+      attachInventoryHtlc: !!this.settings.attachInventoryHtlc,
+      inventoryHtlcLocktimeHeight: this.settings.inventoryHtlcLocktimeHeight || null,
+      documentRelayFeeSats: this.settings.documentRelayFeeSats != null ? this.settings.documentRelayFeeSats : null,
+      documentRelayFeeBps: this.settings.documentRelayFeeBps != null ? this.settings.documentRelayFeeBps : 100,
+      documentRelayMaxHops: this.settings.documentRelayMaxHops != null ? this.settings.documentRelayMaxHops : 4
     };
-    if (Array.isArray(this.settings.flushChainAuthorizedPubkeys)) {
-      peerOpts.flushChainAuthorizedPubkeys = this.settings.flushChainAuthorizedPubkeys;
-    }
-    if (this.settings.flushChainMinTrustedScore != null) {
-      const t = Number(this.settings.flushChainMinTrustedScore);
-      if (Number.isFinite(t)) {
-        peerOpts.flushChainMinTrustedScore = t;
-      }
-    }
 
     // Create and assign Peer instance as the `node` property
     this.node = new Peer(peerOpts);
+    this._peerAliasByPubkey = this._peerAliasByPubkey || {};
 
     if (this.settings.debug) {
       this.node.on('debug', (msg) => {
@@ -391,62 +432,8 @@ class CLI extends FabricShell {
    * Starts (and renders) the CLI.
    */
   async start () {
-    // Register Internal Commands
-    this._registerCommand('help', this._handleHelpRequest);
-    this._registerCommand('quit', this._handleQuitRequest);
-    this._registerCommand('exit', this._handleQuitRequest);
-    this._registerCommand('clear', this._handleClearRequest);
-    this._registerCommand('flush', this._handleFlushRequest);
-    this._registerCommand('alias', this._handleAliasRequest);
-    this._registerCommand('peers', this._handlePeerListRequest);
-    this._registerCommand('rotate', this._handleRotateRequest);
-    this._registerCommand('connect', this._handleConnectRequest);
-    this._registerCommand('disconnect', this._handleDisconnectRequest);
-    this._registerCommand('settings', this._handleSettingsRequest);
-    this._registerCommand('inventory', this._handleInventoryRequest);
-    this._registerCommand('channels', this._handleChannelRequest);
-    this._registerCommand('identity', this._handleIdentityRequest);
-    this._registerCommand('generate', this._handleGenerateRequest);
-    this._registerCommand('wallet', this._handleWalletCommand);
-    this._registerCommand('service', this._handleServiceCommand);
-    this._registerCommand('publish', this._handlePublishCommand);
-    this._registerCommand('request', this._handleRequestCommand);
-    this._registerCommand('grant', this._handleGrantCommand);
-    this._registerCommand('import', this._handleImportCommand);
-    this._registerCommand('join', this._handleJoinRequest);
-    this._registerCommand('sync', this._handleChainSyncRequest);
-    this._registerCommand('flushchain', this._handleFlushChainCli);
-    this._registerCommand('send', this._handleSendRequest);
-    this._registerCommand('fund', this._handleFundRequest);
-    this._registerCommand('state', this._handleStateRequest);
-    this._registerCommand('set', this._handleSetRequest);
-    this._registerCommand('get', this._handleGetRequest);
-
-    // Contracts
-    this._registerCommand('contracts', this._handleContractsRequest);
-    this._registerCommand('subscribe', this._handleSubscribeRequest);
-    this._registerCommand('create', this._handleCreateRequest);
-    this._registerCommand('deploy', this._handleDeployRequest);
-    this._registerCommand('accept', this._handleAcceptRequest);
-
-    // Service Commands
-    this._registerCommand('bitcoin', this._handleBitcoinRequest);
-    this._registerCommand('lightning', this._handleLightningRequest);
-
-    // Debug Commands
-    this._registerCommand('syncui', this._handleSyncUIRequest);
-    this._registerCommand('listelements', this._handleListElementsRequest);
-    this._registerCommand('testrpc', this._handleTestRPCRequest);
-    this._registerCommand('createwallet', this._handleCreateWalletRequest);
-    this._registerCommand('loadwallet', this._handleLoadWalletRequest);
-    this._registerCommand('listwallets', this._handleListWalletsRequest);
-    this._registerCommand('bitcoinhelp', this._handleBitcoinHelpRequest);
-
-    // Blockchain explorer
-    this._registerCommand('block', this._handleBlockExplorerRequest);
-    this._registerCommand('tx', this._handleTxExplorerRequest);
-    this._registerCommand('address', this._handleAddressExplorerRequest);
-    this._registerCommand('explorer', this._handleExplorerHelpRequest);
+    // Register composable CLI contracts (default-on surfaces; disable via /contracts).
+    this._loadCliContracts();
 
     // Services
     this._registerService('bitcoin', Bitcoin);
@@ -483,6 +470,7 @@ class CLI extends FabricShell {
     this.node.on('commit', this._handlePeerCommit.bind(this));
     this.node.on('state', this._handlePeerState.bind(this));
     this.node.on('chat', this._handlePeerChat.bind(this));
+    this.node.on('peerAlias', this._handlePeerAlias.bind(this));
     this.node.on('upnp', this._handlePeerUPNP.bind(this));
     this.node.on('actorset', this._handleActorSet.bind(this));
     this.node.on('contractset', this._handleContractSet.bind(this));
@@ -498,11 +486,18 @@ class CLI extends FabricShell {
     this.node.on('peer', this._handlePeer.bind(this));
     this.node.on('peer:candidate', this._handlePeerCandidate.bind(this));
     this.node.on('session:update', this._handleSessionUpdate.bind(this));
-    this.node.on('flushChain', this._handlePeerFlushChain.bind(this));
 
     // ## Document Exchange
     this.node.on('DocumentPublish', this._handlePeerDocumentPublish.bind(this));
     this.node.on('DocumentRequest', this._handlePeerDocumentRequest.bind(this));
+    this.node.on('documentRequestPending', this._handlePeerDocumentRequestPending.bind(this));
+    this.node.on('inventoryResponse', this._handlePeerInventoryResponse.bind(this));
+    this.node.on('file', this._handlePeerFileReceive.bind(this));
+    this.node.on('documentReceived', this._handlePeerDocumentReceived.bind(this));
+    this.node.on('documentBlobRejected', this._handlePeerDocumentBlobRejected.bind(this));
+    this.node.on('documentCiphertextReceived', this._handlePeerDocumentCiphertextReceived.bind(this));
+    this.node.on('documentAwaitingKey', this._handlePeerDocumentAwaitingKey.bind(this));
+    this.node.on('documentOpened', this._handlePeerDocumentOpened.bind(this));
 
     // ## Anchor handlers
     // ### Bitcoin
@@ -520,6 +515,13 @@ class CLI extends FabricShell {
       this.bitcoin.on('sync', this._handleBitcoinSync.bind(this));
       this.bitcoin.on('block', this._handleBitcoinBlock.bind(this));
       this.bitcoin.on('transaction', this._handleBitcoinTransaction.bind(this));
+      if (this.wallet && typeof this.wallet.trust === 'function') {
+        this.wallet.trust(this.bitcoin);
+        this.wallet.on('walletTransaction', this._handleWalletTransaction.bind(this));
+        this.wallet.on('htlcClaim', this._handleWalletHtlcClaim.bind(this));
+        this.wallet.on('htlcFunding', this._handleWalletHtlcFunding.bind(this));
+        this.wallet.on('htlcRefund', this._handleWalletHtlcRefund.bind(this));
+      }
     }
 
     // #### Lightning
@@ -834,7 +836,220 @@ class CLI extends FabricShell {
   }
 
   async _appendDebug (msg) {
+    const verbosity = Number(this.settings.verbosity);
+    if (!this.settings.debug && !(Number.isFinite(verbosity) && verbosity >= 4)) return;
     this._appendMessage(`{green-fg}${msg}{/green-fg}`);
+  }
+
+  /**
+   * Load enabled CLI contracts and register their slash-commands.
+   * @param {{ reset?: boolean }} [opts]
+   */
+  _loadCliContracts (opts = {}) {
+    if (opts.reset) {
+      this.commands = {};
+      this._commandOwners = new Map();
+    }
+    const resolved = resolveEnabledContracts(this.settings);
+    this.cliContracts = new Map();
+    for (const contract of resolved) {
+      this.cliContracts.set(contract.id, contract);
+      if (!contract.enabled) continue;
+      this._registerContractCommands(contract);
+    }
+  }
+
+  /**
+   * @param {object} contract
+   */
+  _registerContractCommands (contract) {
+    if (!contract || !contract.commands) return;
+    for (const cmd of Object.keys(contract.commands)) {
+      const methodName = contract.commands[cmd];
+      const method = this[methodName];
+      if (typeof method !== 'function') {
+        if (this.settings.debug) {
+           
+          console.warn(`[FABRIC:CLI] Missing handler ${methodName} for /${cmd} (${contract.id})`);
+        }
+        continue;
+      }
+      this._registerCommand(cmd, method);
+      this._commandOwners.set(cmd, contract.id);
+    }
+  }
+
+  /**
+   * @param {object} contract
+   */
+  _unregisterContractCommands (contract) {
+    if (!contract || !contract.commands) return;
+    for (const cmd of Object.keys(contract.commands)) {
+      if (this._commandOwners.get(cmd) === contract.id) {
+        delete this.commands[cmd];
+        this._commandOwners.delete(cmd);
+      }
+    }
+  }
+
+  /**
+   * Persist CLI contract enable override into settings.
+   * @param {string} id
+   * @param {boolean} enabled
+   */
+  _setCliContractEnabled (id, enabled) {
+    if (!this.settings.cliContracts || typeof this.settings.cliContracts !== 'object') {
+      this.settings.cliContracts = {};
+    }
+    this.settings.cliContracts[id] = !!enabled;
+    if (Array.isArray(this.settings.cliContractsDisabled)) {
+      this.settings.cliContractsDisabled = this.settings.cliContractsDisabled.filter((x) => x !== id);
+      if (!enabled) this.settings.cliContractsDisabled.push(id);
+    }
+  }
+
+  /**
+   * Format shell-pack lines for /contracts.
+   * @returns {string[]}
+   */
+  _formatShellContractLines () {
+    const lines = [];
+    for (const contract of this.cliContracts.values()) {
+      const cmds = Object.keys(contract.commands || {}).sort().join(', ');
+      lines.push(
+        `  ${contract.enabled ? 'on ' : 'off'}  ${contract.id}` +
+        (contract.required ? ' (required)' : '') +
+        ` — ${contract.title}` +
+        (contract.description ? `\n       ${contract.description}` : '') +
+        `\n       cmds: ${cmds || '(none)'}`
+      );
+    }
+    return lines;
+  }
+
+  /**
+   * Live document-exchange / HTLC purchase sessions as contracts.
+   * @returns {Promise<string[]>}
+   */
+  async _formatSessionContractLines () {
+    const tip = await this.documentExchange.bitcoinTipHeight();
+    const rows = listRefundCandidates(this.purchaseSessions, tip, { filter: 'all' });
+    const openish = [];
+    for (const session of this.purchaseSessions.values()) {
+      if (!session) continue;
+      if (session.status === 'complete' || session.status === 'refunded') continue;
+      if (rows.some((r) => r.settlementId === session.settlementId)) continue;
+      openish.push(session);
+    }
+    const lines = [];
+    for (const r of rows) {
+      lines.push(
+        `  [${r.bucket}] document-exchange  settlement=${r.settlementId}` +
+        ` doc=${r.documentId} status=${r.status} amount=${r.amountSats}sats` +
+        (r.refundLocktimeHeight != null ? ` htlcLock=${r.refundLocktimeHeight}` : '')
+      );
+    }
+    for (const s of openish) {
+      lines.push(
+        `  [open] document-exchange  settlement=${s.settlementId}` +
+        ` doc=${s.documentId} status=${s.status} amount=${s.amountSats}sats`
+      );
+    }
+    if (!lines.length) {
+      lines.push('  (none — use /buy for a document-exchange / HTLC session)');
+    }
+    return lines;
+  }
+
+  /**
+   * /contracts — Fabric contracts (interfaces, shell packs, sessions, runtime).
+   * Usage: /contracts [list|interfaces|shell|sessions|enable|disable|runtime]
+   */
+  async _handleContractsCommand (params) {
+    const sub = params[1] ? String(params[1]).toLowerCase() : null;
+    const id = params[2] ? String(params[2]).trim() : null;
+
+    if (sub === 'interfaces' || sub === 'kinds') {
+      return this._appendMessage(
+        `{bold}Contract interfaces{/bold} (capabilities — not exclusive kinds)\n` +
+        `  payment/escrow     — HTLCs, offer escrow\n` +
+        `  document-exchange  — purchase sessions, sealed sales, blob plans\n` +
+        `  crowdfund          — threshold / federation funding\n` +
+        `  program            — Fabric Program + Machine execution\n` +
+        `  proposal           — ContractProposal (Merkle + JSON Patch + PSBT)\n` +
+        `  cli.shell          — local TUI command packs\n` +
+        `Hub registry holds published contracts; Hub publishes first on the public network.\n` +
+        `See docs/CONTRACTS.md`
+      );
+    }
+
+    if (sub === 'shell') {
+      return this._appendMessage(
+        `{bold}Shell packs{/bold} (interface cli.shell)\n` +
+        `${this._formatShellContractLines().join('\n')}\n` +
+        `Use /contracts enable <id> or /contracts disable <id>.`
+      );
+    }
+
+    if (sub === 'sessions') {
+      const lines = await this._formatSessionContractLines();
+      return this._appendMessage(
+        `{bold}Document-exchange / HTLC sessions{/bold}\n` +
+        `${lines.join('\n')}\n` +
+        `Refunds: /refunds · settle: /refund <settlementId>`
+      );
+    }
+
+    if (!sub || sub === 'list') {
+      const shell = this._formatShellContractLines();
+      const sessions = await this._formatSessionContractLines();
+      const runtimeKeys = Object.keys(this.contracts || {});
+      return this._appendMessage(
+        `{bold}Contracts{/bold}\n` +
+        `Agreements beyond the base peer protocol. A contract may implement many\n` +
+        `interfaces; Hub registry published set starts with the Hub contract.\n` +
+        `See docs/CONTRACTS.md · /contracts interfaces\n\n` +
+        `{bold}Document-exchange / HTLC{/bold}\n${sessions.join('\n')}\n\n` +
+        `{bold}Shell packs{/bold} (cli.shell)\n${shell.join('\n')}\n\n` +
+        `{bold}Runtime store{/bold} (${runtimeKeys.length} keys) — /contracts runtime\n` +
+        `Enable/disable shell: /contracts enable|disable <id>`
+      );
+    }
+
+    if (sub === 'runtime' || sub === 'store') {
+      return this._appendMessage(
+        '{bold}Runtime contract store{/bold}: ' + JSON.stringify(this.contracts, null, '  ')
+      );
+    }
+
+    if ((sub === 'enable' || sub === 'disable') && !id) {
+      return this._appendError(`Usage: /contracts ${sub} <shellPackId>`);
+    }
+
+    if (sub === 'enable' || sub === 'disable') {
+      const catalog = findCliContract(id) || this.cliContracts.get(id);
+      if (!catalog) {
+        return this._appendError(
+          `Unknown shell pack "${id}". Known: ${CLI_CONTRACTS.map((c) => c.id).join(', ')}`
+        );
+      }
+      if (sub === 'disable' && catalog.required) {
+        return this._appendError(`Shell pack "${catalog.id}" is required and cannot be disabled.`);
+      }
+      const enable = sub === 'enable';
+      this._setCliContractEnabled(catalog.id, enable);
+      const contract = Object.assign({}, catalog, { enabled: enable });
+      this.cliContracts.set(contract.id, contract);
+      if (enable) this._registerContractCommands(contract);
+      else this._unregisterContractCommands(contract);
+      return this._appendMessage(
+        `Shell pack ${contract.id} ${enable ? 'enabled' : 'disabled'} (interfaces: ${(contract.interfaces || ['cli.shell']).join(', ')}).`
+      );
+    }
+
+    return this._appendError(
+      'Usage: /contracts [list|interfaces|shell|sessions|enable <id>|disable <id>|runtime]'
+    );
   }
 
   async _appendWarning (msg) {
@@ -909,9 +1124,9 @@ class CLI extends FabricShell {
     return false;
   }
 
-  async _handleContractsRequest (_params) {
-    this._appendMessage('{bold}Current Contracts{/bold}: ' + JSON.stringify(this.contracts, null, '  '));
-    return false;
+  async _handleContractsRequest (params) {
+    // Legacy alias — surfaces are contracts now.
+    return this._handleContractsCommand(params || ['contracts']);
   }
 
   async _handleSubscribeRequest (params) {
@@ -977,38 +1192,227 @@ class CLI extends FabricShell {
     if (!params[1]) return this._appendError(`You must specify a sidechain.`);
   }
 
-  async _handleInventoryRequest (_params) {
-    this._appendMessage(`{bold}Inventory:{/bold} ${JSON.stringify(this.documents, null, '  ')}`);
+  /** @deprecated Prefer `this.documentExchange.syncDocumentToPeer` */
+  _syncDocumentToPeer (documentId, content, rateSats = null) {
+    return this.documentExchange.syncDocumentToPeer(documentId, content, rateSats);
+  }
+
+  /** @deprecated Prefer `this.documentExchange.formatLocalInventory` */
+  _formatLocalInventory () {
+    return this.documentExchange.formatLocalInventory();
+  }
+
+  async _handleInventoryRequest (params) {
+    const peerRef = params[1];
+    const mode = String(params[2] || '').toLowerCase();
+    const offerBtc = mode === 'btc' || mode === '--btc' || mode === 'offerbtc';
+    if (peerRef) {
+      this._inventoryRequestStartedAt = Date.now();
+      this._inventoryRequestPeer = peerRef;
+    }
+    const result = this.documentExchange.requestInventory(peerRef || null, { offerBtc });
+    if (!result.ok) return this._appendError(result.error);
+    this._appendMessage(result.message);
+    if (result.data && result.data.local && result.data.pendingCount > 0) {
+      this._appendMessage(`{bold}Pending inbound requests{/bold}: ${result.data.pendingCount} (see /pending)`);
+    }
+  }
+
+  /** @deprecated Prefer `this.documentExchange.buyerRefundPubkeyHex` */
+  _buyerRefundPubkeyHex () {
+    return this.documentExchange.buyerRefundPubkeyHex();
+  }
+
+  /** @deprecated Prefer `this.documentExchange.buyerPrivateKey32` */
+  _buyerPrivateKey32 () {
+    return this.documentExchange.buyerPrivateKey32();
+  }
+
+  /** @deprecated Prefer `this.documentExchange.fetchRawTxHex` */
+  async _fetchRawTxHex (txid) {
+    return this.documentExchange.fetchRawTxHex(txid);
+  }
+
+  /** @deprecated Prefer `this.documentExchange.bitcoinTipHeight` */
+  async _bitcoinTipHeight () {
+    return this.documentExchange.bitcoinTipHeight();
+  }
+
+  _peerScoreForAddress (address) {
+    try {
+      const registry = (this.node && this.node._state && this.node._state.peers) || {};
+      for (const id of Object.keys(registry)) {
+        const e = registry[id];
+        if (e && (e.address === address || id === address)) return Number(e.score) || 0;
+      }
+    } catch (_) { /* ignore */ }
+    return 0;
+  }
+
+  /**
+   * Apply a headless {@link CliDocumentExchange} result to the Blessed log.
+   * @param {{ ok: boolean, error?: string, message?: string }} result
+   */
+  _applyExchangeResult (result) {
+    if (!result) return;
+    if (!result.ok) return this._appendError(result.error || 'document exchange failed');
+    if (result.message) this._appendMessage(result.message);
   }
 
   async _handleImportCommand (params) {
-    if (!params[1]) return this._appendError(`You must provide a file to import.`);
-    if (!fs.existsSync(params[1])) return this._appendError(`File does not exist: ${params[1]}`);
-    const content = fs.readFileSync(params[1]);
-    const actor = new Actor(content);
-    this._appendMessage(`File contents (${content.length} bytes):\n---${content}\n---\nDocument ID: ${actor.id}`);
-    this.documents[actor.id] = content;
-    this._state.content.documents[actor.id] = content.toString('hex');
+    const result = this.documentExchange.importFile(params[1]);
+    if (!result.ok) return this._appendError(result.error);
+    if (result.data && result.data.documentId && result.data.content) {
+      this._state.content.documents[result.data.documentId] = result.data.content.toString('hex');
+    }
+    this._appendMessage(result.message);
   }
 
   async _handlePublishCommand (params) {
-    if (!params[1]) return this._appendError(`You must specify the file to publish.`);
-    if (!params[2]) return this._appendError(`You must specify the rate to pay.`);
-    if (!this.documents[params[1]]) return this._appendError(`This file does not exist in the local library.`);
-
-    this.fs.touchDir(`documents`);
-    this.fs.publish(`${params[1]}`, this.documents[params[1]]);
-    this.node._publishDocument(params[1], this.documents[params[1]].toString('utf8'));
+    this._applyExchangeResult(this.documentExchange.publish(params[1], params[2]));
   }
 
   async _handleRequestCommand (params) {
-    if (!params[1]) return this._appendError(`You must specify the file to request.`);
-    if (!params[2]) return this._appendError(`You must specify the rate to pay.`);
-    const message = Message.fromVector(['DocumentRequest', {
-      document: params[1]
-    }]);
-    message.signWithKey(this.node.key);
-    this.node.broadcast(message.toBuffer());
+    if (!params[1]) {
+      return this._appendError(`Usage: /request <documentID> [peer] [maxSats] — ask a peer (or broadcast) for a document`);
+    }
+    const documentId = params[1];
+    const peerOrRate = params[2];
+    const directedPeer = (peerOrRate && !/^\d+$/.test(String(peerOrRate))) ? peerOrRate : null;
+    const maxSatsArg = directedPeer ? params[3] : peerOrRate;
+    const opts = {};
+    if (maxSatsArg != null && /^\d+$/.test(String(maxSatsArg))) {
+      opts.maxSats = Number(maxSatsArg);
+    }
+    const ok = this.node.requestDocument(documentId, directedPeer, opts);
+    if (!ok) {
+      return this._appendError(`Could not send DocumentRequest${directedPeer ? ` to ${directedPeer}` : ''}.`);
+    }
+    this._appendMessage(
+      directedPeer
+        ? `DocumentRequest for ${documentId} sent to ${directedPeer}${opts.maxSats != null ? ` (maxSats=${opts.maxSats})` : ''}. Seller must /approve.`
+        : `DocumentRequest for ${documentId} broadcast${opts.maxSats != null ? ` (maxSats=${opts.maxSats})` : ''}. Seller must /approve (consent mode).`
+    );
+  }
+
+  async _handleOffersCommand (params) {
+    this._applyExchangeResult(this.documentExchange.listOffers(params[1] || null));
+  }
+
+  async _handleBuyCommand (params) {
+    const amountArg = params[3] != null ? Number(params[3]) : null;
+    this._applyExchangeResult(
+      this.documentExchange.buy(params[1], params[2] || 'auto', amountArg)
+    );
+  }
+
+  /** @deprecated Prefer `this.documentExchange.openBuySessionFromOffer` */
+  _openBuySessionFromOffer (documentId, offer, amountArg) {
+    return this.documentExchange.openBuySessionFromOffer(documentId, offer, amountArg);
+  }
+
+  /** @deprecated Prefer `this.documentExchange.registerSessionHtlcWatch` */
+  _registerSessionHtlcWatch (session) {
+    return this.documentExchange.registerSessionHtlcWatch(session);
+  }
+
+  async _handleConfirmCommand (params) {
+    this._applyExchangeResult(await this.documentExchange.confirm(params[1], params[2]));
+  }
+
+  /**
+   * Extract content key K from an on-chain HTLC claim witness and open sealed delivery.
+   * Usage: /claimwatch <settlementId> [claimTxid]
+   */
+  async _handleClaimWatchCommand (params) {
+    this._applyExchangeResult(
+      await this.documentExchange.claimWatch(params[1], params[2] || null)
+    );
+  }
+
+  /**
+   * Refund HTLC after locktime if seller never claimed / never delivered openable content.
+   * Usage: /refund <settlementId> [destinationAddress] [feeSats]
+   */
+  async _handleRefundCommand (params) {
+    const feeSats = params[3] != null ? Number(params[3]) : null;
+    this._applyExchangeResult(
+      await this.documentExchange.refund(params[1], params[2] || null, feeSats)
+    );
+  }
+
+  /**
+   * List outstanding / failed / mature HTLC refund candidates.
+   * Usage: /refunds [outstanding|mature|failed|pending|refunded|all]
+   */
+  async _handleRefundsCommand (params) {
+    this._applyExchangeResult(await this.documentExchange.listRefunds(params[1] || 'outstanding'));
+  }
+
+  async _handleRelayFeesCommand (params) {
+    if (!this.node) return this._appendError('Peer not ready.');
+    if (params[1] == null) {
+      return this._appendMessage(
+        `Relay fees: sats=${this.node.settings.documentRelayFeeSats} bps=${this.node.settings.documentRelayFeeBps} ` +
+        `minRemaining=${this.node.settings.documentRelayMinRemainingSats} maxHops=${this.node.settings.documentRelayMaxHops} ` +
+        `private=${!!this.node.settings.relayPrivateDocumentRequests}`
+      );
+    }
+    const v = String(params[1]);
+    if (v.endsWith('bps') || v.includes('bps')) {
+      const n = Number(String(v).replace(/bps/i, ''));
+      if (!Number.isFinite(n)) return this._appendError('Usage: /relayfees <sats>|<bps>bps');
+      this.node.settings.documentRelayFeeBps = Math.round(n);
+      this.node.settings.documentRelayFeeSats = null;
+    } else {
+      const n = Number(v);
+      if (!Number.isFinite(n)) return this._appendError('Usage: /relayfees <sats>|<bps>bps');
+      this.node.settings.documentRelayFeeSats = Math.round(n);
+    }
+    this._appendMessage(`Relay fee policy updated: sats=${this.node.settings.documentRelayFeeSats} bps=${this.node.settings.documentRelayFeeBps}`);
+  }
+
+  async _handlePendingDocumentRequests (_params) {
+    const rows = this.node ? this.node.listPendingDocumentRequests() : [];
+    if (!rows.length) {
+      this._appendMessage('No pending document requests.');
+      return;
+    }
+    const lines = rows.map((r) => {
+      return `  ${r.key}  doc=${r.documentId}  from=${r.peerAddress || '?'}  at=${new Date(r.created).toISOString()}`;
+    });
+    this._appendMessage(`{bold}Pending document requests{/bold}\n${lines.join('\n')}\nUse /approve <key> or /deny <key>`);
+  }
+
+  async _handleApproveCommand (params) {
+    if (!params[1]) return this._appendError(`Usage: /approve <requestKey|documentID>`);
+    const result = this.node.approveDocumentRequest(params[1]);
+    if (!result.ok) return this._appendError(result.error || 'approve failed');
+    this._appendMessage(`Approved ${result.documentId} → sent P2P_FILE_SEND to ${result.peerAddress}`);
+  }
+
+  async _handleDenyCommand (params) {
+    if (!params[1]) return this._appendError(`Usage: /deny <requestKey|documentID>`);
+    const result = this.node.denyDocumentRequest(params[1]);
+    if (!result.ok) return this._appendError(result.error || 'deny failed');
+    this._appendMessage(`Denied request for ${result.documentId} from ${result.peerAddress}`);
+  }
+
+  async _handleSendDocumentCommand (params) {
+    // Prefer document push when first arg looks like a document id held locally;
+    // otherwise fall through to wallet BTC send (/send <addr> <amount>).
+    const maybeDoc = params[1];
+    const maybePeer = params[2];
+    if (maybeDoc && maybePeer && this.documents[maybeDoc]) {
+      this._syncDocumentToPeer(maybeDoc, this.documents[maybeDoc]);
+      const ok = this.node.sendDocumentFileToPeer(maybeDoc, maybePeer);
+      if (!ok) {
+        return this._appendError(`Could not send document ${maybeDoc} to ${maybePeer} (check /peers).`);
+      }
+      this._appendMessage(`Sent document ${maybeDoc} to ${maybePeer} via P2P_FILE_SEND.`);
+      return;
+    }
+    return this._handleSendRequest(params);
   }
 
   async _handleBitcoinMessage (message) {
@@ -1016,35 +1420,151 @@ class CLI extends FabricShell {
       case 'CollectionSnapshot':
         break;
       default:
-        this._appendMessage(`Bitcoin service emitted message: ${JSON.stringify(message)}`);
+        if (this.settings.debug || Number(this.settings.verbosity) >= 3) {
+          this._appendMessage(`Bitcoin service emitted message: ${JSON.stringify(message)}`);
+        }
         break;
     }
   }
 
   async _handleBitcoinLog (log) {
+    if (!this.settings.debug && Number(this.settings.verbosity) < 3) return;
     this._appendMessage(`[SERVICES:BITCOIN] ${log}`);
   }
 
   async _handleBitcoinCommit (_commit) {
-    // this._appendMessage(`Bitcoin service emitted commit: ${JSON.stringify(_commit)}`);
+    // Quiet by default — commits are high-frequency.
   }
 
   async _handleBitcoinSync (sync) {
-    this._appendMessage(`Bitcoin service emitted sync: ${JSON.stringify(sync)}`);
-    this._state.content.bitcoin.best = sync.best;
-    this.commit();
+    if (sync && sync.best) {
+      this._state.content.bitcoin.best = sync.best;
+      this.commit();
+    }
+    if (this.settings.debug || Number(this.settings.verbosity) >= 3) {
+      this._appendMessage(`Bitcoin service emitted sync: ${JSON.stringify(sync)}`);
+    }
   }
 
   async _handleBitcoinBlock (_block) {
-    // this._appendMessage(`Bitcoin service emitted block ${JSON.stringify(_block)}, chain height now: ${this.bitcoin.height}`);
-    // await this.bitcoin._syncChainInfoOverRPC();
+    // Wallet ingest is handled by `this.wallet.trust(this.bitcoin)`.
     this._syncChainDisplay();
-    // const message = Message.fromVector(['BlockCandidate', block.raw]);
-    // this.node.relayFrom(this.node.id, message);
+    if (_block && _block.height != null) {
+      await this._checkRefundMaturity(_block.height);
+    }
   }
 
   async _handleBitcoinTransaction (transaction) {
-    this._appendMessage(`Bitcoin service emitted transaction: ${JSON.stringify(transaction)}`);
+    // Verbose/hex txs are ingested by wallet.trust; only surface balance-only tips here.
+    if (transaction && transaction.balance && !transaction.txid && !transaction.hex) {
+      this._appendMessage(`Bitcoin balance update: ${JSON.stringify(transaction.balance)}`);
+    }
+  }
+
+  async _handleWalletTransaction (ev) {
+    if (!ev || !ev.related) return;
+    if (!this.settings.debug && Number(this.settings.verbosity) < 3) return;
+    this._appendMessage(
+      `Wallet tx ${ev.kind} ${ev.txid || '?'}` +
+      (ev.matchedAddresses && ev.matchedAddresses.length
+        ? ` addrs=${ev.matchedAddresses.slice(0, 3).join(',')}`
+        : '') +
+      (ev.settlementId ? ` settlement=${ev.settlementId}` : '')
+    );
+  }
+
+  async _handleWalletHtlcFunding (ev) {
+    if (!ev || !ev.settlementId) return;
+    const session = findSession(this.purchaseSessions, ev.settlementId);
+    if (!session) return;
+    if (ev.txid && !session.txid) {
+      session.txid = ev.txid;
+      session.fundedTxHex = ev.hex || session.fundedTxHex;
+    }
+    if (session.status === 'open') {
+      this._appendMessage(
+        `HTLC funding seen for ${session.settlementId} (${ev.txid}). Use /confirm when ready.`
+      );
+    }
+  }
+
+  async _handleWalletHtlcClaim (ev) {
+    if (!ev || !ev.preimageHex) return;
+    const session = ev.settlementId
+      ? findSession(this.purchaseSessions, ev.settlementId)
+      : null;
+    const documentId = (session && session.documentId) ||
+      (ev.documentId) ||
+      null;
+    // Prefer settlement match; else try any awaiting_key session with this payment hash.
+    let target = session;
+    if (!target && ev.paymentHashHex) {
+      for (const row of this.purchaseSessions.values()) {
+        if (row && row.contentHashHex === ev.paymentHashHex &&
+            (row.status === 'awaiting_key' || row.status === 'delivery_pending')) {
+          target = row;
+          break;
+        }
+      }
+    }
+    if (!target) {
+      if (documentId && this.node) {
+        const opened = this.node.openSealedDeliveryWithPreimage(documentId, ev.preimageHex);
+        if (opened.ok) {
+          this._appendMessage(`Opened ${documentId} from wallet claim watch (${ev.txid}).`);
+        }
+      }
+      return;
+    }
+    if (target.status === 'complete') return;
+    target.claimTxid = ev.txid || target.claimTxid;
+    if (!this.node) return;
+    const opened = this.node.openSealedDeliveryWithPreimage(target.documentId, ev.preimageHex);
+    if (opened.ok) {
+      target.status = 'complete';
+      target.openedFrom = 'wallet_claim_watch';
+      this._appendMessage(
+        `Auto-opened ${target.documentId} from on-chain claim ${ev.txid} (wallet watch).`
+      );
+    } else if (opened.error && /no pending sealed delivery/i.test(opened.error)) {
+      target.claimTxid = ev.txid;
+      this._appendMessage(
+        `Claim preimage stored for ${target.settlementId}; awaiting sealed ciphertext then retry open.`
+      );
+      target.pendingClaimPreimageHex = ev.preimageHex;
+    } else {
+      this._appendWarning(`Wallet claim open failed: ${opened.error}`);
+    }
+  }
+
+  async _handleWalletHtlcRefund (ev) {
+    if (!ev || !ev.settlementId) return;
+    const session = findSession(this.purchaseSessions, ev.settlementId);
+    if (!session || session.status === 'complete') return;
+    session.status = 'refunded';
+    session.refundTxid = ev.txid || session.refundTxid;
+    this._appendMessage(`HTLC refund observed for ${session.settlementId}: ${ev.txid}`);
+  }
+
+  /**
+   * When tip crosses a session refund locktime, nudge the operator (does not auto-broadcast).
+   * @param {number} tipHeight
+   */
+  async _checkRefundMaturity (tipHeight) {
+    const tip = Number(tipHeight);
+    if (!Number.isFinite(tip)) return;
+    for (const session of this.purchaseSessions.values()) {
+      if (!session || session.status === 'complete' || session.status === 'refunded') continue;
+      const lock = session.htlc && session.htlc.refundLocktimeHeight;
+      if (!Number.isFinite(Number(lock))) continue;
+      if (refundLocktimeMature(tip, lock) && !session.refundMatureNotified) {
+        session.refundMatureNotified = true;
+        this._appendMessage(
+          `Refund locktime mature for ${session.settlementId} (tip=${tip} ≥ ${lock}). ` +
+          `Use /refund ${session.settlementId} if the sale did not complete.`
+        );
+      }
+    }
   }
 
   async _handleBitcoinDebug (...msg) {
@@ -1298,9 +1818,142 @@ class CLI extends FabricShell {
   async _handlePeerDocumentRequest (message) {
     const id = (message && message.documentId) || '';
     const held = id && this.documents && Object.prototype.hasOwnProperty.call(this.documents, id);
+    const pendingKey = message && message.pendingKey;
+    if (pendingKey) {
+      this._appendMessage(
+        `Document request: ${id || '(unknown)'} from ${(message.origin && message.origin.name) || '?'} — pending ${pendingKey}. /approve ${pendingKey}`
+      );
+      return;
+    }
     this._appendMessage(
-      `Document request: ${id || '(unknown)'}${held ? ' [serving from local store]' : ''}`
+      `Document request: ${id || '(unknown)'}${held ? ' [auto-fulfill or pending]' : ' [not held — relaying]'}`
     );
+  }
+
+  async _handlePeerDocumentRequestPending (row) {
+    this._appendMessage(
+      `Pending file request ${row.key}: doc=${row.documentId} from=${row.peerAddress}. /approve ${row.key} or /deny ${row.key}`
+    );
+  }
+
+  async _handlePeerInventoryResponse (ev) {
+    const origin = (ev && ev.origin && ev.origin.name) || 'peer';
+    const obj = (ev && ev.message && ev.message.object) || {};
+    const items = Array.isArray(obj.items) ? obj.items : [];
+    this.remoteInventories[origin] = { at: Date.now(), items, kind: obj.kind || null };
+    const latencyMs = this._inventoryRequestStartedAt
+      ? Math.max(0, Date.now() - this._inventoryRequestStartedAt)
+      : 0;
+    this.offerBook.ingestInventoryResponse({
+      origin,
+      items,
+      peerScore: this._peerScoreForAddress(origin),
+      latencyMs
+    });
+    if (!items.length) {
+      this._appendMessage(`Inventory from ${origin}: (empty)`);
+      return;
+    }
+    const lines = items.slice(0, 50).map((it) => {
+      const price = it.purchasePriceSats != null ? it.purchasePriceSats : it.rateSats;
+      const priceStr = price != null ? `${price} sats` : 'free';
+      const name = it.name || it.id || '?';
+      const blobs = Array.isArray(it.blobs) ? ` blobs=${it.blobs.length}` : '';
+      return `  ${it.id || '?'}  ${name}  ${priceStr}${blobs}`;
+    });
+    const more = items.length > 50 ? `\n  … +${items.length - 50} more` : '';
+    this._appendMessage(
+      `{bold}Inventory from ${origin}{/bold} (${items.length}, ${latencyMs}ms)\n${lines.join('\n')}${more}\nUse /offers [documentId]`
+    );
+  }
+
+  async _handlePeerFileReceive (ev) {
+    // Indexed frames are handled via documentReceived / documentBlobRejected / awaiting_key.
+    if (ev && (ev.status === 'need_more' || ev.status === 'complete' ||
+        ev.status === 'reject' || ev.status === 'awaiting_key')) {
+      if (ev.status === 'need_more') {
+        this._appendMessage(
+          `Receiving ${ev.documentId}: blob ${ev.received}/${ev.total} verified…`
+        );
+      }
+      return;
+    }
+    this._appendMessage('Received file frame (awaiting verification).');
+  }
+
+  async _handlePeerDocumentCiphertextReceived (ev) {
+    if (!ev || !ev.documentId) return;
+    for (const session of this.purchaseSessions.values()) {
+      if (session && session.documentId === ev.documentId &&
+          (session.status === 'delivery_pending' || session.status === 'confirmed')) {
+        session.status = 'awaiting_key';
+      }
+      if (session && session.documentId === ev.documentId && session.pendingClaimPreimageHex && this.node) {
+        const opened = this.node.openSealedDeliveryWithPreimage(
+          session.documentId,
+          session.pendingClaimPreimageHex
+        );
+        if (opened.ok) {
+          session.status = 'complete';
+          session.openedFrom = 'wallet_claim_watch';
+          delete session.pendingClaimPreimageHex;
+          this._appendMessage(
+            `Opened ${session.documentId} with stored claim preimage after ciphertext arrived.`
+          );
+        }
+      }
+    }
+    this._appendMessage(
+      `Verified sealed ciphertext for ${ev.documentId} (${ev.buffer && ev.buffer.length} bytes). Awaiting content key…`
+    );
+  }
+
+  async _handlePeerDocumentAwaitingKey (ev) {
+    if (!ev || !ev.documentId) return;
+    this._appendMessage(`Document ${ev.documentId} ciphertext complete — awaiting content-key reveal.`);
+  }
+
+  async _handlePeerDocumentOpened (ev) {
+    if (!ev || !ev.documentId || !ev.buffer) return;
+    for (const session of this.purchaseSessions.values()) {
+      if (session && session.documentId === ev.documentId &&
+          (session.status === 'awaiting_key' || session.status === 'delivery_pending')) {
+        session.status = 'complete';
+      }
+    }
+    await this._handlePeerDocumentReceived(Object.assign({}, ev, { opened: true }));
+  }
+
+  async _handlePeerDocumentReceived (ev) {
+    if (!ev || !ev.documentId || !ev.buffer) return;
+    if (!ev.verified) {
+      return this._appendWarning(`Unverified document ${ev.documentId} ignored.`);
+    }
+    const name = ev.documentId;
+    const buf = ev.buffer;
+    this.documents[name] = buf;
+    this._state.content.documents[name] = buf.toString('hex');
+    this._syncDocumentToPeer(name, buf.toString('utf8'));
+    const from = (ev.origin && ev.origin.name) || 'peer';
+    this._appendMessage(
+      `Verified document ${name} (${buf.length} bytes) from ${from}` +
+      (ev.opened ? ' (opened with content key)' : '') +
+      (ev.merkleRootHex ? ` merkle=${ev.merkleRootHex.slice(0, 16)}…` : '') +
+      (ev.unindexed ? ' (single unindexed frame)' : '') +
+      ' — stored in local inventory.'
+    );
+  }
+
+  async _handlePeerDocumentBlobRejected (ev) {
+    const id = (ev && ev.documentId) || '?';
+    const err = (ev && ev.error) || 'rejected';
+    for (const session of this.purchaseSessions.values()) {
+      if (session && session.documentId === id && session.status !== 'complete') {
+        session.status = 'fraud';
+        session.error = err;
+      }
+    }
+    this._appendError(`Rejected blob for ${id}: ${err}`);
   }
 
   async _handlePeerCandidate (peer) {
@@ -1347,11 +2000,26 @@ class CLI extends FabricShell {
     // this._appendDebug(`[NODE] [COMMIT] ${JSON.stringify(_commit)}`);
   }
 
-  async _handlePeerChat (chat) {
-    const actor = chat.actor || {};
-    const idPrefer = actor.id != null && String(actor.id).length ? String(actor.id) : null;
-    const truncatedId = truncateMiddle(idPrefer || actor.username || '', 10, '…', 5);
-    this._appendMessage(`[@${truncatedId}]: ${chat.object.content}`);
+  async _handlePeerChat (chat, meta = {}) {
+    const text = chatTextOf(chat);
+    if (!text.trim()) return;
+    const actorId = chatActorIdOf(chat, {
+      signer: meta && meta.signer,
+      defaultActorId: this.node && this.node.id
+    });
+    const aliases = this._peerAliasByPubkey || {};
+    const alias = (actorId && aliases[actorId]) || (meta && meta.signer && aliases[meta.signer]) || null;
+    this._appendMessage(formatChatLogLine(actorId, alias, text, truncateMiddle));
+  }
+
+  async _handlePeerAlias (ev) {
+    const alias = ev && ev.alias != null ? String(ev.alias).trim().slice(0, 64) : '';
+    const signer = ev && ev.signer ? String(ev.signer) : '';
+    if (!alias || !signer) return;
+    this._peerAliasByPubkey = this._peerAliasByPubkey || {};
+    this._peerAliasByPubkey[signer] = alias;
+    const xonly = chatActorIdOf(null, { signer });
+    if (xonly && xonly !== signer) this._peerAliasByPubkey[xonly] = alias;
   }
 
   async _handlePeerUPNP (upnp) {
@@ -1376,16 +2044,11 @@ class CLI extends FabricShell {
           this._appendError('Could not parse <ChatMessage> data: expected object');
           break;
         }
-        const actor = parsed.actor;
-        const obj = parsed.object;
-        const truncatedId = truncateMiddle(
-          actor && (actor.username || actor),
-          10,
-          '…',
-          5
-        );
-        const content = obj && obj.content != null ? String(obj.content) : '';
-        this._appendMessage(`[@${truncatedId}]: ${content}`);
+        const content = chatTextOf(parsed);
+        const actorId = chatActorIdOf(parsed, { defaultActorId: this.node && this.node.id });
+        const aliases = this._peerAliasByPubkey || {};
+        const alias = (actorId && aliases[actorId]) || null;
+        this._appendMessage(formatChatLogLine(actorId, alias, content, truncateMiddle));
         break;
       }
       case 'BlockCandidate':
@@ -1481,9 +2144,18 @@ class CLI extends FabricShell {
   }
 
   _sendToAllServices (message) {
-    for (const [name, _service] of Object.entries(this.services)) {
-      if (this.settings.services.includes(name)) {
-        service._send(message);
+    for (const [name, service] of Object.entries(this.services)) {
+      if (!this.settings.services.includes(name)) continue;
+      if (!service || typeof service._send !== 'function') continue;
+      try {
+        const result = service._send(message);
+        if (result && typeof result.then === 'function') {
+          void result.catch((error) => {
+            this._appendError(`Service "${name}" could not send message: ${error.message || error}`);
+          });
+        }
+      } catch (error) {
+        this._appendError(`Service "${name}" could not send message: ${error.message || error}`);
       }
     }
   }
@@ -1495,37 +2167,33 @@ class CLI extends FabricShell {
     if (!content) return self._appendMessage('No message provided.');
     if (content.length > MAX_CHAT_MESSAGE_LENGTH) return self._appendMessage(`Message exceeds maximum length (${MAX_CHAT_MESSAGE_LENGTH}).`);
 
-    // Modify history
-    self.history.push(data.input);
+    const raw = String(data.input || '');
+    const tokens = raw.trim().split(/\s+/);
+    const head = String(tokens[0] || '').replace(/^\//, '').toLowerCase();
+    const sub = String(tokens[1] || '').toLowerCase();
+    if (head === 'unlock') {
+      self.history.push('/unlock ***');
+    } else if (head === 'wallet' && sub === 'unlock') {
+      self.history.push('/wallet unlock ***');
+    } else {
+      self.history.push(data.input);
+    }
 
-    // Send as Chat Message if no handler registered
+    // Mesh shoutbox: first-class UTF-8 P2P_CHAT_MESSAGE (Hub UI + GoonCitizen).
     if (!self._processInput(data.input)) {
-      // Describe the activity for use in P2P message
-      const msg = {
-        type: 'P2P_CHAT_MESSAGE',
-        actor: {
-          id: self.node.id
-        },
-        object: {
-          created: Date.now(),
-          content: content
-        },
-        target: '/messages'
-      };
-
-      let message = Message.fromVector(['ChatMessage', JSON.stringify(msg)]);
+      const text = String(content);
+      let message = Message.fromVector(['P2P_CHAT_MESSAGE', text]);
       message = message.signWithKey(this.key);
 
       self.setPane('messages');
 
-      // Log own message
-      self._handlePeerChat(msg);
+      self._handlePeerChat({ text, type: 'P2P_CHAT_MESSAGE' }, {
+        signer: self.node && self.node.id
+      });
 
-      // Relay to peers
       self.node.relayFrom(self.node.id, message);
 
-      // Notify services
-      self._sendToAllServices(msg);
+      self._sendToAllServices({ type: 'P2P_CHAT_MESSAGE', text });
     }
 
     self.elements['form'].reset();
@@ -1595,47 +2263,6 @@ class CLI extends FabricShell {
     this.node.relayFrom(this.node.id, message);
 
     return false;
-  }
-
-  /**
-   * Operator: send `P2P_FLUSH_CHAIN` to Fabric peers whose registry score is strictly greater than
-   * {@link Peer#settings.flushChainMinTrustedScore} (default 800). Peers only honor inbound flush when the
-   * sender's pubkey is listed in {@link Peer#settings.flushChainAuthorizedPubkeys} (configure in Fabric settings JSON).
-   */
-  _handleFlushChainCli (params) {
-    const hex = params[1];
-    if (!hex || !/^[0-9a-fA-F]{64}$/.test(String(hex).trim())) {
-      return this._appendError('Usage: flushchain <snapshotBlockHash-hex-64> [label] — sends P2P_FLUSH_CHAIN to peers with score > flushChainMinTrustedScore; receivers must list authorized signer pubkeys (flushChainAuthorizedPubkeys).');
-    }
-    const snapshotBlockHash = String(hex).trim().toLowerCase();
-    const label = params[2] ? String(params[2]) : undefined;
-    const network = (this.settings.bitcoin && this.settings.bitcoin.network) || this.settings.network;
-    const body = { snapshotBlockHash, network };
-    if (label) body.label = label;
-    const n = this.node.sendFlushChainToTrustedPeers(body);
-    this._appendMessage(`FLUSH_CHAIN sent to ${n} trusted peer connection(s) (score > ${this.node.settings.flushChainMinTrustedScore}).`);
-    return false;
-  }
-
-  async _handlePeerFlushChain (payload) {
-    const object = payload && payload.object;
-    if (!object || !object.snapshotBlockHash) return;
-    if (!this.settings.bitcoin || !this.settings.bitcoin.enable || !this.bitcoin) {
-      return this._appendWarning('[FLUSH_CHAIN] Bitcoin service disabled; not rewinding chain.');
-    }
-    const localNet = this.settings.bitcoin.network || this.settings.network;
-    if (object.network && localNet && object.network !== localNet) {
-      if (this.settings.debug) {
-        this._appendDebug(`[FLUSH_CHAIN] skipped: message network ${object.network} !== local ${localNet}`);
-      }
-      return;
-    }
-    try {
-      const r = await this.bitcoin.flushChainToSnapshot(object.snapshotBlockHash);
-      this._appendMessage(`[FLUSH_CHAIN] bitcoind rewound to snapshot: ${JSON.stringify(r)}`);
-    } catch (err) {
-      this._appendError(`[FLUSH_CHAIN] ${err.message || err}`);
-    }
   }
 
   async spend (to, amount) {
@@ -2079,12 +2706,80 @@ class CLI extends FabricShell {
   }
 
   _handleIdentityRequest () {
+    const env = this.operatorEnvironment || this.environment;
+    const locked = !!(env && env.walletLocked);
+    const pub = (env && env.walletPublic) || {};
+    const lockSnap = env && env.lockSession && env.lockSession.snapshot();
     this._appendMessage(`Local Identity: ${JSON.stringify({
-      id: this.identity.id,
-      pubkey: this.identity.pubkey,
-      address: this.node.server.address(),
-      endpoint: `${this.identity.id}@${this.settings.host}:${this.settings.port}`
+      id: (this.identity && this.identity.id) || pub.identity,
+      pubkey: (this.identity && this.identity.pubkey) || pub.pubkey,
+      xpub: pub.xpub || (this.wallet && this.wallet.xpub),
+      locked,
+      lockTimeoutMinutes: lockSnap && lockSnap.timeoutMinutes,
+      address: this.node && this.node.server && this.node.server.address(),
+      endpoint: this.identity ? `${this.identity.id}@${this.settings.host}:${this.settings.port}` : null
     }, null, '  ')}`);
+  }
+
+  _operatorEnv () {
+    return this.operatorEnvironment || this.environment;
+  }
+
+  _touchLock () {
+    const env = this._operatorEnv();
+    if (env && env.lockSession && !env.lockSession.locked) env.lockSession.touch();
+  }
+
+  _handleUnlockRequest (params) {
+    const env = this._operatorEnv();
+    if (!env || typeof env.unlockWallet !== 'function') {
+      this._appendError('No operator environment to unlock.');
+      return false;
+    }
+    const password = (params.slice(1).join(' ') || this.settings.password || process.env.FABRIC_PASSWORD || '').trim();
+    if (!password) {
+      this._appendError('Usage: /unlock <password>');
+      return false;
+    }
+    try {
+      env.unlockWallet(password);
+      if (env.wallet) {
+        this.attachWallet(env.wallet);
+        this.assumeIdentity(env.wallet.settings.key);
+      }
+      this._appendMessage('Wallet unlocked. Idle lock is armed. Use /lock to re-lock.');
+      return true;
+    } catch (exception) {
+      this._appendError(exception.message || String(exception));
+      return false;
+    }
+  }
+
+  _handleLockRequest (params) {
+    const env = this._operatorEnv();
+    if (!env) {
+      this._appendError('No operator environment to lock.');
+      return false;
+    }
+    const sub = params[1];
+    if (sub === 'timeout' || sub === 'idle') {
+      if (params[2] == null) {
+        const snap = env.lockSession && env.lockSession.snapshot();
+        this._appendMessage(`Idle lock timeout: ${snap ? snap.timeoutMinutes : '?'} minutes (0 = off).`);
+        return true;
+      }
+      const parsed = Number(params[2]);
+      if (!Number.isFinite(parsed)) {
+        this._appendError('Idle lock timeout must be a number of minutes (0 = off).');
+        return false;
+      }
+      env.setLockTimeoutMinutes(parsed);
+      this._appendMessage(`Idle lock timeout set to ${env.lockSession.timeoutMinutes} minutes.`);
+      return true;
+    }
+    if (typeof env.lockWallet === 'function') env.lockWallet();
+    this._appendMessage('Wallet locked. Public identity remains; /unlock <password> to sign.');
+    return true;
   }
 
   _handleSettingsRequest () {
@@ -2096,7 +2791,36 @@ class CLI extends FabricShell {
 
     switch (params[1]) {
       default:
-        text = `{bold}Fabric CLI Help{/bold}\nThe Fabric CLI offers a simple command-based interface to a Fabric-speaking Network.  You can use \`/connect <address>\` to establish a connection to a known peer, or any of the available commands.\n\n{bold}Panels{/bold}: F1 Home | F2 Console | F3 Network | F4 Wallet | F5 Contracts | F6 Blockchain\n\n{bold}Available Commands{/bold}:\n\n${Object.keys(this.commands).map(x => `  ${x}`).join('\n')}\n\n{bold}Usage{/bold}:\n  Type any command with a forward slash, e.g. /help, /peers, /connect localhost:7777\n\n{bold}Examples{/bold}:\n  /help          - Show this help message\n  /block 850000  - Browse block by height (F6 panel)\n  /tx <txid>     - Look up transaction\n  /address <addr> - Look up address\n  /peers         - List connected peers\n  /connect <addr> - Connect to a peer\n  /identity      - Show your identity\n  /wallet        - Show wallet information\n  /bitcoin       - Show Bitcoin service status\n  /quit          - Exit the application`;
+        text = `{bold}Fabric CLI Help{/bold}\n` +
+          `Agreements are {bold}contracts{/bold} with {bold}interfaces{/bold} (HTLC, sessions, programs, cli.shell, …).\n` +
+          `Hub registry publishes the Hub contract first. Use /contracts.\n\n` +
+          `{bold}Panels{/bold}: F1 Home | F2 Console | F3 Network | F4 Wallet | F5 Contracts | F6 Blockchain\n\n` +
+          `{bold}Available Commands{/bold}:\n\n` +
+          `${Object.keys(this.commands).sort().map((x) => `  ${x}`).join('\n')}\n\n` +
+          `{bold}Usage{/bold}:\n` +
+          `  Type any command with a forward slash, e.g. /help, /peers, /connect localhost:7777\n\n` +
+          `{bold}Examples{/bold}:\n` +
+          `  /help          - Show this help message\n` +
+          `  /contracts     - List contracts (sessions, shell packs, interfaces)\n` +
+          `  /peers         - List connected peers\n` +
+          `  /connect <addr> - Connect to a peer\n` +
+          `  /import <file> - Load a file into local document inventory\n` +
+          `  /publish <id> <rateSats> - Gossip document (+ optional sat ask)\n` +
+          `  /inventory [peer] [btc] - Local catalog, or request a peer's inventory\n` +
+          `  /offers [id]   - Ranked sale offers (price/latency/score)\n` +
+          `  /buy <id> [seller|auto] [sats] - Open L1 purchase session\n` +
+          `  /confirm <settlementId> <txid> - Verify pay + request delivery\n` +
+          `  /claimwatch <id> [claimTxid] - Open sealed doc from on-chain claim preimage\n` +
+          `  /refunds [filter] - List outstanding / failed / mature refunds\n` +
+          `  /refund <id> [addr] [feeSats] - Buyer refund after HTLC locktime\n` +
+          `  /request <id> [peer] [maxSats] - Ask for a document (seller /approve)\n` +
+          `  /pending /approve /deny - Consent inbound file requests\n` +
+          `  /relayfees [sats|bps] - Private relay fee policy\n` +
+          `  /send <id> <peer> - Push a held document (or /send <addr> <btc>)\n` +
+          `  /identity      - Show your identity (lock status)\n` +
+          `  /unlock <pw>   - Unlock the sealed wallet\n` +
+          `  /lock          - Re-lock secrets now (/lock timeout <min>)\n` +
+          `  /quit          - Exit the application`;
         break;
     }
 
@@ -2113,6 +2837,7 @@ class CLI extends FabricShell {
 
       if (this.commands[parts[0]]) {
         this.commands[parts[0]].apply(this, [ parts ]);
+        this._touchLock();
         return true;
       }
 
@@ -3317,6 +4042,10 @@ class CLI extends FabricShell {
       this._appendMessage('  wallet send <address> <amount> - Send funds to address');
       this._appendMessage('  wallet receive - Generate a new receive address');
       this._appendMessage('  wallet unspent - List unspent outputs');
+      this._appendMessage('  wallet status - Lock / unlock / timeout');
+      this._appendMessage('  wallet unlock <password> - Unlock sealed wallet');
+      this._appendMessage('  wallet lock - Re-lock secrets now');
+      this._appendMessage('  wallet timeout [minutes] - Idle auto-lock (0 off)');
       return false;
     }
 
@@ -3329,6 +4058,14 @@ class CLI extends FabricShell {
         return this._handleReceiveAddressRequest(params);
       case 'unspent':
         return this._handleUnspentRequest(params);
+      case 'status':
+        return this._handleIdentityRequest(params);
+      case 'unlock':
+        return this._handleUnlockRequest(params.slice(1));
+      case 'lock':
+        return this._handleLockRequest(['lock'].concat(params.slice(2)));
+      case 'timeout':
+        return this._handleLockRequest(['lock', 'timeout'].concat(params.slice(2)));
       default:
         this._appendError(`Unknown wallet command: ${params[1]}`);
         return false;

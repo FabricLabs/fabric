@@ -25,15 +25,40 @@ const ecc = require('../types/ecc');
 const bip65 = require('bip65');
 const bip68 = require('bip68');
 const bitcoin = require('bitcoinjs-lib');
+const { sortInputs, sortOutputs } = require('../functions/bip69');
 
 // Initialize bitcoinjs-lib with the ECC library
 bitcoin.initEccLib(ecc);
 
 // Services
 const ZMQ = require('../services/zmq');
+const Watchtower = require('../services/watchtower');
 
 // Types
 const Actor = require('../types/actor');
+const Message = require('../types/message');
+
+/** bitcoind ZMQ topic → `_handleZMQMessage` case. */
+const ZMQ_TOPIC_CASES = Object.freeze({
+  rawblock: 'BitcoinBlock',
+  hashblock: 'BitcoinBlockHash',
+  rawtx: 'BitcoinTransaction',
+  hashtx: 'BitcoinTransactionHash'
+});
+/** Max txids kept for `rawtx` / `hashtx` pair dedupe. */
+const ZMQ_TXID_MEMORY = 4096;
+/** Default window in which a `rawtx` / `hashtx` pair counts as one admission. */
+const ZMQ_TX_DEDUPE_MS = 30 * 1000;
+/** Per-transaction topics, paused during initial block download. */
+const ZMQ_TX_TOPICS = Object.freeze(['rawtx', 'hashtx']);
+/** Default interval between initial-block-download checks while it lasts. */
+const ZMQ_IBD_POLL_MS = 30 * 1000;
+/** Default wait for a `rawtx` before a lone `hashtx` is fetched over RPC. */
+const ZMQ_HASHTX_GRACE_MS = 250;
+/** Default minimum interval between wallet balance reads driven by `rawtx`. */
+const BALANCE_REFRESH_MS = 2000;
+/** Default cap on concurrent RPC connections to bitcoind. */
+const RPC_MAX_SOCKETS = 16;
 const Collection = require('../types/collection');
 const Entity = require('../types/entity');
 const Key = require('../types/key');
@@ -55,11 +80,93 @@ const SATS_PER_BTC = 10 ** 8;
 // Internal: max |sats - round(sats)| allowed for BTC -> sats conversion
 // (reject fractional satoshis while tolerating float noise).
 const SAT_ADJ_EPS = 1 / (10 ** 6);
+
+/**
+ * PSBT output values are integer satoshis. Reject float BTC leftovers.
+ * @param {bigint|number|string} value
+ * @returns {bigint}
+ */
+function toIntegerSats (value) {
+  if (typeof value === 'bigint') {
+    if (value < 0n) throw new Error('Output value must be a non-negative integer satoshi count');
+    return value;
+  }
+  if (typeof value !== 'number' && typeof value !== 'string') {
+    throw new Error('Output value must be a non-negative integer satoshi count');
+  }
+  if (typeof value === 'string' && value.trim() === '') {
+    throw new Error('Output value must be a non-negative integer satoshi count');
+  }
+  const n = typeof value === 'number' ? value : Number(value);
+  if (!Number.isInteger(n) || !Number.isSafeInteger(n) || n < 0) {
+    throw new Error('Output value must be a non-negative integer satoshi count');
+  }
+  return BigInt(n);
+}
+
 // Internal: reject absurd cookie path lengths before filesystem reads.
 const BITCOIN_COOKIE_PATH_MAX_LEN = 4096;
 
 // Internal allowlist: Bitcoin Core chain directory names under -datadir.
 const BITCOIND_CHAIN_FOLDER_NAMES = new Set(['regtest', 'testnet3', 'testnet4', 'signet']);
+
+/**
+ * Classify bitcoind stderr. Core writes fatal bind/lock failures as `Error: …`.
+ * @private
+ * @param {string} line
+ * @returns {boolean}
+ */
+function shouldTreatBitcoinStderrAsError (line) {
+  const text = String(line || '').trim().toLowerCase();
+  if (!text) return false;
+  return (
+    text.startsWith('error:') ||
+    text.includes(' error: ') ||
+    text.includes('fatal') ||
+    text.includes('exception')
+  );
+}
+
+/**
+ * Buffer bitcoind stderr and emit complete lines.
+ * @private
+ * @param {Bitcoin} service
+ * @param {Buffer|string} chunk
+ * @returns {void}
+ */
+function appendBitcoinStderrChunk (service, chunk) {
+  if (!service._bitcoindStderrBuf) service._bitcoindStderrBuf = '';
+  service._bitcoindStderrBuf += chunk.toString('utf8');
+  const parts = service._bitcoindStderrBuf.split(/\r?\n/);
+  service._bitcoindStderrBuf = parts.pop() || '';
+  for (const raw of parts) {
+    const line = raw.trim();
+    if (!line) continue;
+    if (shouldTreatBitcoinStderrAsError(line)) {
+      service._emitErrorSafe(`[FABRIC:BITCOIN] ${line}`);
+      continue;
+    }
+    if (service.settings.debug) service.emit('debug', `[FABRIC:BITCOIN] ${line}`);
+  }
+}
+
+/**
+ * Flush a trailing bitcoind stderr fragment (no final newline).
+ * @private
+ * @param {Bitcoin} service
+ * @returns {void}
+ */
+function flushBitcoinStderrBuffer (service) {
+  if (!service._bitcoindStderrBuf) return;
+  const line = service._bitcoindStderrBuf.trim();
+  service._bitcoindStderrBuf = '';
+  if (!line) return;
+  if (shouldTreatBitcoinStderrAsError(line)) {
+    service._emitErrorSafe(`[FABRIC:BITCOIN] ${line}`);
+    return;
+  }
+  if (service.settings.debug) service.emit('debug', `[FABRIC:BITCOIN] ${line}`);
+}
 
 // Internal helper: append fixed path components under baseAbs and reject traversal.
 function cookiePathUnderDatadirBase (baseAbs, parts) {
@@ -440,11 +547,7 @@ class Bitcoin extends Service {
       port: 8333, // P2P port
       rpcport: 8332, // RPC port
       interval: 60000, // 10 * 60 * 1000, // every 10 minutes, write a checkpoint
-      verbosity: 2,
-      // When true, flushChainToSnapshot is allowed on mainnet (dangerous).
-      flushChainAllowUnsafeNetworks: false,
-      // Safety cap for invalidateblock steps when rewinding to a snapshot tip.
-      flushChainMaxSteps: 100000
+      verbosity: 2
     }, settings);
 
     const netNorm = this._normalizeChainName(this.settings.network || 'mainnet');
@@ -538,6 +641,14 @@ class Bitcoin extends Service {
     }); */
 
     this.zmq = new ZMQ({ ...this.settings.zmq, key: { xprv: this._rootKey.xprv } });
+    // Every node that runs Bitcoin watches its own filings and those of
+    // clients the host admits. `settings.watchtower === false` turns it off.
+    this.watchtower = this.settings.watchtower === false
+      ? null
+      : new Watchtower({
+        localPrivateKey: this._rootKey && this._rootKey.private,
+        admit: typeof this.settings.watchtowerAdmit === 'function' ? this.settings.watchtowerAdmit : null
+      });
 
     // Define Bitcoin P2P Messages
     this.define('VersionPacket', { type: 0 });
@@ -856,11 +967,34 @@ class Bitcoin extends Service {
     return candidates;
   }
 
+  /**
+   * Keep-alive agent shared by every RPC client of this service. Its socket
+   * cap (`settings.rpcMaxSockets`, default 16) queues bursts here instead of
+   * opening a connection per call, which overflows bitcoind's work queue and
+   * leaves the host's ephemeral ports in TIME_WAIT.
+   * @private
+   * @param {boolean} [secure] HTTPS rather than HTTP.
+   * @returns {http.Agent}
+   */
+  _rpcAgent (secure = false) {
+    const key = secure ? '_rpcHttpsAgent' : '_rpcHttpAgent';
+    if (!this[key]) {
+      const max = Number(this.settings.rpcMaxSockets);
+      const lib = secure ? require('https') : require('http');
+      this[key] = new lib.Agent({
+        keepAlive: true,
+        maxSockets: Number.isFinite(max) && max > 0 ? max : RPC_MAX_SOCKETS
+      });
+    }
+    return this[key];
+  }
+
   _createRPCClientForCandidate (candidate) {
     const config = {
       host: candidate.host,
       port: Number(candidate.rpcport),
-      timeout: 2500
+      timeout: 2500,
+      agent: this._rpcAgent(candidate.secure === true)
     };
 
     if (candidate.username && candidate.password) {
@@ -871,7 +1005,20 @@ class Bitcoin extends Service {
     return (candidate.secure === true) ? jayson.https(config) : jayson.http(config);
   }
 
+  /**
+   * Point a client built before `stop()` at the live agent: a destroyed one
+   * would leave it with no capped pool to share.
+   * @private
+   * @param {Object} client jayson client.
+   */
+  _refreshRPCAgent (client) {
+    const options = client && client.options;
+    if (!options || !options.agent || !this._rpcRetiredAgents || !this._rpcRetiredAgents.has(options.agent)) return;
+    options.agent = this._rpcAgent(options.agent instanceof require('https').Agent);
+  }
+
   _requestWithRPCClient (client, method, params = []) {
+    this._refreshRPCAgent(client);
     return new Promise((resolve, reject) => {
       client.request(method, params, (err, response) => {
         if (err) return reject(err);
@@ -1564,51 +1711,117 @@ class Bitcoin extends Service {
   async _handleZMQMessage (msg) {
     let topic, content;
 
-    // Handle both raw ZMQ messages and Message objects
+    // Handle both raw ZMQ messages ([topic, bytes]) and Message objects (`services/zmq`).
     if (Array.isArray(msg)) {
-      // Raw ZMQ message format
-      topic = msg[0].toString();
-      content = msg[1];
+      topic = ZMQ_TOPIC_CASES[String(msg[0])] || String(msg[0]);
+      const bytes = msg[1];
+      content = { content: bytes instanceof Uint8Array ? Buffer.from(bytes).toString('hex') : String(bytes || '') };
     } else if (msg && typeof msg === 'object') {
-      // Message object format
-      topic = msg.type;
-      content = msg.data;
+      // `msg.type` is the wire name (BITCOIN_BLOCK_HASH); the cases use the
+      // friendly name. The body is a field layout holding `{ content }`.
+      topic = msg.friendlyType || msg.type;
+      const parsed = typeof msg.toBuffer === 'function' ? Message.tryParseLegacyBody(msg) : null;
+      content = parsed && parsed.ok ? parsed.value : msg.data;
     } else {
       this.emit('error', `[BITCOIN] Invalid message format: ${JSON.stringify(msg)}`);
       return;
     }
+    const hexContent = content && typeof content === 'object' && typeof content.content === 'string'
+      ? content.content
+      : null;
 
-    if (this.settings.debug) this.emit('debug', '[ZMQ] Received message on topic:', topic, 'Message length:', content && (Buffer.isBuffer(content) ? content.length : (typeof content === 'object' ? JSON.stringify(content).length : String(content).length)));
+    if (this.settings.debug) this.emit('debug', '[ZMQ] Received message on topic:', topic, 'Message length:', hexContent ? hexContent.length / 2 : 0);
 
     try {
       switch (topic) {
-        case 'BitcoinBlock':
-        case 'BitcoinTransactionHash':
+        case 'BitcoinBlock': {
+          // `hashblock` drives `block` (tip, height, transactions). The raw block
+          // arrives for the same tip, so it gets its own event instead of a second `block`.
+          if (hexContent && hexContent.length >= 160) {
+            const header = Buffer.from(hexContent.slice(0, 160), 'hex');
+            const hash = Buffer.from(bitcoin.crypto.hash256(header)).reverse().toString('hex');
+            this.emit('rawBlock', { raw: hexContent, hash, source: 'BitcoinBlock' });
+          }
           break;
+        }
+        case 'BitcoinTransactionHash': {
+          const txid = hexContent;
+          // `rawtx` for this admission may already have been handled.
+          if (!txid || this._zmqTxRecent(txid)) break;
+          if (this.settings.walletWatchMempool !== false) {
+            // bitcoind sends `rawtx` for the same admission; give it a moment
+            // to arrive before paying an RPC for what it already carries.
+            if (this._zmqReceives('rawtx')) this._deferHashTx(txid);
+            else await this._fetchHashTx(txid);
+          }
+          break;
+        }
         case 'BitcoinBlockHash': {
-          const blockHashHex = (content && typeof content === 'object' && content.content)
-            ? content.content
-            : (JSON.parse(Buffer.isBuffer(content) ? content.toString() : String(content))).content;
-          const supply = await this._makeRPCRequest('gettxoutsetinfo', []);
-          this._state.content.height = supply.height;
-          this._state.content.tip = blockHashHex;
-          this._state.content.supply = supply.total_amount;
-          this.commit();
-          this.emit('block', {
+          const blockHashHex = hexContent;
+          if (!blockHashHex) break;
+          let height = null;
+          let supplyAmount = null;
+          try {
+            const supply = await this._makeRPCRequest('gettxoutsetinfo', []);
+            height = supply.height;
+            supplyAmount = supply.total_amount;
+            this._state.content.height = supply.height;
+            this._state.content.tip = blockHashHex;
+            this._state.content.supply = supply.total_amount;
+            this.commit();
+          } catch (e) {
+            if (this.settings.debug) this.emit('debug', `[FABRIC:BITCOIN] tip supply: ${e.message || e}`);
+          }
+
+          let verboseBlock = null;
+          try {
+            verboseBlock = await this._makeRPCRequest('getblock', [blockHashHex, 2]);
+            if (verboseBlock && verboseBlock.height != null) height = verboseBlock.height;
+          } catch (e) {
+            if (this.settings.debug) {
+              this.emit('debug', `[FABRIC:BITCOIN] getblock(${blockHashHex},2): ${e.message || e}`);
+            }
+          }
+
+          const payload = {
             tip: blockHashHex,
-            height: supply.height,
-            supply: supply.total_amount
-          });
+            hash: blockHashHex,
+            height,
+            supply: supplyAmount,
+            tx: (verboseBlock && verboseBlock.tx) || [],
+            source: 'BitcoinBlockHash'
+          };
+          const watchHexes = payload.tx.map((tx) => tx && tx.hex).filter(Boolean);
+          if (watchHexes.length) this.broadcastWatchtower(watchHexes).catch(() => {});
+          this.emit('block', payload);
+          if (this.wallet && typeof this.wallet.ingestBitcoinBlock === 'function') {
+            try {
+              this.wallet.ingestBitcoinBlock(payload);
+            } catch (e) {
+              this.emit('warning', `[FABRIC:BITCOIN] wallet block ingest: ${e.message || e}`);
+            }
+          }
           break;
         }
         case 'BitcoinTransaction': {
           try {
-            const balance = await this._makeRPCRequest('getbalances', []).catch(() => null);
-            if (balance != null) {
-              this._state.balances.mine.trusted = balance;
-              this.commit();
-              this.emit('transaction', { balance: this._state.balances.mine.trusted });
+            const rawHex = hexContent;
+            let txid = null;
+            try {
+              txid = require('bitcoinjs-lib').Transaction.fromHex(rawHex).getId();
+            } catch (_) { /* not a transaction: handled as unparsed below */ }
+            // `hashtx` for this admission may already have been handled.
+            if (rawHex && !(txid && this._zmqTxRecent(txid))) {
+              if (txid) this._zmqTxMark(txid);
+              this.broadcastWatchtower([rawHex]).catch(() => {});
+              const event = { hex: rawHex, source: 'BitcoinTransaction' };
+              if (txid) event.txid = txid;
+              this.emit('transaction', event);
+              if (this.wallet && typeof this.wallet.ingestBitcoinTransaction === 'function') {
+                this.wallet.ingestBitcoinTransaction(rawHex, { source: 'BitcoinTransaction' });
+              }
             }
+            await this._refreshBalancesSoon();
           } catch (e) {
             if (this.settings.debug) this.emit('debug', `[FABRIC:BITCOIN] ZMQ BitcoinTransaction handler: ${e.message || e}`);
           }
@@ -1617,9 +1830,305 @@ class Bitcoin extends Service {
         default:
           if (this.settings.verbosity >= 5) this.emit('debug', `[AUDIT] Unknown ZMQ topic: ${topic}`);
       }
-    } catch {
-      //', `Could not process ZMQ message: ${exception}`);
+    } catch (exception) {
+      this.emit('warning', `[FABRIC:BITCOIN] Could not process ZMQ ${topic}: ${exception && exception.message ? exception.message : exception}`);
     }
+  }
+
+  /**
+   * Whether a txid was delivered by ZMQ within the pair window. bitcoind
+   * publishes `rawtx` and `hashtx` for every mempool admission; the window
+   * (`settings.zmqTxDedupeMs`, default 30 s) collapses that pair without
+   * suppressing a later admission of the same transaction (evicted, then
+   * re-accepted), which notifies again.
+   * @private
+   * @param {string} txid
+   * @returns {boolean}
+   */
+  _zmqTxRecent (txid) {
+    const at = this._zmqTxids ? this._zmqTxids.get(String(txid).toLowerCase()) : undefined;
+    return at !== undefined && (Date.now() - at) < this._zmqTxDedupeMs();
+  }
+
+  /**
+   * Record that a txid's admission was delivered (see {@link Bitcoin#_zmqTxRecent}).
+   * Entries older than the window are dropped; the map is also size-bounded.
+   * @private
+   * @param {string} txid
+   */
+  _zmqTxMark (txid) {
+    if (!this._zmqTxids) this._zmqTxids = new Map();
+    const now = Date.now();
+    const key = String(txid).toLowerCase();
+    this._zmqTxids.delete(key);
+    this._zmqTxids.set(key, now);
+    const windowMs = this._zmqTxDedupeMs();
+    // Maps iterate in insertion order, so the oldest entries come first.
+    for (const [k, at] of this._zmqTxids) {
+      if (this._zmqTxids.size <= ZMQ_TXID_MEMORY && now - at < windowMs) break;
+      this._zmqTxids.delete(k);
+    }
+  }
+
+  /** @private */
+  _zmqTxDedupeMs () {
+    const ms = Number(this.settings.zmqTxDedupeMs);
+    return Number.isFinite(ms) && ms >= 0 ? ms : ZMQ_TX_DEDUPE_MS;
+  }
+
+  /**
+   * A non-negative number setting, else the default.
+   * @private
+   */
+  _msSetting (name, fallback) {
+    const ms = Number(this.settings[name]);
+    return Number.isFinite(ms) && ms >= 0 ? ms : fallback;
+  }
+
+  /**
+   * Whether the ZMQ subscriber is receiving a topic right now.
+   * @private
+   * @param {string} name bitcoind topic (`rawtx`, …).
+   */
+  _zmqReceives (name) {
+    const zmq = this.zmq;
+    if (!zmq || !zmq.settings || !Array.isArray(zmq.settings.subscriptions)) return false;
+    return zmq.settings.subscriptions.includes(name) && !(Array.isArray(zmq.paused) && zmq.paused.includes(name));
+  }
+
+  /**
+   * Fetch a mempool transaction announced by `hashtx` and deliver it, unless
+   * `rawtx` delivered it first.
+   * @private
+   * @param {string} txid
+   */
+  async _fetchHashTx (txid, source = 'BitcoinTransactionHash') {
+    try {
+      const verbose = await this._makeRPCRequest('getrawtransaction', [txid, true]);
+      // Mark only once this path delivered: a failed fetch leaves `rawtx` to do it.
+      // Re-check after the await in case `rawtx` won the race, or the service stopped.
+      if (verbose && !this._zmqIbdStopped && !this._zmqTxRecent(txid)) {
+        this._zmqTxMark(txid);
+        if (verbose.hex) this.broadcastWatchtower([verbose.hex]).catch(() => {});
+        this.emit('transaction', Object.assign({}, verbose, { source }));
+        if (this.wallet && typeof this.wallet.ingestBitcoinTransaction === 'function') {
+          this.wallet.ingestBitcoinTransaction(verbose, { source });
+        }
+      }
+    } catch (e) {
+      if (this.settings.debug) {
+        this.emit('debug', `[FABRIC:BITCOIN] mempool tx fetch ${txid}: ${e.message || e}`);
+      }
+    }
+  }
+
+  /**
+   * Hold a `hashtx` for `settings.zmqHashTxGraceMs` (default 250 ms); only
+   * txids its `rawtx` didn't deliver by then are fetched.
+   * @private
+   * @param {string} txid
+   */
+  _deferHashTx (txid) {
+    this._queueHashTx(txid, Date.now() + this._msSetting('zmqHashTxGraceMs', ZMQ_HASHTX_GRACE_MS));
+  }
+
+  /**
+   * Queue a txid for one fetch at `due` (ms). Queued and in-flight txids
+   * together never exceed `ZMQ_TXID_MEMORY`; one drainer fetches them in order.
+   * @private
+   * @param {string} txid
+   * @param {number} due
+   * @returns {boolean} Whether it was queued.
+   */
+  _queueHashTx (txid, due) {
+    if (this._zmqIbdStopped) return false;
+    if (!this._zmqHashTxPending) this._zmqHashTxPending = new Map();
+    const id = String(txid).toLowerCase();
+    if (this._zmqHashTxPending.has(id) || this._zmqHashTxInFlight === id) return false;
+    const inFlight = this._zmqHashTxInFlight ? 1 : 0;
+    if (this._zmqHashTxPending.size + inFlight >= ZMQ_TXID_MEMORY) return false;
+    this._zmqHashTxPending.set(id, due);
+    this._drainHashTx();
+    return true;
+  }
+
+  /**
+   * The single drainer of the hashtx queue: waits for each txid's grace, skips
+   * those `rawtx` delivered, and fetches the rest one at a time. It stops
+   * while the service is stopped or the transaction topics are paused.
+   * @private
+   */
+  _drainHashTx () {
+    if (this._zmqHashTxDraining) return;
+    this._zmqHashTxDraining = true;
+    const run = async () => {
+      try {
+        while (this._zmqHashTxPending && this._zmqHashTxPending.size && !this._zmqIbdStopped && !this._zmqTxPaused()) {
+          const [id, due] = this._zmqHashTxPending.entries().next().value;
+          const wait = due - Date.now();
+          if (wait > 0) {
+            await new Promise((resolve) => {
+              this._zmqHashTxWake = resolve;
+              this._zmqHashTxTimer = setTimeout(resolve, wait);
+              if (typeof this._zmqHashTxTimer.unref === 'function') this._zmqHashTxTimer.unref();
+            });
+            this._zmqHashTxTimer = null;
+            this._zmqHashTxWake = null;
+            continue;
+          }
+          this._zmqHashTxPending.delete(id);
+          if (this._zmqTxRecent(id)) continue;
+          this._zmqHashTxInFlight = id;
+          try {
+            await this._fetchHashTx(id);
+          } finally {
+            this._zmqHashTxInFlight = null;
+          }
+        }
+      } finally {
+        this._zmqHashTxDraining = false;
+      }
+    };
+    run().catch(() => {});
+  }
+
+  /**
+   * Drop every queued hashtx fetch and wake the drainer so it exits.
+   * @private
+   */
+  _clearHashTxQueue () {
+    if (this._zmqHashTxPending) this._zmqHashTxPending.clear();
+    if (this._zmqHashTxTimer) clearTimeout(this._zmqHashTxTimer);
+    this._zmqHashTxTimer = null;
+    const wake = this._zmqHashTxWake;
+    this._zmqHashTxWake = null;
+    if (wake) wake();
+  }
+
+  /**
+   * Whether the per-transaction topics are paused (initial block download).
+   * @private
+   * @returns {boolean}
+   */
+  _zmqTxPaused () {
+    const paused = this.zmq && Array.isArray(this.zmq.paused) ? this.zmq.paused : [];
+    return ZMQ_TX_TOPICS.some((name) => paused.includes(name));
+  }
+
+  /**
+   * After initial block download, queue every mempool transaction ZMQ has not
+   * delivered: they were admitted while the topics were paused. They go to
+   * the same bounded queue as `hashtx`, so the wallet and the watchtower see them.
+   * @private
+   * @returns {Promise<number>} How many were queued.
+   */
+  async _reconcileMempool () {
+    if (this.settings.walletWatchMempool === false) return 0;
+    const generation = this._zmqIbdGeneration;
+    let txids = null;
+    try {
+      txids = await this._makeRPCRequest('getrawmempool', [false], { retries: 0 });
+    } catch (_) {
+      return 0;
+    }
+    if (this._zmqIbdStopped || generation !== this._zmqIbdGeneration || !Array.isArray(txids)) return 0;
+    let queued = 0;
+    let dropped = 0;
+    const now = Date.now();
+    for (const txid of txids) {
+      if (typeof txid !== 'string' || !/^[0-9a-f]{64}$/i.test(txid) || this._zmqTxRecent(txid)) continue;
+      if (this._queueHashTx(txid, now)) queued++;
+      else dropped++;
+    }
+    if (queued || dropped) {
+      this.emit('log', `[FABRIC:BITCOIN] Mempool reconciled after initial block download: ${queued} transactions queued${dropped ? `, ${dropped} over the queue limit` : ''}`);
+    }
+    return queued;
+  }
+
+  /**
+   * Read wallet balances after a transaction, at most once per
+   * `settings.balanceRefreshMs` (default 2 s): the first read runs at once,
+   * later ones inside the window share one trailing read.
+   * @private
+   * @returns {Promise<void>}
+   */
+  _refreshBalancesSoon () {
+    if (this._balanceRefresh) {
+      // A read already under way may predate this transaction: read once more after it.
+      if (this._balanceRefreshRunning) this._balanceRefreshAgain = true;
+      return this._balanceRefresh;
+    }
+    const windowMs = this._msSetting('balanceRefreshMs', BALANCE_REFRESH_MS);
+    const wait = Math.max(0, windowMs - (Date.now() - (this._balanceRefreshAt || 0)));
+    this._balanceRefresh = new Promise((resolve) => {
+      this._balanceRefreshResolve = resolve;
+      const run = async () => {
+        this._balanceRefreshTimer = null;
+        this._balanceRefreshRunning = true;
+        this._balanceRefreshAt = Date.now();
+        const balance = await this._makeRPCRequest('getbalances', []).catch(() => null);
+        // The same shape `_syncBalances` stores: the whole `getbalances` result.
+        if (balance && typeof balance === 'object' && balance.mine && !this._zmqIbdStopped) {
+          this._state.balances = balance;
+          this.commit();
+        }
+        this._balanceRefreshRunning = false;
+        this._balanceRefresh = null;
+        this._balanceRefreshResolve = null;
+        resolve();
+        if (this._balanceRefreshAgain && !this._zmqIbdStopped) {
+          this._balanceRefreshAgain = false;
+          this._refreshBalancesSoon().catch(() => {});
+        }
+      };
+      if (wait === 0) {
+        run();
+        return;
+      }
+      this._balanceRefreshTimer = setTimeout(run, wait);
+      if (typeof this._balanceRefreshTimer.unref === 'function') this._balanceRefreshTimer.unref();
+    });
+    return this._balanceRefresh;
+  }
+
+  /**
+   * bitcoind publishes `rawtx` / `hashtx` for every transaction of every block
+   * it connects: thousands a second during initial block download, none of
+   * them mempool news. While the node is in IBD those topics are paused (the
+   * publisher stops sending them) and queued hashtx fetches are dropped. IBD
+   * is checked every `settings.zmqIbdPollMs` (default 30 s) for as long as
+   * the service runs, so a node that falls back into IBD (restart, reindex)
+   * pauses them again. Once it is over they resume, the mempool is
+   * reconciled, and balances are read once. Unknown (RPC unreachable) leaves
+   * them as they are. A check that answers after `stop()` changes nothing.
+   * @private
+   */
+  async _gateZMQTransactions () {
+    if (!this.zmq || typeof this.zmq.pause !== 'function' || this._zmqIbdStopped) return;
+    const generation = this._zmqIbdGeneration;
+    let ibd = null;
+    try {
+      const info = await this._makeRPCRequest('getblockchaininfo', [], { retries: 0 });
+      if (info && typeof info.initialblockdownload === 'boolean') ibd = info.initialblockdownload;
+    } catch (_) { /* unknown */ }
+    if (this._zmqIbdStopped || generation !== this._zmqIbdGeneration) return;
+    if (ibd === true) {
+      if (this.zmq.pause(ZMQ_TX_TOPICS).length) {
+        this.emit('log', '[FABRIC:BITCOIN] Initial block download: transaction notifications paused until the node catches up');
+      }
+      this._clearHashTxQueue();
+    } else if (ibd === false && this.zmq.resume(ZMQ_TX_TOPICS).length) {
+      this.emit('log', '[FABRIC:BITCOIN] Initial block download complete: transaction notifications resumed');
+      this._reconcileMempool().catch(() => {});
+      this._refreshBalancesSoon().catch(() => {});
+    }
+    if (this._zmqIbdTimer) clearTimeout(this._zmqIbdTimer);
+    this._zmqIbdTimer = setTimeout(() => {
+      this._zmqIbdTimer = null;
+      if (generation === this._zmqIbdGeneration) this._gateZMQTransactions().catch(() => {});
+    }, this._msSetting('zmqIbdPollMs', ZMQ_IBD_POLL_MS));
+    if (typeof this._zmqIbdTimer.unref === 'function') this._zmqIbdTimer.unref();
   }
 
   async _startZMQ () {
@@ -1642,6 +2151,11 @@ class Bitcoin extends Service {
       this.emit('debug', '[ZMQ] Disconnected from Bitcoin node');
     });
 
+    // Check IBD before subscribing: topics paused now are never subscribed,
+    // so a node still downloading blocks sends no per-transaction flood.
+    this._zmqIbdStopped = false;
+    this._zmqIbdGeneration = (this._zmqIbdGeneration || 0) + 1;
+    await this._gateZMQTransactions();
     await this.zmq.start();
     if (this.settings.debug) this.emit('debug', '[AUDIT] ZMQ Started.');
   }
@@ -1690,12 +2204,15 @@ class Bitcoin extends Service {
     if (this.rpc) {
       try {
         await this._loadWallet(this.walletName);
-        const info = await this._makeRPCRequest('getnetworkinfo');
-        const version = parseInt(info.version);
-        const address = await this._makeWalletRequest('getnewaddress', [
-          '', // label
-          version >= 240000 ? 'legacy' : 'legacy' // address type
-        ], this.walletName);
+        // Taproot: the cheapest input to spend later. Segwit only where the
+        // wallet can't make one (Core before 22, or a non-descriptor wallet).
+        let address = null;
+        try {
+          address = await this._makeWalletRequest('getnewaddress', ['', 'bech32m'], this.walletName);
+        } catch (taprootError) {
+          if (this.settings.debug) this.emit('debug', `[FABRIC:BITCOIN] No Taproot address (${taprootError.message || taprootError}); using segwit`);
+          address = await this._makeWalletRequest('getnewaddress', ['', 'bech32'], this.walletName);
+        }
 
         if (!address) throw new Error('No address returned from getnewaddress');
         return address;
@@ -1703,37 +2220,23 @@ class Bitcoin extends Service {
       if (this.settings.debug) this.emit('debug', `[FABRIC:BITCOIN] Error getting unused address: ${error.message || error}`);
         throw error;
       }
-    } else if (this.settings.key || this._rootKey) {
-      // In fabric mode, derive from a Key instance; settings.key may be plain config.
-      const keySource = (this.settings.key && typeof this.settings.key.deriveAddress === 'function')
-        ? this.settings.key
-        : this._rootKey;
-      const target = keySource.deriveAddress(this.settings.state.walletIndex);
-      // Increment the index for next time
-      this.settings.state.walletIndex++;
-      // Track the address
-      this.settings.state.addresses[target.address] = {
-        index: this.settings.state.walletIndex - 1,
-        transactions: []
-      };
-      return target.address;
-    } else {
-      // If no key is provided, generate a new key for regtest
-      const key = new Key({
-        network: this.settings.network,
-        purpose: 44,
-        account: 0,
-        index: this.settings.state.walletIndex
-      });
-      this.settings.key = key;
-      const target = key.deriveAddress(this.settings.state.walletIndex);
-      this.settings.state.walletIndex++;
-      this.settings.state.addresses[target.address] = {
-        index: this.settings.state.walletIndex - 1,
-        transactions: []
-      };
-      return target.address;
     }
+
+    // Without bitcoind: BIP-86 Taproot (`m/86'/{coin}'/0'/0/i`) from a Key
+    // instance (settings.key may be plain config), else a new key.
+    let keySource = (this.settings.key && typeof this.settings.key.deriveAddress === 'function')
+      ? this.settings.key
+      : this._rootKey;
+    if (!keySource && !this.settings.key) {
+      keySource = new Key({ network: this.settings.network });
+      this.settings.key = keySource;
+    }
+    if (!keySource) throw new Error('No key to derive a receive address from (settings.key is not a Key)');
+    const index = this.settings.state.walletIndex;
+    const { address } = Wallet.deriveTaprootAddress(keySource, { index, network: this.settings.network });
+    this.settings.state.walletIndex++;
+    this.settings.state.addresses[address] = { index, transactions: [] };
+    return address;
   }
 
   async append (raw) {
@@ -1927,6 +2430,7 @@ class Bitcoin extends Service {
   _makeRPCRequestOnce (method, params = []) {
     return new Promise((resolve, reject) => {
       if (!this.rpc) return reject(new Error('RPC manager does not exist'));
+      this._refreshRPCAgent(this.rpc);
       this.rpc.request(method, params, (err, response) => {
         if (err) {
           if (this.settings.debug) this.emit('debug', `[FABRIC:BITCOIN] RPC error for ${method}(${params.join(', ')}): ${err.message || err}`);
@@ -1970,7 +2474,8 @@ class Bitcoin extends Service {
         port: port,
         timeout: 300000, // 5 minute timeout for heavy operations
         headers: { Authorization: `Basic ${Buffer.from(auth, 'utf8').toString('base64')}` },
-        path: `/wallet/${wallet}`
+        path: `/wallet/${wallet}`,
+        agent: this._rpcAgent(!!this.settings.secure)
       };
 
       let walletRpc;
@@ -2031,83 +2536,6 @@ class Bitcoin extends Service {
       if (this.settings.debug) this.emit('debug', `[FABRIC:BITCOIN] Error requesting best block hash: ${error.message}`);
       throw error;
     }
-  }
-
-  /**
-   * Rewind the attached Bitcoin Core node to a known-good tip by repeatedly calling `invalidateblock`
-   * on the current best block until `getbestblockhash` matches `snapshotBlockHash`.
-   * Allowed on regtest, playnet, signet, testnet, testnet4 unless settings.flushChainAllowUnsafeNetworks.
-   * @param {string} snapshotBlockHash - 64-char hex block hash to keep as the active tip.
-   * @returns {Promise<{ ok: boolean, steps: number, snapshotBlockHash: string }>}
-   */
-  async flushChainToSnapshot (snapshotBlockHash) {
-    const run = () => this._flushChainToSnapshotBody(snapshotBlockHash);
-    const p = (this._flushChainQueue || Promise.resolve())
-      .catch(() => {})
-      .then(run);
-    this._flushChainQueue = p.catch(() => {});
-    return p;
-  }
-
-  /**
-   * @private
-   */
-  async _flushChainToSnapshotBody (snapshotBlockHash) {
-    const hex = String(snapshotBlockHash || '').trim().toLowerCase();
-    if (!/^[0-9a-f]{64}$/.test(hex)) {
-      throw new Error('flushChainToSnapshot: snapshotBlockHash must be 64 hex characters');
-    }
-    const net = this._normalizeChainName(this.settings.network || 'mainnet');
-    const allowed =
-      net === 'regtest' ||
-      net === 'playnet' ||
-      net === 'signet' ||
-      net === 'testnet' ||
-      net === 'testnet4';
-    if (!allowed && !this.settings.flushChainAllowUnsafeNetworks) {
-      throw new Error(`flushChainToSnapshot: not allowed for network "${net}" (set flushChainAllowUnsafeNetworks to override)`);
-    }
-    const maxSteps = (typeof this.settings.flushChainMaxSteps === 'number' && this.settings.flushChainMaxSteps > 0)
-      ? this.settings.flushChainMaxSteps
-      : 100000;
-
-    try {
-      await this._makeRPCRequest('getblockheader', [hex]);
-    } catch (err) {
-      const msg = err && err.message ? String(err.message) : String(err);
-      throw new Error(`flushChainToSnapshot: snapshot block not known to node (${msg})`);
-    }
-
-    let cursor = String(await this._makeRPCRequest('getbestblockhash', [])).trim().toLowerCase();
-    let reachable = false;
-    for (let i = 0; i < maxSteps; i++) {
-      if (cursor === hex) {
-        reachable = true;
-        break;
-      }
-      const header = await this._makeRPCRequest('getblockheader', [cursor]);
-      const prev = header && header.previousblockhash
-        ? String(header.previousblockhash).trim().toLowerCase()
-        : null;
-      if (!prev) break;
-      cursor = prev;
-    }
-    if (!reachable) {
-      throw new Error('flushChainToSnapshot: snapshot is not an ancestor of the active tip');
-    }
-
-    let steps = 0;
-    while (steps < maxSteps) {
-      const best = String(await this._makeRPCRequest('getbestblockhash', [])).trim().toLowerCase();
-      if (best === hex) {
-        const out = { ok: true, steps, snapshotBlockHash: hex };
-        this.emit('message', { type: 'BitcoinFlushChain', data: out });
-        return out;
-      }
-      await this._makeRPCRequest('invalidateblock', [best]);
-      steps++;
-    }
-    throw new Error(`flushChainToSnapshot: exceeded flushChainMaxSteps=${maxSteps} before reaching snapshot`);
   }
 
   async _requestBlockHeader (hash) {
@@ -2298,6 +2726,7 @@ class Bitcoin extends Service {
 
   /**
    * Create a Partially-Signed Bitcoin Transaction (PSBT).
+   * Vin/vout are BIP-69 sorted before they are added (unsigned construction only).
    * @param {Object} options Parameters for the PSBT.
    * @returns {PSBT} Instance of the PSBT.
    */
@@ -2328,36 +2757,49 @@ class Bitcoin extends Service {
 
     // TODO: add change output
 
-    // Create the PSBT
-    const psbt = new bitcoin.Psbt({ network });
-
-    for (let i = 0; i < options.inputs.length; i++) {
-      const input = options.inputs[i];
-      const data = {
-        hash: input.txid,
-        index: input.vout,
-        sequence: -1 >>> 0
-      };
-
-      psbt.addInput(data);
-    }
-
+    const sortedInputs = sortInputs(options.inputs.map((input) => Object.assign({}, input)));
+    const preparedOutputs = [];
     for (let i = 0; i < options.outputs.length; i++) {
       const output = options.outputs[i];
+      let sats;
+      try {
+        sats = toIntegerSats(output.value);
+      } catch (e) {
+        throw new Error(`Invalid output value for ${output.address}: ${e.message}`);
+      }
       try {
         const script = bitcoin.address.toOutputScript(output.address, network);
-        const data = {
+        preparedOutputs.push({
+          address: output.address,
           script,
-          value: output.value
-        };
-
-        psbt.addOutput(data);
+          value: sats
+        });
       } catch (e) {
         if (this.settings.debug) {
-          if (this.settings.debug) this.emit('debug', `[FABRIC:BITCOIN] Failed to add output: ${e.message}`);
+          this.emit('debug', `[FABRIC:BITCOIN] Failed to add output: ${e.message}`);
         }
         throw new Error(`Invalid address ${output.address}: ${e.message}`);
       }
+    }
+    const sortedOutputs = sortOutputs(preparedOutputs);
+
+    const psbt = new bitcoin.Psbt({ network });
+
+    for (let i = 0; i < sortedInputs.length; i++) {
+      const input = sortedInputs[i];
+      psbt.addInput({
+        hash: input.txid,
+        index: input.vout,
+        sequence: -1 >>> 0
+      });
+    }
+
+    for (let i = 0; i < sortedOutputs.length; i++) {
+      const output = sortedOutputs[i];
+      psbt.addOutput({
+        script: output.script,
+        value: output.value
+      });
     }
 
     return psbt;
@@ -2388,6 +2830,39 @@ class Bitcoin extends Service {
 
   async _spendRawTX (raw) {
     return this._makeRPCRequest('sendrawtransaction', [ raw ]);
+  }
+
+  /**
+   * Broadcast justice transactions for any revoked commitment in `txHexes`.
+   * A filing is dropped only once every one of its transactions is accepted
+   * or already settled. A prefix that does not decrypt is ignored.
+   * @param {string[]} txHexes raw transactions (block or mempool)
+   * @returns {Promise<string[]>} justice transactions submitted
+   */
+  async broadcastWatchtower (txHexes) {
+    const tower = this.watchtower;
+    if (!tower || !txHexes || !txHexes.length) return [];
+    const hits = tower.match(txHexes);
+    const sent = [];
+    for (const hit of hits) {
+      let keep = false;
+      for (const txHex of hit.transactions) {
+        try {
+          await this._spendRawTX(txHex);
+          sent.push(txHex);
+        } catch (e) {
+          if (Watchtower.broadcastSettled(e)) {
+            sent.push(txHex);
+          } else {
+            keep = true;
+            const msg = e && e.message ? e.message : String(e);
+            this.emit('warning', `[FABRIC:BITCOIN] watchtower broadcast: ${msg}`);
+          }
+        }
+      }
+      if (!keep) tower.drop(hit.client, hit.hint);
+    }
+    return sent;
   }
 
   async _syncBestBlock () {
@@ -2675,10 +3150,28 @@ class Bitcoin extends Service {
         this.emit('log', `[FABRIC:BITCOIN] addnode ${cmd} ${addr}`);
       } catch (e) {
         const msg = e && e.message ? e.message : String(e);
+        if (cmd === 'add' && (/-23\b/.test(msg) || /already added/i.test(msg))) {
+          done.push(addr);
+          if (this.settings && this.settings.debug) {
+            this.emit('log', `[FABRIC:BITCOIN] addnode ${addr} already present`);
+          }
+          continue;
+        }
         this.emit('warning', `[FABRIC:BITCOIN] addnode failed ${addr}: ${msg}`);
       }
     }
     return done;
+  }
+
+  /**
+   * Emit `error` only when a listener is present. Node's EventEmitter throws
+   * `ERR_UNHANDLED_ERROR` otherwise, which mocha reports as a second `done()`.
+   * @param {*} msg
+   * @returns {void}
+   */
+  _emitErrorSafe (msg) {
+    if (this.listenerCount('error') > 0) this.emit('error', msg);
+    else this.emit('warning', msg);
   }
 
   async createLocalNode () {
@@ -2735,17 +3228,16 @@ class Bitcoin extends Service {
         datadir = './stores/bitcoin-signet';
         params.push('-signet');
         break;
+      // No fee estimates without real traffic; fall back to the 1 sat/vB relay floor.
       case 'regtest':
         datadir = './stores/bitcoin-regtest';
         params.push('-regtest');
-        params.push('-fallbackfee=1.0');
-        params.push('-maxtxfee=1.1');
+        params.push('-fallbackfee=0.00001');
         break;
       case 'playnet':
         datadir = './stores/bitcoin-playnet';
         params.push('-regtest');
-        params.push('-fallbackfee=1.0');
-        params.push('-maxtxfee=1.1');
+        params.push('-fallbackfee=0.00001');
         break;
     }
 
@@ -2802,11 +3294,15 @@ class Bitcoin extends Service {
         if (this.settings.debug) this.emit('debug', `[FABRIC:BITCOIN] ${line}`);
       });
 
+      this._bitcoindStderrBuf = '';
       child.stderr.on('data', (data) => {
-        const line = data.toString('utf8').trim();
-        if (!line) return;
-        // Route bitcoind stderr into Fabric's error channel instead of terminal stderr
-        this.emit('error', `[FABRIC:BITCOIN] ${line}`);
+        appendBitcoinStderrChunk(this, data);
+      });
+      child.stderr.on('end', () => {
+        flushBitcoinStderrBuffer(this);
+      });
+      child.stderr.on('close', () => {
+        flushBitcoinStderrBuffer(this);
       });
 
       child.on('close', (code) => {
@@ -2816,10 +3312,7 @@ class Bitcoin extends Service {
       });
 
       child.on('error', (err) => {
-        // Route child process errors into Fabric's error channel; avoid writing to stderr.
-        this.emit('error', `[FABRIC:BITCOIN] Bitcoin Core process error: ${err.message || err}`);
-        // Attempt to restart the process
-        // this._restartBitcoind();
+        this._emitErrorSafe(`[FABRIC:BITCOIN] Bitcoin Core process error: ${err.message || err}`);
       });
 
       // Fail fast if the process exits/errors immediately after spawn.
@@ -2863,7 +3356,7 @@ class Bitcoin extends Service {
               this._nodeProcess.on('close', () => resolve());
             });
           } catch (e) {
-            this.emit('error', `[FABRIC:BITCOIN] Error during cleanup: ${e.message || e}`);
+            this._emitErrorSafe(`[FABRIC:BITCOIN] Error during cleanup: ${e.message || e}`);
           }
         }
       };
@@ -2876,14 +3369,14 @@ class Bitcoin extends Service {
         // Only handle errors from this service's child process
         if (err.source === 'bitcoin' || (this._nodeProcess && err.pid === this._nodeProcess.pid)) {
           // Avoid console.trace to keep TUI clean; surface via error channel instead.
-          this.emit('error', `[FABRIC:BITCOIN] Uncaught exception from Bitcoin service: ${err.message || err}`);
+          this._emitErrorSafe(`[FABRIC:BITCOIN] Uncaught exception from Bitcoin service: ${err.message || err}`);
           // await cleanup();
         }
       };
       this._errorHandlers.unhandledRejection = async (reason, _promise) => {
         // Only handle rejections from this service's operations
         if (reason.source === 'bitcoin' || (this._nodeProcess && reason.pid === this._nodeProcess.pid)) {
-          this.emit('error', '[FABRIC:BITCOIN] Unhandled rejection from Bitcoin service');
+          this._emitErrorSafe('[FABRIC:BITCOIN] Unhandled rejection from Bitcoin service');
           // await cleanup();
         }
       };
@@ -2925,7 +3418,8 @@ class Bitcoin extends Service {
       const config = {
         host: '127.0.0.1',
         port: this.settings.rpcport,
-        timeout: 300000 // 5 minute timeout for heavy operations
+        timeout: 300000, // 5 minute timeout for heavy operations
+        agent: this._rpcAgent()
       };
 
       const auth = `${this.settings.username}:${this.settings.password}`;
@@ -3050,7 +3544,8 @@ class Bitcoin extends Service {
         host: host,
         port: port,
         // Keep RPC timeout modest so CLI stays responsive even if bitcoind is slow/offline
-        timeout: 15000
+        timeout: 15000,
+        agent: this._rpcAgent(protocol === 'https')
       };
 
       if (this.settings.username && this.settings.password) {
@@ -3139,10 +3634,33 @@ class Bitcoin extends Service {
       await this.wallet.stop();
     }
 
+    this._zmqIbdStopped = true;
+    this._zmqIbdGeneration = (this._zmqIbdGeneration || 0) + 1;
+    this._clearHashTxQueue();
+    for (const timer of ['_zmqIbdTimer', '_balanceRefreshTimer']) {
+      if (this[timer]) clearTimeout(this[timer]);
+      this[timer] = null;
+    }
+    // A trailing refresh that will never run still settles for its callers.
+    const settle = this._balanceRefreshResolve;
+    this._balanceRefreshResolve = null;
+    this._balanceRefresh = null;
+    this._balanceRefreshAgain = false;
+    if (settle) settle();
+
     // Stop the ZMQ service
     if (this.zmq) {
       if (this.settings.debug) this.emit('debug', '[FABRIC:BITCOIN] Stopping ZMQ...');
       await this.zmq.stop();
+    }
+    // A destroyed agent opens no sockets; `_rpcAgent` builds a fresh one on the next start.
+    for (const key of ['_rpcHttpAgent', '_rpcHttpsAgent']) {
+      if (this[key]) {
+        this[key].destroy();
+        if (!this._rpcRetiredAgents) this._rpcRetiredAgents = new WeakSet();
+        this._rpcRetiredAgents.add(this[key]);
+      }
+      this[key] = null;
     }
 
     // Kill the Bitcoin node process if it exists
