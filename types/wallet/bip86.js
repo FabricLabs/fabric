@@ -11,7 +11,7 @@
 
 const ecc = require('../ecc');
 const Hash256 = require('../hash256');
-const { encodeSegwitAddress } = require('../bech32/bech32');
+const { encodeSegwitAddress } = require('../../functions/bech32');
 const { bitcoinPurposeDerivationPath } = require('../../constants');
 
 const BIP86_PURPOSE = 86;

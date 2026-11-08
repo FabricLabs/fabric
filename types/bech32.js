@@ -1,7 +1,7 @@
 'use strict';
 
-const codec = require('./bech32/bech32');
-const payment = require('./bech32/fabricPaymentBech32');
+const codec = require('../functions/bech32');
+const payment = require('../functions/fabricPaymentBech32');
 
 const { encode, decode, toWords, fromWords } = codec;
 

@@ -45,7 +45,7 @@ function randomGenericPayload (sender) {
     'P2P_PING',
     'P2P_PEERING_OFFER',
     'P2P_GOSSIP',
-    'P2P_FLUSH_CHAIN',
+    'P2P_CHAIN_SYNC_REQUEST',
     'CHAT',
     'UNKNOWN_CHAOS'
   ];
@@ -179,7 +179,7 @@ describe('fuzz: live peer chaos (TCP + NOISE)', function () {
 
 /**
  * Opt-in public playnet neighbor storm (signed Ping / BASE / chat / unknown).
- * Does not send P2P_FLUSH_CHAIN, P2P_FILE_SEND, or GHSA advisory documents.
+ * Does not send P2P_FILE_SEND or GHSA advisory documents.
  *
  *   FABRIC_PLAYNET_CHAOS=1 FABRIC_PLAYNET_PEERS=hub.fabric.pub:7777,relay.goon.vc:7777 \
  *     npm test -- tests/fuzz/p2p.chaosPeers.fuzz.js

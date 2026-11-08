@@ -579,8 +579,6 @@ describe('Message legacy bodies', function () {
       assert.deepStrictEqual(roundTrip('BitcoinTransaction', { content: 'ABC' }), { content: 'ABC' });
       assert.deepStrictEqual(roundTrip('BitcoinBlockHash', { content: HASH }), { content: HASH });
       assert.deepStrictEqual(roundTrip('BitcoinTransactionHash', { content: HASH }), { content: HASH });
-      const flush = { snapshotBlockHash: HASH, network: 'regtest', label: 'reset' };
-      assert.deepStrictEqual(roundTrip('P2P_FLUSH_CHAIN', flush), flush);
     });
 
     it('stores raw block and transaction bytes, not hex text', function () {

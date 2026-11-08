@@ -4,7 +4,7 @@ See also [DEVELOPERS.md](DEVELOPERS.md) (repo layout, tests) and [docs/PRODUCTIO
 ## Release posture
 - **Target:** `0.1.0` reference client — not a production-hardened VM claim
   ([PUBLIC_API.md](PUBLIC_API.md), [AUDIT.md](AUDIT.md)).
-- **Gate:** `npm run ci` on Node **26.12.1**. Tag **core before** bumping Hub / http.
+- **Gate:** `npm run ci` on Node **26.13.0**. Tag **core before** bumping Hub / http.
 - Do not paper over AUDIT “known gaps” or expand protocol surface for RC without
   owner go-ahead.
 
@@ -221,7 +221,7 @@ become Global symbols). Mark module-private helpers/constants `@private` so
 they do not appear on `docs/global.html` / `API.md` Globals.
 
 ## Fabric ecosystem workflow (shared)
-This repo is **1 of 6 — @fabric/core (no Fabric deps; never add HTTP)** in the Fabric dependency order. Before installing or testing, read [docs/agents/](docs/agents/README.md):
+This repo is **1 of 6 — @fabric/core (no Fabric deps; never add HTTP)** in the Fabric dependency order. Before installing or testing:
 - **Install** with `npm run report:install` (fresh lock, latest Git pins; log in `reports/install.log`).
 - **Strictly serial:** one install or test run at a time across all Fabric repos, top down (core → http → discord → hub → passport → star-citizen). Stop on upstream failure.
-- **Consolidate** into common APIs; Core messaging stays free of HTTP, HTTP is an adapter ([API_CONSOLIDATION.md](docs/agents/API_CONSOLIDATION.md)).
+- **Consolidate** into common APIs; Core messaging stays free of HTTP, HTTP is an adapter.

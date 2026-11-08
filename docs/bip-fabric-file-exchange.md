@@ -191,7 +191,7 @@ Type decided: Standards Track (Applications layer).
 
 ## Appendix A: Test vectors
 
-Full vectors: [`tests/vectors/bip-fabric-file-exchange.json`](../tests/vectors/bip-fabric-file-exchange.json), checked by `tests/functions.bipFileExchange.js` both against the library and against the formulas above recomputed from SHA-256 alone. Selected values:
+Full vectors: [`tests/vectors/bip-fabric-file-exchange.json`](../tests/vectors/bip-fabric-file-exchange.json), checked by `tests/functions.bip39.js` (the file exchange suite) both against the library and against the formulas above recomputed from SHA-256 alone. Selected values:
 
 **Convergent seal, plaintext `"hello fabric"`, public scope:** see `convergent[1]`. Empty plaintext:
 

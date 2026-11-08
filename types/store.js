@@ -33,6 +33,14 @@ function routePath (path) {
 const UNSAFE_PATH_TOKENS = new Set(['__proto__', 'constructor', 'prototype']);
 
 /**
+ * Under an array only an element index is a child: `length` or a name would
+ * persist to Level and then fail (or truncate) in memory.
+ */
+function isArrayIndex (token) {
+  return /^(0|[1-9][0-9]{0,8})$/.test(token);
+}
+
+/**
  * The JSON `set` writes for `value`, or null when it writes the value as itself.
  * @private
  */
@@ -281,8 +289,7 @@ class Store extends Actor {
   }
 
   async _DELETE (key) {
-    await this._PUT(key, null);
-    return null;
+    return this.remove(key);
   }
 
   async _PATCH (key, patch) {
@@ -377,8 +384,10 @@ class Store extends Actor {
       origin.push(value);
       const serialized = String(await origin.serialize());
 
-      // Keep in-memory collection view in sync for _GET/_PUT call paths.
-      existingList = await self._GET(key);
+      // Keep in-memory collection view in sync for _GET/_PUT call paths. A
+      // failed read is not proof the list was absent, so it stops the post
+      // before anything is written.
+      existingList = await self._read(key, { strict: true });
       const persistedList = Array.isArray(family) ? family.filter((item) => item != null) : [];
       const inMemoryList = Array.isArray(existingList) ? existingList.filter((item) => item != null) : [];
       const seedList = inMemoryList.length ? inMemoryList : persistedList;
@@ -405,8 +414,10 @@ class Store extends Actor {
       console.log('Could not POST:', key, value, E);
       // Undo what this post already wrote, so a reopen never lists an item
       // whose entity or collection record is missing.
-      if (entityWritten) await self._PUT(`/entities/${state.id}`, null).catch(() => {});
-      if (listWritten) await self._PUT(key, existingList === undefined ? null : existingList).catch(() => {});
+      if (entityWritten) await self.remove(`/entities/${state.id}`).catch(() => {});
+      if (listWritten) {
+        await (existingList == null ? self.remove(key) : self._PUT(key, existingList)).catch(() => {});
+      }
       return false;
     }
 
@@ -511,6 +522,15 @@ class Store extends Actor {
    * @return {Promise}     Resolves on complete.  `null` if not found.
    */
   async get (key) {
+    return this._read(key, { strict: !!this.settings.strict });
+  }
+
+  /**
+   * {@link Store#get}, where `strict` makes a failed Level read reject
+   * instead of resolving `null` like a missing key.
+   * @private
+   */
+  async _read (key, { strict = false } = {}) {
     const route = await this.getRouteInfo(key);
     let result;
     try {
@@ -532,7 +552,7 @@ class Store extends Actor {
         pointer.set(this._state.content, route.path, value);
         return value;
       } catch (E) {
-        if (this.settings.strict && !isLevelNotFound(E)) throw E;
+        if (strict && !isLevelNotFound(E)) throw E;
         return null;
       }
     }
@@ -559,13 +579,29 @@ class Store extends Actor {
    * @param       {Mixed} value Content to store at `key`.
    */
   async set (key, value) {
-    // Writes under one top-level key run in call order, so a parent and its
-    // children never race and Level and memory agree on the last write. The
-    // write is queued before any await, so `stop` sees it.
+    return this._enqueueWrite(key, async () => this._set(key, value, await this.getRouteInfo(key)));
+  }
+
+  /**
+   * Remove `key` from Level and from memory. A missing key is not an error.
+   * @param {String} key Address of the information.
+   * @returns {Promise<null>}
+   */
+  async remove (key) {
+    return this._enqueueWrite(key, async () => this._remove(await this.getRouteInfo(key)));
+  }
+
+  /**
+   * Writes under one top-level key run in call order, so a parent and its
+   * children never race and Level and memory agree on the last write. The
+   * write is queued before any await, so `stop` sees it.
+   * @private
+   */
+  _enqueueWrite (key, run) {
     const lane = routePath(key).split('/')[1] || '';
     if (!this._writes) this._writes = new Map();
     const previous = this._writes.get(lane) || Promise.resolve();
-    const write = previous.catch(() => {}).then(async () => this._set(key, value, await this.getRouteInfo(key)));
+    const write = previous.catch(() => {}).then(run);
     const tail = write.catch(() => {});
     this._writes.set(lane, tail);
     tail.then(() => {
@@ -591,21 +627,52 @@ class Store extends Actor {
     let node = this._state.content;
     for (let i = 0; i < tokens.length - 1; i++) {
       if (node === null || typeof node !== 'object') return beneath;
+      if (Array.isArray(node) && !isArrayIndex(tokens[i])) return `${path} names a non-index key under an array`;
       if (!Object.prototype.hasOwnProperty.call(node, tokens[i])) {
-        return (await this._persistedParentIsScalar(tokens, i)) ? beneath : null;
+        return this._persistedParentError(tokens, i, path);
       }
       node = node[tokens[i]];
     }
-    return (node === null || typeof node !== 'object') ? beneath : null;
+    if (node === null || typeof node !== 'object') return beneath;
+    if (Array.isArray(node) && tokens.length && !isArrayIndex(tokens[tokens.length - 1])) return `${path} names a non-index key under an array`;
+    return null;
   }
 
   /**
-   * Is an ancestor from `tokens[from]` down, absent from memory, stored in
-   * Level as something other than an object?
+   * Why `path` cannot be removed: it names an unsafe key, or a non-index key
+   * under an array (in memory, or in Level after a reopen). A path that
+   * reaches nothing is not an error.
    * @private
    */
-  async _persistedParentIsScalar (tokens, from) {
-    if (!this.db || this.settings.persistent === false) return false;
+  async _removeError (path) {
+    let tokens = [];
+    try {
+      tokens = pointer.parse(path);
+    } catch (E) {
+      return `bad path ${path}`;
+    }
+    if (tokens.some((token) => UNSAFE_PATH_TOKENS.has(token))) return `${path} names a reserved key`;
+    let node = this._state.content;
+    for (let i = 0; i < tokens.length; i++) {
+      if (node === null || typeof node !== 'object') return null;
+      if (Array.isArray(node) && !isArrayIndex(tokens[i])) return `${path} names a non-index key under an array`;
+      if (!Object.prototype.hasOwnProperty.call(node, tokens[i])) {
+        return this._persistedParentError(tokens, i, path, { scalar: false });
+      }
+      node = node[tokens[i]];
+    }
+    return null;
+  }
+
+  /**
+   * Why an ancestor from `tokens[from]` down, absent from memory, cannot hold
+   * the next token: it is stored in Level as something other than an object
+   * (unless `scalar` is false), or as an array and the next token is not an
+   * index.
+   * @private
+   */
+  async _persistedParentError (tokens, from, path, { scalar = true } = {}) {
+    if (!this.db || this.settings.persistent === false) return null;
     for (let i = from; i < tokens.length - 1; i++) {
       let raw;
       try {
@@ -617,9 +684,65 @@ class Store extends Actor {
       }
       if (raw === undefined || raw === null) continue;
       const value = decodePersisted(raw);
-      if (value === null || typeof value !== 'object') return true;
+      if (value === null || typeof value !== 'object') {
+        if (scalar) return `${path} is beneath a value that is not an object`;
+        continue;
+      }
+      if (Array.isArray(value) && !isArrayIndex(tokens[i + 1])) return `${path} names a non-index key under an array`;
     }
-    return false;
+    return null;
+  }
+
+  /**
+   * Level operations that remove `path`: the key itself, every key beneath
+   * it, and the child dropped from every persisted ancestor, so nothing
+   * removed comes back after a reopen.
+   * @private
+   */
+  async _removeOperations (path) {
+    const tokens = pointer.parse(path);
+    const ops = [{ type: 'del', key: path }];
+    for await (const key of this.db.keys({ gte: `${path}/`, lt: `${path}0` })) {
+      ops.push({ type: 'del', key });
+    }
+    for (let i = 1; i < tokens.length; i++) {
+      const key = pointer.compile(tokens.slice(0, i));
+      let raw;
+      try {
+        raw = await this.db.get(key);
+      } catch (E) {
+        if (isLevelNotFound(E)) continue;
+        throw E;
+      }
+      if (raw === undefined || raw === null) continue;
+      const value = decodePersisted(raw);
+      const rest = pointer.compile(tokens.slice(i));
+      if (value === null || typeof value !== 'object' || !pointer.has(value, rest)) continue;
+      pointer.remove(value, rest);
+      ops.push({ type: 'put', key, value: persistedJson(value) });
+    }
+    return ops;
+  }
+
+  /** @private */
+  async _remove (route) {
+    const removeError = await this._removeError(route.path);
+    if (removeError) throw new Error(`[FABRIC:STORE] ${removeError}`);
+    if (this.db && this.settings.persistent !== false) {
+      try {
+        await this.db.batch(await this._removeOperations(route.path));
+      } catch (E) {
+        if (!isLevelNotFound(E)) {
+          if (this.settings.strict) throw E;
+          console.error('[FABRIC:STORE]', 'Could not remove key:', route.path, E);
+        }
+      }
+    }
+    if (pointer.has(this._state.content, route.path)) pointer.remove(this._state.content, route.path);
+    delete this._state.indices[route.index];
+    delete this._state.metadata[route.index];
+    this.commit();
+    return null;
   }
 
   /** @private */

@@ -46,6 +46,7 @@ class ZMQ extends Service {
     }, settings);
 
     this.socket = null;
+    this._paused = new Set();
     this._state = {
       status: 'STOPPED',
       reconnectAttempts: 0
@@ -141,7 +142,8 @@ class ZMQ extends Service {
     await this.connect();
 
     for (let i = 0; i < this.settings.subscriptions.length; i++) {
-      this.subscribe(this.settings.subscriptions[i]);
+      const name = this.settings.subscriptions[i];
+      if (!this._paused.has(name)) this.subscribe(name);
     }
 
     this.status = 'STARTED';
@@ -156,13 +158,54 @@ class ZMQ extends Service {
    */
   async stop () {
     this.status = 'STOPPING';
-    if (this.socket) this.socket.close();
+    const socket = this.socket;
+    // Pause and resume after stop only record topics; a closed socket is never touched.
+    this.socket = null;
+    if (socket) socket.close();
     this.status = 'STOPPED';
     return this;
   }
 
   subscribe (name) {
     this.socket.subscribe(name);
+  }
+
+  /**
+   * Stop receiving the named topics. The publisher filters them, so nothing
+   * for them crosses the socket. Kept across reconnects until {@link ZMQ#resume}.
+   * @param {String[]} names Topics from `settings.subscriptions`.
+   * @returns {String[]} The topics newly paused.
+   */
+  pause (names = []) {
+    const changed = [];
+    for (const name of names) {
+      if (!this.settings.subscriptions.includes(name) || this._paused.has(name)) continue;
+      this._paused.add(name);
+      changed.push(name);
+      if (this.socket) this.socket.unsubscribe(name);
+    }
+    return changed;
+  }
+
+  /**
+   * Receive topics paused by {@link ZMQ#pause} again.
+   * @param {String[]} names Topics to resume.
+   * @returns {String[]} The topics newly resumed.
+   */
+  resume (names = []) {
+    const changed = [];
+    for (const name of names) {
+      if (!this._paused.has(name)) continue;
+      this._paused.delete(name);
+      changed.push(name);
+      if (this.socket) this.socket.subscribe(name);
+    }
+    return changed;
+  }
+
+  /** @returns {String[]} Topics currently paused. */
+  get paused () {
+    return Array.from(this._paused);
   }
 }
 

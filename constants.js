@@ -157,7 +157,7 @@ function bitcoinChangeDerivationPath (account = 0, index = 0, networkOrCoinType)
 /**
  * BIP-43 purpose path for Bitcoin funds: m/{purpose}'/{coin}'/account'/{0|1}/index
  * Account wallets hand out addresses from BIP-84 and also watch BIP-86 Taproot
- * and BIP-44 (see `types/wallet/accountKeys.js`); BIP-87 names the multisig
+ * and BIP-44 (see `functions/accountKeys.js`); BIP-87 names the multisig
  * cosigner key.
  *
  * @param {number} purpose 44 (p2pkh), 49 (p2sh-p2wpkh), 84 (p2wpkh), 86 (p2tr), or 87 (multisig)
@@ -420,7 +420,7 @@ const PEER_MAX_WIRE_HASH_CACHE = 10000;
 /**
  * Max logical first-writer-wins registration keys in {@link Peer}
  * (CONTRACT_PUBLISH / DOCUMENT_PUBLISH / CONTRACT_PROPOSAL / announces /
- * BitcoinBlock tip / FLUSH_CHAIN / peer alias / key reveal).
+ * BitcoinBlock tip / peer alias / key reveal).
  * Distinct from wire-hash dedup: catches re-signed copies of the same body.
  */
 const PEER_MAX_LOGICAL_REGISTER_CACHE = 10000;
@@ -552,8 +552,8 @@ const P2P_FORWARD = 0x00000045;
 /** Max nested `P2P_FORWARD` hops an originator may build (path length). */
 const P2P_FORWARD_MAX_HOPS = 8;
 const P2P_CHAIN_SYNC_REQUEST = 0x55;
-/** Playnet / federation: rewind bitcoind to a known-good tip; relay only to highly trusted peers. */
-const P2P_FLUSH_CHAIN = 0x56;
+// 0x56 was P2P_FLUSH_CHAIN (a trusted-peer chain rewind). Removed from the V1
+// protocol; the opcode stays reserved, is never reassigned, and decodes as unknown.
 const P2P_INVENTORY_REQUEST = 0x57;
 const P2P_INVENTORY_RESPONSE = 0x58;
 const P2P_FILE_SEND = 0x59;
@@ -852,7 +852,6 @@ module.exports = {
   P2P_IDENT_REQUEST,
   P2P_IDENT_RESPONSE,
   P2P_CHAIN_SYNC_REQUEST,
-  P2P_FLUSH_CHAIN,
   P2P_INVENTORY_REQUEST,
   P2P_INVENTORY_RESPONSE,
   P2P_FILE_SEND,

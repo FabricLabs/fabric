@@ -23,7 +23,7 @@ const Hash256 = require('./hash256');
 const Chain = require('./chain');
 const fabricCanonicalJson = require('../functions/fabricCanonicalJson');
 const beaconFederationSigning = require('../functions/beaconFederationSigning');
-const bls = require('./witness/bls');
+const bls = require('../functions/bls');
 const Federation = require('./federation');
 
 const SATS_PER_BTC = 100_000_000;

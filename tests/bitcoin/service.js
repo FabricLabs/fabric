@@ -505,7 +505,7 @@ describe('@fabric/core/services/bitcoin', function () {
         let committed = 0;
         btc.commit = () => { committed++; };
         btc._makeRPCRequest = async (method) => {
-          if (method === 'getbalances') return { trusted: 10.5 };
+          if (method === 'getbalances') return { mine: { trusted: 10.5, untrusted_pending: 0, immature: 0 } };
           throw new Error(`unexpected method ${method}`);
         };
 
@@ -520,7 +520,7 @@ describe('@fabric/core/services/bitcoin', function () {
         await btc._handleZMQMessage(Message.fromLegacyBody('BitcoinTransaction', { content: tx.toHex() }));
 
         assert.deepStrictEqual(events, [{ hex: tx.toHex(), source: 'BitcoinTransaction', txid: tx.getId() }]);
-        assert.deepStrictEqual(btc._state.balances.mine.trusted, { trusted: 10.5 });
+        assert.deepStrictEqual(btc._state.balances, { mine: { trusted: 10.5, untrusted_pending: 0, immature: 0 } });
         assert.strictEqual(committed, 1);
       });
 

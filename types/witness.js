@@ -8,11 +8,11 @@ const { verifyInclusion } = require('../functions/bitcoinTxInclusion');
 const Message = require('./message');
 const { P2P_FILE_SEND } = require('../constants');
 const adaptor = require('./witness/adaptor');
-const bls = require('./witness/bls');
+const bls = require('../functions/bls');
 const dleq = require('./witness/dleq');
-const musig2 = require('./witness/musig2');
+const musig2 = require('../functions/musig2');
 const musig2Adaptor = require('./witness/musig2Adaptor');
-const musig2Session = require('./witness/musig2Session');
+const musig2Session = require('../functions/musig2Session');
 
 const HEX64 = /^[0-9a-f]{64}$/;
 /**

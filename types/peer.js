@@ -51,7 +51,6 @@ const {
   PEER_SCORE_OVERSIZE_FRAME_PENALTY,
   P2P_PORT,
   P2P_CHAIN_SYNC_REQUEST,
-  P2P_FLUSH_CHAIN,
   P2P_FORWARD,
   P2P_RELAY
 } = require('../constants');
@@ -71,8 +70,8 @@ const {
   isOnionChatSeal,
   tryOpenOnionChatText
 } = require('../functions/onionChatSeal');
-const { individualPk } = require('./witness/musig2');
-const musig2Session = require('./witness/musig2Session');
+const { individualPk } = require('../functions/musig2');
+const musig2Session = require('../functions/musig2Session');
 const sidechainState = require('../functions/sidechainState');
 const { epochCommitmentDigestHex } = require('../functions/beaconFederationSigning');
 const Federation = require('./federation');
@@ -88,6 +87,8 @@ const SEALED_DELIVERY_INNER_TYPES = new Set(Object.values(SEALED_DELIVERY_INNER_
 
 /** Session-advertised level of field-body support (`object.fieldBodies`). */
 const FIELD_BODIES_VERSION = 1;
+/** Default time a funded sealed-blob quote keeps its secret while its HTLC settles. */
+const PEER_SEALED_BLOB_FUNDED_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 const {
   aggregatePeerBandwidth,
   peerBandwidthSnapshot,
@@ -381,8 +382,8 @@ function meshDeliveryContext (opts = {}, originName = null) {
 }
 
 const Contract = require('./contract');
-const { normalizePeerPubkeyHex } = require('./key/pubkey');
-const SIGNING_TAGS = require('./key/signingTags');
+const { normalizePeerPubkeyHex } = require('../functions/pubkey');
+const SIGNING_TAGS = require('../functions/signingTags');
 
 /**
  * Outer / generic types whose local registration side-effects are first-writer-wins.
@@ -405,8 +406,6 @@ const LOGICAL_REGISTER_ONCE_TYPES = new Set([
   // Tip / operator / identity registration frames (re-sign ≠ new event)
   'BitcoinBlock',
   'BITCOIN_BLOCK',
-  'P2P_FLUSH_CHAIN',
-  'FlushChain',
   'P2P_PEER_ALIAS',
   'DocumentContentKeyReveal',
   // Authorized sidechain patches: commitment-level replay (re-signed envelope ≠ new patch)
@@ -571,7 +570,6 @@ class Peer extends Service {
         windowMs: 60 * 1000,
         maxCreditsPerWindow: 520,
         chainSyncCreditCost: 55,
-        flushChainCreditCost: 120,
         bitcoinBlockCreditCost: 3,
         relayCreditCost: PEER_RELAY_CREDIT_COST,
         defaultCreditCost: 1,
@@ -592,11 +590,7 @@ class Peer extends Service {
         banOnHardMisbehavior: true,
         banTtlMs: PEER_BAN_TTL_MS,
         maxRelayNestDepth: PEER_MAX_RELAY_NEST_DEPTH
-      },
-      // Inbound P2P_FLUSH_CHAIN: sender registry score must be strictly greater than this (relay uses same threshold).
-      flushChainMinTrustedScore: 800,
-      // Inbound P2P_FLUSH_CHAIN: allowed signer pubkeys (hex/Buffers); empty = reject all until configured.
-      flushChainAuthorizedPubkeys: []
+      }
     }, config);
 
     this.settings.musig2 = Object.assign({
@@ -730,8 +724,6 @@ class Peer extends Service {
     // Peers: keyed by public key (id). Persistent registry in _state.peers.
     // Map connection address (IP:port) -> peer id (public key). Learned on P2P_SESSION_OFFER/OPEN.
     this._addressToId = {};
-    /** Inbound address -> NOISE static pubkey hex (FLUSH_CHAIN allowlist only; never for AMP verify). */
-    this._inboundNoiseStaticPubkeyByAddress = Object.create(null);
     this.mailboxes = {};
     this.memory = {};
     this.handlers = {};
@@ -897,11 +889,6 @@ class Peer extends Service {
             : (obj.content != null ? String(obj.content) : '')));
       if (!tip) return null;
       return `btcblock:${tip.toLowerCase()}`;
-    }
-    if (t === 'P2P_FLUSH_CHAIN' || t === 'FlushChain') {
-      const snap = obj.snapshotBlockHash != null ? String(obj.snapshotBlockHash).trim().toLowerCase() : '';
-      if (!snap) return null;
-      return `flush:${snap}`;
     }
     if (t === 'P2P_PEER_ALIAS') {
       const alias = obj.alias != null ? String(obj.alias).trim() : '';
@@ -1205,9 +1192,6 @@ class Peer extends Service {
     const t = wireType != null ? String(wireType) : '';
     if (t === 'P2P_CHAIN_SYNC_REQUEST' || t === 'ChainSyncRequest' || wireType === P2P_CHAIN_SYNC_REQUEST) {
       return Number(w.chainSyncCreditCost) || 55;
-    }
-    if (t === 'P2P_FLUSH_CHAIN' || t === 'FlushChain' || wireType === P2P_FLUSH_CHAIN) {
-      return Number(w.flushChainCreditCost) || 120;
     }
     if (t === 'BITCOIN_BLOCK' || t === 'BitcoinBlock') {
       return Number(w.bitcoinBlockCreditCost) || 3;
@@ -2338,110 +2322,6 @@ class Peer extends Service {
     return this;
   }
 
-  /**
-   * Relay an AMP message only to connected peers whose persistent registry score is strictly greater than
-   * {@link Peer#settings.flushChainMinTrustedScore} (default 800). Used for `P2P_FLUSH_CHAIN`.
-   * @param {string|null} origin - Connection key to skip (inbound sender), or null when originating locally.
-   * @param {Message|Buffer} message
-   * @param {number} [minScoreExclusive] - Override trust threshold (relay if peer score &gt; this value).
-   * @returns {number} Number of sockets written.
-   */
-  relayFromTrustedPeers (origin, message, minScoreExclusive = null) {
-    const threshold = (minScoreExclusive != null && Number.isFinite(Number(minScoreExclusive)))
-      ? Number(minScoreExclusive)
-      : (Number(this.settings.flushChainMinTrustedScore) || 800);
-    const buf = Buffer.isBuffer(message) ? message : message.toBuffer();
-    let sent = 0;
-    for (const id in this.connections) {
-      if (origin && id === origin) continue;
-      const score = this._registryScoreForConnectionAddress(id);
-      if (!(score > threshold)) continue;
-      this.connections[id]._writeFabric(buf);
-      sent++;
-    }
-    return sent;
-  }
-
-  /**
-   * Best-effort registry score for a live connection key (`host:port`), using mapped Fabric id when known.
-   * @param {string} connAddress
-   * @returns {number}
-   */
-  _registryScoreForConnectionAddress (connAddress) {
-    const reg = this._state.peers || {};
-    const mappedId = this._addressToId && this._addressToId[connAddress];
-    let best = 0;
-    for (const key of [mappedId, connAddress]) {
-      if (!key) continue;
-      const e = reg[key];
-      if (!e) continue;
-      const s = Number(e.score);
-      if (Number.isFinite(s) && s > best) best = s;
-    }
-    return best;
-  }
-
-  /**
-   * FLUSH_CHAIN trust score bound to verified sender key.
-   *
-   * Prevents trusting attacker-controlled `P2P_SESSION_OFFER.actor.id` aliases
-   * by refusing `_addressToId`-mapped scores unless that mapped registry entry
-   * is explicitly bound to the same verified sender pubkey.
-   *
-   * @param {string} connAddress
-   * @param {string} senderPubkeyHex - verified sender pubkey hex (from NOISE/static or trusted peer record)
-   * @returns {number}
-   */
-  _registryScoreForFlushChainSender (connAddress, senderPubkeyHex) {
-    const reg = this._state.peers || {};
-    const senderHex = normalizePeerPubkeyHex(senderPubkeyHex);
-    const candidates = new Set();
-    if (connAddress) candidates.add(connAddress);
-    if (senderHex) candidates.add(senderHex);
-
-    const mappedId = this._addressToId && this._addressToId[connAddress];
-    if (mappedId && senderHex) {
-      const mapped = reg[mappedId];
-      if (mapped && typeof mapped === 'object') {
-        const mappedPk = normalizePeerPubkeyHex(mapped.publicKey);
-        // Only trust mapped id score when mapped record is key-bound.
-        if (mappedPk && mappedPk === senderHex) candidates.add(mappedId);
-      }
-    }
-
-    let best = 0;
-    for (const key of candidates) {
-      const e = reg[key];
-      if (!e) continue;
-      const s = Number(e.score);
-      if (Number.isFinite(s) && s > best) best = s;
-    }
-
-    return best;
-  }
-
-  /**
-   * Sign and send `P2P_FLUSH_CHAIN` to all connected peers with registry score &gt; threshold.
-   * Body `{ snapshotBlockHash, network?, label? }`, sent as signed JSON for legacy relays.
-   *
-   * **Receivers** (see `P2P_FLUSH_CHAIN` handler) require **both**:
-   * 1. Sender pubkey in {@link Peer#settings.flushChainAuthorizedPubkeys} (non-empty allowlist), and
-   * 2. Registry score above {@link Peer#settings.flushChainMinTrustedScore}.
-   * Registry score bumps on `P2P_PONG` only when that pong answers an outbound ping on the same
-   * connection (`_fabricPingOutstanding`), so unsolicited pongs cannot inflate trust alone.
-   *
-   * @param {Object} object
-   * @returns {number} number of sockets written
-   */
-  sendFlushChainToTrustedPeers (object) {
-    const body = object && typeof object === 'object' && !Array.isArray(object) ? object : {};
-    // Even a field-capable next hop may relay to a JSON-only peer. Choose JSON
-    // at the author: relays cannot transcode signed bodies without losing the
-    // authorized sender's signature. Forward the same bytes at every hop.
-    const message = Message.fromVector(['P2P_FLUSH_CHAIN', JSON.stringify(body)]).signWithKey(this.key);
-    return this.relayFromTrustedPeers(null, message);
-  }
-
   subscribe (_path) {
 
   }
@@ -2688,7 +2568,6 @@ class Peer extends Service {
 
     delete this.connections[target];
     delete this.peers[target];
-    if (this._inboundNoiseStaticPubkeyByAddress) delete this._inboundNoiseStaticPubkeyByAddress[target];
     if (this._addressToId) delete this._addressToId[target];
     this._unregisterSocketActor(target);
     this._prunePeerBandwidthMaps();
@@ -2767,18 +2646,6 @@ class Peer extends Service {
           this.emit('error', `Failed to save peer registry: ${message}`);
         });
     }, 500);
-  }
-
-  /** FLUSH_CHAIN sender hex: {@link Peer#peers}[addr].publicKey if set, else inbound NOISE static (allowlist must match). */
-  _flushChainSenderPubkeyHex (connectionAddress) {
-    if (!connectionAddress) return '';
-    const rec = this.peers[connectionAddress];
-    if (rec && typeof rec === 'object' && rec.publicKey != null && rec.publicKey !== '') {
-      const h = normalizePeerPubkeyHex(rec.publicKey);
-      if (h) return h;
-    }
-    const noise = this._inboundNoiseStaticPubkeyByAddress[connectionAddress];
-    return noise ? normalizePeerPubkeyHex(noise) : '';
   }
 
   /**
@@ -3021,8 +2888,7 @@ class Peer extends Service {
   /**
    * Whether `message` is a JSON body of a type with a field layout
    * (`Message.LEGACY_BODY_TYPES`), which the wire no longer accepts
-   * except for FLUSH_CHAIN compatibility across mixed-version relay paths
-   * (docs/MESSAGE_BODY_MIGRATION.md Phase 5). Stored frames are read with
+   * (docs/MESSAGE_BODY.md, Migration, Phase 5). Stored frames are read with
    * `Message.tryParseLegacyBody`, which still accepts JSON.
    * @private
    * @param {Message} message
@@ -3030,8 +2896,6 @@ class Peer extends Service {
    */
   _isRefusedJsonBody (message) {
     const name = Message.canonicalTypeName(message.type);
-    // FLUSH_CHAIN retains JSON compatibility across mixed-version relay paths.
-    if (name === 'P2P_FLUSH_CHAIN') return false;
     if (!name || !Message.LEGACY_BODY_TYPES.includes(name)) return false;
     const body = message.raw && message.raw.data;
     if (!body || !body.length) return false;
@@ -3180,8 +3044,6 @@ class Peer extends Service {
     const peerKey = origin && (origin.name != null ? origin.name : origin);
     const peerRecord = peerKey && this.peers[peerKey];
     const relayAsIs = peeledForward
-      // FLUSH_CHAIN is forwarded with the authorized original author intact.
-      || Message.canonicalTypeName(message.type) === 'P2P_FLUSH_CHAIN'
       || isRelayAsIsWireType(message.type)
       || isRelayAsIsWireType(message.friendlyType)
       || isRelayAsIsGenericCarrier(message);
@@ -3270,8 +3132,11 @@ class Peer extends Service {
               peeledForward: suppressTcpOriginPunish,
               relayedAsIs: softRelayOrigin
             });
-            // Only the outermost received envelope is mesh-flooded (bit-identical).
-            if (!opts.skipRelayFlood) {
+            // Only the outermost received envelope is mesh-flooded (bit-identical),
+            // and only when every frame inside is well formed, signed, and a
+            // registered type, and none is a Passport or delegation frame: those
+            // are point to point, and a relay would carry them past their audience.
+            if (!opts.skipRelayFlood && this._relayMayFlood(inner, nestCap)) {
               this.relayFrom(origin.name, message, socket);
             }
           }
@@ -3320,64 +3185,6 @@ class Peer extends Service {
           this.emit('chainSyncRequest', { message, origin, socket, object: pr.value });
         }
         break;
-      case 'P2P_FLUSH_CHAIN':
-      case 'FlushChain': {
-        if (!origin || !origin.name) break;
-        const senderHex = signerPubkeyHex || this._flushChainSenderPubkeyHex(origin.name);
-        if (!senderHex) {
-          this.emit('warning', `[FABRIC:PEER] FLUSH_CHAIN ignored: no verified peer key for ${origin.name}`);
-          break;
-        }
-        const authList = this.settings.flushChainAuthorizedPubkeys;
-        if (!Array.isArray(authList) || authList.length === 0) {
-          this.emit('warning', `[FABRIC:PEER] FLUSH_CHAIN ignored: flushChainAuthorizedPubkeys is empty (configure allowed signer pubkeys)`);
-          break;
-        }
-        const allowed = new Set();
-        for (const e of authList) {
-          const h = normalizePeerPubkeyHex(e);
-          if (h) allowed.add(h);
-        }
-        if (!allowed.has(senderHex)) {
-          this.emit('warning', `[FABRIC:PEER] FLUSH_CHAIN ignored: sender pubkey not in flushChainAuthorizedPubkeys`);
-          break;
-        }
-        const threshold = Number(this.settings.flushChainMinTrustedScore) || 800;
-        const score = this._registryScoreForFlushChainSender(origin.name, senderHex);
-        if (!(score > threshold)) {
-          if (this.settings.debug) {
-            this.emit('debug', `[FABRIC:PEER] FLUSH_CHAIN ignored: sender score ${score} not > ${threshold}`);
-          }
-          break;
-        }
-        const prFc = Message.tryParseLegacyBody(message);
-        if (!prFc.ok) {
-          this.emit('warning', `[FABRIC:PEER] FLUSH_CHAIN parse failed: ${prFc.error.message}`);
-          break;
-        }
-        const object = prFc.value;
-        if (object === null || typeof object !== 'object' || Array.isArray(object)) {
-          this.emit('warning', '[FABRIC:PEER] FLUSH_CHAIN body must be a JSON object');
-          break;
-        }
-        const snap = object.snapshotBlockHash != null ? String(object.snapshotBlockHash).trim() : '';
-        if (!/^[0-9a-fA-F]{64}$/.test(snap)) {
-          this.emit('warning', '[FABRIC:PEER] FLUSH_CHAIN missing or invalid snapshotBlockHash (expect 64 hex)');
-          break;
-        }
-        object.snapshotBlockHash = snap.toLowerCase();
-        const claimFc = this._claimLogicalRegistrationOrPunish(
-          message.type, object, senderHex, scoreOrigin);
-        if (claimFc.duplicate) {
-          if (this.settings.debug) {
-            this.emit('debug', '[FABRIC:PEER] Ignoring duplicate FLUSH_CHAIN (snapshot already registered)');
-          }
-          break;
-        }
-        this.emit('flushChain', { message, origin, socket, object });
-        this.relayFromTrustedPeers(origin.name, message, threshold);
-        break;
-      }
       case 'P2P_CHAT_MESSAGE': {
         // Body = raw UTF-8 chat text only (no JSON chat envelope). Author is AMP header /
         // signature. Optional FabricOnionChatSeal JSON keeps onion tips confidential to
@@ -3953,6 +3760,43 @@ class Peer extends Service {
     return this;
   }
 
+  /**
+   * May this P2P_RELAY body be mesh-flooded? At every nesting level (up to
+   * `nestCap`) the inner frame must decode to exactly its declared size, match
+   * its body hash, carry a valid author signature, and be a registered,
+   * non-deprecated opcode; and the innermost frame must not be a Passport or
+   * delegation frame, which are point to point.
+   * @private
+   * @param {Buffer} inner
+   * @param {number} nestCap
+   * @returns {boolean}
+   */
+  _relayMayFlood (inner, nestCap) {
+    let buffer = inner;
+    for (let depth = 0; depth <= nestCap; depth++) {
+      if (!Buffer.isBuffer(buffer) || buffer.length < HEADER_SIZE) return false;
+      let decoded = null;
+      try {
+        decoded = Message.fromBuffer(buffer);
+      } catch (_) {
+        return false;
+      }
+      if (!decoded || !decoded.raw || !Buffer.isBuffer(decoded.raw.type)) return false;
+      const body = Buffer.isBuffer(decoded.raw.data) ? decoded.raw.data : Buffer.alloc(0);
+      if (HEADER_SIZE + body.length !== buffer.length) return false;
+      const expected = Buffer.isBuffer(decoded.raw.hash) ? decoded.raw.hash.toString('hex') : decoded.raw.hash;
+      if (Hash256.doubleDigest(body) !== expected) return false;
+      if (!this._verifiedFabricSignerPubkeyHex(decoded)) return false;
+      if (!Message.isRegisteredType(decoded.raw.type.readUInt32BE(0))) return false;
+      const type = decoded.type;
+      if (typeof type !== 'string' || Message.DEPRECATED_WIRE_TYPES.includes(type)) return false;
+      if (/^(PASSPORT|DELEGATION)_/.test(type)) return false;
+      if (type !== 'P2P_RELAY') return true;
+      buffer = body;
+    }
+    return false;
+  }
+
   _handleGenericMessage (message, origin = null, socket = null, wireMessage = null, options = null) {
     const handleOpts = (options && typeof options === 'object') ? options : {};
     const delivery = meshDeliveryContext(handleOpts, origin && origin.name);
@@ -4486,7 +4330,10 @@ class Peer extends Service {
           contract: publishedId,
           object: msg.object,
           origin,
-          signer: signerPubkeyHex || null
+          signer: signerPubkeyHex || null,
+          // Signed frame, so apps can keep the publish in a contract's history.
+          wireMessage: wireMessage || null,
+          messageId: wireMessage && wireMessage.id ? wireMessage.id : null
         });
         // Peel / RELAY unwrap: deliver locally only (outer envelope already floods).
         if (delivery.allowMeshRelay && origin && origin.name && wireMessage) {
@@ -4614,7 +4461,7 @@ class Peer extends Service {
   /**
    * Record whether a remote parses field bodies for every legacy-JSON opcode
    * (`object.fieldBodies` in its session message). Absent = an older peer
-   * that parses `P2P_FLUSH_CHAIN` and the like as JSON only.
+   * that parses legacy-JSON opcodes as JSON only.
    * @param {string} connAddress
    * @param {Object} sessionObject Session message `object`
    * @returns {boolean}
@@ -4812,7 +4659,6 @@ class Peer extends Service {
       if (remotePk != null) {
         const pkHex = normalizePeerPubkeyHex(Buffer.isBuffer(remotePk) ? Buffer.from(remotePk) : remotePk);
         if (pkHex) {
-          this._inboundNoiseStaticPubkeyByAddress[target] = pkHex;
           if (this._isPeerBanned(target, pkHex)) {
             this.emit('warning', `[FABRIC:PEER] Closing inbound: banned Noise static ${pkHex.slice(0, 16)}…`);
             this._destroyFabric(socket, target);
@@ -5259,6 +5105,12 @@ class Peer extends Service {
    * no amount check is possible; settlement code must always pass it. With
    * `sealedBlobPaymentMode: 'perBuyer'` static hashes are never fulfilled
    * (that would publish `K_i`).
+   *
+   * A live quote that an HTLC paying its full price is checked against is
+   * pinned: it outlives its `expiresAt` and is never evicted, so the secret
+   * is still there when the HTLC settles. It is dropped by
+   * {@link Peer#settleSealedBlobQuote} or after `sealedBlobFundedRetentionMs`
+   * (default 7 days).
    * @param {string} paymentHashHex
    * @param {Object} [htlc] `{ amountSats, expireAfter?, expireHeight? }`
    * @returns {{ documentId: string, blobIndex: number, preimageHex: string, keyHex: string, perBuyer: boolean, priceSats: number }|null}
@@ -5271,11 +5123,13 @@ class Peer extends Service {
     if (htlc && !(paid >= 0)) return null;
     const quote = this._sealedBlobQuotes.get(ph);
     if (quote) {
-      if (quote.expiresAt && Date.now() > quote.expiresAt) {
+      const now = Date.now();
+      if (this._sealedBlobQuoteLapsed(quote, now)) {
         this._sealedBlobQuotes.delete(ph);
         return null;
       }
       if (paid != null && paid < quote.priceSats) return null;
+      if (paid != null && !quote.fundedAt) quote.fundedAt = now;
       return { documentId: quote.documentId, blobIndex: quote.blobIndex, preimageHex: quote.secretHex, keyHex: quote.secretHex, perBuyer: true, priceSats: quote.priceSats };
     }
     if (this.settings.sealedBlobPaymentMode === 'perBuyer') return null;
@@ -5321,6 +5175,7 @@ class Peer extends Service {
     const leaf = Number.isInteger(blobIndex) ? doc.blob(blobIndex) : null;
     const keyHex = leaf ? doc.keyFor(blobIndex) : null;
     if (!leaf || !keyHex) return { ok: false, error: 'unknown blob index' };
+    if (!this._reserveSealedBlobQuoteSlot()) return { ok: false, error: 'too many funded quotes waiting to settle' };
     const ttlSetting = Number(opts.ttlMs || this.settings.sealedBlobQuoteTtlMs);
     const ttl = Number.isFinite(ttlSetting) && ttlSetting > 0 ? ttlSetting : 60 * 60 * 1000;
     const priceSats = this._sealedBlobPriceSats(documentId);
@@ -5334,15 +5189,6 @@ class Peer extends Service {
       amountSats: priceSats,
       expiresAt
     });
-    const now = Date.now();
-    for (const [h, q] of this._sealedBlobQuotes) {
-      if (q.expiresAt && now > q.expiresAt) this._sealedBlobQuotes.delete(h);
-    }
-    const capSetting = Number(this.settings.maxSealedBlobQuotes);
-    const cap = Number.isFinite(capSetting) && capSetting > 0 ? capSetting : 4096;
-    while (this._sealedBlobQuotes.size >= cap) {
-      this._sealedBlobQuotes.delete(this._sealedBlobQuotes.keys().next().value);
-    }
     this._sealedBlobQuotes.set(quote.paymentHashHex, {
       documentId,
       blobIndex,
@@ -5364,6 +5210,7 @@ class Peer extends Service {
    * @param {number} opts.end
    * @param {number} [opts.amountSats] Ask above the listed price (rate × blobs). It never lowers it: a lower, non-finite, or negative amount quotes the listed price.
    * @param {number} [opts.maxSats] The buyer's ceiling: a price above it is refused, and no quote is kept.
+   * @param {number} [opts.ttlMs] default `sealedBlobQuoteTtlMs` (1 h); the quote expires after it.
    * @returns {{ ok: boolean, batch: (Object|undefined), error: (string|undefined) }}
    */
   quoteSealedBatch (opts = {}) {
@@ -5373,6 +5220,9 @@ class Peer extends Service {
     const doc = documentId ? this._getSealedBlobDocument(documentId) : null;
     if (!doc) return { ok: false, error: 'unknown sealed document' };
     if (!Number.isInteger(start) || !Number.isInteger(end) || end < start) return { ok: false, error: 'bad batch range' };
+    const rangeSetting = Number(this.settings.maxSealedBlobBatchBlobs);
+    const maxRange = Number.isSafeInteger(rangeSetting) && rangeSetting > 0 ? rangeSetting : 4096;
+    if (end - start + 1 > maxRange) return { ok: false, error: `batch range over ${maxRange} blobs` };
     const blobs = [];
     for (let i = start; i <= end; i++) {
       const leaf = doc.blob(i);
@@ -5386,11 +5236,15 @@ class Peer extends Service {
     const price = Number.isSafeInteger(asked) && asked > listed ? asked : listed;
     const ceiling = opts.maxSats != null ? Number(opts.maxSats) : NaN;
     if (Number.isFinite(ceiling) && price > ceiling) return { ok: false, error: 'price above maxSats' };
+    if (!this._reserveSealedBlobQuoteSlot()) return { ok: false, error: 'too many funded quotes waiting to settle' };
+    const ttlSetting = Number(opts.ttlMs || this.settings.sealedBlobQuoteTtlMs);
+    const ttl = Number.isFinite(ttlSetting) && ttlSetting > 0 ? ttlSetting : 60 * 60 * 1000;
     const { batch, secretHex } = createBlobBatch({
       documentId,
       merkleRootHex: doc.merkleRootHex,
       blobs,
-      amountSats: price
+      amountSats: price,
+      expiresAt: Date.now() + ttl
     });
     this._sealedBlobQuotes.set(batch.paymentHashHex, {
       documentId,
@@ -5402,6 +5256,57 @@ class Peer extends Service {
       keyHashHex: null
     });
     return { ok: true, batch };
+  }
+
+  /**
+   * Seller: the HTLC for a funded quote has settled (or failed for good), so
+   * its secret is no longer needed.
+   * @param {string} paymentHashHex
+   * @returns {boolean} Whether a quote was dropped.
+   */
+  settleSealedBlobQuote (paymentHashHex) {
+    const ph = String(paymentHashHex || '').toLowerCase();
+    return /^[0-9a-f]{64}$/.test(ph) ? this._sealedBlobQuotes.delete(ph) : false;
+  }
+
+  /**
+   * Is a quote past use? An unfunded quote lapses at `expiresAt`; a funded
+   * one `sealedBlobFundedRetentionMs` (default 7 days) after it was funded.
+   * @private
+   * @param {Object} quote
+   * @param {number} now
+   * @returns {boolean}
+   */
+  _sealedBlobQuoteLapsed (quote, now) {
+    if (quote.fundedAt) {
+      const setting = Number(this.settings.sealedBlobFundedRetentionMs);
+      const retention = Number.isFinite(setting) && setting > 0 ? setting : PEER_SEALED_BLOB_FUNDED_RETENTION_MS;
+      return now > quote.fundedAt + retention;
+    }
+    return !!(quote.expiresAt && now > quote.expiresAt);
+  }
+
+  /**
+   * Seller: drop lapsed quotes, then the oldest unfunded ones, until one more
+   * fits under `maxSealedBlobQuotes`. Every kept quote holds a preimage, so a
+   * peer asking again and again cannot grow the table. Funded quotes are
+   * never evicted: when they alone fill the table, no new quote is made.
+   * @private
+   * @returns {boolean} Whether a slot is free.
+   */
+  _reserveSealedBlobQuoteSlot () {
+    const now = Date.now();
+    for (const [h, q] of this._sealedBlobQuotes) {
+      if (this._sealedBlobQuoteLapsed(q, now)) this._sealedBlobQuotes.delete(h);
+    }
+    const capSetting = Number(this.settings.maxSealedBlobQuotes);
+    const cap = Number.isFinite(capSetting) && capSetting > 0 ? capSetting : 4096;
+    if (this._sealedBlobQuotes.size < cap) return true;
+    for (const [h, q] of this._sealedBlobQuotes) {
+      if (this._sealedBlobQuotes.size < cap) break;
+      if (!q.fundedAt) this._sealedBlobQuotes.delete(h);
+    }
+    return this._sealedBlobQuotes.size < cap;
   }
 
   /**
@@ -5417,8 +5322,9 @@ class Peer extends Service {
         if (hit && hit.documentId === documentId) this._sealedBlobByPaymentHash.delete(b.paymentHashHex);
       }
     }
+    // A funded quote stays until it settles: its buyer has already paid.
     for (const [h, q] of this._sealedBlobQuotes) {
-      if (q.documentId === documentId) this._sealedBlobQuotes.delete(h);
+      if (q.documentId === documentId && !q.fundedAt) this._sealedBlobQuotes.delete(h);
     }
     this._sealedBlobSecrets.delete(documentId);
   }
@@ -7258,6 +7164,12 @@ class Peer extends Service {
     try {
       if (wireMessage && typeof wireMessage.toBuffer === 'function') frame = wireMessage.toBuffer();
     } catch (_) { /* synthetic */ }
+    const capSetting = Number(this.settings.maxSealedBlobQuotes);
+    const cap = Number.isFinite(capSetting) && capSetting > 0 ? capSetting : 4096;
+    this._receivedBlobQuotes.delete(paymentHashHex);
+    while (this._receivedBlobQuotes.size >= cap) {
+      this._receivedBlobQuotes.delete(this._receivedBlobQuotes.keys().next().value);
+    }
     const originName = origin && typeof origin === 'object' ? (origin.name || origin.address || null) : (origin || null);
     this._receivedBlobQuotes.set(paymentHashHex, { quote: Object.assign({}, batch), origin: originName, frame, received: Date.now() });
     this.emit('documentBlobQuote', { quote: Object.assign({}, batch), origin: originName });
@@ -8115,7 +8027,7 @@ class Peer extends Service {
 
   /**
    * Periodic P2P_PING and track expected P2P_PONG replies so registry score cannot be
-   * self-inflated by unsolicited pongs (see FLUSH_CHAIN trust gate).
+   * self-inflated by unsolicited pongs.
    * @param {*} socket — connection object (stores `_fabricPingOutstanding`, `_keepalive`)
    * @param {*} encryptWrite — NOISE encrypt stream with `.write(Buffer)` (`client.encrypt` / `handler.encrypt`)
    */
@@ -8123,8 +8035,7 @@ class Peer extends Service {
     if (socket._keepalive) clearInterval(socket._keepalive);
     socket._fabricPingOutstanding = 0;
     socket._keepalive = setInterval(() => {
-      // At most one unanswered PING per connection so burst P2P_PONG cannot inflate registry score
-      // (FLUSH_CHAIN trust gate uses _registryScoreForConnectionAddress).
+      // At most one unanswered PING per connection so burst P2P_PONG cannot inflate registry score.
       if ((socket._fabricPingOutstanding | 0) >= 1) return;
       const P2P_PING = Message.fromLegacyBody('P2P_PING', {
         nonce: this._freshKeepaliveNonce()

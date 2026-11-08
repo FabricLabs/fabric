@@ -23,7 +23,6 @@ const {
   P2P_INSTRUCTION,
   P2P_BASE_MESSAGE,
   P2P_CHAIN_SYNC_REQUEST,
-  P2P_FLUSH_CHAIN,
   P2P_INVENTORY_REQUEST,
   P2P_INVENTORY_RESPONSE,
   P2P_FILE_SEND,
@@ -347,7 +346,6 @@ const WIRE_TYPE_DECODE_ORDER = Object.freeze([
   [P2P_PONG, 'P2P_PONG'],
   [P2P_GENERIC, 'P2P_GENERIC'],
   [P2P_CHAIN_SYNC_REQUEST, 'P2P_CHAIN_SYNC_REQUEST'],
-  [P2P_FLUSH_CHAIN, 'P2P_FLUSH_CHAIN'],
   [P2P_INVENTORY_REQUEST, 'P2P_INVENTORY_REQUEST'],
   [P2P_INVENTORY_RESPONSE, 'P2P_INVENTORY_RESPONSE'],
   [P2P_FILE_SEND, 'P2P_FILE_SEND'],
@@ -470,7 +468,6 @@ const LEGACY_MESSAGE_TYPE_ALIASES = Object.freeze({
   IdentityRequest: P2P_IDENT_REQUEST,
   IdentityResponse: P2P_IDENT_RESPONSE,
   ChainSyncRequest: P2P_CHAIN_SYNC_REQUEST,
-  FlushChain: P2P_FLUSH_CHAIN,
   InventoryRequest: P2P_INVENTORY_REQUEST,
   InventoryResponse: P2P_INVENTORY_RESPONSE,
   PeerAlias: P2P_PEER_ALIAS,
@@ -1329,8 +1326,9 @@ Object.defineProperty(Message.prototype, 'type', {
     // frame nobody handles; it now throws.
     const code = typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 0xffffffff
       ? value
-      : this.types[value];
-    if (code == null) {
+      : (typeof value === 'string' && Object.prototype.hasOwnProperty.call(this.types, value) ? this.types[value] : null);
+    // Inherited names (`toString`, `constructor`) are not types.
+    if (!Number.isInteger(code)) {
       throw new TypeError(`Unknown message type: ${value}`);
     }
     if (typeof value === 'number') value = CANONICAL_WIRE_TYPE_BY_OPCODE[value] || value;
@@ -1877,7 +1875,7 @@ const SCHEMA_DELEGATION_LINK_REVEAL = Object.freeze([
 ]);
 /**
  * Lets `grantee` ask the author to sign. Comma lists for `scopes`,
- * `origins`, `networks`; `link` is the reveal hash hex (or empty);
+ * `origins`, `networks`, `peers` (empty: no peer sign-ins); `link` is the reveal hash hex (or empty);
  * `cosigner` / `cosignerProof` disclose the author's BIP87 key.
  * @private
  */
@@ -1894,7 +1892,7 @@ const SCHEMA_DELEGATION_GRANT = Object.freeze([
   { name: 'extensionOrigin', type: 'string' },
   { name: 'label', type: 'string' },
   { name: 'issuedAt', type: 'u64' },
-  { name: 'peers', type: 'string', optional: true }
+  { name: 'peers', type: 'string' }
 ]);
 /**
  * `grant` is the sha256 of the grant frame being withdrawn.
@@ -1908,7 +1906,8 @@ const SCHEMA_DELEGATION_REVOKE = Object.freeze([
 /**
  * Ask `target` to sign the embedded `request` frame under its grant
  * `grant` (sha256 of the grant frame). `origin` / `disclose` apply to
- * Passport challenges.
+ * Passport challenges; `sessionKey` and `clientNonce` (the one its requester
+ * sent the peer) apply to peer sign-ins and are empty otherwise.
  * @private
  */
 const SCHEMA_DELEGATION_REQUEST = Object.freeze([
@@ -1924,7 +1923,8 @@ const SCHEMA_DELEGATION_REQUEST = Object.freeze([
   { name: 'purpose', type: 'string' },
   { name: 'issuedAt', type: 'u64' },
   { name: 'expiresAt', type: 'u64' },
-  { name: 'sessionKey', type: 'string', optional: true }
+  { name: 'sessionKey', type: 'string' },
+  { name: 'clientNonce', type: 'string' }
 ]);
 /**
  * Either `answer` (a frame) or `refusal` (text) is set; `rule` names the rule that decided.
@@ -2137,14 +2137,6 @@ const KEYED_LAYOUTS = Object.freeze({
       { path: 'psbt.proposalBase64', field: 'psbt', kind: 'base64' }
     ]
   },
-  P2P_FLUSH_CHAIN: {
-    envelope: false,
-    keys: [
-      { path: 'snapshotBlockHash', field: 'snapshotBlockHash', kind: 'hex32' },
-      { path: 'network', field: 'network', kind: 'string' },
-      { path: 'label', field: 'label', kind: 'string' }
-    ]
-  },
   // Hub resync (`{ v, reason, requester, at }`) or CLI (`{ tip }`).
   P2P_CHAIN_SYNC_REQUEST: {
     envelope: true,
@@ -2289,11 +2281,6 @@ const SCHEMA_BITCOIN_TRANSACTION_HASH = keyedSchema(KEYED_LAYOUTS.BITCOIN_TRANSA
  * @private
  */
 const SCHEMA_CONTRACT_PROPOSAL = keyedSchema(KEYED_LAYOUTS.CONTRACT_PROPOSAL);
-/**
- * Operator chain flush to a snapshot block.
- * @private
- */
-const SCHEMA_P2P_FLUSH_CHAIN = keyedSchema(KEYED_LAYOUTS.P2P_FLUSH_CHAIN);
 /** @private Ask a peer to replay its catalog and chain log. */
 const SCHEMA_P2P_CHAIN_SYNC_REQUEST = keyedSchema(KEYED_LAYOUTS.P2P_CHAIN_SYNC_REQUEST);
 /** @private One document blob, raw bytes. */
@@ -2441,7 +2428,6 @@ function tryParseMessageBody (message) {
     [BITCOIN_TRANSACTION_TYPE, 'BITCOIN_TRANSACTION', 'BitcoinTransaction', SCHEMA_BITCOIN_TRANSACTION],
     [BITCOIN_TRANSACTION_HASH_TYPE, 'BITCOIN_TRANSACTION_HASH', 'BitcoinTransactionHash', SCHEMA_BITCOIN_TRANSACTION_HASH],
     [CONTRACT_PROPOSAL_TYPE, 'CONTRACT_PROPOSAL', 'ContractProposal', SCHEMA_CONTRACT_PROPOSAL],
-    [P2P_FLUSH_CHAIN, 'P2P_FLUSH_CHAIN', 'FlushChain', SCHEMA_P2P_FLUSH_CHAIN],
     [P2P_CHAIN_SYNC_REQUEST, 'P2P_CHAIN_SYNC_REQUEST', 'ChainSyncRequest', SCHEMA_P2P_CHAIN_SYNC_REQUEST],
     [P2P_FILE_SEND, 'P2P_FILE_SEND', 'FileSend', SCHEMA_P2P_FILE_SEND],
     [DOCUMENT_KEY_REVEAL_TYPE, 'DOCUMENT_KEY_REVEAL', 'DocumentContentKeyReveal', SCHEMA_DOCUMENT_KEY_REVEAL],
@@ -2458,7 +2444,7 @@ function tryParseMessageBody (message) {
 // Legacy JSON bodies <-> typed field bodies, for the protocol opcodes whose
 // field schemas are registered above. Senders use `Message.fromLegacyBody`;
 // receivers use `Message.tryParseLegacyBody` so handlers keep seeing the JSON
-// shape whichever encoding the peer sent (docs/MESSAGE_BODY_MIGRATION.md).
+// shape whichever encoding the peer sent (docs/MESSAGE_BODY.md, Migration).
 /** @private */
 const SIDECHAIN_PATCH_KIND = 'SidechainStatePatch';
 /** @private */
@@ -2469,7 +2455,7 @@ const MAX_UINT32 = (2 ** 32) - 1;
 const MAX_PORT = 65535;
 
 /**
- * Registered opcodes nothing sends or handles (docs/MESSAGE_BODY_MIGRATION.md
+ * Registered opcodes nothing sends or handles (docs/MESSAGE_BODY.md, Migration
  * Phase 4). They still decode; Peer counts and warns when one arrives, and a
  * later protocol version removes them. `P2P_BASE_MESSAGE` and
  * `P2P_CHAIN_SYNC_REQUEST` are still in use and are not listed.
@@ -2516,7 +2502,6 @@ const LEGACY_BODY_TYPES = Object.freeze([
   'BITCOIN_TRANSACTION',
   'BITCOIN_TRANSACTION_HASH',
   'CONTRACT_PROPOSAL',
-  'P2P_FLUSH_CHAIN',
   'P2P_CHAIN_SYNC_REQUEST',
   'P2P_FILE_SEND',
   'DOCUMENT_KEY_REVEAL',

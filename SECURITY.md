@@ -47,7 +47,6 @@ Exact wire duplicates are already dropped via the FIFO-capped wire-hash cache (`
 - `CONTRACT_PROPOSAL` (`contractId` + merkle root)
 - `P2P_PEER_ANNOUNCE` / `P2P_STATE_ANNOUNCE` (Actor id of announce / state)
 - `BitcoinBlock` / `BITCOIN_BLOCK` (tip / hash)
-- `P2P_FLUSH_CHAIN` / `FlushChain` (`snapshotBlockHash`)
 - `P2P_PEER_ALIAS` (signer + nickname)
 - `DocumentContentKeyReveal` (`documentId` + `SHA256(keyHex)` — only well-formed preimages; claim runs **after** successful open so junk public-hash frames cannot burn the slot)
 
@@ -70,7 +69,7 @@ Source-routed nesting for IP-hiding delivery (see [docs/P2P_FORWARD.md](docs/P2P
 - **Accepted risk:** hop IDs and inner payload are cleartext at each layer unless the app seals content. Not Sphinx.
 
 ## Peer scoring / misbehavior
-Registry score (Bitcoin Core–style) is earned on ping-gated `P2P_PONG` and spent for trust (`flushChainMinTrustedScore`, `relayFromTrustedPeers`). Misbehavior lowers score via `_applyPeerMisbehavior` / `_derankPeerForWireTraffic`. New peers start at **0**, so hard offenses also **disconnect** the socket (de-rank alone is ineffective at the floor).
+Registry score (Bitcoin Core–style) is earned on ping-gated `P2P_PONG` and spent for trust (peer selection and eviction). Misbehavior lowers score via `_applyPeerMisbehavior` / `_derankPeerForWireTraffic`. New peers start at **0**, so hard offenses also **disconnect** the socket (de-rank alone is ineffective at the floor).
 
 | Offense | Default penalty | Disconnect? |
 |---------|-----------------|-------------|
