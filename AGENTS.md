@@ -196,10 +196,11 @@ Before merging a new Fabric agent:
 - do not abbreviate in APIs; `documentId` should be `documentIdentifier`
 
 ## JSDoc (for `npm run make:api`)
-**Run `npm run check:jsdoc` after touching any doc comment** in `types/**`,
-`services/`, `schemata/` or `settings/deprecations.js`. It parses everything
-`make:api` and `make:docs` document and fails on any jsdoc `ERROR` or
-`WARNING`; `npm run ci` runs it. Never land a change it rejects.
+**Run `node scripts/check-jsdoc.js` after touching any doc comment** in `types/**`,
+`services/`, `schemata/` or `settings/deprecations.js`, when that local-only
+script is present (it is not in the repository or `npm run ci`). It parses
+everything `make:api` and `make:docs` document and fails on any jsdoc `ERROR`
+or `WARNING`. Never land a change it rejects.
 
 Type expressions are Closure syntax, not TypeScript. These break the build:
 
