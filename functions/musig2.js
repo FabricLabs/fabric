@@ -14,7 +14,7 @@
 
 const crypto = require('crypto');
 const { secp256k1, schnorr: schnorrModule } = require('@noble/curves/secp256k1.js');
-const taggedHash = require('./taggedHash');
+const taggedHash = require('../types/hash256').tagged;
 const { toUint8Flexible, toBuffer } = require('./bytes');
 
 const SecpPoint = secp256k1.ProjectivePoint || secp256k1.Point;
@@ -533,29 +533,34 @@ function nonceAgg (pubnonces) {
  * @param {Array<Buffer>} tweaks
  * @param {Array<boolean>} isXonly
  * @param {Buffer} msg
+ * @param {Buffer} [adaptor] 33-byte compressed adaptor point T; the session then
+ *   makes a pre-signature that `T`'s secret completes (secp256k1-zkp `musig_nonce_process`)
  * @returns {object}
  */
-function sessionContext (aggnonce, pubkeys, tweaks, isXonly, msg) {
+function sessionContext (aggnonce, pubkeys, tweaks, isXonly, msg, adaptor) {
+  let T = null;
+  if (adaptor != null) {
+    T = Buffer.from(toBuffer(adaptor));
+    cpoint(T);
+  }
   return {
     aggnonce: toBuffer(aggnonce),
     pubkeys: pubkeys.map((pk) => Buffer.from(toBuffer(pk))),
     tweaks: (tweaks || []).map((t) => Buffer.from(toBuffer(t))),
     isXonly: (isXonly || []).map((v) => !!v),
-    msg: toBuffer(msg)
+    msg: toBuffer(msg),
+    adaptor: T
   };
 }
 
 /**
  * @param {object} sessionCtx
  * @returns {{ Q: object, gacc: bigint, tacc: bigint, b: bigint, R: object, e: bigint }}
+ *   With an adaptor, `R` is the final nonce (R1 + T) + b·R2.
  */
 function getSessionValues (sessionCtx) {
   const { aggnonce, pubkeys, tweaks, isXonly, msg } = sessionCtx;
   const { Q, gacc, tacc } = keyAggAndTweak(pubkeys, tweaks, isXonly);
-  const b = intFromBytes(taggedHash(
-    'MuSig/noncecoef',
-    Buffer.concat([aggnonce, xbytes(Q), msg])
-  )) % N;
   let R1;
   let R2;
   try {
@@ -565,6 +570,15 @@ function getSessionValues (sessionCtx) {
     if (err instanceof ValueError) throw new InvalidContributionError(null, 'aggnonce');
     throw err;
   }
+  let nonceBytes = aggnonce;
+  if (sessionCtx.adaptor) {
+    R1 = pointAdd(R1, cpoint(sessionCtx.adaptor));
+    nonceBytes = Buffer.concat([cbytesExt(R1), aggnonce.subarray(33, 66)]);
+  }
+  const b = intFromBytes(taggedHash(
+    'MuSig/noncecoef',
+    Buffer.concat([nonceBytes, xbytes(Q), msg])
+  )) % N;
   let R_ = pointAdd(R1, pointMul(R2, b));
   const R = isInfinite(R_) ? SecpPoint.BASE : R_;
   const e = intFromBytes(taggedHash(
@@ -671,14 +685,15 @@ function partialSigVerifyInternal (psig, pubnonce, pk, sessionCtx) {
  * @param {Array<boolean>} isXonly
  * @param {Buffer} msg
  * @param {number} i
+ * @param {Buffer} [adaptor] 33-byte adaptor point of an adaptor session
  * @returns {boolean}
  */
-function partialSigVerify (psig, pubnonces, pubkeys, tweaks, isXonly, msg, i) {
+function partialSigVerify (psig, pubnonces, pubkeys, tweaks, isXonly, msg, i, adaptor) {
   if (pubnonces.length !== pubkeys.length) {
     throw new ValueError('The `pubnonces` and `pubkeys` arrays must have the same length.');
   }
   const aggnonce = nonceAgg(pubnonces);
-  const sessionCtx = sessionContext(aggnonce, pubkeys, tweaks, isXonly, msg);
+  const sessionCtx = sessionContext(aggnonce, pubkeys, tweaks, isXonly, msg, adaptor);
   return partialSigVerifyInternal(psig, pubnonces[i], pubkeys[i], sessionCtx);
 }
 
@@ -731,9 +746,11 @@ function detNonceHash (sk_, aggothernonce, aggpk, msg, i) {
  * @param {Array<boolean>} isXonly
  * @param {Buffer} msg
  * @param {Buffer|null} rand
+ * @param {Buffer} [adaptor] 33-byte adaptor point; the partial signature is then
+ *   a pre-signature share of that adaptor session
  * @returns {{ pubnonce: Buffer, psig: Buffer }}
  */
-function deterministicSign (sk, aggothernonce, pubkeys, tweaks, isXonly, msg, rand) {
+function deterministicSign (sk, aggothernonce, pubkeys, tweaks, isXonly, msg, rand, adaptor) {
   const skBuf = toBuffer(sk);
   const sk_ = rand != null
     ? bytesXor(skBuf, taggedHash('MuSig/aux', toBuffer(rand)))
@@ -741,8 +758,22 @@ function deterministicSign (sk, aggothernonce, pubkeys, tweaks, isXonly, msg, ra
   const aggpk = getXonlyPk(keyAggAndTweak(pubkeys, tweaks, isXonly));
   const m = toBuffer(msg);
   const other = toBuffer(aggothernonce);
-  const k1 = detNonceHash(sk_, other, aggpk, m, 0) % N;
-  const k2 = detNonceHash(sk_, other, aggpk, m, 1) % N;
+  // Sessions that differ only in the adaptor must not share a nonce. T is folded
+  // into the others' R1, which leaves the nonce equal only for identical sessions.
+  let nonceInput = other;
+  if (adaptor != null) {
+    let R1;
+    try {
+      R1 = cpointExt(other.subarray(0, 33));
+      cpointExt(other.subarray(33, 66));
+    } catch (err) {
+      if (err instanceof ValueError) throw new InvalidContributionError(null, 'aggothernonce');
+      throw err;
+    }
+    nonceInput = Buffer.concat([cbytesExt(pointAdd(R1, cpoint(toBuffer(adaptor)))), other.subarray(33, 66)]);
+  }
+  const k1 = detNonceHash(sk_, nonceInput, aggpk, m, 0) % N;
+  const k2 = detNonceHash(sk_, nonceInput, aggpk, m, 1) % N;
   if (k1 === 0n || k2 === 0n) throw new Error('deterministicSign: zero nonce');
   const Rs1 = SecpPoint.BASE.multiply(k1);
   const Rs2 = SecpPoint.BASE.multiply(k2);
@@ -757,7 +788,7 @@ function deterministicSign (sk, aggothernonce, pubkeys, tweaks, isXonly, msg, ra
     }
     throw err;
   }
-  const sessionCtx = sessionContext(aggnonce, pubkeys, tweaks, isXonly, m);
+  const sessionCtx = sessionContext(aggnonce, pubkeys, tweaks, isXonly, m, adaptor);
   const psig = sign(secnonce, skBuf, sessionCtx);
   return { pubnonce, psig };
 }

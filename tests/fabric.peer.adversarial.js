@@ -26,8 +26,9 @@ const {
   fabricIdentityDerivationPath,
   resolveFabricIdentityCoinType
 } = require('../constants');
-const { DocumentBlobTransferBook } = require('../functions/documentBlobManifest');
 const Htlc = require('../types/htlc');
+const DocumentBlobTransferBook = require('../types/documentBlobTransferBook');
+const SIGNING_TAGS = require('../functions/signingTags');
 
 bitcoin.initEccLib(ecc);
 
@@ -65,7 +66,7 @@ describe('@fabric/core Peer adversarial hardening', function () {
     peer.connections['127.0.0.1:9101'] = wireConn(bWrites);
     peer.peers[a] = { publicKey: k.pubkey };
 
-    const inner = Message.fromVector(['P2P_PING', JSON.stringify({ t: 1 })]).signWithKey(k);
+    const inner = Message.fromLegacyBody('P2P_PING', { t: 1 }).signWithKey(k);
     const relay = Message.fromVector(['P2P_RELAY', inner.toBuffer()]).signWithKey(k);
     const outerBuf = relay.toBuffer();
 
@@ -94,7 +95,7 @@ describe('@fabric/core Peer adversarial hardening', function () {
     peer._state.peers = { 'nest-peer': { id: 'nest-peer', address: a, score: 200, publicKey: k.pubkey } };
     peer.peers[a] = { publicKey: k.pubkey };
 
-    const leaf = Message.fromVector(['P2P_PING', JSON.stringify({ nest: true })]).signWithKey(k);
+    const leaf = Message.fromLegacyBody('P2P_PING', { nest: true }).signWithKey(k);
     const mid = Message.fromVector(['P2P_RELAY', leaf.toBuffer()]).signWithKey(k);
     const outer = Message.fromVector(['P2P_RELAY', mid.toBuffer()]).signWithKey(k);
 
@@ -123,7 +124,7 @@ describe('@fabric/core Peer adversarial hardening', function () {
       destroy () { destroyed = true; }
     };
 
-    const msg = Message.fromVector(['P2P_PING', JSON.stringify({ t: 9 })]).signWithKey(peer.key);
+    const msg = Message.fromLegacyBody('P2P_PING', { t: 9 }).signWithKey(peer.key);
     const buf = Buffer.from(msg.toBuffer());
     if (buf.length > 208) buf[208] ^= 0xff;
     peer._handleFabricMessage(buf, { name: origin }, null);
@@ -146,7 +147,7 @@ describe('@fabric/core Peer adversarial hardening', function () {
     assert.strictEqual(peer._outboundDialTargets.size, 0);
 
     // Inbound valid frame from banned origin is dropped (no cache / no score change)
-    const ping = Message.fromVector(['P2P_PING', JSON.stringify({ ok: 1 })]).signWithKey(peer.key);
+    const ping = Message.fromLegacyBody('P2P_PING', { ok: 1 }).signWithKey(peer.key);
     const good = ping.toBuffer();
     const hash = crypto.createHash('sha256').update(good).digest('hex');
     let inboundDestroyed = 0;
@@ -304,7 +305,7 @@ describe('@fabric/core Peer adversarial hardening', function () {
       fwd: { id: 'fwd', address: a, score: 200, publicKey: forwarder.pubkey }
     };
 
-    const inner = Message.fromVector(['P2P_PING', JSON.stringify({ t: 1 })]).signWithKey(attacker);
+    const inner = Message.fromLegacyBody('P2P_PING', { t: 1 }).signWithKey(attacker);
     const relay = Message.fromVector(['P2P_RELAY', inner.toBuffer()]).signWithKey(attacker);
     peer._handleFabricMessage(relay.toBuffer(), { name: a }, null);
 
@@ -336,7 +337,7 @@ describe('@fabric/core Peer adversarial hardening', function () {
     };
     peer.peers[a] = { publicKey: forwarder.pubkey };
 
-    const leaf = Message.fromVector(['P2P_PING', JSON.stringify({ nest: true })]).signWithKey(attacker);
+    const leaf = Message.fromLegacyBody('P2P_PING', { nest: true }).signWithKey(attacker);
     const mid = Message.fromVector(['P2P_RELAY', leaf.toBuffer()]).signWithKey(attacker);
     const outer = Message.fromVector(['P2P_RELAY', mid.toBuffer()]).signWithKey(attacker);
     peer._handleFabricMessage(outer.toBuffer(), { name: a }, null);
@@ -366,16 +367,16 @@ describe('@fabric/core Peer adversarial hardening', function () {
 
     const attackerId = 'attacker-via-relay';
     const proof = peer._sessionKeyProofMessage(attackerId, attacker.pubkey, attacker.pubkey);
-    const offer = Message.fromVector(['P2P_SESSION_OFFER', JSON.stringify({
+    const offer = Message.fromLegacyBody('P2P_SESSION_OFFER', {
       type: 'P2P_SESSION_OFFER',
       actor: {
         id: attackerId,
         pubkey: attacker.pubkey,
         parentPubkey: attacker.pubkey,
-        parentSignature: attacker.signSchnorr(proof).toString('hex')
+        parentSignature: attacker.signSchnorr(proof, SIGNING_TAGS.SESSION_KEY).toString('hex')
       },
       object: { challenge: 'relay-rebind' }
-    })]).signWithKey(attacker);
+    }).signWithKey(attacker);
     const relay = Message.fromVector(['P2P_RELAY', offer.toBuffer()]).signWithKey(attacker);
 
     peer._handleFabricMessage(relay.toBuffer(), { name: a }, null);
@@ -429,7 +430,7 @@ describe('@fabric/core Peer adversarial hardening', function () {
     assert.strictEqual(peer._state.peers['size-peer'].score, 90);
     assert.strictEqual(peer._isPeerBanned(origin), false);
 
-    const ok = Message.fromVector(['P2P_PING', JSON.stringify({ tiny: 1 })]).signWithKey(peer.key);
+    const ok = Message.fromLegacyBody('P2P_PING', { tiny: 1 }).signWithKey(peer.key);
     assert.ok(ok.toBuffer().length <= HEADER_SIZE + 100);
   });
 
@@ -592,7 +593,7 @@ describe('@fabric/core RC1 first-tier contract', function () {
   }
 
   function signPing (key, nonce) {
-    return Message.fromVector(['P2P_PING', JSON.stringify({ t: nonce })]).signWithKey(key);
+    return Message.fromLegacyBody('P2P_PING', { nonce }).signWithKey(key);
   }
 
   describe('wire integrity (body hash + BIP-340)', function () {
@@ -641,9 +642,27 @@ describe('@fabric/core RC1 first-tier contract', function () {
       assert.strictEqual(wasDestroyed(), true);
     });
 
-    it('verified frames FIFO-evict so an older wire hash can be claimed again', function () {
+    it('verified frames FIFO-evict, and the replay filter still drops the evicted frame', function () {
       const peer = offlinePeer({
         gossip: { maxWireHashCache: 2 }
+      });
+      const origin = '127.0.0.1:rc1-fifo-filter';
+      const key = new Key();
+      peer.connections[origin] = wireConn([]);
+      peer.peers[origin] = { publicKey: key.pubkey };
+
+      const frames = [1, 2, 3].map((n) => signPing(key, `fifo-${n}`).toBuffer());
+      const hashes = frames.map((buf) => crypto.createHash('sha256').update(buf).digest('hex'));
+      for (const buf of frames) peer._handleFabricMessage(buf, { name: origin }, null);
+      assert.strictEqual(peer.messages[hashes[0]], undefined, 'the FIFO cache stays bounded');
+
+      peer._handleFabricMessage(frames[0], { name: origin }, null);
+      assert.strictEqual(peer.messages[hashes[0]], undefined, 'a replay after eviction is dropped, not re-claimed');
+    });
+
+    it('without the replay filter, an evicted wire hash can be claimed again', function () {
+      const peer = offlinePeer({
+        gossip: { maxWireHashCache: 2, replayFilter: false }
       });
       const origin = '127.0.0.1:rc1-fifo';
       const key = new Key();
@@ -692,15 +711,11 @@ describe('@fabric/core RC1 first-tier contract', function () {
       peer.peers[origin] = { publicKey: author.pubkey };
 
       const body = { host: '198.51.100.77', port: 7777, tag: 'hop0-then-5' };
-      const dead = Message.fromVector(
-        ['P2P_PEER_GOSSIP', JSON.stringify(Object.assign({}, body, { gossipHop: 0 }))]
-      ).signWithKey(author);
+      const dead = Message.fromLegacyBody('P2P_PEER_GOSSIP', Object.assign({}, body, { gossipHop: 0 })).signWithKey(author);
       peer._handleFabricMessage(dead.toBuffer(), { name: origin }, null);
       assert.strictEqual(sinkWrites.length, 0);
 
-      const live = Message.fromVector(
-        ['P2P_PEER_GOSSIP', JSON.stringify(Object.assign({}, body, { gossipHop: 5 }))]
-      ).signWithKey(author);
+      const live = Message.fromLegacyBody('P2P_PEER_GOSSIP', Object.assign({}, body, { gossipHop: 5 })).signWithKey(author);
       peer._handleFabricMessage(live.toBuffer(), { name: origin }, null);
       assert.strictEqual(sinkWrites.length, 1, 'valid hop after hop=0 must still relay');
     });
@@ -719,16 +734,12 @@ describe('@fabric/core RC1 first-tier contract', function () {
       peer.peers[origin] = { publicKey: author.pubkey };
 
       const body = { transport: 'fabric', host: '203.0.113.77', port: 7777, tag: 'phop0-then-5' };
-      const dead = Message.fromVector(
-        ['P2P_PEERING_OFFER', JSON.stringify(Object.assign({}, body, { peeringHop: 0 }))]
-      ).signWithKey(author);
+      const dead = Message.fromLegacyBody('P2P_PEERING_OFFER', Object.assign({}, body, { peeringHop: 0 })).signWithKey(author);
       peer._handleFabricMessage(dead.toBuffer(), { name: origin }, null);
       assert.strictEqual(sinkWrites.length, 0);
       assert.strictEqual(peer.candidates.length, 0);
 
-      const live = Message.fromVector(
-        ['P2P_PEERING_OFFER', JSON.stringify(Object.assign({}, body, { peeringHop: 5 }))]
-      ).signWithKey(author);
+      const live = Message.fromLegacyBody('P2P_PEERING_OFFER', Object.assign({}, body, { peeringHop: 5 })).signWithKey(author);
       peer._handleFabricMessage(live.toBuffer(), { name: origin }, null);
       assert.strictEqual(sinkWrites.length, 1, 'valid hop after peeringHop=0 must still relay');
       assert.ok(peer.candidates.some((c) => c.host === '203.0.113.77' && Number(c.port) === 7777));
@@ -814,30 +825,30 @@ describe('@fabric/core RC1 first-tier contract', function () {
 
       const bodyForB = { host: '198.51.100.9', port: 1, gossipHop: 5, pubkey: b.pubkey, tag: 'steal-b' };
       peer._handleFabricMessage(
-        Message.fromVector(['P2P_PEER_GOSSIP', JSON.stringify(bodyForB)]).signWithKey(a).toBuffer(),
+        Message.fromLegacyBody('P2P_PEER_GOSSIP', bodyForB).signWithKey(a).toBuffer(),
         { name: originA },
         null
       );
       peer._handleFabricMessage(
-        Message.fromVector(['P2P_PEER_GOSSIP', JSON.stringify({
+        Message.fromLegacyBody('P2P_PEER_GOSSIP', {
           host: '198.51.100.10',
           port: 2,
           gossipHop: 5,
           pubkey: b.pubkey,
           tag: 'steal-b-2'
-        })]).signWithKey(a).toBuffer(),
+        }).signWithKey(a).toBuffer(),
         { name: originA },
         null
       );
       assert.strictEqual(sinkWrites.length, 1, 'origin A is budget-capped at 1');
 
       peer._handleFabricMessage(
-        Message.fromVector(['P2P_PEER_GOSSIP', JSON.stringify({
+        Message.fromLegacyBody('P2P_PEER_GOSSIP', {
           host: '198.51.100.11',
           port: 3,
           gossipHop: 5,
           tag: 'honest-b'
-        })]).signWithKey(b).toBuffer(),
+        }).signWithKey(b).toBuffer(),
         { name: originB },
         null
       );
@@ -922,20 +933,20 @@ describe('@fabric/core RC1 first-tier contract', function () {
       assert.strictEqual(fabricCoinTypeForNetwork('not-a-network'), FABRIC_COIN_TYPE_TESTNET);
       assert.strictEqual(fabricCoinTypeForNetwork(''), FABRIC_COIN_TYPE_TESTNET);
       assert.strictEqual(fabricCoinTypeForNetwork(null), FABRIC_COIN_TYPE_TESTNET);
-      assert.strictEqual(fabricIdentityDerivationPath(0, 0, 7777), "m/44'/7777'/0'/0/0");
-      assert.strictEqual(fabricIdentityAccountPath(0, 'not-a-network'), "m/44'/7778'/0'");
-      assert.strictEqual(fabricIdentityAccountPath(0, 'mainnet'), "m/44'/7777'/0'");
+      assert.strictEqual(fabricIdentityDerivationPath(0, 0, 7777), "m/7777'/7777'/0'/0/0");
+      assert.strictEqual(fabricIdentityAccountPath(0, 'not-a-network'), "m/7777'/7778'/0'");
+      assert.strictEqual(fabricIdentityAccountPath(0, 'mainnet'), "m/7777'/7777'/0'");
       assert.strictEqual(resolveFabricIdentityCoinType('not-a-network'), FABRIC_COIN_TYPE_TESTNET);
       assert.strictEqual(resolveFabricIdentityCoinType(7777), FABRIC_COIN_TYPE_MAINNET);
     });
 
-    it('Bitcoin fund paths stay on coin type 0 and never equal the Fabric identity key', function () {
+    it('mainnet Bitcoin fund paths use BIP84 coin type 0 and never equal the Fabric identity key', function () {
       const identity = new Identity({ seed: SAMPLE_SEED, network: 'mainnet' });
       const fundPath = bitcoinReceiveDerivationPath(0, 0);
       const fund = identity.master.derive(fundPath);
-      assert.match(fundPath, /^m\/44'\/0'\//);
+      assert.match(fundPath, /^m\/84'\/0'\//);
       assert.notEqual(fund.pubkey, identity.pubkey);
-      assert.strictEqual(identity.derivation, "m/44'/7777'/0'/0/0");
+      assert.strictEqual(identity.derivation, "m/7777'/7777'/0'/0/0");
       assert.notEqual(identity.pubkey, identity.master.pubkey);
     });
 
@@ -1088,12 +1099,12 @@ describe('@fabric/core RC1 PR-review coverage', function () {
     const author = new Key();
     peer.connections[origin] = wireConn([]);
     peer.peers[origin] = { publicKey: author.pubkey };
-    const wire = Message.fromVector(['P2P_PEERING_OFFER', JSON.stringify({
+    const wire = Message.fromLegacyBody('P2P_PEERING_OFFER', {
       type: 98,
       host: '203.0.113.98',
       port: 7777,
       transport: 'fabric'
-    })]).signWithKey(author);
+    }).signWithKey(author);
     peer._handleFabricMessage(wire.toBuffer(), { name: origin }, null);
     assert.ok(peer.candidates.some((c) => c.host === '203.0.113.98' && Number(c.port) === 7777));
   });
@@ -1109,12 +1120,12 @@ describe('@fabric/core RC1 PR-review coverage', function () {
     peer.peers[origin] = { publicKey: author.pubkey };
     let inventory = 0;
     peer.on('inventoryResponse', () => { inventory++; });
-    const wire = Message.fromVector(['P2P_INVENTORY_RESPONSE', JSON.stringify({
+    const wire = Message.fromLegacyBody('P2P_INVENTORY_RESPONSE', {
       type: 98,
       host: '203.0.113.99',
       port: 7777,
       transport: 'fabric'
-    })]).signWithKey(author);
+    }).signWithKey(author);
     peer._handleFabricMessage(wire.toBuffer(), { name: origin }, null);
     assert.strictEqual(peer.candidates.length, 0);
     assert.ok(!peer._candidateKeys || !peer._candidateKeys.has('203.0.113.99:7777'));
@@ -1169,6 +1180,51 @@ describe('@fabric/core RC1 PR-review coverage', function () {
     peer._handleFabricMessage(wire.toBuffer(), { name: origin }, null);
     assert.strictEqual(peer._state.peers['peer-wave1-u'].score, 200);
     assert.strictEqual(wasDestroyed(), false);
+  });
+
+  it('retired opcode 0x56 (FLUSH_CHAIN) is unknown: no event, no relay, no rewind', function () {
+    const peer = offlinePeer();
+    const origin = '127.0.0.1:retired-flush';
+    const author = new Key();
+    const wasDestroyed = seedScore(peer, origin, 'peer-retired-flush', 1000, author.pubkey);
+    const relayed = [];
+    peer.connections['127.0.0.1:retired-flush-neighbor'] = wireConn(relayed);
+    const emitted = [];
+    const emit = peer.emit.bind(peer);
+    peer.emit = function (name, ...args) {
+      if (!['debug', 'warning', 'log'].includes(name)) emitted.push(name);
+      return emit(name, ...args);
+    };
+    const body = JSON.stringify({ snapshotBlockHash: 'ab'.repeat(32), network: 'regtest' });
+    const wire = Message.fromVector([0x56, Buffer.from(body)]).signWithKey(author);
+    assert.strictEqual(Message.fromBuffer(wire.toBuffer()).type, 'UNKNOWN_MESSAGE');
+    peer._handleFabricMessage(wire.toBuffer(), { name: origin }, null);
+    assert.deepStrictEqual(emitted.filter((name) => /flush/i.test(name)), []);
+    assert.strictEqual(relayed.length, 0);
+    assert.strictEqual(peer._state.peers['peer-retired-flush'].score, 1000);
+    assert.strictEqual(wasDestroyed(), false);
+    assert.strictEqual(typeof peer.sendFlushChainToTrustedPeers, 'undefined');
+    assert.strictEqual(typeof peer.relayFromTrustedPeers, 'undefined');
+  });
+
+  it('an inherited property name is not a message type', function () {
+    const m = Message.fromVector(['P2P_PING', '{}']);
+    for (const name of ['toString', 'constructor', '__proto__', 'hasOwnProperty']) {
+      assert.throws(() => { m.type = name; }, /Unknown message type/, name);
+    }
+    assert.strictEqual(m.type, 'P2P_PING');
+  });
+
+  it('no decode name, alias, or gossip row claims retired opcode 0x56', function () {
+    const constants = require('../constants');
+    const { GOSSIP_NETWORK_TYPES, lookupGossipType } = require('../functions/gossipNetwork');
+    assert.strictEqual(constants.P2P_FLUSH_CHAIN, undefined);
+    assert.ok(!Object.values(constants).includes(0x56));
+    assert.strictEqual(lookupGossipType(0x56), null);
+    assert.strictEqual(lookupGossipType('FlushChain'), null);
+    assert.ok(!GOSSIP_NETWORK_TYPES.some((row) => row.opcode === 0x56));
+    assert.throws(() => Message.fromVector(['P2P_FLUSH_CHAIN', '{}']), /Unknown message type/);
+    assert.throws(() => Message.fromVector(['FlushChain', '{}']), /Unknown message type/);
   });
 
   it('JSON GenericMessage claiming CONTRACT_MESSAGE does not escalate opcode', function () {

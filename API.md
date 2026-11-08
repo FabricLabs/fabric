@@ -1,6 +1,51 @@
 ## Modules
 
 <dl>
+<dt><a href="#module_types/delegation">types/delegation</a></dt>
+<dd><p>Delegation: one Fabric key holder asks another to sign.</p>
+<p>Participants (Passport, a Hub, GoonCitizen, any Fabric key) never share
+keys or storage. Everything between them is a signed Fabric Message frame,
+carried as a <code>fabric:</code> string through a rendezvous or a mailbox:</p>
+<ul>
+<li>Pairing, so each learns the other&#39;s key: <code>DELEGATION_LINK_OFFER</code> commits
+to the initiator&#39;s nonce, <code>DELEGATION_LINK_ANSWER</code> brings the responder&#39;s
+nonce, <code>DELEGATION_LINK_REVEAL</code> opens the commitment. Both screens then
+show the same six-digit code (<a href="sas">sas</a>); neither side could choose its
+nonce after seeing the other&#39;s, so a relay in the middle matches it with
+odds of one in a million.</li>
+<li><code>DELEGATION_GRANT</code>: the author lets <code>grantee</code> ask it to sign, for listed
+scopes (<code>identity</code>, <code>passport</code>, <code>federation</code>, <code>message</code>) and optional
+origins / networks. It discloses the author&#39;s cosigner key with a proof,
+so grants are enough to build a shared federation wallet. A grant runs
+one way; two <code>identity</code> grants, one each way, mean &quot;the same person&quot;.</li>
+<li><code>DELEGATION_REVOKE</code> withdraws a grant.</li>
+<li><code>DELEGATION_REQUEST</code> embeds one frame for the target to sign: a
+<code>PASSPORT_CHALLENGE</code> (answered with a <code>PASSPORT_ASSERTION</code>), a federation
+<code>CONTRACT_MESSAGE</code> (an invite or a withdrawal request), or an unsigned
+chat / generic message. The target answers with a <code>DELEGATION_RESULT</code>
+holding the answer frame or a refusal.</li>
+<li><code>DELEGATION_MAILBOX_FETCH</code> proves a reader holds the key whose mail it asks for.</li>
+</ul>
+<p>Authority always comes from the recipient&#39;s own grants (<a href="authorize">authorize</a>);
+a rendezvous or mailbox only carries frames.</p>
+<p>The frame builders and readers are statics on <a href="Delegation">Delegation</a> (and
+plain properties of this module), so <code>require(&#39;@fabric/core/types/delegation&#39;).createGrant</code>
+works without a participant.</p>
+<p>A <code>Delegation</code> instance is one participant&#39;s side: each participant
+(Passport, a Hub, GoonCitizen) builds its own <code>Delegation</code> with its own
+key and its own store; nothing is shared between them. It keeps
+every delegation frame it sends or receives (replayable as a
+<code>FabricMessageCollection</code>), its pairings, the grants it made and received,
+revocations, and the requests it was asked and asked of others.</p>
+<p>Incoming frames go to <a href="Delegation#receive">Delegation#receive</a>. An authorized request is
+stored as pending and emitted as <code>request</code> with the notification to show;
+the app answers with <a href="Delegation#sign">Delegation#sign</a> or <a href="Delegation#decline">Delegation#decline</a>,
+and sends the returned frames where they need to go (a rendezvous, a
+mailbox, a loopback reply). This class never talks to the network itself.</p>
+<p>Events: <code>request</code> <code>{ hash, read, notification }</code>, <code>result</code> <code>{ hash, request, read }</code>,
+<code>grant</code> <code>{ hash, read, direction }</code>, <code>revoke</code> <code>{ grant, hash }</code>,
+<code>link</code> <code>{ linkId, sas, peer, role }</code>.</p>
+</dd>
 <dt><a href="#types/ecc.module_selftest">types/ecc.selftest</a></dt>
 <dd><p>Lightweight ECC sanity check for real browsers (see types/ecc.js).</p>
 </dd>
@@ -156,6 +201,24 @@ PSBT build and checks, key-path signing, ownership proofs, and PoDLE.</p>
 <dd></dd>
 <dt><a href="#Document">Document</a></dt>
 <dd></dd>
+<dt><a href="#DocumentBlobTransferBook">DocumentBlobTransferBook</a></dt>
+<dd><p>Buyer-side reassembly of indexed blob transfers.</p>
+<p>Two tables:</p>
+<ul>
+<li><strong>Expectations</strong> (<code>expectTransfer</code>): what the buyer asked / paid for.
+Only the local caller writes them; unsolicited frames can never evict
+them. Each lives until <code>expiresAt</code> (caller-set, default an hour), is
+refreshed by matching frames
+(<a href="#DocumentBlobTransferBook+touch">touch</a>), and ends with
+<a href="#DocumentBlobTransferBook+releaseTransfer">releaseTransfer</a> or completion.</li>
+<li><strong>Assembly rows</strong> (<code>ingest</code>): bytes received so far. Rows backed by an
+expectation are <em>pinned</em>; others are unsolicited and bounded by
+<code>maxPending</code> rows overall, <code>maxPendingPerOrigin</code> rows and
+<code>maxPendingBytesPerOrigin</code> bytes per sending peer, idle <code>ttlMs</code>, and are
+evicted (oldest first) before any pinned row. A row whose <code>total</code>
+contradicts the expectation (planted before the purchase) is replaced.</li>
+</ul>
+</dd>
 <dt><a href="#DocumentBook">DocumentBook</a></dt>
 <dd></dd>
 <dt><a href="#Entity">Entity</a> ⇐ <code>EventEmitter</code></dt>
@@ -183,15 +246,15 @@ types for experiments and apps. Prefer importing <strong>leaf</strong> types in 
 <dd><p>Simple interaction with 256-bit spaces.</p>
 </dd>
 <dt><a href="#HKDF">HKDF</a></dt>
-<dd><p>Provides an HMAC-based Extract-and-Expand Key Derivation Function (HKDF), compatible with
-RFC 5869.  Defaults to 32 byte output, matching Bitcoin&#39;s implementaton.</p>
+<dd><p>HMAC-based Extract-and-Expand Key Derivation Function (HKDF, RFC 5869).
+Defaults to SHA-256 and 32 bytes of output.</p>
 </dd>
 <dt><a href="#Htlc">Htlc</a></dt>
 <dd></dd>
 <dt><a href="#Identity">Identity</a> ⇐ <code><a href="#Actor">Actor</a></code></dt>
 <dd><p><strong>BIP32/BIP39 identity</strong> wrapping <a href="#Key">Key</a>: mnemonic / xprv / passphrase.
 Protocol identity (pubkey / Schnorr sign / Bech32 id) uses the Fabric derivation path
-<code>m/44'/{7777|7778}'/account'/0/index</code> — coin type <strong>7777</strong> on Bitcoin
+<code>m/7777'/{7777|7778}'/account'/0/index</code> — coin type <strong>7777</strong> on Bitcoin
 mainnet, <strong>7778</strong> on all other networks (see <a href="Identity#derivation">Identity#derivation</a> and
 IDENTITY.md). The HD <strong>master</strong> remains available as <a href="#Identity+master">master</a> /
 <a href="Identity#key">Identity#key</a> so Bitcoin funds can derive under BIP44 coin type <code>0</code> (see
@@ -443,6 +506,10 @@ contract&#39;s lifetime as &quot;fulfillment conditions&quot; for its closure.</
 </dd>
 <dt><a href="#Text">Text</a> ⇐ <code><a href="#Service">Service</a></code></dt>
 <dd></dd>
+<dt><a href="#Watchtower">Watchtower</a></dt>
+<dd></dd>
+<dt><a href="#Watchtower">Watchtower</a></dt>
+<dd></dd>
 <dt><a href="#ZMQ">ZMQ</a></dt>
 <dd><p>Connect and subscribe to ZeroMQ publishers.</p>
 </dd>
@@ -564,6 +631,18 @@ still fit one <code>CONTRACT_MESSAGE</code> under <code>MAX_MESSAGE_SIZE</code> 
 <dt><a href="#GCM_TAG_BYTES">GCM_TAG_BYTES</a></dt>
 <dd><p>AES-GCM tag appended to each sealed blob.</p>
 </dd>
+<dt><a href="#BID_TYPE">BID_TYPE</a></dt>
+<dd><p>Wire type of a chunk bid.</p>
+</dd>
+<dt><a href="#ASK_TYPE">ASK_TYPE</a></dt>
+<dd><p>Wire type of a seller&#39;s answer to a bid.</p>
+</dd>
+<dt><a href="#DEFAULT_BID_TTL_SECONDS">DEFAULT_BID_TTL_SECONDS</a></dt>
+<dd><p>Bid lifetime when the buyer names none.</p>
+</dd>
+<dt><a href="#BID_CLOCK_SKEW_SECONDS">BID_CLOCK_SKEW_SECONDS</a></dt>
+<dd><p>Clock difference tolerated between peers when checking how far ahead a bid expires.</p>
+</dd>
 <dt><a href="#DEFAULT_WEIGHTS">DEFAULT_WEIGHTS</a></dt>
 <dd><p>Default ranking weights (sum to 1).</p>
 </dd>
@@ -603,6 +682,21 @@ still fit one <code>CONTRACT_MESSAGE</code> under <code>MAX_MESSAGE_SIZE</code> 
 <dt><a href="#LOCKTIME_THRESHOLD">LOCKTIME_THRESHOLD</a></dt>
 <dd><p>BIP65: lock values at or above this are unix times, not heights.</p>
 </dd>
+<dt><a href="#DEPRECATED_WIRE_TYPES">DEPRECATED_WIRE_TYPES</a></dt>
+<dd><p>Registered opcodes nothing sends or handles (docs/MESSAGE_BODY.md, Migration
+Phase 4). They still decode; Peer counts and warns when one arrives, and a
+later protocol version removes them. <code>P2P_BASE_MESSAGE</code> and
+<code>P2P_CHAIN_SYNC_REQUEST</code> are still in use and are not listed.</p>
+</dd>
+<dt><a href="#SEALED_DELIVERY_INNER_TYPE_BY_WIRE">SEALED_DELIVERY_INNER_TYPE_BY_WIRE</a></dt>
+<dd><p>Sealed document delivery wire type → the inner <code>type</code> its generic handler dispatches on.</p>
+</dd>
+<dt><a href="#SEALED_DELIVERY_INNER_TYPES">SEALED_DELIVERY_INNER_TYPES</a></dt>
+<dd><p>Those inner types: refused inside a <code>GenericMessage</code> / <code>P2P_BASE_MESSAGE</code> carrier.</p>
+</dd>
+<dt><a href="#FIELD_BODIES_VERSION">FIELD_BODIES_VERSION</a></dt>
+<dd><p>Session-advertised level of field-body support (<code>object.fieldBodies</code>).</p>
+</dd>
 <dt><a href="#TAPROOT_INTERNAL_NUMS">TAPROOT_INTERNAL_NUMS</a></dt>
 <dd><p>BIP341-style NUMS x-only internal key (script-path spend only).</p>
 </dd>
@@ -617,6 +711,9 @@ still fit one <code>CONTRACT_MESSAGE</code> under <code>MAX_MESSAGE_SIZE</code> 
 </dd>
 <dt><a href="#EXIT_SIGNATURE_TYPE">EXIT_SIGNATURE_TYPE</a></dt>
 <dd><p><code>CONTRACT_MESSAGE</code> body carrying one exit signature.</p>
+</dd>
+<dt><a href="#UNSAFE_PATH_TOKENS">UNSAFE_PATH_TOKENS</a></dt>
+<dd><p>Path tokens that would reach <code>Object.prototype</code> through <code>pointer.set</code>.</p>
 </dd>
 <dt><a href="#MAX_PREMIUM_PPM">MAX_PREMIUM_PPM</a></dt>
 <dd><p>Largest premium (either sign) an order may quote: ±50%.</p>
@@ -647,8 +744,23 @@ invoice, at the default block time.</p>
 <dt><a href="#SIGNER_FIELD">SIGNER_FIELD</a></dt>
 <dd><p>Which field carries each body&#39;s author key.</p>
 </dd>
+<dt><a href="#ZMQ_TOPIC_CASES">ZMQ_TOPIC_CASES</a></dt>
+<dd><p>bitcoind ZMQ topic → <code>_handleZMQMessage</code> case.</p>
+</dd>
+<dt><a href="#ZMQ_TXID_MEMORY">ZMQ_TXID_MEMORY</a></dt>
+<dd><p>Max txids kept for <code>rawtx</code> / <code>hashtx</code> pair dedupe.</p>
+</dd>
+<dt><a href="#ZMQ_TX_DEDUPE_MS">ZMQ_TX_DEDUPE_MS</a></dt>
+<dd><p>Default window in which a <code>rawtx</code> / <code>hashtx</code> pair counts as one admission.</p>
+</dd>
 <dt><del><a href="#Text">Text</a></del></dt>
 <dd></dd>
+<dt><a href="#ZMQ_MESSAGE_TYPES">ZMQ_MESSAGE_TYPES</a></dt>
+<dd><p>bitcoind topic → message type for the field-encoded form.</p>
+</dd>
+<dt><a href="#ZMQ_MAX_FIELD_HEX">ZMQ_MAX_FIELD_HEX</a></dt>
+<dd><p>Hex characters that fit a field body beside its <code>present</code> / <code>extra</code> fields.</p>
+</dd>
 </dl>
 
 ## Functions
@@ -854,6 +966,9 @@ and <code>listdescriptors true</code> output (<code>tr(…/*)</code> descriptors
 <dt><a href="#offerKey">offerKey(row)</a> ⇒ <code>string</code></dt>
 <dd><p>Stable key for one offer row.</p>
 </dd>
+<dt><a href="#settlementDedupeKey">settlementDedupeKey(session)</a> ⇒ <code>string</code></dt>
+<dd><p>Dedup key for paid settlements: (documentId, blobIndex|all, contentHash).</p>
+</dd>
 <dt><a href="#createDocumentPurchaseSession">createDocumentPurchaseSession(opts)</a> ⇒ <code>Object</code></dt>
 <dd><p>A buyer/seller document purchase session record (whole document or one blob).</p>
 </dd>
@@ -885,6 +1000,14 @@ leaves dropped (<code>leavesInline: false</code>); every slice still carries the
 id, root, and blob total, so a receiving <a href="#DocumentBook">DocumentBook</a> upserts the
 pages per blob without further work. Items that cannot be made to fit are
 returned in <code>skipped</code>.</p>
+</dd>
+<dt><a href="#contractMessageIndex">contractMessageIndex(messageOrFields)</a> ⇒ <code>Object</code></dt>
+<dd><p><code>recipient</code>, <code>ref</code>, and <code>slot</code> from a CONTRACT_MESSAGE field body.
+Does not read the JSON payload.</p>
+</dd>
+<dt><a href="#contractMessageMatches">contractMessageMatches(messageOrFields, [query])</a> ⇒ <code>boolean</code></dt>
+<dd><p>True when every non-empty query field equals the frame&#39;s index field.
+An empty query matches. A frame with no index does not match a query.</p>
 </dd>
 <dt><a href="#tierWhenPath">tierWhenPath(state, path)</a> ⇒ <code>*</code></dt>
 <dd></dd>
@@ -974,7 +1097,7 @@ script-pubkey order so the first <code>CHECKSIG</code> pops the last stack item.
 <dd><p>Authority P2TR vault from validator/signer set.</p>
 <p><strong>Default (RC):</strong> 2-tier ladder — k-of-n authority now; softer rule after
 <code>csvBlocks</code> (default 144) CSV. Same tree as <a href="#synthesizeDefaultLadder">synthesizeDefaultLadder</a> /
-<a href="module:functions/contractSpend.resolveSpend">module:functions/contractSpend.resolveSpend</a> when inputs match.</p>
+<a href="#Contract.resolveSpend">resolveSpend</a> when inputs match.</p>
 <p><strong>Legacy:</strong> pass <code>{ legacySingleLeaf: true }</code> for the pre-ladder single k-of-n
 leaf address (opt-in only; not used by Hub vault summary).</p>
 <p><strong>Internal key:</strong> default n≥2 uses the MuSig2 aggregate (<code>internalKeyMode: &#39;musig2&#39;</code>) — a <strong>new address</strong> vs historical NUMS. Pass <code>internalKeyMode: &#39;nums&#39;</code> to keep coins at the old script-path-only vault. Rebuilds do not
@@ -1000,6 +1123,9 @@ and accepts are referenced by it.</p>
 <dd><p>Body codec for one signed market: every body is a JSON object with a
 <code>type</code>, normalized by that type&#39;s normalizer and BIP340-signed by the key
 named by <code>signerField</code> over <a href="#signingString">signingString</a>.</p>
+</dd>
+<dt><a href="#routePath">routePath()</a></dt>
+<dd><p><code>path</code> as an absolute JSON Pointer path.</p>
 </dd>
 <dt><a href="#normalizeOrder">normalizeOrder(input)</a> ⇒ <code>Object</code></dt>
 <dd></dd>
@@ -1081,6 +1207,14 @@ proximity shifts weight from price toward measured latency + hops.</p>
 or refunded purchase from one seller never blocks buying the blob from
 another.</p>
 </dd>
+<dt><a href="#openFiling">openFiling(filing, txid)</a> ⇒ <code>Array.&lt;string&gt;</code> | <code>null</code></dt>
+<dd><p>Decrypt a filing with the commitment txid. Null when the hint misses or
+the ciphertext was sealed for a different transaction (prefix collision).</p>
+</dd>
+<dt><a href="#broadcastSettled">broadcastSettled(error)</a> ⇒ <code>boolean</code></dt>
+<dd><p>A broadcast error that means this penalty will not confirm later: the
+transaction is already known, or its inputs are already spent.</p>
+</dd>
 </dl>
 
 ## Typedefs
@@ -1096,6 +1230,1179 @@ another.</p>
 <dd><p>Options for <a href="#Bitcoin.buildRegtestCookiePathList">buildRegtestCookiePathList</a>.</p>
 </dd>
 </dl>
+
+<a name="module_types/delegation"></a>
+
+## types/delegation
+Delegation: one Fabric key holder asks another to sign.
+
+Participants (Passport, a Hub, GoonCitizen, any Fabric key) never share
+keys or storage. Everything between them is a signed Fabric Message frame,
+carried as a `fabric:` string through a rendezvous or a mailbox:
+
+- Pairing, so each learns the other's key: `DELEGATION_LINK_OFFER` commits
+  to the initiator's nonce, `DELEGATION_LINK_ANSWER` brings the responder's
+  nonce, `DELEGATION_LINK_REVEAL` opens the commitment. Both screens then
+  show the same six-digit code ([sas](sas)); neither side could choose its
+  nonce after seeing the other's, so a relay in the middle matches it with
+  odds of one in a million.
+- `DELEGATION_GRANT`: the author lets `grantee` ask it to sign, for listed
+  scopes (`identity`, `passport`, `federation`, `message`) and optional
+  origins / networks. It discloses the author's cosigner key with a proof,
+  so grants are enough to build a shared federation wallet. A grant runs
+  one way; two `identity` grants, one each way, mean "the same person".
+- `DELEGATION_REVOKE` withdraws a grant.
+- `DELEGATION_REQUEST` embeds one frame for the target to sign: a
+  `PASSPORT_CHALLENGE` (answered with a `PASSPORT_ASSERTION`), a federation
+  `CONTRACT_MESSAGE` (an invite or a withdrawal request), or an unsigned
+  chat / generic message. The target answers with a `DELEGATION_RESULT`
+  holding the answer frame or a refusal.
+- `DELEGATION_MAILBOX_FETCH` proves a reader holds the key whose mail it asks for.
+
+Authority always comes from the recipient's own grants ([authorize](authorize));
+a rendezvous or mailbox only carries frames.
+
+The frame builders and readers are statics on [Delegation](Delegation) (and
+plain properties of this module), so `require('@fabric/core/types/delegation').createGrant`
+works without a participant.
+
+A `Delegation` instance is one participant's side: each participant
+(Passport, a Hub, GoonCitizen) builds its own `Delegation` with its own
+key and its own store; nothing is shared between them. It keeps
+every delegation frame it sends or receives (replayable as a
+`FabricMessageCollection`), its pairings, the grants it made and received,
+revocations, and the requests it was asked and asked of others.
+
+Incoming frames go to [Delegation#receive](Delegation#receive). An authorized request is
+stored as pending and emitted as `request` with the notification to show;
+the app answers with [Delegation#sign](Delegation#sign) or [Delegation#decline](Delegation#decline),
+and sends the returned frames where they need to go (a rendezvous, a
+mailbox, a loopback reply). This class never talks to the network itself.
+
+Events: `request` `{ hash, read, notification }`, `result` `{ hash, request, read }`,
+`grant` `{ hash, read, direction }`, `revoke` `{ grant, hash }`,
+`link` `{ linkId, sas, peer, role }`.
+
+
+* [types/delegation](#module_types/delegation)
+    * [~Delegation](#module_types/delegation..Delegation) ⇐ <code>EventEmitter</code>
+        * [new Delegation(settings)](#new_module_types/delegation..Delegation_new)
+        * [.pubkey](#module_types/delegation..Delegation+pubkey)
+        * [.load()](#module_types/delegation..Delegation+load) ⇒ <code>Promise.&lt;Delegation&gt;</code>
+        * [.offer(params)](#module_types/delegation..Delegation+offer) ⇒ <code>Promise.&lt;{uri: string, linkId: string, expiresAt: number}&gt;</code>
+        * [.answer(offer, [params])](#module_types/delegation..Delegation+answer) ⇒ <code>Promise.&lt;{uri: string, linkId: string, peer: string, peerPubkey: string}&gt;</code>
+        * [.sasFor(linkId)](#module_types/delegation..Delegation+sasFor) ⇒ <code>Promise.&lt;(string\|null)&gt;</code>
+        * [.confirmLink(linkId)](#module_types/delegation..Delegation+confirmLink) ⇒ <code>Promise.&lt;{linkId: string, peer: string, peerPubkey: (string\|null), revealHash: string}&gt;</code>
+        * [.links()](#module_types/delegation..Delegation+links) ⇒ <code>Promise.&lt;Array.&lt;object&gt;&gt;</code>
+        * [.grant(params)](#module_types/delegation..Delegation+grant) ⇒ <code>Promise.&lt;{uri: string, hash: string}&gt;</code>
+        * [.revoke(grantHash)](#module_types/delegation..Delegation+revoke) ⇒ <code>Promise.&lt;{uri: string, hash: string}&gt;</code>
+        * [.grants(which, [options])](#module_types/delegation..Delegation+grants) ⇒ <code>Promise.&lt;Array.&lt;object&gt;&gt;</code>
+        * [.identityPeers()](#module_types/delegation..Delegation+identityPeers) ⇒ <code>Promise.&lt;Array.&lt;string&gt;&gt;</code>
+        * [.grantFrom(grantor, scope)](#module_types/delegation..Delegation+grantFrom) ⇒ <code>Promise.&lt;(object\|null)&gt;</code>
+        * [.request(params)](#module_types/delegation..Delegation+request) ⇒ <code>Promise.&lt;{uri: string, hash: string, scope: string, expiresAt: number}&gt;</code>
+        * [.pending()](#module_types/delegation..Delegation+pending) ⇒ <code>Promise.&lt;Array.&lt;{hash: string, read: object, notification: object, receivedAt: number}&gt;&gt;</code>
+        * [.inboxItem(hash)](#module_types/delegation..Delegation+inboxItem) ⇒ <code>Promise.&lt;({hash: string, status: string, read: object, result: (string\|null)}\|null)&gt;</code>
+        * [.outboxItem(hash)](#module_types/delegation..Delegation+outboxItem) ⇒ <code>Promise.&lt;({hash: string, status: string, result: (object\|null)}\|null)&gt;</code>
+        * [.sign(requestHash, answer, [options])](#module_types/delegation..Delegation+sign) ⇒ <code>Promise.&lt;{uri: string, hash: string}&gt;</code>
+        * [.decline(requestHash, [reason], [options])](#module_types/delegation..Delegation+decline) ⇒ <code>Promise.&lt;{uri: string, hash: string}&gt;</code>
+        * [.receive(input, [context])](#module_types/delegation..Delegation+receive) ⇒ <code>Promise.&lt;object&gt;</code>
+        * [.frames()](#module_types/delegation..Delegation+frames) ⇒ <code>Promise.&lt;Array.&lt;object&gt;&gt;</code>
+    * [~Delegation](#module_types/delegation..Delegation)
+        * [new Delegation(settings)](#new_module_types/delegation..Delegation_new)
+        * [.pubkey](#module_types/delegation..Delegation+pubkey)
+        * [.load()](#module_types/delegation..Delegation+load) ⇒ <code>Promise.&lt;Delegation&gt;</code>
+        * [.offer(params)](#module_types/delegation..Delegation+offer) ⇒ <code>Promise.&lt;{uri: string, linkId: string, expiresAt: number}&gt;</code>
+        * [.answer(offer, [params])](#module_types/delegation..Delegation+answer) ⇒ <code>Promise.&lt;{uri: string, linkId: string, peer: string, peerPubkey: string}&gt;</code>
+        * [.sasFor(linkId)](#module_types/delegation..Delegation+sasFor) ⇒ <code>Promise.&lt;(string\|null)&gt;</code>
+        * [.confirmLink(linkId)](#module_types/delegation..Delegation+confirmLink) ⇒ <code>Promise.&lt;{linkId: string, peer: string, peerPubkey: (string\|null), revealHash: string}&gt;</code>
+        * [.links()](#module_types/delegation..Delegation+links) ⇒ <code>Promise.&lt;Array.&lt;object&gt;&gt;</code>
+        * [.grant(params)](#module_types/delegation..Delegation+grant) ⇒ <code>Promise.&lt;{uri: string, hash: string}&gt;</code>
+        * [.revoke(grantHash)](#module_types/delegation..Delegation+revoke) ⇒ <code>Promise.&lt;{uri: string, hash: string}&gt;</code>
+        * [.grants(which, [options])](#module_types/delegation..Delegation+grants) ⇒ <code>Promise.&lt;Array.&lt;object&gt;&gt;</code>
+        * [.identityPeers()](#module_types/delegation..Delegation+identityPeers) ⇒ <code>Promise.&lt;Array.&lt;string&gt;&gt;</code>
+        * [.grantFrom(grantor, scope)](#module_types/delegation..Delegation+grantFrom) ⇒ <code>Promise.&lt;(object\|null)&gt;</code>
+        * [.request(params)](#module_types/delegation..Delegation+request) ⇒ <code>Promise.&lt;{uri: string, hash: string, scope: string, expiresAt: number}&gt;</code>
+        * [.pending()](#module_types/delegation..Delegation+pending) ⇒ <code>Promise.&lt;Array.&lt;{hash: string, read: object, notification: object, receivedAt: number}&gt;&gt;</code>
+        * [.inboxItem(hash)](#module_types/delegation..Delegation+inboxItem) ⇒ <code>Promise.&lt;({hash: string, status: string, read: object, result: (string\|null)}\|null)&gt;</code>
+        * [.outboxItem(hash)](#module_types/delegation..Delegation+outboxItem) ⇒ <code>Promise.&lt;({hash: string, status: string, result: (object\|null)}\|null)&gt;</code>
+        * [.sign(requestHash, answer, [options])](#module_types/delegation..Delegation+sign) ⇒ <code>Promise.&lt;{uri: string, hash: string}&gt;</code>
+        * [.decline(requestHash, [reason], [options])](#module_types/delegation..Delegation+decline) ⇒ <code>Promise.&lt;{uri: string, hash: string}&gt;</code>
+        * [.receive(input, [context])](#module_types/delegation..Delegation+receive) ⇒ <code>Promise.&lt;object&gt;</code>
+        * [.frames()](#module_types/delegation..Delegation+frames) ⇒ <code>Promise.&lt;Array.&lt;object&gt;&gt;</code>
+    * [~DELEGATION_VERSION](#module_types/delegation..DELEGATION_VERSION)
+    * [~DELEGATION_SCOPES](#module_types/delegation..DELEGATION_SCOPES)
+    * [~DELEGATION_LINK_TTL_MS](#module_types/delegation..DELEGATION_LINK_TTL_MS)
+    * [~DELEGATION_REQUEST_TTL_MS](#module_types/delegation..DELEGATION_REQUEST_TTL_MS)
+    * [~DELEGATION_CLOCK_SKEW_MS](#module_types/delegation..DELEGATION_CLOCK_SKEW_MS)
+    * [~DELEGATION_MAX_LABEL](#module_types/delegation..DELEGATION_MAX_LABEL)
+    * [~FEDERATION_REQUEST_TYPES](#module_types/delegation..FEDERATION_REQUEST_TYPES)
+    * [~MESSAGE_SCOPE_TYPES](#module_types/delegation..MESSAGE_SCOPE_TYPES)
+    * [~GENERIC_PROTOCOL_BODY_TYPES](#module_types/delegation..GENERIC_PROTOCOL_BODY_TYPES)
+    * [~frameHash(frame)](#module_types/delegation..frameHash) ⇒ <code>string</code>
+    * [~xOnly(pubkey)](#module_types/delegation..xOnly) ⇒ <code>string</code> \| <code>null</code>
+    * [~cleanLabel(label, [max])](#module_types/delegation..cleanLabel) ⇒ <code>string</code>
+    * [~federationIdsError(body)](#module_types/delegation..federationIdsError) ⇒ <code>string</code> \| <code>null</code>
+    * [~normalizeExtensionOrigin(value)](#module_types/delegation..normalizeExtensionOrigin) ⇒ <code>string</code> \| <code>null</code>
+    * [~commitment(initiator, nonce)](#module_types/delegation..commitment) ⇒ <code>string</code>
+    * [~sas(params)](#module_types/delegation..sas) ⇒ <code>string</code>
+    * [~createLinkOffer(params, key)](#module_types/delegation..createLinkOffer) ⇒ <code>Object</code>
+    * [~readLinkOffer(input, [options])](#module_types/delegation..readLinkOffer) ⇒ <code>Object</code> \| <code>Object</code>
+    * [~createLinkAnswer(params, key)](#module_types/delegation..createLinkAnswer) ⇒ <code>Object</code>
+    * [~readLinkAnswer(input, [options])](#module_types/delegation..readLinkAnswer) ⇒ <code>Object</code> \| <code>Object</code>
+    * [~createLinkReveal(params, key)](#module_types/delegation..createLinkReveal) ⇒ <code>Object</code>
+    * [~readLinkReveal(input, [options])](#module_types/delegation..readLinkReveal) ⇒ <code>Object</code> \| <code>Object</code>
+    * [~verifyLink(frames, [options])](#module_types/delegation..verifyLink) ⇒ <code>Object</code> \| <code>Object</code>
+    * [~grantCosignerScope(grant)](#module_types/delegation..grantCosignerScope) ⇒ <code>string</code>
+    * [~createGrant(params, key)](#module_types/delegation..createGrant) ⇒ <code>Object</code>
+    * [~readGrant(input, [options])](#module_types/delegation..readGrant) ⇒ <code>Object</code> \| <code>Object</code>
+    * [~createRevoke(params, key)](#module_types/delegation..createRevoke) ⇒ <code>Object</code>
+    * [~readRevoke(input, [options])](#module_types/delegation..readRevoke) ⇒ <code>Object</code> \| <code>Object</code>
+    * [~readInnerFrame(buffer, [options])](#module_types/delegation..readInnerFrame) ⇒ <code>Object</code> \| <code>Object</code>
+    * [~createRequest(params, key)](#module_types/delegation..createRequest) ⇒ <code>Object</code>
+    * [~readRequest(input, [options])](#module_types/delegation..readRequest) ⇒ <code>Object</code> \| <code>Object</code>
+    * [~authorize(read, grants, [options])](#module_types/delegation..authorize) ⇒ <code>Object</code> \| <code>Object</code>
+    * [~createResult(params, key)](#module_types/delegation..createResult) ⇒ <code>Object</code>
+    * [~readResult(input, [options])](#module_types/delegation..readResult) ⇒ <code>Object</code> \| <code>Object</code>
+    * [~createMailboxFetch([params], key)](#module_types/delegation..createMailboxFetch) ⇒ <code>Object</code>
+    * [~readMailboxFetch(input, [options])](#module_types/delegation..readMailboxFetch) ⇒ <code>Object</code> \| <code>Object</code>
+    * [~mailboxAddress(input, [hints])](#module_types/delegation..mailboxAddress) ⇒ <code>Object</code> \| <code>Object</code>
+    * [~identityPeers(self, grants, [revoked])](#module_types/delegation..identityPeers) ⇒ <code>Array.&lt;string&gt;</code>
+    * [~notificationFor(read, [context])](#module_types/delegation..notificationFor) ⇒ <code>Object</code>
+    * [~answerPassport(read, params, key)](#module_types/delegation..answerPassport) ⇒ <code>Object</code>
+    * [~answerMessage(read, key)](#module_types/delegation..answerMessage) ⇒ [<code>Message</code>](#Message)
+    * [~answerError(read, answer, [options])](#module_types/delegation..answerError) ⇒ <code>string</code> \| <code>null</code>
+    * [~delegationType(input)](#module_types/delegation..delegationType) ⇒ <code>string</code> \| <code>null</code>
+
+<a name="module_types/delegation..Delegation"></a>
+
+### types/delegation~Delegation ⇐ <code>EventEmitter</code>
+A participant's delegation state on its own key and store.
+
+**Kind**: inner class of [<code>types/delegation</code>](#module_types/delegation)  
+**Extends**: <code>EventEmitter</code>  
+
+* [~Delegation](#module_types/delegation..Delegation) ⇐ <code>EventEmitter</code>
+    * [new Delegation(settings)](#new_module_types/delegation..Delegation_new)
+    * [.pubkey](#module_types/delegation..Delegation+pubkey)
+    * [.load()](#module_types/delegation..Delegation+load) ⇒ <code>Promise.&lt;Delegation&gt;</code>
+    * [.offer(params)](#module_types/delegation..Delegation+offer) ⇒ <code>Promise.&lt;{uri: string, linkId: string, expiresAt: number}&gt;</code>
+    * [.answer(offer, [params])](#module_types/delegation..Delegation+answer) ⇒ <code>Promise.&lt;{uri: string, linkId: string, peer: string, peerPubkey: string}&gt;</code>
+    * [.sasFor(linkId)](#module_types/delegation..Delegation+sasFor) ⇒ <code>Promise.&lt;(string\|null)&gt;</code>
+    * [.confirmLink(linkId)](#module_types/delegation..Delegation+confirmLink) ⇒ <code>Promise.&lt;{linkId: string, peer: string, peerPubkey: (string\|null), revealHash: string}&gt;</code>
+    * [.links()](#module_types/delegation..Delegation+links) ⇒ <code>Promise.&lt;Array.&lt;object&gt;&gt;</code>
+    * [.grant(params)](#module_types/delegation..Delegation+grant) ⇒ <code>Promise.&lt;{uri: string, hash: string}&gt;</code>
+    * [.revoke(grantHash)](#module_types/delegation..Delegation+revoke) ⇒ <code>Promise.&lt;{uri: string, hash: string}&gt;</code>
+    * [.grants(which, [options])](#module_types/delegation..Delegation+grants) ⇒ <code>Promise.&lt;Array.&lt;object&gt;&gt;</code>
+    * [.identityPeers()](#module_types/delegation..Delegation+identityPeers) ⇒ <code>Promise.&lt;Array.&lt;string&gt;&gt;</code>
+    * [.grantFrom(grantor, scope)](#module_types/delegation..Delegation+grantFrom) ⇒ <code>Promise.&lt;(object\|null)&gt;</code>
+    * [.request(params)](#module_types/delegation..Delegation+request) ⇒ <code>Promise.&lt;{uri: string, hash: string, scope: string, expiresAt: number}&gt;</code>
+    * [.pending()](#module_types/delegation..Delegation+pending) ⇒ <code>Promise.&lt;Array.&lt;{hash: string, read: object, notification: object, receivedAt: number}&gt;&gt;</code>
+    * [.inboxItem(hash)](#module_types/delegation..Delegation+inboxItem) ⇒ <code>Promise.&lt;({hash: string, status: string, read: object, result: (string\|null)}\|null)&gt;</code>
+    * [.outboxItem(hash)](#module_types/delegation..Delegation+outboxItem) ⇒ <code>Promise.&lt;({hash: string, status: string, result: (object\|null)}\|null)&gt;</code>
+    * [.sign(requestHash, answer, [options])](#module_types/delegation..Delegation+sign) ⇒ <code>Promise.&lt;{uri: string, hash: string}&gt;</code>
+    * [.decline(requestHash, [reason], [options])](#module_types/delegation..Delegation+decline) ⇒ <code>Promise.&lt;{uri: string, hash: string}&gt;</code>
+    * [.receive(input, [context])](#module_types/delegation..Delegation+receive) ⇒ <code>Promise.&lt;object&gt;</code>
+    * [.frames()](#module_types/delegation..Delegation+frames) ⇒ <code>Promise.&lt;Array.&lt;object&gt;&gt;</code>
+
+<a name="new_module_types/delegation..Delegation_new"></a>
+
+#### new Delegation(settings)
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| settings | <code>Object</code> |  |  |
+| settings.key | [<code>Key</code>](#Key) |  | This participant's identity key (private). |
+| [settings.store] | <code>Object</code> |  | `{ get(key), set(key, value) }` (async); in memory when omitted. |
+| [settings.collection] | <code>string</code> | <code>&quot;&#x27;delegations&#x27;&quot;</code> | Store key for this participant's record. |
+| [settings.now] | <code>function</code> |  | Clock (ms). |
+| [settings.maxFrames] | <code>number</code> | <code>2000</code> | Frames kept in the message store. |
+| [settings.maxPending] | <code>number</code> | <code>200</code> | Pending requests kept. |
+| [settings.networkOf] | <code>function</code> |  | `(read) => network` for requests whose frame names none (federation withdrawals). |
+
+<a name="module_types/delegation..Delegation+pubkey"></a>
+
+#### delegation.pubkey
+Compressed pubkey of this participant.
+
+**Kind**: instance property of [<code>Delegation</code>](#module_types/delegation..Delegation)  
+<a name="module_types/delegation..Delegation+load"></a>
+
+#### delegation.load() ⇒ <code>Promise.&lt;Delegation&gt;</code>
+Load the stored record (called by every method; safe to call again).
+
+**Kind**: instance method of [<code>Delegation</code>](#module_types/delegation..Delegation)  
+<a name="module_types/delegation..Delegation+offer"></a>
+
+#### delegation.offer(params) ⇒ <code>Promise.&lt;{uri: string, linkId: string, expiresAt: number}&gt;</code>
+Start pairing through a rendezvous.
+
+**Kind**: instance method of [<code>Delegation</code>](#module_types/delegation..Delegation)  
+
+| Param | Type |
+| --- | --- |
+| params | <code>Object</code> | 
+
+<a name="module_types/delegation..Delegation+answer"></a>
+
+#### delegation.answer(offer, [params]) ⇒ <code>Promise.&lt;{uri: string, linkId: string, peer: string, peerPubkey: string}&gt;</code>
+Answer another participant's offer.
+
+**Kind**: instance method of [<code>Delegation</code>](#module_types/delegation..Delegation)  
+
+| Param | Type |
+| --- | --- |
+| offer | <code>string</code> \| <code>Buffer</code> | 
+| [params] | <code>Object</code> | 
+
+<a name="module_types/delegation..Delegation+sasFor"></a>
+
+#### delegation.sasFor(linkId) ⇒ <code>Promise.&lt;(string\|null)&gt;</code>
+Code to show for a pairing once both nonces are known, or null.
+
+**Kind**: instance method of [<code>Delegation</code>](#module_types/delegation..Delegation)  
+
+| Param | Type |
+| --- | --- |
+| linkId | <code>string</code> | 
+
+<a name="module_types/delegation..Delegation+confirmLink"></a>
+
+#### delegation.confirmLink(linkId) ⇒ <code>Promise.&lt;{linkId: string, peer: string, peerPubkey: (string\|null), revealHash: string}&gt;</code>
+The user confirmed both screens show the same code.
+
+**Kind**: instance method of [<code>Delegation</code>](#module_types/delegation..Delegation)  
+
+| Param | Type |
+| --- | --- |
+| linkId | <code>string</code> | 
+
+<a name="module_types/delegation..Delegation+links"></a>
+
+#### delegation.links() ⇒ <code>Promise.&lt;Array.&lt;object&gt;&gt;</code>
+Pairings, newest first (no secrets).
+
+**Kind**: instance method of [<code>Delegation</code>](#module_types/delegation..Delegation)  
+<a name="module_types/delegation..Delegation+grant"></a>
+
+#### delegation.grant(params) ⇒ <code>Promise.&lt;{uri: string, hash: string}&gt;</code>
+Let `grantee` ask this participant to sign.
+
+**Kind**: instance method of [<code>Delegation</code>](#module_types/delegation..Delegation)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| params | <code>Object</code> | See [Delegation.createGrant](Delegation.createGrant). |
+
+<a name="module_types/delegation..Delegation+revoke"></a>
+
+#### delegation.revoke(grantHash) ⇒ <code>Promise.&lt;{uri: string, hash: string}&gt;</code>
+Withdraw a grant this participant made.
+
+**Kind**: instance method of [<code>Delegation</code>](#module_types/delegation..Delegation)  
+
+| Param | Type |
+| --- | --- |
+| grantHash | <code>string</code> | 
+
+<a name="module_types/delegation..Delegation+grants"></a>
+
+#### delegation.grants(which, [options]) ⇒ <code>Promise.&lt;Array.&lt;object&gt;&gt;</code>
+Grants this participant made (`given`) or holds from others (`received`), unrevoked unless asked.
+
+**Kind**: instance method of [<code>Delegation</code>](#module_types/delegation..Delegation)  
+**Returns**: <code>Promise.&lt;Array.&lt;object&gt;&gt;</code> - `{ hash, uri, grant, revoked }`  
+
+| Param | Type | Default |
+| --- | --- | --- |
+| which | <code>&#x27;given&#x27;</code> \| <code>&#x27;received&#x27;</code> | <code>given</code> | 
+| [options] | <code>Object</code> |  | 
+
+<a name="module_types/delegation..Delegation+identityPeers"></a>
+
+#### delegation.identityPeers() ⇒ <code>Promise.&lt;Array.&lt;string&gt;&gt;</code>
+Participants linked as the same person (mutual `identity` grants).
+
+**Kind**: instance method of [<code>Delegation</code>](#module_types/delegation..Delegation)  
+<a name="module_types/delegation..Delegation+grantFrom"></a>
+
+#### delegation.grantFrom(grantor, scope) ⇒ <code>Promise.&lt;(object\|null)&gt;</code>
+The unrevoked grant `grantor` made to this participant covering `scope`, if any.
+
+**Kind**: instance method of [<code>Delegation</code>](#module_types/delegation..Delegation)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| grantor | <code>string</code> | Pubkey. |
+| scope | <code>string</code> |  |
+
+<a name="module_types/delegation..Delegation+request"></a>
+
+#### delegation.request(params) ⇒ <code>Promise.&lt;{uri: string, hash: string, scope: string, expiresAt: number}&gt;</code>
+Ask `target` to sign a frame, under its newest grant covering the frame's scope.
+
+**Kind**: instance method of [<code>Delegation</code>](#module_types/delegation..Delegation)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| params | <code>Object</code> | See `createRequest`; `grant` is found when omitted. |
+
+<a name="module_types/delegation..Delegation+pending"></a>
+
+#### delegation.pending() ⇒ <code>Promise.&lt;Array.&lt;{hash: string, read: object, notification: object, receivedAt: number}&gt;&gt;</code>
+Requests waiting for this participant's answer, oldest first.
+
+**Kind**: instance method of [<code>Delegation</code>](#module_types/delegation..Delegation)  
+<a name="module_types/delegation..Delegation+inboxItem"></a>
+
+#### delegation.inboxItem(hash) ⇒ <code>Promise.&lt;({hash: string, status: string, read: object, result: (string\|null)}\|null)&gt;</code>
+A request this participant received (any status).
+
+**Kind**: instance method of [<code>Delegation</code>](#module_types/delegation..Delegation)  
+
+| Param | Type |
+| --- | --- |
+| hash | <code>string</code> | 
+
+<a name="module_types/delegation..Delegation+outboxItem"></a>
+
+#### delegation.outboxItem(hash) ⇒ <code>Promise.&lt;({hash: string, status: string, result: (object\|null)}\|null)&gt;</code>
+A request this participant sent, with its result once it arrived.
+
+**Kind**: instance method of [<code>Delegation</code>](#module_types/delegation..Delegation)  
+
+| Param | Type |
+| --- | --- |
+| hash | <code>string</code> | 
+
+<a name="module_types/delegation..Delegation+sign"></a>
+
+#### delegation.sign(requestHash, answer, [options]) ⇒ <code>Promise.&lt;{uri: string, hash: string}&gt;</code>
+Answer a pending request with a signed frame.
+
+**Kind**: instance method of [<code>Delegation</code>](#module_types/delegation..Delegation)  
+
+| Param | Type |
+| --- | --- |
+| requestHash | <code>string</code> | 
+| answer | <code>string</code> \| <code>Buffer</code> \| [<code>Message</code>](#Message) | 
+| [options] | <code>Object</code> | 
+
+<a name="module_types/delegation..Delegation+decline"></a>
+
+#### delegation.decline(requestHash, [reason], [options]) ⇒ <code>Promise.&lt;{uri: string, hash: string}&gt;</code>
+Refuse a pending request.
+
+**Kind**: instance method of [<code>Delegation</code>](#module_types/delegation..Delegation)  
+
+| Param | Type | Default |
+| --- | --- | --- |
+| requestHash | <code>string</code> |  | 
+| [reason] | <code>string</code> | <code>&quot;declined&quot;</code> | 
+| [options] | <code>Object</code> |  | 
+
+<a name="module_types/delegation..Delegation+receive"></a>
+
+#### delegation.receive(input, [context]) ⇒ <code>Promise.&lt;object&gt;</code>
+Take in any delegation frame addressed to this participant.
+
+**Kind**: instance method of [<code>Delegation</code>](#module_types/delegation..Delegation)  
+**Returns**: <code>Promise.&lt;object&gt;</code> - `{ ok, type, ... }`; `ok: false` with `error` when refused.  
+
+| Param | Type |
+| --- | --- |
+| input | <code>string</code> \| <code>Buffer</code> \| [<code>Message</code>](#Message) | 
+| [context] | <code>Object</code> | 
+
+<a name="module_types/delegation..Delegation+frames"></a>
+
+#### delegation.frames() ⇒ <code>Promise.&lt;Array.&lt;object&gt;&gt;</code>
+Every frame this participant sent or received, oldest first, as
+`FabricMessageCollection`-style records (`hash`, `hex`, `type`, `direction`, `at`).
+
+**Kind**: instance method of [<code>Delegation</code>](#module_types/delegation..Delegation)  
+<a name="module_types/delegation..Delegation"></a>
+
+### types/delegation~Delegation
+**Kind**: inner class of [<code>types/delegation</code>](#module_types/delegation)  
+
+* [~Delegation](#module_types/delegation..Delegation)
+    * [new Delegation(settings)](#new_module_types/delegation..Delegation_new)
+    * [.pubkey](#module_types/delegation..Delegation+pubkey)
+    * [.load()](#module_types/delegation..Delegation+load) ⇒ <code>Promise.&lt;Delegation&gt;</code>
+    * [.offer(params)](#module_types/delegation..Delegation+offer) ⇒ <code>Promise.&lt;{uri: string, linkId: string, expiresAt: number}&gt;</code>
+    * [.answer(offer, [params])](#module_types/delegation..Delegation+answer) ⇒ <code>Promise.&lt;{uri: string, linkId: string, peer: string, peerPubkey: string}&gt;</code>
+    * [.sasFor(linkId)](#module_types/delegation..Delegation+sasFor) ⇒ <code>Promise.&lt;(string\|null)&gt;</code>
+    * [.confirmLink(linkId)](#module_types/delegation..Delegation+confirmLink) ⇒ <code>Promise.&lt;{linkId: string, peer: string, peerPubkey: (string\|null), revealHash: string}&gt;</code>
+    * [.links()](#module_types/delegation..Delegation+links) ⇒ <code>Promise.&lt;Array.&lt;object&gt;&gt;</code>
+    * [.grant(params)](#module_types/delegation..Delegation+grant) ⇒ <code>Promise.&lt;{uri: string, hash: string}&gt;</code>
+    * [.revoke(grantHash)](#module_types/delegation..Delegation+revoke) ⇒ <code>Promise.&lt;{uri: string, hash: string}&gt;</code>
+    * [.grants(which, [options])](#module_types/delegation..Delegation+grants) ⇒ <code>Promise.&lt;Array.&lt;object&gt;&gt;</code>
+    * [.identityPeers()](#module_types/delegation..Delegation+identityPeers) ⇒ <code>Promise.&lt;Array.&lt;string&gt;&gt;</code>
+    * [.grantFrom(grantor, scope)](#module_types/delegation..Delegation+grantFrom) ⇒ <code>Promise.&lt;(object\|null)&gt;</code>
+    * [.request(params)](#module_types/delegation..Delegation+request) ⇒ <code>Promise.&lt;{uri: string, hash: string, scope: string, expiresAt: number}&gt;</code>
+    * [.pending()](#module_types/delegation..Delegation+pending) ⇒ <code>Promise.&lt;Array.&lt;{hash: string, read: object, notification: object, receivedAt: number}&gt;&gt;</code>
+    * [.inboxItem(hash)](#module_types/delegation..Delegation+inboxItem) ⇒ <code>Promise.&lt;({hash: string, status: string, read: object, result: (string\|null)}\|null)&gt;</code>
+    * [.outboxItem(hash)](#module_types/delegation..Delegation+outboxItem) ⇒ <code>Promise.&lt;({hash: string, status: string, result: (object\|null)}\|null)&gt;</code>
+    * [.sign(requestHash, answer, [options])](#module_types/delegation..Delegation+sign) ⇒ <code>Promise.&lt;{uri: string, hash: string}&gt;</code>
+    * [.decline(requestHash, [reason], [options])](#module_types/delegation..Delegation+decline) ⇒ <code>Promise.&lt;{uri: string, hash: string}&gt;</code>
+    * [.receive(input, [context])](#module_types/delegation..Delegation+receive) ⇒ <code>Promise.&lt;object&gt;</code>
+    * [.frames()](#module_types/delegation..Delegation+frames) ⇒ <code>Promise.&lt;Array.&lt;object&gt;&gt;</code>
+
+<a name="new_module_types/delegation..Delegation_new"></a>
+
+#### new Delegation(settings)
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| settings | <code>Object</code> |  |  |
+| settings.key | [<code>Key</code>](#Key) |  | This participant's identity key (private). |
+| [settings.store] | <code>Object</code> |  | `{ get(key), set(key, value) }` (async); in memory when omitted. |
+| [settings.collection] | <code>string</code> | <code>&quot;&#x27;delegations&#x27;&quot;</code> | Store key for this participant's record. |
+| [settings.now] | <code>function</code> |  | Clock (ms). |
+| [settings.maxFrames] | <code>number</code> | <code>2000</code> | Frames kept in the message store. |
+| [settings.maxPending] | <code>number</code> | <code>200</code> | Pending requests kept. |
+| [settings.networkOf] | <code>function</code> |  | `(read) => network` for requests whose frame names none (federation withdrawals). |
+
+<a name="module_types/delegation..Delegation+pubkey"></a>
+
+#### delegation.pubkey
+Compressed pubkey of this participant.
+
+**Kind**: instance property of [<code>Delegation</code>](#module_types/delegation..Delegation)  
+<a name="module_types/delegation..Delegation+load"></a>
+
+#### delegation.load() ⇒ <code>Promise.&lt;Delegation&gt;</code>
+Load the stored record (called by every method; safe to call again).
+
+**Kind**: instance method of [<code>Delegation</code>](#module_types/delegation..Delegation)  
+<a name="module_types/delegation..Delegation+offer"></a>
+
+#### delegation.offer(params) ⇒ <code>Promise.&lt;{uri: string, linkId: string, expiresAt: number}&gt;</code>
+Start pairing through a rendezvous.
+
+**Kind**: instance method of [<code>Delegation</code>](#module_types/delegation..Delegation)  
+
+| Param | Type |
+| --- | --- |
+| params | <code>Object</code> | 
+
+<a name="module_types/delegation..Delegation+answer"></a>
+
+#### delegation.answer(offer, [params]) ⇒ <code>Promise.&lt;{uri: string, linkId: string, peer: string, peerPubkey: string}&gt;</code>
+Answer another participant's offer.
+
+**Kind**: instance method of [<code>Delegation</code>](#module_types/delegation..Delegation)  
+
+| Param | Type |
+| --- | --- |
+| offer | <code>string</code> \| <code>Buffer</code> | 
+| [params] | <code>Object</code> | 
+
+<a name="module_types/delegation..Delegation+sasFor"></a>
+
+#### delegation.sasFor(linkId) ⇒ <code>Promise.&lt;(string\|null)&gt;</code>
+Code to show for a pairing once both nonces are known, or null.
+
+**Kind**: instance method of [<code>Delegation</code>](#module_types/delegation..Delegation)  
+
+| Param | Type |
+| --- | --- |
+| linkId | <code>string</code> | 
+
+<a name="module_types/delegation..Delegation+confirmLink"></a>
+
+#### delegation.confirmLink(linkId) ⇒ <code>Promise.&lt;{linkId: string, peer: string, peerPubkey: (string\|null), revealHash: string}&gt;</code>
+The user confirmed both screens show the same code.
+
+**Kind**: instance method of [<code>Delegation</code>](#module_types/delegation..Delegation)  
+
+| Param | Type |
+| --- | --- |
+| linkId | <code>string</code> | 
+
+<a name="module_types/delegation..Delegation+links"></a>
+
+#### delegation.links() ⇒ <code>Promise.&lt;Array.&lt;object&gt;&gt;</code>
+Pairings, newest first (no secrets).
+
+**Kind**: instance method of [<code>Delegation</code>](#module_types/delegation..Delegation)  
+<a name="module_types/delegation..Delegation+grant"></a>
+
+#### delegation.grant(params) ⇒ <code>Promise.&lt;{uri: string, hash: string}&gt;</code>
+Let `grantee` ask this participant to sign.
+
+**Kind**: instance method of [<code>Delegation</code>](#module_types/delegation..Delegation)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| params | <code>Object</code> | See [Delegation.createGrant](Delegation.createGrant). |
+
+<a name="module_types/delegation..Delegation+revoke"></a>
+
+#### delegation.revoke(grantHash) ⇒ <code>Promise.&lt;{uri: string, hash: string}&gt;</code>
+Withdraw a grant this participant made.
+
+**Kind**: instance method of [<code>Delegation</code>](#module_types/delegation..Delegation)  
+
+| Param | Type |
+| --- | --- |
+| grantHash | <code>string</code> | 
+
+<a name="module_types/delegation..Delegation+grants"></a>
+
+#### delegation.grants(which, [options]) ⇒ <code>Promise.&lt;Array.&lt;object&gt;&gt;</code>
+Grants this participant made (`given`) or holds from others (`received`), unrevoked unless asked.
+
+**Kind**: instance method of [<code>Delegation</code>](#module_types/delegation..Delegation)  
+**Returns**: <code>Promise.&lt;Array.&lt;object&gt;&gt;</code> - `{ hash, uri, grant, revoked }`  
+
+| Param | Type | Default |
+| --- | --- | --- |
+| which | <code>&#x27;given&#x27;</code> \| <code>&#x27;received&#x27;</code> | <code>given</code> | 
+| [options] | <code>Object</code> |  | 
+
+<a name="module_types/delegation..Delegation+identityPeers"></a>
+
+#### delegation.identityPeers() ⇒ <code>Promise.&lt;Array.&lt;string&gt;&gt;</code>
+Participants linked as the same person (mutual `identity` grants).
+
+**Kind**: instance method of [<code>Delegation</code>](#module_types/delegation..Delegation)  
+<a name="module_types/delegation..Delegation+grantFrom"></a>
+
+#### delegation.grantFrom(grantor, scope) ⇒ <code>Promise.&lt;(object\|null)&gt;</code>
+The unrevoked grant `grantor` made to this participant covering `scope`, if any.
+
+**Kind**: instance method of [<code>Delegation</code>](#module_types/delegation..Delegation)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| grantor | <code>string</code> | Pubkey. |
+| scope | <code>string</code> |  |
+
+<a name="module_types/delegation..Delegation+request"></a>
+
+#### delegation.request(params) ⇒ <code>Promise.&lt;{uri: string, hash: string, scope: string, expiresAt: number}&gt;</code>
+Ask `target` to sign a frame, under its newest grant covering the frame's scope.
+
+**Kind**: instance method of [<code>Delegation</code>](#module_types/delegation..Delegation)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| params | <code>Object</code> | See `createRequest`; `grant` is found when omitted. |
+
+<a name="module_types/delegation..Delegation+pending"></a>
+
+#### delegation.pending() ⇒ <code>Promise.&lt;Array.&lt;{hash: string, read: object, notification: object, receivedAt: number}&gt;&gt;</code>
+Requests waiting for this participant's answer, oldest first.
+
+**Kind**: instance method of [<code>Delegation</code>](#module_types/delegation..Delegation)  
+<a name="module_types/delegation..Delegation+inboxItem"></a>
+
+#### delegation.inboxItem(hash) ⇒ <code>Promise.&lt;({hash: string, status: string, read: object, result: (string\|null)}\|null)&gt;</code>
+A request this participant received (any status).
+
+**Kind**: instance method of [<code>Delegation</code>](#module_types/delegation..Delegation)  
+
+| Param | Type |
+| --- | --- |
+| hash | <code>string</code> | 
+
+<a name="module_types/delegation..Delegation+outboxItem"></a>
+
+#### delegation.outboxItem(hash) ⇒ <code>Promise.&lt;({hash: string, status: string, result: (object\|null)}\|null)&gt;</code>
+A request this participant sent, with its result once it arrived.
+
+**Kind**: instance method of [<code>Delegation</code>](#module_types/delegation..Delegation)  
+
+| Param | Type |
+| --- | --- |
+| hash | <code>string</code> | 
+
+<a name="module_types/delegation..Delegation+sign"></a>
+
+#### delegation.sign(requestHash, answer, [options]) ⇒ <code>Promise.&lt;{uri: string, hash: string}&gt;</code>
+Answer a pending request with a signed frame.
+
+**Kind**: instance method of [<code>Delegation</code>](#module_types/delegation..Delegation)  
+
+| Param | Type |
+| --- | --- |
+| requestHash | <code>string</code> | 
+| answer | <code>string</code> \| <code>Buffer</code> \| [<code>Message</code>](#Message) | 
+| [options] | <code>Object</code> | 
+
+<a name="module_types/delegation..Delegation+decline"></a>
+
+#### delegation.decline(requestHash, [reason], [options]) ⇒ <code>Promise.&lt;{uri: string, hash: string}&gt;</code>
+Refuse a pending request.
+
+**Kind**: instance method of [<code>Delegation</code>](#module_types/delegation..Delegation)  
+
+| Param | Type | Default |
+| --- | --- | --- |
+| requestHash | <code>string</code> |  | 
+| [reason] | <code>string</code> | <code>&quot;declined&quot;</code> | 
+| [options] | <code>Object</code> |  | 
+
+<a name="module_types/delegation..Delegation+receive"></a>
+
+#### delegation.receive(input, [context]) ⇒ <code>Promise.&lt;object&gt;</code>
+Take in any delegation frame addressed to this participant.
+
+**Kind**: instance method of [<code>Delegation</code>](#module_types/delegation..Delegation)  
+**Returns**: <code>Promise.&lt;object&gt;</code> - `{ ok, type, ... }`; `ok: false` with `error` when refused.  
+
+| Param | Type |
+| --- | --- |
+| input | <code>string</code> \| <code>Buffer</code> \| [<code>Message</code>](#Message) | 
+| [context] | <code>Object</code> | 
+
+<a name="module_types/delegation..Delegation+frames"></a>
+
+#### delegation.frames() ⇒ <code>Promise.&lt;Array.&lt;object&gt;&gt;</code>
+Every frame this participant sent or received, oldest first, as
+`FabricMessageCollection`-style records (`hash`, `hex`, `type`, `direction`, `at`).
+
+**Kind**: instance method of [<code>Delegation</code>](#module_types/delegation..Delegation)  
+<a name="module_types/delegation..DELEGATION_VERSION"></a>
+
+### types/delegation~DELEGATION\_VERSION
+Protocol version carried in every frame. Restrictions (a grant's `peers`,
+a request's `sessionKey` and `clientNonce`) are required fields, empty when
+unused, never optional trailing fields a reader could skip.
+
+**Kind**: inner constant of [<code>types/delegation</code>](#module_types/delegation)  
+<a name="module_types/delegation..DELEGATION_SCOPES"></a>
+
+### types/delegation~DELEGATION\_SCOPES
+What a grant may allow.
+
+**Kind**: inner constant of [<code>types/delegation</code>](#module_types/delegation)  
+<a name="module_types/delegation..DELEGATION_LINK_TTL_MS"></a>
+
+### types/delegation~DELEGATION\_LINK\_TTL\_MS
+Default lifetime of a pairing frame or a mailbox read.
+
+**Kind**: inner constant of [<code>types/delegation</code>](#module_types/delegation)  
+<a name="module_types/delegation..DELEGATION_REQUEST_TTL_MS"></a>
+
+### types/delegation~DELEGATION\_REQUEST\_TTL\_MS
+Default lifetime of a request.
+
+**Kind**: inner constant of [<code>types/delegation</code>](#module_types/delegation)  
+<a name="module_types/delegation..DELEGATION_CLOCK_SKEW_MS"></a>
+
+### types/delegation~DELEGATION\_CLOCK\_SKEW\_MS
+Allowed clock difference between participants.
+
+**Kind**: inner constant of [<code>types/delegation</code>](#module_types/delegation)  
+<a name="module_types/delegation..DELEGATION_MAX_LABEL"></a>
+
+### types/delegation~DELEGATION\_MAX\_LABEL
+Longest label or purpose text.
+
+**Kind**: inner constant of [<code>types/delegation</code>](#module_types/delegation)  
+<a name="module_types/delegation..FEDERATION_REQUEST_TYPES"></a>
+
+### types/delegation~FEDERATION\_REQUEST\_TYPES
+Federation message types a delegate may be asked to answer.
+
+**Kind**: inner constant of [<code>types/delegation</code>](#module_types/delegation)  
+<a name="module_types/delegation..MESSAGE_SCOPE_TYPES"></a>
+
+### types/delegation~MESSAGE\_SCOPE\_TYPES
+Frame types a `message` grant lets the grantee have signed (never protocol frames).
+
+**Kind**: inner constant of [<code>types/delegation</code>](#module_types/delegation)  
+<a name="module_types/delegation..GENERIC_PROTOCOL_BODY_TYPES"></a>
+
+### types/delegation~GENERIC\_PROTOCOL\_BODY\_TYPES
+GENERIC_MESSAGE body types Peer (`Peer#_handleGenericMessage`) or a Fabric
+app acts on as protocol. A `message` grant never gets the user's signature
+on one of these, nor on any body named like a registered wire type.
+
+**Kind**: inner constant of [<code>types/delegation</code>](#module_types/delegation)  
+<a name="module_types/delegation..frameHash"></a>
+
+### types/delegation~frameHash(frame) ⇒ <code>string</code>
+sha256 of a frame, hex: the id every participant uses for it.
+
+**Kind**: inner method of [<code>types/delegation</code>](#module_types/delegation)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| frame | <code>string</code> \| <code>Buffer</code> \| [<code>Message</code>](#Message) | `fabric:` string, frame bytes, or Message. |
+
+<a name="module_types/delegation..xOnly"></a>
+
+### types/delegation~xOnly(pubkey) ⇒ <code>string</code> \| <code>null</code>
+x-only hex of a compressed or x-only pubkey.
+
+**Kind**: inner method of [<code>types/delegation</code>](#module_types/delegation)  
+
+| Param | Type |
+| --- | --- |
+| pubkey | <code>string</code> | 
+
+<a name="module_types/delegation..cleanLabel"></a>
+
+### types/delegation~cleanLabel(label, [max]) ⇒ <code>string</code>
+Label as shown and signed: no control or bidi characters, at most 64 characters.
+
+**Kind**: inner method of [<code>types/delegation</code>](#module_types/delegation)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| label | <code>string</code> |  |
+| [max] | <code>number</code> | Longest kept (purposes and refusals keep 140). |
+
+<a name="module_types/delegation..federationIdsError"></a>
+
+### types/delegation~federationIdsError(body) ⇒ <code>string</code> \| <code>null</code>
+Federation members accept only canonical ids (`Federation.verifySender`,
+`verifyWithdrawalRequest`): a lowercase 64-hex federation id that is also the
+contract, and a lowercase 64-hex request id on withdrawal messages.
+
+**Kind**: inner method of [<code>types/delegation</code>](#module_types/delegation)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| body | <code>Object</code> | federation message body |
+
+<a name="module_types/delegation..normalizeExtensionOrigin"></a>
+
+### types/delegation~normalizeExtensionOrigin(value) ⇒ <code>string</code> \| <code>null</code>
+Browser extension origin (`chrome-extension://<id>`, `moz-extension://<uuid>`), or null.
+
+**Kind**: inner method of [<code>types/delegation</code>](#module_types/delegation)  
+
+| Param | Type |
+| --- | --- |
+| value | <code>string</code> | 
+
+<a name="module_types/delegation..commitment"></a>
+
+### types/delegation~commitment(initiator, nonce) ⇒ <code>string</code>
+Commitment an offer carries: sha256 over the tag, the initiator's x-only
+pubkey, and its secret nonce.
+
+**Kind**: inner method of [<code>types/delegation</code>](#module_types/delegation)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| initiator | <code>string</code> | Pubkey hex. |
+| nonce | <code>string</code> | 64 hex. |
+
+<a name="module_types/delegation..sas"></a>
+
+### types/delegation~sas(params) ⇒ <code>string</code>
+The six-digit code both sides show once the reveal is in.
+
+**Kind**: inner method of [<code>types/delegation</code>](#module_types/delegation)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| params | <code>Object</code> |  |
+| params.initiator | <code>string</code> | Pubkey hex (offer author). |
+| params.responder | <code>string</code> | Pubkey hex (answer author). |
+| params.initiatorNonce | <code>string</code> |  |
+| params.responderNonce | <code>string</code> |  |
+| params.linkId | <code>string</code> | Offer frame hash. |
+
+<a name="module_types/delegation..createLinkOffer"></a>
+
+### types/delegation~createLinkOffer(params, key) ⇒ <code>Object</code>
+Start pairing.
+
+**Kind**: inner method of [<code>types/delegation</code>](#module_types/delegation)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| params | <code>Object</code> |  |
+| params.origin | <code>string</code> | The rendezvous (Hub) the frames go through. |
+| [params.label] | <code>string</code> | What this participant calls itself. |
+| [params.network] | <code>string</code> |  |
+| [params.nonce] | <code>string</code> | Secret nonce (generated when omitted); keep it for the reveal. |
+| [params.ttlMs] | <code>number</code> |  |
+| [params.now] | <code>number</code> |  |
+| key | [<code>Key</code>](#Key) |  |
+
+<a name="module_types/delegation..readLinkOffer"></a>
+
+### types/delegation~readLinkOffer(input, [options]) ⇒ <code>Object</code> \| <code>Object</code>
+Read a `DELEGATION_LINK_OFFER`.
+
+**Kind**: inner method of [<code>types/delegation</code>](#module_types/delegation)  
+
+| Param | Type |
+| --- | --- |
+| input | <code>string</code> \| <code>Buffer</code> \| [<code>Message</code>](#Message) | 
+| [options] | <code>Object</code> | 
+
+<a name="module_types/delegation..createLinkAnswer"></a>
+
+### types/delegation~createLinkAnswer(params, key) ⇒ <code>Object</code>
+Answer an offer with this participant's nonce (picked after the commitment is fixed).
+
+**Kind**: inner method of [<code>types/delegation</code>](#module_types/delegation)  
+
+| Param | Type |
+| --- | --- |
+| params | <code>Object</code> | 
+| params.offer | <code>string</code> \| <code>Buffer</code> \| [<code>Message</code>](#Message) | 
+| [params.label] | <code>string</code> | 
+| [params.nonce] | <code>string</code> | 
+| [params.ttlMs] | <code>number</code> | 
+| [params.now] | <code>number</code> | 
+| key | [<code>Key</code>](#Key) | 
+
+<a name="module_types/delegation..readLinkAnswer"></a>
+
+### types/delegation~readLinkAnswer(input, [options]) ⇒ <code>Object</code> \| <code>Object</code>
+Read a `DELEGATION_LINK_ANSWER`.
+
+**Kind**: inner method of [<code>types/delegation</code>](#module_types/delegation)  
+
+| Param | Type |
+| --- | --- |
+| input | <code>string</code> \| <code>Buffer</code> \| [<code>Message</code>](#Message) | 
+| [options] | <code>Object</code> | 
+
+<a name="module_types/delegation..createLinkReveal"></a>
+
+### types/delegation~createLinkReveal(params, key) ⇒ <code>Object</code>
+Open the commitment once the answer is in.
+
+**Kind**: inner method of [<code>types/delegation</code>](#module_types/delegation)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| params | <code>Object</code> |  |
+| params.offer | <code>string</code> \| <code>Buffer</code> \| [<code>Message</code>](#Message) | This participant's own offer. |
+| params.answer | <code>string</code> \| <code>Buffer</code> \| [<code>Message</code>](#Message) |  |
+| params.nonce | <code>string</code> | The secret nonce the offer committed to. |
+| [params.ttlMs] | <code>number</code> |  |
+| [params.now] | <code>number</code> |  |
+| key | [<code>Key</code>](#Key) |  |
+
+<a name="module_types/delegation..readLinkReveal"></a>
+
+### types/delegation~readLinkReveal(input, [options]) ⇒ <code>Object</code> \| <code>Object</code>
+Read a `DELEGATION_LINK_REVEAL`.
+
+**Kind**: inner method of [<code>types/delegation</code>](#module_types/delegation)  
+
+| Param | Type |
+| --- | --- |
+| input | <code>string</code> \| <code>Buffer</code> \| [<code>Message</code>](#Message) | 
+| [options] | <code>Object</code> | 
+
+<a name="module_types/delegation..verifyLink"></a>
+
+### types/delegation~verifyLink(frames, [options]) ⇒ <code>Object</code> \| <code>Object</code>
+Check a whole pairing transcript and compute its code. Each side runs this
+on the three frames before showing the code.
+
+**Kind**: inner method of [<code>types/delegation</code>](#module_types/delegation)  
+
+| Param | Type |
+| --- | --- |
+| frames | <code>Object</code> | 
+| frames.offer | <code>string</code> \| <code>Buffer</code> \| [<code>Message</code>](#Message) | 
+| frames.answer | <code>string</code> \| <code>Buffer</code> \| [<code>Message</code>](#Message) | 
+| frames.reveal | <code>string</code> \| <code>Buffer</code> \| [<code>Message</code>](#Message) | 
+| [options] | <code>Object</code> | 
+
+<a name="module_types/delegation..grantCosignerScope"></a>
+
+### types/delegation~grantCosignerScope(grant) ⇒ <code>string</code>
+Scope a grant's cosigner proof to that grant.
+
+**Kind**: inner method of [<code>types/delegation</code>](#module_types/delegation)  
+
+| Param | Type |
+| --- | --- |
+| grant | <code>Object</code> | 
+
+<a name="module_types/delegation..createGrant"></a>
+
+### types/delegation~createGrant(params, key) ⇒ <code>Object</code>
+Let `grantee` ask this key to sign.
+
+**Kind**: inner method of [<code>types/delegation</code>](#module_types/delegation)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| params | <code>Object</code> |  |
+| params.grantee | <code>string</code> | Compressed pubkey. |
+| params.scopes | <code>Array.&lt;string&gt;</code> | Any of [DELEGATION_SCOPES](DELEGATION_SCOPES). |
+| [params.origins] | <code>Array.&lt;string&gt;</code> | Limit `passport` requests to these sites. |
+| [params.peers] | <code>Array.&lt;string&gt;</code> | Limit `passport` peer sign-ins (v3) to these peer pubkeys. |
+| [params.networks] | <code>Array.&lt;string&gt;</code> | Limit requests to these networks. |
+| [params.link] | <code>string</code> | Reveal hash of the pairing it follows. |
+| [params.cosignerKey] | [<code>Key</code>](#Key) | Disclose this participant's cosigner key. |
+| [params.extensionOrigin] | <code>string</code> | The author's browser extension origin (Passport). |
+| [params.label] | <code>string</code> |  |
+| [params.now] | <code>number</code> |  |
+| key | [<code>Key</code>](#Key) | The granting identity key. |
+
+<a name="module_types/delegation..readGrant"></a>
+
+### types/delegation~readGrant(input, [options]) ⇒ <code>Object</code> \| <code>Object</code>
+Read a `DELEGATION_GRANT`, checking its cosigner proof.
+
+**Kind**: inner method of [<code>types/delegation</code>](#module_types/delegation)  
+
+| Param | Type |
+| --- | --- |
+| input | <code>string</code> \| <code>Buffer</code> \| [<code>Message</code>](#Message) | 
+| [options] | <code>Object</code> | 
+
+<a name="module_types/delegation..createRevoke"></a>
+
+### types/delegation~createRevoke(params, key) ⇒ <code>Object</code>
+Withdraw a grant this key made.
+
+**Kind**: inner method of [<code>types/delegation</code>](#module_types/delegation)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| params | <code>Object</code> |  |
+| params.grant | <code>string</code> | Grant hash (or the grant frame). |
+| [params.now] | <code>number</code> |  |
+| key | [<code>Key</code>](#Key) |  |
+
+<a name="module_types/delegation..readRevoke"></a>
+
+### types/delegation~readRevoke(input, [options]) ⇒ <code>Object</code> \| <code>Object</code>
+Read a `DELEGATION_REVOKE`. The caller checks its author made the grant.
+
+**Kind**: inner method of [<code>types/delegation</code>](#module_types/delegation)  
+
+| Param | Type |
+| --- | --- |
+| input | <code>string</code> \| <code>Buffer</code> \| [<code>Message</code>](#Message) | 
+| [options] | <code>Object</code> | 
+
+<a name="module_types/delegation..readInnerFrame"></a>
+
+### types/delegation~readInnerFrame(buffer, [options]) ⇒ <code>Object</code> \| <code>Object</code>
+What an embedded frame asks for, and under which scope.
+
+**Kind**: inner method of [<code>types/delegation</code>](#module_types/delegation)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| buffer | <code>Buffer</code> | Inner frame bytes. |
+| [options] | <code>Object</code> |  |
+
+<a name="module_types/delegation..createRequest"></a>
+
+### types/delegation~createRequest(params, key) ⇒ <code>Object</code>
+Ask `target` to sign one frame, under the grant it made to this key.
+
+**Kind**: inner method of [<code>types/delegation</code>](#module_types/delegation)  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| params | <code>Object</code> |  |  |
+| params.target | <code>string</code> |  | Compressed pubkey of the participant asked. |
+| params.grant | <code>string</code> |  | Hash of the target's grant to this key. |
+| params.request | <code>string</code> \| <code>Buffer</code> \| [<code>Message</code>](#Message) |  | The frame to sign. |
+| [params.origin] | <code>string</code> |  | The origin this participant saw (Passport   challenges; for a v3 peer challenge, the page that asked, when there is one). |
+| [params.sessionKey] | <code>string</code> |  | v3 peer challenges: the session key the   target's assertion names (this participant holds its private key). |
+| [params.account] | <code>number</code> | <code>0</code> | Account index the target signs with. |
+| [params.disclose] | <code>Array.&lt;string&gt;</code> |  | What the user agreed to share (Passport challenges). |
+| [params.purpose] | <code>string</code> |  | Short text shown to the target's user. |
+| [params.ttlMs] | <code>number</code> |  |  |
+| [params.now] | <code>number</code> |  |  |
+| key | [<code>Key</code>](#Key) |  |  |
+
+<a name="module_types/delegation..readRequest"></a>
+
+### types/delegation~readRequest(input, [options]) ⇒ <code>Object</code> \| <code>Object</code>
+Read a `DELEGATION_REQUEST` and the frame it embeds. Whether the author may
+ask is [authorize](authorize)'s check, against the target's own grants.
+
+**Kind**: inner method of [<code>types/delegation</code>](#module_types/delegation)  
+
+| Param | Type |
+| --- | --- |
+| input | <code>string</code> \| <code>Buffer</code> \| [<code>Message</code>](#Message) | 
+| [options] | <code>Object</code> | 
+
+<a name="module_types/delegation..authorize"></a>
+
+### types/delegation~authorize(read, grants, [options]) ⇒ <code>Object</code> \| <code>Object</code>
+May this request be acted on? Checks it against the recipient's own grants:
+the named grant exists, was made by the target to the requester, is not
+revoked, covers the request's scope, and its origins / networks allow it.
+
+**Kind**: inner method of [<code>types/delegation</code>](#module_types/delegation)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| read | <code>Object</code> | An `ok` [readRequest](readRequest) result. |
+| grants | <code>Array.&lt;Object&gt;</code> | Grants the recipient made (read). |
+| [options] | <code>Object</code> |  |
+| [options.revoked] | <code>Set.&lt;string&gt;</code> \| <code>Array.&lt;string&gt;</code> | Revoked grant hashes. |
+| [options.networkOf] | <code>function</code> | `(read) => network` for frames that do not name one (a withdrawal names only its federation id). |
+
+<a name="module_types/delegation..createResult"></a>
+
+### types/delegation~createResult(params, key) ⇒ <code>Object</code>
+Answer (or refuse) a request.
+
+**Kind**: inner method of [<code>types/delegation</code>](#module_types/delegation)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| params | <code>Object</code> |  |
+| params.request | <code>string</code> | Request hash. |
+| [params.answer] | <code>string</code> \| <code>Buffer</code> \| [<code>Message</code>](#Message) | The signed answer frame. |
+| [params.refusal] | <code>string</code> | Why it was refused (when there is no answer). |
+| [params.rule] | <code>string</code> | Id of the rule that decided, if one did. |
+| [params.now] | <code>number</code> |  |
+| key | [<code>Key</code>](#Key) |  |
+
+<a name="module_types/delegation..readResult"></a>
+
+### types/delegation~readResult(input, [options]) ⇒ <code>Object</code> \| <code>Object</code>
+Read a `DELEGATION_RESULT`. The answer frame is decoded (signature checked);
+whether it answers the request is the requester's check.
+
+**Kind**: inner method of [<code>types/delegation</code>](#module_types/delegation)  
+
+| Param | Type |
+| --- | --- |
+| input | <code>string</code> \| <code>Buffer</code> \| [<code>Message</code>](#Message) | 
+| [options] | <code>Object</code> | 
+
+<a name="module_types/delegation..createMailboxFetch"></a>
+
+### types/delegation~createMailboxFetch([params], key) ⇒ <code>Object</code>
+Prove this key may read its mailbox.
+
+**Kind**: inner method of [<code>types/delegation</code>](#module_types/delegation)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| [params] | <code>Object</code> |  |
+| [params.since] | <code>number</code> | Mailbox sequence to read after. |
+| [params.ttlMs] | <code>number</code> |  |
+| [params.now] | <code>number</code> |  |
+| key | [<code>Key</code>](#Key) |  |
+
+<a name="module_types/delegation..readMailboxFetch"></a>
+
+### types/delegation~readMailboxFetch(input, [options]) ⇒ <code>Object</code> \| <code>Object</code>
+Read a `DELEGATION_MAILBOX_FETCH`. Spending the nonce once is the mailbox's job.
+
+**Kind**: inner method of [<code>types/delegation</code>](#module_types/delegation)  
+
+| Param | Type |
+| --- | --- |
+| input | <code>string</code> \| <code>Buffer</code> \| [<code>Message</code>](#Message) | 
+| [options] | <code>Object</code> | 
+
+<a name="module_types/delegation..mailboxAddress"></a>
+
+### types/delegation~mailboxAddress(input, [hints]) ⇒ <code>Object</code> \| <code>Object</code>
+Which pubkey a mailbox frame is addressed to.
+
+**Kind**: inner method of [<code>types/delegation</code>](#module_types/delegation)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| input | <code>string</code> \| <code>Buffer</code> \| [<code>Message</code>](#Message) | A request, result, grant, revoke, or pairing frame. |
+| [hints] | <code>Object</code> |  |
+| [hints.to] | <code>string</code> | Compressed pubkey for frames that do not name one (results, revokes). |
+
+<a name="module_types/delegation..identityPeers"></a>
+
+### types/delegation~identityPeers(self, grants, [revoked]) ⇒ <code>Array.&lt;string&gt;</code>
+Pubkeys linked to `self` as the same person: both have an unrevoked
+`identity` grant to the other.
+
+**Kind**: inner method of [<code>types/delegation</code>](#module_types/delegation)  
+**Returns**: <code>Array.&lt;string&gt;</code> - Compressed pubkeys.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| self | <code>string</code> | Pubkey hex. |
+| grants | <code>Array.&lt;Object&gt;</code> | Every grant known (made and received). |
+| [revoked] | <code>Set.&lt;string&gt;</code> \| <code>Array.&lt;string&gt;</code> |  |
+
+<a name="module_types/delegation..notificationFor"></a>
+
+### types/delegation~notificationFor(read, [context]) ⇒ <code>Object</code>
+What a recipient shows its user for a request. Every app renders this one shape.
+
+**Kind**: inner method of [<code>types/delegation</code>](#module_types/delegation)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| read | <code>Object</code> | An `ok` [readRequest](readRequest) result. |
+| [context] | <code>Object</code> |  |
+| [context.label] | <code>string</code> | What this participant calls the requester. |
+
+<a name="module_types/delegation..answerPassport"></a>
+
+### types/delegation~answerPassport(read, params, key) ⇒ <code>Object</code>
+Answer a Passport challenge request: sign the assertion for the origin the
+requester saw, naming the requester as `device`.
+
+**Kind**: inner method of [<code>types/delegation</code>](#module_types/delegation)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| read | <code>Object</code> | An `ok` passport-scope [readRequest](readRequest) result. |
+| params | <code>Object</code> |  |
+| params.signer | <code>string</code> | Passport signer label (`hub`, `gooncitizen`, `passport`). |
+| params.network | <code>string</code> |  |
+| [params.wallet] | <code>Object</code> | To disclose `wallet`. |
+| [params.cosignerKey] | [<code>Key</code>](#Key) | To disclose `cosigner`. |
+| [params.now] | <code>number</code> |  |
+| key | [<code>Key</code>](#Key) | The identity key that answers. |
+
+<a name="module_types/delegation..answerMessage"></a>
+
+### types/delegation~answerMessage(read, key) ⇒ [<code>Message</code>](#Message)
+Sign a `message`-scope request's frame as this key.
+
+**Kind**: inner method of [<code>types/delegation</code>](#module_types/delegation)  
+
+| Param | Type |
+| --- | --- |
+| read | <code>Object</code> | 
+| key | [<code>Key</code>](#Key) | 
+
+<a name="module_types/delegation..answerError"></a>
+
+### types/delegation~answerError(read, answer, [options]) ⇒ <code>string</code> \| <code>null</code>
+Why an answer frame does not answer a request, or null when it does: a
+Passport assertion over the request's challenge and origin, the request's
+own message signed, or a federation reply for the same federation.
+
+**Kind**: inner method of [<code>types/delegation</code>](#module_types/delegation)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| read | <code>Object</code> | An `ok` [readRequest](readRequest) result. |
+| answer | <code>string</code> \| <code>Buffer</code> \| [<code>Message</code>](#Message) | The answer frame. |
+| [options] | <code>Object</code> |  |
+| [options.now] | <code>number</code> | Check the assertion window at this time (default: when it was signed). |
+
+<a name="module_types/delegation..delegationType"></a>
+
+### types/delegation~delegationType(input) ⇒ <code>string</code> \| <code>null</code>
+The kind of frame `input` is, when it is a delegation frame.
+
+**Kind**: inner method of [<code>types/delegation</code>](#module_types/delegation)  
+
+| Param | Type |
+| --- | --- |
+| input | <code>string</code> \| <code>Buffer</code> \| [<code>Message</code>](#Message) | 
 
 <a name="types/ecc.module_selftest"></a>
 
@@ -2003,7 +3310,7 @@ Observe an on-chain transaction for payments to this contract's spend address.
 On success (and when `apply` is not false), folds matched sats into tip balances.
 
 **Kind**: instance method of [<code>Bond</code>](#Bond)  
-**Returns**: <code>object</code> - observation from [module:functions/contractPaymentObserve.observePaymentToAddress](module:functions/contractPaymentObserve.observePaymentToAddress)  
+**Returns**: <code>object</code> - observation from [observePayment](#Contract.observePayment)  
 
 | Param | Type | Default | Description |
 | --- | --- | --- | --- |
@@ -2044,7 +3351,7 @@ Bech32m P2TR address for this contract's spend policy.
 Resolve tip + genesis spend policy to the public P2TR surface (ARC).
 
 **Kind**: instance method of [<code>Bond</code>](#Bond)  
-**Returns**: <code>object</code> - [module:functions/contractSpend.resolveSpend](module:functions/contractSpend.resolveSpend)  
+**Returns**: <code>object</code> - [resolveSpend](#Contract.resolveSpend)  
 
 | Param | Type | Description |
 | --- | --- | --- |
@@ -2165,7 +3472,7 @@ Register a single opcode entry in the service registry.
 
 | Param | Type | Description |
 | --- | --- | --- |
-| name | <code>string</code> | Opcode symbol (e.g. `OP_SHA256`, `P2P_FLUSH_CHAIN`) |
+| name | <code>string</code> | Opcode symbol (e.g. `OP_SHA256`, `P2P_CHAIN_SYNC_REQUEST`) |
 | [definition] | <code>Object</code> |  |
 
 <a name="Service+defineBitcoinOpcode"></a>
@@ -2197,7 +3504,7 @@ Register Fabric opcode metadata.
 ### bond.defineOpcodeContract(name, body, [meta]) ⇒ <code>Object</code>
 Register a newline-delimited opcode contract.
 Contract body example:
-`OP_DUP\nOP_HASH160\nP2P_FLUSH_CHAIN`
+`OP_DUP\nOP_HASH160\nP2P_CHAIN_SYNC_REQUEST`
 
 **Kind**: instance method of [<code>Bond</code>](#Bond)  
 
@@ -4594,6 +5901,8 @@ hold signed and revoked; the answer resends whatever we missed.
         * [.preimageFor(paymentHashHex)](#ChannelSession+preimageFor)
         * [.finalize()](#ChannelSession+finalize) ⇒ <code>object</code>
         * [.close()](#ChannelSession+close) ⇒ <code>object</code>
+        * [.penaltyFilings([opts])](#ChannelSession+penaltyFilings) ⇒ <code>Array.&lt;object&gt;</code>
+        * [.actionTransactions(actions, [opts])](#ChannelSession+actionTransactions) ⇒ <code>Array.&lt;string&gt;</code>
         * [.export()](#ChannelSession+export) ⇒ <code>object</code>
     * _static_
         * [.import(snapshot, localPrivateKey, [deps])](#ChannelSession.import) ⇒ [<code>ChannelSession</code>](#ChannelSession)
@@ -4919,6 +6228,38 @@ Cooperative close: no HTLCs pending, latest balances. Returns a
 `ChannelClose` proposal; the reply countersigns and both finalize.
 
 **Kind**: instance method of [<code>ChannelSession</code>](#ChannelSession)  
+<a name="ChannelSession+penaltyFilings"></a>
+
+### channelSession.penaltyFilings([opts]) ⇒ <code>Array.&lt;object&gt;</code>
+Per-output justice transactions for every revoked counterparty commitment,
+signed now so a watchtower can broadcast them without this channel key.
+The commitment transaction is the unsigned one rebuilt from the revoked
+state (its txid is already fixed). One transaction per output, so a spent
+output does not take the others with it.
+
+**Kind**: instance method of [<code>ChannelSession</code>](#ChannelSession)  
+**Returns**: <code>Array.&lt;object&gt;</code> - `[{ commitmentTxid, transactions }]`  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| [opts] | <code>object</code> | `{ destinationAddress?, feeSats? }` — destination defaults to this session's `localAddress` |
+
+<a name="ChannelSession+actionTransactions"></a>
+
+### channelSession.actionTransactions(actions, [opts]) ⇒ <code>Array.&lt;string&gt;</code>
+Broadcastable transactions for this session's watchdog actions: our own
+force-close, and an HTLC claim or timeout spent from that commitment.
+A remote commitment already on chain is left alone (its penalty is a
+watchtower filing, not one of these).
+
+**Kind**: instance method of [<code>ChannelSession</code>](#ChannelSession)  
+**Returns**: <code>Array.&lt;string&gt;</code> - raw transaction hex  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| actions | <code>Array.&lt;object&gt;</code> | from [tick](#ChannelSession+tick) |
+| [opts] | <code>object</code> | `{ destinationAddress?, feeSats? }` |
+
 <a name="ChannelSession+export"></a>
 
 ### channelSession.export() ⇒ <code>object</code>
@@ -4970,6 +6311,8 @@ Cooperative close: no HTLCs pending, latest balances. Returns a
         * [.preimageFor(paymentHashHex)](#ChannelSession+preimageFor)
         * [.finalize()](#ChannelSession+finalize) ⇒ <code>object</code>
         * [.close()](#ChannelSession+close) ⇒ <code>object</code>
+        * [.penaltyFilings([opts])](#ChannelSession+penaltyFilings) ⇒ <code>Array.&lt;object&gt;</code>
+        * [.actionTransactions(actions, [opts])](#ChannelSession+actionTransactions) ⇒ <code>Array.&lt;string&gt;</code>
         * [.export()](#ChannelSession+export) ⇒ <code>object</code>
     * _static_
         * [.import(snapshot, localPrivateKey, [deps])](#ChannelSession.import) ⇒ [<code>ChannelSession</code>](#ChannelSession)
@@ -5295,6 +6638,38 @@ Cooperative close: no HTLCs pending, latest balances. Returns a
 `ChannelClose` proposal; the reply countersigns and both finalize.
 
 **Kind**: instance method of [<code>ChannelSession</code>](#ChannelSession)  
+<a name="ChannelSession+penaltyFilings"></a>
+
+### channelSession.penaltyFilings([opts]) ⇒ <code>Array.&lt;object&gt;</code>
+Per-output justice transactions for every revoked counterparty commitment,
+signed now so a watchtower can broadcast them without this channel key.
+The commitment transaction is the unsigned one rebuilt from the revoked
+state (its txid is already fixed). One transaction per output, so a spent
+output does not take the others with it.
+
+**Kind**: instance method of [<code>ChannelSession</code>](#ChannelSession)  
+**Returns**: <code>Array.&lt;object&gt;</code> - `[{ commitmentTxid, transactions }]`  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| [opts] | <code>object</code> | `{ destinationAddress?, feeSats? }` — destination defaults to this session's `localAddress` |
+
+<a name="ChannelSession+actionTransactions"></a>
+
+### channelSession.actionTransactions(actions, [opts]) ⇒ <code>Array.&lt;string&gt;</code>
+Broadcastable transactions for this session's watchdog actions: our own
+force-close, and an HTLC claim or timeout spent from that commitment.
+A remote commitment already on chain is left alone (its penalty is a
+watchtower filing, not one of these).
+
+**Kind**: instance method of [<code>ChannelSession</code>](#ChannelSession)  
+**Returns**: <code>Array.&lt;string&gt;</code> - raw transaction hex  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| actions | <code>Array.&lt;object&gt;</code> | from [tick](#ChannelSession+tick) |
+| [opts] | <code>object</code> | `{ destinationAddress?, feeSats? }` |
+
 <a name="ChannelSession+export"></a>
 
 ### channelSession.export() ⇒ <code>object</code>
@@ -5367,6 +6742,8 @@ blobHashHex, amountSats, direction, preimageHex?, outcome?, reason? }`.
     * [.tick()](#ChannelBook+tick) ⇒ <code>Object</code>
     * [.reestablish([channelId])](#ChannelBook+reestablish) ⇒ <code>Array.&lt;object&gt;</code>
     * [.observe(txHex, [opts])](#ChannelBook+observe) ⇒ <code>Array.&lt;object&gt;</code>
+    * [.penaltyFilings([opts])](#ChannelBook+penaltyFilings) ⇒ <code>Array.&lt;object&gt;</code>
+    * [.actionTransactions(actions, [opts])](#ChannelBook+actionTransactions) ⇒ <code>Array.&lt;string&gt;</code>
     * [.export()](#ChannelBook+export) ⇒ <code>object</code>
     * [.import(snapshot)](#ChannelBook+import)
     * [.list()](#ChannelBook+list) ⇒ <code>Array.&lt;object&gt;</code>
@@ -5634,6 +7011,31 @@ Hand an observed transaction to every session (mempool / block hook).
 | --- | --- | --- |
 | txHex | <code>string</code> |  |
 | [opts] | <code>object</code> | `{ destinationAddress?, feeSats?, excludeVouts?, perOutput? }` |
+
+<a name="ChannelBook+penaltyFilings"></a>
+
+### channelBook.penaltyFilings([opts]) ⇒ <code>Array.&lt;object&gt;</code>
+Justice filings for every revoked commitment on this book. Each filing is
+ready for [appointment](#Watchtower.appointment): the transactions are already
+signed, and the commitment txid is the hint's preimage.
+
+**Kind**: instance method of [<code>ChannelBook</code>](#ChannelBook)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| [opts] | <code>object</code> | passed to [penaltyFilings](#ChannelSession+penaltyFilings) |
+
+<a name="ChannelBook+actionTransactions"></a>
+
+### channelBook.actionTransactions(actions, [opts]) ⇒ <code>Array.&lt;string&gt;</code>
+Raw transactions for the watchdog actions `onBlock` returned.
+
+**Kind**: instance method of [<code>ChannelBook</code>](#ChannelBook)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| actions | <code>Array.&lt;object&gt;</code> |  |
+| [opts] | <code>object</code> | passed to [actionTransactions](#ChannelSession+actionTransactions) |
 
 <a name="ChannelBook+export"></a>
 
@@ -5682,6 +7084,8 @@ Hand an observed transaction to every session (mempool / block hook).
     * [.tick()](#ChannelBook+tick) ⇒ <code>Object</code>
     * [.reestablish([channelId])](#ChannelBook+reestablish) ⇒ <code>Array.&lt;object&gt;</code>
     * [.observe(txHex, [opts])](#ChannelBook+observe) ⇒ <code>Array.&lt;object&gt;</code>
+    * [.penaltyFilings([opts])](#ChannelBook+penaltyFilings) ⇒ <code>Array.&lt;object&gt;</code>
+    * [.actionTransactions(actions, [opts])](#ChannelBook+actionTransactions) ⇒ <code>Array.&lt;string&gt;</code>
     * [.export()](#ChannelBook+export) ⇒ <code>object</code>
     * [.import(snapshot)](#ChannelBook+import)
     * [.list()](#ChannelBook+list) ⇒ <code>Array.&lt;object&gt;</code>
@@ -5949,6 +7353,31 @@ Hand an observed transaction to every session (mempool / block hook).
 | --- | --- | --- |
 | txHex | <code>string</code> |  |
 | [opts] | <code>object</code> | `{ destinationAddress?, feeSats?, excludeVouts?, perOutput? }` |
+
+<a name="ChannelBook+penaltyFilings"></a>
+
+### channelBook.penaltyFilings([opts]) ⇒ <code>Array.&lt;object&gt;</code>
+Justice filings for every revoked commitment on this book. Each filing is
+ready for [appointment](#Watchtower.appointment): the transactions are already
+signed, and the commitment txid is the hint's preimage.
+
+**Kind**: instance method of [<code>ChannelBook</code>](#ChannelBook)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| [opts] | <code>object</code> | passed to [penaltyFilings](#ChannelSession+penaltyFilings) |
+
+<a name="ChannelBook+actionTransactions"></a>
+
+### channelBook.actionTransactions(actions, [opts]) ⇒ <code>Array.&lt;string&gt;</code>
+Raw transactions for the watchdog actions `onBlock` returned.
+
+**Kind**: instance method of [<code>ChannelBook</code>](#ChannelBook)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| actions | <code>Array.&lt;object&gt;</code> |  |
+| [opts] | <code>object</code> | passed to [actionTransactions](#ChannelSession+actionTransactions) |
 
 <a name="ChannelBook+export"></a>
 
@@ -6734,37 +8163,67 @@ Dead stub. Page composition lives in `@fabric/http` (`types/component.js`,
 
 * [Contract](#Contract) ⇐ [<code>Service</code>](#Service)
     * [new Contract()](#new_Contract_new)
-    * [.resolutions](#Contract+resolutions) : [<code>Resolutions</code>](#Resolutions)
-    * [.advance(stateId)](#Contract+advance) ⇒ [<code>Contract</code>](#Contract)
-    * [.deploy()](#Contract+deploy) ⇒ <code>String</code>
-    * [.start()](#Contract+start) ⇒ [<code>Contract</code>](#Contract)
-    * [._handleBitcoinTransaction(txInput, [opts])](#Contract+_handleBitcoinTransaction) ⇒ <code>object</code>
-    * [.toTaprootContract([overrides])](#Contract+toTaprootContract) ⇒ <code>object</code>
-    * [.toAddress([network])](#Contract+toAddress) ⇒ <code>string</code>
-    * [.resolveSpend([opts])](#Contract+resolveSpend) ⇒ <code>object</code>
-    * [._appendWarning(msg)](#Service+_appendWarning) ⇒ [<code>Service</code>](#Service)
-    * [.init()](#Service+init)
-    * [.tick()](#Service+tick) ⇒ <code>Number</code>
-    * [.beat()](#Service+beat) ⇒ [<code>Service</code>](#Service)
-    * [.get(path)](#Service+get) ⇒ <code>Mixed</code>
-    * [.set(path)](#Service+set) ⇒ <code>Mixed</code>
-    * [.trust(source)](#Service+trust) ⇒ [<code>Service</code>](#Service)
-    * [.handler(message)](#Service+handler) ⇒ [<code>Service</code>](#Service)
-    * [.lock([duration])](#Service+lock) ⇒ <code>Boolean</code>
-    * [.when(event, method)](#Service+when) ⇒ <code>EventEmitter</code>
-    * [.defineOpcode(name, [definition])](#Service+defineOpcode) ⇒ <code>Object</code>
-    * [.defineBitcoinOpcode(name, [definition])](#Service+defineBitcoinOpcode) ⇒ <code>Object</code>
-    * [.defineFabricOpcode(name, [definition])](#Service+defineFabricOpcode) ⇒ <code>Object</code>
-    * [.defineOpcodeContract(name, body, [meta])](#Service+defineOpcodeContract) ⇒ <code>Object</code>
-    * [.listOpcodes()](#Service+listOpcodes) ⇒ <code>Array.&lt;Object&gt;</code>
-    * [.route(msg)](#Service+route) ⇒ <code>Promise</code>
-    * [._GET(path)](#Service+_GET) ⇒ <code>Promise</code>
-    * [._PUT(path, value, [commit])](#Service+_PUT) ⇒ <code>Promise</code>
-    * [.connect(notify)](#Service+connect) ⇒ <code>Promise</code>
-    * [.send(channel, message)](#Service+send) ⇒ [<code>Service</code>](#Service)
-    * [.commit()](#Service+commit) ⇒ <code>String</code>
-    * [._registerActor(actor)](#Service+_registerActor) ⇒ <code>Promise</code>
-    * [._send(message)](#Service+_send)
+    * _instance_
+        * [.resolutions](#Contract+resolutions) : [<code>Resolutions</code>](#Resolutions)
+        * [.advance(stateId)](#Contract+advance) ⇒ [<code>Contract</code>](#Contract)
+        * [.deploy()](#Contract+deploy) ⇒ <code>String</code>
+        * [.start()](#Contract+start) ⇒ [<code>Contract</code>](#Contract)
+        * [._handleBitcoinTransaction(txInput, [opts])](#Contract+_handleBitcoinTransaction) ⇒ <code>object</code>
+        * [.toTaprootContract([overrides])](#Contract+toTaprootContract) ⇒ <code>object</code>
+        * [.toAddress([network])](#Contract+toAddress) ⇒ <code>string</code>
+        * [.resolveSpend([opts])](#Contract+resolveSpend) ⇒ <code>object</code>
+        * [._appendWarning(msg)](#Service+_appendWarning) ⇒ [<code>Service</code>](#Service)
+        * [.init()](#Service+init)
+        * [.tick()](#Service+tick) ⇒ <code>Number</code>
+        * [.beat()](#Service+beat) ⇒ [<code>Service</code>](#Service)
+        * [.get(path)](#Service+get) ⇒ <code>Mixed</code>
+        * [.set(path)](#Service+set) ⇒ <code>Mixed</code>
+        * [.trust(source)](#Service+trust) ⇒ [<code>Service</code>](#Service)
+        * [.handler(message)](#Service+handler) ⇒ [<code>Service</code>](#Service)
+        * [.lock([duration])](#Service+lock) ⇒ <code>Boolean</code>
+        * [.when(event, method)](#Service+when) ⇒ <code>EventEmitter</code>
+        * [.defineOpcode(name, [definition])](#Service+defineOpcode) ⇒ <code>Object</code>
+        * [.defineBitcoinOpcode(name, [definition])](#Service+defineBitcoinOpcode) ⇒ <code>Object</code>
+        * [.defineFabricOpcode(name, [definition])](#Service+defineFabricOpcode) ⇒ <code>Object</code>
+        * [.defineOpcodeContract(name, body, [meta])](#Service+defineOpcodeContract) ⇒ <code>Object</code>
+        * [.listOpcodes()](#Service+listOpcodes) ⇒ <code>Array.&lt;Object&gt;</code>
+        * [.route(msg)](#Service+route) ⇒ <code>Promise</code>
+        * [._GET(path)](#Service+_GET) ⇒ <code>Promise</code>
+        * [._PUT(path, value, [commit])](#Service+_PUT) ⇒ <code>Promise</code>
+        * [.connect(notify)](#Service+connect) ⇒ <code>Promise</code>
+        * [.send(channel, message)](#Service+send) ⇒ [<code>Service</code>](#Service)
+        * [.commit()](#Service+commit) ⇒ <code>String</code>
+        * [._registerActor(actor)](#Service+_registerActor) ⇒ <code>Promise</code>
+        * [._send(message)](#Service+_send)
+    * _static_
+        * [.normalizeIdentifier(value)](#Contract.normalizeIdentifier) ⇒ <code>string</code> \| <code>null</code>
+        * [.resolveIdentifier(obj)](#Contract.resolveIdentifier) ⇒ <code>string</code> \| <code>null</code>
+        * [.stampIdentifier(obj, identifier)](#Contract.stampIdentifier) ⇒ <code>object</code>
+        * [.authorityPubkeys(object)](#Contract.authorityPubkeys) ⇒ <code>Set.&lt;string&gt;</code>
+        * [.hasAuthority(authorities, pubkeyHex)](#Contract.hasAuthority) ⇒ <code>boolean</code>
+        * [.publishSignerAuthorized(object, [signerPubkeyHex])](#Contract.publishSignerAuthorized) ⇒ <code>boolean</code>
+        * [.issueCapability(opts)](#Contract.issueCapability) ⇒ <code>string</code>
+        * [.verifyCapability(tokenString, expect)](#Contract.verifyCapability) ⇒ <code>Object</code> \| <code>null</code>
+        * [.roleToCapability(role)](#Contract.roleToCapability) ⇒ <code>string</code>
+        * [.capabilityToRole(cap)](#Contract.capabilityToRole) ⇒ <code>string</code> \| <code>null</code>
+        * [.observePayment(opts)](#Contract.observePayment) ⇒ <code>object</code>
+        * [.applyPaymentObservation(tip, observation)](#Contract.applyPaymentObservation) ⇒ <code>object</code>
+        * [.toCompressedPubkeys(list, [genesisList])](#Contract.toCompressedPubkeys) ⇒ <code>Array.&lt;string&gt;</code>
+        * [.normalizeGenesis(definition)](#Contract.normalizeGenesis) ⇒ <code>object</code>
+        * [.tipSpendKeys(tip)](#Contract.tipSpendKeys) ⇒ <code>Array</code>
+        * [.canonicalSpendPolicy([opts])](#Contract.canonicalSpendPolicy) ⇒ <code>object</code>
+        * [.nestBitcoinAnchor([opts])](#Contract.nestBitcoinAnchor) ⇒ <code>Object</code> \| <code>null</code>
+        * [.resolveSpend(opts)](#Contract.resolveSpend) ⇒ <code>object</code>
+        * [.withdrawalRequestCommitmentFields(object)](#Contract.withdrawalRequestCommitmentFields) ⇒ <code>object</code>
+        * [.computeWithdrawalRequestId(object)](#Contract.computeWithdrawalRequestId) ⇒ <code>string</code>
+        * [.validateWithdrawalRequest(object, tip, [opts])](#Contract.validateWithdrawalRequest) ⇒ <code>Object</code>
+        * [.buildWithdrawalRequest(opts)](#Contract.buildWithdrawalRequest) ⇒ <code>object</code>
+        * [.withdrawalWitnessSigningMessage(fields)](#Contract.withdrawalWitnessSigningMessage) ⇒ <code>string</code>
+        * [.verifyWithdrawalWitnessSignature(witness)](#Contract.verifyWithdrawalWitnessSignature) ⇒ <code>Object</code>
+        * [.buildWithdrawalWitness(opts)](#Contract.buildWithdrawalWitness) ⇒ <code>object</code>
+        * [.prepareWithdrawalFromRequest(opts)](#Contract.prepareWithdrawalFromRequest) ⇒ <code>object</code>
+        * [.countValidWithdrawalWitnesses(request, witnesses, validatorPubkeys)](#Contract.countValidWithdrawalWitnesses) ⇒ <code>number</code>
+        * [.meetWithdrawalWitnessThreshold(request, witnesses, validatorPubkeys, threshold)](#Contract.meetWithdrawalWitnessThreshold) ⇒ <code>Object</code>
 
 <a name="new_Contract_new"></a>
 
@@ -6818,7 +8277,7 @@ Observe an on-chain transaction for payments to this contract's spend address.
 On success (and when `apply` is not false), folds matched sats into tip balances.
 
 **Kind**: instance method of [<code>Contract</code>](#Contract)  
-**Returns**: <code>object</code> - observation from [module:functions/contractPaymentObserve.observePaymentToAddress](module:functions/contractPaymentObserve.observePaymentToAddress)  
+**Returns**: <code>object</code> - observation from [observePayment](#Contract.observePayment)  
 
 | Param | Type | Default | Description |
 | --- | --- | --- | --- |
@@ -6859,7 +8318,7 @@ Bech32m P2TR address for this contract's spend policy.
 Resolve tip + genesis spend policy to the public P2TR surface (ARC).
 
 **Kind**: instance method of [<code>Contract</code>](#Contract)  
-**Returns**: <code>object</code> - [module:functions/contractSpend.resolveSpend](module:functions/contractSpend.resolveSpend)  
+**Returns**: <code>object</code> - [resolveSpend](#Contract.resolveSpend)  
 
 | Param | Type | Description |
 | --- | --- | --- |
@@ -6980,7 +8439,7 @@ Register a single opcode entry in the service registry.
 
 | Param | Type | Description |
 | --- | --- | --- |
-| name | <code>string</code> | Opcode symbol (e.g. `OP_SHA256`, `P2P_FLUSH_CHAIN`) |
+| name | <code>string</code> | Opcode symbol (e.g. `OP_SHA256`, `P2P_CHAIN_SYNC_REQUEST`) |
 | [definition] | <code>Object</code> |  |
 
 <a name="Service+defineBitcoinOpcode"></a>
@@ -7012,7 +8471,7 @@ Register Fabric opcode metadata.
 ### contract.defineOpcodeContract(name, body, [meta]) ⇒ <code>Object</code>
 Register a newline-delimited opcode contract.
 Contract body example:
-`OP_DUP\nOP_HASH160\nP2P_FLUSH_CHAIN`
+`OP_DUP\nOP_HASH160\nP2P_CHAIN_SYNC_REQUEST`
 
 **Kind**: instance method of [<code>Contract</code>](#Contract)  
 
@@ -7124,6 +8583,365 @@ Sends a message.
 | --- | --- | --- |
 | message | <code>Mixed</code> | Message to send. |
 
+<a name="Contract.normalizeIdentifier"></a>
+
+### Contract.normalizeIdentifier(value) ⇒ <code>string</code> \| <code>null</code>
+Trimmed contract identifier, or `null` when empty.
+
+**Kind**: static method of [<code>Contract</code>](#Contract)  
+
+| Param | Type |
+| --- | --- |
+| value | <code>\*</code> | 
+
+<a name="Contract.resolveIdentifier"></a>
+
+### Contract.resolveIdentifier(obj) ⇒ <code>string</code> \| <code>null</code>
+Read `contractIdentifier` or legacy `contractId` from an object.
+Prefer writing `contractIdentifier`; the dual read lasts until Hub,
+`@fabric/http`, and apps finish the rename (OUTSTANDING Blocker).
+
+**Kind**: static method of [<code>Contract</code>](#Contract)  
+
+| Param | Type |
+| --- | --- |
+| obj | <code>object</code> \| <code>null</code> \| <code>undefined</code> | 
+
+<a name="Contract.stampIdentifier"></a>
+
+### Contract.stampIdentifier(obj, identifier) ⇒ <code>object</code>
+Stamp `contractIdentifier` and `contractId` with the same value so old and
+new readers converge. Deletes neither key.
+
+**Kind**: static method of [<code>Contract</code>](#Contract)  
+**Returns**: <code>object</code> - the same object  
+
+| Param | Type |
+| --- | --- |
+| obj | <code>object</code> | 
+| identifier | <code>string</code> | 
+
+<a name="Contract.authorityPubkeys"></a>
+
+### Contract.authorityPubkeys(object) ⇒ <code>Set.&lt;string&gt;</code>
+Pubkeys declared as patch authorities on a CONTRACT_PUBLISH body
+(validators, parties, owners, authorities, members, spend / proposed policy).
+
+**Kind**: static method of [<code>Contract</code>](#Contract)  
+
+| Param | Type |
+| --- | --- |
+| object | <code>object</code> | 
+
+<a name="Contract.hasAuthority"></a>
+
+### Contract.hasAuthority(authorities, pubkeyHex) ⇒ <code>boolean</code>
+Whether `pubkeyHex` is in an authority set (x-only ↔ compressed tolerant).
+
+**Kind**: static method of [<code>Contract</code>](#Contract)  
+
+| Param | Type |
+| --- | --- |
+| authorities | <code>Set.&lt;string&gt;</code> | 
+| pubkeyHex | <code>string</code> | 
+
+<a name="Contract.publishSignerAuthorized"></a>
+
+### Contract.publishSignerAuthorized(object, [signerPubkeyHex]) ⇒ <code>boolean</code>
+Whether a wire signer may publish this definition.
+
+Empty authority set → any signer (open genesis / observe-only publish).
+Non-empty authority set → the AMP wire signer **must** be present and listed
+(fail closed: unsigned frames must not register).
+
+**Kind**: static method of [<code>Contract</code>](#Contract)  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| object | <code>object</code> |  | CONTRACT_PUBLISH body |
+| [signerPubkeyHex] | <code>string</code> \| <code>null</code> | <code>null</code> |  |
+
+<a name="Contract.issueCapability"></a>
+
+### Contract.issueCapability(opts) ⇒ <code>string</code>
+Issue a contract-scoped Token capability (read-only member or signer).
+
+**Kind**: static method of [<code>Contract</code>](#Contract)  
+**Returns**: <code>string</code> - Token.toSignedString()  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| opts | <code>Object</code> |  |  |
+| opts.issuerKey | <code>object</code> \| [<code>Key</code>](#Key) |  | Fabric Key (or settings) of issuer |
+| opts.subject | <code>string</code> |  | Subject compressed pubkey |
+| opts.contractId | <code>string</code> |  | Contract / namespace id |
+| [opts.capability] | <code>string</code> | <code>&quot;Contract.OP_CONTRACT_READ&quot;</code> |  |
+| [opts.expiresInSeconds] | <code>number</code> |  |  |
+
+<a name="Contract.verifyCapability"></a>
+
+### Contract.verifyCapability(tokenString, expect) ⇒ <code>Object</code> \| <code>null</code>
+Verify a contract-scoped Token capability.
+
+**Kind**: static method of [<code>Contract</code>](#Contract)  
+**Returns**: <code>Object</code> \| <code>null</code> - token payload (`cap`, `iss`, `sub`, `iat`, `exp`, `ctx`) plus `verified`  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| tokenString | <code>string</code> |  |
+| expect | <code>Object</code> |  |
+| expect.contractId | <code>string</code> |  |
+| [expect.expectedCap] | <code>string</code> |  |
+| [expect.subject] | <code>string</code> |  |
+| [expect.issuerKey] | [<code>Key</code>](#Key) \| <code>object</code> | Verify Schnorr against this key (auth path) |
+| [expect.allowUnverified] | <code>boolean</code> | Opt-in parse-only (no sig check); result has verified:false |
+
+<a name="Contract.roleToCapability"></a>
+
+### Contract.roleToCapability(role) ⇒ <code>string</code>
+**Kind**: static method of [<code>Contract</code>](#Contract)  
+**Returns**: <code>string</code> - [Contract.OP_CONTRACT_SIGN](Contract.OP_CONTRACT_SIGN) or [Contract.OP_CONTRACT_READ](Contract.OP_CONTRACT_READ)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| role | <code>string</code> | `signer` or `sign`; anything else is a reader |
+
+<a name="Contract.capabilityToRole"></a>
+
+### Contract.capabilityToRole(cap) ⇒ <code>string</code> \| <code>null</code>
+**Kind**: static method of [<code>Contract</code>](#Contract)  
+**Returns**: <code>string</code> \| <code>null</code> - `signer`, `reader`, or `null`  
+
+| Param | Type |
+| --- | --- |
+| cap | <code>string</code> | 
+
+<a name="Contract.observePayment"></a>
+
+### Contract.observePayment(opts) ⇒ <code>object</code>
+Observe whether `tx` pays `address` at least `amountSats` (when set).
+Does not broadcast or mutate chain state.
+
+**Kind**: static method of [<code>Contract</code>](#Contract)  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| opts | <code>Object</code> |  |  |
+| opts.tx | <code>string</code> \| <code>object</code> |  | transaction hex or Transaction |
+| opts.address | <code>string</code> |  | contract spend address |
+| [opts.network] | <code>string</code> | <code>&quot;&#x27;regtest&#x27;&quot;</code> |  |
+| [opts.amountSats] | <code>number</code> |  | minimum matched sats (optional) |
+
+<a name="Contract.applyPaymentObservation"></a>
+
+### Contract.applyPaymentObservation(tip, observation) ⇒ <code>object</code>
+Fold a successful observation into tip content balances (immutable clone).
+
+**Kind**: static method of [<code>Contract</code>](#Contract)  
+**Returns**: <code>object</code> - tip  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| tip | <code>object</code> |  |
+| observation | <code>object</code> | from [observePayment](#Contract.observePayment) |
+
+<a name="Contract.toCompressedPubkeys"></a>
+
+### Contract.toCompressedPubkeys(list, [genesisList]) ⇒ <code>Array.&lt;string&gt;</code>
+Lift pubkeys to BIP67-sorted compressed hex for Taproot policy builders.
+Prefers the genesis compressed forms when the tip holds the same x-only set
+(02/03 parity drift would otherwise move the address off the Hub vault).
+
+**Kind**: static method of [<code>Contract</code>](#Contract)  
+
+| Param | Type | Default |
+| --- | --- | --- |
+| list | <code>Iterable.&lt;\*&gt;</code> |  | 
+| [genesisList] | <code>Iterable.&lt;\*&gt;</code> | <code></code> | 
+
+<a name="Contract.normalizeGenesis"></a>
+
+### Contract.normalizeGenesis(definition) ⇒ <code>object</code>
+Normalize a CONTRACT_PUBLISH definition (or Hub-stored genesis) into ARC fields.
+Accepts legacy shapes: `messageTypes`, `proposedPolicy.validators`, etc.
+
+**Kind**: static method of [<code>Contract</code>](#Contract)  
+
+| Param | Type |
+| --- | --- |
+| definition | <code>object</code> | 
+
+<a name="Contract.tipSpendKeys"></a>
+
+### Contract.tipSpendKeys(tip) ⇒ <code>Array</code>
+Tip keys used for spend authority. Prefer explicit signers over a general
+`members` roster (Groups fold applicants into members). An explicit empty
+`signers: []` (reader-only GroupChange fold) must NOT widen to members —
+[resolveSpend](#Contract.resolveSpend) then keeps genesis validators.
+
+**Kind**: static method of [<code>Contract</code>](#Contract)  
+
+| Param | Type |
+| --- | --- |
+| tip | <code>object</code> | 
+
+<a name="Contract.canonicalSpendPolicy"></a>
+
+### Contract.canonicalSpendPolicy([opts]) ⇒ <code>object</code>
+Canonical authority spendPolicy bag shared by Beacon ARC, vault, and [resolveSpend](#Contract.resolveSpend).
+
+**Kind**: static method of [<code>Contract</code>](#Contract)  
+
+| Param | Type |
+| --- | --- |
+| [opts] | <code>object</code> | 
+
+<a name="Contract.nestBitcoinAnchor"></a>
+
+### Contract.nestBitcoinAnchor([opts]) ⇒ <code>Object</code> \| <code>null</code>
+Nested tip anchor used by Hub tracked accept / summarize.
+
+**Kind**: static method of [<code>Contract</code>](#Contract)  
+**Returns**: <code>Object</code> \| <code>null</code> - `{ blockHash, height }`  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| [opts] | <code>Object</code> |  |
+| [opts.blockHash] | <code>string</code> |  |
+| [opts.height] | <code>number</code> |  |
+| [opts.bitcoinBlockHash] | <code>string</code> | alias of `blockHash` |
+| [opts.bitcoinHeight] | <code>number</code> | alias of `height` |
+
+<a name="Contract.resolveSpend"></a>
+
+### Contract.resolveSpend(opts) ⇒ <code>object</code>
+Resolve current tip (+ genesis) to the public P2TR spend surface.
+
+**Kind**: static method of [<code>Contract</code>](#Contract)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| opts | <code>Object</code> |  |
+| [opts.genesis] | <code>Object</code> | CONTRACT_PUBLISH definition or [normalizeGenesis](#Contract.normalizeGenesis) output |
+| [opts.tip] | <code>Object</code> | `{ content, stateDigest, bitcoinBlockHash, … }` (`content.signers` or `content.members`) |
+| [opts.overrides] | <code>Object</code> | network / spendPolicy overrides |
+
+<a name="Contract.withdrawalRequestCommitmentFields"></a>
+
+### Contract.withdrawalRequestCommitmentFields(object) ⇒ <code>object</code>
+Canonical fields hashed into ContractWithdrawalRequest.requestId.
+Witness BIP340 covers requestId; this preimage binds destination/fee/vault.
+
+**Kind**: static method of [<code>Contract</code>](#Contract)  
+
+| Param | Type |
+| --- | --- |
+| object | <code>object</code> | 
+
+<a name="Contract.computeWithdrawalRequestId"></a>
+
+### Contract.computeWithdrawalRequestId(object) ⇒ <code>string</code>
+**Kind**: static method of [<code>Contract</code>](#Contract)  
+**Returns**: <code>string</code> - 64-hex sha256 of canonical commitment JSON  
+
+| Param | Type |
+| --- | --- |
+| object | <code>object</code> | 
+
+<a name="Contract.validateWithdrawalRequest"></a>
+
+### Contract.validateWithdrawalRequest(object, tip, [opts]) ⇒ <code>Object</code>
+**Kind**: static method of [<code>Contract</code>](#Contract)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| object | <code>object</code> | ContractWithdrawalRequest body |
+| tip | <code>object</code> | Current tip (must include stateDigest + bitcoinBlockHash) |
+| [opts] | <code>Object</code> |  |
+| [opts.genesis] | <code>Object</code> | Optional ARC genesis for policy checks |
+
+<a name="Contract.buildWithdrawalRequest"></a>
+
+### Contract.buildWithdrawalRequest(opts) ⇒ <code>object</code>
+Build a tip-bound ContractWithdrawalRequest object.
+When the tip seals `content.program`, its digests are copied onto the request
+(Machine/Program run binding — does not alter the P2TR address).
+
+**Kind**: static method of [<code>Contract</code>](#Contract)  
+
+| Param | Type |
+| --- | --- |
+| opts | <code>object</code> | 
+
+<a name="Contract.withdrawalWitnessSigningMessage"></a>
+
+### Contract.withdrawalWitnessSigningMessage(fields) ⇒ <code>string</code>
+Canonical UTF-8 message for BIP340 withdrawal co-sign attestations.
+
+**Kind**: static method of [<code>Contract</code>](#Contract)  
+
+| Param | Type |
+| --- | --- |
+| fields | <code>object</code> | 
+
+<a name="Contract.verifyWithdrawalWitnessSignature"></a>
+
+### Contract.verifyWithdrawalWitnessSignature(witness) ⇒ <code>Object</code>
+Verify BIP340 witness signature over [withdrawalWitnessSigningMessage](#Contract.withdrawalWitnessSigningMessage).
+
+**Kind**: static method of [<code>Contract</code>](#Contract)  
+
+| Param | Type |
+| --- | --- |
+| witness | <code>object</code> | 
+
+<a name="Contract.buildWithdrawalWitness"></a>
+
+### Contract.buildWithdrawalWitness(opts) ⇒ <code>object</code>
+Build a ContractWithdrawalWitness, signing with `opts.signerKey` when no signature is given.
+
+**Kind**: static method of [<code>Contract</code>](#Contract)  
+
+| Param | Type |
+| --- | --- |
+| opts | <code>object</code> | 
+
+<a name="Contract.prepareWithdrawalFromRequest"></a>
+
+### Contract.prepareWithdrawalFromRequest(opts) ⇒ <code>object</code>
+Prepare an L1 PSBT from a validated withdrawal request + spend policy.
+
+**Kind**: static method of [<code>Contract</code>](#Contract)  
+
+| Param | Type |
+| --- | --- |
+| opts | <code>object</code> | 
+
+<a name="Contract.countValidWithdrawalWitnesses"></a>
+
+### Contract.countValidWithdrawalWitnesses(request, witnesses, validatorPubkeys) ⇒ <code>number</code>
+Count distinct validator BIP340 witnesses for a withdrawal request.
+
+**Kind**: static method of [<code>Contract</code>](#Contract)  
+
+| Param | Type |
+| --- | --- |
+| request | <code>object</code> | 
+| witnesses | <code>Array.&lt;object&gt;</code> | 
+| validatorPubkeys | <code>Array.&lt;string&gt;</code> | 
+
+<a name="Contract.meetWithdrawalWitnessThreshold"></a>
+
+### Contract.meetWithdrawalWitnessThreshold(request, witnesses, validatorPubkeys, threshold) ⇒ <code>Object</code>
+**Kind**: static method of [<code>Contract</code>](#Contract)  
+
+| Param | Type |
+| --- | --- |
+| request | <code>object</code> | 
+| witnesses | <code>Array.&lt;object&gt;</code> | 
+| validatorPubkeys | <code>Array.&lt;string&gt;</code> | 
+| threshold | <code>number</code> | 
+
 <a name="Disk"></a>
 
 ## Disk
@@ -7171,6 +8989,22 @@ change here until then.
         * [.fromRecord(record)](#Document.fromRecord) ⇒ [<code>Document</code>](#Document)
         * [.encodeManifest(meta)](#Document.encodeManifest) ⇒ <code>Buffer</code>
         * [.decodeManifest(bytes)](#Document.decodeManifest) ⇒ <code>Object</code> \| <code>null</code>
+        * [.rootHexFromBlobHashes(blobHashHexes, [opts])](#Document.rootHexFromBlobHashes) ⇒ <code>string</code>
+        * [.sameIv(a, b)](#Document.sameIv) ⇒ <code>boolean</code>
+        * [.leafHex(blob)](#Document.leafHex) ⇒ <code>string</code>
+        * [.rootHex(blobs)](#Document.rootHex) ⇒ <code>string</code>
+        * [.inclusionProof(blobs, index)](#Document.inclusionProof) ⇒ <code>Array.&lt;string&gt;</code>
+        * [.inclusionProofs(blobs)](#Document.inclusionProofs) ⇒ <code>Array.&lt;Array.&lt;string&gt;&gt;</code>
+        * [.verifyInclusion(opts)](#Document.verifyInclusion) ⇒ <code>boolean</code>
+        * [.verifyOfferLeaves(opts)](#Document.verifyOfferLeaves) ⇒ <code>Object</code>
+        * [.split(buffer, [chunkBytes], [documentId])](#Document.split) ⇒ <code>Object</code>
+        * [.blobIndex(opts)](#Document.blobIndex) ⇒ <code>object</code>
+        * [.compactBlobIndex(index, [maxBytes])](#Document.compactBlobIndex) ⇒ <code>object</code>
+        * [.advertise(buffer, [opts])](#Document.advertise) ⇒ <code>Object</code>
+        * [.verifyBlobIndex(index, [blobHashHexes], [opts])](#Document.verifyBlobIndex) ⇒ <code>Object</code>
+        * [.blobPaymentHash(opts)](#Document.blobPaymentHash) ⇒ <code>string</code>
+        * [.verifyBlob(bytes, expectedHashHex)](#Document.verifyBlob) ⇒ <code>boolean</code>
+        * [.reassemble(blobsByIndex, total, [merkleRootHex], [opts])](#Document.reassemble) ⇒ <code>Object</code>
 
 <a name="new_Document_new"></a>
 
@@ -7430,7 +9264,7 @@ from each blob's content (convergent) unless `private` is set.
 <a name="Document.fromPlain"></a>
 
 ### Document.fromPlain(content, [opts]) ⇒ [<code>Document</code>](#Document)
-Unsealed blob tree over raw content (same leaves and root as `splitBlobs`).
+Unsealed blob tree over raw content (same leaves and root as `Document.split`).
 
 **Kind**: static method of [<code>Document</code>](#Document)  
 
@@ -7475,6 +9309,414 @@ metadata lives. Seal it as its own one-blob Document.
 | --- | --- |
 | bytes | <code>Buffer</code> \| <code>string</code> | 
 
+<a name="Document.rootHexFromBlobHashes"></a>
+
+### Document.rootHexFromBlobHashes(blobHashHexes, [opts]) ⇒ <code>string</code>
+Document root over blob hashes alone (unsealed blobs: zero payment hash
+and IV), or with one payment hash on every leaf (a whole-document sale
+under a single key).
+
+**Kind**: static method of [<code>Document</code>](#Document)  
+**Returns**: <code>string</code> - 64 hex chars  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| blobHashHexes | <code>Array.&lt;string&gt;</code> | in index order |
+| [opts] | <code>Object</code> |  |
+| [opts.paymentHashHex] | <code>string</code> | payment hash committed by every leaf |
+
+<a name="Document.sameIv"></a>
+
+### Document.sameIv(a, b) ⇒ <code>boolean</code>
+Compare two IVs by their decoded bytes (base64 spelling does not matter).
+
+**Kind**: static method of [<code>Document</code>](#Document)  
+
+| Param | Type |
+| --- | --- |
+| a | <code>\*</code> | 
+| b | <code>\*</code> | 
+
+<a name="Document.leafHex"></a>
+
+### Document.leafHex(blob) ⇒ <code>string</code>
+Leaf for one blob: `H(0x00 || blobHash || paymentHash || iv)`.
+Unsealed blobs use 32 / 12 zero bytes for the payment hash / IV.
+
+**Kind**: static method of [<code>Document</code>](#Document)  
+**Returns**: <code>string</code> - 64 hex chars  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| blob | <code>Object</code> |  |
+| blob.blobHashHex | <code>string</code> | SHA256(ciphertext) (64 hex) |
+| [blob.paymentHashHex] | <code>string</code> | SHA256(K_i) (64 hex) |
+| [blob.iv] | <code>string</code> \| <code>Buffer</code> | 12-byte AES-GCM IV (base64 or bytes) |
+
+<a name="Document.rootHex"></a>
+
+### Document.rootHex(blobs) ⇒ <code>string</code>
+Document root for blob leaves in index order.
+
+**Kind**: static method of [<code>Document</code>](#Document)  
+**Returns**: <code>string</code> - 64 hex chars  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| blobs | <code>Array.&lt;Object&gt;</code> | `{ blobHashHex, paymentHashHex?, iv? }` per index |
+
+<a name="Document.inclusionProof"></a>
+
+### Document.inclusionProof(blobs, index) ⇒ <code>Array.&lt;string&gt;</code>
+Inclusion proof for blob `index`: sibling hashes leaf to root, skipping
+levels where the node is promoted. Positions follow from `index` and the
+blob count, so the proof is a bare hex list.
+
+**Kind**: static method of [<code>Document</code>](#Document)  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| blobs | <code>Array.&lt;Object&gt;</code> |  | `{ blobHashHex, paymentHashHex?, iv? }` per index |
+| index | <code>number</code> | <code>0</code> |  |
+
+<a name="Document.inclusionProofs"></a>
+
+### Document.inclusionProofs(blobs) ⇒ <code>Array.&lt;Array.&lt;string&gt;&gt;</code>
+Every blob's inclusion proof from one tree build.
+
+**Kind**: static method of [<code>Document</code>](#Document)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| blobs | <code>Array.&lt;Object&gt;</code> | `{ blobHashHex, paymentHashHex?, iv? }` per index |
+
+<a name="Document.verifyInclusion"></a>
+
+### Document.verifyInclusion(opts) ⇒ <code>boolean</code>
+Check one blob's leaf against a document root with its inclusion proof.
+
+**Kind**: static method of [<code>Document</code>](#Document)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| opts | <code>Object</code> |  |
+| opts.merkleRootHex | <code>string</code> | document root |
+| opts.blobTotal | <code>number</code> | blob count the root commits |
+| opts.blobIndex | <code>number</code> |  |
+| opts.blobHashHex | <code>string</code> |  |
+| [opts.paymentHashHex] | <code>string</code> |  |
+| [opts.iv] | <code>string</code> \| <code>Buffer</code> |  |
+| opts.proof | <code>Array.&lt;string&gt;</code> | from [inclusionProof](#Document.inclusionProof) |
+
+<a name="Document.verifyOfferLeaves"></a>
+
+### Document.verifyOfferLeaves(opts) ⇒ <code>Object</code>
+Check the per-blob leaves an offer advertises against its document root
+before trusting any of its payment hashes or IVs.
+
+- Every blob listed → the root is recomputed from the list.
+- A subset → each listed blob must carry an inclusion `proof`.
+- The root commits `blobTotal`, each blob's payment hash and IV, so a
+  reseller cannot advertise a payment hash (or IV) the publisher did not
+  seal under.
+
+**Kind**: static method of [<code>Document</code>](#Document)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| opts | <code>Object</code> |  |
+| opts.merkleRootHex | <code>string</code> | advertised document root |
+| opts.blobs | <code>Array.&lt;Object&gt;</code> | `{ index?, blobHashHex, paymentHashHex?, iv?, proof? }` (`contentHashHex` is read when `paymentHashHex` is absent; `index` defaults to the position) |
+| opts.blobTotal | <code>number</code> | blob count of the document |
+
+<a name="Document.split"></a>
+
+### Document.split(buffer, [chunkBytes], [documentId]) ⇒ <code>Object</code>
+Split content into wire-sized blobs and commit them with the document root.
+Always returns at least one blob (empty buffer → one empty blob).
+
+**Kind**: static method of [<code>Document</code>](#Document)  
+
+| Param | Type |
+| --- | --- |
+| buffer | <code>Buffer</code> \| <code>string</code> | 
+| [chunkBytes] | <code>number</code> | 
+| [documentId] | <code>string</code> | 
+
+<a name="Document.blobIndex"></a>
+
+### Document.blobIndex(opts) ⇒ <code>object</code>
+Canonical index message (no content bytes). Always produced — even for one blob.
+
+**Kind**: static method of [<code>Document</code>](#Document)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| opts | <code>object</code> |  |
+| [opts.documentId] | <code>string</code> |  |
+| opts.merkleRootHex | <code>string</code> |  |
+| [opts.contentSha256] | <code>string</code> |  |
+| [opts.chunkBytes] | <code>number</code> |  |
+| opts.blobs | <code>Array.&lt;Object&gt;</code> | `{ index, total?, blobHashHex, size?, rateSats?, contentHash? }` per blob |
+| [opts.leavesInline] | <code>boolean</code> |  |
+
+<a name="Document.compactBlobIndex"></a>
+
+### Document.compactBlobIndex(index, [maxBytes]) ⇒ <code>object</code>
+Drop inline leaves when the JSON index would exceed AMP body size.
+
+**Kind**: static method of [<code>Document</code>](#Document)  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| index | <code>object</code> |  | from [blobIndex](#Document.blobIndex) |
+| [maxBytes] | <code>number</code> | <code>MAX_MESSAGE_SIZE</code> |  |
+
+<a name="Document.advertise"></a>
+
+### Document.advertise(buffer, [opts]) ⇒ <code>Object</code>
+Inventory / offer advertisement: index fields + optional per-blob payment hashes.
+Always includes `blobs[]` when leaves fit; otherwise root-only with `leavesInline: false`.
+
+**Kind**: static method of [<code>Document</code>](#Document)  
+
+| Param | Type |
+| --- | --- |
+| buffer | <code>Buffer</code> \| <code>string</code> | 
+| [opts] | <code>object</code> | 
+| [opts.documentId] | <code>string</code> | 
+| [opts.chunkBytes] | <code>number</code> | 
+| [opts.rateSats] | <code>number</code> | 
+| [opts.includePaymentHashes] | <code>boolean</code> | 
+
+<a name="Document.verifyBlobIndex"></a>
+
+### Document.verifyBlobIndex(index, [blobHashHexes], [opts]) ⇒ <code>Object</code>
+Verify an index's root against listed (or supplied) blob hashes.
+
+**Kind**: static method of [<code>Document</code>](#Document)  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| index | <code>object</code> |  |  |
+| [blobHashHexes] | <code>Array.&lt;string&gt;</code> | <code></code> | override leaves when `leavesInline` is false |
+| [opts] | <code>Object</code> |  |  |
+| [opts.paymentHashHex] | <code>string</code> |  | whole-document payment hash on every leaf |
+
+<a name="Document.blobPaymentHash"></a>
+
+### Document.blobPaymentHash(opts) ⇒ <code>string</code>
+Per-blob payment commitment (distinct from whole-doc purchaseContentHashHex).
+
+**Kind**: static method of [<code>Document</code>](#Document)  
+**Returns**: <code>string</code> - 64 hex chars  
+
+| Param | Type |
+| --- | --- |
+| opts | <code>Object</code> | 
+
+<a name="Document.verifyBlob"></a>
+
+### Document.verifyBlob(bytes, expectedHashHex) ⇒ <code>boolean</code>
+**Kind**: static method of [<code>Document</code>](#Document)  
+
+| Param | Type |
+| --- | --- |
+| bytes | <code>Buffer</code> \| <code>string</code> | 
+| expectedHashHex | <code>string</code> | 
+
+<a name="Document.reassemble"></a>
+
+### Document.reassemble(blobsByIndex, total, [merkleRootHex], [opts]) ⇒ <code>Object</code>
+**Kind**: static method of [<code>Document</code>](#Document)  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| blobsByIndex | <code>Map.&lt;number, Buffer&gt;</code> \| <code>object</code> |  |  |
+| total | <code>number</code> |  |  |
+| [merkleRootHex] | <code>string</code> | <code>null</code> |  |
+| [opts] | <code>Object</code> |  |  |
+| [opts.leaves] | <code>Map.&lt;number, Object&gt;</code> \| <code>Array.&lt;Object&gt;</code> |  | `{ paymentHashHex?, iv? }` per blob index; a whole-document sale repeats one payment hash |
+
+<a name="DocumentBlobTransferBook"></a>
+
+## DocumentBlobTransferBook
+Buyer-side reassembly of indexed blob transfers.
+
+Two tables:
+- **Expectations** (`expectTransfer`): what the buyer asked / paid for.
+  Only the local caller writes them; unsolicited frames can never evict
+  them. Each lives until `expiresAt` (caller-set, default an hour), is
+  refreshed by matching frames
+  ([touch](#DocumentBlobTransferBook+touch)), and ends with
+  [releaseTransfer](#DocumentBlobTransferBook+releaseTransfer) or completion.
+- **Assembly rows** (`ingest`): bytes received so far. Rows backed by an
+  expectation are *pinned*; others are unsolicited and bounded by
+  `maxPending` rows overall, `maxPendingPerOrigin` rows and
+  `maxPendingBytesPerOrigin` bytes per sending peer, idle `ttlMs`, and are
+  evicted (oldest first) before any pinned row. A row whose `total`
+  contradicts the expectation (planted before the purchase) is replaced.
+
+**Kind**: global class  
+
+* [DocumentBlobTransferBook](#DocumentBlobTransferBook)
+    * [new DocumentBlobTransferBook([opts])](#new_DocumentBlobTransferBook_new)
+    * _instance_
+        * [._pending](#DocumentBlobTransferBook+_pending) : <code>Map.&lt;string, object&gt;</code>
+        * [._expectations](#DocumentBlobTransferBook+_expectations) : <code>Map.&lt;string, object&gt;</code>
+        * [._originBytes](#DocumentBlobTransferBook+_originBytes) : <code>Map.&lt;string, number&gt;</code>
+        * [.pendingCount](#DocumentBlobTransferBook+pendingCount) : <code>number</code>
+        * [.pendingBytes](#DocumentBlobTransferBook+pendingBytes) : <code>number</code>
+        * [.expectTransfer(opts)](#DocumentBlobTransferBook+expectTransfer) ⇒ <code>Object</code> \| <code>null</code>
+        * [.expectedFor(documentId)](#DocumentBlobTransferBook+expectedFor) ⇒ <code>Array.&lt;Object&gt;</code>
+        * [.touch(documentId, [merkleRootHex])](#DocumentBlobTransferBook+touch) ⇒ <code>boolean</code>
+        * [.releaseTransfer(opts)](#DocumentBlobTransferBook+releaseTransfer) ⇒ <code>boolean</code>
+        * [.ingest(frame, [opts])](#DocumentBlobTransferBook+ingest) ⇒ <code>Object</code>
+    * _static_
+        * [.parseFrame(obj)](#DocumentBlobTransferBook.parseFrame) ⇒ <code>Object</code>
+        * [.verifySealedFrame(obj, expected)](#DocumentBlobTransferBook.verifySealedFrame) ⇒ <code>Object</code>
+
+<a name="new_DocumentBlobTransferBook_new"></a>
+
+### new DocumentBlobTransferBook([opts])
+
+| Param | Type | Description |
+| --- | --- | --- |
+| [opts] | <code>Object</code> |  |
+| [opts.ttlMs] | <code>number</code> | drop unsolicited incomplete transfers idle this long |
+| [opts.expectationTtlMs] | <code>number</code> | default expectation lifetime |
+| [opts.maxPending] | <code>number</code> | max concurrent unsolicited incomplete transfers |
+| [opts.maxExpectations] | <code>number</code> | max concurrent expectations (oldest released first; defaults to `maxPending`) |
+| [opts.maxPendingPerOrigin] | <code>number</code> | max unsolicited rows one origin may hold |
+| [opts.maxPendingBytesPerOrigin] | <code>number</code> | unsolicited byte quota per origin (default a quarter of `maxPendingBytes`) |
+| [opts.maxParts] | <code>number</code> | max `blobTotal` for one transfer |
+| [opts.maxPendingBytes] | <code>number</code> | byte budget across every incomplete transfer |
+
+<a name="DocumentBlobTransferBook+_pending"></a>
+
+### documentBlobTransferBook.\_pending : <code>Map.&lt;string, object&gt;</code>
+**Kind**: instance property of [<code>DocumentBlobTransferBook</code>](#DocumentBlobTransferBook)  
+<a name="DocumentBlobTransferBook+_expectations"></a>
+
+### documentBlobTransferBook.\_expectations : <code>Map.&lt;string, object&gt;</code>
+**Kind**: instance property of [<code>DocumentBlobTransferBook</code>](#DocumentBlobTransferBook)  
+<a name="DocumentBlobTransferBook+_originBytes"></a>
+
+### documentBlobTransferBook.\_originBytes : <code>Map.&lt;string, number&gt;</code>
+**Kind**: instance property of [<code>DocumentBlobTransferBook</code>](#DocumentBlobTransferBook)  
+<a name="DocumentBlobTransferBook+pendingCount"></a>
+
+### documentBlobTransferBook.pendingCount : <code>number</code>
+Number of in-flight transfers (expected or with bytes held).
+
+**Kind**: instance property of [<code>DocumentBlobTransferBook</code>](#DocumentBlobTransferBook)  
+<a name="DocumentBlobTransferBook+pendingBytes"></a>
+
+### documentBlobTransferBook.pendingBytes : <code>number</code>
+Bytes held across every in-flight transfer.
+
+**Kind**: instance property of [<code>DocumentBlobTransferBook</code>](#DocumentBlobTransferBook)  
+<a name="DocumentBlobTransferBook+expectTransfer"></a>
+
+### documentBlobTransferBook.expectTransfer(opts) ⇒ <code>Object</code> \| <code>null</code>
+Pre-register expected leaves (from inventory DocumentBlobIndex).
+
+**Kind**: instance method of [<code>DocumentBlobTransferBook</code>](#DocumentBlobTransferBook)  
+**Returns**: <code>Object</code> \| <code>null</code> - the expectation row  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| opts | <code>object</code> |  |
+| [opts.blobHashHexes] | <code>Array.&lt;string&gt;</code> | expected blob hash per blob index; empty or null entries leave that index unchecked here (the sealed per-blob path refuses them once any index is pinned: that blob was not bought) |
+| [opts.paymentHashHexes] | <code>Array.&lt;string&gt;</code> | expected sealed payment hash (SHA256(K_i)) per blob index |
+| [opts.ivs] | <code>Array.&lt;string&gt;</code> | advertised AES-GCM IV (base64) per blob index |
+| [opts.origins] | <code>Array.&lt;string&gt;</code> | peer the index was bought from (its frame may displace another origin's alternate when the IV is not advertised) |
+| [opts.merge] | <code>boolean</code> | add these pins to an existing expectation for the same document and root (same `total`) instead of replacing it, so buying blob j keeps blob i pinned |
+| [opts.expiresAt] | <code>number</code> | epoch ms the expectation lapses (session lifetime) |
+| [opts.ttlMs] | <code>number</code> | lifetime from now (and refresh step) when `expiresAt` is not given |
+
+<a name="DocumentBlobTransferBook+expectedFor"></a>
+
+### documentBlobTransferBook.expectedFor(documentId) ⇒ <code>Array.&lt;Object&gt;</code>
+Expectations registered for a document (any root). Lets the per-blob
+sealed path refuse frames whose root / total disagree with what the buyer
+actually asked for.
+
+**Kind**: instance method of [<code>DocumentBlobTransferBook</code>](#DocumentBlobTransferBook)  
+**Returns**: <code>Array.&lt;Object&gt;</code> - rows from [expectTransfer](#DocumentBlobTransferBook+expectTransfer)  
+
+| Param | Type |
+| --- | --- |
+| documentId | <code>string</code> | 
+
+<a name="DocumentBlobTransferBook+touch"></a>
+
+### documentBlobTransferBook.touch(documentId, [merkleRootHex]) ⇒ <code>boolean</code>
+Extend an expectation by its refresh step (a matching frame arrived).
+
+**Kind**: instance method of [<code>DocumentBlobTransferBook</code>](#DocumentBlobTransferBook)  
+**Returns**: <code>boolean</code> - true when an expectation was refreshed  
+
+| Param | Type | Default |
+| --- | --- | --- |
+| documentId | <code>string</code> |  | 
+| [merkleRootHex] | <code>string</code> \| <code>null</code> | <code>null</code> | 
+
+<a name="DocumentBlobTransferBook+releaseTransfer"></a>
+
+### documentBlobTransferBook.releaseTransfer(opts) ⇒ <code>boolean</code>
+End a purchase session: drop its expectation and any partial bytes.
+
+**Kind**: instance method of [<code>DocumentBlobTransferBook</code>](#DocumentBlobTransferBook)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| opts | <code>Object</code> \| <code>string</code> | `{ documentId, merkleRootHex }` or a transfer key |
+
+<a name="DocumentBlobTransferBook+ingest"></a>
+
+### documentBlobTransferBook.ingest(frame, [opts]) ⇒ <code>Object</code>
+**Kind**: instance method of [<code>DocumentBlobTransferBook</code>](#DocumentBlobTransferBook)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| frame | <code>object</code> | from [parseFrame](#DocumentBlobTransferBook.parseFrame) |
+| [opts] | <code>Object</code> |  |
+| [opts.origin] | <code>string</code> | sending peer (per-origin quotas for unsolicited rows) |
+
+<a name="DocumentBlobTransferBook.parseFrame"></a>
+
+### DocumentBlobTransferBook.parseFrame(obj) ⇒ <code>Object</code>
+**Kind**: static method of [<code>DocumentBlobTransferBook</code>](#DocumentBlobTransferBook)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| obj | <code>object</code> | P2P_FILE_SEND JSON object |
+
+<a name="DocumentBlobTransferBook.verifySealedFrame"></a>
+
+### DocumentBlobTransferBook.verifySealedFrame(obj, expected) ⇒ <code>Object</code>
+Verify-before-pay: check one free sealed per-blob `P2P_FILE_SEND` body
+(ciphertext of blob `i`) against the document root **before** funding the
+HTLC for `K_i`. The ciphertext must hash to its `blobHashHex` and the leaf
+`(blobHash, paymentHash, iv)` must open to the root with the frame's
+inclusion proof (or `expected.proof`). Pins from verified offer leaves
+([verifyOfferLeaves](#Document.verifyOfferLeaves)) are enforced when given.
+
+**Kind**: static method of [<code>DocumentBlobTransferBook</code>](#DocumentBlobTransferBook)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| obj | <code>Object</code> | raw `P2P_FILE_SEND` body (`sealed`, `perBlob`) |
+| expected | <code>Object</code> |  |
+| expected.merkleRootHex | <code>string</code> |  |
+| expected.blobTotal | <code>number</code> |  |
+| [expected.blobIndex] | <code>number</code> |  |
+| [expected.blobHashHex] | <code>string</code> |  |
+| [expected.paymentHashHex] | <code>string</code> |  |
+| [expected.iv] | <code>string</code> |  |
+| [expected.proof] | <code>Array.&lt;string&gt;</code> |  |
+
 <a name="DocumentBook"></a>
 
 ## DocumentBook
@@ -7482,32 +9724,40 @@ metadata lives. Seal it as its own one-blob Document.
 
 * [DocumentBook](#DocumentBook)
     * [new DocumentBook([settings])](#new_DocumentBook_new)
-    * [._providers](#DocumentBook+_providers) : <code>Map.&lt;string, object&gt;</code>
-    * [._keyPenalties](#DocumentBook+_keyPenalties) : <code>Map.&lt;string, object&gt;</code>
-    * [._sellerKeys](#DocumentBook+_sellerKeys) : <code>Map.&lt;string, Set.&lt;string&gt;&gt;</code>
-    * [._evidence](#DocumentBook+_evidence) : <code>Set.&lt;string&gt;</code>
-    * [.capacity](#DocumentBook+capacity) ⇒ <code>number</code>
-    * [.recordInventoryLatency(sellerId, latencyMs, [opts])](#DocumentBook+recordInventoryLatency)
-    * [.recordDelivery(sellerId, outcome)](#DocumentBook+recordDelivery)
-    * [.recordRefund(sellerId)](#DocumentBook+recordRefund)
-    * [.recordPenalty(sellerId, [proof])](#DocumentBook+recordPenalty)
-    * [.ingestFraudProof(body, [ctx])](#DocumentBook+ingestFraudProof) ⇒ <code>Object</code>
-    * [.keyPenalties(pubkey)](#DocumentBook+keyPenalties) ⇒ <code>number</code>
-    * [.scoreFor(sellerId)](#DocumentBook+scoreFor) ⇒ <code>number</code>
-    * [.latencyFor(sellerId)](#DocumentBook+latencyFor) ⇒ <code>number</code>
-    * [.providerStats(sellerId)](#DocumentBook+providerStats) ⇒ <code>object</code> \| <code>null</code>
-    * [.listProviders()](#DocumentBook+listProviders) ⇒ <code>Array.&lt;object&gt;</code>
-    * [.exportTelemetry()](#DocumentBook+exportTelemetry) ⇒ <code>Object</code>
-    * [.importTelemetry(record, [opts])](#DocumentBook+importTelemetry) ⇒ <code>number</code>
-    * [.ingestInventoryResponse(opts)](#DocumentBook+ingestInventoryResponse)
-    * [.forgetSeller(sellerId)](#DocumentBook+forgetSeller) ⇒ <code>number</code>
-    * [.listOffers([filter])](#DocumentBook+listOffers) ⇒ <code>Array.&lt;object&gt;</code>
-    * [.providersForBlob(blobHashHex, [opts])](#DocumentBook+providersForBlob) ⇒ <code>Array.&lt;object&gt;</code>
-    * [.indexByBlobHash([filter])](#DocumentBook+indexByBlobHash) ⇒ <code>Map.&lt;string, Array.&lt;object&gt;&gt;</code>
-    * [.rankOffers(offers, [weights])](#DocumentBook+rankOffers) ⇒ <code>Array.&lt;object&gt;</code>
-    * [.pickBest(documentId, [opts])](#DocumentBook+pickBest) ⇒ <code>object</code> \| <code>null</code>
-    * [.pickBlobPlan(documentId, blobTotal, [opts])](#DocumentBook+pickBlobPlan) ⇒ <code>Map.&lt;number, object&gt;</code>
-    * [.groupPlanBySeller(plan)](#DocumentBook+groupPlanBySeller) ⇒ <code>Array.&lt;object&gt;</code>
+    * _instance_
+        * [._providers](#DocumentBook+_providers) : <code>Map.&lt;string, object&gt;</code>
+        * [._keyPenalties](#DocumentBook+_keyPenalties) : <code>Map.&lt;string, object&gt;</code>
+        * [._sellerKeys](#DocumentBook+_sellerKeys) : <code>Map.&lt;string, Set.&lt;string&gt;&gt;</code>
+        * [._evidence](#DocumentBook+_evidence) : <code>Set.&lt;string&gt;</code>
+        * [.capacity](#DocumentBook+capacity) ⇒ <code>number</code>
+        * [.recordInventoryLatency(sellerId, latencyMs, [opts])](#DocumentBook+recordInventoryLatency)
+        * [.recordDelivery(sellerId, outcome)](#DocumentBook+recordDelivery)
+        * [.recordRefund(sellerId)](#DocumentBook+recordRefund)
+        * [.recordPenalty(sellerId, [proof])](#DocumentBook+recordPenalty)
+        * [.ingestFraudProof(body, [ctx])](#DocumentBook+ingestFraudProof) ⇒ <code>Object</code>
+        * [.keyPenalties(pubkey)](#DocumentBook+keyPenalties) ⇒ <code>number</code>
+        * [.scoreFor(sellerId)](#DocumentBook+scoreFor) ⇒ <code>number</code>
+        * [.latencyFor(sellerId)](#DocumentBook+latencyFor) ⇒ <code>number</code>
+        * [.providerStats(sellerId)](#DocumentBook+providerStats) ⇒ <code>object</code> \| <code>null</code>
+        * [.listProviders()](#DocumentBook+listProviders) ⇒ <code>Array.&lt;object&gt;</code>
+        * [.exportTelemetry()](#DocumentBook+exportTelemetry) ⇒ <code>Object</code>
+        * [.importTelemetry(record, [opts])](#DocumentBook+importTelemetry) ⇒ <code>number</code>
+        * [.ingestInventoryResponse(opts)](#DocumentBook+ingestInventoryResponse)
+        * [.ingestAsk(ask, [opts])](#DocumentBook+ingestAsk) ⇒ <code>object</code> \| <code>null</code>
+        * [.forgetSeller(sellerId)](#DocumentBook+forgetSeller) ⇒ <code>number</code>
+        * [.listOffers([filter])](#DocumentBook+listOffers) ⇒ <code>Array.&lt;object&gt;</code>
+        * [.providersForBlob(blobHashHex, [opts])](#DocumentBook+providersForBlob) ⇒ <code>Array.&lt;object&gt;</code>
+        * [.indexByBlobHash([filter])](#DocumentBook+indexByBlobHash) ⇒ <code>Map.&lt;string, Array.&lt;object&gt;&gt;</code>
+        * [.rankOffers(offers, [weights])](#DocumentBook+rankOffers) ⇒ <code>Array.&lt;object&gt;</code>
+        * [.pickBest(documentId, [opts])](#DocumentBook+pickBest) ⇒ <code>object</code> \| <code>null</code>
+        * [.pickBlobPlan(documentId, blobTotal, [opts])](#DocumentBook+pickBlobPlan) ⇒ <code>Map.&lt;number, object&gt;</code>
+        * [.groupPlanBySeller(plan)](#DocumentBook+groupPlanBySeller) ⇒ <code>Array.&lt;object&gt;</code>
+    * _static_
+        * [.bidId(message)](#DocumentBook.bidId) ⇒ <code>string</code> \| <code>null</code>
+        * [.createBid(opts)](#DocumentBook.createBid) ⇒ <code>Object</code>
+        * [.readBid(message, [opts])](#DocumentBook.readBid) ⇒ <code>Object</code> \| <code>Object</code>
+        * [.createAsk(bid, opts)](#DocumentBook.createAsk) ⇒ <code>Object</code>
+        * [.readAsk(message, [opts])](#DocumentBook.readAsk) ⇒ <code>Object</code> \| <code>Object</code>
 
 <a name="new_DocumentBook_new"></a>
 
@@ -7721,6 +9971,22 @@ win; otherwise local telemetry for the seller is applied.
 | [opts.sellerPubkey] | <code>string</code> |  |
 | [opts.signerPubkeyHex] | <code>string</code> | AMP signer (preferred identity) |
 
+<a name="DocumentBook+ingestAsk"></a>
+
+### documentBook.ingestAsk(ask, [opts]) ⇒ <code>object</code> \| <code>null</code>
+Record a seller's answer to one of our bids as an offer row for that
+chunk, ranked with every other offer. The seller is its signing key.
+
+**Kind**: instance method of [<code>DocumentBook</code>](#DocumentBook)  
+**Returns**: <code>object</code> \| <code>null</code> - the row, or null for a malformed ask  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| ask | <code>object</code> | from [readAsk](#DocumentBook.readAsk) (checked against the bid) |
+| [opts] | <code>Object</code> |  |
+| [opts.origin] | <code>string</code> | connection the ask arrived on |
+| [opts.latencyMs] | <code>number</code> | time from sending the bid to this ask |
+
 <a name="DocumentBook+forgetSeller"></a>
 
 ### documentBook.forgetSeller(sellerId) ⇒ <code>number</code>
@@ -7794,6 +10060,7 @@ Full chunk index: blob hash → ranked offers.
 | [opts.blobIndex] | <code>number</code> |  |
 | [opts.maxSats] | <code>number</code> |  |
 | [opts.minPaidSats] | <code>number</code> | drop paid offers below this (free offers stay) |
+| [opts.paidSealedOnly] | <code>boolean</code> | `true`: drop every paid unsealed   offer, even when no sealed offer is left. Unset: drop paid unsealed   offers only while a sealed offer remains after the other filters. |
 | [opts.excludeSellers] | <code>Array.&lt;string&gt;</code> |  |
 | [opts.merkleRootHex] | <code>string</code> | only offers for this tree root |
 | [opts.weights] | <code>Object</code> |  |
@@ -7816,6 +10083,7 @@ ones; a legacy document-level seal (`opts.singleKey`) stays on one seller.
 | [opts.singleKey] | <code>boolean</code> | legacy whole-document key: lock one seller |
 | [opts.maxSats] | <code>number</code> | per-blob ceiling |
 | [opts.minPaidSats] | <code>number</code> | drop paid offers below this (free offers stay) |
+| [opts.paidSealedOnly] | <code>boolean</code> | `true`: drop every paid unsealed   offer, even when no sealed offer is left. Unset: drop paid unsealed   offers only while a sealed offer remains after the other filters. |
 | [opts.excludeSellers] | <code>Array.&lt;string&gt;</code> |  |
 | [opts.merkleRootHex] | <code>string</code> | only offers for this tree root; when   omitted the plan still stays on **one** root (the first pick's), so   blobs from different trees are never mixed into a single document |
 
@@ -7831,6 +10099,89 @@ seller covering every blob picked from them).
 | Param | Type | Description |
 | --- | --- | --- |
 | plan | <code>Map.&lt;number, object&gt;</code> | from [pickBlobPlan](#DocumentBook+pickBlobPlan) |
+
+<a name="DocumentBook.bidId"></a>
+
+### DocumentBook.bidId(message) ⇒ <code>string</code> \| <code>null</code>
+Id of a bid: sha256(author ‖ body). Binding the author means a copy of the
+body signed by another key is another bid, so it cannot take over the
+route asks travel back on.
+
+**Kind**: static method of [<code>DocumentBook</code>](#DocumentBook)  
+
+| Param | Type |
+| --- | --- |
+| message | [<code>Message</code>](#Message) \| <code>Buffer</code> | 
+
+<a name="DocumentBook.createBid"></a>
+
+### DocumentBook.createBid(opts) ⇒ <code>Object</code>
+Build a signed bid to buy one chunk. Unless `opts.key` is given, each bid
+is signed by a fresh key, so bids do not link to the buyer's Peer identity.
+
+**Kind**: static method of [<code>DocumentBook</code>](#DocumentBook)  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| opts | <code>Object</code> |  |  |
+| opts.documentId | <code>string</code> |  |  |
+| opts.blobIndex | <code>number</code> |  |  |
+| opts.maxSats | <code>number</code> |  | most the buyer pays for the chunk (at least 1) |
+| [opts.merkleRootHex] | <code>string</code> |  | only this document tree |
+| [opts.blobHashHex] | <code>string</code> |  | only a chunk with this leaf hash |
+| [opts.ttlSeconds] | <code>number</code> | <code>600</code> | at most `DOCUMENT_BID_MAX_TTL_SECONDS` |
+| [opts.now] | <code>number</code> |  | unix seconds |
+| [opts.key] | [<code>Key</code>](#Key) |  | signer |
+
+<a name="DocumentBook.readBid"></a>
+
+### DocumentBook.readBid(message, [opts]) ⇒ <code>Object</code> \| <code>Object</code>
+Read and check a bid. Pure apart from the clock.
+
+**Kind**: static method of [<code>DocumentBook</code>](#DocumentBook)  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| message | [<code>Message</code>](#Message) \| <code>Buffer</code> |  |  |
+| [opts] | <code>Object</code> |  |  |
+| [opts.now] | <code>number</code> |  | unix seconds |
+| [opts.verify] | <code>boolean</code> | <code>true</code> | check the author signature (Peer already has) |
+
+<a name="DocumentBook.createAsk"></a>
+
+### DocumentBook.createAsk(bid, opts) ⇒ <code>Object</code>
+Build a seller's signed answer to a bid for a chunk it holds. The ask is a
+quote: payment terms are agreed later.
+
+**Kind**: static method of [<code>DocumentBook</code>](#DocumentBook)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| bid | <code>object</code> | from [readBid](#DocumentBook.readBid) |
+| opts | <code>Object</code> |  |
+| opts.key | [<code>Key</code>](#Key) | seller key |
+| opts.merkleRootHex | <code>string</code> | the seller's document tree |
+| opts.blobHashHex | <code>string</code> | the seller's leaf hash for the chunk |
+| opts.priceSats | <code>number</code> | at most the bid's `maxSats` |
+| [opts.expiresAt] | <code>number</code> | unix seconds, no later than the bid's |
+| [opts.now] | <code>number</code> | unix seconds |
+
+<a name="DocumentBook.readAsk"></a>
+
+### DocumentBook.readAsk(message, [opts]) ⇒ <code>Object</code> \| <code>Object</code>
+Read and check an ask; with `opts.bid`, also that it answers that bid:
+same document, index, root and leaf where the bid named them, price within
+the bid, and expiring no later than it.
+
+**Kind**: static method of [<code>DocumentBook</code>](#DocumentBook)  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| message | [<code>Message</code>](#Message) \| <code>Buffer</code> |  |  |
+| [opts] | <code>Object</code> |  |  |
+| [opts.bid] | <code>object</code> |  | from [readBid](#DocumentBook.readBid) |
+| [opts.now] | <code>number</code> |  | unix seconds |
+| [opts.verify] | <code>boolean</code> | <code>true</code> | check the author signature (Peer already has) |
 
 <a name="Entity"></a>
 
@@ -8307,7 +10658,7 @@ Register a single opcode entry in the service registry.
 
 | Param | Type | Description |
 | --- | --- | --- |
-| name | <code>string</code> | Opcode symbol (e.g. `OP_SHA256`, `P2P_FLUSH_CHAIN`) |
+| name | <code>string</code> | Opcode symbol (e.g. `OP_SHA256`, `P2P_CHAIN_SYNC_REQUEST`) |
 | [definition] | <code>Object</code> |  |
 
 <a name="Service+defineBitcoinOpcode"></a>
@@ -8339,7 +10690,7 @@ Register Fabric opcode metadata.
 ### fabric.defineOpcodeContract(name, body, [meta]) ⇒ <code>Object</code>
 Register a newline-delimited opcode contract.
 Contract body example:
-`OP_DUP\nOP_HASH160\nP2P_FLUSH_CHAIN`
+`OP_DUP\nOP_HASH160\nP2P_CHAIN_SYNC_REQUEST`
 
 **Kind**: instance method of [<code>Fabric</code>](#Fabric)  
 
@@ -8808,7 +11159,7 @@ Register a single opcode entry in the service registry.
 
 | Param | Type | Description |
 | --- | --- | --- |
-| name | <code>string</code> | Opcode symbol (e.g. `OP_SHA256`, `P2P_FLUSH_CHAIN`) |
+| name | <code>string</code> | Opcode symbol (e.g. `OP_SHA256`, `P2P_CHAIN_SYNC_REQUEST`) |
 | [definition] | <code>Object</code> |  |
 
 <a name="Service+defineBitcoinOpcode"></a>
@@ -8840,7 +11191,7 @@ Register Fabric opcode metadata.
 ### fabric.defineOpcodeContract(name, body, [meta]) ⇒ <code>Object</code>
 Register a newline-delimited opcode contract.
 Contract body example:
-`OP_DUP\nOP_HASH160\nP2P_FLUSH_CHAIN`
+`OP_DUP\nOP_HASH160\nP2P_CHAIN_SYNC_REQUEST`
 
 **Kind**: instance method of [<code>Fabric</code>](#Fabric)  
 
@@ -9941,6 +12292,9 @@ Simple interaction with 256-bit spaces.
     * [new Hash256(settings)](#new_Hash256_new)
     * [.doubleDigest(input)](#Hash256.doubleDigest) ⇒ <code>String</code>
     * [.digest(input)](#Hash256.digest) ⇒ <code>String</code>
+    * [.tagged(tag, data)](#Hash256.tagged) ⇒ <code>Buffer</code>
+    * [.hmac(key, data)](#Hash256.hmac) ⇒ <code>Buffer</code>
+    * [.keystream(key, n, [prefix])](#Hash256.keystream) ⇒ <code>Buffer</code>
     * [.reverse()](#Hash256.reverse)
 
 <a name="new_Hash256_new"></a>
@@ -9981,6 +12335,48 @@ Produce a SHA256 digest of some input data.
 | --- | --- | --- |
 | input | <code>String</code> \| <code>Buffer</code> | Content to digest. |
 
+<a name="Hash256.tagged"></a>
+
+### Hash256.tagged(tag, data) ⇒ <code>Buffer</code>
+BIP-340 tagged hash: `SHA256(SHA256(tag) ‖ SHA256(tag) ‖ data)`.
+
+**Kind**: static method of [<code>Hash256</code>](#Hash256)  
+**Returns**: <code>Buffer</code> - 32-byte digest.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| tag | <code>String</code> \| <code>Buffer</code> | Tag (a string is UTF-8), e.g. `Fabric/Message`. |
+| data | <code>Buffer</code> | Data to hash. |
+
+<a name="Hash256.hmac"></a>
+
+### Hash256.hmac(key, data) ⇒ <code>Buffer</code>
+HMAC-SHA256 (RFC 2104).
+
+**Kind**: static method of [<code>Hash256</code>](#Hash256)  
+**Returns**: <code>Buffer</code> - 32-byte MAC.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| key | <code>Buffer</code> \| <code>Uint8Array</code> \| <code>String</code> | Key (a string is UTF-8). |
+| data | <code>Buffer</code> \| <code>Uint8Array</code> \| <code>String</code> | Message (a string is UTF-8). |
+
+<a name="Hash256.keystream"></a>
+
+### Hash256.keystream(key, n, [prefix]) ⇒ <code>Buffer</code>
+`n` bytes of HMAC-SHA256 counter-mode keystream: block `j` is
+`HMAC-SHA256(key, prefix ‖ uint32be(j))`, from `j = 0`, truncated to `n`.
+XOR with a plaintext to encrypt; a key must never encrypt two plaintexts.
+
+**Kind**: static method of [<code>Hash256</code>](#Hash256)  
+**Returns**: <code>Buffer</code> - `n` bytes.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| key | <code>Buffer</code> \| <code>Uint8Array</code> \| <code>String</code> | Key (a string is UTF-8). |
+| n | <code>Number</code> | Number of bytes. |
+| [prefix] | <code>Buffer</code> \| <code>Uint8Array</code> \| <code>String</code> | Domain label ahead of the counter. |
+
 <a name="Hash256.reverse"></a>
 
 ### Hash256.reverse()
@@ -9990,39 +12386,73 @@ Reverses the bytes of the digest.
 <a name="HKDF"></a>
 
 ## HKDF
-Provides an HMAC-based Extract-and-Expand Key Derivation Function (HKDF), compatible with
-RFC 5869.  Defaults to 32 byte output, matching Bitcoin's implementaton.
+HMAC-based Extract-and-Expand Key Derivation Function (HKDF, RFC 5869).
+Defaults to SHA-256 and 32 bytes of output.
 
 **Kind**: global class  
 
 * [HKDF](#HKDF)
     * [new HKDF(settings)](#new_HKDF_new)
-    * [.derive([info], [size])](#HKDF+derive)
+    * _instance_
+        * [.derive([info], [size])](#HKDF+derive) ⇒ <code>Buffer</code>
+    * _static_
+        * [.extract(ikm, [salt], [algorithm])](#HKDF.extract) ⇒ <code>Buffer</code>
+        * [.expand(prk, [info], [length], [algorithm])](#HKDF.expand) ⇒ <code>Buffer</code>
 
 <a name="new_HKDF_new"></a>
 
 ### new HKDF(settings)
-Create an HKDF instance.
+Create an HKDF instance: extracts the pseudorandom key once, then
+[derive](#HKDF+derive) expands it for each `info`.
 
 
 | Param | Type | Default | Description |
 | --- | --- | --- | --- |
 | settings | <code>Object</code> |  | List of settings. |
-| settings.initial | <code>String</code> |  | Input keying material. |
-| [settings.algorithm] | <code>String</code> | <code>sha256</code> | Name of the hashing algorithm to use. |
-| [settings.salt] | <code>String</code> |  | Salt value (a non-secret random value). |
+| settings.initial | <code>Buffer</code> \| <code>String</code> |  | Input keying material (a string is UTF-8). |
+| [settings.algorithm] | <code>String</code> | <code>sha256</code> | `sha256` or `sha512`. |
+| [settings.salt] | <code>Buffer</code> \| <code>String</code> |  | Salt; defaults to a hash-length string of zero bytes. |
 
 <a name="HKDF+derive"></a>
 
-### hkdF.derive([info], [size])
+### hkdF.derive([info], [size]) ⇒ <code>Buffer</code>
 Derive a new output.
 
 **Kind**: instance method of [<code>HKDF</code>](#HKDF)  
 
 | Param | Type | Default | Description |
 | --- | --- | --- | --- |
-| [info] | <code>Buffer</code> |  | Context and application specific information. |
+| [info] | <code>Buffer</code> \| <code>String</code> |  | Context and application specific information. |
 | [size] | <code>Number</code> | <code>32</code> | Length of output. |
+
+<a name="HKDF.extract"></a>
+
+### HKDF.extract(ikm, [salt], [algorithm]) ⇒ <code>Buffer</code>
+HKDF-Extract: `PRK = HMAC-Hash(salt, IKM)`.
+
+**Kind**: static method of [<code>HKDF</code>](#HKDF)  
+**Returns**: <code>Buffer</code> - Pseudorandom key, one hash length.  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| ikm | <code>Buffer</code> \| <code>Uint8Array</code> \| <code>String</code> |  | Input keying material (a string is UTF-8). |
+| [salt] | <code>Buffer</code> \| <code>Uint8Array</code> \| <code>String</code> |  | Salt; empty means a hash-length string of zero bytes. |
+| [algorithm] | <code>String</code> | <code>sha256</code> | `sha256` or `sha512`. |
+
+<a name="HKDF.expand"></a>
+
+### HKDF.expand(prk, [info], [length], [algorithm]) ⇒ <code>Buffer</code>
+HKDF-Expand: `T(1) ‖ T(2) ‖ …` with `T(i) = HMAC-Hash(PRK, T(i-1) ‖ info ‖ i)`.
+
+**Kind**: static method of [<code>HKDF</code>](#HKDF)  
+**Returns**: <code>Buffer</code> - Output keying material.  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| prk | <code>Buffer</code> \| <code>Uint8Array</code> |  | Pseudorandom key, at least one hash length. |
+| [info] | <code>Buffer</code> \| <code>Uint8Array</code> \| <code>String</code> |  | Context and application specific information. |
+| [length] | <code>Number</code> | <code>32</code> | Output length, at most 255 hash lengths. |
+| [algorithm] | <code>String</code> | <code>sha256</code> | `sha256` or `sha512`. |
 
 <a name="Htlc"></a>
 
@@ -10054,7 +12484,12 @@ Derive a new output.
         * [.signRefund(bundle, priv32)](#Htlc.signRefund) ⇒ <code>Object</code>
         * [.extractPreimageFromWitness(witness, paymentHash32)](#Htlc.extractPreimageFromWitness) ⇒ <code>Buffer</code> \| <code>null</code>
         * [.extractPreimage(txHexOrTx, paymentHashHex)](#Htlc.extractPreimage) ⇒ <code>Object</code>
-        * [.refundMature(tipHeight, refundLocktimeHeight)](#Htlc.refundMature) ⇒ <code>boolean</code>
+        * [.spendFeeSats([opts])](#Htlc.spendFeeSats) ⇒ <code>number</code>
+        * [.claimFeeSats(feerate)](#Htlc.claimFeeSats) ⇒ <code>number</code>
+        * [.dustForAddress([address])](#Htlc.dustForAddress) ⇒ <code>number</code>
+        * [.minimumForFeerate(feerate, [address])](#Htlc.minimumForFeerate) ⇒ <code>number</code>
+        * [.minimumLockBlocks()](#Htlc.minimumLockBlocks) ⇒ <code>number</code>
+        * [.claimRefusal(opts)](#Htlc.claimRefusal) ⇒ <code>string</code> \| <code>null</code>
         * [.validateOffer(opts)](#Htlc.validateOffer) ⇒ <code>Object</code>
 
 <a name="new_Htlc_new"></a>
@@ -10299,16 +12734,79 @@ Scan a claim transaction for the preimage (the content key for sealed sales).
 | txHexOrTx | <code>string</code> \| <code>Transaction</code> | Raw hex, or a bitcoinjs-lib transaction |
 | paymentHashHex | <code>string</code> \| <code>Buffer</code> |  |
 
-<a name="Htlc.refundMature"></a>
+<a name="Htlc.spendFeeSats"></a>
 
-### Htlc.refundMature(tipHeight, refundLocktimeHeight) ⇒ <code>boolean</code>
+### Htlc.spendFeeSats([opts]) ⇒ <code>number</code>
+Fee for a claim or refund. An explicit `feeSats` wins. Otherwise
+`feerate` (sat/vB) times the measured 162 vB claim. Neither falls back
+to [Htlc.DEFAULT_FEE_SATS](Htlc.DEFAULT_FEE_SATS).
+
 **Kind**: static method of [<code>Htlc</code>](#Htlc)  
-**Returns**: <code>boolean</code> - the refund leaf is spendable at `tipHeight`  
 
 | Param | Type |
 | --- | --- |
-| tipHeight | <code>number</code> | 
-| refundLocktimeHeight | <code>number</code> | 
+| [opts] | <code>Object</code> | 
+| [opts.feeSats] | <code>number</code> | 
+| [opts.feerate] | <code>number</code> | 
+
+<a name="Htlc.claimFeeSats"></a>
+
+### Htlc.claimFeeSats(feerate) ⇒ <code>number</code>
+Claim fee at `feerate` sat/vB on the measured claim size.
+
+**Kind**: static method of [<code>Htlc</code>](#Htlc)  
+
+| Param | Type |
+| --- | --- |
+| feerate | <code>number</code> | 
+
+<a name="Htlc.dustForAddress"></a>
+
+### Htlc.dustForAddress([address]) ⇒ <code>number</code>
+Dust the claim output must leave. A taproot destination is 330 sats;
+anything else stays at the legacy 546.
+
+**Kind**: static method of [<code>Htlc</code>](#Htlc)  
+
+| Param | Type |
+| --- | --- |
+| [address] | <code>string</code> | 
+
+<a name="Htlc.minimumForFeerate"></a>
+
+### Htlc.minimumForFeerate(feerate, [address]) ⇒ <code>number</code>
+Smallest document HTLC at `feerate`. Never under [HTLC_MINIMUM_SATS](HTLC_MINIMUM_SATS).
+A taproot payout needs `dust + feerate × measured vbytes`.
+
+**Kind**: static method of [<code>Htlc</code>](#Htlc)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| feerate | <code>number</code> | sat/vB |
+| [address] | <code>string</code> | destination; omitted means taproot |
+
+<a name="Htlc.minimumLockBlocks"></a>
+
+### Htlc.minimumLockBlocks() ⇒ <code>number</code>
+Blocks the buyer must leave between the tip and the refund lock:
+confirmations + claim room + margin.
+
+**Kind**: static method of [<code>Htlc</code>](#Htlc)  
+<a name="Htlc.claimRefusal"></a>
+
+### Htlc.claimRefusal(opts) ⇒ <code>string</code> \| <code>null</code>
+Why a seller claim is refused, or null when it may be built.
+The funding transaction needs `c` confirmations, and the tip must be at
+least `d` blocks before the refund lock.
+
+**Kind**: static method of [<code>Htlc</code>](#Htlc)  
+
+| Param | Type |
+| --- | --- |
+| opts | <code>Object</code> | 
+| opts.tipHeight | <code>number</code> | 
+| opts.refundLocktime | <code>number</code> | 
+| opts.confirmations | <code>number</code> | 
 
 <a name="Htlc.validateOffer"></a>
 
@@ -10329,7 +12827,7 @@ it. A seller-supplied address is never authoritative without a match.
 ## Identity ⇐ [<code>Actor</code>](#Actor)
 <strong>BIP32/BIP39 identity</strong> wrapping [Key](#Key): mnemonic / xprv / passphrase.
 Protocol identity (pubkey / Schnorr sign / Bech32 id) uses the Fabric derivation path
-<code>m/44'/{7777|7778}'/account'/0/index</code> — coin type <strong>7777</strong> on Bitcoin
+<code>m/7777'/{7777|7778}'/account'/0/index</code> — coin type <strong>7777</strong> on Bitcoin
 mainnet, <strong>7778</strong> on all other networks (see [Identity#derivation](Identity#derivation) and
 IDENTITY.md). The HD <strong>master</strong> remains available as [master](#Identity+master) /
 [Identity#key](Identity#key) so Bitcoin funds can derive under BIP44 coin type <code>0</code> (see
@@ -10878,10 +13376,10 @@ Represents a cryptographic key.
     * [new Key([settings])](#new_Key_new)
     * _instance_
         * ~~[.iv](#Key+iv)~~
-        * [.verify(msg, sig)](#Key+verify) ⇒ <code>Boolean</code>
-        * [.signSchnorr(msg)](#Key+signSchnorr) ⇒ <code>Buffer</code>
+        * [.verify(msg, sig, [tag])](#Key+verify) ⇒ <code>Boolean</code>
+        * [.signSchnorr(msg, tag)](#Key+signSchnorr) ⇒ <code>Buffer</code>
         * [.signSchnorrHash(messageHash)](#Key+signSchnorrHash) ⇒ <code>Buffer</code>
-        * [.verifySchnorr(msg, sig)](#Key+verifySchnorr) ⇒ <code>Boolean</code>
+        * [.verifySchnorr(msg, sig, tag)](#Key+verifySchnorr) ⇒ <code>Boolean</code>
         * [.verifySchnorrHash(messageHash, sig)](#Key+verifySchnorrHash) ⇒ <code>Boolean</code>
         * [.sign(data)](#Key+sign) ⇒ <code>Buffer</code>
         * [.secure()](#Key+secure)
@@ -10917,7 +13415,7 @@ create it from a known public key.
 **Kind**: instance property of [<code>Key</code>](#Key)  
 <a name="Key+verify"></a>
 
-### key.verify(msg, sig) ⇒ <code>Boolean</code>
+### key.verify(msg, sig, [tag]) ⇒ <code>Boolean</code>
 Verify a message's signature.
 
 **Kind**: instance method of [<code>Key</code>](#Key)  
@@ -10927,11 +13425,15 @@ Verify a message's signature.
 | --- | --- | --- |
 | msg | <code>Buffer</code> \| <code>String</code> | The message that was signed |
 | sig | <code>Buffer</code> \| <code>String</code> | The signature to verify |
+| [tag] | <code>String</code> | Purpose tag (default `Fabric/Sign`) |
 
 <a name="Key+signSchnorr"></a>
 
-### key.signSchnorr(msg) ⇒ <code>Buffer</code>
-Signs a message using Schnorr signatures (BIP340).
+### key.signSchnorr(msg, tag) ⇒ <code>Buffer</code>
+Signs a message using Schnorr signatures (BIP340) over
+`taggedHash(tag, msg)`. Every purpose has its own tag, so a signature
+made for one purpose never verifies for another (or as a Taproot
+sighash, or as a Nostr event).
 
 **Kind**: instance method of [<code>Key</code>](#Key)  
 **Returns**: <code>Buffer</code> - The signature  
@@ -10939,6 +13441,7 @@ Signs a message using Schnorr signatures (BIP340).
 | Param | Type | Description |
 | --- | --- | --- |
 | msg | <code>Buffer</code> \| <code>String</code> | The message to sign |
+| tag | <code>String</code> | Purpose tag, e.g. `Fabric/IdentityCrossSign` |
 
 <a name="Key+signSchnorrHash"></a>
 
@@ -10955,8 +13458,8 @@ This is useful when the message has already been hashed (e.g., with a tagged has
 
 <a name="Key+verifySchnorr"></a>
 
-### key.verifySchnorr(msg, sig) ⇒ <code>Boolean</code>
-Verifies a Schnorr signature (BIP340).
+### key.verifySchnorr(msg, sig, tag) ⇒ <code>Boolean</code>
+Verifies a BIP340 Schnorr signature over `taggedHash(tag, msg)`.
 
 **Kind**: instance method of [<code>Key</code>](#Key)  
 **Returns**: <code>Boolean</code> - Whether the signature is valid  
@@ -10965,6 +13468,7 @@ Verifies a Schnorr signature (BIP340).
 | --- | --- | --- |
 | msg | <code>Buffer</code> \| <code>String</code> | The message that was signed |
 | sig | <code>Buffer</code> | The signature to verify |
+| tag | <code>String</code> | Purpose tag the signer used |
 
 <a name="Key+verifySchnorrHash"></a>
 
@@ -12331,6 +14835,7 @@ JSON bridging is <strong>@fabric/http</strong>. See <code>docs/MESSAGE_BODY.md</
         * [._readObject(input)](#Actor+_readObject) ⇒ <code>Object</code>
     * _static_
         * [.fromFields(type, [fields], [opts])](#Message.fromFields) ⇒ [<code>Message</code>](#Message)
+        * [.isRegisteredType(type)](#Message.isRegisteredType) ⇒ <code>boolean</code>
 
 <a name="new_Message_new"></a>
 
@@ -12639,6 +15144,17 @@ Build a Message whose body is encoded from a registered field schema (V1).
 | type | <code>string</code> \| <code>number</code> |  | Wire or friendly type name (or opcode). |
 | [fields] | <code>object</code> | <code>{}</code> | Named fields matching the schema. |
 | [opts] | <code>object</code> | <code>{}</code> | Extra Message constructor options (`signer`, `sensitive`, …). |
+
+<a name="Message.isRegisteredType"></a>
+
+### Message.isRegisteredType(type) ⇒ <code>boolean</code>
+Whether `type` is a registered wire name, friendly alias, or opcode.
+
+**Kind**: static method of [<code>Message</code>](#Message)  
+
+| Param | Type |
+| --- | --- |
+| type | <code>string</code> \| <code>number</code> | 
 
 <a name="Message"></a>
 
@@ -12679,6 +15195,7 @@ Build a Message whose body is encoded from a registered field schema (V1).
         * [._readObject(input)](#Actor+_readObject) ⇒ <code>Object</code>
     * _static_
         * [.fromFields(type, [fields], [opts])](#Message.fromFields) ⇒ [<code>Message</code>](#Message)
+        * [.isRegisteredType(type)](#Message.isRegisteredType) ⇒ <code>boolean</code>
 
 <a name="new_Message_new"></a>
 
@@ -12988,6 +15505,17 @@ Build a Message whose body is encoded from a registered field schema (V1).
 | [fields] | <code>object</code> | <code>{}</code> | Named fields matching the schema. |
 | [opts] | <code>object</code> | <code>{}</code> | Extra Message constructor options (`signer`, `sensitive`, …). |
 
+<a name="Message.isRegisteredType"></a>
+
+### Message.isRegisteredType(type) ⇒ <code>boolean</code>
+Whether `type` is a registered wire name, friendly alias, or opcode.
+
+**Kind**: static method of [<code>Message</code>](#Message)  
+
+| Param | Type |
+| --- | --- |
+| type | <code>string</code> \| <code>number</code> | 
+
 <a name="OrderBook"></a>
 
 ## OrderBook
@@ -13020,7 +15548,10 @@ Verify and hold a signed entry body.
 <a name="OrderBook+_beforeInsert"></a>
 
 ### orderBook.\_beforeInsert(entry)
-A maker at its entry limit loses its oldest entry.
+A maker at its entry limit loses its oldest entry. In a full book the
+maker holding the most entries (counting the incoming one; the incoming
+maker on a tie) gives up its oldest, so one key cannot flush every other
+maker out; with no such maker the book's oldest row goes.
 
 **Kind**: instance method of [<code>OrderBook</code>](#OrderBook)  
 **Access**: protected  
@@ -13107,8 +15638,11 @@ see [Message](#Message) wire vs friendly names and <code>constants</code> opcode
     * [._heldChunks](#Peer+_heldChunks)
     * [._seedRecords](#Peer+_seedRecords)
     * [._documentRelayRoutes](#Peer+_documentRelayRoutes)
-    * [._inboundNoiseStaticPubkeyByAddress](#Peer+_inboundNoiseStaticPubkeyByAddress)
+    * [._documentBids](#Peer+_documentBids)
+    * [._documentBidRoutes](#Peer+_documentBidRoutes)
+    * [._documentBidRelayRate](#Peer+_documentBidRelayRate)
     * [.messages](#Peer+messages)
+    * [._wireReplayFilter](#Peer+_wireReplayFilter)
     * [._logicalRegisterOnce](#Peer+_logicalRegisterOnce) : <code>Map.&lt;string, {type: string, signer: (string\|null), at: number}&gt;</code>
     * [._gossipPayloadSeen](#Peer+_gossipPayloadSeen)
     * [._gossipRelayByOrigin](#Peer+_gossipRelayByOrigin)
@@ -13156,24 +15690,21 @@ see [Message](#Message) wire vs friendly names and <code>constants</code> opcode
     * [.sendOnion(path, payload)](#Peer+sendOnion) ⇒ <code>boolean</code>
     * [.startMusig2([opts])](#Peer+startMusig2) ⇒ <code>object</code> \| <code>null</code>
     * [.getMusig2Session(sessionId)](#Peer+getMusig2Session) ⇒ <code>object</code> \| <code>null</code>
-    * [.relayFromTrustedPeers(origin, message, [minScoreExclusive])](#Peer+relayFromTrustedPeers)
-    * [._registryScoreForConnectionAddress(connAddress)](#Peer+_registryScoreForConnectionAddress) ⇒ <code>number</code>
-    * [._registryScoreForFlushChainSender(connAddress, senderPubkeyHex)](#Peer+_registryScoreForFlushChainSender) ⇒ <code>number</code>
-    * [.sendFlushChainToTrustedPeers(object)](#Peer+sendFlushChainToTrustedPeers) ⇒ <code>number</code>
     * [._connect(target)](#Peer+_connect)
     * [._announceAlias(alias, [origin], [_socket])](#Peer+_announceAlias)
     * [._loadPeerRegistry()](#Peer+_loadPeerRegistry) ⇒ <code>Promise.&lt;void&gt;</code>
     * [._savePeerRegistry()](#Peer+_savePeerRegistry)
-    * [._flushChainSenderPubkeyHex()](#Peer+_flushChainSenderPubkeyHex)
     * [._upsertPeerRegistry(address, [updates])](#Peer+_upsertPeerRegistry)
     * [._fillPeerSlots()](#Peer+_fillPeerSlots) ⇒ [<code>Peer</code>](#Peer)
-    * [._handleFabricMessage(buffer, [origin], [socket], [options])](#Peer+_handleFabricMessage) ⇒ [<code>Peer</code>](#Peer)
+    * [.jsonBodyCounts()](#Peer+jsonBodyCounts) ⇒ <code>Object.&lt;string, number&gt;</code>
+    * [.deprecatedWireTypeCounts()](#Peer+deprecatedWireTypeCounts) ⇒ <code>Object.&lt;string, number&gt;</code>
     * [._relayWirePayload()](#Peer+_relayWirePayload)
     * [._relayGenericPayload()](#Peer+_relayGenericPayload)
     * [._isTransientSocketError(error)](#Peer+_isTransientSocketError) ⇒ <code>boolean</code>
     * [._noiseTransportOptions()](#Peer+_noiseTransportOptions) ⇒ <code>Object</code>
     * [._bindNoiseTransportToSocket(noiseStream, socket)](#Peer+_bindNoiseTransportToSocket) ⇒ <code>void</code>
     * [._localMaxFrameBytes()](#Peer+_localMaxFrameBytes) ⇒ <code>number</code>
+    * [._recordRemoteFieldBodies(connAddress, sessionObject)](#Peer+_recordRemoteFieldBodies) ⇒ <code>boolean</code>
     * [._recordRemoteFrameCap(connAddress, sessionObject)](#Peer+_recordRemoteFrameCap) ⇒ <code>number</code>
     * [._attachNoiseStreamErrorHandlers(noiseStream, [label])](#Peer+_attachNoiseStreamErrorHandlers)
     * [._detachNoiseStreamErrorHandlers(noiseStream)](#Peer+_detachNoiseStreamErrorHandlers) ⇒ <code>void</code>
@@ -13185,6 +15716,7 @@ see [Message](#Message) wire vs friendly names and <code>constants</code> opcode
     * [.publishSealedDocument(doc, [opts])](#Peer+publishSealedDocument) ⇒ <code>Object</code>
     * [.sealedBlobPreimageForPaymentHash(paymentHashHex, [htlc])](#Peer+sealedBlobPreimageForPaymentHash) ⇒ <code>Object</code> \| <code>null</code>
     * [.quoteSealedBlob(opts)](#Peer+quoteSealedBlob) ⇒ <code>Object</code>
+    * [.quoteSealedBatch(opts)](#Peer+quoteSealedBatch) ⇒ <code>Object</code>
     * [._getSealedBlobDocument(documentId)](#Peer+_getSealedBlobDocument) ⇒ [<code>Document</code>](#Document) \| <code>null</code>
     * [.getDocumentBuffer(documentId)](#Peer+getDocumentBuffer) ⇒ <code>Buffer</code> \| <code>null</code>
     * [._sendP2pFileSendToPeer(documentId, peerAddress, [opts])](#Peer+_sendP2pFileSendToPeer) ⇒ <code>boolean</code>
@@ -13204,11 +15736,15 @@ see [Message](#Message) wire vs friendly names and <code>constants</code> opcode
     * [.listPendingDocumentRequests()](#Peer+listPendingDocumentRequests) ⇒ <code>Array.&lt;object&gt;</code>
     * [.approveDocumentRequest(requestKey)](#Peer+approveDocumentRequest) ⇒ <code>Object</code>
     * [.authorizeDocumentKeyReveal(opts)](#Peer+authorizeDocumentKeyReveal) ⇒ <code>Object</code>
+    * [._ingestSealedBlobBatch(batch, [origin], [wireMessage])](#Peer+_ingestSealedBlobBatch) ⇒ <code>Object</code>
     * [._ingestSealedBlobQuote(quote, [origin], [wireMessage])](#Peer+_ingestSealedBlobQuote) ⇒ <code>Object</code>
     * [.denyDocumentRequest(requestKey)](#Peer+denyDocumentRequest) ⇒ <code>Object</code>
     * [._buildPublishDocumentWireBuffers(documentId, body, rateSats)](#Peer+_buildPublishDocumentWireBuffers) ⇒ <code>Array.&lt;Buffer&gt;</code>
     * [._announceLocalDocumentsToPeer(peerAddress)](#Peer+_announceLocalDocumentsToPeer)
+    * [.retainLocalDocument(id, bytes)](#Peer+retainLocalDocument) ⇒ <code>boolean</code>
     * [._publishDocument(documentId, [content], [rateSats])](#Peer+_publishDocument)
+    * [.bidForDocumentChunk(opts)](#Peer+bidForDocumentChunk) ⇒ <code>object</code>
+    * [.askDocumentBid(bidId, [opts])](#Peer+askDocumentBid) ⇒ <code>Object</code>
     * [._handleDocumentRequestWire(message, origin, socket, [options])](#Peer+_handleDocumentRequestWire)
     * [._privateRelayDocumentRequest(parsed, origin, [originalMessage])](#Peer+_privateRelayDocumentRequest)
     * [._sendPrivateRelayedDocumentRequest(msg, origin, parsed)](#Peer+_sendPrivateRelayedDocumentRequest) ⇒ <code>boolean</code>
@@ -13378,16 +15914,34 @@ can sell the same tree again from the held chunks.
 Private reverse routes for rewritten DocumentRequests (never gossiped).
 
 **Kind**: instance property of [<code>Peer</code>](#Peer)  
-<a name="Peer+_inboundNoiseStaticPubkeyByAddress"></a>
+<a name="Peer+_documentBids"></a>
 
-### peer.\_inboundNoiseStaticPubkeyByAddress
-Inbound address -> NOISE static pubkey hex (FLUSH_CHAIN allowlist only; never for AMP verify).
+### peer.\_documentBids
+This Peer's own open bids: bid id → `{ bid, sentAt, book, sellers }`.
+
+**Kind**: instance property of [<code>Peer</code>](#Peer)  
+<a name="Peer+_documentBidRoutes"></a>
+
+### peer.\_documentBidRoutes
+Bids relayed here: bid id → `{ bid, prevHop, asks }` (the only route state; never gossiped).
+
+**Kind**: instance property of [<code>Peer</code>](#Peer)  
+<a name="Peer+_documentBidRelayRate"></a>
+
+### peer.\_documentBidRelayRate
+`host:port` → `{ windowStart, count }` for bids flooded onward.
 
 **Kind**: instance property of [<code>Peer</code>](#Peer)  
 <a name="Peer+messages"></a>
 
 ### peer.messages
 Wire-envelope dedup (SHA-256 of full buffer); FIFO-capped via [Peer#_rememberWireHash](Peer#_rememberWireHash).
+
+**Kind**: instance property of [<code>Peer</code>](#Peer)  
+<a name="Peer+_wireReplayFilter"></a>
+
+### peer.\_wireReplayFilter
+Wire hashes seen within a time window, so flooding the FIFO cache cannot reopen a replay.
 
 **Kind**: instance property of [<code>Peer</code>](#Peer)  
 <a name="Peer+_logicalRegisterOnce"></a>
@@ -13838,66 +16392,6 @@ Public MuSig2 session snapshot (no secret nonce).
 | --- | --- |
 | sessionId | <code>Buffer</code> \| <code>string</code> | 
 
-<a name="Peer+relayFromTrustedPeers"></a>
-
-### peer.relayFromTrustedPeers(origin, message, [minScoreExclusive])
-Relay an AMP message only to connected peers whose persistent registry score is strictly greater than
-[Peer#settings.flushChainMinTrustedScore](Peer#settings.flushChainMinTrustedScore) (default 800). Used for `P2P_FLUSH_CHAIN`.
-
-**Kind**: instance method of [<code>Peer</code>](#Peer)  
-
-| Param | Type | Default | Description |
-| --- | --- | --- | --- |
-| origin | <code>string</code> \| <code>null</code> |  | Connection key to skip (inbound sender), or null when originating locally. |
-| message | [<code>Message</code>](#Message) \| <code>Buffer</code> |  |  |
-| [minScoreExclusive] | <code>number</code> | <code></code> | Override trust threshold (relay if peer score &gt; this value). |
-
-<a name="Peer+_registryScoreForConnectionAddress"></a>
-
-### peer.\_registryScoreForConnectionAddress(connAddress) ⇒ <code>number</code>
-Best-effort registry score for a live connection key (`host:port`), using mapped Fabric id when known.
-
-**Kind**: instance method of [<code>Peer</code>](#Peer)  
-
-| Param | Type |
-| --- | --- |
-| connAddress | <code>string</code> | 
-
-<a name="Peer+_registryScoreForFlushChainSender"></a>
-
-### peer.\_registryScoreForFlushChainSender(connAddress, senderPubkeyHex) ⇒ <code>number</code>
-FLUSH_CHAIN trust score bound to verified sender key.
-
-Prevents trusting attacker-controlled `P2P_SESSION_OFFER.actor.id` aliases
-by refusing `_addressToId`-mapped scores unless that mapped registry entry
-is explicitly bound to the same verified sender pubkey.
-
-**Kind**: instance method of [<code>Peer</code>](#Peer)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| connAddress | <code>string</code> |  |
-| senderPubkeyHex | <code>string</code> | verified sender pubkey hex (from NOISE/static or trusted peer record) |
-
-<a name="Peer+sendFlushChainToTrustedPeers"></a>
-
-### peer.sendFlushChainToTrustedPeers(object) ⇒ <code>number</code>
-Sign and send `P2P_FLUSH_CHAIN` to all connected peers with registry score &gt; threshold.
-Body JSON: `{ snapshotBlockHash, network?, label? }`.
-
-**Receivers** (see `P2P_FLUSH_CHAIN` handler) require **both**:
-1. Sender pubkey in [Peer#settings.flushChainAuthorizedPubkeys](Peer#settings.flushChainAuthorizedPubkeys) (non-empty allowlist), and
-2. Registry score above [Peer#settings.flushChainMinTrustedScore](Peer#settings.flushChainMinTrustedScore).
-Registry score bumps on `P2P_PONG` only when that pong answers an outbound ping on the same
-connection (`_fabricPingOutstanding`), so unsolicited pongs cannot inflate trust alone.
-
-**Kind**: instance method of [<code>Peer</code>](#Peer)  
-**Returns**: <code>number</code> - number of sockets written  
-
-| Param | Type |
-| --- | --- |
-| object | <code>Object</code> | 
-
 <a name="Peer+_connect"></a>
 
 ### peer.\_connect(target)
@@ -13936,12 +16430,6 @@ Uses classic-level in Node, browser-level (IndexedDB) in browser.
 Persist peer registry to LevelDB (debounced).
 
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
-<a name="Peer+_flushChainSenderPubkeyHex"></a>
-
-### peer.\_flushChainSenderPubkeyHex()
-FLUSH_CHAIN sender hex: [Peer#peers](Peer#peers)[addr].publicKey if set, else inbound NOISE static (allowlist must match).
-
-**Kind**: instance method of [<code>Peer</code>](#Peer)  
 <a name="Peer+_upsertPeerRegistry"></a>
 
 ### peer.\_upsertPeerRegistry(address, [updates])
@@ -13961,24 +16449,18 @@ Attempt to fill available connection slots with new peers.
 
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
 **Returns**: [<code>Peer</code>](#Peer) - Instance of the peer.  
-<a name="Peer+_handleFabricMessage"></a>
+<a name="Peer+jsonBodyCounts"></a>
 
-### peer.\_handleFabricMessage(buffer, [origin], [socket], [options]) ⇒ [<code>Peer</code>](#Peer)
-Handle a Fabric [Message](#Message) buffer.
+### peer.jsonBodyCounts() ⇒ <code>Object.&lt;string, number&gt;</code>
+Refused JSON bodies of field-layout types since start, by wire name.
 
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
-**Returns**: [<code>Peer</code>](#Peer) - Instance of the Peer.  
+<a name="Peer+deprecatedWireTypeCounts"></a>
 
-| Param | Type | Default | Description |
-| --- | --- | --- | --- |
-| buffer | <code>Buffer</code> |  |  |
-| [origin] | <code>object</code> \| <code>null</code> | <code></code> |  |
-| [socket] | <code>object</code> \| <code>null</code> | <code></code> |  |
-| [options] | <code>Object</code> | <code></code> |  |
-| [options.relayDepth] | <code>number</code> |  |  |
-| [options.skipRelayFlood] | <code>boolean</code> |  |  |
-| [options.peeledForward] | <code>boolean</code> |  | true when delivered via [Peer#_handleP2PForward](Peer#_handleP2PForward) peel |
+### peer.deprecatedWireTypeCounts() ⇒ <code>Object.&lt;string, number&gt;</code>
+Inbound deprecated opcodes seen since start, by wire name.
 
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
 <a name="Peer+_relayWirePayload"></a>
 
 ### peer.\_relayWirePayload()
@@ -14017,8 +16499,8 @@ NOISE transport limits from settings (absolute handshake deadline + pre-handshak
 
 ### peer.\_bindNoiseTransportToSocket(noiseStream, socket) ⇒ <code>void</code>
 Tie a NOISE pair to its TCP socket: a destroyed decrypt side (limit broken, handshake
-timeout, decrypt failure) destroys the socket. The remote frame cap starts at the
-legacy 4096 bytes until its session message advertises `maxFrameBytes`.
+timeout, decrypt failure) destroys the socket. The remote frame cap starts at
+[MAX_FRAME_BYTES](MAX_FRAME_BYTES); a smaller `maxFrameBytes` in its session message lowers it.
 
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
 
@@ -14033,11 +16515,26 @@ legacy 4096 bytes until its session message advertises `maxFrameBytes`.
 Local AMP frame cap (header + `maxMessageSize` body) — what this node accepts and advertises.
 
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
+<a name="Peer+_recordRemoteFieldBodies"></a>
+
+### peer.\_recordRemoteFieldBodies(connAddress, sessionObject) ⇒ <code>boolean</code>
+Record whether a remote parses field bodies for every legacy-JSON opcode
+(`object.fieldBodies` in its session message). Absent = an older peer
+that parses legacy-JSON opcodes as JSON only.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| connAddress | <code>string</code> |  |
+| sessionObject | <code>Object</code> | Session message `object` |
+
 <a name="Peer+_recordRemoteFrameCap"></a>
 
 ### peer.\_recordRemoteFrameCap(connAddress, sessionObject) ⇒ <code>number</code>
 Record the frame cap a remote advertised in `P2P_SESSION_OFFER` / `P2P_SESSION_OPEN`
-(`object.maxFrameBytes`). Absent or invalid = legacy 4096-byte peer.
+(`object.maxFrameBytes`). Absent or invalid = [MAX_FRAME_BYTES](MAX_FRAME_BYTES); there is no
+smaller default for peers that don't advertise one.
 
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
 **Returns**: <code>number</code> - Cap now used for frames sent to that connection  
@@ -14102,6 +16599,7 @@ Build hub-compatible document metadata for [purchaseContentHashHex](purchaseCont
 
 ### peer.\_collectDocumentCatalogInventoryItems([req]) ⇒ <code>Array.&lt;object&gt;</code>
 Items for Hub-style `kind: 'documents'` inventory (Fabric UI / `@fabric/hub` merge expects `object.kind`).
+Documents a catalog row marks unpublished (private, bought, or unlisted) are left out.
 
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
 
@@ -14199,6 +16697,25 @@ in a bounded private map until `expiresAt`.
 | opts.documentId | <code>string</code> |  |
 | opts.blobIndex | <code>number</code> |  |
 | [opts.ttlMs] | <code>number</code> | default `sealedBlobQuoteTtlMs` (1 h) |
+
+<a name="Peer+quoteSealedBatch"></a>
+
+### peer.quoteSealedBatch(opts) ⇒ <code>Object</code>
+Seller: one preimage wraps every key from `start` through `end`.
+The wraps are returned to the caller to send to that buyer. They are
+not written onto the public inventory item.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| opts | <code>Object</code> |  |
+| opts.documentId | <code>string</code> |  |
+| opts.start | <code>number</code> |  |
+| opts.end | <code>number</code> |  |
+| [opts.amountSats] | <code>number</code> | Ask above the listed price (rate × blobs). It never lowers it: a lower, non-finite, or negative amount quotes the listed price. |
+| [opts.maxSats] | <code>number</code> | The buyer's ceiling: a price above it is refused, and no quote is kept. |
+| [opts.ttlMs] | <code>number</code> | default `sealedBlobQuoteTtlMs` (1 h); the quote expires after it. |
 
 <a name="Peer+_getSealedBlobDocument"></a>
 
@@ -14479,6 +16996,19 @@ DocumentRequest may receive the AES content key (not merely the ciphertext).
 | [opts.settlementId] | <code>string</code> |  |
 | [opts.txid] | <code>string</code> |  |
 
+<a name="Peer+_ingestSealedBlobBatch"></a>
+
+### peer.\_ingestSealedBlobBatch(batch, [origin], [wireMessage]) ⇒ <code>Object</code>
+Buyer: keep a batch quote. Wraps stay on this quote, never on inventory.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Default |
+| --- | --- | --- |
+| batch | <code>Object</code> |  | 
+| [origin] | <code>Object</code> \| <code>string</code> | <code></code> | 
+| [wireMessage] | [<code>Message</code>](#Message) \| <code>null</code> | <code></code> | 
+
 <a name="Peer+_ingestSealedBlobQuote"></a>
 
 ### peer.\_ingestSealedBlobQuote(quote, [origin], [wireMessage]) ⇒ <code>Object</code>
@@ -14529,11 +17059,25 @@ Re-send all local document publishes to one peer (same bytes as [_publishDocumen
 | --- | --- | --- |
 | peerAddress | <code>string</code> | connection key in [Peer#connections](Peer#connections) |
 
+<a name="Peer+retainLocalDocument"></a>
+
+### peer.retainLocalDocument(id, bytes) ⇒ <code>boolean</code>
+Hold document bytes for a later approved `DOCUMENT_REQUEST`.
+Does not emit `DOCUMENT_PUBLISH`. The catalog row is unpublished, so
+`serveLocalDocumentInventory` still will not list it.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| id | <code>string</code> | Wire document id (1–128 characters). |
+| bytes | <code>Buffer</code> \| <code>string</code> |  |
+
 <a name="Peer+_publishDocument"></a>
 
 ### peer.\_publishDocument(documentId, [content], [rateSats])
 Store a document locally and gossip to peers.
-1) **Canonical** `DOCUMENT_PUBLISH` wire message (same bytes as hub `documentPublishEnvelope`) for L1 `contentHash`.
+1) **Canonical** `DOCUMENT_PUBLISH` field frame (`documentPublishEnvelopeBuffer` plus this peer's author and signature) for L1 `contentHash`.
 2) If `rateSats > 0`, a **pricing** `GENERIC` `P2P_DOCUMENT_PUBLISH` with `rate` and `contentHash` (sat ask).
 
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
@@ -14543,6 +17087,37 @@ Store a document locally and gossip to peers.
 | documentId | <code>String</code> |  | Catalog key (e.g. CLI document name). |
 | [content] | <code>String</code> | <code>&#x27;&#x27;</code> | UTF-8 body stored under [Peer#state](Peer#state).documents. |
 | [rateSats] | <code>Number</code> | <code>0</code> | Ask price in satoshis (gossip only; not part of canonical hash). |
+
+<a name="Peer+bidForDocumentChunk"></a>
+
+### peer.bidForDocumentChunk(opts) ⇒ <code>object</code>
+Buyer: flood a signed bid to buy one chunk of a document, so peers holding
+it can answer with a `P2P_DOCUMENT_ASK` routed back along the bid's path.
+Each answer is emitted as `documentAsk` and, with `opts.book`, ranked there.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+**Returns**: <code>object</code> - the bid ([readBid](#DocumentBook.readBid) shape; `id` names it)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| opts | <code>Object</code> | see [createBid](#DocumentBook.createBid) |
+| [opts.book] | [<code>DocumentBook</code>](#DocumentBook) | book that takes the asks |
+
+<a name="Peer+askDocumentBid"></a>
+
+### peer.askDocumentBid(bidId, [opts]) ⇒ <code>Object</code>
+Seller: answer a bid relayed here for a chunk this Peer holds (a per-blob
+sealed document), at `opts.priceSats` or the document's listed rate. The
+ask goes only to the connection the bid came from.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| bidId | <code>string</code> |  |
+| [opts] | <code>Object</code> |  |
+| [opts.priceSats] | <code>number</code> | at most the bid's `maxSats` |
+| [opts.expiresAt] | <code>number</code> | unix seconds, no later than the bid's |
 
 <a name="Peer+_handleDocumentRequestWire"></a>
 
@@ -14561,7 +17136,7 @@ queue against the TCP last hop, and never second-flood the inner under that hop.
 | message | [<code>Message</code>](#Message) |  |  |
 | origin | <code>Object</code> |  |  |
 | socket | <code>\*</code> |  |  |
-| [options] | <code>Object</code> | <code></code> | same delivery opts as [_handleFabricMessage](#Peer+_handleFabricMessage) |
+| [options] | <code>Object</code> | <code></code> | same delivery opts as [Peer#_handleFabricMessage](Peer#_handleFabricMessage) |
 
 <a name="Peer+_privateRelayDocumentRequest"></a>
 
@@ -14685,7 +17260,7 @@ already listed there.
 
 ### peer.\_startFabricPingKeepalive(socket, encryptWrite)
 Periodic P2P_PING and track expected P2P_PONG replies so registry score cannot be
-self-inflated by unsolicited pongs (see FLUSH_CHAIN trust gate).
+self-inflated by unsolicited pongs.
 
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
 
@@ -14840,7 +17415,7 @@ Register a single opcode entry in the service registry.
 
 | Param | Type | Description |
 | --- | --- | --- |
-| name | <code>string</code> | Opcode symbol (e.g. `OP_SHA256`, `P2P_FLUSH_CHAIN`) |
+| name | <code>string</code> | Opcode symbol (e.g. `OP_SHA256`, `P2P_CHAIN_SYNC_REQUEST`) |
 | [definition] | <code>Object</code> |  |
 
 <a name="Service+defineBitcoinOpcode"></a>
@@ -14872,7 +17447,7 @@ Register Fabric opcode metadata.
 ### peer.defineOpcodeContract(name, body, [meta]) ⇒ <code>Object</code>
 Register a newline-delimited opcode contract.
 Contract body example:
-`OP_DUP\nOP_HASH160\nP2P_FLUSH_CHAIN`
+`OP_DUP\nOP_HASH160\nP2P_CHAIN_SYNC_REQUEST`
 
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
 
@@ -15122,8 +17697,11 @@ Parse an Object into a corresponding Fabric state.
     * [._heldChunks](#Peer+_heldChunks)
     * [._seedRecords](#Peer+_seedRecords)
     * [._documentRelayRoutes](#Peer+_documentRelayRoutes)
-    * [._inboundNoiseStaticPubkeyByAddress](#Peer+_inboundNoiseStaticPubkeyByAddress)
+    * [._documentBids](#Peer+_documentBids)
+    * [._documentBidRoutes](#Peer+_documentBidRoutes)
+    * [._documentBidRelayRate](#Peer+_documentBidRelayRate)
     * [.messages](#Peer+messages)
+    * [._wireReplayFilter](#Peer+_wireReplayFilter)
     * [._logicalRegisterOnce](#Peer+_logicalRegisterOnce) : <code>Map.&lt;string, {type: string, signer: (string\|null), at: number}&gt;</code>
     * [._gossipPayloadSeen](#Peer+_gossipPayloadSeen)
     * [._gossipRelayByOrigin](#Peer+_gossipRelayByOrigin)
@@ -15171,24 +17749,21 @@ Parse an Object into a corresponding Fabric state.
     * [.sendOnion(path, payload)](#Peer+sendOnion) ⇒ <code>boolean</code>
     * [.startMusig2([opts])](#Peer+startMusig2) ⇒ <code>object</code> \| <code>null</code>
     * [.getMusig2Session(sessionId)](#Peer+getMusig2Session) ⇒ <code>object</code> \| <code>null</code>
-    * [.relayFromTrustedPeers(origin, message, [minScoreExclusive])](#Peer+relayFromTrustedPeers)
-    * [._registryScoreForConnectionAddress(connAddress)](#Peer+_registryScoreForConnectionAddress) ⇒ <code>number</code>
-    * [._registryScoreForFlushChainSender(connAddress, senderPubkeyHex)](#Peer+_registryScoreForFlushChainSender) ⇒ <code>number</code>
-    * [.sendFlushChainToTrustedPeers(object)](#Peer+sendFlushChainToTrustedPeers) ⇒ <code>number</code>
     * [._connect(target)](#Peer+_connect)
     * [._announceAlias(alias, [origin], [_socket])](#Peer+_announceAlias)
     * [._loadPeerRegistry()](#Peer+_loadPeerRegistry) ⇒ <code>Promise.&lt;void&gt;</code>
     * [._savePeerRegistry()](#Peer+_savePeerRegistry)
-    * [._flushChainSenderPubkeyHex()](#Peer+_flushChainSenderPubkeyHex)
     * [._upsertPeerRegistry(address, [updates])](#Peer+_upsertPeerRegistry)
     * [._fillPeerSlots()](#Peer+_fillPeerSlots) ⇒ [<code>Peer</code>](#Peer)
-    * [._handleFabricMessage(buffer, [origin], [socket], [options])](#Peer+_handleFabricMessage) ⇒ [<code>Peer</code>](#Peer)
+    * [.jsonBodyCounts()](#Peer+jsonBodyCounts) ⇒ <code>Object.&lt;string, number&gt;</code>
+    * [.deprecatedWireTypeCounts()](#Peer+deprecatedWireTypeCounts) ⇒ <code>Object.&lt;string, number&gt;</code>
     * [._relayWirePayload()](#Peer+_relayWirePayload)
     * [._relayGenericPayload()](#Peer+_relayGenericPayload)
     * [._isTransientSocketError(error)](#Peer+_isTransientSocketError) ⇒ <code>boolean</code>
     * [._noiseTransportOptions()](#Peer+_noiseTransportOptions) ⇒ <code>Object</code>
     * [._bindNoiseTransportToSocket(noiseStream, socket)](#Peer+_bindNoiseTransportToSocket) ⇒ <code>void</code>
     * [._localMaxFrameBytes()](#Peer+_localMaxFrameBytes) ⇒ <code>number</code>
+    * [._recordRemoteFieldBodies(connAddress, sessionObject)](#Peer+_recordRemoteFieldBodies) ⇒ <code>boolean</code>
     * [._recordRemoteFrameCap(connAddress, sessionObject)](#Peer+_recordRemoteFrameCap) ⇒ <code>number</code>
     * [._attachNoiseStreamErrorHandlers(noiseStream, [label])](#Peer+_attachNoiseStreamErrorHandlers)
     * [._detachNoiseStreamErrorHandlers(noiseStream)](#Peer+_detachNoiseStreamErrorHandlers) ⇒ <code>void</code>
@@ -15200,6 +17775,7 @@ Parse an Object into a corresponding Fabric state.
     * [.publishSealedDocument(doc, [opts])](#Peer+publishSealedDocument) ⇒ <code>Object</code>
     * [.sealedBlobPreimageForPaymentHash(paymentHashHex, [htlc])](#Peer+sealedBlobPreimageForPaymentHash) ⇒ <code>Object</code> \| <code>null</code>
     * [.quoteSealedBlob(opts)](#Peer+quoteSealedBlob) ⇒ <code>Object</code>
+    * [.quoteSealedBatch(opts)](#Peer+quoteSealedBatch) ⇒ <code>Object</code>
     * [._getSealedBlobDocument(documentId)](#Peer+_getSealedBlobDocument) ⇒ [<code>Document</code>](#Document) \| <code>null</code>
     * [.getDocumentBuffer(documentId)](#Peer+getDocumentBuffer) ⇒ <code>Buffer</code> \| <code>null</code>
     * [._sendP2pFileSendToPeer(documentId, peerAddress, [opts])](#Peer+_sendP2pFileSendToPeer) ⇒ <code>boolean</code>
@@ -15219,11 +17795,15 @@ Parse an Object into a corresponding Fabric state.
     * [.listPendingDocumentRequests()](#Peer+listPendingDocumentRequests) ⇒ <code>Array.&lt;object&gt;</code>
     * [.approveDocumentRequest(requestKey)](#Peer+approveDocumentRequest) ⇒ <code>Object</code>
     * [.authorizeDocumentKeyReveal(opts)](#Peer+authorizeDocumentKeyReveal) ⇒ <code>Object</code>
+    * [._ingestSealedBlobBatch(batch, [origin], [wireMessage])](#Peer+_ingestSealedBlobBatch) ⇒ <code>Object</code>
     * [._ingestSealedBlobQuote(quote, [origin], [wireMessage])](#Peer+_ingestSealedBlobQuote) ⇒ <code>Object</code>
     * [.denyDocumentRequest(requestKey)](#Peer+denyDocumentRequest) ⇒ <code>Object</code>
     * [._buildPublishDocumentWireBuffers(documentId, body, rateSats)](#Peer+_buildPublishDocumentWireBuffers) ⇒ <code>Array.&lt;Buffer&gt;</code>
     * [._announceLocalDocumentsToPeer(peerAddress)](#Peer+_announceLocalDocumentsToPeer)
+    * [.retainLocalDocument(id, bytes)](#Peer+retainLocalDocument) ⇒ <code>boolean</code>
     * [._publishDocument(documentId, [content], [rateSats])](#Peer+_publishDocument)
+    * [.bidForDocumentChunk(opts)](#Peer+bidForDocumentChunk) ⇒ <code>object</code>
+    * [.askDocumentBid(bidId, [opts])](#Peer+askDocumentBid) ⇒ <code>Object</code>
     * [._handleDocumentRequestWire(message, origin, socket, [options])](#Peer+_handleDocumentRequestWire)
     * [._privateRelayDocumentRequest(parsed, origin, [originalMessage])](#Peer+_privateRelayDocumentRequest)
     * [._sendPrivateRelayedDocumentRequest(msg, origin, parsed)](#Peer+_sendPrivateRelayedDocumentRequest) ⇒ <code>boolean</code>
@@ -15393,16 +17973,34 @@ can sell the same tree again from the held chunks.
 Private reverse routes for rewritten DocumentRequests (never gossiped).
 
 **Kind**: instance property of [<code>Peer</code>](#Peer)  
-<a name="Peer+_inboundNoiseStaticPubkeyByAddress"></a>
+<a name="Peer+_documentBids"></a>
 
-### peer.\_inboundNoiseStaticPubkeyByAddress
-Inbound address -> NOISE static pubkey hex (FLUSH_CHAIN allowlist only; never for AMP verify).
+### peer.\_documentBids
+This Peer's own open bids: bid id → `{ bid, sentAt, book, sellers }`.
+
+**Kind**: instance property of [<code>Peer</code>](#Peer)  
+<a name="Peer+_documentBidRoutes"></a>
+
+### peer.\_documentBidRoutes
+Bids relayed here: bid id → `{ bid, prevHop, asks }` (the only route state; never gossiped).
+
+**Kind**: instance property of [<code>Peer</code>](#Peer)  
+<a name="Peer+_documentBidRelayRate"></a>
+
+### peer.\_documentBidRelayRate
+`host:port` → `{ windowStart, count }` for bids flooded onward.
 
 **Kind**: instance property of [<code>Peer</code>](#Peer)  
 <a name="Peer+messages"></a>
 
 ### peer.messages
 Wire-envelope dedup (SHA-256 of full buffer); FIFO-capped via [Peer#_rememberWireHash](Peer#_rememberWireHash).
+
+**Kind**: instance property of [<code>Peer</code>](#Peer)  
+<a name="Peer+_wireReplayFilter"></a>
+
+### peer.\_wireReplayFilter
+Wire hashes seen within a time window, so flooding the FIFO cache cannot reopen a replay.
 
 **Kind**: instance property of [<code>Peer</code>](#Peer)  
 <a name="Peer+_logicalRegisterOnce"></a>
@@ -15853,66 +18451,6 @@ Public MuSig2 session snapshot (no secret nonce).
 | --- | --- |
 | sessionId | <code>Buffer</code> \| <code>string</code> | 
 
-<a name="Peer+relayFromTrustedPeers"></a>
-
-### peer.relayFromTrustedPeers(origin, message, [minScoreExclusive])
-Relay an AMP message only to connected peers whose persistent registry score is strictly greater than
-[Peer#settings.flushChainMinTrustedScore](Peer#settings.flushChainMinTrustedScore) (default 800). Used for `P2P_FLUSH_CHAIN`.
-
-**Kind**: instance method of [<code>Peer</code>](#Peer)  
-
-| Param | Type | Default | Description |
-| --- | --- | --- | --- |
-| origin | <code>string</code> \| <code>null</code> |  | Connection key to skip (inbound sender), or null when originating locally. |
-| message | [<code>Message</code>](#Message) \| <code>Buffer</code> |  |  |
-| [minScoreExclusive] | <code>number</code> | <code></code> | Override trust threshold (relay if peer score &gt; this value). |
-
-<a name="Peer+_registryScoreForConnectionAddress"></a>
-
-### peer.\_registryScoreForConnectionAddress(connAddress) ⇒ <code>number</code>
-Best-effort registry score for a live connection key (`host:port`), using mapped Fabric id when known.
-
-**Kind**: instance method of [<code>Peer</code>](#Peer)  
-
-| Param | Type |
-| --- | --- |
-| connAddress | <code>string</code> | 
-
-<a name="Peer+_registryScoreForFlushChainSender"></a>
-
-### peer.\_registryScoreForFlushChainSender(connAddress, senderPubkeyHex) ⇒ <code>number</code>
-FLUSH_CHAIN trust score bound to verified sender key.
-
-Prevents trusting attacker-controlled `P2P_SESSION_OFFER.actor.id` aliases
-by refusing `_addressToId`-mapped scores unless that mapped registry entry
-is explicitly bound to the same verified sender pubkey.
-
-**Kind**: instance method of [<code>Peer</code>](#Peer)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| connAddress | <code>string</code> |  |
-| senderPubkeyHex | <code>string</code> | verified sender pubkey hex (from NOISE/static or trusted peer record) |
-
-<a name="Peer+sendFlushChainToTrustedPeers"></a>
-
-### peer.sendFlushChainToTrustedPeers(object) ⇒ <code>number</code>
-Sign and send `P2P_FLUSH_CHAIN` to all connected peers with registry score &gt; threshold.
-Body JSON: `{ snapshotBlockHash, network?, label? }`.
-
-**Receivers** (see `P2P_FLUSH_CHAIN` handler) require **both**:
-1. Sender pubkey in [Peer#settings.flushChainAuthorizedPubkeys](Peer#settings.flushChainAuthorizedPubkeys) (non-empty allowlist), and
-2. Registry score above [Peer#settings.flushChainMinTrustedScore](Peer#settings.flushChainMinTrustedScore).
-Registry score bumps on `P2P_PONG` only when that pong answers an outbound ping on the same
-connection (`_fabricPingOutstanding`), so unsolicited pongs cannot inflate trust alone.
-
-**Kind**: instance method of [<code>Peer</code>](#Peer)  
-**Returns**: <code>number</code> - number of sockets written  
-
-| Param | Type |
-| --- | --- |
-| object | <code>Object</code> | 
-
 <a name="Peer+_connect"></a>
 
 ### peer.\_connect(target)
@@ -15951,12 +18489,6 @@ Uses classic-level in Node, browser-level (IndexedDB) in browser.
 Persist peer registry to LevelDB (debounced).
 
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
-<a name="Peer+_flushChainSenderPubkeyHex"></a>
-
-### peer.\_flushChainSenderPubkeyHex()
-FLUSH_CHAIN sender hex: [Peer#peers](Peer#peers)[addr].publicKey if set, else inbound NOISE static (allowlist must match).
-
-**Kind**: instance method of [<code>Peer</code>](#Peer)  
 <a name="Peer+_upsertPeerRegistry"></a>
 
 ### peer.\_upsertPeerRegistry(address, [updates])
@@ -15976,24 +18508,18 @@ Attempt to fill available connection slots with new peers.
 
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
 **Returns**: [<code>Peer</code>](#Peer) - Instance of the peer.  
-<a name="Peer+_handleFabricMessage"></a>
+<a name="Peer+jsonBodyCounts"></a>
 
-### peer.\_handleFabricMessage(buffer, [origin], [socket], [options]) ⇒ [<code>Peer</code>](#Peer)
-Handle a Fabric [Message](#Message) buffer.
+### peer.jsonBodyCounts() ⇒ <code>Object.&lt;string, number&gt;</code>
+Refused JSON bodies of field-layout types since start, by wire name.
 
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
-**Returns**: [<code>Peer</code>](#Peer) - Instance of the Peer.  
+<a name="Peer+deprecatedWireTypeCounts"></a>
 
-| Param | Type | Default | Description |
-| --- | --- | --- | --- |
-| buffer | <code>Buffer</code> |  |  |
-| [origin] | <code>object</code> \| <code>null</code> | <code></code> |  |
-| [socket] | <code>object</code> \| <code>null</code> | <code></code> |  |
-| [options] | <code>Object</code> | <code></code> |  |
-| [options.relayDepth] | <code>number</code> |  |  |
-| [options.skipRelayFlood] | <code>boolean</code> |  |  |
-| [options.peeledForward] | <code>boolean</code> |  | true when delivered via [Peer#_handleP2PForward](Peer#_handleP2PForward) peel |
+### peer.deprecatedWireTypeCounts() ⇒ <code>Object.&lt;string, number&gt;</code>
+Inbound deprecated opcodes seen since start, by wire name.
 
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
 <a name="Peer+_relayWirePayload"></a>
 
 ### peer.\_relayWirePayload()
@@ -16032,8 +18558,8 @@ NOISE transport limits from settings (absolute handshake deadline + pre-handshak
 
 ### peer.\_bindNoiseTransportToSocket(noiseStream, socket) ⇒ <code>void</code>
 Tie a NOISE pair to its TCP socket: a destroyed decrypt side (limit broken, handshake
-timeout, decrypt failure) destroys the socket. The remote frame cap starts at the
-legacy 4096 bytes until its session message advertises `maxFrameBytes`.
+timeout, decrypt failure) destroys the socket. The remote frame cap starts at
+[MAX_FRAME_BYTES](MAX_FRAME_BYTES); a smaller `maxFrameBytes` in its session message lowers it.
 
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
 
@@ -16048,11 +18574,26 @@ legacy 4096 bytes until its session message advertises `maxFrameBytes`.
 Local AMP frame cap (header + `maxMessageSize` body) — what this node accepts and advertises.
 
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
+<a name="Peer+_recordRemoteFieldBodies"></a>
+
+### peer.\_recordRemoteFieldBodies(connAddress, sessionObject) ⇒ <code>boolean</code>
+Record whether a remote parses field bodies for every legacy-JSON opcode
+(`object.fieldBodies` in its session message). Absent = an older peer
+that parses legacy-JSON opcodes as JSON only.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| connAddress | <code>string</code> |  |
+| sessionObject | <code>Object</code> | Session message `object` |
+
 <a name="Peer+_recordRemoteFrameCap"></a>
 
 ### peer.\_recordRemoteFrameCap(connAddress, sessionObject) ⇒ <code>number</code>
 Record the frame cap a remote advertised in `P2P_SESSION_OFFER` / `P2P_SESSION_OPEN`
-(`object.maxFrameBytes`). Absent or invalid = legacy 4096-byte peer.
+(`object.maxFrameBytes`). Absent or invalid = [MAX_FRAME_BYTES](MAX_FRAME_BYTES); there is no
+smaller default for peers that don't advertise one.
 
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
 **Returns**: <code>number</code> - Cap now used for frames sent to that connection  
@@ -16117,6 +18658,7 @@ Build hub-compatible document metadata for [purchaseContentHashHex](purchaseCont
 
 ### peer.\_collectDocumentCatalogInventoryItems([req]) ⇒ <code>Array.&lt;object&gt;</code>
 Items for Hub-style `kind: 'documents'` inventory (Fabric UI / `@fabric/hub` merge expects `object.kind`).
+Documents a catalog row marks unpublished (private, bought, or unlisted) are left out.
 
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
 
@@ -16214,6 +18756,25 @@ in a bounded private map until `expiresAt`.
 | opts.documentId | <code>string</code> |  |
 | opts.blobIndex | <code>number</code> |  |
 | [opts.ttlMs] | <code>number</code> | default `sealedBlobQuoteTtlMs` (1 h) |
+
+<a name="Peer+quoteSealedBatch"></a>
+
+### peer.quoteSealedBatch(opts) ⇒ <code>Object</code>
+Seller: one preimage wraps every key from `start` through `end`.
+The wraps are returned to the caller to send to that buyer. They are
+not written onto the public inventory item.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| opts | <code>Object</code> |  |
+| opts.documentId | <code>string</code> |  |
+| opts.start | <code>number</code> |  |
+| opts.end | <code>number</code> |  |
+| [opts.amountSats] | <code>number</code> | Ask above the listed price (rate × blobs). It never lowers it: a lower, non-finite, or negative amount quotes the listed price. |
+| [opts.maxSats] | <code>number</code> | The buyer's ceiling: a price above it is refused, and no quote is kept. |
+| [opts.ttlMs] | <code>number</code> | default `sealedBlobQuoteTtlMs` (1 h); the quote expires after it. |
 
 <a name="Peer+_getSealedBlobDocument"></a>
 
@@ -16494,6 +19055,19 @@ DocumentRequest may receive the AES content key (not merely the ciphertext).
 | [opts.settlementId] | <code>string</code> |  |
 | [opts.txid] | <code>string</code> |  |
 
+<a name="Peer+_ingestSealedBlobBatch"></a>
+
+### peer.\_ingestSealedBlobBatch(batch, [origin], [wireMessage]) ⇒ <code>Object</code>
+Buyer: keep a batch quote. Wraps stay on this quote, never on inventory.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Default |
+| --- | --- | --- |
+| batch | <code>Object</code> |  | 
+| [origin] | <code>Object</code> \| <code>string</code> | <code></code> | 
+| [wireMessage] | [<code>Message</code>](#Message) \| <code>null</code> | <code></code> | 
+
 <a name="Peer+_ingestSealedBlobQuote"></a>
 
 ### peer.\_ingestSealedBlobQuote(quote, [origin], [wireMessage]) ⇒ <code>Object</code>
@@ -16544,11 +19118,25 @@ Re-send all local document publishes to one peer (same bytes as [_publishDocumen
 | --- | --- | --- |
 | peerAddress | <code>string</code> | connection key in [Peer#connections](Peer#connections) |
 
+<a name="Peer+retainLocalDocument"></a>
+
+### peer.retainLocalDocument(id, bytes) ⇒ <code>boolean</code>
+Hold document bytes for a later approved `DOCUMENT_REQUEST`.
+Does not emit `DOCUMENT_PUBLISH`. The catalog row is unpublished, so
+`serveLocalDocumentInventory` still will not list it.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| id | <code>string</code> | Wire document id (1–128 characters). |
+| bytes | <code>Buffer</code> \| <code>string</code> |  |
+
 <a name="Peer+_publishDocument"></a>
 
 ### peer.\_publishDocument(documentId, [content], [rateSats])
 Store a document locally and gossip to peers.
-1) **Canonical** `DOCUMENT_PUBLISH` wire message (same bytes as hub `documentPublishEnvelope`) for L1 `contentHash`.
+1) **Canonical** `DOCUMENT_PUBLISH` field frame (`documentPublishEnvelopeBuffer` plus this peer's author and signature) for L1 `contentHash`.
 2) If `rateSats > 0`, a **pricing** `GENERIC` `P2P_DOCUMENT_PUBLISH` with `rate` and `contentHash` (sat ask).
 
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
@@ -16558,6 +19146,37 @@ Store a document locally and gossip to peers.
 | documentId | <code>String</code> |  | Catalog key (e.g. CLI document name). |
 | [content] | <code>String</code> | <code>&#x27;&#x27;</code> | UTF-8 body stored under [Peer#state](Peer#state).documents. |
 | [rateSats] | <code>Number</code> | <code>0</code> | Ask price in satoshis (gossip only; not part of canonical hash). |
+
+<a name="Peer+bidForDocumentChunk"></a>
+
+### peer.bidForDocumentChunk(opts) ⇒ <code>object</code>
+Buyer: flood a signed bid to buy one chunk of a document, so peers holding
+it can answer with a `P2P_DOCUMENT_ASK` routed back along the bid's path.
+Each answer is emitted as `documentAsk` and, with `opts.book`, ranked there.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+**Returns**: <code>object</code> - the bid ([readBid](#DocumentBook.readBid) shape; `id` names it)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| opts | <code>Object</code> | see [createBid](#DocumentBook.createBid) |
+| [opts.book] | [<code>DocumentBook</code>](#DocumentBook) | book that takes the asks |
+
+<a name="Peer+askDocumentBid"></a>
+
+### peer.askDocumentBid(bidId, [opts]) ⇒ <code>Object</code>
+Seller: answer a bid relayed here for a chunk this Peer holds (a per-blob
+sealed document), at `opts.priceSats` or the document's listed rate. The
+ask goes only to the connection the bid came from.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| bidId | <code>string</code> |  |
+| [opts] | <code>Object</code> |  |
+| [opts.priceSats] | <code>number</code> | at most the bid's `maxSats` |
+| [opts.expiresAt] | <code>number</code> | unix seconds, no later than the bid's |
 
 <a name="Peer+_handleDocumentRequestWire"></a>
 
@@ -16576,7 +19195,7 @@ queue against the TCP last hop, and never second-flood the inner under that hop.
 | message | [<code>Message</code>](#Message) |  |  |
 | origin | <code>Object</code> |  |  |
 | socket | <code>\*</code> |  |  |
-| [options] | <code>Object</code> | <code></code> | same delivery opts as [_handleFabricMessage](#Peer+_handleFabricMessage) |
+| [options] | <code>Object</code> | <code></code> | same delivery opts as [Peer#_handleFabricMessage](Peer#_handleFabricMessage) |
 
 <a name="Peer+_privateRelayDocumentRequest"></a>
 
@@ -16700,7 +19319,7 @@ already listed there.
 
 ### peer.\_startFabricPingKeepalive(socket, encryptWrite)
 Periodic P2P_PING and track expected P2P_PONG replies so registry score cannot be
-self-inflated by unsolicited pongs (see FLUSH_CHAIN trust gate).
+self-inflated by unsolicited pongs.
 
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
 
@@ -16855,7 +19474,7 @@ Register a single opcode entry in the service registry.
 
 | Param | Type | Description |
 | --- | --- | --- |
-| name | <code>string</code> | Opcode symbol (e.g. `OP_SHA256`, `P2P_FLUSH_CHAIN`) |
+| name | <code>string</code> | Opcode symbol (e.g. `OP_SHA256`, `P2P_CHAIN_SYNC_REQUEST`) |
 | [definition] | <code>Object</code> |  |
 
 <a name="Service+defineBitcoinOpcode"></a>
@@ -16887,7 +19506,7 @@ Register Fabric opcode metadata.
 ### peer.defineOpcodeContract(name, body, [meta]) ⇒ <code>Object</code>
 Register a newline-delimited opcode contract.
 Contract body example:
-`OP_DUP\nOP_HASH160\nP2P_FLUSH_CHAIN`
+`OP_DUP\nOP_HASH160\nP2P_CHAIN_SYNC_REQUEST`
 
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
 
@@ -17236,6 +19855,12 @@ This policy plus a Program-run hashlock leaf (see [Policy.withRunHashlock](Polic
         * [.runCommitmentHex(result)](#Program+runCommitmentHex) ⇒ <code>string</code>
     * _static_
         * [.from([opts])](#Program.from) ⇒ [<code>Program</code>](#Program)
+        * [.runFromTip([tip])](#Program.runFromTip) ⇒ <code>Object</code> \| <code>null</code>
+        * [.requiresBinding([genesis])](#Program.requiresBinding) ⇒ <code>boolean</code>
+        * [.bindRun(tip, run)](#Program.bindRun) ⇒ <code>object</code>
+        * [.validateBinding(opts)](#Program.validateBinding) ⇒ <code>Object</code>
+        * [.verifyMachineRun(opts)](#Program.verifyMachineRun) ⇒ <code>Object</code>
+        * [.runId(programHash, runCommitmentHex)](#Program.runId) ⇒ <code>string</code>
 
 <a name="new_Program_new"></a>
 
@@ -17294,6 +19919,85 @@ Stable digest binding program identity to a compute result (L1 / OP_RETURN / wit
 | [opts.bytecode] | <code>\*</code> | 
 | [opts.steps] | <code>Array.&lt;string&gt;</code> | 
 | [opts.programId] | <code>string</code> | 
+
+<a name="Program.runFromTip"></a>
+
+### Program.runFromTip([tip]) ⇒ <code>Object</code> \| <code>null</code>
+Program run sealed on a contract tip (`content.program`, `content.meta.program`, or `tip.program`).
+
+**Kind**: static method of [<code>Program</code>](#Program)  
+
+| Param | Type |
+| --- | --- |
+| [tip] | <code>object</code> | 
+
+<a name="Program.requiresBinding"></a>
+
+### Program.requiresBinding([genesis]) ⇒ <code>boolean</code>
+True when a contract genesis declares a Program / opcode surface that withdrawals must bind.
+
+**Kind**: static method of [<code>Program</code>](#Program)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| [genesis] | <code>object</code> | raw or [normalizeGenesis](#Contract.normalizeGenesis) output |
+
+<a name="Program.bindRun"></a>
+
+### Program.bindRun(tip, run) ⇒ <code>object</code>
+Fold a Machine/Program run onto tip content without touching P2TR keys.
+Returns a shallow-cloned tip; the caller persists / digests it.
+
+**Kind**: static method of [<code>Program</code>](#Program)  
+**Returns**: <code>object</code> - tip with `content.program`  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| tip | <code>object</code> | contract tip |
+| run | <code>Object</code> |  |
+| run.programHash | <code>string</code> |  |
+| run.runCommitmentHex | <code>string</code> |  |
+| [run.programId] | <code>string</code> |  |
+| [run.clock] | <code>number</code> |  |
+
+<a name="Program.validateBinding"></a>
+
+### Program.validateBinding(opts) ⇒ <code>Object</code>
+Check a withdrawal's (or any object's) program digests against tip / genesis policy.
+
+**Kind**: static method of [<code>Program</code>](#Program)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| opts | <code>Object</code> |  |
+| [opts.object] | <code>Object</code> | withdrawal body |
+| [opts.tip] | <code>Object</code> |  |
+| [opts.genesis] | <code>Object</code> |  |
+
+<a name="Program.verifyMachineRun"></a>
+
+### Program.verifyMachineRun(opts) ⇒ <code>Object</code>
+Check a `Machine.runProgram` result against `program.runCommitmentHex`.
+
+**Kind**: static method of [<code>Program</code>](#Program)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| opts | <code>Object</code> |  |
+| opts.program | [<code>Program</code>](#Program) | needs `programHash` + `runCommitmentHex` |
+| opts.run | <code>Object</code> | `{ tip, trace, runCommitmentHex }` (`stack` in place of `trace` also works) |
+
+<a name="Program.runId"></a>
+
+### Program.runId(programHash, runCommitmentHex) ⇒ <code>string</code>
+Stable id for a program run (tests / logging; not a wire type).
+
+**Kind**: static method of [<code>Program</code>](#Program)  
+
+| Param | Type |
+| --- | --- |
+| programHash | <code>string</code> | 
+| runCommitmentHex | <code>string</code> | 
 
 <a name="EncryptedPromise"></a>
 
@@ -18753,6 +21457,7 @@ so commits and encryption options match the rest of the stack.
     * [._POST(key, value)](#Store+_POST) ⇒ <code>Promise</code>
     * [.get(key)](#Store+get) ⇒ <code>Promise</code>
     * [.set(key, value)](#Store+set)
+    * [.remove(key)](#Store+remove) ⇒ <code>Promise.&lt;null&gt;</code>
     * [.trust(source)](#Store+trust) ⇒ [<code>Store</code>](#Store)
     * [.del(key)](#Store+del)
     * [.flush()](#Store+flush)
@@ -18860,6 +21565,17 @@ Set a `key` to a specific `value`.
 | --- | --- | --- |
 | key | <code>String</code> | Address of the information. |
 | value | <code>Mixed</code> | Content to store at `key`. |
+
+<a name="Store+remove"></a>
+
+### resource.remove(key) ⇒ <code>Promise.&lt;null&gt;</code>
+Remove `key` from Level and from memory. A missing key is not an error.
+
+**Kind**: instance method of [<code>Resource</code>](#Resource)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| key | <code>String</code> | Address of the information. |
 
 <a name="Store+trust"></a>
 
@@ -19274,7 +21990,7 @@ Register a single opcode entry in the service registry.
 
 | Param | Type | Description |
 | --- | --- | --- |
-| name | <code>string</code> | Opcode symbol (e.g. `OP_SHA256`, `P2P_FLUSH_CHAIN`) |
+| name | <code>string</code> | Opcode symbol (e.g. `OP_SHA256`, `P2P_CHAIN_SYNC_REQUEST`) |
 | [definition] | <code>Object</code> |  |
 
 <a name="Service+defineBitcoinOpcode"></a>
@@ -19306,7 +22022,7 @@ Register Fabric opcode metadata.
 ### service.defineOpcodeContract(name, body, [meta]) ⇒ <code>Object</code>
 Register a newline-delimited opcode contract.
 Contract body example:
-`OP_DUP\nOP_HASH160\nP2P_FLUSH_CHAIN`
+`OP_DUP\nOP_HASH160\nP2P_CHAIN_SYNC_REQUEST`
 
 **Kind**: instance method of [<code>Service</code>](#Service)  
 
@@ -19710,7 +22426,7 @@ Register a single opcode entry in the service registry.
 
 | Param | Type | Description |
 | --- | --- | --- |
-| name | <code>string</code> | Opcode symbol (e.g. `OP_SHA256`, `P2P_FLUSH_CHAIN`) |
+| name | <code>string</code> | Opcode symbol (e.g. `OP_SHA256`, `P2P_CHAIN_SYNC_REQUEST`) |
 | [definition] | <code>Object</code> |  |
 
 <a name="Service+defineBitcoinOpcode"></a>
@@ -19742,7 +22458,7 @@ Register Fabric opcode metadata.
 ### service.defineOpcodeContract(name, body, [meta]) ⇒ <code>Object</code>
 Register a newline-delimited opcode contract.
 Contract body example:
-`OP_DUP\nOP_HASH160\nP2P_FLUSH_CHAIN`
+`OP_DUP\nOP_HASH160\nP2P_CHAIN_SYNC_REQUEST`
 
 **Kind**: instance method of [<code>Service</code>](#Service)  
 
@@ -20790,6 +23506,7 @@ encrypted values; [openEncrypted](#Store.openEncrypted) matches Hub/shell keysto
         * [._POST(key, value)](#Store+_POST) ⇒ <code>Promise</code>
         * [.get(key)](#Store+get) ⇒ <code>Promise</code>
         * [.set(key, value)](#Store+set)
+        * [.remove(key)](#Store+remove) ⇒ <code>Promise.&lt;null&gt;</code>
         * [.trust(source)](#Store+trust) ⇒ [<code>Store</code>](#Store)
         * [.del(key)](#Store+del)
         * [.flush()](#Store+flush)
@@ -20821,6 +23538,7 @@ Create an instance of a [Store](#Store) to manage long-term storage (LevelDB by 
 | Param | Type | Default | Description |
 | --- | --- | --- | --- |
 | [settings] | <code>Object</code> | <code>{}</code> | configuration object (<code>path</code>, <code>codec</code>, <code>persistent</code>, …). |
+| [settings.strict] | <code>boolean</code> | <code>false</code> | `get` rejects when Level fails to read (a missing key still resolves `null`) and `set` rejects when Level fails to write, instead of resolving as if nothing went wrong |
 
 <a name="Store+codec"></a>
 
@@ -20880,6 +23598,17 @@ Set a `key` to a specific `value`.
 | --- | --- | --- |
 | key | <code>String</code> | Address of the information. |
 | value | <code>Mixed</code> | Content to store at `key`. |
+
+<a name="Store+remove"></a>
+
+### store.remove(key) ⇒ <code>Promise.&lt;null&gt;</code>
+Remove `key` from Level and from memory. A missing key is not an error.
+
+**Kind**: instance method of [<code>Store</code>](#Store)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| key | <code>String</code> | Address of the information. |
 
 <a name="Store+trust"></a>
 
@@ -21075,6 +23804,7 @@ Settings object for a [Store](#Store) with [Codec](Codec) at-rest encryption
         * [._POST(key, value)](#Store+_POST) ⇒ <code>Promise</code>
         * [.get(key)](#Store+get) ⇒ <code>Promise</code>
         * [.set(key, value)](#Store+set)
+        * [.remove(key)](#Store+remove) ⇒ <code>Promise.&lt;null&gt;</code>
         * [.trust(source)](#Store+trust) ⇒ [<code>Store</code>](#Store)
         * [.del(key)](#Store+del)
         * [.flush()](#Store+flush)
@@ -21106,6 +23836,7 @@ Create an instance of a [Store](#Store) to manage long-term storage (LevelDB by 
 | Param | Type | Default | Description |
 | --- | --- | --- | --- |
 | [settings] | <code>Object</code> | <code>{}</code> | configuration object (<code>path</code>, <code>codec</code>, <code>persistent</code>, …). |
+| [settings.strict] | <code>boolean</code> | <code>false</code> | `get` rejects when Level fails to read (a missing key still resolves `null`) and `set` rejects when Level fails to write, instead of resolving as if nothing went wrong |
 
 <a name="Store+codec"></a>
 
@@ -21165,6 +23896,17 @@ Set a `key` to a specific `value`.
 | --- | --- | --- |
 | key | <code>String</code> | Address of the information. |
 | value | <code>Mixed</code> | Content to store at `key`. |
+
+<a name="Store+remove"></a>
+
+### store.remove(key) ⇒ <code>Promise.&lt;null&gt;</code>
+Remove `key` from Level and from memory. A missing key is not an error.
+
+**Kind**: instance method of [<code>Store</code>](#Store)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| key | <code>String</code> | Address of the information. |
 
 <a name="Store+trust"></a>
 
@@ -21965,6 +24707,7 @@ Manage keys and track their balances.
     * [new Wallet([settings])](#new_Wallet_new)
     * _instance_
         * [._emittedWalletTxKeys](#Wallet+_emittedWalletTxKeys) : <code>Set.&lt;string&gt;</code>
+        * [.derive([path])](#Wallet+derive)
         * [.loadKey(input, [labels])](#Wallet+loadKey) ⇒ <code>Object</code>
         * [.loadSeed(phrase, [labels], [opts])](#Wallet+loadSeed) ⇒ <code>Object</code>
         * [.listSeeds()](#Wallet+listSeeds) ⇒ <code>Array.&lt;{seedId: string, xpub: string, labels: Array.&lt;string&gt;}&gt;</code>
@@ -21979,15 +24722,17 @@ Manage keys and track their balances.
         * [.getAddressForScript(script)](#Wallet+getAddressForScript)
         * [.getAddressFromRedeemScript(redeemScript)](#Wallet+getAddressFromRedeemScript)
         * ~~[.createHTLC()](#Wallet+createHTLC)~~
+        * [.getUnusedAddress()](#Wallet+getUnusedAddress) ⇒ <code>Promise.&lt;string&gt;</code>
         * [._sign(tx)](#Wallet+_sign)
         * [._createCrowdfund(fund)](#Wallet+_createCrowdfund)
         * [._getSwapInputScript(redeemScript, secret)](#Wallet+_getSwapInputScript)
         * [._getRefundInputScript(redeemScript)](#Wallet+_getRefundInputScript)
         * [.publicKeyFromString(input)](#Wallet+publicKeyFromString)
+        * [.receiveAddress()](#Wallet+receiveAddress) ⇒ <code>Promise.&lt;string&gt;</code>
     * _static_
         * [.createSeed(passphrase)](#Wallet.createSeed) ⇒ <code>FabricSeed</code>
         * [.fromSeed(seed)](#Wallet.fromSeed) ⇒ [<code>Wallet</code>](#Wallet)
-        * [.purchaseContentHashHex(documentId, parsed)](#Wallet.purchaseContentHashHex) ⇒ <code>string</code>
+        * [.deriveTaprootAddress(key, [options])](#Wallet.deriveTaprootAddress) ⇒ <code>Object</code>
         * [.resolveDocumentContentHashHex(opts)](#Wallet.resolveDocumentContentHashHex) ⇒ <code>Object</code>
 
 <a name="new_Wallet_new"></a>
@@ -22008,6 +24753,18 @@ Create an instance of a [Wallet](#Wallet).
 
 ### wallet.\_emittedWalletTxKeys : <code>Set.&lt;string&gt;</code>
 **Kind**: instance property of [<code>Wallet</code>](#Wallet)  
+<a name="Wallet+derive"></a>
+
+### wallet.derive([path])
+Derive a key; the default is the first SegWit receive key of account 0
+on the wallet's network (`m/84'/{0|1}'/0'/0/0`).
+
+**Kind**: instance method of [<code>Wallet</code>](#Wallet)  
+
+| Param | Type |
+| --- | --- |
+| [path] | <code>string</code> | 
+
 <a name="Wallet+loadKey"></a>
 
 ### wallet.loadKey(input, [labels]) ⇒ <code>Object</code>
@@ -22084,7 +24841,10 @@ Watch an inventory HTLC offer (payment address + payment hash + optional settlem
 <a name="Wallet+_registerDerivedAddresses"></a>
 
 ### wallet.\_registerDerivedAddresses(key, [opts])
-Derive and watch a window of addresses for a key (all common script types).
+Derive and watch a window of addresses for a key on the wallet's network:
+SegWit on `m/84'/{coin}'/0'`, Taproot on `m/86'/{coin}'/0'`, and standard
+on `m/44'/{coin}'/0'`, receive and change chains — the same set as
+[Wallet.walletDescriptors](Wallet.walletDescriptors).
 
 **Kind**: instance method of [<code>Wallet</code>](#Wallet)  
 
@@ -22153,6 +24913,12 @@ Generate a [BitcoinAddress](BitcoinAddress) for the supplied [BitcoinScript](Bit
 Use `@fabric/core/types/htlc` instead.***
 
 **Kind**: instance method of [<code>Wallet</code>](#Wallet)  
+<a name="Wallet+getUnusedAddress"></a>
+
+### wallet.getUnusedAddress() ⇒ <code>Promise.&lt;string&gt;</code>
+Next unused receive address; see [receiveAddress](#Wallet+receiveAddress).
+
+**Kind**: instance method of [<code>Wallet</code>](#Wallet)  
 <a name="Wallet+_sign"></a>
 
 ### wallet.\_sign(tx)
@@ -22209,6 +24975,13 @@ Create a public key from a string.
 | --- | --- | --- |
 | input | <code>String</code> | Hex-encoded string to create key from. |
 
+<a name="Wallet+receiveAddress"></a>
+
+### wallet.receiveAddress() ⇒ <code>Promise.&lt;string&gt;</code>
+Next BIP-86 Taproot receive address of account 0 (`m/86'/{coin}'/0'/0/i`),
+recorded in the wallet's address book and watched.
+
+**Kind**: instance method of [<code>Wallet</code>](#Wallet)  
 <a name="Wallet.createSeed"></a>
 
 ### Wallet.createSeed(passphrase) ⇒ <code>FabricSeed</code>
@@ -22233,18 +25006,22 @@ Create a new [Wallet](#Wallet) from a seed object.
 | --- | --- | --- |
 | seed | <code>FabricSeed</code> | Fabric seed. |
 
-<a name="Wallet.purchaseContentHashHex"></a>
+<a name="Wallet.deriveTaprootAddress"></a>
 
-### Wallet.purchaseContentHashHex(documentId, parsed) ⇒ <code>string</code>
-Envelope (legacy / unsealed) payment hash. Prefer [resolveDocumentContentHashHex](#Wallet.resolveDocumentContentHashHex)
-when sealed meta or a content key may apply.
+### Wallet.deriveTaprootAddress(key, [options]) ⇒ <code>Object</code>
+BIP-86 Taproot address of a key with private derivation
+(`m/86'/{coin}'/account'/change/index`).
 
 **Kind**: static method of [<code>Wallet</code>](#Wallet)  
 
-| Param | Type | Description |
-| --- | --- | --- |
-| documentId | <code>string</code> |  |
-| parsed | <code>object</code> | Whitelisted document fields (see [_buildDocumentParsedForPublish](#Peer+_buildDocumentParsedForPublish)). |
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| key | [<code>Key</code>](#Key) |  | Key holding a master that can derive hardened children. |
+| [options] | <code>Object</code> |  |  |
+| [options.account] | <code>number</code> | <code>0</code> |  |
+| [options.change] | <code>number</code> | <code>0</code> |  |
+| [options.index] | <code>number</code> | <code>0</code> |  |
+| [options.network] | <code>string</code> | <code>&quot;&#x27;mainnet&#x27;&quot;</code> | Fabric network name. |
 
 <a name="Wallet.resolveDocumentContentHashHex"></a>
 
@@ -22560,10 +25337,10 @@ Manages interaction with the Bitcoin network.
         * [.getBlockInfo(hashOrHeight)](#Bitcoin+getBlockInfo) ⇒ <code>Promise.&lt;Object&gt;</code>
         * [.getTransactionInfo(txid)](#Bitcoin+getTransactionInfo) ⇒ <code>Promise.&lt;Object&gt;</code>
         * [.getAddressInfo(address)](#Bitcoin+getAddressInfo) ⇒ <code>Promise.&lt;Object&gt;</code>
-        * [.flushChainToSnapshot(snapshotBlockHash)](#Bitcoin+flushChainToSnapshot) ⇒ <code>Promise.&lt;{ok: boolean, steps: number, snapshotBlockHash: string}&gt;</code>
         * [._requestBlockAtHeight(height)](#Bitcoin+_requestBlockAtHeight) ⇒ <code>Object</code>
         * [._createContractProposal(options)](#Bitcoin+_createContractProposal) ⇒ <code>ContractProposal</code>
         * [._buildPSBT(options)](#Bitcoin+_buildPSBT) ⇒ <code>PSBT</code>
+        * [.broadcastWatchtower(txHexes)](#Bitcoin+broadcastWatchtower) ⇒ <code>Promise.&lt;Array.&lt;string&gt;&gt;</code>
         * [._normalizeP2pPeerAddress(peer)](#Bitcoin+_normalizeP2pPeerAddress) ⇒ <code>string</code> \| <code>null</code>
         * [.applyP2pAddNodes(peers, [command])](#Bitcoin+applyP2pAddNodes) ⇒ <code>Promise.&lt;Array.&lt;string&gt;&gt;</code>
         * [._emitErrorSafe(msg)](#Bitcoin+_emitErrorSafe) ⇒ <code>void</code>
@@ -22812,19 +25589,6 @@ Requires `explorerBaseUrl` (Core has no generic address index over RPC alone).
 | --- | --- | --- |
 | address | <code>String</code> | Bitcoin address. |
 
-<a name="Bitcoin+flushChainToSnapshot"></a>
-
-### bitcoin.flushChainToSnapshot(snapshotBlockHash) ⇒ <code>Promise.&lt;{ok: boolean, steps: number, snapshotBlockHash: string}&gt;</code>
-Rewind the attached Bitcoin Core node to a known-good tip by repeatedly calling `invalidateblock`
-on the current best block until `getbestblockhash` matches `snapshotBlockHash`.
-Allowed on regtest, playnet, signet, testnet, testnet4 unless settings.flushChainAllowUnsafeNetworks.
-
-**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| snapshotBlockHash | <code>string</code> | 64-char hex block hash to keep as the active tip. |
-
 <a name="Bitcoin+_requestBlockAtHeight"></a>
 
 ### bitcoin.\_requestBlockAtHeight(height) ⇒ <code>Object</code>
@@ -22861,6 +25625,20 @@ Vin/vout are BIP-69 sorted before they are added (unsigned construction only).
 | Param | Type | Description |
 | --- | --- | --- |
 | options | <code>Object</code> | Parameters for the PSBT. |
+
+<a name="Bitcoin+broadcastWatchtower"></a>
+
+### bitcoin.broadcastWatchtower(txHexes) ⇒ <code>Promise.&lt;Array.&lt;string&gt;&gt;</code>
+Broadcast justice transactions for any revoked commitment in `txHexes`.
+A filing is dropped only once every one of its transactions is accepted
+or already settled. A prefix that does not decrypt is ignored.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Returns**: <code>Promise.&lt;Array.&lt;string&gt;&gt;</code> - justice transactions submitted  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| txHexes | <code>Array.&lt;string&gt;</code> | raw transactions (block or mempool) |
 
 <a name="Bitcoin+_normalizeP2pPeerAddress"></a>
 
@@ -23035,7 +25813,7 @@ Register a single opcode entry in the service registry.
 
 | Param | Type | Description |
 | --- | --- | --- |
-| name | <code>string</code> | Opcode symbol (e.g. `OP_SHA256`, `P2P_FLUSH_CHAIN`) |
+| name | <code>string</code> | Opcode symbol (e.g. `OP_SHA256`, `P2P_CHAIN_SYNC_REQUEST`) |
 | [definition] | <code>Object</code> |  |
 
 <a name="Service+defineBitcoinOpcode"></a>
@@ -23069,7 +25847,7 @@ Register Fabric opcode metadata.
 ### bitcoin.defineOpcodeContract(name, body, [meta]) ⇒ <code>Object</code>
 Register a newline-delimited opcode contract.
 Contract body example:
-`OP_DUP\nOP_HASH160\nP2P_FLUSH_CHAIN`
+`OP_DUP\nOP_HASH160\nP2P_CHAIN_SYNC_REQUEST`
 
 **Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
 **Overrides**: [<code>defineOpcodeContract</code>](#Service+defineOpcodeContract)  
@@ -23737,7 +26515,6 @@ Default TCP port lightningd listens on when [settings.port](settings.port) is om
         * [.stop()](#Market+stop) ⇒ [<code>Promise.&lt;Market&gt;</code>](#Market)
         * [.tick()](#Market+tick) ⇒ <code>Promise.&lt;Object&gt;</code>
         * [.buyerRefundPubkeyHex()](#Market+buyerRefundPubkeyHex) ⇒ <code>string</code> \| <code>null</code>
-        * [.purchasePlan(want, planned)](#Market+purchasePlan) ⇒ <code>Promise.&lt;Array.&lt;Object&gt;&gt;</code>
         * [.openSession(want, offer, blobIndex, blobTotal)](#Market+openSession) ⇒ <code>Object</code> \| <code>null</code>
         * [.confirm(settlementId, [txid])](#Market+confirm) ⇒ <code>Object</code>
         * [.buildRefund(settlementId)](#Market+buildRefund) ⇒ <code>Promise.&lt;{ok: boolean, error: (string\|undefined), psbtBase64: (string\|undefined), txHex: (string\|null\|undefined), txid: (string\|null\|undefined)}&gt;</code>
@@ -23765,7 +26542,7 @@ Default TCP port lightningd listens on when [settings.port](settings.port) is om
 | [settings.deliveryTimeoutMs] | <code>number</code> | <code>600000</code> | Paid sessions without delivery time out after this (0 = never); funded L1 HTLCs then wait for refund. |
 | [settings.prepayTimeoutMs] | <code>number</code> | <code>60000</code> | Verify-before-pay: wait this long for the seller's free ciphertext (and quote). |
 | [settings.verifyBeforePay] | <code>boolean</code> | <code>true</code> | Pay a sealed blob only once its ciphertext is held and committed by the root. |
-| [settings.quotes] | <code>boolean</code> | <code>false</code> | Ask sellers for a per-buyer `DocumentBlobQuote` and pay its hash. Not atomic: a seller can quote a wrapped key that does not unwrap, claim the HTLC, and leave only a fraud proof (`documentBlobQuoteFraud`). Static hashes are atomic. |
+| [settings.quotes] | <code>boolean</code> | <code>false</code> | Ask sellers for a per-buyer `DocumentBlobQuote`. The HTLC still pays the committed content hash. A quote hash is `SHA256(s)` and the wrap cannot be checked until `s` is revealed, so paying it lets the seller claim without delivering the key. |
 | [settings.credit] | <code>boolean</code> | <code>true</code> | Take a seller's credit offer (`creditRateSats`) when a channel with it can pay: the key comes first, and the blob is paid with a channel transfer only once it opens. A blob that does not open is never paid. |
 | [settings.seed] | <code>Object</code> \| <code>boolean</code> |  | Seed after download: sell every received convergent document again as the same tree, on these `Peer#publishSealedDocument` terms (`{ rateSats, creditRateSats, creditLimitSats }`; `true` = free). |
 | [settings.fundingSafetyMs] | <code>number</code> | <code>3600000</code> | A funding whose outcome is unknown is released only after the address is reported unfunded this long after the last pay attempt. |
@@ -23778,7 +26555,9 @@ Default TCP port lightningd listens on when [settings.port](settings.port) is om
 | [settings.refundPrivateKey] | <code>string</code> \| <code>Buffer</code> |  | Buyer refund key (defaults to the Peer key when it matches). |
 | [settings.tipHeight] | <code>function</code> |  | `() => number` chain tip (else `attach({ tipHeight })`, the channel book, or `onBlock`). |
 | [settings.now] | <code>function</code> |  | clock override (`() => ms`), for tests. |
-| [settings.network] | <code>string</code> | <code>&quot;&#x27;regtest&#x27;&quot;</code> | Bitcoin test network (mainnet refused). |
+| [settings.claimFeerate] | <code>number</code> | <code>1</code> | sat/vB assumed when opening an L1 document HTLC. No fee oracle. |
+| [settings.l1Batch] | <code>boolean</code> |  | Pay 128 chunks per L1 HTLC. Default on for mainnet. |
+| [settings.network] | <code>string</code> | <code>&quot;&#x27;regtest&#x27;&quot;</code> | `regtest` / `signet` / `testnet` / `testnet4` / `mainnet`. |
 | [settings.book] | <code>Object</code> |  | `DocumentBook` settings. |
 
 <a name="Market+attach"></a>
@@ -23941,19 +26720,6 @@ budget.
 ### market.buyerRefundPubkeyHex() ⇒ <code>string</code> \| <code>null</code>
 **Kind**: instance method of [<code>Market</code>](#Market)  
 **Returns**: <code>string</code> \| <code>null</code> - compressed buyer refund key (Peer identity).  
-<a name="Market+purchasePlan"></a>
-
-### market.purchasePlan(want, planned) ⇒ <code>Promise.&lt;Array.&lt;Object&gt;&gt;</code>
-Open, verify, fund, confirm, and request every blob in a plan.
-
-**Kind**: instance method of [<code>Market</code>](#Market)  
-**Returns**: <code>Promise.&lt;Array.&lt;Object&gt;&gt;</code> - opened sessions  
-
-| Param | Type |
-| --- | --- |
-| want | <code>Object</code> | 
-| planned | <code>Object</code> | 
-
 <a name="Market+openSession"></a>
 
 ### market.openSession(want, offer, blobIndex, blobTotal) ⇒ <code>Object</code> \| <code>null</code>
@@ -24303,7 +27069,7 @@ Register a single opcode entry in the service registry.
 
 | Param | Type | Description |
 | --- | --- | --- |
-| name | <code>string</code> | Opcode symbol (e.g. `OP_SHA256`, `P2P_FLUSH_CHAIN`) |
+| name | <code>string</code> | Opcode symbol (e.g. `OP_SHA256`, `P2P_CHAIN_SYNC_REQUEST`) |
 | [definition] | <code>Object</code> |  |
 
 <a name="Service+defineBitcoinOpcode"></a>
@@ -24335,7 +27101,7 @@ Register Fabric opcode metadata.
 ### text.defineOpcodeContract(name, body, [meta]) ⇒ <code>Object</code>
 Register a newline-delimited opcode contract.
 Contract body example:
-`OP_DUP\nOP_HASH160\nP2P_FLUSH_CHAIN`
+`OP_DUP\nOP_HASH160\nP2P_CHAIN_SYNC_REQUEST`
 
 **Kind**: instance method of [<code>Text</code>](#Text)  
 
@@ -24613,6 +27379,268 @@ Join a list with an Oxford comma (delegates to [module:functions/oxfordJoin](mod
 | --- | --- |
 | list | <code>Array.&lt;string&gt;</code> | 
 
+<a name="Watchtower"></a>
+
+## Watchtower
+**Kind**: global class  
+
+* [Watchtower](#Watchtower)
+    * [new Watchtower()](#new_Watchtower_new)
+    * [new Watchtower([settings])](#new_Watchtower_new)
+    * _instance_
+        * [._filings](#Watchtower+_filings) : <code>Map.&lt;string, object&gt;</code>
+        * [.size](#Watchtower+size) ⇒ <code>number</code>
+        * [.isAdmitted(pubkey)](#Watchtower+isAdmitted) ⇒ <code>boolean</code>
+        * [.file(appointment, [opts])](#Watchtower+file) ⇒ <code>Object</code>
+        * [.match(txHexes)](#Watchtower+match) ⇒ <code>Array.&lt;object&gt;</code>
+        * [.drop(client, hint)](#Watchtower+drop)
+        * [.export()](#Watchtower+export) ⇒ <code>object</code>
+        * [.import(snapshot)](#Watchtower+import) ⇒ <code>number</code>
+    * _static_
+        * [.appointment(filing, privateKey)](#Watchtower.appointment) ⇒ <code>object</code>
+
+<a name="new_Watchtower_new"></a>
+
+### new Watchtower()
+Local store of encrypted justice filings.
+
+<a name="new_Watchtower_new"></a>
+
+### new Watchtower([settings])
+
+| Param | Type | Description |
+| --- | --- | --- |
+| [settings] | <code>object</code> |  |
+| [settings.localPrivateKey] | <code>Buffer</code> \| <code>string</code> | operator key; its x-only pubkey is always admitted |
+| [settings.localPubkey] | <code>string</code> | x-only or compressed operator pubkey when the private key is held elsewhere |
+| [settings.admit] | <code>function</code> | other clients this node has registered |
+| [settings.maxPerClient] | <code>number</code> |  |
+| [settings.maxFilings] | <code>number</code> |  |
+
+<a name="Watchtower+_filings"></a>
+
+### watchtower.\_filings : <code>Map.&lt;string, object&gt;</code>
+`${client}|${hint}` → signed appointment
+
+**Kind**: instance property of [<code>Watchtower</code>](#Watchtower)  
+<a name="Watchtower+size"></a>
+
+### watchtower.size ⇒ <code>number</code>
+**Kind**: instance property of [<code>Watchtower</code>](#Watchtower)  
+<a name="Watchtower+isAdmitted"></a>
+
+### watchtower.isAdmitted(pubkey) ⇒ <code>boolean</code>
+Operator, or a client the host already registered.
+
+**Kind**: instance method of [<code>Watchtower</code>](#Watchtower)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| pubkey | <code>string</code> | x-only or compressed |
+
+<a name="Watchtower+file"></a>
+
+### watchtower.file(appointment, [opts]) ⇒ <code>Object</code>
+Keep a signed appointment. The same client replacing a hint is a fee
+update and does not consume another slot. A client this node has not
+registered is refused (`code` `UNREGISTERED`) unless `opts.sessionPubkey`
+is that same key — a current Passport session.
+
+**Kind**: instance method of [<code>Watchtower</code>](#Watchtower)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| appointment | <code>object</code> | `WatchtowerAppointment` |
+| [opts] | <code>object</code> |  |
+| [opts.sessionPubkey] | <code>string</code> | pubkey of the signed-in session |
+
+<a name="Watchtower+match"></a>
+
+### watchtower.match(txHexes) ⇒ <code>Array.&lt;object&gt;</code>
+Justice transactions for commitments present in `txHexes`. A hint that
+does not decrypt is ignored.
+
+**Kind**: instance method of [<code>Watchtower</code>](#Watchtower)  
+**Returns**: <code>Array.&lt;object&gt;</code> - `[{ client, hint, commitmentTxid, transactions }]`  
+
+| Param | Type |
+| --- | --- |
+| txHexes | <code>Array.&lt;string&gt;</code> | 
+
+<a name="Watchtower+drop"></a>
+
+### watchtower.drop(client, hint)
+Drop a filing after its justice transactions have been broadcast.
+
+**Kind**: instance method of [<code>Watchtower</code>](#Watchtower)  
+
+| Param | Type |
+| --- | --- |
+| client | <code>string</code> | 
+| hint | <code>string</code> | 
+
+<a name="Watchtower+export"></a>
+
+### watchtower.export() ⇒ <code>object</code>
+**Kind**: instance method of [<code>Watchtower</code>](#Watchtower)  
+**Returns**: <code>object</code> - persistence snapshot (ciphertext only)  
+<a name="Watchtower+import"></a>
+
+### watchtower.import(snapshot) ⇒ <code>number</code>
+Restore filings. Each row is checked again, so a restarted node keeps
+only appointments that still verify and that it still admits.
+
+**Kind**: instance method of [<code>Watchtower</code>](#Watchtower)  
+**Returns**: <code>number</code> - filings kept  
+
+| Param | Type |
+| --- | --- |
+| snapshot | <code>object</code> | 
+
+<a name="Watchtower.appointment"></a>
+
+### Watchtower.appointment(filing, privateKey) ⇒ <code>object</code>
+Sign a filing from this node's own channel book, or from a client.
+
+**Kind**: static method of [<code>Watchtower</code>](#Watchtower)  
+**Returns**: <code>object</code> - signed `WatchtowerAppointment`  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| filing | <code>object</code> | `{ commitmentTxid, transactions }` |
+| privateKey | <code>Buffer</code> \| <code>string</code> |  |
+
+<a name="Watchtower"></a>
+
+## Watchtower
+**Kind**: global class  
+
+* [Watchtower](#Watchtower)
+    * [new Watchtower()](#new_Watchtower_new)
+    * [new Watchtower([settings])](#new_Watchtower_new)
+    * _instance_
+        * [._filings](#Watchtower+_filings) : <code>Map.&lt;string, object&gt;</code>
+        * [.size](#Watchtower+size) ⇒ <code>number</code>
+        * [.isAdmitted(pubkey)](#Watchtower+isAdmitted) ⇒ <code>boolean</code>
+        * [.file(appointment, [opts])](#Watchtower+file) ⇒ <code>Object</code>
+        * [.match(txHexes)](#Watchtower+match) ⇒ <code>Array.&lt;object&gt;</code>
+        * [.drop(client, hint)](#Watchtower+drop)
+        * [.export()](#Watchtower+export) ⇒ <code>object</code>
+        * [.import(snapshot)](#Watchtower+import) ⇒ <code>number</code>
+    * _static_
+        * [.appointment(filing, privateKey)](#Watchtower.appointment) ⇒ <code>object</code>
+
+<a name="new_Watchtower_new"></a>
+
+### new Watchtower()
+Local store of encrypted justice filings.
+
+<a name="new_Watchtower_new"></a>
+
+### new Watchtower([settings])
+
+| Param | Type | Description |
+| --- | --- | --- |
+| [settings] | <code>object</code> |  |
+| [settings.localPrivateKey] | <code>Buffer</code> \| <code>string</code> | operator key; its x-only pubkey is always admitted |
+| [settings.localPubkey] | <code>string</code> | x-only or compressed operator pubkey when the private key is held elsewhere |
+| [settings.admit] | <code>function</code> | other clients this node has registered |
+| [settings.maxPerClient] | <code>number</code> |  |
+| [settings.maxFilings] | <code>number</code> |  |
+
+<a name="Watchtower+_filings"></a>
+
+### watchtower.\_filings : <code>Map.&lt;string, object&gt;</code>
+`${client}|${hint}` → signed appointment
+
+**Kind**: instance property of [<code>Watchtower</code>](#Watchtower)  
+<a name="Watchtower+size"></a>
+
+### watchtower.size ⇒ <code>number</code>
+**Kind**: instance property of [<code>Watchtower</code>](#Watchtower)  
+<a name="Watchtower+isAdmitted"></a>
+
+### watchtower.isAdmitted(pubkey) ⇒ <code>boolean</code>
+Operator, or a client the host already registered.
+
+**Kind**: instance method of [<code>Watchtower</code>](#Watchtower)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| pubkey | <code>string</code> | x-only or compressed |
+
+<a name="Watchtower+file"></a>
+
+### watchtower.file(appointment, [opts]) ⇒ <code>Object</code>
+Keep a signed appointment. The same client replacing a hint is a fee
+update and does not consume another slot. A client this node has not
+registered is refused (`code` `UNREGISTERED`) unless `opts.sessionPubkey`
+is that same key — a current Passport session.
+
+**Kind**: instance method of [<code>Watchtower</code>](#Watchtower)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| appointment | <code>object</code> | `WatchtowerAppointment` |
+| [opts] | <code>object</code> |  |
+| [opts.sessionPubkey] | <code>string</code> | pubkey of the signed-in session |
+
+<a name="Watchtower+match"></a>
+
+### watchtower.match(txHexes) ⇒ <code>Array.&lt;object&gt;</code>
+Justice transactions for commitments present in `txHexes`. A hint that
+does not decrypt is ignored.
+
+**Kind**: instance method of [<code>Watchtower</code>](#Watchtower)  
+**Returns**: <code>Array.&lt;object&gt;</code> - `[{ client, hint, commitmentTxid, transactions }]`  
+
+| Param | Type |
+| --- | --- |
+| txHexes | <code>Array.&lt;string&gt;</code> | 
+
+<a name="Watchtower+drop"></a>
+
+### watchtower.drop(client, hint)
+Drop a filing after its justice transactions have been broadcast.
+
+**Kind**: instance method of [<code>Watchtower</code>](#Watchtower)  
+
+| Param | Type |
+| --- | --- |
+| client | <code>string</code> | 
+| hint | <code>string</code> | 
+
+<a name="Watchtower+export"></a>
+
+### watchtower.export() ⇒ <code>object</code>
+**Kind**: instance method of [<code>Watchtower</code>](#Watchtower)  
+**Returns**: <code>object</code> - persistence snapshot (ciphertext only)  
+<a name="Watchtower+import"></a>
+
+### watchtower.import(snapshot) ⇒ <code>number</code>
+Restore filings. Each row is checked again, so a restarted node keeps
+only appointments that still verify and that it still admits.
+
+**Kind**: instance method of [<code>Watchtower</code>](#Watchtower)  
+**Returns**: <code>number</code> - filings kept  
+
+| Param | Type |
+| --- | --- |
+| snapshot | <code>object</code> | 
+
+<a name="Watchtower.appointment"></a>
+
+### Watchtower.appointment(filing, privateKey) ⇒ <code>object</code>
+Sign a filing from this node's own channel book, or from a client.
+
+**Kind**: static method of [<code>Watchtower</code>](#Watchtower)  
+**Returns**: <code>object</code> - signed `WatchtowerAppointment`  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| filing | <code>object</code> | `{ commitmentTxid, transactions }` |
+| privateKey | <code>Buffer</code> \| <code>string</code> |  |
+
 <a name="ZMQ"></a>
 
 ## ZMQ
@@ -24623,6 +27651,7 @@ Connect and subscribe to ZeroMQ publishers.
 * [ZMQ](#ZMQ)
     * [new ZMQ([settings])](#new_ZMQ_new)
     * [._emitErrorSafe()](#ZMQ+_emitErrorSafe)
+    * [._handleSocketMessage(topic, message)](#ZMQ+_handleSocketMessage)
     * [.start()](#ZMQ+start) ⇒ [<code>ZMQ</code>](#ZMQ)
     * [.stop()](#ZMQ+stop) ⇒ [<code>ZMQ</code>](#ZMQ)
 
@@ -24645,6 +27674,19 @@ Creates an instance of a ZeroMQ subscriber.
 Avoid process crash when nothing listens for `error` (Node EventEmitter default).
 
 **Kind**: instance method of [<code>ZMQ</code>](#ZMQ)  
+<a name="ZMQ+_handleSocketMessage"></a>
+
+### zmQ.\_handleSocketMessage(topic, message)
+One bitcoind notification: emit it as a field-body `Message`, or as the raw
+`[topic, bytes]` pair when the codec can't hold it. Never throws.
+
+**Kind**: instance method of [<code>ZMQ</code>](#ZMQ)  
+
+| Param | Type |
+| --- | --- |
+| topic | <code>Buffer</code> | 
+| message | <code>Buffer</code> | 
+
 <a name="ZMQ+start"></a>
 
 ### zmQ.start() ⇒ [<code>ZMQ</code>](#ZMQ)
@@ -24867,6 +27909,30 @@ Extra inputs budgeted when the taker selects coins.
 AES-GCM tag appended to each sealed blob.
 
 **Kind**: global constant  
+<a name="BID_TYPE"></a>
+
+## BID\_TYPE
+Wire type of a chunk bid.
+
+**Kind**: global constant  
+<a name="ASK_TYPE"></a>
+
+## ASK\_TYPE
+Wire type of a seller's answer to a bid.
+
+**Kind**: global constant  
+<a name="DEFAULT_BID_TTL_SECONDS"></a>
+
+## DEFAULT\_BID\_TTL\_SECONDS
+Bid lifetime when the buyer names none.
+
+**Kind**: global constant  
+<a name="BID_CLOCK_SKEW_SECONDS"></a>
+
+## BID\_CLOCK\_SKEW\_SECONDS
+Clock difference tolerated between peers when checking how far ahead a bid expires.
+
+**Kind**: global constant  
 <a name="DEFAULT_WEIGHTS"></a>
 
 ## DEFAULT\_WEIGHTS
@@ -24945,6 +28011,33 @@ Fee used when a spend names none.
 BIP65: lock values at or above this are unix times, not heights.
 
 **Kind**: global constant  
+<a name="DEPRECATED_WIRE_TYPES"></a>
+
+## DEPRECATED\_WIRE\_TYPES
+Registered opcodes nothing sends or handles (docs/MESSAGE_BODY.md, Migration
+Phase 4). They still decode; Peer counts and warns when one arrives, and a
+later protocol version removes them. `P2P_BASE_MESSAGE` and
+`P2P_CHAIN_SYNC_REQUEST` are still in use and are not listed.
+
+**Kind**: global constant  
+<a name="SEALED_DELIVERY_INNER_TYPE_BY_WIRE"></a>
+
+## SEALED\_DELIVERY\_INNER\_TYPE\_BY\_WIRE
+Sealed document delivery wire type → the inner `type` its generic handler dispatches on.
+
+**Kind**: global constant  
+<a name="SEALED_DELIVERY_INNER_TYPES"></a>
+
+## SEALED\_DELIVERY\_INNER\_TYPES
+Those inner types: refused inside a `GenericMessage` / `P2P_BASE_MESSAGE` carrier.
+
+**Kind**: global constant  
+<a name="FIELD_BODIES_VERSION"></a>
+
+## FIELD\_BODIES\_VERSION
+Session-advertised level of field-body support (`object.fieldBodies`).
+
+**Kind**: global constant  
 <a name="TAPROOT_INTERNAL_NUMS"></a>
 
 ## TAPROOT\_INTERNAL\_NUMS
@@ -24973,6 +28066,12 @@ Exit kinds.
 
 ## EXIT\_SIGNATURE\_TYPE
 `CONTRACT_MESSAGE` body carrying one exit signature.
+
+**Kind**: global constant  
+<a name="UNSAFE_PATH_TOKENS"></a>
+
+## UNSAFE\_PATH\_TOKENS
+Path tokens that would reach `Object.prototype` through `pointer.set`.
 
 **Kind**: global constant  
 <a name="MAX_PREMIUM_PPM"></a>
@@ -25029,6 +28128,24 @@ BOLT11 default expiry when the invoice names none.
 
 ## SIGNER\_FIELD
 Which field carries each body's author key.
+
+**Kind**: global constant  
+<a name="ZMQ_TOPIC_CASES"></a>
+
+## ZMQ\_TOPIC\_CASES
+bitcoind ZMQ topic → `_handleZMQMessage` case.
+
+**Kind**: global constant  
+<a name="ZMQ_TXID_MEMORY"></a>
+
+## ZMQ\_TXID\_MEMORY
+Max txids kept for `rawtx` / `hashtx` pair dedupe.
+
+**Kind**: global constant  
+<a name="ZMQ_TX_DEDUPE_MS"></a>
+
+## ZMQ\_TX\_DEDUPE\_MS
+Default window in which a `rawtx` / `hashtx` pair counts as one admission.
 
 **Kind**: global constant  
 <a name="Text"></a>
@@ -25202,7 +28319,7 @@ Register a single opcode entry in the service registry.
 
 | Param | Type | Description |
 | --- | --- | --- |
-| name | <code>string</code> | Opcode symbol (e.g. `OP_SHA256`, `P2P_FLUSH_CHAIN`) |
+| name | <code>string</code> | Opcode symbol (e.g. `OP_SHA256`, `P2P_CHAIN_SYNC_REQUEST`) |
 | [definition] | <code>Object</code> |  |
 
 <a name="Service+defineBitcoinOpcode"></a>
@@ -25234,7 +28351,7 @@ Register Fabric opcode metadata.
 ### text.defineOpcodeContract(name, body, [meta]) ⇒ <code>Object</code>
 Register a newline-delimited opcode contract.
 Contract body example:
-`OP_DUP\nOP_HASH160\nP2P_FLUSH_CHAIN`
+`OP_DUP\nOP_HASH160\nP2P_CHAIN_SYNC_REQUEST`
 
 **Kind**: instance method of [<code>Text</code>](#Text)  
 
@@ -25512,6 +28629,18 @@ Join a list with an Oxford comma (delegates to [module:functions/oxfordJoin](mod
 | --- | --- |
 | list | <code>Array.&lt;string&gt;</code> | 
 
+<a name="ZMQ_MESSAGE_TYPES"></a>
+
+## ZMQ\_MESSAGE\_TYPES
+bitcoind topic → message type for the field-encoded form.
+
+**Kind**: global constant  
+<a name="ZMQ_MAX_FIELD_HEX"></a>
+
+## ZMQ\_MAX\_FIELD\_HEX
+Hex characters that fit a field body beside its `present` / `extra` fields.
+
+**Kind**: global constant  
 <a name="lockFrom"></a>
 
 ## lockFrom()
@@ -26255,6 +29384,20 @@ Stable key for one offer row.
 | --- | --- |
 | row | <code>object</code> | 
 
+<a name="settlementDedupeKey"></a>
+
+## settlementDedupeKey(session) ⇒ <code>string</code>
+Dedup key for paid settlements: (documentId, blobIndex|all, contentHash).
+
+**Kind**: global function  
+
+| Param | Type |
+| --- | --- |
+| session | <code>Object</code> | 
+| session.documentId | <code>string</code> | 
+| [session.blobIndex] | <code>number</code> | 
+| [session.contentHashHex] | <code>string</code> | 
+
 <a name="createDocumentPurchaseSession"></a>
 
 ## createDocumentPurchaseSession(opts) ⇒ <code>Object</code>
@@ -26377,6 +29520,31 @@ returned in `skipped`.
 | items | <code>Array.&lt;Object&gt;</code> |  |  |
 | [opts] | <code>Object</code> |  |  |
 | [opts.pageBytes] | <code>number</code> | <code>INVENTORY_RESPONSE_PAGE_BYTES</code> | Max JSON bytes of one page's `items` array. |
+
+<a name="contractMessageIndex"></a>
+
+## contractMessageIndex(messageOrFields) ⇒ <code>Object</code>
+`recipient`, `ref`, and `slot` from a CONTRACT_MESSAGE field body.
+Does not read the JSON payload.
+
+**Kind**: global function  
+
+| Param | Type |
+| --- | --- |
+| messageOrFields | [<code>Message</code>](#Message) \| <code>object</code> \| <code>null</code> | 
+
+<a name="contractMessageMatches"></a>
+
+## contractMessageMatches(messageOrFields, [query]) ⇒ <code>boolean</code>
+True when every non-empty query field equals the frame's index field.
+An empty query matches. A frame with no index does not match a query.
+
+**Kind**: global function  
+
+| Param | Type |
+| --- | --- |
+| messageOrFields | [<code>Message</code>](#Message) \| <code>object</code> \| <code>null</code> | 
+| [query] | <code>object</code> | 
 
 <a name="tierWhenPath"></a>
 
@@ -26675,7 +29843,7 @@ Authority P2TR vault from validator/signer set.
 
 **Default (RC):** 2-tier ladder — k-of-n authority now; softer rule after
 `csvBlocks` (default 144) CSV. Same tree as [synthesizeDefaultLadder](#synthesizeDefaultLadder) /
-[module:functions/contractSpend.resolveSpend](module:functions/contractSpend.resolveSpend) when inputs match.
+[resolveSpend](#Contract.resolveSpend) when inputs match.
 
 **Legacy:** pass `{ legacySingleLeaf: true }` for the pre-ladder single k-of-n
 leaf address (opt-in only; not used by Hub vault summary).
@@ -26840,6 +30008,12 @@ Check a body's shape and its author's BIP340 signature.
 | --- | --- |
 | body | <code>Object</code> | 
 
+<a name="routePath"></a>
+
+## routePath()
+`path` as an absolute JSON Pointer path.
+
+**Kind**: global function  
 <a name="normalizeOrder"></a>
 
 ## normalizeOrder(input) ⇒ <code>Object</code>
@@ -27111,6 +30285,31 @@ another.
 | Param | Type |
 | --- | --- |
 | session | <code>Object</code> | 
+
+<a name="openFiling"></a>
+
+## openFiling(filing, txid) ⇒ <code>Array.&lt;string&gt;</code> \| <code>null</code>
+Decrypt a filing with the commitment txid. Null when the hint misses or
+the ciphertext was sealed for a different transaction (prefix collision).
+
+**Kind**: global function  
+
+| Param | Type |
+| --- | --- |
+| filing | <code>object</code> | 
+| txid | <code>string</code> | 
+
+<a name="broadcastSettled"></a>
+
+## broadcastSettled(error) ⇒ <code>boolean</code>
+A broadcast error that means this penalty will not confirm later: the
+transaction is already known, or its inputs are already spent.
+
+**Kind**: global function  
+
+| Param | Type |
+| --- | --- |
+| error | <code>Error</code> \| <code>string</code> | 
 
 <a name="BitcoinCookieProbeConstraints"></a>
 

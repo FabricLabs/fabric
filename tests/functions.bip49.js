@@ -14,8 +14,8 @@ const {
 const { p2shP2wpkhAddress, p2shP2wpkhPayment } = require('../functions/bip49');
 
 describe('@fabric/core/functions/bip49', function () {
-  it('keeps default funds path on BIP-44', function () {
-    assert.strictEqual(BITCOIN_KEY_DERIVATION_PATH, "m/44'/0'/0'/0/0");
+  it('keeps default funds path on BIP-84', function () {
+    assert.strictEqual(BITCOIN_KEY_DERIVATION_PATH, "m/84'/0'/0'/0/0");
     assert.notStrictEqual(bitcoinBip49ReceiveDerivationPath(), BITCOIN_KEY_DERIVATION_PATH);
   });
 

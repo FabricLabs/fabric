@@ -5,7 +5,6 @@ names from `Message.WIRE_TYPE_DECODE_ORDER`) and defines the **Program +
 manifest** shape that lets Fabric-speaking peers derive a **common state** —
 a list of fields and their values — across the network.
 
-Companion diagram: [`contracts/protocol.dot`](../contracts/protocol.dot).  
 Opcode catalog: [`MESSAGES.md`](../MESSAGES.md).  
 Execution model: [`DISTRIBUTED_EXECUTION.md`](./DISTRIBUTED_EXECUTION.md), [`PROGRAM.md`](./PROGRAM.md).
 
@@ -92,7 +91,6 @@ Body/activity type (not yet a dedicated outer opcode): `SIDECHAIN_STATE_PATCH`.
 | `0x0003` | 3 | `BLOCK_CANDIDATE` |
 | `0x0021` | 33 | `P2P_START_CHAIN` |
 | `0x0055` | 85 | `P2P_CHAIN_SYNC_REQUEST` |
-| `0x0056` | 86 | `P2P_FLUSH_CHAIN` |
 | `0x0039` | 57 | `P2P_TRANSACTION` |
 | `0x0042` | 66 | `P2P_CALL` |
 | `0x3e80` | 16000 | `JSON_CALL` |

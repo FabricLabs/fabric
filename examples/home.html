@@ -21,6 +21,7 @@
     }
     main { max-width: 40rem; margin: 0 auto; padding: 2.5rem 1.25rem 3rem; }
     h1 { font-size: 1.35rem; margin: 0 0 0.4rem; }
+    h2 { font-size: 1rem; margin: 1.6rem 0 0.4rem; }
     p { color: var(--muted); }
     a { color: var(--accent); }
     ul { padding-left: 1.2rem; }
@@ -46,14 +47,14 @@
 <body>
   <main>
     <h1>Fabric examples</h1>
-    <p>Literate sources for the curated demos. Prefer running the Node scripts from a clone; these pages are for reading.</p>
+    <p>Offline Node tutorials for the local stack. Run <code>npm run example:tutorials</code> from a clone. These pages are for reading.</p>
+
+    <h2>Node tutorials</h2>
     <ul>
-      <li><a href="fabric-basic-usage.html">fabric-basic-usage.js</a> <span class="tag">flagship</span> — Key + sign/verify</li>
-      <li><a href="fabric-demo.html">fabric-demo.js</a> <span class="tag">flagship</span> — Collection + shoutbox</li>
-      <li><a href="message.html">message.js</a> <span class="tag">flagship</span> — Wire message + chat smoke</li>
-      <li><a href="onion-forward.html">onion-forward.js</a> <span class="tag">flagship</span> — P2P_FORWARD peel</li>
-      <li><a href="index.html">index.js</a> — Fabric state get/set + <code>example:smoke</code> runner</li>
-      <li><a href="agents.html">agents.js</a> — Multi-core distributor</li>
+      <li><a href="fabric-basic-usage.html">fabric-basic-usage.js</a> <span class="tag">flagship</span> — sign and verify one message</li>
+      <li><a href="onion-forward.html">onion-forward.js</a> — P2P_FORWARD peel</li>
+      <li><a href="fabric-demo.html">fabric-demo.js</a> — Collection plus one message</li>
+      <li><a href="index.html">index.js</a> — in-memory get and set</li>
     </ul>
     <p>Site root: <a href="../index.html">@fabric/core demos</a> · Repo: <a href="https://github.com/FabricLabs/fabric">FabricLabs/fabric</a></p>
   </main>

@@ -75,6 +75,33 @@ describe('@fabric/core contractMessageQueue', function () {
     assert.strictEqual(result.tip.clock, 1);
   });
 
+  it('lists by recipient, ref, and slot without parsing the payload', function () {
+    const author = new Key();
+    const store = createMemoryStore();
+    const indexed = Message.fromLegacyBody('CONTRACT_MESSAGE', {
+      contract: contractId,
+      type: 'GroupChat',
+      object: { body: 'not-the-index', recipient: 'bob', ref: 'm1', slot: 'general' }
+    }).signWithKey(author);
+    const other = Message.fromLegacyBody('CONTRACT_MESSAGE', {
+      contract: contractId,
+      type: 'GroupChat',
+      object: { body: 'bob', recipient: 'ada' }
+    }).signWithKey(author);
+    const jsonOnly = signContractMessage(author, contractId, 'GroupChat', {
+      body: 'legacy',
+      recipient: 'bob'
+    });
+    enqueueMessageBuffer(store, contractId, indexed.toBuffer());
+    enqueueMessageBuffer(store, contractId, other.toBuffer());
+    enqueueMessageBuffer(store, contractId, jsonOnly.toBuffer());
+    const hits = listQueuedMessages(store, contractId, { recipient: 'bob', ref: 'm1' });
+    assert.strictEqual(hits.length, 1);
+    assert.strictEqual(hits[0].hex, indexed.toBuffer().toString('hex'));
+    assert.strictEqual(listQueuedMessages(store, contractId, { slot: 'general' }).length, 1);
+    assert.strictEqual(listQueuedMessages(store, contractId).length, 3);
+  });
+
   it('rejects unsigned frames at enqueue', function () {
     const store = createMemoryStore();
     const unsigned = Message.fromVector(['CONTRACT_MESSAGE', JSON.stringify({

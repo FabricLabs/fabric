@@ -14,7 +14,11 @@ execution. Distributed Beacon / federation orchestration is Hub-composed and
 
 | Concern | Import | Notes |
 |---------|--------|-------|
-| Identity / keys | `@fabric/core/types/key` | BIP32/39 + Schnorr |
+| Identity / keys | `@fabric/core/types/key` | BIP32/39 + Schnorr; `Key.BIP32`, `Key.Mnemonic.*`, `Key.BIP49`, `Key.BIP85`, `Key.Base58`, `Key.TAGS`, pubkey helpers |
+| Hashing | `@fabric/core/types/hash256`, `@fabric/core/types/hkdf` | `Hash256.tagged` (BIP-340 tagged hash), `hmac`, `keystream`; `HKDF.extract` / `expand` (RFC 5869) |
+| Wallet / accounts | `@fabric/core/types/wallet` | Account keys (`Wallet.deriveAccount`, vaults, descriptors), `Wallet.Watch`, `Wallet.BIP21`, `Wallet.BIP86`; receive addresses are BIP-86 Taproot |
+| Signatures | `@fabric/core/types/witness` | `Witness.MuSig2` (BIP-327), `Witness.MuSig2.Session`, `Witness.BLS`; signed artifacts and `Witness.FraudProof` |
+| Bech32 | `@fabric/core/types/bech32` | `Bech32.Codec` (BIP-173 / BIP-350), segwit addresses, `Bech32.Payment` (`fa1…`) |
 | Wire message | `@fabric/core/types/message` | JS protocol oracle |
 | P2P node | `@fabric/core/types/peer` | TCP/NOISE; `Peer.Swarm` |
 | Opcodes / constants | `@fabric/core/constants` | Shared with Hub |
@@ -32,6 +36,8 @@ execution. Distributed Beacon / federation orchestration is Hub-composed and
 | Local VM | `@fabric/core/types/machine` | Opcode runner (host-defined ops) |
 | Sidechain document | `@fabric/core/functions/sidechainState` | Patches, digests, journal |
 | Program manifest | `@fabric/core/functions/fabricProgramManifest` | Manifest v1 parse |
+| Passport sign-in | `@fabric/core/functions/passport` | `PASSPORT_CHALLENGE` / `PASSPORT_ASSERTION` frames ([docs/PASSPORT.md](docs/PASSPORT.md)) |
+| Delegation | `@fabric/core/types/delegation` | Pairing (commit-then-reveal code), grants, revokes, requests and results as `DELEGATION_*` frames; `Delegation` keeps one participant's state on its own key and store ([docs/DELEGATION.md](docs/DELEGATION.md)) |
 
 ### Common supporting leaves (stable enough for Hub / HTTP)
 
@@ -43,6 +49,8 @@ requires; do not rely on `Fabric.*` statics in production.
 Password-sealed JSON and in-memory lock sessions (CLI / setup wallets):
 `@fabric/core/functions/sealedBlob`, `@fabric/core/functions/identityLock`
 (ambient stubs `functions/sealedBlob.d.ts` / `functions/identityLock.d.ts`).
+New seals use 600000 PBKDF2 iterations; `needsReseal` flags older envelopes
+(which still open) so callers seal them again on unlock.
 
 ### Services
 
@@ -57,6 +65,13 @@ L1/L2 liquidity swap market, regtest-only prototype
 escrow / invoice checks),
 `@fabric/core/types/liquidityBook` (local order book). Paths and body
 shapes may change in any 0.1.x release.
+
+Adaptor signatures and DLEQ proofs for the document sale protocol:
+`Witness.Adaptor` (BIP-340 pre-sign / pre-verify / adapt / extract),
+`Witness.MuSig2.Adaptor` (secp256k1-zkp-compatible MuSig2 adaptor sessions),
+and `Witness.DLEQ` (secp256k1-zkp-compatible Chaum-Pedersen proofs), all on
+`@fabric/core/types/witness`. Byte formats follow secp256k1-zkp and are
+checked against its output; the API may change before the sale protocol ships.
 
 ## Minimal Peer example
 
@@ -82,7 +97,7 @@ Programmatic surface: `CliDocumentExchange` from
 `@fabric/core/functions/cliDocumentExchange`.
 
 `Document.seal` is **convergent** by default: the same bytes seal to the same
-chunks and root for every seller that uses no `convergenceSecret` (or the same
+chunks and root for every seller who uses no `convergenceSecret` (or the same
 one), and `Peer#publishSealedDocument` lists such a document under its
 `merkleRootHex` (a custom `documentId` is a local label). Different secrets
 give different chunks and roots. Pass `{ private: true }` for random keys. Sellers may also sell convergent
@@ -103,17 +118,24 @@ above; **runtime `.js` files remain authoritative**.
 by design: `tests/`, `reports/`, coverage trees, `_book/`, local `stores/`, and
 operator `settings/local.js` (use `settings/local.example.js`).
 
+Modules moved from `functions/` into a Type (`types/<type>/<name>.js`) keep their
+`functions/<name>` path as a re-export of the same module, so existing imports
+resolve unchanged. `npm run check:downstream` resolves every
+`@fabric/core/...` import in the sibling Fabric repositories against this tree.
+
 ## Wire and runtime limits (`constants.js`)
 
 | Constant | Value | Notes |
 |----------|-------|-------|
 | `HEADER_SIZE` | 208 bytes | AMP header |
-| `MAX_MESSAGE_SIZE` | 32768 bytes | AMP body cap (32 KiB; was 3888 = `4096 − HEADER_SIZE` before 2026-10-14) |
-| `MAX_FRAME_BYTES` | 32976 bytes | `HEADER_SIZE + MAX_MESSAGE_SIZE`; fits one Noise transport message (65535 − 16 MAC) |
+| `MAX_FRAME_BYTES` | 65519 bytes | Largest frame one Noise transport message carries (`NOISE_MAX_MESSAGE_BYTES` 65535 − `NOISE_MAC_BYTES` 16); was 32976 before 2026-11-05 |
+| `MAX_MESSAGE_SIZE` | 65311 bytes | AMP body cap, `MAX_FRAME_BYTES − HEADER_SIZE` |
+| `DOCUMENT_CHUNK_BYTES` / `DOCUMENT_SEALED_CHUNK_BYTES` | 32768 bytes | Document blob size (32 KiB); a blob's `P2P_FILE_SEND` field frame fits one AMP frame |
 | `MACHINE_MAX_MEMORY` | ≈3.8 MiB | `MAX_MEMORY_ALLOC × MACHINE_MEMORY_PAGE_SIZE` (3888, independent of the wire cap); allocated on first access by `Machine` |
 
-Peers drop frames shorter than `HEADER_SIZE` or longer than `HEADER_SIZE +
-MAX_MESSAGE_SIZE` before parse/crypto. Per-origin relay budgets (chat, gossip,
+Peers drop frames shorter than `HEADER_SIZE` or longer than `MAX_FRAME_BYTES`
+before parse/crypto. A peer that advertises no `maxFrameBytes` is assumed to take
+`MAX_FRAME_BYTES`; there is no smaller legacy default. Per-origin relay budgets (chat, gossip,
 inventory) are peer settings — not global throughput caps. `Machine` enforces
 `MACHINE_MAX_MEMORY` as a heap budget only — it does **not** provide VM
 isolation or gas metering (see [PUBLIC_API](#out-of-scope-for-stable-api) /

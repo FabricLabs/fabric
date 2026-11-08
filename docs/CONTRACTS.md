@@ -184,7 +184,7 @@ and L2 spend proofs MUST include the tip’s `stateDigest` **and** `bitcoinBlock
 | Reader | `OP_CONTRACT_READ` | Genesis `members.readers` or `ContractCapabilityGrant` Token |
 | Signer | `OP_CONTRACT_SIGN` | Genesis `members.signers` / threshold set or grant Token |
 
-`functions/contractCapability.js` issues/verifies Tokens with `ctx.contractId`.
+`Contract.issueCapability` / `Contract.verifyCapability` issue and verify Tokens with `ctx.contractId`.
 
 #### MUST (security — PR #183)
 1. **Ingest authz:** `contractMessageAccumulate.ingestMessageBuffer` (and equivalents) MUST NOT fold `GroupChange` (or other member/spend mutations) on AMP signature alone. Author MUST be in the current signer set **or** present a verified `OP_CONTRACT_SIGN` Token for this `contractId`.
@@ -217,17 +217,17 @@ Product apps MAY add types **only** if listed in that contract’s `primitives.m
 ```text
 resolveSpend({ genesis, tip }) =
   Policy.compile(
-    spendPolicy from normalizeArcGenesis(genesis),
+    spendPolicy from Contract.normalizeGenesis(genesis),
     keys := tip.content.signers (else tip.content.members, else genesis signers/validators),
     threshold := tip or genesis threshold
   )
 → { address, policy, leaves, network, stateDigest, bitcoinBlockHash }
 ```
 
-Implementation: [`functions/contractSpend.js`](../functions/contractSpend.js) (`resolveSpend`, `buildWithdrawalRequest`, `validateWithdrawalRequest`, `prepareWithdrawalFromRequest`). `Contract#resolveSpend` delegates here.
+Implementation: statics on [`types/contract.js`](../types/contract.js) (`Contract.resolveSpend`, `buildWithdrawalRequest`, `validateWithdrawalRequest`, `prepareWithdrawalFromRequest`). The instance `Contract#resolveSpend` calls the static with its own settings as genesis.
 
 - **L1 withdrawal:** `ContractWithdrawalRequest` **MUST** bind `{ stateDigest, bitcoinBlockHash, destinationAddress, amountSats, feeSats, … }` to the current tip (`amountSats` is hashed into `requestId`); co-signers add `ContractWithdrawalWitness` with the same tip fields + `requestId`. Accumulate rejects stale bindings at ingest. Federation vault PSBT prep uses `prepareWithdrawalFromRequest` (partial send + change to vault when `amountSats` is set). Peg conservation: `Federation` reserve ledger in `types/federation.js` (`/federationReserve`).
-- **Program run binding:** When the tip seals `content.program` (`programHash` + `runCommitmentHex` from `Machine.runProgram` / `FabricProgramRun`), withdrawals MUST carry matching digests (`functions/contractProgramBind`). Genesis may require this via `interfaces: ['fabric.program']`, non-empty `primitives.opcodes`, or `spendPolicy.requireProgramRun`. Binding does **not** by itself change the P2TR address — Machine is the deterministic compute layer; Taproot remains the authority redeem surface.
+- **Program run binding:** When the tip seals `content.program` (`programHash` + `runCommitmentHex` from `Machine.runProgram` / `FabricProgramRun`), withdrawals MUST carry matching digests (`Program.validateBinding`). Genesis may require this via `interfaces: ['fabric.program']`, non-empty `primitives.opcodes`, or `spendPolicy.requireProgramRun`. Binding does **not** by itself change the P2TR address — Machine is the deterministic compute layer; Taproot remains the authority redeem surface.
 - **Optional hashlock leaf:** `spendPolicy.hashlock` / `composeTaprootTree({ hashlock, extraLeaves })` adds a tapscript leaf (`OP_SHA256 <commitment> EQUAL` or `… EQUALVERIFY <pk> CHECKSIG`). This **does** change the address. Commitment MAY be `runCommitmentHex` or `SHA256(preimage)`. See `docs/PROGRAM.md` and `prepareHashlockWithdrawalPsbt` / `finalizeHashlockPsbt`.
 - **Composable trees:** `buildSpendLeaf` / `buildHashlockLeaf` / `buildScriptLeaf` + `composeTaprootTree` are the wallet-facing leaf API; Hub vault summaries expose `leaves[]` for UI selection.
 - **L2 spending:** HTLC / channel offers SHOULD embed the same `contractId`, `stateDigest`, and `bitcoinBlockHash` so counterparties refuse stale tips.
@@ -242,14 +242,14 @@ Implementation: [`functions/contractSpend.js`](../functions/contractSpend.js) (`
 |---------|--------|
 | Contract class | `types/contract.js` |
 | Body type names | `functions/applicationNamespaces.js` |
-| Tip → P2TR / withdrawals | `functions/contractSpend.js` |
-| Machine/Program run bind | `functions/contractProgramBind.js` (`bindProgramRunToTip`, withdrawal digest checks) |
+| Tip → P2TR / withdrawals | `types/contract.js` (`Contract.resolveSpend`, withdrawal statics) |
+| Machine/Program run bind | `types/program.js` (`Program.bindRun`, `Program.validateBinding`) |
 | Accumulate / fold | `functions/contractMessageAccumulate.js` (signer authz + primitives + withdrawal fold) |
-| Token grants | `functions/contractCapability.js`, `types/token.js` |
+| Token grants | `Contract.issueCapability` / `Contract.verifyCapability`, `types/token.js` |
 | Tip Schnorr | `functions/contractStateSigning.js` |
 | P2TR ladder | `types/policy.js` (`Policy`) |
 | Sidechain doc | `functions/sidechainState.js`, `contractStatechains.js` |
-| Hub tracked accept | Hub `functions/trackedApplicationContracts.js` (`normalizeArcGenesis` + `resolveSpend`) |
+| Hub tracked accept | Hub `functions/trackedApplicationContracts.js` (`Contract.normalizeGenesis` + `Contract.resolveSpend`) |
 
 ---
 
@@ -258,8 +258,8 @@ Implementation: [`functions/contractSpend.js`](../functions/contractSpend.js) (`
 2. ~~**Enforce** `primitives.messageTypes` at ingest~~ — empty declared array is deny-all (not fail-open)
 3. ~~**Thread** `bitcoinBlockHash` through withdrawal messages~~ — reject non-64-hex `meta.bitcoinBlockHash` before tip mutate
 4. ~~**Wire** Token grants into member checks~~
-5. ~~**Document** Machine `opcodes[]` / Program bind when Program interface is attached~~ — see `docs/PROGRAM.md` + `contractProgramBind`
-6. ~~**Complete** L1 payment observation on `Contract`~~ — `functions/contractPaymentObserve` + `Contract#_handleBitcoinTransaction`
+5. ~~**Document** Machine `opcodes[]` / Program bind when Program interface is attached~~ — see `docs/PROGRAM.md` + `Program.bindRun`
+6. ~~**Complete** L1 payment observation on `Contract`~~ — `Contract.observePayment` + `Contract#_handleBitcoinTransaction`
 7. ~~Align Hub tracked-contract accept path with this genesis shape~~
 8. ~~Call sites must pass `meta.genesis.signers` (or persist genesis)~~ — `ingestContractPublishBuffer` seeds genesis; later `GroupChange` reuses it
 9. ~~**Enforce** GroupChat reader∪signer authz + BIP340 withdrawal witness / MessageReceipt~~ — `authorizeIngest` + `verifyWithdrawalWitnessSignature` / `markReceipt` (PR #183 review follow-up)
@@ -269,7 +269,7 @@ Implementation: [`functions/contractSpend.js`](../functions/contractSpend.js) (`
 13. **Optional hashlock / composable trees:** `composeTaprootTree`, leaf builders, `prepareHashlockWithdrawalPsbt` — Hub vault PSBT uses full `policy` leaves; wallet UIs list `leaves[]`
 14. ~~**ExecutionRun → FabricProgramRun / full Machine runner:**~~ Hub uses `fabric-execution` on `Machine`/`Program` (`executionProgramRunner`); digests via `executionRunBridge`
 15. ~~**Enforce** genesis `primitives.opcodes` on `Machine.loadProgram` / `define`~~ — `functions/opcodeAllowList.js` + `Machine.setAllowedOpcodes` / `applyGenesisOpcodes` (fail closed when set; unrestricted legacy soft-coerce otherwise)
-16. **API naming (Author Style):** public short ids such as `contractId` → `contractIdentifier` (and kin) where call sites allow — breaking; coordinate Hub / `@fabric/http` / apps (see root `AGENTS.md`). Prep helper (dual-read / stamp both fields): `functions/contractIdentifier.js` — does not rewrite wire schemas until consumers land.
+16. **API naming (Author Style):** public short ids such as `contractId` → `contractIdentifier` (and kin) where call sites allow — breaking; coordinate Hub / `@fabric/http` / apps (see root `AGENTS.md`). Prep helpers (dual-read / stamp both fields): `Contract.resolveIdentifier` / `Contract.stampIdentifier` — do not rewrite wire schemas until consumers land.
 17. ~~**Journal / re-fold growth:**~~ compactable types (`GroupChat`, `MessageReceived`, `MessageReceipt`) drop by hex-hash order above `maxJournalEntries` (genesis/meta; hard cap 20000); mutations are never evicted
 18. ~~**Seal AAD:**~~ tip-bound `groupChatSeal` and participant / onion seals bind scheme (+ tip / contract / ephemeral) as AES-GCM AAD. Public API renames (16) remain.
 19. ~~**Blinded-execution `at` bind (PR #183 follow-up):**~~ `decisionSigningMessage` v2 includes `at`; `recordProposalDecision` requires it. Same actor/proposal/decision/`at` is idempotent; a different `at` conflicts.

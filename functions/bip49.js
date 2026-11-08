@@ -3,7 +3,7 @@
  *
  * Path templates live in `constants.js` (`m/49'/0'/account'/{0|1}/index`).
  * This module is the **payment** helper those paths are meant to feed.
- * Fabric’s default funds path remains BIP-44 `m/44'/0'/0'/0/0`.
+ * Fabric’s default funds path is BIP-84 `m/84'/0'/0'/0/0`.
  *
  * @fileoverview BIP-49 P2WPKH-nested-in-P2SH addresses.
  * @module functions/bip49

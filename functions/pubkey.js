@@ -64,8 +64,31 @@ function pubkeysMatch (a, b) {
   return !!(xa && xb && xa === xb);
 }
 
+/**
+ * Lowercase hex for a peer pubkey, dropping a compressed 02/03 prefix.
+ * Unlike {@link pubkeyXOnly}, also takes a Buffer and passes other strings
+ * through lowercased, so it never returns null (`''` for none).
+ * @param {string|Buffer|null|undefined} pk
+ * @returns {string}
+ */
+function normalizePeerPubkeyHex (pk) {
+  if (pk == null) return '';
+  if (Buffer.isBuffer(pk)) {
+    const h = pk.toString('hex').toLowerCase();
+    if (pk.length === 32) return h;
+    if (pk.length === 33 && (h.startsWith('02') || h.startsWith('03'))) return h.slice(2);
+    return h;
+  }
+  const s = String(pk).trim();
+  const h = (s.startsWith('0x') || s.startsWith('0X')) ? s.slice(2) : s;
+  const lo = h.toLowerCase();
+  if (lo.length === 66 && (lo.startsWith('02') || lo.startsWith('03'))) return lo.slice(2);
+  return lo;
+}
+
 module.exports = {
   pubkeyXOnly,
   pubkeyCompressed,
-  pubkeysMatch
+  pubkeysMatch,
+  normalizePeerPubkeyHex
 };

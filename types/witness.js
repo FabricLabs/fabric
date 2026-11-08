@@ -3,27 +3,45 @@
 const crypto = require('crypto');
 const { secp256k1, schnorr } = require('@noble/curves/secp256k1.js');
 const { stableStringify } = require('../functions/fabricCanonicalJson');
-const { verifyBlob } = require('../functions/documentBlobManifest');
+const { verifyBlob } = require('./document');
 const { verifyInclusion } = require('../functions/bitcoinTxInclusion');
 const Message = require('./message');
 const { P2P_FILE_SEND } = require('../constants');
+const adaptor = require('./witness/adaptor');
+const bls = require('../functions/bls');
+const dleq = require('./witness/dleq');
+const musig2 = require('../functions/musig2');
+const musig2Adaptor = require('./witness/musig2Adaptor');
+const musig2Session = require('../functions/musig2Session');
 
 const HEX64 = /^[0-9a-f]{64}$/;
-/** @private lazily loaded bitcoinjs (fraud proofs that carry transactions) */
+/**
+ * lazily loaded bitcoinjs (fraud proofs that carry transactions)
+ * @private
+ */
 function bitcoinjs () { return require('bitcoinjs-lib'); }
-/** @private BIP341 helpers; `Policy` initialises the ECC library they need */
+/**
+ * BIP341 helpers; `Policy` initialises the ECC library they need
+ * @private
+ */
 function bip341 () {
   require('./policy');
   return require('bitcoinjs-lib/src/payments/bip341');
 }
 
-/** @private x-only hex from compressed or x-only hex */
+/**
+ * x-only hex from compressed or x-only hex
+ * @private
+ */
 function xOnlyHex (pubkey) {
   const s = String(pubkey || '').toLowerCase();
   return /^(02|03)[0-9a-f]{64}$/.test(s) ? s.slice(2) : s;
 }
 
-/** @private display-order txid of input `i` of a bitcoinjs Transaction */
+/**
+ * display-order txid of input `i` of a bitcoinjs Transaction
+ * @private
+ */
 function inputTxid (tx, i = 0) {
   return Buffer.from(tx.ins[i].hash).reverse().toString('hex');
 }
@@ -297,7 +315,10 @@ const DEFAULT_MAX_PENALTY_FEE_SATS = 20000;
 const LOCKTIME_THRESHOLD = 500000000;
 const SEQUENCE_FINAL = 0xffffffff;
 
-/** @private non-negative safe integer from a number or canonical decimal string, else `null` */
+/**
+ * non-negative safe integer from a number or canonical decimal string, else `null`
+ * @private
+ */
 function toInt (value) {
   if (typeof value === 'number') return Number.isSafeInteger(value) && value >= 0 ? value : null;
   if (typeof value === 'string' && /^(0|[1-9][0-9]{0,15})$/.test(value)) {
@@ -307,32 +328,47 @@ function toInt (value) {
   return null;
 }
 
-/** @private lowercase 64-hex string, else `null` */
+/**
+ * lowercase 64-hex string, else `null`
+ * @private
+ */
 function hex64 (value) {
   const s = typeof value === 'string' ? value.trim().toLowerCase() : '';
   return HEX64.test(s) ? s : null;
 }
 
-/** @private even-length hex string, else `null` */
+/**
+ * even-length hex string, else `null`
+ * @private
+ */
 function hexBytes (value) {
   const s = typeof value === 'string' ? value.trim() : '';
   return /^([0-9a-f]{2})+$/i.test(s) ? Buffer.from(s, 'hex') : null;
 }
 
-/** @private SHA-256 hex over the concatenated parts */
+/**
+ * SHA-256 hex over the concatenated parts
+ * @private
+ */
 function sha256Hex (...parts) {
   const h = crypto.createHash('sha256');
   for (const p of parts) h.update(p);
   return h.digest('hex');
 }
 
-/** @private confirmations the verifier demands of an on-chain fact */
+/**
+ * confirmations the verifier demands of an on-chain fact
+ * @private
+ */
 function minConfirmations (ctx = {}) {
   const n = toInt(ctx.minConfirmations);
   return n != null && n >= 1 ? n : DEFAULT_CONFIRMATIONS;
 }
 
-/** @private blob tree parent, same as `types/tree.js` (display-order hashes) */
+/**
+ * blob tree parent, same as `types/tree.js` (display-order hashes)
+ * @private
+ */
 function blobParent (left, right) {
   const rev = (b) => Buffer.from(b).reverse();
   const once = crypto.createHash('sha256').update(Buffer.concat([rev(left), rev(right)])).digest();
@@ -1314,7 +1350,10 @@ class FraudProof {
     return !!proof && verifyBlobPath({ merkleRootHex: bound.root, leafHex: challenge.blobHashHex, index: bound.blobIndex, leafCount: bound.blobTotal, proof });
   }
 
-  /** @private provider-signed response to exactly this challenge */
+  /**
+   * provider-signed response to exactly this challenge
+   * @private
+   */
   static _responseTo (challenge, response, provider) {
     if (!response || response.type !== RESPONSE_TYPE) return { ok: false, reason: 'response missing' };
     if (!Witness.verifyArtifact(response, provider)) return { ok: false, reason: 'response signature invalid' };
@@ -1382,7 +1421,10 @@ class FraudProof {
   }
 }
 
-/** @private verdict that names an offender and may move reputation */
+/**
+ * verdict that names an offender and may move reputation
+ * @private
+ */
 function convict (offender, reason, extra = {}) {
   return Object.assign({ ok: true, offender, reputational: true, reason }, extra);
 }
@@ -1405,5 +1447,21 @@ Witness.verifyPenaltyPreSig = FraudProof.verifyPenaltyPreSig;
 Witness.checkPenaltyPsbt = FraudProof.checkPenaltyPsbt;
 Witness.verifyBlobPath = verifyBlobPath;
 Witness.FRAUD_PROOF_KINDS = FRAUD_PROOF_KINDS;
+
+// BIP-327 MuSig2 (key aggregation, nonces, partial signatures); `Session` is
+// the Fabric round state machine over it, `Adaptor` its adaptor sessions.
+Witness.MuSig2 = Object.freeze(Object.assign({}, musig2, {
+  Adaptor: musig2Adaptor,
+  Session: musig2Session
+}));
+
+// BIP-340 adaptor signatures: pre-sign, pre-verify, adapt, extract.
+Witness.Adaptor = adaptor;
+
+// Chaum-Pedersen discrete-log equality proofs.
+Witness.DLEQ = dleq;
+
+// BLS12-381 signatures and the federation witness bundles bound to secp256k1 validators.
+Witness.BLS = bls;
 
 module.exports = Witness;

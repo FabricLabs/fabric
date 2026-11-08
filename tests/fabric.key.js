@@ -9,6 +9,8 @@ const { secp256k1, schnorr: nobleSchnorr } = require('@noble/curves/secp256k1.js
 const message = require('../assets/message');
 const playnet = require('../settings/playnet');
 
+const TEST_TAG = 'Fabric/Test';
+
 const SAMPLE = {
   seed: 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about',
   private: '1111111111111111111111111111111111111111111111111111111111111111'
@@ -134,6 +136,15 @@ describe('@fabric/core/types/key', function () {
       assert.ok(!valid);
     });
 
+    it('signs a Uint8Array as the same raw bytes as a Buffer', function () {
+      const key = new Key({ private: SAMPLE.private });
+      const bytes = Uint8Array.from([1, 2, 3, 4]);
+      const signature = key._sign(bytes);
+      assert.ok(signature.equals(key._sign(Buffer.from(bytes))));
+      assert.ok(key._verify(Buffer.from(bytes), signature));
+      assert.ok(key._verify(bytes, signature));
+    });
+
     it('can encrypt and decrypt messages', function () {
       const key = new Key();
       const testMessage = 'Hello, Fabric!';
@@ -214,10 +225,26 @@ describe('@fabric/core/types/key', function () {
       assert.equal(key.deriveAddress(0, 1, 'p2tr').address, 'bc1p3qkhfews2uk44qtvauqyr2ttdsw7svhkl9nkm9s9c3x4ax5h60wqwruhk7');
     });
 
+    it('derives addresses for the network it is on, never mainnet by default', function () {
+      const mnemonic = 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about';
+      const on = (network) => new Key({ mnemonic, purpose: 86, network });
+      assert.equal(on('mainnet').deriveAddress(0, 0, 'p2tr').address, 'bc1p5cyxnuxmeuwuvkwfem96lqzszd02n6xdcjrs20cac6yqjjwudpxqkedrcr');
+      for (const network of ['signet', 'testnet', 'testnet4']) {
+        assert.match(on(network).deriveAddress(0, 0, 'p2tr').address, /^tb1p/, network);
+        assert.match(on(network).deriveAddress(0, 0, 'p2wpkh').address, /^tb1q/, network);
+        assert.match(on(network).deriveAddress(0, 0, 'p2pkh').address, /^[mn]/, network);
+      }
+      for (const network of ['regtest', 'playnet']) {
+        assert.match(on(network).deriveAddress(0, 0, 'p2tr').address, /^bcrt1p/, network);
+        assert.match(on(network).deriveAddress(0, 0, 'p2wpkh').address, /^bcrt1q/, network);
+      }
+      assert.throws(() => on('nosuchnet').deriveAddress(0, 0, 'p2wpkh'), /Unsupported network/);
+    });
+
     it('can sign messages using Schnorr signatures', function () {
       const key = new Key({ private: '1111111111111111111111111111111111111111111111111111111111111111' });
       const message = 'test message';
-      const signature = key.signSchnorr(message);
+      const signature = key.signSchnorr(message, TEST_TAG);
       assert.ok(signature instanceof Buffer);
       assert.equal(signature.length, 64); // Schnorr signatures are 64 bytes
     });
@@ -225,18 +252,18 @@ describe('@fabric/core/types/key', function () {
     it('can verify valid Schnorr signatures', function () {
       const key = new Key({ private: '1111111111111111111111111111111111111111111111111111111111111111' });
       const message = 'test message';
-      const signature = key.signSchnorr(message);
-      const valid = key.verifySchnorr(message, signature);
+      const signature = key.signSchnorr(message, TEST_TAG);
+      const valid = key.verifySchnorr(message, signature, TEST_TAG);
       assert.ok(valid);
     });
 
     it('rejects invalid Schnorr signatures', function () {
       const key = new Key({ private: '1111111111111111111111111111111111111111111111111111111111111111' });
       const message = 'test message';
-      const signature = key.signSchnorr(message);
+      const signature = key.signSchnorr(message, TEST_TAG);
       const invalidSignature = Buffer.from(signature);
       invalidSignature[0] ^= 1; // Flip a bit to make the signature invalid
-      const valid = key.verifySchnorr(message, invalidSignature);
+      const valid = key.verifySchnorr(message, invalidSignature, TEST_TAG);
       assert.ok(!valid);
     });
 
@@ -244,12 +271,12 @@ describe('@fabric/core/types/key', function () {
       const key = new Key({ private: SAMPLE.private });
       const message1 = 'test message 1';
       const message2 = 'test message 2';
-      const signature1 = key.signSchnorr(message1);
-      const signature2 = key.signSchnorr(message2);
+      const signature1 = key.signSchnorr(message1, TEST_TAG);
+      const signature2 = key.signSchnorr(message2, TEST_TAG);
       assert.ok(!signature1.equals(signature2), 'distinct messages must not share signature bytes');
-      assert.strictEqual(key.verifySchnorr(message1, signature1), true);
-      assert.strictEqual(key.verifySchnorr(message2, signature1), false);
-      assert.strictEqual(key.verifySchnorr(message1, signature2), false);
+      assert.strictEqual(key.verifySchnorr(message1, signature1, TEST_TAG), true);
+      assert.strictEqual(key.verifySchnorr(message2, signature1, TEST_TAG), false);
+      assert.strictEqual(key.verifySchnorr(message1, signature2, TEST_TAG), false);
     });
 
     it('can create a new key from a seed', function () {
@@ -279,33 +306,33 @@ describe('@fabric/core/types/key', function () {
       assert.equal(actualPubkey, expectedPubkey);
     });
 
-    it('Schnorr signatures match noble BIP340 with zero auxRand', function () {
+    it('Schnorr signatures match noble BIP340 over the tagged hash with zero auxRand', function () {
       const key = new Key({ private: SAMPLE.private });
       const message = 'Hello, Fabric!';
-      const signature = key.signSchnorr(message);
-      const messageHash = require('crypto').createHash('sha256').update(Buffer.from(message)).digest();
+      const signature = key.signSchnorr(message, TEST_TAG);
+      const messageHash = require('../functions/taggedHash')(TEST_TAG, Buffer.from(message));
       const expected = Buffer.from(
         nobleSchnorr.sign(messageHash, Buffer.from(SAMPLE.private, 'hex'), Buffer.alloc(32))
       );
       assert.ok(signature.equals(expected));
-      assert.strictEqual(key.verifySchnorr(message, signature), true);
-      assert.strictEqual(key.verifySchnorr('Hello, World!', signature), false);
+      assert.strictEqual(key.verifySchnorr(message, signature, TEST_TAG), true);
+      assert.strictEqual(key.verifySchnorr('Hello, World!', signature, TEST_TAG), false);
     });
 
     it('rejects a Schnorr signature from a different key', function () {
       const key1 = new Key({ private: SAMPLE.private });
       const key2 = new Key({ seed: SAMPLE.seed });
       const message = 'Hello, Fabric!';
-      const signature = key1.signSchnorr(message);
-      assert.strictEqual(key1.verifySchnorr(message, signature), true);
-      assert.strictEqual(key2.verifySchnorr(message, signature), false);
+      const signature = key1.signSchnorr(message, TEST_TAG);
+      assert.strictEqual(key1.verifySchnorr(message, signature, TEST_TAG), true);
+      assert.strictEqual(key2.verifySchnorr(message, signature, TEST_TAG), false);
     });
 
     it('throws when signing without private key using Schnorr', function () {
       const key = new Key();
       const publicKey = new Key({ public: key.public.encodeCompressed() });
       const message = 'test message';
-      assert.throws(() => publicKey.signSchnorr(message), /Cannot sign without private key/);
+      assert.throws(() => publicKey.signSchnorr(message, TEST_TAG), /Cannot sign without private key/);
     });
 
     it('secure clears private material and marks state', function () {
@@ -321,7 +348,7 @@ describe('@fabric/core/types/key', function () {
     it('accepts Uint8Array private keys for signing', function () {
       const bytes = new Uint8Array(32).fill(1);
       const key = new Key({ private: bytes });
-      const sig = key.signSchnorr('byte-like private key');
+      const sig = key.signSchnorr('byte-like private key', TEST_TAG);
       assert.ok(Buffer.isBuffer(sig));
       assert.strictEqual(sig.length, 64);
     });
@@ -329,19 +356,19 @@ describe('@fabric/core/types/key', function () {
     it('throws on invalid private key format', function () {
       const key = new Key();
       key.private = 1;
-      assert.throws(() => key.signSchnorr('invalid private key'), /Invalid private key format/);
+      assert.throws(() => key.signSchnorr('invalid private key', TEST_TAG), /Invalid private key format/);
     });
 
     it('rejects non-hex string private key values', function () {
       const key = new Key();
       key.private = 'z'.repeat(32);
-      assert.throws(() => key.signSchnorr('invalid private key'), /Invalid private key format/);
+      assert.throws(() => key.signSchnorr('invalid private key', TEST_TAG), /Invalid private key format/);
     });
 
     it('rejects plain array-like private key objects', function () {
       const key = new Key();
       key.private = { length: 32 };
-      assert.throws(() => key.signSchnorr('invalid private key'), /Invalid private key format/);
+      assert.throws(() => key.signSchnorr('invalid private key', TEST_TAG), /Invalid private key format/);
     });
   });
 });
@@ -673,6 +700,7 @@ const {
   xOnlyHex,
   startFields
 } = require('../functions/musig2Session');
+const keyHasPrivateSigningMaterial = require('../functions/keyHasPrivateSigningMaterial');
 
 function skOf (key) {
   return Buffer.isBuffer(key.private) ? key.private : Buffer.from(String(key.private), 'hex');
@@ -875,5 +903,66 @@ describe('@fabric/core/functions/musig2Session', function () {
     });
     assert.strictEqual(made.ok, false);
     assert.strictEqual(made.reason, 'invalid-start');
+  });
+});
+
+describe('@fabric/core/types/key statics', function () {
+  it('expose the modules the functions/ shims re-export', function () {
+    assert.strictEqual(require('../functions/bip32'), Key.BIP32);
+    assert.strictEqual(require('../functions/bip49'), Key.BIP49);
+    assert.strictEqual(require('../functions/bip85'), Key.BIP85);
+    assert.strictEqual(require('../functions/base58'), Key.Base58);
+    assert.strictEqual(require('../functions/fabricKeyMaterial'), Key.Material);
+    assert.strictEqual(require('../functions/signingTags'), Key.TAGS);
+    assert.strictEqual(require('../functions/keyHasPrivateSigningMaterial'), Key.hasPrivateSigningMaterial);
+    const pubkey = require('../functions/pubkey');
+    assert.strictEqual(pubkey.pubkeyXOnly, Key.pubkeyXOnly);
+    assert.strictEqual(pubkey.normalizePeerPubkeyHex, Key.normalizePeerPubkeyHex);
+    const bip39 = require('../functions/bip39');
+    assert.strictEqual(bip39.validateMnemonic, Key.Mnemonic.validate);
+    assert.strictEqual(bip39.mnemonicToSeedSync, Key.Mnemonic.toSeedSync);
+    assert.strictEqual(Key.HDNode, Key.BIP32.HDNode);
+    assert.strictEqual(Key.SIGN_TAG, Key.TAGS.SIGN);
+  });
+
+  it('Key.Mnemonic carries BIP-39 (Trezor vector)', function () {
+    const phrase = Key.Mnemonic.fromEntropy(Buffer.alloc(16));
+    assert.strictEqual(phrase, 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about');
+    assert.strictEqual(Key.Mnemonic.validate(phrase), true);
+    assert.strictEqual(Buffer.from(Key.Mnemonic.toEntropy(phrase)).toString('hex'), '00000000000000000000000000000000');
+    assert.strictEqual(
+      Buffer.from(Key.Mnemonic.toSeedSync(phrase, 'TREZOR')).toString('hex'),
+      'c55257c360c07c72029aebc1b53c05ed0362ada38ead3e3e9efa3708e53495531f09a6987599d18264c1e1c92f2cf141630c7a3c4ab7c81b2f001698e7463b04'
+    );
+    assert.deepStrictEqual(Key.Mnemonic.WORD_COUNTS, [12, 15, 18, 21, 24]);
+    assert.strictEqual(Key.Mnemonic.wordlist.length, 2048);
+    assert.strictEqual(Key.Mnemonic.generate().split(' ').length, 12);
+  });
+
+  it('Key.Mnemonic(entropy) still makes a key from that phrase', function () {
+    const key = Key.Mnemonic(Buffer.alloc(16));
+    assert.strictEqual(key.seed.split(' ').pop(), 'about');
+    assert.ok(key.private);
+  });
+
+  it('Key.TAGS is frozen', function () {
+    assert.ok(Object.isFrozen(Key.TAGS));
+  });
+});
+
+describe('keyHasPrivateSigningMaterial', function () {
+  it('returns false for null / missing private', function () {
+    assert.strictEqual(keyHasPrivateSigningMaterial(null), false);
+    assert.strictEqual(keyHasPrivateSigningMaterial({}), false);
+    assert.strictEqual(keyHasPrivateSigningMaterial({ private: null }), false);
+    assert.strictEqual(keyHasPrivateSigningMaterial({ private: '' }), false);
+    assert.strictEqual(keyHasPrivateSigningMaterial({ private: Buffer.alloc(0) }), false);
+  });
+
+  it('returns true for Key with private material and false for watch-only', function () {
+    const full = new Key({ private: '1111111111111111111111111111111111111111111111111111111111111111' });
+    const watch = new Key({ public: full.pubkey });
+    assert.strictEqual(keyHasPrivateSigningMaterial(full), true);
+    assert.strictEqual(keyHasPrivateSigningMaterial(watch), false);
   });
 });

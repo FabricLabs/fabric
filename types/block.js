@@ -28,6 +28,7 @@ const CONSENSUS_POW = 'pow';
 const CONSENSUS_FEDERATION = 'federation';
 const CONSENSUS_GOSSIP = 'gossip';
 const BLOCK_SIGNING_KIND = 'FabricBlock';
+const SIGNING_TAGS = require('../functions/signingTags');
 
 /**
  * @private
@@ -371,7 +372,7 @@ class Block extends Actor {
     if (key && key.private) {
       if (!this._state.author && key.pubkey) this._state.author = String(key.pubkey);
       const msg = Buffer.from(this.signingString(), 'utf8');
-      const sig = key.signSchnorr(msg);
+      const sig = key.signSchnorr(msg, SIGNING_TAGS.BLOCK_AUTHOR);
       this._state.signature = Buffer.isBuffer(sig) ? sig.toString('hex') : String(sig);
       return this._state.signature;
     }
@@ -464,7 +465,7 @@ class Block extends Actor {
         const k = new Key({ pubkey: this.author });
         const msg = Buffer.from(this.signingString(), 'utf8');
         const sig = Buffer.from(this.signature, 'hex');
-        if (!k.verifySchnorr(msg, sig)) {
+        if (!k.verifySchnorr(msg, sig, SIGNING_TAGS.BLOCK_AUTHOR)) {
           return { ok: false, reason: 'invalid author signature' };
         }
         return { ok: true };

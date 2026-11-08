@@ -71,7 +71,7 @@ const EVALUATION_SUITE = [
     why: 'Foundation of modern wallet backup and xpub watch-only.',
     patterns: ['functions/bip32', 'BIP32', 'bip32', 'fromSeed', 'xprv', 'xpub'],
     expected: { core: 'full', hub: 'strong', passport: 'full', application: 'strong' },
-    notes: 'Core ships functions/bip32.js + BIP32 test vectors; Passport tests vectors.'
+    notes: 'Core ships functions/bip32.js (Key.BIP32) + BIP32 test vectors; Passport tests vectors.'
   },
   {
     bip: 39,
@@ -82,7 +82,7 @@ const EVALUATION_SUITE = [
     why: 'Industry-standard recovery phrases (12/24 words).',
     patterns: ['functions/bip39', 'BIP39', 'bip39', 'generateMnemonic', 'validateMnemonic', 'mnemonicToSeed'],
     expected: { core: 'full', hub: 'strong', passport: 'full', application: 'strong' },
-    notes: 'Core functions/bip39.js with English wordlist + NFKD passphrase tests.'
+    notes: 'Core functions/bip39.js (Key.Mnemonic) with English wordlist + NFKD passphrase tests.'
   },
   {
     bip: 43,
@@ -93,7 +93,7 @@ const EVALUATION_SUITE = [
     why: 'Purpose level (44/49/84/86) disambiguates account trees.',
     patterns: ['BIP43', "m/44'", "m/84'", "m/86'"],
     expected: { core: 'strong', hub: 'strong', passport: 'strong', application: 'partial' },
-    notes: 'Fabric uses purpose 44 for identity (coin 7777 mainnet / 7778 other) and Bitcoin funds; Core also names BIP-49/84/86 fund path templates. Passport receive UI is BIP84.'
+    notes: "Fabric identities use purpose 7777' (coin 7777 mainnet / 7778 other); Bitcoin funds receive on 84' and watch 44'; Core also names BIP-49/86 fund path templates. Cosigners use 87'."
   },
   {
     bip: 44,
@@ -102,9 +102,9 @@ const EVALUATION_SUITE = [
     layer: 'Applications',
     adoption: 'universal',
     why: 'Default multi-account path template; still dominant for legacy P2PKH + many apps.',
-    patterns: ['BIP44', 'BITCOIN_KEY_DERIVATION_PATH', "m/44'/0'", "m/44'/7777'", "m/44'/7778'", 'bitcoinReceiveDerivationPath', 'fabricCoinTypeForNetwork', 'resolveFabricIdentityCoinType', 'fabricIdentityDerivationPath', 'fabricIdentityAccountPath'],
+    patterns: ['BIP44', 'BITCOIN_KEY_DERIVATION_PATH', "m/44'/0'", "m/44'/1'", 'bitcoinReceiveDerivationPath'],
     expected: { core: 'full', hub: 'strong', passport: 'absent', application: 'strong' },
-    notes: 'Core constants encode BIP44 Bitcoin funds + Fabric coin-type 7777 (mainnet) / 7778 (other) identity. Passport receive UI is BIP84, not BIP44 path templates.'
+    notes: "Core watches the BIP44 account as pkh (spendable, never hands out addresses); new funds go to BIP84. Fabric identities use purpose 7777' (coin 7777 mainnet / 7778 other), outside BIP44."
   },
   {
     bip: 49,
@@ -115,7 +115,7 @@ const EVALUATION_SUITE = [
     why: 'Wrapped SegWit path — still seen in older wallets / migrations.',
     patterns: ["m/49'", 'BIP49', 'p2sh-p2wpkh', 'p2shP2wpkh', 'bitcoinBip49ReceiveDerivationPath', 'functions/bip49'],
     expected: { core: 'strong', hub: 'absent', passport: 'absent', application: 'absent' },
-    notes: 'Named m/49\' path templates plus p2sh-p2wpkh payment helper (BIP-49 testnet vector). Default funds path remains BIP-44.'
+    notes: 'Named m/49\' path templates plus p2sh-p2wpkh payment helper (BIP-49 testnet vector). Default funds path is BIP-84.'
   },
   {
     bip: 65,
@@ -180,7 +180,7 @@ const EVALUATION_SUITE = [
     why: 'Default receive path for modern bc1q wallets.',
     patterns: ['BIP84', "m/84'", 'p2wpkh', 'native SegWit', 'bitcoinBip84ReceiveDerivationPath'],
     expected: { core: 'strong', hub: 'partial', passport: 'strong', application: 'partial' },
-    notes: 'Core names BIP-84 path templates; default Bitcoin funds path remains BIP-44. Passport derives BIP84 receive from xpub.'
+    notes: 'BIP-84 is the default Bitcoin funds path (BITCOIN_KEY_DERIVATION_PATH, receive and change). Passport derives BIP84 receive from the shared account xpub.'
   },
   {
     bip: 86,
@@ -191,7 +191,7 @@ const EVALUATION_SUITE = [
     why: 'Standard Taproot single-key receive path (bc1p).',
     patterns: ['BIP86', "m/86'", 'p2tr', 'bitcoinBip86ReceiveDerivationPath', 'Key Derivation for Single'],
     expected: { core: 'strong', hub: 'partial', passport: 'absent', application: 'absent' },
-    notes: 'Named m/86\' receive/change templates; default funds path is still BIP-44. P2TR address generation exists separately. GoonCitizen has no BIP86 surface.'
+    notes: 'Named m/86\' receive/change templates; default funds path is BIP-84. P2TR address generation exists separately. GoonCitizen has no BIP86 surface.'
   },
   {
     bip: 112,

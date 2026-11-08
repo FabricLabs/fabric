@@ -14,6 +14,7 @@ const {
   BEACON_EPOCH_SIGNING_KIND
 } = require('../functions/beaconFederationSigning');
 const { parseProgramManifestV1 } = require('../functions/fabricProgramManifest');
+const SIGNING_TAGS = require('../functions/signingTags');
 
 describe('@fabric/core federation / program helpers (ex-distributedExecution)', function () {
   it('jsonSafe round-trips JSON-serializable data and drops undefined', function () {
@@ -48,7 +49,7 @@ describe('@fabric/core federation / program helpers (ex-distributedExecution)', 
     const key = new Key({ private: '1111111111111111111111111111111111111111111111111111111111111111' });
     const epoch = { clock: 1 };
     const msg = Buffer.from(signingStringForBeaconEpoch(epoch), 'utf8');
-    const sig = key.signSchnorr(msg);
+    const sig = key.signSchnorr(msg, SIGNING_TAGS.FEDERATION_WITNESS);
     const witness = { signatures: { [key.pubkey]: sig.toString('hex') } };
     assert.strictEqual(verifyFederationWitnessOnMessage(msg, witness, [key.pubkey], 1), true);
   });
@@ -60,7 +61,7 @@ describe('@fabric/core federation / program helpers (ex-distributedExecution)', 
     assert.strictEqual(verifyFederationWitnessOnMessage(msg, {}, [key.pubkey]), false);
     assert.strictEqual(verifyFederationWitnessOnMessage('not-buffer', { signatures: {} }, [key.pubkey]), false);
     assert.strictEqual(verifyFederationWitnessOnMessage(msg, { signatures: { x: 'bad' } }, [key.pubkey]), false);
-    const good = { signatures: { [key.pubkey]: key.signSchnorr(msg).toString('hex') } };
+    const good = { signatures: { [key.pubkey]: key.signSchnorr(msg, SIGNING_TAGS.FEDERATION_WITNESS).toString('hex') } };
     assert.strictEqual(verifyFederationWitnessOnMessage(msg, good, [key.pubkey], 1), true);
     assert.strictEqual(verifyFederationWitnessOnMessage(msg, good, [key.pubkey], 0), false);
     assert.strictEqual(verifyFederationWitnessOnMessage(msg, good, [key.pubkey], NaN), false);
@@ -72,8 +73,8 @@ describe('@fabric/core federation / program helpers (ex-distributedExecution)', 
     const msg = Buffer.from(signingStringForBeaconEpoch({ n: 2 }), 'utf8');
     const witness = {
       signatures: {
-        [k1.pubkey]: k1.signSchnorr(msg).toString('hex'),
-        [k2.pubkey]: k2.signSchnorr(msg).toString('hex')
+        [k1.pubkey]: k1.signSchnorr(msg, SIGNING_TAGS.FEDERATION_WITNESS).toString('hex'),
+        [k2.pubkey]: k2.signSchnorr(msg, SIGNING_TAGS.FEDERATION_WITNESS).toString('hex')
       }
     };
     assert.strictEqual(verifyFederationWitnessOnMessage(msg, witness, [k1.pubkey, k2.pubkey], 2), true);
@@ -81,7 +82,7 @@ describe('@fabric/core federation / program helpers (ex-distributedExecution)', 
     // Duplicate validator entries must not double-count a single signature.
     assert.strictEqual(
       verifyFederationWitnessOnMessage(msg, {
-        signatures: { [k1.pubkey]: k1.signSchnorr(msg).toString('hex') }
+        signatures: { [k1.pubkey]: k1.signSchnorr(msg, SIGNING_TAGS.FEDERATION_WITNESS).toString('hex') }
       }, [k1.pubkey, k1.pubkey], 2),
       false
     );

@@ -64,13 +64,12 @@ describe('@fabric/core/types/message', function () {
       assert.strictEqual(Message instanceof Function, true);
     });
 
-    it('caps the body at 32 KiB and keeps one frame inside one Noise message', function () {
+    it('caps a frame at the largest one Noise message carries', function () {
       const { MAX_FRAME_BYTES } = require('../constants');
       const NOISE_MESSAGE_SIZE = 65535; // noise-protocol-stream MESSAGE_SIZE
       const NOISE_MAC_BYTES = 16;
-      assert.strictEqual(MAX_MESSAGE_SIZE, 32 * 1024);
-      assert.strictEqual(MAX_FRAME_BYTES, HEADER_SIZE + MAX_MESSAGE_SIZE);
-      assert.ok(MAX_FRAME_BYTES <= NOISE_MESSAGE_SIZE - NOISE_MAC_BYTES);
+      assert.strictEqual(MAX_FRAME_BYTES, NOISE_MESSAGE_SIZE - NOISE_MAC_BYTES);
+      assert.strictEqual(MAX_MESSAGE_SIZE, MAX_FRAME_BYTES - HEADER_SIZE);
       assert.strictEqual(Message.MAX_MESSAGE_SIZE, MAX_MESSAGE_SIZE);
     });
 
@@ -451,7 +450,13 @@ describe('@fabric/core/types/message', function () {
         contract: 'cc'.repeat(32),
         payload
       });
-      assert.deepStrictEqual(cm.toFields(), { contract: 'cc'.repeat(32), payload });
+      assert.deepStrictEqual(cm.toFields(), {
+        contract: 'cc'.repeat(32),
+        payload,
+        recipient: '',
+        ref: '',
+        slot: ''
+      });
     });
 
     it('fromVector accepts an explicit parent hex as the third element', function () {
@@ -617,5 +622,57 @@ describe('MESSAGES.md wire catalog', function () {
     const stop = actual.indexOf(CATALOG_END);
     assert.ok(start >= 0 && stop > start, 'MESSAGES.md catalog markers');
     assert.strictEqual(actual.slice(start, stop + CATALOG_END.length), catalogBlock(rows));
+  });
+});
+
+describe('@fabric/core/types/message statics', function () {
+  it('fromLegacyBody round-trips through tryParseLegacyBody', function () {
+    const body = { host: 'hub.fabric.pub', port: 7777, gossipHop: 3, pubkey: 'ab'.repeat(33) };
+    const message = Message.fromLegacyBody('P2P_PEER_GOSSIP', body).signWithKey(new Key());
+    const parsed = Message.tryParseLegacyBody(Message.fromBuffer(message.toBuffer()));
+    assert.strictEqual(parsed.ok, true);
+    assert.strictEqual(parsed.encoding, 'fields');
+    assert.deepStrictEqual(parsed.value, body);
+    assert.throws(() => Message.fromLegacyBody('GenericMessage', {}), /fromLegacyBody: no field mapping/);
+  });
+
+  it('padDigits left-pads with zeros and never truncates', function () {
+    assert.strictEqual(Message.padDigits('1', 8), '00000001');
+    assert.strictEqual(Message.padDigits(255, 3), '255');
+    assert.strictEqual(Message.padDigits('123456789', 8), '123456789');
+  });
+
+  it('HEADER_OFFSETS tile the header and match parseRawMessage', function () {
+    const ranges = Object.values(Message.HEADER_OFFSETS);
+    assert.strictEqual(ranges[0][0], 0);
+    for (let i = 1; i < ranges.length; i++) assert.strictEqual(ranges[i][0], ranges[i - 1][1]);
+    assert.strictEqual(ranges[ranges.length - 1][1], HEADER_SIZE);
+
+    const key = new Key();
+    const message = Message.fromVector(['P2P_CHAT_MESSAGE', 'hello']);
+    message.parent = 'ab'.repeat(32);
+    message.signWithKey(key);
+    const buffer = message.toBuffer();
+    const raw = Message.parseRawMessage(buffer);
+    for (const [name, [start, end]] of Object.entries(Message.HEADER_OFFSETS)) {
+      assert.ok(raw[name].equals(buffer.subarray(start, end)), name);
+    }
+    assert.ok(raw.data.equals(buffer.subarray(HEADER_SIZE)));
+    assert.strictEqual(Message.fromBuffer(buffer).parent, 'ab'.repeat(32));
+  });
+
+  it('verifyFrameAuthor reports the signer of a frame', function () {
+    const key = new Key();
+    const message = Message.fromVector(['P2P_CHAT_MESSAGE', 'hello']).signWithKey(key);
+    const frame = message.toBuffer();
+    const result = Message.verifyFrameAuthor(frame.toString('hex'));
+    assert.strictEqual(result.ok, true);
+    assert.strictEqual(result.author, Buffer.from(key.pubkey, 'hex').subarray(1).toString('hex'));
+    assert.strictEqual(result.parent, Message.ZERO_PARENT);
+
+    const tampered = Buffer.from(frame);
+    tampered[tampered.length - 1] ^= 1;
+    assert.strictEqual(Message.verifyFrameAuthor(tampered).ok, false);
+    assert.strictEqual(Message.verifyFrameAuthor('zz').ok, false);
   });
 });

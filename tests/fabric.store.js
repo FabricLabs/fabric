@@ -10,7 +10,6 @@ const Fabric = require('../');
 
 const config = require('../settings/test');
 const samples = require('../assets/samples');
-const handler = require('../functions/handleException');
 
 // Types
 const Store = require('../types/store');
@@ -57,6 +56,138 @@ describe('@fabric/core/types/store', function () {
       assert.ok(store.codec);
     });
 
+    it('remove deletes a key from Level and memory; _DELETE uses it', async function () {
+      const removed = [];
+      const store = new Store({ persistent: false });
+      await store.set('/things/a', { n: 1 });
+      await store.set('/things/b', { n: 2 });
+      store.db = {
+        get: async () => undefined,
+        put: async () => {},
+        keys: async function * () {},
+        batch: async (ops) => { for (const op of ops) if (op.type === 'del') removed.push(op.key); }
+      };
+      store.settings.persistent = true;
+      assert.strictEqual(await store._DELETE('/things/a'), null);
+      assert.deepStrictEqual(removed, ['/things/a']);
+      assert.strictEqual(store._state.content.things.a, undefined);
+      assert.deepStrictEqual(store._state.content.things.b, { n: 2 });
+      assert.strictEqual(await store.remove('/things/missing'), null);
+    });
+
+    it('refuses a non-index key beneath an array', async function () {
+      const store = new Store({ persistent: false });
+      await store.set('/list', [1, 2]);
+      await assert.rejects(store.set('/list/length', 0), /non-index key under an array/);
+      await assert.rejects(store.set('/list/name/x', 1), /non-index key under an array/);
+      await store.set('/list/1', 3);
+      assert.deepStrictEqual(store._state.content.list, [1, 3]);
+    });
+
+    it('refuses to remove a reserved key or a non-index key under an array', async function () {
+      const store = new Store({ persistent: false });
+      await store.set('/list', [1, 2]);
+      await store.set('/things/a', 1);
+      for (const key of ['/__proto__', '/things/__proto__', '/a/constructor/prototype']) {
+        await assert.rejects(store.remove(key), /reserved key/);
+      }
+      await assert.rejects(store.remove('/list/length'), /non-index key under an array/);
+      await assert.rejects(store.remove('/list/name/x'), /non-index key under an array/);
+      assert.deepStrictEqual(store._state.content.list, [1, 2]);
+      await store.remove('/list/0');
+      assert.deepStrictEqual(store._state.content.list, [2]);
+    });
+
+    it('refuses to remove a non-index key under an array stored before a reopen', async function () {
+      const batches = [];
+      const store = new Store({ strict: true });
+      // Memory is empty, as after a restart; Level still holds `/list` as an array.
+      store.db = {
+        get: async (key) => (key === '/list' ? JSON.stringify([1, 2]) : undefined),
+        keys: async function * () {},
+        batch: async (ops) => { batches.push(ops); }
+      };
+      await assert.rejects(store.remove('/list/length'), /non-index key under an array/);
+      assert.deepStrictEqual(batches, []);
+      await store.remove('/list/1');
+      assert.deepStrictEqual(batches[0], [
+        { type: 'del', key: '/list/1' },
+        { type: 'put', key: '/list', value: JSON.stringify([1]) }
+      ]);
+    });
+
+    it('a write under a persisted array parent needs an index token', async function () {
+      const puts = [];
+      const store = new Store({ strict: true });
+      store.db = { get: async (key) => (key === '/list' ? JSON.stringify([1, 2]) : undefined), put: async (key) => { puts.push(key); } };
+      await assert.rejects(store.set('/list/length', 0), /non-index key under an array/);
+      await assert.rejects(store.set('/list/name/x', 1), /non-index key under an array/);
+      assert.deepStrictEqual(puts, []);
+      await store.set('/list/1', 3);
+      assert.deepStrictEqual(puts, ['/list/1']);
+    });
+
+    it('a removed key and everything beneath it stay removed after a reopen', async function () {
+      const fs = require('fs');
+      const path = `./stores/test-store-remove-${process.pid}-${Date.now()}`;
+      const open = async () => {
+        const store = new Store({ path, persistent: true, strict: true });
+        await store.start();
+        return store;
+      };
+      try {
+        let store = await open();
+        await store.set('/tree', { a: { b: 1 }, keep: true });
+        await store.set('/tree/a/c', { x: 2 });
+        await store.set('/tree/a/c/d', 3);
+        await store.set('/tree/other', 4);
+        await store.set('/treehouse', 5);
+        await store.remove('/tree/a');
+        await store.stop();
+
+        store = await open();
+        assert.strictEqual(await store.get('/tree/a/c/d'), null, 'descendant key deleted');
+        assert.strictEqual(await store.get('/tree/a/c'), null);
+        assert.strictEqual(await store.get('/tree/a'), null);
+        assert.deepStrictEqual(await store.get('/tree'), { keep: true }, 'ancestor rewritten without the child');
+        assert.strictEqual(await store.get('/tree/a'), null, 'a hydrated ancestor brings nothing back');
+        assert.strictEqual(await store.get('/tree/other'), 4, 'siblings stay');
+        assert.strictEqual(await store.get('/treehouse'), 5, 'a key sharing the prefix stays');
+        await store.stop();
+      } finally {
+        fs.rmSync(path, { recursive: true, force: true });
+      }
+    });
+
+    it('a failed first post removes the list instead of writing null', async function () {
+      const disk = new Map();
+      const store = new Store({ strict: true, persistent: true });
+      store.db = {
+        get: async (key) => disk.get(key),
+        put: async (key, value) => {
+          if (key.startsWith('/collections/')) throw new Error('disk full');
+          disk.set(key, value);
+        },
+        keys: async function * () {},
+        batch: async (ops) => { for (const op of ops) op.type === 'del' ? disk.delete(op.key) : disk.set(op.key, op.value); }
+      };
+      assert.strictEqual(await store._POST('/widgets', { n: 0 }), false);
+      assert.strictEqual(disk.has('/widgets'), false, 'nothing persisted for the list');
+      assert.strictEqual(await store._GET('/widgets'), null);
+      assert.ok(![...disk.keys()].some((k) => k.startsWith('/entities/')), 'the entity is gone too');
+    });
+
+    it('a post whose list cannot be read writes nothing, even when not strict', async function () {
+      const puts = [];
+      const store = new Store({ persistent: true });
+      store.db = {
+        get: async (key) => { if (key === '/widgets') throw new Error('disk gone'); },
+        put: async (key) => { puts.push(key); }
+      };
+      assert.strictEqual(await store._POST('/widgets', { n: 0 }), false);
+      assert.deepStrictEqual(puts, [], 'an unreadable list is not taken for an empty one');
+    });
+
     it('flush is a no-op when Level is not open', async function () {
       const store = new Store({ persistent: false });
       const out = await store.flush();
@@ -75,6 +206,172 @@ describe('@fabric/core/types/store', function () {
       };
       const out = await store.flush();
       assert.strictEqual(out, store);
+    });
+
+    it('strict: Level read and write failures reject; a missing key is still null', async function () {
+      const broken = () => { throw new Error('disk gone'); };
+      const strict = new Store({ strict: true });
+      strict.db = { get: broken, put: broken };
+      await assert.rejects(strict.get('/metrics/a'), /disk gone/);
+      await assert.rejects(strict.set('/metrics/a', { n: 1 }), /disk gone/);
+      strict.db = { get: async () => undefined, put: broken };
+      assert.strictEqual(await strict.get('/metrics/a'), null, 'a failed write is not kept in memory');
+
+      // Level 10 resolves a missing key as `undefined`; older Level threw LEVEL_NOT_FOUND.
+      const missing = new Store({ strict: true });
+      missing.db = { get: async () => undefined };
+      assert.strictEqual(await missing.get('/metrics/none'), null);
+      missing.db = {
+        get: async () => {
+          const err = new Error('not found');
+          err.code = 'LEVEL_NOT_FOUND';
+          throw err;
+        }
+      };
+      assert.strictEqual(await missing.get('/metrics/none'), null);
+
+      const text = new Store({ strict: true });
+      text.db = { get: async () => 'null' };
+      assert.strictEqual(await text.get('/metrics/word'), 'null', 'persisted null text is the string');
+
+      const lenient = new Store();
+      lenient.db = { get: broken };
+      assert.strictEqual(await lenient.get('/metrics/a'), null);
+    });
+
+    it('writes to one key land in call order, in Level and in memory', async function () {
+      const disk = new Map();
+      const store = new Store({ strict: true });
+      // The first put resolves last, as concurrent Level writes may.
+      let delay = 30;
+      store.db = {
+        get: async (key) => disk.get(key),
+        put: (key, value) => new Promise((resolve) => setTimeout(() => { disk.set(key, value); resolve(); }, (delay -= 15) + 15))
+      };
+      await Promise.all([store.set('/metrics/a', 'first'), store.set('/metrics/a', 'second')]);
+      assert.strictEqual(disk.get('/metrics/a'), 'second');
+      assert.strictEqual(store._state.content.metrics.a, 'second');
+      // A failed write does not hold up the next one.
+      const broken = new Store({ strict: true });
+      let fail = true;
+      broken.db = { get: async () => undefined, put: async () => { if (fail) { fail = false; throw new Error('disk gone'); } } };
+      const results = await Promise.allSettled([broken.set('/metrics/a', 1), broken.set('/metrics/a', 2)]);
+      assert.deepStrictEqual(results.map((r) => r.status), ['rejected', 'fulfilled']);
+      assert.strictEqual(broken._state.content.metrics.a, 2);
+    });
+
+    it('refuses a write beneath a scalar before it reaches Level', async function () {
+      const puts = [];
+      const store = new Store({ strict: true });
+      store.db = { get: async () => undefined, put: async (key) => { puts.push(key); } };
+      await store.set('/metrics', 'flat');
+      await assert.rejects(store.set('/metrics/a', 1), /not an object/);
+      assert.deepStrictEqual(puts, ['/metrics']);
+      assert.strictEqual(store._state.content.metrics, 'flat');
+    });
+
+    it('orders a parent and a child write, so the child never lands beneath a scalar', async function () {
+      const disk = new Map();
+      const store = new Store({ strict: true });
+      store.db = {
+        get: async (key) => disk.get(key),
+        put: (key, value) => new Promise((resolve) => setTimeout(() => { disk.set(key, value); resolve(); }, 10))
+      };
+      const results = await Promise.allSettled([store.set('/metrics', 'flat'), store.set('/metrics/a', 1)]);
+      assert.deepStrictEqual(results.map((r) => r.status), ['fulfilled', 'rejected']);
+      assert.ok(!disk.has('/metrics/a'));
+    });
+
+    it('a post whose entity or collection write fails leaves the list as it was', async function () {
+      const disk = new Map();
+      const store = new Store({ strict: true, persistent: true });
+      let failOn = null;
+      store.db = {
+        get: async (key) => disk.get(key),
+        put: async (key, value) => {
+          if (failOn && failOn(key)) throw new Error('disk full');
+          disk.set(key, value);
+        }
+      };
+      assert.notStrictEqual(await store._POST('/widgets', { n: 0 }), false);
+      const before = disk.get('/widgets');
+      for (const target of [(k) => k.startsWith('/entities/'), (k) => k.startsWith('/collections/')]) {
+        failOn = target;
+        assert.strictEqual(await store._POST('/widgets', { n: 1 }), false);
+        failOn = null;
+        assert.strictEqual(disk.get('/widgets'), before, 'the persisted list is unchanged');
+        assert.deepStrictEqual(await store._GET('/widgets'), [{ n: 0 }], 'and so is memory');
+      }
+    });
+
+    it('refuses a child beneath a scalar stored before a reopen', async function () {
+      const puts = [];
+      const store = new Store({ strict: true });
+      // Memory is empty, as after a restart; Level still holds `/metrics` as text.
+      store.db = { get: async (key) => (key === '/metrics' ? 'flat' : undefined), put: async (key) => { puts.push(key); } };
+      await assert.rejects(store.set('/metrics/a', 1), /not an object/);
+      assert.deepStrictEqual(puts, []);
+      store.db.get = async (key) => (key === '/metrics' ? JSON.stringify({ b: 2 }) : undefined);
+      await store.set('/metrics/a', 1);
+      assert.deepStrictEqual(puts, ['/metrics/a']);
+    });
+
+    it('refuses a path through a reserved key', async function () {
+      const store = new Store({ strict: true });
+      store.db = { get: async () => undefined, put: async () => {} };
+      for (const key of ['/__proto__/polluted', '/a/constructor/prototype/polluted']) {
+        await assert.rejects(store.set(key, 1), /reserved key/);
+      }
+      assert.strictEqual({}.polluted, undefined);
+    });
+
+    it('refuses an object too large to read back after a reopen', async function () {
+      const { PERSISTED_JSON_MAX_CHARS } = require('../constants');
+      const puts = [];
+      const store = new Store({ strict: true, persistent: true });
+      store.db = { get: async () => undefined, put: async (key) => { puts.push(key); } };
+      await assert.rejects(store.set('/blobs/big', { text: 'x'.repeat(PERSISTED_JSON_MAX_CHARS) }), /larger than/);
+      assert.deepStrictEqual(puts, []);
+      assert.strictEqual(store._state.content.blobs, undefined);
+      // Text is stored as itself, so its length is not capped.
+      await store.set('/blobs/text', 'x'.repeat(PERSISTED_JSON_MAX_CHARS + 1));
+      assert.deepStrictEqual(puts, ['/blobs/text']);
+    });
+
+    it('writes nothing for a post or push that would pass the cap', async function () {
+      const { PERSISTED_JSON_MAX_CHARS } = require('../constants');
+      const puts = [];
+      const store = new Store({ strict: true, persistent: true });
+      store.db = { get: async () => undefined, put: async (key) => { puts.push(key); } };
+      // Each entity fits; the collection grows past the cap, and the post that would pass it writes nothing.
+      const item = (n) => ({ n, text: 'x'.repeat(Math.floor(PERSISTED_JSON_MAX_CHARS / 10)) });
+      let posted = 0;
+      let before = 0;
+      for (;;) {
+        before = puts.length;
+        if ((await store._POST('/widgets', item(posted))) === false) break;
+        posted++;
+        assert.ok(posted < 20, 'the collection reaches the cap');
+      }
+      assert.ok(posted > 0);
+      assert.strictEqual(puts.length, before);
+      assert.strictEqual((await store._GET('/widgets')).length, posted);
+      await assert.rejects(store._PUSH('/log', { text: 'x'.repeat(PERSISTED_JSON_MAX_CHARS) }));
+      assert.strictEqual(puts.length, before);
+    });
+
+    it('stop waits for queued writes before Level closes', async function () {
+      const order = [];
+      const store = new Store({ strict: true, persistent: true });
+      store.db = {
+        get: async () => undefined,
+        put: (key, value) => new Promise((resolve) => setTimeout(() => { order.push(`put ${value}`); resolve(); }, 10))
+      };
+      store.close = async () => { order.push('close'); };
+      const writes = [store.set('/metrics/a', 1), store.set('/metrics/a', 2)];
+      await store.stop();
+      await Promise.all(writes);
+      assert.deepStrictEqual(order, ['put 1', 'put 2', 'close']);
     });
 
     it('_setEncrypted/_getEncrypted round-trip plain values without codec', async function () {

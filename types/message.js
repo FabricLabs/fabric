@@ -23,7 +23,6 @@ const {
   P2P_INSTRUCTION,
   P2P_BASE_MESSAGE,
   P2P_CHAIN_SYNC_REQUEST,
-  P2P_FLUSH_CHAIN,
   P2P_INVENTORY_REQUEST,
   P2P_INVENTORY_RESPONSE,
   P2P_FILE_SEND,
@@ -32,6 +31,8 @@ const {
   P2P_PEER_ANNOUNCE,
   P2P_PEER_GOSSIP,
   P2P_PEERING_OFFER,
+  P2P_DOCUMENT_BID,
+  P2P_DOCUMENT_ASK,
   P2P_SESSION_OFFER,
   P2P_SESSION_OPEN,
   P2P_SESSION_ACK,
@@ -41,9 +42,21 @@ const {
   P2P_MUSIG_SEND_PROPOSAL,
   P2P_MUSIG_REPLY_TO_PROPOSAL,
   P2P_MUSIG_ACCEPT_PROPOSAL,
-  SITE_LOGIN_REQUEST,
-  SITE_LOGIN_RESPONSE,
-  FABRIC_SIGN_REQUEST,
+  PASSPORT_CHALLENGE,
+  PASSPORT_ASSERTION,
+  PASSPORT_SIGN_REQUEST,
+  DELEGATION_LINK_OFFER,
+  DELEGATION_LINK_ANSWER,
+  DELEGATION_LINK_REVEAL,
+  DELEGATION_GRANT,
+  DELEGATION_REVOKE,
+  DELEGATION_REQUEST,
+  DELEGATION_RESULT,
+  DELEGATION_MAILBOX_FETCH,
+  PASSPORT_CONNECT,
+  PASSPORT_SESSION,
+  PASSPORT_RESUME,
+  PASSPORT_REFUSED,
   P2P_CONTRACT_PUBLISH,
   P2P_CONTRACT_MESSAGE,
   P2P_STATE_ROOT,
@@ -60,6 +73,9 @@ const {
   SIDECHAIN_STATE_PATCH_TYPE,
   DOCUMENT_PUBLISH_TYPE,
   DOCUMENT_REQUEST_TYPE,
+  DOCUMENT_KEY_REVEAL_TYPE,
+  DOCUMENT_BLOB_QUOTE_TYPE,
+  DOCUMENT_BLOB_BATCH_TYPE,
   JSON_CALL_TYPE,
   PATCH_MESSAGE_TYPE,
   CONTRACT_PROPOSAL_TYPE,
@@ -113,7 +129,7 @@ const Hash256 = require('./hash256');
 
 // Function Definitions
 const { schnorr } = require('@noble/curves/secp256k1.js');
-const taggedHash = require('../functions/taggedHash');
+const taggedHash = Hash256.tagged;
 
 /**
  * Byte ranges `[start, end)` of each AMP header field.
@@ -322,12 +338,14 @@ const WIRE_TYPE_DECODE_ORDER = Object.freeze([
   [SIDECHAIN_STATE_PATCH_TYPE, 'SIDECHAIN_STATE_PATCH'],
   [DOCUMENT_PUBLISH_TYPE, 'DOCUMENT_PUBLISH'],
   [DOCUMENT_REQUEST_TYPE, 'DOCUMENT_REQUEST'],
+  [DOCUMENT_KEY_REVEAL_TYPE, 'DOCUMENT_KEY_REVEAL'],
+  [DOCUMENT_BLOB_QUOTE_TYPE, 'DOCUMENT_BLOB_QUOTE'],
+  [DOCUMENT_BLOB_BATCH_TYPE, 'DOCUMENT_BLOB_BATCH'],
   [BLOCK_CANDIDATE, 'BLOCK_CANDIDATE'],
   [P2P_PING, 'P2P_PING'],
   [P2P_PONG, 'P2P_PONG'],
   [P2P_GENERIC, 'P2P_GENERIC'],
   [P2P_CHAIN_SYNC_REQUEST, 'P2P_CHAIN_SYNC_REQUEST'],
-  [P2P_FLUSH_CHAIN, 'P2P_FLUSH_CHAIN'],
   [P2P_INVENTORY_REQUEST, 'P2P_INVENTORY_REQUEST'],
   [P2P_INVENTORY_RESPONSE, 'P2P_INVENTORY_RESPONSE'],
   [P2P_FILE_SEND, 'P2P_FILE_SEND'],
@@ -336,6 +354,8 @@ const WIRE_TYPE_DECODE_ORDER = Object.freeze([
   [P2P_PEER_ANNOUNCE, 'P2P_PEER_ANNOUNCE'],
   [P2P_PEER_GOSSIP, 'P2P_PEER_GOSSIP'],
   [P2P_PEERING_OFFER, 'P2P_PEERING_OFFER'],
+  [P2P_DOCUMENT_BID, 'P2P_DOCUMENT_BID'],
+  [P2P_DOCUMENT_ASK, 'P2P_DOCUMENT_ASK'],
   [P2P_SESSION_OFFER, 'P2P_SESSION_OFFER'],
   [P2P_SESSION_OPEN, 'P2P_SESSION_OPEN'],
   [P2P_SESSION_ACK, 'P2P_SESSION_ACK'],
@@ -345,9 +365,21 @@ const WIRE_TYPE_DECODE_ORDER = Object.freeze([
   [P2P_MUSIG_SEND_PROPOSAL, 'P2P_MUSIG_SEND_PROPOSAL'],
   [P2P_MUSIG_REPLY_TO_PROPOSAL, 'P2P_MUSIG_REPLY_TO_PROPOSAL'],
   [P2P_MUSIG_ACCEPT_PROPOSAL, 'P2P_MUSIG_ACCEPT_PROPOSAL'],
-  [SITE_LOGIN_REQUEST, 'SITE_LOGIN_REQUEST'],
-  [SITE_LOGIN_RESPONSE, 'SITE_LOGIN_RESPONSE'],
-  [FABRIC_SIGN_REQUEST, 'FABRIC_SIGN_REQUEST'],
+  [PASSPORT_CHALLENGE, 'PASSPORT_CHALLENGE'],
+  [PASSPORT_ASSERTION, 'PASSPORT_ASSERTION'],
+  [PASSPORT_SIGN_REQUEST, 'PASSPORT_SIGN_REQUEST'],
+  [DELEGATION_LINK_OFFER, 'DELEGATION_LINK_OFFER'],
+  [DELEGATION_LINK_ANSWER, 'DELEGATION_LINK_ANSWER'],
+  [DELEGATION_LINK_REVEAL, 'DELEGATION_LINK_REVEAL'],
+  [DELEGATION_GRANT, 'DELEGATION_GRANT'],
+  [DELEGATION_REVOKE, 'DELEGATION_REVOKE'],
+  [DELEGATION_REQUEST, 'DELEGATION_REQUEST'],
+  [DELEGATION_RESULT, 'DELEGATION_RESULT'],
+  [DELEGATION_MAILBOX_FETCH, 'DELEGATION_MAILBOX_FETCH'],
+  [PASSPORT_CONNECT, 'PASSPORT_CONNECT'],
+  [PASSPORT_SESSION, 'PASSPORT_SESSION'],
+  [PASSPORT_RESUME, 'PASSPORT_RESUME'],
+  [PASSPORT_REFUSED, 'PASSPORT_REFUSED'],
   [P2P_CONTRACT_PUBLISH, 'CONTRACT_PUBLISH'],
   [P2P_CONTRACT_MESSAGE, 'CONTRACT_MESSAGE'],
   [P2P_IDENT_REQUEST, 'P2P_IDENT_REQUEST'],
@@ -436,13 +468,14 @@ const LEGACY_MESSAGE_TYPE_ALIASES = Object.freeze({
   IdentityRequest: P2P_IDENT_REQUEST,
   IdentityResponse: P2P_IDENT_RESPONSE,
   ChainSyncRequest: P2P_CHAIN_SYNC_REQUEST,
-  FlushChain: P2P_FLUSH_CHAIN,
   InventoryRequest: P2P_INVENTORY_REQUEST,
   InventoryResponse: P2P_INVENTORY_RESPONSE,
   PeerAlias: P2P_PEER_ALIAS,
   PeerAnnounce: P2P_PEER_ANNOUNCE,
   PeerGossip: P2P_PEER_GOSSIP,
   PeeringOffer: P2P_PEERING_OFFER,
+  DocumentBid: P2P_DOCUMENT_BID,
+  DocumentAsk: P2P_DOCUMENT_ASK,
   SessionOffer: P2P_SESSION_OFFER,
   SessionOpen: P2P_SESSION_OPEN,
   MusigStart: P2P_MUSIG_START,
@@ -451,14 +484,28 @@ const LEGACY_MESSAGE_TYPE_ALIASES = Object.freeze({
   MusigSendProposal: P2P_MUSIG_SEND_PROPOSAL,
   MusigReplyToProposal: P2P_MUSIG_REPLY_TO_PROPOSAL,
   MusigAcceptProposal: P2P_MUSIG_ACCEPT_PROPOSAL,
-  SiteLoginRequest: SITE_LOGIN_REQUEST,
-  SiteLoginResponse: SITE_LOGIN_RESPONSE,
-  FabricSignRequest: FABRIC_SIGN_REQUEST,
+  PassportChallenge: PASSPORT_CHALLENGE,
+  PassportAssertion: PASSPORT_ASSERTION,
+  DelegationLinkOffer: DELEGATION_LINK_OFFER,
+  DelegationLinkAnswer: DELEGATION_LINK_ANSWER,
+  DelegationLinkReveal: DELEGATION_LINK_REVEAL,
+  DelegationGrant: DELEGATION_GRANT,
+  DelegationRevoke: DELEGATION_REVOKE,
+  DelegationRequest: DELEGATION_REQUEST,
+  DelegationResult: DELEGATION_RESULT,
+  DelegationMailboxFetch: DELEGATION_MAILBOX_FETCH,
+  PassportConnect: PASSPORT_CONNECT,
+  PassportSession: PASSPORT_SESSION,
+  PassportResume: PASSPORT_RESUME,
+  PassportRefused: PASSPORT_REFUSED,
   FileSend: P2P_FILE_SEND,
   DocumentPricingPublish: P2P_DOCUMENT_PUBLISH,
   Ping: P2P_PING,
   Pong: P2P_PONG,
   DocumentRequest: DOCUMENT_REQUEST_TYPE,
+  DocumentContentKeyReveal: DOCUMENT_KEY_REVEAL_TYPE,
+  DocumentBlobQuote: DOCUMENT_BLOB_QUOTE_TYPE,
+  DocumentBlobBatch: DOCUMENT_BLOB_BATCH_TYPE,
   DocumentPublish: DOCUMENT_PUBLISH_TYPE,
   SidechainStatePatch: SIDECHAIN_STATE_PATCH_TYPE,
   BlockCandidate: BLOCK_CANDIDATE,
@@ -692,10 +739,13 @@ class Message extends Actor {
       if (Buffer.isBuffer(messageData) || messageData instanceof Uint8Array) {
         this.data = Buffer.from(messageData);
       } else if (typeof messageData !== 'string') {
-        // Deprecated transitional path: plain objects without an explicit field encode
-        // still JSON.stringify. Prefer Message.fromFields(type, fields) for V1 bodies
-        // (docs/MESSAGE_BODY.md). Auto field-encode is not applied here to avoid breaking
-        // legacy ChatMessage / GenericMessage object payloads.
+        // A type with a field layout must not be JSON-encoded by accident: Peers
+        // drop those bodies. Build it with Message.fromLegacyBody / fromFields.
+        // Types without a layout (GenericMessage, ChatMessage, JSONCall, …)
+        // still take a JSON object body.
+        if (getBodySchema(this.type)) {
+          throw new TypeError(`Message: ${this.type} has a field layout; build it with Message.fromLegacyBody(type, body) or Message.fromFields(type, fields), not an object body`);
+        }
         this.data = JSON.stringify(messageData);
       } else {
         this.data = messageData;
@@ -1145,10 +1195,22 @@ class Message extends Actor {
     if (!schema) {
       throw new Error(`Message.fromFields: no body schema registered for type ${type}`);
     }
-    return new Message(Object.assign({}, opts, {
+    // Schemas registered by name only (e.g. `FabricProgramRun`) are codecs, not wire types.
+    if (typeof type === 'string' && !CANONICAL_MESSAGE_TYPE_STRINGS[type] && !LEGACY_MESSAGE_TYPE_ALIASES[type]) {
+      throw new Error(`Message.fromFields: ${type} has no wire opcode; use Message.encodeBody with its schema`);
+    }
+    const message = new Message(Object.assign({}, opts, {
       type,
       data: encodeBody(schema, fields)
     }));
+    // A name without an opcode falls back to P2P_BASE_MESSAGE, whose decoder
+    // has no schema: the frame could never be read back. Schemas registered
+    // by name only (e.g. `FabricProgramRun`) are for `encodeBody` / `decodeBody`.
+    if (message.raw.type.readUInt32BE(0) === P2P_BASE_MESSAGE &&
+        Message.canonicalTypeName(type) !== 'P2P_BASE_MESSAGE') {
+      throw new Error(`Message.fromFields: ${type} has no wire opcode; use Message.encodeBody with its schema`);
+    }
+    return message;
   }
 
   /**
@@ -1258,15 +1320,18 @@ Object.defineProperty(Message.prototype, 'type', {
     return this.wireType;
   },
   set (value) {
-    let code = this.types[value];
-    // Default to P2P_BASE_MESSAGE for unknown/unregistered names.
-    if (!code) {
-      this.emit('warning', `Unknown message type: ${value}`);
-      // Keep unknown payloads representable on-wire without inventing ad-hoc generic labels.
-      tryParseWireJson(typeof this.data === 'string' ? this.data : String(this.data ?? ''));
-      code = this.types.P2P_BASE_MESSAGE;
-      value = 'P2P_BASE_MESSAGE';
+    // A number is an explicit opcode and is written as given, registered or
+    // not (decoding and hostile-frame tests rely on that). An unregistered
+    // name used to become P2P_BASE_MESSAGE silently, so a typo produced a
+    // frame nobody handles; it now throws.
+    const code = typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 0xffffffff
+      ? value
+      : (typeof value === 'string' && Object.prototype.hasOwnProperty.call(this.types, value) ? this.types[value] : null);
+    // Inherited names (`toString`, `constructor`) are not types.
+    if (!Number.isInteger(code)) {
+      throw new TypeError(`Unknown message type: ${value}`);
     }
+    if (typeof value === 'number') value = CANONICAL_WIRE_TYPE_BY_OPCODE[value] || value;
 
     const padded = padDigits(code.toString(16), 8);
     this['@type'] = value;
@@ -1332,7 +1397,10 @@ Message.FRIENDLY_TO_WIRE_TYPE = FRIENDLY_TO_WIRE_TYPE;
 const BODY_FIELD_TYPES = Object.freeze([
   'u8', 'u16', 'u32', 'u64', 'bytes32', 'bytes', 'string', 'message'
 ]);
-/** @private @type {Map<number|string, Array<{ name: string, type: string }>>} */
+/**
+ * @type {Map<number|string, Array<{ name: string, type: string }>>}
+ * @private
+ */
 const BODY_SCHEMA_BY_KEY = new Map();
 
 function registerBodySchema (opcodeOrName, schema) {
@@ -1363,11 +1431,26 @@ function _readU32 (buf, offset) {
   return buf.readUInt32BE(offset);
 }
 
+/**
+ * An optional string left empty is not written when every field after it is
+ * the same. Older decoders ignore those trailing bytes, so an absent filter
+ * does not change the body they already know.
+ * @private
+ * @param {{ optional: (boolean|undefined), type: string }} def
+ * @param {*} value
+ * @returns {boolean}
+ */
+function _trailingOptionalStringEmpty (def, value) {
+  return !!(def && def.optional && def.type === 'string' && (value == null || value === ''));
+}
+
 function encodeBody (schema, fields = {}) {
   if (!Array.isArray(schema)) throw new TypeError('schema required');
+  let count = schema.length;
+  while (count > 0 && _trailingOptionalStringEmpty(schema[count - 1], fields[schema[count - 1].name])) count -= 1;
   const chunks = [];
   let total = 0;
-  for (const def of schema) {
+  for (const def of schema.slice(0, count)) {
     const value = fields[def.name];
     let part;
     switch (def.type) {
@@ -1527,28 +1610,40 @@ function decodeBody (schema, buffer) {
 
 const SCHEMA_P2P_PING = Object.freeze([{ name: 'nonce', type: 'string' }]);
 const SCHEMA_P2P_CHAT = null;
-/** @private Transitional field layouts; JSON bodies remain accepted via tryParseMessageBody. */
+/**
+ * Transitional field layouts; JSON bodies remain accepted via tryParseMessageBody.
+ * @private
+ */
 const SCHEMA_CONTRACT_PUBLISH = Object.freeze([
   { name: 'definition', type: 'string' }
 ]);
 const SCHEMA_CONTRACT_MESSAGE = Object.freeze([
   { name: 'contract', type: 'string' },
-  { name: 'payload', type: 'string' }
+  { name: 'payload', type: 'string' },
+  // Index fields. The JSON payload is unchanged. Old decoders stop after
+  // `payload` and ignore these trailing bytes.
+  { name: 'recipient', type: 'string', optional: true },
+  { name: 'ref', type: 'string', optional: true },
+  { name: 'slot', type: 'string', optional: true }
 ]);
 const SCHEMA_PROGRAM_RUN = Object.freeze([
   { name: 'programHash', type: 'bytes32' },
   { name: 'runCommitment', type: 'bytes32' },
   { name: 'resultHint', type: 'string' }
 ]);
-/** @private Directed onion hop — see {@link module:@fabric/core/functions/fabricOnion}. */
+/**
+ * Directed onion hop — see {@link module:@fabric/core/functions/fabricOnion}.
+ * @private
+ */
 const SCHEMA_P2P_FORWARD = Object.freeze([
   { name: 'nextPeer', type: 'bytes32' },
   { name: 'ttl', type: 'u8' },
   { name: 'inner', type: 'message' }
 ]);
 /**
- * @private Discovery / peering field layouts; JSON bodies remain accepted.
+ * Discovery / peering field layouts; JSON bodies remain accepted.
  * Optional fields are appended only — older decoders ignore trailing bytes.
+ * @private
  */
 const SCHEMA_P2P_PEER_GOSSIP = Object.freeze([
   { name: 'host', type: 'string' },
@@ -1574,8 +1669,36 @@ const SCHEMA_P2P_PEER_ANNOUNCE = Object.freeze([
   { name: 'nonce', type: 'string', optional: true }
 ]);
 /**
- * @private Statechain patch proposal. `catalogCanonical` is the document-registry
+ * A buyer's bid for one chunk (see {@link DocumentBook.createBid}).
+ * A zero `merkleRoot` / `blobHash` leaves that selector open. Times are Unix seconds.
+ * @private
+ */
+const SCHEMA_P2P_DOCUMENT_BID = Object.freeze([
+  { name: 'document', type: 'string' },
+  { name: 'merkleRoot', type: 'bytes32' },
+  { name: 'blobIndex', type: 'u32' },
+  { name: 'blobHash', type: 'bytes32' },
+  { name: 'maxSats', type: 'u64' },
+  { name: 'expiresAt', type: 'u64' },
+  { name: 'nonce', type: 'bytes32' }
+]);
+/**
+ * A seller's answer to one bid (see {@link DocumentBook.createAsk}).
+ * @private
+ */
+const SCHEMA_P2P_DOCUMENT_ASK = Object.freeze([
+  { name: 'bid', type: 'bytes32' },
+  { name: 'document', type: 'string' },
+  { name: 'merkleRoot', type: 'bytes32' },
+  { name: 'blobIndex', type: 'u32' },
+  { name: 'blobHash', type: 'bytes32' },
+  { name: 'priceSats', type: 'u64' },
+  { name: 'expiresAt', type: 'u64' }
+]);
+/**
+ * Statechain patch proposal. `catalogCanonical` is the document-registry
  * shorthand; `patchesCanonical` (RFC6902 JSON array) wins when non-empty.
+ * @private
  */
 const SCHEMA_SIDECHAIN_STATE_PATCH = Object.freeze([
   { name: 'basisClock', type: 'u32' },
@@ -1584,7 +1707,10 @@ const SCHEMA_SIDECHAIN_STATE_PATCH = Object.freeze([
   { name: 'patchesCanonical', type: 'string', optional: true },
   { name: 'federationWitnessCanonical', type: 'string', optional: true }
 ]);
-/** @private BIP-327 directed MuSig2 session (JSON bodies still accepted). */
+/**
+ * BIP-327 directed MuSig2 session (JSON bodies still accepted).
+ * @private
+ */
 const SCHEMA_P2P_MUSIG_START = Object.freeze([
   { name: 'sessionId', type: 'bytes32' },
   { name: 'msg', type: 'bytes' },
@@ -1609,36 +1735,562 @@ const SCHEMA_P2P_MUSIG_SIGNATURE = Object.freeze([
   { name: 'signature', type: 'bytes' }
 ]);
 /**
- * @private Cross-boundary sign-in (`functions/fabricSiteLogin.js`). Times are
- * Unix milliseconds. A request may be unsigned (zero author).
+ * Passport sign-in (`functions/passport.js`). Times are Unix
+ * milliseconds; `request` / `disclose` are comma lists of `wallet`, `cosigner`.
+ * A v2 challenge may be unsigned (zero author). A v3 (peer) challenge is
+ * signed by `peer`, echoes the signer's `clientNonce`, and may leave `origin`
+ * empty; `homes` is a comma list of origins the peer says it serves. The v3
+ * fields are trailing optionals, so v2 frames encode exactly as before.
+ * @private
  */
-const SCHEMA_SITE_LOGIN_REQUEST = Object.freeze([
+const SCHEMA_PASSPORT_CHALLENGE = Object.freeze([
+  { name: 'v', type: 'u8' },
   { name: 'origin', type: 'string' },
   { name: 'nonce', type: 'string' },
   { name: 'issuedAt', type: 'u64' },
   { name: 'expiresAt', type: 'u64' },
-  { name: 'purpose', type: 'string', optional: true }
+  { name: 'purpose', type: 'string', optional: true },
+  { name: 'network', type: 'string', optional: true },
+  { name: 'request', type: 'string', optional: true },
+  { name: 'peer', type: 'string', optional: true },
+  { name: 'clientNonce', type: 'string', optional: true },
+  { name: 'homes', type: 'string', optional: true }
 ]);
-/** @private Signed by the identity that signs in; `pubkey` is compressed hex and must match the author. */
-const SCHEMA_SITE_LOGIN_RESPONSE = Object.freeze([
+/**
+ * Signed by the identity; `pubkey` is compressed hex and must match
+ * the author. `wallet` / `cosigner` are JSON, present only when requested.
+ * v3 adds `peer` (the audience) and `sessionKey` (the key later requests are
+ * signed with).
+ * @private
+ */
+const SCHEMA_PASSPORT_ASSERTION = Object.freeze([
+  { name: 'v', type: 'u8' },
   { name: 'origin', type: 'string' },
   { name: 'nonce', type: 'string' },
+  { name: 'challengeHash', type: 'bytes32' },
   { name: 'issuedAt', type: 'u64' },
   { name: 'expiresAt', type: 'u64' },
-  { name: 'identityId', type: 'string' },
+  { name: 'network', type: 'string' },
   { name: 'pubkey', type: 'string' },
+  { name: 'identityId', type: 'string' },
   { name: 'signer', type: 'string' },
-  { name: 'xpub', type: 'string', optional: true },
-  { name: 'crossSign', type: 'string', optional: true }
+  { name: 'device', type: 'string', optional: true },
+  { name: 'wallet', type: 'string', optional: true },
+  { name: 'cosigner', type: 'string', optional: true },
+  { name: 'peer', type: 'string', optional: true },
+  { name: 'sessionKey', type: 'string', optional: true }
 ]);
-/** @private A linked device asks a desktop app to answer `inner` (a SITE_LOGIN_REQUEST frame) for `origin`. */
-const SCHEMA_FABRIC_SIGN_REQUEST = Object.freeze([
-  { name: 'origin', type: 'string' },
-  { name: 'nonce', type: 'string' },
+/**
+ * Passport v3 peer sessions. `PASSPORT_CONNECT` (unsigned) asks a
+ * peer for a challenge; `clientNonce` makes that challenge fresh to this
+ * connection. `peer` is the key the signer expects, `origin` the page that
+ * asked (informational).
+ * @private
+ */
+const SCHEMA_PASSPORT_CONNECT = Object.freeze([
+  { name: 'v', type: 'u8' },
+  { name: 'clientNonce', type: 'string' },
   { name: 'issuedAt', type: 'u64' },
   { name: 'expiresAt', type: 'u64' },
-  { name: 'inner', type: 'message' }
+  { name: 'peer', type: 'string', optional: true },
+  { name: 'origin', type: 'string', optional: true },
+  { name: 'request', type: 'string', optional: true }
 ]);
+/**
+ * Signed by the peer: `sessionKey` now speaks for `pubkey` on this peer until `expiresAt`.
+ * @private
+ */
+const SCHEMA_PASSPORT_SESSION = Object.freeze([
+  { name: 'v', type: 'u8' },
+  { name: 'sessionId', type: 'bytes32' },
+  { name: 'assertionHash', type: 'bytes32' },
+  { name: 'pubkey', type: 'string' },
+  { name: 'identityId', type: 'string' },
+  { name: 'sessionKey', type: 'string' },
+  { name: 'issuedAt', type: 'u64' },
+  { name: 'expiresAt', type: 'u64' }
+]);
+/**
+ * Signed by the session key: answer a fresh challenge from `peer` to re-bind session `sessionId`.
+ * @private
+ */
+const SCHEMA_PASSPORT_RESUME = Object.freeze([
+  { name: 'v', type: 'u8' },
+  { name: 'sessionId', type: 'bytes32' },
+  { name: 'peer', type: 'string' },
+  { name: 'nonce', type: 'string' },
+  { name: 'challengeHash', type: 'bytes32' },
+  { name: 'issuedAt', type: 'u64' },
+  { name: 'expiresAt', type: 'u64' }
+]);
+/**
+ * Why a peer refused a connect, assertion, or resume; `answers` is the sha256 of that frame (or zero).
+ * @private
+ */
+const SCHEMA_PASSPORT_REFUSED = Object.freeze([
+  { name: 'v', type: 'u8' },
+  { name: 'answers', type: 'bytes32' },
+  { name: 'error', type: 'string' },
+  { name: 'issuedAt', type: 'u64' }
+]);
+/**
+ * Delegation (`types/delegation.js`). Times are Unix
+ * milliseconds; every frame is signed by its author. Pairing commits to the
+ * initiator's nonce before the responder picks its own.
+ * @private
+ */
+const SCHEMA_DELEGATION_LINK_OFFER = Object.freeze([
+  { name: 'v', type: 'u8' },
+  { name: 'pubkey', type: 'string' },
+  { name: 'origin', type: 'string' },
+  { name: 'label', type: 'string' },
+  { name: 'network', type: 'string' },
+  { name: 'commitment', type: 'bytes32' },
+  { name: 'issuedAt', type: 'u64' },
+  { name: 'expiresAt', type: 'u64' }
+]);
+/**
+ * `offer` is the sha256 of the offer frame; `pubkey` (compressed, as in the offer) lets the other side grant to it.
+ * @private
+ */
+const SCHEMA_DELEGATION_LINK_ANSWER = Object.freeze([
+  { name: 'v', type: 'u8' },
+  { name: 'pubkey', type: 'string' },
+  { name: 'offer', type: 'bytes32' },
+  { name: 'nonce', type: 'bytes32' },
+  { name: 'label', type: 'string' },
+  { name: 'issuedAt', type: 'u64' },
+  { name: 'expiresAt', type: 'u64' }
+]);
+/**
+ * `answer` is the sha256 of the answer frame; `nonce` opens the offer's commitment.
+ * @private
+ */
+const SCHEMA_DELEGATION_LINK_REVEAL = Object.freeze([
+  { name: 'v', type: 'u8' },
+  { name: 'answer', type: 'bytes32' },
+  { name: 'nonce', type: 'bytes32' },
+  { name: 'issuedAt', type: 'u64' },
+  { name: 'expiresAt', type: 'u64' }
+]);
+/**
+ * Lets `grantee` ask the author to sign. Comma lists for `scopes`,
+ * `origins`, `networks`, `peers` (empty: no peer sign-ins); `link` is the reveal hash hex (or empty);
+ * `cosigner` / `cosignerProof` disclose the author's BIP87 key.
+ * @private
+ */
+const SCHEMA_DELEGATION_GRANT = Object.freeze([
+  { name: 'v', type: 'u8' },
+  { name: 'pubkey', type: 'string' },
+  { name: 'grantee', type: 'string' },
+  { name: 'link', type: 'string' },
+  { name: 'scopes', type: 'string' },
+  { name: 'origins', type: 'string' },
+  { name: 'networks', type: 'string' },
+  { name: 'cosigner', type: 'string' },
+  { name: 'cosignerProof', type: 'string' },
+  { name: 'extensionOrigin', type: 'string' },
+  { name: 'label', type: 'string' },
+  { name: 'issuedAt', type: 'u64' },
+  { name: 'peers', type: 'string' }
+]);
+/**
+ * `grant` is the sha256 of the grant frame being withdrawn.
+ * @private
+ */
+const SCHEMA_DELEGATION_REVOKE = Object.freeze([
+  { name: 'v', type: 'u8' },
+  { name: 'grant', type: 'bytes32' },
+  { name: 'issuedAt', type: 'u64' }
+]);
+/**
+ * Ask `target` to sign the embedded `request` frame under its grant
+ * `grant` (sha256 of the grant frame). `origin` / `disclose` apply to
+ * Passport challenges; `sessionKey` and `clientNonce` (the one its requester
+ * sent the peer) apply to peer sign-ins and are empty otherwise.
+ * @private
+ */
+const SCHEMA_DELEGATION_REQUEST = Object.freeze([
+  { name: 'v', type: 'u8' },
+  { name: 'pubkey', type: 'string' },
+  { name: 'target', type: 'string' },
+  { name: 'grant', type: 'bytes32' },
+  { name: 'nonce', type: 'bytes32' },
+  { name: 'request', type: 'message' },
+  { name: 'origin', type: 'string' },
+  { name: 'account', type: 'u32' },
+  { name: 'disclose', type: 'string' },
+  { name: 'purpose', type: 'string' },
+  { name: 'issuedAt', type: 'u64' },
+  { name: 'expiresAt', type: 'u64' },
+  { name: 'sessionKey', type: 'string' },
+  { name: 'clientNonce', type: 'string' }
+]);
+/**
+ * Either `answer` (a frame) or `refusal` (text) is set; `rule` names the rule that decided.
+ * @private
+ */
+const SCHEMA_DELEGATION_RESULT = Object.freeze([
+  { name: 'v', type: 'u8' },
+  { name: 'request', type: 'bytes32' },
+  { name: 'answer', type: 'message' },
+  { name: 'refusal', type: 'string' },
+  { name: 'rule', type: 'string' },
+  { name: 'issuedAt', type: 'u64' }
+]);
+/**
+ * A mailbox read, signed by the key whose mail it is.
+ * @private
+ */
+const SCHEMA_DELEGATION_MAILBOX_FETCH = Object.freeze([
+  { name: 'v', type: 'u8' },
+  { name: 'pubkey', type: 'string' },
+  { name: 'since', type: 'u64' },
+  { name: 'nonce', type: 'bytes32' },
+  { name: 'issuedAt', type: 'u64' },
+  { name: 'expiresAt', type: 'u64' }
+]);
+
+/**
+ * Field type for each value kind of a keyed layout.
+ * @private
+ */
+const KEYED_FIELD_TYPES = Object.freeze({
+  string: 'string',
+  u8: 'u8',
+  u32: 'u32',
+  u64: 'u64',
+  bool: 'u8',
+  // Length-prefixed, so an absent hash costs 4 bytes rather than 32.
+  hex32: 'bytes',
+  // Lowercase even-length hex of any size (raw blocks, transactions).
+  hex: 'bytes',
+  base64: 'bytes',
+  json: 'string'
+});
+
+/**
+ * Set in `present` when the keys were read under `object` of a
+ * `{ type, actor, object, … }` envelope (Hub-style senders).
+ * @private
+ */
+const KEYED_ENVELOPE_FLAG = 0x80000000;
+
+/**
+ * Field schema of a keyed layout: `present` (bit i set when key i was
+ * written, so 0, '' and false round-trip), one field per key, then `extra`
+ * (JSON of every key the layout does not name, or whose value is not of the
+ * declared kind). A body any JSON sender writes therefore maps to fields and
+ * back without loss. Append keys only; at most 31.
+ * @private
+ * @param {{ keys: Array<{ path: string, field: string, kind: string }> }} layout
+ * @returns {ReadonlyArray<{ name: string, type: string }>}
+ */
+function keyedSchema (layout) {
+  return Object.freeze([{ name: 'present', type: 'u32' }]
+    .concat(layout.keys.map((key) => ({ name: key.field, type: KEYED_FIELD_TYPES[key.kind] })))
+    .concat([{ name: 'extra', type: 'string' }]));
+}
+
+/**
+ * Session key-exchange claim (`Peer#_buildSessionKeyExchangeClaim`).
+ * @private
+ */
+const SESSION_ACTOR_KEYS = [
+  { path: 'type', field: 'type', kind: 'string' },
+  { path: 'actor.id', field: 'actor', kind: 'string' },
+  { path: 'actor.pubkey', field: 'pubkey', kind: 'string' },
+  { path: 'actor.parentPubkey', field: 'parentPubkey', kind: 'string' },
+  { path: 'actor.parentXpub', field: 'parentXpub', kind: 'string' },
+  { path: 'actor.parentSignature', field: 'parentSignature', kind: 'string' }
+];
+
+/**
+ * Legacy JSON layouts of the session, inventory, and document
+ * opcodes. Paths are read under `object` when `envelope` is set and the body
+ * is an envelope.
+ * @private
+ */
+const KEYED_LAYOUTS = Object.freeze({
+  P2P_SESSION_OFFER: {
+    envelope: false,
+    keys: SESSION_ACTOR_KEYS.concat([
+      { path: 'object.challenge', field: 'challenge', kind: 'string' },
+      { path: 'object.maxFrameBytes', field: 'maxFrameBytes', kind: 'u32' }
+    ])
+  },
+  P2P_SESSION_OPEN: {
+    envelope: false,
+    keys: SESSION_ACTOR_KEYS.concat([
+      { path: 'object.initiator', field: 'initiator', kind: 'string' },
+      { path: 'object.counterparty', field: 'counterparty', kind: 'string' },
+      { path: 'object.solution', field: 'solution', kind: 'string' },
+      { path: 'object.maxFrameBytes', field: 'maxFrameBytes', kind: 'u32' }
+    ])
+  },
+  P2P_INVENTORY_REQUEST: {
+    envelope: true,
+    keys: [
+      { path: 'kind', field: 'kind', kind: 'string' },
+      { path: 'created', field: 'created', kind: 'u64' },
+      { path: 'offerBtc', field: 'offerBtc', kind: 'bool' },
+      { path: 'maxSats', field: 'maxSats', kind: 'u64' },
+      { path: 'buyerRefundPublicKey', field: 'buyerRefundPublicKey', kind: 'string' },
+      { path: 'blobHashHex', field: 'blobHash', kind: 'hex32' },
+      { path: 'merkleRootHex', field: 'merkleRoot', kind: 'hex32' },
+      { path: 'inventoryRelayTtl', field: 'inventoryRelayTtl', kind: 'u8' },
+      { path: 'htlcLocktimeBlocks', field: 'htlcLocktimeBlocks', kind: 'u32' },
+      { path: 'htlcAmountSats', field: 'htlcAmountSats', kind: 'u64' }
+    ]
+  },
+  // `items` stays JSON (offer rows nest proofs and leaves); pages are sized by its bytes.
+  P2P_INVENTORY_RESPONSE: {
+    envelope: true,
+    keys: [
+      { path: 'kind', field: 'kind', kind: 'string' },
+      { path: 'created', field: 'created', kind: 'u64' },
+      { path: 'inventoryId', field: 'inventoryId', kind: 'string' },
+      { path: 'page', field: 'page', kind: 'u32' },
+      { path: 'pages', field: 'pages', kind: 'u32' },
+      { path: 'items', field: 'items', kind: 'json' }
+    ]
+  },
+  // Senders write the same hash under `contentHash` and `contentHashHex`.
+  P2P_DOCUMENT_PUBLISH: {
+    envelope: true,
+    keys: [
+      { path: 'hash', field: 'hash', kind: 'string' },
+      { path: 'rate', field: 'rate', kind: 'u64' },
+      { path: 'contentHash', field: 'contentHash', kind: 'hex32' },
+      { path: 'contentHashHex', field: 'contentHashHex', kind: 'hex32' },
+      { path: 'binding', field: 'binding', kind: 'string' }
+    ]
+  },
+  // The payment binding hashes this frame unsigned, rebuilt from the decoded
+  // values (`functions/publishedDocumentEnvelope.js`), never the received bytes.
+  DOCUMENT_PUBLISH: {
+    envelope: false,
+    keys: [
+      { path: 'contentBase64', field: 'content', kind: 'base64' },
+      { path: 'id', field: 'id', kind: 'string' },
+      { path: 'mime', field: 'mime', kind: 'string' },
+      { path: 'name', field: 'name', kind: 'string' },
+      { path: 'revision', field: 'revision', kind: 'u32' },
+      { path: 'sha256', field: 'sha256', kind: 'string' },
+      { path: 'size', field: 'size', kind: 'u64' }
+    ]
+  },
+  DOCUMENT_REQUEST: {
+    envelope: false,
+    keys: [
+      { path: 'document', field: 'document', kind: 'string' },
+      { path: 'id', field: 'id', kind: 'string' },
+      { path: 'maxSats', field: 'maxSats', kind: 'u64' },
+      { path: 'relayHop', field: 'relayHop', kind: 'u8' },
+      { path: 'routeId', field: 'routeId', kind: 'string' },
+      { path: 'blobIndex', field: 'blobIndex', kind: 'u32' },
+      { path: 'batchEnd', field: 'batchEnd', kind: 'u32' },
+      { path: 'blobTotal', field: 'blobTotal', kind: 'u32' },
+      { path: 'quote', field: 'quote', kind: 'bool' },
+      { path: 'credit', field: 'credit', kind: 'bool' },
+      { path: 'creditRef', field: 'creditRef', kind: 'string' },
+      { path: 'contentHashHex', field: 'contentHash', kind: 'hex32' }
+    ]
+  },
+  // Chain-tip gossip (Hub `{ tip, height, network, at, supply }`) or a ZMQ raw block (`content`).
+  BITCOIN_BLOCK: {
+    envelope: false,
+    keys: [
+      { path: 'tip', field: 'tip', kind: 'hex32' },
+      { path: 'height', field: 'height', kind: 'u32' },
+      { path: 'network', field: 'network', kind: 'string' },
+      { path: 'at', field: 'at', kind: 'string' },
+      { path: 'hash', field: 'hash', kind: 'hex32' },
+      { path: 'blockHash', field: 'blockHash', kind: 'hex32' },
+      { path: 'content', field: 'content', kind: 'hex' }
+    ]
+  },
+  BITCOIN_BLOCK_HASH: {
+    envelope: false,
+    keys: [{ path: 'content', field: 'content', kind: 'hex32' }]
+  },
+  BITCOIN_TRANSACTION: {
+    envelope: false,
+    keys: [{ path: 'content', field: 'content', kind: 'hex' }]
+  },
+  BITCOIN_TRANSACTION_HASH: {
+    envelope: false,
+    keys: [{ path: 'content', field: 'content', kind: 'hex32' }]
+  },
+  // `messages` stays JSON (leaf hash + wire base64 per entry) so the Merkle
+  // check in `functions/contractProposal.js` reads the same values.
+  CONTRACT_PROPOSAL: {
+    envelope: false,
+    keys: [
+      { path: 'version', field: 'version', kind: 'u8' },
+      { path: 'contractId', field: 'contractId', kind: 'string' },
+      { path: 'chain.parentRoot', field: 'parentRoot', kind: 'hex32' },
+      { path: 'chain.merkleRoot', field: 'merkleRoot', kind: 'hex32' },
+      { path: 'chain.leafHashes', field: 'leafHashes', kind: 'json' },
+      { path: 'statePatch', field: 'statePatch', kind: 'json' },
+      { path: 'messages', field: 'messages', kind: 'json' },
+      { path: 'psbt.proposalBase64', field: 'psbt', kind: 'base64' }
+    ]
+  },
+  // Hub resync (`{ v, reason, requester, at }`) or CLI (`{ tip }`).
+  P2P_CHAIN_SYNC_REQUEST: {
+    envelope: true,
+    keys: [
+      { path: 'v', field: 'v', kind: 'u8' },
+      { path: 'reason', field: 'reason', kind: 'string' },
+      { path: 'requester', field: 'requester', kind: 'string' },
+      { path: 'at', field: 'at', kind: 'string' },
+      { path: 'tip', field: 'tip', kind: 'string' }
+    ]
+  },
+  // One document blob (`Document#fileSendObjects`). `body` is the blob's raw
+  // bytes (base64 in the legacy object), so a frame carries ~25% more content.
+  P2P_FILE_SEND: {
+    envelope: true,
+    keys: [
+      { path: 'name', field: 'name', kind: 'string' },
+      { path: 'body', field: 'body', kind: 'base64' },
+      { path: 'blobIndex', field: 'blobIndex', kind: 'u32' },
+      { path: 'blobTotal', field: 'blobTotal', kind: 'u32' },
+      { path: 'blobHashHex', field: 'blobHash', kind: 'hex32' },
+      { path: 'merkleRootHex', field: 'merkleRoot', kind: 'hex32' },
+      { path: 'chunkBytes', field: 'chunkBytes', kind: 'u32' },
+      { path: 'contentSha256', field: 'contentSha256', kind: 'hex32' },
+      { path: 'sealed', field: 'sealed', kind: 'bool' },
+      { path: 'perBlob', field: 'perBlob', kind: 'bool' },
+      { path: 'paymentHashHex', field: 'paymentHash', kind: 'hex32' },
+      { path: 'iv', field: 'iv', kind: 'string' },
+      { path: 'scheme', field: 'scheme', kind: 'string' },
+      { path: 'routeId', field: 'routeId', kind: 'string' },
+      { path: 'relayedBy', field: 'relayedBy', kind: 'string' },
+      { path: 'deliveryFabricId', field: 'deliveryFabricId', kind: 'string' },
+      { path: 'fileRelayTtl', field: 'fileRelayTtl', kind: 'u8' },
+      { path: 'proof', field: 'proof', kind: 'json' }
+    ]
+  },
+  // `{ type: 'DocumentContentKeyReveal', object }` (functions/documentSealedExchange).
+  DOCUMENT_KEY_REVEAL: {
+    envelope: true,
+    keys: [
+      { path: 'documentId', field: 'documentId', kind: 'string' },
+      { path: 'keyHex', field: 'key', kind: 'hex32' },
+      { path: 'paymentHashHex', field: 'paymentHash', kind: 'hex32' },
+      { path: 'iv', field: 'iv', kind: 'string' },
+      { path: 'scheme', field: 'scheme', kind: 'string' },
+      { path: 'plaintextSha256', field: 'plaintextSha256', kind: 'hex32' },
+      { path: 'settlementId', field: 'settlementId', kind: 'string' },
+      { path: 'blobIndex', field: 'blobIndex', kind: 'u32' },
+      { path: 'routeId', field: 'routeId', kind: 'string' }
+    ]
+  },
+  // `{ type: 'DocumentBlobQuote', object: quote }` (`createBlobQuote`).
+  DOCUMENT_BLOB_QUOTE: {
+    envelope: true,
+    keys: [
+      { path: 'documentId', field: 'documentId', kind: 'string' },
+      { path: 'merkleRootHex', field: 'merkleRoot', kind: 'hex32' },
+      { path: 'blobIndex', field: 'blobIndex', kind: 'u32' },
+      { path: 'blobHashHex', field: 'blobHash', kind: 'hex32' },
+      { path: 'keyHashHex', field: 'keyHash', kind: 'hex32' },
+      { path: 'paymentHashHex', field: 'paymentHash', kind: 'hex32' },
+      { path: 'wrappedKeyHex', field: 'wrappedKey', kind: 'hex32' },
+      { path: 'amountSats', field: 'amountSats', kind: 'u64' },
+      { path: 'expiresAt', field: 'expiresAt', kind: 'u64' },
+      { path: 'routeId', field: 'routeId', kind: 'string' }
+    ]
+  },
+  // `{ type: 'DocumentBlobBatch', object: batch }` (`createBlobBatch`); `blobs` holds the key wraps.
+  DOCUMENT_BLOB_BATCH: {
+    envelope: true,
+    keys: [
+      { path: 'documentId', field: 'documentId', kind: 'string' },
+      { path: 'merkleRootHex', field: 'merkleRoot', kind: 'hex32' },
+      { path: 'start', field: 'start', kind: 'u32' },
+      { path: 'end', field: 'end', kind: 'u32' },
+      { path: 'paymentHashHex', field: 'paymentHash', kind: 'hex32' },
+      { path: 'amountSats', field: 'amountSats', kind: 'u64' },
+      { path: 'expiresAt', field: 'expiresAt', kind: 'u64' },
+      { path: 'blobs', field: 'blobs', kind: 'json' },
+      { path: 'routeId', field: 'routeId', kind: 'string' }
+    ]
+  }
+});
+
+/**
+ * Session handshake offer: the key-exchange claim plus `challenge`.
+ * @private
+ */
+const SCHEMA_P2P_SESSION_OFFER = keyedSchema(KEYED_LAYOUTS.P2P_SESSION_OFFER);
+/**
+ * Session handshake answer: the claim plus the solved `challenge`.
+ * @private
+ */
+const SCHEMA_P2P_SESSION_OPEN = keyedSchema(KEYED_LAYOUTS.P2P_SESSION_OPEN);
+/**
+ * Document (`kind`) or L1 offer (`offerBtc`) inventory query.
+ * @private
+ */
+const SCHEMA_P2P_INVENTORY_REQUEST = keyedSchema(KEYED_LAYOUTS.P2P_INVENTORY_REQUEST);
+/**
+ * One page of an inventory reply.
+ * @private
+ */
+const SCHEMA_P2P_INVENTORY_RESPONSE = keyedSchema(KEYED_LAYOUTS.P2P_INVENTORY_RESPONSE);
+/**
+ * A seller's price for one document.
+ * @private
+ */
+const SCHEMA_P2P_DOCUMENT_PUBLISH = keyedSchema(KEYED_LAYOUTS.P2P_DOCUMENT_PUBLISH);
+/**
+ * A published document; `content` is the raw bytes of `contentBase64`.
+ * @private
+ */
+const SCHEMA_DOCUMENT_PUBLISH = keyedSchema(KEYED_LAYOUTS.DOCUMENT_PUBLISH);
+/**
+ * A request for a document or some of its blobs.
+ * @private
+ */
+const SCHEMA_DOCUMENT_REQUEST = keyedSchema(KEYED_LAYOUTS.DOCUMENT_REQUEST);
+/**
+ * Bitcoin chain tip or raw block.
+ * @private
+ */
+const SCHEMA_BITCOIN_BLOCK = keyedSchema(KEYED_LAYOUTS.BITCOIN_BLOCK);
+/**
+ * Bitcoin block hash.
+ * @private
+ */
+const SCHEMA_BITCOIN_BLOCK_HASH = keyedSchema(KEYED_LAYOUTS.BITCOIN_BLOCK_HASH);
+/**
+ * Raw Bitcoin transaction.
+ * @private
+ */
+const SCHEMA_BITCOIN_TRANSACTION = keyedSchema(KEYED_LAYOUTS.BITCOIN_TRANSACTION);
+/**
+ * Bitcoin transaction id.
+ * @private
+ */
+const SCHEMA_BITCOIN_TRANSACTION_HASH = keyedSchema(KEYED_LAYOUTS.BITCOIN_TRANSACTION_HASH);
+/**
+ * Batched messages + Merkle root + state patch (+ optional PSBT).
+ * @private
+ */
+const SCHEMA_CONTRACT_PROPOSAL = keyedSchema(KEYED_LAYOUTS.CONTRACT_PROPOSAL);
+/** @private Ask a peer to replay its catalog and chain log. */
+const SCHEMA_P2P_CHAIN_SYNC_REQUEST = keyedSchema(KEYED_LAYOUTS.P2P_CHAIN_SYNC_REQUEST);
+/** @private One document blob, raw bytes. */
+const SCHEMA_P2P_FILE_SEND = keyedSchema(KEYED_LAYOUTS.P2P_FILE_SEND);
+/** @private Sealed document content-key reveal. */
+const SCHEMA_DOCUMENT_KEY_REVEAL = keyedSchema(KEYED_LAYOUTS.DOCUMENT_KEY_REVEAL);
+/** @private Seller's quote for one sealed blob. */
+const SCHEMA_DOCUMENT_BLOB_QUOTE = keyedSchema(KEYED_LAYOUTS.DOCUMENT_BLOB_QUOTE);
+/** @private Seller's quote for a range of sealed blobs under one preimage. */
+const SCHEMA_DOCUMENT_BLOB_BATCH = keyedSchema(KEYED_LAYOUTS.DOCUMENT_BLOB_BATCH);
 
 /**
  * Parse an inbound AMP body: prefer JSON (legacy), else registered field schema.
@@ -1685,6 +2337,7 @@ function tryParseMessageBody (message) {
   registerBodySchema(P2P_PONG, SCHEMA_P2P_PING);
   registerBodySchema('P2P_PONG', SCHEMA_P2P_PING);
   registerBodySchema('Pong', SCHEMA_P2P_PING);
+  // Name-only: a run commitment layout for `encodeBody`, not a wire type.
   registerBodySchema('FabricProgramRun', SCHEMA_PROGRAM_RUN);
   registerBodySchema(P2P_CONTRACT_PUBLISH, SCHEMA_CONTRACT_PUBLISH);
   registerBodySchema('P2P_CONTRACT_PUBLISH', SCHEMA_CONTRACT_PUBLISH);
@@ -1703,6 +2356,12 @@ function tryParseMessageBody (message) {
   registerBodySchema(P2P_PEER_ANNOUNCE, SCHEMA_P2P_PEER_ANNOUNCE);
   registerBodySchema('P2P_PEER_ANNOUNCE', SCHEMA_P2P_PEER_ANNOUNCE);
   registerBodySchema('PeerAnnounce', SCHEMA_P2P_PEER_ANNOUNCE);
+  registerBodySchema(P2P_DOCUMENT_BID, SCHEMA_P2P_DOCUMENT_BID);
+  registerBodySchema('P2P_DOCUMENT_BID', SCHEMA_P2P_DOCUMENT_BID);
+  registerBodySchema('DocumentBid', SCHEMA_P2P_DOCUMENT_BID);
+  registerBodySchema(P2P_DOCUMENT_ASK, SCHEMA_P2P_DOCUMENT_ASK);
+  registerBodySchema('P2P_DOCUMENT_ASK', SCHEMA_P2P_DOCUMENT_ASK);
+  registerBodySchema('DocumentAsk', SCHEMA_P2P_DOCUMENT_ASK);
   registerBodySchema(SIDECHAIN_STATE_PATCH_TYPE, SCHEMA_SIDECHAIN_STATE_PATCH);
   registerBodySchema('SIDECHAIN_STATE_PATCH', SCHEMA_SIDECHAIN_STATE_PATCH);
   registerBodySchema('SidechainStatePatch', SCHEMA_SIDECHAIN_STATE_PATCH);
@@ -1724,21 +2383,68 @@ function tryParseMessageBody (message) {
   registerBodySchema(P2P_MUSIG_ACCEPT_PROPOSAL, SCHEMA_P2P_MUSIG_SIGNATURE);
   registerBodySchema('P2P_MUSIG_ACCEPT_PROPOSAL', SCHEMA_P2P_MUSIG_SIGNATURE);
   registerBodySchema('MusigAcceptProposal', SCHEMA_P2P_MUSIG_SIGNATURE);
-  registerBodySchema(SITE_LOGIN_REQUEST, SCHEMA_SITE_LOGIN_REQUEST);
-  registerBodySchema('SITE_LOGIN_REQUEST', SCHEMA_SITE_LOGIN_REQUEST);
-  registerBodySchema('SiteLoginRequest', SCHEMA_SITE_LOGIN_REQUEST);
-  registerBodySchema(SITE_LOGIN_RESPONSE, SCHEMA_SITE_LOGIN_RESPONSE);
-  registerBodySchema('SITE_LOGIN_RESPONSE', SCHEMA_SITE_LOGIN_RESPONSE);
-  registerBodySchema('SiteLoginResponse', SCHEMA_SITE_LOGIN_RESPONSE);
-  registerBodySchema(FABRIC_SIGN_REQUEST, SCHEMA_FABRIC_SIGN_REQUEST);
-  registerBodySchema('FABRIC_SIGN_REQUEST', SCHEMA_FABRIC_SIGN_REQUEST);
-  registerBodySchema('FabricSignRequest', SCHEMA_FABRIC_SIGN_REQUEST);
+  registerBodySchema(PASSPORT_CHALLENGE, SCHEMA_PASSPORT_CHALLENGE);
+  registerBodySchema('PASSPORT_CHALLENGE', SCHEMA_PASSPORT_CHALLENGE);
+  registerBodySchema('PassportChallenge', SCHEMA_PASSPORT_CHALLENGE);
+  registerBodySchema(PASSPORT_ASSERTION, SCHEMA_PASSPORT_ASSERTION);
+  registerBodySchema('PASSPORT_ASSERTION', SCHEMA_PASSPORT_ASSERTION);
+  registerBodySchema('PassportAssertion', SCHEMA_PASSPORT_ASSERTION);
+  const passportPeer = [
+    [PASSPORT_CONNECT, 'PASSPORT_CONNECT', 'PassportConnect', SCHEMA_PASSPORT_CONNECT],
+    [PASSPORT_SESSION, 'PASSPORT_SESSION', 'PassportSession', SCHEMA_PASSPORT_SESSION],
+    [PASSPORT_RESUME, 'PASSPORT_RESUME', 'PassportResume', SCHEMA_PASSPORT_RESUME],
+    [PASSPORT_REFUSED, 'PASSPORT_REFUSED', 'PassportRefused', SCHEMA_PASSPORT_REFUSED]
+  ];
+  for (const [code, name, alias, schema] of passportPeer) {
+    registerBodySchema(code, schema);
+    registerBodySchema(name, schema);
+    registerBodySchema(alias, schema);
+  }
+  const delegation = [
+    [DELEGATION_LINK_OFFER, 'DELEGATION_LINK_OFFER', 'DelegationLinkOffer', SCHEMA_DELEGATION_LINK_OFFER],
+    [DELEGATION_LINK_ANSWER, 'DELEGATION_LINK_ANSWER', 'DelegationLinkAnswer', SCHEMA_DELEGATION_LINK_ANSWER],
+    [DELEGATION_LINK_REVEAL, 'DELEGATION_LINK_REVEAL', 'DelegationLinkReveal', SCHEMA_DELEGATION_LINK_REVEAL],
+    [DELEGATION_GRANT, 'DELEGATION_GRANT', 'DelegationGrant', SCHEMA_DELEGATION_GRANT],
+    [DELEGATION_REVOKE, 'DELEGATION_REVOKE', 'DelegationRevoke', SCHEMA_DELEGATION_REVOKE],
+    [DELEGATION_REQUEST, 'DELEGATION_REQUEST', 'DelegationRequest', SCHEMA_DELEGATION_REQUEST],
+    [DELEGATION_RESULT, 'DELEGATION_RESULT', 'DelegationResult', SCHEMA_DELEGATION_RESULT],
+    [DELEGATION_MAILBOX_FETCH, 'DELEGATION_MAILBOX_FETCH', 'DelegationMailboxFetch', SCHEMA_DELEGATION_MAILBOX_FETCH]
+  ];
+  for (const [code, name, alias, schema] of delegation) {
+    registerBodySchema(code, schema);
+    registerBodySchema(name, schema);
+    registerBodySchema(alias, schema);
+  }
+  const keyed = [
+    [P2P_SESSION_OFFER, 'P2P_SESSION_OFFER', 'SessionOffer', SCHEMA_P2P_SESSION_OFFER],
+    [P2P_SESSION_OPEN, 'P2P_SESSION_OPEN', 'SessionOpen', SCHEMA_P2P_SESSION_OPEN],
+    [P2P_INVENTORY_REQUEST, 'P2P_INVENTORY_REQUEST', 'InventoryRequest', SCHEMA_P2P_INVENTORY_REQUEST],
+    [P2P_INVENTORY_RESPONSE, 'P2P_INVENTORY_RESPONSE', 'InventoryResponse', SCHEMA_P2P_INVENTORY_RESPONSE],
+    [P2P_DOCUMENT_PUBLISH, 'P2P_DOCUMENT_PUBLISH', 'DocumentPricingPublish', SCHEMA_P2P_DOCUMENT_PUBLISH],
+    [DOCUMENT_PUBLISH_TYPE, 'DOCUMENT_PUBLISH', 'DocumentPublish', SCHEMA_DOCUMENT_PUBLISH],
+    [DOCUMENT_REQUEST_TYPE, 'DOCUMENT_REQUEST', 'DocumentRequest', SCHEMA_DOCUMENT_REQUEST],
+    [BITCOIN_BLOCK_TYPE, 'BITCOIN_BLOCK', 'BitcoinBlock', SCHEMA_BITCOIN_BLOCK],
+    [BITCOIN_BLOCK_HASH_TYPE, 'BITCOIN_BLOCK_HASH', 'BitcoinBlockHash', SCHEMA_BITCOIN_BLOCK_HASH],
+    [BITCOIN_TRANSACTION_TYPE, 'BITCOIN_TRANSACTION', 'BitcoinTransaction', SCHEMA_BITCOIN_TRANSACTION],
+    [BITCOIN_TRANSACTION_HASH_TYPE, 'BITCOIN_TRANSACTION_HASH', 'BitcoinTransactionHash', SCHEMA_BITCOIN_TRANSACTION_HASH],
+    [CONTRACT_PROPOSAL_TYPE, 'CONTRACT_PROPOSAL', 'ContractProposal', SCHEMA_CONTRACT_PROPOSAL],
+    [P2P_CHAIN_SYNC_REQUEST, 'P2P_CHAIN_SYNC_REQUEST', 'ChainSyncRequest', SCHEMA_P2P_CHAIN_SYNC_REQUEST],
+    [P2P_FILE_SEND, 'P2P_FILE_SEND', 'FileSend', SCHEMA_P2P_FILE_SEND],
+    [DOCUMENT_KEY_REVEAL_TYPE, 'DOCUMENT_KEY_REVEAL', 'DocumentContentKeyReveal', SCHEMA_DOCUMENT_KEY_REVEAL],
+    [DOCUMENT_BLOB_QUOTE_TYPE, 'DOCUMENT_BLOB_QUOTE', 'DocumentBlobQuote', SCHEMA_DOCUMENT_BLOB_QUOTE],
+    [DOCUMENT_BLOB_BATCH_TYPE, 'DOCUMENT_BLOB_BATCH', 'DocumentBlobBatch', SCHEMA_DOCUMENT_BLOB_BATCH]
+  ];
+  for (const [code, name, alias, schema] of keyed) {
+    registerBodySchema(code, schema);
+    registerBodySchema(name, schema);
+    registerBodySchema(alias, schema);
+  }
 })();
 
 // Legacy JSON bodies <-> typed field bodies, for the protocol opcodes whose
 // field schemas are registered above. Senders use `Message.fromLegacyBody`;
 // receivers use `Message.tryParseLegacyBody` so handlers keep seeing the JSON
-// shape whichever encoding the peer sent (docs/MESSAGE_BODY_MIGRATION.md).
+// shape whichever encoding the peer sent (docs/MESSAGE_BODY.md, Migration).
 /** @private */
 const SIDECHAIN_PATCH_KIND = 'SidechainStatePatch';
 /** @private */
@@ -1747,6 +2453,29 @@ const ZERO_DIGEST_HEX = '0'.repeat(64);
 const MAX_UINT32 = (2 ** 32) - 1;
 /** @private */
 const MAX_PORT = 65535;
+
+/**
+ * Registered opcodes nothing sends or handles (docs/MESSAGE_BODY.md, Migration
+ * Phase 4). They still decode; Peer counts and warns when one arrives, and a
+ * later protocol version removes them. `P2P_BASE_MESSAGE` and
+ * `P2P_CHAIN_SYNC_REQUEST` are still in use and are not listed.
+ */
+const DEPRECATED_WIRE_TYPES = Object.freeze([
+  'P2P_GENERIC',
+  'P2P_STATE_REQUEST',
+  'P2P_TRANSACTION',
+  'LOG_MESSAGE',
+  'GENERIC_LIST',
+  'BLOCK_CANDIDATE',
+  'P2P_IDENT_REQUEST',
+  'P2P_IDENT_RESPONSE',
+  'P2P_STATE_ROOT',
+  'P2P_STATE_CHANGE',
+  'P2P_CALL',
+  'PEER_CANDIDATE',
+  'SESSION_START',
+  'P2P_START_CHAIN'
+]);
 
 /**
  * Wire names whose legacy JSON bodies map onto field schemas.
@@ -1760,7 +2489,24 @@ const LEGACY_BODY_TYPES = Object.freeze([
   'P2P_PEERING_OFFER',
   'CONTRACT_PUBLISH',
   'CONTRACT_MESSAGE',
-  'SIDECHAIN_STATE_PATCH'
+  'SIDECHAIN_STATE_PATCH',
+  'P2P_SESSION_OFFER',
+  'P2P_SESSION_OPEN',
+  'P2P_INVENTORY_REQUEST',
+  'P2P_INVENTORY_RESPONSE',
+  'P2P_DOCUMENT_PUBLISH',
+  'DOCUMENT_PUBLISH',
+  'DOCUMENT_REQUEST',
+  'BITCOIN_BLOCK',
+  'BITCOIN_BLOCK_HASH',
+  'BITCOIN_TRANSACTION',
+  'BITCOIN_TRANSACTION_HASH',
+  'CONTRACT_PROPOSAL',
+  'P2P_CHAIN_SYNC_REQUEST',
+  'P2P_FILE_SEND',
+  'DOCUMENT_KEY_REVEAL',
+  'DOCUMENT_BLOB_QUOTE',
+  'DOCUMENT_BLOB_BATCH'
 ]);
 
 /**
@@ -1850,6 +2596,75 @@ function peeringObject (body) {
  * @param {string[]} [zeroIsAbsent]
  * @returns {object}
  */
+const CONTRACT_FILTER_KEYS = Object.freeze(['recipient', 'ref', 'slot']);
+const CONTRACT_FILTER_MAX = 256;
+
+/**
+ * Filter string from the contract body the sender already holds. Top-level
+ * wins; otherwise the same key on `object`. This does not parse a JSON payload.
+ * @private
+ * @param {object} body
+ * @param {string} key
+ * @returns {string}
+ */
+function filterSource (body, key) {
+  if (typeof body[key] === 'string') return body[key];
+  const obj = body.object;
+  if (isPlainObject(obj) && typeof obj[key] === 'string') return obj[key];
+  return '';
+}
+
+/**
+ * @private
+ * @param {*} value
+ * @param {string} key
+ * @returns {string}
+ */
+function contractFilterString (value, key) {
+  if (value == null || value === '') return '';
+  if (typeof value !== 'string') return '';
+  const s = value.trim();
+  if (s.length > CONTRACT_FILTER_MAX) {
+    throw new TypeError(`CONTRACT_MESSAGE ${key} exceeds ${CONTRACT_FILTER_MAX} characters`);
+  }
+  return s;
+}
+
+/**
+ * `recipient`, `ref`, and `slot` from a CONTRACT_MESSAGE field body.
+ * Does not read the JSON payload.
+ * @param {Message|object|null} messageOrFields
+ * @returns {{ recipient: string, ref: string, slot: string }}
+ */
+function contractMessageIndex (messageOrFields) {
+  const fields = messageOrFields && typeof messageOrFields.toFields === 'function'
+    ? messageOrFields.toFields()
+    : messageOrFields;
+  const src = isPlainObject(fields) ? fields : {};
+  const out = { recipient: '', ref: '', slot: '' };
+  for (const key of CONTRACT_FILTER_KEYS) {
+    out[key] = typeof src[key] === 'string' ? src[key] : '';
+  }
+  return out;
+}
+
+/**
+ * True when every non-empty query field equals the frame's index field.
+ * An empty query matches. A frame with no index does not match a query.
+ * @param {Message|object|null} messageOrFields
+ * @param {object} [query]
+ * @returns {boolean}
+ */
+function contractMessageMatches (messageOrFields, query) {
+  const index = contractMessageIndex(messageOrFields);
+  const q = isPlainObject(query) ? query : {};
+  for (const key of CONTRACT_FILTER_KEYS) {
+    if (q[key] == null || q[key] === '') continue;
+    if (index[key] !== String(q[key])) return false;
+  }
+  return true;
+}
+
 function compactBody (obj, zeroIsAbsent = []) {
   const out = {};
   for (const [k, v] of Object.entries(obj)) {
@@ -1889,6 +2704,192 @@ function parseJsonOrUndefined (text) {
 }
 
 /**
+ * @private
+ * @param {object} obj
+ * @param {string} path Dotted path.
+ * @returns {*}
+ */
+function readPath (obj, path) {
+  let node = obj;
+  for (const part of path.split('.')) {
+    if (!isPlainObject(node) || !Object.prototype.hasOwnProperty.call(node, part)) return undefined;
+    node = node[part];
+  }
+  return node;
+}
+
+/**
+ * Delete `path`, then any parent the deletion left empty.
+ * @private
+ * @param {object} obj
+ * @param {string} path
+ */
+function deletePath (obj, path) {
+  const parts = path.split('.');
+  const parents = [obj];
+  for (let i = 0; i < parts.length - 1; i++) parents.push(parents[i][parts[i]]);
+  for (let i = parts.length - 1; i >= 0; i--) {
+    delete parents[i][parts[i]];
+    if (i > 0 && Object.keys(parents[i]).length) break;
+  }
+}
+
+/**
+ * @private
+ * @param {object} obj
+ * @param {string} path
+ * @param {*} value
+ * @returns {boolean} false when a parent on the path is not an object
+ */
+function writePath (obj, path, value) {
+  const parts = path.split('.');
+  let node = obj;
+  for (const part of parts.slice(0, -1)) {
+    if (node[part] === undefined) node[part] = {};
+    if (!isPlainObject(node[part])) return false;
+    node = node[part];
+  }
+  node[parts[parts.length - 1]] = value;
+  return true;
+}
+
+/**
+ * @private
+ * @param {string} kind
+ * @param {*} value A JSON value.
+ * @returns {boolean} whether the field of `kind` holds `value` exactly
+ */
+function keyedValueFits (kind, value) {
+  switch (kind) {
+    case 'string':
+      return typeof value === 'string';
+    case 'u8':
+      return Number.isInteger(value) && value >= 0 && value <= 0xff;
+    case 'u32':
+      return Number.isInteger(value) && value >= 0 && value <= MAX_UINT32;
+    case 'u64':
+      return Number.isSafeInteger(value) && value >= 0;
+    case 'bool':
+      return typeof value === 'boolean';
+    case 'hex32':
+      return typeof value === 'string' && /^[0-9a-f]{64}$/.test(value);
+    case 'hex':
+      return typeof value === 'string' && /^(?:[0-9a-f]{2})*$/.test(value);
+    case 'base64':
+      return typeof value === 'string' && Buffer.from(value, 'base64').toString('base64') === value;
+    case 'json':
+      return value !== undefined;
+  }
+  /* istanbul ignore next */
+  return false;
+}
+
+/**
+ * @private
+ * @param {string} kind
+ * @param {*} value
+ * @returns {*} field value for `encodeBody`
+ */
+function keyedFieldValue (kind, value) {
+  switch (kind) {
+    case 'bool':
+      return value ? 1 : 0;
+    case 'hex32':
+    case 'hex':
+      return Buffer.from(value, 'hex');
+    case 'base64':
+      return Buffer.from(value, 'base64');
+    case 'json':
+      return JSON.stringify(value);
+    default:
+      return value;
+  }
+}
+
+/**
+ * @private
+ * @param {string} kind
+ * @param {*} field Decoded field.
+ * @returns {*} the JSON value, or `undefined` when the field is unusable
+ */
+function keyedJsonValue (kind, field) {
+  switch (kind) {
+    case 'string':
+      return typeof field === 'string' ? field : undefined;
+    case 'u8':
+    case 'u32':
+    case 'u64': {
+      const n = Number(field);
+      return Number.isSafeInteger(n) ? n : undefined;
+    }
+    case 'bool':
+      return field === 1 ? true : (field === 0 ? false : undefined);
+    case 'hex32':
+      return Buffer.isBuffer(field) && field.length === 32 ? field.toString('hex') : undefined;
+    case 'hex':
+      return Buffer.isBuffer(field) ? field.toString('hex') : undefined;
+    case 'base64':
+      return Buffer.isBuffer(field) ? field.toString('base64') : undefined;
+    case 'json':
+      return parseJsonOrUndefined(field);
+  }
+  /* istanbul ignore next */
+  return undefined;
+}
+
+/**
+ * Legacy JSON body → fields of a keyed layout. Works on the body as a JSON
+ * sender would write it, so nothing is lost: what a field can't hold exactly
+ * stays in `extra`.
+ * @private
+ * @param {string} name
+ * @param {object} body
+ * @returns {object}
+ */
+function encodeKeyedBody (name, body) {
+  if (!isPlainObject(body)) throw new TypeError(`${name} body must be an object`);
+  const layout = KEYED_LAYOUTS[name];
+  const rest = JSON.parse(JSON.stringify(body));
+  const envelope = layout.envelope && isPlainObject(rest.object);
+  const prefix = envelope ? 'object.' : '';
+  const fields = {};
+  let present = envelope ? KEYED_ENVELOPE_FLAG : 0;
+  layout.keys.forEach((key, bit) => {
+    const value = readPath(rest, prefix + key.path);
+    if (!keyedValueFits(key.kind, value)) return;
+    fields[key.field] = keyedFieldValue(key.kind, value);
+    present |= (1 << bit);
+    deletePath(rest, prefix + key.path);
+  });
+  fields.present = present >>> 0;
+  fields.extra = Object.keys(rest).length ? JSON.stringify(rest) : '';
+  return fields;
+}
+
+/**
+ * Fields of a keyed layout → legacy JSON body.
+ * @private
+ * @param {string} name
+ * @param {object} fields
+ * @returns {object|null}
+ */
+function decodeKeyedBody (name, fields) {
+  const layout = KEYED_LAYOUTS[name];
+  const out = fields.extra ? parseJsonOrUndefined(fields.extra) : {};
+  if (!isPlainObject(out)) return null;
+  const present = Number(fields.present) >>> 0;
+  const prefix = layout.envelope && (present & KEYED_ENVELOPE_FLAG) ? 'object.' : '';
+  for (let bit = 0; bit < layout.keys.length; bit++) {
+    if (!(present & (1 << bit))) continue;
+    const key = layout.keys[bit];
+    const value = keyedJsonValue(key.kind, fields[key.field]);
+    if (value === undefined) return null;
+    if (!writePath(out, prefix + key.path, value)) return null;
+  }
+  return out;
+}
+
+/**
  * Map a legacy JSON body to the typed field object for `type`.
  * @private
  * @param {string|number} type Wire name, friendly alias, or opcode.
@@ -1898,6 +2899,7 @@ function parseJsonOrUndefined (text) {
 function encodeLegacyBody (type, body) {
   const name = legacyWireName(type);
   if (!name) throw new TypeError(`encodeLegacyBody: no field mapping for ${type}`);
+  if (KEYED_LAYOUTS[name]) return encodeKeyedBody(name, body);
   const b = isPlainObject(body) ? body : {};
 
   switch (name) {
@@ -1941,7 +2943,13 @@ function encodeLegacyBody (type, body) {
       if (!contract) throw new TypeError('CONTRACT_MESSAGE body requires contract');
       const rest = Object.assign({}, b);
       delete rest.contract;
-      return { contract, payload: JSON.stringify(rest) };
+      return {
+        contract,
+        payload: JSON.stringify(rest),
+        recipient: contractFilterString(filterSource(b, 'recipient'), 'recipient'),
+        ref: contractFilterString(filterSource(b, 'ref'), 'ref'),
+        slot: contractFilterString(filterSource(b, 'slot'), 'slot')
+      };
     }
     case 'SIDECHAIN_STATE_PATCH': {
       if (!Array.isArray(b.patches) || !b.patches.length) {
@@ -1974,6 +2982,7 @@ function encodeLegacyBody (type, body) {
 function decodeLegacyBody (type, fields) {
   const name = legacyWireName(type);
   if (!name || !isPlainObject(fields)) return null;
+  if (KEYED_LAYOUTS[name]) return decodeKeyedBody(name, fields);
   const f = fields;
 
   switch (name) {
@@ -2102,11 +3111,25 @@ Message.setMessageParent = setMessageParent;
 Message.padDigits = padDigits;
 Message.verifyFrameAuthor = verifyFrameAuthor;
 Message.LEGACY_BODY_TYPES = LEGACY_BODY_TYPES;
+/**
+ * Whether `type` is a registered wire name, friendly alias, or opcode.
+ * @param {string|number} type
+ * @returns {boolean}
+ */
+Message.isRegisteredType = function isRegisteredType (type) {
+  if (typeof type === 'number') return Object.prototype.hasOwnProperty.call(CANONICAL_WIRE_TYPE_BY_OPCODE, type);
+  if (typeof type !== 'string' || !type) return false;
+  return Object.prototype.hasOwnProperty.call(CANONICAL_MESSAGE_TYPE_STRINGS, type) ||
+    Object.prototype.hasOwnProperty.call(LEGACY_MESSAGE_TYPE_ALIASES, type);
+};
+Message.DEPRECATED_WIRE_TYPES = DEPRECATED_WIRE_TYPES;
 Message.encodeLegacyBody = encodeLegacyBody;
 Message.decodeLegacyBody = decodeLegacyBody;
 Message.fromLegacyBody = fromLegacyBody;
 Message.tryParseLegacyBody = tryParseLegacyBody;
 Message.canonicalPeeringObject = canonicalPeeringObject;
+Message.contractMessageIndex = contractMessageIndex;
+Message.contractMessageMatches = contractMessageMatches;
 Message.registerBodySchema = registerBodySchema;
 Message.getBodySchema = getBodySchema;
 Message.encodeBody = encodeBody;
@@ -2123,9 +3146,27 @@ Message.SCHEMA_P2P_PEERING_OFFER = SCHEMA_P2P_PEERING_OFFER;
 Message.SCHEMA_P2P_PEER_ANNOUNCE = SCHEMA_P2P_PEER_ANNOUNCE;
 Message.SCHEMA_SIDECHAIN_STATE_PATCH = SCHEMA_SIDECHAIN_STATE_PATCH;
 Message.SCHEMA_P2P_MUSIG_START = SCHEMA_P2P_MUSIG_START;
-Message.SCHEMA_SITE_LOGIN_REQUEST = SCHEMA_SITE_LOGIN_REQUEST;
-Message.SCHEMA_SITE_LOGIN_RESPONSE = SCHEMA_SITE_LOGIN_RESPONSE;
-Message.SCHEMA_FABRIC_SIGN_REQUEST = SCHEMA_FABRIC_SIGN_REQUEST;
+Message.SCHEMA_PASSPORT_CHALLENGE = SCHEMA_PASSPORT_CHALLENGE;
+Message.SCHEMA_PASSPORT_ASSERTION = SCHEMA_PASSPORT_ASSERTION;
+Message.SCHEMA_PASSPORT_CONNECT = SCHEMA_PASSPORT_CONNECT;
+Message.SCHEMA_PASSPORT_SESSION = SCHEMA_PASSPORT_SESSION;
+Message.SCHEMA_PASSPORT_RESUME = SCHEMA_PASSPORT_RESUME;
+Message.SCHEMA_PASSPORT_REFUSED = SCHEMA_PASSPORT_REFUSED;
+Message.SCHEMA_DELEGATION_LINK_OFFER = SCHEMA_DELEGATION_LINK_OFFER;
+Message.SCHEMA_DELEGATION_LINK_ANSWER = SCHEMA_DELEGATION_LINK_ANSWER;
+Message.SCHEMA_DELEGATION_LINK_REVEAL = SCHEMA_DELEGATION_LINK_REVEAL;
+Message.SCHEMA_DELEGATION_GRANT = SCHEMA_DELEGATION_GRANT;
+Message.SCHEMA_DELEGATION_REVOKE = SCHEMA_DELEGATION_REVOKE;
+Message.SCHEMA_DELEGATION_REQUEST = SCHEMA_DELEGATION_REQUEST;
+Message.SCHEMA_DELEGATION_RESULT = SCHEMA_DELEGATION_RESULT;
+Message.SCHEMA_DELEGATION_MAILBOX_FETCH = SCHEMA_DELEGATION_MAILBOX_FETCH;
+Message.SCHEMA_P2P_SESSION_OFFER = SCHEMA_P2P_SESSION_OFFER;
+Message.SCHEMA_P2P_SESSION_OPEN = SCHEMA_P2P_SESSION_OPEN;
+Message.SCHEMA_P2P_INVENTORY_REQUEST = SCHEMA_P2P_INVENTORY_REQUEST;
+Message.SCHEMA_P2P_INVENTORY_RESPONSE = SCHEMA_P2P_INVENTORY_RESPONSE;
+Message.SCHEMA_P2P_DOCUMENT_PUBLISH = SCHEMA_P2P_DOCUMENT_PUBLISH;
+Message.SCHEMA_DOCUMENT_PUBLISH = SCHEMA_DOCUMENT_PUBLISH;
+Message.SCHEMA_DOCUMENT_REQUEST = SCHEMA_DOCUMENT_REQUEST;
 
 const fs = require('fs');
 const path = require('path');
@@ -2166,8 +3207,7 @@ function wireCatalogFamilyOf (name, code) {
     name.indexOf('P2P_SESSION_') === 0 ||
     name.indexOf('P2P_IDENT_') === 0 ||
     name.indexOf('P2P_MUSIG_') === 0 ||
-    name.indexOf('SITE_LOGIN_') === 0 ||
-    name === 'FABRIC_SIGN_REQUEST' ||
+    name.indexOf('PASSPORT_') === 0 ||
     name === 'P2P_INSTRUCTION'
   ) {
     return 'session';

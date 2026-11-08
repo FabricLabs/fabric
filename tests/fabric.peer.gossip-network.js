@@ -57,11 +57,11 @@ describe('@fabric/core Peer gossip / peering production network', function () {
   }
 
   function signGossip (key, object) {
-    return Message.fromVector(['P2P_PEER_GOSSIP', JSON.stringify(object)]).signWithKey(key);
+    return Message.fromLegacyBody('P2P_PEER_GOSSIP', object).signWithKey(key);
   }
 
   function signOffer (key, object) {
-    return Message.fromVector(['P2P_PEERING_OFFER', JSON.stringify(object)]).signWithKey(key);
+    return Message.fromLegacyBody('P2P_PEERING_OFFER', object).signWithKey(key);
   }
 
   describe('constants align with SECURITY.md defaults', function () {
@@ -113,7 +113,7 @@ describe('@fabric/core Peer gossip / peering production network', function () {
       peer._handleFabricMessage(wire, { name: origin }, null);
 
       const fwd = edges['127.0.0.1:8101'][0];
-      const parsed = JSON.parse(Message.fromBuffer(fwd).data.toString('utf8'));
+      const parsed = Message.tryParseLegacyBody(Message.fromBuffer(fwd)).value;
       assert.strictEqual(parsed.gossipHop, 4);
       assert.ok(wire.equals(fwd));
     });
@@ -450,6 +450,80 @@ describe('@fabric/core Peer gossip / peering production network', function () {
         assert.ok(outerBuf.equals(writes[0]));
         assert.ok(!writes.some((w) => Message.fromBuffer(w).type === 'P2P_PEER_GOSSIP'));
       }
+    });
+
+    it('P2P_RELAY never floods a Passport or delegation frame, even nested', function () {
+      const { peer, edges } = meshPeer(3);
+      const attacker = new Key();
+      const origin = '127.0.0.1:8100';
+      const passportish = Message.fromVector(['PASSPORT_CHALLENGE', 'x']);
+      const once = Message.fromVector(['P2P_RELAY', passportish.toBuffer()]).signWithKey(attacker);
+      const twice = Message.fromVector(['P2P_RELAY', once.toBuffer()]).signWithKey(attacker);
+      for (const outer of [once, twice]) peer._handleFabricMessage(outer.toBuffer(), { name: origin }, null);
+      for (const [addr, writes] of Object.entries(edges)) {
+        if (addr === origin) continue;
+        assert.ok(!writes.some((w) => Message.fromBuffer(w).type === 'P2P_RELAY'), `flooded to ${addr}`);
+      }
+    });
+
+    describe('P2P_RELAY floods only well-formed, signed, registered frames', function () {
+      const { HEADER_SIZE } = require('../constants');
+      const d = require('../types/delegation');
+      const author = new Key();
+      const origin = '127.0.0.1:8100';
+
+      function floods (innerBuffer, nested = false) {
+        const { peer, edges } = meshPeer(3);
+        const wrap = (buf) => Message.fromVector(['P2P_RELAY', buf]).signWithKey(author).toBuffer();
+        const outer = nested ? wrap(wrap(innerBuffer)) : wrap(innerBuffer);
+        peer.on('warning', () => {});
+        peer._handleFabricMessage(outer, { name: origin }, null);
+        return Object.entries(edges).some(([addr, writes]) => addr !== origin &&
+          writes.some((w) => Buffer.from(w).equals(outer)));
+      }
+
+      const chat = () => Message.fromVector(['P2P_CHAT_MESSAGE', 'o7']).signWithKey(author).toBuffer();
+
+      it('a signed, registered frame floods, direct or nested', function () {
+        assert.strictEqual(floods(chat()), true);
+        assert.strictEqual(floods(chat(), true), true);
+      });
+
+      it('the retired 0x56 opcode never floods', function () {
+        const retired = Message.fromVector(['P2P_CHAT_MESSAGE', 'rewind']);
+        retired.raw.type.writeUInt32BE(0x56);
+        retired.signWithKey(author);
+        assert.strictEqual(Message.isRegisteredType(0x56), false);
+        assert.strictEqual(floods(retired.toBuffer()), false);
+        assert.strictEqual(floods(retired.toBuffer(), true), false);
+      });
+
+      it('a truncated, padded, or body-tampered frame never floods', function () {
+        const good = chat();
+        assert.strictEqual(floods(good.subarray(0, good.length - 1)), false, 'truncated');
+        assert.strictEqual(floods(good.subarray(0, HEADER_SIZE - 1)), false, 'short header');
+        assert.strictEqual(floods(Buffer.concat([good, Buffer.from([0])])), false, 'padded');
+        const tampered = Buffer.from(good);
+        tampered[tampered.length - 1] ^= 1;
+        assert.strictEqual(floods(tampered), false, 'body hash mismatch');
+      });
+
+      it('an unsigned or badly signed frame never floods', function () {
+        assert.strictEqual(floods(Message.fromVector(['P2P_CHAT_MESSAGE', 'anon']).toBuffer()), false, 'unsigned');
+        const forged = Buffer.from(chat());
+        forged[HEADER_SIZE - 1] ^= 1;
+        assert.strictEqual(floods(forged), false, 'bad signature');
+        assert.strictEqual(floods(forged, true), false, 'bad signature, nested');
+      });
+
+      it('signed delegation frames never flood, direct or nested', function () {
+        const revoke = d.createRevoke({ grant: 'ab'.repeat(32), now: Date.now() }, author).message.toBuffer();
+        const grant = d.createGrant({ grantee: new Key().pubkey, scopes: ['message'], now: Date.now() }, author).message.toBuffer();
+        for (const frame of [revoke, grant]) {
+          assert.strictEqual(floods(frame), false);
+          assert.strictEqual(floods(frame, true), false);
+        }
+      });
     });
 
     it('foreign-signed P2P_RELAY peering offer does not enqueue or burn budget', function () {
