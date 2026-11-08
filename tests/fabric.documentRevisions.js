@@ -180,6 +180,41 @@ describe('@fabric/core functions/documentRevisions', function () {
     assert.strictEqual(revisions.verifyDocumentProvenance(wrongRevision).ok, false);
   });
 
+  it('passes a content-hash check only when the last revision commits to that hash', function () {
+    const c = makeContract();
+    const named = revisions.buildDocumentRevisionMessage({
+      contract: c.contract,
+      previous: c.publish,
+      document: { id: 'release-notes', name: 'notes.txt', mime: 'text/plain' },
+      revision: 1,
+      key: editor
+    });
+    const unbound = revisions.documentProvenance([c.publish, named].map((m) => m.toBuffer()), 'release-notes');
+    assert.strictEqual(revisions.verifyDocumentProvenance(unbound, { documentIdentifier: 'release-notes' }).ok, true);
+    const noHash = revisions.verifyDocumentProvenance(unbound, { documentIdentifier: 'release-notes', sha256: sha('anything') });
+    assert.strictEqual(noHash.ok, false);
+    assert.match(noHash.reason, /does not commit/);
+
+    const byIdentifier = revisions.buildDocumentRevisionMessage({
+      contract: c.contract,
+      previous: c.publish,
+      document: { id: sha('body'), name: 'notes.txt', mime: 'text/plain' },
+      revision: 1,
+      key: editor
+    });
+    const idOnly = revisions.documentProvenance([c.publish, byIdentifier].map((m) => m.toBuffer()), sha('body'));
+    assert.strictEqual(revisions.verifyDocumentProvenance(idOnly, { sha256: sha('body') }).ok, true);
+    assert.match(revisions.verifyDocumentProvenance(idOnly, { sha256: sha('other') }).reason, /does not match/);
+
+    const full = chain();
+    const provenance = revisions.documentProvenance([full.publish, full.r1, full.r2].map((m) => m.toBuffer()), sha('two'));
+    assert.strictEqual(revisions.verifyDocumentProvenance(provenance, { sha256: sha('two').toUpperCase() }).ok, true);
+    assert.match(revisions.verifyDocumentProvenance(provenance, { sha256: sha('one') }).reason, /does not match/);
+    const malformed = revisions.verifyDocumentProvenance(provenance, { sha256: 'not-a-digest' });
+    assert.strictEqual(malformed.ok, false);
+    assert.match(malformed.reason, /64-hex/);
+  });
+
   it('parses frames into publish and revision views', function () {
     const c = chain();
     const pub = revisions.parseDocumentContractFrame(c.publish.toBuffer());

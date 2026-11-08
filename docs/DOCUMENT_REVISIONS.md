@@ -84,5 +84,8 @@ k-of-n approval.
 It never includes edits made after that version, so selling an old version does
 not reveal later ones. `verifyDocumentProvenance(provenance, { documentIdentifier?,
 contractId?, sha256? })` checks it with no other data: one unbroken chain of
-editor-signed frames, ending at the claimed version. Holding a provenance grants
+editor-signed frames, ending at the claimed version. With `sha256`, that version
+must commit to the digest: its `sha256` field, or, when it has none, an identifier
+that is the digest. A revision that commits to no digest, or a malformed `sha256`,
+fails the check. Holding a provenance grants
 no edit rights; editors come only from the signed genesis.

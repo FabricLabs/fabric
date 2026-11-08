@@ -560,7 +560,7 @@ function documentProvenance (frames, documentIdentifier, opts = {}) {
  * @param {Object} [expect]
  * @param {string} [expect.documentIdentifier]
  * @param {string} [expect.contractId]
- * @param {string} [expect.sha256]
+ * @param {string} [expect.sha256] Content digest the last revision must commit to (its `sha256`, or a 64-hex identifier when it has none); refused when it doesn't.
  * @returns {{ ok: boolean, reason?: string, contractId?: string, documentIdentifier?: string, revision?: number, definition?: object, revisions?: object[] }}
  */
 function verifyDocumentProvenance (provenance, expect = {}) {
@@ -585,9 +585,13 @@ function verifyDocumentProvenance (provenance, expect = {}) {
   if (expect.documentIdentifier != null && expected !== head.documentIdentifier) {
     return { ok: false, reason: 'provenance is for another document' };
   }
-  const sha = hex64(expect.sha256);
-  if (sha && head.sha256 && sha !== head.sha256) {
-    return { ok: false, reason: 'sha256 does not match the revision' };
+  if (expect.sha256 != null && expect.sha256 !== '') {
+    const sha = hex64(expect.sha256);
+    if (!sha) return { ok: false, reason: 'expected sha256 is not a 64-hex digest' };
+    // A revision commits to content through `sha256`, or, without one, through an identifier that is that digest.
+    const committed = head.sha256 || hex64(head.documentIdentifier);
+    if (!committed) return { ok: false, reason: 'revision does not commit to a sha256' };
+    if (sha !== committed) return { ok: false, reason: 'sha256 does not match the revision' };
   }
   return {
     ok: true,
