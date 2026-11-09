@@ -41,6 +41,29 @@ function isArrayIndex (token) {
 }
 
 /**
+ * `pointer.set` that creates a missing parent as an object (an array only for
+ * an append, `-`). `pointer.set` makes an array for any all-digit token, so a
+ * numeric key such as a Discord snowflake would turn its parent into a sparse
+ * array that later writes are refused under.
+ * @private
+ */
+function setContent (root, path, value) {
+  const tokens = pointer.parse(path);
+  if (!tokens.length) throw new Error('Can not set the root object');
+  if (tokens.some((token) => UNSAFE_PATH_TOKENS.has(token))) throw new Error(`${path} names a reserved key`);
+  let node = root;
+  for (let i = 0; i < tokens.length - 1; i++) {
+    if (!Object.prototype.hasOwnProperty.call(node, tokens[i])) {
+      node[tokens[i]] = tokens[i + 1] === '-' ? [] : {};
+    }
+    node = node[tokens[i]];
+  }
+  const last = tokens[tokens.length - 1];
+  if (last === '-' && Array.isArray(node)) node.push(value);
+  else node[last] = value;
+}
+
+/**
  * The JSON `set` writes for `value`, or null when it writes the value as itself.
  * @private
  */
@@ -549,7 +572,7 @@ class Store extends Actor {
         const info = await this.getDataInfo(value);
         this._state.metadata[route.index] = info;
         this._state.indices[route.index] = route.pointer;
-        pointer.set(this._state.content, route.path, value);
+        setContent(this._state.content, route.path, value);
         return value;
       } catch (E) {
         if (strict && !isLevelNotFound(E)) throw E;
@@ -785,7 +808,7 @@ class Store extends Actor {
     this._state.indices[route.index] = route.pointer;
     this._state.metadata[route.index] = info;
 
-    pointer.set(this._state.content, route.path, value);
+    setContent(this._state.content, route.path, value);
 
     this.commit();
 
