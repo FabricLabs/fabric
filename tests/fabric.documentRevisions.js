@@ -247,6 +247,10 @@ describe('@fabric/core functions/documentRevisions', function () {
     const empty = revisions.verifyDocumentProvenance(signed(''), { sha256: sha('identifier') });
     assert.strictEqual(empty.ok, false, 'an empty signed sha256 does not fall back to the identifier');
     assert.match(empty.reason, /revision sha256/);
+
+    const asArray = revisions.verifyDocumentProvenance(signed([sha('content')]), { sha256: sha('content') });
+    assert.strictEqual(asArray.ok, false, 'a signed digest must be a string');
+    assert.match(asArray.reason, /revision sha256/);
   });
 
   it('parses frames into publish and revision views', function () {

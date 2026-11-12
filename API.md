@@ -1891,7 +1891,8 @@ Every frame this participant sent or received, oldest first, as
 <a name="module_types/delegation..DELEGATION_VERSION"></a>
 
 ### types/delegation~DELEGATION\_VERSION
-Protocol version carried in every frame. Restrictions (a grant's `peers`,
+Protocol version of every delegation frame except `DELEGATION_MAILBOX_FETCH`,
+which carries `MAILBOX_FETCH_VERSION` instead. Restrictions (a grant's `peers`,
 a request's `sessionKey` and `clientNonce`) are required fields, empty when
 unused, never optional trailing fields a reader could skip.
 
@@ -16724,10 +16725,12 @@ no amount check is possible; settlement code must always pass it. With
 
 A live quote that an HTLC paying its full price is checked against is
 pinned: it outlives its `expiresAt` and the quote cap. It is dropped by
-[settleSealedBlobQuote](#Peer+settleSealedBlobQuote), or `sealedBlobFundedRetentionMs`
-(default 7 days) after it was funded even if the HTLC is still open, and
-a later lookup then returns `null`. Keep the returned preimage for HTLCs
-that may outlast that.
+[settleSealedBlobQuote](#Peer+settleSealedBlobQuote), or when a later lookup or quote
+reservation sees that `sealedBlobFundedRetentionMs` (default 7 days) has
+passed since it was funded, even if the HTLC is still open. An idle funded
+quote is not removed when that period ends. Quotes are held in memory and
+do not survive a restart, so a later lookup returns `null`. Persist the
+returned preimage until the HTLC settles or fails.
 
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
 **Returns**: <code>Object</code> \| <code>null</code> - `keyHex` is the preimage (kept for callers written against static hashes).  
@@ -18804,10 +18807,12 @@ no amount check is possible; settlement code must always pass it. With
 
 A live quote that an HTLC paying its full price is checked against is
 pinned: it outlives its `expiresAt` and the quote cap. It is dropped by
-[settleSealedBlobQuote](#Peer+settleSealedBlobQuote), or `sealedBlobFundedRetentionMs`
-(default 7 days) after it was funded even if the HTLC is still open, and
-a later lookup then returns `null`. Keep the returned preimage for HTLCs
-that may outlast that.
+[settleSealedBlobQuote](#Peer+settleSealedBlobQuote), or when a later lookup or quote
+reservation sees that `sealedBlobFundedRetentionMs` (default 7 days) has
+passed since it was funded, even if the HTLC is still open. An idle funded
+quote is not removed when that period ends. Quotes are held in memory and
+do not survive a restart, so a later lookup returns `null`. Persist the
+returned preimage until the HTLC settles or fails.
 
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
 **Returns**: <code>Object</code> \| <code>null</code> - `keyHex` is the preimage (kept for callers written against static hashes).  
