@@ -66,9 +66,10 @@ const {
 } = require('../constants');
 
 /**
- * Protocol version carried in every frame. Restrictions (a grant's `peers`,
- * a request's `sessionKey` and `clientNonce`) are required fields, empty when
- * unused, never optional trailing fields a reader could skip.
+ * Protocol version of every delegation frame except `DELEGATION_MAILBOX_FETCH`,
+ * which carries {@link MAILBOX_FETCH_VERSION} instead. Restrictions (a grant's
+ * `peers`, a request's `sessionKey` and `clientNonce`) are required fields,
+ * empty when unused, never optional trailing fields a reader could skip.
  */
 const DELEGATION_VERSION = 1;
 /**

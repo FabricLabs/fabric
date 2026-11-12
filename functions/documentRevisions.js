@@ -591,7 +591,10 @@ function verifyDocumentProvenance (provenance, expect = {}) {
     if (!sha) return { ok: false, reason: 'expected sha256 is not a 64-hex digest' };
     // A revision commits to content through `sha256`, or, without one, through an identifier that is that digest.
     const signed = head.sha256 != null;
-    const committed = signed ? hex64(head.sha256) : hex64(head.documentIdentifier);
+    // A one-element array stringifies to its digest, so only a string counts.
+    const committed = signed
+      ? (typeof head.sha256 === 'string' ? hex64(head.sha256) : null)
+      : hex64(head.documentIdentifier);
     if (signed && !committed) return { ok: false, reason: 'revision sha256 is not a 64-hex digest' };
     if (!committed) return { ok: false, reason: 'revision does not commit to a sha256' };
     if (sha !== committed) return { ok: false, reason: 'sha256 does not match the revision' };

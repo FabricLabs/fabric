@@ -5108,10 +5108,12 @@ class Peer extends Service {
    *
    * A live quote that an HTLC paying its full price is checked against is
    * pinned: it outlives its `expiresAt` and the quote cap. It is dropped by
-   * {@link Peer#settleSealedBlobQuote}, or `sealedBlobFundedRetentionMs`
-   * (default 7 days) after it was funded even if the HTLC is still open, and
-   * a later lookup then returns `null`. Keep the returned preimage for HTLCs
-   * that may outlast that.
+   * {@link Peer#settleSealedBlobQuote}, or when a later lookup or quote
+   * reservation sees that `sealedBlobFundedRetentionMs` (default 7 days) has
+   * passed since it was funded, even if the HTLC is still open. An idle funded
+   * quote is not removed when that period ends. Quotes are held in memory and
+   * do not survive a restart, so a later lookup returns `null`. Persist the
+   * returned preimage until the HTLC settles or fails.
    * @param {string} paymentHashHex
    * @param {Object} [htlc] `{ amountSats, expireAfter?, expireHeight? }`
    * @returns {{ documentId: string, blobIndex: number, preimageHex: string, keyHex: string, perBuyer: boolean, priceSats: number }|null}

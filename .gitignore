@@ -107,6 +107,9 @@ settings/local.js
 # Hide bitcoin node blocks
 stores
 
+# Local password lists. Never a contract.
+contracts/passwords.txt
+
 # Local Hub dev state (see scripts/run-local-hub.sh)
 .hub-dev-data/
 
