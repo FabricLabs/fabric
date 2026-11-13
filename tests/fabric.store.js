@@ -127,6 +127,18 @@ describe('@fabric/core/types/store', function () {
       assert.deepStrictEqual(puts, ['/list/1']);
     });
 
+    it('keys siblings by numeric ids under an object, not an array', async function () {
+      const store = new Store({ persistent: false, strict: true });
+      await store.set('/channels/1300000000000000001', { name: 'a' });
+      await store.set('/channels/1300000000000000002', { name: 'b' });
+      assert.ok(!Array.isArray(store._state.content.channels));
+      assert.deepStrictEqual(Object.keys(store._state.content.channels), ['1300000000000000001', '1300000000000000002']);
+      assert.deepStrictEqual(await store.get('/channels/1300000000000000002'), { name: 'b' });
+      await store.set('/clips/9002', 1);
+      await store.set('/clips/9002-l0', 2);
+      assert.deepStrictEqual(store._state.content.clips, { 9002: 1, '9002-l0': 2 });
+    });
+
     it('a removed key and everything beneath it stay removed after a reopen', async function () {
       const fs = require('fs');
       const path = `./stores/test-store-remove-${process.pid}-${Date.now()}`;

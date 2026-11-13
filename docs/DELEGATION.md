@@ -33,7 +33,9 @@ Nothing is compatible with them.
 ## Frames
 Every frame is a Fabric wire `Message` with a typed body, signed by its author
 (BIP340), carried as a `fabric:` string, and never flooded on the mesh. Every
-body carries `v: 1`. Link frames and mailbox reads live at most 3 minutes;
+body carries `v: 1`, except `DELEGATION_MAILBOX_FETCH`, which carries `v: 2`
+(`MAILBOX_FETCH_VERSION`) since it gained `origin` and `purpose`; a reader
+refuses any other version before decoding the body. Link frames and mailbox reads live at most 3 minutes;
 requests at most 24 hours (default 10 minutes); grants, revokes, and results
 carry only `issuedAt`. Clocks may differ by 30 seconds.
 
@@ -46,7 +48,7 @@ carry only `issuedAt`. Clocks may differ by 30 seconds.
 | `DELEGATION_REVOKE` | `0x4247` | `grant` (hash), `issuedAt` |
 | `DELEGATION_REQUEST` | `0x4248` | `pubkey`, `target`, `grant` (hash), `nonce`, `request` (inner frame), `origin`, `account`, `disclose`, `purpose`, `issuedAt`, `expiresAt`, `sessionKey`, `clientNonce` (both empty except for peer sign-ins) |
 | `DELEGATION_RESULT` | `0x4249` | `request` (hash), `answer` (frame) or `refusal`, `rule`, `issuedAt` |
-| `DELEGATION_MAILBOX_FETCH` | `0x424A` | `pubkey`, `since`, `nonce`, `issuedAt`, `expiresAt` |
+| `DELEGATION_MAILBOX_FETCH` | `0x424A` | `pubkey`, `origin`, `purpose`, `since`, `nonce`, `issuedAt`, `expiresAt` |
 
 A frame's hash is sha256 of its wire bytes. The link id is the offer's hash.
 
@@ -168,7 +170,12 @@ returned result wherever the request came from. Writes are serialized.
   requests, results, grants, and revokes addressed to a pubkey, capped and
   rate-limited per address. `GET` returns them after a fresh
   `DELEGATION_MAILBOX_FETCH` in the `X-Fabric-Mailbox` header, whose nonce is
-  spent once.
+  spent once. A proof names the Hub it is for (`origin`) and its use
+  (`purpose`, one of `MAILBOX_FETCH_PURPOSES`: `delegation-mailbox`,
+  `delegation-cancel` for `DELETE /delegations/:id`, `federation-mailbox` for
+  a Hub's federation mailbox). `readMailboxFetch` needs the server's origins
+  and the purpose it checks, and refuses a proof for any other, so a proof
+  sent to one Hub or route can't be replayed at another.
 - **Delegate** (loopback): `POST /services/delegation/requests { frame }` and
   `/services/delegation/links { frame }` for Passport on the same machine. The
   host's `decide(request)` hook answers `sign`, `decline`, or `notify`.
@@ -185,3 +192,6 @@ returned result wherever the request came from. Writes are serialized.
 - **A revoked delegate**: its requests are refused once the revoke arrives.
 - **A mailbox reading someone else's frames**: reads need a fresh frame
   signed by the mailbox owner.
+- **A Hub replaying a reader's proof**: the proof names one origin and one
+  purpose, so a Hub that receives it can't spend it on another Hub's mailbox
+  or turn a read into a pairing cancel.
