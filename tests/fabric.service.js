@@ -757,18 +757,18 @@ describe('@fabric/core/types/service', function () {
       const opcodes = service.listOpcodes();
       assert.ok(Array.isArray(opcodes) && opcodes.length > 0);
       assert.ok(opcodes.some((x) => x.name === 'OP_SHA256' && x.family === 'bitcoin'));
-      assert.ok(opcodes.some((x) => x.name === 'P2P_FLUSH_CHAIN' && x.family === 'fabric'));
+      assert.ok(opcodes.some((x) => x.name === 'P2P_CHAIN_SYNC_REQUEST' && x.family === 'fabric'));
     });
 
     it('defineOpcodeContract parses newline-delimited contracts for Hub UI', function () {
       const service = new Service(FAST_SERVICE);
       const authorPubkey = service.key.pubkey;
-      const contract = service.defineOpcodeContract('ExampleContract', 'OP_DUP\nOP_HASH160\nP2P_FLUSH_CHAIN', {
+      const contract = service.defineOpcodeContract('ExampleContract', 'OP_DUP\nOP_HASH160\nP2P_CHAIN_SYNC_REQUEST', {
         author: 'id:example-author'
         ,
         authorPubkey
       });
-      assert.deepStrictEqual(contract.lines, ['OP_DUP', 'OP_HASH160', 'P2P_FLUSH_CHAIN']);
+      assert.deepStrictEqual(contract.lines, ['OP_DUP', 'OP_HASH160', 'P2P_CHAIN_SYNC_REQUEST']);
       assert.strictEqual(contract.author, 'id:example-author');
       assert.strictEqual(contract.policy.threshold, 1);
       assert.strictEqual(contract.policy.participants, 1);

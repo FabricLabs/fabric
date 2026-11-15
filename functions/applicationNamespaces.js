@@ -76,7 +76,14 @@ const CONTRACT_BODY_TYPES = Object.freeze({
   /** Phase-1 delivery ACK: reader received the wire frame. */
   MessageReceived: 'MessageReceived',
   /** Phase-2 BIP340 receipt over message / content hash. */
-  MessageReceipt: 'MessageReceipt'
+  MessageReceipt: 'MessageReceipt',
+  /**
+   * Compact catalog of documents (metadata only). Product pack names stay in
+   * each app; this is the shared list those catalogs can carry.
+   */
+  DocumentList: 'DocumentList',
+  /** One version of an editable document (`DocumentContract`); see functions/documentRevisions. */
+  DocumentRevision: 'DocumentRevision'
 });
 
 /**

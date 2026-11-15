@@ -18,7 +18,7 @@ Fabric separates **who authorized a transition** from **what was committed** and
 | `CONTRACT_PUBLISH` | AMP + authority list in genesis body | Publisher is listed in `validators` / `members.signers` / `spendPolicy.validators` (empty authority list → open publish; **non-empty list requires a wire signer**) |
 | Device-link / identity cluster | UTF-8 challenge strings | Mutual Schnorr attestation between devices |
 
-Helpers: `functions/sidechainState.js`, `functions/beaconFederationSigning.js`, `functions/contractStateSigning.js`, `functions/contractPublishAuthority.js`.
+Helpers: `functions/sidechainState.js`, `functions/beaconFederationSigning.js`, `functions/contractStateSigning.js`, `Contract.publishSignerAuthorized` (`types/contract.js`).
 
 Operator identity for those signatures is the Fabric Environment (`fabric setup` / `FABRIC_XPRV` / sealed `~/.fabric/wallet.json`). See `functions/fabricOperatorIdentity.js` — exclusive xprv-first so Hub and publishers do not split on Key’s mnemonic-first constructor.
 
@@ -36,7 +36,7 @@ Digests answer **what** changed. They do not prove **who** approved the change u
 
 **Peg / federation vault:** `stateDigest` is **not** peg-out authority. L1 withdrawals from the federation vault require a tip-bound `ContractWithdrawalRequest` (`amountSats` + destination bound into `requestId`), optional k-of-n `ContractWithdrawalWitness` when threshold ≥ 2, and conservation against `/federationReserve` (`Federation` reserve ledger, `types/federation.js`). See Hub `PrepareFederationVaultWithdrawalPsbt` / `ProposeFederationPegOut`.
 
-**Validator pre-sign gate (production):** before auto-signing Beacon epochs or preparing vault PSBTs, Hub runs `Federation.evaluateValidatorSignGate` (`types/federation`): fail-closed digest match vs local snapshots **and** reserve conservation when `/federationReserve` is present. Optional Program recompute via `assertMachineRunMatches`. Digests alone are insufficient.
+**Validator pre-sign gate (production):** before auto-signing Beacon epochs or preparing vault PSBTs, Hub runs `Federation.evaluateValidatorSignGate` (`types/federation`): fail-closed digest match vs local snapshots **and** reserve conservation when `/federationReserve` is present. Optional Program recompute via `Program.verifyMachineRun`. Digests alone are insufficient.
 
 ## L1 observability (secondary — not federation proof)
 

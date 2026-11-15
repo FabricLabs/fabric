@@ -19,6 +19,8 @@ const Key = require('../types/key');
 const fabricCanonicalJson = require('./fabricCanonicalJson');
 const { verifyFederationWitnessOnMessage } = require('./beaconFederationSigning');
 
+const CONTRACT_STATE_TAG = require('./signingTags').CONTRACT_STATE;
+
 /** Canonical tip kind — Hub and apps must agree; bump only with protocol note. */
 const CONTRACT_STATE_TIP_KIND = 'ContractStateTip';
 
@@ -63,7 +65,7 @@ function signContractStateTip (keyOrSettings, contractId, clock, stateDigest) {
     ? keyOrSettings
     : new Key(keyOrSettings || {});
   const message = signingStringForContractStateTip({ contractId, clock, stateDigest });
-  const signature = Buffer.from(key.signSchnorr(Buffer.from(message, 'utf8'))).toString('hex');
+  const signature = Buffer.from(key.signSchnorr(Buffer.from(message, 'utf8'), CONTRACT_STATE_TAG)).toString('hex');
   return { pubkey: key.pubkey, signature, message };
 }
 
@@ -97,7 +99,9 @@ function verifyContractStateTip (
     tipMessageBuffer(contractId, clock, stateDigest),
     witness,
     validatorPubkeys,
-    thr
+    thr,
+    undefined,
+    CONTRACT_STATE_TAG
   );
 }
 
@@ -134,6 +138,7 @@ function tipDigestHex (contractId, clock, stateDigest) {
 }
 
 module.exports = {
+  CONTRACT_STATE_TAG,
   CONTRACT_STATE_TIP_KIND,
   signingStringForContractStateTip,
   tipMessageBuffer,

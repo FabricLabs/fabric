@@ -28,6 +28,8 @@ declare class Message {
   static setMessageParent<T> (message: T, parent: unknown): T;
   static padDigits (number: number | string, digits: number): string;
   static verifyFrameAuthor (frame: Buffer | string): FrameAuthorResult;
+  /** A wire opcode or canonical type name in the registry; retired opcodes are not. */
+  static isRegisteredType (type: string | number): boolean;
 
   static readonly LEGACY_BODY_TYPES: readonly string[];
   static encodeLegacyBody (type: string | number, body: Record<string, unknown>): Record<string, unknown>;

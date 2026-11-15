@@ -12,7 +12,6 @@ const mkdirp = require('mkdirp');
 const Actor = require('./actor');
 const Hash256 = require('./hash256');
 const Key = require('./key');
-const Message = require('./message');
 const Tree = require('./tree');
 
 /**
@@ -456,14 +455,12 @@ class Filesystem extends Actor {
     this.writeFile(statePath, stateHex);
     this.writeFile(statePath + '.json', serialized);
 
-    const commit = Message.fromVector(['COMMIT', serialized]);
-    commit.signatures = commit.signatures || [];
-
-    // Only sign if we have a key with private key component
+    // Local record of the write (never sent to peers): the state digest,
+    // signed when the key can sign.
+    const id = Hash256.digest(serialized);
+    const commit = { type: 'COMMIT', id, state: serialized, signatures: [] };
     if (this.key && this.key.xprv) {
-      // Sign the commit message using the configured key
-      const signature = this.key.sign(commit);
-      commit.signatures.push(signature);
+      commit.signatures.push(this.key.sign(Buffer.from(id, 'hex')));
     }
 
     this.emit('commit', commit);

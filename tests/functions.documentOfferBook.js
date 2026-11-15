@@ -3,17 +3,12 @@
 const assert = require('assert');
 const { DocumentBook } = require('../types/documentBook');
 const {
-  splitBlobs,
-  verifyBlob,
-  reassemble,
-  blobPaymentHashHex
-} = require('../functions/documentBlobManifest');
-const {
   computeRelayFee,
   buildForwardedDocumentRequest,
   assertMonotoneBudget,
   createDocumentPurchaseSession
 } = require('../types/documentBook');
+const Document = require('../types/document');
 
 describe('documentOfferBook + blobs + relay', function () {
   it('ranks cheaper faster higher-score offers first', function () {
@@ -65,19 +60,19 @@ describe('documentOfferBook + blobs + relay', function () {
     assert.ok(best && best.sellerAddress === 'honest:1');
   });
 
-  it('splitBlobs verify and reassemble', function () {
+  it('Document.split verify and reassemble', function () {
     const data = Buffer.alloc(3000, 7);
-    const { blobs, merkleRootHex } = splitBlobs(data, 1000);
+    const { blobs, merkleRootHex } = Document.split(data, 1000);
     assert.strictEqual(blobs.length, 3);
     for (const b of blobs) {
-      assert.ok(verifyBlob(b.bytes, b.blobHashHex));
+      assert.ok(Document.verifyBlob(b.bytes, b.blobHashHex));
     }
     const map = new Map(blobs.map((b) => [b.index, b.bytes]));
-    const out = reassemble(map, 3, merkleRootHex);
+    const out = Document.reassemble(map, 3, merkleRootHex);
     assert.strictEqual(out.ok, true);
     assert.ok(out.buffer.equals(data));
-    assert.ok(!verifyBlob(Buffer.from('x'), blobs[0].blobHashHex));
-    const pay = blobPaymentHashHex({
+    assert.ok(!Document.verifyBlob(Buffer.from('x'), blobs[0].blobHashHex));
+    const pay = Document.blobPaymentHash({
       documentId: 'd1',
       blobIndex: 0,
       blobHashHex: blobs[0].blobHashHex

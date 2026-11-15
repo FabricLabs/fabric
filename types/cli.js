@@ -352,15 +352,6 @@ class CLI extends FabricShell {
       documentRelayFeeBps: this.settings.documentRelayFeeBps != null ? this.settings.documentRelayFeeBps : 100,
       documentRelayMaxHops: this.settings.documentRelayMaxHops != null ? this.settings.documentRelayMaxHops : 4
     };
-    if (Array.isArray(this.settings.flushChainAuthorizedPubkeys)) {
-      peerOpts.flushChainAuthorizedPubkeys = this.settings.flushChainAuthorizedPubkeys;
-    }
-    if (this.settings.flushChainMinTrustedScore != null) {
-      const t = Number(this.settings.flushChainMinTrustedScore);
-      if (Number.isFinite(t)) {
-        peerOpts.flushChainMinTrustedScore = t;
-      }
-    }
 
     // Create and assign Peer instance as the `node` property
     this.node = new Peer(peerOpts);
@@ -495,7 +486,6 @@ class CLI extends FabricShell {
     this.node.on('peer', this._handlePeer.bind(this));
     this.node.on('peer:candidate', this._handlePeerCandidate.bind(this));
     this.node.on('session:update', this._handleSessionUpdate.bind(this));
-    this.node.on('flushChain', this._handlePeerFlushChain.bind(this));
 
     // ## Document Exchange
     this.node.on('DocumentPublish', this._handlePeerDocumentPublish.bind(this));
@@ -2273,47 +2263,6 @@ class CLI extends FabricShell {
     this.node.relayFrom(this.node.id, message);
 
     return false;
-  }
-
-  /**
-   * Operator: send `P2P_FLUSH_CHAIN` to Fabric peers whose registry score is strictly greater than
-   * {@link Peer#settings.flushChainMinTrustedScore} (default 800). Peers only honor inbound flush when the
-   * sender's pubkey is listed in {@link Peer#settings.flushChainAuthorizedPubkeys} (configure in Fabric settings JSON).
-   */
-  _handleFlushChainCli (params) {
-    const hex = params[1];
-    if (!hex || !/^[0-9a-fA-F]{64}$/.test(String(hex).trim())) {
-      return this._appendError('Usage: flushchain <snapshotBlockHash-hex-64> [label] — sends P2P_FLUSH_CHAIN to peers with score > flushChainMinTrustedScore; receivers must list authorized signer pubkeys (flushChainAuthorizedPubkeys).');
-    }
-    const snapshotBlockHash = String(hex).trim().toLowerCase();
-    const label = params[2] ? String(params[2]) : undefined;
-    const network = (this.settings.bitcoin && this.settings.bitcoin.network) || this.settings.network;
-    const body = { snapshotBlockHash, network };
-    if (label) body.label = label;
-    const n = this.node.sendFlushChainToTrustedPeers(body);
-    this._appendMessage(`FLUSH_CHAIN sent to ${n} trusted peer connection(s) (score > ${this.node.settings.flushChainMinTrustedScore}).`);
-    return false;
-  }
-
-  async _handlePeerFlushChain (payload) {
-    const object = payload && payload.object;
-    if (!object || !object.snapshotBlockHash) return;
-    if (!this.settings.bitcoin || !this.settings.bitcoin.enable || !this.bitcoin) {
-      return this._appendWarning('[FLUSH_CHAIN] Bitcoin service disabled; not rewinding chain.');
-    }
-    const localNet = this.settings.bitcoin.network || this.settings.network;
-    if (object.network && localNet && object.network !== localNet) {
-      if (this.settings.debug) {
-        this._appendDebug(`[FLUSH_CHAIN] skipped: message network ${object.network} !== local ${localNet}`);
-      }
-      return;
-    }
-    try {
-      const r = await this.bitcoin.flushChainToSnapshot(object.snapshotBlockHash);
-      this._appendMessage(`[FLUSH_CHAIN] bitcoind rewound to snapshot: ${JSON.stringify(r)}`);
-    } catch (err) {
-      this._appendError(`[FLUSH_CHAIN] ${err.message || err}`);
-    }
   }
 
   async spend (to, amount) {

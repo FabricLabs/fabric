@@ -6,9 +6,11 @@ const {
   openSealedJson,
   isSealedEnvelope,
   isPasswordProtectedDocument,
+  needsReseal,
   SEAL_SCHEME,
   PASSWORD_MIN_LENGTH,
-  DEFAULT_ITERATIONS
+  DEFAULT_ITERATIONS,
+  LEGACY_ITERATIONS
 } = require('../functions/sealedBlob');
 
 describe('@fabric/core/functions/sealedBlob', function () {
@@ -25,6 +27,21 @@ describe('@fabric/core/functions/sealedBlob', function () {
     assert.strictEqual(envelope.kdf.iterations, DEFAULT_ITERATIONS);
     const opened = openSealedJson(envelope, password);
     assert.deepStrictEqual(opened, secret);
+  });
+
+  it('seals at 600000 iterations and flags older envelopes for resealing', function () {
+    assert.strictEqual(DEFAULT_ITERATIONS, 600000);
+    assert.strictEqual(LEGACY_ITERATIONS, 210000);
+    const current = sealJson(secret, password);
+    assert.strictEqual(needsReseal(current), false);
+    const old = sealJson(secret, password, { iterations: LEGACY_ITERATIONS });
+    assert.strictEqual(needsReseal(old), true);
+    assert.strictEqual(needsReseal({ seal: old }), true);
+    const unnamed = Object.assign({}, old, { kdf: Object.assign({}, old.kdf) });
+    delete unnamed.kdf.iterations;
+    assert.deepStrictEqual(openSealedJson(unnamed, password), secret);
+    assert.strictEqual(needsReseal(unnamed), true);
+    assert.strictEqual(needsReseal({ not: 'sealed' }), false);
   });
 
   it('opens a nested seal field (wallet document shape)', function () {
@@ -55,6 +72,17 @@ describe('@fabric/core/functions/sealedBlob', function () {
   it('rejects a short password and a wrong password', function () {
     assert.throws(() => sealJson(secret, 'short'), (err) => err.code === 'FABRIC_PASSWORD_POLICY');
     const envelope = sealJson(secret, password);
+    assert.throws(() => openSealedJson(envelope, 'wrong-pass-ok!'), (err) => err.code === 'FABRIC_SEAL_DECRYPT');
+  });
+
+  it('round-trips an Argon2id seal and does not ask to re-seal it', function () {
+    this.timeout(20000);
+    const envelope = sealJson(secret, password, { kdf: 'argon2id', type: 'FabricSealedMaster' });
+    assert.strictEqual(envelope.encryption, 'aes-256-gcm-argon2id');
+    assert.strictEqual(envelope.kdf.name, 'argon2id');
+    assert.strictEqual(envelope.kdf.memory, 65536);
+    assert.strictEqual(needsReseal(envelope), false);
+    assert.deepStrictEqual(openSealedJson(envelope, password), secret);
     assert.throws(() => openSealedJson(envelope, 'wrong-pass-ok!'), (err) => err.code === 'FABRIC_SEAL_DECRYPT');
   });
 

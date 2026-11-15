@@ -875,6 +875,7 @@ Channel.buildCommitment = function buildCommitment (funding, state = {}, opts = 
     revocationPubkey,
     psbtBase64: psbt.toBase64(),
     txid: unsigned.getId(),
+    txHex: unsigned.toHex(),
     fundingTxid: tx.getId(),
     fundingVout: vout,
     inputSats,
@@ -1353,7 +1354,10 @@ function sigHexOf (psbtBase64, network) {
   return tss ? Buffer.from(tss.signature).toString('hex') : null;
 }
 
-/** @private state number a (possibly wrapped) update body carries */
+/**
+ * state number a (possibly wrapped) update body carries
+ * @private
+ */
 function bodyNumber (body) {
   if (!body) return -1;
   const inner = body.commitment && typeof body.commitment === 'object' ? body.commitment : body;
@@ -1465,8 +1469,9 @@ class ChannelSession {
   }
 
   /**
-   * @private record the counterparty-signed commitment for state `n` as that
+   * record the counterparty-signed commitment for state `n` as that
    * state's unilateral exit in {@link Resolutions}.
+   * @private
    */
   _recordExit (n, commitment, sigHex) {
     try {
@@ -1509,7 +1514,10 @@ class ChannelSession {
   /** @private */
   _localPoint (n) { return Channel.commitmentPoint(this._localSecret(n)); }
 
-  /** @private current chain tip or null when unknown / stale */
+  /**
+   * current chain tip or null when unknown / stale
+   * @private
+   */
   _tipHeight () {
     if (!this._tip) return null;
     const h = this._tip();
@@ -1517,7 +1525,10 @@ class ChannelSession {
     return Math.floor(Number(h));
   }
 
-  /** @private commitment fee for a feerate and HTLC count (never below `minCommitFeeSats`) */
+  /**
+   * commitment fee for a feerate and HTLC count (never below `minCommitFeeSats`)
+   * @private
+   */
   _feeFor (feerate, htlcCount) {
     return Math.max(Number(this._state.policy.minCommitFeeSats) || 0, Channel.commitmentFeeSats(feerate, htlcCount));
   }
@@ -1596,10 +1607,11 @@ class ChannelSession {
   }
 
   /**
-   * @private sign the counterparty's commitment and remember it for justice.
+   * sign the counterparty's commitment and remember it for justice.
    * A different commitment already signed for the same number (a proposal
    * abandoned in a collision) is kept as an alternate: the counterparty can
    * still broadcast it, and the same revocation secret revokes it.
+   * @private
    */
   _signRemote (htlcs, number, balances, feeSats) {
     const s = this._state;
@@ -1613,7 +1625,10 @@ class ChannelSession {
     return { commitment: c, sig, sigHex: sigHexOf(sig, this.network) };
   }
 
-  /** @private publish-ready body (signed artifact). */
+  /**
+   * publish-ready body (signed artifact).
+   * @private
+   */
   _body (type, extra = {}) {
     return Witness.signArtifact(Object.assign({
       type,
@@ -1623,7 +1638,10 @@ class ChannelSession {
     }, extra), this.localPrivateKey);
   }
 
-  /** @private the counterparty signature on our current commitment is accepted: remember it apart from any later proposal */
+  /**
+   * the counterparty signature on our current commitment is accepted: remember it apart from any later proposal
+   * @private
+   */
   _noteSigned () {
     const s = this._state;
     const c = this._localCommitment;
@@ -1631,7 +1649,10 @@ class ChannelSession {
     this._recordExit(c.number, c, s.remoteSig);
   }
 
-  /** @private record a revealed counterparty secret for state `n` (idempotent) */
+  /**
+   * record a revealed counterparty secret for state `n` (idempotent)
+   * @private
+   */
   _applyRemoteRevoke (n, revoke) {
     const s = this._state;
     if (!revoke || revoke.type !== CHANNEL_BODY_TYPES.Revoke || !Witness.verifyArtifact(revoke, xOnlyOf(this.funding.remotePubkey))) {
@@ -1657,7 +1678,10 @@ class ChannelSession {
     if (n > s.remoteRevokedThrough) s.remoteRevokedThrough = n;
   }
 
-  /** @private signed revoke payload for our state `n` (no state change) */
+  /**
+   * signed revoke payload for our state `n` (no state change)
+   * @private
+   */
   _revokeBody (n) {
     const s = this._state;
     return Witness.signArtifact({
@@ -1671,7 +1695,10 @@ class ChannelSession {
     }, this.localPrivateKey);
   }
 
-  /** @private revoke our own state `n` */
+  /**
+   * revoke our own state `n`
+   * @private
+   */
   _localRevoke (n) {
     const s = this._state;
     if (n < 0) return null;
@@ -1679,7 +1706,10 @@ class ChannelSession {
     return this._revokeBody(n);
   }
 
-  /** @private remember our own commitment txid per state (for ChannelRevoke) */
+  /**
+   * remember our own commitment txid per state (for ChannelRevoke)
+   * @private
+   */
   _rememberLocal (commitment) {
     const s = this._state;
     if (!s.localTxids) s.localTxids = {};
@@ -1721,7 +1751,10 @@ class ChannelSession {
     return body;
   }
 
-  /** @private checks on a newly offered HTLC (local or remote proposer). */
+  /**
+   * checks on a newly offered HTLC (local or remote proposer).
+   * @private
+   */
   _checkHtlcPolicy (row, htlcs, proposerBalanceAfter, proposer) {
     const p = this._state.policy;
     const label = proposer === 'local' ? 'offerHtlc' : 'receive';
@@ -1793,7 +1826,10 @@ class ChannelSession {
     return body;
   }
 
-  /** @private funder's balance after a fee change must stay above the reserve */
+  /**
+   * funder's balance after a fee change must stay above the reserve
+   * @private
+   */
   _checkFunderCovers (fee, label) {
     const s = this._state;
     const after = s.localSats - (fee - s.feeSats);
@@ -1840,8 +1876,9 @@ class ChannelSession {
   }
 
   /**
-   * @private sign the counterparty's next commitment + build ours; emit the
+   * sign the counterparty's next commitment + build ours; emit the
    * proposal. `balances` exclude fee changes: the funder pays any delta.
+   * @private
    * @param {Object[]} htlcs
    * @param {Object} balances
    * @param {Object} [opts] `{ feeSats?, feerate?, extra?, intent?, type? }`
@@ -1891,9 +1928,10 @@ class ChannelSession {
   }
 
   /**
-   * @private abandon our unanswered proposal (lost a simultaneous-proposal
+   * abandon our unanswered proposal (lost a simultaneous-proposal
    * tie-break): restore the last countersigned state and queue the intent for
    * {@link ChannelSession#repropose}.
+   * @private
    */
   _rollback () {
     const s = this._state;
@@ -2029,8 +2067,9 @@ class ChannelSession {
   }
 
   /**
-   * @private an update for a state we already hold countersigned: a replay /
+   * an update for a state we already hold countersigned: a replay /
    * resend, or a proposal the peer abandoned in a tie-break arriving late.
+   * @private
    */
   _isDuplicate (body) {
     const s = this._state;
@@ -2041,7 +2080,10 @@ class ChannelSession {
     return n === s.number && !s.pending && !!s.lastSigned && s.lastSigned.number === n;
   }
 
-  /** @private a counterparty proposal for the same state number as our unanswered one */
+  /**
+   * a counterparty proposal for the same state number as our unanswered one
+   * @private
+   */
   _collides (body) {
     const s = this._state;
     if (!body || (body.type !== CHANNEL_BODY_TYPES.Commitment && body.type !== CHANNEL_BODY_TYPES.Close)) return false;
@@ -2163,10 +2205,11 @@ class ChannelSession {
   }
 
   /**
-   * @private non-funder side of `ChannelOpen`. Refuses delays outside the
+   * non-funder side of `ChannelOpen`. Refuses delays outside the
    * local `[minToSelfDelay, maxToSelfDelay]`, channels expiring within
    * `minChannelLifetimeBlocks`, malleable (non-segwit) funding inputs, and a
    * declared capacity that is not the funding output value.
+   * @private
    */
   _receiveOpen (body) {
     const s = this._state;
@@ -2223,7 +2266,10 @@ class ChannelSession {
     return reply;
   }
 
-  /** @private the counterparty signed the state we proposed */
+  /**
+   * the counterparty signed the state we proposed
+   * @private
+   */
   _receiveCountersignature (body) {
     const s = this._state;
     const check = Channel.verifyCommitmentSignature(this._localCommitment.psbtBase64, body.signatureHex || body.psbtBase64, this.funding.remotePubkey, this.network);
@@ -2264,7 +2310,10 @@ class ChannelSession {
     return this._localRevoke(s.number - 1);
   }
 
-  /** @private poll the confirmations source for the funding depth */
+  /**
+   * poll the confirmations source for the funding depth
+   * @private
+   */
   _pollFunding () {
     const s = this._state;
     if (s.fundingConfirmed || !this._confirmations || !this.funding.fundingTxid) return;
@@ -2608,6 +2657,112 @@ class ChannelSession {
     const body = this._propose([], { localSats: this._state.localSats, remoteSats: this._state.remoteSats }, { type: CHANNEL_BODY_TYPES.Close, intent: { kind: 'close' } });
     this._state.status = 'closing';
     return body;
+  }
+
+  /**
+   * Per-output justice transactions for every revoked counterparty commitment,
+   * signed now so a watchtower can broadcast them without this channel key.
+   * The commitment transaction is the unsigned one rebuilt from the revoked
+   * state (its txid is already fixed). One transaction per output, so a spent
+   * output does not take the others with it.
+   * @param {object} [opts] `{ destinationAddress?, feeSats? }` — destination defaults to this session's `localAddress`
+   * @returns {object[]} `[{ commitmentTxid, transactions }]`
+   */
+  penaltyFilings (opts = {}) {
+    const dest = opts.destinationAddress || this.localAddress;
+    if (!dest) return [];
+    const fee = opts.feeSats != null ? Math.floor(Number(opts.feeSats)) : 500;
+    const out = [];
+    for (const [txid, stale] of Object.entries(this._state.revoked || {})) {
+      if (!stale || !stale.perCommitmentSecretHex || !stale.pointHex) continue;
+      const state = Object.assign({ fundedTxHex: this.fundedTxHex }, stale.state);
+      let commitment;
+      try {
+        commitment = Channel.buildCommitment(this.funding, state, { holder: 'remote', holderPoint: stale.pointHex });
+      } catch (_) { continue; }
+      if (commitment.txid !== txid || !commitment.txHex) continue;
+      let spends;
+      try {
+        spends = Channel.prepareJusticeSpends({
+          funding: this.funding,
+          state,
+          holderPoint: stale.pointHex,
+          perCommitmentSecretHex: stale.perCommitmentSecretHex,
+          staleTxHex: commitment.txHex,
+          localPrivateKey: this.localPrivateKey,
+          destinationAddress: dest,
+          feeSats: fee,
+          network: this.network
+        });
+      } catch (_) { continue; }
+      if (!spends.length) continue;
+      out.push({ commitmentTxid: txid, transactions: spends.map((spend) => spend.txHex) });
+    }
+    return out;
+  }
+
+  /**
+   * Broadcastable transactions for this session's watchdog actions: our own
+   * force-close, and an HTLC claim or timeout spent from that commitment.
+   * A remote commitment already on chain is left alone (its penalty is a
+   * watchtower filing, not one of these).
+   * @param {object[]} actions from {@link ChannelSession#tick}
+   * @param {object} [opts] `{ destinationAddress?, feeSats? }`
+   * @returns {string[]} raw transaction hex
+   */
+  actionTransactions (actions, opts = {}) {
+    const dest = opts.destinationAddress || this.localAddress;
+    if (!dest) return [];
+    const fee = opts.feeSats != null ? Math.floor(Number(opts.feeSats)) : 500;
+    const onChain = this._state.onChain;
+    const out = [];
+    let fin = null;
+    const ours = () => {
+      if (fin !== null) return fin || null;
+      try { fin = this.finalize(); } catch (_) { fin = false; }
+      return fin || null;
+    };
+    const net = networkForFabricName(this.network);
+    for (const action of actions || []) {
+      if (!action || action.channelId !== this.channelId) continue;
+      if (action.type === 'forceClose') {
+        if (onChain) continue;
+        const built = ours();
+        if (built && built.txHex) out.push(built.txHex);
+        continue;
+      }
+      if (action.type !== 'claimHtlc' && action.type !== 'timeoutHtlc') continue;
+      if (onChain && onChain.kind !== 'local-latest') continue;
+      const built = ours();
+      if (!built || !built.txHex || !built.commitment) continue;
+      try {
+        if (action.type === 'claimHtlc') {
+          const prepared = Channel.prepareHtlcClaim(built.commitment, {
+            htlcId: action.htlcId,
+            commitmentTxHex: built.txHex,
+            preimageHex: action.preimageHex,
+            destinationAddress: dest,
+            feeSats: fee,
+            network: this.network
+          });
+          const psbt = bitcoin.Psbt.fromBase64(prepared.psbtBase64, { network: net });
+          psbt.signInput(0, Htlc.signerFromPriv32(this.localPrivateKey));
+          out.push(Channel.finalizeHtlcClaim(psbt.toBase64(), action.preimageHex).txHex);
+        } else {
+          const prepared = Channel.prepareHtlcTimeout(built.commitment, {
+            htlcId: action.htlcId,
+            commitmentTxHex: built.txHex,
+            destinationAddress: dest,
+            feeSats: fee,
+            network: this.network
+          });
+          const psbt = bitcoin.Psbt.fromBase64(prepared.psbtBase64, { network: net });
+          psbt.signInput(0, Htlc.signerFromPriv32(this.localPrivateKey));
+          out.push(finalizeSpendPsbt({ psbt }).txHex);
+        }
+      } catch (_) { /* this output cannot be spent from our commitment */ }
+    }
+    return out;
   }
 
   /** @returns {object} persistence snapshot (no private key) */

@@ -14,6 +14,8 @@
 const Key = require('../types/key');
 const { pubkeyXOnly } = require('./pubkey');
 
+const RECEIPT_TAG = require('./signingTags').MESSAGE_RECEIPT;
+
 /**
  * Canonical UTF-8 message for BIP340 MessageReceipt signatures.
  * @param {string} messageId wire hash / pending id
@@ -114,7 +116,7 @@ function verifyReceiptSignature (record, pubkey, receiptSig) {
   if (!id) return false;
   try {
     const key = new Key({ public: `02${x}` });
-    return !!key.verifySchnorr(receiptSigningMessage(id), Buffer.from(sigHex, 'hex'));
+    return !!key.verifySchnorr(receiptSigningMessage(id), Buffer.from(sigHex, 'hex'), RECEIPT_TAG);
   } catch (_) {
     return false;
   }
@@ -197,6 +199,7 @@ function pendingForRelay (records) {
 }
 
 module.exports = {
+  RECEIPT_TAG,
   normalizeReaders,
   receiptSigningMessage,
   createPending,

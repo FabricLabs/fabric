@@ -11,6 +11,7 @@ const {
   tryDecodeForward,
   P2P_FORWARD_MAX_HOPS
 } = require('../functions/fabricOnion');
+const SIGNING_TAGS = require('../functions/signingTags');
 
 function wireMock (writes) {
   return {
@@ -215,11 +216,11 @@ describe('Peer P2P_FORWARD onion', function () {
     };
 
     // Minimal session open missing actor key material → session-key violation.
-    const payload = Message.fromVector(['P2P_SESSION_OPEN', JSON.stringify({
+    const payload = Message.fromLegacyBody('P2P_SESSION_OPEN', {
       type: 'P2P_SESSION_OPEN',
       actor: { id: 'attacker' },
       object: { counterparty: 'x', solution: 'y' }
-    })]).signWithKey(new Key());
+    }).signWithKey(new Key());
 
     const outer = wrapOnionPath({
       path: [xOnlyFromKey(peer.key)],
@@ -262,7 +263,7 @@ describe('Peer P2P_FORWARD onion', function () {
     };
 
     const attacker = new Key();
-    const leaf = Message.fromVector(['P2P_PING', JSON.stringify({ nest: true })]).signWithKey(attacker);
+    const leaf = Message.fromLegacyBody('P2P_PING', { nest: true }).signWithKey(attacker);
     const mid = Message.fromVector(['P2P_RELAY', leaf.toBuffer()]).signWithKey(attacker);
     const nested = Message.fromVector(['P2P_RELAY', mid.toBuffer()]).signWithKey(attacker);
 
@@ -303,16 +304,16 @@ describe('Peer P2P_FORWARD onion', function () {
 
     const attackerId = 'attacker-session-id';
     const proof = peer._sessionKeyProofMessage(attackerId, attackerKey.pubkey, attackerKey.pubkey);
-    const payload = Message.fromVector(['P2P_SESSION_OFFER', JSON.stringify({
+    const payload = Message.fromLegacyBody('P2P_SESSION_OFFER', {
       type: 'P2P_SESSION_OFFER',
       actor: {
         id: attackerId,
         pubkey: attackerKey.pubkey,
         parentPubkey: attackerKey.pubkey,
-        parentSignature: attackerKey.signSchnorr(proof).toString('hex')
+        parentSignature: attackerKey.signSchnorr(proof, SIGNING_TAGS.SESSION_KEY).toString('hex')
       },
       object: { challenge: 'peel-rebind' }
-    })]).signWithKey(attackerKey);
+    }).signWithKey(attackerKey);
 
     const outer = wrapOnionPath({
       path: [xOnlyFromKey(peer.key)],
@@ -375,7 +376,7 @@ describe('Peer P2P_FORWARD onion', function () {
     peer.peers[otherAddr] = { id: 'other', publicKey: new Key().public.encodeCompressed('hex') };
 
     const beforeQueue = (peer.candidates && peer.candidates.length) || 0;
-    const payload = Message.fromVector(['P2P_PEERING_OFFER', JSON.stringify({
+    const payload = Message.fromLegacyBody('P2P_PEERING_OFFER', {
       type: 'P2P_PEERING_OFFER',
       object: {
         transport: 'fabric',
@@ -383,7 +384,7 @@ describe('Peer P2P_FORWARD onion', function () {
         port: 17777,
         peeringHop: 5
       }
-    })]).signWithKey(originKey);
+    }).signWithKey(originKey);
 
     const outer = wrapOnionPath({
       path: [xOnlyFromKey(peer.key)],
@@ -580,10 +581,10 @@ describe('Peer P2P_FORWARD onion', function () {
       parties: [String(owner.pubkey).toLowerCase()]
     }, String(owner.pubkey).toLowerCase());
 
-    const payload = Message.fromVector(['CONTRACT_MESSAGE', JSON.stringify({
+    const payload = Message.fromLegacyBody('CONTRACT_MESSAGE', {
       contract: 'c1',
       ops: [{ op: 'replace', path: '/value', value: 99 }]
-    })]).signWithKey(attacker);
+    }).signWithKey(attacker);
 
     const outer = wrapOnionPath({
       path: [xOnlyFromKey(peer.key)],
@@ -661,10 +662,10 @@ describe('Peer P2P_FORWARD onion', function () {
     peer.connections[otherAddr] = wireMock(otherWrites);
     peer.peers[addr] = { id: 'relay', publicKey: originKey.public.encodeCompressed('hex') };
 
-    const payload = Message.fromVector(['P2P_PEER_GOSSIP', JSON.stringify({
+    const payload = Message.fromLegacyBody('P2P_PEER_GOSSIP', {
       type: 'P2P_PEER_GOSSIP',
       object: { peer: 'deadbeef', gossipHop: 5 }
-    })]).signWithKey(originKey);
+    }).signWithKey(originKey);
 
     const outer = wrapOnionPath({
       path: [xOnlyFromKey(peer.key)],
@@ -738,10 +739,10 @@ describe('Peer P2P_FORWARD onion', function () {
     peer.peers[addr] = { publicKey: originKey.public.encodeCompressed('hex') };
     const before = (peer.candidates && peer.candidates.length) || 0;
 
-    const payload = Message.fromVector(['P2P_PEER_ANNOUNCE', JSON.stringify({
+    const payload = Message.fromLegacyBody('P2P_PEER_ANNOUNCE', {
       type: 'P2P_PEER_ANNOUNCE',
       object: { host: '198.51.100.200', port: 17777 }
-    })]).signWithKey(originKey);
+    }).signWithKey(originKey);
 
     const outer = wrapOnionPath({
       path: [xOnlyFromKey(peer.key)],
@@ -791,7 +792,7 @@ describe('Peer P2P_FORWARD onion', function () {
     const scoreAfterFirst = peer._state.peers['honest-relay-cpub'].score;
 
     // Re-signed duplicate via onion peel — must not hijack-penalize the relay.
-    const hijack = Message.fromVector(['CONTRACT_PUBLISH', JSON.stringify(contract)]).signWithKey(attacker);
+    const hijack = Message.fromLegacyBody('CONTRACT_PUBLISH', contract).signWithKey(attacker);
     const outer = wrapOnionPath({
       path: [xOnlyFromKey(peer.key)],
       payload: hijack,
@@ -836,10 +837,10 @@ describe('Peer P2P_FORWARD onion', function () {
     const cases = [];
 
     // CONTRACT_MESSAGE (no ops — emit + would-have-relayed)
-    cases.push(Message.fromVector(['CONTRACT_MESSAGE', JSON.stringify({
+    cases.push(Message.fromLegacyBody('CONTRACT_MESSAGE', {
       contract: 'peel-cm-1',
       ops: []
-    })]).signWithKey(author));
+    }).signWithKey(author));
 
     // CONTRACT_PROPOSAL
     const leaf = Message.fromVector(['P2P_CHAT_MESSAGE', 'leaf']).signWithKey(author);
@@ -848,13 +849,13 @@ describe('Peer P2P_FORWARD onion', function () {
       messages: [leaf],
       statePatch: []
     });
-    cases.push(Message.fromVector(['CONTRACT_PROPOSAL', JSON.stringify(proposal)]).signWithKey(author));
+    cases.push(Message.fromLegacyBody('CONTRACT_PROPOSAL', proposal).signWithKey(author));
 
     // BitcoinBlock tip
-    cases.push(Message.fromVector(['BitcoinBlock', JSON.stringify({
+    cases.push(Message.fromLegacyBody('BitcoinBlock', {
       hash: 'ab'.repeat(32),
       height: 42
-    })]).signWithKey(author));
+    }).signWithKey(author));
 
     for (const payload of cases) {
       otherWrites.length = 0;
@@ -890,10 +891,10 @@ describe('Peer P2P_FORWARD onion', function () {
       publicKey: forwarder.public.encodeCompressed('hex')
     };
 
-    const inner = Message.fromVector(['CONTRACT_MESSAGE', JSON.stringify({
+    const inner = Message.fromLegacyBody('CONTRACT_MESSAGE', {
       contract: 'relay-cm-1',
       ops: []
-    })]).signWithKey(author);
+    }).signWithKey(author);
     const outer = Message.fromVector(['P2P_RELAY', inner.toBuffer()]).signWithKey(author);
 
     peer._handleFabricMessage(outer.toBuffer(), { name: addr }, null);
@@ -934,9 +935,9 @@ describe('Peer P2P_FORWARD onion', function () {
     const events = [];
     peer.on('documentRequest', (ev) => events.push(ev));
 
-    const payload = Message.fromVector(['DocumentRequest', JSON.stringify({
+    const payload = Message.fromLegacyBody('DocumentRequest', {
       document: 'peel-held-doc'
-    })]).signWithKey(author);
+    }).signWithKey(author);
     const outer = wrapOnionPath({
       path: [xOnlyFromKey(peer.key)],
       payload,
@@ -974,9 +975,9 @@ describe('Peer P2P_FORWARD onion', function () {
     peer._state.content.documents = peer._state.content.documents || {};
     peer._state.content.documents['relay-held-doc'] = 'secret-body';
 
-    const innerHeld = Message.fromVector(['DocumentRequest', JSON.stringify({
+    const innerHeld = Message.fromLegacyBody('DocumentRequest', {
       document: 'relay-held-doc'
-    })]).signWithKey(author);
+    }).signWithKey(author);
     const outerHeld = Message.fromVector(['P2P_RELAY', innerHeld.toBuffer()]).signWithKey(author);
     peer._handleFabricMessage(outerHeld.toBuffer(), { name: addr }, null);
     assert.strictEqual(relayWrites.length, 0, 'foreign RELAY must not fulfill to last hop');
@@ -984,9 +985,9 @@ describe('Peer P2P_FORWARD onion', function () {
     // Missing doc: outer may flood; inner must not appear as first-class DocumentRequest.
     relayWrites.length = 0;
     otherWrites.length = 0;
-    const innerMiss = Message.fromVector(['DocumentRequest', JSON.stringify({
+    const innerMiss = Message.fromLegacyBody('DocumentRequest', {
       document: 'missing-via-relay'
-    })]).signWithKey(author);
+    }).signWithKey(author);
     const outerMiss = Message.fromVector(['P2P_RELAY', innerMiss.toBuffer()]).signWithKey(author);
     peer._handleFabricMessage(outerMiss.toBuffer(), { name: addr }, null);
     for (const buf of otherWrites) {
@@ -1020,9 +1021,9 @@ describe('Peer P2P_FORWARD onion', function () {
     peer._state.content.documents = peer._state.content.documents || {};
     peer._state.content.documents['self-relay-doc'] = 'ok-body';
 
-    const inner = Message.fromVector(['DocumentRequest', JSON.stringify({
+    const inner = Message.fromLegacyBody('DocumentRequest', {
       document: 'self-relay-doc'
-    })]).signWithKey(author);
+    }).signWithKey(author);
     const outer = Message.fromVector(['P2P_RELAY', inner.toBuffer()]).signWithKey(author);
     peer._handleFabricMessage(outer.toBuffer(), { name: addr }, null);
 

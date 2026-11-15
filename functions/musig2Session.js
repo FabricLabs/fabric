@@ -325,7 +325,7 @@ function createFromStart (body, opts = {}) {
  * @param {object} session
  * @param {string} signerXOnly
  * @param {Buffer|string} pubnonce
- * @returns {{ ok: boolean, reason?: string }}
+ * @returns {{ ok: boolean, reason: (string|undefined) }}
  */
 function recordPubnonce (session, signerXOnly, pubnonce) {
   if (!session) return { ok: false, reason: 'no-session' };
@@ -361,7 +361,7 @@ function computeAggNonce (session) {
  *
  * @param {object} session
  * @param {Buffer|string} claimed
- * @returns {{ ok: boolean, reason?: string, aggnonce?: Buffer }}
+ * @returns {{ ok: boolean, reason: (string|undefined), aggnonce: (Buffer|undefined) }}
  */
 function setAggNonce (session, claimed) {
   const local = computeAggNonce(session);
@@ -409,7 +409,7 @@ function createPartial (session, sk) {
  * @param {object} session
  * @param {string} signerXOnly
  * @param {Buffer|string} psig
- * @returns {{ ok: boolean, reason?: string }}
+ * @returns {{ ok: boolean, reason: (string|undefined) }}
  */
 function recordPartial (session, signerXOnly, psig) {
   if (!session || !session.aggnonce) return { ok: false, reason: 'no-aggnonce' };
@@ -464,7 +464,7 @@ function aggregatePartials (session) {
 /**
  * @param {object} session
  * @param {Buffer|string} signature
- * @returns {{ ok: boolean, reason?: string }}
+ * @returns {{ ok: boolean, reason: (string|undefined) }}
  */
 function verifyFinalSignature (session, signature) {
   if (!session || !session.pubkeys || !session.challenge) {

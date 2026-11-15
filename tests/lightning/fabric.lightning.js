@@ -98,9 +98,9 @@ describe('@fabric/core/services/lightning', function () {
       });
 
       let entropy = await lightning.machine.sip();
-      let message = Message.fromVector(['Cycle', entropy.toString(8)]);
+      let message = Message.fromVector(['P2P_BASE_MESSAGE', entropy.toString(8)]);
       let next = await lightning.machine.sip();
-      let prediction = Message.fromVector(['Cycle', next.toString(8)]);
+      let prediction = Message.fromVector(['P2P_BASE_MESSAGE', next.toString(8)]);
 
       assert.ok(lightning);
       assert.ok(message);

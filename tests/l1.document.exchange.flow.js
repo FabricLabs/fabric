@@ -141,7 +141,7 @@ describe('L1 document exchange complete flow', function () {
     const envMsg = Message.fromBuffer(Buffer.from(expectedEnvelope));
     assert.strictEqual(
       canonical[0].purchaseContentHashHex,
-      purchaseContentHashHex(docId, JSON.parse(envMsg.data.toString('utf8')))
+      purchaseContentHashHex(docId, Message.tryParseLegacyBody(envMsg).value)
     );
 
     await hub.stop();
