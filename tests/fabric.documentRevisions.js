@@ -180,6 +180,79 @@ describe('@fabric/core functions/documentRevisions', function () {
     assert.strictEqual(revisions.verifyDocumentProvenance(wrongRevision).ok, false);
   });
 
+  it('passes a content-hash check only when the last revision commits to that hash', function () {
+    const c = makeContract();
+    const named = revisions.buildDocumentRevisionMessage({
+      contract: c.contract,
+      previous: c.publish,
+      document: { id: 'release-notes', name: 'notes.txt', mime: 'text/plain' },
+      revision: 1,
+      key: editor
+    });
+    const unbound = revisions.documentProvenance([c.publish, named].map((m) => m.toBuffer()), 'release-notes');
+    assert.strictEqual(revisions.verifyDocumentProvenance(unbound, { documentIdentifier: 'release-notes' }).ok, true);
+    const noHash = revisions.verifyDocumentProvenance(unbound, { documentIdentifier: 'release-notes', sha256: sha('anything') });
+    assert.strictEqual(noHash.ok, false);
+    assert.match(noHash.reason, /does not commit/);
+
+    const byIdentifier = revisions.buildDocumentRevisionMessage({
+      contract: c.contract,
+      previous: c.publish,
+      document: { id: sha('body'), name: 'notes.txt', mime: 'text/plain' },
+      revision: 1,
+      key: editor
+    });
+    const idOnly = revisions.documentProvenance([c.publish, byIdentifier].map((m) => m.toBuffer()), sha('body'));
+    assert.strictEqual(revisions.verifyDocumentProvenance(idOnly, { sha256: sha('body') }).ok, true);
+    assert.match(revisions.verifyDocumentProvenance(idOnly, { sha256: sha('other') }).reason, /does not match/);
+
+    const full = chain();
+    const provenance = revisions.documentProvenance([full.publish, full.r1, full.r2].map((m) => m.toBuffer()), sha('two'));
+    assert.strictEqual(revisions.verifyDocumentProvenance(provenance, { sha256: sha('two').toUpperCase() }).ok, true);
+    assert.match(revisions.verifyDocumentProvenance(provenance, { sha256: sha('one') }).reason, /does not match/);
+    const malformed = revisions.verifyDocumentProvenance(provenance, { sha256: 'not-a-digest' });
+    assert.strictEqual(malformed.ok, false);
+    assert.match(malformed.reason, /64-hex/);
+    const empty = revisions.verifyDocumentProvenance(provenance, { sha256: '' });
+    assert.strictEqual(empty.ok, false);
+    assert.match(empty.reason, /expected sha256/);
+  });
+
+  it('checks a content hash against the signed sha256 before the identifier, in any case', function () {
+    const c = makeContract();
+    function signed (sha256) {
+      const body = revisions.buildDocumentRevisionBody({
+        contract: c.contract,
+        document: { id: sha('identifier'), name: 'notes.txt', mime: 'text/plain' },
+        revision: 1
+      });
+      body.sha256 = sha256;
+      const message = Message.fromLegacyBody('CONTRACT_MESSAGE', body);
+      message.parent = c.publish.id;
+      message.signWithKey(editor);
+      return revisions.documentProvenance([c.publish, message].map((m) => m.toBuffer()), sha('identifier'));
+    }
+
+    const distinct = signed(sha('content'));
+    assert.strictEqual(revisions.verifyDocumentProvenance(distinct, { sha256: sha('content') }).ok, true);
+    assert.match(revisions.verifyDocumentProvenance(distinct, { sha256: sha('identifier') }).reason, /does not match/);
+
+    const upper = signed(sha('content').toUpperCase());
+    assert.strictEqual(revisions.verifyDocumentProvenance(upper, { sha256: sha('content') }).ok, true);
+
+    const malformed = revisions.verifyDocumentProvenance(signed('not-a-digest'), { sha256: sha('identifier') });
+    assert.strictEqual(malformed.ok, false);
+    assert.match(malformed.reason, /revision sha256/);
+
+    const empty = revisions.verifyDocumentProvenance(signed(''), { sha256: sha('identifier') });
+    assert.strictEqual(empty.ok, false, 'an empty signed sha256 does not fall back to the identifier');
+    assert.match(empty.reason, /revision sha256/);
+
+    const asArray = revisions.verifyDocumentProvenance(signed([sha('content')]), { sha256: sha('content') });
+    assert.strictEqual(asArray.ok, false, 'a signed digest must be a string');
+    assert.match(asArray.reason, /revision sha256/);
+  });
+
   it('parses frames into publish and revision views', function () {
     const c = chain();
     const pub = revisions.parseDocumentContractFrame(c.publish.toBuffer());

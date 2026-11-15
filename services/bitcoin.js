@@ -974,7 +974,7 @@ class Bitcoin extends Service {
    * leaves the host's ephemeral ports in TIME_WAIT.
    * @private
    * @param {boolean} [secure] HTTPS rather than HTTP.
-   * @returns {import('http').Agent}
+   * @returns {http.Agent}
    */
   _rpcAgent (secure = false) {
     const key = secure ? '_rpcHttpsAgent' : '_rpcHttpAgent';

@@ -196,6 +196,25 @@ Before merging a new Fabric agent:
 - do not abbreviate in APIs; `documentId` should be `documentIdentifier`
 
 ## JSDoc (for `npm run make:api`)
+**Run `node scripts/check-jsdoc.js` after touching any doc comment** in `types/**`,
+`services/`, `schemata/` or `settings/deprecations.js`, when that local-only
+script is present (it is not in the repository or `npm run ci`). It parses
+everything `make:api` and `make:docs` document and fails on any jsdoc `ERROR`
+or `WARNING`. Never land a change it rejects.
+
+Type expressions are Closure syntax, not TypeScript. These break the build:
+
+| Breaks | Write instead |
+|--------|---------------|
+| `{{ a?: T }}` | `{Object}` + `@param {T} [opts.a]` (`{{ a: (T\|undefined) }}` still requires `a`) |
+| `{import('x').Y}` | `{Y}` / `{x.Y}` (a name, not an import) |
+| `{ReturnType<typeof f>}`, `{keyof T}`, other TS operators | `{Object}` with a description |
+| `@private Some prose` (prose on the tag line) | prose first, then a bare `@private` line |
+| `@private` followed by the description lines | description first, `@private` last |
+| `/** @type {T} prose */` | prose line above, then `@type {T}` |
+
+A one-line `/** @private note */` counts too: expand it to a block.
+
 `jsdoc2md` / Closure parser reject TypeScript optional property syntax inside
 tags. When documenting optional option bags:
 

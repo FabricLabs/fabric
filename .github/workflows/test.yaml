@@ -88,7 +88,7 @@ jobs:
         tar -xzf "${ARCHIVE}"
         sudo mv bitcoin-${VERSION}/bin/bitcoind bitcoin-${VERSION}/bin/bitcoin-cli /usr/local/bin/
     - name: Install Rust toolchain
-      uses: dtolnay/rust-toolchain@1.79.0
+      uses: dtolnay/rust-toolchain@c177d57752bc15d75a239e904291e3c5079759ce # 1.79.0
     - name: Install lightningd
       run: |
         sudo apt-get update
@@ -125,7 +125,7 @@ jobs:
       run: npm run report:coverage
       timeout-minutes: 30
     - name: Send coverage report
-      uses: codecov/codecov-action@v7
+      uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
       with:
         directory: ./reports/
       continue-on-error: true

@@ -1939,12 +1939,15 @@ const SCHEMA_DELEGATION_RESULT = Object.freeze([
   { name: 'issuedAt', type: 'u64' }
 ]);
 /**
- * A mailbox read, signed by the key whose mail it is.
+ * A mailbox read, signed by the key whose mail it is, for one Hub (`origin`)
+ * and one use (`purpose`).
  * @private
  */
 const SCHEMA_DELEGATION_MAILBOX_FETCH = Object.freeze([
   { name: 'v', type: 'u8' },
   { name: 'pubkey', type: 'string' },
+  { name: 'origin', type: 'string' },
+  { name: 'purpose', type: 'string' },
   { name: 'since', type: 'u64' },
   { name: 'nonce', type: 'bytes32' },
   { name: 'issuedAt', type: 'u64' },
@@ -2281,15 +2284,30 @@ const SCHEMA_BITCOIN_TRANSACTION_HASH = keyedSchema(KEYED_LAYOUTS.BITCOIN_TRANSA
  * @private
  */
 const SCHEMA_CONTRACT_PROPOSAL = keyedSchema(KEYED_LAYOUTS.CONTRACT_PROPOSAL);
-/** @private Ask a peer to replay its catalog and chain log. */
+/**
+ * Ask a peer to replay its catalog and chain log.
+ * @private
+ */
 const SCHEMA_P2P_CHAIN_SYNC_REQUEST = keyedSchema(KEYED_LAYOUTS.P2P_CHAIN_SYNC_REQUEST);
-/** @private One document blob, raw bytes. */
+/**
+ * One document blob, raw bytes.
+ * @private
+ */
 const SCHEMA_P2P_FILE_SEND = keyedSchema(KEYED_LAYOUTS.P2P_FILE_SEND);
-/** @private Sealed document content-key reveal. */
+/**
+ * Sealed document content-key reveal.
+ * @private
+ */
 const SCHEMA_DOCUMENT_KEY_REVEAL = keyedSchema(KEYED_LAYOUTS.DOCUMENT_KEY_REVEAL);
-/** @private Seller's quote for one sealed blob. */
+/**
+ * Seller's quote for one sealed blob.
+ * @private
+ */
 const SCHEMA_DOCUMENT_BLOB_QUOTE = keyedSchema(KEYED_LAYOUTS.DOCUMENT_BLOB_QUOTE);
-/** @private Seller's quote for a range of sealed blobs under one preimage. */
+/**
+ * Seller's quote for a range of sealed blobs under one preimage.
+ * @private
+ */
 const SCHEMA_DOCUMENT_BLOB_BATCH = keyedSchema(KEYED_LAYOUTS.DOCUMENT_BLOB_BATCH);
 
 /**
