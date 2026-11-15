@@ -122,7 +122,7 @@ function networkForFabricName (name = '') {
   const n = String(name || '').trim().toLowerCase();
   // Do not alias bare "test" — it is ambiguous (testnet tb1 vs regtest bcrt1).
   if (n === 'regtest') return networks.regtest;
-  if (n === 'testnet' || n === 'testnet4' || n === 'signet') return networks.testnet;
+  if (n === 'testnet' || n === 'testnet4' || n === 'testnet5' || n === 'signet') return networks.testnet;
   return networks.bitcoin;
 }
 

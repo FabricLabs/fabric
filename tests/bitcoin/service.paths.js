@@ -14,6 +14,7 @@ describe('@services/bitcoin bitcoind cookie / datadir paths', function () {
     assert.strictEqual(Bitcoin.bitcoindChainDataDirSegment('playnet'), 'regtest');
     assert.strictEqual(Bitcoin.bitcoindChainDataDirSegment('testnet'), 'testnet3');
     assert.strictEqual(Bitcoin.bitcoindChainDataDirSegment('testnet4'), 'testnet4');
+    assert.strictEqual(Bitcoin.bitcoindChainDataDirSegment('testnet5'), 'testnet5');
     assert.strictEqual(Bitcoin.bitcoindChainDataDirSegment('signet'), 'signet');
   });
 

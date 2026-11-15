@@ -477,7 +477,7 @@ describe('BIP-86 Taproot wallet', function () {
     it('derives on coin type 1 with the right prefix on every other network', function () {
       const testKey = key.master.derivePath("m/86'/1'/0'/0/0").publicKey;
       const expected = bip86.outputKey(Buffer.from(testKey));
-      const prefixes = { testnet: 'tb', testnet4: 'tb', signet: 'tb', regtest: 'bcrt' };
+      const prefixes = { testnet: 'tb', testnet4: 'tb', testnet5: 'tb', signet: 'tb', regtest: 'bcrt' };
       for (const [network, hrp] of Object.entries(prefixes)) {
         const out = Wallet.deriveTaprootAddress(key, { network });
         assert.strictEqual(out.path, "m/86'/1'/0'/0/0", network);

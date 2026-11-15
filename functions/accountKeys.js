@@ -41,7 +41,7 @@ const {
 } = require('../constants');
 
 /** Networks an account may be derived for. */
-const ACCOUNT_NETWORKS = Object.freeze(['mainnet', 'testnet', 'testnet4', 'signet', 'regtest']);
+const ACCOUNT_NETWORKS = Object.freeze(['mainnet', 'testnet', 'testnet4', 'testnet5', 'signet', 'regtest']);
 /** Addresses scanned past the last used one, on each chain of each wallet account. */
 const WALLET_GAP_LIMIT = 20;
 /** Stored record type for a sealed master plus its public account cache. */

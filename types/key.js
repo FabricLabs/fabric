@@ -184,9 +184,9 @@ function bip32NetworkFromKeySettings (settings) {
 }
 
 /**
- * Address and WIF parameters for a Key's network. Signet and testnet4 use
- * testnet's, playnet is regtest. An unknown name throws rather than falling
- * back to mainnet.
+ * Address and WIF parameters for a Key's network. Signet, testnet4, and
+ * testnet5 use testnet's, playnet is regtest. An unknown name throws rather
+ * than falling back to mainnet.
  * @private
  */
 function addressNetworkFromKeySettings (settings) {
@@ -199,6 +199,7 @@ function addressNetworkFromKeySettings (settings) {
     case 'testnet':
     case 'testnet3':
     case 'testnet4':
+    case 'testnet5':
     case 'signet':
       return nets.testnet;
     case 'regtest':

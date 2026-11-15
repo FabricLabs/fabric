@@ -42,6 +42,7 @@ describe('@fabric/core/services/lightning (unit)', function () {
       assert.strictEqual(Lightning.defaultListenPortForNetwork('regtest'), 9735);
       assert.strictEqual(Lightning.defaultListenPortForNetwork('testnet'), 19735);
       assert.strictEqual(Lightning.defaultListenPortForNetwork('testnet4'), 19735);
+      assert.strictEqual(Lightning.defaultListenPortForNetwork('testnet5'), 19735);
       assert.strictEqual(Lightning.defaultListenPortForNetwork('signet'), 39735);
     });
   });
@@ -52,6 +53,7 @@ describe('@fabric/core/services/lightning (unit)', function () {
       assert.strictEqual(new Lightning({ network: 'bitcoin' })._clnNetworkCliName(), 'bitcoin');
       assert.strictEqual(new Lightning({ network: 'testnet' })._clnNetworkCliName(), 'testnet');
       assert.strictEqual(new Lightning({ network: 'testnet4' })._clnNetworkCliName(), 'testnet4');
+      assert.strictEqual(new Lightning({ network: 'testnet5' })._clnNetworkCliName(), 'testnet5');
       assert.strictEqual(new Lightning({ network: 'signet' })._clnNetworkCliName(), 'signet');
       assert.strictEqual(new Lightning({ network: 'regtest' })._clnNetworkCliName(), 'regtest');
     });
@@ -63,6 +65,7 @@ describe('@fabric/core/services/lightning (unit)', function () {
       assert.strictEqual(new Lightning({ network: 'testnet' })._bitcoinCliNetworkFlag(), '-testnet');
       assert.strictEqual(new Lightning({ network: 'test' })._bitcoinCliNetworkFlag(), '-testnet');
       assert.strictEqual(new Lightning({ network: 'testnet4' })._bitcoinCliNetworkFlag(), '-testnet4');
+      assert.strictEqual(new Lightning({ network: 'testnet5' })._bitcoinCliNetworkFlag(), '-testnet5');
       assert.strictEqual(new Lightning({ network: 'signet' })._bitcoinCliNetworkFlag(), '-signet');
       assert.strictEqual(new Lightning({ network: 'regtest' })._bitcoinCliNetworkFlag(), '-regtest');
     });

@@ -576,6 +576,8 @@ describe('Policy', function () {
   it('networkForFabricName does not alias bare test to regtest', function () {
     assert.strictEqual(networkForFabricName('regtest'), bitcoin.networks.regtest);
     assert.strictEqual(networkForFabricName('testnet'), bitcoin.networks.testnet);
+    assert.strictEqual(networkForFabricName('testnet5'), bitcoin.networks.testnet);
+    assert.notStrictEqual(networkForFabricName('testnet5'), bitcoin.networks.bitcoin);
     // Ambiguous "test" falls through to mainnet (same as unknown names).
     assert.strictEqual(networkForFabricName('test'), bitcoin.networks.bitcoin);
   });

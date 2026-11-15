@@ -103,6 +103,7 @@ describe('@fabric/core/services/bitcoin', function () {
         assert.strictEqual(btc._normalizeChainName('regtest'), 'regtest');
         assert.strictEqual(btc._normalizeChainName('signet'), 'signet');
         assert.strictEqual(btc._normalizeChainName('testnet4'), 'testnet4');
+        assert.strictEqual(btc._normalizeChainName('testnet5'), 'testnet5');
         assert.strictEqual(btc._normalizeChainName('unknown-custom'), 'unknown-custom');
       });
 
@@ -124,7 +125,8 @@ describe('@fabric/core/services/bitcoin', function () {
           testnet: { rpc: 18332, p2p: 18333 },
           regtest: { rpc: 18443, p2p: 18444 },
           signet: { rpc: 38332, p2p: 38333 },
-          testnet4: { rpc: 48332, p2p: 48333 }
+          testnet4: { rpc: 48332, p2p: 48333 },
+          testnet5: { rpc: 18352, p2p: 18353 }
         };
 
         for (const [network, ports] of Object.entries(expected)) {
