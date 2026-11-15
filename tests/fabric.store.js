@@ -127,6 +127,37 @@ describe('@fabric/core/types/store', function () {
       assert.deepStrictEqual(puts, ['/list/1']);
     });
 
+    it('refuses an append token before the end of a path', async function () {
+      const puts = [];
+      const store = new Store({ strict: true });
+      store.db = {
+        get: async () => undefined,
+        put: async (key) => { puts.push(key); }
+      };
+      await assert.rejects(store.set('/items/-/name', 'a'), /append token before the end/);
+      assert.deepStrictEqual(puts, []);
+      assert.strictEqual(store._state.content.items, undefined);
+    });
+
+    it('keeps a persisted array when a child is read before its parent', async function () {
+      const disk = new Map([
+        ['/list', JSON.stringify([2])],
+        ['/list/0', JSON.stringify(2)],
+        ['/channels/1300000000000000001', JSON.stringify({ name: 'a' })]
+      ]);
+      const store = new Store({ strict: true });
+      store.db = {
+        get: async (key) => disk.get(key),
+        put: async () => {}
+      };
+      assert.strictEqual(await store.get('/list/0'), 2);
+      assert.ok(Array.isArray(store._state.content.list));
+      assert.deepStrictEqual(await store.get('/list'), [2]);
+      await assert.rejects(store.set('/list/name', 1), /non-index key under an array/);
+      assert.deepStrictEqual(await store.get('/channels/1300000000000000001'), { name: 'a' });
+      assert.ok(!Array.isArray(store._state.content.channels));
+    });
+
     it('keys siblings by numeric ids under an object, not an array', async function () {
       const store = new Store({ persistent: false, strict: true });
       await store.set('/channels/1300000000000000001', { name: 'a' });

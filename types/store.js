@@ -41,10 +41,11 @@ function isArrayIndex (token) {
 }
 
 /**
- * `pointer.set` that creates a missing parent as an object (an array only for
- * an append, `-`). `pointer.set` makes an array for any all-digit token, so a
- * numeric key such as a Discord snowflake would turn its parent into a sparse
- * array that later writes are refused under.
+ * `pointer.set` that creates a missing parent as an object (an array only when
+ * the next token is an append, `-`). `pointer.set` makes an array for any
+ * all-digit token, so a numeric key such as a Discord snowflake would turn its
+ * parent into a sparse array that later writes are refused under. An append
+ * token is only valid as the last token; an earlier `-` is not a property name.
  * @private
  */
 function setContent (root, path, value) {
@@ -53,6 +54,7 @@ function setContent (root, path, value) {
   if (tokens.some((token) => UNSAFE_PATH_TOKENS.has(token))) throw new Error(`${path} names a reserved key`);
   let node = root;
   for (let i = 0; i < tokens.length - 1; i++) {
+    if (tokens[i] === '-') throw new Error(`${path} uses an append token before the end`);
     if (!Object.prototype.hasOwnProperty.call(node, tokens[i])) {
       node[tokens[i]] = tokens[i + 1] === '-' ? [] : {};
     }
@@ -555,6 +557,13 @@ class Store extends Actor {
    */
   async _read (key, { strict = false } = {}) {
     const route = await this.getRouteInfo(key);
+    if (this.db && this.settings.persistent !== false) {
+      try {
+        await this._hydrateMissingParents(pointer.parse(route.path));
+      } catch (E) {
+        if (strict && !isLevelNotFound(E)) throw E;
+      }
+    }
     let result;
     try {
       result = pointer.get(this._state.content, route.path);
@@ -646,6 +655,8 @@ class Store extends Actor {
       return `bad path ${path}`;
     }
     if (tokens.some((token) => UNSAFE_PATH_TOKENS.has(token))) return `${path} names a reserved key`;
+    const appendAt = tokens.indexOf('-');
+    if (appendAt !== -1 && appendAt !== tokens.length - 1) return `${path} uses an append token before the end`;
     const beneath = `${path} is beneath a value that is not an object`;
     let node = this._state.content;
     for (let i = 0; i < tokens.length - 1; i++) {
@@ -675,6 +686,8 @@ class Store extends Actor {
       return `bad path ${path}`;
     }
     if (tokens.some((token) => UNSAFE_PATH_TOKENS.has(token))) return `${path} names a reserved key`;
+    const appendAt = tokens.indexOf('-');
+    if (appendAt !== -1 && appendAt !== tokens.length - 1) return `${path} uses an append token before the end`;
     let node = this._state.content;
     for (let i = 0; i < tokens.length; i++) {
       if (node === null || typeof node !== 'object') return null;
@@ -685,6 +698,40 @@ class Store extends Actor {
       node = node[tokens[i]];
     }
     return null;
+  }
+
+  /**
+   * Load persisted ancestors of `tokens` into memory before a child is placed.
+   * A child read must not invent an object where Level already holds an array,
+   * or the later parent read returns that object and never opens Level.
+   * @param {Array<string>} tokens Parsed path, including the key being read.
+   * @private
+   */
+  async _hydrateMissingParents (tokens) {
+    if (!this.db || this.settings.persistent === false || !Array.isArray(tokens) || tokens.length < 2) return;
+    let node = this._state.content;
+    for (let i = 0; i < tokens.length - 1; i++) {
+      const token = tokens[i];
+      if (token === '-') return;
+      if (node && typeof node === 'object' && Object.prototype.hasOwnProperty.call(node, token)) {
+        node = node[token];
+        continue;
+      }
+      if (node === null || typeof node !== 'object') return;
+      const ancestorPath = pointer.compile(tokens.slice(0, i + 1));
+      let raw;
+      try {
+        raw = await this.db.get(ancestorPath);
+      } catch (E) {
+        if (isLevelNotFound(E)) return;
+        throw E;
+      }
+      if (raw === undefined || raw === null) return;
+      const value = decodePersisted(raw);
+      if (value === null || typeof value !== 'object') return;
+      setContent(this._state.content, ancestorPath, value);
+      node = value;
+    }
   }
 
   /**
