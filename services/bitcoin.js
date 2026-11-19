@@ -1131,8 +1131,6 @@ class Bitcoin extends Service {
 
   async tick () {
     const self = this;
-    const now = (new Date()).toISOString();
-    ++this._clock;
 
     if (this.settings.mode === 'rpc' && this._rpcReady === false) {
       // Degraded mode: no reachable RPC endpoint, skip sync work.
@@ -1144,17 +1142,10 @@ class Bitcoin extends Service {
       this._checkAllTargetBalances()
     ]).catch((exception) => {
       self.emit('error', `Unable to synchronize: ${exception}`);
-    }).then((_output) => {
-      // self.emit('log', `Tick output: ${JSON.stringify(_output, null, '  ')}`);
-
-      const beat = {
-        clock: self._clock,
-        created: now,
-        state: self.state
-      };
-
-      self.emit('beat', beat);
-      self.commit();
+    }).then(() => {
+      // One heartbeat message. The service beat carries a digest, or one
+      // unsealed transition, and does not commit.
+      self.beat();
     });
 
     return this;

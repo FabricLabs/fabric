@@ -203,14 +203,11 @@ class Lightning extends Service {
   }
 
   commit () {
-    // this.emit('debug', `Committing...`);
-
+    const channels = (this.state && this.state.channels) || {};
     const commit = new Actor({
       type: 'Commit',
-      state: this.state
+      state: { channels }
     });
-
-    // this.emit('debug', `Committing Actor: ${commit}`);
 
     this.emit('commit', {
       id: commit.id,

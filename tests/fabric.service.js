@@ -2,8 +2,13 @@
 
 // Testing
 const assert = require('assert');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 const EventEmitter = require('events');
 const Service = require('../types/service');
+const { MAX_MESSAGE_SIZE } = require('../constants');
+const { stateDigest } = require('../functions/sidechainState');
 
 /** Skip real networking and heartbeat ticks during short unit tests. */
 const FAST_SERVICE = Object.freeze({ networking: false, interval: 86400000 });
@@ -369,20 +374,108 @@ describe('@fabric/core/types/service', function () {
       assert.strictEqual(service.history.length, 2);
     });
 
-    it('beat carries monotonic clock and state snapshot for observers', async function () {
+    it('beat carries a monotonic clock and a state digest', async function () {
       const service = new Service(FAST_SERVICE);
       await service.start();
       let seen = null;
+      const commits = [];
+      service.on('commit', (commit) => commits.push(commit));
       service.on('beat', (beat) => {
         const payload = JSON.parse(beat.data);
         seen = payload;
       });
+      const staged = service.staging.length;
       service.beat();
       await service.stop();
       assert.ok(seen);
       assert.strictEqual(seen.clock, service.clock);
       assert.ok(seen.created);
-      assert.ok(seen.state && typeof seen.state === 'object');
+      assert.strictEqual(typeof seen.stateDigest, 'string');
+      assert.strictEqual(seen.stateDigest.length, 64);
+      assert.ok(!('state' in seen));
+      assert.strictEqual(commits.length, 0);
+      assert.strictEqual(service.staging.length, staged);
+    });
+
+    it('beat appends one unsealed message per transition and does not commit', async function () {
+      const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'fabric-beat-')));
+      const service = new Service({
+        ...FAST_SERVICE,
+        name: 'beat-delta',
+        fs: { path: dir }
+      });
+      await service.start();
+      const errors = [];
+      const commits = [];
+      const beats = [];
+      service.on('error', (error) => errors.push(String(error && error.message ? error.message : error)));
+      service.on('commit', (commit) => commits.push(commit));
+      service.on('beat', (beat) => beats.push(beat));
+
+      const messages = service._state.content.messages;
+      service._state.content.payload = { k0: 'x'.repeat(100), k1: 'y'.repeat(100) };
+      service._state.content.note = 'kept';
+      const history = service.history.length;
+      service.beat();
+
+      assert.ok(!errors.some((error) => error.includes('bounded JSON')));
+      assert.strictEqual(errors.length, 0);
+      assert.strictEqual(commits.length, 0);
+      assert.strictEqual(service.history.length, history);
+      assert.deepStrictEqual(service._state.content.messages, messages);
+      assert.strictEqual(service._state.content.note, 'kept');
+      assert.strictEqual(service.staging.length, 1);
+      assert.strictEqual(service.staging[0].seq, 1);
+      assert.strictEqual(service.staging[0].sealedBeaconClock, null);
+      assert.ok(service.staging[0].patches.some((op) => op.path === '/payload'));
+      assert.ok(service.staging[0].patches.some((op) => op.path === '/note'));
+      const digest = stateDigest({
+        version: 1,
+        clock: service._stagedClock,
+        content: service._state.content
+      });
+      assert.strictEqual(service.staging[0].newDigest, digest);
+      assert.strictEqual(beats.length, 1);
+      assert.ok(beats[0].bodyBuffer.length <= MAX_MESSAGE_SIZE);
+      assert.strictEqual(beats[0].type, 'SIDECHAIN_STATE_PATCH');
+      const journal = JSON.parse(fs.readFileSync(path.join(dir, 'sidechain', 'JOURNAL'), 'utf8'));
+      assert.strictEqual(journal.entries.length, 1);
+      assert.strictEqual(journal.entries[0].sealedBeaconClock, null);
+      await service.stop();
+      fs.rmSync(dir, { recursive: true, force: true });
+    });
+
+    it('beat refuses a transition that does not fit in one message', async function () {
+      const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'fabric-beat-leaf-')));
+      const service = new Service({
+        ...FAST_SERVICE,
+        name: 'beat-leaf',
+        fs: { path: dir }
+      });
+      await service.start();
+      const errors = [];
+      const commits = [];
+      const beats = [];
+      service.on('error', (error) => errors.push(String(error && error.message ? error.message : error)));
+      service.on('commit', (commit) => commits.push(commit));
+      service.on('beat', (beat) => beats.push(beat));
+
+      const messages = service._state.content.messages;
+      service._state.content.leaf = 'y'.repeat(MAX_MESSAGE_SIZE);
+      service._state.content.note = 'kept';
+      service.beat();
+
+      assert.ok(!errors.some((error) => error.includes('bounded JSON')));
+      assert.ok(errors.some((error) => error.includes('transition exceeds max') && error.includes(String(MAX_MESSAGE_SIZE))));
+      assert.strictEqual(errors.length, 1);
+      assert.strictEqual(commits.length, 0);
+      assert.strictEqual(beats.length, 0);
+      assert.strictEqual(service.staging.length, 0);
+      assert.strictEqual(service._state.content.leaf.length, MAX_MESSAGE_SIZE);
+      assert.strictEqual(service._state.content.note, 'kept');
+      assert.deepStrictEqual(service._state.content.messages, messages);
+      await service.stop();
+      fs.rmSync(dir, { recursive: true, force: true });
     });
 
     it('trust forwards tip hashes to subservices via alert', function () {
