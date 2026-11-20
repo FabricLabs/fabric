@@ -1073,6 +1073,7 @@ describe('@fabric/core/services/lightning (unit)', function () {
       });
       await ln._syncChannels();
       assert.ok(Object.keys(ln._state.channels).length >= 1);
+      assert.deepStrictEqual(Object.keys(ln.state.channels), Object.keys(ln._state.channels));
     });
   });
 

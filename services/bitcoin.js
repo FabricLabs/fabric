@@ -572,7 +572,9 @@ class Bitcoin extends Service {
       mainnet: bitcoin.networks.bitcoin,
       testnet: bitcoin.networks.testnet,
       regtest: bitcoin.networks.regtest,
-      signet: bitcoin.networks.testnet // Signet uses testnet address format
+      signet: bitcoin.networks.testnet, // Signet uses testnet address format
+      testnet4: bitcoin.networks.testnet,
+      testnet5: bitcoin.networks.testnet
     };
 
     if (this.settings.debug && this.settings.verbosity >= 4) this.emit('debug', '[DEBUG] Instance of Bitcoin service created');
@@ -1106,7 +1108,7 @@ class Bitcoin extends Service {
   validateAddress (address) {
     try {
       // Get the correct network configuration
-      const network = this._networkConfigs[this.settings.network];
+      const network = this._networkConfigs[this._normalizeChainName(this.settings.network)];
       if (!network) {
         throw new Error(`Invalid network: ${this.settings.network}`);
       }

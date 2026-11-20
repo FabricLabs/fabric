@@ -50,10 +50,14 @@ function discoverRepos (root = CORE_ROOT) {
     if (dir === here) continue;
     const pkg = readPackage(dir);
     if (!pkg || !pkg.name || !self || !self.name) continue;
-    const deps = Object.assign({}, pkg.dependencies, pkg.devDependencies, pkg.peerDependencies);
+    const deps = declaredDependencies(pkg);
     if (Object.prototype.hasOwnProperty.call(deps, self.name)) found.push({ dir, pkg });
   }
   return found;
+}
+
+function declaredDependencies (pkg) {
+  return Object.assign({}, pkg && pkg.dependencies, pkg && pkg.devDependencies, pkg && pkg.peerDependencies, pkg && pkg.optionalDependencies);
 }
 
 function readPackage (dir) {
@@ -72,7 +76,7 @@ function readPackage (dir) {
 function orderRepos (repos) {
   const byName = new Map(repos.map((r) => [r.pkg.name, r]));
   const nodes = repos.map((r) => {
-    const deps = Object.assign({}, r.pkg.dependencies, r.pkg.devDependencies, r.pkg.peerDependencies);
+    const deps = declaredDependencies(r.pkg);
     const needs = Object.keys(deps).filter((name) => name !== r.pkg.name && byName.has(name));
     return Object.assign({}, r, { needs: needs.map((name) => byName.get(name).dir) });
   });
@@ -127,9 +131,60 @@ function parseArgs (argv) {
   return opts;
 }
 
+function quoteArg (value) {
+  const text = String(value);
+  if (/^[A-Za-z0-9_./:@+=,-]+$/.test(text)) return text;
+  return `'${text.replace(/'/g, `'\\''`)}'`;
+}
+
+/**
+ * The command that reruns this process from a failed repository, keeping the
+ * directories and flags of the run that failed.
+ * @param {string} failedName
+ * @param {{ dirs: string[], ci?: boolean, install?: boolean, bail?: boolean }} opts
+ * @returns {string}
+ */
+function resumeCommand (failedName, opts) {
+  const parts = ['node', 'scripts/test-ecosystem.js'];
+  if (opts.ci) parts.push('--ci');
+  if (opts.install) parts.push('--install');
+  if (opts.bail === false) parts.push('--no-bail');
+  for (const dir of opts.dirs || []) parts.push(quoteArg(dir));
+  parts.push('--from', quoteArg(failedName));
+  return parts.join(' ');
+}
+
+/**
+ * @param {string[]} dirs
+ * @param {boolean} explicit When true, a missing or nameless package.json is an error.
+ * @returns {Array<{ dir: string, pkg: object }>}
+ */
+function selectRepos (dirs, explicit) {
+  const repos = [];
+  const invalid = [];
+  for (const dir of dirs) {
+    const pkg = readPackage(dir);
+    if (!pkg || !pkg.name) {
+      if (explicit) invalid.push(dir);
+      continue;
+    }
+    repos.push({ dir, pkg });
+  }
+  if (invalid.length) throw new Error(`Invalid repository selection: ${invalid.join(', ')}`);
+  return repos;
+}
+
+function npmLaunch (args) {
+  if (process.platform !== 'win32') return { command: 'npm', args };
+  const cli = path.join(path.dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js');
+  if (fs.existsSync(cli)) return { command: process.execPath, args: [cli].concat(args) };
+  return { command: 'npm.cmd', args };
+}
+
 function run (dir, args, timeoutMs) {
   const started = Date.now();
-  const result = spawnSync('npm', args, { cwd: dir, stdio: 'inherit', timeout: timeoutMs });
+  const launch = npmLaunch(args);
+  const result = spawnSync(launch.command, launch.args, { cwd: dir, stdio: 'inherit', timeout: timeoutMs });
   const seconds = Math.round((Date.now() - started) / 1000);
   const ok = result.status === 0;
   let reason = null;
@@ -141,9 +196,8 @@ function run (dir, args, timeoutMs) {
 
 function main (argv) {
   const opts = parseArgs(argv);
-  const repos = (opts.dirs.length ? opts.dirs : defaultRepos())
-    .map((dir) => ({ dir, pkg: readPackage(dir) }))
-    .filter((r) => r.pkg && r.pkg.name);
+  const explicit = opts.dirs.length > 0 || Boolean(process.env.FABRIC_REPOS);
+  const repos = selectRepos(opts.dirs.length ? opts.dirs : defaultRepos(), explicit);
   let ordered = orderRepos(repos);
   if (opts.from) {
     const at = ordered.findIndex((r) => path.basename(r.dir) === opts.from || r.pkg.name === opts.from);
@@ -173,7 +227,7 @@ function main (argv) {
       if (!result.ok) {
         console.error(`\n✗ ${name}: npm ${args.join(' ')} failed (${result.reason}, ${result.seconds}s)`);
         if (passed.length) console.error(`Passed before it: ${passed.join(', ')}`);
-        console.error(`Resume with: node scripts/test-ecosystem.js --from ${name}`);
+        console.error(`Resume with: ${resumeCommand(name, opts)}`);
         return 1;
       }
       console.log(`✓ ${name}: npm ${args.join(' ')} (${result.seconds}s)`);
@@ -193,4 +247,4 @@ if (require.main === module) {
   }
 }
 
-module.exports = { orderRepos, testCommand, discoverRepos };
+module.exports = { orderRepos, testCommand, discoverRepos, selectRepos, resumeCommand };

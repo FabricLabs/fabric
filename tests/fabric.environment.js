@@ -1070,6 +1070,20 @@ describe('@fabric/core/types/environment', function () {
         }
       });
 
+      it('_readBitcoinConf selects testnet5 and its RPC port', function () {
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fabric-btc-conf-'));
+        try {
+          const confPath = path.join(dir, 'bitcoin.conf');
+          fs.writeFileSync(confPath, 'testnet5=1\n', 'utf8');
+          const cfg = new Environment()._readBitcoinConf(confPath);
+          assert.strictEqual(cfg.network.testnet5, 1);
+          assert.strictEqual(cfg.network.active, 'testnet5');
+          assert.strictEqual(cfg.rpc.rpcport, 18352);
+        } finally {
+          fs.rmSync(dir, { recursive: true, force: true });
+        }
+      });
+
       it('_readBitcoinConf returns found false for a missing path', function () {
         const e = new Environment();
         const cfg = e._readBitcoinConf(path.join(os.tmpdir(), `missing-bitcoin-${Date.now()}.conf`));

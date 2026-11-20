@@ -941,11 +941,13 @@ class Lightning extends Service {
       return this;
     }
 
-    this._state.channels = channels.channels.reduce((acc, channel) => {
+    const synced = channels.channels.reduce((acc, channel) => {
       const actor = new Actor(channel);
       acc[actor.id] = actor.state;
       return acc;
     }, {});
+    this._state.channels = synced;
+    if (this._state.content) this._state.content.channels = synced;
 
     return this;
   }

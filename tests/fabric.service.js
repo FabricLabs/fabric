@@ -509,6 +509,142 @@ describe('@fabric/core/types/service', function () {
       assert.deepStrictEqual(forwarded[0], sample);
     });
 
+    it('beat reports an observer that cannot be read', function () {
+      const service = new Service(FAST_SERVICE);
+      const errors = [];
+      service.on('error', (error) => errors.push(String(error)));
+      service.observer = 1;
+      service.beat();
+      assert.ok(errors.some((error) => error.includes('Exception staging beat')));
+    });
+
+    it('pairs a preceding test op and skips values that are not ops', function () {
+      const service = new Service(FAST_SERVICE);
+      const ops = service._forwardOps([
+        null,
+        'nope',
+        { op: 'test', path: '/n', value: 1 },
+        { op: 'replace', path: '/n', value: 2 },
+        { op: 'add', path: '/x', value: true }
+      ]);
+      assert.strictEqual(ops.length, 2);
+      assert.strictEqual(ops[0].old, 1);
+      assert.strictEqual(ops[1].old, undefined);
+    });
+
+    it('reverts a transition to its basis and refuses one it cannot invert', function () {
+      const service = new Service(FAST_SERVICE);
+      service._state.content = { n: 2, extra: true };
+      const basis = service._revertTransition(service._state.content, [
+        { op: { op: 'replace', path: '/n', value: 2 }, old: 1 },
+        { op: { op: 'add', path: '/extra', value: true } }
+      ]);
+      assert.strictEqual(basis.n, 1);
+      assert.strictEqual(basis.extra, undefined);
+      assert.deepStrictEqual(service._revertTransition({ a: 1 }, []), { a: 1 });
+      assert.strictEqual(service._revertTransition({ a: 1 }, [{ op: { op: 'add' } }]), null);
+      assert.strictEqual(service._revertTransition({ a: 1 }, [{ op: { op: 'remove', path: '/a' } }]), null);
+      const circular = {};
+      circular.self = circular;
+      assert.strictEqual(service._revertTransition(circular, [{ op: { op: 'add', path: '/x' } }]), null);
+      assert.strictEqual(service._revertTransition({ a: 1 }, [{ op: { op: 'add', path: '/a/b' } }]), null);
+    });
+
+    it('refuses an empty patch list and a patch that cannot be encoded', function () {
+      const service = new Service(FAST_SERVICE);
+      const circular = {};
+      circular.self = circular;
+      assert.strictEqual(service._transitionFits([]), false);
+      assert.strictEqual(service._transitionFits([{ op: 'add', path: '/x', value: circular }]), false);
+    });
+
+    it('stages nothing from test ops alone and reports a transition it cannot read', function () {
+      const service = new Service(FAST_SERVICE);
+      const now = new Date().toISOString();
+      const testsOnly = service._stageTransition([{ op: 'test', path: '/n', value: 1 }], now);
+      assert.strictEqual(testsOnly.row, null);
+      assert.deepStrictEqual(testsOnly.errors, []);
+      service._state.content.n = 2;
+      const unread = service._stageTransition([{ op: 'replace', path: '/n', value: 2 }], now);
+      assert.strictEqual(unread.row, null);
+      assert.ok(unread.errors[0].includes('could not read the transition'));
+    });
+
+    it('reports a message that cannot be built and a transition the sidechain rejects', function () {
+      const service = new Service(FAST_SERVICE);
+      service._state.content.flag = true;
+      const now = new Date().toISOString();
+      const raw = [{ op: 'add', path: '/flag', value: true }];
+      const fromLegacyBody = Message.fromLegacyBody;
+      const apply = sidechain.applyPatchesToState;
+      Message.fromLegacyBody = () => { throw new Error('bad body'); };
+      try {
+        const built = service._stageTransition(raw, now);
+        assert.strictEqual(built.row, null);
+        assert.ok(built.errors[0].includes('bad body'));
+      } finally {
+        Message.fromLegacyBody = fromLegacyBody;
+      }
+      sidechain.applyPatchesToState = () => ({ ok: false, error: 'rejected' });
+      try {
+        const rejected = service._stageTransition(raw, now);
+        assert.strictEqual(rejected.row, null);
+        assert.ok(rejected.errors[0].includes('rejected'));
+      } finally {
+        sidechain.applyPatchesToState = apply;
+      }
+      sidechain.applyPatchesToState = () => { throw new Error('sidechain down'); };
+      try {
+        const thrown = service._stageTransition(raw, now);
+        assert.ok(thrown.errors[0].includes('sidechain down'));
+      } finally {
+        sidechain.applyPatchesToState = apply;
+      }
+    });
+
+    it('idle beat reports a digest failure, a body that will not parse, and a missing message', function () {
+      const service = new Service(FAST_SERVICE);
+      const errors = [];
+      service.on('error', (error) => errors.push(String(error)));
+      service.observer = null;
+      service.contentDigest = () => { throw new Error('digest down'); };
+      service.beat();
+      assert.ok(errors.some((error) => error.includes('digest down')));
+
+      const fromVector = Message.fromVector;
+      Message.fromVector = () => ({ data: '{' });
+      try {
+        errors.length = 0;
+        service.contentDigest = Service.prototype.contentDigest;
+        service._emitIdleBeat(new Date().toISOString());
+        assert.ok(errors.some((error) => error.includes('Exception parsing beat')));
+      } finally {
+        Message.fromVector = fromVector;
+      }
+
+      Message.fromVector = () => null;
+      try {
+        assert.throws(() => service._emitIdleBeat(new Date().toISOString()), /could not construct a Message/);
+      } finally {
+        Message.fromVector = fromVector;
+      }
+    });
+
+    it('keeps a staged row when the journal cannot be written', function () {
+      const service = new Service(FAST_SERVICE);
+      const errors = [];
+      service.on('error', (error) => errors.push(String(error)));
+      service.fs = null;
+      service._appendStagingRow({ basisClock: 0, clock: 1, patches: [] });
+      assert.strictEqual(errors.length, 0);
+      service.fs = {
+        readFile () { return null; },
+        writeFile () { throw new Error('disk full'); }
+      };
+      service._appendStagingRow({ basisClock: 0, clock: 1, patches: [] });
+      assert.ok(errors.some((error) => error.includes('disk full')));
+    });
+
     it('route with high verbosity emits routing and commit diagnostics', async function () {
       const service = new Service({ ...FAST_SERVICE, verbosity: 4 });
       await service.start();
@@ -890,6 +1026,12 @@ describe('@fabric/core/types/service', function () {
   });
 });
 
+const Chain = require('../types/chain');
+const Contract = require('../types/contract');
+const Message = require('../types/message');
+const sidechain = require('../functions/sidechainState');
+const { discoverRepos, orderRepos, resumeCommand, selectRepos } = require('../scripts/test-ecosystem');
+
 const Bitcoin = require('../services/bitcoin');
 const State = require('../types/state');
 const Store = require('../types/store');
@@ -921,5 +1063,87 @@ describe('Hub crash-report follow-ups (core)', function () {
     const done = await Bitcoin.prototype.applyP2pAddNodes.call(btc, ['hub.fabric.pub:18444']);
     assert.deepStrictEqual(done, ['hub.fabric.pub:18444']);
     assert.strictEqual(warnings.length, 0);
+  });
+});
+
+describe('state digests on chain blocks and contract commits', function () {
+  it('signs a block with a state digest, and null when the digest cannot be built', function () {
+    const chain = new Chain();
+    const block = chain.createSignedBlock({ actor: 'aa'.repeat(32), changes: [] });
+    assert.strictEqual(block.type, 'FabricBlock');
+    assert.strictEqual(block.actor, 'aa'.repeat(32));
+    assert.strictEqual(typeof block.stateDigest, 'string');
+    assert.strictEqual(block.stateDigest.length, 64);
+    assert.ok(!('state' in block));
+    chain.contentDigest = () => { throw new Error('digest down'); };
+    assert.strictEqual(chain.createSignedBlock().stateDigest, null);
+  });
+
+  it('commit records a null digest when the content digest cannot be built', function () {
+    const contract = new Contract({
+      key: { xprv: require('../constants').FIXTURE_XPRV }
+    });
+    const commits = [];
+    const warnings = [];
+    contract.on('commit', (commit) => commits.push(commit));
+    contract.on('warning', (warning) => warnings.push(String(warning)));
+    contract.contentDigest = () => { throw new Error('digest down'); };
+    contract.commit();
+    assert.strictEqual(commits.length, 1);
+    assert.strictEqual(commits[0].stateDigest, null);
+    assert.ok(!('state' in commits[0]));
+    assert.ok(warnings.some((warning) => warning.includes('state digest not built')));
+  });
+});
+
+describe('scripts/test-ecosystem', function () {
+  it('orders a sibling that depends only through optionalDependencies', function () {
+    const repos = [
+      { dir: '/core', pkg: { name: '@fabric/core' } },
+      { dir: '/app', pkg: { name: 'app', optionalDependencies: { '@fabric/core': '1.0.0' } } }
+    ];
+    const ordered = orderRepos(repos);
+    assert.deepStrictEqual(ordered.map((repo) => repo.dir), ['/core', '/app']);
+    assert.deepStrictEqual(ordered[1].needs, ['/core']);
+  });
+
+  it('discovers a sibling whose only dependency is optional', function () {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fabric-eco-'));
+    const core = path.join(root, 'core');
+    const app = path.join(root, 'app');
+    fs.mkdirSync(core);
+    fs.mkdirSync(app);
+    fs.writeFileSync(path.join(core, 'package.json'), JSON.stringify({ name: '@fabric/core' }));
+    fs.writeFileSync(path.join(app, 'package.json'), JSON.stringify({
+      name: 'app',
+      optionalDependencies: { '@fabric/core': '1.0.0' }
+    }));
+    const found = discoverRepos(core).map((repo) => repo.pkg.name);
+    assert.deepStrictEqual(found.sort(), ['@fabric/core', 'app']);
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  it('rejects an explicit directory with no package name and ignores one found by discovery', function () {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fabric-eco-'));
+    const named = path.join(root, 'named');
+    const empty = path.join(root, 'empty');
+    fs.mkdirSync(named);
+    fs.mkdirSync(empty);
+    fs.writeFileSync(path.join(named, 'package.json'), JSON.stringify({ name: 'named' }));
+    fs.writeFileSync(path.join(empty, 'package.json'), '{');
+    assert.throws(() => selectRepos([named, empty], true), /Invalid repository selection/);
+    assert.deepStrictEqual(selectRepos([named, empty], false).map((repo) => repo.pkg.name), ['named']);
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  it('keeps the flags and directories in the resume command', function () {
+    assert.strictEqual(
+      resumeCommand('fabric-http', { ci: true, install: true, bail: true, dirs: ['/tmp/fabric http'] }),
+      "node scripts/test-ecosystem.js --ci --install '/tmp/fabric http' --from fabric-http"
+    );
+    assert.strictEqual(
+      resumeCommand('core', { ci: false, install: false, bail: false, dirs: [] }),
+      'node scripts/test-ecosystem.js --no-bail --from core'
+    );
   });
 });
