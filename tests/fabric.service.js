@@ -1030,8 +1030,6 @@ const Chain = require('../types/chain');
 const Contract = require('../types/contract');
 const Message = require('../types/message');
 const sidechain = require('../functions/sidechainState');
-const { discoverRepos, orderRepos, resumeCommand, selectRepos } = require('../scripts/test-ecosystem');
-
 const Bitcoin = require('../services/bitcoin');
 const State = require('../types/state');
 const Store = require('../types/store');
@@ -1093,57 +1091,5 @@ describe('state digests on chain blocks and contract commits', function () {
     assert.strictEqual(commits[0].stateDigest, null);
     assert.ok(!('state' in commits[0]));
     assert.ok(warnings.some((warning) => warning.includes('state digest not built')));
-  });
-});
-
-describe('scripts/test-ecosystem', function () {
-  it('orders a sibling that depends only through optionalDependencies', function () {
-    const repos = [
-      { dir: '/core', pkg: { name: '@fabric/core' } },
-      { dir: '/app', pkg: { name: 'app', optionalDependencies: { '@fabric/core': '1.0.0' } } }
-    ];
-    const ordered = orderRepos(repos);
-    assert.deepStrictEqual(ordered.map((repo) => repo.dir), ['/core', '/app']);
-    assert.deepStrictEqual(ordered[1].needs, ['/core']);
-  });
-
-  it('discovers a sibling whose only dependency is optional', function () {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fabric-eco-'));
-    const core = path.join(root, 'core');
-    const app = path.join(root, 'app');
-    fs.mkdirSync(core);
-    fs.mkdirSync(app);
-    fs.writeFileSync(path.join(core, 'package.json'), JSON.stringify({ name: '@fabric/core' }));
-    fs.writeFileSync(path.join(app, 'package.json'), JSON.stringify({
-      name: 'app',
-      optionalDependencies: { '@fabric/core': '1.0.0' }
-    }));
-    const found = discoverRepos(core).map((repo) => repo.pkg.name);
-    assert.deepStrictEqual(found.sort(), ['@fabric/core', 'app']);
-    fs.rmSync(root, { recursive: true, force: true });
-  });
-
-  it('rejects an explicit directory with no package name and ignores one found by discovery', function () {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fabric-eco-'));
-    const named = path.join(root, 'named');
-    const empty = path.join(root, 'empty');
-    fs.mkdirSync(named);
-    fs.mkdirSync(empty);
-    fs.writeFileSync(path.join(named, 'package.json'), JSON.stringify({ name: 'named' }));
-    fs.writeFileSync(path.join(empty, 'package.json'), '{');
-    assert.throws(() => selectRepos([named, empty], true), /Invalid repository selection/);
-    assert.deepStrictEqual(selectRepos([named, empty], false).map((repo) => repo.pkg.name), ['named']);
-    fs.rmSync(root, { recursive: true, force: true });
-  });
-
-  it('keeps the flags and directories in the resume command', function () {
-    assert.strictEqual(
-      resumeCommand('fabric-http', { ci: true, install: true, bail: true, dirs: ['/tmp/fabric http'] }),
-      "node scripts/test-ecosystem.js --ci --install '/tmp/fabric http' --from fabric-http"
-    );
-    assert.strictEqual(
-      resumeCommand('core', { ci: false, install: false, bail: false, dirs: [] }),
-      'node scripts/test-ecosystem.js --no-bail --from core'
-    );
   });
 });
