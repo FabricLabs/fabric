@@ -95,7 +95,8 @@ class CLI extends FabricShell {
       testnet: 18332,
       signet: 38332,
       regtest: 18443,
-      testnet4: 48332
+      testnet4: 48332,
+      testnet5: 18352
     };
 
     const explicitRPCPort = settings.bitcoin && Object.prototype.hasOwnProperty.call(settings.bitcoin, 'rpcport');
@@ -132,7 +133,8 @@ class CLI extends FabricShell {
       signet: './stores/bitcoin-signet',
       mainnet: './stores/bitcoin-mainnet',
       testnet: './stores/bitcoin-testnet',
-      testnet4: './stores/bitcoin-testnet4'
+      testnet4: './stores/bitcoin-testnet4',
+      testnet5: './stores/bitcoin-testnet5'
     };
 
     // Assign Settings

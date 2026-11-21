@@ -1520,9 +1520,15 @@ class Contract extends Service {
       }
     }
 
+    let stateDigest = null;
+    try {
+      stateDigest = this.contentDigest(0);
+    } catch (err) {
+      this.emit('warning', `[CONTRACT] state digest not built: ${err && err.message ? err.message : err}`);
+    }
     this.emit('commit', {
       created: now.toISOString(),
-      state: this.state
+      stateDigest: stateDigest
     });
 
     return this;

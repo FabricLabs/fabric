@@ -1,6 +1,9 @@
 # `@fabric/core` Changelog
 Recent changes to Fabric Core.
 
+## 2026-11-14
+- **`testnet5` is a test network.** BIP 95 (replaces testnet4) uses testnet address parameters (`tb1`), chain folder `testnet5`, RPC 18352, and P2P 18353. `networkForFabricName`, `Key`, the test-network allowlist, and account derivation accept the name. It does not use mainnet parameters, and an unknown name still does not.
+
 ## 2026-11-08
 - **Mailbox read proofs name their Hub and use (breaking wire change).** `DELEGATION_MAILBOX_FETCH` adds `origin` and `purpose` after `pubkey` and moves to body version 2 (`MAILBOX_FETCH_VERSION`), so a reader of either layout refuses the other instead of reading fields at the wrong offsets; `createMailboxFetch` requires both, and `readMailboxFetch` requires the server's origin (or list) and the purpose it checks (`MAILBOX_FETCH_PURPOSES`: `delegation-mailbox`, `delegation-cancel`, `federation-mailbox`), refusing a proof for any other and any read that names neither. A proof sent to one Hub or route can no longer be replayed at another before its nonce is spent there.
 - **Editable documents as contracts** (`functions/documentRevisions`, [docs/DOCUMENT_REVISIONS.md](docs/DOCUMENT_REVISIONS.md)). A `DocumentContract` publish names the editors; each edit is a signed `DocumentRevision` contract message (new `CONTRACT_BODY_TYPES` entry) whose header `parent` is the replaced revision's frame id. Versions keep their own document ids. `foldDocumentRevisions` folds frames in any order, keeping forks; `documentProvenance` / `verifyDocumentProvenance` give and check one version's history (publish through that revision, no later edits) as a `FabricMessageCollection`; an empty `sha256`, expected or signed, is refused as malformed.

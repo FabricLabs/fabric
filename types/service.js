@@ -26,7 +26,7 @@ const Key = require('./key');
 const Message = require('./message');
 const Resource = require('./resource');
 const Store = require('./store');
-const { SERVICE_COMMIT_HISTORY_MAX } = require('../constants');
+const { MAX_MESSAGE_SIZE, SERVICE_COMMIT_HISTORY_MAX } = require('../constants');
 const {
   createDefaultOpcodeRegistry,
   defineOpcode: defineOpcodeEntry,
@@ -108,6 +108,9 @@ class Service extends Actor {
     this.clients = {};
     this.targets = [];
     this.history = [];
+    // Append-only unsealed journal. Beat never seals these rows.
+    this.staging = [];
+    this._stagedClock = 0;
     this.origin = '';
 
     // TODO: fix this
@@ -300,7 +303,9 @@ class Service extends Actor {
   }
 
   /**
-   * Compute latest state.
+   * Advance one heartbeat. Outstanding changes are one transition: one unsealed
+   * message, or nothing if that message would not fit. An idle beat is a digest
+   * checkpoint. This does not commit.
    * @emits Message#beat
    * @returns {Service}
    */
@@ -310,22 +315,221 @@ class Service extends Actor {
     // Increment clock
     ++this._clock;
 
-    // Create Generic Message
-    const beat = Message.fromVector(['Generic', {
-      clock: this._clock,
-      created: now,
-      state: this._state.content
-    }]);
+    let raw = [];
+    if (PATCHES_ENABLED && this.observer) {
+      try {
+        const generated = manager.generate(this.observer, true);
+        raw = Array.isArray(generated) ? generated : [];
+      } catch (exception) {
+        this.emit('error', `Exception staging beat: ${exception.message || exception}`);
+      }
+    }
+
+    if (!raw.length) {
+      this._emitIdleBeat(now);
+      return this;
+    }
+
+    const staged = this._stageTransition(raw, now);
+    for (const error of staged.errors) this.emit('error', error);
+    if (!staged.row || !staged.message) return this;
+
+    staged.row.seq = this.staging.length + 1;
+    this.staging.push(staged.row);
+    this._appendStagingRow(staged.row);
+    this._stagedClock = staged.clock;
+    this.emit('beat', staged.message);
+
+    return this;
+  }
+
+  /**
+   * Pair each forward op with the old value from a preceding test op.
+   * @param {Array} raw Observer output, including test ops.
+   * @returns {Array} Forward ops paired with their previous values.
+   * @private
+   */
+  _forwardOps (raw) {
+    const ops = [];
+    let test = null;
+    for (const op of raw) {
+      if (!op || typeof op !== 'object') continue;
+      if (op.op === 'test') {
+        test = op;
+        continue;
+      }
+      ops.push({
+        op,
+        old: test && test.path === op.path ? test.value : undefined
+      });
+      test = null;
+    }
+    return ops;
+  }
+
+  /**
+   * Content from before these ops were applied.
+   * @param {Object} content State after the ops.
+   * @param {Array} ops Forward ops paired with previous values.
+   * @returns {Object|null} Basis content, or null when it cannot be restored.
+   * @private
+   */
+  _revertTransition (content, ops) {
+    let basis;
+    try {
+      basis = JSON.parse(JSON.stringify(content));
+    } catch (err) {
+      return null;
+    }
+    const inverse = [];
+    for (let i = ops.length - 1; i >= 0; i--) {
+      const entry = ops[i];
+      const op = entry.op;
+      if (!op || typeof op.path !== 'string') return null;
+      if (op.op === 'add') {
+        inverse.push({ op: 'remove', path: op.path });
+      } else if ((op.op === 'remove' || op.op === 'replace') && entry.old !== undefined) {
+        inverse.push({
+          op: op.op === 'remove' ? 'add' : 'replace',
+          path: op.path,
+          value: entry.old
+        });
+      } else {
+        return null;
+      }
+    }
+    if (!inverse.length) return basis;
+    try {
+      manager.applyPatch(basis, inverse, true, true);
+    } catch (err) {
+      return null;
+    }
+    return basis;
+  }
+
+  /**
+   * Whether one transition's ops fit in a single sidechain message.
+   * @param {Array} patches RFC6902 operations.
+   * @returns {Boolean} True when the encoded body is within the frame cap.
+   * @private
+   */
+  _transitionFits (patches) {
+    if (!patches.length) return false;
+    try {
+      const fields = Message.encodeLegacyBody('SIDECHAIN_STATE_PATCH', {
+        basisClock: 0,
+        basisDigest: '0'.repeat(64),
+        patches
+      });
+      const length = Message.encodeBody(Message.SCHEMA_SIDECHAIN_STATE_PATCH, fields).length;
+      return length <= MAX_MESSAGE_SIZE;
+    } catch (err) {
+      return false;
+    }
+  }
+
+  /**
+   * One observer reading becomes one unsealed row and one message.
+   * A transition that does not fit is refused whole.
+   * @param {Array} rawPatches Observer output, including test ops.
+   * @param {String} now ISO time of this heartbeat.
+   * @returns {Object} <code>message</code>, <code>row</code>, <code>errors</code>, and <code>clock</code>.
+   * @private
+   */
+  _stageTransition (rawPatches, now) {
+    const errors = [];
+    const ops = this._forwardOps(rawPatches);
+    const clock = this._stagedClock | 0;
+    if (!ops.length) return { message: null, row: null, errors, clock };
+
+    const basis = this._revertTransition(this._state.content, ops);
+    if (!basis) {
+      errors.push('Exception staging beat: could not read the transition');
+      return { message: null, row: null, errors, clock };
+    }
+
+    // applyPatch inserts object values by reference. Copy before encoding.
+    const patches = JSON.parse(JSON.stringify(ops.map((entry) => entry.op)));
+    if (!this._transitionFits(patches)) {
+      errors.push(`Exception staging beat: transition exceeds max ${MAX_MESSAGE_SIZE}`);
+      return { message: null, row: null, errors, clock };
+    }
+
+    const priorDigest = Actor.contentDigest(clock, basis);
+    const proposal = {
+      basisClock: clock,
+      basisDigest: priorDigest,
+      patches
+    };
+    let message;
+    try {
+      message = Message.fromLegacyBody('SIDECHAIN_STATE_PATCH', proposal);
+    } catch (err) {
+      errors.push(`Exception staging beat: ${err.message || err}`);
+      return { message: null, row: null, errors, clock };
+    }
+
+    let applied;
+    let sidechain;
+    try {
+      sidechain = require('../functions/sidechainState');
+      applied = sidechain.applyPatchesToState({
+        version: 1,
+        clock: clock,
+        content: basis
+      }, JSON.parse(JSON.stringify(patches)), null);
+    } catch (err) {
+      errors.push(`Exception staging beat: ${err.message || err}`);
+      return { message: null, row: null, errors, clock };
+    }
+    if (!applied.ok) {
+      errors.push(`Exception staging beat: ${applied.error || 'transition rejected'}`);
+      return { message: null, row: null, errors, clock };
+    }
+
+    return {
+      message,
+      row: {
+        seq: 0,
+        at: now,
+        basisClock: clock,
+        clock: applied.state.clock,
+        basisDigest: priorDigest,
+        newDigest: applied.newDigest,
+        patchDigest: sidechain.patchCommitmentDigestHex(proposal),
+        patches,
+        sealedBeaconClock: null
+      },
+      errors,
+      clock: applied.state.clock
+    };
+  }
+
+  /**
+   * Digest checkpoint. The body does not carry the state document.
+   * @param {String} now
+   * @returns {Service}
+   * @private
+   */
+  _emitIdleBeat (now) {
+    let beat;
+    try {
+      beat = Message.fromVector(['Generic', {
+        clock: this._clock,
+        created: now,
+        stateDigest: this.contentDigest(this._stagedClock)
+      }]);
+    } catch (exception) {
+      this.emit('error', `Exception staging beat: ${exception.message || exception}`);
+      return this;
+    }
 
     if (!beat) {
       this.emit('error', 'Beat could not construct a Message!');
       throw new Error('Beat could not construct a Message');
     }
 
-    // TODO: remove JSON parser here — only needed for verification
-    // TODO: parse JSON types in @fabric/core/types/message
     const data = beat.data;
-
     try {
       const pr = tryParseWireJson(typeof data === 'string' ? data : String(data ?? ''));
       if (!pr.ok) {
@@ -336,9 +540,23 @@ class Service extends Actor {
     }
 
     this.emit('beat', beat);
-    this.commit();
-
     return this;
+  }
+
+  /**
+   * Append one unsealed row to the sidechain journal. The in-memory staging
+   * list is already updated. A disk failure does not seal or drop the row.
+   * @param {Object} row
+   * @private
+   */
+  _appendStagingRow (row) {
+    if (!this.fs || typeof this.fs.writeFile !== 'function') return;
+    try {
+      const { appendJournalEntrySync } = require('../functions/sidechainState');
+      appendJournalEntrySync(this.fs, row);
+    } catch (exception) {
+      this.emit('error', `Exception staging beat: ${exception.message || exception}`);
+    }
   }
 
   append (block) {
@@ -756,9 +974,18 @@ class Service extends Actor {
 
       // Attach events
       this.collections[key].on('commit', (_commit) => {
+        let stateDigest = null;
+        try {
+          stateDigest = service.contentDigest(service._stagedClock | 0);
+        } catch (err) {
+          service.emit('error', `StateUpdate digest: ${err && err.message ? err.message : err}`);
+        }
         service.broadcast({
           '@type': 'StateUpdate',
-          '@data': service.state
+          '@data': {
+            clock: service._clock | 0,
+            stateDigest: stateDigest
+          }
         });
       });
 
@@ -793,6 +1020,8 @@ class Service extends Actor {
       await this.connect();
     }
 
+    await this.load();
+
     // TODO: re-re-evaluate a better approach... oh how I long for Object.observe!
     // this.observer = manager.observe(this.state, this._handleStateChange.bind(this));
     try {
@@ -808,6 +1037,15 @@ class Service extends Actor {
     this.emit('log', '[FABRIC:SERVICE] Started!');
     this.ready();
 
+    return this;
+  }
+
+  /**
+   * Load durable state after the store is open and before the observer and
+   * heartbeat attach, so a restored snapshot is not staged as one replace.
+   * @returns {Promise<Service>}
+   */
+  async load () {
     return this;
   }
 
