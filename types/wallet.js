@@ -37,7 +37,7 @@ const {
 } = require('../constants');
 
 /**
- * bitcoinjs-lib parameters for a Fabric network name (signet and testnet4 share testnet's).
+ * bitcoinjs-lib parameters for a Fabric network name (signet, testnet4, and testnet5 share testnet's).
  * @private
  * @param {string} network
  */

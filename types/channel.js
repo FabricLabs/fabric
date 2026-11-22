@@ -123,7 +123,7 @@ function xOnlyOf (compressedHex) {
 }
 
 /**
- * Allowlist test networks (regtest / signet / testnet / testnet4); mainnet and
+ * Allowlist test networks (regtest / signet / testnet / testnet4 / testnet5); mainnet and
  * unknown names are refused.
  * @param {string} network
  * @returns {string} normalised network name

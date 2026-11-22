@@ -196,7 +196,7 @@ class Market extends Service {
    * @param {Function} [settings.now] clock override (`() => ms`), for tests.
    * @param {number} [settings.claimFeerate=1] sat/vB assumed when opening an L1 document HTLC. No fee oracle.
    * @param {boolean} [settings.l1Batch] Pay 128 chunks per L1 HTLC. Default on for mainnet.
-   * @param {string} [settings.network='regtest'] `regtest` / `signet` / `testnet` / `testnet4` / `mainnet`.
+   * @param {string} [settings.network='regtest'] `regtest` / `signet` / `testnet` / `testnet4` / `testnet5` / `mainnet`.
    * @param {Object} [settings.book] `DocumentBook` settings.
    */
   constructor (settings = {}) {
@@ -340,7 +340,8 @@ class Market extends Service {
    * @private
    */
   _htlcNetwork () {
-    return this.settings.network === 'testnet4' ? 'testnet' : this.settings.network;
+    const n = this.settings.network;
+    return (n === 'testnet4' || n === 'testnet5') ? 'testnet' : n;
   }
 
   /**

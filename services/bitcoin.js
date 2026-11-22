@@ -108,7 +108,7 @@ function toIntegerSats (value) {
 const BITCOIN_COOKIE_PATH_MAX_LEN = 4096;
 
 // Internal allowlist: Bitcoin Core chain directory names under -datadir.
-const BITCOIND_CHAIN_FOLDER_NAMES = new Set(['regtest', 'testnet3', 'testnet4', 'signet']);
+const BITCOIND_CHAIN_FOLDER_NAMES = new Set(['regtest', 'testnet3', 'testnet4', 'testnet5', 'signet']);
 
 /**
  * Classify bitcoind stderr. Core writes fatal bind/lock failures as `Error: …`.
@@ -215,8 +215,8 @@ function cookiePathUnderDatadirBase (baseAbs, parts) {
 class Bitcoin extends Service {
   /**
    * Bitcoin Core chain data subdirectory under {@code -datadir} (empty string for mainnet cookie at datadir root).
-   * Matches Core layout: `regtest/`, `testnet3/`, `signet/`, `testnet4/`, or root for mainnet.
-   * @param {string} network Fabric network name (mainnet, testnet, regtest, signet, testnet4, playnet, …).
+   * Matches Core layout: `regtest/`, `testnet3/`, `signet/`, `testnet4/`, `testnet5/`, or root for mainnet.
+   * @param {string} network Fabric network name (mainnet, testnet, regtest, signet, testnet4, testnet5, playnet, …).
    * @returns {string}
    */
   static bitcoindChainDataDirSegment (network) {
@@ -224,6 +224,7 @@ class Bitcoin extends Service {
     if (n === 'regtest' || n === 'playnet') return 'regtest';
     if (n === 'testnet') return 'testnet3';
     if (n === 'testnet4') return 'testnet4';
+    if (n === 'testnet5') return 'testnet5';
     if (n === 'signet') return 'signet';
     return '';
   }
@@ -367,6 +368,8 @@ class Bitcoin extends Service {
         return ['stores/bitcoin-testnet'];
       case 'testnet4':
         return ['stores/bitcoin-testnet4'];
+      case 'testnet5':
+        return ['stores/bitcoin-testnet5'];
       case 'signet':
         return ['stores/bitcoin-signet'];
       case 'mainnet':
@@ -412,6 +415,9 @@ class Bitcoin extends Service {
       case 'testnet4':
         pushProjectStore('stores/bitcoin-testnet4');
         break;
+      case 'testnet5':
+        pushProjectStore('stores/bitcoin-testnet5');
+        break;
       case 'signet':
         pushProjectStore('stores/bitcoin-signet');
         break;
@@ -438,6 +444,9 @@ class Bitcoin extends Service {
           break;
         case 'testnet4':
           pushElectronStore('bitcoin-testnet4');
+          break;
+        case 'testnet5':
+          pushElectronStore('bitcoin-testnet5');
           break;
         case 'signet':
           pushElectronStore('bitcoin-signet');
@@ -563,7 +572,9 @@ class Bitcoin extends Service {
       mainnet: bitcoin.networks.bitcoin,
       testnet: bitcoin.networks.testnet,
       regtest: bitcoin.networks.regtest,
-      signet: bitcoin.networks.testnet // Signet uses testnet address format
+      signet: bitcoin.networks.testnet, // Signet uses testnet address format
+      testnet4: bitcoin.networks.testnet,
+      testnet5: bitcoin.networks.testnet
     };
 
     if (this.settings.debug && this.settings.verbosity >= 4) this.emit('debug', '[DEBUG] Instance of Bitcoin service created');
@@ -790,6 +801,8 @@ class Bitcoin extends Service {
         return 18332;
       case 'testnet4':
         return 48332;
+      case 'testnet5':
+        return 18352;
       case 'signet':
         return 38332;
       default:
@@ -806,6 +819,8 @@ class Bitcoin extends Service {
         return 18333;
       case 'testnet4':
         return 48333;
+      case 'testnet5':
+        return 18353;
       case 'signet':
         return 38333;
       default:
@@ -827,6 +842,8 @@ class Bitcoin extends Service {
         return 'regtest';
       case 'testnet4':
         return 'testnet4';
+      case 'testnet5':
+        return 'testnet5';
       default:
         return chain;
     }
@@ -930,7 +947,7 @@ class Bitcoin extends Service {
       });
     }
 
-    const allNetworks = ['mainnet', 'testnet', 'signet', 'regtest', 'testnet4'];
+    const allNetworks = ['mainnet', 'testnet', 'signet', 'regtest', 'testnet4', 'testnet5'];
     const preferred = [];
     if (this.settings.network) preferred.push(this.settings.network);
 
@@ -1091,7 +1108,7 @@ class Bitcoin extends Service {
   validateAddress (address) {
     try {
       // Get the correct network configuration
-      const network = this._networkConfigs[this.settings.network];
+      const network = this._networkConfigs[this._normalizeChainName(this.settings.network)];
       if (!network) {
         throw new Error(`Invalid network: ${this.settings.network}`);
       }
@@ -1116,8 +1133,6 @@ class Bitcoin extends Service {
 
   async tick () {
     const self = this;
-    const now = (new Date()).toISOString();
-    ++this._clock;
 
     if (this.settings.mode === 'rpc' && this._rpcReady === false) {
       // Degraded mode: no reachable RPC endpoint, skip sync work.
@@ -1129,17 +1144,10 @@ class Bitcoin extends Service {
       this._checkAllTargetBalances()
     ]).catch((exception) => {
       self.emit('error', `Unable to synchronize: ${exception}`);
-    }).then((_output) => {
-      // self.emit('log', `Tick output: ${JSON.stringify(_output, null, '  ')}`);
-
-      const beat = {
-        clock: self._clock,
-        created: now,
-        state: self.state
-      };
-
-      self.emit('beat', beat);
-      self.commit();
+    }).then(() => {
+      // One heartbeat message. The service beat carries a digest, or one
+      // unsealed transition, and does not commit.
+      self.beat();
     });
 
     return this;
@@ -1503,7 +1511,7 @@ class Bitcoin extends Service {
     const n = this._normalizeChainName(this.settings.network || 'mainnet');
     // Playnet runs against regtest-style bitcoind (WIF/bech32 prefixes match regtest, not mainnet).
     if (n === 'playnet') return 'regtest';
-    if (n === 'signet' || n === 'testnet4') return 'testnet';
+    if (n === 'signet' || n === 'testnet4' || n === 'testnet5') return 'testnet';
     if (n === 'mainnet' || n === 'testnet' || n === 'regtest') return n;
     return 'mainnet';
   }
@@ -3094,6 +3102,7 @@ class Bitcoin extends Service {
     if (n === 'regtest' || n === 'playnet') return 18444;
     if (n === 'testnet') return 18333;
     if (n === 'testnet4') return 48333;
+    if (n === 'testnet5') return 18353;
     if (n === 'signet') return 38333;
     return 8333;
   }
@@ -3128,7 +3137,7 @@ class Bitcoin extends Service {
   _shouldApplyP2pAddNodes () {
     if (this.settings.p2pAddNodesAllowMainnet) return true;
     const n = String(this.settings.network || '').toLowerCase();
-    return n === 'regtest' || n === 'signet' || n === 'testnet' || n === 'testnet4' || n === 'playnet';
+    return n === 'regtest' || n === 'signet' || n === 'testnet' || n === 'testnet4' || n === 'testnet5' || n === 'playnet';
   }
 
   /**
@@ -3223,6 +3232,10 @@ class Bitcoin extends Service {
       case 'testnet4':
         datadir = './stores/bitcoin-testnet4';
         params.push('-testnet4');
+        break;
+      case 'testnet5':
+        datadir = './stores/bitcoin-testnet5';
+        params.push('-testnet5');
         break;
       case 'signet':
         datadir = './stores/bitcoin-signet';

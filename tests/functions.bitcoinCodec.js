@@ -158,9 +158,9 @@ describe('functions/bech32', function () {
 });
 
 describe('@fabric/core/functions/bitcoinNetworkAllowlist', function () {
-  it('allows only regtest / signet / testnet / testnet4 (trimmed, case-insensitive)', function () {
-    assert.deepStrictEqual([...TEST_NETWORKS], ['regtest', 'signet', 'testnet', 'testnet4']);
-    for (const name of ['regtest', ' Regtest ', 'SIGNET', 'testnet', '\ttestnet4\n']) assert.strictEqual(isTestNetwork(name), true, name);
+  it('allows only regtest / signet / testnet / testnet4 / testnet5 (trimmed, case-insensitive)', function () {
+    assert.deepStrictEqual([...TEST_NETWORKS], ['regtest', 'signet', 'testnet', 'testnet4', 'testnet5']);
+    for (const name of ['regtest', ' Regtest ', 'SIGNET', 'testnet', '\ttestnet4\n', 'testnet5']) assert.strictEqual(isTestNetwork(name), true, name);
     for (const name of ['mainnet', 'main', 'bitcoin', 'livenet', 'Mainnet ', '', null, undefined, 'regtestx', 'test net']) {
       assert.strictEqual(isTestNetwork(name), false, String(name));
     }
@@ -173,6 +173,8 @@ describe('@fabric/core/functions/bitcoinNetworkAllowlist', function () {
   it('maps test networks to bitcoinjs parameters without falling back to mainnet', function () {
     assert.strictEqual(networkForFabricName(' REGTEST '), bitcoin.networks.regtest);
     assert.strictEqual(networkForFabricName('testnet4'), bitcoin.networks.testnet);
+    assert.strictEqual(networkForFabricName('testnet5'), bitcoin.networks.testnet);
+    assert.notStrictEqual(networkForFabricName('testnet5'), bitcoin.networks.bitcoin);
     assert.strictEqual(networkForFabricName('Signet'), bitcoin.networks.testnet);
   });
 

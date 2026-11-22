@@ -229,7 +229,7 @@ describe('@fabric/core/types/key', function () {
       const mnemonic = 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about';
       const on = (network) => new Key({ mnemonic, purpose: 86, network });
       assert.equal(on('mainnet').deriveAddress(0, 0, 'p2tr').address, 'bc1p5cyxnuxmeuwuvkwfem96lqzszd02n6xdcjrs20cac6yqjjwudpxqkedrcr');
-      for (const network of ['signet', 'testnet', 'testnet4']) {
+      for (const network of ['signet', 'testnet', 'testnet4', 'testnet5']) {
         assert.match(on(network).deriveAddress(0, 0, 'p2tr').address, /^tb1p/, network);
         assert.match(on(network).deriveAddress(0, 0, 'p2wpkh').address, /^tb1q/, network);
         assert.match(on(network).deriveAddress(0, 0, 'p2pkh').address, /^[mn]/, network);

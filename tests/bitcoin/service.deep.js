@@ -1047,7 +1047,7 @@ describe('@fabric/core/services/bitcoin (deep coverage)', function () {
 
   describe('createLocalNode network datadir branches', function () {
     it('configures testnet and signet params', async function () {
-      for (const network of ['testnet', 'signet', 'testnet4']) {
+      for (const network of ['testnet', 'signet', 'testnet4', 'testnet5']) {
         const btc = new Bitcoin({
           network,
           mode: 'rpc',
@@ -1164,6 +1164,7 @@ describe('@fabric/core/services/bitcoin (deep coverage)', function () {
       const btc = new Bitcoin({ network: 'mainnet' });
       assert.strictEqual(btc._defaultBitcoinP2pPort('playnet'), 18444);
       assert.strictEqual(btc._defaultBitcoinP2pPort('testnet4'), 48333);
+      assert.strictEqual(btc._defaultBitcoinP2pPort('testnet5'), 18353);
     });
 
     it('generateBlock uses RPC mode', async function () {

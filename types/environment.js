@@ -401,7 +401,7 @@ class Environment extends Entity {
         // Categorize configuration options
         if (key.startsWith('rpc') || ['server', 'rpcbind', 'rpcallowip'].includes(key)) {
           config.rpc[key] = this._parseConfigValue(value);
-        } else if (['testnet', 'testnet4', 'regtest', 'signet', 'mainnet'].includes(key)) {
+        } else if (['testnet', 'testnet4', 'testnet5', 'regtest', 'signet', 'mainnet'].includes(key)) {
           config.network[key] = this._parseConfigValue(value);
         } else {
           config.general[key] = this._parseConfigValue(value);
@@ -413,6 +413,8 @@ class Environment extends Entity {
         config.network.active = 'testnet';
       } else if (config.network.testnet4) {
         config.network.active = 'testnet4';
+      } else if (config.network.testnet5) {
+        config.network.active = 'testnet5';
       } else if (config.network.regtest) {
         config.network.active = 'regtest';
       } else if (config.network.signet) {
@@ -438,6 +440,9 @@ class Environment extends Entity {
             break;
           case 'testnet4':
             config.rpc.rpcport = 48332;
+            break;
+          case 'testnet5':
+            config.rpc.rpcport = 18352;
             break;
           default:
             config.rpc.rpcport = 8332;
@@ -548,6 +553,8 @@ class Environment extends Entity {
         return 18332;
       case 'testnet4':
         return 48332;
+      case 'testnet5':
+        return 18352;
       case 'regtest':
         return 18443;
       case 'signet':
@@ -563,6 +570,8 @@ class Environment extends Entity {
         return 'testnet3';
       case 'testnet4':
         return 'testnet4';
+      case 'testnet5':
+        return 'testnet5';
       case 'regtest':
         return 'regtest';
       case 'signet':
@@ -663,7 +672,7 @@ class Environment extends Entity {
       }
     }
 
-    const allNetworks = ['mainnet', 'testnet', 'signet', 'regtest', 'testnet4'];
+    const allNetworks = ['mainnet', 'testnet', 'signet', 'regtest', 'testnet4', 'testnet5'];
     const preferredNetworks = [];
     if (baseSettings.network) preferredNetworks.push(baseSettings.network);
     if (confNetwork && !preferredNetworks.includes(confNetwork)) preferredNetworks.push(confNetwork);

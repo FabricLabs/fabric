@@ -77,7 +77,7 @@ class Lightning extends Service {
    */
   static defaultListenPortForNetwork (network) {
     const n = String(network || 'mainnet').toLowerCase();
-    if (n === 'testnet' || n === 'testnet4') return 19735;
+    if (n === 'testnet' || n === 'testnet4' || n === 'testnet5') return 19735;
     if (n === 'signet') return 39735;
     return 9735;
   }
@@ -167,6 +167,7 @@ class Lightning extends Service {
     const n = String(this.settings.network || 'regtest').toLowerCase();
     if (n === 'mainnet' || n === 'bitcoin' || n === 'main') return 'bitcoin';
     if (n === 'testnet4') return 'testnet4';
+    if (n === 'testnet5') return 'testnet5';
     if (n === 'testnet' || n === 'test') return 'testnet';
     if (n === 'signet') return 'signet';
     return 'regtest';
@@ -181,6 +182,7 @@ class Lightning extends Service {
       case 'test':
       case 'testnet': return '-testnet';
       case 'testnet4': return '-testnet4';
+      case 'testnet5': return '-testnet5';
       case 'signet': return '-signet';
       case 'regtest':
       default:
@@ -201,14 +203,11 @@ class Lightning extends Service {
   }
 
   commit () {
-    // this.emit('debug', `Committing...`);
-
+    const channels = (this.state && this.state.channels) || {};
     const commit = new Actor({
       type: 'Commit',
-      state: this.state
+      state: { channels }
     });
-
-    // this.emit('debug', `Committing Actor: ${commit}`);
 
     this.emit('commit', {
       id: commit.id,
@@ -942,11 +941,13 @@ class Lightning extends Service {
       return this;
     }
 
-    this._state.channels = channels.channels.reduce((acc, channel) => {
+    const synced = channels.channels.reduce((acc, channel) => {
       const actor = new Actor(channel);
       acc[actor.id] = actor.state;
       return acc;
     }, {});
+    this._state.channels = synced;
+    if (this._state.content) this._state.content.channels = synced;
 
     return this;
   }
