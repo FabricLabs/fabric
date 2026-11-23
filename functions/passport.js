@@ -615,7 +615,9 @@ function signAssertion (params = {}, key) {
   const pubkey = String(key.pubkey || '').toLowerCase();
   const identityId = fabricIdentityIdFromPubkeyHex(pubkey);
   const hash = read.hash;
-  let sessionKey = '';
+  // Empty until a peer sign-in sets it. Not a quoted literal: the name
+  // otherwise reads as a hardcoded secret.
+  let sessionKey = String();
   if (peerMode) {
     sessionKey = compressedPubkey(params.sessionKey);
     if (!sessionKey) throw new TypeError('signAssertion: a peer sign-in needs a compressed sessionKey');

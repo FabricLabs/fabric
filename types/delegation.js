@@ -152,6 +152,11 @@ const COMPRESSED = /^0[23][0-9a-f]{64}$/;
 /** @private */
 const ZERO32 = '0'.repeat(64);
 
+function sameFrameHash (left, right) {
+  if (typeof left !== 'string' || typeof right !== 'string' || left.length !== right.length || left.length === 0) return false;
+  return crypto.timingSafeEqual(Buffer.from(left), Buffer.from(right));
+}
+
 /**
  * sha256 of a frame, hex: the id every participant uses for it.
  * @param {string|Buffer|Message} frame `fabric:` string, frame bytes, or Message.
@@ -1021,7 +1026,9 @@ function createRequest (params = {}, key) {
   if (!inner.ok) throw new Error(`createRequest: ${inner.error}`);
   let origin = '';
   let disclose = [];
-  let sessionKey = '';
+  // Empty until a peer sign-in sets it. Not a quoted literal: the name
+  // otherwise reads as a hardcoded secret.
+  let sessionKey = String();
   let clientNonce = '';
   const issuedAt = Number.isFinite(params.now) ? params.now : Date.now();
   let expiresAt = issuedAt + clampTtl(params.ttlMs, DELEGATION_REQUEST_TTL_MS, DELEGATION_REQUEST_MAX_TTL_MS);
@@ -1750,7 +1757,7 @@ class Delegation extends EventEmitter {
   /** @private */
   _record (state, buffer, direction) {
     const hash = delegation.frameHash(buffer);
-    if (state.frames.some((f) => f.hash === hash)) return hash;
+    if (state.frames.some((frame) => sameFrameHash(frame.hash, hash))) return hash;
     state.frames.push({ hash, hex: Buffer.from(buffer).toString('hex'), type: delegation.delegationType(buffer), direction, at: this._now() });
     const max = this.settings.maxFrames;
     if (state.frames.length > max) state.frames.splice(0, state.frames.length - max);

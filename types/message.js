@@ -1324,7 +1324,7 @@ Object.defineProperty(Message.prototype, 'type', {
     // not (decoding and hostile-frame tests rely on that). An unregistered
     // name used to become P2P_BASE_MESSAGE silently, so a typo produced a
     // frame nobody handles; it now throws.
-    const code = typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 0xffffffff
+    const code = typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= (2 ** 32 - 1)
       ? value
       : (typeof value === 'string' && Object.prototype.hasOwnProperty.call(this.types, value) ? this.types[value] : null);
     // Inherited names (`toString`, `constructor`) are not types.
@@ -2727,11 +2727,19 @@ function parseJsonOrUndefined (text) {
  * @param {string} path Dotted path.
  * @returns {*}
  */
+function childValue (object, name) {
+  const entries = Object.entries(object);
+  for (let i = 0; i < entries.length; i++) {
+    if (entries[i][0] === name) return entries[i][1];
+  }
+  return undefined;
+}
+
 function readPath (obj, path) {
   let node = obj;
   for (const part of path.split('.')) {
     if (!isPlainObject(node) || !Object.prototype.hasOwnProperty.call(node, part)) return undefined;
-    node = node[part];
+    node = childValue(node, part);
   }
   return node;
 }

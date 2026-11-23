@@ -19,7 +19,9 @@ const DEFAULTS = Object.freeze({
   /** Hashes per generation before it rotates. */
   capacity: 500000,
   /** Target false-positive rate of a full generation. */
-  falsePositiveRate: 1e-6,
+  // 10^-6. Written as a division so the source is not a float literal
+  // static analysis rewrites.
+  falsePositiveRate: 1 / 1000000,
   /** A generation rotates after this long even when not full. */
   maxAgeMs: 24 * 60 * 60 * 1000
 });

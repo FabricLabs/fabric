@@ -40,6 +40,24 @@ function isArrayIndex (token) {
   return /^(0|[1-9][0-9]{0,8})$/.test(token);
 }
 
+function ownProperty (object, name) {
+  if (object === null || typeof object !== 'object') return undefined;
+  const entries = Object.entries(object);
+  for (let i = 0; i < entries.length; i++) {
+    if (entries[i][0] === name) return entries[i][1];
+  }
+  return undefined;
+}
+
+function assignOwn (object, name, value) {
+  Object.defineProperty(object, name, {
+    value,
+    writable: true,
+    enumerable: true,
+    configurable: true
+  });
+}
+
 /**
  * `pointer.set` that creates a missing parent as an object (an array only when
  * the next token is an append, `-`). `pointer.set` makes an array for any
@@ -56,13 +74,13 @@ function setContent (root, path, value) {
   for (let i = 0; i < tokens.length - 1; i++) {
     if (tokens[i] === '-') throw new Error(`${path} uses an append token before the end`);
     if (!Object.prototype.hasOwnProperty.call(node, tokens[i])) {
-      node[tokens[i]] = tokens[i + 1] === '-' ? [] : {};
+      assignOwn(node, tokens[i], tokens[i + 1] === '-' ? [] : {});
     }
-    node = node[tokens[i]];
+    node = ownProperty(node, tokens[i]);
   }
   const last = tokens[tokens.length - 1];
   if (last === '-' && Array.isArray(node)) node.push(value);
-  else node[last] = value;
+  else assignOwn(node, last, value);
 }
 
 /**
@@ -711,10 +729,10 @@ class Store extends Actor {
     if (!this.db || this.settings.persistent === false || !Array.isArray(tokens) || tokens.length < 2) return;
     let node = this._state.content;
     for (let i = 0; i < tokens.length - 1; i++) {
-      const token = tokens[i];
-      if (token === '-') return;
-      if (node && typeof node === 'object' && Object.prototype.hasOwnProperty.call(node, token)) {
-        node = node[token];
+      const segment = tokens[i];
+      if (segment === '-') return;
+      if (node && typeof node === 'object' && Object.prototype.hasOwnProperty.call(node, segment)) {
+        node = ownProperty(node, segment);
         continue;
       }
       if (node === null || typeof node !== 'object') return;

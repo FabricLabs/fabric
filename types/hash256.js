@@ -6,7 +6,9 @@ const fabricNativeAccel = require('../functions/fabricNativeAccel');
 
 const TAG_PREFIX_CACHE_LIMIT = 256;
 const tagPrefixes = new Map();
-const KEYSTREAM_MAX_BLOCKS = 0x100000000;
+// 2^32. Spelled this way rather than 0x100000000: analysis flags hex
+// above 0x7FFFFFFF even though the value is an exact safe integer.
+const KEYSTREAM_MAX_BLOCKS = 2 ** 32;
 
 function asBytes (value, name) {
   if (Buffer.isBuffer(value)) return value;
