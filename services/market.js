@@ -141,7 +141,26 @@ function xOnlyHex (key) {
   return null;
 }
 
-/** @private */
+/**
+ * Compare two strings without leaking how long a shared prefix is.
+ * A different length still returns early, the same as `===`.
+ * @param {*} left
+ * @param {*} right
+ * @returns {boolean}
+ * @private
+ */
+function timingSafeEqualString (left, right) {
+  const a = Buffer.from(String(left), 'utf8');
+  const b = Buffer.from(String(right), 'utf8');
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(a, b);
+}
+
+/**
+ * @param {Buffer|string} buf
+ * @returns {string}
+ * @private
+ */
 function sha256Hex (buf) {
   return crypto.createHash('sha256').update(buf).digest('hex');
 }
@@ -1750,7 +1769,7 @@ class Market extends Service {
     if (session.blobHashHex && part.blobHashHex !== session.blobHashHex) return false;
     const hash = session.contentHashHex;
     const candidates = [part].concat(part.alternates || []);
-    if (hash && !candidates.some((c) => c.paymentHashHex === hash)) return false;
+    if (hash && !candidates.some((c) => timingSafeEqualString(c.paymentHashHex, hash))) return false;
     return part.verified === true || (session.rootVerified === true && !!session.blobHashHex);
   }
 
