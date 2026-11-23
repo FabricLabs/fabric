@@ -6,13 +6,15 @@
 
 Helpers in [`publishedDocumentEnvelope.js`](../functions/publishedDocumentEnvelope.js):
 
-1. Canonical Fabric **`DocumentPublish`** AMP bytes from **`documentPublishEnvelopeBuffer`** — **signature field all zeros**.
+1. The **`DOCUMENT_PUBLISH`** field frame (`documentPublishMessage`) as AMP bytes from **`documentPublishEnvelopeBuffer`** — **author and signature fields all zeros**. Byte layout: [bip-fabric-file-exchange.md](./bip-fabric-file-exchange.md#unsealed-commitments).
 2. **32-byte preimage** = `SHA256(those unsigned bytes)`.
 3. **`purchaseContentHashHex`** = `SHA256(preimage)`.
 
-**Footgun eliminated:** do **not** hash a Schnorr-**signed** gossip `DocumentPublish` `toBuffer()`. Signing changes bytes 144–207 and diverges from the payment commitment. `assertUnsignedDocumentPublishEnvelope` / `inventoryHtlcPreimage32FromEnvelopeBuffer` **throw** if the signature region is non-zero.
+Peer gossips the same frame signed, so the gossiped bytes are the envelope with bytes 40–71 (author) and 144–207 (signature) filled in.
 
-Whitelist for the envelope JSON omits timestamps (`created` / `edited`) and lineage so Hub store vs Peer rebuild stay aligned.
+**Footgun eliminated:** do **not** hash a Schnorr-**signed** gossip `DocumentPublish` `toBuffer()`. Signing changes the author and signature and diverges from the payment commitment. `assertUnsignedDocumentPublishEnvelope` / `inventoryHtlcPreimage32FromEnvelopeBuffer` **throw** if either region is non-zero.
+
+The envelope's whitelisted fields omit timestamps (`created` / `edited`) and lineage so Hub store vs Peer rebuild stay aligned.
 
 ## AMP header `preimage` (Lightning-style)
 
@@ -33,24 +35,23 @@ Every document is advertised as a **`DocumentBlobIndex`** (Tree merkle over blob
 - `blobHashHex` = `SHA256(blob bytes)` (ciphertext bytes when sealed)
 - `merkleRootHex` = Fabric [`Tree`](../types/tree.js) root over those leaf hashes
 - **Priced / sealed:** inventory `contentHash` = `SHA256(K)` via [`documentSealedExchange`](../functions/documentSealedExchange.js); seller reveals `K` only after payment-hash match (Fabric) **or** by claiming the HTLC on-chain (buyer `/claimwatch` extracts `K` from the claim witness)
-- **Per-blob sealed trees** ([`types/document.js`](../types/document.js)): one key `K_i` per blob, `paymentHashHex_i = SHA256(K_i)`. Over a **payment channel** the seller fulfills the HTLC with `K_i` itself (`Channel.Book({ preimageFor })`, `Peer#sealedBlobPreimageForPaymentHash`); the buyer learns the key from the `ChannelHtlcFulfill` and opens the held ciphertext (`Peer#openSealedBlobWithKey`). The channel HTLC **is** the payment-hash binding — no separate key-reveal body, and the key can never be clawed back because the HTLC settles atomically with its disclosure.
+- **Per-blob sealed trees** ([`types/document.js`](../types/document.js)): one key `K_i` per blob, `paymentHashHex_i = SHA256(K_i)`. Over a **payment channel** the seller fulfills the HTLC with `K_i` itself (`ChannelBook({ preimageFor })`, `Peer#sealedBlobPreimageForPaymentHash`); the buyer learns the key from the `ChannelHtlcFulfill` and opens the held ciphertext (`Peer#openSealedBlobWithKey`). The channel HTLC **is** the payment-hash binding — no separate key-reveal body, and the key can never be clawed back because the HTLC settles atomically with its disclosure.
 - **Buyer-side reassembly** is keyed by `documentId | merkleRootHex`; frames whose root / `blobTotal` / origin disagree with that row (or with the purchase's `expectTransfer`) are rejected, and each held part keeps the seller's raw signed `P2P_FILE_SEND` frame for `wrong-bytes` fraud proofs ([`L1_DOCUMENT_EXCHANGE.md`](L1_DOCUMENT_EXCHANGE.md)).
-- **Unsealed per-blob:** `blobPaymentHashHex` tagged hash — see [`documentBlobManifest.js`](../functions/documentBlobManifest.js)
+- **Unsealed per-blob:** `Document.blobPaymentHash` tagged hash — see [`types/document.js`](../types/document.js)
 - **Refund:** after `refundLocktimeHeight`, buyer `/refund` spends the CLTV leaf if the sale never completed
 
 When the full leaf list will not fit one AMP body, the index is compacted (`leavesInline: false`) and carries only the Tree root; leaves are recovered from verified blob frames.
 
-Hop budgets for private relay nest with monotone `maxSats` ([`documentMarket.js`](../functions/documentMarket.js)).
+Hop budgets for private relay nest with monotone `maxSats` ([`types/documentBook.js`](../types/documentBook.js)).
 
 ## API (`@fabric/core/functions/*`)
 | Export | Purpose |
 |--------|---------|
 | `documentPaymentHash` | **`resolveDocumentContentHashHex`**, alias normalize, re-exports |
 | `publishedDocumentEnvelope` | Unsigned envelope + legacy `purchaseContentHashHex` |
-| `inventoryHtlc` | P2TR build / fund hints / claim+refund PSBTs / `extractPreimageFromClaimTx` / `refundLocktimeMature` |
+| `Htlc` (`types/htlc`) | P2TR build / fund hints / claim+refund PSBTs / `extractPreimage` / `refundMature` / `validateOffer` |
 | `documentSealedExchange` | AES-GCM seal; `paymentHashHexFromKey`; sealed sale helpers |
-| `inventoryHtlc.buildDocumentOfferEscrow` | Role-renamed HTLC wrapper (deliverer/initiator) |
-| `documentMarket` | Offer book, purchase sessions, private request relay |
+| `DocumentBook` | Offer book, purchase sessions, private request relay |
 | `walletTransactionWatch` | Block/mempool classification against multi-seed wallet watch set |
 | `Wallet.loadSeed` / `watchHtlc` / `ingestBitcoinBlock` | Key collection + on-chain watch |
 

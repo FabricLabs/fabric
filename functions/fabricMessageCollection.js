@@ -68,7 +68,7 @@ const {
   isZeroParent,
   parentHexOf,
   frameIdOf
-} = require('./fabricMessageParent');
+} = Message;
 /** @private */
 const COLLECTION_TYPE = 'FabricMessageCollection';
 /** @private */
@@ -84,6 +84,21 @@ function createCollection () {
     messages: [],
     seen: new Set()
   };
+}
+
+/**
+ * Frame id of the last record, or 32 zero bytes when the log is empty.
+ * The next chained frame sets `parent` to this value.
+ * @param {object} collection
+ * @returns {string}
+ */
+function collectionTipId (collection) {
+  const messages = collection && Array.isArray(collection.messages) ? collection.messages : [];
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const id = messages[i] && messages[i].id;
+    if (id && /^[0-9a-f]{64}$/i.test(String(id))) return String(id).toLowerCase();
+  }
+  return ZERO_PARENT;
 }
 
 /**
@@ -787,6 +802,7 @@ module.exports = {
   COLLECTION_TYPE,
   SCHEMA_VERSION,
   createCollection,
+  collectionTipId,
   verifyBodyHash,
   parseFrame,
   recordFromMessage,

@@ -11,14 +11,12 @@
  */
 
 const crypto = require('crypto');
-const { SIDECHAIN_STATE_PATCH_TYPE: SIDECHAIN_STATE_PATCH_OPCODE } = require('../constants');
 const fabricCanonicalJson = require('./fabricCanonicalJson');
 const sidechainState = require('./sidechainState');
 const {
-  registerBodySchema,
-  getBodySchema,
   encodeBody,
-  decodeBody
+  decodeBody,
+  SCHEMA_SIDECHAIN_STATE_PATCH
 } = require('../types/message');
 
 const REGISTRY_PATH = '/registry';
@@ -59,27 +57,6 @@ function registryUpdatePathPolicy (policy) {
   }
   return out;
 }
-
-/** V1 field layout for SIDECHAIN_STATE_PATCH (catalog + optional RFC6902 fidelity). */
-const SCHEMA_SIDECHAIN_STATE_PATCH = Object.freeze([
-  { name: 'basisClock', type: 'u32' },
-  { name: 'basisDigest', type: 'bytes32' },
-  { name: 'catalogCanonical', type: 'string' },
-  /** Empty string when absent; UTF-8 JSON array of RFC6902 ops (HTTP edge / multi-op). */
-  { name: 'patchesCanonical', type: 'string', optional: true }
-]);
-
-function _installSchema () {
-  const existing = getBodySchema(SIDECHAIN_STATE_PATCH_TYPE);
-  if (existing && existing.length === SCHEMA_SIDECHAIN_STATE_PATCH.length) return;
-  registerBodySchema(SIDECHAIN_STATE_PATCH_TYPE, SCHEMA_SIDECHAIN_STATE_PATCH);
-  registerBodySchema('SidechainStatePatch', SCHEMA_SIDECHAIN_STATE_PATCH);
-  if (SIDECHAIN_STATE_PATCH_OPCODE != null) {
-    registerBodySchema(SIDECHAIN_STATE_PATCH_OPCODE, SCHEMA_SIDECHAIN_STATE_PATCH);
-  }
-}
-
-_installSchema();
 
 /**
  * Normalize inventory / DocumentPublish summaries into a registry catalog object.
@@ -136,7 +113,6 @@ function encodeRegistryUpdateFields (state, catalog) {
  * @returns {Buffer}
  */
 function encodeRegistryUpdateBody (fields) {
-  _installSchema();
   return encodeBody(SCHEMA_SIDECHAIN_STATE_PATCH, fields);
 }
 
@@ -145,7 +121,6 @@ function encodeRegistryUpdateBody (fields) {
  * @returns {object}
  */
 function decodeRegistryUpdateBody (body) {
-  _installSchema();
   return decodeBody(SCHEMA_SIDECHAIN_STATE_PATCH, body);
 }
 

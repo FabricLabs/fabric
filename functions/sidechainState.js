@@ -25,6 +25,8 @@ const {
   verifyFederationWitnessOnMessage
 } = require('./beaconFederationSigning');
 
+const SIDECHAIN_STATE_TAG = require('./signingTags').SIDECHAIN_STATE;
+
 const SIDECHAIN_STATE_PATH = 'sidechain/STATE';
 const SIDECHAIN_SNAPSHOTS_PATH = 'sidechain/SNAPSHOTS';
 const SIDECHAIN_JOURNAL_PATH = 'sidechain/JOURNAL';
@@ -82,10 +84,11 @@ function createInitialState () {
  * @returns {string}
  */
 function stateDigest (state) {
+  const doc = state || {};
   const s = stableStringify({
-    version: state.version != null ? Number(state.version) : 1,
-    clock: Number(state.clock) || 0,
-    content: jsonSafe(state.content || {})
+    version: doc.version != null ? Number(doc.version) : 1,
+    clock: Number(doc.clock) || 0,
+    content: jsonSafe(doc.content || {})
   });
   return crypto.createHash('sha256').update(Buffer.from(s, 'utf8')).digest('hex');
 }
@@ -632,6 +635,11 @@ function encodeSidechainStatePatchMessage (proposal) {
  */
 function parseSidechainStatePatchMessage (body) {
   if (!body || typeof body !== 'object') return { ok: false, error: 'body must be an object' };
+  if (body.patchesCanonical != null || body.catalogCanonical != null) {
+    const legacy = require('../types/message').decodeLegacyBody(SIDECHAIN_STATE_PATCH_TYPE, body);
+    if (!legacy) return { ok: false, error: 'patches required' };
+    body = legacy;
+  }
   const type = body.type || body['@type'];
   if (type && type !== SIDECHAIN_STATE_PATCH_TYPE && body.kind !== SIDECHAIN_PATCH_KIND) {
     return { ok: false, error: 'not a SIDECHAIN_STATE_PATCH message' };
@@ -767,7 +775,7 @@ function buildFederationWitnessForSidechainPatch ({ proposal, signKey, validator
   // Watch-only keys expose signSchnorr but throw "Cannot sign without private key".
   if (!keyHasPrivateSigningMaterial(signKey)) return null;
   const msgBuf = Buffer.from(signingStringForSidechainStatePatch(proposal), 'utf8');
-  const sigHex = signKey.signSchnorr(msgBuf).toString('hex');
+  const sigHex = signKey.signSchnorr(msgBuf, SIDECHAIN_STATE_TAG).toString('hex');
   const pk = signKey.pubkey != null ? String(signKey.pubkey) : '';
   if (!pk) return null;
   const witness = { version: 1, signatures: { [pk]: sigHex } };
@@ -779,19 +787,33 @@ function buildFederationWitnessForSidechainPatch ({ proposal, signKey, validator
 }
 
 /**
+ * Verify a k-of-n witness over a sidechain patch proposal.
+ * @param {{ basisClock: number, basisDigest: string, patches: object[] }} proposal
+ * @param {object|null} witness
+ * @param {string[]} validators
+ * @param {number} threshold
+ * @returns {boolean}
+ */
+function verifySidechainPatchWitness (proposal, witness, validators, threshold) {
+  if (!witness) return false;
+  const msgBuf = Buffer.from(signingStringForSidechainStatePatch(proposal), 'utf8');
+  return verifyFederationWitnessOnMessage(msgBuf, witness, validators, threshold, undefined, SIDECHAIN_STATE_TAG);
+}
+
+/**
  * Encode, optionally witness, and AMP-sign a SIDECHAIN_STATE_PATCH message.
  * @param {{ proposal: object, signKey?: object, federationWitness?: object|null }} opts
  * @returns {import('../types/message')}
  */
 function buildSignedSidechainPatchMessage ({ proposal, signKey, federationWitness = null }) {
-  const Message = require('../types/message');
+  const { fromLegacyBody } = require('../types/message');
   const witness = federationWitness != null
     ? federationWitness
     : (signKey ? buildFederationWitnessForSidechainPatch({ proposal, signKey }) : null);
   const body = encodeSidechainStatePatchMessage(Object.assign({}, proposal, {
     federationWitness: witness
   }));
-  const msg = Message.fromVector(['SIDECHAIN_STATE_PATCH', JSON.stringify(body)]);
+  const msg = fromLegacyBody('SIDECHAIN_STATE_PATCH', body);
   // Only AMP-sign when the key has private material. Message#signWithKey throws on
   // public-only keys; do not probe Message#signWithKey (always present).
   if (signKey && keyHasPrivateSigningMaterial(signKey) && typeof signKey.sign === 'function') {
@@ -801,6 +823,8 @@ function buildSignedSidechainPatchMessage ({ proposal, signKey, federationWitnes
 }
 
 module.exports = {
+  SIDECHAIN_STATE_TAG,
+  verifySidechainPatchWitness,
   SIDECHAIN_STATE_PATH,
   SIDECHAIN_SNAPSHOTS_PATH,
   SIDECHAIN_JOURNAL_PATH,

@@ -10,9 +10,9 @@ const {
   listDocumentExchangeCliContracts,
   listDocumentExchangeCommands
 } = require('../functions/cliDocumentExchange');
-const { Book } = require('../functions/documentMarket');
-const { createDocumentPurchaseSession } = require('../functions/documentMarket');
+const { DocumentBook, createDocumentPurchaseSession } = require('../types/documentBook');
 const { HTLC_MINIMUM_SATS } = require('../constants');
+const Document = require('../types/document');
 
 describe('functions/cliDocumentExchange (headless CLI surface)', function () {
   it('catalog exposes documents + documents-market packs and commands', function () {
@@ -95,11 +95,10 @@ describe('functions/cliDocumentExchange (headless CLI surface)', function () {
     const { HTLC_MINIMUM_SATS } = require('../constants');
     const Peer = require('../types/peer');
     const Message = require('../types/message');
-    const { DEFAULT_CHUNK_BYTES } = require('../functions/documentBlobManifest');
     const peer = new Peer({ listen: false });
     const exchange = new CliDocumentExchange({ getPeer: () => peer, getFilesystem: () => null });
     // One chunk of plaintext, two once sealed (the 16-byte GCM tag spills over).
-    exchange.documents.d = Buffer.alloc(DEFAULT_CHUNK_BYTES - 8, 0x61);
+    exchange.documents.d = Buffer.alloc(Document.CHUNK_BYTES - 8, 0x61);
     const low = exchange.publish('d', HTLC_MINIMUM_SATS);
     assert.strictEqual(low.ok, false);
     assert.match(low.error, new RegExp(`at least ${2 * HTLC_MINIMUM_SATS}`));
@@ -107,10 +106,31 @@ describe('functions/cliDocumentExchange (headless CLI surface)', function () {
     const written = [];
     peer.connections.b = { _writeFabric: (buf) => { written.push(buf); return true; } };
     peer._respondInventoryFromLocalDocuments({ object: { offerBtc: true } }, { name: 'b' });
-    const item = JSON.parse(Message.fromBuffer(written[0]).body).items[0];
+    const item = Message.tryParseLegacyBody(Message.fromBuffer(written[0])).value.items[0];
     const blobs = item.blobs || (item.documentBlobIndex && item.documentBlobIndex.blobs);
     assert.strictEqual(blobs.length, 2);
     assert.ok(blobs.every((b) => Number(b.rateSats) >= HTLC_MINIMUM_SATS), JSON.stringify(blobs.map((b) => b.rateSats)));
+  });
+
+  it('inventory skips a document too large to advertise and serves the rest', function () {
+    const Peer = require('../types/peer');
+    const Message = require('../types/message');
+    const { MAX_DOCUMENT_BLOBS } = require('../constants');
+    const peer = new Peer({ listen: false });
+    peer.settings.inventoryBlobChunkBytes = 1;
+    peer._publishDocument('small', Buffer.from('ok').toString('base64'), 0);
+    // Larger than one AMP frame, so it is stored directly. Inventory still
+    // has to skip it: at one byte per blob it exceeds MAX_DOCUMENT_BLOBS.
+    peer._state.content.documents.huge = Buffer.alloc(MAX_DOCUMENT_BLOBS + 1, 0x61).toString('base64');
+    peer._state.content.documentRates.huge = 0;
+    const warnings = [];
+    peer.on('warning', (w) => warnings.push(String(w)));
+    const written = [];
+    peer.connections.b = { _writeFabric: (buf) => { written.push(buf); return true; } };
+    peer._respondInventoryFromLocalDocuments({ object: { offerBtc: true } }, { name: 'b' });
+    const ids = Message.tryParseLegacyBody(Message.fromBuffer(written[0])).value.items.map((i) => i.id);
+    assert.deepStrictEqual(ids, ['small']);
+    assert.ok(warnings.some((w) => w.includes('inventory skipped huge')), warnings.join('\n'));
   });
 
   it('publish refuses a paid rate under the HTLC minimum', function () {
@@ -130,19 +150,19 @@ describe('functions/cliDocumentExchange (headless CLI surface)', function () {
 
   it('buy opens a session from the offer book without double-pay', function () {
     const Key = require('../types/key');
-    const inventoryHtlc = require('../functions/inventoryHtlc');
+    const Htlc = require('../types/htlc');
     const seller = new Key();
     const buyer = new Key();
     const contentHash = 'aa'.repeat(32);
     const lock = 900_000;
-    const built = inventoryHtlc.buildInventoryHtlcP2tr({
-      networkName: 'regtest',
-      sellerPubkeyCompressed: Buffer.from(String(seller.pubkey), 'hex'),
-      buyerRefundPubkeyCompressed: Buffer.from(String(buyer.pubkey), 'hex'),
-      paymentHash32: Buffer.from(contentHash, 'hex'),
-      refundLocktimeHeight: lock
+    const built = new Htlc({
+      network: 'regtest',
+      claimPubkey: Buffer.from(String(seller.pubkey), 'hex'),
+      refundPubkey: Buffer.from(String(buyer.pubkey), 'hex'),
+      paymentHash: Buffer.from(contentHash, 'hex'),
+      refundLocktime: lock
     });
-    const book = new Book();
+    const book = new DocumentBook();
     book.ingestInventoryResponse({
       origin: 'seller1',
       sellerPubkey: String(seller.pubkey).toLowerCase(),
@@ -211,7 +231,7 @@ describe('functions/cliDocumentExchange (headless CLI surface)', function () {
     const Key = require('../types/key');
     const seller = new Key();
     const buyer = new Key();
-    const book = new Book();
+    const book = new DocumentBook();
     book.ingestInventoryResponse({
       origin: 'seller1',
       sellerPubkey: String(seller.pubkey).toLowerCase(),
@@ -245,7 +265,7 @@ describe('functions/cliDocumentExchange (headless CLI surface)', function () {
   });
 
   it('listOffers ranks ingested inventory rows', function () {
-    const book = new Book();
+    const book = new DocumentBook();
     book.ingestInventoryResponse({
       origin: 'a',
       peerScore: 2,
@@ -520,19 +540,19 @@ describe('functions/cliDocumentExchange (headless CLI surface)', function () {
 
   it('buy auto opens a multi-blob plan when blobTotal > 1', function () {
     const Key = require('../types/key');
-    const inventoryHtlc = require('../functions/inventoryHtlc');
+    const Htlc = require('../types/htlc');
     const seller = new Key();
     const buyer = new Key();
     const contentHash = 'ee'.repeat(32);
     const lock = 900_000;
-    const built = inventoryHtlc.buildInventoryHtlcP2tr({
-      networkName: 'regtest',
-      sellerPubkeyCompressed: Buffer.from(String(seller.pubkey), 'hex'),
-      buyerRefundPubkeyCompressed: Buffer.from(String(buyer.pubkey), 'hex'),
-      paymentHash32: Buffer.from(contentHash, 'hex'),
-      refundLocktimeHeight: lock
+    const built = new Htlc({
+      network: 'regtest',
+      claimPubkey: Buffer.from(String(seller.pubkey), 'hex'),
+      refundPubkey: Buffer.from(String(buyer.pubkey), 'hex'),
+      paymentHash: Buffer.from(contentHash, 'hex'),
+      refundLocktime: lock
     });
-    const book = new Book();
+    const book = new DocumentBook();
     book.ingestInventoryResponse({
       origin: 'seller-blobs',
       sellerPubkey: String(seller.pubkey).toLowerCase(),
@@ -547,7 +567,7 @@ describe('functions/cliDocumentExchange (headless CLI surface)', function () {
           { index: 0, total: 2, blobHashHex: 'f1'.repeat(32), rateSats: 1000 },
           { index: 1, total: 2, blobHashHex: 'f2'.repeat(32), rateSats: 1000 }
         ],
-        merkleRootHex: require('../functions/documentBlobManifest').merkleRootHexFromBlobHashes(['f1'.repeat(32), 'f2'.repeat(32)]),
+        merkleRootHex: Document.rootHexFromBlobHashes(['f1'.repeat(32), 'f2'.repeat(32)]),
         htlc: { paymentAddress: built.address, paymentHashHex: contentHash }
       }]
     });
@@ -672,6 +692,5 @@ describe('@fabric/core/functions/contractSidechainLocal path hardening', functio
     // Second ensure is not created
     const again = local.ensureLocalContractChain(root, id);
     assert.strictEqual(again.created, false);
-    assert.strictEqual(local.storePathsForContract, local.storePathsForLocalContract);
   });
 });

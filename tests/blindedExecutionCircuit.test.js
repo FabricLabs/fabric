@@ -19,7 +19,8 @@ const {
   HASHLOCK_LEAF_ID,
   DECISION_SIGNING_VERSION
 } = require('../functions/blindedExecutionCircuit');
-const { toAddress, synthesizeDefaultLadder } = require('../functions/contractTaproot');
+const { toAddress, synthesizeDefaultLadder } = require('../types/policy');
+const SIGNING_TAGS = require('../functions/signingTags');
 
 describe('functions/blindedExecutionCircuit', function () {
   const keys = [];
@@ -38,7 +39,7 @@ describe('functions/blindedExecutionCircuit', function () {
       decision,
       at
     });
-    return Buffer.from(keys[keyIndex].signSchnorr(msg)).toString('hex');
+    return Buffer.from(keys[keyIndex].signSchnorr(msg, SIGNING_TAGS.CIRCUIT_DECISION)).toString('hex');
   }
 
   it('composeGarblerPublish requires an evaluator party and is digest-stable', function () {

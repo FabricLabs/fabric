@@ -3,6 +3,7 @@
 const assert = require('assert');
 const Key = require('../types/key');
 const bfs = require('../functions/beaconFederationSigning');
+const SIGNING_TAGS = require('../functions/signingTags');
 
 describe('@fabric/core/functions/beaconFederationSigning', function () {
   it('canonicalEpochForFederation drops balance/timestamp and keeps contracts merkleRoot', function () {
@@ -63,8 +64,8 @@ describe('@fabric/core/functions/beaconFederationSigning', function () {
     });
     assert.strictEqual(bfs.roundMeetsThreshold(round), false);
     const msg = bfs.messageBufferForPayload(epoch);
-    assert.strictEqual(bfs.addSignature(round, k1.pubkey, k1.signSchnorr(msg).toString('hex')).sealed, false);
-    assert.strictEqual(bfs.addSignature(round, k2.pubkey, k2.signSchnorr(msg).toString('hex')).sealed, true);
+    assert.strictEqual(bfs.addSignature(round, k1.pubkey, k1.signSchnorr(msg, SIGNING_TAGS.FEDERATION_WITNESS).toString('hex')).sealed, false);
+    assert.strictEqual(bfs.addSignature(round, k2.pubkey, k2.signSchnorr(msg, SIGNING_TAGS.FEDERATION_WITNESS).toString('hex')).sealed, true);
     assert.strictEqual(
       bfs.verifyFederationWitnessOnMessage(msg, round.witness, [k1.pubkey, k2.pubkey], 2),
       true
@@ -92,7 +93,7 @@ describe('@fabric/core/functions/beaconFederationSigning', function () {
     const k1 = new Key({ private: '1111111111111111111111111111111111111111111111111111111111111111' });
     const epoch = { clock: 3, blockHash: 'dd'.repeat(32), height: 3 };
     const msg = bfs.messageBufferForPayload(epoch);
-    const sig = k1.signSchnorr(msg).toString('hex');
+    const sig = k1.signSchnorr(msg, SIGNING_TAGS.FEDERATION_WITNESS).toString('hex');
     const round = bfs.createRound(epoch, {
       validators: [k1.pubkey],
       threshold: 1
@@ -115,7 +116,7 @@ describe('@fabric/core/functions/beaconFederationSigning', function () {
     const round = bfs.createRound(epoch);
     assert.strictEqual(round.status, 'collecting');
     const msg = bfs.messageBufferForPayload(epoch);
-    const again = bfs.addSignature(round, k1.pubkey, k1.signSchnorr(msg).toString('hex'));
+    const again = bfs.addSignature(round, k1.pubkey, k1.signSchnorr(msg, SIGNING_TAGS.FEDERATION_WITNESS).toString('hex'));
     assert.strictEqual(again.ok, false);
     assert.match(again.error, /not in federation validators/i);
   });
@@ -125,10 +126,10 @@ describe('@fabric/core/functions/beaconFederationSigning', function () {
     const epoch = { clock: 2, blockHash: 'cc'.repeat(32), height: 2 };
     const round = bfs.createRound(epoch, { validators: [k1.pubkey], threshold: 1 });
     const msg = bfs.messageBufferForPayload(epoch);
-    const first = bfs.addSignature(round, k1.pubkey, k1.signSchnorr(msg).toString('hex'));
+    const first = bfs.addSignature(round, k1.pubkey, k1.signSchnorr(msg, SIGNING_TAGS.FEDERATION_WITNESS).toString('hex'));
     assert.strictEqual(first.sealed, true);
     assert.strictEqual(round.status, 'ready');
-    const again = bfs.addSignature(round, k1.pubkey, k1.signSchnorr(msg).toString('hex'));
+    const again = bfs.addSignature(round, k1.pubkey, k1.signSchnorr(msg, SIGNING_TAGS.FEDERATION_WITNESS).toString('hex'));
     assert.strictEqual(again.ok, false);
     assert.match(again.error, /not open/i);
   });
@@ -147,7 +148,7 @@ describe('@fabric/core/functions/beaconFederationSigning', function () {
     const k1 = new Key({ private: '1111111111111111111111111111111111111111111111111111111111111111' });
     const epoch = { clock: 7, blockHash: '77'.repeat(32), height: 7 };
     const msg = bfs.messageBufferForPayload(epoch);
-    const sig = k1.signSchnorr(msg).toString('hex');
+    const sig = k1.signSchnorr(msg, SIGNING_TAGS.FEDERATION_WITNESS).toString('hex');
     const witness = { signatures: { [k1.pubkey]: sig } };
     assert.strictEqual(
       bfs.verifyFederationWitnessOnMessage(msg, witness, [k1.pubkey, k1.pubkey], 2),

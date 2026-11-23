@@ -48,7 +48,7 @@ describe('@fabric/core/functions/contractSidechainLocal', function () {
     const pub = local.publishContent(root, id, { hello: 1 }, { name: 'Group' });
     assert.strictEqual(pub.state.clock, 1);
     assert.strictEqual(pub.head.stateDigest, Statechain.stateDigest(pub.state));
-    const patches = local.patchesForNamespaceHead({}, id, pub.head);
+    const patches = Statechain.patchesForNamespaceHead({}, id, pub.head);
     assert.strictEqual(patches[0].path, '/namespaces');
   });
 });

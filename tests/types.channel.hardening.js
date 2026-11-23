@@ -4,8 +4,9 @@ const assert = require('assert');
 const crypto = require('crypto');
 const bitcoin = require('bitcoinjs-lib');
 const Channel = require('../types/channel');
+const ChannelBook = require('../types/channelBook');
 const Witness = require('../types/witness');
-const { signerFromPriv32 } = require('../functions/inventoryHtlc');
+const { signerFromPriv32 } = require('../types/htlc');
 
 const NET = bitcoin.networks.regtest;
 const ANCHORS = 2 * Channel.DEFAULTS.anchorSats;
@@ -76,13 +77,13 @@ function payB (ctx, amount) {
   sync(ctx.B, ctx.A, ctx.B.fulfillHtlc(ctx.B.state.htlcs[0].id, pre));
 }
 
-/** Channel.Book hosts with manual message delivery (broadcast to every other book). */
+/** ChannelBook hosts with manual message delivery (broadcast to every other book). */
 function books (n, extra = {}) {
   const out = [];
   for (let i = 0; i < n; i++) {
     const p = party();
     const queue = [];
-    const book = new Channel.Book(Object.assign({ localPrivateKey: p.priv, network: 'regtest', confirmations: () => 6, publish: (body) => queue.push(body) }, extra));
+    const book = new ChannelBook(Object.assign({ localPrivateKey: p.priv, network: 'regtest', confirmations: () => 6, publish: (body) => queue.push(body) }, extra));
     out.push({ p, book, queue });
   }
   const deliver = (from, opts = {}) => {
@@ -360,10 +361,10 @@ describe('@fabric/core/types/channel hardening: inbound ChannelOpen trust', func
   it('a book without a confirmations source refuses inbound opens', function () {
     const { out } = books(2, { tipHeight: () => 10 });
     const [A, B] = out;
-    const lax = new Channel.Book({ localPrivateKey: B.p.priv, network: 'regtest', tipHeight: () => 10 });
+    const lax = new ChannelBook({ localPrivateKey: B.p.priv, network: 'regtest', tipHeight: () => 10 });
     const { body } = bookOpen(A, B);
     assert.throws(() => lax.ingest(body), /needs a confirmations source/);
-    assert.strictEqual(lax.sessions.size, 0);
+    assert.strictEqual(lax.size, 0);
   });
 });
 
@@ -471,7 +472,7 @@ describe('@fabric/core/types/channel hardening: concurrent updates + reconnect',
     pump();
     A.book.publish(session.offerHtlc({ amountSats: 5000, paymentHashHex: hashOf(pre), expireAfter: tip + 1000 }), session);
     pump();
-    const sB = B.book.sessions.get(session.channelId);
+    const sB = B.book.get(session.channelId);
     assert.strictEqual(sB.balances.localSats, 5000);
     A.book.publish(session.offerHtlc({ amountSats: 1000, paymentHashHex: rnd(), expireAfter: tip + 1000 }), session);
     B.book.publish(sB.offerHtlc({ amountSats: 1500, paymentHashHex: rnd(), expireAfter: tip + 1000 }), sB);
@@ -516,12 +517,12 @@ describe('@fabric/core/types/channel hardening: concurrent updates + reconnect',
     const [A, B] = out;
     const { session } = bookOpen(A, B);
     deliver(A, { drop: true });
-    assert.strictEqual(B.book.sessions.size, 0);
+    assert.strictEqual(B.book.size, 0);
     const sent = A.book.reestablish();
     assert.strictEqual(sent[0].type, 'ChannelOpen');
     pump();
     assert.strictEqual(session.status, 'open');
-    assert.strictEqual(B.book.sessions.get(session.channelId).status, 'open');
+    assert.strictEqual(B.book.get(session.channelId).status, 'open');
     // Once open, reestablish is a ChannelReestablish answered with nothing new.
     assert.strictEqual(A.book.reestablish()[0].type, 'ChannelReestablish');
     pump();
@@ -603,11 +604,38 @@ describe('@fabric/core/types/channel hardening: channel ids', function () {
     tx.addOutput(bitcoin.address.toOutputScript(f.address, NET), 20000n);
     assert.throws(() => make(tx.toHex(), Channel.buildFunding(Object.assign({}, f, { funder: 'local', fundingTxid: tx.getId(), fundingVout: 0 }))), /does not pay the channel address/);
 
-    const book = new Channel.Book({ localPrivateKey: a.priv, network: 'regtest' });
+    const book = new ChannelBook({ localPrivateKey: a.priv, network: 'regtest' });
     book.add(s1);
     book.add(s1);
     assert.throws(() => book.add(Channel.Session.import(s1.export(), a.priv)), /already registered/);
-    assert.strictEqual(book.sessions.get(s1.channelId), s1);
+    assert.strictEqual(book.get(s1.channelId), s1);
+  });
+
+  it('is a Book whose sessions are rows, refusing new channels when full instead of evicting', function () {
+    const Book = require('../types/book');
+    const { out } = books(3, { maxEntries: 1, tipHeight: () => 10 });
+    const [A, B, C] = out;
+    assert.ok(A.book instanceof Book);
+    assert.ok(A.book instanceof require('../types/actor'));
+    assert.deepStrictEqual(A.book.state, { type: 'ChannelBook' });
+    const { session } = bookOpen(A, B);
+    assert.strictEqual(A.book.size, 1);
+    assert.ok(A.book.has(session.channelId));
+    assert.strictEqual(A.book.get(session.channelId), session);
+    assert.strictEqual(A.book.get('ff'.repeat(32)), null);
+    assert.throws(() => bookOpen(A, C), /ChannelBook: full \(1 channels\)/);
+    assert.strictEqual(A.book.get(session.channelId), session, 'the open channel is kept');
+    assert.strictEqual(new ChannelBook({ localPrivateKey: A.p.priv, network: 'regtest' }).capacity, Infinity);
+  });
+
+  it('times the chain tip with the book clock', function () {
+    let now = 1000;
+    const book = new ChannelBook({ localPrivateKey: crypto.randomBytes(32), network: 'regtest', staleTipMs: 500, now: () => now });
+    book.setTip(42);
+    assert.strictEqual(book.tipHeight(), 42);
+    now += 501;
+    assert.strictEqual(book.tipHeight(), null);
+    assert.strictEqual(book.settings.localPrivateKey, undefined, 'the key stays off the Book settings');
   });
 
   it('ignores a ChannelOpen whose declared id is not the derived one', function () {
@@ -616,7 +644,7 @@ describe('@fabric/core/types/channel hardening: channel ids', function () {
     const { body } = bookOpen(A, B);
     const forged = resign(Object.assign({}, body, { channelId: 'ff'.repeat(32) }), A.p.priv);
     assert.strictEqual(B.book.ingest(forged), null);
-    assert.strictEqual(B.book.sessions.size, 0);
+    assert.strictEqual(B.book.size, 0);
   });
 });
 
@@ -632,13 +660,13 @@ describe('@fabric/core/types/channel hardening: forwarding', function () {
     const upExpire = tip + 1000;
     A.book.publish(ab.session.offerHtlc({ amountSats: 1010, paymentHashHex: hashOf(pre), expireAfter: upExpire }), ab.session);
     deliver(A);
-    const upstream = B.book.sessions.get(ab.session.channelId);
+    const upstream = B.book.get(ab.session.channelId);
     assert.strictEqual(upstream.busy, true);
     assert.throws(() => B.book.forward(upstream, upstream.state.htlcs[0].id, bc.session), /not irrevocably committed/);
     pump();
     B.book.forward(upstream, upstream.state.htlcs[0].id, bc.session);
     pump();
-    const atC = C.book.sessions.get(bc.session.channelId);
+    const atC = C.book.get(bc.session.channelId);
     assert.strictEqual(atC.state.htlcs[0].expireAfter.height, upExpire - Channel.minForwardCltvDelta(bc.session), 'policy delta raised to the safe minimum');
 
     // Upstream busy when the downstream preimage arrives: settlement is queued, then retried.
@@ -660,14 +688,14 @@ describe('@fabric/core/types/channel hardening: persistence', function () {
   it('persists before publishing; a failing persist cancels the publish', async function () {
     const log = [];
     const a = party(); const b = party();
-    const book = new Channel.Book({ localPrivateKey: a.priv, network: 'regtest', tipHeight: () => 10, persist: (s, body) => log.push(['persist', body.type]), publish: (body) => log.push(['publish', body.type]) });
+    const book = new ChannelBook({ localPrivateKey: a.priv, network: 'regtest', tipHeight: () => 10, persist: (s, body) => log.push(['persist', body.type]), publish: (body) => log.push(['publish', body.type]) });
     const funding = Channel.buildFunding({ network: 'regtest', localPubkey: a.pub, remotePubkey: b.pub, expireAfter: 5000 });
     book.open({ remotePubkey: b.pub, fundedTxHex: fundingTx(funding.address, 20000), capacitySats: 20000, expireAfter: 5000, feeSats: 500, localAddress: a.address, remoteAddress: b.address });
     assert.deepStrictEqual(log, [['persist', 'ChannelOpen'], ['publish', 'ChannelOpen']]);
 
     const sent = [];
     let resolve;
-    const slow = new Channel.Book({ localPrivateKey: a.priv, network: 'regtest', tipHeight: () => 10, persist: () => new Promise((r) => { resolve = r; }), publish: (body) => sent.push(body) });
+    const slow = new ChannelBook({ localPrivateKey: a.priv, network: 'regtest', tipHeight: () => 10, persist: () => new Promise((r) => { resolve = r; }), publish: (body) => sent.push(body) });
     slow.open({ remotePubkey: b.pub, fundedTxHex: fundingTx(funding.address, 20000), capacitySats: 20000, expireAfter: 5000, feeSats: 500, localAddress: a.address, remoteAddress: b.address });
     assert.strictEqual(sent.length, 0, 'waits for persist');
     resolve();
@@ -675,7 +703,7 @@ describe('@fabric/core/types/channel hardening: persistence', function () {
     assert.strictEqual(sent.length, 1);
 
     const none = [];
-    const failing = new Channel.Book({ localPrivateKey: a.priv, network: 'regtest', tipHeight: () => 10, persist: () => { throw new Error('disk full'); }, publish: (body) => none.push(body) });
+    const failing = new ChannelBook({ localPrivateKey: a.priv, network: 'regtest', tipHeight: () => 10, persist: () => { throw new Error('disk full'); }, publish: (body) => none.push(body) });
     assert.throws(() => failing.open({ remotePubkey: b.pub, fundedTxHex: fundingTx(funding.address, 20000), capacitySats: 20000, expireAfter: 5000, feeSats: 500, localAddress: a.address, remoteAddress: b.address }), /disk full/);
     assert.strictEqual(none.length, 0);
   });
@@ -761,7 +789,7 @@ describe('@fabric/core/types/channel hardening: justice, settlements, and HTLC r
     assert.strictEqual(snap.announced.length, 1);
 
     // Restored book does not re-announce the old HTLC.
-    const restored = new Channel.Book({ localPrivateKey: B.p.priv, network: 'regtest', confirmations: () => 6, tipHeight: () => tip, publish: (body) => B.queue.push(body) }).import(snap);
+    const restored = new ChannelBook({ localPrivateKey: B.p.priv, network: 'regtest', confirmations: () => 6, tipHeight: () => tip, publish: (body) => B.queue.push(body) }).import(snap);
     const reannounced = [];
     restored.on('htlcCommitted', (e) => reannounced.push(e));
     restored.on('htlcSettled', (e) => settledAtB.push(e));

@@ -35,7 +35,10 @@ const CONSENSUS_POW = Block.CONSENSUS_POW;
 const CONSENSUS_FEDERATION = Block.CONSENSUS_FEDERATION;
 const CONSENSUS_GOSSIP = Block.CONSENSUS_GOSSIP;
 
-/** @private @deprecated Use CONSENSUS_*; aliases for one release. */
+/**
+ * @deprecated Use CONSENSUS_*; aliases for one release.
+ * @private
+ */
 const SEAL_BLOCK = 'block';
 /** @private */
 const SEAL_FEDERATION = CONSENSUS_FEDERATION;
@@ -400,6 +403,12 @@ class Chain extends Actor {
   }
 
   createSignedBlock (proposal = {}) {
+    let stateDigest = null;
+    try {
+      stateDigest = this.contentDigest(0);
+    } catch (_err) {
+      stateDigest = null;
+    }
     return {
       actor: proposal.actor || Actor.randomBytes(32).toString('hex'),
       changes: proposal.changes,
@@ -412,7 +421,7 @@ class Chain extends Actor {
       ]),
       parent: this.id,
       signature: Buffer.alloc(64),
-      state: this.state,
+      stateDigest: stateDigest,
       type: 'FabricBlock'
     };
   }

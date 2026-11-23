@@ -6,9 +6,9 @@ const bitcoin = require('bitcoinjs-lib');
 const Key = require('../types/key');
 const Contract = require('../types/contract');
 const {
-  observePaymentToAddress,
-  applyPaymentObservationToTip
-} = require('../functions/contractPaymentObserve');
+  observePayment,
+  applyPaymentObservation
+} = require('../types/contract');
 const {
   buildExecutionRunOutput,
   computeExecutionRunCommitmentHex,
@@ -80,7 +80,7 @@ describe('executionRunBridge / FabricProgramRun forward digest', function () {
   });
 });
 
-describe('contractPaymentObserve / Contract L1 payment', function () {
+describe('Contract.observePayment / L1 payment', function () {
   const keys = [];
   before(function () {
     for (let i = 0; i < 3; i++) keys.push(new Key());
@@ -104,7 +104,7 @@ describe('contractPaymentObserve / Contract L1 payment', function () {
     const address = contract.toAddress('regtest');
     const built = contract.toTaprootContract({ network: 'regtest' });
     const tx = fundTx(built.output, 50000);
-    const obs = observePaymentToAddress({
+    const obs = observePayment({
       tx: tx.toHex(),
       address,
       network: 'regtest',
@@ -128,7 +128,7 @@ describe('contractPaymentObserve / Contract L1 payment', function () {
       threshold: 1,
       publisher: keys[0].pubkey
     });
-    const obs = observePaymentToAddress({
+    const obs = observePayment({
       tx: tx.toHex(),
       address: contract.toAddress('regtest'),
       network: 'regtest'
@@ -146,7 +146,7 @@ describe('contractPaymentObserve / Contract L1 payment', function () {
     });
     const built = contract.toTaprootContract({ network: 'regtest' });
     const tx = fundTx(built.output, 1000);
-    const obs = observePaymentToAddress({
+    const obs = observePayment({
       tx,
       address: contract.toAddress('regtest'),
       network: 'regtest',
@@ -158,9 +158,9 @@ describe('contractPaymentObserve / Contract L1 payment', function () {
   });
 
   it('fails on missing / invalid tx', function () {
-    assert.strictEqual(observePaymentToAddress({ address: 'bcrt1qxx' }).code, 'MISSING_TX');
+    assert.strictEqual(observePayment({ address: 'bcrt1qxx' }).code, 'MISSING_TX');
     assert.strictEqual(
-      observePaymentToAddress({ tx: 'zz', address: 'bcrt1qxx' }).code,
+      observePayment({ tx: 'zz', address: 'bcrt1qxx' }).code,
       'INVALID_TX'
     );
   });
@@ -212,9 +212,9 @@ describe('contractPaymentObserve / Contract L1 payment', function () {
     assert.deepStrictEqual(contract._state.content.payments || [], []);
   });
 
-  it('applyPaymentObservationToTip rejects failed observations', function () {
+  it('applyPaymentObservation rejects failed observations', function () {
     assert.throws(
-      () => applyPaymentObservationToTip({}, { ok: false, code: 'NO_MATCH' }),
+      () => applyPaymentObservation({}, { ok: false, code: 'NO_MATCH' }),
       /successful/
     );
   });

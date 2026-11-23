@@ -8,6 +8,10 @@ const sidechainState = require('../functions/sidechainState');
 const bfs = require('../functions/beaconFederationSigning');
 const { offlinePeerSettings } = require('./helpers/peer');
 
+function legacyBody (msg) {
+  return Message.tryParseLegacyBody(Message.fromBuffer(msg.toBuffer())).value;
+}
+
 describe('Peer SIDECHAIN_STATE_PATCH authorization', function () {
   it('fail-closes when no federation validators are configured', function () {
     const peer = new Peer(offlinePeerSettings());
@@ -18,7 +22,7 @@ describe('Peer SIDECHAIN_STATE_PATCH authorization', function () {
       object: {
         type: sidechainState.SIDECHAIN_STATE_PATCH_TYPE,
         basisClock: 0,
-        basisDigest: 'aa',
+        basisDigest: 'aa'.repeat(32),
         patches: [{ op: 'add', path: '/x', value: 1 }]
       }
     }, { name: 'peer@127.0.0.1:7777' }, null, null, {});
@@ -51,7 +55,7 @@ describe('Peer SIDECHAIN_STATE_PATCH authorization', function () {
       object: {
         type: sidechainState.SIDECHAIN_STATE_PATCH_TYPE,
         basisClock: 0,
-        basisDigest: 'aa',
+        basisDigest: 'aa'.repeat(32),
         patches: [{ op: 'add', path: '/x', value: 1 }]
       }
     }, { name: 'peer@127.0.0.1:7777' }, null, null, {});
@@ -61,14 +65,14 @@ describe('Peer SIDECHAIN_STATE_PATCH authorization', function () {
     const signed = sidechainState.buildSignedSidechainPatchMessage({
       proposal: {
         basisClock: 0,
-        basisDigest: 'aa',
+        basisDigest: 'aa'.repeat(32),
         patches: [{ op: 'add', path: '/x', value: 1 }]
       },
       signKey: attacker
     });
     peer._handleGenericMessage({
       type: 'SIDECHAIN_STATE_PATCH',
-      object: JSON.parse(signed.data.toString('utf8'))
+      object: legacyBody(signed)
     }, { name: 'peer@127.0.0.1:7777' }, null, null, {});
     assert.strictEqual(emitted, false);
   });
@@ -85,14 +89,14 @@ describe('Peer SIDECHAIN_STATE_PATCH authorization', function () {
     }));
     const proposal = {
       basisClock: 0,
-      basisDigest: 'aa',
+      basisDigest: 'aa'.repeat(32),
       patches: [{ op: 'add', path: '/x', value: 1 }]
     };
     const signed = sidechainState.buildSignedSidechainPatchMessage({
       proposal,
       signKey: key
     });
-    const body = JSON.parse(signed.data.toString('utf8'));
+    const body = legacyBody(signed);
     let got = null;
     peer.on('sidechain:patch', (ev) => { got = ev; });
     peer._handleGenericMessage({
@@ -117,7 +121,7 @@ describe('Peer SIDECHAIN_STATE_PATCH authorization', function () {
     }));
     const proposal = {
       basisClock: 0,
-      basisDigest: 'cc',
+      basisDigest: 'cc'.repeat(32),
       patches: [{ op: 'add', path: '/replay', value: 1 }]
     };
     const first = sidechainState.buildSignedSidechainPatchMessage({ proposal, signKey: key });
@@ -126,11 +130,11 @@ describe('Peer SIDECHAIN_STATE_PATCH authorization', function () {
     peer.on('sidechain:patch', () => { count += 1; });
     peer._handleGenericMessage({
       type: 'SIDECHAIN_STATE_PATCH',
-      object: JSON.parse(first.data.toString('utf8'))
+      object: legacyBody(first)
     }, { name: 'peer@127.0.0.1:7777' }, null, null, {});
     peer._handleGenericMessage({
       type: 'SIDECHAIN_STATE_PATCH',
-      object: JSON.parse(second.data.toString('utf8'))
+      object: legacyBody(second)
     }, { name: 'peer@127.0.0.1:7778' }, null, null, {});
     assert.strictEqual(count, 1);
   });
@@ -146,7 +150,7 @@ describe('Peer SIDECHAIN_STATE_PATCH authorization', function () {
       const signed = sidechainState.buildSignedSidechainPatchMessage({
         proposal: {
           basisClock: 0,
-          basisDigest: 'bb',
+          basisDigest: 'bb'.repeat(32),
           patches: [{ op: 'add', path: '/env', value: 1 }]
         },
         signKey: key
@@ -155,7 +159,7 @@ describe('Peer SIDECHAIN_STATE_PATCH authorization', function () {
       peer.on('sidechain:patch', (ev) => { got = ev; });
       peer._handleGenericMessage({
         type: 'SIDECHAIN_STATE_PATCH',
-        object: JSON.parse(signed.data.toString('utf8'))
+        object: legacyBody(signed)
       }, { name: 'peer@127.0.0.1:7777' }, null, null, {});
       assert.ok(got);
     } finally {

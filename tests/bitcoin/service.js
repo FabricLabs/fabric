@@ -8,6 +8,7 @@ const jayson = require('jayson/lib/client');
 // Fabric Types
 const Bitcoin = require('../../services/bitcoin');
 const Key = require('../../types/key');
+const Message = require('../../types/message');
 const {
   isolatedManagedRegtestSettings,
   rpcProbeLooksUnavailable
@@ -86,6 +87,12 @@ describe('@fabric/core/services/bitcoin', function () {
         assert.strictEqual(btc.validateAddress(''), false);
       });
 
+      it('accepts a testnet5 bech32 address', function () {
+        const btc = new Bitcoin({ network: 'testnet5', mode: 'fabric' });
+        assert.strictEqual(btc.validateAddress('tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx'), true);
+        assert.strictEqual(btc.validateAddress('bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4'), false);
+      });
+
       it('fails closed set of networks safely', function () {
         const btc = new Bitcoin({ network: 'invalidnet', mode: 'fabric' });
         // Should not throw, but must return false on validation
@@ -102,6 +109,9 @@ describe('@fabric/core/services/bitcoin', function () {
         assert.strictEqual(btc._normalizeChainName('regtest'), 'regtest');
         assert.strictEqual(btc._normalizeChainName('signet'), 'signet');
         assert.strictEqual(btc._normalizeChainName('testnet4'), 'testnet4');
+        assert.strictEqual(btc._normalizeChainName('testnet5'), 'testnet5');
+        assert.strictEqual(btc._keyNetworkNameForWif(), 'regtest');
+        assert.strictEqual(new Bitcoin({ network: 'testnet5', mode: 'rpc' })._keyNetworkNameForWif(), 'testnet');
         assert.strictEqual(btc._normalizeChainName('unknown-custom'), 'unknown-custom');
       });
 
@@ -123,7 +133,8 @@ describe('@fabric/core/services/bitcoin', function () {
           testnet: { rpc: 18332, p2p: 18333 },
           regtest: { rpc: 18443, p2p: 18444 },
           signet: { rpc: 38332, p2p: 38333 },
-          testnet4: { rpc: 48332, p2p: 48333 }
+          testnet4: { rpc: 48332, p2p: 48333 },
+          testnet5: { rpc: 18352, p2p: 18353 }
         };
 
         for (const [network, ports] of Object.entries(expected)) {
@@ -489,14 +500,12 @@ describe('@fabric/core/services/bitcoin', function () {
           throw new Error(`unexpected method ${method}`);
         };
 
-        const payload = Buffer.from(JSON.stringify({ content: 'abc123tip' }), 'utf8');
-        await btc._handleZMQMessage({
-          type: 'BitcoinBlockHash',
-          data: payload
-        });
+        // What services/zmq emits for `hashblock`: a field-body Message.
+        const tip = 'ab'.repeat(32);
+        await btc._handleZMQMessage(Message.fromLegacyBody('BitcoinBlockHash', { content: tip }));
 
         assert.strictEqual(btc._state.content.height, 321);
-        assert.strictEqual(btc._state.content.tip, 'abc123tip');
+        assert.strictEqual(btc._state.content.tip, tip);
         assert.strictEqual(btc._state.content.supply, 123.45);
         assert.strictEqual(committed, 1);
       });
@@ -506,16 +515,22 @@ describe('@fabric/core/services/bitcoin', function () {
         let committed = 0;
         btc.commit = () => { committed++; };
         btc._makeRPCRequest = async (method) => {
-          if (method === 'getbalances') return { trusted: 10.5 };
+          if (method === 'getbalances') return { mine: { trusted: 10.5, untrusted_pending: 0, immature: 0 } };
           throw new Error(`unexpected method ${method}`);
         };
 
-        await btc._handleZMQMessage({
-          type: 'BitcoinTransaction',
-          data: Buffer.from('{}', 'utf8')
-        });
+        // What services/zmq emits for `rawtx`: a field-body Message of a real transaction.
+        const bitcoinjs = require('bitcoinjs-lib');
+        const tx = new bitcoinjs.Transaction();
+        tx.addInput(Buffer.alloc(32, 7), 0);
+        tx.addOutput(Buffer.from('0014' + '11'.repeat(20), 'hex'), BigInt(1000));
+        const events = [];
+        btc.broadcastWatchtower = async () => {};
+        btc.on('transaction', (event) => events.push(event));
+        await btc._handleZMQMessage(Message.fromLegacyBody('BitcoinTransaction', { content: tx.toHex() }));
 
-        assert.deepStrictEqual(btc._state.balances.mine.trusted, { trusted: 10.5 });
+        assert.deepStrictEqual(events, [{ hex: tx.toHex(), source: 'BitcoinTransaction', txid: tx.getId() }]);
+        assert.deepStrictEqual(btc._state.balances, { mine: { trusted: 10.5, untrusted_pending: 0, immature: 0 } });
         assert.strictEqual(committed, 1);
       });
 
@@ -528,14 +543,12 @@ describe('@fabric/core/services/bitcoin', function () {
           throw new Error(`unexpected method ${method}`);
         };
 
-        const raw = [
-          Buffer.from('BitcoinBlockHash', 'utf8'),
-          Buffer.from(JSON.stringify({ content: 'tip-raw-array' }), 'utf8')
-        ];
-        await btc._handleZMQMessage(raw);
+        // bitcoind's own frame: topic + the 32 hash bytes.
+        const tip = 'cd'.repeat(32);
+        await btc._handleZMQMessage([Buffer.from('hashblock', 'utf8'), Buffer.from(tip, 'hex')]);
 
         assert.strictEqual(btc._state.content.height, 9);
-        assert.strictEqual(btc._state.content.tip, 'tip-raw-array');
+        assert.strictEqual(btc._state.content.tip, tip);
         assert.strictEqual(btc._state.content.supply, 50);
         assert.strictEqual(committed, 1);
       });
@@ -1144,11 +1157,14 @@ describe('@fabric/core/services/bitcoin', function () {
         await assert.rejects(() => btc.generateBlock('addr'), /Invalid mode/);
       });
 
-      it('getUnusedAddress derives sequential addresses in fabric mode', async function () {
+      it('getUnusedAddress derives sequential BIP-86 addresses in fabric mode', async function () {
         const btc = new Bitcoin({ network: 'regtest', mode: 'fabric' });
         const a = await btc.getUnusedAddress();
         const b = await btc.getUnusedAddress();
         assert.notStrictEqual(a, b);
+        assert.match(a, /^bcrt1p/);
+        assert.match(b, /^bcrt1p/);
+        assert.deepStrictEqual([btc.settings.state.addresses[a].index, btc.settings.state.addresses[b].index], [0, 1]);
         assert.ok(btc.settings.state.addresses[a]);
         assert.ok(btc.settings.state.addresses[b]);
       });

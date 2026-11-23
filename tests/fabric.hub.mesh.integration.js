@@ -96,20 +96,20 @@ describe('@fabric/core Hub mesh integration', function () {
       const sock = hub.connections[addr];
       if (!sock || !sock._writeFabric) return;
 
-      const inv = Message.fromVector(['P2P_INVENTORY_RESPONSE', JSON.stringify({
+      const inv = Message.fromLegacyBody('P2P_INVENTORY_RESPONSE', {
         type: 'INVENTORY_RESPONSE',
         object: {
           items: [{ id: docId, rateSats: askSats, contentHash, network: 'bitcoin' }]
         }
-      })]);
+      });
       inv.signWithKey(hub.key);
       sock._writeFabric(inv.toBuffer());
 
       // First-class opcode — P2P_FILE_SEND must not escalate from P2P_BASE_MESSAGE.
-      const file = Message.fromVector(['P2P_FILE_SEND', JSON.stringify({
+      const file = Message.fromLegacyBody('P2P_FILE_SEND', {
         name: docId,
         body: body.toString('base64')
-      })]);
+      });
       file.signWithKey(hub.key);
       sock._writeFabric(file.toBuffer());
     });
@@ -321,6 +321,79 @@ describe('generic application contract chain', function () {
     assert.deepStrictEqual(fixture.tip.chatBodies, ['hello application', 'carol is in']);
   });
 
+  it('field-encoded chain folds to the same contract id, members, and state as the JSON fixture', function () {
+    const fixture = loadFixture();
+    const chain = buildGenericApplicationChain({ encoding: 'fields' });
+    for (const row of chain.frames) {
+      const wire = Message.fromBuffer(Buffer.from(row.hex, 'hex'));
+      assert.strictEqual(Message.tryParseMessageBody(wire).encoding, 'fields', row.label);
+    }
+    assert.strictEqual(chain.contractId, fixture.contractId);
+    assert.deepStrictEqual(chain.groupChangeActions, fixture.groupChangeActions);
+    assert.deepStrictEqual(
+      chain.frames.map((row) => [row.label, row.type, row.appType]),
+      fixture.labels.map((row) => [row.label, row.type, row.appType])
+    );
+    const jsonHashes = new Set(fixture.collection.messages.map((m) => m.hash));
+    assert.ok(chain.document.messages.every((m) => !jsonHashes.has(m.hash)),
+      'field frames carry different message hashes than their JSON copies');
+    // The fold orders entries by message hash. The two `members.set` frames
+    // (seed roster vs. the roster with eve) don't commute, so new hashes can
+    // pick a different last writer: eve is the only roster difference allowed.
+    const eve = pubkeyXOnly(pub(chain.keys.eve));
+    const sameState = (tip) => {
+      const { stateDigest, ...rest } = tip;
+      for (const key of ['members', 'signers']) rest[key] = rest[key].filter((k) => k !== eve).sort();
+      rest.chatBodies = rest.chatBodies.slice().sort();
+      return rest;
+    };
+    assert.deepStrictEqual(sameState(chain.tip), sameState(fixture.tip));
+
+    const replayed = replayCollectionDocument(chain.document);
+    assert.strictEqual(replayed.skipped, 0, JSON.stringify(replayed.errors));
+    assert.strictEqual(replayed.contractId, fixture.contractId);
+    assert.deepStrictEqual(replayed.tip, chain.tip);
+  });
+
+  it('gossips the field-encoded chain across a local Peer mesh', async function () {
+    const fixture = loadFixture();
+    const chain = buildGenericApplicationChain({ encoding: 'fields' });
+    const network = new NetworkHarness({
+      peerCount: 3,
+      topology: 'star',
+      connectTimeoutMs: 20000
+    });
+    try {
+      await network.start();
+      const collectors = network.peers.map(attachCollector);
+      const events = network.peers.map(() => []);
+      network.peers.forEach((peer, i) => {
+        peer.on('contract:message', (ev) => events[i].push(ev.object));
+      });
+      const hub = network.peers[0];
+      for (const row of chain.document.messages) {
+        hub._handleFabricMessage(Buffer.from(row.hex, 'hex'), { name: 'local-inject' });
+      }
+
+      const expected = chain.document.messages.map((m) => m.hash).sort();
+      await waitUntil(() => collectors.every((col) => {
+        const got = appHashes(col);
+        return got.length === expected.length && got.every((h, i) => h === expected[i]);
+      }), 20000);
+
+      for (const peer of network.peers) {
+        assert.ok(peer.contracts && peer.contracts[fixture.contractId],
+          'each node should register the field-published contract');
+      }
+      const chat = events[1].find((obj) => obj.type === 'GroupChat');
+      assert.ok(chat, 'contract:message carries the legacy JSON shape');
+      assert.strictEqual(chat.contract, fixture.contractId);
+      assert.strictEqual(chat.object.body, 'hello application');
+    } finally {
+      await network.stop();
+    }
+  });
+
   it('replays the fixture collection to the bound tip digest', function () {
     const fixture = loadFixture();
     const replayed = replayCollectionDocument(fixture.collection);
@@ -331,58 +404,27 @@ describe('generic application contract chain', function () {
     assert.strictEqual(replayed.tip.stateDigest, fixture.tip.stateDigest);
   });
 
-  it('gossips the fixture chain across a local Peer mesh and replays to the same tip', async function () {
+  it('a Peer drops the JSON fixture chain on the wire; the stored chain still replays', function () {
     const fixture = loadFixture();
-    const network = new NetworkHarness({
-      peerCount: 3,
-      topology: 'star',
-      connectTimeoutMs: 20000
-    });
-    try {
-      await network.start();
-      const collectors = network.peers.map(attachCollector);
-      const hub = network.peers[0];
-      for (const row of fixture.collection.messages) {
-        hub._handleFabricMessage(Buffer.from(row.hex, 'hex'), { name: 'local-inject' });
-      }
-
-      const expected = fixture.collection.messages.map((m) => m.hash).sort();
-      await waitUntil(() => {
-        return collectors.every((col) => {
-          const got = appHashes(col);
-          return got.length === expected.length && got.every((h, i) => h === expected[i]);
-        });
-      }, 20000);
-
-      for (const peer of network.peers) {
-        assert.ok(
-          peer.contracts && peer.contracts[fixture.contractId],
-          'each node should register the published contract'
-        );
-      }
-
-      for (const col of collectors) {
-        const subset = createCollection();
-        for (const row of col.messages) {
-          if (row.type === 'CONTRACT_PUBLISH' || row.type === 'CONTRACT_MESSAGE') {
-            ingest(subset, row.hex);
-          }
-        }
-        const replayed = replayCollectionDocument(toJSON(subset));
-        assert.strictEqual(replayed.tip.stateDigest, fixture.tip.stateDigest);
-        assert.deepStrictEqual(replayed.tip.members, fixture.tip.members);
-        assert.deepStrictEqual(replayed.tip.chatBodies, fixture.tip.chatBodies);
-        assert.strictEqual(replayed.tip.proposalStatus, 'adopted');
-      }
-    } finally {
-      await network.stop();
+    const peer = new Peer({ listen: false, peersDb: null, networking: false });
+    for (const row of fixture.collection.messages) {
+      peer._handleFabricMessage(Buffer.from(row.hex, 'hex'), { name: 'local-inject' });
     }
+    assert.ok(!(peer.contracts && peer.contracts[fixture.contractId]), 'JSON CONTRACT_PUBLISH must not register');
+    const counts = peer.jsonBodyCounts();
+    assert.ok(counts.CONTRACT_PUBLISH >= 1 && counts.CONTRACT_MESSAGE >= 1, JSON.stringify(counts));
+
+    const stored = createCollection();
+    for (const row of fixture.collection.messages) ingest(stored, row.hex);
+    const replayed = replayCollectionDocument(toJSON(stored));
+    assert.strictEqual(replayed.tip.stateDigest, fixture.tip.stateDigest);
+    assert.deepStrictEqual(replayed.tip.members, fixture.tip.members);
   });
 });
 
 const Actor = require('../types/actor');
 const Key = require('../types/key');
-const { pubkeyXOnly } = require('../functions/groupChatSeal');
+const { pubkeyXOnly } = require('../functions/pubkey');
 const {
   GOVERNANCE_ACTIONS,
   signProposalVote
@@ -470,28 +512,31 @@ function applicationDefinition (keys) {
   };
 }
 
-function signPublish (key, definition) {
-  return Message.fromVector(['CONTRACT_PUBLISH', JSON.stringify(definition)]).signWithKey(key);
+function signPublish (key, definition, encoding = 'json', parent = null) {
+  const message = encoding === 'fields'
+    ? Message.fromLegacyBody('CONTRACT_PUBLISH', definition)
+    : Message.fromVector(['CONTRACT_PUBLISH', JSON.stringify(definition)]);
+  if (parent) message.parent = parent;
+  return message.signWithKey(key);
 }
 
-function signContractMessage (key, contractId, type, object) {
-  return Message.fromVector(['CONTRACT_MESSAGE', JSON.stringify({
-    contract: contractId,
-    type,
-    object
-  })]).signWithKey(key);
+function signContractMessage (key, contractId, type, object, encoding = 'json', parent = null) {
+  const body = { contract: contractId, type, object };
+  const message = encoding === 'fields'
+    ? Message.fromLegacyBody('CONTRACT_MESSAGE', body)
+    : Message.fromVector(['CONTRACT_MESSAGE', JSON.stringify(body)]);
+  if (parent) message.parent = parent;
+  return message.signWithKey(key);
 }
 
 function changeActionOf (message) {
   if (!message || message.type !== 'CONTRACT_MESSAGE') return null;
-  try {
-    const body = JSON.parse(message.body || message.data || '{}');
-    if (body.type !== 'GroupChange' && body.type !== 'GroupChangeProposal') return null;
-    const obj = body.object && typeof body.object === 'object' ? body.object : {};
-    return obj.action != null ? String(obj.action) : null;
-  } catch (_) {
-    return null;
-  }
+  const parsed = Message.tryParseLegacyBody(message);
+  if (!parsed.ok) return null;
+  const body = parsed.value;
+  if (body.type !== 'GroupChange' && body.type !== 'GroupChangeProposal') return null;
+  const obj = body.object && typeof body.object === 'object' ? body.object : {};
+  return obj.action != null ? String(obj.action) : null;
 }
 
 /**
@@ -499,11 +544,17 @@ function changeActionOf (message) {
  * @param {object} [opts]
  * @param {object} [opts.mnemonics]
  * @param {object} [opts.material]
+ * @param {'json'|'fields'} [opts.encoding='json'] AMP body encoding for every frame
  * @returns {object}
  */
 function buildGenericApplicationChain (opts = {}) {
   const mnemonics = opts.mnemonics || MNEMONICS;
   const material = opts.material || KEY_MATERIAL;
+  const encoding = opts.encoding || 'json';
+  let parent = null;
+  const link = (message) => { parent = message.id; return message; };
+  const publish = (key, def) => link(signPublish(key, def, encoding, parent));
+  const send = (key, id, type, object) => link(signContractMessage(key, id, type, object, encoding, parent));
   const keys = keysFromMaterial(material);
   const definition = applicationDefinition(keys);
   const contractId = new Actor(definition).id;
@@ -530,11 +581,11 @@ function buildGenericApplicationChain (opts = {}) {
   const frames = [
     {
       label: 'publish',
-      message: signPublish(keys.alice, definition)
+      message: publish(keys.alice, definition)
     },
     {
       label: 'chat-alice',
-      message: signContractMessage(keys.alice, contractId, 'GroupChat', {
+      message: send(keys.alice, contractId, 'GroupChat', {
         body: 'hello application',
         author: alice,
         ts: '2026-08-16T00:00:01.000Z'
@@ -542,14 +593,14 @@ function buildGenericApplicationChain (opts = {}) {
     },
     {
       label: 'change-seed-roster',
-      message: signContractMessage(keys.alice, contractId, 'GroupChange', {
+      message: send(keys.alice, contractId, 'GroupChange', {
         action: 'members.set',
         members: [alice, bob]
       })
     },
     {
       label: 'change-member-add-dave',
-      message: signContractMessage(keys.alice, contractId, 'GroupChange', {
+      message: send(keys.alice, contractId, 'GroupChange', {
         action: 'member.add',
         member: dave,
         role: 'signer'
@@ -557,7 +608,7 @@ function buildGenericApplicationChain (opts = {}) {
     },
     {
       label: 'change-member-add-eve-reader',
-      message: signContractMessage(keys.alice, contractId, 'GroupChange', {
+      message: send(keys.alice, contractId, 'GroupChange', {
         action: 'member.add',
         member: eve,
         role: 'reader'
@@ -565,28 +616,28 @@ function buildGenericApplicationChain (opts = {}) {
     },
     {
       label: 'change-member-remove-dave',
-      message: signContractMessage(keys.alice, contractId, 'GroupChange', {
+      message: send(keys.alice, contractId, 'GroupChange', {
         action: 'member.remove',
         member: dave
       })
     },
     {
       label: 'change-members-set',
-      message: signContractMessage(keys.alice, contractId, 'GroupChange', {
+      message: send(keys.alice, contractId, 'GroupChange', {
         action: 'members.set',
         members: [alice, bob, carol, eve]
       })
     },
     {
       label: 'change-signers-set',
-      message: signContractMessage(keys.alice, contractId, 'GroupChange', {
+      message: send(keys.alice, contractId, 'GroupChange', {
         action: 'signers.set',
         signers: [alice, bob]
       })
     },
     {
       label: 'change-update',
-      message: signContractMessage(keys.alice, contractId, 'GroupChange', {
+      message: send(keys.alice, contractId, 'GroupChange', {
         action: 'update',
         patch: {
           pinnedChannels: ['group:app-generic-1'],
@@ -596,11 +647,11 @@ function buildGenericApplicationChain (opts = {}) {
     },
     {
       label: 'proposal-add-carol',
-      message: signContractMessage(keys.alice, contractId, 'GroupChangeProposal', proposal)
+      message: send(keys.alice, contractId, 'GroupChangeProposal', proposal)
     },
     {
       label: 'vote-bob',
-      message: signContractMessage(keys.bob, contractId, 'GroupChangeVote', {
+      message: send(keys.bob, contractId, 'GroupChangeVote', {
         type: 'GroupChangeVote',
         proposalId: proposal.id,
         contractId,
@@ -612,7 +663,7 @@ function buildGenericApplicationChain (opts = {}) {
     },
     {
       label: 'chat-bob',
-      message: signContractMessage(keys.bob, contractId, 'GroupChat', {
+      message: send(keys.bob, contractId, 'GroupChat', {
         body: 'carol is in',
         author: bob,
         ts: '2026-08-16T00:00:03.000Z'
@@ -620,7 +671,7 @@ function buildGenericApplicationChain (opts = {}) {
     },
     {
       label: 'journal-request',
-      message: signContractMessage(keys.alice, contractId, 'GroupJournalRequest', {
+      message: send(keys.alice, contractId, 'GroupJournalRequest', {
         fromClock: 1,
         contractId
       })
@@ -806,7 +857,7 @@ describe('playnet contract publish + re-publish', function () {
     let publishes = 0;
     peer.on('contract:publish', () => { publishes++; });
 
-    const wire = Message.fromVector(['CONTRACT_PUBLISH', JSON.stringify(definition)]).signWithKey(owner);
+    const wire = Message.fromLegacyBody('CONTRACT_PUBLISH', definition).signWithKey(owner);
     peer._handleFabricMessage(wire.toBuffer(), { name: '127.0.0.1:18444' });
 
     assert.ok(peer.contracts[contractId] || Object.keys(peer.contracts || {}).length >= 1);
@@ -843,12 +894,20 @@ describe('playnet contract publish + re-publish', function () {
       parties: [String(owner.pubkey).toLowerCase()],
       state: { network: 'regtest' }
     };
-    const msg = Message.fromVector(['CONTRACT_PUBLISH', JSON.stringify(definition)]).signWithKey(owner);
+    const msg = Message.fromLegacyBody('CONTRACT_PUBLISH', definition).signWithKey(owner);
     const sent = peer.broadcast(msg.toBuffer());
     assert.ok(sent > 0, `expected CONTRACT_PUBLISH fan-out > 0, got ${sent}`);
     assert.strictEqual(writes.length, 1);
     const parsed = Message.fromBuffer(writes[0]);
     assert.strictEqual(parsed.type, 'CONTRACT_PUBLISH');
+
+    const fieldMsg = Message.fromLegacyBody('CONTRACT_PUBLISH', definition).signWithKey(owner);
+    assert.ok(peer.broadcast(fieldMsg.toBuffer()) > 0);
+    assert.strictEqual(writes.length, 2);
+    const fieldParsed = Message.fromBuffer(writes[1]);
+    assert.strictEqual(fieldParsed.type, 'CONTRACT_PUBLISH');
+    assert.deepStrictEqual(Message.tryParseLegacyBody(fieldParsed).value, definition);
+    assert.strictEqual(new Actor(Message.tryParseLegacyBody(fieldParsed).value).id, new Actor(definition).id);
   });
 
   it('deterministic Actor id is stable across JSON clone (re-publish body)', function () {
@@ -903,13 +962,13 @@ describe('playnet contract publish live', function () {
         parties: [ownerPub],
         state: { network: process.env.FABRIC_FLUSH_NETWORK || 'regtest' }
       };
-      const msg = Message.fromVector(['CONTRACT_PUBLISH', JSON.stringify(definition)]).signWithKey(peer.key);
+      const msg = Message.fromLegacyBody('CONTRACT_PUBLISH', definition).signWithKey(peer.key);
       const sent1 = peer.broadcast(msg.toBuffer());
       assert.ok(sent1 > 0, `expected CONTRACT_PUBLISH fan-out > 0, got ${sent1}`);
 
       // Brief observe, then re-publish once.
       await new Promise((r) => setTimeout(r, 1000));
-      const msg2 = Message.fromVector(['CONTRACT_PUBLISH', JSON.stringify(definition)]).signWithKey(peer.key);
+      const msg2 = Message.fromLegacyBody('CONTRACT_PUBLISH', definition).signWithKey(peer.key);
       const sent2 = peer.broadcast(msg2.toBuffer());
       assert.ok(sent2 > 0, `expected second CONTRACT_PUBLISH fan-out > 0, got ${sent2}`);
       await new Promise((r) => setTimeout(r, 1000));

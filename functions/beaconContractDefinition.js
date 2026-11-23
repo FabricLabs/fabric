@@ -14,10 +14,10 @@
  */
 
 const Actor = require('../types/actor');
-const { pubkeyCompressed } = require('./groupChatSeal');
+const { pubkeyCompressed } = require('./pubkey');
 const { sortPubkeysBip67 } = require('./bip67');
-const { canonicalSpendPolicy } = require('./contractSpend');
-const { DEFAULT_CSV_BLOCKS } = require('./contractTaproot');
+const Contract = require('../types/contract');
+const { DEFAULT_CSV_BLOCKS } = require('../types/policy');
 
 const BEACON_CONTRACT_NAME = 'fabric-beacon';
 const BEACON_CONTRACT_VERSION = 1;
@@ -72,7 +72,7 @@ function normalizeValidatorPubkeys (list) {
  * @returns {object} CONTRACT_PUBLISH body (no `network`, no `bitcoinAnchor`)
  */
 function beaconContractDefinition (opts = {}) {
-  const spendPolicy = canonicalSpendPolicy({
+  const spendPolicy = Contract.canonicalSpendPolicy({
     validators: opts.validators || [],
     threshold: opts.threshold,
     publisher: opts.publisher,

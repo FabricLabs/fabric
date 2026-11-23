@@ -146,8 +146,7 @@ const CLI_CONTRACTS = Object.freeze([
     commands: {
       bitcoin: '_handleBitcoinRequest',
       lightning: '_handleLightningRequest',
-      sync: '_handleChainSyncRequest',
-      flushchain: '_handleFlushChainCli'
+      sync: '_handleChainSyncRequest'
     }
   }),
   defineContract({

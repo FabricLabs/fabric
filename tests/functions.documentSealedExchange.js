@@ -12,10 +12,40 @@ const {
   isSealedDocument,
   contentKeyStorePath,
   readContentKey,
-  writeContentKey
+  writeContentKey,
+  sealPlaintext,
+  openCiphertext,
+  convergentKey,
+  convergentIv,
+  isConvergentKey,
+  CONVERGENT_SCHEME
 } = require('../functions/documentSealedExchange');
 
 describe('functions/documentSealedExchange', function () {
+  it('convergent sealing is deterministic per content and scope', function () {
+    const plain = Buffer.from('the same chunk', 'utf8');
+    const a = sealPlaintext(plain, { convergent: true });
+    const b = sealPlaintext(plain, { convergent: true });
+    assert.strictEqual(a.encryption.scheme, CONVERGENT_SCHEME);
+    assert.ok(a.key.equals(b.key));
+    assert.ok(a.ciphertext.equals(b.ciphertext));
+    assert.ok(a.key.equals(convergentKey(plain)));
+    assert.ok(a.iv.equals(convergentIv(a.key)));
+    assert.ok(openCiphertext(a.ciphertext, a.key, a.iv).equals(plain));
+    assert.ok(isConvergentKey(plain, a.key, { iv: a.iv }));
+    assert.ok(!isConvergentKey(Buffer.from('another chunk'), a.key));
+
+    const scoped = sealPlaintext(plain, { convergent: true, secret: 'community' });
+    assert.ok(!scoped.key.equals(a.key));
+    assert.ok(isConvergentKey(plain, scoped.key, { secret: 'community' }));
+    assert.ok(!isConvergentKey(plain, scoped.key));
+    assert.ok(!isConvergentKey(plain, scoped.key, { secret: 'other' }));
+
+    const random = sealPlaintext(plain);
+    assert.ok(!random.key.equals(sealPlaintext(plain).key));
+    assert.ok(isSealedDocument({ encryption: a.encryption }));
+  });
+
   it('prepareSealedSale + openSealedDelivery round-trip', function () {
     const plain = Buffer.from('atomic secret payload', 'utf8');
     const sale = prepareSealedSale(plain);

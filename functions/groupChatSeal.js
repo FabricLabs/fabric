@@ -19,6 +19,7 @@ const { secp256k1 } = require('@noble/curves/secp256k1.js');
 const HKDF = require('../types/hkdf');
 const Key = require('../types/key');
 const { tipDigestHex } = require('./contractStateSigning');
+const { pubkeyXOnly, pubkeyCompressed } = require('./pubkey');
 
 /** Tip-bound interim scheme (not hub-blind). */
 const SEAL_SCHEME = 'aes-256-gcm-groupchat-v1';
@@ -29,48 +30,6 @@ const HKDF_INFO_PREFIX = 'FabricGroupChat/v1/aes-256-gcm';
 const SALT_LABEL = 'FabricGroupChat/v1';
 const PARTICIPANT_WRAP_LABEL = 'FabricGroupChat/participant-v1/wrap';
 const PARTICIPANT_SALT_LABEL = 'FabricGroupChat/participant-v1';
-
-/**
- * Normalize to lowercase 64-hex x-only (accepts compressed 02/03||x).
- * @param {*} hex
- * @returns {string|null}
- */
-function pubkeyXOnly (hex) {
-  const s = String(hex || '').toLowerCase().replace(/^0x/, '');
-  if (/^0[23][0-9a-f]{64}$/.test(s)) return s.slice(2);
-  if (/^[0-9a-f]{64}$/.test(s)) return s;
-  return null;
-}
-
-/**
- * Compressed 33-byte pubkey hex from x-only or compressed input.
- * @param {*} hex
- * @returns {string|null}
- */
-function pubkeyCompressed (hex) {
-  const s = String(hex || '').toLowerCase().replace(/^0x/, '');
-  if (/^0[23][0-9a-f]{64}$/.test(s)) return s;
-  const x = pubkeyXOnly(s);
-  if (!x) return null;
-  const Point = secp256k1.ProjectivePoint || secp256k1.Point;
-  for (const prefix of ['02', '03']) {
-    const cand = prefix + x;
-    try {
-      if (Point && typeof Point.fromHex === 'function') {
-        Point.fromHex(cand);
-        return cand;
-      }
-      if (Point && typeof Point.fromBytes === 'function') {
-        Point.fromBytes(Buffer.from(cand, 'hex'));
-        return cand;
-      }
-      // Last resort: ECDH probe with fixed priv (valid curve scalar).
-      secp256k1.getSharedSecret(Buffer.alloc(32, 1), Buffer.from(cand, 'hex'), true);
-      return cand;
-    } catch (_) { /* try other parity */ }
-  }
-  throw new Error('pubkeyCompressed: x-only does not lift to a curve point');
-}
 
 /**
  * Sorted unique x-only member list for salt / wrap recipients.
@@ -488,8 +447,6 @@ function isParticipantSealedGroupChat (sealOrObject) {
 module.exports = {
   SEAL_SCHEME,
   SEAL_SCHEME_PARTICIPANT,
-  pubkeyXOnly,
-  pubkeyCompressed,
   sortedMemberXOnlys,
   chatSealSalt,
   deriveTimelineCipherKey,

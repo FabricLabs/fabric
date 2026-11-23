@@ -2,8 +2,13 @@
 
 // Testing
 const assert = require('assert');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 const EventEmitter = require('events');
 const Service = require('../types/service');
+const { MAX_MESSAGE_SIZE } = require('../constants');
+const { stateDigest } = require('../functions/sidechainState');
 
 /** Skip real networking and heartbeat ticks during short unit tests. */
 const FAST_SERVICE = Object.freeze({ networking: false, interval: 86400000 });
@@ -369,20 +374,108 @@ describe('@fabric/core/types/service', function () {
       assert.strictEqual(service.history.length, 2);
     });
 
-    it('beat carries monotonic clock and state snapshot for observers', async function () {
+    it('beat carries a monotonic clock and a state digest', async function () {
       const service = new Service(FAST_SERVICE);
       await service.start();
       let seen = null;
+      const commits = [];
+      service.on('commit', (commit) => commits.push(commit));
       service.on('beat', (beat) => {
         const payload = JSON.parse(beat.data);
         seen = payload;
       });
+      const staged = service.staging.length;
       service.beat();
       await service.stop();
       assert.ok(seen);
       assert.strictEqual(seen.clock, service.clock);
       assert.ok(seen.created);
-      assert.ok(seen.state && typeof seen.state === 'object');
+      assert.strictEqual(typeof seen.stateDigest, 'string');
+      assert.strictEqual(seen.stateDigest.length, 64);
+      assert.ok(!('state' in seen));
+      assert.strictEqual(commits.length, 0);
+      assert.strictEqual(service.staging.length, staged);
+    });
+
+    it('beat appends one unsealed message per transition and does not commit', async function () {
+      const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'fabric-beat-')));
+      const service = new Service({
+        ...FAST_SERVICE,
+        name: 'beat-delta',
+        fs: { path: dir }
+      });
+      await service.start();
+      const errors = [];
+      const commits = [];
+      const beats = [];
+      service.on('error', (error) => errors.push(String(error && error.message ? error.message : error)));
+      service.on('commit', (commit) => commits.push(commit));
+      service.on('beat', (beat) => beats.push(beat));
+
+      const messages = service._state.content.messages;
+      service._state.content.payload = { k0: 'x'.repeat(100), k1: 'y'.repeat(100) };
+      service._state.content.note = 'kept';
+      const history = service.history.length;
+      service.beat();
+
+      assert.ok(!errors.some((error) => error.includes('bounded JSON')));
+      assert.strictEqual(errors.length, 0);
+      assert.strictEqual(commits.length, 0);
+      assert.strictEqual(service.history.length, history);
+      assert.deepStrictEqual(service._state.content.messages, messages);
+      assert.strictEqual(service._state.content.note, 'kept');
+      assert.strictEqual(service.staging.length, 1);
+      assert.strictEqual(service.staging[0].seq, 1);
+      assert.strictEqual(service.staging[0].sealedBeaconClock, null);
+      assert.ok(service.staging[0].patches.some((op) => op.path === '/payload'));
+      assert.ok(service.staging[0].patches.some((op) => op.path === '/note'));
+      const digest = stateDigest({
+        version: 1,
+        clock: service._stagedClock,
+        content: service._state.content
+      });
+      assert.strictEqual(service.staging[0].newDigest, digest);
+      assert.strictEqual(beats.length, 1);
+      assert.ok(beats[0].bodyBuffer.length <= MAX_MESSAGE_SIZE);
+      assert.strictEqual(beats[0].type, 'SIDECHAIN_STATE_PATCH');
+      const journal = JSON.parse(fs.readFileSync(path.join(dir, 'sidechain', 'JOURNAL'), 'utf8'));
+      assert.strictEqual(journal.entries.length, 1);
+      assert.strictEqual(journal.entries[0].sealedBeaconClock, null);
+      await service.stop();
+      fs.rmSync(dir, { recursive: true, force: true });
+    });
+
+    it('beat refuses a transition that does not fit in one message', async function () {
+      const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'fabric-beat-leaf-')));
+      const service = new Service({
+        ...FAST_SERVICE,
+        name: 'beat-leaf',
+        fs: { path: dir }
+      });
+      await service.start();
+      const errors = [];
+      const commits = [];
+      const beats = [];
+      service.on('error', (error) => errors.push(String(error && error.message ? error.message : error)));
+      service.on('commit', (commit) => commits.push(commit));
+      service.on('beat', (beat) => beats.push(beat));
+
+      const messages = service._state.content.messages;
+      service._state.content.leaf = 'y'.repeat(MAX_MESSAGE_SIZE);
+      service._state.content.note = 'kept';
+      service.beat();
+
+      assert.ok(!errors.some((error) => error.includes('bounded JSON')));
+      assert.ok(errors.some((error) => error.includes('transition exceeds max') && error.includes(String(MAX_MESSAGE_SIZE))));
+      assert.strictEqual(errors.length, 1);
+      assert.strictEqual(commits.length, 0);
+      assert.strictEqual(beats.length, 0);
+      assert.strictEqual(service.staging.length, 0);
+      assert.strictEqual(service._state.content.leaf.length, MAX_MESSAGE_SIZE);
+      assert.strictEqual(service._state.content.note, 'kept');
+      assert.deepStrictEqual(service._state.content.messages, messages);
+      await service.stop();
+      fs.rmSync(dir, { recursive: true, force: true });
     });
 
     it('trust forwards tip hashes to subservices via alert', function () {
@@ -414,6 +507,142 @@ describe('@fabric/core/types/service', function () {
       await parent.stop();
       assert.strictEqual(forwarded.length, 1);
       assert.deepStrictEqual(forwarded[0], sample);
+    });
+
+    it('beat reports an observer that cannot be read', function () {
+      const service = new Service(FAST_SERVICE);
+      const errors = [];
+      service.on('error', (error) => errors.push(String(error)));
+      service.observer = 1;
+      service.beat();
+      assert.ok(errors.some((error) => error.includes('Exception staging beat')));
+    });
+
+    it('pairs a preceding test op and skips values that are not ops', function () {
+      const service = new Service(FAST_SERVICE);
+      const ops = service._forwardOps([
+        null,
+        'nope',
+        { op: 'test', path: '/n', value: 1 },
+        { op: 'replace', path: '/n', value: 2 },
+        { op: 'add', path: '/x', value: true }
+      ]);
+      assert.strictEqual(ops.length, 2);
+      assert.strictEqual(ops[0].old, 1);
+      assert.strictEqual(ops[1].old, undefined);
+    });
+
+    it('reverts a transition to its basis and refuses one it cannot invert', function () {
+      const service = new Service(FAST_SERVICE);
+      service._state.content = { n: 2, extra: true };
+      const basis = service._revertTransition(service._state.content, [
+        { op: { op: 'replace', path: '/n', value: 2 }, old: 1 },
+        { op: { op: 'add', path: '/extra', value: true } }
+      ]);
+      assert.strictEqual(basis.n, 1);
+      assert.strictEqual(basis.extra, undefined);
+      assert.deepStrictEqual(service._revertTransition({ a: 1 }, []), { a: 1 });
+      assert.strictEqual(service._revertTransition({ a: 1 }, [{ op: { op: 'add' } }]), null);
+      assert.strictEqual(service._revertTransition({ a: 1 }, [{ op: { op: 'remove', path: '/a' } }]), null);
+      const circular = {};
+      circular.self = circular;
+      assert.strictEqual(service._revertTransition(circular, [{ op: { op: 'add', path: '/x' } }]), null);
+      assert.strictEqual(service._revertTransition({ a: 1 }, [{ op: { op: 'add', path: '/a/b' } }]), null);
+    });
+
+    it('refuses an empty patch list and a patch that cannot be encoded', function () {
+      const service = new Service(FAST_SERVICE);
+      const circular = {};
+      circular.self = circular;
+      assert.strictEqual(service._transitionFits([]), false);
+      assert.strictEqual(service._transitionFits([{ op: 'add', path: '/x', value: circular }]), false);
+    });
+
+    it('stages nothing from test ops alone and reports a transition it cannot read', function () {
+      const service = new Service(FAST_SERVICE);
+      const now = new Date().toISOString();
+      const testsOnly = service._stageTransition([{ op: 'test', path: '/n', value: 1 }], now);
+      assert.strictEqual(testsOnly.row, null);
+      assert.deepStrictEqual(testsOnly.errors, []);
+      service._state.content.n = 2;
+      const unread = service._stageTransition([{ op: 'replace', path: '/n', value: 2 }], now);
+      assert.strictEqual(unread.row, null);
+      assert.ok(unread.errors[0].includes('could not read the transition'));
+    });
+
+    it('reports a message that cannot be built and a transition the sidechain rejects', function () {
+      const service = new Service(FAST_SERVICE);
+      service._state.content.flag = true;
+      const now = new Date().toISOString();
+      const raw = [{ op: 'add', path: '/flag', value: true }];
+      const fromLegacyBody = Message.fromLegacyBody;
+      const apply = sidechain.applyPatchesToState;
+      Message.fromLegacyBody = () => { throw new Error('bad body'); };
+      try {
+        const built = service._stageTransition(raw, now);
+        assert.strictEqual(built.row, null);
+        assert.ok(built.errors[0].includes('bad body'));
+      } finally {
+        Message.fromLegacyBody = fromLegacyBody;
+      }
+      sidechain.applyPatchesToState = () => ({ ok: false, error: 'rejected' });
+      try {
+        const rejected = service._stageTransition(raw, now);
+        assert.strictEqual(rejected.row, null);
+        assert.ok(rejected.errors[0].includes('rejected'));
+      } finally {
+        sidechain.applyPatchesToState = apply;
+      }
+      sidechain.applyPatchesToState = () => { throw new Error('sidechain down'); };
+      try {
+        const thrown = service._stageTransition(raw, now);
+        assert.ok(thrown.errors[0].includes('sidechain down'));
+      } finally {
+        sidechain.applyPatchesToState = apply;
+      }
+    });
+
+    it('idle beat reports a digest failure, a body that will not parse, and a missing message', function () {
+      const service = new Service(FAST_SERVICE);
+      const errors = [];
+      service.on('error', (error) => errors.push(String(error)));
+      service.observer = null;
+      service.contentDigest = () => { throw new Error('digest down'); };
+      service.beat();
+      assert.ok(errors.some((error) => error.includes('digest down')));
+
+      const fromVector = Message.fromVector;
+      Message.fromVector = () => ({ data: '{' });
+      try {
+        errors.length = 0;
+        service.contentDigest = Service.prototype.contentDigest;
+        service._emitIdleBeat(new Date().toISOString());
+        assert.ok(errors.some((error) => error.includes('Exception parsing beat')));
+      } finally {
+        Message.fromVector = fromVector;
+      }
+
+      Message.fromVector = () => null;
+      try {
+        assert.throws(() => service._emitIdleBeat(new Date().toISOString()), /could not construct a Message/);
+      } finally {
+        Message.fromVector = fromVector;
+      }
+    });
+
+    it('keeps a staged row when the journal cannot be written', function () {
+      const service = new Service(FAST_SERVICE);
+      const errors = [];
+      service.on('error', (error) => errors.push(String(error)));
+      service.fs = null;
+      service._appendStagingRow({ basisClock: 0, clock: 1, patches: [] });
+      assert.strictEqual(errors.length, 0);
+      service.fs = {
+        readFile () { return null; },
+        writeFile () { throw new Error('disk full'); }
+      };
+      service._appendStagingRow({ basisClock: 0, clock: 1, patches: [] });
+      assert.ok(errors.some((error) => error.includes('disk full')));
     });
 
     it('route with high verbosity emits routing and commit diagnostics', async function () {
@@ -757,18 +986,18 @@ describe('@fabric/core/types/service', function () {
       const opcodes = service.listOpcodes();
       assert.ok(Array.isArray(opcodes) && opcodes.length > 0);
       assert.ok(opcodes.some((x) => x.name === 'OP_SHA256' && x.family === 'bitcoin'));
-      assert.ok(opcodes.some((x) => x.name === 'P2P_FLUSH_CHAIN' && x.family === 'fabric'));
+      assert.ok(opcodes.some((x) => x.name === 'P2P_CHAIN_SYNC_REQUEST' && x.family === 'fabric'));
     });
 
     it('defineOpcodeContract parses newline-delimited contracts for Hub UI', function () {
       const service = new Service(FAST_SERVICE);
       const authorPubkey = service.key.pubkey;
-      const contract = service.defineOpcodeContract('ExampleContract', 'OP_DUP\nOP_HASH160\nP2P_FLUSH_CHAIN', {
+      const contract = service.defineOpcodeContract('ExampleContract', 'OP_DUP\nOP_HASH160\nP2P_CHAIN_SYNC_REQUEST', {
         author: 'id:example-author'
         ,
         authorPubkey
       });
-      assert.deepStrictEqual(contract.lines, ['OP_DUP', 'OP_HASH160', 'P2P_FLUSH_CHAIN']);
+      assert.deepStrictEqual(contract.lines, ['OP_DUP', 'OP_HASH160', 'P2P_CHAIN_SYNC_REQUEST']);
       assert.strictEqual(contract.author, 'id:example-author');
       assert.strictEqual(contract.policy.threshold, 1);
       assert.strictEqual(contract.policy.participants, 1);
@@ -797,6 +1026,10 @@ describe('@fabric/core/types/service', function () {
   });
 });
 
+const Chain = require('../types/chain');
+const Contract = require('../types/contract');
+const Message = require('../types/message');
+const sidechain = require('../functions/sidechainState');
 const Bitcoin = require('../services/bitcoin');
 const State = require('../types/state');
 const Store = require('../types/store');
@@ -828,5 +1061,35 @@ describe('Hub crash-report follow-ups (core)', function () {
     const done = await Bitcoin.prototype.applyP2pAddNodes.call(btc, ['hub.fabric.pub:18444']);
     assert.deepStrictEqual(done, ['hub.fabric.pub:18444']);
     assert.strictEqual(warnings.length, 0);
+  });
+});
+
+describe('state digests on chain blocks and contract commits', function () {
+  it('signs a block with a state digest, and null when the digest cannot be built', function () {
+    const chain = new Chain();
+    const block = chain.createSignedBlock({ actor: 'aa'.repeat(32), changes: [] });
+    assert.strictEqual(block.type, 'FabricBlock');
+    assert.strictEqual(block.actor, 'aa'.repeat(32));
+    assert.strictEqual(typeof block.stateDigest, 'string');
+    assert.strictEqual(block.stateDigest.length, 64);
+    assert.ok(!('state' in block));
+    chain.contentDigest = () => { throw new Error('digest down'); };
+    assert.strictEqual(chain.createSignedBlock().stateDigest, null);
+  });
+
+  it('commit records a null digest when the content digest cannot be built', function () {
+    const contract = new Contract({
+      key: { xprv: require('../constants').FIXTURE_XPRV }
+    });
+    const commits = [];
+    const warnings = [];
+    contract.on('commit', (commit) => commits.push(commit));
+    contract.on('warning', (warning) => warnings.push(String(warning)));
+    contract.contentDigest = () => { throw new Error('digest down'); };
+    contract.commit();
+    assert.strictEqual(commits.length, 1);
+    assert.strictEqual(commits[0].stateDigest, null);
+    assert.ok(!('state' in commits[0]));
+    assert.ok(warnings.some((warning) => warning.includes('state digest not built')));
   });
 });

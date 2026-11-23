@@ -10,16 +10,7 @@
  * both shapes into the Hub cache object.
  */
 
-/**
- * @param {*} hex
- * @returns {string|null} lowercase 64-hex x-only, or null
- */
-function pubkeyXOnly (hex) {
-  const s = String(hex || '').toLowerCase().replace(/^0x/, '');
-  if (/^0[23][0-9a-f]{64}$/.test(s)) return s.slice(2);
-  if (/^[0-9a-f]{64}$/.test(s)) return s;
-  return null;
-}
+const { pubkeyXOnly } = require('./pubkey');
 
 /**
  * Extract displayable text from a chat payload or Peer chat event.
@@ -101,11 +92,8 @@ function formatChatLogLine (actorId, alias, text, truncate) {
 }
 
 module.exports = {
-  pubkeyXOnly,
   chatTextOf,
   chatActorIdOf,
   sanitizeChatDisplayField,
-  formatChatLogLine,
-  // Re-export surface classifiers (gossip-first / encrypted-chat wave).
-  ...require('./fabricChatKind')
+  formatChatLogLine
 };

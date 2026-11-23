@@ -75,6 +75,5 @@ Until those proofs exist, Hub and core stay on **explicit sats**.
 
 ## Related
 - [SIGNATURE_PROOF_MODEL.md](SIGNATURE_PROOF_MODEL.md)
-- `functions/federationReserveLedger.js` (explicit F0 ledger)
-- `functions/federationValidatorVerify.js`
+- `types/federation.js` (explicit F0 ledger, pre-sign gate)
 - Bitcoin BIP352 (external)

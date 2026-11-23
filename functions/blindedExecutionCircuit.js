@@ -20,6 +20,8 @@ const crypto = require('crypto');
 
 const Actor = require('../types/actor');
 const Key = require('../types/key');
+
+const CIRCUIT_DECISION_TAG = require('./signingTags').CIRCUIT_DECISION;
 const Program = require('../types/program');
 const fabricCanonicalJson = require('./fabricCanonicalJson');
 const { jsonSafe } = fabricCanonicalJson;
@@ -33,7 +35,7 @@ const {
   prepareHashlockWithdrawalPsbt,
   finalizeHashlockPsbt,
   DEFAULT_CSV_BLOCKS
-} = require('./contractTaproot');
+} = require('../types/policy');
 
 const SESSION_VERSION = 1;
 const HASHLOCK_LEAF_ID = 'blinded-execution-hashlock';
@@ -371,7 +373,7 @@ function recordProposalDecision (opts = {}) {
     at
   });
   const verifyKey = new Key({ public: actorPubkey });
-  if (!verifyKey.verifySchnorr(msg, Buffer.from(sigHex, 'hex'))) {
+  if (!verifyKey.verifySchnorr(msg, Buffer.from(sigHex, 'hex'), CIRCUIT_DECISION_TAG)) {
     throw new Error('recordProposalDecision: invalid decision signature');
   }
 
@@ -590,6 +592,7 @@ function bindBlindedExecutionToHashlock (opts = {}) {
 }
 
 module.exports = {
+  CIRCUIT_DECISION_TAG,
   SESSION_VERSION,
   DECISION_SIGNING_VERSION,
   HASHLOCK_LEAF_ID,

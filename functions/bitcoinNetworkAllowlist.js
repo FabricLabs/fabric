@@ -2,12 +2,12 @@
 
 /**
  * @fileoverview Allowlist of Bitcoin test networks. Value-bearing code that
- * must never touch mainnet (payment channels, market HTLCs) accepts only
+ * must never touch mainnet (payment channels) accepts only
  * these names; anything else — mainnet aliases, typos, unknown names — is
  * refused rather than silently mapped to mainnet parameters.
  */
 
-const TEST_NETWORKS = Object.freeze(['regtest', 'signet', 'testnet', 'testnet4']);
+const TEST_NETWORKS = Object.freeze(['regtest', 'signet', 'testnet', 'testnet4', 'testnet5']);
 
 /**
  * @param {*} name network name
@@ -20,7 +20,7 @@ function normalizeNetworkName (name) {
 
 /**
  * @param {*} name network name (case-insensitive, surrounding whitespace ignored)
- * @returns {boolean} `true` for regtest / signet / testnet / testnet4 only
+ * @returns {boolean} `true` for regtest / signet / testnet / testnet4 / testnet5 only
  */
 function isTestNetwork (name) {
   return TEST_NETWORKS.includes(normalizeNetworkName(name));

@@ -13,7 +13,7 @@ const {
 /**
  * @classdesc <strong>BIP32/BIP39 identity</strong> wrapping {@link Key}: mnemonic / xprv / passphrase.
  * Protocol identity (pubkey / Schnorr sign / Bech32 id) uses the Fabric derivation path
- * <code>m/44'/{7777|7778}'/account'/0/index</code> — coin type <strong>7777</strong> on Bitcoin
+ * <code>m/7777'/{7777|7778}'/account'/0/index</code> — coin type <strong>7777</strong> on Bitcoin
  * mainnet, <strong>7778</strong> on all other networks (see {@link Identity#derivation} and
  * IDENTITY.md). The HD <strong>master</strong> remains available as {@link Identity#master} /
  * {@link Identity#key} so Bitcoin funds can derive under BIP44 coin type <code>0</code> (see

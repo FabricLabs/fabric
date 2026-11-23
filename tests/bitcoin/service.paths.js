@@ -14,6 +14,8 @@ describe('@services/bitcoin bitcoind cookie / datadir paths', function () {
     assert.strictEqual(Bitcoin.bitcoindChainDataDirSegment('playnet'), 'regtest');
     assert.strictEqual(Bitcoin.bitcoindChainDataDirSegment('testnet'), 'testnet3');
     assert.strictEqual(Bitcoin.bitcoindChainDataDirSegment('testnet4'), 'testnet4');
+    assert.strictEqual(Bitcoin.bitcoindChainDataDirSegment('testnet5'), 'testnet5');
+    assert.deepStrictEqual(Bitcoin.defaultStoresRelativeDirsForProbe('testnet5'), ['stores/bitcoin-testnet5']);
     assert.strictEqual(Bitcoin.bitcoindChainDataDirSegment('signet'), 'signet');
   });
 
@@ -58,6 +60,19 @@ describe('@services/bitcoin bitcoind cookie / datadir paths', function () {
     });
     assert.ok(list.includes(envCookiePath));
     assert.ok(list.some((p) => p.endsWith(path.join('stores', 'bitcoin-regtest', 'regtest', '.cookie'))));
+  });
+
+  it('buildLocalCookieProbePaths includes the testnet5 store and Electron mirror', function () {
+    const list = Bitcoin.buildLocalCookieProbePaths({ network: 'testnet5', settingsDatadir: null });
+    assert.ok(list.some((p) => p.endsWith(path.join('stores', 'bitcoin-testnet5', 'testnet5', '.cookie'))));
+    const platform = Object.getOwnPropertyDescriptor(process, 'platform');
+    Object.defineProperty(process, 'platform', { value: 'darwin' });
+    try {
+      const darwin = Bitcoin.buildLocalCookieProbePaths({ network: 'testnet5', settingsDatadir: null });
+      assert.ok(darwin.some((p) => p.includes(`${path.sep}Electron${path.sep}`) && p.includes('bitcoin-testnet5')));
+    } finally {
+      Object.defineProperty(process, 'platform', platform);
+    }
   });
 
   it('buildLocalCookieProbePaths includes mainnet project cookie', function () {
