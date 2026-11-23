@@ -56,10 +56,18 @@ class Collection extends Stack {
     return this;
   }
 
+  /**
+   * Route templates from `settings.routes`.
+   * @type {Object}
+   */
   get routes () {
     return this.settings.routes;
   }
 
+  /**
+   * Store path the collection is kept under.
+   * @type {string}
+   */
   get path () {
     return this._path;
   }
@@ -70,8 +78,8 @@ class Collection extends Stack {
   }
 
   /**
-   * Current elements of the collection as a {@link MerkleTree}.
-   * @returns {MerkleTree}
+   * Current elements of the collection as a {@link Tree}.
+   * @returns {Tree}
    */
   asMerkleTree () {
     let list = pointer.get(this.value, this.path);

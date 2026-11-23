@@ -349,19 +349,29 @@ d('@fabric/core/services/lightning', function () {
       // const inbound = await peer.createChannel(lightning.state.node.id, 100000);
       const finality = await bitcoin._makeRPCRequest('generatetoaddress', [6, miner]);
 
-      // Wait for the channel to be established
-      let channelEstablished = false;
-      attempts = 0;
-      while (!channelEstablished && attempts < 20) {
-        const channels = await lightning._makeRPCRequest('listchannels', []);
-        console.debug(`Attempt ${attempts + 1}/20 - channels:`, channels);
-        if (channels.channels && channels.channels.length > 0) {
-          channelEstablished = true;
-          break;
+      // `pay` refuses to route ("All N channels to the source are disabled")
+      // until the paying node has received the counterparty's `channel_update`,
+      // so wait for the channel to appear in gossip with BOTH directions active —
+      // not merely for the first direction to show up.
+      // Filter on the exact node pair (either direction) so an unrelated channel
+      // that merely touches `otherId` cannot satisfy the check.
+      const waitForActiveChannel = async (node, selfId, otherId, label, maxTries = 45) => {
+        for (let i = 0; i < maxTries; i++) {
+          const channels = await node._makeRPCRequest('listchannels', []);
+          const edges = (channels.channels || []).filter((c) =>
+            (c.source === selfId && c.destination === otherId) ||
+            (c.source === otherId && c.destination === selfId)
+          );
+          const active = edges.filter((c) => c.active);
+          const directions = new Set(active.map((c) => `${c.source}->${c.destination}`));
+          console.debug(`Attempt ${i + 1}/${maxTries} - ${label}: ${active.length} active edge(s), ${directions.size} direction(s)`);
+          if (directions.size >= 2) return edges;
+          await new Promise((resolve) => setTimeout(resolve, 2000));
         }
-        attempts++;
-        await new Promise(resolve => setTimeout(resolve, 2000));
-      }
+        throw new Error(`${label}: channel never became active in both gossip directions`);
+      };
+
+      await waitForActiveChannel(lightning, lightning.state.node.id, peer.state.node.id, 'main<->peer');
 
       // Connect peer to carol and create channel
       console.debug('Connecting peer to carol...');
@@ -375,9 +385,9 @@ d('@fabric/core/services/lightning', function () {
       // Wait for both channels to be active
       let allChannelsActive = false;
       attempts = 0;
-      while (!allChannelsActive && attempts < 20) {
+      while (!allChannelsActive && attempts < 45) {
         const peerInfo = await peer._makeRPCRequest('getinfo', []);
-        console.debug(`Attempt ${attempts + 1}/20 - peer info:`, peerInfo);
+        console.debug(`Attempt ${attempts + 1}/45 - peer info:`, peerInfo);
 
         if (peerInfo.num_active_channels === 2 && peerInfo.num_pending_channels === 0) {
           allChannelsActive = true;
@@ -386,6 +396,12 @@ d('@fabric/core/services/lightning', function () {
         attempts++;
         await new Promise(resolve => setTimeout(resolve, 2000));
       }
+      assert.ok(allChannelsActive, 'peer should have two active channels before paying');
+
+      // The paying node must see its own channel enabled in both directions
+      // right before `pay`; the peer<->carol channel only needs to be known.
+      await waitForActiveChannel(peer, peer.state.node.id, carol.state.node.id, 'peer<->carol');
+      await waitForActiveChannel(lightning, lightning.state.node.id, peer.state.node.id, 'main<->peer (pre-pay)');
 
       // Verify channel states
       const peerChannels = await peer._makeRPCRequest('listchannels', []);

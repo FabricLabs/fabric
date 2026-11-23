@@ -41,7 +41,7 @@ describe('playnet contract publish + re-publish', function () {
     let publishes = 0;
     peer.on('contract:publish', () => { publishes++; });
 
-    const wire = Message.fromVector(['CONTRACT_PUBLISH', JSON.stringify(definition)]).signWithKey(owner);
+    const wire = Message.fromLegacyBody('CONTRACT_PUBLISH', definition).signWithKey(owner);
     peer._handleFabricMessage(wire.toBuffer(), { name: '127.0.0.1:18444' });
 
     assert.ok(peer.contracts[contractId], 'CONTRACT_PUBLISH must register the Actor id');
@@ -78,7 +78,7 @@ describe('playnet contract publish + re-publish', function () {
       parties: [String(owner.pubkey).toLowerCase()],
       state: { network: 'regtest' }
     };
-    const msg = Message.fromVector(['CONTRACT_PUBLISH', JSON.stringify(definition)]).signWithKey(owner);
+    const msg = Message.fromLegacyBody('CONTRACT_PUBLISH', definition).signWithKey(owner);
     const sent = peer.broadcast(msg.toBuffer());
     assert.ok(sent > 0, `expected CONTRACT_PUBLISH fan-out > 0, got ${sent}`);
     assert.strictEqual(writes.length, 1);
@@ -138,13 +138,13 @@ describe('playnet contract publish live', function () {
         parties: [ownerPub],
         state: { network: process.env.FABRIC_FLUSH_NETWORK || 'regtest' }
       };
-      const msg = Message.fromVector(['CONTRACT_PUBLISH', JSON.stringify(definition)]).signWithKey(peer.key);
+      const msg = Message.fromLegacyBody('CONTRACT_PUBLISH', definition).signWithKey(peer.key);
       const sent1 = peer.broadcast(msg.toBuffer());
       assert.ok(sent1 > 0, `expected CONTRACT_PUBLISH fan-out > 0, got ${sent1}`);
 
       // Brief observe, then re-publish once.
       await new Promise((r) => setTimeout(r, 1000));
-      const msg2 = Message.fromVector(['CONTRACT_PUBLISH', JSON.stringify(definition)]).signWithKey(peer.key);
+      const msg2 = Message.fromLegacyBody('CONTRACT_PUBLISH', definition).signWithKey(peer.key);
       const sent2 = peer.broadcast(msg2.toBuffer());
       assert.ok(sent2 > 0, `expected second CONTRACT_PUBLISH fan-out > 0, got ${sent2}`);
       await new Promise((r) => setTimeout(r, 1000));

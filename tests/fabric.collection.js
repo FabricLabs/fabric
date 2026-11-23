@@ -481,10 +481,6 @@ const {
   loadDoc,
   parseContractMessageBody
 } = require('../functions/contractMessageAccumulate');
-const {
-  SIGN_TYPE,
-  buildCrossSignObject
-} = require('../functions/identityCrossSign');
 
 function signContract (key, contractId, type, object) {
   const body = JSON.stringify({
@@ -554,17 +550,17 @@ describe('@fabric/core/functions/fabricMessageCollection', function () {
         payload: { platform: 'discord', guilds: [{ id: 'g1', name: 'Fleet Ops' }] }
       }]
     });
-    const cross = signContract(key, contractId, SIGN_TYPE, buildCrossSignObject({
-      localPubkey: key.pubkey,
-      peerPubkey: '02' + 'bb'.repeat(32),
-      nonce: 'ab'.repeat(32)
-    }));
+    const cross = signContract(key, contractId, 'GroupChange', {
+      type: 'GroupChange',
+      action: 'update',
+      groupId: 'grp-ops'
+    });
 
     const collection = createCollection();
     ingestMany(collection, [chat, pack, cross], { origin: 'peer' });
     assert.strictEqual(collection.messages.length, 3);
     assert.strictEqual(collection.messages[1].appType, 'GroupDataShare');
-    assert.strictEqual(collection.messages[2].appType, SIGN_TYPE);
+    assert.strictEqual(collection.messages[2].appType, 'GroupChange');
 
     const texts = [];
     const types = [];
@@ -576,7 +572,7 @@ describe('@fabric/core/functions/fabricMessageCollection', function () {
     });
     assert.strictEqual(result.applied, 3);
     assert.deepStrictEqual(texts, ['public mesh line']);
-    assert.deepStrictEqual(types, ['P2P_CHAT_MESSAGE', 'GroupDataShare', SIGN_TYPE]);
+    assert.deepStrictEqual(types, ['P2P_CHAT_MESSAGE', 'GroupDataShare', 'GroupChange']);
   });
 
   it('replays a GroupJournalBatch-style fabricMessage.hex list', function () {

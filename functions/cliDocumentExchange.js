@@ -15,23 +15,19 @@
 
 const fs = require('fs');
 const path = require('path');
+const { HTLC_MINIMUM_SATS } = require('../constants');
 const Actor = require('../types/actor');
+const DocumentBook = require('../types/documentBook');
 const {
-  DocumentOfferBook,
   createDocumentPurchaseSession,
   findSession,
   isDuplicateSettlement,
   rememberSettlement,
   listRefundCandidates
-} = require('./documentMarket');
-const inventoryHtlc = require('./inventoryHtlc');
+} = DocumentBook;
+const Htlc = require('../types/htlc');
+const Document = require('../types/document');
 const { contentHashHexFromObject } = require('./documentPaymentHash');
-const {
-  extractPreimageFromClaimTx,
-  refundLocktimeMature,
-  prepareInventoryHtlcBuyerRefundPsbt,
-  signAndExtractInventoryHtlcBuyerRefund
-} = inventoryHtlc;
 const { findCliContract } = require('./cliContracts');
 
 const IMPORT_PATH_MAX_LEN = 4096;
@@ -119,6 +115,22 @@ function readResolvedImportFile (absolutePath) {
  */
 
 /**
+ * Blobs the Peer will advertise for a priced document of `plainBytes`:
+ * sealed as AES-256-GCM (16-byte tag) unless `sealPricedDocuments` is off,
+ * cut at `inventoryBlobChunkBytes`.
+ * @private
+ * @param {object} peer
+ * @param {number} plainBytes
+ * @returns {number}
+ */
+function advertisedBlobCount (peer, plainBytes) {
+  const settings = (peer && peer.settings) || {};
+  const bytes = plainBytes + (settings.sealPricedDocuments !== false ? 16 : 0);
+  const chunk = Math.max(1, Number(settings.inventoryBlobChunkBytes) || Document.CHUNK_BYTES);
+  return Math.max(1, Math.ceil(bytes / chunk));
+}
+
+/**
  * Structured result for CLI / headless callers.
  * @typedef {Object} ExchangeResult
  * @property {boolean} ok
@@ -138,7 +150,7 @@ class CliDocumentExchange {
   constructor (host = {}) {
     this.host = host;
     this.documents = host.documents || {};
-    this.offerBook = host.offerBook || new DocumentOfferBook();
+    this.offerBook = host.offerBook || new DocumentBook();
     this.purchaseSessions = host.purchaseSessions || new Map();
     this.paidSettlements = host.paidSettlements || new Set();
     this.remoteInventories = host.remoteInventories || {};
@@ -312,6 +324,13 @@ class CliDocumentExchange {
       return { ok: false, error: 'Peer not ready.' };
     }
     const body = this.documents[id].toString('utf8');
+    if (rate > 0) {
+      // The Peer advertises `ceil(rate / blobs)` per blob; buyers skip blobs under the minimum.
+      const blobs = advertisedBlobCount(peer, Buffer.byteLength(body, 'utf8'));
+      if (Math.ceil(rate / blobs) < HTLC_MINIMUM_SATS) {
+        return { ok: false, error: `rateSats must be 0 (free) or at least ${HTLC_MINIMUM_SATS * blobs} (${blobs} blob${blobs === 1 ? '' : 's'} × the ${HTLC_MINIMUM_SATS}-sat HTLC minimum); buyers cannot pay less per blob` };
+      }
+    }
     const filesystem = this._fs();
     if (filesystem && typeof filesystem.touchDir === 'function') {
       filesystem.touchDir('documents');
@@ -416,6 +435,13 @@ class CliDocumentExchange {
     const amountSats = amountArg != null && Number.isFinite(amountArg)
       ? amountArg
       : (Number(offer.rateSats) || 0);
+    const feerate = Number(this._settings().claimFeerate);
+    const rate = Number.isFinite(feerate) && feerate > 0 ? feerate : 1;
+    let l1Min = HTLC_MINIMUM_SATS;
+    try { l1Min = Htlc.minimumForFeerate(rate); } catch (_) { l1Min = HTLC_MINIMUM_SATS; }
+    if (amountSats > 0 && amountSats < l1Min) {
+      return { error: `Cannot open paid buy: ${amountSats} sats is below the ${l1Min}-sat HTLC minimum at ${rate} sat/vB (the claim could not leave a non-dust output)` };
+    }
     // Never fund a seller-supplied address without rebuilding a buyer-bound HTLC tree.
     let paymentAddress = null;
     let bitcoinUri = null;
@@ -432,9 +458,15 @@ class CliDocumentExchange {
             error: 'Cannot open paid buy: need buyer refund key, seller pubkey, and inventoryHtlcLocktimeHeight to build a buyer-bound HTLC'
           };
         }
+        const tip = peer && peer.settings ? Number(peer.settings.tipHeight) : NaN;
+        if (Number.isFinite(tip) && Number(lock) < tip + Htlc.minimumLockBlocks()) {
+          return {
+            error: `Cannot open paid buy: refund lock ${lock} is inside the claim-safety window at tip ${tip}`
+          };
+        }
         const ampSigner = offer.ampSignerPubkey || offer.wireSignerPubkey ||
           (offer.htlc && (offer.htlc.ampSignerPubkey || offer.htlc.sellerPublicKeyHex)) || null;
-        if (ampSigner && !inventoryHtlc.pubkeysMatchXOnly(ampSigner, sellerHex)) {
+        if (ampSigner && !Htlc.pubkeysMatchXOnly(ampSigner, sellerHex)) {
           return {
             error: 'Offer AMP signer does not match resolved seller pubkey — refusing to fund'
           };
@@ -442,20 +474,19 @@ class CliDocumentExchange {
         const sellerAddr = offer.htlc && offer.htlc.paymentAddress
           ? String(offer.htlc.paymentAddress).trim()
           : '';
-        const verdict = inventoryHtlc.validateInventoryHtlcOffer({
-          networkName: this._networkName(),
-          sellerPubkeyCompressed: sellerHex,
-          buyerRefundPubkeyCompressed: buyerHex,
-          paymentHash32: contentHashHex,
-          refundLocktimeHeight: Number(lock),
+        const verdict = Htlc.validateOffer({
+          network: this._networkName(),
+          claimPubkey: sellerHex,
+          refundPubkey: buyerHex,
+          paymentHash: contentHashHex,
+          refundLocktime: Number(lock),
           paymentAddress: sellerAddr || undefined
         });
         if (!verdict.ok) {
           return { error: verdict.error || 'HTLC offer validation failed' };
         }
-        const built = verdict.built;
-        const hints = inventoryHtlc.buildHtlcFundingHints({
-          paymentAddress: built.address,
+        const built = verdict.htlc;
+        const hints = built.fundingHints({
           amountSats,
           label: documentId.slice(0, 32)
         });
@@ -489,6 +520,7 @@ class CliDocumentExchange {
       merkleRootHex: offer.merkleRootHex,
       htlc
     });
+    session.iv = offer.iv || null;
     if (isDuplicateSettlement(this.paidSettlements, session)) {
       return { error: `Already settled ${session.dedupeKey} — refusing double-pay` };
     }
@@ -532,7 +564,7 @@ class CliDocumentExchange {
     const sample = this.offerBook.listOffers({ documentId: id })[0];
     const blobTotal = sample && sample.blobTotal != null ? Number(sample.blobTotal) : 0;
     if (seller === 'auto' && blobTotal > 1) {
-      const plan = this.offerBook.pickBlobPlan(id, blobTotal);
+      const plan = this.offerBook.pickBlobPlan(id, blobTotal, { minPaidSats: HTLC_MINIMUM_SATS });
       if (!plan.size) {
         return { ok: false, error: `No blob plan for ${id}. Run /inventory <peer> btc then /offers.` };
       }
@@ -558,7 +590,9 @@ class CliDocumentExchange {
 
     let offer = null;
     if (seller === 'auto') {
-      offer = this.offerBook.pickBest(id, amount != null ? { maxSats: amount } : {});
+      const pick = { minPaidSats: HTLC_MINIMUM_SATS };
+      if (amount != null) pick.maxSats = amount;
+      offer = this.offerBook.pickBest(id, pick);
     } else {
       const offers = this.offerBook.listOffers({ documentId: id }).filter((o) => {
         return o.sellerAddress === seller || o.sellerId === seller;
@@ -710,11 +744,24 @@ class CliDocumentExchange {
     if (fundedHex) session.fundedTxHex = fundedHex;
     const peer = this._peer();
     if (session.merkleRootHex && peer && peer.blobTransfers) {
+      const index = Math.max(0, Math.floor(Number(session.blobIndex) || 0));
+      const blobHashHexes = session.blobHashHex ? [] : null;
+      const paymentHashHexes = session.contentHashHex ? [] : null;
+      if (blobHashHexes) blobHashHexes[index] = session.blobHashHex;
+      if (paymentHashHexes) paymentHashHexes[index] = session.contentHashHex;
+      const ivs = session.iv ? [] : null;
+      if (ivs) ivs[index] = session.iv;
+      const origins = session.seller ? [] : null;
+      if (origins) origins[index] = String(session.seller);
       peer.blobTransfers.expectTransfer({
         documentId: session.documentId,
         merkleRootHex: session.merkleRootHex,
         total: session.blobTotal,
-        blobHashHexes: session.blobHashHex ? [session.blobHashHex] : null
+        blobHashHexes,
+        paymentHashHexes,
+        ivs,
+        origins,
+        merge: true
       });
     }
     session.status = 'delivery_pending';
@@ -817,7 +864,7 @@ class CliDocumentExchange {
       };
     }
 
-    const extracted = extractPreimageFromClaimTx(txHex, paymentHash);
+    const extracted = Htlc.extractPreimage(txHex, paymentHash);
     if (!extracted.ok) {
       return { ok: false, error: `Claim watch failed: ${extracted.error || 'preimage not found'}` };
     }
@@ -893,7 +940,7 @@ class CliDocumentExchange {
     if (tip == null) {
       return { ok: false, error: 'Need local bitcoind for tip height (getblockchaininfo).' };
     }
-    if (!refundLocktimeMature(tip, refundLocktimeHeight)) {
+    if (!Htlc.refundMature(tip, refundLocktimeHeight)) {
       return {
         ok: false,
         error: `Refund locktime not mature: tip=${tip}, need >= ${refundLocktimeHeight}.`
@@ -935,7 +982,7 @@ class CliDocumentExchange {
 
     let signed;
     try {
-      const bundle = prepareInventoryHtlcBuyerRefundPsbt({
+      const bundle = Htlc.prepareRefundPsbt({
         networkName: session.network || this._networkName(),
         fundedTxHex,
         paymentAddress,
@@ -945,7 +992,7 @@ class CliDocumentExchange {
         destinationAddress: dest,
         feeSats: fee
       });
-      signed = signAndExtractInventoryHtlcBuyerRefund(bundle, priv);
+      signed = Htlc.signRefund(bundle, priv);
     } catch (e) {
       return { ok: false, error: `Refund PSBT failed: ${e.message}` };
     }
@@ -1020,12 +1067,6 @@ class CliDocumentExchange {
 
 module.exports = {
   CliDocumentExchange,
-  DocumentOfferBook,
-  createDocumentPurchaseSession,
-  findSession,
-  isDuplicateSettlement,
-  rememberSettlement,
-  listRefundCandidates,
   DOCUMENT_EXCHANGE_CLI_PACKS,
   listDocumentExchangeCliContracts,
   listDocumentExchangeCommands

@@ -8,9 +8,9 @@ const { describe, it } = require('mocha');
 
 const { CliDocumentExchange } = require('../functions/cliDocumentExchange');
 const {
-  DocumentOfferBook,
+  DocumentBook,
   createDocumentPurchaseSession
-} = require('../functions/documentMarket');
+} = require('../types/documentBook');
 
 describe('functions/cliDocumentExchange path & publish edges', function () {
   it('rejects null-byte paths and oversized paths', function () {
@@ -85,9 +85,10 @@ describe('functions/cliDocumentExchange path & publish edges', function () {
     for (const bad of [NaN, Infinity, -Infinity, -1, 'nope']) {
       assert.strictEqual(exchange.publish('docA', bad).ok, false, String(bad));
     }
-    // Current policy: Number.isFinite only — fractional sats are accepted.
-    assert.strictEqual(exchange.publish('docA', 1.5).ok, true);
-    assert.deepStrictEqual(published, [1.5]);
+    // Paid rates start at the HTLC minimum; above it, finite fractions are accepted.
+    assert.strictEqual(exchange.publish('docA', 1.5).ok, false);
+    assert.strictEqual(exchange.publish('docA', 716.5).ok, true);
+    assert.deepStrictEqual(published, [716.5]);
   });
 
   it('publish propagates host getPeer errors (not swallowed)', function () {
@@ -137,20 +138,20 @@ describe('functions/cliDocumentExchange path & publish edges', function () {
 
   it('buy by seller id + AMP signer mismatch refuse', function () {
     const Key = require('../types/key');
-    const inventoryHtlc = require('../functions/inventoryHtlc');
+    const Htlc = require('../types/htlc');
     const seller = new Key();
     const other = new Key();
     const buyer = new Key();
     const contentHash = 'ab'.repeat(32);
     const lock = 900_000;
-    const built = inventoryHtlc.buildInventoryHtlcP2tr({
-      networkName: 'regtest',
-      sellerPubkeyCompressed: Buffer.from(String(seller.pubkey), 'hex'),
-      buyerRefundPubkeyCompressed: Buffer.from(String(buyer.pubkey), 'hex'),
-      paymentHash32: Buffer.from(contentHash, 'hex'),
-      refundLocktimeHeight: lock
+    const built = new Htlc({
+      network: 'regtest',
+      claimPubkey: Buffer.from(String(seller.pubkey), 'hex'),
+      refundPubkey: Buffer.from(String(buyer.pubkey), 'hex'),
+      paymentHash: Buffer.from(contentHash, 'hex'),
+      refundLocktime: lock
     });
-    const book = new DocumentOfferBook();
+    const book = new DocumentBook();
     book.ingestInventoryResponse({
       origin: 'seller-named',
       sellerPubkey: String(seller.pubkey).toLowerCase(),
@@ -160,7 +161,7 @@ describe('functions/cliDocumentExchange path & publish edges', function () {
       latencyMs: 5,
       items: [{
         id: 'doc-named',
-        rateSats: 25,
+        rateSats: 1000,
         contentHash,
         sellerPubkey: String(seller.pubkey).toLowerCase(),
         sellerAddress: 'seller-named',
@@ -201,16 +202,16 @@ describe('functions/cliDocumentExchange path & publish edges', function () {
       latencyMs: 5,
       items: [{
         id: 'doc-named-2',
-        rateSats: 25,
+        rateSats: 1000,
         contentHash: 'ac'.repeat(32),
         sellerAddress: 'seller-named',
         htlc: {
-          paymentAddress: inventoryHtlc.buildInventoryHtlcP2tr({
-            networkName: 'regtest',
-            sellerPubkeyCompressed: Buffer.from(String(seller.pubkey), 'hex'),
-            buyerRefundPubkeyCompressed: Buffer.from(String(buyer.pubkey), 'hex'),
-            paymentHash32: Buffer.from('ac'.repeat(32), 'hex'),
-            refundLocktimeHeight: lock
+          paymentAddress: new Htlc({
+            network: 'regtest',
+            claimPubkey: Buffer.from(String(seller.pubkey), 'hex'),
+            refundPubkey: Buffer.from(String(buyer.pubkey), 'hex'),
+            paymentHash: Buffer.from('ac'.repeat(32), 'hex'),
+            refundLocktime: lock
           }).address,
           paymentHashHex: 'ac'.repeat(32)
         }
@@ -225,7 +226,7 @@ describe('functions/cliDocumentExchange path & publish edges', function () {
     const crypto = require('crypto');
     const bitcoin = require('bitcoinjs-lib');
     const ecc = require('../types/ecc');
-    const inventoryHtlc = require('../functions/inventoryHtlc');
+    const Htlc = require('../types/htlc');
     bitcoin.initEccLib(ecc);
 
     const sellerPriv = crypto.randomBytes(32);
@@ -233,13 +234,13 @@ describe('functions/cliDocumentExchange path & publish edges', function () {
     const sellerPub = Buffer.from(ecc.pointFromScalar(sellerPriv, true));
     const buyerPub = Buffer.from(ecc.pointFromScalar(buyerPriv, true));
     const preimage = crypto.randomBytes(32);
-    const paymentHash32 = inventoryHtlc.hash256(preimage);
-    const built = inventoryHtlc.buildInventoryHtlcP2tr({
-      networkName: 'regtest',
-      sellerPubkeyCompressed: sellerPub,
-      buyerRefundPubkeyCompressed: buyerPub,
-      paymentHash32,
-      refundLocktimeHeight: 1_000_000
+    const paymentHash32 = Htlc.sha256(preimage);
+    const built = new Htlc({
+      network: 'regtest',
+      claimPubkey: sellerPub,
+      refundPubkey: buyerPub,
+      paymentHash: paymentHash32,
+      refundLocktime: 1_000_000
     });
     const fundingTx = new bitcoin.Transaction();
     fundingTx.version = 2;
@@ -249,7 +250,7 @@ describe('functions/cliDocumentExchange path & publish edges', function () {
       pubkey: buyerPub,
       network: bitcoin.networks.regtest
     }).address;
-    const claimBundle = inventoryHtlc.prepareInventoryHtlcSellerClaimPsbt({
+    const claimBundle = Htlc.prepareClaimPsbt({
       networkName: 'regtest',
       fundedTxHex: fundingTx.toHex(),
       paymentAddress: built.address,
@@ -260,7 +261,7 @@ describe('functions/cliDocumentExchange path & publish edges', function () {
       feeSats: 1500
     });
     const { txHex: claimHex, txid: claimTxid } =
-      inventoryHtlc.signAndExtractInventoryHtlcSellerClaim(claimBundle, sellerPriv);
+      Htlc.signClaim(claimBundle, sellerPriv);
 
     const session = createDocumentPurchaseSession({
       documentId: 'doc-claim-open',
@@ -371,7 +372,7 @@ describe('functions/cliDocumentExchange path & publish edges', function () {
     const crypto = require('crypto');
     const bitcoin = require('bitcoinjs-lib');
     const ecc = require('../types/ecc');
-    const inventoryHtlc = require('../functions/inventoryHtlc');
+    const Htlc = require('../types/htlc');
     bitcoin.initEccLib(ecc);
 
     const sellerPriv = crypto.randomBytes(32);
@@ -379,14 +380,14 @@ describe('functions/cliDocumentExchange path & publish edges', function () {
     const sellerPub = Buffer.from(ecc.pointFromScalar(sellerPriv, true));
     const buyerPub = Buffer.from(ecc.pointFromScalar(buyerPriv, true));
     const preimage = crypto.randomBytes(32);
-    const paymentHash32 = inventoryHtlc.hash256(preimage);
+    const paymentHash32 = Htlc.sha256(preimage);
     const lock = 100;
-    const built = inventoryHtlc.buildInventoryHtlcP2tr({
-      networkName: 'regtest',
-      sellerPubkeyCompressed: sellerPub,
-      buyerRefundPubkeyCompressed: buyerPub,
-      paymentHash32,
-      refundLocktimeHeight: lock
+    const built = new Htlc({
+      network: 'regtest',
+      claimPubkey: sellerPub,
+      refundPubkey: buyerPub,
+      paymentHash: paymentHash32,
+      refundLocktime: lock
     });
     const fundingTx = new bitcoin.Transaction();
     fundingTx.version = 2;

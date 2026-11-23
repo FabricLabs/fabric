@@ -14,20 +14,107 @@
  * 4. Buyer verifies ciphertext Tree root, then opens with K.
  * 5. If K never arrives, buyer refunds after HTLC locktime (seller cannot
  *    claim without revealing K on-chain either).
+ *
+ * **Per-buyer payment hashes** (`DocumentBlobQuote`). Settling on the static
+ * hash `SHA256(K_i)` puts `K_i` in a public claim witness (and in every hop of
+ * a forwarded channel HTLC), after which anyone holding the free ciphertext
+ * can decrypt blob i. A quote instead names a fresh secret `s` the seller
+ * draws for one buyer: `paymentHash = SHA256(s)` and the buyer is handed
+ * `wrappedKey = K_i XOR HMAC-SHA256(s, tag || documentId || root ||
+ * blobIndex)`. Revealing `s` only lets the holder of `wrappedKey` recover
+ * `K_i`. That wrap cannot be checked before `s` is public, so a buyer must
+ * not fund `SHA256(s)`: the seller can claim and leave a fraud proof
+ * (`checkBlobQuote`) after the output is spent. Market pays the committed
+ * `SHA256(K_i)` instead.
+ *
+ * **Convergent sealing** (`CONVERGENT_SCHEME`). The key is derived from the
+ * plaintext — `K = taggedHash(CONVERGENT_KEY_TAG, mode || secret? || plaintext)`
+ * — and the IV from the key, so the same plaintext seals to the same
+ * ciphertext, blob hash, and payment hash for every seller. Identical chunks
+ * de-duplicate by construction. An optional convergence secret scopes that
+ * to whoever holds it (a community), which blunts confirmation-of-file
+ * guesses. Random keys (`SCHEME`) remain the private mode.
  */
 
 const crypto = require('crypto');
+const taggedHash = require('./taggedHash');
 
-const SCHEME = 'aes-256-gcm-content-v1';
+const SCHEME = 'aes-256-gcm-content';
+const CONVERGENT_SCHEME = 'aes-256-gcm-convergent';
+const CONVERGENT_KEY_TAG = 'Fabric/DocumentConvergentKey';
+const CONVERGENT_IV_TAG = 'Fabric/DocumentConvergentIv';
+const SEALED_SCHEMES = Object.freeze([SCHEME, CONVERGENT_SCHEME]);
+
+/**
+ * Normalize a convergence secret to 32 bytes (`SHA256` of whatever was given).
+ * @param {Buffer|string|null|undefined} secret
+ * @returns {Buffer|null}
+ * @private
+ */
+function _convergenceSecret (secret) {
+  if (secret == null || secret === '') return null;
+  const buf = Buffer.isBuffer(secret) ? secret : Buffer.from(String(secret), 'utf8');
+  if (!buf.length) return null;
+  return crypto.createHash('sha256').update(buf).digest();
+}
+
+/**
+ * Content-derived key for one chunk. A leading mode byte keeps the public
+ * and secret-scoped namespaces disjoint.
+ * @param {Buffer|string} plaintext
+ * @param {Buffer|string} [secret] convergence secret (community scope)
+ * @returns {Buffer} 32-byte key
+ */
+function convergentKey (plaintext, secret) {
+  const plain = Buffer.isBuffer(plaintext) ? plaintext : Buffer.from(plaintext == null ? '' : plaintext);
+  const scope = _convergenceSecret(secret);
+  const head = scope ? Buffer.concat([Buffer.from([1]), scope]) : Buffer.from([0]);
+  return taggedHash(CONVERGENT_KEY_TAG, Buffer.concat([head, plain]));
+}
+
+/**
+ * IV for a convergent key (a key is only ever used for one plaintext).
+ * @param {Buffer|string} key32
+ * @returns {Buffer} 12-byte IV
+ */
+function convergentIv (key32) {
+  const key = Buffer.isBuffer(key32) ? key32 : Buffer.from(String(key32), 'hex');
+  if (key.length !== 32) throw new Error('content key must be 32 bytes');
+  return taggedHash(CONVERGENT_IV_TAG, key).subarray(0, 12);
+}
+
+/**
+ * True when `keyHex` (and `iv`, when given) are the convergent derivation of
+ * `plaintext` — the chunk is the canonical one for its content.
+ * @param {Buffer} plaintext
+ * @param {Buffer|string} keyHex
+ * @param {Object} [opts]
+ * @param {Buffer|string} [opts.iv] base64 or Buffer
+ * @param {Buffer|string} [opts.secret]
+ * @returns {boolean}
+ */
+function isConvergentKey (plaintext, keyHex, opts = {}) {
+  const key = Buffer.isBuffer(keyHex) ? keyHex : Buffer.from(String(keyHex || ''), 'hex');
+  if (key.length !== 32) return false;
+  const derived = convergentKey(plaintext, opts.secret);
+  if (!crypto.timingSafeEqual(derived, key)) return false;
+  if (opts.iv == null) return true;
+  const iv = Buffer.isBuffer(opts.iv) ? opts.iv : Buffer.from(String(opts.iv), 'base64');
+  return iv.length === 12 && iv.equals(convergentIv(key));
+}
 
 /**
  * @param {Buffer} plaintext
+ * @param {Object} [opts]
+ * @param {boolean} [opts.convergent] derive key and IV from the content
+ * @param {Buffer|string} [opts.secret] convergence secret (with `convergent`)
  * @returns {{ key: Buffer, iv: Buffer, ciphertext: Buffer, contentSha256: string, encryption: object }}
  */
-function sealPlaintext (plaintext) {
+function sealPlaintext (plaintext, opts = {}) {
   const buf = Buffer.isBuffer(plaintext) ? plaintext : Buffer.from(plaintext);
-  const key = crypto.randomBytes(32);
-  const iv = crypto.randomBytes(12);
+  const convergent = opts.convergent === true;
+  const key = convergent ? convergentKey(buf, opts.secret) : crypto.randomBytes(32);
+  const iv = convergent ? convergentIv(key) : crypto.randomBytes(12);
   const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
   const enc = Buffer.concat([cipher.update(buf), cipher.final()]);
   const tag = cipher.getAuthTag();
@@ -39,7 +126,7 @@ function sealPlaintext (plaintext) {
     ciphertext,
     contentSha256,
     encryption: {
-      scheme: SCHEME,
+      scheme: convergent ? CONVERGENT_SCHEME : SCHEME,
       iv: iv.toString('base64'),
       contentSha256
     }
@@ -80,7 +167,7 @@ function paymentHashHexFromKey (key32) {
  * @returns {boolean}
  */
 function isSealedDocument (doc) {
-  return !!(doc && doc.encryption && doc.encryption.scheme === SCHEME);
+  return !!(doc && doc.encryption && SEALED_SCHEMES.includes(doc.encryption.scheme));
 }
 
 /**
@@ -144,7 +231,6 @@ async function writeContentKey (fs, documentId, key32) {
     created: new Date().toISOString()
   });
 }
-const { splitBlobs, advertiseDocumentBlobs } = require('./documentBlobManifest');
 
 const KEY_REVEAL_TYPE = 'DocumentContentKeyReveal';
 
@@ -181,13 +267,22 @@ function advertiseSealedDocument (sale, opts = {}) {
   const documentId = opts.documentId != null ? String(opts.documentId) : undefined;
   const rateSats = Number(opts.rateSats) || 0;
   const pay = String(sale.paymentHashHex).toLowerCase();
-  const advertised = advertiseDocumentBlobs(sale.ciphertext, {
+  // Required here: types/document requires this module.
+  const Document = require('../types/document');
+  const advertised = Document.advertise(sale.ciphertext, {
     documentId,
     chunkBytes: opts.chunkBytes,
     rateSats,
     // Sealed sales bind one HTLC to SHA256(K) — never per-blob tagged hashes.
     includePaymentHashes: false
   });
+  // Every leaf commits SHA256(K): the root binds the ciphertext to the key sold.
+  const merkleRootHex = Document.rootHexFromBlobHashes(
+    (advertised.blobs || []).map((b) => b.blobHashHex),
+    { paymentHashHex: pay }
+  );
+  advertised.merkleRootHex = merkleRootHex;
+  if (advertised.index) advertised.index.merkleRootHex = merkleRootHex;
   for (const b of advertised.itemBlobs || []) {
     b.contentHash = pay;
     b.contentHashHex = pay;
@@ -198,15 +293,279 @@ function advertiseSealedDocument (sale, opts = {}) {
       b.contentHashHex = pay;
     }
   }
+  // No plaintextSha256: a public plaintext digest is a confirmation oracle
+  // for guessable content. It travels only with the key reveal.
   return {
     ...advertised,
     contentHash: pay,
     contentHashHex: pay,
     paymentHashHex: pay,
     sealed: true,
-    encryption: sale.encryption,
-    plaintextSha256: sale.plaintextSha256
+    encryption: sale.encryption
   };
+}
+
+const BLOB_QUOTE_TYPE = 'DocumentBlobQuote';
+const BLOB_BATCH_TYPE = 'DocumentBlobBatch';
+const BLOB_KEY_WRAP_TAG = 'Fabric/DocumentBlobKeyWrap';
+const HEX64 = /^[0-9a-f]{64}$/;
+
+/**
+ * @param {*} v
+ * @param {string} name
+ * @returns {Buffer}
+ * @private
+ */
+function _key32 (v, name) {
+  const s = Buffer.isBuffer(v) ? v.toString('hex') : String(v == null ? '' : v).trim().toLowerCase();
+  if (!HEX64.test(s)) throw new Error(`${name} must be 64 hex chars`);
+  return Buffer.from(s, 'hex');
+}
+
+/**
+ * Key-wrap pad for one blob: `HMAC-SHA256(s, tag || 0 || documentId || 0 || root || uint32be(blobIndex))`.
+ * @param {Buffer} secret
+ * @param {Object} opts `{ documentId, merkleRootHex, blobIndex }`
+ * @returns {Buffer}
+ * @private
+ */
+function _blobKeyWrapPad (secret, opts = {}) {
+  const index = Math.round(Number(opts.blobIndex));
+  if (!Number.isInteger(index) || index < 0) throw new Error('blobIndex must be >= 0');
+  const root = String(opts.merkleRootHex || '').trim().toLowerCase();
+  const count = Buffer.alloc(4);
+  count.writeUInt32BE(index >>> 0, 0);
+  return crypto.createHmac('sha256', secret).update(Buffer.concat([
+    Buffer.from(BLOB_KEY_WRAP_TAG, 'utf8'),
+    Buffer.from([0]),
+    Buffer.from(String(opts.documentId || ''), 'utf8'),
+    Buffer.from([0]),
+    HEX64.test(root) ? Buffer.from(root, 'hex') : Buffer.alloc(0),
+    count
+  ])).digest();
+}
+
+/**
+ * Wrap `K_i` under a per-buyer secret `s` (see the file overview).
+ * @param {Object} opts
+ * @param {string} opts.keyHex `K_i`
+ * @param {string} opts.secretHex `s` (the HTLC preimage)
+ * @param {string} opts.documentId
+ * @param {string} [opts.merkleRootHex]
+ * @param {number} opts.blobIndex
+ * @returns {string} wrapped key (64 hex)
+ */
+function wrapBlobKey (opts = {}) {
+  const key = _key32(opts.keyHex, 'keyHex');
+  const pad = _blobKeyWrapPad(_key32(opts.secretHex, 'secretHex'), opts);
+  const out = Buffer.alloc(32);
+  for (let i = 0; i < 32; i++) out[i] = key[i] ^ pad[i];
+  return out.toString('hex');
+}
+
+/**
+ * Recover `K_i` from a wrapped key once `s` is known.
+ * @param {Object} opts `{ wrappedKeyHex, secretHex, documentId, merkleRootHex?, blobIndex, keyHashHex? }`
+ * @returns {{ ok: boolean, keyHex: (string|undefined), error: (string|undefined) }}
+ */
+function unwrapBlobKey (opts = {}) {
+  try {
+    const keyHex = wrapBlobKey(Object.assign({}, opts, { keyHex: opts.wrappedKeyHex }));
+    const want = opts.keyHashHex ? String(opts.keyHashHex).trim().toLowerCase() : null;
+    if (want && paymentHashHexFromKey(keyHex) !== want) return { ok: false, error: 'unwrapped key does not match keyHashHex' };
+    return { ok: true, keyHex };
+  } catch (err) {
+    return { ok: false, error: err && err.message ? err.message : String(err) };
+  }
+}
+
+/**
+ * Seller side: a per-buyer quote for one sealed blob. Keep `secretHex`
+ * private (it is the HTLC preimage); send only `quote` to the buyer, over a
+ * signed message so a bad `wrappedKeyHex` is attributable.
+ * @param {Object} opts
+ * @param {string} opts.documentId
+ * @param {string} [opts.merkleRootHex]
+ * @param {number} opts.blobIndex
+ * @param {string} [opts.blobHashHex]
+ * @param {string} opts.keyHex `K_i`
+ * @param {number} [opts.amountSats]
+ * @param {number} [opts.expiresAt] epoch ms
+ * @param {string} [opts.secretHex] fixed `s` (tests); random by default
+ * @returns {{ quote: Object, secretHex: string }}
+ */
+function createBlobQuote (opts = {}) {
+  const documentId = String(opts.documentId || '').trim();
+  if (!documentId) throw new Error('documentId required');
+  const key = _key32(opts.keyHex, 'keyHex');
+  const secret = opts.secretHex ? _key32(opts.secretHex, 'secretHex') : crypto.randomBytes(32);
+  const merkleRootHex = opts.merkleRootHex ? String(opts.merkleRootHex).toLowerCase() : null;
+  const blobIndex = Math.round(Number(opts.blobIndex));
+  const quote = {
+    type: BLOB_QUOTE_TYPE,
+    documentId,
+    merkleRootHex,
+    blobIndex,
+    blobHashHex: opts.blobHashHex ? String(opts.blobHashHex).toLowerCase() : null,
+    keyHashHex: paymentHashHexFromKey(key),
+    paymentHashHex: paymentHashHexFromKey(secret),
+    wrappedKeyHex: wrapBlobKey({ keyHex: key, secretHex: secret, documentId, merkleRootHex, blobIndex }),
+    amountSats: Math.max(0, Math.floor(Number(opts.amountSats) || 0)),
+    expiresAt: Number(opts.expiresAt) > 0 ? Number(opts.expiresAt) : null
+  };
+  return { quote, secretHex: secret.toString('hex') };
+}
+
+/**
+ * One L1 preimage `S` wraps every key in a consecutive blob range.
+ * `K_i` is recovered with {@link unwrapBlobKey} once `S` is revealed.
+ * The wraps travel only on this object, which is sent to the buyer, not
+ * placed on a public inventory item.
+ * @param {Object} opts
+ * @param {string} opts.documentId
+ * @param {string} [opts.merkleRootHex]
+ * @param {Array<{ blobIndex: number, blobHashHex: string, keyHex: string }>} opts.blobs
+ * @param {number} [opts.amountSats]
+ * @param {number} [opts.expiresAt]
+ * @param {string} [opts.secretHex]
+ * @returns {{ batch: Object, secretHex: string }}
+ */
+function createBlobBatch (opts = {}) {
+  const documentId = String(opts.documentId || '').trim();
+  if (!documentId) throw new Error('documentId required');
+  const blobs = Array.isArray(opts.blobs) ? opts.blobs : [];
+  if (!blobs.length) throw new Error('batch needs at least one blob');
+  const secret = opts.secretHex ? _key32(opts.secretHex, 'secretHex') : crypto.randomBytes(32);
+  const secretHex = secret.toString('hex');
+  const merkleRootHex = opts.merkleRootHex ? String(opts.merkleRootHex).toLowerCase() : null;
+  let start = Infinity;
+  let end = -1;
+  for (const b of blobs) {
+    const blobIndex = Math.round(Number(b.blobIndex));
+    if (blobIndex < start) start = blobIndex;
+    if (blobIndex > end) end = blobIndex;
+  }
+  const wrapped = blobs.map((b) => {
+    const blobIndex = Math.round(Number(b.blobIndex));
+    const key = _key32(b.keyHex, 'keyHex');
+    return {
+      blobIndex,
+      blobHashHex: b.blobHashHex ? String(b.blobHashHex).toLowerCase() : null,
+      keyHashHex: paymentHashHexFromKey(key),
+      wrappedKeyHex: wrapBlobKey({ keyHex: key, secretHex, documentId, merkleRootHex, blobIndex })
+    };
+  });
+  return {
+    secretHex,
+    batch: {
+      type: BLOB_BATCH_TYPE,
+      documentId,
+      merkleRootHex,
+      start,
+      end,
+      paymentHashHex: paymentHashHexFromKey(secret),
+      amountSats: Math.max(0, Math.floor(Number(opts.amountSats) || 0)),
+      expiresAt: Number(opts.expiresAt) > 0 ? Number(opts.expiresAt) : null,
+      blobs: wrapped
+    }
+  };
+}
+
+/**
+ * @param {Object} batch
+ * @returns {boolean}
+ */
+function isWellFormedBlobBatch (batch) {
+  if (!batch || batch.type !== BLOB_BATCH_TYPE) return false;
+  if (!String(batch.documentId || '').trim()) return false;
+  if (!HEX64.test(String(batch.paymentHashHex || '').toLowerCase())) return false;
+  if (!Number.isInteger(Number(batch.start)) || !Number.isInteger(Number(batch.end)) || Number(batch.end) < Number(batch.start)) return false;
+  if (!Array.isArray(batch.blobs) || !batch.blobs.length) return false;
+  return batch.blobs.every((b) => Number.isInteger(Number(b.blobIndex)) &&
+    HEX64.test(String(b.keyHashHex || '').toLowerCase()) &&
+    HEX64.test(String(b.wrappedKeyHex || '').toLowerCase()));
+}
+
+/**
+ * Recover one chunk key from a batch once `S` is known.
+ * @param {Object} opts
+ * @param {Object} opts.batch
+ * @param {string} opts.preimageHex
+ * @param {number} opts.blobIndex
+ * @returns {{ ok: boolean, keyHex: (string|undefined), error: (string|undefined), fraud: (boolean|undefined) }}
+ */
+function openBlobBatch (opts = {}) {
+  const batch = opts.batch;
+  if (!isWellFormedBlobBatch(batch)) return { ok: false, error: 'malformed batch' };
+  let pre;
+  try {
+    pre = _key32(opts.preimageHex, 'preimageHex');
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+  if (paymentHashHexFromKey(pre) !== String(batch.paymentHashHex).toLowerCase()) {
+    return { ok: false, error: 'preimage does not match batch paymentHashHex' };
+  }
+  const blobIndex = Math.round(Number(opts.blobIndex));
+  const leaf = batch.blobs.find((b) => Number(b.blobIndex) === blobIndex);
+  if (!leaf) return { ok: false, error: 'blob is not in this batch' };
+  const out = unwrapBlobKey({
+    wrappedKeyHex: leaf.wrappedKeyHex,
+    secretHex: pre,
+    documentId: batch.documentId,
+    merkleRootHex: batch.merkleRootHex,
+    blobIndex,
+    keyHashHex: leaf.keyHashHex
+  });
+  return out.ok ? out : Object.assign(out, { fraud: true });
+}
+
+function isWellFormedBlobQuote (quote) {
+  if (!quote || typeof quote !== 'object') return false;
+  if (!String(quote.documentId || '').trim()) return false;
+  if (!Number.isInteger(Number(quote.blobIndex)) || Number(quote.blobIndex) < 0) return false;
+  for (const k of ['keyHashHex', 'paymentHashHex', 'wrappedKeyHex']) {
+    if (!HEX64.test(String(quote[k] || '').toLowerCase())) return false;
+  }
+  return String(quote.keyHashHex).toLowerCase() !== String(quote.paymentHashHex).toLowerCase();
+}
+
+/**
+ * Buyer side, after payment: recover `K_i` from a quote with the revealed
+ * preimage `s`. `ok: false` with `fraud: true` means `s` is the paid
+ * preimage but the quote's wrapped key does not open to `keyHashHex` — the
+ * signed quote plus `s` prove the seller cheated.
+ * @param {Object} opts
+ * @param {Object} opts.quote from {@link createBlobQuote}
+ * @param {string} opts.preimageHex `s`
+ * @param {string} [opts.keyHashHex] committed `SHA256(K_i)` (defaults to `quote.keyHashHex`)
+ * @returns {{ ok: boolean, keyHex: (string|undefined), error: (string|undefined), fraud: (boolean|undefined) }}
+ */
+function checkBlobQuote (opts = {}) {
+  const quote = opts.quote;
+  if (!isWellFormedBlobQuote(quote)) return { ok: false, error: 'malformed quote' };
+  let pre;
+  try {
+    pre = _key32(opts.preimageHex, 'preimageHex');
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+  if (paymentHashHexFromKey(pre) !== String(quote.paymentHashHex).toLowerCase()) {
+    return { ok: false, error: 'preimage does not match quote paymentHashHex' };
+  }
+  const keyHashHex = String(opts.keyHashHex || quote.keyHashHex).toLowerCase();
+  if (keyHashHex !== String(quote.keyHashHex).toLowerCase()) {
+    return { ok: false, error: 'quote keyHashHex is not the committed key hash', fraud: true };
+  }
+  const out = unwrapBlobKey({
+    wrappedKeyHex: quote.wrappedKeyHex,
+    secretHex: pre,
+    documentId: quote.documentId,
+    merkleRootHex: quote.merkleRootHex,
+    blobIndex: quote.blobIndex,
+    keyHashHex
+  });
+  return out.ok ? out : Object.assign(out, { fraud: true });
 }
 
 /**
@@ -338,7 +697,22 @@ function openWithClaimPreimage (opts = {}) {
 
 module.exports = {
   KEY_REVEAL_TYPE,
+  BLOB_QUOTE_TYPE,
+  BLOB_BATCH_TYPE,
+  createBlobBatch,
+  isWellFormedBlobBatch,
+  openBlobBatch,
   SCHEME,
+  CONVERGENT_SCHEME,
+  SEALED_SCHEMES,
+  convergentKey,
+  convergentIv,
+  isConvergentKey,
+  wrapBlobKey,
+  unwrapBlobKey,
+  createBlobQuote,
+  isWellFormedBlobQuote,
+  checkBlobQuote,
   sealPlaintext,
   openCiphertext,
   paymentHashHexFromKey,
@@ -353,6 +727,5 @@ module.exports = {
   openSealedDelivery,
   openWithClaimPreimage,
   requestMatchesPaymentHash,
-  requestUnlocksContentKey,
-  splitBlobs
+  requestUnlocksContentKey
 };

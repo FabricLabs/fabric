@@ -14,21 +14,12 @@
  * @module functions/contractMessageAccumulate
  */
 
-const crypto = require('crypto');
 const Message = require('../types/message');
 const Key = require('../types/key');
 const { HEADER_SIZE, MAX_MESSAGE_SIZE } = require('../constants');
 const { OUTER, CONTRACT_BODY_TYPES, isKnownContractBodyType } = require('./applicationNamespaces');
-const { pubkeyXOnly, pubkeyCompressed } = require('./groupChatSeal');
-const {
-  OP_CONTRACT_READ,
-  OP_CONTRACT_SIGN,
-  verifyContractCapability
-} = require('./contractCapability');
-const {
-  validateWithdrawalRequest,
-  verifyWithdrawalWitnessSignature
-} = require('./contractSpend');
+const { pubkeyXOnly, pubkeyCompressed } = require('../types/key');
+const { normalizeContractId, stateDigest } = require('./sidechainState');
 const {
   GOVERNANCE_ACTIONS,
   proposalIdOf,
@@ -38,6 +29,7 @@ const {
 } = require('./groupChangeGovernance');
 
 const Actor = require('../types/actor');
+const Contract = require('../types/contract');
 
 const COLLECTION = 'contractmessages';
 const ORIGINS = Object.freeze(['mesh', 'queue', 'paste', 'local']);
@@ -201,33 +193,6 @@ function isSyncTrackedType (type, doc = {}, meta = {}) {
   return !DEFAULT_SYNC_EXCLUDE.includes(t);
 }
 
-function normalizeContractId (contractId) {
-  const id = String(contractId || '').trim().toLowerCase();
-  if (!id || id.includes('/') || id.includes('..') || id.length > 128) {
-    throw new Error('invalid contractId');
-  }
-  return id;
-}
-
-function _canonicalStringify (value) {
-  if (value === null || typeof value !== 'object') return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map(_canonicalStringify).join(',')}]`;
-  const keys = Object.keys(value).sort();
-  return `{${keys.map((k) => `${JSON.stringify(k)}:${_canonicalStringify(value[k])}`).join(',')}}`;
-}
-
-/**
- * @param {{ version?: number, clock?: number, content?: object }} state
- * @returns {string}
- */
-function stateDigest (state) {
-  return crypto.createHash('sha256').update(_canonicalStringify({
-    version: state && state.version != null ? Number(state.version) : 1,
-    clock: Number(state && state.clock) || 0,
-    content: (state && state.content) || {}
-  })).digest('hex');
-}
-
 /**
  * Parse `fabric:<hex>` or raw hex into a Buffer.
  * @param {string|Buffer} input
@@ -273,7 +238,7 @@ function verifyMessageSignature (msg) {
 }
 
 /**
- * Parse CONTRACT_MESSAGE JSON body.
+ * Parse a CONTRACT_MESSAGE body (typed fields or transitional JSON).
  * @param {Message} msg
  * @returns {{ contract: string, type: string, object: object }|null}
  */
@@ -281,15 +246,9 @@ function parseContractMessageBody (msg) {
   if (!msg || (msg.type !== OUTER.CONTRACT_MESSAGE && msg.type !== 'P2P_CONTRACT_MESSAGE')) {
     return null;
   }
-  let raw = msg.body != null ? msg.body : (msg.raw && msg.raw.data);
-  if (Buffer.isBuffer(raw)) raw = raw.toString('utf8');
-  if (typeof raw !== 'string') return null;
-  let parsed;
-  try {
-    parsed = JSON.parse(raw);
-  } catch (_) {
-    return null;
-  }
+  const result = Message.tryParseLegacyBody(msg);
+  if (!result.ok) return null;
+  const parsed = result.value;
   if (!parsed || typeof parsed !== 'object') return null;
   const contract = String(parsed.contract || '').trim().toLowerCase();
   const type = String(parsed.type || '').trim();
@@ -574,7 +533,7 @@ function authorHasCapabilityToken (doc, authorXOnly, tokenString, expectedCap) {
       if (!/^(02|03)[0-9a-f]{64}$/.test(c) || seen.has(c)) continue;
       seen.add(c);
       try {
-        const payload = verifyContractCapability(tokenString, {
+        const payload = Contract.verifyCapability(tokenString, {
           contractId: doc.id,
           expectedCap,
           issuerKey: { public: c }
@@ -590,11 +549,11 @@ function authorHasCapabilityToken (doc, authorXOnly, tokenString, expectedCap) {
 }
 
 function authorHasSignToken (doc, authorXOnly, tokenString) {
-  return authorHasCapabilityToken(doc, authorXOnly, tokenString, OP_CONTRACT_SIGN);
+  return authorHasCapabilityToken(doc, authorXOnly, tokenString, Contract.OP_CONTRACT_SIGN);
 }
 
 function authorHasReadToken (doc, authorXOnly, tokenString) {
-  return authorHasCapabilityToken(doc, authorXOnly, tokenString, OP_CONTRACT_READ)
+  return authorHasCapabilityToken(doc, authorXOnly, tokenString, Contract.OP_CONTRACT_READ)
     || authorHasSignToken(doc, authorXOnly, tokenString);
 }
 
@@ -703,7 +662,7 @@ function authorizeIngest (doc, type, authorXOnly, meta = {}, bodyObject = null) 
 
   if (type === 'ContractWithdrawalRequest' && bodyObject) {
     const tip = tipFromDoc(doc);
-    const check = validateWithdrawalRequest(bodyObject, tip, {
+    const check = Contract.validateWithdrawalRequest(bodyObject, tip, {
       genesis: doc.genesis || meta.genesis || null
     });
     if (!check.ok) return { ok: false, error: check.error };
@@ -743,7 +702,7 @@ function authorizeIngest (doc, type, authorXOnly, meta = {}, bodyObject = null) 
     if (claimed && claimed !== authorXOnly) {
       return { ok: false, error: 'witness signer must match AMP author' };
     }
-    const verified = verifyWithdrawalWitnessSignature({
+    const verified = Contract.verifyWithdrawalWitnessSignature({
       ...bodyObject,
       signer: authorXOnly
     });
@@ -1331,11 +1290,9 @@ module.exports = {
   isDeliveryAckType,
   resolveDeliverySyncPolicy,
   isSyncTrackedType,
-  normalizeContractId,
   normalizeGenesis,
   normalizePubkeyList,
   authorAllowedByReaders,
-  stateDigest,
   bufferFromPaste,
   verifyMessageSignature,
   parseContractMessageBody,

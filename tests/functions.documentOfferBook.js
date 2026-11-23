@@ -1,23 +1,18 @@
 'use strict';
 
 const assert = require('assert');
-const { DocumentOfferBook } = require('../functions/documentMarket');
-const {
-  splitBlobs,
-  verifyBlob,
-  reassemble,
-  blobPaymentHashHex
-} = require('../functions/documentBlobManifest');
+const { DocumentBook } = require('../types/documentBook');
 const {
   computeRelayFee,
   buildForwardedDocumentRequest,
-  assertMonotoneBudget
-} = require('../functions/documentMarket');
-const { createDocumentPurchaseSession } = require('../functions/documentMarket');
+  assertMonotoneBudget,
+  createDocumentPurchaseSession
+} = require('../types/documentBook');
+const Document = require('../types/document');
 
 describe('documentOfferBook + blobs + relay', function () {
   it('ranks cheaper faster higher-score offers first', function () {
-    const book = new DocumentOfferBook();
+    const book = new DocumentBook();
     book.ingestInventoryResponse({
       origin: 'a:1',
       peerScore: 900,
@@ -48,7 +43,7 @@ describe('documentOfferBook + blobs + relay', function () {
   });
 
   it('prefers high peerScore over equal-price zero-score sybil', function () {
-    const book = new DocumentOfferBook();
+    const book = new DocumentBook();
     book.ingestInventoryResponse({
       origin: 'honest:1',
       peerScore: 900,
@@ -65,19 +60,19 @@ describe('documentOfferBook + blobs + relay', function () {
     assert.ok(best && best.sellerAddress === 'honest:1');
   });
 
-  it('splitBlobs verify and reassemble', function () {
+  it('Document.split verify and reassemble', function () {
     const data = Buffer.alloc(3000, 7);
-    const { blobs, merkleRootHex } = splitBlobs(data, 1000);
+    const { blobs, merkleRootHex } = Document.split(data, 1000);
     assert.strictEqual(blobs.length, 3);
     for (const b of blobs) {
-      assert.ok(verifyBlob(b.bytes, b.blobHashHex));
+      assert.ok(Document.verifyBlob(b.bytes, b.blobHashHex));
     }
     const map = new Map(blobs.map((b) => [b.index, b.bytes]));
-    const out = reassemble(map, 3, merkleRootHex);
+    const out = Document.reassemble(map, 3, merkleRootHex);
     assert.strictEqual(out.ok, true);
     assert.ok(out.buffer.equals(data));
-    assert.ok(!verifyBlob(Buffer.from('x'), blobs[0].blobHashHex));
-    const pay = blobPaymentHashHex({
+    assert.ok(!Document.verifyBlob(Buffer.from('x'), blobs[0].blobHashHex));
+    const pay = Document.blobPaymentHash({
       documentId: 'd1',
       blobIndex: 0,
       blobHashHex: blobs[0].blobHashHex
@@ -116,7 +111,7 @@ describe('documentOfferBook + blobs + relay', function () {
   });
 
   it('pickBlobPlan diversifies unsealed sellers but locks sealed to one seller', function () {
-    const book = new DocumentOfferBook();
+    const book = new DocumentBook();
     book.ingestInventoryResponse({
       origin: 'seller-a',
       peerScore: 500,
@@ -155,7 +150,7 @@ describe('documentOfferBook + blobs + relay', function () {
     ]);
     assert.strictEqual(sellersUnsealed.size, 2, 'unsealed plan should diversify sellers');
 
-    const sealedBook = new DocumentOfferBook();
+    const sealedBook = new DocumentBook();
     sealedBook.ingestInventoryResponse({
       origin: 'seal-a',
       peerScore: 900,
@@ -197,7 +192,7 @@ describe('documentOfferBook + blobs + relay', function () {
   });
 
   it('updates the same origin when a seller reprices (inventory snapshot)', function () {
-    const book = new DocumentOfferBook();
+    const book = new DocumentBook();
     const hash = 'aa'.repeat(32);
     book.ingestInventoryResponse({
       origin: 'relay:7',
@@ -219,8 +214,9 @@ describe('documentOfferBook + blobs + relay', function () {
   });
 
   it('Hub-style 10% listing markup covers a 10% relay skim on origin cost', function () {
-    const origin = 100;
-    let hubList = 110;
+    // Above HTLC_MINIMUM_SATS (716), where Hub floors every paid list price.
+    const origin = 10000;
+    let hubList = 11000;
     try {
       const path = require('path');
       const market = require(path.join(__dirname, '..', '..', 'hub.fabric.pub', 'functions', 'documentInventoryMarket'));
@@ -228,15 +224,15 @@ describe('documentOfferBook + blobs + relay', function () {
     } catch (_) {
       hubList = Math.ceil((origin * 11000) / 10000);
     }
-    assert.strictEqual(hubList, 110);
+    assert.strictEqual(hubList, 11000);
     const fee = computeRelayFee({ documentRelayFeeBps: 1000 }, origin);
     assert.strictEqual(fee.ok, true);
-    assert.strictEqual(fee.feeSats, 10);
+    assert.strictEqual(fee.feeSats, 1000);
     assert.ok(hubList - origin >= fee.feeSats, 'republish spread should cover a same-bps hop fee');
   });
 
   it('does not keep peer contentBase64 or costBasis on ranked offers', function () {
-    const book = new DocumentOfferBook();
+    const book = new DocumentBook();
     book.ingestInventoryResponse({
       origin: 'seller:1',
       peerScore: 400,
@@ -257,7 +253,7 @@ describe('documentOfferBook + blobs + relay', function () {
   });
 
   it('skips inventory items without an id and filters listOffers by blobIndex', function () {
-    const book = new DocumentOfferBook();
+    const book = new DocumentBook();
     book.ingestInventoryResponse({
       origin: 'seller:1',
       items: [

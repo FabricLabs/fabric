@@ -21,10 +21,10 @@ const Identity = require('../types/identity');
 const bip39 = require('./bip39');
 const { tryParsePersistedJson } = require('./wireJson');
 const { isPasswordProtectedDocument, PASSWORD_MIN_LENGTH } = require('./sealedBlob');
+const { WALLET_FILE_MODE, writePrivateFile } = require('./fabricHomeEnv');
 
 const SETUP_PATH_MAX_LEN = 4096;
 const SETUP_RESTORE_MAX_BYTES = 1024 * 1024;
-const WALLET_FILE_MODE = 0o600;
 
 /**
  * @param {string} [v]
@@ -354,25 +354,6 @@ function revealSecrets (environment) {
     seed: key.seed || key.mnemonic || null,
     xprv: key.xprv || (key.master && typeof key.master.toBase58 === 'function' ? key.master.toBase58() : null)
   };
-}
-
-/**
- * @param {string} filePath
- */
-function ensureParentDir (filePath) {
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-}
-
-/**
- * @param {string} filePath
- * @param {string} content
- */
-function writePrivateFile (filePath, content) {
-  ensureParentDir(filePath);
-  fs.writeFileSync(filePath, content, { encoding: 'utf8', mode: WALLET_FILE_MODE });
-  try {
-    fs.chmodSync(filePath, WALLET_FILE_MODE);
-  } catch (_) { /* best-effort on platforms without chmod */ }
 }
 
 /**
@@ -746,8 +727,6 @@ async function runSetupCli (environment, opts = {}) {
 module.exports = {
   SETUP_PATH_MAX_LEN,
   SETUP_RESTORE_MAX_BYTES,
-  WALLET_FILE_MODE,
-  PASSWORD_MIN_LENGTH,
   applyWalletFileOption,
   backupWallet,
   debugEnabled,

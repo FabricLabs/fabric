@@ -20,8 +20,8 @@ const Key = require('../types/key');
 const Machine = require('../types/machine');
 const Program = require('../types/program');
 const {
-  assertMachineRunMatches
-} = require('../functions/contractProgramBind');
+  verifyMachineRun
+} = require('../types/program');
 const {
   createMemoryStore,
   ingestContractPublishBuffer,
@@ -35,23 +35,23 @@ const {
   buildWithdrawalRequest,
   buildWithdrawalWitness,
   validateWithdrawalRequest,
-  prepareWithdrawalFromRequest,
-  bindProgramRunToTip
-} = require('../functions/contractSpend');
+  prepareWithdrawalFromRequest
+} = require('../types/contract');
+const { bindRun } = require('../types/program');
+const Policy = require('../types/policy');
 const {
   buildFederationVaultFromPolicy,
-  buildContractTaproot,
   synthesizeDefaultLadder,
   selectActiveTiers,
   prepareTierWithdrawalPsbt,
   prepareHashlockWithdrawalPsbt,
   finalizeHashlockPsbt,
   toAddress
-} = require('../functions/contractTaproot');
+} = Policy;
 const {
-  observePaymentToAddress,
-  applyPaymentObservationToTip
-} = require('../functions/contractPaymentObserve');
+  observePayment,
+  applyPaymentObservation
+} = require('../types/contract');
 const {
   createRound,
   addSignature,
@@ -65,6 +65,7 @@ const {
   createCollection,
   ingest
 } = require('../functions/fabricMessageCollection');
+const SIGNING_TAGS = require('../types/key').TAGS;
 const {
   e2eRegtestEnabled,
   signSpendPsbt,
@@ -368,11 +369,11 @@ describe('ARC / Federation network E2E', function () {
       const msg = messageBufferForPayload(epoch);
       assert.strictEqual(roundMeetsThreshold(round), false);
       assert.strictEqual(
-        addSignature(round, validators[0], tree.keys.ops[0].signSchnorr(msg).toString('hex')).sealed,
+        addSignature(round, validators[0], tree.keys.ops[0].signSchnorr(msg, SIGNING_TAGS.FEDERATION_WITNESS).toString('hex')).sealed,
         false
       );
       assert.strictEqual(
-        addSignature(round, validators[1], tree.keys.ops[1].signSchnorr(msg).toString('hex')).sealed,
+        addSignature(round, validators[1], tree.keys.ops[1].signSchnorr(msg, SIGNING_TAGS.FEDERATION_WITNESS).toString('hex')).sealed,
         true
       );
       assert.strictEqual(roundMeetsThreshold(round), true);
@@ -414,7 +415,8 @@ describe('ARC / Federation network E2E', function () {
         tip: Object.assign({}, tip, { contractId }),
         genesis: def,
         destinationAddress: dest,
-        feeSats: 1000,
+        amountSats: 10000,
+      feeSats: 1000,
         vaultAddress: spend.address,
         tierId: 't0-authority'
       });
@@ -468,7 +470,8 @@ describe('ARC / Federation network E2E', function () {
         tip: Object.assign({}, first.tip, { contractId }),
         genesis: def,
         destinationAddress: dest,
-        feeSats: 500
+        amountSats: 10000,
+      feeSats: 500
       });
       foldMessage(store, contractId, signContractMessage(keys[0], contractId, 'GroupChat', {
         body: 'two',
@@ -485,7 +488,8 @@ describe('ARC / Federation network E2E', function () {
         tip: Object.assign({}, liveTip, { contractId }),
         genesis: def,
         destinationAddress: dest,
-        feeSats: 500
+        amountSats: 10000,
+      feeSats: 500
       });
       const diverted = Object.assign({}, good, {
         destinationAddress: p2wpkhAddress(compressedPubkey(keys[0])),
@@ -511,7 +515,7 @@ describe('ARC / Federation network E2E', function () {
       machine.define('OP_TRUE', () => true);
       const run = await machine.runProgram(prog);
       assert.strictEqual(run.ok, true);
-      const match = assertMachineRunMatches({ program: prog, run });
+      const match = verifyMachineRun({ program: prog, run });
       assert.strictEqual(match.ok, true, match.error);
 
       const tip0 = {
@@ -521,7 +525,7 @@ describe('ARC / Federation network E2E', function () {
         bitcoinBlockHash: BLOCK_HASH,
         content: { signers: [compressedPubkey(keys[0])], threshold: 1 }
       };
-      const tip1 = bindProgramRunToTip(tip0, {
+      const tip1 = bindRun(tip0, {
         programHash: match.programHash,
         runCommitmentHex: match.runCommitmentHex
       });
@@ -530,6 +534,7 @@ describe('ARC / Federation network E2E', function () {
         tip: tip1,
         genesis: def,
         destinationAddress: dest,
+        amountSats: 10000,
         feeSats: 800
       });
       assert.strictEqual(ok.runCommitmentHex, match.runCommitmentHex);
@@ -538,6 +543,7 @@ describe('ARC / Federation network E2E', function () {
         tip: tip1,
         genesis: def,
         destinationAddress: dest,
+        amountSats: 10000,
         feeSats: 800,
         runCommitmentHex: 'ff'.repeat(32)
       }), /runCommitment|program/i);
@@ -567,6 +573,7 @@ describe('ARC / Federation network E2E', function () {
         tip,
         genesis: def,
         destinationAddress: dest,
+        amountSats: 99000,
         feeSats: 1000,
         vaultAddress: spend.address,
         tierId: 't0-authority'
@@ -576,7 +583,7 @@ describe('ARC / Federation network E2E', function () {
         tip,
         genesis: def,
         spend,
-        fundedTxHex: syntheticFundedTxHex(buildContractTaproot(spend.policy).output, 100000),
+        fundedTxHex: syntheticFundedTxHex(Policy.compile(spend.policy).output, 100000),
         ctx: { utxoAgeBlocks: 0 }
       });
       assert.ok(prepared.psbtBase64);
@@ -597,7 +604,7 @@ describe('ARC / Federation network E2E', function () {
         network: 'regtest',
         csvBlocks: CSV_BLOCKS
       });
-      const built = buildContractTaproot(policy);
+      const built = Policy.compile(policy);
       const dest = p2wpkhAddress(compressedPubkey(keys[2]));
       const fundedTxHex = syntheticFundedTxHex(built.output, 100000);
 
@@ -649,7 +656,8 @@ describe('ARC / Federation network E2E', function () {
         tip,
         genesis: def,
         destinationAddress: dest,
-        feeSats: 99999,
+        amountSats: 98455,
+        feeSats: 1000,
         vaultAddress: spend.address
       });
       assert.throws(() => prepareWithdrawalFromRequest({
@@ -657,7 +665,7 @@ describe('ARC / Federation network E2E', function () {
         tip,
         genesis: def,
         spend,
-        fundedTxHex: syntheticFundedTxHex(buildContractTaproot(spend.policy).output, 100000)
+        fundedTxHex: syntheticFundedTxHex(Policy.compile(spend.policy).output, 100000)
       }), /dust/i);
     });
 
@@ -703,6 +711,7 @@ describe('ARC / Federation network E2E', function () {
           tip,
           genesis: def,
           destinationAddress: dest,
+          amountSats: 10000,
           feeSats: 1000,
           vaultAddress: spend.address
         });
@@ -711,7 +720,7 @@ describe('ARC / Federation network E2E', function () {
           tip,
           genesis: def,
           spend,
-          fundedTxHex: syntheticFundedTxHex(buildContractTaproot(spend.policy).output, 80000)
+          fundedTxHex: syntheticFundedTxHex(Policy.compile(spend.policy).output, 80000)
         });
         const fin = signSpendPsbt(prepared.psbtBase64, keys);
         assert.ok(fin.txHex, mode);
@@ -730,7 +739,7 @@ describe('ARC / Federation network E2E', function () {
         csvBlocks: CSV_BLOCKS,
         hashlock: { commitmentHex, id: 'hashlock-run' }
       });
-      const built = buildContractTaproot(policy);
+      const built = Policy.compile(policy);
       assert.ok(built.leaves.some((l) => l.kind === 'hashlock'));
       const dest = p2wpkhAddress(compressedPubkey(keys[2]));
       const prepared = prepareHashlockWithdrawalPsbt({
@@ -828,7 +837,7 @@ describe('ARC / Federation L1 regtest withdrawals', function () {
     const txid = await fundAddress(spend.address, 0.01);
     await confirm(1);
     const hex = await rawTx(txid);
-    const obs = observePaymentToAddress({
+    const obs = observePayment({
       tx: hex,
       address: spend.address,
       network: 'regtest',
@@ -843,7 +852,7 @@ describe('ARC / Federation L1 regtest withdrawals', function () {
       content: {},
       bitcoinBlockHash: BLOCK_HASH
     };
-    const tip1 = applyPaymentObservationToTip(tip0, obs);
+    const tip1 = applyPaymentObservation(tip0, obs);
     assert.strictEqual(tip1.content.balances[spend.address].sats, obs.matchedSats);
   });
 
@@ -875,6 +884,7 @@ describe('ARC / Federation L1 regtest withdrawals', function () {
       tip,
       genesis: def,
       destinationAddress: dest,
+      amountSats: 10000,
       feeSats: 1000,
       vaultAddress: spend.address,
       tierId: 't0-authority'
@@ -892,7 +902,11 @@ describe('ARC / Federation L1 regtest withdrawals', function () {
     assert.ok(spendTxid);
     await confirm(1);
     const received = await rpc('getreceivedbyaddress', [dest]);
-    assert.ok(received > 0.009, `expected withdrawal on L1, got ${received}`);
+    assert.strictEqual(
+      Math.round(received * 1e8),
+      10000,
+      `expected withdrawal on L1, got ${received}`
+    );
 
     const decoded = bitcoin.Transaction.fromHex(fundedHex);
     const vout = decoded.outs.findIndex((o) => {
@@ -901,6 +915,17 @@ describe('ARC / Federation L1 regtest withdrawals', function () {
     });
     const leftover = await rpc('gettxout', [fundTxid, vout]);
     assert.strictEqual(leftover, null);
+
+    // An explicit amountSats pays the request exactly and returns the remainder to
+    // the vault as change; omitting amountSats is the only sweep path.
+    const inputSats = Number(decoded.outs[vout].value);
+    const spent = bitcoin.Transaction.fromHex(fin.txHex);
+    const change = spent.outs.find((o) => {
+      const addr = bitcoin.address.fromOutputScript(Buffer.from(o.script), bitcoin.networks.regtest);
+      return addr === spend.address;
+    });
+    assert.ok(change, 'remainder must return to the vault address as change');
+    assert.strictEqual(Number(change.value), inputSats - 10000 - 1000);
   });
 
   it('spends an unconfirmed (0-conf) vault funding from the mempool', async function () {
@@ -929,6 +954,7 @@ describe('ARC / Federation L1 regtest withdrawals', function () {
       tip,
       genesis: def,
       destinationAddress: dest,
+      amountSats: 10000,
       feeSats: 1000,
       vaultAddress: spend.address
     });
@@ -1055,6 +1081,7 @@ describe('ARC / Federation L1 regtest withdrawals', function () {
         tip: tipBase,
         genesis: def,
         destinationAddress: dest,
+        amountSats: 10000,
         feeSats: 1000,
         vaultAddress: spend.address
       });
@@ -1112,6 +1139,7 @@ describe('ARC / Federation L1 regtest withdrawals', function () {
       tip,
       genesis: tree.defs.mission,
       destinationAddress: dest,
+      amountSats: 10000,
       feeSats: 1000,
       vaultAddress: childSpend.address
     });
@@ -1150,7 +1178,7 @@ describe('ARC / Federation L1 regtest withdrawals', function () {
       csvBlocks: CSV_BLOCKS,
       hashlock: { commitmentHex, id: 'hashlock-l1' }
     });
-    const built = buildContractTaproot(policy);
+    const built = Policy.compile(policy);
     const fundTxid = await fundAddress(built.address, 0.01);
     await confirm(1);
     const fundedHex = await rawTx(fundTxid);
@@ -1189,7 +1217,7 @@ describe('ARC / Federation L1 regtest withdrawals', function () {
     const fundTxid = await fundAddress(spend.address, 0.01);
     const fundBlock = (await rpc('generatetoaddress', [1, miner]))[0];
     const fundedHex = await rawTx(fundTxid);
-    const obs = observePaymentToAddress({
+    const obs = observePayment({
       tx: fundedHex,
       address: spend.address,
       network: 'regtest'

@@ -11,6 +11,20 @@ describe('@fabric/core/types/machine', function () {
       assert.equal(Machine instanceof Function, true);
     });
 
+    it('allocates memory lazily, sized independently of the wire cap', function () {
+      const { MACHINE_MAX_MEMORY, MAX_MEMORY_ALLOC, MACHINE_MEMORY_PAGE_SIZE, MAX_MESSAGE_SIZE } = require('../constants');
+      assert.strictEqual(MACHINE_MAX_MEMORY, MAX_MEMORY_ALLOC * MACHINE_MEMORY_PAGE_SIZE);
+      assert.ok(MACHINE_MAX_MEMORY < MAX_MEMORY_ALLOC * MAX_MESSAGE_SIZE);
+      const machine = new Machine(false);
+      assert.strictEqual(machine._memory, null, 'no buffer before first use');
+      assert.strictEqual(Object.keys(machine).includes('_memory'), false);
+      assert.strictEqual(machine.memory.length, MACHINE_MAX_MEMORY);
+      assert.strictEqual(machine.memory, machine.memory, 'same buffer on later access');
+      const replacement = Buffer.alloc(8);
+      machine.memory = replacement;
+      assert.strictEqual(machine.memory, replacement);
+    });
+
     it('provides entropy on first sip', function () {
       const machine = new Machine(false);
       const sip = machine.sip();
@@ -92,8 +106,8 @@ describe('@fabric/core/types/machine', function () {
 
     it('compileOpcodeContract accepts newline-delimited opcode bodies', function () {
       const machine = new Machine(false);
-      const lines = machine.compileOpcodeContract('OP_DUP\nOP_HASH160\nP2P_FLUSH_CHAIN');
-      assert.deepStrictEqual(lines, ['OP_DUP', 'OP_HASH160', 'P2P_FLUSH_CHAIN']);
+      const lines = machine.compileOpcodeContract('OP_DUP\nOP_HASH160\nP2P_CHAIN_SYNC_REQUEST');
+      assert.deepStrictEqual(lines, ['OP_DUP', 'OP_HASH160', 'P2P_CHAIN_SYNC_REQUEST']);
     });
 
     it('compileOpcodeContract rejects unknown opcode symbols', function () {
@@ -238,9 +252,9 @@ const bitcoin = require('bitcoinjs-lib');
 const Key = require('../types/key');
 const Contract = require('../types/contract');
 const {
-  observePaymentToAddress,
-  applyPaymentObservationToTip
-} = require('../functions/contractPaymentObserve');
+  observePayment,
+  applyPaymentObservation
+} = require('../types/contract');
 const {
   buildExecutionRunOutput,
   computeExecutionRunCommitmentHex,
@@ -291,7 +305,7 @@ describe('executionRunBridge / FabricProgramRun forward digest', function () {
   });
 });
 
-describe('contractPaymentObserve / Contract L1 payment', function () {
+describe('Contract.observePayment / L1 payment', function () {
   const keys = [];
   before(function () {
     for (let i = 0; i < 3; i++) keys.push(new Key());
@@ -315,7 +329,7 @@ describe('contractPaymentObserve / Contract L1 payment', function () {
     const address = contract.toAddress('regtest');
     const built = contract.toTaprootContract({ network: 'regtest' });
     const tx = fundTx(built.output, 50000);
-    const obs = observePaymentToAddress({
+    const obs = observePayment({
       tx: tx.toHex(),
       address,
       network: 'regtest',
@@ -339,7 +353,7 @@ describe('contractPaymentObserve / Contract L1 payment', function () {
       threshold: 1,
       publisher: keys[0].pubkey
     });
-    const obs = observePaymentToAddress({
+    const obs = observePayment({
       tx: tx.toHex(),
       address: contract.toAddress('regtest'),
       network: 'regtest'
@@ -357,7 +371,7 @@ describe('contractPaymentObserve / Contract L1 payment', function () {
     });
     const built = contract.toTaprootContract({ network: 'regtest' });
     const tx = fundTx(built.output, 1000);
-    const obs = observePaymentToAddress({
+    const obs = observePayment({
       tx,
       address: contract.toAddress('regtest'),
       network: 'regtest',
@@ -369,9 +383,9 @@ describe('contractPaymentObserve / Contract L1 payment', function () {
   });
 
   it('fails on missing / invalid tx', function () {
-    assert.strictEqual(observePaymentToAddress({ address: 'bcrt1qxx' }).code, 'MISSING_TX');
+    assert.strictEqual(observePayment({ address: 'bcrt1qxx' }).code, 'MISSING_TX');
     assert.strictEqual(
-      observePaymentToAddress({ tx: 'zz', address: 'bcrt1qxx' }).code,
+      observePayment({ tx: 'zz', address: 'bcrt1qxx' }).code,
       'INVALID_TX'
     );
   });
@@ -416,9 +430,9 @@ describe('contractPaymentObserve / Contract L1 payment', function () {
     assert.deepStrictEqual(contract._state.content.payments || [], []);
   });
 
-  it('applyPaymentObservationToTip rejects failed observations', function () {
+  it('applyPaymentObservation rejects failed observations', function () {
     assert.throws(
-      () => applyPaymentObservationToTip({}, { ok: false, code: 'NO_MATCH' }),
+      () => applyPaymentObservation({}, { ok: false, code: 'NO_MATCH' }),
       /successful/
     );
   });

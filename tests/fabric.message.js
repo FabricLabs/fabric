@@ -64,6 +64,48 @@ describe('@fabric/core/types/message', function () {
       assert.strictEqual(Message instanceof Function, true);
     });
 
+    it('caps a frame at the largest one Noise message carries', function () {
+      const { MAX_FRAME_BYTES } = require('../constants');
+      const NOISE_MESSAGE_SIZE = 65535; // noise-protocol-stream MESSAGE_SIZE
+      const NOISE_MAC_BYTES = 16;
+      assert.strictEqual(MAX_FRAME_BYTES, NOISE_MESSAGE_SIZE - NOISE_MAC_BYTES);
+      assert.strictEqual(MAX_MESSAGE_SIZE, MAX_FRAME_BYTES - HEADER_SIZE);
+      assert.strictEqual(Message.MAX_MESSAGE_SIZE, MAX_MESSAGE_SIZE);
+    });
+
+    it('toBuffer throws when a fromVector (JSON) frame exceeds MAX_FRAME_BYTES', function () {
+      const { MAX_FRAME_BYTES } = require('../constants');
+      const body = JSON.stringify({ blob: 'x'.repeat(MAX_MESSAGE_SIZE) });
+      const msg = Message.fromVector(['GenericMessage', body]);
+      assert.ok(msg.asRaw().length > MAX_FRAME_BYTES);
+      assert.throws(() => msg.toBuffer(), (err) => err instanceof RangeError && /MAX_FRAME_BYTES/.test(err.message));
+      assert.strictEqual(Message.MAX_FRAME_BYTES, MAX_FRAME_BYTES);
+    });
+
+    it('round-trips a body at exactly MAX_MESSAGE_SIZE', function () {
+      // AMP bodies carry no inline length prefix — the body length lives in the
+      // header `size` field — so a MAX_MESSAGE_SIZE-byte payload is the limit
+      // exactly. Build it from bytes (not characters) so multi-byte UTF-8 cannot
+      // make the test lie about the wire size.
+      const payload = Buffer.alloc(MAX_MESSAGE_SIZE, 'x');
+      assert.strictEqual(Buffer.byteLength(payload), MAX_MESSAGE_SIZE);
+      const full = Message.fromVector(['P2P_BASE_MESSAGE', payload.toString('utf8')]);
+      const buf = full.toBuffer();
+      assert.strictEqual(buf.length, HEADER_SIZE + MAX_MESSAGE_SIZE);
+      assert.strictEqual(Buffer.from(full.raw.size).readUInt32BE(0), MAX_MESSAGE_SIZE, 'header size field equals the body byte length');
+      const parsed = Message.fromBuffer(buf);
+      assert.strictEqual(parsed.raw.data.length, MAX_MESSAGE_SIZE);
+      assert.ok(parsed.raw.data.equals(payload));
+    });
+
+    it('a multi-byte body is bounded by bytes, not characters', function () {
+      const chars = Math.floor(MAX_MESSAGE_SIZE / 3); // '€' is 3 bytes in UTF-8
+      const text = '€'.repeat(chars);
+      const m = Message.fromVector(['P2P_BASE_MESSAGE', text]);
+      assert.strictEqual(m.raw.data.length, Buffer.byteLength(text, 'utf8'));
+      assert.ok(m.raw.data.length <= MAX_MESSAGE_SIZE);
+    });
+
     it('can compose from a vector', async function prove () {
       const message = Message.fromVector(['Call', JSON.stringify(example.data)]);
       const literal = message.toObject();
@@ -408,7 +450,13 @@ describe('@fabric/core/types/message', function () {
         contract: 'cc'.repeat(32),
         payload
       });
-      assert.deepStrictEqual(cm.toFields(), { contract: 'cc'.repeat(32), payload });
+      assert.deepStrictEqual(cm.toFields(), {
+        contract: 'cc'.repeat(32),
+        payload,
+        recipient: '',
+        ref: '',
+        slot: ''
+      });
     });
 
     it('fromVector accepts an explicit parent hex as the third element', function () {
@@ -574,5 +622,193 @@ describe('MESSAGES.md wire catalog', function () {
     const stop = actual.indexOf(CATALOG_END);
     assert.ok(start >= 0 && stop > start, 'MESSAGES.md catalog markers');
     assert.strictEqual(actual.slice(start, stop + CATALOG_END.length), catalogBlock(rows));
+  });
+});
+
+describe('@fabric/core/types/message statics', function () {
+  it('fromLegacyBody round-trips through tryParseLegacyBody', function () {
+    const body = { host: 'hub.fabric.pub', port: 7777, gossipHop: 3, pubkey: 'ab'.repeat(33) };
+    const message = Message.fromLegacyBody('P2P_PEER_GOSSIP', body).signWithKey(new Key());
+    const parsed = Message.tryParseLegacyBody(Message.fromBuffer(message.toBuffer()));
+    assert.strictEqual(parsed.ok, true);
+    assert.strictEqual(parsed.encoding, 'fields');
+    assert.deepStrictEqual(parsed.value, body);
+    assert.throws(() => Message.fromLegacyBody('GenericMessage', {}), /fromLegacyBody: no field mapping/);
+  });
+
+  it('padDigits left-pads with zeros and never truncates', function () {
+    assert.strictEqual(Message.padDigits('1', 8), '00000001');
+    assert.strictEqual(Message.padDigits(255, 3), '255');
+    assert.strictEqual(Message.padDigits('123456789', 8), '123456789');
+  });
+
+  it('HEADER_OFFSETS tile the header and match parseRawMessage', function () {
+    const ranges = Object.values(Message.HEADER_OFFSETS);
+    assert.strictEqual(ranges[0][0], 0);
+    for (let i = 1; i < ranges.length; i++) assert.strictEqual(ranges[i][0], ranges[i - 1][1]);
+    assert.strictEqual(ranges[ranges.length - 1][1], HEADER_SIZE);
+
+    const key = new Key();
+    const message = Message.fromVector(['P2P_CHAT_MESSAGE', 'hello']);
+    message.parent = 'ab'.repeat(32);
+    message.signWithKey(key);
+    const buffer = message.toBuffer();
+    const raw = Message.parseRawMessage(buffer);
+    for (const [name, [start, end]] of Object.entries(Message.HEADER_OFFSETS)) {
+      assert.ok(raw[name].equals(buffer.subarray(start, end)), name);
+    }
+    assert.ok(raw.data.equals(buffer.subarray(HEADER_SIZE)));
+    assert.strictEqual(Message.fromBuffer(buffer).parent, 'ab'.repeat(32));
+  });
+
+  it('verifyFrameAuthor reports the signer of a frame', function () {
+    const key = new Key();
+    const message = Message.fromVector(['P2P_CHAT_MESSAGE', 'hello']).signWithKey(key);
+    const frame = message.toBuffer();
+    const result = Message.verifyFrameAuthor(frame.toString('hex'));
+    assert.strictEqual(result.ok, true);
+    assert.strictEqual(result.author, Buffer.from(key.pubkey, 'hex').subarray(1).toString('hex'));
+    assert.strictEqual(result.parent, Message.ZERO_PARENT);
+
+    const tampered = Buffer.from(frame);
+    tampered[tampered.length - 1] ^= 1;
+    assert.strictEqual(Message.verifyFrameAuthor(tampered).ok, false);
+    assert.strictEqual(Message.verifyFrameAuthor('zz').ok, false);
+  });
+});
+
+
+const { MAX_FRAME_BYTES } = require('../constants');
+const {
+  encodeFabricUri,
+  decodeFabricUri,
+  parseFabricUriBytes,
+  isFabricUri
+} = require('../types/message');
+
+function signedChat (text = 'hello') {
+  const key = new Key();
+  const message = Message.fromVector(['P2P_CHAT_MESSAGE', text]);
+  message.signWithKey(key);
+  return { key, message };
+}
+
+describe('@fabric/core/functions/fabricUri', function () {
+  it('round-trips a signed frame as base64url by default', function () {
+    const { key, message } = signedChat();
+    const uri = encodeFabricUri(message);
+    assert.ok(uri.startsWith('fabric:'));
+    assert.ok(!/[+/=]/.test(uri.slice(7)), 'base64url without padding');
+    const decoded = decodeFabricUri(uri);
+    assert.strictEqual(decoded.ok, true, decoded.error);
+    assert.strictEqual(decoded.type, 'P2P_CHAT_MESSAGE');
+    assert.strictEqual(decoded.encoding, 'base64url');
+    assert.strictEqual(decoded.author, key.pubkey.slice(2));
+    assert.strictEqual(decoded.signed, true);
+    assert.ok(decoded.buffer.equals(message.toBuffer()));
+    assert.strictEqual(decoded.message.body, 'hello');
+  });
+
+  it('encodes without the base64url Buffer encoding (browser polyfills lack it)', function () {
+    const { message } = signedChat();
+    const expected = 'fabric:' + message.toBuffer().toString('base64url');
+    const toString = Buffer.prototype.toString;
+    Buffer.prototype.toString = function (encoding, ...rest) {
+      if (encoding === 'base64url') throw new TypeError('Unknown encoding: base64url');
+      return toString.call(this, encoding, ...rest);
+    };
+    let uri;
+    try {
+      uri = encodeFabricUri(message);
+    } finally {
+      Buffer.prototype.toString = toString;
+    }
+    assert.strictEqual(uri, expected);
+  });
+
+  it('accepts hex, 0x hex, standard base64, and the legacy prefixes', function () {
+    const { message } = signedChat();
+    const buffer = message.toBuffer();
+    const forms = [
+      `fabric:${buffer.toString('hex')}`,
+      `fabric:0x${buffer.toString('hex')}`,
+      `fabric:${buffer.toString('base64')}`,
+      `fabric:base64,${buffer.toString('base64')}`,
+      `fabric:b64,${buffer.toString('base64url')}`,
+      `fabric:hex,${buffer.toString('hex')}`,
+      `FABRIC:${buffer.toString('base64url')}`,
+      `fabric:${encodeURIComponent(buffer.toString('base64'))}`
+    ];
+    for (const form of forms) {
+      const decoded = decodeFabricUri(form);
+      assert.strictEqual(decoded.ok, true, `${form.slice(0, 20)}: ${decoded.error}`);
+      assert.ok(decoded.buffer.equals(buffer));
+    }
+    assert.strictEqual(decodeFabricUri(encodeFabricUri(message, { encoding: 'hex' })).encoding, 'hex');
+  });
+
+  it('refuses hierarchical fabric:// URLs and other schemes', function () {
+    assert.strictEqual(decodeFabricUri('fabric://login?sessionId=ab&hub=https://hub.fabric.pub').ok, false);
+    assert.strictEqual(decodeFabricUri('https://example.com').ok, false);
+    assert.strictEqual(decodeFabricUri('fabric:').ok, false);
+    assert.strictEqual(isFabricUri('fabric://link?x=1'), false);
+    assert.strictEqual(isFabricUri('fabric:abcd'), true);
+  });
+
+  it('refuses short frames, bad magic, and frames over the cap', function () {
+    assert.match(decodeFabricUri(`fabric:${'00'.repeat(100)}`).error, /shorter/);
+    assert.match(decodeFabricUri(`fabric:${'00'.repeat(300)}`).error, /magic/);
+    const { message } = signedChat('x'.repeat(2000));
+    assert.match(decodeFabricUri(encodeFabricUri(message), { maxBytes: 1024 }).error, /exceeds|too long/);
+    assert.match(decodeFabricUri(encodeFabricUri(message), { maxBytes: 2100 }).error, /exceeds/);
+    const tooLong = 'fabric:' + 'A'.repeat((MAX_FRAME_BYTES * 2) + 100);
+    assert.match(parseFabricUriBytes(tooLong).error, /too long/);
+  });
+
+  it('refuses a tampered body, a broken size field, and a forged signature', function () {
+    const { message } = signedChat('payload');
+    const body = Buffer.from(message.toBuffer());
+    body[body.length - 1] ^= 0x01;
+    assert.match(decodeFabricUri(encodeFabricUri(body)).error, /hash/);
+
+    const sized = Buffer.from(message.toBuffer());
+    sized.writeUInt32BE(1, 76);
+    assert.match(decodeFabricUri(encodeFabricUri(sized)).error, /size/);
+
+    const forged = Buffer.from(message.toBuffer());
+    forged[150] ^= 0x01;
+    assert.match(decodeFabricUri(encodeFabricUri(forged)).error, /signature/);
+
+    const otherAuthor = Buffer.from(message.toBuffer());
+    Buffer.from(new Key().pubkey.slice(2), 'hex').copy(otherAuthor, 40);
+    assert.strictEqual(decodeFabricUri(encodeFabricUri(otherAuthor)).ok, false);
+  });
+
+  it('refuses unsigned frames unless allowed', function () {
+    const message = Message.fromVector(['P2P_CHAT_MESSAGE', 'unsigned']);
+    const uri = encodeFabricUri(message);
+    assert.match(decodeFabricUri(uri).error, /unsigned/);
+    const decoded = decodeFabricUri(uri, { allowUnsigned: true });
+    assert.strictEqual(decoded.ok, true);
+    assert.strictEqual(decoded.author, null);
+    assert.strictEqual(decoded.signed, false);
+  });
+
+  it('enforces allowedTypes by wire name, friendly name, or opcode', function () {
+    const { message } = signedChat();
+    const uri = encodeFabricUri(message);
+    assert.strictEqual(decodeFabricUri(uri, { allowedTypes: ['P2P_CHAT_MESSAGE'] }).ok, true);
+    assert.strictEqual(decodeFabricUri(uri, { allowedTypes: [0x68] }).ok, true);
+    const ping = Message.fromVector(['P2P_PING', 'hi']);
+    ping.signWithKey(new Key());
+    assert.strictEqual(decodeFabricUri(encodeFabricUri(ping), { allowedTypes: ['Ping'] }).ok, true);
+    assert.match(decodeFabricUri(uri, { allowedTypes: ['PassportAssertion'] }).error, /not allowed/);
+  });
+
+  it('refuses opcodes this build does not know', function () {
+    const { message } = signedChat();
+    const buffer = Buffer.from(message.toBuffer());
+    buffer.writeUInt32BE(0x7ffffff0, 72);
+    assert.match(decodeFabricUri(encodeFabricUri(buffer), { allowUnsigned: true }).error, /unknown message type/);
   });
 });

@@ -2,7 +2,7 @@
 
 /**
  * Basics tied to SECURITY.md § Adversarial environment.
- * Not a substitute for tests/protocol-v1 adversarial Peer coverage.
+ * Not a substitute for a full adversarial Peer delivery matrix.
  */
 
 const assert = require('assert');

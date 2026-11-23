@@ -5,6 +5,8 @@ const assert = require('assert');
 const noise = require('../functions/noiseProtocolStream');
 const crypto = require('crypto');
 
+const TEST_TAG = 'Fabric/Test';
+
 const SAMPLE = {
   seed: 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about',
   private: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
@@ -24,8 +26,8 @@ describe('@fabric/core/types/noise', function () {
           // Verify the remote public key using our Key class
           const remoteKey = new Key({ public: remotePublicKey.toString('hex') });
           const message = 'Hello, Fabric!';
-          const signature = key.signSchnorr(message);
-          const verified = remoteKey.verifySchnorr(message, signature);
+          const signature = key.signSchnorr(message, TEST_TAG);
+          const verified = remoteKey.verifySchnorr(message, signature, TEST_TAG);
           done(null, verified);
         }
       });
@@ -48,8 +50,8 @@ describe('@fabric/core/types/noise', function () {
         verify: (localPrivateKey, localPublicKey, remotePublicKey, done) => {
           const remoteKey = new Key({ public: remotePublicKey.toString('hex') });
           const message = 'Hello, Fabric!';
-          const signature = key1.signSchnorr(message);
-          const verified = remoteKey.verifySchnorr(message, signature);
+          const signature = key1.signSchnorr(message, TEST_TAG);
+          const verified = remoteKey.verifySchnorr(message, signature, TEST_TAG);
           done(null, verified);
         }
       });
@@ -59,8 +61,8 @@ describe('@fabric/core/types/noise', function () {
         verify: (localPrivateKey, localPublicKey, remotePublicKey, done) => {
           const remoteKey = new Key({ public: remotePublicKey.toString('hex') });
           const message = 'Hello, Fabric!';
-          const signature = key2.signSchnorr(message);
-          const verified = remoteKey.verifySchnorr(message, signature);
+          const signature = key2.signSchnorr(message, TEST_TAG);
+          const verified = remoteKey.verifySchnorr(message, signature, TEST_TAG);
           done(null, verified);
         }
       });
@@ -79,8 +81,8 @@ describe('@fabric/core/types/noise', function () {
         verify: (localPrivateKey, localPublicKey, remotePublicKey, done) => {
           const remoteKey = new Key({ public: remotePublicKey.toString('hex') });
           const message = 'Hello, Fabric!';
-          const signature = key.signSchnorr(message);
-          const verified = remoteKey.verifySchnorr(message, signature);
+          const signature = key.signSchnorr(message, TEST_TAG);
+          const verified = remoteKey.verifySchnorr(message, signature, TEST_TAG);
           done(null, verified);
         }
       });

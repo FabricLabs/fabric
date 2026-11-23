@@ -1,5 +1,11 @@
 'use strict';
 
+/**
+ * Fabric routed payment strings (`fa1…`, Bech32m) and classification beside Lightning `ln…`.
+ *
+ * @module functions/fabricPaymentBech32
+ */
+
 const bech32 = require('./bech32');
 const lb = require('./lightningBolt12');
 

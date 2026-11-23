@@ -6,7 +6,7 @@ type. Distributed runs use:
 | Layer | Role |
 |-------|------|
 | **`Program` + `Machine`** | Executable artifact + runner (`docs/PROGRAM.md`) |
-| **`Contract` / `Federation`** | Shared coordination + k-of-n Schnorr policy |
+| **`Contract` / `Federation`** | Shared coordination + k-of-n Schnorr policy, optional BLS12-381 witnesses |
 | **`Chain` + `Block`** | Consensus ledgers (`pow` \| `federation` \| `gossip`) — `docs/CHAIN.md` |
 | **`functions/` helpers** | Canonical JSON, Beacon epoch signing, program manifest, **sidechain document** |
 
@@ -14,16 +14,18 @@ Hub’s longer narrative (Beacon, delegation, signing rounds): hub.fabric.pub
 `docs/DISTRIBUTED_CONTRACT_EXECUTION.md`. HTTP binder:
 `@fabric/http` `types/distributedExecutionHttp` (manifest / epoch / sidechain routes).
 
+**Signature vs L1 proof:** [SIGNATURE_PROOF_MODEL.md](SIGNATURE_PROOF_MODEL.md). Operator deployment ladder: hub.fabric.pub `docs/FEDERATION_DEPLOYMENT.md`. Settlement tracks: [FEDERATED_SETTLEMENT.md](FEDERATED_SETTLEMENT.md).
+
 ## Protocol helpers (`functions/`)
 
 | Module | Role |
 |--------|------|
 | `fabricCanonicalJson` | Deterministic digests (Actor / sidechain / Program) |
-| `beaconFederationSigning` | Epoch commitment strings + federation witness verify |
+| `beaconFederationSigning` | Epoch commitment strings + federation witness verify (Schnorr, or BLS when `signatureScheme` is `bls`) |
+| `bls` | BLS12-381 sign / verify / aggregate and federation bundles |
 | `contractStateSigning` | Contract-namespace tip Schnorr (`ContractStateTip`); same witness shape as Beacon |
-| `contractTaproot` | Failover ladder → P2TR (`toAddress` / `toTaprootContract`); `after`/`until` decay + migrate |
-| `contractTierWhen` | Off-chain `when` predicates for tier activation |
-| `contractCapability` | Token issue/verify for `OP_CONTRACT_READ` / `OP_CONTRACT_SIGN` |
+| `Policy` (`types/policy`) | Failover ladder → P2TR (`policy.address` / `toTaprootContract`); `after`/`until` decay + migrate; off-chain `when` predicates for tier activation |
+| `Contract.issueCapability` / `verifyCapability` | Token issue/verify for `OP_CONTRACT_READ` / `OP_CONTRACT_SIGN` |
 | `fabricProgramManifest` | Manifest v1 (`programId` / `programHash` / allowed types / optional `sidechainPolicy`) |
 | **`sidechainState`** | Sealed JSON document: digests, RFC6902 patches, path policy, journal, snapshots, Beacon tip restore, contract namespace seals |
 
@@ -51,8 +53,7 @@ const sidechainState = require('@fabric/core/functions/sidechainState');
 
 Store paths: `sidechain/STATE`, `sidechain/SNAPSHOTS`, `sidechain/JOURNAL`.
 
-**Opcode catalog + common-state Program:** [NETWORK_STATE_PROGRAM.md](./NETWORK_STATE_PROGRAM.md),
-diagram [`contracts/protocol.dot`](../contracts/protocol.dot).
+**Opcode catalog + common-state Program:** [NETWORK_STATE_PROGRAM.md](./NETWORK_STATE_PROGRAM.md).
 
 **Chain digests may feed** the document / app state snapshots; raw gossip is never
 Beacon authority.
@@ -100,4 +101,5 @@ A dedicated numeric outer opcode may be allocated later.
 
 Related: [PROGRAM.md](./PROGRAM.md), [CHAIN.md](./CHAIN.md),
 [APPLICATION_NAMESPACES.md](./APPLICATION_NAMESPACES.md),
+[FEDERATED_SETTLEMENT.md](./FEDERATED_SETTLEMENT.md),
 [snippets/sidechains.md](../snippets/sidechains.md).

@@ -34,6 +34,14 @@ describe('functions/contractProposal', function () {
     assert.strictEqual(v.ok, true, v.error);
   });
 
+  it('createContractProposalMessage refuses JSON, which peers drop unread', function () {
+    const key = new Key();
+    const inner = Message.fromVector(['P2P_CHAT_MESSAGE', 'o7']).signWithKey(key);
+    assert.throws(() => createContractProposalMessage(key, { messages: [inner], contractId: 'c1', encoding: 'json' }), /sent as fields/);
+    const msg = createContractProposalMessage(key, { messages: [inner], contractId: 'c1', encoding: 'fields' });
+    assert.strictEqual(Message.tryParseLegacyBody(Message.fromBuffer(msg.toBuffer())).value.contractId, 'c1');
+  });
+
   it('createContractProposalMessage sets CONTRACT_PROPOSAL wire type', function () {
     const key = new Key({});
     const inner = Message.fromVector(['P2P_BASE_MESSAGE', JSON.stringify({ type: 'X', object: {} })]);
@@ -52,8 +60,9 @@ describe('functions/contractProposal', function () {
     const again = Message.fromBuffer(msg.toBuffer());
     assert.strictEqual(again.wireType, 'CONTRACT_PROPOSAL');
     assert.strictEqual(again.friendlyType, 'ContractProposal');
-    const payload = JSON.parse(again.data);
-    const v = verifyContractProposalPayload(payload);
+    const parsed = Message.tryParseLegacyBody(again);
+    assert.strictEqual(parsed.encoding, 'fields');
+    const v = verifyContractProposalPayload(parsed.value);
     assert.strictEqual(v.ok, true);
   });
 

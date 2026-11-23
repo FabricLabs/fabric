@@ -3,7 +3,7 @@ export class CliDocumentExchange {
   [key: string]: unknown;
 }
 
-export const DocumentOfferBook: unknown;
+export const Book: unknown;
 export function createDocumentPurchaseSession (...args: unknown[]): unknown;
 export function findSession (...args: unknown[]): unknown;
 export function isDuplicateSettlement (...args: unknown[]): boolean;

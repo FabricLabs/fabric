@@ -13,10 +13,10 @@
 
 const {
   SEAL_SCHEME_PARTICIPANT,
-  pubkeyXOnly,
   sealParticipantGroupChatBody,
   openParticipantGroupChatBody
 } = require('./groupChatSeal');
+const { pubkeyXOnly } = require('../types/key');
 
 /** Wire marker for sealed onion chat UTF-8 bodies (not a legacy chat envelope). */
 const ONION_CHAT_SEAL_TYPE = 'FabricOnionChatSeal';

@@ -14,12 +14,10 @@ const Message = require('../../types/message');
 const {
   CONTRACT_BODY_TYPES
 } = require('../../functions/applicationNamespaces');
-const {
-  pubkeyXOnly
-} = require('../../functions/groupChatSeal');
+const { pubkeyXOnly } = require('../../types/key');
 const {
   finalizeSpendPsbt
-} = require('../../functions/contractTaproot');
+} = require('../../types/policy');
 const {
   createCollection,
   ingest
@@ -152,15 +150,15 @@ function contractIdOf (definition) {
 }
 
 function signPublish (key, definition) {
-  return Message.fromVector(['CONTRACT_PUBLISH', JSON.stringify(definition)]).signWithKey(key);
+  return Message.fromLegacyBody('CONTRACT_PUBLISH', definition).signWithKey(key);
 }
 
 function signContractMessage (key, contractId, type, object) {
-  return Message.fromVector(['CONTRACT_MESSAGE', JSON.stringify({
+  return Message.fromLegacyBody('CONTRACT_MESSAGE', {
     contract: contractId,
     type,
     object
-  })]).signWithKey(key);
+  }).signWithKey(key);
 }
 
 function attachCollector (peer) {

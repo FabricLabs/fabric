@@ -59,7 +59,9 @@ let nodeGypJs;
 try {
   nodeGypJs = require.resolve('node-gyp/bin/node-gyp.js', { paths: [root] });
 } catch (err) {
-  failOrWarn('[@fabric/core] node-gyp not found; run npm install from the package root.', err);
+  // npm exposes its bundled node-gyp to lifecycle scripts; node-gyp is a devDependency only.
+  nodeGypJs = process.env.npm_config_node_gyp;
+  if (!nodeGypJs) failOrWarn('[@fabric/core] node-gyp not found; install it or run under npm.', err);
 }
 
 const r = spawnSync(process.execPath, [nodeGypJs, 'rebuild'], {
