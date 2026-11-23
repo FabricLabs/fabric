@@ -20,6 +20,7 @@
  * @module functions/fabricUri
  */
 
+const crypto = require('crypto');
 const Message = require('../types/message');
 const Hash256 = require('../types/hash256');
 const { HEADER_SIZE, MAGIC_BYTES, MAX_FRAME_BYTES } = require('../constants');
@@ -190,8 +191,11 @@ function decodeFabricUri (uri, options = {}) {
   const size = buffer.readUInt32BE(76);
   const body = buffer.subarray(HEADER_SIZE);
   if (body.length !== size) return { ok: false, error: 'body length does not match header size' };
-  const hash = buffer.subarray(80, 112).toString('hex');
-  if (Hash256.doubleDigest(body) !== hash) return { ok: false, error: 'body hash mismatch' };
+  const claimed = buffer.subarray(80, 112);
+  const digest = Buffer.from(Hash256.doubleDigest(body), 'hex');
+  if (digest.length !== claimed.length || !crypto.timingSafeEqual(digest, claimed)) {
+    return { ok: false, error: 'body hash mismatch' };
+  }
 
   const opcode = buffer.readUInt32BE(72);
   const type = Message.canonicalTypeName(opcode);
