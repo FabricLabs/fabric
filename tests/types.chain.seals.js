@@ -8,7 +8,7 @@ const {
 } = require('../functions/beaconFederationSigning');
 const Chain = require('../types/chain');
 const Block = require('../types/block');
-const SIGNING_TAGS = require('../functions/signingTags');
+const SIGNING_TAGS = require('../types/key').TAGS;
 
 describe('@fabric/core/types/chain consensus (Block ledger)', function () {
   it('federation append is linear and digest is stable', function () {

@@ -7,9 +7,9 @@ const { secp256k1, schnorr } = require('@noble/curves/secp256k1.js');
 const Witness = require('../types/witness');
 const VECTORS = require('./vectors/zkp-adaptor.json');
 const Key = require('../types/key');
-const bls = require('../functions/bls');
+const bls = require('../types/witness').BLS;
 const bfs = require('../functions/beaconFederationSigning');
-const SIGNING_TAGS = require('../functions/signingTags');
+const SIGNING_TAGS = require('../types/key').TAGS;
 
 const { Adaptor, DLEQ, MuSig2 } = Witness;
 const N = secp256k1.Point.Fn.ORDER;
@@ -46,7 +46,7 @@ describe('@fabric/core/types/witness signatures', function () {
     assert.strictEqual(Witness.MuSig2.keyAgg, require('../functions/musig2').keyAgg);
     assert.strictEqual(Witness.MuSig2.Session, require('../functions/musig2Session'));
     assert.strictEqual(Witness.MuSig2.Adaptor, require('../types/witness/musig2Adaptor'));
-    assert.strictEqual(Witness.BLS, require('../functions/bls'));
+    assert.strictEqual(Witness.BLS, require('../types/witness').BLS);
     assert.strictEqual(typeof Adaptor.preSign, 'function');
     assert.strictEqual(typeof DLEQ.prove, 'function');
     assert.ok(Object.isFrozen(Witness.MuSig2));

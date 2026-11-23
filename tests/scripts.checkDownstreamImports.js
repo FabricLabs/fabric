@@ -24,7 +24,7 @@ describe('scripts/check-downstream-imports', function () {
   it('resolves paths that exist in core and refuses ones that do not', function () {
     assert.strictEqual(resolvesInCore('types/key'), true);
     assert.strictEqual(resolvesInCore('constants'), true);
-    assert.strictEqual(resolvesInCore('functions/fabricUri'), true);
+    assert.strictEqual(resolvesInCore('functions/passport'), true);
     assert.strictEqual(resolvesInCore('functions/fabricSiteLogin'), false);
     assert.strictEqual(resolvesInCore('../package.json'), false);
   });
@@ -33,7 +33,7 @@ describe('scripts/check-downstream-imports', function () {
     fs.writeFileSync(path.join(dir, 'a.js'), [
       "const Key = require('@fabric/core/types/key');",
       "import Message from '@fabric/core/types/message';",
-      "const later = import('@fabric/core/functions/fabricUri');",
+      "const later = import('@fabric/core/functions/passport');",
       "// const Old = require('@fabric/core/types/stash');",
       ' * See `@fabric/core/types/offerBook`.',
       "const label = 'see @fabric/core/types/signer';"
@@ -41,7 +41,7 @@ describe('scripts/check-downstream-imports', function () {
     fs.mkdirSync(path.join(dir, 'node_modules'));
     fs.writeFileSync(path.join(dir, 'node_modules', 'b.js'), "require('@fabric/core/types/stash');");
     const found = findImports(dir).map((i) => i.subpath).sort();
-    assert.deepStrictEqual(found, ['functions/fabricUri', 'types/key', 'types/message']);
+    assert.deepStrictEqual(found, ['functions/passport', 'types/key', 'types/message']);
   });
 
   it('reports imports that no longer resolve, with file and line', function () {

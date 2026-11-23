@@ -29,7 +29,7 @@ const {
   finalizeSpendPsbt,
   normalizeLock
 } = require('./policy');
-const { assertTestNetwork } = require('../functions/bitcoinNetworkAllowlist');
+const { assertTestNetwork } = require('./channel');
 const { stableStringify, jsonSafe } = require('../functions/fabricCanonicalJson');
 const { BIP125_SEQUENCE_LOCKTIME_ONLY } = require('../functions/bip125');
 

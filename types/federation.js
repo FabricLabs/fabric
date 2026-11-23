@@ -28,12 +28,12 @@ const ecc = require('./ecc');
 
 // Fabric Functions
 const { stableStringify } = require('../functions/fabricCanonicalJson');
-const { pubkeyXOnly, normalizePeerPubkeyHex } = require('../functions/pubkey');
+const { pubkeyXOnly, normalizePeerPubkeyHex } = require('./key');
 
 // Fabric Types
 const Contract = require('./contract');
 const Key = require('./key');
-const FEDERATION_WITNESS_TAG = require('../functions/signingTags').FEDERATION_WITNESS;
+const FEDERATION_WITNESS_TAG = require('./key').TAGS.FEDERATION_WITNESS;
 const Program = require('./program');
 const Wallet = require('./wallet');
 
@@ -64,12 +64,12 @@ const MESSAGE_TYPES = Object.freeze({
 const MESSAGE_TYPE_SET = new Set(Object.values(MESSAGE_TYPES));
 
 /**
- * `functions/bls` imports this module, so it loads on first use.
+ * `Witness.BLS` calls back into this module, so it loads on first use.
  * @returns {Object}
  * @private
  */
 function blsLib () {
-  return require('../functions/bls');
+  return require('./witness').BLS;
 }
 
 /**

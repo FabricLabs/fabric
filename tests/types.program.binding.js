@@ -23,7 +23,7 @@ const {
   applyPaymentObservation
 } = require('../types/contract');
 const { buildFederationVaultFromPolicy } = require('../types/policy');
-const era = require('../functions/executionRunAttestation');
+const era = require('../types/program');
 
 describe('Program run binding / Machine ↔ redeemable withdrawals', function () {
   const blockHash = 'ab'.repeat(32);

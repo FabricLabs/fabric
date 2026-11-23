@@ -10,7 +10,7 @@ const assert = require('assert');
 const net = require('net');
 const { EventEmitter } = require('events');
 const { PassThrough } = require('stream');
-const SIGNING_TAGS = require('../functions/signingTags');
+const SIGNING_TAGS = require('../types/key').TAGS;
 const Bech32 = require('../types/bech32');
 const Hash256 = require('../types/hash256');
 

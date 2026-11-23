@@ -26,7 +26,7 @@ const Resolutions = require('./resolutions');
 const { taprootPsbtInputFields } = require('../functions/bip371');
 const { BIP125_SEQUENCE_LOCKTIME_ONLY } = require('../functions/bip125');
 const Htlc = require('./htlc');
-const { buildInclusion } = require('../functions/bitcoinTxInclusion');
+const { buildInclusion } = require('./block');
 const ecc = require('./ecc');
 
 const {
@@ -40,7 +40,58 @@ const {
   finalizeSpendPsbt,
   finalizeHashlockPsbt
 } = require('./policy');
-const { assertTestNetwork } = require('../functions/bitcoinNetworkAllowlist');
+const {
+  TEST_NETWORKS,
+  normalizeNetworkName,
+  isTestNetwork,
+  assertTestNetwork
+} = (function () {
+/**
+ * @fileoverview Allowlist of Bitcoin test networks. Value-bearing code that
+ * must never touch mainnet (payment channels) accepts only
+ * these names; anything else — mainnet aliases, typos, unknown names — is
+ * refused rather than silently mapped to mainnet parameters.
+ */
+
+const TEST_NETWORKS = Object.freeze(['regtest', 'signet', 'testnet', 'testnet4', 'testnet5']);
+
+/**
+ * @param {*} name network name
+ * @returns {string} trimmed, lowercased name
+ * @private
+ */
+function normalizeNetworkName (name) {
+  return String(name == null ? '' : name).trim().toLowerCase();
+}
+
+/**
+ * @param {*} name network name (case-insensitive, surrounding whitespace ignored)
+ * @returns {boolean} `true` for regtest / signet / testnet / testnet4 / testnet5 only
+ */
+function isTestNetwork (name) {
+  return TEST_NETWORKS.includes(normalizeNetworkName(name));
+}
+
+/**
+ * Throw unless `name` is an allowlisted test network.
+ * @param {*} name network name
+ * @param {string} [label] error prefix
+ * @returns {string} normalised network name
+ */
+function assertTestNetwork (name, label = 'network') {
+  const n = normalizeNetworkName(name);
+  if (!TEST_NETWORKS.includes(n)) {
+    throw new Error(`${label}: network "${n || String(name)}" refused (${TEST_NETWORKS.join('/')} only; mainnet refused)`);
+  }
+  return n;
+}
+  return {
+    TEST_NETWORKS,
+    normalizeNetworkName,
+    isTestNetwork,
+    assertTestNetwork
+  };
+})();
 
 // Locals
 const HEX64 = /^[0-9a-f]{64}$/;
@@ -2856,4 +2907,8 @@ Channel.exchange = function exchange (from, to, body) {
   return trace;
 };
 
+Channel.TEST_NETWORKS = TEST_NETWORKS;
+Channel.normalizeNetworkName = normalizeNetworkName;
+Channel.isTestNetwork = isTestNetwork;
+Channel.assertTestNetwork = assertTestNetwork;
 module.exports = Channel;

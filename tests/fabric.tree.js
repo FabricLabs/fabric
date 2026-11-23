@@ -316,7 +316,7 @@ describe('@fabric/core/types/tree', function () {
 
   describe('Bitcoin Merkle tree', function () {
     const { sha256 } = require('@noble/hashes/sha2.js');
-    const { merkleRootFromTxids, buildBranch } = require('../functions/bitcoinTxInclusion');
+    const { merkleRootFromTxids, buildBranch } = require('../types/block');
     const vectors = require('./fixtures/bitcoin-merkle.json');
     const steps = (proof) => proof.map((step) => [step.position, step.data.toString('hex')]);
     const reverse = (bytes) => Buffer.from(bytes).reverse();

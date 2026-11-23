@@ -11,7 +11,7 @@ const {
   tryDecodeForward,
   P2P_FORWARD_MAX_HOPS
 } = require('../functions/fabricOnion');
-const SIGNING_TAGS = require('../functions/signingTags');
+const SIGNING_TAGS = require('../types/key').TAGS;
 
 function wireMock (writes) {
   return {
@@ -1337,7 +1337,7 @@ const {
   isSealedGroupChat,
   isParticipantSealedGroupChat
 } = require('../functions/groupChatSeal');
-const { pubkeyXOnly } = require('../functions/pubkey');
+const { pubkeyXOnly } = require('../types/key');
 
 describe('@fabric/core groupChatSeal', function () {
   const a = new Key();

@@ -24,9 +24,9 @@ const {
   getFreePort
 } = require('./helpers/peer');
 const crypto = require('crypto');
-const WireReplayFilter = require('../functions/wireReplayFilter');
+const WireReplayFilter = require('../types/peer').WireReplayFilter;
 const { BITCOIN_L1_BLOCK_BYTES, BITCOIN_L1_BLOCK_INTERVAL_MS, MAX_PEERS } = require('../constants');
-const { aggregatePeerBandwidth, peerBandwidthByteLength, peerBandwidthSnapshot, perPeerBandwidthBudgetBytes, recordPeerBandwidth } = require('../functions/peerBandwidth');
+const { aggregatePeerBandwidth, peerBandwidthByteLength, peerBandwidthSnapshot, perPeerBandwidthBudgetBytes, recordPeerBandwidth } = require('../types/peer');
 
 function offlinePeer (overrides = {}) {
   return new Peer(offlinePeerSettings(overrides));

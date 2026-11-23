@@ -74,11 +74,11 @@ const {
   resolveMaxJournalEntries
 } = require('../functions/contractMessageAccumulate');
 const { stateDigest } = require('../functions/sidechainState');
-const { pubkeyXOnly } = require('../functions/pubkey');
+const { pubkeyXOnly } = require('../types/key');
 const {
   signProposalVote
 } = require('../functions/groupChangeGovernance');
-const SIGNING_TAGS = require('../functions/signingTags');
+const SIGNING_TAGS = require('../types/key').TAGS;
 const {
   OP_CONTRACT_SIGN,
   issueCapability
@@ -899,7 +899,7 @@ describe('@fabric/core contractMessageCommit', function () {
 
   it('markReceived initializes peers map when missing (legacy records)', function () {
     const a = new Key();
-    const x = require('../functions/pubkey').pubkeyXOnly(a.pubkey);
+    const x = require('../types/key').pubkeyXOnly(a.pubkey);
     const record = {
       id: 'm4',
       contractId: 'c'.repeat(64),

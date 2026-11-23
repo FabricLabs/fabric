@@ -15,7 +15,7 @@ const os = require('os');
 const path = require('path');
 
 const Environment = require('../types/environment');
-const { classifyFabricKeyMaterial } = require('./fabricKeyMaterial');
+const { classifyFabricKeyMaterial } = require('../types/key').Material;
 
 /**
  * @param {Object} [opts]

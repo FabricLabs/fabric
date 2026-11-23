@@ -9,8 +9,8 @@ const {
   DELEGATION_MAILBOX_FETCH,
   FIXTURE_SEED
 } = require('../constants');
-const { encodeFabricUri } = require('../functions/fabricUri');
-const { importSeed, deriveAccount } = require('../functions/accountKeys');
+const { encodeFabricUri } = require('../types/message');
+const { importSeed, deriveAccount } = require('../types/key').Accounts;
 const { classifyGossipWireType, isPublicGossipFloodType } = require('../functions/gossipNetwork');
 const { createChallenge, verifyAssertion } = require('../functions/passport');
 

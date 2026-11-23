@@ -20,7 +20,7 @@ const {
   DECISION_SIGNING_VERSION
 } = require('../functions/blindedExecutionCircuit');
 const { toAddress, synthesizeDefaultLadder } = require('../types/policy');
-const SIGNING_TAGS = require('../functions/signingTags');
+const SIGNING_TAGS = require('../types/key').TAGS;
 
 describe('functions/blindedExecutionCircuit', function () {
   const keys = [];

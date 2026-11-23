@@ -41,7 +41,7 @@ const Service = require('../types/service');
 const DocumentBook = require('../types/documentBook');
 const Htlc = require('../types/htlc');
 const { networkForFabricName } = require('../types/policy');
-const { isTestNetwork, normalizeNetworkName } = require('../functions/bitcoinNetworkAllowlist');
+const { isTestNetwork, normalizeNetworkName } = require('../types/channel');
 const { contentHashHexFromObject } = require('../functions/documentPaymentHash');
 
 /** @private */

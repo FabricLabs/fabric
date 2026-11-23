@@ -57,8 +57,8 @@ const crypto = require('crypto');
 const EventEmitter = require('events');
 const Actor = require('./actor');
 const Message = require('./message');
-const { encodeFabricUri, decodeFabricUri } = require('../functions/fabricUri');
-const { normalizeAccountNetwork, cosignerProof, verifyCosignerProof } = require('../functions/accountKeys');
+const { encodeFabricUri, decodeFabricUri } = require('./message');
+const { normalizeAccountNetwork, cosignerProof, verifyCosignerProof } = require('./key').Accounts;
 const { normalizeOrigin, readChallenge, signAssertion, verifyAssertion, PASSPORT_DISCLOSURES } = require('../functions/passport');
 const {
   DELEGATION_LINK_MAX_TTL_MS,

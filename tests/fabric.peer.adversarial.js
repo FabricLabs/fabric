@@ -28,7 +28,7 @@ const {
 } = require('../constants');
 const Htlc = require('../types/htlc');
 const DocumentBlobTransferBook = require('../types/documentBlobTransferBook');
-const SIGNING_TAGS = require('../functions/signingTags');
+const SIGNING_TAGS = require('../types/key').TAGS;
 
 bitcoin.initEccLib(ecc);
 

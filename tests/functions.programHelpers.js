@@ -14,7 +14,7 @@ const {
   BEACON_EPOCH_SIGNING_KIND
 } = require('../functions/beaconFederationSigning');
 const { parseProgramManifestV1 } = require('../functions/fabricProgramManifest');
-const SIGNING_TAGS = require('../functions/signingTags');
+const SIGNING_TAGS = require('../types/key').TAGS;
 
 describe('@fabric/core federation / program helpers (ex-distributedExecution)', function () {
   it('jsonSafe round-trips JSON-serializable data and drops undefined', function () {
