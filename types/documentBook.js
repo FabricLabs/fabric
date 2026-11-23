@@ -2042,7 +2042,7 @@ class DocumentBlobTransferBook {
     while (this._expectations.size > this.maxExpectations) {
       this.releaseTransfer(this._expectations.keys().next().value);
     }
-    this._reconcileRow(row);
+    this._reconcileRow(row, true);
     return row;
   }
 
@@ -2130,7 +2130,15 @@ class DocumentBlobTransferBook {
   _purgeExpired () {
     const now = Date.now();
     for (const [k, exp] of this._expectations.entries()) {
-      if (now > exp.expiresAt) this._expectations.delete(k);
+      if (now <= exp.expiresAt) continue;
+      this._expectations.delete(k);
+      const row = this._pending.get(k);
+      // A pin lasts only while the expectation does. After that the row is
+      // unsolicited: idle expiry, caps, and origin quotas apply to it.
+      if (row && row.pinned) {
+        row.pinned = false;
+        this._countOriginBytes(row, row.bytes || 0);
+      }
     }
     for (const [k, row] of this._pending.entries()) {
       if (row.pinned && this._expectations.has(k)) continue;

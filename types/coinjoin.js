@@ -1608,6 +1608,8 @@ class CoinjoinBook extends OrderBook {
     });
     // maker → `{ ok, value, outpoint, reason, checkedAt }`
     this._bonds = new Map();
+    // A refresh that started later must not be overwritten by one still in flight.
+    this._bondRefresh = 0;
   }
 
   /**
@@ -1663,6 +1665,7 @@ class CoinjoinBook extends OrderBook {
    * @returns {Promise<{ checked: number, valid: number, shared: number }>}
    */
   async refreshBonds (verifier) {
+    const generation = ++this._bondRefresh;
     this.prune();
     const perMaker = new Map();
     for (const row of this._rows()) {
@@ -1713,6 +1716,7 @@ class CoinjoinBook extends OrderBook {
       best.checkedAt = this.now();
       next.set(maker, best);
     }
+    if (generation !== this._bondRefresh) return { checked, valid, shared };
     this._bonds = next;
     return { checked, valid, shared };
   }

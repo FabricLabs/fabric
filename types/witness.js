@@ -21,10 +21,10 @@ const adaptor = (function () {
  *
  * Adapting and extracting follow secp256k1-zkp `musig_adapt` /
  * `musig_extract_adaptor` (t is negated when the final nonce has an odd y);
- * {@link module:types/witness/musig2Adaptor} uses the same arithmetic for
+ * {@link Witness.MuSig2.Adaptor} uses the same arithmetic for
  * 64-byte MuSig2 pre-signatures plus their nonce parity.
  *
- * @module types/witness/adaptor
+ * Exposed as {@link Witness.Adaptor} on {@link module:@fabric/core/types/witness}.
  */
 
 const crypto = require('crypto');
@@ -672,7 +672,7 @@ const dleq = (function () {
  * `H_ECDSAadaptor/aux(aux)` when auxiliary randomness is given, challenge
  * `e = H_DLEQ(P1 ‖ H ‖ P2 ‖ k·G ‖ k·H)`, response `s = k + e·x`.
  *
- * @module types/witness/dleq
+ * Exposed as {@link Witness.DLEQ} on {@link module:@fabric/core/types/witness}.
  */
 
 const crypto = require('crypto');
@@ -796,7 +796,7 @@ const musig2Adaptor = (function () {
  * signer's partial signature is a share of a pre-signature `x(R̂) ‖ s'`. The
  * final nonce parity says whether completing it adds or subtracts t.
  *
- * @module types/witness/musig2Adaptor
+ * Exposed as {@link Witness.MuSig2.Adaptor} on {@link module:@fabric/core/types/witness}.
  */
 
 const { secp256k1 } = require('@noble/curves/secp256k1.js');

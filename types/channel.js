@@ -1714,7 +1714,11 @@ class ChannelSession {
     if (!HEX64.test(secret)) throw new Error('revoke: perCommitmentSecret must be 32-byte hex');
     const known = s.revokedSecrets[n];
     if (known) {
-      if (known !== secret) throw new Error(`revoke: conflicting secret for state ${n}`);
+      const prior = Buffer.from(known);
+      const revealed = Buffer.from(secret);
+      if (prior.length !== revealed.length || !crypto.timingSafeEqual(prior, revealed)) {
+        throw new Error(`revoke: conflicting secret for state ${n}`);
+      }
       return;
     }
     const expectedPoint = s.remotePoints[n];
