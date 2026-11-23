@@ -1411,6 +1411,63 @@ describe('functions/documentList', function () {
     const removedReverse = foldDocumentList([remove, addLate, addEarly]);
     assert.deepStrictEqual(removedForward.documents, []);
     assert.deepStrictEqual(removedReverse.documents, []);
+
+    const tied = {
+      type: DOCUMENT_LIST_TYPE,
+      observedAt: '2026-06-01T00:00:00.000Z',
+      documents: [{ id, name: 'listed', mime: 'text/plain', size: 1 }]
+    };
+    const tiedRemove = {
+      type: DOCUMENT_LIST_TYPE,
+      observedAt: '2026-06-01T00:00:00.000Z',
+      documents: [{ id, removed: true }]
+    };
+    assert.deepStrictEqual(foldDocumentList([tied, tiedRemove]).documents, []);
+    assert.deepStrictEqual(foldDocumentList([tiedRemove, tied]).documents, []);
+  });
+
+  it('does not emit a chunk that only fits while marked truncated', function () {
+    const observedAt = '2026-10-30T00:00:00.000Z';
+    const row = (i, name) => ({ id: i.toString(16).padStart(64, '0'), name, mime: 'text/plain', size: 1 });
+    const listed = (documents, truncated) => buildDocumentList({
+      libraryId: CONTRACT,
+      documents,
+      observedAt,
+      truncated
+    });
+    const documents = [];
+    let full = null;
+    for (let i = 0; i < 5000; i++) {
+      documents.push(row(i, 'f'));
+      const tight = listed(documents, true);
+      if (!tight || !documentListFits(tight, CONTRACT)) {
+        documents.pop();
+        full = documents.slice();
+        break;
+      }
+    }
+    assert.ok(full && full.length > 1, 'expected a catalog that fills one frame');
+    let boundary = null;
+    const last = full.length - 1;
+    for (let n = 1; n <= 128; n++) {
+      const trial = full.slice();
+      trial[last] = row(last, 'f'.repeat(n));
+      const tight = listed(trial, true);
+      const loose = listed(trial, false);
+      if (tight && documentListFits(tight, CONTRACT) && loose && !documentListFits(loose, CONTRACT)) {
+        boundary = trial;
+        break;
+      }
+    }
+    assert.ok(boundary, 'expected a catalog that fits only while truncated');
+    const chunks = chunkDocumentList({
+      libraryId: CONTRACT,
+      contract: CONTRACT,
+      observedAt,
+      documents: boundary
+    });
+    assert.ok(chunks.length >= 1);
+    for (const list of chunks) assert.strictEqual(documentListFits(list, CONTRACT), true);
   });
 
   it('does not treat DocumentList as a compactable journal row', function () {
@@ -1686,6 +1743,10 @@ describe('@fabric/core functions/documentRevisions', function () {
     const empty = revisions.verifyDocumentProvenance(provenance, { sha256: '' });
     assert.strictEqual(empty.ok, false);
     assert.match(empty.reason, /expected sha256/);
+    const badContract = revisions.verifyDocumentProvenance(provenance, { contractId: 'abc' });
+    assert.strictEqual(badContract.ok, false);
+    assert.match(badContract.reason, /64-hex/);
+    assert.strictEqual(revisions.foldDocumentRevisions(provenance, {}).ok, true);
   });
 
   it('checks a content hash against the signed sha256 before the identifier, in any case', function () {
@@ -1721,6 +1782,10 @@ describe('@fabric/core functions/documentRevisions', function () {
     const asArray = revisions.verifyDocumentProvenance(signed([sha('content')]), { sha256: sha('content') });
     assert.strictEqual(asArray.ok, false, 'a signed digest must be a string');
     assert.match(asArray.reason, /revision sha256/);
+
+    const explicitNull = revisions.verifyDocumentProvenance(signed(null), { sha256: sha('identifier') });
+    assert.strictEqual(explicitNull.ok, false, 'a signed null sha256 does not fall back to the identifier');
+    assert.match(explicitNull.reason, /revision sha256/);
   });
 
   it('parses frames into publish and revision views', function () {

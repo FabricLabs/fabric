@@ -1169,7 +1169,6 @@ const accountKeys = (function () {
   const bip39Accounts = require('../functions/bip39');
   const { encodeCheck: encodeCheckAccount, decodeCheck: decodeCheckAccount } = require('../functions/base58');
   const { sealJson, openSealedJson } = require('../functions/sealedBlob');
-  const { fabricIdentityIdFromPubkeyHex } = require('../functions/fabricIdentitySchnorr');
   const signingTags = SIGNING_TAGS;
   const {
     assertBip32ChildIndex,
@@ -1363,7 +1362,7 @@ function deriveAccount (master, options = {}) {
       path: identityPath,
       key: identityKey,
       pubkey: identityPubkey,
-      id: fabricIdentityIdFromPubkeyHex(identityPubkey)
+      id: require('../functions/fabricIdentitySchnorr').fabricIdentityIdFromPubkeyHex(identityPubkey)
     },
     wallet,
     cosigner: {

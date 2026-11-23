@@ -1464,12 +1464,12 @@ function compactDocumentRow (row) {
  * @returns {string}
  * @private
  */
-function observedAtOf (value) {
+function observedAtOf (value, fallback) {
   if (value) {
     const d = new Date(value);
     if (!Number.isNaN(d.getTime())) return d.toISOString();
   }
-  return new Date().toISOString();
+  return fallback;
 }
 
 /**
@@ -1498,7 +1498,7 @@ function buildDocumentList (opts = {}) {
     v: DOCUMENT_LIST_VERSION,
     libraryId,
     publisher: cleanText(opts.publisher).slice(0, 256),
-    observedAt: observedAtOf(opts.observedAt),
+    observedAt: observedAtOf(opts.observedAt, new Date().toISOString()),
     truncated: opts.truncated === true,
     documents
   };
@@ -1586,7 +1586,24 @@ function chunkDocumentList (opts = {}) {
   const tailTruncated = opts.truncated === true || chunks.length > 0 || batch.length < documents.length;
   flush(tailTruncated);
   if (chunks.length === 1 && opts.truncated !== true && chunks[0].documents.length === documents.length) {
-    chunks[0].truncated = false;
+    const open = Object.assign({}, chunks[0], { truncated: false });
+    if (documentListFits(open, contract)) {
+      chunks[0] = open;
+    } else if (chunks[0].documents.length > 1) {
+      const docs = chunks[0].documents;
+      const head = buildDocumentList(Object.assign({}, opts, { documents: docs.slice(0, -1), truncated: true }));
+      const tail = buildDocumentList(Object.assign({}, opts, { documents: docs.slice(-1), truncated: false }));
+      const tailFits = tail && documentListFits(tail, contract);
+      const headFits = head && documentListFits(head, contract);
+      if (headFits && tailFits) chunks.splice(0, 1, head, tail);
+      else if (tail && !tailFits) {
+        const capped = buildDocumentList(Object.assign({}, opts, { documents: docs, truncated: true }));
+        if (capped && documentListFits(capped, contract)) chunks[0] = capped;
+      }
+    } else {
+      const capped = buildDocumentList(Object.assign({}, opts, { documents: chunks[0].documents, truncated: true }));
+      if (capped && documentListFits(capped, contract)) chunks[0] = capped;
+    }
   }
   return chunks;
 }
@@ -1615,7 +1632,11 @@ function frameParts (frame) {
 function wins (next, prev) {
   if (next.observedAt > prev.observedAt) return true;
   if (next.observedAt < prev.observedAt) return false;
-  return next.hash > prev.hash;
+  if (next.hash !== prev.hash) return next.hash > prev.hash;
+  const nextRemoved = !!(next.row && next.row.removed === true);
+  const prevRemoved = !!(prev.row && prev.row.removed === true);
+  if (nextRemoved !== prevRemoved) return nextRemoved;
+  return false;
 }
 
 /**
@@ -1631,7 +1652,7 @@ function foldDocumentList (frames) {
     const parts = frameParts(frame);
     if (!parts) continue;
     if (parts.list.truncated === true) truncated = true;
-    const observedAt = observedAtOf(parts.list.observedAt);
+    const observedAt = observedAtOf(parts.list.observedAt, '1970-01-01T00:00:00.000Z');
     for (const raw of parts.list.documents) {
       const row = compactDocumentRow(raw);
       if (!row) continue;
@@ -2077,8 +2098,8 @@ function revisionView (parsed) {
     parent: parsed.parent,
     hash: parsed.hash
   };
-  // Kept even when empty: a signed `sha256: ''` is a malformed commitment, not a missing one.
-  if (b.sha256 != null) out.sha256 = b.sha256;
+  // A present field, including `null` or `''`, is a signed commitment. Only an omitted field falls back to the identifier.
+  if (Object.prototype.hasOwnProperty.call(b, 'sha256')) out.sha256 = b.sha256;
   if (b.merkleRootHex) out.merkleRootHex = b.merkleRootHex;
   if (b.size != null) out.size = b.size;
   if (b.note) out.note = b.note;
@@ -2128,6 +2149,9 @@ function foldDocumentRevisions (frames, opts = {}) {
     if (seen.has(parsed.id)) continue;
     seen.add(parsed.id);
     parsedAll.push(parsed);
+  }
+  if (opts.contractId != null && String(opts.contractId) !== '' && !hex64(opts.contractId)) {
+    return Object.assign(empty, { reason: 'contract id is not a 64-hex digest' });
   }
   const wanted = hex64(opts.contractId);
   const publishes = parsedAll
@@ -2308,7 +2332,7 @@ function verifyDocumentProvenance (provenance, expect = {}) {
     const sha = hex64(expect.sha256);
     if (!sha) return { ok: false, reason: 'expected sha256 is not a 64-hex digest' };
     // A revision commits to content through `sha256`, or, without one, through an identifier that is that digest.
-    const signed = head.sha256 != null;
+    const signed = Object.prototype.hasOwnProperty.call(head, 'sha256');
     // A one-element array stringifies to its digest, so only a string counts.
     const committed = signed
       ? (typeof head.sha256 === 'string' ? hex64(head.sha256) : null)

@@ -799,6 +799,9 @@ describe('@fabric/core/functions/fabricUri', function () {
     const uri = encodeFabricUri(message);
     assert.strictEqual(decodeFabricUri(uri, { allowedTypes: ['P2P_CHAT_MESSAGE'] }).ok, true);
     assert.strictEqual(decodeFabricUri(uri, { allowedTypes: [0x68] }).ok, true);
+    const ping = Message.fromVector(['P2P_PING', 'hi']);
+    ping.signWithKey(new Key());
+    assert.strictEqual(decodeFabricUri(encodeFabricUri(ping), { allowedTypes: ['Ping'] }).ok, true);
     assert.match(decodeFabricUri(uri, { allowedTypes: ['PassportAssertion'] }).error, /not allowed/);
   });
 
