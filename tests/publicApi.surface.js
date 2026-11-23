@@ -70,6 +70,8 @@ describe('@fabric/core public API surface (0.1 RC)', function () {
       'types/fabric.d.ts',
       'types/peer.d.ts',
       'types/message.d.ts',
+      'types/store.d.ts',
+      'types/resource.d.ts',
       'types/key.d.ts',
       'types/program.d.ts',
       'types/machine.d.ts',

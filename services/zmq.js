@@ -6,6 +6,17 @@ const zeromq = require('zeromq/v5-compat');
 // Fabric Types
 const Service = require('../types/service');
 const Message = require('../types/message');
+const { MAX_MESSAGE_SIZE } = require('../constants');
+
+/** bitcoind topic → message type for the field-encoded form. */
+const ZMQ_MESSAGE_TYPES = Object.freeze({
+  rawblock: 'BitcoinBlock',
+  rawtx: 'BitcoinTransaction',
+  hashtx: 'BitcoinTransactionHash',
+  hashblock: 'BitcoinBlockHash'
+});
+/** Hex characters that fit a field body beside its `present` / `extra` fields. */
+const ZMQ_MAX_FIELD_HEX = (MAX_MESSAGE_SIZE - 64) * 2;
 
 /**
  * Connect and subscribe to ZeroMQ publishers.
@@ -35,6 +46,7 @@ class ZMQ extends Service {
     }, settings);
 
     this.socket = null;
+    this._paused = new Set();
     this._state = {
       status: 'STOPPED',
       reconnectAttempts: 0
@@ -90,30 +102,36 @@ class ZMQ extends Service {
       }
     });
 
-    this.socket.on('message', (topic, message) => {
-      switch (topic.toString()) {
-        case 'rawblock':
-          const block = Message.fromVector(['BitcoinBlock', { content: message.toString('hex') }]);
-          this.emit('message', block);
-          break;
-        case 'rawtx':
-          const transaction = Message.fromVector(['BitcoinTransaction', { content: message.toString('hex') }]);
-          this.emit('message', transaction);
-          break;
-        case 'hashtx':
-          const txHash = Message.fromVector(['BitcoinTransactionHash', { content: message.toString('hex') }]);
-          this.emit('message', txHash);
-          break;
-        case 'hashblock':
-          const blockHash = Message.fromVector(['BitcoinBlockHash', { content: message.toString('hex') }]);
-          this.emit('message', blockHash);
-          break;
-      }
-    });
+    this.socket.on('message', (topic, message) => this._handleSocketMessage(topic, message));
 
     this.socket.connect(`tcp://${this.settings.host}:${this.settings.port}`);
 
     return this;
+  }
+
+  /**
+   * One bitcoind notification: emit it as a field-body `Message`, or as the raw
+   * `[topic, bytes]` pair when the codec can't hold it. Never throws.
+   * @param {Buffer} topic
+   * @param {Buffer} message
+   */
+  _handleSocketMessage (topic, message) {
+    const name = topic.toString();
+    const type = ZMQ_MESSAGE_TYPES[name];
+    if (!type) return;
+    // Raw blocks (and large transactions) exceed one AMP frame. Anything the
+    // field codec can't hold is emitted as bitcoind's own `[topic, bytes]`
+    // pair, which `Bitcoin#_handleZMQMessage` reads directly. Nothing thrown
+    // here may escape the socket callback.
+    if (message && message.length * 2 <= ZMQ_MAX_FIELD_HEX) {
+      try {
+        this.emit('message', Message.fromLegacyBody(type, { content: message.toString('hex') }));
+        return;
+      } catch (err) {
+        this.emit('warning', `[ZMQ] ${name} not field-encoded (${err && err.message ? err.message : err}); passing raw bytes`);
+      }
+    }
+    this.emit('message', [name, message]);
   }
 
   /**
@@ -124,7 +142,8 @@ class ZMQ extends Service {
     await this.connect();
 
     for (let i = 0; i < this.settings.subscriptions.length; i++) {
-      this.subscribe(this.settings.subscriptions[i]);
+      const name = this.settings.subscriptions[i];
+      if (!this._paused.has(name)) this.subscribe(name);
     }
 
     this.status = 'STARTED';
@@ -139,13 +158,54 @@ class ZMQ extends Service {
    */
   async stop () {
     this.status = 'STOPPING';
-    if (this.socket) this.socket.close();
+    const socket = this.socket;
+    // Pause and resume after stop only record topics; a closed socket is never touched.
+    this.socket = null;
+    if (socket) socket.close();
     this.status = 'STOPPED';
     return this;
   }
 
   subscribe (name) {
     this.socket.subscribe(name);
+  }
+
+  /**
+   * Stop receiving the named topics. The publisher filters them, so nothing
+   * for them crosses the socket. Kept across reconnects until {@link ZMQ#resume}.
+   * @param {String[]} names Topics from `settings.subscriptions`.
+   * @returns {String[]} The topics newly paused.
+   */
+  pause (names = []) {
+    const changed = [];
+    for (const name of names) {
+      if (!this.settings.subscriptions.includes(name) || this._paused.has(name)) continue;
+      this._paused.add(name);
+      changed.push(name);
+      if (this.socket) this.socket.unsubscribe(name);
+    }
+    return changed;
+  }
+
+  /**
+   * Receive topics paused by {@link ZMQ#pause} again.
+   * @param {String[]} names Topics to resume.
+   * @returns {String[]} The topics newly resumed.
+   */
+  resume (names = []) {
+    const changed = [];
+    for (const name of names) {
+      if (!this._paused.has(name)) continue;
+      this._paused.delete(name);
+      changed.push(name);
+      if (this.socket) this.socket.subscribe(name);
+    }
+    return changed;
+  }
+
+  /** @returns {String[]} Topics currently paused. */
+  get paused () {
+    return Array.from(this._paused);
   }
 }
 

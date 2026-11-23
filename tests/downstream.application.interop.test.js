@@ -38,10 +38,7 @@ const {
   markReceived,
   phaseFlags
 } = require('../functions/contractMessageCommit');
-const {
-  normalizeArcGenesis,
-  resolveSpend
-} = require('../functions/contractSpend');
+const Contract = require('../types/contract');
 
 /** Representative Federation group messageTypes allow-list (application catalogs may extend). */
 const FEDERATION_GROUP_MESSAGE_TYPES = Object.freeze([
@@ -186,7 +183,7 @@ describe('application ARC interop (Hub + Federation groups)', function () {
     const owner = new Key();
     const store = createMemoryStore();
     const def = federationGroupDefinition(owner);
-    const pub = Message.fromVector(['CONTRACT_PUBLISH', JSON.stringify(def)]).signWithKey(owner);
+    const pub = Message.fromLegacyBody('CONTRACT_PUBLISH', def).signWithKey(owner);
     const seeded = ingestContractPublishBuffer(store, pub.toBuffer());
     assert.strictEqual(seeded.accepted, true, seeded.error);
     assert.ok(seeded.contractId);
@@ -217,7 +214,7 @@ describe('application ARC interop (Hub + Federation groups)', function () {
     });
     const seeded = ingestContractPublishBuffer(
       store,
-      Message.fromVector(['CONTRACT_PUBLISH', JSON.stringify(def)]).signWithKey(a).toBuffer()
+      Message.fromLegacyBody('CONTRACT_PUBLISH', def).signWithKey(a).toBuffer()
     );
     assert.strictEqual(seeded.accepted, true, seeded.error);
     const contractId = seeded.contractId;
@@ -269,7 +266,7 @@ describe('application ARC interop (Hub + Federation groups)', function () {
     const def = federationGroupDefinition(owner);
     const seeded = ingestContractPublishBuffer(
       store,
-      Message.fromVector(['CONTRACT_PUBLISH', JSON.stringify(def)]).signWithKey(owner).toBuffer()
+      Message.fromLegacyBody('CONTRACT_PUBLISH', def).signWithKey(owner).toBuffer()
     );
     const change = ingestMessageBuffer(
       store,
@@ -294,7 +291,7 @@ describe('application ARC interop (Hub + Federation groups)', function () {
     const def = federationGroupDefinition(owner);
     const seeded = ingestContractPublishBuffer(
       store,
-      Message.fromVector(['CONTRACT_PUBLISH', JSON.stringify(def)]).signWithKey(owner).toBuffer()
+      Message.fromLegacyBody('CONTRACT_PUBLISH', def).signWithKey(owner).toBuffer()
     );
     const denied = ingestMessageBuffer(
       store,
@@ -312,13 +309,13 @@ describe('application ARC interop (Hub + Federation groups)', function () {
     const owner = new Key();
     const definition = hubPlaynetDefinition(owner);
     const contractId = new Actor(definition).id;
-    const arc = normalizeArcGenesis(definition);
+    const arc = Contract.normalizeGenesis(definition);
     assert.ok(arc.members.signers.length);
     assert.deepStrictEqual(arc.primitives.messageTypes.slice(0, 3), [
       'GroupChat', 'GroupChange', 'GroupChangeProposal'
     ]);
     const tipHash = 'ab'.repeat(32);
-    const spend = resolveSpend({
+    const spend = Contract.resolveSpend({
       genesis: arc,
       tip: {
         contractId,
@@ -348,7 +345,7 @@ describe('application ARC interop (Hub + Federation groups)', function () {
     const def = hubPlaynetDefinition(owner);
     const seeded = ingestContractPublishBuffer(
       store,
-      Message.fromVector(['CONTRACT_PUBLISH', JSON.stringify(def)]).signWithKey(owner).toBuffer()
+      Message.fromLegacyBody('CONTRACT_PUBLISH', def).signWithKey(owner).toBuffer()
     );
     const msg = signContractMessage(owner, seeded.contractId, 'GroupChat', {
       body: 'queued-from-hub',
@@ -372,7 +369,7 @@ describe('application ARC interop (Hub + Federation groups)', function () {
     peer.peers[origin] = { publicKey: owner.pubkey };
 
     const def = federationGroupDefinition(owner);
-    const publish = Message.fromVector(['CONTRACT_PUBLISH', JSON.stringify(def)]).signWithKey(owner);
+    const publish = Message.fromLegacyBody('CONTRACT_PUBLISH', def).signWithKey(owner);
     peer._handleFabricMessage(publish.toBuffer(), { name: origin }, null);
     const contractId = new Actor(def).id;
     assert.ok(peer._signerMayPatchContract(contractId, owner.pubkey));
@@ -411,13 +408,13 @@ describe('application ARC interop (Hub + Federation groups)', function () {
     const owner = new Key();
     const attacker = new Key();
     const def = federationGroupDefinition(owner);
-    const hijack = Message.fromVector(['CONTRACT_PUBLISH', JSON.stringify(def)]).signWithKey(attacker);
+    const hijack = Message.fromLegacyBody('CONTRACT_PUBLISH', def).signWithKey(attacker);
     peer._handleFabricMessage(hijack.toBuffer(), { name: '127.0.0.1:18445' }, null);
     const contractId = new Actor(def).id;
     assert.strictEqual(peer._signerMayPatchContract(contractId, attacker.pubkey), false);
     assert.ok(!peer.contracts[contractId]);
 
-    const legit = Message.fromVector(['CONTRACT_PUBLISH', JSON.stringify(def)]).signWithKey(owner);
+    const legit = Message.fromLegacyBody('CONTRACT_PUBLISH', def).signWithKey(owner);
     peer._handleFabricMessage(legit.toBuffer(), { name: '127.0.0.1:18444' }, null);
     assert.ok(peer.contracts[contractId]);
     assert.ok(peer._signerMayPatchContract(contractId, owner.pubkey));

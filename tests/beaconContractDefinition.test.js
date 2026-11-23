@@ -10,7 +10,7 @@ const {
   beaconRedeploySteps,
   normalizeValidatorPubkeys
 } = require('../functions/beaconContractDefinition');
-const { normalizeArcGenesis, resolveSpend } = require('../functions/contractSpend');
+const { normalizeGenesis, resolveSpend } = require('../types/contract');
 const { buildFederationVaultFromPolicy, DEFAULT_CSV_BLOCKS } = require('../types/policy');
 
 describe('beaconContractDefinition', function () {
@@ -57,7 +57,7 @@ describe('beaconContractDefinition', function () {
       publisher: a.pubkey,
       csvBlocks: 144
     });
-    const arc = normalizeArcGenesis(def);
+    const arc = normalizeGenesis(def);
     for (const network of ['regtest', 'signet', 'mainnet']) {
       const spend = resolveSpend({
         genesis: arc,
@@ -89,7 +89,7 @@ describe('beaconContractDefinition', function () {
       csvBlocks: 144
     });
     assert.ok(!Object.prototype.hasOwnProperty.call(def.spendPolicy, 'internalKeyMode'));
-    const arc = normalizeArcGenesis(def);
+    const arc = normalizeGenesis(def);
     const spend = resolveSpend({
       genesis: arc,
       tip: {
@@ -137,7 +137,7 @@ describe('beaconContractDefinition', function () {
     });
     assert.ok(!Object.prototype.hasOwnProperty.call(def.spendPolicy, 'internalKeyMode'));
     assert.ok(!Object.prototype.hasOwnProperty.call(def.spendPolicy, 'network'));
-    const arc = normalizeArcGenesis(def);
+    const arc = normalizeGenesis(def);
     const spend = resolveSpend({
       genesis: arc,
       tip: {

@@ -18,6 +18,7 @@ const Key = require('../types/key');
 const fabricCanonicalJson = require('./fabricCanonicalJson');
 const bls = require('./bls');
 const Federation = require('../types/federation');
+const FEDERATION_WITNESS_TAG = require('./signingTags').FEDERATION_WITNESS;
 const { jsonSafe } = fabricCanonicalJson;
 
 const BEACON_EPOCH_SIGNING_KIND = 'BeaconEpoch';
@@ -97,17 +98,16 @@ function epochCommitmentDigestHex (epochPayload) {
  * @param {string[]} validatorPubkeys
  * @param {number} [threshold=1]
  * @param {string} [scheme] overrides `witness.scheme` when set
- * @param {Object} [opts]
- * @param {boolean} [opts.allowLegacy=true] BLS: accept legacy `v: 1` bundles (history only)
+ * @param {string} [tag=FEDERATION_WITNESS_TAG] Schnorr tag the witness signed under
  * @returns {boolean}
  */
-function verifyFederationWitnessOnMessage (messageBuffer, witness, validatorPubkeys, threshold = 1, scheme, opts = {}) {
+function verifyFederationWitnessOnMessage (messageBuffer, witness, validatorPubkeys, threshold = 1, scheme, tag = FEDERATION_WITNESS_TAG) {
   const resolved = bls.normalizeSignatureScheme(
     scheme != null ? scheme : (witness && witness.scheme)
   );
   if (resolved === bls.SCHEME_BLS) {
     if (!Buffer.isBuffer(messageBuffer)) return false;
-    return bls.verifyFederationBlsWitness(messageBuffer, witness, validatorPubkeys, threshold, opts);
+    return bls.verifyFederationBlsWitness(messageBuffer, witness, validatorPubkeys, threshold);
   }
   if (!witness || !witness.signatures || typeof witness.signatures !== 'object') return false;
   if (!Buffer.isBuffer(messageBuffer)) return false;
@@ -123,7 +123,7 @@ function verifyFederationWitnessOnMessage (messageBuffer, witness, validatorPubk
       // BIP340 verifies over x only, so x-only validator ids verify too.
       const k = new Key({ pubkey: '02' + Federation.validatorId(pubkey) });
       const sig = Buffer.from(sigHex, 'hex');
-      if (k.verifySchnorr(messageBuffer, sig)) valid++;
+      if (k.verifySchnorr(messageBuffer, sig, tag)) valid++;
       if (valid >= thr) return true;
     } catch {
       /* ignore */
@@ -220,9 +220,7 @@ function roundMeetsThreshold (round) {
     messageBufferForPayload(round.payload),
     round.witness,
     round.validators,
-    round.threshold,
-    undefined,
-    { allowLegacy: false }
+    round.threshold
   );
 }
 
@@ -269,7 +267,7 @@ function addSignature (round, pubkey, signatureHex) {
     ...(scheme === bls.SCHEME_BLS ? { scheme: bls.SCHEME_BLS } : {}),
     signatures: { [member]: stored }
   };
-  if (!verifyFederationWitnessOnMessage(msg, probe, [member], 1, undefined, { allowLegacy: false })) {
+  if (!verifyFederationWitnessOnMessage(msg, probe, [member], 1)) {
     return {
       ok: false,
       error: scheme === bls.SCHEME_BLS ? 'invalid BLS signature' : 'invalid Schnorr signature'
@@ -331,6 +329,7 @@ function parseSignResponse (body) {
 
 module.exports = {
   BEACON_EPOCH_SIGNING_KIND,
+  FEDERATION_WITNESS_TAG,
   FEDERATION_SIGN_REQUEST,
   FEDERATION_SIGN_RESPONSE,
   PENDING_STORE_PATH,

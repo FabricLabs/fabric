@@ -2,6 +2,7 @@
 
 const assert = require('assert');
 const Circuit = require('../types/circuit');
+const SIGNING_TAGS = require('../functions/signingTags');
 
 describe('@fabric/core/types/circuit', function () {
   describe('Circuit', function () {
@@ -255,7 +256,7 @@ describe('functions/blindedExecutionCircuit', function () {
       decision,
       at
     });
-    return Buffer.from(keys[keyIndex].signSchnorr(msg)).toString('hex');
+    return Buffer.from(keys[keyIndex].signSchnorr(msg, SIGNING_TAGS.CIRCUIT_DECISION)).toString('hex');
   }
 
   it('composeGarblerPublish requires an evaluator party and is digest-stable', function () {

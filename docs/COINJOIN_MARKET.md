@@ -249,9 +249,7 @@ true` for PoDLE keys — so not watch-only). `memoryWallet` / `memoryChain` are
 in-memory versions for tests.
 
 ## Tests
-- `tests/types.coinjoin.js`, `tests/types.coinjoin.podle.js`,
-  `tests/types.bond.fidelity.js`, `tests/types.coinjoinBook.js`,
-  `tests/types.coinjoinRound.js` — run in `npm test` (in-memory chain + wallets).
+- `tests/types.coinjoin.js`, `tests/types.bond.js` — run in `npm test` (in-memory chain + wallets).
 - `tests/bitcoin/coinjoin.regtest.js` — managed bitcoind with a taker and two
   maker descriptor wallets: one round end to end over `CONTRACT_MESSAGE`
   (makers earn exactly `cjfee − txFeeContributionSats`), and a bond funded,

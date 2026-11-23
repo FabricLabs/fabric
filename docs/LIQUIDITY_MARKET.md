@@ -161,8 +161,7 @@ invoiceExpiresAt + marginSeconds ≤ now + (refundLockHeight − tip) × seconds
 `services/lightning` (Core Lightning; `decode`, falling back to `decodepay`).
 
 ## Tests
-- `tests/types.swap.bodies.js`, `tests/types.liquidityBook.js`,
-  `tests/types.swap.js` — run in `npm test` (mock chain + Lightning).
+- `tests/types.swap.js`, `tests/types.books.js` — run in `npm test` (mock chain + Lightning).
 - `tests/lightning/swap.regtest.js` — managed bitcoind + two Core
   Lightning nodes; settles an ask end to end and refunds an unpaid swap.
   Gated: `FABRIC_E2E_REGTEST=1 npx mocha tests/lightning/swap.regtest.js`

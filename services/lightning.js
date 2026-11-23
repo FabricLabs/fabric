@@ -17,6 +17,24 @@ const Machine = require('../types/machine');
 // Contracts
 const OP_TEST = require('../contracts/test');
 
+// Operator directories stay absolute. The socket is one file name, so a
+// setting cannot walk out of the data directory through path.join/resolve.
+function absoluteDirectory (value) {
+  const text = String(value == null ? '' : value);
+  if (!text || text.includes('\0')) throw new Error('Lightning directory is invalid');
+  const rooted = path.isAbsolute(text) ? text : `${process.cwd()}${path.sep}${text}`;
+  const normalized = path.normalize(rooted);
+  if (normalized.length > 1 && normalized.endsWith(path.sep)) return normalized.slice(0, -1);
+  return normalized;
+}
+
+function socketInside (directory, name) {
+  const base = absoluteDirectory(directory);
+  const leaf = String(name == null ? '' : name);
+  if (!/^[A-Za-z0-9._-]+$/.test(leaf)) throw new Error('Lightning socket name is invalid');
+  return `${base}${path.sep}${leaf}`;
+}
+
 function redactSensitiveCommandArg (arg) {
   return String(arg).replace(
     /((?:--?rpcpassword|--?rpcuser|--?rpcauth|--bitcoin-rpcpassword|--bitcoin-rpcuser)=).*/i,
@@ -77,7 +95,7 @@ class Lightning extends Service {
    */
   static defaultListenPortForNetwork (network) {
     const n = String(network || 'mainnet').toLowerCase();
-    if (n === 'testnet' || n === 'testnet4') return 19735;
+    if (n === 'testnet' || n === 'testnet4' || n === 'testnet5') return 19735;
     if (n === 'signet') return 39735;
     return 9735;
   }
@@ -167,6 +185,7 @@ class Lightning extends Service {
     const n = String(this.settings.network || 'regtest').toLowerCase();
     if (n === 'mainnet' || n === 'bitcoin' || n === 'main') return 'bitcoin';
     if (n === 'testnet4') return 'testnet4';
+    if (n === 'testnet5') return 'testnet5';
     if (n === 'testnet' || n === 'test') return 'testnet';
     if (n === 'signet') return 'signet';
     return 'regtest';
@@ -181,6 +200,7 @@ class Lightning extends Service {
       case 'test':
       case 'testnet': return '-testnet';
       case 'testnet4': return '-testnet4';
+      case 'testnet5': return '-testnet5';
       case 'signet': return '-signet';
       case 'regtest':
       default:
@@ -201,14 +221,11 @@ class Lightning extends Service {
   }
 
   commit () {
-    // this.emit('debug', `Committing...`);
-
+    const channels = (this.state && this.state.channels) || {};
     const commit = new Actor({
       type: 'Commit',
-      state: this.state
+      state: { channels }
     });
-
-    // this.emit('debug', `Committing Actor: ${commit}`);
 
     this.emit('commit', {
       id: commit.id,
@@ -530,7 +547,7 @@ class Lightning extends Service {
         if (this.settings.debug) this.emit('debug', `[FABRIC:LIGHTNING] Attempt ${attempts + 1}/${maxAttempts} to connect to lightningd...`);
 
         // Check if the RPC socket exists
-        const socketPath = path.resolve(this.settings.datadir, this.settings.socket);
+        const socketPath = socketInside(this.settings.datadir, this.settings.socket);
         if (this.settings.debug) this.emit('debug', `[FABRIC:LIGHTNING] Checking for socket at: ${socketPath}`);
 
         if (!fs.existsSync(socketPath)) {
@@ -576,9 +593,9 @@ class Lightning extends Service {
 
   async createLocalNode () {
     if (this.settings.debug) this.emit('debug', '[FABRIC:LIGHTNING] Creating local Lightning node...');
-    const datadir = path.resolve(this.settings.datadir);
-    const bitcoinDatadir = path.resolve(this.settings.bitcoin.datadir);
-    const socketPath = path.join(datadir, this.settings.socket);
+    const datadir = absoluteDirectory(this.settings.datadir);
+    const bitcoinDatadir = absoluteDirectory(this.settings.bitcoin.datadir);
+    const socketPath = socketInside(datadir, this.settings.socket);
 
     // Ensure storage directory exists
     await mkdirp(datadir);
@@ -899,7 +916,7 @@ class Lightning extends Service {
         fn(arg);
       };
 
-      const socketPath = path.resolve(this.settings.datadir, this.settings.socket);
+      const socketPath = socketInside(this.settings.datadir, this.settings.socket);
       let client;
       const timeoutId = timeoutMs > 0 ? setTimeout(() => {
         finish(reject, new Error(`Lightning RPC timeout after ${timeoutMs}ms (${method})`));
@@ -942,11 +959,13 @@ class Lightning extends Service {
       return this;
     }
 
-    this._state.channels = channels.channels.reduce((acc, channel) => {
+    const synced = channels.channels.reduce((acc, channel) => {
       const actor = new Actor(channel);
       acc[actor.id] = actor.state;
       return acc;
     }, {});
+    this._state.channels = synced;
+    if (this._state.content) this._state.content.channels = synced;
 
     return this;
   }
@@ -1065,7 +1084,7 @@ class Lightning extends Service {
       }
 
       // Clean up socket file
-      const socketPath = path.resolve(this.settings.datadir, this.settings.socket);
+      const socketPath = socketInside(this.settings.datadir, this.settings.socket);
       try {
         if (fs.existsSync(socketPath)) {
           if (this.settings.debug) this.emit('debug', `[FABRIC:LIGHTNING] Cleaning up socket file: ${socketPath}`);

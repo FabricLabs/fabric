@@ -8,6 +8,7 @@ const { jsonSafe, stableStringify } = require('../functions/fabricCanonicalJson'
 const { parseDistributedManifestV1 } = require('../functions/fabricProgramManifest');
 const sc = require('../functions/sidechainState');
 const Message = require('../types/message');
+const SIGNING_TAGS = require('../functions/signingTags');
 
 function legacyBody (msg) {
   const parsed = Message.tryParseLegacyBody(Message.fromBuffer(msg.toBuffer()));
@@ -393,7 +394,7 @@ describe('@fabric/core/functions/sidechainState', function () {
     const good = {
       type: 'BEACON_EPOCH',
       payload: epoch,
-      federationWitness: { signatures: { [key.pubkey]: key.signSchnorr(msg).toString('hex') } }
+      federationWitness: { signatures: { [key.pubkey]: key.signSchnorr(msg, SIGNING_TAGS.FEDERATION_WITNESS).toString('hex') } }
     };
     const bad = { type: 'BEACON_EPOCH', payload: epoch, federationWitness: null };
     assert.strictEqual(sc.verifyEpochChainFederationWitnesses([good], [key.pubkey], 1).ok, true);

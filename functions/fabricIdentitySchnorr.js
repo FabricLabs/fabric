@@ -3,7 +3,8 @@
 /**
  * @fileoverview Protocol identity Schnorr helpers (site-login, device-link,
  * IdentityCrossSign). Signing uses {@link Identity#fabricKey} when an HD master
- * is available. Verify: BIP340 over UTF-8; `identity.xpub` must neuter to
+ * is available. Verify: BIP340 over `taggedHash(tag, utf8)` with the caller's
+ * purpose tag; `identity.xpub` must neuter to
  * `pubkeyHex`; `identity.id` must be Bech32 `id1…` of SHA-256d(compressed pubkey).
  * @see IDENTITY.md
  */
@@ -149,18 +150,20 @@ function isResolvedSigningIdentity (value) {
  * Build the JSON body Hub / LiveRelay expect for client-signed challenges.
  * @param {object} input Identity, Key, Passport leaf, or already-resolved
  *   `{ fabricKey, identityId }` from {@link resolveFabricSigningIdentity}
- * @param {string} message UTF-8 challenge string
+ * @param {string} message UTF-8 string the caller built itself
+ * @param {string} tag purpose tag (e.g. `Fabric/DeviceLink`)
  * @returns {{ signature: string, pubkeyHex: string, identity: { id: string, xpub: string } }}
  */
-function buildFabricIdentitySignedPayload (input, message) {
+function buildFabricIdentitySignedPayload (input, message, tag) {
   if (typeof message !== 'string' || !message) {
     throw new Error('message required');
   }
+  if (typeof tag !== 'string' || !tag) throw new Error('signing tag required');
   const resolved = isResolvedSigningIdentity(input)
     ? input
     : resolveFabricSigningIdentity(input);
   const { fabricKey, identityId } = resolved;
-  const signature = Buffer.from(fabricKey.signSchnorr(Buffer.from(message, 'utf8'))).toString('hex');
+  const signature = Buffer.from(fabricKey.signSchnorr(Buffer.from(message, 'utf8'), tag)).toString('hex');
   const pubkeyHex = String(fabricKey.pubkey || '');
   if (!/^[a-f0-9]{66}$/i.test(pubkeyHex)) {
     throw new Error('Could not derive Fabric public key');
@@ -180,11 +183,15 @@ function buildFabricIdentitySignedPayload (input, message) {
  * @param {string} signatureHex
  * @param {string} pubkeyHex
  * @param {{ id?: *, xpub: string }} identity
+ * @param {string} tag purpose tag the signer used
  * @returns {{ ok: true, key: object, identityId: string }|{ ok: false, error: string }}
  */
-function verifyIdentitySchnorr (message, signatureHex, pubkeyHex, identity) {
+function verifyIdentitySchnorr (message, signatureHex, pubkeyHex, identity, tag) {
   if (typeof message !== 'string' || !message) {
     return { ok: false, error: 'Missing signed message' };
+  }
+  if (typeof tag !== 'string' || !tag) {
+    return { ok: false, error: 'Missing signing tag' };
   }
   if (typeof signatureHex !== 'string' || !/^[a-f0-9]{128}$/i.test(signatureHex)) {
     return { ok: false, error: 'Missing or invalid signature' };
@@ -208,7 +215,13 @@ function verifyIdentitySchnorr (message, signatureHex, pubkeyHex, identity) {
   } catch (_) {
     return { ok: false, error: 'Invalid signature encoding' };
   }
-  if (!key.verifySchnorr(msgBuf, sigBuf)) {
+  let valid = false;
+  try {
+    valid = key.verifySchnorr(msgBuf, sigBuf, tag);
+  } catch (_) {
+    return { ok: false, error: 'Invalid signing tag' };
+  }
+  if (!valid) {
     return { ok: false, error: 'Signature verification failed' };
   }
   const compressedPub = String(key.pubkey || '').toLowerCase();

@@ -21,15 +21,6 @@ const { OUTER, CONTRACT_BODY_TYPES, isKnownContractBodyType } = require('./appli
 const { pubkeyXOnly, pubkeyCompressed } = require('./pubkey');
 const { normalizeContractId, stateDigest } = require('./sidechainState');
 const {
-  OP_CONTRACT_READ,
-  OP_CONTRACT_SIGN,
-  verifyContractCapability
-} = require('./contractCapability');
-const {
-  validateWithdrawalRequest,
-  verifyWithdrawalWitnessSignature
-} = require('./contractSpend');
-const {
   GOVERNANCE_ACTIONS,
   proposalIdOf,
   verifyProposalVote,
@@ -38,6 +29,7 @@ const {
 } = require('./groupChangeGovernance');
 
 const Actor = require('../types/actor');
+const Contract = require('../types/contract');
 
 const COLLECTION = 'contractmessages';
 const ORIGINS = Object.freeze(['mesh', 'queue', 'paste', 'local']);
@@ -541,7 +533,7 @@ function authorHasCapabilityToken (doc, authorXOnly, tokenString, expectedCap) {
       if (!/^(02|03)[0-9a-f]{64}$/.test(c) || seen.has(c)) continue;
       seen.add(c);
       try {
-        const payload = verifyContractCapability(tokenString, {
+        const payload = Contract.verifyCapability(tokenString, {
           contractId: doc.id,
           expectedCap,
           issuerKey: { public: c }
@@ -557,11 +549,11 @@ function authorHasCapabilityToken (doc, authorXOnly, tokenString, expectedCap) {
 }
 
 function authorHasSignToken (doc, authorXOnly, tokenString) {
-  return authorHasCapabilityToken(doc, authorXOnly, tokenString, OP_CONTRACT_SIGN);
+  return authorHasCapabilityToken(doc, authorXOnly, tokenString, Contract.OP_CONTRACT_SIGN);
 }
 
 function authorHasReadToken (doc, authorXOnly, tokenString) {
-  return authorHasCapabilityToken(doc, authorXOnly, tokenString, OP_CONTRACT_READ)
+  return authorHasCapabilityToken(doc, authorXOnly, tokenString, Contract.OP_CONTRACT_READ)
     || authorHasSignToken(doc, authorXOnly, tokenString);
 }
 
@@ -670,7 +662,7 @@ function authorizeIngest (doc, type, authorXOnly, meta = {}, bodyObject = null) 
 
   if (type === 'ContractWithdrawalRequest' && bodyObject) {
     const tip = tipFromDoc(doc);
-    const check = validateWithdrawalRequest(bodyObject, tip, {
+    const check = Contract.validateWithdrawalRequest(bodyObject, tip, {
       genesis: doc.genesis || meta.genesis || null
     });
     if (!check.ok) return { ok: false, error: check.error };
@@ -710,7 +702,7 @@ function authorizeIngest (doc, type, authorXOnly, meta = {}, bodyObject = null) 
     if (claimed && claimed !== authorXOnly) {
       return { ok: false, error: 'witness signer must match AMP author' };
     }
-    const verified = verifyWithdrawalWitnessSignature({
+    const verified = Contract.verifyWithdrawalWitnessSignature({
       ...bodyObject,
       signer: authorXOnly
     });

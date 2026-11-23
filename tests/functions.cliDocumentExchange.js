@@ -12,6 +12,7 @@ const {
 } = require('../functions/cliDocumentExchange');
 const { DocumentBook, createDocumentPurchaseSession } = require('../types/documentBook');
 const { HTLC_MINIMUM_SATS } = require('../constants');
+const Document = require('../types/document');
 
 describe('functions/cliDocumentExchange (headless CLI surface)', function () {
   it('catalog exposes documents + documents-market packs and commands', function () {
@@ -94,11 +95,10 @@ describe('functions/cliDocumentExchange (headless CLI surface)', function () {
     const { HTLC_MINIMUM_SATS } = require('../constants');
     const Peer = require('../types/peer');
     const Message = require('../types/message');
-    const { DEFAULT_CHUNK_BYTES } = require('../functions/documentBlobManifest');
     const peer = new Peer({ listen: false });
     const exchange = new CliDocumentExchange({ getPeer: () => peer, getFilesystem: () => null });
     // One chunk of plaintext, two once sealed (the 16-byte GCM tag spills over).
-    exchange.documents.d = Buffer.alloc(DEFAULT_CHUNK_BYTES - 8, 0x61);
+    exchange.documents.d = Buffer.alloc(Document.CHUNK_BYTES - 8, 0x61);
     const low = exchange.publish('d', HTLC_MINIMUM_SATS);
     assert.strictEqual(low.ok, false);
     assert.match(low.error, new RegExp(`at least ${2 * HTLC_MINIMUM_SATS}`));
@@ -106,7 +106,7 @@ describe('functions/cliDocumentExchange (headless CLI surface)', function () {
     const written = [];
     peer.connections.b = { _writeFabric: (buf) => { written.push(buf); return true; } };
     peer._respondInventoryFromLocalDocuments({ object: { offerBtc: true } }, { name: 'b' });
-    const item = JSON.parse(Message.fromBuffer(written[0]).body).items[0];
+    const item = Message.tryParseLegacyBody(Message.fromBuffer(written[0])).value.items[0];
     const blobs = item.blobs || (item.documentBlobIndex && item.documentBlobIndex.blobs);
     assert.strictEqual(blobs.length, 2);
     assert.ok(blobs.every((b) => Number(b.rateSats) >= HTLC_MINIMUM_SATS), JSON.stringify(blobs.map((b) => b.rateSats)));
@@ -118,14 +118,17 @@ describe('functions/cliDocumentExchange (headless CLI surface)', function () {
     const { MAX_DOCUMENT_BLOBS } = require('../constants');
     const peer = new Peer({ listen: false });
     peer.settings.inventoryBlobChunkBytes = 1;
-    peer._publishDocument('huge', Buffer.alloc(MAX_DOCUMENT_BLOBS + 1, 0x61).toString('base64'), 0);
     peer._publishDocument('small', Buffer.from('ok').toString('base64'), 0);
+    // Larger than one AMP frame, so it is stored directly. Inventory still
+    // has to skip it: at one byte per blob it exceeds MAX_DOCUMENT_BLOBS.
+    peer._state.content.documents.huge = Buffer.alloc(MAX_DOCUMENT_BLOBS + 1, 0x61).toString('base64');
+    peer._state.content.documentRates.huge = 0;
     const warnings = [];
     peer.on('warning', (w) => warnings.push(String(w)));
     const written = [];
     peer.connections.b = { _writeFabric: (buf) => { written.push(buf); return true; } };
     peer._respondInventoryFromLocalDocuments({ object: { offerBtc: true } }, { name: 'b' });
-    const ids = JSON.parse(Message.fromBuffer(written[0]).body).items.map((i) => i.id);
+    const ids = Message.tryParseLegacyBody(Message.fromBuffer(written[0])).value.items.map((i) => i.id);
     assert.deepStrictEqual(ids, ['small']);
     assert.ok(warnings.some((w) => w.includes('inventory skipped huge')), warnings.join('\n'));
   });
@@ -564,7 +567,7 @@ describe('functions/cliDocumentExchange (headless CLI surface)', function () {
           { index: 0, total: 2, blobHashHex: 'f1'.repeat(32), rateSats: 1000 },
           { index: 1, total: 2, blobHashHex: 'f2'.repeat(32), rateSats: 1000 }
         ],
-        merkleRootHex: require('../functions/documentBlobManifest').merkleRootHexFromBlobHashes(['f1'.repeat(32), 'f2'.repeat(32)]),
+        merkleRootHex: Document.rootHexFromBlobHashes(['f1'.repeat(32), 'f2'.repeat(32)]),
         htlc: { paymentAddress: built.address, paymentHashHex: contentHash }
       }]
     });
