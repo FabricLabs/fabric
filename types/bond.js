@@ -87,12 +87,18 @@ function refuseMainnet (network) {
   return assertTestNetwork(network, 'Bond');
 }
 
-/** @private display-order txid of input `i` */
+/**
+ * display-order txid of input `i`
+ * @private
+ */
 function inputTxid (tx, i = 0) {
   return Buffer.from(tx.ins[i].hash).reverse().toString('hex');
 }
 
-/** @private output script for `address` on the deposit's network */
+/**
+ * output script for `address` on the deposit's network
+ * @private
+ */
 function scriptFor (network, address) {
   return Buffer.from(bitcoinAddress.toOutputScript(String(address), networkForFabricName(network)));
 }

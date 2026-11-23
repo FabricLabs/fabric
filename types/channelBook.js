@@ -23,7 +23,10 @@ const HEX64 = /^[0-9a-f]{64}$/;
 /** Settled credit rows kept (open rows are bounded by the credit limit). */
 const MAX_SETTLED_CREDITS = 4096;
 
-/** @private a credit / transfer ref: non-empty, ≤ 256 printable characters */
+/**
+ * a credit / transfer ref: non-empty, ≤ 256 printable characters
+ * @private
+ */
 function creditRef (ref) {
   const s = ref == null ? '' : String(ref);
   return s && s.length <= 256 && !/[\u0000-\u001f\u007f]/.test(s) ? s : null;
@@ -165,9 +168,10 @@ class ChannelBook extends Book {
   get tipFresh () { return this.tipHeight() != null; }
 
   /**
-   * @private deps handed to every session. `tipHeight` is **always** wired so
+   * deps handed to every session. `tipHeight` is **always** wired so
    * a session never mistakes "no chain view" for "no expiry rule": with an
    * unknown tip sessions refuse new HTLCs and refuse sender-side fails.
+   * @private
    */
   _sessionDeps () {
     return {
@@ -205,7 +209,10 @@ class ChannelBook extends Book {
     return null;
   }
 
-  /** @private event payload for an HTLC row */
+  /**
+   * event payload for an HTLC row
+   * @private
+   */
   _htlcEvent (session, row, extra = {}) {
     return Object.assign({
       channelId: session.channelId,
@@ -220,10 +227,11 @@ class ChannelBook extends Book {
   }
 
   /**
-   * @private fulfill the first committed received HTLC whose preimage we may
+   * fulfill the first committed received HTLC whose preimage we may
    * release (one per call — each fulfill opens a new round). Too close to
    * expiry the preimage is only handed to the session, whose watchdog then
    * asks for an on-chain claim.
+   * @private
    */
   _autoFulfil (session) {
     const ready = !session.busy && session.status === 'open';
@@ -242,7 +250,10 @@ class ChannelBook extends Book {
     return null;
   }
 
-  /** @private replay an intent rolled back in a proposal collision */
+  /**
+   * replay an intent rolled back in a proposal collision
+   * @private
+   */
   _repropose (session) {
     const body = session.repropose();
     if (body) this.publish(body, session);
@@ -262,7 +273,7 @@ class ChannelBook extends Book {
     const existing = this._row(session.channelId);
     if (existing && existing !== session) throw new Error(`ChannelBook: channel ${session.channelId} already registered`);
     if (!existing) {
-      if (this.size >= this.capacity) throw new Error(`ChannelBook: full (${this.capacity} channels)`);
+      if (this.size >= this._limit()) throw new Error(`ChannelBook: full (${this._limit()} channels)`);
       this._insert(session.channelId, session);
     }
     this.peers.set(session.funding.remotePubkey, session.channelId);
@@ -413,9 +424,10 @@ class ChannelBook extends Book {
   }
 
   /**
-   * @private emit received transfers once final (the payer revoked the state
+   * emit received transfers once final (the payer revoked the state
    * before the transfer, so it can no longer close without it) and apply
    * them to the credit their `ref` names
+   * @private
    */
   _announceTransfers (session) {
     const s = session.state;
@@ -437,7 +449,10 @@ class ChannelBook extends Book {
     }
   }
 
-  /** @private resolve a channel id or a counterparty alias / key to a session */
+  /**
+   * resolve a channel id or a counterparty alias / key to a session
+   * @private
+   */
   _sessionOf (counterparty, pubkeyHex = null) {
     return this._row(String(counterparty || '')) || this.sessionFor(counterparty, pubkeyHex);
   }
@@ -453,7 +468,7 @@ class ChannelBook extends Book {
     if (!session) return 0;
     let owed = 0;
     for (const c of this.credits.values()) {
-      if (c.channelId === session.channelId && !c.settledAt) owed += c.amountSats - c.paidSats;
+      if (c.channelId === session.channelId && !c.settledAt) owed += Math.max(0, c.amountSats - c.paidSats);
     }
     return owed;
   }
@@ -498,7 +513,10 @@ class ChannelBook extends Book {
     return [...this.credits.values()].filter((c) => !channelId || c.channelId === String(channelId)).map((c) => Object.assign({}, c));
   }
 
-  /** @private drop the oldest settled rows past `MAX_SETTLED_CREDITS` */
+  /**
+   * drop the oldest settled rows past `MAX_SETTLED_CREDITS`
+   * @private
+   */
   _trimCredits () {
     let settled = 0;
     for (const c of this.credits.values()) if (c.settledAt) settled++;
@@ -527,7 +545,10 @@ class ChannelBook extends Book {
     return body;
   }
 
-  /** @private settle the upstream leg of a forwarded HTLC */
+  /**
+   * settle the upstream leg of a forwarded HTLC
+   * @private
+   */
   _propagate (downstream, body) {
     const key = `${downstream.channelId}:${body.htlcId}`;
     const link = this.forwards.get(key);
@@ -536,7 +557,10 @@ class ChannelBook extends Book {
     this._settleUpstream(link, { type: body.type, htlcId: body.htlcId, preimageHex: body.preimageHex || null, reason: body.reason || null });
   }
 
-  /** @private @returns {object|null} body published upstream */
+  /**
+   * @returns {object|null} body published upstream
+   * @private
+   */
   _settleUpstream (link, body) {
     const upstream = this._row(link.channelId);
     if (!upstream) return null;
@@ -555,7 +579,10 @@ class ChannelBook extends Book {
     }
   }
 
-  /** @private retry upstream settlements that failed (busy / tip unknown) */
+  /**
+   * retry upstream settlements that failed (busy / tip unknown)
+   * @private
+   */
   _retryPropagation () {
     const pending = this.pendingPropagation;
     this.pendingPropagation = [];
@@ -679,6 +706,45 @@ class ChannelBook extends Book {
     return out;
   }
 
+  /**
+   * Justice filings for every revoked commitment on this book. Each filing is
+   * ready for {@link Watchtower.appointment}: the transactions are already
+   * signed, and the commitment txid is the hint's preimage.
+   * @param {object} [opts] passed to {@link ChannelSession#penaltyFilings}
+   * @returns {object[]}
+   */
+  penaltyFilings (opts = {}) {
+    const out = [];
+    for (const session of this._rows()) {
+      try {
+        for (const filing of session.penaltyFilings(opts)) out.push(filing);
+      } catch (_) { /* one channel's revoked state does not block the others */ }
+    }
+    return out;
+  }
+
+  /**
+   * Raw transactions for the watchdog actions `onBlock` returned.
+   * @param {object[]} actions
+   * @param {object} [opts] passed to {@link ChannelSession#actionTransactions}
+   * @returns {string[]}
+   */
+  actionTransactions (actions, opts = {}) {
+    const grouped = new Map();
+    for (const action of actions || []) {
+      if (!action || !action.channelId) continue;
+      if (!grouped.has(action.channelId)) grouped.set(action.channelId, []);
+      grouped.get(action.channelId).push(action);
+    }
+    const out = [];
+    for (const [id, list] of grouped) {
+      const session = this._row(id);
+      if (!session) continue;
+      try { out.push(...session.actionTransactions(list, opts)); } catch (_) { /* skip */ }
+    }
+    return out;
+  }
+
   /** @returns {object} persistence snapshot (no private key) */
   export () {
     return {
@@ -696,14 +762,18 @@ class ChannelBook extends Book {
 
   /** @param {object} snapshot @returns {ChannelBook} */
   import (snapshot = {}) {
-    for (const snap of snapshot.sessions || []) {
+    // A damaged snapshot imports what it can: each field is taken only in its own shape.
+    const list = (v) => (Array.isArray(v) ? v : []);
+    const record = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? v : {});
+    const data = record(snapshot);
+    for (const snap of list(data.sessions)) {
       try { this.add(ChannelSession.import(snap, this.localPrivateKey, this._sessionDeps())); } catch (_) { /* skip foreign / duplicate */ }
     }
-    for (const [alias, id] of Object.entries(snapshot.peers || {})) if (this.has(id)) this.peers.set(alias, id);
-    for (const [k, v] of Object.entries(snapshot.forwards || {})) this.forwards.set(k, v);
-    for (const k of snapshot.announced || []) this._announced.add(String(k));
-    for (const p of snapshot.pendingPropagation || []) if (p && p.link && p.body) this.pendingPropagation.push({ link: p.link, body: p.body });
-    for (const c of snapshot.credits || []) {
+    for (const [alias, id] of Object.entries(record(data.peers))) if (this.has(id)) this.peers.set(alias, id);
+    for (const [k, v] of Object.entries(record(data.forwards))) this.forwards.set(k, v);
+    for (const k of list(data.announced)) this._announced.add(String(k));
+    for (const p of list(data.pendingPropagation)) if (p && p.link && p.body) this.pendingPropagation.push({ link: p.link, body: p.body });
+    for (const c of list(data.credits)) {
       const ref = c && creditRef(c.ref);
       const amountSats = Number(c && c.amountSats);
       if (!ref || !this.has(c.channelId) || !Number.isSafeInteger(amountSats) || amountSats < 1) continue;
@@ -711,7 +781,8 @@ class ChannelBook extends Book {
         channelId: String(c.channelId),
         ref,
         amountSats,
-        paidSats: Math.max(0, Math.floor(Number(c.paidSats) || 0)),
+        // never more than the credit: an overpaid row would lower what is owed below zero
+        paidSats: Math.min(amountSats, Math.max(0, Math.floor(Number(c.paidSats) || 0))),
         extendedAt: Number(c.extendedAt) || 0,
         settledAt: c.settledAt ? Number(c.settledAt) : null
       });

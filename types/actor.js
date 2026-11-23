@@ -202,6 +202,30 @@ class Actor extends EventEmitter {
   }
 
   /**
+   * Digest of a sidechain document <code>{ version, clock, content }</code>.
+   * @param {Number} clock Sidechain clock covered by the digest.
+   * @param {Object} content Document content.
+   * @returns {String} 64-character hex SHA-256.
+   */
+  static contentDigest (clock, content) {
+    const { stateDigest } = require('../functions/sidechainState');
+    return stateDigest({
+      version: 1,
+      clock: Number(clock) || 0,
+      content: content || {}
+    });
+  }
+
+  /**
+   * Digest of this actor's content at <code>clock</code>.
+   * @param {Number} [clock=0] Sidechain clock covered by the digest.
+   * @returns {String} 64-character hex SHA-256.
+   */
+  contentDigest (clock = 0) {
+    return Actor.contentDigest(clock, this._state && this._state.content);
+  }
+
+  /**
    * Explicitly adopt a set of {@link JSONPatch}-encoded changes.
    * @param {Array} changes List of {@link JSONPatch} operations to apply.
    * @returns {Actor} Instance of the Actor.

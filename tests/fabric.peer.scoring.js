@@ -48,7 +48,7 @@ describe('@fabric/core Peer scoring / misbehavior', function () {
     const peer = offlinePeer();
     const origin = '127.0.0.1:bh';
     const wasDestroyed = seedScore(peer, origin, 'peer-bh', 200);
-    const msg = Message.fromVector(['P2P_PING', JSON.stringify({ t: 1 })]).signWithKey(peer.key);
+    const msg = Message.fromLegacyBody('P2P_PING', { t: 1 }).signWithKey(peer.key);
     const buf = Buffer.from(msg.toBuffer());
     const hash = crypto.createHash('sha256').update(buf).digest('hex');
     if (buf.length > 208) buf[208] = buf[208] ^ 0xff;
@@ -65,7 +65,7 @@ describe('@fabric/core Peer scoring / misbehavior', function () {
     const origin = '127.0.0.1:sig';
     const wasDestroyed = seedScore(peer, origin, 'peer-sig', 150);
     const other = new Key();
-    const msg = Message.fromVector(['P2P_PING', JSON.stringify({ t: 2 })]).signWithKey(other);
+    const msg = Message.fromLegacyBody('P2P_PING', { t: 2 }).signWithKey(other);
     const buf = Buffer.from(msg.toBuffer());
     const hash = crypto.createHash('sha256').update(buf).digest('hex');
     buf.fill(0, 144, 208);
@@ -103,8 +103,8 @@ describe('@fabric/core Peer scoring / misbehavior', function () {
     const wasDestroyed = seedScore(peer, attackerOrigin, 'peer-hijack', 100);
     const definition = { id: 'score-hijack', state: { v: 1 }, parties: [ownerPub] };
 
-    const wireOwner = Message.fromVector(['CONTRACT_PUBLISH', JSON.stringify(definition)]).signWithKey(owner);
-    const wireAttacker = Message.fromVector(['CONTRACT_PUBLISH', JSON.stringify(definition)]).signWithKey(attacker);
+    const wireOwner = Message.fromLegacyBody('CONTRACT_PUBLISH', definition).signWithKey(owner);
+    const wireAttacker = Message.fromLegacyBody('CONTRACT_PUBLISH', definition).signWithKey(attacker);
 
     peer._handleGenericMessage({
       type: 'CONTRACT_PUBLISH',
@@ -138,8 +138,8 @@ describe('@fabric/core Peer scoring / misbehavior', function () {
     // Both listed — second publisher is authorized but still a logical duplicate.
     const definition = { id: 'score-hijack-co', state: { v: 1 }, parties: [ownerPub, coPub] };
 
-    const wireOwner = Message.fromVector(['CONTRACT_PUBLISH', JSON.stringify(definition)]).signWithKey(owner);
-    const wireCo = Message.fromVector(['CONTRACT_PUBLISH', JSON.stringify(definition)]).signWithKey(coParty);
+    const wireOwner = Message.fromLegacyBody('CONTRACT_PUBLISH', definition).signWithKey(owner);
+    const wireCo = Message.fromLegacyBody('CONTRACT_PUBLISH', definition).signWithKey(coParty);
 
     peer._handleGenericMessage({
       type: 'CONTRACT_PUBLISH',
@@ -171,10 +171,10 @@ describe('@fabric/core Peer scoring / misbehavior', function () {
     seedScore(peer, origin2, 'peer-tip2', 50);
     const payload = { tip: 'ab'.repeat(32), height: 10 };
 
-    const w1 = Message.fromVector(['BitcoinBlock', JSON.stringify(payload)]).signWithKey(k1);
+    const w1 = Message.fromLegacyBody('BitcoinBlock', payload).signWithKey(k1);
     peer._handleFabricMessage(w1.toBuffer(), { name: '127.0.0.1:tip1' }, null);
 
-    const w2a = Message.fromVector(['BitcoinBlock', JSON.stringify(payload)]).signWithKey(k2);
+    const w2a = Message.fromLegacyBody('BitcoinBlock', payload).signWithKey(k2);
     peer._handleFabricMessage(w2a.toBuffer(), { name: origin2 }, null);
     assert.strictEqual(
       peer._state.peers['peer-tip2'].score,
@@ -183,7 +183,7 @@ describe('@fabric/core Peer scoring / misbehavior', function () {
 
     // Third signer, same tip, same origin — soft window must not stack.
     const k3 = new Key();
-    const w2c = Message.fromVector(['BitcoinBlock', JSON.stringify(payload)]).signWithKey(k3);
+    const w2c = Message.fromLegacyBody('BitcoinBlock', payload).signWithKey(k3);
     peer._handleFabricMessage(w2c.toBuffer(), { name: origin2 }, null);
     assert.strictEqual(
       peer._state.peers['peer-tip2'].score,
@@ -207,10 +207,10 @@ describe('@fabric/core Peer scoring / misbehavior', function () {
     peer.relayFrom = function () { relays++; };
     peer.on('contract:message', () => { emits++; });
 
-    const wire = Message.fromVector(['CONTRACT_MESSAGE', JSON.stringify({
+    const wire = Message.fromLegacyBody('CONTRACT_MESSAGE', {
       contract: 'c1',
       ops: [{ op: 'replace', path: '/value', value: 99 }]
-    })]).signWithKey(attacker);
+    }).signWithKey(attacker);
 
     peer._handleGenericMessage({
       type: 'CONTRACT_MESSAGE',
@@ -234,7 +234,7 @@ describe('@fabric/core Peer scoring / misbehavior', function () {
     });
     const origin = '127.0.0.1:soft';
     const wasDestroyed = seedScore(peer, origin, 'peer-soft', 100);
-    const msg = Message.fromVector(['P2P_PING', JSON.stringify({ t: 9 })]).signWithKey(peer.key);
+    const msg = Message.fromLegacyBody('P2P_PING', { t: 9 }).signWithKey(peer.key);
     const buf = Buffer.from(msg.toBuffer());
     if (buf.length > 208) buf[208] ^= 0xff;
     peer._handleFabricMessage(buf, { name: origin }, null);

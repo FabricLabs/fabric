@@ -7,7 +7,7 @@ Fabric aims to maximize the security of a sensible default configuration while k
 Fabric networks are intended for deployment where **peers, relays, hubs, and operators may be hostile**. Design and review against:
 
 - Untrusted TCP / WebSocket / WebRTC neighbors (forgery, replay, amplification, pin hijack, logical front-running)
-- Phishing of identity flows (`fabric://login`, device-link) toward attacker-controlled hubs
+- Phishing of identity flows (Passport sign-in, device-link) toward attacker-controlled sites and hubs ([docs/PASSPORT.md](docs/PASSPORT.md))
 - Public observability of unsigned or plaintext application traffic unless an explicit seal is used
 - No reliance on an “honest majority” of random internet peers for key custody or contract acceptance
 
@@ -47,7 +47,6 @@ Exact wire duplicates are already dropped via the FIFO-capped wire-hash cache (`
 - `CONTRACT_PROPOSAL` (`contractId` + merkle root)
 - `P2P_PEER_ANNOUNCE` / `P2P_STATE_ANNOUNCE` (Actor id of announce / state)
 - `BitcoinBlock` / `BITCOIN_BLOCK` (tip / hash)
-- `P2P_FLUSH_CHAIN` / `FlushChain` (`snapshotBlockHash`)
 - `P2P_PEER_ALIAS` (signer + nickname)
 - `DocumentContentKeyReveal` (`documentId` + `SHA256(keyHex)` — only well-formed preimages; claim runs **after** successful open so junk public-hash frames cannot burn the slot)
 
@@ -70,7 +69,7 @@ Source-routed nesting for IP-hiding delivery (see [docs/P2P_FORWARD.md](docs/P2P
 - **Accepted risk:** hop IDs and inner payload are cleartext at each layer unless the app seals content. Not Sphinx.
 
 ## Peer scoring / misbehavior
-Registry score (Bitcoin Core–style) is earned on ping-gated `P2P_PONG` and spent for trust (`flushChainMinTrustedScore`, `relayFromTrustedPeers`). Misbehavior lowers score via `_applyPeerMisbehavior` / `_derankPeerForWireTraffic`. New peers start at **0**, so hard offenses also **disconnect** the socket (de-rank alone is ineffective at the floor).
+Registry score (Bitcoin Core–style) is earned on ping-gated `P2P_PONG` and spent for trust (peer selection and eviction). Misbehavior lowers score via `_applyPeerMisbehavior` / `_derankPeerForWireTraffic`. New peers start at **0**, so hard offenses also **disconnect** the socket (de-rank alone is ineffective at the floor).
 
 | Offense | Default penalty | Disconnect? |
 |---------|-----------------|-------------|
@@ -112,7 +111,7 @@ dropped by frame-hash dedup. Chat/alias remain raw UTF-8. Coverage: `tests/fabri
 `tests/fabric.message.js` and `tests/types.message.legacyBody.js`.
 
 ## Application Resource Contract accumulate
-`functions/contractMessageAccumulate.ingestMessageBuffer` folds signed `CONTRACT_MESSAGE` frames into a tip. **Signer mutations** (`GroupChange`, `GroupChangeProposal` / `GroupChangeVote`, federation invite (+ response), capability grants, withdrawal request/witness, journal request/batch/state) require the AMP author to be in **genesis.signers** (when tip members are empty) or the **current tip member set**, or to present a **verified** `OP_CONTRACT_SIGN` Token (`meta.capabilityToken`) issued by a current signer. **`GroupChat`** and other non-mutation body types (including custom genesis `primitives.messageTypes`) require author ∈ tip/genesis **reader ∪ signer** set (or verified `OP_CONTRACT_READ` / `OP_CONTRACT_SIGN`). **`ContractWithdrawalWitness`** must bind `signer` to the AMP author, carry BIP340 `signature` over `fabric:contract-withdrawal-witness:1:…`, and match the pending request’s tip fields. AMP signature alone is not sufficient. Body `type` must appear in genesis `primitives.messageTypes` when declared (**empty declared list = deny-all**); otherwise only known core `CONTRACT_BODY_TYPES` are accepted. **Withdrawals** must bind `stateDigest` + `bitcoinBlockHash` to the tip at request time (`functions/contractSpend`). See [`docs/CONTRACTS.md`](docs/CONTRACTS.md).
+`functions/contractMessageAccumulate.ingestMessageBuffer` folds signed `CONTRACT_MESSAGE` frames into a tip. **Signer mutations** (`GroupChange`, `GroupChangeProposal` / `GroupChangeVote`, federation invite (+ response), capability grants, withdrawal request/witness, journal request/batch/state) require the AMP author to be in **genesis.signers** (when tip members are empty) or the **current tip member set**, or to present a **verified** `OP_CONTRACT_SIGN` Token (`meta.capabilityToken`) issued by a current signer. **`GroupChat`** and other non-mutation body types (including custom genesis `primitives.messageTypes`) require author ∈ tip/genesis **reader ∪ signer** set (or verified `OP_CONTRACT_READ` / `OP_CONTRACT_SIGN`). **`ContractWithdrawalWitness`** must bind `signer` to the AMP author, carry BIP340 `signature` over `fabric:contract-withdrawal-witness:1:…`, and match the pending request’s tip fields. AMP signature alone is not sufficient. Body `type` must appear in genesis `primitives.messageTypes` when declared (**empty declared list = deny-all**); otherwise only known core `CONTRACT_BODY_TYPES` are accepted. **Withdrawals** must bind `stateDigest` + `bitcoinBlockHash` to the tip at request time (`Contract.validateWithdrawalRequest`). See [`docs/CONTRACTS.md`](docs/CONTRACTS.md).
 
 **Outstanding (seals / accumulate):** tip-bound and participant AES-GCM seals bind scheme (+ tip / contract / ephemeral) as AAD. Journal / re-fold caps drop compactable rows by hex-hash order (`maxJournalEntries`, hard cap 20000). Genesis `bitcoinAnchor.blockHash` is only folded when it is 64-hex (same gate as `meta.bitcoinBlockHash`). Explicit tip `signers: []` no longer widens `tipSpendKeys` / `resolveSpend` to participant `members`.
 
@@ -126,7 +125,7 @@ dropped by frame-hash dedup. Chat/alias remain raw UTF-8. Coverage: `tests/fabri
 
 **Still open (non-blocking for this PR pass):** eager `messageHex` on Peer hot paths; `contractId` → `contractIdentifier` rename; Hub/Passport callers still on hard-coded `7778` until they adopt `fabricIdentityDerivationPath`; `API.md` index sync via `make:api` for gossip / parse / `resolveSpend` option docs. Blinded-execution remains a scaffold (not Yao GC) even with signed decisions + hashlock+pubkey leaves — `decisionSigningMessage` v2 binds `at` (PR #183 Medium closed). GroupChangeProposal votes bind canonical `members` / `signers` (v2; PR #183 High closed). Beacon federation rounds stop collecting at `ready`; core `Beacon#submitFederationEpochSignature` idempotently finalizes already-`ready` rounds if epoch-chain persist fails ([docs/CONTRACTS.md](docs/CONTRACTS.md) §8 item 25). Peering self-dial suppress uses verified AMP signer (`verifiedPubkey`) only — advertised `obj.pubkey` is informational (FIFO-capped). OP_RETURN hallmarks ([docs/STATECHAIN.md](docs/STATECHAIN.md) / `functions/fabricHallmark`) are encode/verify in core; Hub opt-in publish+scan is separate — no P2P hallmark broadcast. Evaluator acceptance for blinded-execution finalization excludes the garbler key.
 
-~~**Beacon/ARC publish authority fail-open**~~ — `Peer.collectContractAuthorityPubkeys` includes nested `members.signers` / `spendPolicy.validators` so Beacon genesis front-runs by non-validators are rejected.
+~~**Beacon/ARC publish authority fail-open**~~ — `Contract.authorityPubkeys` (used by Peer) includes nested `members.signers` / `spendPolicy.validators` so Beacon genesis front-runs by non-validators are rejected.
 
 ## Inventory HTLC binding
 Buyers must rebuild the buyer-bound P2TR (`Htlc.validateOffer`) and must not fund a seller-advertised `paymentAddress` that does not match. When an AMP signer is known (`inventoryResponse.signerPubkeyHex` / offer `ampSignerPubkey` / HTLC `sellerPublicKeyHex`), it must match the resolved seller x-only key before funding.

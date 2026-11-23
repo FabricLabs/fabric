@@ -28,15 +28,35 @@ class OrderBook extends SignedBook {
   }
 
   /**
-   * A maker at its entry limit loses its oldest entry.
+   * A maker at its entry limit loses its oldest entry. In a full book the
+   * maker holding the most entries (counting the incoming one; the incoming
+   * maker on a tie) gives up its oldest, so one key cannot flush every other
+   * maker out; with no such maker the book's oldest row goes.
    * @protected
    * @param {Object} entry verified body
    */
   _beforeInsert (entry) {
     const setting = this._spec.perMakerSetting;
-    if (!setting) return;
-    const mine = this._list((row) => this._body(row).makerPubkey === entry.makerPubkey);
-    if (mine.length >= this.settings[setting]) this._delete(mine[0].id);
+    if (setting) {
+      const mine = this._list((row) => this._body(row).makerPubkey === entry.makerPubkey);
+      if (mine.length >= this.settings[setting]) this._delete(mine[0].id);
+    }
+    if (this.size < this._limit()) return;
+    const byMaker = new Map();
+    for (const row of this._rows()) {
+      const maker = this._body(row).makerPubkey;
+      if (byMaker.has(maker)) byMaker.get(maker).push(row);
+      else byMaker.set(maker, [row]);
+    }
+    let victim = byMaker.get(entry.makerPubkey) || [];
+    let most = victim.length + 1;
+    for (const [maker, rows] of byMaker) {
+      if (maker !== entry.makerPubkey && rows.length > most) {
+        victim = rows;
+        most = rows.length;
+      }
+    }
+    if (victim.length) this._delete(victim[0].id);
   }
 
   /** @returns {Set<string>} makers with a live entry */

@@ -10,6 +10,7 @@ const sidechainState = require('../functions/sidechainState');
 const { createMemoryStore, parseContractMessageBody } = require('../functions/contractMessageAccumulate');
 const { enqueueMessageBuffer } = require('../functions/contractMessageQueue');
 const { createCollection, ingest } = require('../functions/fabricMessageCollection');
+const { purchaseContentHashHex } = require('../functions/publishedDocumentEnvelope');
 const { offlinePeerSettings } = require('./helpers/peer');
 
 const OWNER = new Key({ private: '1111111111111111111111111111111111111111111111111111111111111111' });
@@ -123,6 +124,54 @@ describe('Message legacy bodies', function () {
       const back = roundTrip('CONTRACT_MESSAGE', body);
       assert.deepStrictEqual(back, body);
       assert.deepStrictEqual(Object.keys(back), Object.keys(body), 'key order is kept');
+    });
+
+    it('CONTRACT_MESSAGE indexes recipient, ref, and slot without reading the payload', function () {
+      const body = {
+        contract: 'ab'.repeat(32),
+        type: 'GroupChat',
+        object: { body: 'hello', recipient: 'bob', ref: 'm1', slot: 'general' }
+      };
+      const msg = Message.fromLegacyBody('CONTRACT_MESSAGE', body);
+      const fields = msg.toFields();
+      assert.deepStrictEqual(Message.contractMessageIndex(msg), {
+        recipient: 'bob',
+        ref: 'm1',
+        slot: 'general'
+      });
+      assert.strictEqual(JSON.parse(fields.payload).object.body, 'hello');
+      assert.strictEqual(Message.contractMessageMatches(msg, { recipient: 'bob', ref: 'm1' }), true);
+      assert.strictEqual(Message.contractMessageMatches(msg, { recipient: 'ada' }), false);
+
+      const indexed = Message.fromFields('CONTRACT_MESSAGE', {
+        contract: 'ab'.repeat(32),
+        payload: 'not-json',
+        recipient: 'bob'
+      });
+      assert.deepStrictEqual(Message.contractMessageIndex(indexed), { recipient: 'bob', ref: '', slot: '' });
+      assert.strictEqual(Message.contractMessageMatches(indexed, { recipient: 'bob' }), true);
+
+      const bare = Message.encodeBody(
+        [{ name: 'contract', type: 'string' }, { name: 'payload', type: 'string' }],
+        { contract: 'ab'.repeat(32), payload: '{"type":"GroupChat"}' }
+      );
+      const decoded = Message.decodeBody(Message.SCHEMA_CONTRACT_MESSAGE, bare);
+      assert.strictEqual(decoded.recipient, '');
+      assert.strictEqual(decoded.payload, '{"type":"GroupChat"}');
+
+      const unindexed = Message.fromLegacyBody('CONTRACT_MESSAGE', {
+        contract: 'ab'.repeat(32),
+        type: 'GroupChat',
+        object: { body: 'hello' }
+      });
+      assert.ok(unindexed.bodyBuffer.equals(Message.encodeBody(
+        [{ name: 'contract', type: 'string' }, { name: 'payload', type: 'string' }],
+        { contract: 'ab'.repeat(32), payload: JSON.stringify({ type: 'GroupChat', object: { body: 'hello' } }) }
+      )));
+      assert.throws(
+        () => Message.fromLegacyBody('CONTRACT_MESSAGE', { contract: 'ab'.repeat(32), recipient: 'x'.repeat(257) }),
+        /recipient exceeds 256/
+      );
     });
 
     it('SIDECHAIN_STATE_PATCH', function () {
@@ -239,13 +288,13 @@ describe('Message legacy bodies', function () {
       );
     });
 
-    it('a JSON copy and a field copy of one gossip emit once', function () {
+    it('a field gossip relayed twice emits once', function () {
       const receiver = new Peer(offlinePeerSettings());
       let seen = 0;
       receiver.on('peeringGossip', () => { seen += 1; });
       const body = { host: '10.1.1.1', port: 7777, nonce: 'once' };
-      receiver._handleFabricMessage(jsonFrame('P2P_PEER_GOSSIP', body).toBuffer(), { name: 'a' });
-      receiver._handleFabricMessage(fieldFrame('P2P_PEER_GOSSIP', body).toBuffer(), { name: 'b' });
+      receiver._handleFabricMessage(fieldFrame('P2P_PEER_GOSSIP', body).toBuffer(), { name: 'a' });
+      receiver._handleFabricMessage(fieldFrame('P2P_PEER_GOSSIP', Object.assign({ gossipHop: 1 }, body)).toBuffer(), { name: 'b' });
       assert.strictEqual(seen, 1);
     });
   });
@@ -278,19 +327,16 @@ describe('Message legacy bodies', function () {
     it('a field CONTRACT_MESSAGE emits the JSON event shape and applies its ops', function () {
       const id = new Actor(definition()).id;
       const body = { contract: id, type: 'ContractMessage', ops: [{ op: 'add', path: '/note', value: 'from-fields' }] };
-      const shapes = [];
-      for (const frame of [jsonFrame('CONTRACT_MESSAGE', body), fieldFrame('CONTRACT_MESSAGE', body)]) {
-        const receiver = new Peer(offlinePeerSettings());
-        receiver._handleFabricMessage(fieldFrame('CONTRACT_PUBLISH', definition()).toBuffer(), { name: 'a' });
-        let ev = null;
-        receiver.on('contract:message', (e) => { ev = e; });
-        receiver._handleFabricMessage(frame.toBuffer(), { name: 'a' });
-        assert.ok(ev, 'contract:message emitted');
-        assert.strictEqual(ev.contract, id);
-        assert.strictEqual(receiver._state.content.contracts[id].note, 'from-fields');
-        shapes.push(ev.object);
-      }
-      assert.deepStrictEqual(shapes[1], shapes[0]);
+      const receiver = new Peer(offlinePeerSettings());
+      receiver._handleFabricMessage(fieldFrame('CONTRACT_PUBLISH', definition()).toBuffer(), { name: 'a' });
+      let ev = null;
+      receiver.on('contract:message', (e) => { ev = e; });
+      receiver._handleFabricMessage(fieldFrame('CONTRACT_MESSAGE', body).toBuffer(), { name: 'a' });
+      assert.ok(ev, 'contract:message emitted');
+      assert.strictEqual(ev.contract, id);
+      assert.strictEqual(ev.object.type, 'ContractMessage');
+      assert.deepStrictEqual(ev.object.ops, body.ops);
+      assert.strictEqual(receiver._state.content.contracts[id].note, 'from-fields');
     });
 
     it('a field sidechain patch passes the federation witness check', function () {
@@ -337,6 +383,290 @@ describe('Message legacy bodies', function () {
       assert.strictEqual(pongs[0].toFields().nonce, a.toFields().nonce);
       assert.strictEqual(pongs[1].toFields().nonce, b.toFields().nonce);
       assert.notStrictEqual(pongs[0].id, pongs[1].id);
+    });
+  });
+
+  describe('session, inventory, and document layouts', function () {
+    const HASH = 'ab'.repeat(32);
+    const sender = new Peer(offlinePeerSettings());
+    const claim = sender._buildSessionKeyExchangeClaim();
+    const sessionOffer = {
+      type: 'P2P_SESSION_OFFER',
+      actor: Object.assign({ id: sender.identity.id }, claim),
+      object: { challenge: '0011223344556677', maxFrameBytes: 1048576 }
+    };
+    const documentBody = {
+      contentBase64: Buffer.from('hello fields').toString('base64'),
+      id: HASH,
+      mime: 'text/plain',
+      name: 'hello.txt',
+      revision: 1,
+      sha256: HASH,
+      size: 12
+    };
+
+    it('registers each layout under its opcode, wire name, and alias', function () {
+      const names = [
+        ['P2P_SESSION_OFFER', 'SessionOffer', Message.SCHEMA_P2P_SESSION_OFFER],
+        ['P2P_SESSION_OPEN', 'SessionOpen', Message.SCHEMA_P2P_SESSION_OPEN],
+        ['P2P_INVENTORY_REQUEST', 'InventoryRequest', Message.SCHEMA_P2P_INVENTORY_REQUEST],
+        ['P2P_INVENTORY_RESPONSE', 'InventoryResponse', Message.SCHEMA_P2P_INVENTORY_RESPONSE],
+        ['P2P_DOCUMENT_PUBLISH', 'DocumentPricingPublish', Message.SCHEMA_P2P_DOCUMENT_PUBLISH],
+        ['DOCUMENT_PUBLISH', 'DocumentPublish', Message.SCHEMA_DOCUMENT_PUBLISH],
+        ['DOCUMENT_REQUEST', 'DocumentRequest', Message.SCHEMA_DOCUMENT_REQUEST]
+      ];
+      for (const [name, alias, schema] of names) {
+        assert.ok(Array.isArray(schema), name);
+        assert.deepStrictEqual(Message.getBodySchema(name), schema.slice());
+        assert.deepStrictEqual(Message.getBodySchema(alias), schema.slice());
+        assert.deepStrictEqual(Message.getBodySchema(Message.canonicalTypeCode(name)), schema.slice());
+        assert.ok(Message.LEGACY_BODY_TYPES.includes(name), name);
+      }
+      assert.strictEqual(Message.getBodySchema('P2P_SESSION_ACK'), null);
+    });
+
+    it('P2P_SESSION_OFFER and P2P_SESSION_OPEN', function () {
+      assert.deepStrictEqual(roundTrip('P2P_SESSION_OFFER', sessionOffer), sessionOffer);
+      const open = {
+        type: 'P2P_SESSION_OPEN',
+        actor: Object.assign({}, sessionOffer.actor, { parentXpub: null }),
+        object: { initiator: 'a'.repeat(20), counterparty: 'b'.repeat(20), solution: '0011223344556677', maxFrameBytes: 65536 }
+      };
+      assert.deepStrictEqual(roundTrip('SessionOpen', open), open);
+    });
+
+    it('a field session offer passes the key-exchange check like JSON', function () {
+      const receiver = new Peer(offlinePeerSettings());
+      const fromJson = receiver._validateSessionKeyExchangeClaim(sessionOffer, claim.pubkey, 'a');
+      const fromFields = receiver._validateSessionKeyExchangeClaim(roundTrip('P2P_SESSION_OFFER', sessionOffer), claim.pubkey, 'a');
+      assert.ok(fromJson);
+      assert.deepStrictEqual(fromFields, fromJson);
+    });
+
+    it('P2P_INVENTORY_REQUEST, flat and as a Hub envelope', function () {
+      const offer = { offerBtc: true, maxSats: 0, buyerRefundPublicKey: '02' + HASH, blobHashHex: HASH };
+      assert.deepStrictEqual(roundTrip('P2P_INVENTORY_REQUEST', offer), offer);
+      const documents = { kind: 'documents', created: 1793376578453 };
+      assert.deepStrictEqual(roundTrip('InventoryRequest', documents), documents);
+      const hub = {
+        type: 'FABRIC_DOCUMENT_OFFER',
+        actor: { id: 'hub' },
+        object: { kind: 'mainchain-blocks', created: 1, hashes: [HASH], inventoryRelayTtl: 6, htlcAmountSats: 2000 },
+        target: '127.0.0.1:7777'
+      };
+      assert.deepStrictEqual(roundTrip('P2P_INVENTORY_REQUEST', hub), hub);
+    });
+
+    it('P2P_INVENTORY_RESPONSE keeps items and paging', function () {
+      const page = {
+        kind: 'documents',
+        items: [{ id: HASH, blobs: [{ index: 0, hash: HASH }], purchasePriceSats: 716 }],
+        created: 1793376578453,
+        inventoryId: '0011223344556677',
+        page: 1,
+        pages: 3
+      };
+      const back = roundTrip('P2P_INVENTORY_RESPONSE', page);
+      assert.deepStrictEqual(back, page);
+      assert.deepStrictEqual(Object.keys(back.items[0]), Object.keys(page.items[0]), 'item key order is kept');
+      const hub = { type: 'FABRIC_DOCUMENT_OFFER_RESPONSE', actor: { id: 'hub' }, object: { kind: 'documents', items: [], created: 2 }, target: 'buyer' };
+      assert.deepStrictEqual(roundTrip('InventoryResponse', hub), hub);
+    });
+
+    it('DOCUMENT_REQUEST keeps zero, false, and unknown keys', function () {
+      const body = {
+        document: HASH,
+        maxSats: 500,
+        relayHop: 0,
+        routeId: '0102030405060708',
+        blobIndex: 0,
+        batchEnd: 4,
+        blobTotal: 9,
+        quote: false,
+        credit: true,
+        creditRef: 'ref-1',
+        contentHashHex: HASH,
+        futureKey: { x: 1 }
+      };
+      assert.deepStrictEqual(roundTrip('DocumentRequest', body), body);
+      assert.deepStrictEqual(roundTrip('DOCUMENT_REQUEST', { id: 'legacy-id' }), { id: 'legacy-id' });
+    });
+
+    it('values a field cannot hold exactly ride in extra', function () {
+      const odd = { document: 'd', blobIndex: -1, relayHop: 300, maxSats: 1.5, contentHashHex: HASH.toUpperCase(), quote: 'yes', routeId: null };
+      const fields = Message.encodeLegacyBody('DOCUMENT_REQUEST', odd);
+      assert.deepStrictEqual(JSON.parse(fields.extra), { blobIndex: -1, relayHop: 300, maxSats: 1.5, contentHashHex: HASH.toUpperCase(), quote: 'yes', routeId: null });
+      assert.deepStrictEqual(roundTrip('DOCUMENT_REQUEST', odd), odd);
+      const loose = Object.assign({}, documentBody, { contentBase64: 'aGVsbG8', revision: '2' });
+      assert.deepStrictEqual(roundTrip('DocumentPublish', loose), loose);
+      assert.deepStrictEqual(roundTrip('DocumentPublish', Object.assign({}, documentBody, { contentBase64: null })),
+        Object.assign({}, documentBody, { contentBase64: null }));
+      assert.deepStrictEqual(roundTrip('P2P_INVENTORY_REQUEST', { offerBtc: true, maxSats: undefined }), { offerBtc: true });
+    });
+
+    it('DOCUMENT_PUBLISH carries the content as raw bytes and keeps the payment hash', function () {
+      const back = roundTrip('DocumentPublish', documentBody);
+      assert.deepStrictEqual(back, documentBody);
+      assert.strictEqual(purchaseContentHashHex(HASH, back), purchaseContentHashHex(HASH, documentBody));
+      const fields = Message.fromLegacyBody('DOCUMENT_PUBLISH', documentBody).toFields();
+      assert.strictEqual(fields.content.toString('utf8'), 'hello fields');
+    });
+
+    it('P2P_DOCUMENT_PUBLISH', function () {
+      const rate = {
+        type: 'P2P_DOCUMENT_PUBLISH',
+        object: { hash: HASH, rate: 1000, contentHash: HASH, contentHashHex: HASH, binding: 'envelope' }
+      };
+      assert.deepStrictEqual(roundTrip('DocumentPricingPublish', rate), rate);
+    });
+
+    it('rejects non-object bodies and decodes unusable fields to null', function () {
+      assert.throws(() => Message.encodeLegacyBody('DOCUMENT_REQUEST', 'doc'), /must be an object/);
+      assert.throws(() => Message.encodeLegacyBody('P2P_SESSION_OFFER', [1]), /must be an object/);
+      assert.strictEqual(Message.decodeLegacyBody('DOCUMENT_REQUEST', { present: 0, extra: '[1]' }), null);
+      assert.strictEqual(Message.decodeLegacyBody('DOCUMENT_REQUEST', { present: 0, extra: 'nope' }), null);
+      assert.strictEqual(Message.decodeLegacyBody('DOCUMENT_REQUEST', { present: 1 << 8, quote: 2, extra: '' }), null);
+      assert.strictEqual(Message.decodeLegacyBody('DOCUMENT_REQUEST', { present: 1 << 11, contentHash: Buffer.alloc(31), extra: '' }), null);
+      assert.strictEqual(Message.decodeLegacyBody('P2P_SESSION_OFFER', { present: 1 << 1, actor: 'x', extra: '{"actor":"y"}' }), null);
+      assert.deepStrictEqual(Message.decodeLegacyBody('DOCUMENT_REQUEST', { present: 0, extra: '' }), {});
+    });
+
+    it('dedup and registration keys ignore the encoding', function () {
+      const peer = new Peer(offlinePeerSettings());
+      assert.strictEqual(
+        peer._logicalRegistrationKey('DOCUMENT_PUBLISH', roundTrip('DOCUMENT_PUBLISH', documentBody)),
+        peer._logicalRegistrationKey('DOCUMENT_PUBLISH', documentBody)
+      );
+      const rate = { hash: HASH, rate: 1000, contentHash: HASH };
+      assert.strictEqual(
+        peer._logicalRegistrationKey('P2P_DOCUMENT_PUBLISH', roundTrip('P2P_DOCUMENT_PUBLISH', rate)),
+        peer._logicalRegistrationKey('P2P_DOCUMENT_PUBLISH', rate)
+      );
+    });
+
+    it('Peer emits document and inventory events for field frames', function () {
+      const request = { document: HASH, blobIndex: 0, contentHashHex: HASH };
+      const inventory = { kind: 'documents', created: 5 };
+      const rate = { type: 'P2P_DOCUMENT_PUBLISH', object: { hash: HASH, rate: 1000, contentHash: HASH } };
+      const receiver = new Peer(offlinePeerSettings());
+      const got = {};
+      receiver.on('documentRequest', (ev) => { got.request = ev.parsed; });
+      receiver.on('documentPublish', (ev) => {
+        if (ev.source === 'canonical') got.publish = [ev.parsed, ev.purchaseContentHashHex];
+        else got.rate = [ev.documentId, ev.rateSats, ev.contentHash];
+      });
+      receiver.on('inventory', (ev) => { got.inventory = ev.message.object; });
+      receiver._handleFabricMessage(fieldFrame('DocumentRequest', request).toBuffer(), { name: 'a' });
+      receiver._handleFabricMessage(fieldFrame('DocumentPublish', documentBody).toBuffer(), { name: 'a' });
+      receiver._handleFabricMessage(fieldFrame('P2P_DOCUMENT_PUBLISH', rate).toBuffer(), { name: 'a' });
+      receiver._handleFabricMessage(fieldFrame('P2P_INVENTORY_REQUEST', inventory).toBuffer(), { name: 'a' });
+      assert.deepStrictEqual(Object.keys(got).sort(), ['inventory', 'publish', 'rate', 'request']);
+      assert.deepStrictEqual(got.request, request);
+      assert.deepStrictEqual(got.inventory, inventory);
+      assert.deepStrictEqual(got.rate.slice(0, 2), [HASH, 1000]);
+    });
+  });
+
+  describe('Bitcoin, proposal and flush layouts', function () {
+    const HASH = 'ab'.repeat(32);
+    const tipBody = { tip: HASH, height: 812, supply: 1.25, network: 'regtest', at: '2026-11-03T00:00:00.000Z' };
+
+    it('round-trips every key, odd values included', function () {
+      assert.deepStrictEqual(roundTrip('BitcoinBlock', tipBody), tipBody);
+      assert.deepStrictEqual(roundTrip('BitcoinBlock', { content: '00ff' }), { content: '00ff' });
+      assert.deepStrictEqual(roundTrip('BitcoinBlock', { tip: 'abc' }), { tip: 'abc' });
+      assert.deepStrictEqual(roundTrip('BitcoinTransaction', { content: '0102' }), { content: '0102' });
+      assert.deepStrictEqual(roundTrip('BitcoinTransaction', { content: 'ABC' }), { content: 'ABC' });
+      assert.deepStrictEqual(roundTrip('BitcoinBlockHash', { content: HASH }), { content: HASH });
+      assert.deepStrictEqual(roundTrip('BitcoinTransactionHash', { content: HASH }), { content: HASH });
+    });
+
+    it('stores raw block and transaction bytes, not hex text', function () {
+      const content = 'ab'.repeat(100);
+      const m = Message.fromLegacyBody('BitcoinTransaction', { content });
+      assert.ok(m.toBuffer().length < Message.fromVector(['BitcoinTransaction', JSON.stringify({ content })]).toBuffer().length - 90);
+    });
+
+    it('a field CONTRACT_PROPOSAL still verifies', function () {
+      const { createContractProposalMessage, verifyContractProposalPayload } = require('../functions/contractProposal');
+      const inner = Message.fromVector(['P2P_BASE_MESSAGE', JSON.stringify({ type: 'X' })]).signWithKey(OWNER);
+      const msg = createContractProposalMessage(OWNER, { messages: [inner], contractId: 'c1', psbtProposalBase64: 'AQID' });
+      const parsed = Message.tryParseLegacyBody(Message.fromBuffer(msg.toBuffer()));
+      assert.strictEqual(parsed.encoding, 'fields');
+      assert.strictEqual(parsed.value.psbt.proposalBase64, 'AQID');
+      assert.strictEqual(verifyContractProposalPayload(parsed.value).ok, true);
+    });
+
+    it('Peer reads field BitcoinBlock and CONTRACT_PROPOSAL frames', function () {
+      const { createContractProposalMessage } = require('../functions/contractProposal');
+      const inner = Message.fromVector(['P2P_BASE_MESSAGE', JSON.stringify({ type: 'X' })]).signWithKey(OWNER);
+      const fieldProposal = createContractProposalMessage(OWNER, { messages: [inner], contractId: 'c9' });
+      const proposalBody = Message.tryParseLegacyBody(fieldProposal).value;
+      const receiver = new Peer(offlinePeerSettings());
+      const got = {};
+      receiver.on('bitcoinBlock', (ev) => { got.block = ev.object; });
+      receiver.on('contract:proposal', (ev) => { got.proposal = [ev.contract, ev.payload.chain.merkleRoot]; });
+      for (const f of [fieldFrame('BitcoinBlock', tipBody), fieldProposal]) receiver._handleFabricMessage(f.toBuffer(), { name: 'a' });
+      assert.deepStrictEqual(got.block, tipBody);
+      assert.deepStrictEqual(got.proposal, ['c9', proposalBody.chain.merkleRoot]);
+    });
+  });
+
+  describe('Phase 5: the wire requires fields', function () {
+    it('a default Peer drops JSON bodies of field types and counts them', function () {
+      const receiver = new Peer(offlinePeerSettings());
+      const warnings = [];
+      receiver.on('warning', (w) => warnings.push(String(w)));
+      let blocks = 0;
+      receiver.on('bitcoinBlock', () => { blocks++; });
+      const tip = { tip: 'cd'.repeat(32), height: 1 };
+      receiver._handleFabricMessage(jsonFrame('BitcoinBlock', tip).toBuffer(), { name: 'a' });
+      assert.strictEqual(blocks, 0);
+      assert.deepStrictEqual(receiver.jsonBodyCounts(), { BITCOIN_BLOCK: 1 });
+      assert.ok(warnings.some((w) => w.includes('Dropped JSON body of BITCOIN_BLOCK')));
+      receiver._handleFabricMessage(fieldFrame('BitcoinBlock', tip).toBuffer(), { name: 'a' });
+      assert.strictEqual(blocks, 1);
+    });
+
+    it('types without a layout keep JSON bodies', function () {
+      const receiver = new Peer(offlinePeerSettings());
+      receiver._handleFabricMessage(jsonFrame('GenericMessage', { type: 'Example', object: {} }).toBuffer(), { name: 'a' });
+      assert.deepStrictEqual(receiver.jsonBodyCounts(), {});
+    });
+
+    it('stored JSON frames still parse for replay', function () {
+      const body = { contract: 'ab'.repeat(32), type: 'Example', object: { n: 1 } };
+      const parsed = Message.tryParseLegacyBody(Message.fromBuffer(jsonFrame('CONTRACT_MESSAGE', body).toBuffer()));
+      assert.strictEqual(parsed.encoding, 'json');
+      assert.deepStrictEqual(parsed.value, body);
+    });
+  });
+
+  describe('Phase 4: local records and deprecated opcodes', function () {
+    it('fromFields refuses a schema name with no opcode', function () {
+      const fields = { programHash: Buffer.alloc(32), runCommitment: Buffer.alloc(32), resultHint: '' };
+      assert.throws(() => Message.fromFields('FabricProgramRun', fields), /no wire opcode/);
+      const schema = Message.getBodySchema('FabricProgramRun');
+      assert.deepStrictEqual(Message.decodeBody(schema, Message.encodeBody(schema, fields)).resultHint, '');
+    });
+
+    it('Peer counts deprecated opcodes and warns once per type', function () {
+      const peer = new Peer(offlinePeerSettings());
+      const warnings = [];
+      peer.on('warning', (w) => warnings.push(String(w)));
+      for (let i = 0; i < 3; i++) {
+        const m = Message.fromVector(['P2P_STATE_ROOT', JSON.stringify({ n: i })]).signWithKey(OWNER);
+        peer._handleFabricMessage(m.toBuffer(), { name: 'a' });
+      }
+      assert.deepStrictEqual(peer.deprecatedWireTypeCounts(), { P2P_STATE_ROOT: 3 });
+      assert.strictEqual(warnings.filter((w) => w.includes('Deprecated wire type')).length, 1);
+    });
+
+    it('every deprecated name is a registered decode name', function () {
+      const names = Object.values(new Message({}).codes);
+      for (const t of Message.DEPRECATED_WIRE_TYPES) assert.ok(names.includes(t), t);
+      assert.ok(!Message.DEPRECATED_WIRE_TYPES.includes('P2P_BASE_MESSAGE'));
+      assert.ok(!Message.DEPRECATED_WIRE_TYPES.includes('P2P_CHAIN_SYNC_REQUEST'));
     });
   });
 

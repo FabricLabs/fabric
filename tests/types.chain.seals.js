@@ -8,6 +8,7 @@ const {
 } = require('../functions/beaconFederationSigning');
 const Chain = require('../types/chain');
 const Block = require('../types/block');
+const SIGNING_TAGS = require('../functions/signingTags');
 
 describe('@fabric/core/types/chain consensus (Block ledger)', function () {
   it('federation append is linear and digest is stable', function () {
@@ -51,7 +52,7 @@ describe('@fabric/core/types/chain consensus (Block ledger)', function () {
       {
         type: 'BEACON_EPOCH',
         payload: epochOk,
-        federationWitness: { signatures: { [key.pubkey]: key.signSchnorr(msg).toString('hex') } }
+        federationWitness: { signatures: { [key.pubkey]: key.signSchnorr(msg, SIGNING_TAGS.FEDERATION_WITNESS).toString('hex') } }
       },
       { type: 'BEACON_EPOCH', payload: epochBad, federationWitness: null }
     ]);
@@ -165,7 +166,7 @@ describe('@fabric/core/types/chain consensus (Block ledger)', function () {
     const block = new Block({
       type: 'BEACON_EPOCH',
       data: epoch,
-      federationWitness: { signatures: { [key.pubkey]: key.signSchnorr(msg).toString('hex') } }
+      federationWitness: { signatures: { [key.pubkey]: key.signSchnorr(msg, SIGNING_TAGS.FEDERATION_WITNESS).toString('hex') } }
     });
     assert.strictEqual(block.validate({
       consensus: 'federation',

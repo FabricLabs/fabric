@@ -44,6 +44,19 @@ class Book extends Actor {
     return this.settings.maxEntries;
   }
 
+  /**
+   * {@link Book#capacity} as a usable bound: a missing or non-numeric
+   * setting (e.g. `{ maxOrders: undefined }` overriding the default) falls
+   * back to `MAX_ENTRIES` instead of leaving the book unbounded.
+   * @private
+   * @returns {number}
+   */
+  _limit () {
+    const cap = this.capacity;
+    const n = typeof cap === 'number' ? cap : Number(cap);
+    return cap == null || Number.isNaN(n) ? MAX_ENTRIES : n;
+  }
+
   /** @returns {number} rows held */
   get size () {
     return this._entries.size;
@@ -89,7 +102,8 @@ class Book extends Actor {
    * @param {Object} row
    */
   _insert (key, row) {
-    while (this._entries.size && this._entries.size >= this.capacity) {
+    const limit = this._limit();
+    while (this._entries.size && this._entries.size >= limit) {
       this._entries.delete(this._entries.keys().next().value);
     }
     this._entries.set(key, row);

@@ -17,14 +17,8 @@ const crypto = require('crypto');
 const Key = require('../types/key');
 const fabricCanonicalJson = require('./fabricCanonicalJson');
 const bls = require('./bls');
-const {
-  federationValidatorId,
-  uniqueValidatorPubkeys,
-  normalizeFederationValidators,
-  findValidatorEntry,
-  witnessSignatureFor,
-  resolveFederationThreshold
-} = require('./federationValidators');
+const Federation = require('../types/federation');
+const FEDERATION_WITNESS_TAG = require('./signingTags').FEDERATION_WITNESS;
 const { jsonSafe } = fabricCanonicalJson;
 
 const BEACON_EPOCH_SIGNING_KIND = 'BeaconEpoch';
@@ -104,33 +98,32 @@ function epochCommitmentDigestHex (epochPayload) {
  * @param {string[]} validatorPubkeys
  * @param {number} [threshold=1]
  * @param {string} [scheme] overrides `witness.scheme` when set
- * @param {Object} [opts]
- * @param {boolean} [opts.allowLegacy=true] BLS: accept legacy `v: 1` bundles (history only)
+ * @param {string} [tag=FEDERATION_WITNESS_TAG] Schnorr tag the witness signed under
  * @returns {boolean}
  */
-function verifyFederationWitnessOnMessage (messageBuffer, witness, validatorPubkeys, threshold = 1, scheme, opts = {}) {
+function verifyFederationWitnessOnMessage (messageBuffer, witness, validatorPubkeys, threshold = 1, scheme, tag = FEDERATION_WITNESS_TAG) {
   const resolved = bls.normalizeSignatureScheme(
     scheme != null ? scheme : (witness && witness.scheme)
   );
   if (resolved === bls.SCHEME_BLS) {
     if (!Buffer.isBuffer(messageBuffer)) return false;
-    return bls.verifyFederationBlsWitness(messageBuffer, witness, validatorPubkeys, threshold, opts);
+    return bls.verifyFederationBlsWitness(messageBuffer, witness, validatorPubkeys, threshold);
   }
   if (!witness || !witness.signatures || typeof witness.signatures !== 'object') return false;
   if (!Buffer.isBuffer(messageBuffer)) return false;
   // One count per signing key, so a repeated or respelled pubkey cannot satisfy k-of-n with one signature.
-  const pubkeys = uniqueValidatorPubkeys(validatorPubkeys);
+  const pubkeys = Federation.uniqueValidatorPubkeys(validatorPubkeys);
   const thr = Number(threshold);
   if (!Number.isInteger(thr) || thr < 1) return false;
   let valid = 0;
   for (const pubkey of pubkeys) {
-    const sigHex = witnessSignatureFor(witness.signatures, pubkey);
+    const sigHex = Federation.witnessSignatureFor(witness.signatures, pubkey);
     if (!sigHex || typeof sigHex !== 'string') continue;
     try {
       // BIP340 verifies over x only, so x-only validator ids verify too.
-      const k = new Key({ pubkey: '02' + federationValidatorId(pubkey) });
+      const k = new Key({ pubkey: '02' + Federation.validatorId(pubkey) });
       const sig = Buffer.from(sigHex, 'hex');
-      if (k.verifySchnorr(messageBuffer, sig)) valid++;
+      if (k.verifySchnorr(messageBuffer, sig, tag)) valid++;
       if (valid >= thr) return true;
     } catch {
       /* ignore */
@@ -177,7 +170,7 @@ async function persistPendingDoc (fs, doc) {
  * @param {object} epochPayload full epoch incl. sidechain / contracts heads
  * @param {Object} [policy]
  * @param {string[]} [policy.validators] validator pubkeys (compressed or x-only hex);
- * stored normalized ({@link module:functions/federationValidators.normalizeFederationValidators})
+ * stored normalized ({@link Federation.normalizeValidators})
  * @param {number} [policy.threshold] k (clamped to the distinct validators);
  * omitted = strict majority of the distinct validators
  * @param {string} [policy.signatureScheme] `schnorr` (default) or `bls`
@@ -188,8 +181,8 @@ function createRound (epochPayload, policy = {}, initialWitness = null) {
   const pol = policy && typeof policy === 'object' ? policy : {};
   const canonical = canonicalEpochForFederation(epochPayload);
   const commitmentDigest = epochCommitmentDigestHex(canonical);
-  const validators = normalizeFederationValidators(pol.validators || []);
-  const threshold = resolveFederationThreshold(pol.threshold, validators);
+  const validators = Federation.normalizeValidators(pol.validators || []);
+  const threshold = Federation.resolveThreshold(pol.threshold, validators);
   const signatureScheme = bls.normalizeSignatureScheme(pol.signatureScheme);
   const round = {
     commitmentDigest,
@@ -227,9 +220,7 @@ function roundMeetsThreshold (round) {
     messageBufferForPayload(round.payload),
     round.witness,
     round.validators,
-    round.threshold,
-    undefined,
-    { allowLegacy: false }
+    round.threshold
   );
 }
 
@@ -266,7 +257,7 @@ function addSignature (round, pubkey, signatureHex) {
     if (!pk || !sig) return { ok: false, error: 'pubkey and signature required' };
     stored = sig;
   }
-  const member = findValidatorEntry(round.validators, pk);
+  const member = Federation.findValidatorEntry(round.validators, pk);
   if (!member) {
     return { ok: false, error: 'pubkey not in federation validators' };
   }
@@ -276,7 +267,7 @@ function addSignature (round, pubkey, signatureHex) {
     ...(scheme === bls.SCHEME_BLS ? { scheme: bls.SCHEME_BLS } : {}),
     signatures: { [member]: stored }
   };
-  if (!verifyFederationWitnessOnMessage(msg, probe, [member], 1, undefined, { allowLegacy: false })) {
+  if (!verifyFederationWitnessOnMessage(msg, probe, [member], 1)) {
     return {
       ok: false,
       error: scheme === bls.SCHEME_BLS ? 'invalid BLS signature' : 'invalid Schnorr signature'
@@ -285,7 +276,7 @@ function addSignature (round, pubkey, signatureHex) {
   if (scheme === bls.SCHEME_BLS) round.witness.scheme = bls.SCHEME_BLS;
   // One entry per signing key, under the listed spelling.
   for (const k of Object.keys(round.witness.signatures)) {
-    if (k !== member && federationValidatorId(k) === federationValidatorId(member)) {
+    if (k !== member && Federation.validatorId(k) === Federation.validatorId(member)) {
       delete round.witness.signatures[k];
     }
   }
@@ -338,6 +329,7 @@ function parseSignResponse (body) {
 
 module.exports = {
   BEACON_EPOCH_SIGNING_KIND,
+  FEDERATION_WITNESS_TAG,
   FEDERATION_SIGN_REQUEST,
   FEDERATION_SIGN_RESPONSE,
   PENDING_STORE_PATH,

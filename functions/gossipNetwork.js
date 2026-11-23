@@ -11,7 +11,6 @@
  * - `flood` — public `relayFrom` after AMP validate (bit-identical)
  * - `envelope` — `P2P_RELAY` outer flood (inner is local-observe)
  * - `opt-in` — flood only when Peer settings enable it (inventory)
- * - `trusted` — not public; `relayFromTrustedPeers` / allow-list
  * - `directed` — hop-by-hop (`P2P_FORWARD`, file send, MuSig2)
  * - `session` — TCP/NOISE control (ping, session offer/open)
  * - `observe` — local emit / originator broadcast; Peer does not mesh-flood
@@ -35,12 +34,14 @@ const {
   SIDECHAIN_STATE_PATCH_TYPE,
   DOCUMENT_PUBLISH_TYPE,
   DOCUMENT_REQUEST_TYPE,
+  DOCUMENT_KEY_REVEAL_TYPE,
+  DOCUMENT_BLOB_QUOTE_TYPE,
+  DOCUMENT_BLOB_BATCH_TYPE,
   BLOCK_CANDIDATE,
   P2P_PING,
   P2P_PONG,
   P2P_GENERIC,
   P2P_CHAIN_SYNC_REQUEST,
-  P2P_FLUSH_CHAIN,
   P2P_INVENTORY_REQUEST,
   P2P_INVENTORY_RESPONSE,
   P2P_FILE_SEND,
@@ -49,6 +50,8 @@ const {
   P2P_PEER_ANNOUNCE,
   P2P_PEER_GOSSIP,
   P2P_PEERING_OFFER,
+  P2P_DOCUMENT_BID,
+  P2P_DOCUMENT_ASK,
   P2P_SESSION_OFFER,
   P2P_SESSION_OPEN,
   P2P_SESSION_ACK,
@@ -78,9 +81,21 @@ const {
   P2P_CHAT_MESSAGE,
   JSON_CALL_TYPE,
   PATCH_MESSAGE_TYPE,
-  SITE_LOGIN_REQUEST,
-  SITE_LOGIN_RESPONSE,
-  FABRIC_SIGN_REQUEST,
+  PASSPORT_CHALLENGE,
+  PASSPORT_ASSERTION,
+  PASSPORT_SIGN_REQUEST,
+  DELEGATION_LINK_OFFER,
+  DELEGATION_LINK_ANSWER,
+  DELEGATION_LINK_REVEAL,
+  DELEGATION_GRANT,
+  DELEGATION_REVOKE,
+  DELEGATION_REQUEST,
+  DELEGATION_RESULT,
+  DELEGATION_MAILBOX_FETCH,
+  PASSPORT_CONNECT,
+  PASSPORT_SESSION,
+  PASSPORT_RESUME,
+  PASSPORT_REFUSED,
   CONTRACT_PROPOSAL_TYPE,
   P2P_START_CHAIN,
   P2P_INSTRUCTION,
@@ -134,12 +149,14 @@ const GOSSIP_NETWORK_TYPES = Object.freeze([
   row('SIDECHAIN_STATE_PATCH', SIDECHAIN_STATE_PATCH_TYPE, 'observe', 'contracts', ['SidechainStatePatch']),
   row('DOCUMENT_PUBLISH', DOCUMENT_PUBLISH_TYPE, 'observe', 'documents', ['DocumentPublish']),
   row('DOCUMENT_REQUEST', DOCUMENT_REQUEST_TYPE, 'flood', 'documents', ['DocumentRequest']),
+  row('DOCUMENT_KEY_REVEAL', DOCUMENT_KEY_REVEAL_TYPE, 'directed', 'documents', ['DocumentContentKeyReveal']),
+  row('DOCUMENT_BLOB_QUOTE', DOCUMENT_BLOB_QUOTE_TYPE, 'directed', 'documents', ['DocumentBlobQuote']),
+  row('DOCUMENT_BLOB_BATCH', DOCUMENT_BLOB_BATCH_TYPE, 'directed', 'documents', ['DocumentBlobBatch']),
   row('BLOCK_CANDIDATE', BLOCK_CANDIDATE, 'observe', 'legacy', ['BlockCandidate']),
   row('P2P_PING', P2P_PING, 'session', 'keepalive', ['Ping']),
   row('P2P_PONG', P2P_PONG, 'session', 'keepalive', ['Pong']),
   row('P2P_GENERIC', P2P_GENERIC, 'observe', 'legacy', ['Generic']),
   row('P2P_CHAIN_SYNC_REQUEST', P2P_CHAIN_SYNC_REQUEST, 'observe', 'mesh', ['ChainSyncRequest']),
-  row('P2P_FLUSH_CHAIN', P2P_FLUSH_CHAIN, 'trusted', 'playnet', ['FlushChain']),
   row('P2P_INVENTORY_REQUEST', P2P_INVENTORY_REQUEST, 'opt-in', 'documents', ['InventoryRequest', 'INVENTORY_REQUEST']),
   row('P2P_INVENTORY_RESPONSE', P2P_INVENTORY_RESPONSE, 'opt-in', 'documents', ['InventoryResponse', 'INVENTORY_RESPONSE']),
   row('P2P_FILE_SEND', P2P_FILE_SEND, 'directed', 'documents', ['FileSend']),
@@ -148,6 +165,8 @@ const GOSSIP_NETWORK_TYPES = Object.freeze([
   row('P2P_PEER_ANNOUNCE', P2P_PEER_ANNOUNCE, 'observe', 'topology', ['PeerAnnounce']),
   row('P2P_PEER_GOSSIP', P2P_PEER_GOSSIP, 'flood', 'topology', ['PeerGossip']),
   row('P2P_PEERING_OFFER', P2P_PEERING_OFFER, 'flood', 'topology', ['PeeringOffer']),
+  row('P2P_DOCUMENT_BID', P2P_DOCUMENT_BID, 'flood', 'documents', ['DocumentBid']),
+  row('P2P_DOCUMENT_ASK', P2P_DOCUMENT_ASK, 'directed', 'documents', ['DocumentAsk']),
   row('P2P_SESSION_OFFER', P2P_SESSION_OFFER, 'session', 'handshake', ['SessionOffer']),
   row('P2P_SESSION_OPEN', P2P_SESSION_OPEN, 'session', 'handshake', ['SessionOpen']),
   row('P2P_SESSION_ACK', P2P_SESSION_ACK, 'session', 'handshake', []),
@@ -177,9 +196,21 @@ const GOSSIP_NETWORK_TYPES = Object.freeze([
   row('P2P_CHAT_MESSAGE', P2P_CHAT_MESSAGE, 'flood', 'shoutbox', []),
   row('JSON_CALL', JSON_CALL_TYPE, 'hub', 'rpc', ['JSONCall']),
   row('JSON_PATCH', PATCH_MESSAGE_TYPE, 'hub', 'rpc', ['JSONPatch']),
-  row('SITE_LOGIN_REQUEST', SITE_LOGIN_REQUEST, 'hub', 'site-login', ['SiteLoginRequest']),
-  row('SITE_LOGIN_RESPONSE', SITE_LOGIN_RESPONSE, 'hub', 'site-login', ['SiteLoginResponse']),
-  row('FABRIC_SIGN_REQUEST', FABRIC_SIGN_REQUEST, 'hub', 'site-login', ['FabricSignRequest']),
+  row('PASSPORT_CHALLENGE', PASSPORT_CHALLENGE, 'hub', 'passport', ['PassportChallenge']),
+  row('PASSPORT_ASSERTION', PASSPORT_ASSERTION, 'hub', 'passport', ['PassportAssertion']),
+  row('PASSPORT_SIGN_REQUEST', PASSPORT_SIGN_REQUEST, 'hub', 'retired', []),
+  row('DELEGATION_LINK_OFFER', DELEGATION_LINK_OFFER, 'hub', 'delegation', ['DelegationLinkOffer']),
+  row('DELEGATION_LINK_ANSWER', DELEGATION_LINK_ANSWER, 'hub', 'delegation', ['DelegationLinkAnswer']),
+  row('DELEGATION_LINK_REVEAL', DELEGATION_LINK_REVEAL, 'hub', 'delegation', ['DelegationLinkReveal']),
+  row('DELEGATION_GRANT', DELEGATION_GRANT, 'hub', 'delegation', ['DelegationGrant']),
+  row('DELEGATION_REVOKE', DELEGATION_REVOKE, 'hub', 'delegation', ['DelegationRevoke']),
+  row('DELEGATION_REQUEST', DELEGATION_REQUEST, 'hub', 'delegation', ['DelegationRequest']),
+  row('DELEGATION_RESULT', DELEGATION_RESULT, 'hub', 'delegation', ['DelegationResult']),
+  row('DELEGATION_MAILBOX_FETCH', DELEGATION_MAILBOX_FETCH, 'hub', 'delegation', ['DelegationMailboxFetch']),
+  row('PASSPORT_CONNECT', PASSPORT_CONNECT, 'session', 'passport', ['PassportConnect']),
+  row('PASSPORT_SESSION', PASSPORT_SESSION, 'session', 'passport', ['PassportSession']),
+  row('PASSPORT_RESUME', PASSPORT_RESUME, 'session', 'passport', ['PassportResume']),
+  row('PASSPORT_REFUSED', PASSPORT_REFUSED, 'session', 'passport', ['PassportRefused']),
   row('CONTRACT_PROPOSAL', CONTRACT_PROPOSAL_TYPE, 'flood', 'contracts', ['ContractProposal', 'P2P_CONTRACT_PROPOSAL']),
   row('P2P_START_CHAIN', P2P_START_CHAIN, 'observe', 'legacy', ['StartChain']),
   row('P2P_INSTRUCTION', P2P_INSTRUCTION, 'session', 'control', ['PeerInstruction']),
@@ -233,6 +264,10 @@ const RELAY_AS_IS_TYPES = new Set([
   'P2P_PEERING_OFFER',
   'DOCUMENT_REQUEST',
   'DocumentRequest',
+  'P2P_DOCUMENT_BID',
+  'DocumentBid',
+  'P2P_DOCUMENT_ASK',
+  'DocumentAsk',
   'P2P_INVENTORY_REQUEST',
   'P2P_INVENTORY_RESPONSE',
   'INVENTORY_REQUEST',
@@ -253,6 +288,8 @@ const RELAY_AS_IS_NUMERIC = new Set([
   P2P_INVENTORY_REQUEST,
   P2P_INVENTORY_RESPONSE,
   DOCUMENT_REQUEST_TYPE,
+  P2P_DOCUMENT_BID,
+  P2P_DOCUMENT_ASK,
   P2P_FORWARD,
   P2P_RELAY
 ]);
@@ -262,6 +299,10 @@ const FIRST_CLASS_OPCODE_ONLY_TYPES = new Set([
   'P2P_PEERING_OFFER',
   'P2P_PEER_ANNOUNCE',
   'P2P_PEER_ALIAS',
+  'P2P_DOCUMENT_BID',
+  'P2P_DOCUMENT_ASK',
+  'DocumentBid',
+  'DocumentAsk',
   'P2P_SESSION_OFFER',
   'P2P_SESSION_OPEN',
   'P2P_MUSIG_START',
@@ -286,8 +327,6 @@ const FIRST_CLASS_OPCODE_ONLY_TYPES = new Set([
   'INVENTORY_RESPONSE',
   'P2P_FILE_SEND',
   'P2P_DOCUMENT_PUBLISH',
-  'P2P_FLUSH_CHAIN',
-  'FlushChain',
   'BitcoinBlock',
   'BITCOIN_BLOCK'
 ]);
@@ -316,8 +355,7 @@ function classifyGossipWireType (type) {
 
 /**
  * True when Peer mesh-floods this type on the public gossip network
- * (`flood` or the `P2P_RELAY` envelope). Opt-in inventory and trusted
- * `FLUSH_CHAIN` are excluded.
+ * (`flood` or the `P2P_RELAY` envelope). Opt-in inventory is excluded.
  *
  * @param {string|number|null|undefined} type
  * @returns {boolean}

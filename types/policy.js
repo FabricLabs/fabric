@@ -38,8 +38,9 @@ const { payments, networks, script, Psbt } = bitcoin;
 const psbtutils = require('bitcoinjs-lib/src/psbt/psbtutils');
 const { sortPubkeysBip67 } = require('../functions/bip67');
 const { taprootPsbtInputFields } = require('../functions/bip371');
+const { BIP125_SEQUENCE_FINAL, BIP125_SEQUENCE_LOCKTIME_ONLY } = require('../functions/bip125');
 const { aggregateXonly } = require('../functions/musig2');
-const contractProgramBind = require('../functions/contractProgramBind');
+const Program = require('./program');
 
 bitcoin.initEccLib(ecc);
 
@@ -81,7 +82,9 @@ const TIER_WHEN_OPS = Object.freeze(Object.assign(Object.create(null), {
 
 /**
  * @param {object|null|undefined} when
- * @param {{ tipClock?: number, contractState?: object }} ctx
+ * @param {Object} [ctx]
+ * @param {number} [ctx.tipClock]
+ * @param {Object} [ctx.contractState]
  * @returns {boolean}
  */
 function evaluateTierWhen (when, ctx = {}) {
@@ -114,13 +117,12 @@ const DEFAULT_CSV_BLOCKS = 144;
 const CLTV_TIMESTAMP_THRESHOLD = Number('500000000');
 /** nLockTime / nSequence max (2^32 − 1). Avoid a 32-bit hex literal. */
 const MAX_LOCKTIME = (2 ** 32) - 1;
-const SEQUENCE_NONFINAL = MAX_LOCKTIME - 1;
 
 function networkForFabricName (name = '') {
   const n = String(name || '').trim().toLowerCase();
   // Do not alias bare "test" — it is ambiguous (testnet tb1 vs regtest bcrt1).
   if (n === 'regtest') return networks.regtest;
-  if (n === 'testnet' || n === 'testnet4' || n === 'signet') return networks.testnet;
+  if (n === 'testnet' || n === 'testnet4' || n === 'testnet5' || n === 'signet') return networks.testnet;
   return networks.bitcoin;
 }
 
@@ -688,7 +690,9 @@ function normalizeExtraLeafSpecs (list) {
 
 /**
  * Hashlock tapscript: SHA256(preimage) == commitment [+ optional CHECKSIG].
- * @param {{ commitmentHex: string, pubkeyHex?: string|null }} opts
+ * @param {Object} opts
+ * @param {string} opts.commitmentHex
+ * @param {(string|null)} [opts.pubkeyHex]
  * @returns {Buffer}
  */
 function buildHashlockTapscript (opts = {}) {
@@ -952,7 +956,7 @@ function compileLeaves (policy) {
 
 /**
  * bitcoinjs-lib Taptree is a binary tree of leaves (not a flat list of >2).
- * @param {{ script: Buffer }[]} leaves
+ * @param {Array<{ script: Buffer }>} leaves
  * @returns {object}
  */
 function scriptTreeFromLeaves (leaves) {
@@ -1097,7 +1101,12 @@ function toAddress (policy) {
 
 /**
  * @param {object} policy
- * @param {{ tipHeight?: number, medianTime?: number, utxoAgeBlocks?: number, tipClock?: number, contractState?: object }} ctx
+ * @param {Object} [ctx]
+ * @param {number} [ctx.tipHeight]
+ * @param {number} [ctx.medianTime]
+ * @param {number} [ctx.utxoAgeBlocks]
+ * @param {number} [ctx.tipClock]
+ * @param {Object} [ctx.contractState]
  */
 function selectActiveTiers (policy, ctx = {}) {
   const p = normalizeContractSpendPolicy(policy);
@@ -1208,7 +1217,7 @@ function prepareLeafPsbt (opts = {}) {
   } else if (afterLock && afterLock.type === 'cltv') {
     locktime = afterLock.value;
     // CLTV requires a non-final nSequence on the input.
-    if (sequence == null || sequence === MAX_LOCKTIME) sequence = SEQUENCE_NONFINAL;
+    if (sequence == null || sequence === BIP125_SEQUENCE_FINAL) sequence = BIP125_SEQUENCE_LOCKTIME_ONLY;
   }
 
   const internalPubkey = resolveTaprootInternalPubkey(opts, opts.policy || null);
@@ -1613,7 +1622,7 @@ function finalizeSpendPsbt (opts = {}) {
  *
  * **Default (RC):** 2-tier ladder — k-of-n authority now; softer rule after
  * `csvBlocks` (default 144) CSV. Same tree as {@link synthesizeDefaultLadder} /
- * {@link module:functions/contractSpend.resolveSpend} when inputs match.
+ * {@link Contract.resolveSpend} when inputs match.
  *
  * **Legacy:** pass `{ legacySingleLeaf: true }` for the pre-ladder single k-of-n
  * leaf address (opt-in only; not used by Hub vault summary).
@@ -1805,7 +1814,7 @@ function prepareVaultWithdrawalPsbt (opts = {}) {
  * @param {string} [run.commitmentHex] Override commitment
  * @param {string} [run.id='hashlock-run']
  * @param {string} [run.pubkeyHex] Optional Schnorr key for preimage+sig path
- * @returns {{ id: string, commitmentHex: string, runCommitmentHex: string|null, programHash: string|null, pubkeyHex?: string }}
+ * @returns {{ id: string, commitmentHex: string, runCommitmentHex: (string|null), programHash: (string|null), pubkeyHex: (string|undefined) }}
  */
 function hashlockFromProgramRun (run = {}) {
   const runCommitmentHex = String(run.runCommitmentHex || run.runCommitment || '')
@@ -1882,7 +1891,7 @@ function composePolicyWithRunHashlock (opts = {}) {
     extraLeaves: Array.isArray(opts.extraLeaves) ? opts.extraLeaves : []
   });
   const programRunId = (hashlock.programHash && hashlock.runCommitmentHex)
-    ? contractProgramBind.programRunId(hashlock.programHash, hashlock.runCommitmentHex)
+    ? Program.runId(hashlock.programHash, hashlock.runCommitmentHex)
     : null;
   return Object.assign({}, tree, {
     hashlock,

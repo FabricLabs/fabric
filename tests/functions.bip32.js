@@ -3,6 +3,7 @@
 const assert = require('assert');
 const { fromSeed, fromBase58, DEFAULT_NETWORK } = require('../functions/bip32');
 const { encodeCheck, decodeCheck } = require('../functions/base58');
+const VECTORS = require('./vectors/bip32.json');
 
 const SEED_A = Buffer.from('000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f', 'hex');
 const SEED_B = Buffer.from('ff0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f', 'hex');
@@ -145,4 +146,41 @@ describe('@fabric/core/functions/bip32', function () {
     const bad = encodeCheck(raw);
     assert.throws(() => fromBase58(bad), /Invalid public key/);
   });
+
+  it('derive refuses a child past depth 255', function () {
+    let node = fromSeed(SEED_A);
+    for (let i = 0; i < 255; i++) node = node.derive(0);
+    assert.strictEqual(node.depth, 255);
+    assert.strictEqual(fromBase58(node.toBase58()).depth, 255);
+    assert.throws(() => node.derive(0), /255/);
+  });
+});
+
+describe('@fabric/core/functions/bip32 official test vectors', function () {
+  for (const [n, vector] of VECTORS.valid.entries()) {
+    it(`derives test vector ${n + 1} (seed ${vector.seed.slice(0, 8)}…)`, function () {
+      const root = fromSeed(Buffer.from(vector.seed, 'hex'));
+      let parent = null;
+      for (const chain of vector.chains) {
+        const node = chain.path === 'm' ? root : root.derivePath(chain.path);
+        assert.strictEqual(node.toBase58(), chain.xprv, `${chain.path} xprv`);
+        assert.strictEqual(node.neutered().toBase58(), chain.xpub, `${chain.path} xpub`);
+        assert.strictEqual(fromBase58(chain.xprv).toBase58(), chain.xprv);
+        assert.strictEqual(fromBase58(chain.xpub).toBase58(), chain.xpub);
+        const last = chain.path.split('/').pop();
+        if (parent && !last.endsWith("'")) {
+          // CKDpub: the public parent alone yields the same non-hardened child.
+          const child = fromBase58(parent.xpub).derive(Number(last));
+          assert.strictEqual(child.toBase58(), chain.xpub, `${chain.path} from parent xpub`);
+        }
+        parent = chain;
+      }
+    });
+  }
+
+  for (const { key, reason } of VECTORS.invalid) {
+    it(`rejects test vector 5: ${reason}`, function () {
+      assert.throws(() => fromBase58(key));
+    });
+  }
 });

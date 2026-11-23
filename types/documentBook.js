@@ -18,10 +18,26 @@
 const crypto = require('crypto');
 const { contentHashHexFromObject } = require('../functions/documentPaymentHash');
 const { stableStringify, jsonSafe } = require('../functions/fabricCanonicalJson');
-const manifest = require('../functions/documentBlobManifest');
-const { INVENTORY_RESPONSE_PAGE_BYTES } = require('../constants');
+const Document = require('./document');
+const {
+  INVENTORY_RESPONSE_PAGE_BYTES,
+  MAX_DOCUMENT_BLOBS,
+  MAX_DOCUMENT_ID_LENGTH,
+  DOCUMENT_BID_MAX_TTL_SECONDS
+} = require('../constants');
 const Book = require('./book');
 const Htlc = require('./htlc');
+const Key = require('./key');
+const Message = require('./message');
+
+/** Wire type of a chunk bid. */
+const BID_TYPE = 'P2P_DOCUMENT_BID';
+/** Wire type of a seller's answer to a bid. */
+const ASK_TYPE = 'P2P_DOCUMENT_ASK';
+/** Bid lifetime when the buyer names none. */
+const DEFAULT_BID_TTL_SECONDS = 10 * 60;
+/** Clock difference tolerated between peers when checking how far ahead a bid expires. */
+const BID_CLOCK_SKEW_SECONDS = 2 * 60;
 
 /** Default ranking weights (sum to 1). */
 const DEFAULT_WEIGHTS = Object.freeze({
@@ -95,10 +111,93 @@ function xOnlyKey (v) {
   return /^[0-9a-f]{64}$/.test(s) ? s : null;
 }
 
-/** @private non-negative safe integer, else 0 */
+/**
+ * non-negative safe integer, else 0
+ * @private
+ */
 function count (v) {
   const n = Number(v);
   return Number.isSafeInteger(n) && n > 0 ? n : 0;
+}
+
+/**
+ * An advertised price in whole sats: missing is free; anything that is not a
+ * finite amount from 0 to `Number.MAX_SAFE_INTEGER` is NaN, and the row is
+ * refused (a price of `1e999` or `-1e15` would otherwise skew every ranking).
+ * @private
+ */
+function priceOf (v) {
+  if (v == null) return 0;
+  const n = Number(v);
+  return Number.isFinite(n) && n >= 0 && n <= Number.MAX_SAFE_INTEGER ? Math.floor(n) : NaN;
+}
+
+/**
+ * unix seconds, from `now` (seconds) or the clock
+ * @private
+ */
+function nowSeconds (now) {
+  return now != null && Number.isFinite(Number(now)) ? Math.floor(Number(now)) : Math.floor(Date.now() / 1000);
+}
+
+/**
+ * a decoded u64 as a safe integer, else null
+ * @private
+ */
+function safeInteger (v) {
+  if (typeof v === 'bigint') return v <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(v) : null;
+  const n = Number(v);
+  return Number.isSafeInteger(n) && n >= 0 ? n : null;
+}
+
+/**
+ * a decoded bytes32 as hex, or null when all zero (an open selector)
+ * @private
+ */
+function selectorHex (buf) {
+  if (!Buffer.isBuffer(buf) || buf.length !== 32 || buf.equals(Buffer.alloc(32))) return null;
+  return buf.toString('hex');
+}
+
+/**
+ * a Message from a Message or raw frame, else null
+ * @private
+ */
+function asMessage (message) {
+  if (message instanceof Message) return message;
+  if (Buffer.isBuffer(message) || message instanceof Uint8Array) {
+    try { return Message.fromBuffer(Buffer.from(message)); } catch (_) { return null; }
+  }
+  return null;
+}
+
+/**
+ * a wire document id: 1..MAX_DOCUMENT_ID_LENGTH characters after trim
+ * @private
+ */
+function documentIdOf (v) {
+  const s = typeof v === 'string' ? v.trim() : '';
+  return s.length > 0 && s.length <= MAX_DOCUMENT_ID_LENGTH ? s : null;
+}
+
+/**
+ * an advertised blob total in [1, MAX_DOCUMENT_BLOBS], else null
+ * @private
+ */
+function blobTotalOf (v) {
+  if (v == null) return null;
+  const n = Number(v);
+  return Number.isSafeInteger(n) && n >= 1 && n <= MAX_DOCUMENT_BLOBS ? n : null;
+}
+
+/**
+ * a ranking input clamped to [0, MAX_SAFE_INTEGER] (NaN is 0)
+ * @private
+ */
+function rankInput (v) {
+  const n = Number(v);
+  if (Number.isNaN(n) || n <= 0) return 0;
+  return Math.min(n, Number.MAX_SAFE_INTEGER);
 }
 
 /**
@@ -112,21 +211,6 @@ function telemetryHash (record) {
   return crypto.createHash('sha256').update(stableStringify(jsonSafe(body))).digest('hex');
 }
 
-/**
- * Leaf check for an advertised blob list: `functions/documentBlobManifest`
- * `verifyOfferLeaves` (v2 and v1 trees), else a v1 blob-hash root over a
- * complete list. Returns the `verifyOfferLeaves` result (or `true` / `false`),
- * or `null` when the list cannot be checked (a subset without inclusion proofs).
- * @private
- */
-function defaultVerifyOfferLeaves (opts) {
-  if (typeof manifest.verifyOfferLeaves === 'function') return manifest.verifyOfferLeaves(opts);
-  const hashes = [];
-  for (const b of opts.blobs) hashes[Number(b.index)] = b.blobHashHex;
-  if (hashes.length !== opts.blobTotal || hashes.some((h) => !h)) return null;
-  return manifest.createBlobMerkleTree(hashes).rootHex === opts.merkleRootHex;
-}
-
 class DocumentBook extends Book {
   /**
    * @param {Object} [settings]
@@ -136,7 +220,7 @@ class DocumentBook extends Book {
    * @param {number} [settings.maxProviders=10000] tracked providers (LRU over unpenalized ones)
    * @param {number} [settings.maxOffers=100000] offer rows (oldest evicted)
    * @param {string} [settings.nodeId] stamped on exported telemetry; imports from another node are refused
-   * @param {Function} [settings.verifyOfferLeaves] `({ merkleRootHex, blobs, blobTotal, treeVersion }) → boolean|null|{ ok }`
+   * @param {Function} [settings.verifyOfferLeaves] `({ merkleRootHex, blobs, blobTotal }) → boolean|null|{ ok }`
    */
   constructor (settings = {}) {
     super(Object.assign({
@@ -148,13 +232,25 @@ class DocumentBook extends Book {
       nodeId: null,
       verifyOfferLeaves: null
     }, settings));
-    /** @type {Map<string, object>} sellerId → provider telemetry */
+    /**
+     * sellerId → provider telemetry
+     * @type {Map<string, object>}
+     */
     this._providers = new Map();
-    /** @type {Map<string, object>} x-only key → `{ penalties, lastPenaltyKind }` (never cleared) */
+    /**
+     * x-only key → `{ penalties, lastPenaltyKind }` (never cleared)
+     * @type {Map<string, object>}
+     */
     this._keyPenalties = new Map();
-    /** @type {Map<string, Set<string>>} sellerId → x-only AMP signer keys seen on its offers */
+    /**
+     * sellerId → x-only AMP signer keys seen on its offers
+     * @type {Map<string, Set<string>>}
+     */
     this._sellerKeys = new Map();
-    /** @type {Set<string>} fraud-proof evidence ids already counted */
+    /**
+     * fraud-proof evidence ids already counted
+     * @type {Set<string>}
+     */
     this._evidence = new Set();
   }
 
@@ -590,7 +686,8 @@ class DocumentBook extends Book {
       if (!it || typeof it !== 'object') continue;
       const documentId = String(it.id || it.documentId || '').trim();
       if (!documentId) continue;
-      const rateSats = Number(it.rateSats != null ? it.rateSats : it.purchasePriceSats) || 0;
+      const rateSats = priceOf(it.rateSats != null ? it.rateSats : it.purchasePriceSats);
+      if (Number.isNaN(rateSats)) continue;
       const contentHashHex = contentHashHexFromObject(it);
       const sealed = it.sealed === true;
       const blobs = Array.isArray(it.blobs) ? it.blobs : null;
@@ -598,15 +695,11 @@ class DocumentBook extends Book {
         ? it.documentBlobIndex
         : null;
       const merkleRootHex = hex64(it.merkleRootHex || (indexObj && indexObj.merkleRootHex));
-      const rawTreeVersion = it.treeVersion != null ? it.treeVersion : (indexObj && indexObj.treeVersion);
-      const treeVersion = Number.isSafeInteger(Number(rawTreeVersion)) && Number(rawTreeVersion) > 0 ? Number(rawTreeVersion) : null;
       let rootVerified = false;
-      let leavesCommitted = null;
       if (blobs && blobs.length && merkleRootHex) {
         const leaves = this._verifyLeaves(it, merkleRootHex, blobs, indexObj);
         if (leaves === false) continue;
         rootVerified = leaves != null;
-        leavesCommitted = leaves ? leaves.committed : null;
       }
       const base = {
         documentId,
@@ -616,8 +709,6 @@ class DocumentBook extends Book {
         ampSignerPubkey: ampSignerPubkey || null,
         merkleRootHex,
         rootVerified,
-        leavesCommitted,
-        treeVersion,
         mime: it.mime || null,
         sealed,
         // Sealed only: the convergence scope, and a pay-after-verify price
@@ -634,12 +725,25 @@ class DocumentBook extends Book {
         for (const b of blobs) {
           if (!b || typeof b !== 'object') continue;
           // Per-blob payment hash when present (sealed K_i or unsealed tagged
-          // hash); fall back to the item-level hash. Never bind to blobHashHex.
-          const paymentHash = contentHashHexFromObject(b) || contentHashHex;
+          // hash). Never bind to blobHashHex. On a verified root the paid hash
+          // must be one the root commits: an unsealed leaf's tagged hash is
+          // derived from its committed blobHashHex, and the item-level hash is
+          // only a fallback for unverified rows.
+          let paymentHash = contentHashHexFromObject(b);
+          if (!paymentHash && rootVerified && !sealed) {
+            try {
+              paymentHash = Document.blobPaymentHash({ documentId, blobIndex: Number(b.index), blobHashHex: b.blobHashHex });
+            } catch (_) {
+              paymentHash = null;
+            }
+          }
+          if (!paymentHash && !rootVerified) paymentHash = contentHashHex;
+          const blobRate = b.rateSats != null ? priceOf(b.rateSats) : rateSats;
+          if (Number.isNaN(blobRate)) continue;
           const row = Object.assign({}, base, {
             blobIndex: Number(b.index),
-            blobTotal: Number(b.total != null ? b.total : blobs.length),
-            rateSats: Number(b.rateSats != null ? b.rateSats : rateSats) || 0,
+            blobTotal: blobTotalOf(b.total != null ? b.total : blobs.length),
+            rateSats: blobRate,
             contentHashHex: paymentHash,
             blobHashHex: hex64(b.blobHashHex),
             iv: typeof b.iv === 'string' && /^[A-Za-z0-9+/]{16,64}={0,2}$/.test(b.iv) ? b.iv : null,
@@ -654,7 +758,7 @@ class DocumentBook extends Book {
       } else {
         const row = Object.assign({}, base, {
           blobIndex: it.blobIndex != null ? Number(it.blobIndex) : null,
-          blobTotal: it.blobTotal != null ? Number(it.blobTotal) : null,
+          blobTotal: blobTotalOf(it.blobTotal),
           rateSats,
           contentHashHex,
           blobHashHex: hex64(it.blobHashHex),
@@ -670,6 +774,243 @@ class DocumentBook extends Book {
   }
 
   /**
+   * Record a seller's answer to one of our bids as an offer row for that
+   * chunk, ranked with every other offer. The seller is its signing key.
+   * @param {object} ask from {@link DocumentBook.readAsk} (checked against the bid)
+   * @param {Object} [opts]
+   * @param {string} [opts.origin] connection the ask arrived on
+   * @param {number} [opts.latencyMs] time from sending the bid to this ask
+   * @returns {object|null} the row, or null for a malformed ask
+   */
+  ingestAsk (ask, opts = {}) {
+    if (!ask || !hex64(ask.seller) || !hex64(ask.bidId) || !documentIdOf(ask.documentId)) return null;
+    const sellerId = ask.seller;
+    if (opts.latencyMs != null && Number.isFinite(Number(opts.latencyMs))) {
+      this.recordInventoryLatency(sellerId, Number(opts.latencyMs));
+    }
+    const row = {
+      documentId: ask.documentId,
+      sellerId,
+      sellerAddress: opts.origin != null ? String(opts.origin) : null,
+      sellerPubkey: sellerId,
+      ampSignerPubkey: sellerId,
+      merkleRootHex: hex64(ask.merkleRootHex),
+      rootVerified: false,
+      sealed: false,
+      blobIndex: ask.blobIndex,
+      blobTotal: null,
+      blobHashHex: hex64(ask.blobHashHex),
+      rateSats: ask.priceSats,
+      contentHashHex: null,
+      bidId: ask.bidId,
+      expiresAt: ask.expiresAt,
+      peerScore: this.scoreFor(sellerId),
+      latencyMs: this.latencyFor(sellerId),
+      hops: 0,
+      completeness: 1,
+      observedAt: Date.now()
+    };
+    this._putOffer(row);
+    return Object.assign({}, row);
+  }
+
+  // ---------------------------------------------------------------------
+  // Chunk bids and asks (P2P_DOCUMENT_BID / P2P_DOCUMENT_ASK)
+  // ---------------------------------------------------------------------
+
+  /**
+   * Id of a bid: sha256(author ‖ body). Binding the author means a copy of the
+   * body signed by another key is another bid, so it cannot take over the
+   * route asks travel back on.
+   * @param {Message|Buffer} message
+   * @returns {string|null}
+   */
+  static bidId (message) {
+    const msg = asMessage(message);
+    if (!msg || !Buffer.isBuffer(msg.raw.author) || !Buffer.isBuffer(msg.raw.data)) return null;
+    return crypto.createHash('sha256').update(Buffer.concat([msg.raw.author, msg.raw.data])).digest('hex');
+  }
+
+  /**
+   * Build a signed bid to buy one chunk. Unless `opts.key` is given, each bid
+   * is signed by a fresh key, so bids do not link to the buyer's Peer identity.
+   * @param {Object} opts
+   * @param {string} opts.documentId
+   * @param {number} opts.blobIndex
+   * @param {number} opts.maxSats most the buyer pays for the chunk (at least 1)
+   * @param {string} [opts.merkleRootHex] only this document tree
+   * @param {string} [opts.blobHashHex] only a chunk with this leaf hash
+   * @param {number} [opts.ttlSeconds=600] at most `DOCUMENT_BID_MAX_TTL_SECONDS`
+   * @param {number} [opts.now] unix seconds
+   * @param {Key} [opts.key] signer
+   * @returns {{ message: Message, bid: object }}
+   */
+  static createBid (opts = {}) {
+    const fail = (reason) => { throw new Error(`DocumentBook.createBid: ${reason}`); };
+    const documentId = documentIdOf(opts.documentId);
+    if (!documentId) fail(`documentId must be 1..${MAX_DOCUMENT_ID_LENGTH} characters`);
+    const blobIndex = Number(opts.blobIndex);
+    if (!Number.isSafeInteger(blobIndex) || blobIndex < 0 || blobIndex >= MAX_DOCUMENT_BLOBS) fail('blobIndex out of range');
+    const maxSats = Number(opts.maxSats);
+    if (!Number.isSafeInteger(maxSats) || maxSats < 1) fail('maxSats must be a whole number of sats, at least 1');
+    const root = opts.merkleRootHex != null ? hex64(opts.merkleRootHex) : null;
+    if (opts.merkleRootHex != null && !root) fail('merkleRootHex must be 64 hex characters');
+    const leaf = opts.blobHashHex != null ? hex64(opts.blobHashHex) : null;
+    if (opts.blobHashHex != null && !leaf) fail('blobHashHex must be 64 hex characters');
+    const ttl = opts.ttlSeconds != null ? Number(opts.ttlSeconds) : DEFAULT_BID_TTL_SECONDS;
+    if (!Number.isSafeInteger(ttl) || ttl < 1 || ttl > DOCUMENT_BID_MAX_TTL_SECONDS) {
+      fail(`ttlSeconds must be 1..${DOCUMENT_BID_MAX_TTL_SECONDS}`);
+    }
+    const now = nowSeconds(opts.now);
+    const message = Message.fromFields(BID_TYPE, {
+      document: documentId,
+      merkleRoot: root || Buffer.alloc(32),
+      blobIndex,
+      blobHash: leaf || Buffer.alloc(32),
+      maxSats,
+      expiresAt: now + ttl,
+      nonce: crypto.randomBytes(32)
+    }).signWithKey(opts.key || new Key());
+    const read = DocumentBook.readBid(message, { now, verify: false });
+    if (!read.ok) fail(read.error);
+    return { message, bid: read.bid };
+  }
+
+  /**
+   * Read and check a bid. Pure apart from the clock.
+   * @param {Message|Buffer} message
+   * @param {Object} [opts]
+   * @param {number} [opts.now] unix seconds
+   * @param {boolean} [opts.verify=true] check the author signature (Peer already has)
+   * @returns {{ ok: true, bid: object } | { ok: false, error: string }}
+   */
+  static readBid (message, opts = {}) {
+    const no = (error) => ({ ok: false, error });
+    const msg = asMessage(message);
+    if (!msg) return no('unparseable frame');
+    if (msg.type !== BID_TYPE) return no(`not a ${BID_TYPE}`);
+    if (opts.verify !== false && !Message.verifyFrameAuthor(msg.toBuffer()).ok) return no('signature invalid');
+    const f = msg.toFields();
+    if (!f) return no('malformed body');
+    const documentId = documentIdOf(f.document);
+    if (!documentId) return no('invalid document id');
+    if (!(f.blobIndex < MAX_DOCUMENT_BLOBS)) return no('blobIndex out of range');
+    const maxSats = safeInteger(f.maxSats);
+    if (!maxSats) return no('maxSats must be at least 1');
+    const expiresAt = safeInteger(f.expiresAt);
+    const now = nowSeconds(opts.now);
+    if (expiresAt == null || expiresAt <= now) return no('expired');
+    if (expiresAt > now + DOCUMENT_BID_MAX_TTL_SECONDS + BID_CLOCK_SKEW_SECONDS) return no('expires too far ahead');
+    return {
+      ok: true,
+      bid: {
+        id: DocumentBook.bidId(msg),
+        author: msg.author,
+        documentId,
+        merkleRootHex: selectorHex(f.merkleRoot),
+        blobIndex: f.blobIndex,
+        blobHashHex: selectorHex(f.blobHash),
+        maxSats,
+        expiresAt,
+        nonce: Buffer.isBuffer(f.nonce) ? f.nonce.toString('hex') : null
+      }
+    };
+  }
+
+  /**
+   * Build a seller's signed answer to a bid for a chunk it holds. The ask is a
+   * quote: payment terms are agreed later.
+   * @param {object} bid from {@link DocumentBook.readBid}
+   * @param {Object} opts
+   * @param {Key} opts.key seller key
+   * @param {string} opts.merkleRootHex the seller's document tree
+   * @param {string} opts.blobHashHex the seller's leaf hash for the chunk
+   * @param {number} opts.priceSats at most the bid's `maxSats`
+   * @param {number} [opts.expiresAt] unix seconds, no later than the bid's
+   * @param {number} [opts.now] unix seconds
+   * @returns {{ message: Message, ask: object }}
+   */
+  static createAsk (bid, opts = {}) {
+    const fail = (reason) => { throw new Error(`DocumentBook.createAsk: ${reason}`); };
+    if (!bid || !hex64(bid.id)) fail('a bid from DocumentBook.readBid is required');
+    if (!opts.key) fail('seller key required');
+    const root = hex64(opts.merkleRootHex);
+    if (!root) fail('merkleRootHex must be 64 hex characters');
+    const leaf = hex64(opts.blobHashHex);
+    if (!leaf) fail('blobHashHex must be 64 hex characters');
+    const priceSats = Number(opts.priceSats);
+    if (!Number.isSafeInteger(priceSats) || priceSats < 0) fail('priceSats must be a whole number of sats');
+    const expiresAt = opts.expiresAt != null ? Number(opts.expiresAt) : bid.expiresAt;
+    if (!Number.isSafeInteger(expiresAt) || expiresAt < 0) fail('expiresAt must be unix seconds');
+    const message = Message.fromFields(ASK_TYPE, {
+      bid: bid.id,
+      document: bid.documentId,
+      merkleRoot: root,
+      blobIndex: bid.blobIndex,
+      blobHash: leaf,
+      priceSats,
+      expiresAt
+    }).signWithKey(opts.key);
+    const read = DocumentBook.readAsk(message, { bid, now: opts.now, verify: false });
+    if (!read.ok) fail(read.error);
+    return { message, ask: read.ask };
+  }
+
+  /**
+   * Read and check an ask; with `opts.bid`, also that it answers that bid:
+   * same document, index, root and leaf where the bid named them, price within
+   * the bid, and expiring no later than it.
+   * @param {Message|Buffer} message
+   * @param {Object} [opts]
+   * @param {object} [opts.bid] from {@link DocumentBook.readBid}
+   * @param {number} [opts.now] unix seconds
+   * @param {boolean} [opts.verify=true] check the author signature (Peer already has)
+   * @returns {{ ok: true, ask: object } | { ok: false, error: string }}
+   */
+  static readAsk (message, opts = {}) {
+    const no = (error) => ({ ok: false, error });
+    const msg = asMessage(message);
+    if (!msg) return no('unparseable frame');
+    if (msg.type !== ASK_TYPE) return no(`not a ${ASK_TYPE}`);
+    if (opts.verify !== false && !Message.verifyFrameAuthor(msg.toBuffer()).ok) return no('signature invalid');
+    const f = msg.toFields();
+    if (!f) return no('malformed body');
+    const bidId = selectorHex(f.bid);
+    if (!bidId) return no('names no bid');
+    const documentId = documentIdOf(f.document);
+    if (!documentId) return no('invalid document id');
+    const merkleRootHex = selectorHex(f.merkleRoot);
+    if (!merkleRootHex) return no('names no merkleRoot');
+    const blobHashHex = selectorHex(f.blobHash);
+    if (!blobHashHex) return no('names no blobHash');
+    const priceSats = safeInteger(f.priceSats);
+    if (priceSats == null) return no('priceSats out of range');
+    const expiresAt = safeInteger(f.expiresAt);
+    if (expiresAt == null || expiresAt <= nowSeconds(opts.now)) return no('expired');
+    const ask = {
+      bidId,
+      seller: msg.author,
+      documentId,
+      merkleRootHex,
+      blobIndex: f.blobIndex,
+      blobHashHex,
+      priceSats,
+      expiresAt
+    };
+    const bid = opts.bid;
+    if (bid) {
+      if (bidId !== bid.id) return no('answers another bid');
+      if (documentId !== bid.documentId) return no('names another document');
+      if (ask.blobIndex !== bid.blobIndex) return no('names another chunk');
+      if (bid.merkleRootHex && merkleRootHex !== bid.merkleRootHex) return no('names another document tree');
+      if (bid.blobHashHex && blobHashHex !== bid.blobHashHex) return no('names another leaf hash');
+      if (priceSats > bid.maxSats) return no('price over the bid');
+      if (expiresAt > bid.expiresAt) return no('outlives the bid');
+    }
+    return { ok: true, ask };
+  }
+
+  /**
    * Insert or refresh a row; past `maxOffers` the oldest row goes.
    * @private
    * @param {object} row
@@ -680,12 +1021,11 @@ class DocumentBook extends Book {
 
   /**
    * Check an item's inline blob leaves against its `merkleRootHex`
-   * (`settings.verifyOfferLeaves`, else `documentBlobManifest.verifyOfferLeaves`).
+   * (`settings.verifyOfferLeaves`, else `Document.verifyOfferLeaves`).
    * @private
-   * @returns {Object|boolean|null} `false` = reject the item; `null` = a subset
+   * @returns {boolean|null} `false` = reject the item; `null` = a subset
    *   without inclusion proofs (rows kept with `rootVerified: false`); else
-   *   `{ committed }` — `true` when the root commits the payment hashes and
-   *   IVs (v2), `false` for a v1 root, `null` when the verifier does not say
+   *   `true` when the root checks out
    */
   _verifyLeaves (it, merkleRootHex, blobs, indexObj) {
     const first = blobs.find((b) => b && b.total != null);
@@ -694,14 +1034,25 @@ class DocumentBook extends Book {
         : (indexObj && indexObj.blobTotal != null ? indexObj.blobTotal
           : (first ? first.total : blobs.length))
     );
-    if (!Number.isSafeInteger(blobTotal) || blobTotal < 1) return false;
+    if (!Number.isSafeInteger(blobTotal) || blobTotal < 1 || blobTotal > MAX_DOCUMENT_BLOBS) return false;
+    const sealed = it.sealed === true;
+    const documentId = String(it.id || it.documentId || '').trim();
     const leaves = [];
     for (const b of blobs) {
       if (!b || typeof b !== 'object') return false;
+      const pay = contentHashHexFromObject(b);
+      // Unsealed roots commit zero payment hashes, so the tagged hash is checked by recomputing it.
+      if (!sealed && pay) {
+        try {
+          if (pay !== Document.blobPaymentHash({ documentId, blobIndex: Number(b.index), blobHashHex: b.blobHashHex })) return false;
+        } catch (_) {
+          return false;
+        }
+      }
       leaves.push({
         index: Number(b.index),
         blobHashHex: b.blobHashHex,
-        paymentHashHex: contentHashHexFromObject(b),
+        paymentHashHex: sealed ? pay : null,
         iv: b.iv,
         proof: b.proof
       });
@@ -711,15 +1062,11 @@ class DocumentBook extends Book {
     if (!full && !leaves.every((l) => Array.isArray(l.proof))) return null;
     const verify = typeof this.settings.verifyOfferLeaves === 'function'
       ? this.settings.verifyOfferLeaves
-      : defaultVerifyOfferLeaves;
-    const treeVersion = it.treeVersion != null ? it.treeVersion : (indexObj && indexObj.treeVersion);
+      : Document.verifyOfferLeaves;
     try {
-      const out = verify({ merkleRootHex, blobs: leaves, blobTotal, treeVersion: treeVersion != null ? Number(treeVersion) : undefined });
+      const out = verify({ merkleRootHex, blobs: leaves, blobTotal });
       if (out === null) return null;
-      if (out === true) return { committed: null };
-      if (out != null && typeof out === 'object' && out.ok === true) {
-        return { committed: typeof out.committed === 'boolean' ? out.committed : null };
-      }
+      if (out === true || (out != null && typeof out === 'object' && out.ok === true)) return true;
       return false;
     } catch (err) {
       return false;
@@ -810,10 +1157,11 @@ class DocumentBook extends Book {
       const ex = new Set(opts.excludeSellers.map(String));
       out = out.filter((o) => !ex.has(String(o.sellerId)) && !ex.has(String(o.sellerAddress)));
     }
-    // A v1 root over the same blobs commits no payment hashes, so a reseller
-    // could pair real ciphertext with keys it doesn't hold: never pick one
-    // while an offer whose root commits them is listed.
-    if (out.some((o) => o.leavesCommitted === true)) out = out.filter((o) => o.leavesCommitted !== false);
+    // Only a sealed sale makes payment release the chunk: an unsealed seller can
+    // claim without delivering, so a paid unsealed offer never beats a sealed one.
+    if (opts.paidSealedOnly === true || out.some((o) => o.sealed === true)) {
+      out = out.filter((o) => o.sealed === true || !(Number(o.rateSats) > 0));
+    }
     return out;
   }
 
@@ -827,9 +1175,11 @@ class DocumentBook extends Book {
     if (!list.length) return list;
     const w = Object.assign({}, DEFAULT_WEIGHTS, this.settings.weights || {}, weights || {});
     const hopMs = this.settings.hopPenaltyMs;
-    const prices = list.map((o) => Number(o.rateSats) || 0);
-    const lats = list.map((o) => (Number(o.latencyMs) || 0) + ((Number(o.hops) || 0) * hopMs));
-    const scores = list.map((o) => Number(o.peerScore) || 0);
+    // Clamped so a hand-built offer (negative, Infinity, NaN) cannot turn the
+    // min/max normalization into NaN and leave the list in arrival order.
+    const prices = list.map((o) => rankInput(o.rateSats));
+    const lats = list.map((o) => rankInput(rankInput(o.latencyMs) + (rankInput(o.hops) * hopMs)));
+    const scores = list.map((o) => rankInput(o.peerScore));
     const comps = list.map((o) => {
       const c = Number(o.completeness);
       return Number.isFinite(c) ? Math.min(1, Math.max(0, c)) : 1;
@@ -849,8 +1199,8 @@ class DocumentBook extends Book {
       const scoreN = normHighBetter(scores[i], minS, maxS);
       const compN = comps[i];
       const rankScore = (w.price * priceN) + (w.latency * latN) + (w.peerScore * scoreN) + (w.completeness * compN);
-      return Object.assign({}, o, { rankScore });
-    }).sort((a, b) => b.rankScore - a.rankScore);
+      return Object.assign({}, o, { rankScore: Number.isFinite(rankScore) ? rankScore : -Infinity });
+    }).sort((a, b) => (b.rankScore - a.rankScore) || 0);
   }
 
   /**
@@ -859,6 +1209,9 @@ class DocumentBook extends Book {
    * @param {number} [opts.blobIndex]
    * @param {number} [opts.maxSats]
    * @param {number} [opts.minPaidSats] drop paid offers below this (free offers stay)
+   * @param {boolean} [opts.paidSealedOnly] `true`: drop every paid unsealed
+   *   offer, even when no sealed offer is left. Unset: drop paid unsealed
+   *   offers only while a sealed offer remains after the other filters.
    * @param {string[]} [opts.excludeSellers]
    * @param {string} [opts.merkleRootHex] only offers for this tree root
    * @param {Object} [opts.weights]
@@ -882,6 +1235,9 @@ class DocumentBook extends Book {
    * @param {boolean} [opts.singleKey] legacy whole-document key: lock one seller
    * @param {number} [opts.maxSats] per-blob ceiling
    * @param {number} [opts.minPaidSats] drop paid offers below this (free offers stay)
+   * @param {boolean} [opts.paidSealedOnly] `true`: drop every paid unsealed
+   *   offer, even when no sealed offer is left. Unset: drop paid unsealed
+   *   offers only while a sealed offer remains after the other filters.
    * @param {string[]} [opts.excludeSellers]
    * @param {string} [opts.merkleRootHex] only offers for this tree root; when
    *   omitted the plan still stays on **one** root (the first pick's), so
@@ -891,7 +1247,7 @@ class DocumentBook extends Book {
   pickBlobPlan (documentId, blobTotal, opts = {}) {
     const n = Math.round(Number(blobTotal));
     const plan = new Map();
-    if (!Number.isFinite(n) || n < 1) return plan;
+    if (!Number.isFinite(n) || n < 1 || n > MAX_DOCUMENT_BLOBS) return plan;
     const all = this._applyFilters(this.listOffers({ documentId, merkleRootHex: opts.merkleRootHex }), opts);
     const lockToOne = opts.singleKey === true || this._usesSingleKey(all, opts);
     const used = [];
@@ -972,6 +1328,21 @@ class DocumentBook extends Book {
 }
 
 /**
+ * Dedup key for paid settlements: (documentId, blobIndex|all, contentHash).
+ * @param {Object} session
+ * @param {string} session.documentId
+ * @param {number} [session.blobIndex]
+ * @param {string} [session.contentHashHex]
+ * @returns {string}
+ */
+function settlementDedupeKey (session = {}) {
+  const doc = String(session.documentId || '');
+  const blob = session.blobIndex != null ? String(session.blobIndex) : 'all';
+  const hash = String(session.contentHashHex || '').toLowerCase();
+  return `${doc}|${blob}|${hash}`;
+}
+
+/**
  * A buyer/seller document purchase session record (whole document or one blob).
  * @param {Object} opts
  * @param {string} opts.documentId
@@ -1028,7 +1399,7 @@ function createDocumentPurchaseSession (opts = {}) {
   }
   if (opts.blobHashHex) session.blobHashHex = String(opts.blobHashHex).toLowerCase();
   if (opts.merkleRootHex) session.merkleRootHex = String(opts.merkleRootHex).toLowerCase();
-  session.dedupeKey = manifest.settlementDedupeKey(session);
+  session.dedupeKey = settlementDedupeKey(session);
   return session;
 }
 
@@ -1040,7 +1411,7 @@ function createDocumentPurchaseSession (opts = {}) {
  */
 function isDuplicateSettlement (paidKeys, session) {
   if (!paidKeys || !session) return false;
-  const key = session.dedupeKey || manifest.settlementDedupeKey(session);
+  const key = session.dedupeKey || settlementDedupeKey(session);
   if (paidKeys instanceof Set) return paidKeys.has(key);
   if (paidKeys instanceof Map) return paidKeys.has(key);
   return !!paidKeys[key];
@@ -1052,7 +1423,7 @@ function isDuplicateSettlement (paidKeys, session) {
  */
 function rememberSettlement (paidKeys, session) {
   if (!paidKeys || !session) return;
-  const key = session.dedupeKey || manifest.settlementDedupeKey(session);
+  const key = session.dedupeKey || settlementDedupeKey(session);
   if (paidKeys instanceof Set) paidKeys.add(key);
   else if (paidKeys instanceof Map) paidKeys.set(key, session);
   else paidKeys[key] = session;
@@ -1324,9 +1695,13 @@ module.exports.TELEMETRY_TYPE = TELEMETRY_TYPE;
 module.exports.TELEMETRY_VERSION = TELEMETRY_VERSION;
 module.exports.HOP_PENALTY_MS = HOP_PENALTY_MS;
 module.exports.offerKey = offerKey;
+module.exports.BID_TYPE = BID_TYPE;
+module.exports.ASK_TYPE = ASK_TYPE;
+module.exports.DEFAULT_BID_TTL_SECONDS = DEFAULT_BID_TTL_SECONDS;
 module.exports.SCORE_UNKNOWN = SCORE_UNKNOWN;
 module.exports.SCORE_INVENTORY_ONLY = SCORE_INVENTORY_ONLY;
 module.exports.MAX_PROVIDERS = MAX_PROVIDERS;
+module.exports.settlementDedupeKey = settlementDedupeKey;
 module.exports.createDocumentPurchaseSession = createDocumentPurchaseSession;
 module.exports.isDuplicateSettlement = isDuplicateSettlement;
 module.exports.rememberSettlement = rememberSettlement;

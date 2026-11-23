@@ -11,29 +11,10 @@
  */
 'use strict';
 
+const { toBuffer } = require('./bytes');
+
 /** BIP-341 leaf version for tapscript (0xc0). */
 const LEAF_VERSION_TAPSCRIPT = 0xc0;
-
-/**
- * Coerce Buffer / Uint8Array / hex string to Buffer (bitcoinjs-lib 7 yields
- * Uint8Array). Hex may carry a `0x` prefix; odd-length or non-hex strings
- * give `null` instead of a silently truncated buffer.
- * @param {Buffer|Uint8Array|string} value
- * @param {string} [encoding]
- * @returns {Buffer|null}
- */
-function asBuffer (value, encoding = 'hex') {
-  if (Buffer.isBuffer(value)) return value;
-  if (value instanceof Uint8Array) return Buffer.from(value);
-  if (typeof value === 'string') {
-    const hex = String(value).trim().replace(/^0x/i, '');
-    if (!hex || hex.length % 2) return null;
-    // Buffer.from(hex, 'hex') silently truncates at the first non-hex nibble.
-    if (encoding === 'hex' && !/^[0-9a-f]+$/i.test(hex)) return null;
-    return Buffer.from(hex, encoding);
-  }
-  return null;
-}
 
 /**
  * One `PSBT_IN_TAP_LEAF_SCRIPT` entry (script + control block + leaf version).
@@ -45,12 +26,12 @@ function asBuffer (value, encoding = 'hex') {
  * @returns {{ leafVersion: number, script: Buffer, controlBlock: Buffer }}
  */
 function tapLeafScriptEntry (opts = {}) {
-  const script = asBuffer(opts.script);
-  const controlBlock = asBuffer(opts.controlBlock);
-  if (!script || !script.length) {
+  const script = toBuffer(opts.script, 'BIP371 tapLeafScript script');
+  const controlBlock = toBuffer(opts.controlBlock, 'BIP371 controlBlock');
+  if (!script.length) {
     throw new Error('BIP371 tapLeafScript requires script bytes');
   }
-  if (!controlBlock || controlBlock.length < 33 ||
+  if (controlBlock.length < 33 ||
       controlBlock.length > 33 + (32 * 128) ||
       ((controlBlock.length - 33) % 32) !== 0) {
     throw new Error('BIP371 controlBlock length must be 33 + 32*m bytes');
@@ -84,8 +65,8 @@ function tapLeafScriptEntry (opts = {}) {
  * @returns {Object} `tapInternalKey`, `tapLeafScript`; `tapMerkleRoot` when provided
  */
 function taprootPsbtInputFields (opts = {}) {
-  const tapInternalKey = asBuffer(opts.tapInternalKey);
-  if (!tapInternalKey || tapInternalKey.length !== 32) {
+  const tapInternalKey = toBuffer(opts.tapInternalKey, 'BIP371 tapInternalKey');
+  if (tapInternalKey.length !== 32) {
     throw new Error('BIP371 tapInternalKey must be 32 bytes (x-only)');
   }
   const fields = {
@@ -93,8 +74,8 @@ function taprootPsbtInputFields (opts = {}) {
     tapLeafScript: [tapLeafScriptEntry(opts)]
   };
   if (opts.tapMerkleRoot != null && opts.tapMerkleRoot !== '') {
-    const tapMerkleRoot = asBuffer(opts.tapMerkleRoot);
-    if (!tapMerkleRoot || tapMerkleRoot.length !== 32) {
+    const tapMerkleRoot = toBuffer(opts.tapMerkleRoot, 'BIP371 tapMerkleRoot');
+    if (tapMerkleRoot.length !== 32) {
       throw new Error('BIP371 tapMerkleRoot must be 32 bytes');
     }
     fields.tapMerkleRoot = tapMerkleRoot;
@@ -104,7 +85,6 @@ function taprootPsbtInputFields (opts = {}) {
 
 module.exports = {
   LEAF_VERSION_TAPSCRIPT,
-  asBuffer,
   tapLeafScriptEntry,
   taprootPsbtInputFields
 };

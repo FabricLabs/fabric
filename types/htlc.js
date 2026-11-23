@@ -37,9 +37,18 @@ const {
   composeTaprootTree,
   buildControlBlockForLeaf
 } = require('./policy');
-const { asBuffer, taprootPsbtInputFields } = require('../functions/bip371');
+const { taprootPsbtInputFields } = require('../functions/bip371');
+const { toBuffer } = require('../functions/bytes');
 const { encodeBitcoinUri } = require('../functions/bip21');
 const { BIP125_SEQUENCE_LOCKTIME_ONLY } = require('../functions/bip125');
+const {
+  HTLC_MINIMUM_SATS,
+  HTLC_CLAIM_MEASURED_VBYTES,
+  HTLC_P2TR_DUST_SATS,
+  HTLC_CLAIM_CONFIRMATIONS,
+  HTLC_CLAIM_SAFETY_BLOCKS,
+  HTLC_CLAIM_LOCK_MARGIN_BLOCKS
+} = require('../constants');
 
 bitcoin.initEccLib(ecc);
 
@@ -61,8 +70,13 @@ function sha256 (buf) {
  * @returns {Buffer|null} 32-byte x-only key
  */
 function xOnlyOf (pubkey33) {
-  const key = asBuffer(pubkey33);
-  if (!key || key.length !== 33) return null;
+  let key;
+  try {
+    key = toBuffer(pubkey33);
+  } catch (_) {
+    return null;
+  }
+  if (key.length !== 33) return null;
   if (key[0] !== 0x02 && key[0] !== 0x03) return null;
   return key.subarray(1, 33);
 }
@@ -71,17 +85,18 @@ function xOnlyOf (pubkey33) {
  * The funded HTLC output and the destination amount after the fee.
  * @private
  */
-function fundedOutput ({ networkName, fundedTxHex, paymentAddress, feeSats }) {
-  const network = networkForFabricName(networkName);
-  const tx = bitcoin.Transaction.fromHex(String(fundedTxHex || '').trim());
-  const vout = Htlc.findVout(tx, paymentAddress, network);
+function fundedOutput (opts) {
+  const network = networkForFabricName(opts.networkName);
+  const tx = bitcoin.Transaction.fromHex(String(opts.fundedTxHex || '').trim());
+  const vout = Htlc.findVout(tx, opts.paymentAddress, network);
   if (vout < 0) throw new Error('Funding tx has no output matching paymentAddress.');
   const out = tx.outs[vout];
   const inputSats = Number(out.value);
   if (!Number.isFinite(inputSats) || inputSats <= 0) throw new Error('Invalid HTLC output value.');
-  const fee = Math.max(1, Math.round(Number(feeSats || DEFAULT_FEE_SATS)));
+  const fee = Htlc.spendFeeSats(opts);
   const destSats = inputSats - fee;
-  if (destSats < DUST_SATS) throw new Error('Amount after fee is below dust threshold; lower fee or fund more sats.');
+  const dust = Htlc.dustForAddress(opts.destinationAddress);
+  if (destSats < dust) throw new Error(`Amount after fee is below dust threshold (${dust} sats); lower fee or fund more sats.`);
   return { network, tx, vout, out, inputSats, fee, destSats };
 }
 
@@ -121,15 +136,15 @@ class Htlc {
     if (!xOnlyOf(settings.claimPubkey) || !xOnlyOf(settings.refundPubkey)) {
       throw new Error('Invalid compressed public keys (expect 33-byte 02/03).');
     }
-    const paymentHash = asBuffer(settings.paymentHash);
-    if (!paymentHash || paymentHash.length !== 32) throw new Error('paymentHash must be 32 bytes.');
+    const paymentHash = toBuffer(settings.paymentHash, 'paymentHash');
+    if (paymentHash.length !== 32) throw new Error('paymentHash must be 32 bytes.');
     const lock = Number(settings.refundLocktime);
     if (!Number.isInteger(lock) || lock < 1 || lock >= LOCKTIME_THRESHOLD) {
       throw new Error('refundLocktime must be a valid block height (< 500000000).');
     }
 
-    const claimPubkeyHex = asBuffer(settings.claimPubkey).toString('hex');
-    const refundPubkeyHex = asBuffer(settings.refundPubkey).toString('hex');
+    const claimPubkeyHex = toBuffer(settings.claimPubkey).toString('hex');
+    const refundPubkeyHex = toBuffer(settings.refundPubkey).toString('hex');
     const claim = buildHashlockLeaf({ id: 'claim', commitmentHex: paymentHash.toString('hex'), pubkeyHex: claimPubkeyHex });
     const refund = buildSpendLeaf({ id: 'refund', keys: [refundPubkeyHex], threshold: 1, after: { type: 'cltv', height: lock } });
     const tree = composeTaprootTree({
@@ -169,7 +184,7 @@ class Htlc {
   }
 
   /**
-   * @param {import('bitcoinjs-lib').Transaction} tx
+   * @param {Transaction} tx bitcoinjs-lib transaction
    * @returns {number} the output paying this HTLC, or -1
    */
   findVout (tx) {
@@ -237,8 +252,8 @@ class Htlc {
    * @returns {Object}
    */
   static signerFromPriv32 (priv32) {
-    const priv = asBuffer(priv32);
-    if (!priv || priv.length !== 32) throw new Error('Private key must be 32 bytes.');
+    const priv = toBuffer(priv32, 'priv32');
+    if (priv.length !== 32) throw new Error('Private key must be 32 bytes.');
     const publicKey = ecc.pointFromScalar(priv, true);
     if (!publicKey) throw new Error('Invalid private key (pointFromScalar failed).');
     return {
@@ -300,7 +315,7 @@ class Htlc {
 
   /**
    * Find the vout paying exactly `paymentAddress`.
-   * @param {import('bitcoinjs-lib').Transaction} tx
+   * @param {Transaction} tx bitcoinjs-lib transaction
    * @param {string} paymentAddress
    * @param {Object} network bitcoinjs network
    * @returns {number} -1 when absent
@@ -324,10 +339,9 @@ class Htlc {
    * @returns {Buffer}
    */
   static controlBlockFor (claimScript, refundScript, leafScript) {
-    const claim = asBuffer(claimScript);
-    const refund = asBuffer(refundScript);
-    const leaf = asBuffer(leafScript);
-    if (!claim || !refund || !leaf) throw new Error('Invalid HTLC tapleaf script bytes.');
+    const claim = toBuffer(claimScript, 'claimScript');
+    const refund = toBuffer(refundScript, 'refundScript');
+    const leaf = toBuffer(leafScript, 'leafScript');
     try {
       return buildControlBlockForLeaf([{ script: claim }, { script: refund }], leaf, TAPROOT_INTERNAL_NUMS);
     } catch (err) {
@@ -366,12 +380,19 @@ class Htlc {
    * @returns {Object} bundle for {@link Htlc.signClaim}
    */
   static prepareClaimPsbt (opts = {}) {
+    if (opts.tipHeight != null) {
+      const refusal = Htlc.claimRefusal({
+        tipHeight: opts.tipHeight,
+        refundLocktime: opts.refundLocktimeHeight,
+        confirmations: opts.confirmations
+      });
+      if (refusal) throw new Error(refusal);
+    }
     const { network, tx, vout, out, inputSats, fee, destSats } = fundedOutput(opts);
-    const claimBuf = asBuffer(opts.claimScript);
-    const refundBuf = asBuffer(opts.refundScript);
-    const preimage = asBuffer(opts.preimage32);
-    if (!claimBuf || !refundBuf) throw new Error('Invalid HTLC script bytes.');
-    if (!preimage || preimage.length !== 32) throw new Error('preimage must be 32 bytes.');
+    const claimBuf = toBuffer(opts.claimScript, 'claimScript');
+    const refundBuf = toBuffer(opts.refundScript, 'refundScript');
+    const preimage = toBuffer(opts.preimage32, 'preimage32');
+    if (preimage.length !== 32) throw new Error('preimage must be 32 bytes.');
 
     const controlBlock = Htlc.controlBlockFor(claimBuf, refundBuf, claimBuf);
     const psbt = new bitcoin.Psbt({ network });
@@ -399,9 +420,9 @@ class Htlc {
    */
   static signClaim (bundle, priv32) {
     if (!bundle || !bundle.psbt) throw new Error('Invalid PSBT bundle.');
-    const priv = asBuffer(priv32);
-    if (!priv || priv.length !== 32) throw new Error('Seller private key must be 32 bytes.');
-    return signLeafAndExtract(bundle.psbt, priv, [asBuffer(bundle.preimage32)]);
+    const priv = toBuffer(priv32, 'priv32');
+    if (priv.length !== 32) throw new Error('Seller private key must be 32 bytes.');
+    return signLeafAndExtract(bundle.psbt, priv, [toBuffer(bundle.preimage32, 'preimage32')]);
   }
 
   /**
@@ -412,9 +433,8 @@ class Htlc {
    */
   static prepareRefundPsbt (opts = {}) {
     const { network, tx, vout, out, inputSats, fee, destSats } = fundedOutput(opts);
-    const claimBuf = asBuffer(opts.claimScript);
-    const refundBuf = asBuffer(opts.refundScript);
-    if (!claimBuf || !refundBuf) throw new Error('Invalid HTLC script bytes.');
+    const claimBuf = toBuffer(opts.claimScript, 'claimScript');
+    const refundBuf = toBuffer(opts.refundScript, 'refundScript');
     const lock = Number(opts.refundLocktimeHeight);
     if (!Number.isFinite(lock) || lock < 1) throw new Error('refundLocktimeHeight is required.');
 
@@ -445,8 +465,8 @@ class Htlc {
    */
   static signRefund (bundle, priv32) {
     if (!bundle || !bundle.psbt) throw new Error('Invalid PSBT bundle.');
-    const priv = asBuffer(priv32);
-    if (!priv || priv.length !== 32) throw new Error('Buyer private key must be 32 bytes.');
+    const priv = toBuffer(priv32, 'priv32');
+    if (priv.length !== 32) throw new Error('Buyer private key must be 32 bytes.');
     return signLeafAndExtract(bundle.psbt, priv, []);
   }
 
@@ -457,11 +477,21 @@ class Htlc {
    * @returns {Buffer|null}
    */
   static extractPreimageFromWitness (witness, paymentHash32) {
-    const want = asBuffer(paymentHash32) || Buffer.from(String(paymentHash32 || '').trim(), 'hex');
+    let want;
+    try {
+      want = toBuffer(paymentHash32);
+    } catch (_) {
+      return null;
+    }
     if (want.length !== 32) return null;
     for (const item of Array.isArray(witness) ? witness : []) {
-      const buf = asBuffer(item);
-      if (!buf || buf.length !== 32) continue;
+      let buf;
+      try {
+        buf = toBuffer(item);
+      } catch (_) {
+        continue;
+      }
+      if (buf.length !== 32) continue;
       if (sha256(buf).equals(want)) return Buffer.from(buf);
     }
     return null;
@@ -469,7 +499,7 @@ class Htlc {
 
   /**
    * Scan a claim transaction for the preimage (the content key for sealed sales).
-   * @param {string|import('bitcoinjs-lib').Transaction} txHexOrTx
+   * @param {(string|Transaction)} txHexOrTx Raw hex, or a bitcoinjs-lib transaction
    * @param {string|Buffer} paymentHashHex
    * @returns {{ ok: boolean, preimage32: (Buffer|undefined), preimageHex: (string|undefined), vin: (number|undefined), error: (string|undefined) }}
    */
@@ -500,6 +530,97 @@ class Htlc {
    * @param {number} refundLocktimeHeight
    * @returns {boolean} the refund leaf is spendable at `tipHeight`
    */
+  /**
+   * Fee for a claim or refund. An explicit `feeSats` wins. Otherwise
+   * `feerate` (sat/vB) times the measured 162 vB claim. Neither falls back
+   * to {@link Htlc.DEFAULT_FEE_SATS}.
+   * @param {Object} [opts]
+   * @param {number} [opts.feeSats]
+   * @param {number} [opts.feerate]
+   * @returns {number}
+   */
+  static spendFeeSats (opts = {}) {
+    if (opts.feeSats != null && opts.feeSats !== '') {
+      const fee = Math.round(Number(opts.feeSats));
+      if (!Number.isFinite(fee) || fee < 1) throw new Error('feeSats must be a positive integer');
+      return fee;
+    }
+    if (opts.feerate != null && opts.feerate !== '') return Htlc.claimFeeSats(opts.feerate);
+    return DEFAULT_FEE_SATS;
+  }
+
+  /**
+   * Claim fee at `feerate` sat/vB on the measured claim size.
+   * @param {number} feerate
+   * @returns {number}
+   */
+  static claimFeeSats (feerate) {
+    const rate = Number(feerate);
+    if (!Number.isFinite(rate) || rate <= 0) throw new Error('feerate must be positive');
+    return Math.ceil(rate * HTLC_CLAIM_MEASURED_VBYTES);
+  }
+
+  /**
+   * Dust the claim output must leave. A taproot destination is 330 sats;
+   * anything else stays at the legacy 546.
+   * @param {string} [address]
+   * @returns {number}
+   */
+  static dustForAddress (address) {
+    const addr = String(address || '').trim();
+    if (!addr) return DUST_SATS;
+    try {
+      const decoded = bitcoin.address.fromBech32(addr);
+      if (decoded.version === 1) return HTLC_P2TR_DUST_SATS;
+    } catch (_) { /* legacy or unknown */ }
+    return DUST_SATS;
+  }
+
+  /**
+   * Smallest document HTLC at `feerate`. Never under {@link HTLC_MINIMUM_SATS}.
+   * A taproot payout needs `dust + feerate × measured vbytes`.
+   * @param {number} feerate sat/vB
+   * @param {string} [address] destination; omitted means taproot
+   * @returns {number}
+   */
+  static minimumForFeerate (feerate, address) {
+    const dust = address ? Htlc.dustForAddress(address) : HTLC_P2TR_DUST_SATS;
+    return Math.max(HTLC_MINIMUM_SATS, dust + Htlc.claimFeeSats(feerate));
+  }
+
+  /**
+   * Blocks the buyer must leave between the tip and the refund lock:
+   * confirmations + claim room + margin.
+   * @returns {number}
+   */
+  static minimumLockBlocks () {
+    return HTLC_CLAIM_CONFIRMATIONS + HTLC_CLAIM_SAFETY_BLOCKS + HTLC_CLAIM_LOCK_MARGIN_BLOCKS;
+  }
+
+  /**
+   * Why a seller claim is refused, or null when it may be built.
+   * The funding transaction needs `c` confirmations, and the tip must be at
+   * least `d` blocks before the refund lock.
+   * @param {Object} opts
+   * @param {number} opts.tipHeight
+   * @param {number} opts.refundLocktime
+   * @param {number} opts.confirmations
+   * @returns {string|null}
+   */
+  static claimRefusal (opts = {}) {
+    const tip = Math.floor(Number(opts.tipHeight));
+    const lock = Math.floor(Number(opts.refundLocktime));
+    const confirmations = Math.floor(Number(opts.confirmations));
+    if (!Number.isFinite(tip) || !Number.isFinite(lock)) return 'tip and refund lock are required to claim';
+    if (!(confirmations >= HTLC_CLAIM_CONFIRMATIONS)) {
+      return `funding needs ${HTLC_CLAIM_CONFIRMATIONS} confirmation before the seller claims`;
+    }
+    if (lock - tip < HTLC_CLAIM_SAFETY_BLOCKS) {
+      return `claim is inside ${HTLC_CLAIM_SAFETY_BLOCKS} blocks of the refund lock`;
+    }
+    return null;
+  }
+
   static refundMature (tipHeight, refundLocktimeHeight) {
     const tip = Math.round(Number(tipHeight));
     const lock = Math.round(Number(refundLocktimeHeight));
@@ -535,6 +656,11 @@ class Htlc {
 }
 
 Htlc.DUST_SATS = DUST_SATS;
+Htlc.DEFAULT_FEE_SATS = DEFAULT_FEE_SATS;
+Htlc.P2TR_DUST_SATS = HTLC_P2TR_DUST_SATS;
+Htlc.CLAIM_MEASURED_VBYTES = HTLC_CLAIM_MEASURED_VBYTES;
+Htlc.CLAIM_CONFIRMATIONS = HTLC_CLAIM_CONFIRMATIONS;
+Htlc.CLAIM_SAFETY_BLOCKS = HTLC_CLAIM_SAFETY_BLOCKS;
 
 module.exports = Htlc;
 module.exports.Htlc = Htlc;

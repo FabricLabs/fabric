@@ -19,21 +19,31 @@
 const merge = require('lodash.merge');
 
 const Actor = require('./actor');
-const Message = require('./message');
+const Hash256 = require('./hash256');
 const Chain = require('./chain');
+const fabricCanonicalJson = require('../functions/fabricCanonicalJson');
 const beaconFederationSigning = require('../functions/beaconFederationSigning');
 const bls = require('../functions/bls');
-const {
-  normalizeFederationValidators,
-  findValidatorEntry,
-  resolveFederationThreshold,
-  federationThresholdExceedsValidators,
-  uniqueValidatorPubkeys
-} = require('../functions/federationValidators');
+const Federation = require('./federation');
 
 const SATS_PER_BTC = 100_000_000;
 const BEACON_CHAIN_PATH = 'beacon/CHAIN';
 const MAX_REMEMBERED_CANCELLED_ROUNDS = 1024;
+
+/**
+ * Id of a stored epoch entry: double-SHA256 of the epoch's canonical JSON, taken
+ * over the payload as `beacon/CHAIN` stores it (JSON drops an unset field, which
+ * canonical JSON would hash as `null`). Epochs are never sent as frames, so no
+ * Message is built. Older entries keep the ids they were stored with.
+ * @private
+ * @param {object} payload
+ * @returns {string}
+ */
+function epochEntryId (payload) {
+  // Canonical JSON first, so a Symbol or BigInt still fails closed rather than vanishing.
+  fabricCanonicalJson(payload);
+  return Hash256.doubleDigest(fabricCanonicalJson(fabricCanonicalJson.jsonSafe(payload)));
+}
 
 /**
  * @param {object} round
@@ -120,7 +130,7 @@ class Beacon extends Actor {
     this._blockQueue = null;
     this._bitcoinChainInfo = null;
     this._epochChain = Chain.create({ consensus: 'federation' });
-    this._federationValidators = normalizeFederationValidators(this.settings.federationValidators);
+    this._federationValidators = Federation.normalizeValidators(this.settings.federationValidators);
     this._federationThresholdSetting = this.settings.federationThreshold;
     this._federationSignatureScheme = bls.normalizeSignatureScheme(this.settings.federationSignatureScheme);
     this._getSidechainSnapshotForEpoch = null;
@@ -158,7 +168,7 @@ class Beacon extends Actor {
    * @private
    */
   get _federationThreshold () {
-    return resolveFederationThreshold(this._federationThresholdSetting, this._federationValidators);
+    return Federation.resolveThreshold(this._federationThresholdSetting, this._federationValidators);
   }
 
   get merkleRoot () {
@@ -194,7 +204,7 @@ class Beacon extends Actor {
     if (deps.fs) this.fs = deps.fs;
     if (deps.key) this.key = deps.key;
     if (Array.isArray(deps.federationValidators)) {
-      this._federationValidators = normalizeFederationValidators(deps.federationValidators);
+      this._federationValidators = Federation.normalizeValidators(deps.federationValidators);
     }
     if (deps.federationThreshold !== undefined) {
       this._federationThresholdSetting = deps.federationThreshold;
@@ -233,8 +243,8 @@ class Beacon extends Actor {
    * @private
    */
   _warnIfThresholdClamped () {
-    if (!federationThresholdExceedsValidators(this._federationThresholdSetting, this._federationValidators)) return;
-    const n = uniqueValidatorPubkeys(this._federationValidators).length;
+    if (!Federation.thresholdExceedsValidators(this._federationThresholdSetting, this._federationValidators)) return;
+    const n = Federation.uniqueValidatorPubkeys(this._federationValidators).length;
     this.emit('warning', `[BEACON] federationThreshold ${this._federationThresholdSetting} exceeds the ${n} distinct federation validators; using ${n}`);
   }
 
@@ -244,7 +254,7 @@ class Beacon extends Actor {
    * @private
    */
   _isFederationValidator (pubkey) {
-    return !!findValidatorEntry(this._federationValidators, pubkey);
+    return !!Federation.findValidatorEntry(this._federationValidators, pubkey);
   }
 
   _compressedPubkeyHex () {
@@ -306,7 +316,7 @@ class Beacon extends Actor {
     if (!this._federationValidators.length) return null;
     if (!this.key || !this.key.private) return null;
     const pk = this._compressedPubkeyHex();
-    const member = pk ? findValidatorEntry(this._federationValidators, pk) : null;
+    const member = pk ? Federation.findValidatorEntry(this._federationValidators, pk) : null;
     if (!member) return null;
     const msg = Buffer.from(beaconFederationSigning.signingStringForBeaconEpoch(epochPayload), 'utf8');
     if (this._federationSignatureScheme === bls.SCHEME_BLS) {
@@ -323,7 +333,7 @@ class Beacon extends Actor {
     }
     let sig;
     try {
-      sig = this.key.signSchnorr(msg);
+      sig = this.key.signSchnorr(msg, beaconFederationSigning.FEDERATION_WITNESS_TAG);
     } catch (_) {
       return null;
     }
@@ -335,9 +345,7 @@ class Beacon extends Actor {
 
   _buildEpochEntry (epochBase, witnessOverride = null) {
     const fullEpoch = this._mergeSidechainIntoEpoch(epochBase);
-    const message = Message.fromVector(['BEACON_EPOCH', JSON.stringify(fullEpoch)]);
-    if (this.key && this.key.private) message.signWithKey(this.key);
-    const entry = { type: 'BEACON_EPOCH', payload: fullEpoch, id: message.id || null };
+    const entry = { type: 'BEACON_EPOCH', payload: fullEpoch, id: epochEntryId(fullEpoch) };
     const witness = witnessOverride || this._makeFederationWitnessForEpoch(fullEpoch);
     if (witness) entry.federationWitness = witness;
     return entry;
@@ -351,9 +359,7 @@ class Beacon extends Actor {
    * @private
    */
   _appendSealedEpoch (payload, witness = null) {
-    const message = Message.fromVector(['BEACON_EPOCH', JSON.stringify(payload)]);
-    if (this.key && this.key.private) message.signWithKey(this.key);
-    const entry = { type: 'BEACON_EPOCH', payload, id: message.id || null };
+    const entry = { type: 'BEACON_EPOCH', payload, id: epochEntryId(payload) };
     if (witness) entry.federationWitness = witness;
     this._epochChain.append(entry);
     return entry;
@@ -547,7 +553,7 @@ class Beacon extends Actor {
    * Whether `round` may seal now: directly above the sealed tip, or the
    * lowest pending clock on an empty chain.
    * @param {object} round
-   * @returns {{ ok: boolean, reason?: string }}
+   * @returns {{ ok: boolean, reason: (string|undefined) }}
    * @private
    */
   _roundSealable (round) {
@@ -570,7 +576,7 @@ class Beacon extends Actor {
    * Find a pending round in memory or the pending store, cancelling it when it
    * can no longer seal.
    * @param {string} digest
-   * @returns {{ round?: object|null, cancelled?: string }}
+   * @returns {{ round: (object|null|undefined), cancelled: (string|undefined) }}
    * @private
    */
   _lookupPendingRound (digest) {
@@ -738,9 +744,7 @@ class Beacon extends Actor {
       beaconFederationSigning.messageBufferForPayload(round.payload),
       round.witness,
       this._federationValidators,
-      this._federationThreshold,
-      undefined,
-      { allowLegacy: false }
+      this._federationThreshold
     );
   }
 
@@ -1038,7 +1042,7 @@ class Beacon extends Actor {
       if (scheme === bls.SCHEME_BLS) {
         signatureHex = JSON.stringify(bls.createFederationBlsBundle(msg, this.key));
       } else {
-        const sig = this.key.signSchnorr(msg);
+        const sig = this.key.signSchnorr(msg, beaconFederationSigning.FEDERATION_WITNESS_TAG);
         signatureHex = Buffer.isBuffer(sig) ? sig.toString('hex') : String(sig);
       }
     } catch (err) {

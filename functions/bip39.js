@@ -218,6 +218,7 @@ function mnemonicToEntropy (mnemonic, wordlist = DEFAULT_WORDLIST) {
 }
 
 module.exports = {
+  MNEMONIC_WORD_COUNTS,
   mnemonicToSeed,
   mnemonicToSeedSync,
   entropyToMnemonic,
