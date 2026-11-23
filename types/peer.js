@@ -564,7 +564,7 @@ const {
   buildForwardedDocumentRequest,
   paginateInventoryItems
 } = DocumentBook;
-const DocumentBlobTransferBook = require('./documentBlobTransferBook');
+const DocumentBlobTransferBook = require('./documentBook').DocumentBlobTransferBook;
 const {
   KEY_REVEAL_TYPE,
   BLOB_QUOTE_TYPE,

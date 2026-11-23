@@ -11,7 +11,7 @@ const bitcoinjs = require('bitcoinjs-lib');
 
 const Bitcoin = require('../../services/bitcoin');
 const Message = require('../../types/message');
-const CoinjoinBook = require('../../types/coinjoinBook');
+const CoinjoinBook = require('../../types/coinjoin').CoinjoinBook;
 const { CoinjoinTakerRound, CoinjoinMakerRound } = require('../../types/coinjoinRound');
 const Coinjoin = require('../../types/coinjoin');
 const Bond = require('../../types/bond');

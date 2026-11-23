@@ -20,7 +20,7 @@ const Entity = require('./entity');
 const State = require('./state');
 const Secret = require('./secret');
 const Witness = require('./witness');
-const Resolutions = require('./resolutions');
+const Resolutions = require('./contract').Resolutions;
 
 // Functions
 const { taprootPsbtInputFields } = require('../functions/bip371');

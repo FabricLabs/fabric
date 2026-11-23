@@ -15,7 +15,7 @@ const {
 const DocumentBook = require('../types/documentBook');
 const Message = require('../types/message');
 const { HTLC_MINIMUM_SATS } = require('../constants');
-const DocumentBlobTransferBook = require('../types/documentBlobTransferBook');
+const DocumentBlobTransferBook = require('../types/documentBook').DocumentBlobTransferBook;
 const { HEADER_SIZE, MAX_MESSAGE_SIZE } = require('../constants');
 const Key = require('../types/key');
 const { DOCUMENT_LIST_TYPE, compactDocumentRow, buildDocumentList, chunkDocumentList, documentListFits, foldDocumentList, contractMessageEnvelopeReserve, ampObjectBudget } = require('../types/document');

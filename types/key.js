@@ -1165,7 +1165,9 @@ module.exports = Key;
 
 const accountKeys = (function () {
   const { networks, payments } = require('bitcoinjs-lib');
-  const bip86 = require('./wallet/bip86');
+  function bip86 () {
+    return require('./wallet').BIP86;
+  }
   const bip39Accounts = require('../functions/bip39');
   const { encodeCheck: encodeCheckAccount, decodeCheck: decodeCheckAccount } = require('../functions/base58');
   const { sealJson, openSealedJson } = require('../functions/sealedBlob');
@@ -1340,7 +1342,7 @@ function deriveAccount (master, options = {}) {
 
   const segwitPath = bitcoinAccountDerivationPath(84, account, network);
   const segwitKey = root.derive(segwitPath);
-  const taprootPath = bitcoinAccountDerivationPath(bip86.BIP86_PURPOSE, account, network);
+  const taprootPath = bitcoinAccountDerivationPath(bip86().BIP86_PURPOSE, account, network);
   const taprootKey = root.derive(taprootPath);
   const standardPath = bitcoinAccountDerivationPath(44, account, network);
   const standardKey = root.derive(standardPath);
@@ -1414,7 +1416,7 @@ function walletAddress (params = {}) {
   const net = addressNetworkFor(network);
   const script = params.script || 'wpkh';
   if (script === 'wpkh') return payments.p2wpkh({ pubkey, network: net }).address;
-  if (script === 'tr') return bip86.address(pubkey, net);
+  if (script === 'tr') return bip86().address(pubkey, net);
   if (script === 'pkh') return payments.p2pkh({ pubkey, network: net }).address;
   throw new RangeError(`unsupported script: ${script}`);
 }

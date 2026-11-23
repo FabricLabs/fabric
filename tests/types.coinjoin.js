@@ -6,7 +6,7 @@ const bitcoin = require('bitcoinjs-lib');
 const Coinjoin = require('../types/coinjoin');
 const ecc = require('../types/ecc');
 const Bond = require('../types/bond');
-const CoinjoinBook = require('../types/coinjoinBook');
+const CoinjoinBook = require('../types/coinjoin').CoinjoinBook;
 const bip32 = require('../functions/bip32');
 const { CoinjoinTakerRound, CoinjoinMakerRound, descriptorPrivateKey, envelopeRecipient, memoryWallet, memoryChain } = require('../types/coinjoinRound');
 

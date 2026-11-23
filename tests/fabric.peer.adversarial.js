@@ -27,7 +27,7 @@ const {
   resolveFabricIdentityCoinType
 } = require('../constants');
 const Htlc = require('../types/htlc');
-const DocumentBlobTransferBook = require('../types/documentBlobTransferBook');
+const DocumentBlobTransferBook = require('../types/documentBook').DocumentBlobTransferBook;
 const SIGNING_TAGS = require('../types/key').TAGS;
 
 bitcoin.initEccLib(ecc);

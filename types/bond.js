@@ -15,7 +15,7 @@ const { Psbt, address: bitcoinAddress } = require('bitcoinjs-lib');
 const ecc = require('./ecc');
 const Contract = require('./contract');
 const Witness = require('./witness');
-const Resolutions = require('./resolutions');
+const Resolutions = require('./contract').Resolutions;
 const Htlc = require('./htlc');
 const {
   composeTaprootTree,

@@ -4,7 +4,7 @@ const assert = require('assert');
 const { composeUseCases } = require('./packs');
 const { DocumentBook } = require('../../../types/documentBook');
 const Document = require('../../../types/document');
-const DocumentBlobTransferBook = require('../../../types/documentBlobTransferBook');
+const DocumentBlobTransferBook = require('../../../types/documentBook').DocumentBlobTransferBook;
 
 const packs = composeUseCases(['document-market', 'gossip']);
 
