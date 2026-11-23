@@ -11,9 +11,9 @@
  */
 
 const Key = require('../types/key');
-const { pubkeyXOnly } = require('./pubkey');
+const { pubkeyXOnly } = require('../types/key');
 
-const GROUP_CHANGE_TAG = require('./signingTags').GROUP_CHANGE;
+const GROUP_CHANGE_TAG = require('../types/key').TAGS.GROUP_CHANGE;
 
 const GOVERNANCE_ACTIONS = Object.freeze(['member.add', 'member.remove', 'members.set', 'signers.set', 'update']);
 

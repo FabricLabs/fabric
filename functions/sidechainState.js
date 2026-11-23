@@ -19,13 +19,13 @@ const crypto = require('crypto');
 const { applyPatch, validate } = require('fast-json-patch');
 const fabricCanonicalJson = require('./fabricCanonicalJson');
 const { jsonSafe, stableStringify } = fabricCanonicalJson;
-const keyHasPrivateSigningMaterial = require('./keyHasPrivateSigningMaterial');
+const keyHasPrivateSigningMaterial = require('../types/key').hasPrivateSigningMaterial;
 const {
   signingStringForBeaconEpoch,
   verifyFederationWitnessOnMessage
 } = require('./beaconFederationSigning');
 
-const SIDECHAIN_STATE_TAG = require('./signingTags').SIDECHAIN_STATE;
+const SIDECHAIN_STATE_TAG = require('../types/key').TAGS.SIDECHAIN_STATE;
 
 const SIDECHAIN_STATE_PATH = 'sidechain/STATE';
 const SIDECHAIN_SNAPSHOTS_PATH = 'sidechain/SNAPSHOTS';

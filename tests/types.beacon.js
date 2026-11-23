@@ -6,7 +6,7 @@ const Beacon = require('../types/beacon');
 const Key = require('../types/key');
 const beaconFederationSigning = require('../functions/beaconFederationSigning');
 const sidechainState = require('../functions/sidechainState');
-const SIGNING_TAGS = require('../functions/signingTags');
+const SIGNING_TAGS = require('../types/key').TAGS;
 
 function stubBitcoin (opts = {}) {
   let height = opts.height != null ? opts.height : 0;
@@ -888,7 +888,7 @@ describe('@fabric/core/types/beacon', function () {
     assert.strictEqual(sealed.status, 'success');
     assert.strictEqual(sealed.sealed, true);
     assert.strictEqual(sealed.federationWitness.scheme, 'bls');
-    const blsMod = require('../functions/bls');
+    const blsMod = require('../types/witness').BLS;
     const msg = Buffer.from(
       require('../functions/beaconFederationSigning').signingStringForBeaconEpoch(sealed.payload),
       'utf8'

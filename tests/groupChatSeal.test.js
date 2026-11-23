@@ -12,7 +12,7 @@ const {
   isSealedGroupChat,
   isParticipantSealedGroupChat
 } = require('../functions/groupChatSeal');
-const { pubkeyXOnly } = require('../functions/pubkey');
+const { pubkeyXOnly } = require('../types/key');
 const Key = require('../types/key');
 
 describe('@fabric/core groupChatSeal', function () {

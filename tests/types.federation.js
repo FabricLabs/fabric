@@ -7,7 +7,7 @@ const {
   parseStatechainPathPolicy,
   validatePatchesAgainstPolicy
 } = require('../functions/sidechainState');
-const { musig2EpochAggregateStatus, tryAggregateEpochWitness } = require('../functions/musig2EpochAggregate');
+const { musig2EpochAggregateStatus, tryAggregateEpochWitness } = require('../types/beacon');
 
 const {
   validatorId,

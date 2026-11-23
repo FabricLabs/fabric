@@ -14,7 +14,7 @@ const Message = require('../../types/message');
 const {
   CONTRACT_BODY_TYPES
 } = require('../../functions/applicationNamespaces');
-const { pubkeyXOnly } = require('../../functions/pubkey');
+const { pubkeyXOnly } = require('../../types/key');
 const {
   finalizeSpendPsbt
 } = require('../../types/policy');

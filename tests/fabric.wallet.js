@@ -72,7 +72,7 @@ describe('@fabric/core/types/wallet', function () {
     });
 
     it('watches and derives the same addresses as its account keys', function () {
-      const { deriveAccount, importSeed, walletReceiveAddress, walletChangeAddress, walletAddress } = require('../functions/accountKeys');
+      const { deriveAccount, importSeed, walletReceiveAddress, walletChangeAddress, walletAddress } = require('../types/key').Accounts;
       const { FIXTURE_SEED, bitcoinReceiveDerivationPath } = require('../constants');
       const wallet = new Wallet({ network: 'regtest', gapLimit: 2, key: { seed: FIXTURE_SEED } });
       const account = deriveAccount(importSeed(FIXTURE_SEED), { network: 'regtest' }).wallet;
@@ -391,7 +391,7 @@ const {
   bitcoinBip48P2wshReceiveDerivationPath,
   bitcoinBip48P2wshChangeDerivationPath
 } = require('../constants');
-const bip86 = require('../types/wallet/bip86');
+const bip86 = require('../types/wallet').BIP86;
 const { decodeSegwitAddress } = require('../functions/bech32');
 
 describe('@fabric/core Bitcoin derivation path templates', function () {

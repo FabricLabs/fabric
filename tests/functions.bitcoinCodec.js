@@ -16,12 +16,12 @@ const {
 
 const { spawnSync } = require('child_process');
 const bitcoin = require('bitcoinjs-lib');
-const { TEST_NETWORKS, normalizeNetworkName, isTestNetwork, assertTestNetwork } = require('../functions/bitcoinNetworkAllowlist');
+const { TEST_NETWORKS, normalizeNetworkName, isTestNetwork, assertTestNetwork } = require('../types/channel');
 const { networkForFabricName } = require('../types/policy');
 const Channel = require('../types/channel');
 const ChannelBook = require('../types/channelBook');
 const crypto = require('crypto');
-const { merkleRootFromTxids, buildBranch, verifyInclusion, buildInclusion, parseHeader, targetFromBits, headerMeetsTarget } = require('../functions/bitcoinTxInclusion');
+const { merkleRootFromTxids, buildBranch, verifyInclusion, buildInclusion, parseHeader, targetFromBits, headerMeetsTarget } = require('../types/block');
 const Message = require('../types/message');
 
 function bech32SubprocessOpts () {

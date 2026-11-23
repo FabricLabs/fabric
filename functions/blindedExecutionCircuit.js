@@ -21,7 +21,7 @@ const crypto = require('crypto');
 const Actor = require('../types/actor');
 const Key = require('../types/key');
 
-const CIRCUIT_DECISION_TAG = require('./signingTags').CIRCUIT_DECISION;
+const CIRCUIT_DECISION_TAG = require('../types/key').TAGS.CIRCUIT_DECISION;
 const Program = require('../types/program');
 const fabricCanonicalJson = require('./fabricCanonicalJson');
 const { jsonSafe } = fabricCanonicalJson;

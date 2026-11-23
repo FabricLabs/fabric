@@ -8,8 +8,8 @@ const {
   PASSPORT_MAX_TTL_MS,
   FIXTURE_SEED
 } = require('../constants');
-const { encodeFabricUri } = require('../functions/fabricUri');
-const { importSeed, deriveAccount, extendedKeyForNetwork } = require('../functions/accountKeys');
+const { encodeFabricUri } = require('../types/message');
+const { importSeed, deriveAccount, extendedKeyForNetwork } = require('../types/key').Accounts;
 const { classifyGossipWireType, isPublicGossipFloodType, isRelayAsIsWireType } = require('../functions/gossipNetwork');
 const {
   normalizeOrigin,

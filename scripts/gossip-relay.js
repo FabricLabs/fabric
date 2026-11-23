@@ -27,7 +27,7 @@ const {
   listPublicGossipFloodNames,
   classifyGossipWireType
 } = require('../functions/gossipNetwork');
-const { keySettingsFromEnv } = require('../functions/fabricKeyMaterial');
+const { keySettingsFromEnv } = require('../types/key').Material;
 const { resolveFabricPeerInterface } = require('../functions/fabricListenInterface');
 
 function printHelp () {

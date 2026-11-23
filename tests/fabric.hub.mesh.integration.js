@@ -424,7 +424,7 @@ describe('generic application contract chain', function () {
 
 const Actor = require('../types/actor');
 const Key = require('../types/key');
-const { pubkeyXOnly } = require('../functions/pubkey');
+const { pubkeyXOnly } = require('../types/key');
 const {
   GOVERNANCE_ACTIONS,
   signProposalVote

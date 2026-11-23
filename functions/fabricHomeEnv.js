@@ -295,7 +295,7 @@ function publicKeyPrefix (key) {
  */
 function runEnsureHomeEnvCli (argv = process.argv) {
   const Key = require('../types/key');
-  const { keySettingsFromEnv } = require('./fabricKeyMaterial');
+  const { keySettingsFromEnv } = require('../types/key').Material;
   const { loadIdentityFromWalletFile } = require('./fabricWalletIdentity');
 
   function keyFromSettings (settings) {

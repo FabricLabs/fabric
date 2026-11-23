@@ -19,7 +19,7 @@ const { secp256k1 } = require('@noble/curves/secp256k1.js');
 const HKDF = require('../types/hkdf');
 const Key = require('../types/key');
 const { tipDigestHex } = require('./contractStateSigning');
-const { pubkeyXOnly, pubkeyCompressed } = require('./pubkey');
+const { pubkeyXOnly, pubkeyCompressed } = require('../types/key');
 
 /** Tip-bound interim scheme (not hub-blind). */
 const SEAL_SCHEME = 'aes-256-gcm-groupchat-v1';

@@ -215,7 +215,7 @@ describe('@fabric/core/types/federation', function () {
     });
 
     it('verifies a raw BLS signature for a public-only member', function () {
-      const blsMod = require('../functions/bls');
+      const blsMod = require('../types/witness').BLS;
       const federation = new Federation({ signatureScheme: 'bls' });
       const member = new Key({ private: '5555555555555555555555555555555555555555555555555555555555555555' });
       const derived = blsMod.deriveFederationSigner(member.private);
@@ -230,7 +230,7 @@ describe('@fabric/core/types/federation', function () {
     });
 
     it('rejects a supplied blsPublicKey that does not match the member private key', function () {
-      const blsMod = require('../functions/bls');
+      const blsMod = require('../types/witness').BLS;
       const federation = new Federation({ signatureScheme: 'bls' });
       const member = new Key({ private: '6666666666666666666666666666666666666666666666666666666666666666' });
       const other = blsMod.deriveFederationSigner(Buffer.from('77'.repeat(32), 'hex'));

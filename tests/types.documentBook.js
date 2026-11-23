@@ -13,7 +13,7 @@ const { P2P_DOCUMENT_BID, P2P_DOCUMENT_ASK, DOCUMENT_BID_MAX_TTL_SECONDS, DOCUME
 const { lookupGossipType, isRelayAsIsWireType, isFirstClassOpcodeOnlyType } = require('../functions/gossipNetwork');
 const { offlinePeerSettings, waitUntil, getFreePort } = require('./helpers/peer');
 const { createDocumentPurchaseSession, isDuplicateSettlement, rememberSettlement } = require('../types/documentBook');
-const DocumentBlobTransferBook = require('../types/documentBlobTransferBook');
+const DocumentBlobTransferBook = require('../types/documentBook').DocumentBlobTransferBook;
 const { MAX_DOCUMENT_BLOBS } = require('../constants');
 const Market = require('../services/market');
 const { DOCUMENT_L1_BATCH_BLOBS } = require('../constants');

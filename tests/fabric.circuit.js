@@ -2,7 +2,7 @@
 
 const assert = require('assert');
 const Circuit = require('../types/circuit');
-const SIGNING_TAGS = require('../functions/signingTags');
+const SIGNING_TAGS = require('../types/key').TAGS;
 
 describe('@fabric/core/types/circuit', function () {
   describe('Circuit', function () {

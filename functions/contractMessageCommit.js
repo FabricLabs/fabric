@@ -12,9 +12,9 @@
  */
 
 const Key = require('../types/key');
-const { pubkeyXOnly } = require('./pubkey');
+const { pubkeyXOnly } = require('../types/key');
 
-const RECEIPT_TAG = require('./signingTags').MESSAGE_RECEIPT;
+const RECEIPT_TAG = require('../types/key').TAGS.MESSAGE_RECEIPT;
 
 /**
  * Canonical UTF-8 message for BIP340 MessageReceipt signatures.

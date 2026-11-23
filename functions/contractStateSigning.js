@@ -19,7 +19,7 @@ const Key = require('../types/key');
 const fabricCanonicalJson = require('./fabricCanonicalJson');
 const { verifyFederationWitnessOnMessage } = require('./beaconFederationSigning');
 
-const CONTRACT_STATE_TAG = require('./signingTags').CONTRACT_STATE;
+const CONTRACT_STATE_TAG = require('../types/key').TAGS.CONTRACT_STATE;
 
 /** Canonical tip kind — Hub and apps must agree; bump only with protocol note. */
 const CONTRACT_STATE_TIP_KIND = 'ContractStateTip';

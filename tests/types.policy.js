@@ -955,7 +955,7 @@ const {
   prepareWithdrawalFromRequest,
   verifyWithdrawalWitnessSignature
 } = require('../types/contract');
-const { pubkeyXOnly } = require('../functions/pubkey');
+const { pubkeyXOnly } = require('../types/key');
 const {
   createMemoryStore,
   ingestMessageBuffer,
@@ -1053,7 +1053,7 @@ describe('Contract.resolveSpend / ARC withdrawals', function () {
       overrides: { network: 'regtest' }
     });
     assert.strictEqual(spend.validators.length, 1);
-    assert.strictEqual(spend.validators[0], require('../functions/pubkey').pubkeyCompressed(a.pubkey) || a.pubkey);
+    assert.strictEqual(spend.validators[0], require('../types/key').pubkeyCompressed(a.pubkey) || a.pubkey);
   });
 
   it('resolveSpend is stable for tip members', function () {

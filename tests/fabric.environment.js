@@ -573,7 +573,7 @@ describe('@fabric/core/types/environment', function () {
         reloaded.unlockWallet(password);
         assert.ok(reloaded.wallet && reloaded.wallet.key);
         assert.strictEqual(reloaded.wallet.version, doc.walletVersion);
-        assert.strictEqual(reloaded.wallet.key.master.toBase58(), require('../functions/accountKeys').importSeed(FIXTURE_SEED));
+        assert.strictEqual(reloaded.wallet.key.master.toBase58(), require('../types/key').Accounts.importSeed(FIXTURE_SEED));
         assert.strictEqual(reloaded.wallet.key.seed || null, null, 'only the master xprv is sealed');
         reloaded.lockWallet();
       } finally {
@@ -1195,7 +1195,7 @@ const {
   keySettingsFromEnv,
   MIN_SEED_BYTES,
   MAX_SEED_BYTES
-} = require('../functions/fabricKeyMaterial');
+} = require('../types/key').Material;
 
 const SAMPLE_MNEMONIC = 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about';
 

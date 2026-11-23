@@ -19,6 +19,12 @@ declare class Message {
   static fromVector (vector: unknown[]): Message;
   static fromBuffer (buffer: Buffer | Uint8Array): Message;
 
+  static readonly FABRIC_URI_SCHEME: 'fabric:';
+  static encodeFabricUri (input: Message | Buffer | Uint8Array, options?: { encoding?: 'base64url' | 'hex' }): string;
+  static parseFabricUriBytes (uri: string, options?: { maxBytes?: number }): { ok: true; buffer: Buffer; encoding: string } | { ok: false; error: string };
+  static decodeFabricUri (uri: string, options?: { allowUnsigned?: boolean; allowUnknownTypes?: boolean; allowedTypes?: Array<string | number>; maxBytes?: number }): { ok: true; message: Message; buffer: Buffer; encoding: string; type: string; author: string | null; signed: boolean } | { ok: false; error: string };
+  static isFabricUri (value: unknown): boolean;
+
   static readonly HEADER_OFFSETS: Readonly<Record<HeaderField, readonly [number, number]>>;
   static readonly ZERO_PARENT: string;
   static isZeroParent (value: unknown): boolean;

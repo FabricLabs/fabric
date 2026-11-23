@@ -8,7 +8,7 @@
  */
 
 const sidechainState = require('./sidechainState');
-const { normalizeSignatureScheme } = require('./bls');
+const { normalizeSignatureScheme } = require('../types/witness').BLS;
 
 /**
  * Setup-phase manifest schema (v1).

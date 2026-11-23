@@ -10,7 +10,7 @@ const crypto = require('crypto');
 const Book = require('./book');
 const Channel = require('./channel');
 const Htlc = require('./htlc');
-const { assertTestNetwork, normalizeNetworkName } = require('../functions/bitcoinNetworkAllowlist');
+const { assertTestNetwork, normalizeNetworkName } = require('./channel');
 
 const ChannelSession = Channel.Session;
 const CHANNEL_DEFAULTS = Channel.DEFAULTS;
