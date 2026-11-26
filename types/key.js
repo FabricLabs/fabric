@@ -1776,7 +1776,10 @@ const operatorIdentity = (function () {
   const classifyFabricKeyMaterial = keyMaterial.classifyFabricKeyMaterial;
   const classifyFabricIdentityEnvValue = keyMaterial.classifyFabricIdentityEnvValue;
   const keySettingsFromEnv = keyMaterial.keySettingsFromEnv;
-/** @private copies a non-empty `passphrase` (or `password`) from `bag` onto `out` */
+/**
+ * Copy a non-empty `passphrase` (or `password`) from `bag` onto `out`.
+ * @private
+ */
 function withPassphrase (out, bag) {
   if (!out || !bag || typeof bag !== 'object') return out;
   const passphrase = bag.passphrase != null ? bag.passphrase : bag.password;

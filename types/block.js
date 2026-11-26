@@ -502,19 +502,28 @@ const block_inclusion = (function () {
 
 const crypto = require('crypto');
 
-/** @private double SHA-256 */
+/**
+ * Double SHA-256.
+ * @private
+ */
 function hash256 (buffer) {
   return crypto.createHash('sha256').update(crypto.createHash('sha256').update(buffer).digest()).digest();
 }
 
-/** @private display-order txid (hex) → internal byte order */
+/**
+ * Display-order txid (hex) to internal byte order.
+ * @private
+ */
 function toInternal (txidHex) {
   const hex = String(txidHex || '').toLowerCase();
   if (!/^[0-9a-f]{64}$/.test(hex)) throw new Error(`bitcoinTxInclusion: bad txid ${txidHex}`);
   return Buffer.from(hex, 'hex').reverse();
 }
 
-/** @private internal byte order → display-order hex */
+/**
+ * Internal byte order to display-order hex.
+ * @private
+ */
 function toDisplay (buffer) {
   return Buffer.from(buffer).reverse().toString('hex');
 }
@@ -616,7 +625,10 @@ function headerMeetsTarget (blockHeaderHex) {
   return BigInt(`0x${header.blockHash}`) <= target;
 }
 
-/** @private Merkle depth of a tree with `count` leaves */
+/**
+ * Merkle depth of a tree with `count` leaves.
+ * @private
+ */
 function treeDepth (count) {
   let depth = 0;
   for (let width = count; width > 1; width = Math.ceil(width / 2)) depth++;
@@ -632,11 +644,11 @@ function treeDepth (count) {
  * otherwise pose as an inner node). The proof's own `txCount` is chosen by
  * whoever built it; a verifier with a chain view should pass the block's
  * real count as `opts.txCount`, which then wins.
- * @param {object} proof `{ blockHeaderHex, txid, index, branch, txCount? }`
+ * @param {object} proof `blockHeaderHex`, `txid`, `index`, `branch`, and optional `txCount`
  * @param {object} [opts]
  * @param {number} [opts.txCount] the block's transaction count from the verifier's chain view
  * @param {boolean} [opts.requireTxCount] fail when neither `opts.txCount` nor `proof.txCount` is known
- * @returns {{ ok: boolean, reason?: string, blockHash?: string, merkleRootHex?: string }}
+ * @returns {Object} `ok`. On failure, `reason`. When known, `blockHash` and `merkleRootHex`.
  */
 function verifyInclusion (proof = {}, opts = {}) {
   let header;

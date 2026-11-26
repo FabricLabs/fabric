@@ -237,7 +237,10 @@ function composeGarblerPublish (opts = {}) {
       publisher: garbler,
       validators: signers,
       threshold,
-      csvBlocks
+      csvBlocks,
+      // Withdrawals must carry this publish's run commitment. The flag is
+      // not an input to the Taproot tree, so the vault address is unchanged.
+      requireProgramRun: true
     },
     blindedExecution: {
       version: SESSION_VERSION,

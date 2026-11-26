@@ -1,6 +1,9 @@
 # `@fabric/core` Changelog
 Recent changes to Fabric Core.
 
+## 2026-11-26
+- **Contract runs fail closed.** `Machine.compute` throws on an unknown opcode instead of coercing it to `0`, and stops at 256 steps or a stack of 64 (same caps as `executionProgramRunner`; `maxSteps` / `maxStack` on the Machine). A `javascript` program's functions register only when `runProgram` / `loadProgram` is called with `{ trusted: true }`. Hub and mesh runs do not set it. New blinded-execution publishes set `spendPolicy.requireProgramRun`. The flag is not an input to the Taproot tree, so existing vault addresses stay put. This is not a separate isolate.
+
 ## 2026-11-14
 - **`testnet5` is a test network.** BIP 95 (replaces testnet4) uses testnet address parameters (`tb1`), chain folder `testnet5`, RPC 18352, and P2P 18353. `networkForFabricName`, `Key`, the test-network allowlist, and account derivation accept the name. It does not use mainnet parameters, and an unknown name still does not.
 
