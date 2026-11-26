@@ -87,6 +87,12 @@ describe('@fabric/core/services/bitcoin', function () {
         assert.strictEqual(btc.validateAddress(''), false);
       });
 
+      it('accepts a testnet5 bech32 address', function () {
+        const btc = new Bitcoin({ network: 'testnet5', mode: 'fabric' });
+        assert.strictEqual(btc.validateAddress('tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx'), true);
+        assert.strictEqual(btc.validateAddress('bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4'), false);
+      });
+
       it('fails closed set of networks safely', function () {
         const btc = new Bitcoin({ network: 'invalidnet', mode: 'fabric' });
         // Should not throw, but must return false on validation
@@ -103,6 +109,9 @@ describe('@fabric/core/services/bitcoin', function () {
         assert.strictEqual(btc._normalizeChainName('regtest'), 'regtest');
         assert.strictEqual(btc._normalizeChainName('signet'), 'signet');
         assert.strictEqual(btc._normalizeChainName('testnet4'), 'testnet4');
+        assert.strictEqual(btc._normalizeChainName('testnet5'), 'testnet5');
+        assert.strictEqual(btc._keyNetworkNameForWif(), 'regtest');
+        assert.strictEqual(new Bitcoin({ network: 'testnet5', mode: 'rpc' })._keyNetworkNameForWif(), 'testnet');
         assert.strictEqual(btc._normalizeChainName('unknown-custom'), 'unknown-custom');
       });
 
@@ -124,7 +133,8 @@ describe('@fabric/core/services/bitcoin', function () {
           testnet: { rpc: 18332, p2p: 18333 },
           regtest: { rpc: 18443, p2p: 18444 },
           signet: { rpc: 38332, p2p: 38333 },
-          testnet4: { rpc: 48332, p2p: 48333 }
+          testnet4: { rpc: 48332, p2p: 48333 },
+          testnet5: { rpc: 18352, p2p: 18353 }
         };
 
         for (const [network, ports] of Object.entries(expected)) {

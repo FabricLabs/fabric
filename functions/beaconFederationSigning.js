@@ -16,9 +16,11 @@
 const crypto = require('crypto');
 const Key = require('../types/key');
 const fabricCanonicalJson = require('./fabricCanonicalJson');
-const bls = require('./bls');
+function bls () {
+  return require('../types/witness').BLS;
+}
 const Federation = require('../types/federation');
-const FEDERATION_WITNESS_TAG = require('./signingTags').FEDERATION_WITNESS;
+const FEDERATION_WITNESS_TAG = require('../types/key').TAGS.FEDERATION_WITNESS;
 const { jsonSafe } = fabricCanonicalJson;
 
 const BEACON_EPOCH_SIGNING_KIND = 'BeaconEpoch';
@@ -102,12 +104,12 @@ function epochCommitmentDigestHex (epochPayload) {
  * @returns {boolean}
  */
 function verifyFederationWitnessOnMessage (messageBuffer, witness, validatorPubkeys, threshold = 1, scheme, tag = FEDERATION_WITNESS_TAG) {
-  const resolved = bls.normalizeSignatureScheme(
+  const resolved = bls().normalizeSignatureScheme(
     scheme != null ? scheme : (witness && witness.scheme)
   );
-  if (resolved === bls.SCHEME_BLS) {
+  if (resolved === bls().SCHEME_BLS) {
     if (!Buffer.isBuffer(messageBuffer)) return false;
-    return bls.verifyFederationBlsWitness(messageBuffer, witness, validatorPubkeys, threshold);
+    return bls().verifyFederationBlsWitness(messageBuffer, witness, validatorPubkeys, threshold);
   }
   if (!witness || !witness.signatures || typeof witness.signatures !== 'object') return false;
   if (!Buffer.isBuffer(messageBuffer)) return false;
@@ -183,7 +185,7 @@ function createRound (epochPayload, policy = {}, initialWitness = null) {
   const commitmentDigest = epochCommitmentDigestHex(canonical);
   const validators = Federation.normalizeValidators(pol.validators || []);
   const threshold = Federation.resolveThreshold(pol.threshold, validators);
-  const signatureScheme = bls.normalizeSignatureScheme(pol.signatureScheme);
+  const signatureScheme = bls().normalizeSignatureScheme(pol.signatureScheme);
   const round = {
     commitmentDigest,
     payload: canonical,
@@ -192,7 +194,7 @@ function createRound (epochPayload, policy = {}, initialWitness = null) {
     signatureScheme,
     witness: {
       version: 1,
-      ...(signatureScheme === bls.SCHEME_BLS ? { scheme: bls.SCHEME_BLS } : {}),
+      ...(signatureScheme === bls().SCHEME_BLS ? { scheme: bls().SCHEME_BLS } : {}),
       signatures: Object.assign({}, (initialWitness && initialWitness.signatures) || {})
     },
     status: 'collecting',
@@ -235,11 +237,11 @@ function addSignature (round, pubkey, signatureHex) {
     return { ok: false, error: 'round not open' };
   }
   const pk = String(pubkey || '').trim();
-  const scheme = bls.normalizeSignatureScheme(
+  const scheme = bls().normalizeSignatureScheme(
     round.signatureScheme || (round.witness && round.witness.scheme)
   );
   let stored = null;
-  if (scheme === bls.SCHEME_BLS) {
+  if (scheme === bls().SCHEME_BLS) {
     if (signatureHex && typeof signatureHex === 'object') {
       stored = signatureHex;
     } else if (typeof signatureHex === 'string' && signatureHex.trim().startsWith('{')) {
@@ -264,16 +266,16 @@ function addSignature (round, pubkey, signatureHex) {
   const msg = messageBufferForPayload(round.payload);
   const probe = {
     version: 1,
-    ...(scheme === bls.SCHEME_BLS ? { scheme: bls.SCHEME_BLS } : {}),
+    ...(scheme === bls().SCHEME_BLS ? { scheme: bls().SCHEME_BLS } : {}),
     signatures: { [member]: stored }
   };
   if (!verifyFederationWitnessOnMessage(msg, probe, [member], 1)) {
     return {
       ok: false,
-      error: scheme === bls.SCHEME_BLS ? 'invalid BLS signature' : 'invalid Schnorr signature'
+      error: scheme === bls().SCHEME_BLS ? 'invalid BLS signature' : 'invalid Schnorr signature'
     };
   }
-  if (scheme === bls.SCHEME_BLS) round.witness.scheme = bls.SCHEME_BLS;
+  if (scheme === bls().SCHEME_BLS) round.witness.scheme = bls().SCHEME_BLS;
   // One entry per signing key, under the listed spelling.
   for (const k of Object.keys(round.witness.signatures)) {
     if (k !== member && Federation.validatorId(k) === Federation.validatorId(member)) {
@@ -295,7 +297,7 @@ function encodeSignRequest (round) {
     epoch: round.payload,
     validators: round.validators.slice(),
     threshold: round.threshold,
-    signatureScheme: bls.normalizeSignatureScheme(round.signatureScheme),
+    signatureScheme: bls().normalizeSignatureScheme(round.signatureScheme),
     createdAt: round.createdAt
   };
 }

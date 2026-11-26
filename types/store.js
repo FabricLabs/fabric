@@ -40,6 +40,49 @@ function isArrayIndex (token) {
   return /^(0|[1-9][0-9]{0,8})$/.test(token);
 }
 
+function ownProperty (object, name) {
+  if (object === null || typeof object !== 'object') return undefined;
+  const entries = Object.entries(object);
+  for (let i = 0; i < entries.length; i++) {
+    if (entries[i][0] === name) return entries[i][1];
+  }
+  return undefined;
+}
+
+function assignOwn (object, name, value) {
+  Object.defineProperty(object, name, {
+    value,
+    writable: true,
+    enumerable: true,
+    configurable: true
+  });
+}
+
+/**
+ * `pointer.set` that creates a missing parent as an object (an array only when
+ * the next token is an append, `-`). `pointer.set` makes an array for any
+ * all-digit token, so a numeric key such as a Discord snowflake would turn its
+ * parent into a sparse array that later writes are refused under. An append
+ * token is only valid as the last token; an earlier `-` is not a property name.
+ * @private
+ */
+function setContent (root, path, value) {
+  const tokens = pointer.parse(path);
+  if (!tokens.length) throw new Error('Can not set the root object');
+  if (tokens.some((token) => UNSAFE_PATH_TOKENS.has(token))) throw new Error(`${path} names a reserved key`);
+  let node = root;
+  for (let i = 0; i < tokens.length - 1; i++) {
+    if (tokens[i] === '-') throw new Error(`${path} uses an append token before the end`);
+    if (!Object.prototype.hasOwnProperty.call(node, tokens[i])) {
+      assignOwn(node, tokens[i], tokens[i + 1] === '-' ? [] : {});
+    }
+    node = ownProperty(node, tokens[i]);
+  }
+  const last = tokens[tokens.length - 1];
+  if (last === '-' && Array.isArray(node)) node.push(value);
+  else assignOwn(node, last, value);
+}
+
 /**
  * The JSON `set` writes for `value`, or null when it writes the value as itself.
  * @private
@@ -532,6 +575,13 @@ class Store extends Actor {
    */
   async _read (key, { strict = false } = {}) {
     const route = await this.getRouteInfo(key);
+    if (this.db && this.settings.persistent !== false) {
+      try {
+        await this._hydrateMissingParents(pointer.parse(route.path));
+      } catch (E) {
+        if (strict && !isLevelNotFound(E)) throw E;
+      }
+    }
     let result;
     try {
       result = pointer.get(this._state.content, route.path);
@@ -549,7 +599,7 @@ class Store extends Actor {
         const info = await this.getDataInfo(value);
         this._state.metadata[route.index] = info;
         this._state.indices[route.index] = route.pointer;
-        pointer.set(this._state.content, route.path, value);
+        setContent(this._state.content, route.path, value);
         return value;
       } catch (E) {
         if (strict && !isLevelNotFound(E)) throw E;
@@ -623,6 +673,8 @@ class Store extends Actor {
       return `bad path ${path}`;
     }
     if (tokens.some((token) => UNSAFE_PATH_TOKENS.has(token))) return `${path} names a reserved key`;
+    const appendAt = tokens.indexOf('-');
+    if (appendAt !== -1 && appendAt !== tokens.length - 1) return `${path} uses an append token before the end`;
     const beneath = `${path} is beneath a value that is not an object`;
     let node = this._state.content;
     for (let i = 0; i < tokens.length - 1; i++) {
@@ -652,6 +704,8 @@ class Store extends Actor {
       return `bad path ${path}`;
     }
     if (tokens.some((token) => UNSAFE_PATH_TOKENS.has(token))) return `${path} names a reserved key`;
+    const appendAt = tokens.indexOf('-');
+    if (appendAt !== -1 && appendAt !== tokens.length - 1) return `${path} uses an append token before the end`;
     let node = this._state.content;
     for (let i = 0; i < tokens.length; i++) {
       if (node === null || typeof node !== 'object') return null;
@@ -662,6 +716,40 @@ class Store extends Actor {
       node = node[tokens[i]];
     }
     return null;
+  }
+
+  /**
+   * Load persisted ancestors of `tokens` into memory before a child is placed.
+   * A child read must not invent an object where Level already holds an array,
+   * or the later parent read returns that object and never opens Level.
+   * @param {Array<string>} tokens Parsed path, including the key being read.
+   * @private
+   */
+  async _hydrateMissingParents (tokens) {
+    if (!this.db || this.settings.persistent === false || !Array.isArray(tokens) || tokens.length < 2) return;
+    let node = this._state.content;
+    for (let i = 0; i < tokens.length - 1; i++) {
+      const segment = tokens[i];
+      if (segment === '-') return;
+      if (node && typeof node === 'object' && Object.prototype.hasOwnProperty.call(node, segment)) {
+        node = ownProperty(node, segment);
+        continue;
+      }
+      if (node === null || typeof node !== 'object') return;
+      const ancestorPath = pointer.compile(tokens.slice(0, i + 1));
+      let raw;
+      try {
+        raw = await this.db.get(ancestorPath);
+      } catch (E) {
+        if (isLevelNotFound(E)) return;
+        throw E;
+      }
+      if (raw === undefined || raw === null) return;
+      const value = decodePersisted(raw);
+      if (value === null || typeof value !== 'object') return;
+      setContent(this._state.content, ancestorPath, value);
+      node = value;
+    }
   }
 
   /**
@@ -785,7 +873,7 @@ class Store extends Actor {
     this._state.indices[route.index] = route.pointer;
     this._state.metadata[route.index] = info;
 
-    pointer.set(this._state.content, route.path, value);
+    setContent(this._state.content, route.path, value);
 
     this.commit();
 

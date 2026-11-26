@@ -21,7 +21,7 @@ const Contract = require('../types/contract');
 const Key = require('../types/key');
 const { signerFromPriv32 } = require('../types/htlc');
 const { createBlobMerkleTree } = require('../types/challenge');
-const { buildInclusion, merkleRootFromTxids, headerMeetsTarget } = require('../functions/bitcoinTxInclusion');
+const { buildInclusion, merkleRootFromTxids, headerMeetsTarget } = require('../types/block');
 
 // Smallest per-blob price that settles with an enforceable HTLC.
 const P = HTLC_MINIMUM_SATS;

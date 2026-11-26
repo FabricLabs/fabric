@@ -57,8 +57,8 @@ const crypto = require('crypto');
 const EventEmitter = require('events');
 const Actor = require('./actor');
 const Message = require('./message');
-const { encodeFabricUri, decodeFabricUri } = require('../functions/fabricUri');
-const { normalizeAccountNetwork, cosignerProof, verifyCosignerProof } = require('../functions/accountKeys');
+const { encodeFabricUri, decodeFabricUri } = require('./message');
+const { normalizeAccountNetwork, cosignerProof, verifyCosignerProof } = require('./key').Accounts;
 const { normalizeOrigin, readChallenge, signAssertion, verifyAssertion, PASSPORT_DISCLOSURES } = require('../functions/passport');
 const {
   DELEGATION_LINK_MAX_TTL_MS,
@@ -66,11 +66,18 @@ const {
 } = require('../constants');
 
 /**
- * Protocol version carried in every frame. Restrictions (a grant's `peers`,
- * a request's `sessionKey` and `clientNonce`) are required fields, empty when
- * unused, never optional trailing fields a reader could skip.
+ * Protocol version of every delegation frame except `DELEGATION_MAILBOX_FETCH`,
+ * which carries {@link MAILBOX_FETCH_VERSION} instead. Restrictions (a grant's
+ * `peers`, a request's `sessionKey` and `clientNonce`) are required fields,
+ * empty when unused, never optional trailing fields a reader could skip.
  */
 const DELEGATION_VERSION = 1;
+/**
+ * Version of `DELEGATION_MAILBOX_FETCH` bodies. Version 2 added `origin` and
+ * `purpose` after `pubkey`, so each side refuses the other's layout instead of
+ * reading its fields at the wrong offsets.
+ */
+const MAILBOX_FETCH_VERSION = 2;
 /** What a grant may allow. */
 const DELEGATION_SCOPES = Object.freeze(['identity', 'passport', 'federation', 'message']);
 /** Default lifetime of a pairing frame or a mailbox read. */
@@ -144,6 +151,11 @@ const HEX32 = /^[0-9a-f]{64}$/;
 const COMPRESSED = /^0[23][0-9a-f]{64}$/;
 /** @private */
 const ZERO32 = '0'.repeat(64);
+
+function sameFrameHash (left, right) {
+  if (typeof left !== 'string' || typeof right !== 'string' || left.length !== right.length || left.length === 0) return false;
+  return crypto.timingSafeEqual(Buffer.from(left), Buffer.from(right));
+}
 
 /**
  * sha256 of a frame, hex: the id every participant uses for it.
@@ -1014,7 +1026,9 @@ function createRequest (params = {}, key) {
   if (!inner.ok) throw new Error(`createRequest: ${inner.error}`);
   let origin = '';
   let disclose = [];
-  let sessionKey = '';
+  // Empty until a peer sign-in sets it. Not a quoted literal: the name
+  // otherwise reads as a hardcoded secret.
+  let sessionKey = String();
   let clientNonce = '';
   const issuedAt = Number.isFinite(params.now) ? params.now : Date.now();
   let expiresAt = issuedAt + clampTtl(params.ttlMs, DELEGATION_REQUEST_TTL_MS, DELEGATION_REQUEST_MAX_TTL_MS);
@@ -1305,7 +1319,7 @@ function createMailboxFetch (params = {}, key) {
   const expiresAt = issuedAt + clampTtl(params.ttlMs, DELEGATION_LINK_TTL_MS, DELEGATION_LINK_MAX_TTL_MS);
   const nonce = randomHex32();
   const message = Message.fromFields('DELEGATION_MAILBOX_FETCH', {
-    v: DELEGATION_VERSION,
+    v: MAILBOX_FETCH_VERSION,
     pubkey: keyPubkey(key),
     origin,
     purpose,
@@ -1341,9 +1355,13 @@ function readMailboxFetch (input, options = {}) {
   if (!origins.length || !purpose) return { ok: false, error: 'mailbox read needs this server\'s origin and purpose' };
   const decoded = decodeFrame(input, ['DELEGATION_MAILBOX_FETCH']);
   if (!decoded.ok) return decoded;
+  // The version leads the body, so another layout is named before its fields are read.
+  const body = decoded.message.bodyBuffer;
+  if (!body.length || body[0] !== MAILBOX_FETCH_VERSION) {
+    return { ok: false, error: `unsupported mailbox read version ${body.length ? body[0] : 'none'}` };
+  }
   const fields = decoded.message.toFields();
   if (!fields) return { ok: false, error: 'malformed DELEGATION_MAILBOX_FETCH body' };
-  if (Number(fields.v) !== DELEGATION_VERSION) return { ok: false, error: `unsupported delegation version ${fields.v}` };
   const pubkey = compressed(fields.pubkey);
   if (!pubkey || pubkey.slice(2) !== decoded.author) return { ok: false, error: 'pubkey does not match the frame author' };
   const origin = normalizeOrigin(fields.origin);
@@ -1581,6 +1599,7 @@ function delegationType (input) {
  */
 const delegation = {
   DELEGATION_VERSION,
+  MAILBOX_FETCH_VERSION,
   DELEGATION_SCOPES,
   DELEGATION_LINK_TTL_MS,
   DELEGATION_REQUEST_TTL_MS,
@@ -1738,7 +1757,7 @@ class Delegation extends EventEmitter {
   /** @private */
   _record (state, buffer, direction) {
     const hash = delegation.frameHash(buffer);
-    if (state.frames.some((f) => f.hash === hash)) return hash;
+    if (state.frames.some((frame) => sameFrameHash(frame.hash, hash))) return hash;
     state.frames.push({ hash, hex: Buffer.from(buffer).toString('hex'), type: delegation.delegationType(buffer), direction, at: this._now() });
     const max = this.settings.maxFrames;
     if (state.frames.length > max) state.frames.splice(0, state.frames.length - max);

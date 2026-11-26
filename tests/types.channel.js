@@ -241,7 +241,7 @@ describe('@fabric/core/types/channel (Phase 4 sessions)', function () {
     const bare = B.observe(staleA.txHex, { destinationAddress: B.localAddress, feeSats: 400 });
     assert.strictEqual(Witness.FraudProof.fromBody(bare.fraudProof).verify().ok, false, 'no broadcast evidence');
     assert.strictEqual(Witness.FraudProof.fromBody(bare.fraudProof).verify({ txConfirmed: (id) => id === staleA.txid }).ok, true, 'verifier chain view suffices');
-    const { merkleRootFromTxids, headerMeetsTarget, parseHeader } = require('../functions/bitcoinTxInclusion');
+    const { merkleRootFromTxids, headerMeetsTarget, parseHeader } = require('../types/block');
     const txids = [crypto.randomBytes(32).toString('hex'), staleA.txid, crypto.randomBytes(32).toString('hex')];
     const header = Buffer.alloc(80);
     header.writeInt32LE(2, 0);

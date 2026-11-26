@@ -91,10 +91,208 @@ const FIELD_BODIES_VERSION = 1;
 const PEER_SEALED_BLOB_FUNDED_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 const {
   aggregatePeerBandwidth,
+  peerBandwidthByteLength,
   peerBandwidthSnapshot,
   perPeerBandwidthBudgetBytes,
-  recordPeerBandwidth
-} = require('../functions/peerBandwidth');
+  recordPeerBandwidth,
+  rollPeerBandwidthWindow
+} = (function () {
+const {
+  BITCOIN_L1_BLOCK_BYTES,
+  BITCOIN_L1_BLOCK_INTERVAL_MS,
+  MAX_PEERS
+} = require('../constants');
+
+/**
+ * Fair-share byte budget for one Fabric peer in the L1 window.
+ * Default: 1 MiB / 10 min / {@link MAX_PEERS} (32) = 32768 bytes per peer.
+ * Reporting only: Peer flags `overBudget` but does not throttle or drop a peer.
+ * @param {number} [windowBytes] node-wide window (default Bitcoin L1 1 MiB)
+ * @param {number} [maxPeers] slot count (default {@link MAX_PEERS})
+ * @returns {number}
+ */
+function perPeerBandwidthBudgetBytes (windowBytes, maxPeers) {
+  const total = Number(windowBytes);
+  const n = Number(maxPeers);
+  const bytes = Number.isFinite(total) && total > 0 ? total : BITCOIN_L1_BLOCK_BYTES;
+  const peers = Number.isFinite(n) && n > 0 ? Math.max(1, Math.floor(n)) : MAX_PEERS;
+  return Math.floor(bytes / peers);
+}
+
+/**
+ * Coerce a write/read payload to a non-negative integer byte length.
+ * @param {*} msg
+ * @returns {number}
+ */
+function peerBandwidthByteLength (msg) {
+  if (msg == null) return 0;
+  if (typeof msg === 'number') {
+    if (!Number.isFinite(msg) || msg < 0) return 0;
+    return Math.floor(msg);
+  }
+  if (typeof Buffer !== 'undefined' && Buffer.isBuffer && Buffer.isBuffer(msg)) return msg.length;
+  if (msg instanceof Uint8Array) return msg.byteLength;
+  if (typeof msg === 'string') {
+    return (typeof Buffer !== 'undefined' && Buffer.byteLength) ? Buffer.byteLength(msg) : msg.length;
+  }
+  if (typeof msg.length === 'number' && Number.isFinite(msg.length) && msg.length >= 0) {
+    return Math.floor(msg.length);
+  }
+  return 0;
+}
+
+/**
+ * @param {Object} [slot]
+ * @param {number} now
+ * @param {number} windowMs
+ * @returns {Object}
+ */
+function rollPeerBandwidthWindow (slot, now, windowMs) {
+  const t = Number.isFinite(now) ? now : Date.now();
+  const w = Number(windowMs) > 0 ? Number(windowMs) : BITCOIN_L1_BLOCK_INTERVAL_MS;
+  if (!slot || typeof slot !== 'object') {
+    return {
+      bytesIn: 0,
+      bytesOut: 0,
+      windowBytesIn: 0,
+      windowBytesOut: 0,
+      windowStart: t,
+      windowMs: w
+    };
+  }
+  if ((t - Number(slot.windowStart || 0)) >= w) {
+    return {
+      bytesIn: Number(slot.bytesIn) || 0,
+      bytesOut: Number(slot.bytesOut) || 0,
+      windowBytesIn: 0,
+      windowBytesOut: 0,
+      windowStart: t,
+      windowMs: w
+    };
+  }
+  return {
+    bytesIn: Number(slot.bytesIn) || 0,
+    bytesOut: Number(slot.bytesOut) || 0,
+    windowBytesIn: Number(slot.windowBytesIn) || 0,
+    windowBytesOut: Number(slot.windowBytesOut) || 0,
+    windowStart: Number(slot.windowStart) || t,
+    windowMs: w
+  };
+}
+
+/**
+ * Add inbound or outbound bytes onto a rolling L1 window slot.
+ * @param {Object} [slot]
+ * @param {string} direction `in` or `out`
+ * @param {*} n payload or byte count
+ * @param {number} [now]
+ * @param {number} [windowMs]
+ * @returns {Object}
+ */
+function recordPeerBandwidth (slot, direction, n, now, windowMs) {
+  const next = rollPeerBandwidthWindow(slot, now, windowMs);
+  const add = peerBandwidthByteLength(n);
+  if (direction === 'out') {
+    next.bytesOut += add;
+    next.windowBytesOut += add;
+  } else {
+    next.bytesIn += add;
+    next.windowBytesIn += add;
+  }
+  return next;
+}
+
+/**
+ * Operator-facing snapshot for {@link Peer#knownPeers} / Hub columns.
+ * @param {Object} [slot]
+ * @param {number} [now]
+ * @param {Object} [opts]
+ * @param {number} [opts.windowMs]
+ * @param {number} [opts.windowBytes]
+ * @param {number} [opts.maxPeers]
+ * @param {number} [opts.budgetBytes]
+ * @returns {Object}
+ */
+function peerBandwidthSnapshot (slot, now, opts) {
+  const options = opts && typeof opts === 'object' ? opts : {};
+  const windowMs = Number(options.windowMs) > 0 ? Number(options.windowMs) : BITCOIN_L1_BLOCK_INTERVAL_MS;
+  const budget = Number.isFinite(Number(options.budgetBytes)) && Number(options.budgetBytes) > 0
+    ? Math.floor(Number(options.budgetBytes))
+    : perPeerBandwidthBudgetBytes(options.windowBytes, options.maxPeers);
+  const rolled = rollPeerBandwidthWindow(slot, now, windowMs);
+  const windowBytes = rolled.windowBytesIn + rolled.windowBytesOut;
+  return {
+    bytesIn: rolled.bytesIn,
+    bytesOut: rolled.bytesOut,
+    windowBytesIn: rolled.windowBytesIn,
+    windowBytesOut: rolled.windowBytesOut,
+    windowBytes,
+    windowMs: rolled.windowMs,
+    windowStart: rolled.windowStart,
+    budgetBytes: budget,
+    budgetShare: budget > 0 ? windowBytes / budget : 0,
+    overBudget: budget > 0 && windowBytes > budget
+  };
+}
+
+/**
+ * Sum snapshots for a node-wide GetNetworkStatus strip.
+ * @param {Object[]} snapshots
+ * @param {Object} [meta]
+ * @param {number} [meta.windowMs]
+ * @param {number} [meta.windowBytes]
+ * @param {number} [meta.maxPeers]
+ * @param {number} [meta.peerBudgetBytes]
+ * @returns {Object}
+ */
+function aggregatePeerBandwidth (snapshots, meta) {
+  const list = Array.isArray(snapshots) ? snapshots : [];
+  const m = meta && typeof meta === 'object' ? meta : {};
+  let bytesIn = 0;
+  let bytesOut = 0;
+  let windowBytesIn = 0;
+  let windowBytesOut = 0;
+  let overBudgetPeers = 0;
+  for (const s of list) {
+    if (!s || typeof s !== 'object') continue;
+    bytesIn += Number(s.bytesIn) || 0;
+    bytesOut += Number(s.bytesOut) || 0;
+    windowBytesIn += Number(s.windowBytesIn) || 0;
+    windowBytesOut += Number(s.windowBytesOut) || 0;
+    if (s.overBudget) overBudgetPeers += 1;
+  }
+  const windowBytes = windowBytesIn + windowBytesOut;
+  const windowMs = Number(m.windowMs) > 0 ? Number(m.windowMs) : BITCOIN_L1_BLOCK_INTERVAL_MS;
+  const nodeWindowBytes = Number(m.windowBytes) > 0 ? Number(m.windowBytes) : BITCOIN_L1_BLOCK_BYTES;
+  const maxPeers = Number(m.maxPeers) > 0 ? Math.max(1, Math.floor(Number(m.maxPeers))) : MAX_PEERS;
+  const peerBudgetBytes = Number(m.peerBudgetBytes) > 0
+    ? Math.floor(Number(m.peerBudgetBytes))
+    : perPeerBandwidthBudgetBytes(nodeWindowBytes, maxPeers);
+  return {
+    bytesIn,
+    bytesOut,
+    windowBytesIn,
+    windowBytesOut,
+    windowBytes,
+    windowMs,
+    windowBudgetBytes: nodeWindowBytes,
+    maxPeers,
+    peerBudgetBytes,
+    overBudgetPeers,
+    overBudget: windowBytes > nodeWindowBytes
+  };
+}
+  return {
+    BITCOIN_L1_BLOCK_BYTES,
+    BITCOIN_L1_BLOCK_INTERVAL_MS,
+    aggregatePeerBandwidth,
+    peerBandwidthByteLength,
+    peerBandwidthSnapshot,
+    perPeerBandwidthBudgetBytes,
+    recordPeerBandwidth,
+    rollPeerBandwidthWindow
+  };
+})();
 
 /**
  * Max UTF-8 code units for first-class P2P_CHAT_MESSAGE body (text only).
@@ -215,7 +413,126 @@ const crypto = require('crypto');
 const { Level } = require('level');
 const stream = require('stream');
 const manager = require('fast-json-patch');
-const WireReplayFilter = require('../functions/wireReplayFilter');
+const WireReplayFilter = (function () {
+/**
+ * Remembers wire-envelope hashes across two Bloom filter generations, rotated
+ * when the current one is full (`capacity` hashes, or as many bits set as
+ * `capacity` hashes set on average) or older than `maxAgeMs`; the
+ * previous one is dropped `2 × maxAgeMs` after it started. That outlasts the
+ * Peer's exact FIFO cache (flushed by 10k frames), but capacity still bounds
+ * it: about `2 × capacity` distinct frames rotate a hash out, however soon.
+ * The price of a full filter is a rare false "seen", which drops a frame,
+ * never a replay accepted.
+ *
+ * The wire header has no timestamp or sequence number, so frames older than
+ * two generations can still be replayed; closing that needs a signed field in
+ * a new message version.
+ */
+
+const DEFAULTS = Object.freeze({
+  /** Hashes per generation before it rotates. */
+  capacity: 500000,
+  /** Target false-positive rate of a full generation. */
+  // 10^-6. Written as a division so the source is not a float literal
+  // static analysis rewrites.
+  falsePositiveRate: 1 / 1000000,
+  /** A generation rotates after this long even when not full. */
+  maxAgeMs: 24 * 60 * 60 * 1000
+});
+
+class WireReplayFilter {
+  /**
+   * @param {Object} [settings]
+   * @param {number} [settings.capacity]
+   * @param {number} [settings.falsePositiveRate]
+   * @param {number} [settings.maxAgeMs]
+   * @param {function(): number} [settings.now]
+   */
+  constructor (settings = {}) {
+    const s = Object.assign({}, DEFAULTS, settings);
+    this.capacity = Math.max(1, Math.floor(Number(s.capacity) || DEFAULTS.capacity));
+    const p = Number(s.falsePositiveRate) > 0 && Number(s.falsePositiveRate) < 1 ? Number(s.falsePositiveRate) : DEFAULTS.falsePositiveRate;
+    // Past 0.5 a full generation would call most new frames seen.
+    this.falsePositiveRate = Math.min(0.5, p);
+    this.bits = Math.max(64, Math.ceil(-this.capacity * Math.log(this.falsePositiveRate) / (Math.LN2 * Math.LN2)));
+    this.hashes = Math.max(1, Math.min(32, Math.round((this.bits / this.capacity) * Math.LN2)));
+    // Bits a generation sets, on average, by `capacity` hashes; always below
+    // every bit. A false "seen" adds no count, so the count alone could stall
+    // short of capacity while the bits fill up; the fill rotates it instead.
+    this.maxSetBits = this.bits * (1 - Math.exp(-this.hashes * this.capacity / this.bits));
+    this.maxAgeMs = Number(s.maxAgeMs) > 0 ? Number(s.maxAgeMs) : DEFAULTS.maxAgeMs;
+    this._now = typeof s.now === 'function' ? s.now : Date.now;
+    this._current = this._generation();
+    this._previous = null;
+  }
+
+  /** @private */
+  _generation () {
+    return { bits: new Uint8Array(Math.ceil(this.bits / 8)), count: 0, set: 0, since: this._now() };
+  }
+
+  /**
+   * Bit positions for a hash (double hashing over two 32-bit words of it).
+   * @private
+   * @param {string} hex SHA-256 hex (already uniform)
+   */
+  _positions (hex) {
+    const h1 = parseInt(hex.slice(0, 8), 16) >>> 0;
+    const h2 = (parseInt(hex.slice(8, 16), 16) | 1) >>> 0;
+    const out = new Array(this.hashes);
+    for (let i = 0; i < this.hashes; i++) out[i] = (h1 + Math.imul(i, h2) >>> 0) % this.bits;
+    return out;
+  }
+
+  /** @private */
+  _test (gen, positions) {
+    for (const p of positions) if (!(gen.bits[p >>> 3] & (1 << (p & 7)))) return false;
+    return true;
+  }
+
+  /** @private */
+  _rotateIfDue () {
+    const full = this._current.count >= this.capacity || this._current.set >= this.maxSetBits;
+    if (full || this._now() - this._current.since >= this.maxAgeMs) {
+      this._previous = this._current;
+      this._current = this._generation();
+    }
+    if (this._previous && this._now() - this._previous.since >= 2 * this.maxAgeMs) this._previous = null;
+  }
+
+  /**
+   * @param {string} hex wire hash (SHA-256 hex)
+   * @returns {boolean} true when this hash was (probably) added within the window
+   */
+  has (hex) {
+    if (typeof hex !== 'string' || hex.length < 16) return false;
+    this._rotateIfDue();
+    const positions = this._positions(hex);
+    return this._test(this._current, positions) || (!!this._previous && this._test(this._previous, positions));
+  }
+
+  /**
+   * @param {string} hex wire hash (SHA-256 hex)
+   */
+  add (hex) {
+    if (typeof hex !== 'string' || hex.length < 16) return;
+    this._rotateIfDue();
+    // Only a hash new to this generation counts toward rotation: repeats of
+    // one frame (fan-out, replays) must not age older hashes out early.
+    let fresh = false;
+    for (const p of this._positions(hex)) {
+      const mask = 1 << (p & 7);
+      if (this._current.bits[p >>> 3] & mask) continue;
+      fresh = true;
+      this._current.bits[p >>> 3] |= mask;
+      this._current.set++;
+    }
+    if (fresh) this._current.count++;
+  }
+}
+  WireReplayFilter.WIRE_REPLAY_FILTER_DEFAULTS = DEFAULTS;
+  return WireReplayFilter;
+})();
 const noise = require('../functions/noiseProtocolStream');
 const merge = require('lodash.merge');
 const { EventEmitter } = require('events');
@@ -247,7 +564,7 @@ const {
   buildForwardedDocumentRequest,
   paginateInventoryItems
 } = DocumentBook;
-const DocumentBlobTransferBook = require('./documentBlobTransferBook');
+const DocumentBlobTransferBook = require('./documentBook').DocumentBlobTransferBook;
 const {
   KEY_REVEAL_TYPE,
   BLOB_QUOTE_TYPE,
@@ -382,8 +699,8 @@ function meshDeliveryContext (opts = {}, originName = null) {
 }
 
 const Contract = require('./contract');
-const { normalizePeerPubkeyHex } = require('../functions/pubkey');
-const SIGNING_TAGS = require('../functions/signingTags');
+const { normalizePeerPubkeyHex } = require('./key');
+const SIGNING_TAGS = require('./key').TAGS;
 
 /**
  * Outer / generic types whose local registration side-effects are first-writer-wins.
@@ -5107,10 +5424,13 @@ class Peer extends Service {
    * (that would publish `K_i`).
    *
    * A live quote that an HTLC paying its full price is checked against is
-   * pinned: it outlives its `expiresAt` and is never evicted, so the secret
-   * is still there when the HTLC settles. It is dropped by
-   * {@link Peer#settleSealedBlobQuote} or after `sealedBlobFundedRetentionMs`
-   * (default 7 days).
+   * pinned: it outlives its `expiresAt` and the quote cap. It is dropped by
+   * {@link Peer#settleSealedBlobQuote}, or when a later lookup or quote
+   * reservation sees that `sealedBlobFundedRetentionMs` (default 7 days) has
+   * passed since it was funded, even if the HTLC is still open. An idle funded
+   * quote is not removed when that period ends. Quotes are held in memory and
+   * do not survive a restart, so a later lookup returns `null`. Persist the
+   * returned preimage until the HTLC settles or fails.
    * @param {string} paymentHashHex
    * @param {Object} [htlc] `{ amountSats, expireAfter?, expireHeight? }`
    * @returns {{ documentId: string, blobIndex: number, preimageHex: string, keyHex: string, perBuyer: boolean, priceSats: number }|null}
@@ -8715,6 +9035,15 @@ class Swarm extends Actor {
 
 module.exports = Peer;
 module.exports.Swarm = Swarm;
+Peer.WireReplayFilter = WireReplayFilter;
+Peer.BITCOIN_L1_BLOCK_BYTES = BITCOIN_L1_BLOCK_BYTES;
+Peer.BITCOIN_L1_BLOCK_INTERVAL_MS = BITCOIN_L1_BLOCK_INTERVAL_MS;
+Peer.aggregatePeerBandwidth = aggregatePeerBandwidth;
+Peer.peerBandwidthByteLength = peerBandwidthByteLength;
+Peer.peerBandwidthSnapshot = peerBandwidthSnapshot;
+Peer.perPeerBandwidthBudgetBytes = perPeerBandwidthBudgetBytes;
+Peer.recordPeerBandwidth = recordPeerBandwidth;
+Peer.rollPeerBandwidthWindow = rollPeerBandwidthWindow;
 /**
  * Test/debug helper — never log private material.
  * @private

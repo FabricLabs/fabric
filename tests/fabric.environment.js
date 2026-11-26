@@ -573,7 +573,7 @@ describe('@fabric/core/types/environment', function () {
         reloaded.unlockWallet(password);
         assert.ok(reloaded.wallet && reloaded.wallet.key);
         assert.strictEqual(reloaded.wallet.version, doc.walletVersion);
-        assert.strictEqual(reloaded.wallet.key.master.toBase58(), require('../functions/accountKeys').importSeed(FIXTURE_SEED));
+        assert.strictEqual(reloaded.wallet.key.master.toBase58(), require('../types/key').Accounts.importSeed(FIXTURE_SEED));
         assert.strictEqual(reloaded.wallet.key.seed || null, null, 'only the master xprv is sealed');
         reloaded.lockWallet();
       } finally {
@@ -1017,6 +1017,7 @@ describe('@fabric/core/types/environment', function () {
         assert.strictEqual(e._defaultRPCPortForNetwork('regtest'), 18443);
         assert.strictEqual(e._defaultRPCPortForNetwork('testnet'), 18332);
         assert.strictEqual(e._defaultRPCPortForNetwork('testnet4'), 48332);
+        assert.strictEqual(e._defaultRPCPortForNetwork('testnet5'), 18352);
         assert.strictEqual(e._defaultRPCPortForNetwork('signet'), 38332);
       });
 
@@ -1039,6 +1040,7 @@ describe('@fabric/core/types/environment', function () {
         assert.strictEqual(e._getChainSubdirectory('mainnet'), '');
         assert.strictEqual(e._getChainSubdirectory('regtest'), 'regtest');
         assert.strictEqual(e._getChainSubdirectory('testnet4'), 'testnet4');
+        assert.strictEqual(e._getChainSubdirectory('testnet5'), 'testnet5');
       });
 
       it('_readBitcoinConf parses regtest RPC, flags, and comments', function () {
@@ -1063,6 +1065,20 @@ describe('@fabric/core/types/environment', function () {
           assert.strictEqual(cfg.rpc.rpcuser, 'testuser');
           assert.strictEqual(cfg.rpc.rpcpassword, 'secret');
           assert.strictEqual(cfg.general.txindex, true);
+        } finally {
+          fs.rmSync(dir, { recursive: true, force: true });
+        }
+      });
+
+      it('_readBitcoinConf selects testnet5 and its RPC port', function () {
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fabric-btc-conf-'));
+        try {
+          const confPath = path.join(dir, 'bitcoin.conf');
+          fs.writeFileSync(confPath, 'testnet5=1\n', 'utf8');
+          const cfg = new Environment()._readBitcoinConf(confPath);
+          assert.strictEqual(cfg.network.testnet5, 1);
+          assert.strictEqual(cfg.network.active, 'testnet5');
+          assert.strictEqual(cfg.rpc.rpcport, 18352);
         } finally {
           fs.rmSync(dir, { recursive: true, force: true });
         }
@@ -1179,7 +1195,7 @@ const {
   keySettingsFromEnv,
   MIN_SEED_BYTES,
   MAX_SEED_BYTES
-} = require('../functions/fabricKeyMaterial');
+} = require('../types/key').Material;
 
 const SAMPLE_MNEMONIC = 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about';
 

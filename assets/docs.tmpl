@@ -18,7 +18,30 @@
     </script>
   </head>
   <body>
-    <div id="main"><h1 class="page-title"><?js= title ?></h1><?js= content ?></div>
+    <div id="main"><h1 class="page-title"><?js= title ?></h1>
+      <?js
+        var editFile = null;
+        if (typeof docs !== 'undefined' && docs && docs.length) {
+          for (var editIndex = 0; editIndex < docs.length; editIndex++) {
+            var editDoc = docs[editIndex];
+            if (editDoc && editDoc.meta && editDoc.meta.shortpath && editDoc.kind !== 'source') {
+              editFile = editDoc.meta.shortpath;
+              break;
+            }
+          }
+        }
+        if (!editFile && typeof title === 'string' && title.indexOf('Source: ') === 0) {
+          editFile = title.slice('Source: '.length);
+        }
+        var editHref = null;
+        if (editFile && env && env.conf && env.conf.source) {
+          var editRoot = String(env.conf.source).replace(/\/+$/, '').replace(/\.git$/, '')
+          var editBranch = env.conf.branch || 'master';
+          editHref = editRoot + '/edit/' + editBranch + '/' + String(editFile).replace(/\\/g, '/').replace(/^\//, '');
+        }
+      ?>
+      <?js if (editHref) { ?><p><a href="<?js= editHref ?>">Edit this page</a></p><?js } ?>
+<?js= content ?></div>
     <nav><?js= this.nav ?></nav>
     <br class="clear" />
     <footer><a href="<?js= env.conf.source ?>">git://</a><?js if (env.conf.chat) { ?> &middot; <a href="<?js= env.conf.chat ?>">Community</a><?js } ?></footer>

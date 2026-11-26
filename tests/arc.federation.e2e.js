@@ -65,7 +65,7 @@ const {
   createCollection,
   ingest
 } = require('../functions/fabricMessageCollection');
-const SIGNING_TAGS = require('../functions/signingTags');
+const SIGNING_TAGS = require('../types/key').TAGS;
 const {
   e2eRegtestEnabled,
   signSpendPsbt,

@@ -576,6 +576,8 @@ describe('Policy', function () {
   it('networkForFabricName does not alias bare test to regtest', function () {
     assert.strictEqual(networkForFabricName('regtest'), bitcoin.networks.regtest);
     assert.strictEqual(networkForFabricName('testnet'), bitcoin.networks.testnet);
+    assert.strictEqual(networkForFabricName('testnet5'), bitcoin.networks.testnet);
+    assert.notStrictEqual(networkForFabricName('testnet5'), bitcoin.networks.bitcoin);
     // Ambiguous "test" falls through to mainnet (same as unknown names).
     assert.strictEqual(networkForFabricName('test'), bitcoin.networks.bitcoin);
   });
@@ -953,7 +955,7 @@ const {
   prepareWithdrawalFromRequest,
   verifyWithdrawalWitnessSignature
 } = require('../types/contract');
-const { pubkeyXOnly } = require('../functions/pubkey');
+const { pubkeyXOnly } = require('../types/key');
 const {
   createMemoryStore,
   ingestMessageBuffer,
@@ -1051,7 +1053,7 @@ describe('Contract.resolveSpend / ARC withdrawals', function () {
       overrides: { network: 'regtest' }
     });
     assert.strictEqual(spend.validators.length, 1);
-    assert.strictEqual(spend.validators[0], require('../functions/pubkey').pubkeyCompressed(a.pubkey) || a.pubkey);
+    assert.strictEqual(spend.validators[0], require('../types/key').pubkeyCompressed(a.pubkey) || a.pubkey);
   });
 
   it('resolveSpend is stable for tip members', function () {

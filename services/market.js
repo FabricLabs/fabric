@@ -41,7 +41,7 @@ const Service = require('../types/service');
 const DocumentBook = require('../types/documentBook');
 const Htlc = require('../types/htlc');
 const { networkForFabricName } = require('../types/policy');
-const { isTestNetwork, normalizeNetworkName } = require('../functions/bitcoinNetworkAllowlist');
+const { isTestNetwork, normalizeNetworkName } = require('../types/channel');
 const { contentHashHexFromObject } = require('../functions/documentPaymentHash');
 
 /** @private */
@@ -141,7 +141,26 @@ function xOnlyHex (key) {
   return null;
 }
 
-/** @private */
+/**
+ * Compare two strings without leaking how long a shared prefix is.
+ * A different length still returns early, the same as `===`.
+ * @param {*} left
+ * @param {*} right
+ * @returns {boolean}
+ * @private
+ */
+function timingSafeEqualString (left, right) {
+  const a = Buffer.from(String(left), 'utf8');
+  const b = Buffer.from(String(right), 'utf8');
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(a, b);
+}
+
+/**
+ * @param {Buffer|string} buf
+ * @returns {string}
+ * @private
+ */
 function sha256Hex (buf) {
   return crypto.createHash('sha256').update(buf).digest('hex');
 }
@@ -196,7 +215,7 @@ class Market extends Service {
    * @param {Function} [settings.now] clock override (`() => ms`), for tests.
    * @param {number} [settings.claimFeerate=1] sat/vB assumed when opening an L1 document HTLC. No fee oracle.
    * @param {boolean} [settings.l1Batch] Pay 128 chunks per L1 HTLC. Default on for mainnet.
-   * @param {string} [settings.network='regtest'] `regtest` / `signet` / `testnet` / `testnet4` / `mainnet`.
+   * @param {string} [settings.network='regtest'] `regtest` / `signet` / `testnet` / `testnet4` / `testnet5` / `mainnet`.
    * @param {Object} [settings.book] `DocumentBook` settings.
    */
   constructor (settings = {}) {
@@ -340,7 +359,8 @@ class Market extends Service {
    * @private
    */
   _htlcNetwork () {
-    return this.settings.network === 'testnet4' ? 'testnet' : this.settings.network;
+    const n = this.settings.network;
+    return (n === 'testnet4' || n === 'testnet5') ? 'testnet' : n;
   }
 
   /**
@@ -1749,7 +1769,7 @@ class Market extends Service {
     if (session.blobHashHex && part.blobHashHex !== session.blobHashHex) return false;
     const hash = session.contentHashHex;
     const candidates = [part].concat(part.alternates || []);
-    if (hash && !candidates.some((c) => c.paymentHashHex === hash)) return false;
+    if (hash && !candidates.some((c) => timingSafeEqualString(c.paymentHashHex, hash))) return false;
     return part.verified === true || (session.rootVerified === true && !!session.blobHashHex);
   }
 

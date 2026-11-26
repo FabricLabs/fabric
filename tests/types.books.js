@@ -13,7 +13,7 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const bitcoin = require('bitcoinjs-lib');
 const Coinjoin = require('../types/coinjoin');
-const CoinjoinBook = require('../types/coinjoinBook');
+const CoinjoinBook = require('../types/coinjoin').CoinjoinBook;
 const DocumentBook = require('../types/documentBook');
 const Channel = require('../types/channel');
 const ChannelBook = require('../types/channelBook');
@@ -826,6 +826,25 @@ describe('adversarial: Book family and Market', function () {
       assert.strictEqual(result.valid, 1);
       assert.strictEqual(book.bondOf(a.pubkey).reason, 'rpc down');
       assert.strictEqual(book.bondOf(b.pubkey).value, 5000);
+    });
+
+    it('a slower bond refresh does not publish over a newer one', async function () {
+      const a = cjMaker();
+      book.ingest(cjOffer(a, { fidelityBond: bond(crypto.randomBytes(32).toString('hex')) }));
+      let release;
+      const gate = new Promise((resolve) => { release = resolve; });
+      const slow = book.refreshBonds({
+        verify: async () => {
+          await gate;
+          return { ok: true, value: 1 };
+        }
+      });
+      await book.refreshBonds({ verify: async () => ({ ok: false, value: 0, reason: 'spent' }) });
+      assert.strictEqual(book.bondOf(a.pubkey).ok, false);
+      release();
+      await slow;
+      assert.strictEqual(book.bondOf(a.pubkey).ok, false);
+      assert.strictEqual(book.bondOf(a.pubkey).reason, 'spent');
     });
 
     it('choose stays distinct and bounded under a broken random source', function () {

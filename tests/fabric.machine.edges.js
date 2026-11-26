@@ -7,15 +7,35 @@ const Machine = require('../types/machine');
 const Program = require('../types/program');
 
 describe('@fabric/core Machine / Program edge cases', function () {
-  it('unknown opcodes soft-fail: coerce to 0 and still ok (not a sandbox trap)', async function () {
+  it('unknown opcodes fail closed, with or without an allow-list', async function () {
     const machine = new Machine({ deterministic: true });
     const result = await machine.runProgram({
       language: 'fabric-opcodes',
       steps: ['OP_THIS_DOES_NOT_EXIST']
     });
-    // Machine.compute pushes `instruction | 0` for unknown names — documents the gap.
-    assert.strictEqual(result.ok, true, result.error);
-    assert.strictEqual(result.tip, 0);
+    assert.strictEqual(result.ok, false);
+    assert.match(result.error || '', /opcode not defined/);
+    assert.strictEqual(result.tip, null);
+  });
+
+  it('compute refuses a script past maxSteps and a stack past maxStack', async function () {
+    const wide = new Machine({ deterministic: true, maxStack: 300 });
+    wide.define('OP_TRUE', () => true);
+    const tooLong = await wide.runProgram({
+      language: 'fabric-opcodes',
+      steps: Array(257).fill('OP_TRUE')
+    });
+    assert.strictEqual(tooLong.ok, false);
+    assert.match(tooLong.error || '', /maxSteps \(256\)/);
+
+    const deep = new Machine({ deterministic: true, maxSteps: 300 });
+    deep.define('OP_TRUE', () => true);
+    const overflow = await deep.runProgram({
+      language: 'fabric-opcodes',
+      steps: Array(65).fill('OP_TRUE')
+    });
+    assert.strictEqual(overflow.ok, false);
+    assert.match(overflow.error || '', /stack overflow/);
   });
 
   it('primitives.opcodes allow-list rejects define / load / compute outside the set', async function () {
@@ -79,7 +99,7 @@ describe('@fabric/core Machine / Program edge cases', function () {
     assert.ok(/unsupported language/i.test(result.error || ''));
   });
 
-  it('javascript Programs bind host functions into Machine.define', async function () {
+  it('javascript Programs bind host functions only when trusted', async function () {
     const machine = new Machine({ deterministic: true });
     let called = 0;
     const prog = Program.from({
@@ -92,12 +112,18 @@ describe('@fabric/core Machine / Program edge cases', function () {
         }
       }
     });
-    const result = await machine.runProgram(prog);
+    const refused = await machine.runProgram(prog);
+    assert.strictEqual(refused.ok, false);
+    assert.match(refused.error || '', /trusted: true/);
+    assert.strictEqual(called, 0);
+    assert.strictEqual(machine.known.HOST_PROBE, undefined);
+
+    const trusted = new Machine({ deterministic: true });
+    const result = await trusted.runProgram(prog, undefined, { trusted: true });
     assert.strictEqual(result.ok, true, result.error);
     assert.strictEqual(called, 1);
     assert.strictEqual(result.tip, 42);
-    // Documents the sandbox gap: host functions run in-process.
-    assert.strictEqual(typeof machine.known.HOST_PROBE, 'function');
+    assert.strictEqual(typeof trusted.known.HOST_PROBE, 'function');
   });
 
   it('ignores non-function entries in javascript Program.source', async function () {

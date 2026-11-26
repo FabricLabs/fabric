@@ -4,14 +4,929 @@ const crypto = require('crypto');
 const { secp256k1, schnorr } = require('@noble/curves/secp256k1.js');
 const { stableStringify } = require('../functions/fabricCanonicalJson');
 const { verifyBlob } = require('./document');
-const { verifyInclusion } = require('../functions/bitcoinTxInclusion');
+function verifyInclusion (inclusion, opts) {
+  return require('./block').verifyInclusion(inclusion, opts);
+}
 const Message = require('./message');
 const { P2P_FILE_SEND } = require('../constants');
-const adaptor = require('./witness/adaptor');
-const bls = require('../functions/bls');
-const dleq = require('./witness/dleq');
+const adaptor = (function () {
+/**
+ * BIP-340 Schnorr adaptor signatures.
+ *
+ * A pre-signature on `message` under `publicKey` for the adaptor point
+ * `T = t·G` is `R̂ ‖ s'` (65 bytes): the compressed final nonce `R̂ = k·G + T`
+ * and `s' = k + e·d`, where `k` is negated when `R̂` has an odd y so that the
+ * completed signature `(x(R̂), s' ± t)` is a valid BIP-340 signature. Anyone
+ * holding the pre-signature and the completed signature learns `t`.
+ *
+ * Adapting and extracting follow secp256k1-zkp `musig_adapt` /
+ * `musig_extract_adaptor` (t is negated when the final nonce has an odd y);
+ * `Witness.MuSig2.Adaptor` uses the same arithmetic for
+ * 64-byte MuSig2 pre-signatures plus their nonce parity.
+ *
+ * Exposed as `Witness.Adaptor`.
+ */
+
+const crypto = require('crypto');
+const { secp256k1 } = require('@noble/curves/secp256k1.js');
+const taggedHash = require('./hash256').tagged;
+
+const Point = secp256k1.Point;
+const N = Point.Fn.ORDER;
+const G = Point.BASE;
+
+const NONCE_TAG = 'FabricAdaptor/nonce';
+const PRE_SIGNATURE_BYTES = 65;
+
+function toBytes (value, name, length) {
+  let buf;
+  if (Buffer.isBuffer(value)) buf = value;
+  else if (value instanceof Uint8Array) buf = Buffer.from(value);
+  else if (typeof value === 'string' && /^[0-9a-fA-F]*$/.test(value) && value.length % 2 === 0) buf = Buffer.from(value, 'hex');
+  else throw new TypeError(`${name} must be a Buffer, Uint8Array, or hex string`);
+  if (length != null && buf.length !== length) throw new RangeError(`${name} must be ${length} bytes`);
+  return buf;
+}
+
+function toInt (buf) {
+  return buf.length ? BigInt('0x' + buf.toString('hex')) : 0n;
+}
+
+function scalarBytes (x) {
+  return Buffer.from(x.toString(16).padStart(64, '0'), 'hex');
+}
+
+function mod (x) {
+  const r = x % N;
+  return r < 0n ? r + N : r;
+}
+
+function secretScalar (value, name) {
+  const x = toInt(toBytes(value, name, 32));
+  if (x <= 0n || x >= N) throw new RangeError(`${name} must be in 1..n-1`);
+  return x;
+}
+
+function point (value, name) {
+  const buf = toBytes(value, name, 33);
+  if (buf[0] !== 0x02 && buf[0] !== 0x03) throw new RangeError(`${name} must be a compressed point`);
+  return Point.fromBytes(buf);
+}
+
+function liftX (value, name) {
+  const buf = toBytes(value, name);
+  if (buf.length === 33) return liftX(buf.subarray(1), name);
+  if (buf.length !== 32) throw new RangeError(`${name} must be 32 (x-only) or 33 bytes`);
+  return Point.fromBytes(Buffer.concat([Buffer.from([0x02]), buf]));
+}
+
+function hasEvenY (P) {
+  return (P.toAffine().y & 1n) === 0n;
+}
+
+function compressed (P) {
+  return Buffer.from(P.toBytes(true));
+}
+
+function xOnly (P) {
+  return compressed(P).subarray(1);
+}
+
+function mulPublic (P, k) {
+  return k === 0n ? Point.ZERO : P.multiplyUnsafe(k);
+}
+
+function challenge (rx, px, message) {
+  return mod(toInt(taggedHash('BIP0340/challenge', Buffer.concat([rx, px, message]))));
+}
+
+/**
+ * Pre-sign `message` for the adaptor point `adaptor`.
+ *
+ * @param {Buffer|string} secretKey 32-byte secret key
+ * @param {Buffer|string} message message (BIP-340 allows any length)
+ * @param {Buffer|string} adaptor 33-byte compressed adaptor point T
+ * @param {Object} [options]
+ * @param {Buffer|string} [options.aux] 32 bytes of auxiliary randomness (default: fresh random)
+ * @returns {Buffer} 65-byte pre-signature `R̂ ‖ s'`
+ */
+function preSign (secretKey, message, adaptor, options = {}) {
+  const d0 = secretScalar(secretKey, 'secretKey');
+  const msg = toBytes(message, 'message');
+  const T = point(adaptor, 'adaptor');
+  const P = G.multiply(d0);
+  const d = hasEvenY(P) ? d0 : N - d0;
+  const px = xOnly(P);
+  const aux = options.aux != null ? toBytes(options.aux, 'aux', 32) : crypto.randomBytes(32);
+  const masked = scalarBytes(d);
+  const auxHash = taggedHash('BIP0340/aux', aux);
+  for (let i = 0; i < 32; i++) masked[i] ^= auxHash[i];
+  const k0 = mod(toInt(taggedHash(NONCE_TAG, Buffer.concat([masked, compressed(T), px, msg]))));
+  masked.fill(0);
+  if (k0 === 0n) throw new Error('adaptor nonce is zero');
+  const Rhat = G.multiply(k0).add(T);
+  if (Rhat.equals(Point.ZERO)) throw new Error('adaptor final nonce is infinite');
+  const k = hasEvenY(Rhat) ? k0 : N - k0;
+  const e = challenge(xOnly(Rhat), px, msg);
+  const preSignature = Buffer.concat([compressed(Rhat), scalarBytes(mod(k + e * d))]);
+  if (!preVerify(preSignature, msg, px, adaptor)) throw new Error('pre-signature failed self-check');
+  return preSignature;
+}
+
+/**
+ * Check that `preSignature` completes, with the secret of `adaptor`, to a valid
+ * BIP-340 signature on `message` under `publicKey`.
+ *
+ * @param {Buffer|string} preSignature 65-byte `R̂ ‖ s'`
+ * @param {Buffer|string} message
+ * @param {Buffer|string} publicKey 32-byte x-only or 33-byte compressed
+ * @param {Buffer|string} adaptor 33-byte compressed adaptor point T
+ * @returns {boolean}
+ */
+function preVerify (preSignature, message, publicKey, adaptor) {
+  try {
+    const pre = toBytes(preSignature, 'preSignature', PRE_SIGNATURE_BYTES);
+    const Rhat = point(pre.subarray(0, 33), 'preSignature nonce');
+    const s = toInt(pre.subarray(33));
+    if (s >= N) return false;
+    const P = liftX(publicKey, 'publicKey');
+    const T = point(adaptor, 'adaptor');
+    const e = challenge(xOnly(Rhat), xOnly(P), toBytes(message, 'message'));
+    let Rk = Rhat.subtract(T);
+    if (Rk.equals(Point.ZERO)) return false;
+    if (!hasEvenY(Rhat)) Rk = Rk.negate();
+    return mulPublic(G, s).equals(Rk.add(mulPublic(P, e)));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Complete a 64-byte pre-signature (`x(R̂) ‖ s'`) whose final nonce has `nonceParity`.
+ *
+ * @param {Buffer|string} preSignature 64 bytes
+ * @param {Buffer|string} secret 32-byte adaptor secret t
+ * @param {number} nonceParity 1 when the final nonce has an odd y
+ * @returns {Buffer} 64-byte BIP-340 signature
+ */
+function adaptXonly (preSignature, secret, nonceParity) {
+  const pre = toBytes(preSignature, 'preSignature', 64);
+  if (nonceParity !== 0 && nonceParity !== 1) throw new RangeError('nonceParity must be 0 or 1');
+  const s = toInt(pre.subarray(32));
+  if (s >= N) throw new RangeError('pre-signature s is out of range');
+  const t = secretScalar(secret, 'secret');
+  return Buffer.concat([pre.subarray(0, 32), scalarBytes(mod(nonceParity ? s - t : s + t))]);
+}
+
+/**
+ * Recover the adaptor secret from a completed signature and its 64-byte pre-signature.
+ *
+ * @param {Buffer|string} signature 64-byte BIP-340 signature
+ * @param {Buffer|string} preSignature 64 bytes
+ * @param {number} nonceParity
+ * @param {Buffer|string} [adaptor] when given, the secret must match this point
+ * @returns {Buffer} 32-byte secret t
+ */
+function extractXonly (signature, preSignature, nonceParity, adaptor) {
+  const sig = toBytes(signature, 'signature', 64);
+  const pre = toBytes(preSignature, 'preSignature', 64);
+  if (nonceParity !== 0 && nonceParity !== 1) throw new RangeError('nonceParity must be 0 or 1');
+  if (!sig.subarray(0, 32).equals(pre.subarray(0, 32))) throw new Error('signature and pre-signature nonces differ');
+  const s = toInt(sig.subarray(32));
+  const sPre = toInt(pre.subarray(32));
+  if (s >= N || sPre >= N) throw new RangeError('signature s is out of range');
+  const t = mod(nonceParity ? sPre - s : s - sPre);
+  if (t === 0n) throw new Error('no adaptor secret in this signature');
+  if (adaptor != null && !G.multiply(t).equals(point(adaptor, 'adaptor'))) {
+    throw new Error('extracted secret does not match the adaptor point');
+  }
+  return scalarBytes(t);
+}
+
+function splitPreSignature (preSignature) {
+  const pre = toBytes(preSignature, 'preSignature', PRE_SIGNATURE_BYTES);
+  if (pre[0] !== 0x02 && pre[0] !== 0x03) throw new RangeError('preSignature nonce must be compressed');
+  return { xonly: Buffer.concat([pre.subarray(1, 33), pre.subarray(33)]), nonceParity: pre[0] === 0x03 ? 1 : 0 };
+}
+
+/**
+ * Complete a 65-byte pre-signature with the adaptor secret.
+ *
+ * @param {Buffer|string} preSignature 65-byte `R̂ ‖ s'`
+ * @param {Buffer|string} secret 32-byte adaptor secret t
+ * @returns {Buffer} 64-byte BIP-340 signature
+ */
+function adapt (preSignature, secret) {
+  const { xonly, nonceParity } = splitPreSignature(preSignature);
+  return adaptXonly(xonly, secret, nonceParity);
+}
+
+/**
+ * Recover the adaptor secret from a completed signature and its 65-byte pre-signature.
+ *
+ * @param {Buffer|string} signature 64-byte BIP-340 signature
+ * @param {Buffer|string} preSignature 65-byte `R̂ ‖ s'`
+ * @param {Buffer|string} [adaptor] when given, the secret must match this point
+ * @returns {Buffer} 32-byte secret t
+ */
+function extract (signature, preSignature, adaptor) {
+  const { xonly, nonceParity } = splitPreSignature(preSignature);
+  return extractXonly(signature, xonly, nonceParity, adaptor);
+}
+  return {
+    NONCE_TAG,
+    PRE_SIGNATURE_BYTES,
+    preSign,
+    preVerify,
+    adapt,
+    extract,
+    adaptXonly,
+    extractXonly
+  };
+})();
+const bls = (function () {
+/**
+ * Boneh–Lynn–Shacham signatures for Fabric federations.
+ *
+ * Ciphersuite: BLS12-381 minimal public-key size (IETF basic scheme),
+ * DST `BLS_SIG_BLS12381G2_XMD:SHA-256_SSWU_RO_NUL_` via
+ * `@noble/curves` `longSignatures`.
+ *
+ * - secret keys: 32-byte scalars
+ * - public keys: 48-byte compressed G1
+ * - signatures: 96-byte compressed G2
+ *
+ * Federation members keep their secp256k1 validator identity. A BLS key is
+ * derived from that Fabric private key (HKDF-SHA256). A portable witness
+ * bundle (`v: 2`) is a BLS signature over the federation message, a Schnorr
+ * link from the secp256k1 key over `LINK_PREFIX` + the BLS public key (hex),
+ * and a BLS proof of possession
+ * over the secp256k1 pubkey. Threshold checks count those bundles. They do
+ * not aggregate public keys, so a rogue-key sum cannot satisfy k-of-n.
+ *
+ * The link is BIP340 over `taggedHash('Fabric/BLSBinding', LINK_PREFIX + key)`;
+ * only `v: 3` bundles verify.
+ *
+ * `aggregateSignatures` / `verifyAggregate` are the n-of-n algebraic helpers.
+ * Callers that aggregate must already trust the public-key set.
+ *
+ * Bitcoin vault spends stay BIP340 / Taproot. This module authorizes the same
+ * canonical federation signing strings (Beacon epochs, sidechain patches).
+ *
+ * @fileoverview BLS12-381 federation signatures.
+ */
+
+const crypto = require('crypto');
+const Key = require('./key');
+
+const BLS_BINDING_TAG = require('./key').TAGS.BLS_BINDING;
+
+const SCHEME_SCHNORR = 'schnorr';
+const SCHEME_BLS = 'bls';
+const CIPHERSUITE = 'BLS_SIG_BLS12381G2_XMD:SHA-256_SSWU_RO_NUL_';
+const PUBLIC_KEY_BYTES = 48;
+const SIGNATURE_BYTES = 96;
+const SECRET_KEY_BYTES = 32;
+const SCHNORR_SIGNATURE_BYTES = 64;
+const POP_PREFIX = 'Fabric/BLS/PoP/v1:';
+const LINK_PREFIX = 'Fabric/BLS/Link/v1:';
+const BUNDLE_VERSION = 3;
+const HKDF_SALT = Buffer.from('Fabric-BLS-v1', 'utf8');
+const HKDF_INFO = Buffer.from('federation-signer', 'utf8');
+
+let suiteCache = null;
+
+/**
+ * `types/federation` reaches this module through `types/peer`, so it loads on first use.
+ * @returns {Object}
+ * @private
+ */
+function federation () {
+  return require('./federation');
+}
+
+/**
+ * @returns {object} noble longSignatures (G1 public keys, G2 signatures)
+ * @private
+ */
+function suite () {
+  if (suiteCache) return suiteCache;
+  const mod = require('@noble/curves/bls12-381.js');
+  const curve = mod && (mod.bls12_381 || (mod.default && mod.default.bls12_381));
+  if (!curve || !curve.longSignatures) {
+    throw new Error('BLS12-381 longSignatures are unavailable');
+  }
+  suiteCache = curve.longSignatures;
+  return suiteCache;
+}
+
+/**
+ * @param {string|boolean|number|null|undefined} value
+ * @returns {'schnorr'|'bls'}
+ */
+function normalizeSignatureScheme (value) {
+  if (value === true || value === 1) return SCHEME_BLS;
+  if (value === false || value === 0 || value == null) return SCHEME_SCHNORR;
+  const s = String(value).trim().toLowerCase();
+  if (s === 'bls' || s === 'bls12-381' || s === 'bls12_381' || s === 'true') return SCHEME_BLS;
+  return SCHEME_SCHNORR;
+}
+
+/**
+ * @returns {number}
+ * @private
+ */
+function seedLength () {
+  const n = suite().lengths && suite().lengths.seed;
+  return Number(n) || 48;
+}
+
+/**
+ * @param {Buffer} buf
+ * @returns {Uint8Array}
+ * @private
+ */
+function toU8 (buf) {
+  return Uint8Array.from(buf);
+}
+
+/**
+ * @param {Buffer|Uint8Array|string} input
+ * @param {number|null} expected
+ * @param {string} label
+ * @returns {Buffer}
+ * @private
+ */
+function bytesFromHex (input, expected, label) {
+  let buf;
+  if (Buffer.isBuffer(input)) buf = input;
+  else if (input instanceof Uint8Array) buf = Buffer.from(input);
+  else if (typeof input === 'string') {
+    const hex = input.trim().toLowerCase().replace(/^0x/, '');
+    if (!/^[0-9a-f]*$/.test(hex) || (hex.length % 2) !== 0) {
+      throw new TypeError(label + ' must be hex or bytes');
+    }
+    buf = Buffer.from(hex, 'hex');
+  } else {
+    throw new TypeError(label + ' must be hex or bytes');
+  }
+  if (expected != null && buf.length !== expected) {
+    throw new TypeError(label + ' must be ' + expected + ' bytes, got ' + buf.length);
+  }
+  return buf;
+}
+
+/**
+ * @param {Buffer|Uint8Array|string|object} message
+ * @returns {Buffer}
+ * @private
+ */
+function messageBytes (message) {
+  if (Buffer.isBuffer(message)) return message;
+  if (message instanceof Uint8Array) return Buffer.from(message);
+  if (typeof message === 'string') return Buffer.from(message, 'utf8');
+  if (message && message.data != null) return messageBytes(message.data);
+  throw new TypeError('message must be bytes or a string');
+}
+
+/**
+ * @param {object|Uint8Array|Buffer} point
+ * @returns {Buffer}
+ * @private
+ */
+function pointToBuffer (point) {
+  if (Buffer.isBuffer(point)) return Buffer.from(point);
+  if (point instanceof Uint8Array) return Buffer.from(point);
+  if (point && typeof point.toBytes === 'function') return Buffer.from(point.toBytes());
+  if (point && typeof point.toRawBytes === 'function') return Buffer.from(point.toRawBytes(true));
+  throw new TypeError('unexpected BLS point');
+}
+
+/**
+ * Fresh BLS keypair. Pass a seed of {@link seedLength} bytes for a deterministic key.
+ * @param {Buffer|Uint8Array|string} [seed]
+ * @returns {{ secretKey: Buffer, publicKey: Buffer }}
+ */
+function keygen (seed) {
+  const s = suite();
+  const out = seed == null
+    ? s.keygen()
+    : s.keygen(toU8(bytesFromHex(seed, seedLength(), 'seed')));
+  return {
+    secretKey: Buffer.from(out.secretKey),
+    publicKey: pointToBuffer(out.publicKey)
+  };
+}
+
+/**
+ * Deterministic federation BLS key from a 32-byte Fabric (secp256k1) private key.
+ * @param {Buffer|Uint8Array|string} fabricPrivateKey
+ * @returns {{ secretKey: Buffer, publicKey: Buffer }}
+ */
+function deriveFederationSigner (fabricPrivateKey) {
+  const ikm = bytesFromHex(fabricPrivateKey, SECRET_KEY_BYTES, 'fabric private key');
+  const seed = Buffer.from(crypto.hkdfSync('sha256', ikm, HKDF_SALT, HKDF_INFO, seedLength()));
+  return keygen(seed);
+}
+
+/**
+ * @param {Buffer|Uint8Array|string} secretKey
+ * @returns {Buffer} 48-byte compressed G1 public key
+ */
+function getPublicKey (secretKey) {
+  const sk = bytesFromHex(secretKey, SECRET_KEY_BYTES, 'secret key');
+  return pointToBuffer(suite().getPublicKey(toU8(sk)));
+}
+
+/**
+ * Sign UTF-8 or raw message bytes. Hash-to-curve uses the ciphersuite DST.
+ * @param {Buffer|Uint8Array|string|object} message
+ * @param {Buffer|Uint8Array|string} secretKey
+ * @returns {Buffer} 96-byte compressed G2 signature
+ */
+function sign (message, secretKey) {
+  const s = suite();
+  const sk = bytesFromHex(secretKey, SECRET_KEY_BYTES, 'secret key');
+  const hashed = s.hash(toU8(messageBytes(message)));
+  return pointToBuffer(s.sign(hashed, toU8(sk)));
+}
+
+/**
+ * @param {Buffer|Uint8Array|string} signature
+ * @param {Buffer|Uint8Array|string|object} message
+ * @param {Buffer|Uint8Array|string} publicKey
+ * @returns {boolean}
+ */
+function verify (signature, message, publicKey) {
+  try {
+    const sig = bytesFromHex(signature, SIGNATURE_BYTES, 'signature');
+    const pk = bytesFromHex(publicKey, PUBLIC_KEY_BYTES, 'public key');
+    const hashed = suite().hash(toU8(messageBytes(message)));
+    return suite().verify(toU8(sig), hashed, toU8(pk)) === true;
+  } catch (_) {
+    return false;
+  }
+}
+
+/**
+ * Sum signatures over one message (n-of-n). Empty input throws.
+ * @param {Array<Buffer|Uint8Array|string>} signatures
+ * @returns {Buffer}
+ */
+function aggregateSignatures (signatures) {
+  if (!Array.isArray(signatures) || signatures.length < 1) {
+    throw new TypeError('at least one BLS signature is required');
+  }
+  const points = signatures.map((sig) => toU8(bytesFromHex(sig, SIGNATURE_BYTES, 'signature')));
+  return pointToBuffer(suite().aggregateSignatures(points));
+}
+
+/**
+ * Sum public keys. Empty input throws.
+ * @param {Array<Buffer|Uint8Array|string>} publicKeys
+ * @returns {Buffer}
+ */
+function aggregatePublicKeys (publicKeys) {
+  if (!Array.isArray(publicKeys) || publicKeys.length < 1) {
+    throw new TypeError('at least one BLS public key is required');
+  }
+  const points = publicKeys.map((pk) => toU8(bytesFromHex(pk, PUBLIC_KEY_BYTES, 'public key')));
+  return pointToBuffer(suite().aggregatePublicKeys(points));
+}
+
+/**
+ * Verify one aggregate signature against the sum of public keys (same message).
+ *
+ * Not safe against rogue-key attacks on its own: a signer who picks its public
+ * key as a function of the others can make the sum verify alone. Only pass
+ * public keys whose proofs of possession were checked (as
+ * {@link verifyFederationBlsBundle} does); federation witnesses use
+ * {@link verifyFederationBlsWitness}, which never sums keys.
+ * @param {Buffer|Uint8Array|string} signature
+ * @param {Buffer|Uint8Array|string|object} message
+ * @param {Array<Buffer|Uint8Array|string>} publicKeys
+ * @returns {boolean}
+ */
+function verifyAggregate (signature, message, publicKeys) {
+  try {
+    const agg = aggregatePublicKeys(publicKeys);
+    return verify(signature, message, agg);
+  } catch (_) {
+    return false;
+  }
+}
+
+/**
+ * Bytes the secp256k1 validator key Schnorr-signs to claim a BLS public key.
+ * @param {string} blsPublicKeyHex
+ * @returns {Buffer}
+ * @private
+ */
+function linkMessage (blsPublicKeyHex) {
+  return Buffer.from(LINK_PREFIX + blsPublicKeyHex, 'utf8');
+}
+
+/**
+ * Portable federation witness entry for one secp256k1 validator.
+ * @param {Buffer|Uint8Array|string|object} message
+ * @param {object} fabricKey Fabric {@link Key} with a private key
+ * @returns {{ v: number, blsPublicKey: string, signature: string, pop: string, link: string }}
+ */
+function createFederationBlsBundle (message, fabricKey) {
+  if (!fabricKey || !fabricKey.private) {
+    throw new Error('Fabric private key required for a federation BLS bundle');
+  }
+  if (!fabricKey.public || typeof fabricKey.public.encodeCompressed !== 'function') {
+    throw new Error('Fabric public key required for a federation BLS bundle');
+  }
+  const secpPubkey = String(fabricKey.public.encodeCompressed('hex')).trim().toLowerCase();
+  const derived = deriveFederationSigner(fabricKey.private);
+  const blsPublicKey = derived.publicKey.toString('hex');
+  const pop = sign(Buffer.from(POP_PREFIX + secpPubkey, 'utf8'), derived.secretKey);
+  const signature = sign(message, derived.secretKey);
+  const link = fabricKey.signSchnorr(linkMessage(blsPublicKey), BLS_BINDING_TAG);
+  return {
+    v: BUNDLE_VERSION,
+    blsPublicKey,
+    signature: signature.toString('hex'),
+    pop: pop.toString('hex'),
+    link: Buffer.isBuffer(link) ? link.toString('hex') : Buffer.from(link).toString('hex')
+  };
+}
+
+/**
+ * @param {*} entry
+ * @returns {object|null}
+ * @private
+ */
+function parseBundle (entry) {
+  if (!entry) return null;
+  if (typeof entry === 'object') return entry;
+  if (typeof entry === 'string') {
+    const s = entry.trim();
+    if (!s.startsWith('{')) return null;
+    try {
+      const parsed = JSON.parse(s);
+      return parsed && typeof parsed === 'object' ? parsed : null;
+    } catch (_) {
+      return null;
+    }
+  }
+  return null;
+}
+
+/**
+ * Verify one validator's bundle. The validator id may be compressed or x-only;
+ * the proof of possession is checked against either parity of that x.
+ * @param {Buffer|Uint8Array|string|object} message
+ * @param {string} secpPubkey secp256k1 validator id (compressed or x-only hex)
+ * @param {object|string} bundle
+ * @returns {boolean}
+ */
+function verifyFederationBlsBundle (message, secpPubkey, bundle) {
+  const parsed = parseBundle(bundle);
+  if (!parsed) return false;
+  if (Number(parsed.v) !== BUNDLE_VERSION) return false;
+  const x = federation().validatorId(secpPubkey);
+  if (!x) return false;
+  const given = String(secpPubkey).trim().toLowerCase().replace(/^0x/, '');
+  const popCandidates = /^0[23][0-9a-f]{64}$/.test(given)
+    ? [given, (given.startsWith('02') ? '03' : '02') + x]
+    : ['02' + x, '03' + x];
+  const blsPk = String(parsed.blsPublicKey || '').trim().toLowerCase();
+  const sig = String(parsed.signature || '').trim().toLowerCase();
+  const pop = String(parsed.pop || '').trim().toLowerCase();
+  const link = String(parsed.link || '').trim().toLowerCase();
+  if (blsPk.length !== PUBLIC_KEY_BYTES * 2) return false;
+  if (sig.length !== SIGNATURE_BYTES * 2) return false;
+  if (pop.length !== SIGNATURE_BYTES * 2) return false;
+  if (link.length !== SCHNORR_SIGNATURE_BYTES * 2) return false;
+  try {
+    // BIP340 verifies over x only, so either parity checks the link.
+    const key = new Key({ pubkey: '02' + x });
+    if (!key.verifySchnorr(linkMessage(blsPk), Buffer.from(link, 'hex'), BLS_BINDING_TAG)) return false;
+    if (!popCandidates.some((pk) => verify(pop, Buffer.from(POP_PREFIX + pk, 'utf8'), blsPk))) return false;
+    if (!verify(sig, message, blsPk)) return false;
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+/**
+ * k-of-n over secp256k1 validator ids. Each witness signature is a bundle,
+ * found under the validator's id however the witness spelled it. Each signing
+ * key counts once, however its id is spelled.
+ * @param {Buffer|Uint8Array|string|object} message
+ * @param {object} witness
+ * @param {string[]} validatorPubkeys
+ * @param {number} [threshold=1]
+ * @returns {boolean}
+ */
+function verifyFederationBlsWitness (message, witness, validatorPubkeys, threshold = 1) {
+  if (!witness || !witness.signatures || typeof witness.signatures !== 'object') return false;
+  const Federation = federation();
+  const pubkeys = Federation.uniqueValidatorPubkeys(validatorPubkeys);
+  const thr = Number(threshold);
+  if (!Number.isInteger(thr) || thr < 1) return false;
+  let valid = 0;
+  for (const pubkey of pubkeys) {
+    const entry = Federation.witnessSignatureFor(witness.signatures, pubkey);
+    if (!verifyFederationBlsBundle(message, pubkey, entry)) continue;
+    valid++;
+    if (valid >= thr) return true;
+  }
+  return false;
+}
+  return {
+    BLS_BINDING_TAG,
+    SCHEME_SCHNORR,
+    SCHEME_BLS,
+    CIPHERSUITE,
+    PUBLIC_KEY_BYTES,
+    SIGNATURE_BYTES,
+    SECRET_KEY_BYTES,
+    POP_PREFIX,
+    LINK_PREFIX,
+    BUNDLE_VERSION,
+    normalizeSignatureScheme,
+    keygen,
+    deriveFederationSigner,
+    getPublicKey,
+    sign,
+    verify,
+    aggregateSignatures,
+    aggregatePublicKeys,
+    verifyAggregate,
+    createFederationBlsBundle,
+    verifyFederationBlsBundle,
+    verifyFederationBlsWitness
+  };
+})();
+const dleq = (function () {
+/**
+ * Chaum-Pedersen proof that two points share a discrete logarithm:
+ * `P1 = x·G` and `P2 = x·H`. Byte-compatible with secp256k1-zkp's DLEQ
+ * (the `ecdsa_adaptor` module, after the DLC specification): nonce
+ * `k = H_DLEQ(x' ‖ H ‖ SHA256(P1 ‖ P2))` with `x'` masked by
+ * `H_ECDSAadaptor/aux(aux)` when auxiliary randomness is given, challenge
+ * `e = H_DLEQ(P1 ‖ H ‖ P2 ‖ k·G ‖ k·H)`, response `s = k + e·x`.
+ *
+ * Exposed as `Witness.DLEQ`.
+ */
+
+const crypto = require('crypto');
+const { secp256k1 } = require('@noble/curves/secp256k1.js');
+const taggedHash = require('./hash256').tagged;
+
+const Point = secp256k1.Point;
+const N = Point.Fn.ORDER;
+const G = Point.BASE;
+
+const TAG = 'DLEQ';
+const AUX_TAG = 'ECDSAadaptor/aux';
+const PROOF_BYTES = 64;
+
+function toBytes (value, name, length) {
+  let buf;
+  if (Buffer.isBuffer(value)) buf = value;
+  else if (value instanceof Uint8Array) buf = Buffer.from(value);
+  else if (typeof value === 'string' && /^[0-9a-fA-F]*$/.test(value) && value.length % 2 === 0) buf = Buffer.from(value, 'hex');
+  else throw new TypeError(`${name} must be a Buffer, Uint8Array, or hex string`);
+  if (length != null && buf.length !== length) throw new RangeError(`${name} must be ${length} bytes`);
+  return buf;
+}
+
+function toInt (buf) {
+  return BigInt('0x' + buf.toString('hex'));
+}
+
+function scalarBytes (x) {
+  return Buffer.from(x.toString(16).padStart(64, '0'), 'hex');
+}
+
+function point (value, name) {
+  const buf = toBytes(value, name, 33);
+  if (buf[0] !== 0x02 && buf[0] !== 0x03) throw new RangeError(`${name} must be a compressed point`);
+  return Point.fromBytes(buf);
+}
+
+function compressed (P) {
+  return Buffer.from(P.toBytes(true));
+}
+
+function challenge (P1, H, P2, R1, R2) {
+  return toInt(taggedHash(TAG, Buffer.concat([P1, H, P2, R1, R2].map(compressed)))) % N;
+}
+
+/**
+ * Prove that `x·G` and `x·generator` share the secret `x`.
+ *
+ * @param {Buffer|string} secret 32-byte x
+ * @param {Buffer|string} generator 33-byte compressed second base H
+ * @param {Object} [options]
+ * @param {Buffer|string|null} [options.aux] 32 bytes of auxiliary randomness
+ *   (default: fresh random; `null`: none, deterministic)
+ * @returns {{ p1: Buffer, p2: Buffer, e: Buffer, s: Buffer, proof: Buffer }} `proof` is `e ‖ s`
+ */
+function prove (secret, generator, options = {}) {
+  const x32 = toBytes(secret, 'secret', 32);
+  const x = toInt(x32);
+  if (x <= 0n || x >= N) throw new RangeError('secret must be in 1..n-1');
+  const H = point(generator, 'generator');
+  const P1 = G.multiply(x);
+  const P2 = H.multiply(x);
+  const pointsHash = crypto.createHash('sha256').update(Buffer.concat([compressed(P1), compressed(P2)])).digest();
+  const key = Buffer.from(x32);
+  const aux = options.aux === undefined ? crypto.randomBytes(32) : options.aux;
+  if (aux !== null) {
+    const mask = taggedHash(AUX_TAG, toBytes(aux, 'aux', 32));
+    for (let i = 0; i < 32; i++) key[i] ^= mask[i];
+  }
+  const k = toInt(taggedHash(TAG, Buffer.concat([key, compressed(H), pointsHash]))) % N;
+  key.fill(0);
+  if (k === 0n) throw new Error('DLEQ nonce is zero');
+  const e = challenge(P1, H, P2, G.multiply(k), H.multiply(k));
+  const s = (k + e * x) % N;
+  const eBytes = scalarBytes(e);
+  const sBytes = scalarBytes(s);
+  return { p1: compressed(P1), p2: compressed(P2), e: eBytes, s: sBytes, proof: Buffer.concat([eBytes, sBytes]) };
+}
+
+/**
+ * @param {Buffer|string} proof 64-byte `e ‖ s`
+ * @param {Buffer|string} p1 33-byte x·G
+ * @param {Buffer|string} generator 33-byte H
+ * @param {Buffer|string} p2 33-byte x·H
+ * @returns {boolean}
+ */
+function verify (proof, p1, generator, p2) {
+  try {
+    const bytes = toBytes(proof, 'proof', PROOF_BYTES);
+    const e = toInt(bytes.subarray(0, 32));
+    const s = toInt(bytes.subarray(32));
+    if (e >= N || s >= N) return false;
+    const P1 = point(p1, 'p1');
+    const H = point(generator, 'generator');
+    const P2 = point(p2, 'p2');
+    const mul = (P, k) => (k === 0n ? Point.ZERO : P.multiplyUnsafe(k));
+    const R1 = mul(G, s).subtract(mul(P1, e));
+    const R2 = mul(H, s).subtract(mul(P2, e));
+    if (R1.equals(Point.ZERO) || R2.equals(Point.ZERO)) return false;
+    return challenge(P1, H, P2, R1, R2) === e;
+  } catch {
+    return false;
+  }
+}
+  return {
+    TAG,
+    AUX_TAG,
+    PROOF_BYTES,
+    prove,
+    verify
+  };
+})();
 const musig2 = require('../functions/musig2');
-const musig2Adaptor = require('./witness/musig2Adaptor');
+const musig2Adaptor = (function () {
+/**
+ * MuSig2 adaptor signatures, compatible with secp256k1-zkp's MuSig module.
+ *
+ * The adaptor point T is added to the first aggregate nonce before the nonce
+ * coefficient is hashed (`musig_nonce_process` with an adaptor), so every
+ * signer's partial signature is a share of a pre-signature `x(R̂) ‖ s'`. The
+ * final nonce parity says whether completing it adds or subtracts t.
+ *
+ * Exposed as `Witness.MuSig2.Adaptor`.
+ */
+
+const { secp256k1 } = require('@noble/curves/secp256k1.js');
+const musig2 = require('../functions/musig2');
+
+const Point = secp256k1.Point;
+const N = Point.Fn.ORDER;
+const G = Point.BASE;
+
+function requireAdaptor (value) {
+  if (value == null) throw new TypeError('an adaptor point is required');
+  return value;
+}
+
+function hasEvenY (P) {
+  return (P.toAffine().y & 1n) === 0n;
+}
+
+function toInt (buf) {
+  return BigInt('0x' + Buffer.from(buf).toString('hex'));
+}
+
+/**
+ * @param {Buffer} aggnonce 66-byte aggregate nonce (without the adaptor)
+ * @param {Array<Buffer>} pubkeys
+ * @param {Array<Buffer>} tweaks
+ * @param {Array<boolean>} isXonly
+ * @param {Buffer} msg
+ * @param {Buffer} adaptorPoint 33-byte compressed T
+ * @returns {object} session context for {@link module:functions/musig2}
+ */
+function sessionContext (aggnonce, pubkeys, tweaks, isXonly, msg, adaptorPoint) {
+  return musig2.sessionContext(aggnonce, pubkeys, tweaks, isXonly, msg, requireAdaptor(adaptorPoint));
+}
+
+/**
+ * @param {object} sessionCtx adaptor session context
+ * @returns {number} 1 when the final nonce has an odd y
+ */
+function nonceParity (sessionCtx) {
+  requireAdaptor(sessionCtx.adaptor);
+  return hasEvenY(musig2.getSessionValues(sessionCtx).R) ? 0 : 1;
+}
+
+/**
+ * Aggregate the partial signatures of an adaptor session.
+ *
+ * @param {Array<Buffer>} psigs
+ * @param {object} sessionCtx adaptor session context
+ * @returns {Buffer} 64-byte pre-signature `x(R̂) ‖ s'`
+ */
+function preSignatureAgg (psigs, sessionCtx) {
+  requireAdaptor(sessionCtx.adaptor);
+  return musig2.partialSigAgg(psigs, sessionCtx);
+}
+
+/**
+ * Check an aggregate pre-signature against the session: completing it with the
+ * secret of the session's adaptor point gives a valid BIP-340 signature under
+ * the (tweaked) aggregate key.
+ *
+ * @param {Buffer} preSignature 64 bytes
+ * @param {object} sessionCtx adaptor session context
+ * @returns {boolean}
+ */
+function preVerify (preSignature, sessionCtx) {
+  try {
+    requireAdaptor(sessionCtx.adaptor);
+    const pre = Buffer.from(preSignature);
+    if (pre.length !== 64) return false;
+    const { Q, R, e } = musig2.getSessionValues(sessionCtx);
+    if (!pre.subarray(0, 32).equals(Buffer.from(R.toBytes(true)).subarray(1))) return false;
+    const s = toInt(pre.subarray(32));
+    if (s >= N) return false;
+    let Rk = R.subtract(Point.fromBytes(sessionCtx.adaptor));
+    if (Rk.equals(Point.ZERO)) return false;
+    if (!hasEvenY(R)) Rk = Rk.negate();
+    const Qeven = hasEvenY(Q) ? Q : Q.negate();
+    const lhs = s === 0n ? Point.ZERO : G.multiplyUnsafe(s);
+    const rhs = e === 0n ? Rk : Rk.add(Qeven.multiplyUnsafe(e));
+    return lhs.equals(rhs);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Verify one signer's partial signature in an adaptor session.
+ *
+ * @param {Buffer} psig
+ * @param {Array<Buffer>} pubnonces
+ * @param {Array<Buffer>} pubkeys
+ * @param {Array<Buffer>} tweaks
+ * @param {Array<boolean>} isXonly
+ * @param {Buffer} msg
+ * @param {number} i
+ * @param {Buffer} adaptorPoint
+ * @returns {boolean}
+ */
+function partialSigVerify (psig, pubnonces, pubkeys, tweaks, isXonly, msg, i, adaptorPoint) {
+  return musig2.partialSigVerify(psig, pubnonces, pubkeys, tweaks, isXonly, msg, i, requireAdaptor(adaptorPoint));
+}
+
+/**
+ * Stateless signing for the last signer of an adaptor session (BIP-327 DeterministicSign).
+ *
+ * @param {Buffer} sk
+ * @param {Buffer} aggothernonce
+ * @param {Array<Buffer>} pubkeys
+ * @param {Array<Buffer>} tweaks
+ * @param {Array<boolean>} isXonly
+ * @param {Buffer} msg
+ * @param {Buffer|null} rand
+ * @param {Buffer} adaptorPoint
+ * @returns {{ pubnonce: Buffer, psig: Buffer }}
+ */
+function deterministicSign (sk, aggothernonce, pubkeys, tweaks, isXonly, msg, rand, adaptorPoint) {
+  return musig2.deterministicSign(sk, aggothernonce, pubkeys, tweaks, isXonly, msg, rand, requireAdaptor(adaptorPoint));
+}
+  return {
+    sessionContext,
+    nonceParity,
+    preSignatureAgg,
+    preVerify,
+    partialSigVerify,
+    deterministicSign,
+    adapt: adaptor.adaptXonly,
+    extract: adaptor.extractXonly
+  };
+})();
 const musig2Session = require('../functions/musig2Session');
 
 const HEX64 = /^[0-9a-f]{64}$/;

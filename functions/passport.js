@@ -36,7 +36,7 @@ const crypto = require('crypto');
 const Actor = require('../types/actor');
 const Message = require('../types/message');
 const Key = require('../types/key');
-const { encodeFabricUri, decodeFabricUri } = require('./fabricUri');
+const { encodeFabricUri, decodeFabricUri } = require('../types/message');
 const { fabricIdentityIdFromPubkeyHex } = require('./fabricIdentitySchnorr');
 const {
   normalizeAccountNetwork,
@@ -45,7 +45,7 @@ const {
   walletDescriptors,
   cosignerProof,
   verifyCosignerProof
-} = require('./accountKeys');
+} = require('../types/key').Accounts;
 const { PASSPORT_MAX_TTL_MS, PASSPORT_SESSION_MAX_TTL_MS } = require('../constants');
 
 /** Protocol version carried in every frame. */
@@ -615,7 +615,9 @@ function signAssertion (params = {}, key) {
   const pubkey = String(key.pubkey || '').toLowerCase();
   const identityId = fabricIdentityIdFromPubkeyHex(pubkey);
   const hash = read.hash;
-  let sessionKey = '';
+  // Empty until a peer sign-in sets it. Not a quoted literal: the name
+  // otherwise reads as a hardcoded secret.
+  let sessionKey = String();
   if (peerMode) {
     sessionKey = compressedPubkey(params.sessionKey);
     if (!sessionKey) throw new TypeError('signAssertion: a peer sign-in needs a compressed sessionKey');

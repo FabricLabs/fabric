@@ -124,16 +124,273 @@ function secpPointToRawBytes (point, compressed = true) {
 const base58 = require('../functions/base58');
 const { encodeCheck, decodeCheck } = base58;
 const bip39 = require('../functions/bip39');
-const keyMaterial = require('../functions/fabricKeyMaterial');
-const { parseRawSeedHex, classifyFabricKeyMaterial } = keyMaterial;
+/**
+ * Classify operator key material for Environment / Hub / application loaders.
+ *
+ * Latest RC1 expectation:
+ *   - `FABRIC_XPRV` — BIP32 extended private key (preferred)
+ *   - `FABRIC_SEED` — raw BIP32 seed **hex** (16–64 bytes; BIP39 PBKDF2 output is 64)
+ *   - `FABRIC_MNEMONIC` — BIP39 word phrase
+ *
+ * `FABRIC_SEED` still accepts a mnemonic or an `xprv…` string for compatibility.
+ *
+ * @fileoverview Classify FABRIC_XPRV / FABRIC_SEED / FABRIC_MNEMONIC material.
+ */
+
+/** BIP32 `fromSeed` minimum length. */
+const MIN_SEED_BYTES = 16;
+/** BIP32 `fromSeed` maximum length (BIP39 `mnemonicToSeed` is 64). */
+const MAX_SEED_BYTES = 64;
+
+/**
+ * Parse a raw BIP32 seed from hex (optional `0x` prefix) or a Buffer.
+ *
+ * @param {*} value
+ * @returns {Buffer|null}
+ */
+function parseRawSeedHex (value) {
+  if (value == null) return null;
+  if (Buffer.isBuffer(value)) {
+    if (value.length < MIN_SEED_BYTES || value.length > MAX_SEED_BYTES) return null;
+    return value;
+  }
+  if (value instanceof Uint8Array) {
+    if (value.byteLength < MIN_SEED_BYTES || value.byteLength > MAX_SEED_BYTES) return null;
+    return Buffer.from(value);
+  }
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!trimmed || /\s/.test(trimmed)) return null;
+  if (!/^(?:0x)?[0-9a-fA-F]+$/i.test(trimmed)) return null;
+  const hex = trimmed.slice(0, 2).toLowerCase() === '0x' ? trimmed.slice(2) : trimmed;
+  if (hex.length % 2 !== 0) return null;
+  const bytes = hex.length / 2;
+  if (bytes < MIN_SEED_BYTES || bytes > MAX_SEED_BYTES) return null;
+  return Buffer.from(hex, 'hex');
+}
+
+/**
+ * @param {*} value
+ * @returns {Object} `kind` plus at most one of `xprv`, `seed`, `mnemonic`
+ */
+function classifyFabricKeyMaterial (value) {
+  const trimmed = value == null ? '' : String(value).trim();
+  if (!trimmed) return { kind: null };
+  if (trimmed.startsWith('xprv') || trimmed.startsWith('tprv')) {
+    return { kind: 'xprv', xprv: trimmed };
+  }
+  const hex = parseRawSeedHex(trimmed);
+  if (hex) return { kind: 'seedHex', seed: hex.toString('hex') };
+  if (bip39.validateMnemonic(trimmed)) {
+    return { kind: 'mnemonic', mnemonic: trimmed };
+  }
+  return { kind: 'unknown' };
+}
+
+/**
+ * Values accepted in `FABRIC_XPRV` (and related identity slots).
+ * Private: BIP32 `xprv`/`tprv`. Public / combined: `xpub`/`tpub` or a
+ * compressed/uncompressed secp256k1 pubkey hex (watch-only Hub / MuSig aggregate).
+ *
+ * @param {*} value
+ * @returns {Object} `kind` plus `xprv`, `xpub`, or `public`
+ */
+function classifyFabricIdentityEnvValue (value) {
+  const trimmed = value == null ? '' : String(value).trim();
+  if (!trimmed) return { kind: null };
+  if (trimmed.startsWith('xprv') || trimmed.startsWith('tprv')) {
+    return { kind: 'xprv', xprv: trimmed };
+  }
+  if (trimmed.startsWith('xpub') || trimmed.startsWith('tpub')) {
+    return { kind: 'xpub', xpub: trimmed };
+  }
+  if (/^(02|03)[0-9a-fA-F]{64}$/.test(trimmed)) {
+    return { kind: 'pubkey', public: trimmed.toLowerCase() };
+  }
+  if (/^04[0-9a-fA-F]{128}$/.test(trimmed)) {
+    return { kind: 'pubkey', public: trimmed.toLowerCase() };
+  }
+  return { kind: 'unknown' };
+}
+
+/**
+ * Key constructor settings from process/env identity variables.
+ * Precedence: `FABRIC_XPRV` → `FABRIC_SEED` → `FABRIC_MNEMONIC`.
+ *
+ * @param {NodeJS.ProcessEnv} [env]
+ * @returns {Object|null} Key settings with `xprv`, `seed`, or `mnemonic`
+ */
+function keySettingsFromEnv (env = process.env) {
+  const identitySlot = classifyFabricIdentityEnvValue((env && env.FABRIC_XPRV) || '');
+  if (identitySlot.kind === 'xprv') return { xprv: identitySlot.xprv };
+  if (identitySlot.kind === 'xpub') return { xpub: identitySlot.xpub };
+  if (identitySlot.kind === 'pubkey') return { public: identitySlot.public };
+
+  const seedRaw = String((env && env.FABRIC_SEED) || '').trim();
+  if (seedRaw) {
+    const classified = classifyFabricKeyMaterial(seedRaw);
+    if (classified.kind === 'xprv') return { xprv: classified.xprv };
+    if (classified.kind === 'seedHex') return { seed: classified.seed };
+    if (classified.kind === 'mnemonic') return { mnemonic: classified.mnemonic };
+  }
+
+  const mnemonic = String((env && env.FABRIC_MNEMONIC) || '').trim();
+  if (mnemonic) {
+    const classified = classifyFabricKeyMaterial(mnemonic);
+    if (classified.kind === 'mnemonic') return { mnemonic: classified.mnemonic };
+    if (classified.kind === 'xprv') return { xprv: classified.xprv };
+    if (classified.kind === 'seedHex') return { seed: classified.seed };
+  }
+
+  const xpub = String((env && env.FABRIC_XPUB) || '').trim();
+  if (xpub.startsWith('xpub') || xpub.startsWith('tpub')) return { xpub };
+  const pubkey = String((env && env.FABRIC_PUBKEY) || '').trim();
+  const pubClassified = classifyFabricIdentityEnvValue(pubkey);
+  if (pubClassified.kind === 'pubkey') return { public: pubClassified.public };
+
+  return null;
+}
+
+
+
+const keyMaterial = {
+  MIN_SEED_BYTES,
+  MAX_SEED_BYTES,
+  parseRawSeedHex,
+  classifyFabricKeyMaterial,
+  classifyFabricIdentityEnvValue,
+  keySettingsFromEnv
+};
 const bip32Module = require('../functions/bip32');
 const BIP32 = bip32Module.default;
 const BIP32_DEFAULT_NETWORK = bip32Module.DEFAULT_NETWORK;
 const bip49 = require('../functions/bip49');
 const bip85 = require('../functions/bip85');
-const pubkeyHelpers = require('../functions/pubkey');
-const keyHasPrivateSigningMaterial = require('../functions/keyHasPrivateSigningMaterial');
-const SIGNING_TAGS = require('../functions/signingTags');
+/**
+ * secp256k1 public key hex forms: compressed (`02`/`03` || x, 66 hex) and
+ * BIP-340 x-only (64 hex). Both forms of one key compare equal via
+ * {@link pubkeysMatch}.
+ *
+ */
+
+/**
+ * Normalize to lowercase 64-hex x-only (accepts compressed 02/03||x).
+ * @param {*} hex
+ * @returns {string|null}
+ */
+function pubkeyXOnly (hex) {
+  const s = String(hex || '').toLowerCase().replace(/^0x/, '');
+  if (/^0[23][0-9a-f]{64}$/.test(s)) return s.slice(2);
+  if (/^[0-9a-f]{64}$/.test(s)) return s;
+  return null;
+}
+
+/**
+ * Compressed 33-byte pubkey hex from x-only or compressed input.
+ * @param {*} hex
+ * @returns {string|null}
+ */
+function pubkeyCompressed (hex) {
+  const s = String(hex || '').toLowerCase().replace(/^0x/, '');
+  if (/^0[23][0-9a-f]{64}$/.test(s)) return s;
+  const x = pubkeyXOnly(s);
+  if (!x) return null;
+  const Point = secp256k1.ProjectivePoint || secp256k1.Point;
+  for (const prefix of ['02', '03']) {
+    const cand = prefix + x;
+    try {
+      if (Point && typeof Point.fromHex === 'function') {
+        Point.fromHex(cand);
+        return cand;
+      }
+      if (Point && typeof Point.fromBytes === 'function') {
+        Point.fromBytes(Buffer.from(cand, 'hex'));
+        return cand;
+      }
+      // Last resort: ECDH probe with fixed priv (valid curve scalar).
+      secp256k1.getSharedSecret(Buffer.alloc(32, 1), Buffer.from(cand, 'hex'), true);
+      return cand;
+    } catch (_) { /* try other parity */ }
+  }
+  throw new Error('pubkeyCompressed: x-only does not lift to a curve point');
+}
+
+/**
+ * Same x-only key, whichever form each side is in.
+ * @param {*} a
+ * @param {*} b
+ * @returns {boolean}
+ */
+function pubkeysMatch (a, b) {
+  const xa = pubkeyXOnly(a);
+  const xb = pubkeyXOnly(b);
+  return !!(xa && xb && xa === xb);
+}
+
+/**
+ * Lowercase hex for a peer pubkey, dropping a compressed 02/03 prefix.
+ * Unlike {@link pubkeyXOnly}, also takes a Buffer and passes other strings
+ * through lowercased, so it never returns null (`''` for none).
+ * @param {string|Buffer|null|undefined} pk
+ * @returns {string}
+ */
+function normalizePeerPubkeyHex (pk) {
+  if (pk == null) return '';
+  if (Buffer.isBuffer(pk)) {
+    const h = pk.toString('hex').toLowerCase();
+    if (pk.length === 32) return h;
+    if (pk.length === 33 && (h.startsWith('02') || h.startsWith('03'))) return h.slice(2);
+    return h;
+  }
+  const s = String(pk).trim();
+  const h = (s.startsWith('0x') || s.startsWith('0X')) ? s.slice(2) : s;
+  const lo = h.toLowerCase();
+  if (lo.length === 66 && (lo.startsWith('02') || lo.startsWith('03'))) return lo.slice(2);
+  return lo;
+}
+
+
+
+const pubkeyHelpers = {
+  pubkeyXOnly,
+  pubkeyCompressed,
+  pubkeysMatch,
+  normalizePeerPubkeyHex
+};
+/**
+ * Whether a Key-like object has private material safe for Schnorr / AMP signing.
+ * Watch-only Key instances still expose `sign` / `signSchnorr` but throw without `.private`.
+ *
+ * @param {object|null|undefined} signKey
+ * @returns {boolean}
+ */
+function keyHasPrivateSigningMaterial (signKey) {
+  if (!signKey || signKey.private == null) return false;
+  if (Buffer.isBuffer(signKey.private)) return signKey.private.length > 0;
+  if (typeof signKey.private === 'string') return String(signKey.private).trim().length > 0;
+  return Boolean(signKey.private);
+}
+const SIGNING_TAGS = Object.freeze({
+  // Generic `Key#sign` / `Key#verify`.
+  SIGN: 'Fabric/Sign',
+  // Threshold witnesses over canonical JSON naming its `kind` (Beacon epochs,
+  // federation blocks, execution runs, `Federation#sign`).
+  FEDERATION_WITNESS: 'Fabric/FederationWitness',
+  CONTRACT_STATE: 'Fabric/ContractState',
+  SIDECHAIN_STATE: 'Fabric/SidechainState',
+  BLOCK_AUTHOR: 'Fabric/BlockAuthor',
+  BLS_BINDING: 'Fabric/BLSBinding',
+  SESSION_KEY: 'Fabric/SessionKey',
+  MESSAGE_RECEIPT: 'Fabric/MessageReceipt',
+  CONTRACT_WITHDRAWAL_WITNESS: 'Fabric/ContractWithdrawalWitness',
+  CIRCUIT_DECISION: 'Fabric/CircuitDecision',
+  GROUP_CHANGE: 'Fabric/GroupChange',
+  // A cosigner key vouches for the identity it belongs to, within one scope
+  // (a Passport sign-in, a delegation grant, a group contract).
+  PASSPORT_COSIGNER: 'Fabric/PassportCosigner',
+  ORACLE_ATTESTATION: 'Fabric/OracleAttestation',
+  FEDERATION_INVITE: 'Fabric/FederationInvite'
+});
 const { payments } = require('bitcoinjs-lib');
 const { p2shP2wpkhPayment } = bip49;
 const { encodeSegwitAddress } = require('../functions/bech32');
@@ -184,9 +441,9 @@ function bip32NetworkFromKeySettings (settings) {
 }
 
 /**
- * Address and WIF parameters for a Key's network. Signet and testnet4 use
- * testnet's, playnet is regtest. An unknown name throws rather than falling
- * back to mainnet.
+ * Address and WIF parameters for a Key's network. Signet, testnet4, and
+ * testnet5 use testnet's, playnet is regtest. An unknown name throws rather
+ * than falling back to mainnet.
  * @private
  */
 function addressNetworkFromKeySettings (settings) {
@@ -199,6 +456,7 @@ function addressNetworkFromKeySettings (settings) {
     case 'testnet':
     case 'testnet3':
     case 'testnet4':
+    case 'testnet5':
     case 'signet':
       return nets.testnet;
     case 'regtest':
@@ -904,3 +1162,746 @@ Key.normalizePeerPubkeyHex = pubkeyHelpers.normalizePeerPubkeyHex;
 Key.hasPrivateSigningMaterial = keyHasPrivateSigningMaterial;
 
 module.exports = Key;
+
+const accountKeys = (function () {
+  const { networks, payments } = require('bitcoinjs-lib');
+  function bip86 () {
+    return require('./wallet').BIP86;
+  }
+  const bip39Accounts = require('../functions/bip39');
+  const { encodeCheck: encodeCheckAccount, decodeCheck: decodeCheckAccount } = require('../functions/base58');
+  const { sealJson, openSealedJson } = require('../functions/sealedBlob');
+  const signingTags = SIGNING_TAGS;
+  const {
+    assertBip32ChildIndex,
+    isMainnetNetwork,
+    fabricIdentityDerivationPath,
+    bitcoinAccountDerivationPath,
+    bitcoinCosignerDerivationPath
+  } = require('../constants');
+  const bip39 = bip39Accounts;
+  const encodeCheck = encodeCheckAccount;
+  const decodeCheck = decodeCheckAccount;
+/** Networks an account may be derived for. */
+const ACCOUNT_NETWORKS = Object.freeze(['mainnet', 'testnet', 'testnet4', 'testnet5', 'signet', 'regtest']);
+/** Addresses scanned past the last used one, on each chain of each wallet account. */
+const WALLET_GAP_LIMIT = 20;
+/** Stored record type for a sealed master plus its public account cache. */
+const ACCOUNT_VAULT_TYPE = 'FabricAccountVault';
+const ACCOUNT_VAULT_VERSION = 2;
+
+/**
+ * bitcoinjs-lib address parameters per network.
+ * @private
+ */
+const ADDRESS_NETWORKS = Object.freeze({
+  mainnet: networks.bitcoin,
+  testnet: networks.testnet,
+  regtest: networks.regtest
+});
+
+/**
+ * BIP32 serialization versions (xprv/xpub, tprv/tpub).
+ * @private
+ */
+const VERSIONS = Object.freeze({
+  mainnet: networks.bitcoin.bip32,
+  testnet: networks.testnet.bip32
+});
+
+/**
+ * Canonical network name for account derivation.
+ * @param {string} network
+ * @returns {string} One of {@link ACCOUNT_NETWORKS}.
+ */
+function normalizeAccountNetwork (network) {
+  if (isMainnetNetwork(network)) return 'mainnet';
+  const n = String(network == null ? '' : network).trim().toLowerCase();
+  if (n === 'test') return 'testnet';
+  if (ACCOUNT_NETWORKS.includes(n)) return n;
+  throw new RangeError(`unknown network: ${network}`);
+}
+
+/** @private */
+function versionsFor (network) {
+  return normalizeAccountNetwork(network) === 'mainnet' ? VERSIONS.mainnet : VERSIONS.testnet;
+}
+
+/** @private */
+function addressNetworkFor (network) {
+  const n = normalizeAccountNetwork(network);
+  if (n === 'mainnet') return ADDRESS_NETWORKS.mainnet;
+  if (n === 'regtest') return ADDRESS_NETWORKS.regtest;
+  return ADDRESS_NETWORKS.testnet;
+}
+
+/**
+ * @private
+ * @param {string} base58
+ * @returns {{ payload: Buffer, isPrivate: boolean }}
+ */
+function decodeExtendedKey (base58) {
+  const payload = decodeCheck(String(base58 || '').trim());
+  if (payload.length !== 78) throw new Error('invalid extended key length');
+  const version = payload.readUInt32BE(0);
+  const isPrivate = version === VERSIONS.mainnet.private || version === VERSIONS.testnet.private;
+  const isPublic = version === VERSIONS.mainnet.public || version === VERSIONS.testnet.public;
+  if (!isPrivate && !isPublic) throw new Error('unknown extended key version');
+  return { payload, isPrivate };
+}
+
+/**
+ * Re-serialize an extended key with a network's version bytes (`xpub`/`xprv`
+ * on mainnet, `tpub`/`tprv` elsewhere). Key material is unchanged.
+ * @param {string} base58
+ * @param {string} network
+ * @returns {string}
+ */
+function extendedKeyForNetwork (base58, network) {
+  const { payload, isPrivate } = decodeExtendedKey(base58);
+  const out = Buffer.from(payload);
+  const versions = versionsFor(network);
+  out.writeUInt32BE(isPrivate ? versions.private : versions.public, 0);
+  return encodeCheck(out);
+}
+
+/**
+ * Serialize an account xpub for sharing: the network's version bytes, with
+ * depth, parent fingerprint, and child number zeroed. Those header fields
+ * would otherwise tie every account of one seed to the same parent; child
+ * derivation doesn't use them, so addresses are unchanged.
+ * @param {string} base58 Account xpub / tpub.
+ * @param {string} network
+ * @returns {string}
+ */
+function shareableAccountXpub (base58, network) {
+  const { payload, isPrivate } = decodeExtendedKey(base58);
+  if (isPrivate) throw new Error('only public extended keys are shared');
+  const out = Buffer.from(payload);
+  out.writeUInt32BE(versionsFor(network).public, 0);
+  out[4] = 0;
+  out.writeUInt32BE(0, 5);
+  out.writeUInt32BE(0, 9);
+  return encodeCheck(out);
+}
+
+/**
+ * Generate a new mnemonic. Show it once for backup; it is never stored.
+ * @param {number} [strength=256] Entropy bits (128 → 12 words, 256 → 24 words).
+ * @returns {string}
+ */
+function generateMnemonic (strength = 256) {
+  return bip39.generateMnemonic(strength);
+}
+
+/**
+ * Turn a mnemonic and optional BIP39 passphrase into the master xprv. Callers
+ * drop the mnemonic and passphrase right after.
+ * @param {string} mnemonic
+ * @param {string} [passphrase] The derivation password (BIP39 passphrase).
+ * @returns {string} Master xprv (mainnet serialization; the network is chosen per account).
+ */
+function importSeed (mnemonic, passphrase = '') {
+  const phrase = String(mnemonic || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  if (!bip39.validateMnemonic(phrase)) throw new Error('invalid BIP39 mnemonic');
+  const seed = bip39.mnemonicToSeedSync(phrase, passphrase == null ? '' : String(passphrase));
+  const key = new Key({ seed: Buffer.from(seed).toString('hex') });
+  return normalizeMasterXprv(key.xprv);
+}
+
+/**
+ * Validate a master xprv (depth 0, private) and serialize it for mainnet.
+ * @param {string|Key} master xprv / tprv string or a Key holding one.
+ * @returns {string}
+ */
+function normalizeMasterXprv (master) {
+  const base58 = master instanceof Key ? master.xprv : master;
+  if (typeof base58 !== 'string' || !base58) throw new TypeError('master xprv required');
+  const { payload, isPrivate } = decodeExtendedKey(base58);
+  if (!isPrivate) throw new Error('master xprv required (got a public key)');
+  if (payload[4] !== 0) throw new Error('master xprv required (depth 0)');
+  return extendedKeyForNetwork(base58, 'mainnet');
+}
+
+/**
+ * Derive the three keys of one (account, network) pair.
+ * @param {string|Key} master Master xprv.
+ * @param {Object} [options]
+ * @param {number} [options.account=0]
+ * @param {string} [options.network='mainnet']
+ * @returns {{ account: number, network: string, identity: { path: string, key: Key, pubkey: string, id: string }, wallet: { segwit: { path: string, xpub: string, key: Key }, taproot: { path: string, xpub: string, key: Key }, standard: { path: string, xpub: string, key: Key }, receive: string, descriptors: object }, cosigner: { path: string, key: Key, pubkey: string } }}
+ */
+function deriveAccount (master, options = {}) {
+  const root = new Key({ xprv: normalizeMasterXprv(master) });
+  const account = assertBip32ChildIndex(options.account != null ? options.account : 0, 'account');
+  const network = normalizeAccountNetwork(options.network != null ? options.network : 'mainnet');
+
+  const identityPath = fabricIdentityDerivationPath(account, 0, network);
+  const identityKey = root.derive(identityPath);
+  const identityPubkey = String(identityKey.pubkey).toLowerCase();
+
+  const segwitPath = bitcoinAccountDerivationPath(84, account, network);
+  const segwitKey = root.derive(segwitPath);
+  const taprootPath = bitcoinAccountDerivationPath(bip86().BIP86_PURPOSE, account, network);
+  const taprootKey = root.derive(taprootPath);
+  const standardPath = bitcoinAccountDerivationPath(44, account, network);
+  const standardKey = root.derive(standardPath);
+  const wallet = {
+    segwit: { path: segwitPath, xpub: shareableAccountXpub(segwitKey.xpub, network), key: segwitKey },
+    taproot: { path: taprootPath, xpub: shareableAccountXpub(taprootKey.xpub, network), key: taprootKey },
+    standard: { path: standardPath, xpub: shareableAccountXpub(standardKey.xpub, network), key: standardKey },
+    receive: 'segwit'
+  };
+  wallet.descriptors = walletDescriptors(wallet);
+
+  const cosignerPath = bitcoinCosignerDerivationPath(account, network);
+  const cosignerKey = root.derive(cosignerPath);
+
+  return {
+    account,
+    network,
+    identity: {
+      path: identityPath,
+      key: identityKey,
+      pubkey: identityPubkey,
+      id: require('../functions/fabricIdentitySchnorr').fabricIdentityIdFromPubkeyHex(identityPubkey)
+    },
+    wallet,
+    cosigner: {
+      path: cosignerPath,
+      key: cosignerKey,
+      pubkey: String(cosignerKey.pubkey).toLowerCase()
+    }
+  };
+}
+
+/**
+ * The watch set of a wallet: SegWit receive and change, the Taproot account's
+ * `tr` receive and change (when the wallet has one), and the standard
+ * account's `pkh` receive and change. No key origins.
+ * @param {{ segwit: { xpub: string }, taproot: ({ xpub: string }|undefined), standard: { xpub: string } }} wallet
+ * @returns {{ receive: string, change: string, watch: string[] }}
+ */
+function walletDescriptors (wallet) {
+  if (!wallet || !wallet.segwit || !wallet.standard) throw new TypeError('wallet with segwit and standard accounts required');
+  const s = wallet.segwit.xpub;
+  const l = wallet.standard.xpub;
+  const watch = [`wpkh(${s}/0/*)`, `wpkh(${s}/1/*)`];
+  if (wallet.taproot) watch.push(`tr(${wallet.taproot.xpub}/0/*)`, `tr(${wallet.taproot.xpub}/1/*)`);
+  watch.push(`pkh(${l}/0/*)`, `pkh(${l}/1/*)`);
+  return {
+    receive: `wpkh(${s}/0/*)`,
+    change: `wpkh(${s}/1/*)`,
+    watch
+  };
+}
+
+/**
+ * Address at `<chain>/<index>` of a wallet account xpub.
+ * @param {Object} params
+ * @param {string} params.xpub Account xpub / tpub.
+ * @param {string} params.network
+ * @param {('wpkh'|'tr'|'pkh')} [params.script='wpkh'] `tr` is BIP-86 (key path only).
+ * @param {number} [params.change=0]
+ * @param {number} [params.index=0]
+ * @returns {string}
+ */
+function walletAddress (params = {}) {
+  const network = normalizeAccountNetwork(params.network);
+  const change = assertBip32ChildIndex(params.change != null ? params.change : 0, 'change');
+  if (change !== 0 && change !== 1) throw new RangeError('change must be 0 or 1');
+  const index = assertBip32ChildIndex(params.index != null ? params.index : 0, 'index');
+  const node = new Key({ xpub: extendedKeyForNetwork(params.xpub, 'mainnet') });
+  const pubkey = Buffer.from(node.master.derive(change).derive(index).publicKey);
+  const net = addressNetworkFor(network);
+  const script = params.script || 'wpkh';
+  if (script === 'wpkh') return payments.p2wpkh({ pubkey, network: net }).address;
+  if (script === 'tr') return bip86().address(pubkey, net);
+  if (script === 'pkh') return payments.p2pkh({ pubkey, network: net }).address;
+  throw new RangeError(`unsupported script: ${script}`);
+}
+
+/** @private */
+function assertWalletVerified (wallet) {
+  if (wallet && wallet.verified === false) {
+    const err = new Error('unlock the vault before handing out addresses');
+    err.code = 'FABRIC_ACCOUNT_UNVERIFIED';
+    throw err;
+  }
+}
+
+/**
+ * Next receive address: always from the SegWit account. Refuses a wallet
+ * from a locked vault view (`verified: false`, see {@link currentVaultAccount}).
+ * @param {{ segwit: { xpub: string } }} wallet
+ * @param {string} network
+ * @param {number} index
+ * @returns {string}
+ */
+function walletReceiveAddress (wallet, network, index = 0) {
+  assertWalletVerified(wallet);
+  return walletAddress({ xpub: wallet.segwit.xpub, network, script: 'wpkh', change: 0, index });
+}
+
+/**
+ * Change address: always from the SegWit account. Refuses a wallet from a
+ * locked vault view, like {@link walletReceiveAddress}.
+ * @param {{ segwit: { xpub: string } }} wallet
+ * @param {string} network
+ * @param {number} index
+ * @returns {string}
+ */
+function walletChangeAddress (wallet, network, index = 0) {
+  assertWalletVerified(wallet);
+  return walletAddress({ xpub: wallet.segwit.xpub, network, script: 'wpkh', change: 1, index });
+}
+
+/**
+ * @private
+ * @param {{ identityPubkey: string, cosignerPubkey: string, scope: string }} params
+ * @returns {string}
+ */
+function cosignerProofMessage (params) {
+  const identity = String(params.identityPubkey || '').toLowerCase();
+  const cosigner = String(params.cosignerPubkey || '').toLowerCase();
+  const scope = String(params.scope || '');
+  if (!/^0[23][0-9a-f]{64}$/.test(identity)) throw new TypeError('compressed identity pubkey required');
+  if (!/^0[23][0-9a-f]{64}$/.test(cosigner)) throw new TypeError('compressed cosigner pubkey required');
+  if (!scope || scope.length > 512) throw new TypeError('scope required (at most 512 characters)');
+  return `fabric-cosigner:1\n${scope}\n${identity}\n${cosigner}`;
+}
+
+/**
+ * Sign a claim, by the holder of `cosignerKey`, that it acts for
+ * `identityPubkey` within `scope` (e.g. `passport:<origin>:<challengeHash>`,
+ * `group:<contractId>`). Only the cosigner key signs, and an identity pubkey
+ * is public, so the proof alone does not show that the identity authorized
+ * the cosigner: carry it inside a message the identity key signs, as a
+ * `PASSPORT_ASSERTION` does.
+ * @param {Key} cosignerKey
+ * @param {{ identityPubkey: string, scope: string }} params
+ * @returns {string} BIP340 signature hex.
+ */
+function cosignerProof (cosignerKey, params = {}) {
+  if (!cosignerKey || !cosignerKey.private) throw new TypeError('cosigner private key required');
+  const message = cosignerProofMessage({
+    identityPubkey: params.identityPubkey,
+    cosignerPubkey: cosignerKey.pubkey,
+    scope: params.scope
+  });
+  return Buffer.from(cosignerKey.signSchnorr(message, signingTags.PASSPORT_COSIGNER)).toString('hex');
+}
+
+/**
+ * Check a cosigner proof: the cosigner key signed this claim. Accept it only
+ * from inside a message the identity key signed (see {@link cosignerProof}).
+ * @param {{ cosigner: string, identityPubkey: string, scope: string, proof: string }} params
+ * @returns {boolean}
+ */
+function verifyCosignerProof (params = {}) {
+  try {
+    const message = cosignerProofMessage({
+      identityPubkey: params.identityPubkey,
+      cosignerPubkey: params.cosigner,
+      scope: params.scope
+    });
+    const sig = Buffer.from(String(params.proof || ''), 'hex');
+    if (sig.length !== 64) return false;
+    const key = new Key({ public: String(params.cosigner).toLowerCase() });
+    return key.verifySchnorr(message, sig, signingTags.PASSPORT_COSIGNER);
+  } catch (_) {
+    return false;
+  }
+}
+
+/**
+ * Seal a master xprv with the lock password (Argon2id, AES-256-GCM).
+ * @param {string|Key} master
+ * @param {string} lockPassword
+ * @returns {object}
+ */
+function sealMaster (master, lockPassword) {
+  return sealJson({ xprv: normalizeMasterXprv(master) }, lockPassword, {
+    type: 'FabricSealedMaster',
+    version: ACCOUNT_VAULT_VERSION,
+    kdf: 'argon2id'
+  });
+}
+
+/**
+ * Open a sealed master xprv.
+ * @param {object} blob
+ * @param {string} lockPassword
+ * @returns {string}
+ */
+function unsealMaster (blob, lockPassword) {
+  const inner = openSealedJson(blob, lockPassword);
+  if (!inner || typeof inner.xprv !== 'string') throw new Error('sealed master is missing its xprv');
+  return normalizeMasterXprv(inner.xprv);
+}
+
+/**
+ * Public data of a derived account, cached unsealed in a vault so a locked
+ * client can show identities and watch-only balances. Anyone able to edit the
+ * record can change it, and no key is available to check it while locked, so
+ * {@link currentVaultAccount} marks it unverified until the master checks it.
+ * @param {object} derived result of `deriveAccount`
+ * @param {string} [label]
+ * @returns {object}
+ */
+function accountPublicView (derived, label) {
+  return {
+    account: derived.account,
+    network: derived.network,
+    label: label != null ? String(label).slice(0, 64) : `Account ${derived.account}`,
+    identity: { pubkey: derived.identity.pubkey, id: derived.identity.id },
+    wallet: {
+      segwit: { path: derived.wallet.segwit.path, xpub: derived.wallet.segwit.xpub },
+      taproot: { path: derived.wallet.taproot.path, xpub: derived.wallet.taproot.xpub },
+      standard: { path: derived.wallet.standard.path, xpub: derived.wallet.standard.xpub },
+      receive: 'segwit'
+    },
+    cosigner: { pubkey: derived.cosigner.pubkey }
+  };
+}
+
+/**
+ * Cache key of one (account, network) pair in a vault.
+ * @param {number} account
+ * @param {string} network
+ * @returns {string}
+ */
+function vaultAccountKey (account, network) {
+  return `${normalizeAccountNetwork(network)}:${assertBip32ChildIndex(account, 'account')}`;
+}
+
+/**
+ * A new stored record: the sealed master, the current pair, and its public cache.
+ * @param {Object} params
+ * @param {string|Key} params.master
+ * @param {string} params.lockPassword
+ * @param {number} [params.account=0]
+ * @param {string} [params.network='mainnet']
+ * @param {string} [params.label]
+ * @returns {object}
+ */
+function createAccountVault (params = {}) {
+  const derived = deriveAccount(params.master, { account: params.account, network: params.network });
+  const vault = {
+    type: ACCOUNT_VAULT_TYPE,
+    v: ACCOUNT_VAULT_VERSION,
+    seal: sealMaster(params.master, params.lockPassword),
+    current: { account: derived.account, network: derived.network },
+    accounts: {}
+  };
+  vault.accounts[vaultAccountKey(derived.account, derived.network)] = accountPublicView(derived, params.label);
+  return vault;
+}
+
+/** @private */
+function assertAccountVault (vault) {
+  if (!vault || vault.type !== ACCOUNT_VAULT_TYPE || vault.v !== ACCOUNT_VAULT_VERSION) {
+    throw new TypeError('account vault v2 required');
+  }
+}
+
+/** @private */
+function vaultMismatch (why) {
+  const err = new Error(`account vault cache does not match its master: ${why}`);
+  err.code = 'FABRIC_ACCOUNT_VAULT_MISMATCH';
+  return err;
+}
+
+/**
+ * JSON text with object keys sorted. chrome.storage hands objects back with
+ * sorted keys, so a cache check cannot depend on the order they were saved in.
+ * @param {*} value
+ * @returns {string|undefined}
+ * @private
+ */
+function stableJSON (value) {
+  if (value === undefined) return undefined;
+  if (Array.isArray(value)) return `[${value.map((item) => stableJSON(item) ?? 'null').join(',')}]`;
+  if (value && typeof value === 'object') {
+    const parts = Object.keys(value).sort().filter((key) => value[key] !== undefined).map((key) => `${JSON.stringify(key)}:${stableJSON(value[key])}`);
+    return `{${parts.join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+/**
+ * Check one cached account/network pair against what `master` derives.
+ * @param {string} key Vault key of the pair (`vaultAccountKey`).
+ * @param {object} cached The cached public view.
+ * @param {string|Key} master
+ * @returns {object} The fresh view of a cached pair; throws when they differ.
+ */
+function checkCachedAccount (key, cached, master) {
+  if (!cached || vaultAccountKey(cached.account, cached.network) !== key) throw vaultMismatch(key);
+  const fresh = accountPublicView(deriveAccount(master, { account: cached.account, network: cached.network }), cached.label);
+  // Caches from before the Taproot account lack it; the fresh view supplies it.
+  const compared = (cached.wallet && !cached.wallet.taproot)
+    ? Object.assign({}, fresh, { wallet: withoutTaproot(fresh.wallet) })
+    : fresh;
+  if (stableJSON(compared) !== stableJSON(cached)) throw vaultMismatch(key);
+  return fresh;
+}
+
+/** @private */
+function withoutTaproot (wallet) {
+  const rest = Object.assign({}, wallet);
+  delete rest.taproot;
+  return rest;
+}
+
+/**
+ * Check every cached pair of a vault against what `master` derives, and
+ * refuse a vault whose cache was edited (say, an xpub swapped for someone
+ * else's). Re-deriving checks more than a MAC could, and needs no key while
+ * locked, when nothing could check a MAC anyway.
+ * @param {object} vault
+ * @param {string|Key} master
+ * @returns {object} The vault, unchanged.
+ */
+function verifyVaultAccounts (vault, master) {
+  assertAccountVault(vault);
+  const accounts = vault.accounts || {};
+  for (const [key, cached] of Object.entries(accounts)) checkCachedAccount(key, cached, master);
+  if (!vault.current || !accounts[vaultAccountKey(vault.current.account, vault.current.network)]) {
+    throw vaultMismatch('current account is not cached');
+  }
+  return vault;
+}
+
+/**
+ * Unlock a vault: open the sealed master with the lock password and check the
+ * public cache against it ({@link verifyVaultAccounts}). Pass the master to
+ * {@link currentVaultAccount} for a view that hands out addresses.
+ * @param {object} vault
+ * @param {string} lockPassword
+ * @returns {string} Master xprv.
+ */
+function openAccountVault (vault, lockPassword) {
+  assertAccountVault(vault);
+  const master = unsealMaster(vault.seal, lockPassword);
+  verifyVaultAccounts(vault, master);
+  return master;
+}
+
+/**
+ * Switch a vault to another pair. Derives (and caches) it when the master is
+ * given; without it only cached pairs can be selected.
+ * @param {object} vault
+ * @param {{ account: number, network: string, master: (string|Key|undefined), label: (string|undefined) }} params
+ * @returns {object} New vault record.
+ */
+function selectVaultAccount (vault, params = {}) {
+  assertAccountVault(vault);
+  const network = normalizeAccountNetwork(params.network);
+  const account = assertBip32ChildIndex(params.account, 'account');
+  const key = vaultAccountKey(account, network);
+  const accounts = Object.assign({}, vault.accounts);
+  if (params.master) {
+    const derived = deriveAccount(params.master, { account, network });
+    const prior = accounts[key];
+    accounts[key] = accountPublicView(derived, params.label != null ? params.label : (prior && prior.label));
+  } else if (!accounts[key]) {
+    const err = new Error('unlock to add this account');
+    err.code = 'FABRIC_ACCOUNT_LOCKED';
+    throw err;
+  } else if (params.label != null) {
+    accounts[key] = Object.assign({}, accounts[key], { label: String(params.label).slice(0, 64) });
+  }
+  return Object.assign({}, vault, { current: { account, network }, accounts });
+}
+
+/**
+ * Public view of the vault's current pair, marked `verified` on the view and
+ * its `wallet`. Without the master it is the cache as stored, `verified:
+ * false`: show it as unverified, and {@link walletReceiveAddress} /
+ * {@link walletChangeAddress} refuse its wallet. With the master the pair is
+ * re-derived and checked first (`FABRIC_ACCOUNT_VAULT_MISMATCH` when it
+ * differs), and the view is `verified: true`.
+ * @param {object} vault
+ * @param {string|Key} [master]
+ * @returns {object|null}
+ */
+function currentVaultAccount (vault, master) {
+  if (!vault || !vault.current || !vault.accounts) return null;
+  const key = vaultAccountKey(vault.current.account, vault.current.network);
+  const cached = vault.accounts[key];
+  if (!cached) return null;
+  const view = master ? checkCachedAccount(key, cached, master) : cached;
+  const verified = Boolean(master);
+  return Object.assign({}, view, { verified, wallet: Object.assign({}, view.wallet, { verified }) });
+}
+
+
+
+  return {
+    ARGON2_MASTER: true,
+    ACCOUNT_NETWORKS,
+    ACCOUNT_VAULT_TYPE,
+    ACCOUNT_VAULT_VERSION,
+    WALLET_GAP_LIMIT,
+    normalizeAccountNetwork,
+    extendedKeyForNetwork,
+    shareableAccountXpub,
+    generateMnemonic,
+    importSeed,
+    normalizeMasterXprv,
+    deriveAccount,
+    walletDescriptors,
+    walletAddress,
+    walletReceiveAddress,
+    walletChangeAddress,
+    cosignerProof,
+    verifyCosignerProof,
+    sealMaster,
+    unsealMaster,
+    accountPublicView,
+    vaultAccountKey,
+    createAccountVault,
+    checkCachedAccount,
+    verifyVaultAccounts,
+    openAccountVault,
+    selectVaultAccount,
+    currentVaultAccount
+  };
+})();
+Key.Accounts = accountKeys;
+Object.assign(Key, accountKeys);
+
+const operatorIdentity = (function () {
+  const classifyFabricKeyMaterial = keyMaterial.classifyFabricKeyMaterial;
+  const classifyFabricIdentityEnvValue = keyMaterial.classifyFabricIdentityEnvValue;
+  const keySettingsFromEnv = keyMaterial.keySettingsFromEnv;
+/**
+ * Copy a non-empty `passphrase` (or `password`) from `bag` onto `out`.
+ * @private
+ */
+function withPassphrase (out, bag) {
+  if (!out || !bag || typeof bag !== 'object') return out;
+  const passphrase = bag.passphrase != null ? bag.passphrase : bag.password;
+  if (passphrase == null || passphrase === '') return out;
+  out.passphrase = passphrase;
+  return out;
+}
+
+/**
+ * Collapse a Key settings bag to a single identity source.
+ * Private HD (`xprv`) wins over seed/mnemonic so mixed env copies do not
+ * silently follow Key's mnemonic-first constructor.
+ *
+ * @param {Object} [bag]
+ * @returns {Object|null}
+ */
+function exclusiveOperatorKeySettings (bag = {}) {
+  if (!bag || typeof bag !== 'object') return null;
+
+  const xprvField = String(bag.xprv || '').trim();
+  const fromXprvField = classifyFabricIdentityEnvValue(xprvField);
+  if (fromXprvField.kind === 'xprv') {
+    const out = { xprv: fromXprvField.xprv };
+    const xpub = String(bag.xpub || '').trim();
+    if (xpub.startsWith('xpub') || xpub.startsWith('tpub')) out.xpub = xpub;
+    return withPassphrase(out, bag);
+  }
+  if (fromXprvField.kind === 'xpub') {
+    return withPassphrase({ xpub: fromXprvField.xpub }, bag);
+  }
+  if (fromXprvField.kind === 'pubkey') {
+    return withPassphrase({ public: fromXprvField.public }, bag);
+  }
+
+  if (bag.seed != null && String(bag.seed).trim() !== '') {
+    const classified = classifyFabricKeyMaterial(bag.seed);
+    if (classified.kind === 'xprv') return withPassphrase({ xprv: classified.xprv }, bag);
+    if (classified.kind === 'seedHex') return withPassphrase({ seed: classified.seed }, bag);
+    if (classified.kind === 'mnemonic') {
+      return withPassphrase({ mnemonic: classified.mnemonic }, bag);
+    }
+  }
+
+  const mnemonic = String(bag.mnemonic || '').trim();
+  if (mnemonic) {
+    const classified = classifyFabricKeyMaterial(mnemonic);
+    if (classified.kind === 'mnemonic') {
+      return withPassphrase({ mnemonic: classified.mnemonic }, bag);
+    }
+    if (classified.kind === 'xprv') return withPassphrase({ xprv: classified.xprv }, bag);
+    if (classified.kind === 'seedHex') return withPassphrase({ seed: classified.seed }, bag);
+  }
+
+  const xpub = String(bag.xpub || '').trim();
+  if (xpub.startsWith('xpub') || xpub.startsWith('tpub')) {
+    return withPassphrase({ xpub }, bag);
+  }
+  const pub = String(bag.public || bag.pubkey || '').trim();
+  const pubClassified = classifyFabricIdentityEnvValue(pub);
+  if (pubClassified.kind === 'pubkey') {
+    return withPassphrase({ public: pubClassified.public }, bag);
+  }
+
+  return null;
+}
+
+/**
+ * @param {NodeJS.ProcessEnv} [env]
+ * @param {Object} [opts]
+ * @param {boolean} [opts.allowWalletFallback=true]
+ * @param {string} [opts.password]
+ * @returns {{ source: string, key: Object }|null}
+ */
+function resolveFabricOperatorKeySettings (env = process.env, opts = {}) {
+  const allowWallet = opts.allowWalletFallback !== false;
+  const fromEnv = keySettingsFromEnv(env);
+  if (fromEnv && (fromEnv.xprv || fromEnv.seed || fromEnv.mnemonic)) {
+    const key = exclusiveOperatorKeySettings(fromEnv) || fromEnv;
+    const source = fromEnv.xprv
+      ? 'FABRIC_XPRV'
+      : (fromEnv.seed ? 'FABRIC_SEED' : 'FABRIC_MNEMONIC');
+    return { source, key };
+  }
+
+  // Watch-only FABRIC_XPRV (xpub/pubkey) beats wallet.json — same exclusive env rule.
+  if (fromEnv && (fromEnv.xpub || fromEnv.public)) {
+    let source = 'FABRIC_PUBKEY';
+    if (fromEnv.xpub) {
+      const slot = classifyFabricIdentityEnvValue((env && env.FABRIC_XPRV) || '');
+      source = slot.kind === 'xpub' ? 'FABRIC_XPRV' : 'FABRIC_XPUB';
+    }
+    return {
+      source,
+      key: exclusiveOperatorKeySettings(fromEnv) || fromEnv
+    };
+  }
+
+  if (allowWallet) {
+    try {
+      const { loadIdentityFromWalletFile } = require('../functions/fabricWalletIdentity');
+      const wallet = loadIdentityFromWalletFile({
+        home: env && env.HOME,
+        password: opts.password != null ? opts.password : (env && env.FABRIC_PASSWORD)
+      });
+      if (wallet && wallet.xprv) {
+        const key = exclusiveOperatorKeySettings({
+          xprv: wallet.xprv,
+          seed: wallet.seed,
+          mnemonic: wallet.mnemonic,
+          xpub: wallet.xpub
+        }) || { xprv: wallet.xprv };
+        return { source: 'wallet.json', key };
+      }
+    } catch (_) { /* older pin or locked wallet */ }
+  }
+
+  return null;
+}
+
+
+
+  return { exclusiveOperatorKeySettings, resolveFabricOperatorKeySettings };
+})();
+Key.Operator = operatorIdentity;
+Object.assign(Key, operatorIdentity);

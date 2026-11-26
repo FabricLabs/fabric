@@ -14,7 +14,7 @@ Protocol helpers live under `functions/` (`fabricCanonicalJson`,
 |----------|--------|
 | `fabric-opcodes` | Runnable on Machine (define / opcode registry) |
 | `fabric-execution` | Hub structured steps (`Push`/`Pop`/`Dup`/`ADD`/`FabricOpcode`/…) on Machine stack |
-| `javascript` | Step names + registerable functions via `Machine.define` |
+| `javascript` | Step names. Source functions register only with `trusted: true` (local operator) |
 | `bitcoin-script` | Compile via bitcoinjs; `toRedeemScript()` for L1 P2WSH/P2TR leaf scaffold |
 | `solidity` | Compile stub (Compiler frontend later) |
 | `asm` | Compile stub |
@@ -36,7 +36,7 @@ machine.define('OP_TRUE', () => true);
 const { ok, tip, runCommitmentHex } = await machine.runProgram(prog);
 ```
 
-When `allowedOpcodes` / `primitives.opcodes` is set, unknown steps and `define()` of off-list names throw (or `runProgram` returns `ok: false`). With no allow-list, unknown steps still soft-coerce to `0` (legacy).
+Unknown steps throw, including when no allow-list is set (`runProgram` returns `ok: false`). An allow-list also rejects `define()` of off-list names. One `compute` stops at 256 steps and a stack of 64, the same caps as `executionProgramRunner` (`maxSteps` / `maxStack` on the Machine). A `javascript` program's functions run only when the caller passes `{ trusted: true }`. Mesh ingest and Hub execution do not.
 
 ## L1 redeemability
 

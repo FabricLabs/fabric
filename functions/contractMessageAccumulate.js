@@ -18,7 +18,7 @@ const Message = require('../types/message');
 const Key = require('../types/key');
 const { HEADER_SIZE, MAX_MESSAGE_SIZE } = require('../constants');
 const { OUTER, CONTRACT_BODY_TYPES, isKnownContractBodyType } = require('./applicationNamespaces');
-const { pubkeyXOnly, pubkeyCompressed } = require('./pubkey');
+const { pubkeyXOnly, pubkeyCompressed } = require('../types/key');
 const { normalizeContractId, stateDigest } = require('./sidechainState');
 const {
   GOVERNANCE_ACTIONS,

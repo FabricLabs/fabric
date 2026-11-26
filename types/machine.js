@@ -26,6 +26,34 @@ const {
   opcodeAllowed,
   assertStepsAllowed
 } = require('../functions/opcodeAllowList');
+const {
+  DEFAULT_MAX_STEPS,
+  DEFAULT_MAX_STACK
+} = require('../functions/executionProgramRunner');
+
+/**
+ * Step cap for one `compute`. Settings may lower or raise it up to 4096.
+ * @param {Object} settings
+ * @returns {number}
+ * @private
+ */
+function stepCap (settings) {
+  const n = Number(settings && settings.maxSteps);
+  if (Number.isFinite(n) && n > 0) return Math.min(Math.floor(n), 4096);
+  return DEFAULT_MAX_STEPS;
+}
+
+/**
+ * Stack cap for one `compute`. Settings may lower or raise it up to 256.
+ * @param {Object} settings
+ * @returns {number}
+ * @private
+ */
+function stackCap (settings) {
+  const n = Number(settings && settings.maxStack);
+  if (Number.isFinite(n) && n > 0) return Math.min(Math.floor(n), 256);
+  return DEFAULT_MAX_STACK;
+}
 
 // Strict JSON
 const { parsePersistedJson } = require('../functions/wireJson');
@@ -83,8 +111,10 @@ class Machine extends Actor {
       precision: 8,
       script: [],
       type: 'x86',
-      // Opcode allow-list. Null or empty = unrestricted (legacy soft compute).
-      allowedOpcodes: null
+      // Opcode allow-list. Null or empty still fail-closes unknown opcodes.
+      allowedOpcodes: null,
+      maxSteps: null,
+      maxStack: null
     }, settings);
 
     // machine key
@@ -151,7 +181,8 @@ class Machine extends Actor {
   }
 
   /**
-   * Active opcode allow-list (empty = unrestricted).
+   * Active opcode allow-list (empty = no extra name filter).
+   * Unknown opcodes still throw.
    * @returns {string[]}
    */
   get allowedOpcodes () {
@@ -160,7 +191,7 @@ class Machine extends Actor {
 
   /**
    * Restrict `define` / `loadProgram` / `compute` to this opcode set.
-   * Empty / null clears the restriction (legacy soft unknown-op behavior).
+   * Empty / null clears the name filter. Unknown opcodes still throw.
    * @param {Iterable<*>|null} list
    * @returns {Machine}
    */
@@ -230,9 +261,16 @@ class Machine extends Actor {
 
     const allow = this._allowedOpcodes;
     const restricted = allow && allow.length > 0;
+    const script = this.script;
+    const maxSteps = stepCap(this.settings);
+    const maxStack = stackCap(this.settings);
+    const length = script && typeof script.length === 'number' ? script.length : 0;
+    if (length > maxSteps) {
+      throw new Error(`program exceeds maxSteps (${maxSteps})`);
+    }
 
-    for (const i in this.script) {
-      const instruction = this.script[i];
+    for (const i in script) {
+      const instruction = script[i];
       const name = String(instruction == null ? '' : instruction);
       if (restricted && !opcodeAllowed(allow, name)) {
         throw new Error(`opcode not in primitives.opcodes allow-list: ${name}`);
@@ -245,7 +283,10 @@ class Machine extends Actor {
       } else if (restricted) {
         throw new Error(`opcode not defined (fail closed under allow-list): ${name}`);
       } else {
-        this.stack.push(instruction | 0);
+        throw new Error(`opcode not defined: ${name}`);
+      }
+      if (this.stack.length > maxStack) {
+        throw new Error('stack overflow');
       }
     }
 
@@ -326,10 +367,13 @@ class Machine extends Actor {
    * When an opcode allow-list is active (ctor `allowedOpcodes`,
    * {@link Machine#setAllowedOpcodes}, {@link Machine#applyGenesisOpcodes},
    * or Program/genesis `primitives.opcodes`), steps and javascript `source`
-   * keys must be listed — fail closed.
+   * keys must be listed — fail closed. Unknown opcodes throw even with no
+   * allow-list. A `javascript` program's functions register only when
+   * `opts.trusted` is true (local operator). Mesh and Hub runs omit it.
    * @param {Program|object} program
    * @param {Object} [opts]
    * @param {Object} [opts.genesis] ARC genesis; may supply `primitives.opcodes` allow-list
+   * @param {boolean} [opts.trusted] register `javascript` source functions on this host
    * @returns {Machine}
    */
   loadProgram (program, opts = {}) {
@@ -356,8 +400,12 @@ class Machine extends Actor {
 
     if (prog.language === 'javascript' && prog.source && typeof prog.source === 'object' &&
         !Array.isArray(prog.source)) {
-      for (const [name, fn] of Object.entries(prog.source)) {
-        if (typeof fn === 'function') this.define(name, fn);
+      const fns = Object.entries(prog.source).filter((entry) => typeof entry[1] === 'function');
+      if (fns.length && opts.trusted !== true) {
+        throw new Error('javascript program source requires trusted: true');
+      }
+      if (opts.trusted === true) {
+        for (const [name, fn] of fns) this.define(name, fn);
       }
     }
     this.settings.script = steps;

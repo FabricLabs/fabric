@@ -666,7 +666,7 @@ class CoinjoinTakerRound extends Coinjoin {
         const out = await rpc('gettxout', [txid, Number(vout), false]);
         if (!out) return null;
         return {
-          valueSats: Math.round(Number(out.value) * 1e8),
+          valueSats: Math.round(Number(out.value) * (10 ** 8)),
           scriptPubKeyHex: out.scriptPubKey && out.scriptPubKey.hex,
           confirmations: Number(out.confirmations) || 0
         };
@@ -700,7 +700,7 @@ class CoinjoinTakerRound extends Coinjoin {
         .map((u) => ({
           txid: u.txid,
           vout: Number(u.vout),
-          valueSats: Math.round(Number(u.amount) * 1e8),
+          valueSats: Math.round(Number(u.amount) * (10 ** 8)),
           scriptPubKeyHex: u.scriptPubKey,
           confirmations: Number(u.confirmations) || 0,
           address: u.address
@@ -796,7 +796,7 @@ function descriptorPrivateKey (info, descriptors) {
     for (const seg of full.slice(prefix.length).split('/').filter(Boolean)) {
       const hardened = seg.endsWith("'");
       const index = Number(hardened ? seg.slice(0, -1) : seg);
-      node = node.derive(hardened ? index + 0x80000000 : index);
+      node = node.derive(hardened ? index + (2 ** 31) : index);
     }
     const priv = Buffer.from(node.privateKey);
     if (info.scriptPubKey && Coinjoin.taprootKeyPath(priv).scriptPubKeyHex !== String(info.scriptPubKey).toLowerCase()) continue;

@@ -15,7 +15,7 @@ const { Psbt, address: bitcoinAddress } = require('bitcoinjs-lib');
 const ecc = require('./ecc');
 const Contract = require('./contract');
 const Witness = require('./witness');
-const Resolutions = require('./resolutions');
+const Resolutions = require('./contract').Resolutions;
 const Htlc = require('./htlc');
 const {
   composeTaprootTree,
@@ -29,7 +29,7 @@ const {
   finalizeSpendPsbt,
   normalizeLock
 } = require('./policy');
-const { assertTestNetwork } = require('../functions/bitcoinNetworkAllowlist');
+const { assertTestNetwork } = require('./channel');
 const { stableStringify, jsonSafe } = require('../functions/fabricCanonicalJson');
 const { BIP125_SEQUENCE_LOCKTIME_ONLY } = require('../functions/bip125');
 

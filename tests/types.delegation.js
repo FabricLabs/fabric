@@ -9,8 +9,8 @@ const {
   DELEGATION_MAILBOX_FETCH,
   FIXTURE_SEED
 } = require('../constants');
-const { encodeFabricUri } = require('../functions/fabricUri');
-const { importSeed, deriveAccount } = require('../functions/accountKeys');
+const { encodeFabricUri } = require('../types/message');
+const { importSeed, deriveAccount } = require('../types/key').Accounts;
 const { classifyGossipWireType, isPublicGossipFloodType } = require('../functions/gossipNetwork');
 const { createChallenge, verifyAssertion } = require('../functions/passport');
 
@@ -702,6 +702,34 @@ describe('@fabric/core/types/delegation frames', function () {
       assert.throws(() => d.createMailboxFetch({ purpose: delegation }, PASSPORT.identity.key), /origin is required/);
       assert.throws(() => d.createMailboxFetch({ origin: 'https://hub.example' }, PASSPORT.identity.key), /purpose is required/);
       assert.throws(() => d.createMailboxFetch({ origin: 'https://hub.example', purpose: 'Not A Purpose' }, PASSPORT.identity.key), /purpose is required/);
+    });
+
+    it('refuses a fetch frame in the layout before origin and purpose', function () {
+      const fetch = d.createMailboxFetch({ origin: 'https://hub.example', purpose: d.MAILBOX_FETCH_PURPOSES.delegation, now: NOW }, PASSPORT.identity.key);
+      assert.strictEqual(fetch.message.bodyBuffer[0], d.MAILBOX_FETCH_VERSION);
+      const v1 = [
+        { name: 'v', type: 'u8' },
+        { name: 'pubkey', type: 'string' },
+        { name: 'since', type: 'u64' },
+        { name: 'nonce', type: 'bytes32' },
+        { name: 'issuedAt', type: 'u64' },
+        { name: 'expiresAt', type: 'u64' }
+      ];
+      const old = new Message({
+        type: 'DELEGATION_MAILBOX_FETCH',
+        data: Message.encodeBody(v1, {
+          v: 1,
+          pubkey: PASSPORT.identity.pubkey,
+          since: 0n,
+          nonce: crypto.randomBytes(32),
+          issuedAt: BigInt(NOW),
+          expiresAt: BigInt(NOW + 60000)
+        })
+      });
+      old.signWithKey(PASSPORT.identity.key);
+      const read = d.readMailboxFetch(encodeFabricUri(old), { origin: 'https://hub.example', purpose: d.MAILBOX_FETCH_PURPOSES.delegation, now: NOW + 1 });
+      assert.strictEqual(read.ok, false);
+      assert.match(read.error, /unsupported mailbox read version 1/);
     });
   });
 });

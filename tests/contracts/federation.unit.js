@@ -28,7 +28,7 @@ const {
   applyGroupChangeAction,
   foldProposals
 } = require('../../functions/groupChangeGovernance');
-const { pubkeyXOnly } = require('../../functions/pubkey');
+const { pubkeyXOnly } = require('../../types/key');
 
 describe('@fabric/core groupChangeGovernance', function () {
   it('signs and verifies a proposal vote (canonical application string)', function () {

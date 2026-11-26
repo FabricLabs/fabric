@@ -3,7 +3,7 @@
 const assert = require('assert');
 const Key = require('../types/key');
 const bfs = require('../functions/beaconFederationSigning');
-const SIGNING_TAGS = require('../functions/signingTags');
+const SIGNING_TAGS = require('../types/key').TAGS;
 
 describe('@fabric/core/functions/beaconFederationSigning', function () {
   it('canonicalEpochForFederation drops balance/timestamp and keeps contracts merkleRoot', function () {

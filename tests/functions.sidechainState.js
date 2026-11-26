@@ -8,7 +8,7 @@ const { jsonSafe, stableStringify } = require('../functions/fabricCanonicalJson'
 const { parseDistributedManifestV1 } = require('../functions/fabricProgramManifest');
 const sc = require('../functions/sidechainState');
 const Message = require('../types/message');
-const SIGNING_TAGS = require('../functions/signingTags');
+const SIGNING_TAGS = require('../types/key').TAGS;
 
 function legacyBody (msg) {
   const parsed = Message.tryParseLegacyBody(Message.fromBuffer(msg.toBuffer()));

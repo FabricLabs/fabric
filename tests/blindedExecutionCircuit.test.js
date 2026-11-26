@@ -20,7 +20,7 @@ const {
   DECISION_SIGNING_VERSION
 } = require('../functions/blindedExecutionCircuit');
 const { toAddress, synthesizeDefaultLadder } = require('../types/policy');
-const SIGNING_TAGS = require('../functions/signingTags');
+const SIGNING_TAGS = require('../types/key').TAGS;
 
 describe('functions/blindedExecutionCircuit', function () {
   const keys = [];
@@ -75,6 +75,7 @@ describe('functions/blindedExecutionCircuit', function () {
     assert.deepStrictEqual(a.roles.evaluators, [pk(1).toLowerCase()]);
     assert.strictEqual(a.definition['@type'], 'FabricContract');
     assert.ok(a.definition.interfaces.includes('fabric.blinded-execution'));
+    assert.strictEqual(a.definition.spendPolicy.requireProgramRun, true);
     assert.strictEqual(a.definition.blindedExecution.circuitCommitment, a.circuitCommitment);
     assert.strictEqual(a.finalized, false);
     assert.strictEqual(a.coordinationRoot, null);

@@ -10,7 +10,7 @@
  * both shapes into the Hub cache object.
  */
 
-const { pubkeyXOnly } = require('./pubkey');
+const { pubkeyXOnly } = require('../types/key');
 
 /**
  * Extract displayable text from a chat payload or Peer chat event.

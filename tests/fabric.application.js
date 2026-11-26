@@ -212,7 +212,7 @@ const Actor = require('../types/actor');
 const Key = require('../types/key');
 const Message = require('../types/message');
 const Peer = require('../types/peer');
-const { pubkeyXOnly } = require('../functions/pubkey');
+const { pubkeyXOnly } = require('../types/key');
 const {
   signingStringForGroupChangeProposal,
   signProposalVote,
