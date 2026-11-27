@@ -509,6 +509,8 @@ contract&#39;s lifetime as &quot;fulfillment conditions&quot; for its closure.</
 <dt><a href="#Redis">Redis</a></dt>
 <dd><p>Connect and subscribe to Redis servers (node-redis v6).</p>
 </dd>
+<dt><a href="#Storage">Storage</a></dt>
+<dd></dd>
 <dt><a href="#Text">Text</a> ⇐ <code><a href="#Service">Service</a></code></dt>
 <dd></dd>
 <dt><a href="#Watchtower">Watchtower</a></dt>
@@ -526,6 +528,17 @@ contract&#39;s lifetime as &quot;fulfillment conditions&quot; for its closure.</
 ## Constants
 
 <dl>
+<dt><a href="#crypto">crypto</a></dt>
+<dd><p>Peer storage market.</p>
+<p>Any Fabric peer can publish a storage contract, stake a deposit, answer a
+publisher&#39;s challenge, and build a penalty PSBT. The contract root is the
+challenge tree over raw blob hashes (<a href="Challenge.createBlobMerkleTree">Challenge.createBlobMerkleTree</a>),
+not the document sale tree (which also commits payment hashes and IVs).
+Bonds stay on regtest, signet, and testnet: <a href="#Bond">Bond</a> refuses mainnet.</p>
+<p>A penalty that depends on chain state fails closed unless the host passed
+<code>outpointUnspent</code>, <code>txConfirmed</code>, and <code>headerKnown</code>. Hub HTTP is an adapter
+over this service.</p>
+</dd>
 <dt><del><a href="#Text">Text</a></del></dt>
 <dd></dd>
 </dl>
@@ -12143,7 +12156,7 @@ Create and manage sets of {Signer} instances with the Federation class.
         * [.vaultForDescriptor(descriptor)](#Federation.vaultForDescriptor) ⇒ <code>Object</code>
         * [.isValidator(descriptor, pubkey)](#Federation.isValidator) ⇒ <code>boolean</code>
         * [.withdrawalRequestId(psbtBase64)](#Federation.withdrawalRequestId) ⇒ <code>string</code>
-        * [.prepareWithdrawal(opts)](#Federation.prepareWithdrawal) ⇒ <code>Object</code>
+        * [.buildFundingPsbt(opts)](#Federation.buildFundingPsbt) ⇒ <code>Object</code>
         * [.signWithdrawal(opts)](#Federation.signWithdrawal) ⇒ <code>Object</code>
         * [.addWithdrawalSignatures(opts)](#Federation.addWithdrawalSignatures) ⇒ <code>Object</code>
         * [.finalizeWithdrawal(opts)](#Federation.finalizeWithdrawal) ⇒ <code>Object</code>
@@ -12572,7 +12585,10 @@ Default path policy denying free-form balance invent outside typed reserve write
 
 ### Federation.buildDescriptor(opts) ⇒ <code>Object</code>
 Build a canonical descriptor. The soft tier needs the full threshold after the
-CSV delay (never a single key), and the internal key is NUMS so no key-path spend exists.
+CSV delay (never a single key). A new n-of-n set records `internalKeyMode:
+'musig2'` so a unanimous spend is a Taproot key-path signature. A threshold
+below n stays `nums` (script-path only). Pass `internalKeyMode: 'nums'` to
+keep an existing NUMS vault address; nothing sweeps those coins.
 
 **Kind**: static method of [<code>Federation</code>](#Federation)  
 
@@ -12584,6 +12600,7 @@ CSV delay (never a single key), and the internal key is NUMS so no key-path spen
 | opts.network | <code>string</code> |  | Bitcoin network name |
 | opts.publisher | <code>string</code> |  | Creator pubkey (must be a validator) |
 | [opts.csvBlocks] | <code>number</code> | <code>144</code> | Soft-tier CSV delay |
+| [opts.internalKeyMode] | <code>string</code> |  | `musig2` | `nums` |
 
 <a name="Federation.canonicalDescriptor"></a>
 
@@ -12645,23 +12662,22 @@ Withdrawal request id: SHA-256 of the unsigned PSBT.
 | --- | --- |
 | psbtBase64 | <code>string</code> | 
 
-<a name="Federation.prepareWithdrawal"></a>
+<a name="Federation.buildFundingPsbt"></a>
 
-### Federation.prepareWithdrawal(opts) ⇒ <code>Object</code>
-Build the unsigned withdrawal PSBT for a descriptor. Every member rebuilds
-the same PSBT from the same request (the input txid commits to the funding
-transaction), so a member signs only what it would have built itself.
+### Federation.buildFundingPsbt(opts) ⇒ <code>Object</code>
+Collaborative funding PSBT: one input from each contributing signer, one
+output to the vault, change back to those signers, no OP_RETURN. An n-of-n
+descriptor needs every signer. A threshold descriptor takes a published
+subset. Reserve credit still waits on `Federation.applyPegInCredit`.
 
 **Kind**: static method of [<code>Federation</code>](#Federation)  
 
 | Param | Type | Description |
 | --- | --- | --- |
 | opts | <code>Object</code> |  |
-| opts.descriptor | <code>Object</code> | Canonical federation descriptor |
-| opts.fundedTxHex | <code>string</code> | Raw transaction paying the vault |
-| [opts.vout] | <code>number</code> | Expected vault output index (checked) |
-| opts.destinationAddress | <code>string</code> |  |
-| opts.amountSats | <code>number</code> |  |
+| opts.descriptor | <code>Object</code> |  |
+| opts.inputs | <code>Array.&lt;Object&gt;</code> | signer inputs: `txid`, `vout`, `valueSats`, native P2WPKH `address`, `pubkey`, and optional `changeAddress` |
+| opts.vaultSats | <code>number</code> |  |
 | opts.feeSats | <code>number</code> |  |
 
 <a name="Federation.signWithdrawal"></a>
@@ -12825,7 +12841,7 @@ Check a message for a known federation: right namespace, signed by a member.
 Rebuild a withdrawal request's PSBT and check it matches its request id.
 
 **Kind**: static method of [<code>Federation</code>](#Federation)  
-**Returns**: <code>Object</code> - [prepareWithdrawal](#Federation.prepareWithdrawal) result  
+**Returns**: <code>Object</code> - [Federation.prepareWithdrawal](Federation.prepareWithdrawal) result  
 
 | Param | Type | Description |
 | --- | --- | --- |
@@ -25131,6 +25147,7 @@ the same offence.
 - `payment:<seller x-only>:<payment hash>` and `frame:<sha256 of frame>` wrong-bytes, bad-key
 - `penalty-tx:<txid>` wrongful-penalty
 - `stale-tx:<txid>` stale-commitment
+- `run:<programHash>:<claimedRunCommitmentHex>` wrong-run
 
 **Kind**: instance method of [<code>FraudProof</code>](#FraudProof)  
 <a name="FraudProof+verify"></a>
@@ -26920,6 +26937,216 @@ Closes the connection to the Redis server.
 | --- | --- | --- |
 | name | <code>string</code> | Channel name |
 
+<a name="Storage"></a>
+
+## Storage
+**Kind**: global class  
+
+* [Storage](#Storage)
+    * [new Storage([settings])](#new_Storage_new)
+    * _instance_
+        * [.contracts](#Storage+contracts) : <code>Map.&lt;string, object&gt;</code>
+        * [.commitments](#Storage+commitments) : <code>Map.&lt;string, object&gt;</code>
+        * [.challenges](#Storage+challenges) : <code>Map.&lt;string, object&gt;</code>
+        * [.deposits](#Storage+deposits) : <code>Map.&lt;string, object&gt;</code>
+        * [.register(contract, [id])](#Storage+register) ⇒ <code>object</code>
+        * [.commit(opts)](#Storage+commit) ⇒ <code>object</code>
+        * [.challenge(opts)](#Storage+challenge) ⇒ <code>object</code>
+        * [.respond(response, [ctx])](#Storage+respond) ⇒ <code>object</code>
+        * [.registerDeposit(deposit, fundedTxHex)](#Storage+registerDeposit)
+        * [.missingChainCallbacks()](#Storage+missingChainCallbacks) ⇒ <code>Array.&lt;string&gt;</code>
+        * [.chainView()](#Storage+chainView) ⇒ <code>Object</code> \| <code>Object</code>
+        * [.preparePenalty(opts)](#Storage+preparePenalty) ⇒ <code>object</code>
+        * [.penalizeLateResponse(opts)](#Storage+penalizeLateResponse) ⇒ <code>Object</code>
+        * [.sweep([opts])](#Storage+sweep) ⇒ <code>Object</code>
+    * _static_
+        * [.challengeRoot(blobHashes, [claimedRoot])](#Storage.challengeRoot) ⇒ <code>Object</code>
+        * [.publish(opts)](#Storage.publish) ⇒ <code>object</code>
+        * [.buildBounty(opts)](#Storage.buildBounty) ⇒ <code>object</code>
+        * [.buildDeposit(opts)](#Storage.buildDeposit) ⇒ <code>object</code>
+
+<a name="new_Storage_new"></a>
+
+### new Storage([settings])
+
+| Param | Type |
+| --- | --- |
+| [settings] | <code>object</code> | 
+| [settings.network] | <code>string</code> | 
+| [settings.outpointUnspent] | <code>function</code> | 
+| [settings.txConfirmed] | <code>function</code> | 
+| [settings.headerKnown] | <code>function</code> | 
+
+<a name="Storage+contracts"></a>
+
+### storage.contracts : <code>Map.&lt;string, object&gt;</code>
+**Kind**: instance property of [<code>Storage</code>](#Storage)  
+<a name="Storage+commitments"></a>
+
+### storage.commitments : <code>Map.&lt;string, object&gt;</code>
+**Kind**: instance property of [<code>Storage</code>](#Storage)  
+<a name="Storage+challenges"></a>
+
+### storage.challenges : <code>Map.&lt;string, object&gt;</code>
+**Kind**: instance property of [<code>Storage</code>](#Storage)  
+<a name="Storage+deposits"></a>
+
+### storage.deposits : <code>Map.&lt;string, object&gt;</code>
+Deposit address to `{ deposit, fundedTxHex }`.
+
+**Kind**: instance property of [<code>Storage</code>](#Storage)  
+<a name="Storage+register"></a>
+
+### storage.register(contract, [id]) ⇒ <code>object</code>
+Remember a published contract.
+
+**Kind**: instance method of [<code>Storage</code>](#Storage)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| contract | <code>object</code> | from [publish](#Storage.publish) |
+| [id] | <code>string</code> |  |
+
+<a name="Storage+commit"></a>
+
+### storage.commit(opts) ⇒ <code>object</code>
+**Kind**: instance method of [<code>Storage</code>](#Storage)  
+**Returns**: <code>object</code> - signed commitment  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| opts | <code>object</code> | [commit](#Challenge.commit) options |
+
+<a name="Storage+challenge"></a>
+
+### storage.challenge(opts) ⇒ <code>object</code>
+Publisher-signed challenge for the contract's challenge tree.
+
+**Kind**: instance method of [<code>Storage</code>](#Storage)  
+
+| Param | Type |
+| --- | --- |
+| opts | <code>object</code> | 
+
+<a name="Storage+respond"></a>
+
+### storage.respond(response, [ctx]) ⇒ <code>object</code>
+Check a provider's answer. A timely valid answer resolves the challenge.
+
+**Kind**: instance method of [<code>Storage</code>](#Storage)  
+
+| Param | Type |
+| --- | --- |
+| response | <code>object</code> | 
+| [ctx] | <code>object</code> | 
+
+<a name="Storage+registerDeposit"></a>
+
+### storage.registerDeposit(deposit, fundedTxHex)
+**Kind**: instance method of [<code>Storage</code>](#Storage)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| deposit | <code>object</code> | from [buildDeposit](#Bond.buildDeposit) |
+| fundedTxHex | <code>string</code> |  |
+
+<a name="Storage+missingChainCallbacks"></a>
+
+### storage.missingChainCallbacks() ⇒ <code>Array.&lt;string&gt;</code>
+Names of chain callbacks the host did not pass.
+
+**Kind**: instance method of [<code>Storage</code>](#Storage)  
+<a name="Storage+chainView"></a>
+
+### storage.chainView() ⇒ <code>Object</code> \| <code>Object</code>
+**Kind**: instance method of [<code>Storage</code>](#Storage)  
+<a name="Storage+preparePenalty"></a>
+
+### storage.preparePenalty(opts) ⇒ <code>object</code>
+Build a penalty PSBT for a verifying fraud proof bound to a registered
+deposit. Refuses to run without a chain view.
+
+**Kind**: instance method of [<code>Storage</code>](#Storage)  
+
+| Param | Type |
+| --- | --- |
+| opts | <code>object</code> | 
+| opts.fraudProof | <code>object</code> | 
+| [opts.deposit] | <code>object</code> | 
+| [opts.fundedTxHex] | <code>string</code> | 
+| opts.destinationAddress | <code>string</code> | 
+| [opts.ctx] | <code>object</code> | 
+
+<a name="Storage+penalizeLateResponse"></a>
+
+### storage.penalizeLateResponse(opts) ⇒ <code>Object</code>
+Late answer → non-response proof → penalty PSBT.
+
+**Kind**: instance method of [<code>Storage</code>](#Storage)  
+
+| Param | Type |
+| --- | --- |
+| opts | <code>object</code> | 
+
+<a name="Storage+sweep"></a>
+
+### storage.sweep([opts]) ⇒ <code>Object</code>
+Silence past the deadline does not become a penalty unless the chain
+view is present. Missing callbacks return `failClosed` and build nothing.
+
+**Kind**: instance method of [<code>Storage</code>](#Storage)  
+**Returns**: <code>Object</code> - `ok`. Failure adds `failClosed` and `error`. Success adds `late`.  
+
+| Param | Type |
+| --- | --- |
+| [opts] | <code>object</code> | 
+| [opts.epoch] | <code>number</code> | 
+| [opts.tipHeight] | <code>number</code> | 
+
+<a name="Storage.challengeRoot"></a>
+
+### Storage.challengeRoot(blobHashes, [claimedRoot]) ⇒ <code>Object</code>
+Challenge-tree root for raw blob hashes. Refuses a sale-tree root that
+does not match.
+
+**Kind**: static method of [<code>Storage</code>](#Storage)  
+
+| Param | Type |
+| --- | --- |
+| blobHashes | <code>Array.&lt;string&gt;</code> | 
+| [claimedRoot] | <code>string</code> | 
+
+<a name="Storage.publish"></a>
+
+### Storage.publish(opts) ⇒ <code>object</code>
+Publish a storage contract. `blobs` are hashed here; `blobHashes` are
+used as given. The root is always the challenge tree.
+
+**Kind**: static method of [<code>Storage</code>](#Storage)  
+**Returns**: <code>object</code> - `StorageContract` body  
+
+| Param | Type |
+| --- | --- |
+| opts | <code>object</code> | 
+
+<a name="Storage.buildBounty"></a>
+
+### Storage.buildBounty(opts) ⇒ <code>object</code>
+**Kind**: static method of [<code>Storage</code>](#Storage)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| opts | <code>object</code> | passed to [buildBounty](#Bond.buildBounty); mainnet throws |
+
+<a name="Storage.buildDeposit"></a>
+
+### Storage.buildDeposit(opts) ⇒ <code>object</code>
+**Kind**: static method of [<code>Storage</code>](#Storage)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| opts | <code>object</code> | passed to [buildDeposit](#Bond.buildDeposit); mainnet throws |
+
 <a name="Text"></a>
 
 ## Text ⇐ [<code>Service</code>](#Service)
@@ -27786,6 +28013,22 @@ Receive topics paused by [pause](#ZMQ+pause) again.
 Deprecated 2021-11-06 — use [FabricState](FabricState) (<code>types/state</code>). <code>Scribe</code> was merged into <code>State</code>.
 
 **Kind**: global class  
+<a name="crypto"></a>
+
+## crypto
+Peer storage market.
+
+Any Fabric peer can publish a storage contract, stake a deposit, answer a
+publisher's challenge, and build a penalty PSBT. The contract root is the
+challenge tree over raw blob hashes ([Challenge.createBlobMerkleTree](Challenge.createBlobMerkleTree)),
+not the document sale tree (which also commits payment hashes and IVs).
+Bonds stay on regtest, signet, and testnet: [Bond](#Bond) refuses mainnet.
+
+A penalty that depends on chain state fails closed unless the host passed
+`outpointUnspent`, `txConfirmed`, and `headerKnown`. Hub HTTP is an adapter
+over this service.
+
+**Kind**: global constant  
 <a name="Text"></a>
 
 ## ~~Text~~
