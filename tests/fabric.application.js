@@ -179,10 +179,35 @@ describe('@fabric/core/types/service (FabricShell)', function () {
         }
       }
 
+      const debug = [];
+      app.on('debug', (line) => debug.push(String(line)));
       app._registerService('relay', RelayService);
-      app.emit('identity', { id: 'actor-1' });
-      assert.ok(messages.some((x) => x.includes('Registering actor on service "relay"')));
+      app.emit('identity', { id: 'actor-1', secret: 'do-not-print' });
       assert.ok(errors.some((x) => x.includes('actor register failed')));
+      assert.ok(!messages.some((x) => /Registering actor|Registered Actor|do-not-print/.test(x)));
+      assert.ok(!debug.some((x) => x.includes('do-not-print')));
+    });
+
+    it('registerService identity handler logs only the actor id', function () {
+      const app = new FabricShell();
+      app.settings.services = ['relay'];
+      const messages = [];
+      const debug = [];
+      app._appendMessage = async function (m) { messages.push(String(m)); };
+      app.on('debug', (line) => debug.push(String(line)));
+      app.node = { id: 'node-1', relayFrom: function () {} };
+
+      class RelayService extends require('../types/service') {
+        _registerActor (identity) {
+          return { id: identity.id, secret: identity.secret };
+        }
+      }
+
+      app._registerService('relay', RelayService);
+      app.emit('identity', { id: 'actor-9', secret: 'do-not-print' });
+      assert.ok(debug.some((x) => x.includes('Registered actor on "relay": actor-9')));
+      assert.ok(!debug.some((x) => x.includes('do-not-print')));
+      assert.ok(!messages.some((x) => /Registered Actor|do-not-print/.test(x)));
     });
 
     it('registerService duplicate returns warning path', function () {

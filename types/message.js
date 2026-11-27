@@ -2763,6 +2763,12 @@ function pathParts (path) {
   return parts;
 }
 
+function dropOwn (object, name) {
+  if (!name || name === '__proto__' || name === 'prototype' || name === 'constructor') return false;
+  if (!Object.prototype.hasOwnProperty.call(object, name)) return false;
+  return Reflect.deleteProperty(object, name);
+}
+
 function deletePath (obj, path) {
   const parts = pathParts(path);
   if (!parts || !isPlainObject(obj)) return;
@@ -2773,7 +2779,7 @@ function deletePath (obj, path) {
     parents.push(child);
   }
   for (let i = parts.length - 1; i >= 0; i--) {
-    if (Object.prototype.hasOwnProperty.call(parents[i], parts[i])) delete parents[i][parts[i]];
+    dropOwn(parents[i], parts[i]);
     if (i > 0 && Object.keys(parents[i]).length) break;
   }
 }

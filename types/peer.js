@@ -2813,7 +2813,7 @@ class Peer extends Service {
       this.emit('debug', `--- debug error from _connect() ---`);
       if (this._isTransientSocketError(error)) {
         const code = (error && error.code) || 'ECONNREFUSED';
-        this.emit('warning', `Suppressing transient outbound socket error (${code}) from _connect().`);
+        this.emit('warning', `Suppressing transient outbound socket error (${code}) from _connect() to ${target}.`);
       } else {
         const msg = `Socket error: ${error}`;
         // Avoid crashing consumers/tests that haven't registered an 'error' listener.
@@ -2850,7 +2850,7 @@ class Peer extends Service {
           // privateKey: _derived.privkey — enable when NOISE static === Fabric derived key.
           verify: this._verifyNOISE.bind(this)
         }));
-        this._attachNoiseStreamErrorHandlers(client, 'NOISE');
+        this._attachNoiseStreamErrorHandlers(client, 'NOISE', target);
         this._bindNoiseTransportToSocket(client, socket);
         const handshakeTimeoutMs = (typeof this.settings.handshakeTimeout === 'number')
           ? this.settings.handshakeTimeout
@@ -3478,7 +3478,8 @@ class Peer extends Service {
               relayDepth: relayDepth + 1,
               skipRelayFlood: true,
               peeledForward: suppressTcpOriginPunish,
-              relayedAsIs: softRelayOrigin
+              relayedAsIs: softRelayOrigin,
+              forwardPeelDepth: Number(opts.forwardPeelDepth) || 0
             });
             // Only the outermost received envelope is mesh-flooded (bit-identical),
             // and only when every frame inside is well formed, signed, and a
@@ -4851,8 +4852,9 @@ class Peer extends Service {
    * @param {stream.Duplex} noiseStream.encrypt
    * @param {stream.Duplex} noiseStream.decrypt
    * @param {string} [label='NOISE']
+   * @param {string} [peerAddress] Dial address, when this stream belongs to one peer.
    */
-  _attachNoiseStreamErrorHandlers (noiseStream, label = 'NOISE') {
+  _attachNoiseStreamErrorHandlers (noiseStream, label = 'NOISE', peerAddress = null) {
     if (!noiseStream || !noiseStream.encrypt || !noiseStream.decrypt) return;
     if (noiseStream._fabricNoiseErrorHandlers) {
       this._detachNoiseStreamErrorHandlers(noiseStream);
@@ -4864,7 +4866,8 @@ class Peer extends Service {
         return;
       }
       const text = String((error && error.message) || error || '');
-      const msg = `${label} ${side} error: ${error}`;
+      const where = peerAddress ? ` (${peerAddress})` : '';
+      const msg = `${label} ${side} error: ${error}${where}`;
       // Native teardown after a bad self-handshake / OOM, or a remote that broke a
       // transport limit (socket is destroyed by _bindNoiseTransportToSocket) — keep process alive.
       if (/noise_stream_new|\bmalloc\b|noise_message_too_large|noise_handshake_(budget|timeout)/i.test(text)) {
@@ -5020,7 +5023,7 @@ class Peer extends Service {
       this._destroyFabric(socket, target);
     });
 
-    this._attachNoiseStreamErrorHandlers(handler, 'NOISE');
+    this._attachNoiseStreamErrorHandlers(handler, 'NOISE', target);
     socket._noiseHandler = handler;
 
     handler.decrypt.on('close', (data) => {
@@ -8558,7 +8561,7 @@ class Peer extends Service {
     }
 
     let address = null;
-    this.emit('log', 'Peer starting...');
+    this.emit('debug', 'Peer starting...');
 
     // Ensure initial peers from config are in the registry
     if (this.settings.peers && Array.isArray(this.settings.peers)) {
@@ -8573,7 +8576,7 @@ class Peer extends Service {
     }
 
     if (this.settings.listen) {
-      this.emit('log', 'Listener starting...');
+      this.emit('debug', 'Listener starting...');
 
       const maxAttemptsRaw = this.settings.listenPortAttempts;
       const maxAttempts = (typeof maxAttemptsRaw === 'number' && maxAttemptsRaw > 0)
@@ -8598,7 +8601,7 @@ class Peer extends Service {
           if (attempt > 0) {
             this.emit('log', `[FABRIC:PEER] Port ${basePort} was busy; listening on ${this.settings.port} instead.`);
           }
-          this.emit('log', 'Listener started!');
+          this.emit('debug', 'Listener started!');
           break;
         } catch (exception) {
           const inUse = exception && exception.code === 'EADDRINUSE';
@@ -8618,7 +8621,7 @@ class Peer extends Service {
     }
 
     if (this.settings.networking && this.settings.peers && this.settings.peers.length) {
-      this.emit('warning', `Networking enabled.  Connecting to peers: ${JSON.stringify(this.settings.peers)}`);
+      this.emit('debug', `Networking enabled.  Connecting to peers: ${JSON.stringify(this.settings.peers)}`);
       for (const candidate of this.settings.peers) {
         this.emit('debug', `[FABRIC:PEER] Connecting to peer: ${candidate}`);
         try {

@@ -88,6 +88,47 @@ describe('Peer P2P_FORWARD onion', function () {
     assert.ok(nine.warnings.some((msg) => /peel depth exceeds max hops/.test(msg)));
   });
 
+  it('keeps the peel count across a nested P2P_RELAY', function () {
+    const originKey = new Key();
+
+    function deliver (layers) {
+      const peer = new Peer(offlinePeerSettings());
+      const addr = '127.0.0.1:9102';
+      peer.connections[addr] = wireMock([]);
+      peer.peers[addr] = { id: 'relay', publicKey: originKey.public.encodeCompressed('hex') };
+      const payload = Message.fromVector(['P2P_CHAT_MESSAGE', 'relayed-' + layers]);
+      payload.signWithKey(originKey);
+      const localX = xOnlyFromKey(peer.key);
+      let current = payload;
+      for (let i = 0; i < layers; i++) {
+        current = wrapForwardLayer({
+          nextPeer: localX,
+          inner: current,
+          ttl: 1,
+          key: originKey
+        });
+        if (i + 1 < layers) {
+          current = Message.fromVector(['P2P_RELAY', current.toBuffer()]);
+          current.signWithKey(originKey);
+        }
+      }
+      const chats = [];
+      const warnings = [];
+      peer.on('chat', (body) => chats.push(body));
+      peer.on('warning', (msg) => warnings.push(String(msg)));
+      peer._handleFabricMessage(current.toBuffer(), { name: addr }, null);
+      return { chats, warnings };
+    }
+
+    const eight = deliver(P2P_FORWARD_MAX_HOPS);
+    assert.strictEqual(eight.chats.length, 1);
+    assert.strictEqual(eight.chats[0].text, 'relayed-' + P2P_FORWARD_MAX_HOPS);
+
+    const nine = deliver(P2P_FORWARD_MAX_HOPS + 1);
+    assert.strictEqual(nine.chats.length, 0);
+    assert.ok(nine.warnings.some((msg) => /peel depth exceeds max hops/.test(msg)));
+  });
+
   it('forwards bit-identical outer to next hop when nextPeer is remote', function () {
     const relay = new Peer(offlinePeerSettings());
     const originKey = new Key();

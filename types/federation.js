@@ -15,7 +15,8 @@
  * - **Named federations:** a canonical descriptor (validators, threshold,
  *   network, publisher, ladder) whose hash is the federation id, the Taproot
  *   vault every member derives from it, withdrawals through the k-of-n
- *   authority leaf, and the `CONTRACT_MESSAGE` bodies members exchange.
+ *   authority leaf, and the `CONTRACT_MESSAGE` bodies members exchange
+ *   (including a one-key membership change that names the next descriptor).
  */
 
 // Dependencies
@@ -57,6 +58,7 @@ const MESSAGE_TYPES = Object.freeze({
   invite: 'FederationInvite',
   response: 'FederationInviteResponse',
   sync: 'FederationSync',
+  membership: 'FederationMembership',
   withdrawal: 'FederationWithdrawalRequest',
   signature: 'FederationWithdrawalSignature',
   broadcast: 'FederationWithdrawalBroadcast'
@@ -1523,6 +1525,57 @@ class Federation extends Contract {
   }
 
   /**
+   * The federation that follows a one-key change. The id changes. The previous
+   * vault is not swept. n-of-n records `internalKeyMode: musig2`; a lower
+   * threshold records `nums`.
+   * @param {Object} descriptor The federation being replaced
+   * @param {Object} opts
+   * @param {string} [opts.add] Compressed pubkey to add
+   * @param {string} [opts.remove] Compressed pubkey to remove
+   * @param {number} [opts.threshold] Defaults to the current threshold, clamped to the new set
+   * @returns {{ descriptor: Object, id: string, superseded: string, add: (string|null), remove: (string|null) }}
+   */
+  static successor (descriptor, opts = {}) {
+    const current = Federation.canonicalDescriptor(descriptor);
+    const add = opts.add != null && opts.add !== '' ? compressedPubkey(opts.add) : null;
+    const remove = opts.remove != null && opts.remove !== '' ? compressedPubkey(opts.remove) : null;
+    if ((opts.add != null && opts.add !== '' && !add) || (opts.remove != null && opts.remove !== '' && !remove)) {
+      throw new Error('successor pubkey must be compressed');
+    }
+    if (!!add === !!remove) throw new Error('successor changes exactly one validator');
+    let validators = current.validators.slice();
+    if (add) {
+      if (validators.some((v) => v.slice(2) === add.slice(2))) throw new Error('validator is already a signer');
+      validators = validators.concat([add]);
+    } else {
+      if (!validators.some((v) => v.slice(2) === remove.slice(2))) throw new Error('validator is not a signer');
+      validators = validators.filter((v) => v.slice(2) !== remove.slice(2));
+    }
+    if (!validators.length) throw new Error('a federation needs a signer');
+    let publisher = current.publisher;
+    if (!validators.some((v) => v.slice(2) === publisher.slice(2))) {
+      publisher = validators.slice().sort()[0];
+    }
+    const threshold = opts.threshold != null
+      ? Number(opts.threshold)
+      : Math.min(current.threshold, validators.length);
+    const next = Federation.buildDescriptor({
+      validators,
+      threshold,
+      network: current.network,
+      publisher,
+      csvBlocks: current.ladder && current.ladder.csvBlocks
+    });
+    return {
+      descriptor: next,
+      id: Federation.descriptorId(next),
+      superseded: Federation.descriptorId(current),
+      add: add || null,
+      remove: remove || null
+    };
+  }
+
+  /**
    * Withdrawal request id: SHA-256 of the unsigned PSBT.
    * @param {string} psbtBase64
    * @returns {string} 64 hex
@@ -1804,6 +1857,34 @@ class Federation extends Contract {
   }
 
   /**
+   * One signer added or removed. `federationId` is the successor. Receivers
+   * recompute that descriptor from the superseded federation and refuse the
+   * body when it does not match.
+   * @param {Object} opts
+   * @param {Object} opts.descriptor The federation being replaced
+   * @param {string} [opts.add]
+   * @param {string} [opts.remove]
+   * @param {number} [opts.threshold]
+   * @returns {Object}
+   */
+  static membershipMessage (opts = {}) {
+    const next = Federation.successor(opts.descriptor, {
+      add: opts.add,
+      remove: opts.remove,
+      threshold: opts.threshold
+    });
+    return {
+      contract: next.id,
+      type: MESSAGE_TYPES.membership,
+      federationId: next.id,
+      superseded: next.superseded,
+      add: next.add,
+      remove: next.remove,
+      descriptor: next.descriptor
+    };
+  }
+
+  /**
    * Withdrawal request: what to pay and from which funding transaction, so every
    * member can rebuild the PSBT ({@link Federation.verifyWithdrawalRequest}).
    * @param {string} federationId
@@ -1852,6 +1933,37 @@ class Federation extends Contract {
    * @param {string} signer verified author pubkey (compressed or x-only)
    * @returns {Object} canonical descriptor
    */
+  /**
+   * Refuse a membership body whose descriptor is not `successor` of the
+   * superseded federation. The signer must be a member of that federation.
+   * @param {Object} previousDescriptor
+   * @param {Object} body
+   * @param {string} signer
+   * @returns {{ descriptor: Object, id: string, superseded: string, add: (string|null), remove: (string|null) }}
+   */
+  static verifyMembership (previousDescriptor, body, signer) {
+    if (!body || body.type !== MESSAGE_TYPES.membership) throw new Error('not a federation membership');
+    if (body.contract !== body.federationId) throw new Error('contract must be the federation id');
+    const previous = Federation.canonicalDescriptor(previousDescriptor);
+    if (String(body.superseded) !== Federation.descriptorId(previous)) {
+      throw new Error('membership is for another federation');
+    }
+    const x = pubkeyXOnly(signer);
+    if (!x || !Federation.isValidator(previous, x)) throw new Error('signer is not a member');
+    const expected = Federation.successor(previous, { add: body.add, remove: body.remove });
+    let presented;
+    try {
+      presented = Federation.canonicalDescriptor(body.descriptor);
+    } catch (err) {
+      throw new Error('descriptor does not match its successor');
+    }
+    if (stableStringify(presented) !== stableStringify(expected.descriptor) ||
+        String(body.federationId) !== expected.id) {
+      throw new Error('descriptor does not match its successor');
+    }
+    return expected;
+  }
+
   static verifyInvite (body, signer) {
     if (!body || body.type !== MESSAGE_TYPES.invite) throw new Error('not a federation invite');
     if (body.contract !== body.federationId) throw new Error('contract must be the federation id');

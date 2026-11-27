@@ -125,6 +125,25 @@ describe('@fabric/core/types/machine', function () {
       assert.strictEqual(machine.stack.length, 1);
       machine.settings.script = ['toString'];
       await assert.rejects(machine.compute(), /opcode not defined/);
+      const inherited = [];
+      Object.setPrototypeOf(inherited, { 0: 'OP_TRUE' });
+      inherited.length = 1;
+      machine.stack = [];
+      machine.settings.script = inherited;
+      await machine.compute();
+      assert.strictEqual(machine.stack.length, 0);
+    });
+
+    it('stops the governor when compute rejects and nobody is listening', async function () {
+      const machine = new Machine({ maxStack: 1, frequency: 0.02 });
+      machine.define('PUSH', function () { return 1; });
+      machine.settings.script = ['PUSH', 'PUSH'];
+      await machine.start();
+      const deadline = Date.now() + 500;
+      while (machine.status !== 'STOPPED' && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      assert.strictEqual(machine.status, 'STOPPED');
     });
 
     it('stops the governor when compute rejects', async function () {

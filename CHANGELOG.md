@@ -1,6 +1,13 @@
 # `@fabric/core` Changelog
 Recent changes to Fabric Core.
 
+## 2026-11-27
+- **CLI startup is quieter about actors.** Registering an actor on a service no longer prints the actor record. A one-line id is emitted as debug (`debug` or verbosity 4+).
+- **CLI startup status is one line each.** The console shows the listen address, each peer as connected or why it failed, and Bitcoin and Lightning ready. Peer lifecycle, chain-sync hashes, header-refresh notes, and service JSON stay on debug (verbosity 4+).
+- **CLI quit shows a modal while managed subprocesses stop.** Lightning and Bitcoin children are listed as waiting, stopping, and stopped. A quit with no child process does not draw it.
+- **Onion peel depth survives a nested relay.** A `P2P_RELAY` unwrap keeps `forwardPeelDepth`, so alternating forwards and relays cannot restart the 8-hop cap.
+- **Keyed-body deletion does not use a computed `delete`.** Empty parents are still removed. The machine governor stops before it reports a rejected tick, and only when an `error` listener exists. A script index or keepalive name is read from the object itself.
+
 ## 2026-11-26
 - **Untrusted `fabric-execution` runs on a Worker thread.** `runExecutionProgram` JSON-checks the program, resolves `FabricOpcode` steps in the parent, then runs `Machine.isolateThreadSource()` (`types/machine.js`) on `worker_threads` (Node) or a browser `Worker`. The thread environment is `PATH` and `FABRIC_PROGRAM_ISOLATE=1` only. A parent `Machine` and host `define()` functions are not visible. The thread is terminated after `isolateTimeoutMs` (default 1000). `{ isolate: true }` does the same for a `fabric-opcodes` script, with an empty opcode table. Node verifiers block on the result; a browser must await, and a synchronous call there fails closed. `{ trusted: true }` and local opcode scripts stay in this process. This is not a hardened virtual machine, and Node's `vm` module is not used.
 - **Contract runs fail closed.** `Machine.compute` throws on an unknown opcode instead of coercing it to `0`, and stops at 256 steps or a stack of 64 (same caps as `executionProgramRunner`; `maxSteps` / `maxStack` on the Machine). A `javascript` program's functions register only when `runProgram` / `loadProgram` is called with `{ trusted: true }`. Hub and mesh runs do not set it. New blinded-execution publishes set `spendPolicy.requireProgramRun`. The flag is not an input to the Taproot tree, so existing vault addresses stay put. This is not a separate isolate.

@@ -892,6 +892,27 @@ describe('@fabric/core/types/service', function () {
       assert.deepStrictEqual(received, ['broadcast-body']);
     });
 
+    it('_registerService keeps actor registration off the log', async function () {
+      const parent = new Service({ ...FAST_SERVICE, services: ['child'] });
+      await parent.start();
+      const logs = [];
+      const debug = [];
+      parent.on('log', (line) => logs.push(String(line)));
+      parent.on('debug', (line) => debug.push(String(line)));
+      class Child extends Service {
+        async _registerActor (identity) {
+          return { id: identity.id, secret: 'do-not-print' };
+        }
+      }
+      await parent._registerService('child', Child);
+      parent.emit('identity', { id: 'actor-1', secret: 'do-not-print' });
+      await new Promise((resolve) => setImmediate(resolve));
+      await parent.stop();
+      assert.ok(debug.some((x) => x.includes('Registered actor on "child": actor-1')));
+      assert.ok(!debug.some((x) => x.includes('do-not-print')));
+      assert.ok(!logs.some((x) => /Registered [Aa]ctor|Registering actor|do-not-print/.test(x)));
+    });
+
     it('_registerService warns on duplicate registration', async function () {
       const parent = new Service(FAST_SERVICE);
       await parent.start();

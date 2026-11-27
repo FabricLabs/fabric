@@ -275,6 +275,7 @@ class Machine extends Actor {
         throw new Error(`program exceeds maxSteps (${maxSteps})`);
       }
       executed += 1;
+      if (!Object.prototype.hasOwnProperty.call(script, i)) continue;
       const instruction = script[i];
       const name = String(instruction == null ? '' : instruction);
       if (restricted && !opcodeAllowed(allow, name)) {
@@ -559,8 +560,8 @@ class Machine extends Actor {
     const ms = Number.isFinite(fromFreq) && fromFreq > 0 ? fromFreq : Math.max(1, intervalSec * 1000);
     this._governor = setInterval(() => {
       Promise.resolve(this.compute()).catch((err) => {
-        this.emit('error', err);
         this.stop();
+        if (this.listenerCount('error') > 0) this.emit('error', err);
       });
     }, ms);
     this.status = 'STARTED';
@@ -620,7 +621,6 @@ class Machine extends Actor {
       'var ISOLATE_MAX_STACK = 64;',
       'var DEFAULT_MAX_DEPTH = 16;',
       'var DEFAULT_MAX_TRACE = 512;',
-      'var KEEPALIVE = { Ping: true, Pong: true };',
       'var OP_NAMES = { push: "Push", pop: "Pop", dup: "Dup", add: "ADD", fabricopcode: "FabricOpcode", delegationsignrequest: "DelegationSignRequest" };',
       isolateClampInt.toString(),
       isolateOpcodeAllowed.toString(),
@@ -1072,7 +1072,6 @@ var ISOLATE_MAX_STEPS = 256;
 var ISOLATE_MAX_STACK = 64;
 var DEFAULT_MAX_DEPTH = 16;
 var DEFAULT_MAX_TRACE = 512;
-var KEEPALIVE = { Ping: true, Pong: true };
 var OP_NAMES = {
   push: 'Push',
   pop: 'Pop',
@@ -1215,7 +1214,7 @@ function isolateRunExecutionSteps (steps, options, host) {
       } else if (op === 'FabricOpcode') {
         var entry = resolveEntry(step);
         if (!entry || typeof entry !== 'object') throw new Error('FabricOpcode unresolved');
-        if (KEEPALIVE[entry.name]) {
+        if (entry.name === 'Ping' || entry.name === 'Pong') {
           throw new Error(entry.name + ' is a transport keepalive, not an Execution program opcode');
         }
         if (!isolateOpcodeAllowed(allowList, entry.name)) {
