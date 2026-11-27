@@ -7,8 +7,9 @@ experiments and demos.
 **Bitcoin-settled document market helpers**, and **local** `Program` / `Machine`
 execution. Distributed Beacon / federation orchestration is Hub-composed and
 **experimental**. This package is **not** a sandboxed remote contract VM —
-untrusted programs cannot register host functions, and a local
-`Machine.define` / `{ trusted: true }` run still binds host JavaScript.
+untrusted `fabric-execution` programs run in a child process with no parent
+environment and no host `define()` functions. A local `Machine.define` /
+`{ trusted: true }` run still binds host JavaScript in this process.
 Blinded-execution helpers are a **composition scaffold** (digests + BIP340
 decisions), not Yao GC/OT. New blinded-execution publishes set
 `spendPolicy.requireProgramRun`; that flag is not part of the Taproot tree.

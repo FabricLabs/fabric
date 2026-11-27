@@ -13,7 +13,7 @@ Protocol helpers live under `functions/` (`fabricCanonicalJson`,
 | Language | Status |
 |----------|--------|
 | `fabric-opcodes` | Runnable on Machine (define / opcode registry) |
-| `fabric-execution` | Hub structured steps (`Push`/`Pop`/`Dup`/`ADD`/`FabricOpcode`/…) on Machine stack |
+| `fabric-execution` | Hub structured steps (`Push`/`Pop`/`Dup`/`ADD`/`FabricOpcode`/…). Untrusted runs execute in a child process |
 | `javascript` | Step names. Source functions register only with `trusted: true` (local operator) |
 | `bitcoin-script` | Compile via bitcoinjs; `toRedeemScript()` for L1 P2WSH/P2TR leaf scaffold |
 | `solidity` | Compile stub (Compiler frontend later) |
@@ -36,7 +36,25 @@ machine.define('OP_TRUE', () => true);
 const { ok, tip, runCommitmentHex } = await machine.runProgram(prog);
 ```
 
-Unknown steps throw, including when no allow-list is set (`runProgram` returns `ok: false`). An allow-list also rejects `define()` of off-list names. One `compute` stops at 256 steps and a stack of 64, the same caps as `executionProgramRunner` (`maxSteps` / `maxStack` on the Machine). A `javascript` program's functions run only when the caller passes `{ trusted: true }`. Mesh ingest and Hub execution do not.
+Unknown steps throw, including when no allow-list is set (`runProgram` returns `ok: false`). An allow-list also rejects `define()` of off-list names. One `compute` stops at 256 steps and a stack of 64, the same caps as `executionProgramRunner` (`maxSteps` / `maxStack` on the Machine). A `javascript` program's functions run only when the caller passes `{ trusted: true }`, in this process. `fabric-execution` runs in a child process (`Program.runIsolated`, entry `types/program.js`): the child gets `PATH` and `FABRIC_PROGRAM_ISOLATE=1`, not the parent environment and not host `define()` functions. `{ isolate: true }` does the same for a `fabric-opcodes` script. This is not a hardened virtual machine.
+
+## Paid jobs
+
+A bonded job is a `ComputeOffer` `CONTRACT_MESSAGE`
+(`functions/computeJob.js`). The known program is `Program.programHash`. The
+worker stakes a `Bond.buildDeposit` whose answer leaf commits to the claimed
+run (`answerHashForRun`). Any peer reruns the program. A matching rerun pays
+the worker from a bounty after the challenge window: the preimage is the
+`runCommitmentHex`. A mismatch is a `wrong-run` fraud proof, and
+`preparePenaltySpend` moves the deposit.
+
+Only deterministic `fabric-opcodes` and `fabric-execution` runs of at most
+256 steps can be bonded. `javascript` and `trusted: true` are refused before
+a bond is built. The proof carries the program and the input, not an
+execution trace; `verify()` reruns. This is not a hardened virtual machine.
+JoinMarket fidelity bonds (`Bond.buildFidelity`) stay a coinjoin reputation
+lock. Hub `RunExecutionContract` stays a local operator run and does not
+create a `ComputeOffer`.
 
 ## L1 redeemability
 

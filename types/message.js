@@ -2477,6 +2477,7 @@ const MAX_PORT = 65535;
  * Phase 4). They still decode; Peer counts and warns when one arrives, and a
  * later protocol version removes them. `P2P_BASE_MESSAGE` and
  * `P2P_CHAIN_SYNC_REQUEST` are still in use and are not listed.
+ * @private
  */
 const DEPRECATED_WIRE_TYPES = Object.freeze([
   'P2P_GENERIC',
@@ -2653,6 +2654,7 @@ function contractFilterString (value, key) {
  * Does not read the JSON payload.
  * @param {Message|object|null} messageOrFields
  * @returns {{ recipient: string, ref: string, slot: string }}
+ * @private
  */
 function contractMessageIndex (messageOrFields) {
   const fields = messageOrFields && typeof messageOrFields.toFields === 'function'
@@ -2672,6 +2674,7 @@ function contractMessageIndex (messageOrFields) {
  * @param {Message|object|null} messageOrFields
  * @param {object} [query]
  * @returns {boolean}
+ * @private
  */
 function contractMessageMatches (messageOrFields, query) {
   const index = contractMessageIndex(messageOrFields);
@@ -2750,12 +2753,27 @@ function readPath (obj, path) {
  * @param {object} obj
  * @param {string} path
  */
+function pathParts (path) {
+  const parts = String(path || '').split('.');
+  if (!parts.length) return null;
+  for (let i = 0; i < parts.length; i++) {
+    const part = parts[i];
+    if (!part || part === '__proto__' || part === 'prototype' || part === 'constructor') return null;
+  }
+  return parts;
+}
+
 function deletePath (obj, path) {
-  const parts = path.split('.');
+  const parts = pathParts(path);
+  if (!parts || !isPlainObject(obj)) return;
   const parents = [obj];
-  for (let i = 0; i < parts.length - 1; i++) parents.push(parents[i][parts[i]]);
+  for (let i = 0; i < parts.length - 1; i++) {
+    const child = childValue(parents[i], parts[i]);
+    if (!isPlainObject(child)) return;
+    parents.push(child);
+  }
   for (let i = parts.length - 1; i >= 0; i--) {
-    delete parents[i][parts[i]];
+    if (Object.prototype.hasOwnProperty.call(parents[i], parts[i])) delete parents[i][parts[i]];
     if (i > 0 && Object.keys(parents[i]).length) break;
   }
 }
@@ -2768,14 +2786,29 @@ function deletePath (obj, path) {
  * @returns {boolean} false when a parent on the path is not an object
  */
 function writePath (obj, path, value) {
-  const parts = path.split('.');
+  const parts = pathParts(path);
+  if (!parts || !isPlainObject(obj)) return false;
   let node = obj;
   for (const part of parts.slice(0, -1)) {
-    if (node[part] === undefined) node[part] = {};
-    if (!isPlainObject(node[part])) return false;
-    node = node[part];
+    let child = childValue(node, part);
+    if (child === undefined) {
+      child = {};
+      Object.defineProperty(node, part, {
+        value: child,
+        writable: true,
+        enumerable: true,
+        configurable: true
+      });
+    }
+    if (!isPlainObject(child)) return false;
+    node = child;
   }
-  node[parts[parts.length - 1]] = value;
+  Object.defineProperty(node, parts[parts.length - 1], {
+    value,
+    writable: true,
+    enumerable: true,
+    configurable: true
+  });
   return true;
 }
 

@@ -36,27 +36,49 @@ const INSTRUMENT = 'L1/L2';
 const BODY_VERSION = 1;
 const SIDES = Object.freeze(['bid', 'ask']);
 const PPM = 1000000;
-/** Largest premium (either sign) an order may quote: ±50%. */
+/**
+ * Largest premium (either sign) an order may quote: ±50%.
+ * @private
+ */
 const MAX_PREMIUM_PPM = 500000;
-/** Blocks the L2 giver needs left on the HTLC to claim after paying. */
+/**
+ * Blocks the L2 giver needs left on the HTLC to claim after paying.
+ * @private
+ */
 const DEFAULT_MIN_CLAIM_BLOCKS = 6;
-/** HTLC confirmations before the L2 giver pays. */
+/**
+ * HTLC confirmations before the L2 giver pays.
+ * @private
+ */
 const DEFAULT_MIN_CONFIRMATIONS = 1;
-/** Invoice must expire at least this long before the refund lock opens. */
+/**
+ * Invoice must expire at least this long before the refund lock opens.
+ * @private
+ */
 const DEFAULT_INVOICE_MARGIN_SECONDS = 3600;
 const DEFAULT_SECONDS_PER_BLOCK = 600;
-/** Shortest expiry a swap invoice may carry. */
+/**
+ * Shortest expiry a swap invoice may carry.
+ * @private
+ */
 const MIN_INVOICE_EXPIRY_SECONDS = 60;
 /**
  * Shortest refund lock an order may ask for: room for the claim, the funding
  * confirmations, one block of slack, the invoice margin, and the shortest
  * invoice, at the default block time.
+ * @private
  */
 const MIN_REFUND_LOCK_BLOCKS = DEFAULT_MIN_CLAIM_BLOCKS + DEFAULT_MIN_CONFIRMATIONS + 1 +
   Math.ceil((DEFAULT_INVOICE_MARGIN_SECONDS + MIN_INVOICE_EXPIRY_SECONDS) / DEFAULT_SECONDS_PER_BLOCK);
-/** Longest refund lock an order may ask for (about two weeks of blocks). */
+/**
+ * Longest refund lock an order may ask for (about two weeks of blocks).
+ * @private
+ */
 const MAX_REFUND_LOCK_BLOCKS = 2016;
-/** BOLT11 default expiry when the invoice names none. */
+/**
+ * BOLT11 default expiry when the invoice names none.
+ * @private
+ */
 const DEFAULT_INVOICE_EXPIRY_SECONDS = 3600;
 
 const BODY_TYPES = Object.freeze({
@@ -67,7 +89,10 @@ const BODY_TYPES = Object.freeze({
   FUNDED: 'LiquiditySwapFunded'
 });
 
-/** Which field carries each body's author key. */
+/**
+ * Which field carries each body's author key.
+ * @private
+ */
 const SIGNER_FIELD = Object.freeze({
   [BODY_TYPES.ORDER]: 'makerPubkey',
   [BODY_TYPES.CANCEL]: 'makerPubkey',
@@ -139,6 +164,7 @@ function withSignature (body, signature) {
 /**
  * @param {Object} input
  * @returns {Object} normalized `LiquidityOrder` body (keeps `signature`)
+ * @private
  */
 function normalizeOrder (input = {}) {
   const minSats = intOf('minSats', input.minSats, HTLC_MINIMUM_SATS, Number.MAX_SAFE_INTEGER);
@@ -169,6 +195,7 @@ function normalizeOrder (input = {}) {
 /**
  * @param {Object} input
  * @returns {Object} normalized `LiquidityOrderCancel` body
+ * @private
  */
 function normalizeCancel (input = {}) {
   const body = {
@@ -208,6 +235,7 @@ function hasL1GiverTerms (input) {
  * take on a bid) it carries the L1 giver's terms.
  * @param {Object} input
  * @returns {Object} normalized `LiquidityTake` body
+ * @private
  */
 function normalizeTake (input = {}) {
   const body = {
@@ -233,6 +261,7 @@ function normalizeTake (input = {}) {
  * prepay invoice the taker pays before the maker funds.
  * @param {Object} input
  * @returns {Object} normalized `LiquidityTakeAccept` body
+ * @private
  */
 function normalizeTakeAccept (input = {}) {
   const body = {
@@ -252,6 +281,7 @@ function normalizeTakeAccept (input = {}) {
  * The L1 giver's notice that the HTLC is funded.
  * @param {Object} input
  * @returns {Object} normalized `LiquiditySwapFunded` body
+ * @private
  */
 function normalizeFunded (input = {}) {
   const body = {
@@ -302,6 +332,7 @@ const {
  * @param {*} opts.maker maker identifier (pubkey, record, …)
  * @param {*} opts.taker taker identifier
  * @returns {{ l1Giver: *, l2Giver: *, preimageOwner: *, makerIsL1Giver: boolean }}
+ * @private
  */
 function roles ({ side, maker, taker }) {
   const makerIsL1Giver = sideOf(side) === 'ask';
@@ -319,6 +350,7 @@ function roles ({ side, maker, taker }) {
  * @param {string} opts.side order side
  * @param {boolean} opts.isMaker
  * @returns {'l1Giver'|'l2Giver'}
+ * @private
  */
 function roleFor ({ side, isMaker }) {
   const { makerIsL1Giver } = roles({ side, maker: true, taker: false });
@@ -337,6 +369,7 @@ function roleFor ({ side, isMaker }) {
  * @param {number} [opts.feeSats=0]
  * @param {number} opts.amountSats L1 sats
  * @returns {{ side: string, amountSats: number, l1Sats: number, l2Msat: number, l2Sats: number, premiumPpm: number, feeSats: number, feeMsat: number }}
+ * @private
  */
 function quote (opts = {}) {
   const side = sideOf(opts.side);
@@ -375,6 +408,7 @@ function quote (opts = {}) {
  * @param {number} opts.refundLockHeight absolute block height
  * @param {number} [opts.amountSats]
  * @returns {{ paymentAddress: string, outputHex: string, claimScriptHex: string, refundScriptHex: string, paymentHashHex: string, refundLockHeight: number, amountSats: (number|null), amountBtc: string, bitcoinUri: string }}
+ * @private
  */
 function buildEscrow (opts = {}) {
   const claimKey = pubkeyOf('l2GiverPubkeyHex', opts.l2GiverPubkeyHex);
@@ -411,6 +445,7 @@ function buildEscrow (opts = {}) {
  * or pay against an address that does not match.
  * @param {Object} opts {@link buildEscrow} options plus `paymentAddress`
  * @returns {{ ok: boolean, reason: (string|null), escrow: (Object|null) }}
+ * @private
  */
 function validateEscrow (opts = {}) {
   let escrow;
@@ -431,6 +466,7 @@ function validateEscrow (opts = {}) {
  * numeric string, or legacy `"123msat"` string).
  * @param {Object} decoded
  * @returns {number|null}
+ * @private
  */
 function invoiceAmountMsat (decoded = {}) {
   const raw = decoded.amount_msat != null ? decoded.amount_msat : decoded.amountMsat;
@@ -457,6 +493,7 @@ function invoiceAmountMsat (decoded = {}) {
  * @param {number} [opts.marginSeconds=3600]
  * @param {number} [opts.minClaimBlocks=6]
  * @returns {{ ok: boolean, reason: (string|null), expiresAt: (number|null) }}
+ * @private
  */
 function validateInvoice (opts = {}) {
   const decoded = opts.decoded || {};
@@ -492,6 +529,7 @@ function validateInvoice (opts = {}) {
  * @param {Object} [opts]
  * @param {number} [opts.now] ms
  * @returns {{ ok: boolean, reason: (string|null) }}
+ * @private
  */
 function validateTake (order, take, opts = {}) {
   const bad = (reason) => ({ ok: false, reason });
@@ -516,6 +554,7 @@ function validateTake (order, take, opts = {}) {
  * @param {Object} take
  * @param {Object} accept
  * @returns {{ ok: boolean, reason: (string|null) }}
+ * @private
  */
 function validateTakeAccept (order, take, accept) {
   const bad = (reason) => ({ ok: false, reason });
@@ -536,6 +575,7 @@ function validateTakeAccept (order, take, accept) {
  * @param {Object} take
  * @param {Object} [accept]
  * @returns {Object|null} `{ paymentHashHex, invoice, refundLockHeight, prepayInvoice? }`
+ * @private
  */
 function l1GiverTerms (order, take, accept) {
   const source = roles({ side: order.side, maker: accept, taker: take }).l1Giver;

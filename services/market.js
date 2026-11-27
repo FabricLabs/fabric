@@ -78,6 +78,7 @@ const BLOCKING_STATUSES = RESERVED_STATUSES.concat(['delivery_pending', 'settlin
  * proximity shifts weight from price toward measured latency + hops.
  * @param {number} proximityWeight
  * @returns {{ price: number, latency: number, peerScore: number, completeness: number }}
+ * @private
  */
 function weightsForProximity (proximityWeight) {
   const p = Math.min(1, Math.max(0, Number(proximityWeight) || 0));
@@ -93,6 +94,7 @@ function weightsForProximity (proximityWeight) {
  * another.
  * @param {Object} session
  * @returns {string}
+ * @private
  */
 function sellerDedupeKey (session = {}) {
   return `${DocumentBook.settlementDedupeKey(session)}|${String(session.sellerId || session.seller || '')}`;

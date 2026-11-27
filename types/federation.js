@@ -1392,13 +1392,17 @@ class Federation extends Contract {
 
   /**
    * Build a canonical descriptor. The soft tier needs the full threshold after the
-   * CSV delay (never a single key), and the internal key is NUMS so no key-path spend exists.
+   * CSV delay (never a single key). A new n-of-n set records `internalKeyMode:
+   * 'musig2'` so a unanimous spend is a Taproot key-path signature. A threshold
+   * below n stays `nums` (script-path only). Pass `internalKeyMode: 'nums'` to
+   * keep an existing NUMS vault address; nothing sweeps those coins.
    * @param {Object} opts
    * @param {string[]} opts.validators Compressed pubkeys (any order, deduplicated)
    * @param {number} opts.threshold Signatures required
    * @param {string} opts.network Bitcoin network name
    * @param {string} opts.publisher Creator pubkey (must be a validator)
    * @param {number} [opts.csvBlocks=144] Soft-tier CSV delay
+   * @param {string} [opts.internalKeyMode] `musig2` | `nums`
    * @returns {Object}
    */
   static buildDescriptor (opts = {}) {
@@ -1427,6 +1431,20 @@ class Federation extends Contract {
     if (!Number.isInteger(csvBlocks) || csvBlocks < 1 || csvBlocks > 65535) {
       throw new Error('csvBlocks must be an integer from 1 to 65535');
     }
+    const requested = opts.internalKeyMode != null
+      ? String(opts.internalKeyMode).trim().toLowerCase()
+      : '';
+    let internalKeyMode;
+    if (requested === 'nums' || requested === 'musig2') {
+      internalKeyMode = requested;
+    } else if (requested === '' || requested === 'auto') {
+      internalKeyMode = (validators.length >= 2 && threshold === validators.length) ? 'musig2' : 'nums';
+    } else {
+      throw new Error('internalKeyMode must be "musig2" or "nums"');
+    }
+    if (internalKeyMode === 'musig2' && threshold !== validators.length) {
+      throw new Error('internalKeyMode musig2 requires an n-of-n threshold');
+    }
     return {
       type: DESCRIPTOR_TYPE,
       version: DESCRIPTOR_VERSION,
@@ -1434,7 +1452,7 @@ class Federation extends Contract {
       validators,
       threshold,
       signatureScheme: 'schnorr',
-      internalKeyMode: 'nums',
+      internalKeyMode,
       ladder: { softMode: 'reduced', softThreshold: threshold, csvBlocks },
       publisher
     };
@@ -1454,7 +1472,8 @@ class Federation extends Contract {
       threshold: descriptor.threshold,
       network: descriptor.network,
       publisher: descriptor.publisher,
-      csvBlocks: ladder.csvBlocks
+      csvBlocks: ladder.csvBlocks,
+      internalKeyMode: descriptor.internalKeyMode
     });
     if (stableStringify(canonical) !== stableStringify(descriptor)) {
       throw new Error('descriptor is not canonical');
@@ -1525,6 +1544,94 @@ class Federation extends Contract {
    * @param {number} opts.feeSats
    * @returns {{ requestId: string, psbtBase64: string, txid: string, vout: number, inputSats: number, amountSats: number, feeSats: number, changeSats: number, vaultAddress: string }}
    */
+  /**
+   * Collaborative funding PSBT: one input from each contributing signer, one
+   * output to the vault, change back to those signers, no OP_RETURN. An n-of-n
+   * descriptor needs every signer. A threshold descriptor takes a published
+   * subset. Reserve credit still waits on `Federation.applyPegInCredit`.
+   * @param {Object} opts
+   * @param {Object} opts.descriptor
+   * @param {Array<{ txid: string, vout: number, valueSats: number, address: string, pubkey: string, changeAddress?: string }>} opts.inputs
+   * @param {number} opts.vaultSats
+   * @param {number} opts.feeSats
+   * @returns {{ psbtBase64: string, vaultAddress: string, vaultSats: number, feeSats: number, changeSats: number }}
+   */
+  static buildFundingPsbt (opts = {}) {
+    const Policy = require('./policy');
+    const descriptor = Federation.canonicalDescriptor(opts.descriptor);
+    const vault = Federation.vaultForDescriptor(descriptor);
+    const network = Policy.networkForFabricName(descriptor.network);
+    const inputs = Array.isArray(opts.inputs) ? opts.inputs : [];
+    if (!inputs.length) throw new Error('buildFundingPsbt: at least one signer input is required');
+    const seen = new Set();
+    for (const input of inputs) {
+      const pk = compressedPubkey(input.pubkey);
+      if (!pk || !Federation.isValidator(descriptor, pk)) {
+        throw new Error('buildFundingPsbt: input pubkey is not a validator');
+      }
+      const x = pk.slice(2);
+      if (seen.has(x)) throw new Error('buildFundingPsbt: one input per signer');
+      seen.add(x);
+    }
+    if (descriptor.threshold === descriptor.validators.length && seen.size !== descriptor.validators.length) {
+      throw new Error('buildFundingPsbt: an n-of-n federation needs one input from each signer');
+    }
+    const feeSats = Number(opts.feeSats);
+    if (!Number.isSafeInteger(feeSats) || feeSats < 1) throw new Error('buildFundingPsbt: feeSats must be a positive integer');
+    const vaultSats = Number(opts.vaultSats);
+    if (!Number.isSafeInteger(vaultSats) || vaultSats < DUST_SATS) {
+      throw new Error(`buildFundingPsbt: vaultSats must be an integer of at least ${DUST_SATS}`);
+    }
+    let total = 0;
+    const psbt = new bitcoin.Psbt({ network });
+    for (const input of inputs) {
+      const valueSats = Number(input.valueSats);
+      if (!Number.isSafeInteger(valueSats) || valueSats < DUST_SATS) {
+        throw new Error('buildFundingPsbt: each input valueSats must be above dust');
+      }
+      total += valueSats;
+      const script = bitcoin.address.toOutputScript(String(input.address), network);
+      const nativeP2wpkh = script.length === 22 && script[0] === 0x00 && script[1] === 0x14;
+      if (!nativeP2wpkh) {
+        throw new Error('buildFundingPsbt: only native P2WPKH inputs are accepted');
+      }
+      psbt.addInput({
+        hash: String(input.txid),
+        index: Number(input.vout),
+        witnessUtxo: {
+          script,
+          value: BigInt(valueSats)
+        }
+      });
+    }
+    const changeSats = total - vaultSats - feeSats;
+    if (changeSats < 0) throw new Error('buildFundingPsbt: inputs do not cover the vault output and fee');
+    psbt.addOutput({ address: vault.address, value: BigInt(vaultSats) });
+    if (changeSats > 0) {
+      const share = Math.floor(changeSats / inputs.length);
+      let left = changeSats;
+      for (let i = 0; i < inputs.length; i++) {
+        const sats = i === inputs.length - 1 ? left : share;
+        left -= sats;
+        if (sats < DUST_SATS) throw new Error('buildFundingPsbt: signer change is below dust');
+        const changeAddress = inputs[i].changeAddress || inputs[i].address;
+        psbt.addOutput({ address: String(changeAddress), value: BigInt(sats) });
+      }
+    }
+    for (const out of psbt.txOutputs) {
+      if (out.script && out.script.length && out.script[0] === 0x6a) {
+        throw new Error('buildFundingPsbt: OP_RETURN is not part of a federation funding');
+      }
+    }
+    return {
+      psbtBase64: psbt.toBase64(),
+      vaultAddress: vault.address,
+      vaultSats,
+      feeSats,
+      changeSats
+    };
+  }
+
   static prepareWithdrawal (opts = {}) {
     const Policy = require('./policy');
     const descriptor = Federation.canonicalDescriptor(opts.descriptor);

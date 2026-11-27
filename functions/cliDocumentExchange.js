@@ -27,6 +27,7 @@ const {
 } = DocumentBook;
 const Htlc = require('../types/htlc');
 const Document = require('../types/document');
+const Storage = require('../services/storage');
 const { contentHashHexFromObject } = require('./documentPaymentHash');
 const { findCliContract } = require('./cliContracts');
 
@@ -1062,6 +1063,155 @@ class CliDocumentExchange {
         `)\n${lines.join('\n')}\n` +
         `Mature rows: /refund <settlementId> [addr] [feeSats]`
     };
+  }
+
+  /**
+   * In-memory storage market for /commit /challenge /respond /sweep.
+   * @returns {Storage}
+   */
+  storage () {
+    if (!this._storage) {
+      const bitcoin = this._bitcoin();
+      const rpc = bitcoin && typeof bitcoin._makeRPCRequest === 'function'
+        ? (method, params) => bitcoin._makeRPCRequest(method, params)
+        : null;
+      this._storage = new Storage({
+        network: this._networkName(),
+        outpointUnspent: rpc
+          ? async (txid, vout) => {
+            const out = await rpc('gettxout', [String(txid), Number(vout), true]);
+            return out != null;
+          }
+          : null,
+        txConfirmed: rpc
+          ? async (txid) => {
+            const tx = await rpc('getrawtransaction', [String(txid), true]);
+            return !!(tx && Number(tx.confirmations) > 0);
+          }
+          : null,
+        headerKnown: rpc
+          ? async (hash) => {
+            const header = await rpc('getblockheader', [String(hash), true]);
+            return !!(header && Number(header.confirmations) > 0);
+          }
+          : null
+      });
+    }
+    return this._storage;
+  }
+
+  /**
+   * Publish a storage contract from blob hashes and remember it.
+   * Usage: /commit <id> <hash,hash,...>
+   * @param {string[]} params slash argv (`params[0]` is the command)
+   * @returns {ExchangeResult}
+   */
+  storageCommit (params = []) {
+    const id = params[1];
+    const hashes = String(params[2] || '').split(',').map((h) => h.trim()).filter(Boolean);
+    if (!id || !hashes.length) {
+      return { ok: false, error: 'Usage: /commit <contractId> <blobHash,blobHash,...>' };
+    }
+    try {
+      const contract = this.storage().register(Storage.publish({
+        blobHashes: hashes,
+        documentId: id,
+        publisherPubkey: params[3] || null
+      }), id);
+      return {
+        ok: true,
+        contract,
+        message: `Storage contract ${id} root ${contract.merkleRootHex} (${contract.blobTotal} blobs, challenge tree).`
+      };
+    } catch (e) {
+      return { ok: false, error: e.message };
+    }
+  }
+
+  /**
+   * Usage: /challenge <contractId> <providerXOnly> <publisherPrivHex> [epoch]
+   * @param {string[]} params
+   * @returns {ExchangeResult}
+   */
+  storageChallenge (params = []) {
+    const contractId = params[1];
+    const providerPubkey = params[2];
+    const publisherPrivateKey = params[3];
+    if (!contractId || !providerPubkey || !publisherPrivateKey) {
+      return { ok: false, error: 'Usage: /challenge <contractId> <providerXOnly> <publisherPrivHex> [epoch]' };
+    }
+    try {
+      const challenge = this.storage().challenge({
+        contractId,
+        providerPubkey,
+        publisherPrivateKey,
+        epoch: params[4] != null ? Number(params[4]) : 0
+      });
+      const Witness = require('../types/witness');
+      const hash = Witness.artifactHash(challenge);
+      return {
+        ok: true,
+        challenge,
+        message: `Challenge ${hash} epoch ${challenge.epoch} blob ${challenge.blobIndex} on ${challenge.merkleRootHex}. /respond ${hash} <providerPrivHex> <epoch> <blobHex>`
+      };
+    } catch (e) {
+      return { ok: false, error: e.message };
+    }
+  }
+
+  /**
+   * Usage: /respond <challengeHash> <providerPrivHex> <epoch> <blobHex>
+   * The challenged blob bytes are hex. The provider must already hold the tree
+   * from /commit.
+   * @param {string[]} params
+   * @returns {ExchangeResult}
+   */
+  storageRespond (params = []) {
+    const challengeHash = params[1];
+    const providerPrivateKey = params[2];
+    const epoch = Number(params[3]);
+    const blobHex = params[4];
+    if (!challengeHash || !providerPrivateKey || !Number.isFinite(epoch) || !blobHex) {
+      return { ok: false, error: 'Usage: /respond <challengeHash> <providerPrivHex> <epoch> <blobHex>' };
+    }
+    const row = this.storage().challenges.get(String(challengeHash));
+    if (!row) return { ok: false, error: 'unknown challenge' };
+    const contractId = row.contractId;
+    const contract = contractId ? this.storage().contracts.get(contractId) : null;
+    if (!contract) return { ok: false, error: 'challenge has no storage contract' };
+    try {
+      const Challenge = require('../types/challenge');
+      const Witness = require('../types/witness');
+      const response = new Challenge().respond(row.challenge, {
+        blobHashes: contract.blobHashes,
+        bytes: Buffer.from(blobHex, 'hex'),
+        epoch,
+        providerPrivateKey
+      });
+      const verdict = this.storage().respond(response);
+      if (!verdict.ok) return { ok: false, error: verdict.reason || 'response refused', verdict };
+      return {
+        ok: true,
+        verdict,
+        message: `Response accepted for ${Witness.artifactHash(row.challenge)}.`
+      };
+    } catch (e) {
+      return { ok: false, error: e.message };
+    }
+  }
+
+  /**
+   * Usage: /sweep [epoch] [tipHeight]
+   * @param {string[]} params
+   * @returns {ExchangeResult}
+   */
+  storageSweep (params = []) {
+    const result = this.storage().sweep({
+      epoch: params[1] != null ? Number(params[1]) : undefined,
+      tipHeight: params[2] != null ? Number(params[2]) : undefined
+    });
+    if (!result.ok) return { ok: false, error: result.error || 'sweep failed', result };
+    return { ok: true, result, message: `Sweep late=${result.late}.` };
   }
 }
 

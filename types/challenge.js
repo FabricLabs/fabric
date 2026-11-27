@@ -9,6 +9,7 @@ const { verifyBlob } = require('./document');
  * Storage tree over raw 32-byte blob hashes (its proofs are {@link Tree} proofs).
  * @param {string[]} hashes
  * @returns {Tree}
+ * @private
  */
 function createBlobMerkleTree (hashes) {
   return new Tree({ leaves: hashes.map((h) => Buffer.from(h, 'hex')) });

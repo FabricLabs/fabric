@@ -49,6 +49,7 @@ bitcoin.initEccLib(ecc);
  * @param {object} state Contract / tip state bag
  * @param {string} path JSON-pointer-ish `/a/b`
  * @returns {*}
+ * @private
  */
 function tierWhenPath (state, path) {
   if (!path || typeof path !== 'string') return undefined;
@@ -86,6 +87,7 @@ const TIER_WHEN_OPS = Object.freeze(Object.assign(Object.create(null), {
  * @param {number} [ctx.tipClock]
  * @param {Object} [ctx.contractState]
  * @returns {boolean}
+ * @private
  */
 function evaluateTierWhen (when, ctx = {}) {
   if (when == null) return true;
@@ -105,7 +107,10 @@ function evaluateTierWhen (when, ctx = {}) {
 }
 
 // Ladder, leaves, trees, PSBTs
-/** BIP341-style NUMS x-only internal key (script-path spend only). */
+/**
+ * BIP341-style NUMS x-only internal key (script-path spend only).
+ * @private
+ */
 const TAPROOT_INTERNAL_NUMS = Buffer.from(
   '50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0',
   'hex'
@@ -113,9 +118,15 @@ const TAPROOT_INTERNAL_NUMS = Buffer.from(
 
 const DEFAULT_CSV_BLOCKS = 144;
 
-/** BIP65 LOCKTIME_THRESHOLD: nLockTime / CLTV values ≥ this are unix timestamps. */
+/**
+ * BIP65 LOCKTIME_THRESHOLD: nLockTime / CLTV values ≥ this are unix timestamps.
+ * @private
+ */
 const CLTV_TIMESTAMP_THRESHOLD = Number('500000000');
-/** nLockTime / nSequence max (2^32 − 1). Avoid a 32-bit hex literal. */
+/**
+ * nLockTime / nSequence max (2^32 − 1). Avoid a 32-bit hex literal.
+ * @private
+ */
 const MAX_LOCKTIME = (2 ** 32) - 1;
 
 function networkForFabricName (name = '') {
@@ -173,6 +184,7 @@ function buildKOfNTapscript (sortedPubkeys33, threshold) {
 /**
  * Normalize a lock descriptor `{ type: 'csv'|'cltv', blocks?|height?|unix? }`.
  * @returns {{ type: string, value: number }|null}
+ * @private
  */
 function normalizeLock (raw) {
   if (raw == null) return null;
@@ -211,6 +223,7 @@ function lockValue (lock) {
  * Whether a relative/absolute lock is mature given chain tip context.
  * CSV uses `utxoAgeBlocks` (confirmations / age of the UTXO).
  * CLTV uses tip height or median time.
+ * @private
  */
 function timelockMature (lock, ctx = {}) {
   const n = normalizeLock(lock);
@@ -272,6 +285,7 @@ function resolveKeyList (keysRef, keySets, publisher) {
  * @param {string} [opts.internalKeyMode] `musig2` (default when n≥2) | `nums` (legacy script-path-only).
  *   Historical NUMS vaults MUST pass `nums` — a rebuild does not migrate UTXOs.
  * @returns {object} normalized spend policy
+ * @private
  */
 function synthesizeDefaultLadder (opts = {}) {
   const validators = Array.isArray(opts.validators)
@@ -351,6 +365,7 @@ function synthesizeDefaultLadder (opts = {}) {
 /**
  * @param {object} raw
  * @returns {object} normalized policy
+ * @private
  */
 function normalizeContractSpendPolicy (raw = {}) {
   if (!raw || typeof raw !== 'object') throw new Error('spend policy required');
@@ -526,6 +541,7 @@ function resolveTaprootInternalPubkey (opts, policy) {
 
 /**
  * Drop tiers whose until <= trigger lock; clear migrate leaf schedule for child.
+ * @private
  */
 function policyAfterDecay (policy, atLock) {
   const p = normalizeContractSpendPolicy(policy);
@@ -604,6 +620,7 @@ function prependLock (lock, innerScript) {
  * `commitmentHex` MAY be Machine `runCommitmentHex` or SHA256(preimage).
  * @param {object} raw
  * @returns {{ commitmentHex: string, pubkeyHex: string|null, after: object|null, id: string }|null}
+ * @private
  */
 function normalizeHashlockSpec (raw) {
   if (raw == null) return null;
@@ -639,6 +656,7 @@ function normalizeHashlockSpec (raw) {
 /**
  * @param {unknown} list
  * @returns {object[]}
+ * @private
  */
 function normalizeExtraLeafSpecs (list) {
   if (!Array.isArray(list) || !list.length) return [];
@@ -694,6 +712,7 @@ function normalizeExtraLeafSpecs (list) {
  * @param {string} opts.commitmentHex
  * @param {(string|null)} [opts.pubkeyHex]
  * @returns {Buffer}
+ * @private
  */
 function buildHashlockTapscript (opts = {}) {
   const commitmentHex = String(opts.commitmentHex || '').trim().toLowerCase().replace(/^0x/i, '');
@@ -724,6 +743,7 @@ function buildHashlockTapscript (opts = {}) {
  * First-class hashlock leaf (optional on authority trees).
  * @param {object} opts
  * @returns {object}
+ * @private
  */
 function buildHashlockLeaf (opts = {}) {
   const spec = normalizeHashlockSpec(opts);
@@ -750,6 +770,7 @@ function buildHashlockLeaf (opts = {}) {
  * First-class k-of-n spend leaf (composable outside policy tiers).
  * @param {object} opts
  * @returns {object}
+ * @private
  */
 function buildSpendLeaf (opts = {}) {
   const keysHex = parseCompressedPubkeysSorted(opts.keys || opts.validators || [])
@@ -781,6 +802,7 @@ function buildSpendLeaf (opts = {}) {
  * Arbitrary tapscript leaf from hex / ASM / Buffer (wallet UI composition).
  * @param {object} opts
  * @returns {object}
+ * @private
  */
 function buildScriptLeaf (opts = {}) {
   let scriptBuf = null;
@@ -817,6 +839,7 @@ function buildScriptLeaf (opts = {}) {
  * Normalize a leaf descriptor into a Buffer-backed leaf.
  * @param {object} raw
  * @returns {object}
+ * @private
  */
 function normalizeLeaf (raw = {}) {
   if (raw && Buffer.isBuffer(raw.script) && raw.kind) {
@@ -888,6 +911,7 @@ function leafPublicView (l) {
 /**
  * Build leaf descriptors for a normalized policy (+ optional hashlock / extras).
  * @returns {object[]}
+ * @private
  */
 function compileLeaves (policy) {
   const p = normalizeContractSpendPolicy(policy);
@@ -958,6 +982,7 @@ function compileLeaves (policy) {
  * bitcoinjs-lib Taptree is a binary tree of leaves (not a flat list of >2).
  * @param {Array<{ script: Buffer }>} leaves
  * @returns {object}
+ * @private
  */
 function scriptTreeFromLeaves (leaves) {
   if (!leaves.length) throw new Error('no leaves');
@@ -987,6 +1012,7 @@ function scriptTreeFromLeaves (leaves) {
  * @param {string} [opts.internalPubkeyHex] x-only; default NUMS or MuSig2 from policy
  * @param {string} [opts.internalKeyMode] `nums` | `musig2`
  * @returns {object}
+ * @private
  */
 function composeTaprootTree (opts = {}) {
   const network = opts.network || opts.networkName;
@@ -1045,7 +1071,7 @@ function composeTaprootTree (opts = {}) {
     network: String(network),
     policy,
     leaves: leaves.map(leafPublicView),
-    /** Buffer-backed leaves for control-block / PSBT helpers. */
+    // Buffer-backed leaves for control-block / PSBT helpers.
     leafScripts: leaves,
     scriptTree,
     merkleRootHex: hashTree && hashTree.hash
@@ -1078,6 +1104,7 @@ function buildControlBlockForLeaf (leaves, leafScript, internalPubkey) {
 /**
  * @param {object} policy
  * @returns {object}
+ * @private
  */
 function buildContractTaproot (policy) {
   const p = normalizeContractSpendPolicy(policy);
@@ -1107,6 +1134,7 @@ function toAddress (policy) {
  * @param {number} [ctx.utxoAgeBlocks]
  * @param {number} [ctx.tipClock]
  * @param {Object} [ctx.contractState]
+ * @private
  */
 function selectActiveTiers (policy, ctx = {}) {
   const p = normalizeContractSpendPolicy(policy);
@@ -1280,6 +1308,7 @@ function prepareLeafPsbt (opts = {}) {
 
 /**
  * Prepare withdrawal via a spend tier leaf.
+ * @private
  */
 function prepareTierWithdrawalPsbt (opts = {}) {
   const built = buildContractTaproot(opts.policy);
@@ -1331,6 +1360,7 @@ function prepareTierWithdrawalPsbt (opts = {}) {
 
 /**
  * Prepare decay migration PSBT (output must be child policy address).
+ * @private
  */
 function prepareDecayMigrationPsbt (opts = {}) {
   const built = buildContractTaproot(opts.policy);
@@ -1399,6 +1429,7 @@ function prepareDecayMigrationPsbt (opts = {}) {
  * @param {object[]} [opts.leaves] Buffer-backed or public leaves (+ tapscriptHex)
  * @param {string|Buffer} [opts.preimage32]
  * @returns {object}
+ * @private
  */
 function prepareHashlockWithdrawalPsbt (opts = {}) {
   let networkName = opts.networkName || opts.network;
@@ -1490,6 +1521,7 @@ function prepareHashlockWithdrawalPsbt (opts = {}) {
  * @param {string|Buffer} opts.preimage32
  * @param {string} [opts.witnessShape='preimage']
  * @returns {{ txHex: string, txid: string }}
+ * @private
  */
 function finalizeHashlockPsbt (opts = {}) {
   const psbt = Psbt.fromBase64(String(opts.psbtBase64 || '').trim());
@@ -1532,6 +1564,7 @@ function finalizeHashlockPsbt (opts = {}) {
  * `CHECKSIGADD`), skipping a leading CSV/CLTV prefix when present.
  * @param {Buffer|Uint8Array} scriptBuf
  * @returns {Buffer[]}
+ * @private
  */
 function parseXOnlyPubkeysFromSpendScript (scriptBuf) {
   const raw = Buffer.isBuffer(scriptBuf) ? scriptBuf : Buffer.from(scriptBuf || []);
@@ -1565,6 +1598,7 @@ function parseXOnlyPubkeysFromSpendScript (scriptBuf) {
  * @param {string} [opts.psbtBase64]
  * @param {object} [opts.psbt] bitcoinjs-lib `Psbt`
  * @returns {{ txHex: string, txid: string, witnessCount: number }}
+ * @private
  */
 function finalizeSpendPsbt (opts = {}) {
   const psbt = opts.psbt
@@ -1635,6 +1669,7 @@ function finalizeSpendPsbt (opts = {}) {
  * @param {object} opts
  * @param {string} [opts.internalKeyMode] `musig2` | `nums`
  * @returns {object}
+ * @private
  */
 function buildFederationVaultFromPolicy (opts = {}) {
   const {
@@ -1686,7 +1721,7 @@ function buildFederationVaultFromPolicy (opts = {}) {
       : null;
     return {
       address: built.address,
-      /** Alias aligned with ARC / tracked summaries. */
+      // Alias aligned with ARC / tracked summaries.
       spendAddress: built.address,
       output: built.output,
       multisigScript: Buffer.from(t0.tapscriptHex, 'hex'),
@@ -1815,6 +1850,7 @@ function prepareVaultWithdrawalPsbt (opts = {}) {
  * @param {string} [run.id='hashlock-run']
  * @param {string} [run.pubkeyHex] Optional Schnorr key for preimage+sig path
  * @returns {{ id: string, commitmentHex: string, runCommitmentHex: (string|null), programHash: (string|null), pubkeyHex: (string|undefined) }}
+ * @private
  */
 function hashlockFromProgramRun (run = {}) {
   const runCommitmentHex = String(run.runCommitmentHex || run.runCommitment || '')
@@ -1852,6 +1888,7 @@ function hashlockFromProgramRun (run = {}) {
  * @param {string} [opts.network]
  * @param {object[]} [opts.extraLeaves]
  * @returns {object} `composeTaprootTree` result (+ `programRunId`)
+ * @private
  */
 function composePolicyWithRunHashlock (opts = {}) {
   const hashlock = hashlockFromProgramRun(opts.run || {});

@@ -24,17 +24,24 @@ function isLevelNotFound (error) {
   return !!error && (error.code === 'LEVEL_NOT_FOUND' || error.notFound === true);
 }
 
-/** `path` as an absolute JSON Pointer path. */
+/**
+ * `path` as an absolute JSON Pointer path.
+ * @private
+ */
 function routePath (path) {
   return path.substring(0, 1) === '/' ? path : '/' + path;
 }
 
-/** Path tokens that would reach `Object.prototype` through `pointer.set`. */
+/**
+ * Path tokens that would reach `Object.prototype` through `pointer.set`.
+ * @private
+ */
 const UNSAFE_PATH_TOKENS = new Set(['__proto__', 'constructor', 'prototype']);
 
 /**
  * Under an array only an element index is a child: `length` or a name would
  * persist to Level and then fail (or truncate) in memory.
+ * @private
  */
 function isArrayIndex (token) {
   return /^(0|[1-9][0-9]{0,8})$/.test(token);

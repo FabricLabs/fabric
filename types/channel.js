@@ -107,6 +107,7 @@ const CURVE_N = (ECPoint.Fn && ECPoint.Fn.ORDER) || (secp256k1.CURVE && secp256k
  * the existing `CONTRACT_MESSAGE` opcode as signed artifacts
  * ({@link Witness.signArtifact}); **no channel opcode is introduced** — a
  * dedicated opcode is a separate, later protocol decision.
+ * @private
  */
 const CHANNEL_BODY_TYPES = Object.freeze({
   Open: 'ChannelOpen',
@@ -130,6 +131,7 @@ const CHANNEL_BODY_TYPES = Object.freeze({
  * claim always has that many blocks to itself, whatever the CLTV.
  * `minToSelfDelay` / `maxToSelfDelay` / `minChannelLifetimeBlocks` are local
  * (non-funder) acceptance limits, never negotiated.
+ * @private
  */
 const CHANNEL_DEFAULTS = Object.freeze({
   toSelfDelay: 144,
@@ -1336,6 +1338,7 @@ function cloneHtlcs (list) {
 /**
  * @param {Object} h HTLC row
  * @returns {number} CLTV expiry height (0 when none)
+ * @private
  */
 function expireHeight (h) {
   const lock = heightLock(h && h.expireAfter);
@@ -1344,7 +1347,10 @@ function expireHeight (h) {
 
 Channel.expireHeight = expireHeight;
 
-/** Balance transfers remembered per session (newest kept). */
+/**
+ * Balance transfers remembered per session (newest kept).
+ * @private
+ */
 const MAX_TRANSFERS = 1024;
 
 /**

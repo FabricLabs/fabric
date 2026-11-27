@@ -6,7 +6,15 @@ This document is the **north star** for documentation and implementation work in
 
 **`@fabric/core`** is the **JavaScript (Node) reference implementation**: typed classes for **identity**, **messages**, **peers**, **chain views**, **services** (Bitcoin RPC, Lightning stubs, ZMQ, …), **storage**, and **contracts/proposals** that downstream apps (including **hub.fabric.pub**) compose into products.
 
-The **vision** is not “replace the web in one release.” It is: **clear protocols**, **auditable code**, **honest docs**, and **incremental** delivery—CLI and hub first, broader ecosystem as adapters land.
+Every Fabric-speaking node is a peer. **Hub** is one application and an optional public registry (contract directory, Beacon, browser bridge). It is not a privileged tier. A peer that speaks core can sell file chunks, answer storage challenges, run a bonded program, and join a federation without Hub Accept. Core owns primary Message types. New market payloads ride `CONTRACT_MESSAGE` bodies defined beside the core type. HTTP is an adapter.
+
+A node is paid in Bitcoin for three kinds of work:
+
+- **Chunks.** The network is a paid CDN for 32 KiB file chunks. Delivery is `P2P_FILE_SEND`; settlement is a per-blob HTLC.
+- **Storage.** A publisher’s storage Contract pays a provider who answers challenges for as long as the publisher enforces the term. Fraud proofs slash the provider’s deposit.
+- **Compute.** A worker runs a known program (`Program.programHash`) and posts a `FabricProgramRun`. A fraud proof of a wrong run slashes the worker’s deposit. `javascript` programs that need `trusted: true` are not bondable. This is not a hardened virtual machine.
+
+The **vision** is not “replace the web in one release.” It is: **clear protocols**, **auditable code**, **honest docs**, and **incremental** delivery—CLI and peers first, Hub and other apps as adapters.
 
 ## Principles (from engineering culture)
 See **[GOALS.md](GOALS.md)** for the explicit list. In short:
@@ -21,8 +29,8 @@ See **[GOALS.md](GOALS.md)** for the explicit list. In short:
 | **Wire** | **Fabric Message** framing (`types/message.js`), opcodes in **`constants`**, TCP/NOISE **`Peer`**. |
 | **State** | **Actor** / **State** / **Collection**; JSON Patch for deltas; hub and clients use similar patterns. |
 | **Money** | **Bitcoin** and **Lightning** **services** over RPC; optional explorers via configured origins only. |
-| **Contracts** | Agreements beyond the base peer protocol. Contracts advertise **interfaces** (not a single `kind`); Hub registry publishes the **Hub contract first**. See **[docs/CONTRACTS.md](docs/CONTRACTS.md)**. **`CLI`** extends **`FabricShell`** (`types/service.js`). |
-| **Downstream** | **Hub** (rendezvous, WebSocket bridge, documents, optional Payjoin) is a **consumer** of this library, not part of this repo. |
+| **Contracts** | Agreements beyond the base peer protocol. Contracts advertise **interfaces** (not a single `kind`). Any peer may publish one. A Hub registry is a directory of contracts peers already speak. See **[docs/CONTRACTS.md](docs/CONTRACTS.md)**. **`CLI`** extends **`FabricShell`** (`types/service.js`). |
+| **Downstream** | **Hub** (example application: rendezvous, WebSocket bridge, documents UI, BIP78 Payjoin HTTP) is a **consumer** of this library, not part of this repo. |
 
 ## What “done” looks like for 0.1.x
 - **Operators** can run **`fabric`** / a hub with **[docs/PRODUCTION.md](docs/PRODUCTION.md)** expectations.

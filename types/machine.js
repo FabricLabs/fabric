@@ -128,7 +128,7 @@ class Machine extends Actor {
     // `memory` is allocated on first access (see getter); most Machines never touch it.
     Object.defineProperty(this, '_memory', { value: null, writable: true, enumerable: false, configurable: true });
 
-    this.known = {}; // definitions
+    this.known = Object.create(null);
     this.opcodes = createDefaultOpcodeRegistry();
     this.stack = []; // output
     this.history = []; // State tree
@@ -261,23 +261,27 @@ class Machine extends Actor {
 
     const allow = this._allowedOpcodes;
     const restricted = allow && allow.length > 0;
-    const script = this.script;
+    const script = Array.isArray(this.script) ? this.script : [];
     const maxSteps = stepCap(this.settings);
     const maxStack = stackCap(this.settings);
-    const length = script && typeof script.length === 'number' ? script.length : 0;
-    if (length > maxSteps) {
+    if (script.length > maxSteps) {
       throw new Error(`program exceeds maxSteps (${maxSteps})`);
     }
 
-    for (const i in script) {
+    let executed = 0;
+    for (let i = 0; i < script.length; i++) {
+      if (executed >= maxSteps) {
+        throw new Error(`program exceeds maxSteps (${maxSteps})`);
+      }
+      executed += 1;
       const instruction = script[i];
       const name = String(instruction == null ? '' : instruction);
       if (restricted && !opcodeAllowed(allow, name)) {
         throw new Error(`opcode not in primitives.opcodes allow-list: ${name}`);
       }
-      const method = this.known[instruction];
+      const method = Object.prototype.hasOwnProperty.call(this.known, name) ? this.known[name] : undefined;
 
-      if (method) {
+      if (typeof method === 'function') {
         const data = method.call(this.state, input);
         this.stack.push(data);
       } else if (restricted) {
@@ -425,6 +429,27 @@ class Machine extends Actor {
     try {
       const Program = require('./program');
       const prog = program instanceof Program ? program : Program.from(program || {});
+      if (opts.isolate === true && prog.language === 'fabric-opcodes') {
+        const compiled = prog.compile();
+        if (!compiled.ok) {
+          return {
+            ok: false,
+            stack: [],
+            tip: null,
+            trace: [],
+            runCommitmentHex: null,
+            programHash: prog.programHash,
+            error: compiled.error || 'compile failed'
+          };
+        }
+        return Program.runIsolatedOpcodes(prog.steps, {
+          allowedOpcodes: this._allowedOpcodes,
+          maxSteps: opts.maxSteps != null ? opts.maxSteps : this.settings.maxSteps,
+          maxStack: opts.maxStack != null ? opts.maxStack : this.settings.maxStack,
+          isolateTimeoutMs: opts.isolateTimeoutMs,
+          isolateWorker: opts.isolateWorker
+        });
+      }
       if (prog.language === 'fabric-execution') {
         const {
           runExecutionProgram
@@ -433,10 +458,21 @@ class Machine extends Actor {
         const src = prog.settings.source && typeof prog.settings.source === 'object'
           ? prog.settings.source
           : program;
-        const result = runExecutionProgram(src, Object.assign({}, opts, {
-          machine: this,
-          allowedOpcodes: this._allowedOpcodes
-        }));
+        const pass = {};
+        if (opts.genesis) pass.genesis = opts.genesis;
+        if (opts.maxSteps != null) pass.maxSteps = opts.maxSteps;
+        else if (this.settings.maxSteps != null) pass.maxSteps = this.settings.maxSteps;
+        if (opts.maxStack != null) pass.maxStack = opts.maxStack;
+        else if (this.settings.maxStack != null) pass.maxStack = this.settings.maxStack;
+        if (opts.maxDepth != null) pass.maxDepth = opts.maxDepth;
+        if (opts.maxTrace != null) pass.maxTrace = opts.maxTrace;
+        if (opts.isolateTimeoutMs != null) pass.isolateTimeoutMs = opts.isolateTimeoutMs;
+        if (opts.inProcess === true) pass.inProcess = true;
+        if (typeof opts.resolveFabricEntry === 'function') pass.resolveFabricEntry = opts.resolveFabricEntry;
+        if (this._allowedOpcodes && this._allowedOpcodes.length) {
+          pass.allowedOpcodes = this._allowedOpcodes;
+        }
+        const result = runExecutionProgram(src, pass);
         return {
           ok: result.ok,
           stack: result.stack || [],
@@ -517,7 +553,12 @@ class Machine extends Actor {
       ? this.settings.interval
       : 60;
     const ms = Number.isFinite(fromFreq) && fromFreq > 0 ? fromFreq : Math.max(1, intervalSec * 1000);
-    this._governor = setInterval(this.compute.bind(this), ms);
+    this._governor = setInterval(() => {
+      Promise.resolve(this.compute()).catch((err) => {
+        this.emit('error', err);
+        this.stop();
+      });
+    }, ms);
     this.status = 'STARTED';
     return this;
   }

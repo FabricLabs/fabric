@@ -65,11 +65,20 @@ const MAKER_TRANSITIONS = Object.freeze({
 const DEFAULT_ACK_TIMEOUT_MS = 30000;
 const DEFAULT_SIG_TIMEOUT_MS = 60000;
 const DEFAULT_MAX_REBUILDS = 3;
-/** Times a maker will sign a rebuilt transaction in one round. */
+/**
+ * Times a maker will sign a rebuilt transaction in one round.
+ * @private
+ */
 const DEFAULT_MAX_SIGNS = DEFAULT_MAX_REBUILDS + 1;
-/** Blocks the transaction's `nLockTime` may run ahead of the maker's tip. */
+/**
+ * Blocks the transaction's `nLockTime` may run ahead of the maker's tip.
+ * @private
+ */
 const LOCKTIME_SLACK_BLOCKS = 2;
-/** Extra inputs budgeted when the taker selects coins. */
+/**
+ * Extra inputs budgeted when the taker selects coins.
+ * @private
+ */
 const INPUT_HEADROOM = 3;
 
 /** @private */
@@ -772,6 +781,7 @@ class CoinjoinTakerRound extends Coinjoin {
  * @param {Object} info `getaddressinfo` result
  * @param {Object[]} descriptors `listdescriptors true` `descriptors`
  * @returns {Buffer}
+ * @private
  */
 function descriptorPrivateKey (info, descriptors) {
   const keyPath = String(info && info.hdkeypath || '');
@@ -1105,6 +1115,7 @@ class CoinjoinMakerRound extends Coinjoin {
  * Whose round an envelope belongs to: the x-only key it is sealed to.
  * @param {Object} envelope
  * @returns {string|null}
+ * @private
  */
 function envelopeRecipient (envelope) {
   return envelope && envelope.type === Coinjoin.SEALED_TYPE && /^[0-9a-f]{64}$/.test(String(envelope.to || '')) ? envelope.to : null;
@@ -1116,6 +1127,7 @@ function envelopeRecipient (envelope) {
  * @param {Object[]} opts.coins `{ txid, vout, valueSats, internalPrivateKey, confirmations }`
  * @param {string} [opts.network='regtest']
  * @returns {Object} wallet adapter (plus `coins`, `locked`)
+ * @private
  */
 function memoryWallet (opts = {}) {
   const coins = (opts.coins || []).map((c) => Object.assign({
@@ -1169,6 +1181,7 @@ function memoryWallet (opts = {}) {
  * @param {Map} opts.utxos `txid:vout` → `{ valueSats, scriptPubKeyHex, confirmations }`
  * @param {Object} opts.tip `{ height }`
  * @returns {Object} chain adapter (plus `broadcasts`)
+ * @private
  */
 function memoryChain (opts = {}) {
   const utxos = opts.utxos || new Map();
