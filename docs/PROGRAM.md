@@ -13,7 +13,7 @@ Protocol helpers live under `functions/` (`fabricCanonicalJson`,
 | Language | Status |
 |----------|--------|
 | `fabric-opcodes` | Runnable on Machine (define / opcode registry) |
-| `fabric-execution` | Hub structured steps (`Push`/`Pop`/`Dup`/`ADD`/`FabricOpcode`/…). Untrusted runs execute in a child process |
+| `fabric-execution` | Hub structured steps (`Push`/`Pop`/`Dup`/`ADD`/`FabricOpcode`/…). Untrusted runs execute on a Worker thread |
 | `javascript` | Step names. Source functions register only with `trusted: true` (local operator) |
 | `bitcoin-script` | Compile via bitcoinjs; `toRedeemScript()` for L1 P2WSH/P2TR leaf scaffold |
 | `solidity` | Compile stub (Compiler frontend later) |
@@ -36,7 +36,7 @@ machine.define('OP_TRUE', () => true);
 const { ok, tip, runCommitmentHex } = await machine.runProgram(prog);
 ```
 
-Unknown steps throw, including when no allow-list is set (`runProgram` returns `ok: false`). An allow-list also rejects `define()` of off-list names. One `compute` stops at 256 steps and a stack of 64, the same caps as `executionProgramRunner` (`maxSteps` / `maxStack` on the Machine). A `javascript` program's functions run only when the caller passes `{ trusted: true }`, in this process. `fabric-execution` runs in a child process (`Program.runIsolated`, entry `types/program.js`): the child gets `PATH` and `FABRIC_PROGRAM_ISOLATE=1`, not the parent environment and not host `define()` functions. `{ isolate: true }` does the same for a `fabric-opcodes` script. This is not a hardened virtual machine.
+Unknown steps throw, including when no allow-list is set (`runProgram` returns `ok: false`). An allow-list also rejects `define()` of off-list names. One `compute` stops at 256 steps and a stack of 64, the same caps as `executionProgramRunner` (`maxSteps` / `maxStack` on the Machine). A `javascript` program's functions run only when the caller passes `{ trusted: true }`, in this process. `fabric-execution` runs on a Worker thread (`Machine.runIsolated`, script `Machine.isolateThreadSource()` on `types/machine.js`): Node uses `worker_threads`, and a browser uses `Worker` (a blob of that script, or `workerUrl`). The thread gets `PATH` and `FABRIC_PROGRAM_ISOLATE=1`, not the parent environment and not host `define()` functions. `{ isolate: true }` does the same for a `fabric-opcodes` script, with an empty opcode table. `Machine.runProgram` awaits the worker. A synchronous verifier on Node blocks on the same thread; in the browser that synchronous call fails closed. This is not a hardened virtual machine.
 
 ## Paid jobs
 

@@ -88,8 +88,33 @@ function assertBondable (program) {
 }
 
 /**
- * Rerun a bondable program. Synchronous (child process). The input is bound
- * by {@link inputCommitmentHex}; the machine result is the program body.
+ * Canonical JSON value placed on the stack before the program steps.
+ * @param {*} input
+ * @returns {*}
+ */
+function seedValueFor (input) {
+  return JSON.parse(fabricCanonicalJson(input == null ? null : input));
+}
+
+/**
+ * Digest of one paid run: program, the input commitment, and the machine result.
+ * `Program.runCommitmentHex` stays the machine result alone.
+ * @param {string} programHash
+ * @param {string} inputCommitment
+ * @param {string} runCommitmentHex
+ * @returns {string}
+ */
+function jobCommitmentHex (programHash, inputCommitment, runCommitmentHex) {
+  return sha256Hex(
+    String(programHash || '').toLowerCase()
+    + String(inputCommitment || '').toLowerCase()
+    + String(runCommitmentHex || '').toLowerCase()
+  );
+}
+
+/**
+ * Rerun a bondable program on a Machine. Synchronous on Node. The paid input is the
+ * first stack value. {@link jobCommitmentHex} binds that input to the result.
  * @param {object} program
  * @param {*} [input]
  * @returns {object}
@@ -97,19 +122,26 @@ function assertBondable (program) {
 function rerun (program, input) {
   const Program = require('../types/program');
   const prog = prepareProgram(program);
+  const seedValue = seedValueFor(input);
+  const inputCommitment = inputCommitmentHex(input);
+  let out;
   if (prog.language === 'fabric-execution') {
     const source = prog.source && typeof prog.source === 'object' ? prog.source : { steps: prog.steps };
-    const out = Program.runIsolated(source);
-    return Object.assign({ inputCommitment: inputCommitmentHex(input) }, out);
+    const Machine = require('../types/machine');
+    out = Machine.runIsolated(source, { seedValue });
+  } else {
+    const steps = prog.steps.slice();
+    const identity = Program.from({ language: 'fabric-opcodes', steps });
+    const Machine = require('../types/machine');
+    out = Object.assign({}, Machine.runIsolatedOpcodes(steps, { seedValue }), {
+      program: identity,
+      programHash: identity.programHash
+    });
   }
-  const steps = prog.steps.slice();
-  const identity = Program.from({ language: 'fabric-opcodes', steps });
-  const out = Program.runIsolatedOpcodes(steps);
-  return Object.assign({}, out, {
-    inputCommitment: inputCommitmentHex(input),
-    program: identity,
-    programHash: identity.programHash
-  });
+  const job = (out && out.ok === true && out.runCommitmentHex)
+    ? jobCommitmentHex(out.programHash || prog.programHash, inputCommitment, out.runCommitmentHex)
+    : null;
+  return Object.assign({}, out, { inputCommitment, jobCommitmentHex: job });
 }
 
 /**
@@ -214,23 +246,22 @@ function verifyWrongRun (artifacts = {}) {
   } catch (err) {
     return fail(err.message);
   }
-  if (!out || out.ok !== true || !out.runCommitmentHex) {
+  if (!out || out.ok !== true || !out.runCommitmentHex || !out.jobCommitmentHex) {
     return fail(out && out.error ? out.error : 'rerun failed');
   }
   const check = Program.verifyMachineRun({
     program: out.program || prog,
-    run: { tip: out.tip, trace: out.trace, runCommitmentHex: claimed }
+    run: { tip: out.tip, trace: out.trace, runCommitmentHex: out.runCommitmentHex }
   });
-  if (check.ok && check.runCommitmentHex === claimed) {
+  if (!check.ok) return fail(check.error || 'rerun could not be checked');
+  if (claimed === out.jobCommitmentHex) {
     return fail('claimed run matches the rerun');
   }
-  if (check.ok) return fail('claimed run matches the rerun');
-  if (!/does not match/.test(String(check.error || ''))) return fail(check.error || 'rerun could not be checked');
   return {
     ok: true,
     offender: worker,
     reputational: true,
-    reason: 'claimed runCommitmentHex does not match the rerun',
+    reason: 'claimed job commitment does not match the rerun',
     evidence: 'wrong-run'
   };
 }
@@ -238,6 +269,7 @@ function verifyWrongRun (artifacts = {}) {
 module.exports = {
   MAX_STEPS,
   inputCommitmentHex,
+  jobCommitmentHex,
   assertBondable,
   rerun,
   offer,

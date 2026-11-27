@@ -1,13 +1,15 @@
 'use strict';
 
-let raw = '';
-process.stdin.setEncoding('utf8');
-process.stdin.on('data', (chunk) => {
-  raw += chunk;
-});
-process.stdin.on('end', () => {
-  process.stdout.write(JSON.stringify({
+const { parentPort } = require('worker_threads');
+
+if (parentPort) parentPort.on('message', (message) => {
+  const reply = {
     sawXprv: Object.prototype.hasOwnProperty.call(process.env, 'FABRIC_XPRV'),
     isolate: process.env.FABRIC_PROGRAM_ISOLATE || null
-  }));
+  };
+  if (message && message.port && typeof message.port.postMessage === 'function') {
+    message.port.postMessage(reply);
+    return;
+  }
+  parentPort.postMessage(reply);
 });

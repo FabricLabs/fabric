@@ -220,42 +220,46 @@ DecryptStream.prototype._writeOutput = function (data, cb) {
     cb(createError('noise_stream_decrypt', 'stream freed'));
     return;
   }
-  let n;
-  let dataPtr;
-  let buffer;
-  let dataOffset;
-  let dataSize;
-  let err;
+  // A frame shorter than the MAC makes `data.length - n * mac` negative.
+  // Buffer.alloc throws, and the native copy allocated below would leak.
+  if (!Buffer.isBuffer(data) || data.length === 0 || data.length < this._macSize) {
+    cb(createError('noise_stream_decrypt', 'ciphertext shorter than mac'));
+    return;
+  }
 
-  n = Math.ceil(data.length / MESSAGE_SIZE);
-  dataPtr = writemem(data);
+  const n = Math.ceil(data.length / MESSAGE_SIZE);
+  const plainSize = data.length - n * this._macSize;
+  if (plainSize < 0) {
+    cb(createError('noise_stream_decrypt', 'ciphertext shorter than mac'));
+    return;
+  }
 
-  if (dataPtr) {
-    buffer = Buffer.alloc(data.length - n * this._macSize);
-
-    error: {
-      for (let i = 0; i < n; i++) {
-        dataOffset = dataPtr + i * MESSAGE_SIZE;
-        dataSize = i === (n - 1)
-          ? (data.length - (n - 1) * MESSAGE_SIZE)
-          : MESSAGE_SIZE;
-
-        err = lib.noise_stream_decrypt(this._streamPtr, dataOffset, dataSize, 0);
-
-        if (!err) {
-          readmem(dataOffset, dataSize - this._macSize, buffer, i * (MESSAGE_SIZE - this._macSize));
-        } else {
-          cb(createError('noise_stream_decrypt', err));
-          break error;
-        }
-      }
-
-      this._output.write(buffer, cb);
+  let dataPtr = 0;
+  try {
+    dataPtr = writemem(data);
+    if (!dataPtr) {
+      cb(createError('malloc'));
+      return;
     }
-
-    lib.free(dataPtr);
-  } else {
-    cb(createError('malloc'));
+    const buffer = Buffer.alloc(plainSize);
+    let failed = false;
+    for (let i = 0; i < n; i++) {
+      const dataOffset = dataPtr + i * MESSAGE_SIZE;
+      const dataSize = i === (n - 1)
+        ? (data.length - (n - 1) * MESSAGE_SIZE)
+        : MESSAGE_SIZE;
+      const err = lib.noise_stream_decrypt(this._streamPtr, dataOffset, dataSize, 0);
+      if (!err) {
+        readmem(dataOffset, dataSize - this._macSize, buffer, i * (MESSAGE_SIZE - this._macSize));
+      } else {
+        cb(createError('noise_stream_decrypt', err));
+        failed = true;
+        break;
+      }
+    }
+    if (!failed) this._output.write(buffer, cb);
+  } finally {
+    if (dataPtr) lib.free(dataPtr);
   }
 };
 

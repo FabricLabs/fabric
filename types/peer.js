@@ -52,6 +52,7 @@ const {
   P2P_PORT,
   P2P_CHAIN_SYNC_REQUEST,
   P2P_FORWARD,
+  P2P_FORWARD_MAX_HOPS,
   P2P_RELAY
 } = require('../constants');
 
@@ -2588,9 +2589,17 @@ class Peer extends Service {
   /**
    * Handle inbound {@code P2P_FORWARD}: peel when {@code nextPeer} is local, else
    * forward the bit-identical outer frame to that peer only (no mesh flood).
+   * Nested peels stop at {@link P2P_FORWARD_MAX_HOPS}. A peeled inner does not
+   * punish or disconnect the TCP last hop.
+   * @param {Message} message
+   * @param {object|null} origin
+   * @param {object|null} socket
+   * @param {Object} [opts]
+   * @param {number} [opts.forwardPeelDepth]
+   * @returns {Peer}
    * @private
    */
-  _handleP2PForward (message, origin, socket) {
+  _handleP2PForward (message, origin, socket, opts = {}) {
     const fields = tryDecodeForward(message);
     if (!fields) {
       this.emit('warning', '[FABRIC:PEER] P2P_FORWARD body undecodable');
@@ -2605,6 +2614,12 @@ class Peer extends Service {
 
     const local = this._localXOnlyPeerId();
     if (xOnlyEquals(fields.nextPeer, local)) {
+      const depth = Number(opts.forwardPeelDepth) || 0;
+      const nextDepth = depth + 1;
+      if (nextDepth > P2P_FORWARD_MAX_HOPS) {
+        this.emit('warning', '[FABRIC:PEER] Dropped P2P_FORWARD: peel depth exceeds max hops');
+        return this;
+      }
       this.emit('onion:peel', {
         ttl: fields.ttl,
         origin: origin && origin.name,
@@ -2614,7 +2629,10 @@ class Peer extends Service {
         // Peeled inners must not hard-disconnect / derank the TCP last hop:
         // relays forward bit-identical outers, so a malicious originator can
         // launder a bad inner through an honest relay (see SECURITY.md / P2P_FORWARD).
-        this._handleFabricMessage(fields.inner, origin, socket, { peeledForward: true });
+        this._handleFabricMessage(fields.inner, origin, socket, {
+          peeledForward: true,
+          forwardPeelDepth: nextDepth
+        });
       }
       return this;
     }
@@ -3195,6 +3213,7 @@ class Peer extends Service {
    * @param {number} [options.relayDepth]
    * @param {boolean} [options.skipRelayFlood]
    * @param {boolean} [options.peeledForward] true when delivered via {@link Peer#_handleP2PForward} peel
+   * @param {number} [options.forwardPeelDepth] onion layers already peeled on this delivery
    * @returns {Peer} Instance of the Peer.
    */
   /**
@@ -3472,7 +3491,7 @@ class Peer extends Service {
         }
         break;
       case 'P2P_FORWARD':
-        this._handleP2PForward(message, origin, socket);
+        this._handleP2PForward(message, origin, socket, opts);
         break;
       case 'BITCOIN_BLOCK':
       case 'BitcoinBlock': {

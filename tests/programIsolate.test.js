@@ -3,7 +3,6 @@
 const assert = require('assert');
 const path = require('path');
 const Machine = require('../types/machine');
-const Program = require('../types/program');
 const {
   runExecutionProgram,
   executionProgramFromHub
@@ -19,10 +18,10 @@ describe('program isolate', function () {
     const previous = process.env.FABRIC_XPRV;
     process.env.FABRIC_XPRV = 'do-not-inherit';
     try {
-      const env = Program.isolateChildEnv();
+      const env = Machine.isolateChildEnv();
       assert.strictEqual(Object.prototype.hasOwnProperty.call(env, 'FABRIC_XPRV'), false);
       assert.strictEqual(env.FABRIC_PROGRAM_ISOLATE, '1');
-      const spawned = Program.spawnIsolate({ ping: true }, {
+      const spawned = Machine.spawnIsolate({ ping: true }, {
         isolateWorker: envWorker,
         isolateTimeoutMs: 2000
       });
@@ -33,6 +32,24 @@ describe('program isolate', function () {
     } finally {
       if (previous == null) delete process.env.FABRIC_XPRV;
       else process.env.FABRIC_XPRV = previous;
+    }
+  });
+
+  it('ignores isolateWorker when NODE_ENV is not test', function () {
+    const previous = process.env.NODE_ENV;
+    process.env.NODE_ENV = 'production';
+    try {
+      const spawned = Machine.spawnIsolate({ ping: true }, {
+        isolateWorker: envWorker,
+        isolateTimeoutMs: 2000
+      });
+      assert.ok(spawned.parsed, spawned.error);
+      assert.strictEqual(spawned.parsed.sawXprv, undefined);
+      assert.strictEqual(spawned.parsed.ok, false);
+      assert.match(spawned.parsed.error || '', /program\.steps must be an array/);
+    } finally {
+      if (previous == null) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = previous;
     }
   });
 
@@ -64,6 +81,14 @@ describe('program isolate', function () {
     assert.strictEqual(leaked, false);
     assert.strictEqual(result.ok, false);
     assert.match(result.error || '', /opcode not defined/);
+  });
+
+  it('builds the worker script from Machine', function () {
+    const source = Machine.isolateThreadSource();
+    assert.match(source, /function isolateRunPayload/);
+    assert.match(source, /isolateAttachPort\(\);/);
+    assert.doesNotMatch(source, /child_process/);
+    assert.doesNotMatch(source, /require\(['"]fs['"]\)/);
   });
 
   it('keeps the in-process programHash for a fabric-execution run', function () {

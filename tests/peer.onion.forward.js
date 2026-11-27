@@ -8,6 +8,7 @@ const { offlinePeerSettings } = require('./helpers/peer');
 const {
   xOnlyFromKey,
   wrapOnionPath,
+  wrapForwardLayer,
   tryDecodeForward,
   P2P_FORWARD_MAX_HOPS
 } = require('../functions/fabricOnion');
@@ -48,6 +49,43 @@ describe('Peer P2P_FORWARD onion', function () {
     assert.ok(peels.length >= 1, 'expected onion:peel');
     assert.ok(chats.length >= 1, 'expected chat delivery');
     assert.strictEqual(chats[0].text, 'dest-only');
+  });
+
+  it('delivers eight nested local peels and drops the ninth', function () {
+    const originKey = new Key();
+
+    function deliver (layers) {
+      const peer = new Peer(offlinePeerSettings());
+      const addr = '127.0.0.1:9101';
+      peer.connections[addr] = wireMock([]);
+      peer.peers[addr] = { id: 'relay', publicKey: originKey.public.encodeCompressed('hex') };
+      const payload = Message.fromVector(['P2P_CHAT_MESSAGE', 'nested-' + layers]);
+      payload.signWithKey(originKey);
+      const localX = xOnlyFromKey(peer.key);
+      let current = payload;
+      for (let i = 0; i < layers; i++) {
+        current = wrapForwardLayer({
+          nextPeer: localX,
+          inner: current,
+          ttl: 1,
+          key: originKey
+        });
+      }
+      const chats = [];
+      const warnings = [];
+      peer.on('chat', (body) => chats.push(body));
+      peer.on('warning', (msg) => warnings.push(String(msg)));
+      peer._handleFabricMessage(current.toBuffer(), { name: addr }, null);
+      return { chats, warnings };
+    }
+
+    const eight = deliver(P2P_FORWARD_MAX_HOPS);
+    assert.strictEqual(eight.chats.length, 1);
+    assert.strictEqual(eight.chats[0].text, 'nested-' + P2P_FORWARD_MAX_HOPS);
+
+    const nine = deliver(P2P_FORWARD_MAX_HOPS + 1);
+    assert.strictEqual(nine.chats.length, 0);
+    assert.ok(nine.warnings.some((msg) => /peel depth exceeds max hops/.test(msg)));
   });
 
   it('forwards bit-identical outer to next hop when nextPeer is remote', function () {

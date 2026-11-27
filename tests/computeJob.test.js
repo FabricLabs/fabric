@@ -81,6 +81,16 @@ describe('compute jobs', function () {
     const honest = rerun(program, { n: 1 });
     assert.strictEqual(honest.ok, true, honest.error);
     assert.strictEqual(honest.inputCommitment, job.inputCommitment);
+    assert.deepStrictEqual(honest.stack[0], { n: 1 });
+    const other = rerun(program, { n: 2 });
+    assert.strictEqual(other.ok, true, other.error);
+    assert.notStrictEqual(other.jobCommitmentHex, honest.jobCommitmentHex);
+    assert.strictEqual(other.runCommitmentHex, honest.runCommitmentHex);
+    const opcodes = rerun({ language: 'fabric-opcodes', steps: [] }, { n: 1 });
+    const opcodesOther = rerun({ language: 'fabric-opcodes', steps: [] }, { n: 2 });
+    assert.strictEqual(opcodes.ok, true, opcodes.error);
+    assert.deepStrictEqual(opcodes.stack[0], { n: 1 });
+    assert.notStrictEqual(opcodes.jobCommitmentHex, opcodesOther.jobCommitmentHex);
 
     const bounty = bountyForRun({
       programHash: job.programHash,
@@ -144,9 +154,29 @@ describe('compute jobs', function () {
     assert.strictEqual(proof.verify().ok, true);
     assert.ok(proof.evidenceIds()[0].includes(worker.xOnly));
     const matched = verifyWrongRun(Object.assign({}, artifacts, {
-      claimedRunCommitmentHex: honest.runCommitmentHex
+      claimedRunCommitmentHex: honest.jobCommitmentHex,
+      claim: Witness.signArtifact({
+        type: 'ComputeRunClaim',
+        programHash: job.programHash,
+        inputCommitment: job.inputCommitment,
+        claimedRunCommitmentHex: honest.jobCommitmentHex,
+        depositAddress: deposit.address
+      }, worker.priv)
     }));
     assert.strictEqual(matched.ok, false);
+    assert.match(matched.reason || '', /matches the rerun/);
+    const swapped = verifyWrongRun(Object.assign({}, artifacts, {
+      input: { n: 2 },
+      claimedRunCommitmentHex: honest.jobCommitmentHex,
+      claim: Witness.signArtifact({
+        type: 'ComputeRunClaim',
+        programHash: job.programHash,
+        inputCommitment: job.inputCommitment,
+        claimedRunCommitmentHex: honest.jobCommitmentHex,
+        depositAddress: deposit.address
+      }, worker.priv)
+    }));
+    assert.strictEqual(swapped.ok, false);
 
     const publisherDest = bitcoin.payments.p2wpkh({
       pubkey: Buffer.from(publisher.pub, 'hex'),
