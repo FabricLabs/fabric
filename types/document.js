@@ -76,7 +76,10 @@ const DOCUMENT_TREE_NODE = 0x01;
 const DOCUMENT_TREE_ROOT = 0x02;
 const DOCUMENT_TREE_IV_BYTES = 12;
 
-/** AES-GCM tag appended to each sealed blob. */
+/**
+ * AES-GCM tag appended to each sealed blob.
+ * @private
+ */
 const GCM_TAG_BYTES = DOCUMENT_GCM_TAG_BYTES;
 
 /**

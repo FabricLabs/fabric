@@ -10,8 +10,8 @@ Wire version stays `0x01` (208-byte header). Consolidation means:
 
 1. **One decode name per opcode.** Encode aliases are allowed; they must round-trip to that decode label.
 2. **Typed field bodies** on mesh-originated types. JSON belongs at `@fabric/http`. Exceptions: chat/alias UTF-8, `P2P_RELAY` raw inner AMP, `JSON_CALL` at the Hub edge.
-3. **Application events stay inside `CONTRACT_MESSAGE`.** Do not give MissionBroadcast, GroupChat, GroupChange, etc. their own outer opcodes.
-4. **Do not pack Fabric types into a gapless `0x01, 0x02, …` sequence** — that would break playnet.
+3. **Application events stay inside `CONTRACT_MESSAGE`.** Do not give MissionBroadcast, GroupChat, GroupChange, etc. their own outer opcodes. The same rule covers the peer markets: a compute offer, a storage-contract artifact (`StorageContract`, `AvailabilityCommitment`, `AvailabilityChallenge`, `AvailabilityResponse`, `FraudProof`), and a collaborative federation-funding PSBT are `CONTRACT_MESSAGE` bodies. Their schemas live next to the core type that builds them (`types/program`, `types/challenge`, `types/bond`, `types/witness`, `types/federation`). `GenericMessage` stays the Hub-to-browser carrier. A new mesh opcode is added only in `@fabric/core`, and only when this catalog already treats that name as mesh-primary.
+4. **Do not pack Fabric types into a gapless `0x01, 0x02, …` sequence** — that would break playnet. Hub does not allocate a private opcode block for primary types.
 
 Lightning AMP types live in `0x2000–0x2013` (`POLICY.md`). Fabric keeps the low numbers (`P2P_PING` `0x12`, `P2P_INSTRUCTION` `0x20`, `P2P_GENERIC` `0x80`, …). Duplicate opcodes fail at `Message` module load.
 
@@ -301,7 +301,7 @@ Tests: `tests/gossip.network.js`.
 
 Owner-gated. Protocol version stays `0x01`.
 
-1. **Hub catalog** — Drop INNER pending rows that are already outer opcodes. Do not register `JSONBlob` until core owns `15104`.
+1. **Hub catalog** — Inventory, gossip, peering offers, and `P2P_FILE_SEND` are outer opcodes in core (`0x57` / `0x58`, `0x61`, `0x62`, `0x59`). They are not pending promotion, and Hub does not mint primary opcodes in `16200–16299`. `Tombstone` and `WebRTCSignal` stay on their current Hub↔browser carriers. Do not register `JSONBlob` until core owns `15104`.
 2. **Dual-carrier kill** — Originate inventory / file / chat only on first-class opcodes. Mesh chat = `0x68` only.
 3. **Field schemas** — Phase 1 is done: core sends `P2P_PING`, `P2P_PONG`, `CONTRACT_PUBLISH`, `CONTRACT_MESSAGE` and `SIDECHAIN_STATE_PATCH` as typed fields, the announce, gossip and offer schemas carry every key core reads. A peer drops JSON bodies of typed opcodes (`Message.LEGACY_BODY_TYPES`); there is no opt-out. Next are the downstream senders (Phase 2), then schemas for `P2P_SESSION_ACK`, `P2P_INSTRUCTION` and `P2P_STATE_COMMITTMENT`, the only types still without a layout (Phase 3; `P2P_FILE_SEND` has one, `SCHEMA_P2P_FILE_SEND`). Plan: [docs/MESSAGE_BODY.md § Migration](docs/MESSAGE_BODY.md#migration).
 4. **Protocol-v1 matrix** — Add `P2P_FORWARD`, `P2P_RELAY`, `P2P_PONG`, `P2P_INVENTORY_RESPONSE`, `P2P_SESSION_OPEN`, `P2P_DOCUMENT_PUBLISH`, `SIDECHAIN_STATE_PATCH`, `CONTRACT_PROPOSAL`. MuSig2 stays directed.

@@ -2477,6 +2477,7 @@ const MAX_PORT = 65535;
  * Phase 4). They still decode; Peer counts and warns when one arrives, and a
  * later protocol version removes them. `P2P_BASE_MESSAGE` and
  * `P2P_CHAIN_SYNC_REQUEST` are still in use and are not listed.
+ * @private
  */
 const DEPRECATED_WIRE_TYPES = Object.freeze([
   'P2P_GENERIC',
@@ -2653,6 +2654,7 @@ function contractFilterString (value, key) {
  * Does not read the JSON payload.
  * @param {Message|object|null} messageOrFields
  * @returns {{ recipient: string, ref: string, slot: string }}
+ * @private
  */
 function contractMessageIndex (messageOrFields) {
   const fields = messageOrFields && typeof messageOrFields.toFields === 'function'
@@ -2672,6 +2674,7 @@ function contractMessageIndex (messageOrFields) {
  * @param {Message|object|null} messageOrFields
  * @param {object} [query]
  * @returns {boolean}
+ * @private
  */
 function contractMessageMatches (messageOrFields, query) {
   const index = contractMessageIndex(messageOrFields);

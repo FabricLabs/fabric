@@ -76,18 +76,30 @@ const sidechainState = require('../functions/sidechainState');
 const { epochCommitmentDigestHex } = require('../functions/beaconFederationSigning');
 const Federation = require('./federation');
 
-/** Sealed document delivery wire type → the inner `type` its generic handler dispatches on. */
+/**
+ * Sealed document delivery wire type → the inner `type` its generic handler dispatches on.
+ * @private
+ */
 const SEALED_DELIVERY_INNER_TYPE_BY_WIRE = Object.freeze({
   DOCUMENT_KEY_REVEAL: 'DocumentContentKeyReveal',
   DOCUMENT_BLOB_QUOTE: 'DocumentBlobQuote',
   DOCUMENT_BLOB_BATCH: 'DocumentBlobBatch'
 });
-/** Those inner types: refused inside a `GenericMessage` / `P2P_BASE_MESSAGE` carrier. */
+/**
+ * Those inner types: refused inside a `GenericMessage` / `P2P_BASE_MESSAGE` carrier.
+ * @private
+ */
 const SEALED_DELIVERY_INNER_TYPES = new Set(Object.values(SEALED_DELIVERY_INNER_TYPE_BY_WIRE));
 
-/** Session-advertised level of field-body support (`object.fieldBodies`). */
+/**
+ * Session-advertised level of field-body support (`object.fieldBodies`).
+ * @private
+ */
 const FIELD_BODIES_VERSION = 1;
-/** Default time a funded sealed-blob quote keeps its secret while its HTLC settles. */
+/**
+ * Default time a funded sealed-blob quote keeps its secret while its HTLC settles.
+ * @private
+ */
 const PEER_SEALED_BLOB_FUNDED_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 const {
   aggregatePeerBandwidth,
@@ -430,13 +442,13 @@ const WireReplayFilter = (function () {
  */
 
 const DEFAULTS = Object.freeze({
-  /** Hashes per generation before it rotates. */
+  // Hashes per generation before it rotates.
   capacity: 500000,
-  /** Target false-positive rate of a full generation. */
+  // Target false-positive rate of a full generation.
   // 10^-6. Written as a division so the source is not a float literal
   // static analysis rewrites.
   falsePositiveRate: 1 / 1000000,
-  /** A generation rotates after this long even when not full. */
+  // A generation rotates after this long even when not full.
   maxAgeMs: 24 * 60 * 60 * 1000
 });
 

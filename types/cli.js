@@ -1322,6 +1322,22 @@ class CLI extends FabricShell {
     this._applyExchangeResult(await this.documentExchange.confirm(params[1], params[2]));
   }
 
+  async _handleStorageCommitCommand (params) {
+    this._applyExchangeResult(this.documentExchange.storageCommit(params));
+  }
+
+  async _handleStorageChallengeCommand (params) {
+    this._applyExchangeResult(this.documentExchange.storageChallenge(params));
+  }
+
+  async _handleStorageRespondCommand (params) {
+    this._applyExchangeResult(this.documentExchange.storageRespond(params));
+  }
+
+  async _handleStorageSweepCommand (params) {
+    this._applyExchangeResult(this.documentExchange.storageSweep(params));
+  }
+
   /**
    * Extract content key K from an on-chain HTLC claim witness and open sealed delivery.
    * Usage: /claimwatch <settlementId> [claimTxid]

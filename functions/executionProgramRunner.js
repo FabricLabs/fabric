@@ -138,6 +138,17 @@ function executionProgramFromHub (program) {
  * }}
  */
 function runExecutionProgram (program, options = {}) {
+  if (options.inProcess === true || process.env.FABRIC_PROGRAM_ISOLATE === '1') {
+    return runExecutionProgramInProcess(program, options);
+  }
+  const wrapped = Object.assign({}, options);
+  if (typeof wrapped.resolveFabricEntry !== 'function') {
+    wrapped.resolveFabricEntry = defaultResolveFabricEntry;
+  }
+  return require('../types/program').runIsolated(program, wrapped);
+}
+
+function runExecutionProgramInProcess (program, options = {}) {
   const steps = program && program.steps;
   if (!Array.isArray(steps)) {
     return { ok: false, error: 'program.steps must be an array', programHash: null, runCommitmentHex: null };
@@ -212,7 +223,10 @@ function runExecutionProgram (program, options = {}) {
 
   const ops = Object.assign(Object.create(null), {
     FabricOpcode (step, pc) {
-      const entry = resolveFabricEntry(step);
+      const entry = options.useResolvedEntries === true
+        && step.resolved && typeof step.resolved === 'object'
+        ? step.resolved
+        : resolveFabricEntry(step);
       if (NON_EXECUTION_FABRIC_TYPES.has(entry.name)) {
         throw new Error(`${entry.name} is a transport keepalive, not an Execution program opcode`);
       }
@@ -352,5 +366,6 @@ module.exports = {
   setFabricEntryResolver,
   executionProgramFromHub,
   runExecutionProgram,
+  runExecutionProgramInProcess,
   normalizeOpName
 };

@@ -10,9 +10,9 @@
  * record could be signed and shared later without migration.
  *
  * The module also carries the rest of the document market around the book:
- * purchase session records ({@link createDocumentPurchaseSession}), private
- * `DocumentRequest` relay fees ({@link buildForwardedDocumentRequest}), and
- * inventory paging ({@link paginateInventoryItems}) for the sell side.
+ * purchase session records (`createDocumentPurchaseSession`), private
+ * `DocumentRequest` relay fees (`buildForwardedDocumentRequest`), and
+ * inventory paging (`paginateInventoryItems`) for the sell side.
  */
 
 const crypto = require('crypto');
@@ -30,16 +30,31 @@ const Htlc = require('./htlc');
 const Key = require('./key');
 const Message = require('./message');
 
-/** Wire type of a chunk bid. */
+/**
+ * Wire type of a chunk bid.
+ * @private
+ */
 const BID_TYPE = 'P2P_DOCUMENT_BID';
-/** Wire type of a seller's answer to a bid. */
+/**
+ * Wire type of a seller's answer to a bid.
+ * @private
+ */
 const ASK_TYPE = 'P2P_DOCUMENT_ASK';
-/** Bid lifetime when the buyer names none. */
+/**
+ * Bid lifetime when the buyer names none.
+ * @private
+ */
 const DEFAULT_BID_TTL_SECONDS = 10 * 60;
-/** Clock difference tolerated between peers when checking how far ahead a bid expires. */
+/**
+ * Clock difference tolerated between peers when checking how far ahead a bid expires.
+ * @private
+ */
 const BID_CLOCK_SKEW_SECONDS = 2 * 60;
 
-/** Default ranking weights (sum to 1). */
+/**
+ * Default ranking weights (sum to 1).
+ * @private
+ */
 const DEFAULT_WEIGHTS = Object.freeze({
   price: 45 / 100,
   latency: 25 / 100,
@@ -47,30 +62,58 @@ const DEFAULT_WEIGHTS = Object.freeze({
   completeness: 1 / 10
 });
 
-/** Telemetry record schema version. */
+/**
+ * Telemetry record schema version.
+ * @private
+ */
 const TELEMETRY_VERSION = 2;
-/** Canonical `type` for an exported telemetry record. */
+/**
+ * Canonical `type` for an exported telemetry record.
+ * @private
+ */
 const TELEMETRY_TYPE = 'ProviderTelemetry';
-/** Score for a provider with no observations. */
+/**
+ * Score for a provider with no observations.
+ * @private
+ */
 const SCORE_UNKNOWN = 0;
-/** Maximum provider score. */
+/**
+ * Maximum provider score.
+ * @private
+ */
 const SCORE_MAX = 1000;
-/** A provider seen only in inventories ranks below a neutral record (500). */
+/**
+ * A provider seen only in inventories ranks below a neutral record (500).
+ * @private
+ */
 const SCORE_INVENTORY_ONLY = 250;
-/** Providers tracked before the least recently updated unpenalized one is evicted. */
+/**
+ * Providers tracked before the least recently updated unpenalized one is evicted.
+ * @private
+ */
 const MAX_PROVIDERS = 10000;
-/** Offer rows held before the oldest is evicted. */
+/**
+ * Offer rows held before the oldest is evicted.
+ * @private
+ */
 const MAX_OFFERS = 100000;
-/** Fraud-proof evidence ids remembered for dedupe. */
+/**
+ * Fraud-proof evidence ids remembered for dedupe.
+ * @private
+ */
 const MAX_EVIDENCE = 10000;
 const COUNTERS = ['inventories', 'deliveries', 'failures', 'refunds', 'penalties', 'bytesDelivered'];
-/** Each extra gossip hop counts as this many milliseconds of latency. */
+/**
+ * Each extra gossip hop counts as this many milliseconds of latency.
+ * @private
+ */
 const HOP_PENALTY_MS = 50;
 
 /**
  * Stable key for one offer row.
  * @param {object} row
  * @returns {string}
+ * @private
  */
 function offerKey (row) {
   const blob = row.blobIndex != null ? String(row.blobIndex) : 'all';
@@ -497,8 +540,8 @@ class DocumentBook extends Book {
   }
 
   /**
-   * Derived 0..1000 score. Unknown providers score {@link SCORE_UNKNOWN},
-   * inventory-only ones {@link SCORE_INVENTORY_ONLY} (below a neutral
+   * Derived 0..1000 score. Unknown providers score `SCORE_UNKNOWN`,
+   * inventory-only ones `SCORE_INVENTORY_ONLY` (below a neutral
    * record); a verified penalty — direct or on any AMP signer key the seller
    * used — is weighted as ten failed deliveries.
    * @param {string} sellerId
@@ -1334,6 +1377,7 @@ class DocumentBook extends Book {
  * @param {number} [session.blobIndex]
  * @param {string} [session.contentHashHex]
  * @returns {string}
+ * @private
  */
 function settlementDedupeKey (session = {}) {
   const doc = String(session.documentId || '');
@@ -1356,6 +1400,7 @@ function settlementDedupeKey (session = {}) {
  * @param {number} [opts.blobTotal]
  * @param {Object} [opts.htlc]
  * @returns {Object}
+ * @private
  */
 function createDocumentPurchaseSession (opts = {}) {
   const documentId = String(opts.documentId || '').trim();
@@ -1408,6 +1453,7 @@ function createDocumentPurchaseSession (opts = {}) {
  * @param {Set|Map|Object} paidKeys
  * @param {Object} session
  * @returns {boolean}
+ * @private
  */
 function isDuplicateSettlement (paidKeys, session) {
   if (!paidKeys || !session) return false;
@@ -1420,6 +1466,7 @@ function isDuplicateSettlement (paidKeys, session) {
 /**
  * @param {Set|Map|Object} paidKeys
  * @param {Object} session
+ * @private
  */
 function rememberSettlement (paidKeys, session) {
   if (!paidKeys || !session) return;
@@ -1433,6 +1480,7 @@ function rememberSettlement (paidKeys, session) {
  * @param {Map|Object} store
  * @param {string} key settlementId or documentId
  * @returns {Object|null}
+ * @private
  */
 function findSession (store, key) {
   if (!store || key == null) return null;
@@ -1459,6 +1507,7 @@ function findSession (store, key) {
  * @param {Object} [opts]
  * @param {string} [opts.filter='outstanding'] outstanding|mature|failed|pending|refunded|all
  * @returns {Array<Object>}
+ * @private
  */
 function listRefundCandidates (store, tipHeight, opts = {}) {
   const filter = String(opts.filter || 'outstanding').toLowerCase();
@@ -1527,6 +1576,7 @@ function listRefundCandidates (store, tipHeight, opts = {}) {
  * @param {Object} policy
  * @param {number} maxSatsIn
  * @returns {{ ok: boolean, feeSats: (number|undefined), maxSatsOut: (number|undefined), error: (string|undefined) }}
+ * @private
  */
 function computeRelayFee (policy = {}, maxSatsIn) {
   const M = Math.round(Number(maxSatsIn));
@@ -1555,6 +1605,7 @@ function computeRelayFee (policy = {}, maxSatsIn) {
  * @param {Object} inbound parsed DocumentRequest body
  * @param {Object} policy
  * @returns {{ ok: boolean, body: (Object|undefined), feeSats: (number|undefined), error: (string|undefined) }}
+ * @private
  */
 function buildForwardedDocumentRequest (inbound = {}, policy = {}) {
   const document = inbound.document || inbound.id;
@@ -1588,6 +1639,7 @@ function buildForwardedDocumentRequest (inbound = {}, policy = {}) {
  * @param {number} maxSatsIn
  * @param {number} maxSatsOut
  * @returns {boolean} the forwarded budget is smaller and still at least 1 sat
+ * @private
  */
 function assertMonotoneBudget (maxSatsIn, maxSatsOut) {
   const a = Number(maxSatsIn);
@@ -1651,6 +1703,7 @@ function sliceItemBlobs (item, pageBytes) {
  * @param {Object} [opts]
  * @param {number} [opts.pageBytes=INVENTORY_RESPONSE_PAGE_BYTES] Max JSON bytes of one page's `items` array.
  * @returns {{ pages: Object[][], skipped: Object[] }}
+ * @private
  */
 function paginateInventoryItems (items, opts = {}) {
   const requested = Math.floor(Number(opts.pageBytes));

@@ -8,14 +8,20 @@ const Service = require('../types/service');
 const Message = require('../types/message');
 const { MAX_MESSAGE_SIZE } = require('../constants');
 
-/** bitcoind topic → message type for the field-encoded form. */
+/**
+ * bitcoind topic → message type for the field-encoded form.
+ * @private
+ */
 const ZMQ_MESSAGE_TYPES = Object.freeze({
   rawblock: 'BitcoinBlock',
   rawtx: 'BitcoinTransaction',
   hashtx: 'BitcoinTransactionHash',
   hashblock: 'BitcoinBlockHash'
 });
-/** Hex characters that fit a field body beside its `present` / `extra` fields. */
+/**
+ * Hex characters that fit a field body beside its `present` / `extra` fields.
+ * @private
+ */
 const ZMQ_MAX_FIELD_HEX = (MAX_MESSAGE_SIZE - 64) * 2;
 
 /**

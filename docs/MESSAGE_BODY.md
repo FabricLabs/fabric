@@ -206,7 +206,11 @@ fields. The ZMQ service builds Bitcoin messages locally
 and does not put them on the wire, so it is unchanged.
 
 `P2P_SESSION_ACK` has no layout: no code sends one and nothing reads it.
-`P2P_FILE_SEND` waits on the repricing question in the migration plan.
+`P2P_FILE_SEND` has `SCHEMA_P2P_FILE_SEND` (`types/message.js`). Peer and Hub
+send it with `Message.fromLegacyBody`. The blob's `body` field is raw bytes
+(base64 only in the legacy object). Open question 4 is settled: the per-blob
+price stays `HTLC_MINIMUM_SATS`. The smaller frame buys more bytes; it does
+not change the price.
 
 ## Peer sends no JSON bodies
 
@@ -309,7 +313,8 @@ as of Phase 1.
 | **Raw bytes, by design** (3) | No schema on purpose: UTF-8 text or a raw inner frame. | `P2P_CHAT_MESSAGE` `0x68`, `P2P_PEER_ALIAS` `0x5b`, `P2P_RELAY` `0x43` |
 | **Core sends fields; downstream still JSON** (8, Phase 1) | Core senders use `Message.fromLegacyBody`; every receiver accepts both. Hub, GoonCitizen and goon.vc still send JSON. | `P2P_PING` `0x12`, `P2P_PONG` `0x13`, `P2P_PEER_ANNOUNCE` `0x5c`, `P2P_PEER_GOSSIP` `0x61`, `P2P_PEERING_OFFER` `0x62`, `CONTRACT_PUBLISH` `0x5f`, `CONTRACT_MESSAGE` `0x60`, `SIDECHAIN_STATE_PATCH` `0x3e5` |
 | **Core sends fields** (7, Phase 3) | Keyed layout registered and mapped; core's Peer sends fields, the session handshake included, and reads both. Cores without the layouts are not supported. | `P2P_SESSION_OFFER` `0x5d`, `P2P_SESSION_OPEN` `0x5e`, `P2P_INVENTORY_REQUEST` `0x57`, `P2P_INVENTORY_RESPONSE` `0x58`, `P2P_DOCUMENT_PUBLISH` `0x5a`, `DOCUMENT_PUBLISH` `0x3e6`, `DOCUMENT_REQUEST` `0x3e7` |
-| **Needs a schema** (4) | Mesh traffic with a JSON body and no schema. `P2P_FILE_SEND` waits on open question 4; the other three have no originator (Phase 4 candidates). | `P2P_SESSION_ACK` `0x4200`, `P2P_FILE_SEND` `0x59`, `P2P_INSTRUCTION` `0x20`, `P2P_STATE_COMMITTMENT` `0x32` |
+| **Needs a schema** (3) | Registered, no originator, no layout. | `P2P_SESSION_ACK` `0x4200`, `P2P_INSTRUCTION` `0x20`, `P2P_STATE_COMMITTMENT` `0x32` |
+| **Core sends fields** (`P2P_FILE_SEND`) | `SCHEMA_P2P_FILE_SEND`. Peer and Hub send fields. Per-blob price stays `HTLC_MINIMUM_SATS` (open question 4, settled). | `P2P_FILE_SEND` `0x59` |
 | **Schema; readers in core** (5, Phase 3, 2026-11-03) | Keyed layout registered; Peer reads both encodings. Core sends `CONTRACT_PROPOSAL` as fields; Hub still sends `BitcoinBlock` and `ContractProposal` as JSON. | `BITCOIN_BLOCK` `0x5208`, `BITCOIN_BLOCK_HASH` `0x526c`, `BITCOIN_TRANSACTION` `0x55f0`, `BITCOIN_TRANSACTION_HASH` `0x5654`, `CONTRACT_PROPOSAL` `0x8a` |
 | **JSON at the edge, by design** (5) | Hub / `@fabric/http` carriers where JSON is the intended body. | `JSON_CALL` `0x3e80`, `JSON_PATCH` `0x400`, `GENERIC_MESSAGE` `0x3aff`, `CHAT_MESSAGE` `0x67`, `P2P_MESSAGE_RECEIPT` `0x44` |
 | **Deprecated** (14, Phase 4) | Decode only; Peer counts and warns (`Message.DEPRECATED_WIRE_TYPES`). Removed in a later protocol version. | `P2P_GENERIC` `0x80`, `P2P_STATE_REQUEST` `0x29`, `P2P_TRANSACTION` `0x39`, `LOG_MESSAGE` `0xc0d49070`, `GENERIC_LIST` `0xc0d4c76e`, `BLOCK_CANDIDATE` `0x3`, `P2P_IDENT_REQUEST` `0x1`, `P2P_IDENT_RESPONSE` `0x11`, `P2P_STATE_ROOT` `0x30`, `P2P_STATE_CHANGE` `0x33`, `P2P_CALL` `0x42`, `PEER_CANDIDATE` `0x9`, `SESSION_START` `0x2`, `P2P_START_CHAIN` `0x21` |
@@ -450,7 +455,7 @@ readers of `bitcoinBlock` use the event's parsed `object`; Hub senders of
 |-------|-------|-------|
 | Session | `P2P_SESSION_OFFER`, `P2P_SESSION_OPEN` (done), `P2P_SESSION_ACK` | `P2P_SESSION_ACK` has no originator and no reader, so it has no layout: give it one when something sends it, or move it to Phase 4. |
 | Inventory | `P2P_INVENTORY_REQUEST`, `P2P_INVENTORY_RESPONSE` (done) | `items` is one JSON string field (offer rows nest proofs and leaves), so the page arithmetic (`DocumentBook.paginateInventoryItems`, which measures JSON) still holds: a page's other fields take about 60 bytes, well under the 256-byte reserve. |
-| Files and documents | `P2P_DOCUMENT_PUBLISH`, `DOCUMENT_PUBLISH`, `DOCUMENT_REQUEST` (done); `P2P_FILE_SEND` | `DOCUMENT_PUBLISH` carries the content as raw bytes; its purchase hash is rebuilt from the decoded values, so every copy agrees. `P2P_FILE_SEND` waits on open question 4. |
+| Files and documents | `P2P_DOCUMENT_PUBLISH`, `DOCUMENT_PUBLISH`, `DOCUMENT_REQUEST`, `P2P_FILE_SEND` (done) | `DOCUMENT_PUBLISH` carries the content as raw bytes; its purchase hash is rebuilt from the decoded values, so every copy agrees. `P2P_FILE_SEND` is `SCHEMA_P2P_FILE_SEND`; the per-blob price stays `HTLC_MINIMUM_SATS`. |
 | Contracts | `CONTRACT_PROPOSAL` (done) | Keyed layout; `messages` stays one JSON field. |
 | Control | `P2P_INSTRUCTION`, `P2P_STATE_COMMITTMENT` (`P2P_FLUSH_CHAIN` was removed in V1) | The last two have no core originator: a schema, or move them to Phase 4. |
 | Bitcoin | `BITCOIN_BLOCK`, `BITCOIN_BLOCK_HASH`, `BITCOIN_TRANSACTION`, `BITCOIN_TRANSACTION_HASH` (done) | Keyed layouts; `content` is raw bytes (`hex` kind). Hub's tip gossip keys (`tip`, `height`, `network`, `at`) have fields; `supply` rides in `extra`. |
@@ -499,8 +504,9 @@ deprecation window was skipped.
   (`tests/fixtures/application-contract-chain.json`) is now the negative test:
   a Peer registers nothing from it, while the stored chain still folds to the
   same tip.
-- Types without a layout (`P2P_CHAIN_SYNC_REQUEST`, `P2P_BASE_MESSAGE`,
-  `P2P_FILE_SEND`, the edge JSON types) keep JSON bodies.
+- Types without a layout (`P2P_BASE_MESSAGE` and the edge JSON types) keep
+  JSON bodies. `P2P_FILE_SEND` and `P2P_CHAIN_SYNC_REQUEST` have layouts and
+  are in `LEGACY_BODY_TYPES`; Peer drops a JSON body of either.
 - Hub sends `BitcoinBlock`, `ContractProposal` and WebRTC-relayed frames of
   these types as fields. Browsers still get JSON over WebSocket.
 
@@ -599,9 +605,19 @@ on the seeds.
    the right name, or should generic ops commits get their own body type?
 3. **Session offers.** Settled (2026-10-30): `P2P_SESSION_OFFER` / `OPEN` are
    fields; a legacy peer that can't read the handshake is not supported.
-4. **Base64 in file sends.** Is the blob-size win from a `bytes` field in
-   `P2P_FILE_SEND` worth re-pricing documents, given that blob prices are
-   per-blob (`HTLC_MINIMUM_SATS` floor) and more data fits in a frame?
+4. **Base64 in file sends.** Settled: `SCHEMA_P2P_FILE_SEND` stores `body` as
+   raw bytes. The per-blob price stays `HTLC_MINIMUM_SATS`. A smaller frame
+   carries more of the chunk; it does not reprice the chunk.
+
+### Market bodies (no new opcodes)
+
+Compute offers, storage-contract artifacts, and collaborative federation
+funding PSBTs are `CONTRACT_MESSAGE` bodies. The schema sits next to the core
+type that builds the body (`types/program`, `types/challenge`, `types/bond`,
+`types/witness`, `types/federation`). `GenericMessage` remains the
+Hub-to-browser carrier. A mesh opcode is added only in `@fabric/core`, and
+only for a name this catalog already treats as mesh-primary. Hub does not
+allocate primary opcodes.
 5. **Deprecation window.** How long after Phase 2 lands everywhere should
    JSON stay accepted on the wire: a fixed date, a core version, or a seed
    counter reaching zero?

@@ -973,7 +973,8 @@ const FRAUD_PROOF_KINDS = Object.freeze({
   WRONG_BYTES: 'wrong-bytes',
   BAD_KEY: 'bad-key',
   WRONGFUL_PENALTY: 'wrongful-penalty',
-  STALE_COMMITMENT: 'stale-commitment'
+  STALE_COMMITMENT: 'stale-commitment',
+  WRONG_RUN: 'wrong-run'
 });
 
 const FRAUD_PROOF_TYPE = 'FraudProof';
@@ -1304,6 +1305,7 @@ function blobParent (left, right) {
  * @param {number} opts.leafCount committed number of leaves
  * @param {Array|object} opts.proof `[{ position, data }]` or `{ proof: [...], leafCount }` (as `Challenge#respond` emits)
  * @returns {boolean}
+ * @private
  */
 function verifyBlobPath (opts = {}) {
   const root = hex64(opts.merkleRootHex);
@@ -1461,6 +1463,7 @@ class FraudProof {
    * - `payment:<seller x-only>:<payment hash>` and `frame:<sha256 of frame>` wrong-bytes, bad-key
    * - `penalty-tx:<txid>` wrongful-penalty
    * - `stale-tx:<txid>` stale-commitment
+   * - `run:<programHash>:<claimedRunCommitmentHex>` wrong-run
    * @returns {string[]}
    */
   evidenceIds () {
@@ -1500,6 +1503,12 @@ class FraudProof {
         if (txid) ids.push(`stale-tx:${txid}`);
         break;
       }
+      case FRAUD_PROOF_KINDS.WRONG_RUN: {
+        const programHash = hex64(a.programHash);
+        const claimed = hex64(a.claimedRunCommitmentHex);
+        if (programHash && claimed) ids.push(`run:${programHash}:${claimed}`);
+        break;
+      }
     }
     return ids;
   }
@@ -1531,8 +1540,19 @@ class FraudProof {
       case FRAUD_PROOF_KINDS.BAD_KEY: return this._verifyBadKey(fail);
       case FRAUD_PROOF_KINDS.WRONGFUL_PENALTY: return this._verifyWrongfulPenalty(ctx, fail);
       case FRAUD_PROOF_KINDS.STALE_COMMITMENT: return this._verifyStaleCommitment(ctx, fail);
+      case FRAUD_PROOF_KINDS.WRONG_RUN: return this._verifyWrongRun(fail);
       default: return fail(`unknown fraud proof kind: ${this.kind}`);
     }
+  }
+
+  /**
+   * Rerun the known program. A claim that is not the rerun's commitment is fraud.
+   * @private
+   */
+  _verifyWrongRun (fail) {
+    const verdict = require('../functions/computeJob').verifyWrongRun(this.artifacts);
+    if (!verdict.ok) return fail(verdict.reason);
+    return convict(verdict.offender, verdict.reason, { evidence: 'wrong-run' });
   }
 
   /** @private */

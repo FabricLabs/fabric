@@ -20,7 +20,10 @@ const expireHeight = Channel.expireHeight;
 /** @private */
 const HEX64 = /^[0-9a-f]{64}$/;
 
-/** Settled credit rows kept (open rows are bounded by the credit limit). */
+/**
+ * Settled credit rows kept (open rows are bounded by the credit limit).
+ * @private
+ */
 const MAX_SETTLED_CREDITS = 4096;
 
 /**

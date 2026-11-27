@@ -53,6 +53,7 @@ function limitOf (value, fallback) {
  * Canonical signing bytes: the body without `signature`.
  * @param {Object} body
  * @returns {string}
+ * @private
  */
 function signingString (body) {
   const copy = Object.assign({}, body);
@@ -65,12 +66,16 @@ function signingString (body) {
  * and accepts are referenced by it.
  * @param {Object} body
  * @returns {string}
+ * @private
  */
 function bodyId (body) {
   return crypto.createHash('sha256').update(signingString(body)).digest('hex');
 }
 
-/** @returns {string} 16 random bytes as hex */
+/**
+ * @returns {string} 16 random bytes as hex
+ * @private
+ */
 function randomNonce () {
   return crypto.randomBytes(16).toString('hex');
 }
@@ -85,6 +90,7 @@ function randomNonce () {
  * @param {Map<string, Function>} spec.normalizers body type → `(fields) → body` (throws on bad input)
  * @param {Object} spec.signerField body type → field holding the author's compressed key
  * @returns {Object} `{ toBody, fromBody, signingString, bodyId, pubkeyFromPrivate, signBody, verifyBody, randomNonce }`
+ * @private
  */
 function codec (spec) {
   const { name, version, normalizers, signerField } = spec;

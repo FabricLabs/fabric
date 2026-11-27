@@ -425,6 +425,15 @@ class Machine extends Actor {
     try {
       const Program = require('./program');
       const prog = program instanceof Program ? program : Program.from(program || {});
+      if (opts.isolate === true && prog.language === 'fabric-opcodes') {
+        return Program.runIsolatedOpcodes(prog.steps, {
+          allowedOpcodes: this._allowedOpcodes,
+          maxSteps: this.settings.maxSteps,
+          maxStack: this.settings.maxStack,
+          isolateTimeoutMs: opts.isolateTimeoutMs,
+          isolateWorker: opts.isolateWorker
+        });
+      }
       if (prog.language === 'fabric-execution') {
         const {
           runExecutionProgram
@@ -433,10 +442,17 @@ class Machine extends Actor {
         const src = prog.settings.source && typeof prog.settings.source === 'object'
           ? prog.settings.source
           : program;
-        const result = runExecutionProgram(src, Object.assign({}, opts, {
-          machine: this,
-          allowedOpcodes: this._allowedOpcodes
-        }));
+        const pass = {};
+        if (opts.genesis) pass.genesis = opts.genesis;
+        if (opts.maxSteps != null) pass.maxSteps = opts.maxSteps;
+        if (opts.maxStack != null) pass.maxStack = opts.maxStack;
+        if (opts.isolateTimeoutMs != null) pass.isolateTimeoutMs = opts.isolateTimeoutMs;
+        if (opts.inProcess === true) pass.inProcess = true;
+        if (typeof opts.resolveFabricEntry === 'function') pass.resolveFabricEntry = opts.resolveFabricEntry;
+        if (this._allowedOpcodes && this._allowedOpcodes.length) {
+          pass.allowedOpcodes = this._allowedOpcodes;
+        }
+        const result = runExecutionProgram(src, pass);
         return {
           ok: result.ok,
           stack: result.stack || [],

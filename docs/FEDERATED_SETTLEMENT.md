@@ -28,8 +28,14 @@ A federation can:
 5. Pin the code that signers actually run (tagged `@fabric/core`, Hub lockfile
    SHA) **before** the vault holds coins others rely on.
 
-Lightning, Payjoin, and inventory HTLC stay **adapters and markets** on the
-same identity — they are not a substitute for (1)–(5).
+Lightning and inventory HTLC stay **adapters and markets** on the same
+identity. They do not replace (1)–(5). **Payjoin** is the default *shape* of
+the L1 transaction that performs a peg-in and a unanimous spend (**F6**, after
+**F4**): signer inputs, one output to the vault, signer change, no
+`OP_RETURN`. The reserve ledger still credits and burns. A chain observer
+sees an ordinary PayJoin into a Taproot output and, on a unanimous spend, an
+ordinary key-path signature. The signer set is the off-chain
+`FabricFederationDescriptor`; anyone recomputes the address from it.
 
 ## Tracks
 
@@ -39,8 +45,9 @@ same identity — they are not a substitute for (1)–(5).
 | **F1** | Destination authorization | Next | Withdrawal address must prove membership in a published allowlist (xpub / descriptor), not “any script the signers accept” |
 | **F2** | Peg loop | Next | Watch vault deposits to `maturityDepth`; credit once; burn outstanding **then** broadcast the vault spend |
 | **F3** | Emergency recovery | Next | Script-path CLTV (or CSV) + recovery quorum; documented test that the live key set cannot block forever |
-| **F4** | Compact aggregate spend | Open | Implement MuSig2 for vault / epoch **or** stop naming it; today’s seal is k-of-n BIP340 accumulate |
+| **F4** | Compact aggregate spend | Open | n-of-n `Federation.buildDescriptor` records `internalKeyMode: 'musig2'` (key-path vault). Pass `internalKeyMode: 'nums'` to keep an existing NUMS address. `k < n` stays script-path. Beacon epoch MuSig2 aggregate is still a stub (`functions/musig2EpochAggregate`) |
 | **F5** | Functionary signing | Open | PSBT (or descriptor) export that a hardware / air-gapped signer can complete without the Hub host holding the spend key |
+| **F6** | Cooperative seal | Open | `Federation.buildFundingPsbt` is the peg-in shape: signer inputs, vault output, signer change, no `OP_RETURN`. F0 reserve rules still apply. Unanimous spend is the n-of-n key path. `k < n` spends stay on the tapscript ladder. Existing NUMS vaults are not migrated. Hub BIP78 is the two-party adapter; the Fabric coinjoin market is a different protocol |
 | **P1** | Receive privacy | Deferred | BIP352 silent payments once Bitcoin Core / libsecp surfaces are stable |
 | **P2** | Amount blinding | Deferred | Optional; requires conservation proofs that bind value, instrument id, and `scriptPubKey`. No verifier cache on a subset of those fields. Tagged release before any signer runs it |
 | **I1** | Issued instruments | Later | Contract-layer balances with issuer / reissuer roles — see [ISSUED_INSTRUMENTS.md](ISSUED_INSTRUMENTS.md) |
