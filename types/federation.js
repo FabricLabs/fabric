@@ -1551,7 +1551,7 @@ class Federation extends Contract {
    * subset. Reserve credit still waits on `Federation.applyPegInCredit`.
    * @param {Object} opts
    * @param {Object} opts.descriptor
-   * @param {Array<{ txid: string, vout: number, valueSats: number, address: string, pubkey: string, changeAddress?: string }>} opts.inputs
+   * @param {Array<Object>} opts.inputs signer inputs: `txid`, `vout`, `valueSats`, native P2WPKH `address`, `pubkey`, and optional `changeAddress`
    * @param {number} opts.vaultSats
    * @param {number} opts.feeSats
    * @returns {{ psbtBase64: string, vaultAddress: string, vaultSats: number, feeSats: number, changeSats: number }}

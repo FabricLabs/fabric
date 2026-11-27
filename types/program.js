@@ -12,7 +12,6 @@
  */
 
 const crypto = require('crypto');
-const { spawnSync } = require('child_process');
 const path = require('path');
 const Circuit = require('./circuit');
 const Script = require('./script');
@@ -488,6 +487,15 @@ class Program extends Circuit {
       60000
     );
     const worker = options.isolateWorker ? String(options.isolateWorker) : __filename;
+    let spawnSync;
+    try {
+      spawnSync = require('child_process').spawnSync;
+    } catch (err) {
+      return { timedOut: false, parsed: null, error: 'program isolate requires Node' };
+    }
+    if (typeof spawnSync !== 'function') {
+      return { timedOut: false, parsed: null, error: 'program isolate requires Node' };
+    }
     const result = spawnSync(process.execPath, [worker], {
       input: JSON.stringify(payload),
       encoding: 'utf8',

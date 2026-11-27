@@ -59,7 +59,10 @@ class Storage extends Service {
     this.commitments = new Map();
     /** @type {Map<string, object>} */
     this.challenges = new Map();
-    /** @type {Map<string, object>} deposit address → `{ deposit, fundedTxHex }` */
+    /**
+     * Deposit address to `{ deposit, fundedTxHex }`.
+     * @type {Map<string, object>}
+     */
     this.deposits = new Map();
   }
 
@@ -310,7 +313,7 @@ class Storage extends Service {
    * @param {object} [opts]
    * @param {number} [opts.epoch]
    * @param {number} [opts.tipHeight]
-   * @returns {{ ok: boolean, failClosed?: boolean, error?: string, late: number }}
+   * @returns {Object} `ok`. Failure adds `failClosed` and `error`. Success adds `late`.
    */
   sweep (opts = {}) {
     const view = this.chainView();
