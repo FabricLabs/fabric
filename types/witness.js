@@ -1506,7 +1506,9 @@ class FraudProof {
       case FRAUD_PROOF_KINDS.WRONG_RUN: {
         const programHash = hex64(a.programHash);
         const claimed = hex64(a.claimedRunCommitmentHex);
-        if (programHash && claimed) ids.push(`run:${programHash}:${claimed}`);
+        const worker = hex64(a.workerPubkey);
+        const input = hex64(a.inputCommitment) || 'none';
+        if (programHash && claimed && worker) ids.push(`run:${programHash}:${input}:${worker}:${claimed}`);
         break;
       }
     }

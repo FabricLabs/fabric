@@ -168,5 +168,27 @@ describe('federation cooperative seal', function () {
       vaultSats: 100000,
       feeSats: 1000
     }), /at least one signer/);
+    const taproot = bitcoin.payments.p2tr({
+      internalPubkey: Buffer.alloc(32, 2),
+      network: bitcoin.networks.regtest
+    }).address;
+    assert.throws(() => Federation.buildFundingPsbt({
+      descriptor,
+      inputs: [{
+        txid: crypto.randomBytes(32).toString('hex'),
+        vout: 0,
+        valueSats: 80000,
+        address: taproot,
+        pubkey: a.pub
+      }, {
+        txid: crypto.randomBytes(32).toString('hex'),
+        vout: 0,
+        valueSats: 80000,
+        address: p2wpkh(b.pub),
+        pubkey: b.pub
+      }],
+      vaultSats: 100000,
+      feeSats: 1000
+    }), /P2WPKH/);
   });
 });

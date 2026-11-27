@@ -1072,16 +1072,28 @@ class CliDocumentExchange {
   storage () {
     if (!this._storage) {
       const bitcoin = this._bitcoin();
+      const rpc = bitcoin && typeof bitcoin._makeRPCRequest === 'function'
+        ? (method, params) => bitcoin._makeRPCRequest(method, params)
+        : null;
       this._storage = new Storage({
         network: this._networkName(),
-        outpointUnspent: bitcoin && typeof bitcoin.getTxOut === 'function'
-          ? async (txid, vout) => !!(await bitcoin.getTxOut(txid, vout))
+        outpointUnspent: rpc
+          ? async (txid, vout) => {
+            const out = await rpc('gettxout', [String(txid), Number(vout), true]);
+            return out != null;
+          }
           : null,
-        txConfirmed: bitcoin && typeof bitcoin.getTransaction === 'function'
-          ? async (txid) => !!(await bitcoin.getTransaction(txid))
+        txConfirmed: rpc
+          ? async (txid) => {
+            const tx = await rpc('getrawtransaction', [String(txid), true]);
+            return !!(tx && Number(tx.confirmations) > 0);
+          }
           : null,
-        headerKnown: bitcoin && typeof bitcoin.getBlock === 'function'
-          ? async (hash) => !!(await bitcoin.getBlock(hash))
+        headerKnown: rpc
+          ? async (hash) => {
+            const header = await rpc('getblockheader', [String(hash), true]);
+            return !!(header && Number(header.confirmations) > 0);
+          }
           : null
       });
     }
@@ -1135,10 +1147,12 @@ class CliDocumentExchange {
         publisherPrivateKey,
         epoch: params[4] != null ? Number(params[4]) : 0
       });
+      const Witness = require('../types/witness');
+      const hash = Witness.artifactHash(challenge);
       return {
         ok: true,
         challenge,
-        message: `Challenge epoch ${challenge.epoch} blob ${challenge.blobIndex} on ${challenge.merkleRootHex}.`
+        message: `Challenge ${hash} epoch ${challenge.epoch} blob ${challenge.blobIndex} on ${challenge.merkleRootHex}. /respond ${hash} <providerPrivHex> <epoch> <blobHex>`
       };
     } catch (e) {
       return { ok: false, error: e.message };

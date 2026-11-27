@@ -50,20 +50,41 @@ function asProgram (program) {
 /**
  * @param {import('../types/program')} program
  */
-function assertBondable (program) {
-  if (!program) throw new Error('compute: program required');
-  if (program.language === 'javascript' || program.settings.trusted === true) {
+function positiveInt (value, label) {
+  const n = Math.floor(Number(value));
+  if (!Number.isSafeInteger(n) || n <= 0) {
+    throw new Error(`compute: ${label} must be a positive integer`);
+  }
+  return n;
+}
+
+/**
+ * Compile, then reject anything that is not a short deterministic program.
+ * @param {object} program
+ * @returns {import('../types/program')}
+ */
+function prepareProgram (program) {
+  const prog = asProgram(program);
+  if (!prog) throw new Error('compute: program required');
+  if (prog.language === 'javascript' || prog.settings.trusted === true) {
     throw new Error('compute: javascript and trusted programs cannot be bonded');
   }
-  if (BONDABLE.has(program.language) === false) {
+  if (BONDABLE.has(prog.language) === false) {
     throw new Error('compute: only fabric-execution and fabric-opcodes can be bonded');
   }
-  const steps = program.language === 'fabric-execution'
-    ? ((program.source && program.source.steps) || program.steps)
-    : program.steps;
+  const compiled = prog.compile();
+  if (!compiled.ok) throw new Error(compiled.error || 'compute: compile failed');
+  const steps = prog.language === 'fabric-execution'
+    ? ((prog.source && prog.source.steps) || prog.steps)
+    : prog.steps;
   if (!Array.isArray(steps) || steps.length > MAX_STEPS) {
     throw new Error(`compute: program exceeds ${MAX_STEPS} steps`);
   }
+  return prog;
+}
+
+function assertBondable (program) {
+  prepareProgram(program);
 }
 
 /**
@@ -75,15 +96,20 @@ function assertBondable (program) {
  */
 function rerun (program, input) {
   const Program = require('../types/program');
-  const prog = asProgram(program);
-  assertBondable(prog);
+  const prog = prepareProgram(program);
   if (prog.language === 'fabric-execution') {
     const source = prog.source && typeof prog.source === 'object' ? prog.source : { steps: prog.steps };
     const out = Program.runIsolated(source);
     return Object.assign({ inputCommitment: inputCommitmentHex(input) }, out);
   }
-  const out = Program.runIsolatedOpcodes(prog.steps);
-  return Object.assign({ inputCommitment: inputCommitmentHex(input), program: prog }, out);
+  const steps = prog.steps.slice();
+  const identity = Program.from({ language: 'fabric-opcodes', steps });
+  const out = Program.runIsolatedOpcodes(steps);
+  return Object.assign({}, out, {
+    inputCommitment: inputCommitmentHex(input),
+    program: identity,
+    programHash: identity.programHash
+  });
 }
 
 /**
@@ -91,14 +117,10 @@ function rerun (program, input) {
  * @returns {object} `ComputeOffer`
  */
 function offer (opts = {}) {
-  const prog = asProgram(opts.program);
-  assertBondable(prog);
-  const priceSats = Math.floor(Number(opts.priceSats));
-  const bondSats = Math.floor(Number(opts.bondSats));
-  const challengeWindowBlocks = Math.floor(Number(opts.challengeWindowBlocks));
-  if (!(priceSats > 0)) throw new Error('compute: priceSats must be a positive integer');
-  if (!(bondSats > 0)) throw new Error('compute: bondSats must be a positive integer');
-  if (!(challengeWindowBlocks > 0)) throw new Error('compute: challengeWindowBlocks must be a positive integer');
+  const prog = prepareProgram(opts.program);
+  const priceSats = positiveInt(opts.priceSats, 'priceSats');
+  const bondSats = positiveInt(opts.bondSats, 'bondSats');
+  const challengeWindowBlocks = positiveInt(opts.challengeWindowBlocks, 'challengeWindowBlocks');
   return {
     type: 'ComputeOffer',
     version: 1,
@@ -169,6 +191,23 @@ function verifyWrongRun (artifacts = {}) {
   if (!HEX64.test(claimed)) return fail('claimedRunCommitmentHex must be 64 hex chars');
   const worker = String(artifacts.workerPubkey || '').toLowerCase();
   if (!HEX64.test(worker)) return fail('workerPubkey must be x-only hex');
+  const Witness = require('../types/witness');
+  const claim = artifacts.claim;
+  if (!claim || !Witness.verifyArtifact(claim, worker)) {
+    return fail('worker signature required');
+  }
+  if (String(claim.programHash || '').toLowerCase() !== prog.programHash) {
+    return fail('claim program does not match');
+  }
+  if (String(claim.inputCommitment || '').toLowerCase() !== inputCommitment) {
+    return fail('claim input does not match');
+  }
+  if (String(claim.claimedRunCommitmentHex || '').toLowerCase() !== claimed) {
+    return fail('claim commitment does not match');
+  }
+  if (artifacts.depositAddress && String(claim.depositAddress || '') !== String(artifacts.depositAddress)) {
+    return fail('claim deposit does not match');
+  }
   let out;
   try {
     out = rerun(prog, artifacts.input);

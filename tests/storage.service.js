@@ -199,7 +199,7 @@ describe('services/storage', function () {
     assert.ok(parsed.value.body);
   });
 
-  it('document-exchange CLI commit and sweep verbs call the storage service', function () {
+  it('document-exchange CLI commit and sweep verbs call the storage service', async function () {
     const ex = new CliDocumentExchange({});
     const missing = ex.storageCommit(['commit']);
     assert.strictEqual(missing.ok, false);
@@ -209,5 +209,61 @@ describe('services/storage', function () {
     const sweep = ex.storageSweep(['sweep', '1', '10']);
     assert.strictEqual(sweep.ok, false);
     assert.match(sweep.error, /chain view required/);
+
+    const calls = [];
+    const wired = new CliDocumentExchange({
+      getBitcoin () {
+        return {
+          _makeRPCRequest (method, params) {
+            calls.push([method, params]);
+            if (method === 'gettxout') return { value: 1 };
+            if (method === 'getrawtransaction') return { confirmations: 2 };
+            if (method === 'getblockheader') return { confirmations: 2 };
+            return null;
+          }
+        };
+      }
+    });
+    const storage = wired.storage();
+    assert.strictEqual(await storage._outpointUnspent('aa'.repeat(32), 0), true);
+    assert.strictEqual(calls[0][0], 'gettxout');
+    assert.strictEqual(wired.storageSweep(['sweep']).ok, true);
+    const CLI = require('../types/cli');
+    const recalled = CLI.redactHistoryInput('/challenge c1 aa SECRET 4').split(/\s+/);
+    assert.strictEqual(recalled[3], '***');
+    assert.strictEqual(CLI.redactHistoryInput('/respond HASH SECRET 4 ff').split(/\s+/)[2], '***');
+  });
+
+  it('a rejected response does not close the challenge', function () {
+    const storage = new Storage({
+      network: 'regtest',
+      outpointUnspent: () => true,
+      txConfirmed: () => true,
+      headerKnown: () => true
+    });
+    const contract = storage.register(Storage.publish({ blobHashes: hashes }), 'c1');
+    const challenge = storage.challenge({
+      contractId: 'c1',
+      epoch: 10,
+      providerPubkey: provider.xOnly,
+      publisherPrivateKey: publisher.priv
+    });
+    const late = new Challenge().respond(challenge, {
+      blobHashes: hashes,
+      epoch: 40,
+      allowLate: true,
+      providerPrivateKey: provider.priv
+    });
+    const verdict = storage.respond(late, { epoch: 40 });
+    assert.strictEqual(verdict.ok, false);
+    assert.strictEqual(storage.sweep({ epoch: 40, tipHeight: 1000 }).late, 1);
+    const honest = new Challenge().respond(challenge, {
+      blobHashes: hashes,
+      bytes: doc.bytesFor(challenge.blobIndex),
+      epoch: 11,
+      providerPrivateKey: provider.priv
+    });
+    assert.strictEqual(storage.respond(honest, { bytes: doc.bytesFor(challenge.blobIndex) }).ok, true);
+    void contract;
   });
 });

@@ -1590,11 +1590,16 @@ class Federation extends Contract {
         throw new Error('buildFundingPsbt: each input valueSats must be above dust');
       }
       total += valueSats;
+      const script = bitcoin.address.toOutputScript(String(input.address), network);
+      const nativeP2wpkh = script.length === 22 && script[0] === 0x00 && script[1] === 0x14;
+      if (!nativeP2wpkh) {
+        throw new Error('buildFundingPsbt: only native P2WPKH inputs are accepted');
+      }
       psbt.addInput({
         hash: String(input.txid),
         index: Number(input.vout),
         witnessUtxo: {
-          script: bitcoin.address.toOutputScript(String(input.address), network),
+          script,
           value: BigInt(valueSats)
         }
       });

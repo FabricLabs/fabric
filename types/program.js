@@ -546,33 +546,35 @@ class Program extends Circuit {
       return Program._isolateFailure(err && err.message ? err.message : String(err), null, null);
     }
     let normalized = steps;
-    if (typeof options.resolveFabricEntry === 'function') {
-      try {
-        normalized = steps.map((step) => {
-          if (!step || typeof step !== 'object') return step;
-          const copy = {};
-          for (const key of Object.keys(step)) {
-            if (key === 'resolved') continue;
-            copy[key] = step[key];
-          }
-          if (normalizeOpName(step.op) !== 'FabricOpcode') return copy;
-          const entry = options.resolveFabricEntry(copy);
-          copy.resolved = {
-            name: entry && entry.name != null ? String(entry.name) : '',
-            opcodeDec: entry && entry.opcodeDec != null && Number.isFinite(Number(entry.opcodeDec))
-              ? Number(entry.opcodeDec)
-              : null,
-            stability: entry && entry.stability != null ? entry.stability : null,
-            encoding: entry && entry.encoding != null ? entry.encoding : null,
-            notes: entry && entry.notes != null ? entry.notes : null
-          };
-          return copy;
-        });
-      } catch (err) {
-        return Program._isolateFailure(err && err.message ? err.message : String(err), built.programHash, built.program);
-      }
+    const resolve = options.resolveFabricEntry;
+    try {
+      normalized = steps.map((step) => {
+        if (!step || typeof step !== 'object') return step;
+        const copy = {};
+        for (const key of Object.keys(step)) {
+          if (key === 'resolved') continue;
+          copy[key] = step[key];
+        }
+        if (typeof resolve !== 'function' || normalizeOpName(step.op) !== 'FabricOpcode') return copy;
+        const entry = resolve(copy);
+        copy.resolved = {
+          name: entry && entry.name != null ? String(entry.name) : '',
+          opcodeDec: entry && entry.opcodeDec != null && Number.isFinite(Number(entry.opcodeDec))
+            ? Number(entry.opcodeDec)
+            : null,
+          stability: entry && entry.stability != null ? entry.stability : null,
+          encoding: entry && entry.encoding != null ? entry.encoding : null,
+          notes: entry && entry.notes != null ? entry.notes : null
+        };
+        return copy;
+      });
+    } catch (err) {
+      return Program._isolateFailure(err && err.message ? err.message : String(err), built.programHash, built.program);
     }
-    const childOptions = { inProcess: true, useResolvedEntries: true };
+    const childOptions = {
+      inProcess: true,
+      useResolvedEntries: typeof resolve === 'function'
+    };
     if (options.maxSteps != null) childOptions.maxSteps = options.maxSteps;
     if (options.maxStack != null) childOptions.maxStack = options.maxStack;
     if (options.maxDepth != null) childOptions.maxDepth = options.maxDepth;

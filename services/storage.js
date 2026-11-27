@@ -184,13 +184,19 @@ class Storage extends Service {
     }
     const row = this.challenges.get(String(response.challengeHash || ''));
     if (!row) return { ok: false, reason: 'unknown challenge' };
-    if (row.response) return Object.assign({ duplicate: true }, row.verdict || { ok: false, reason: 'challenge already resolved' });
+    if (row.resolved) return Object.assign({ duplicate: true }, row.verdict || { ok: false, reason: 'challenge already resolved' });
     if (!Witness.verifyArtifact(response, row.challenge.providerPubkey)) {
       return { ok: false, refused: true, reason: 'response signature invalid' };
     }
     const verdict = this._challenger.validate(row.challenge, response, ctx);
-    row.response = response;
-    row.verdict = verdict;
+    row.rejected = row.rejected || [];
+    if (verdict.ok) {
+      row.resolved = true;
+      row.response = response;
+      row.verdict = verdict;
+    } else {
+      row.rejected.push({ response, verdict });
+    }
     return verdict;
   }
 
@@ -311,7 +317,7 @@ class Storage extends Service {
     if (!view.ok) return Object.assign({ late: 0 }, view);
     let late = 0;
     for (const row of this.challenges.values()) {
-      if (row.response) continue;
+      if (row.resolved) continue;
       const verdict = this._challenger.validate(row.challenge, null, {
         epoch: opts.epoch,
         tipHeight: opts.tipHeight

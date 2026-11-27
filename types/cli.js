@@ -2194,7 +2194,7 @@ class CLI extends FabricShell {
     } else if (head === 'wallet' && sub === 'unlock') {
       self.history.push('/wallet unlock ***');
     } else {
-      self.history.push(data.input);
+      self.history.push(CLI.redactHistoryInput(data.input));
     }
 
     // Mesh shoutbox: first-class UTF-8 P2P_CHAT_MESSAGE (Hub UI + GoonCitizen).
@@ -4119,5 +4119,28 @@ class CLI extends FabricShell {
     });
   }
 }
+
+/**
+ * History text for a submitted line. Private-key arguments on `/challenge`
+ * and `/respond` are replaced so Up-arrow recall cannot restore them.
+ * @param {string} raw
+ * @returns {string}
+ */
+function redactHistoryInput (raw) {
+  const text = String(raw || '');
+  const tokens = text.trim().split(/\s+/);
+  const head = String(tokens[0] || '').replace(/^\//, '').toLowerCase();
+  if (head === 'challenge' && tokens.length >= 4) {
+    tokens[3] = '***';
+    return tokens.join(' ');
+  }
+  if (head === 'respond' && tokens.length >= 3) {
+    tokens[2] = '***';
+    return tokens.join(' ');
+  }
+  return text;
+}
+
+CLI.redactHistoryInput = redactHistoryInput;
 
 module.exports = CLI;

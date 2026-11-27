@@ -114,6 +114,29 @@ describe('@fabric/core/types/machine', function () {
       const machine = new Machine(false);
       assert.throws(() => machine.compileOpcodeContract('OP_TRUE\nOP_NOT_REAL'), /Unknown opcodes/);
     });
+
+    it('does not run inherited or extra script properties', async function () {
+      const machine = new Machine({ maxSteps: 1, maxStack: 2 });
+      machine.define('OP_TRUE', function () { return true; });
+      const script = ['OP_TRUE'];
+      script.extra = 'OP_TRUE';
+      machine.settings.script = script;
+      await machine.compute();
+      assert.strictEqual(machine.stack.length, 1);
+      machine.settings.script = ['toString'];
+      await assert.rejects(machine.compute(), /opcode not defined/);
+    });
+
+    it('stops the governor when compute rejects', async function () {
+      const machine = new Machine({ maxStack: 1, frequency: 0.05 });
+      machine.define('PUSH', function () { return 1; });
+      machine.settings.script = ['PUSH', 'PUSH'];
+      const failed = new Promise((resolve) => machine.once('error', resolve));
+      await machine.start();
+      const err = await failed;
+      assert.match(String(err && err.message), /stack overflow/);
+      assert.strictEqual(machine.status, 'STOPPED');
+    });
   });
 });
 
@@ -245,6 +268,21 @@ describe('executionProgramRunner / Machine fabric-execution', function () {
   it('Program.compile fabric-execution requires steps', function () {
     const bad = Program.from({ language: 'fabric-execution', source: {} }).compile();
     assert.strictEqual(bad.ok, false);
+  });
+
+  it('applies Machine step limits and compiles isolated opcode source', async function () {
+    const limited = new Machine({ maxSteps: 1 });
+    const tooLong = await limited.runProgram({
+      language: 'fabric-execution',
+      source: { version: 1, steps: [{ op: 'Push', value: 1 }, { op: 'Push', value: 2 }] }
+    });
+    assert.strictEqual(tooLong.ok, false);
+    const isolated = await new Machine().runProgram({
+      language: 'fabric-opcodes',
+      source: 'OP_UNDEFINED'
+    }, null, { isolate: true });
+    assert.strictEqual(isolated.ok, false);
+    assert.match(String(isolated.error || ''), /opcode not defined|OP_UNDEFINED/);
   });
 });
 const crypto = require('crypto');

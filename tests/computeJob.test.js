@@ -117,21 +117,32 @@ describe('compute jobs', function () {
     });
     const fundedDeposit = fundingFor(deposit.address);
     const fundedTxid = bitcoin.Transaction.fromHex(fundedDeposit).getId();
+    const claimedRunCommitmentHex = 'ab'.repeat(32);
+    const signedClaim = Witness.signArtifact({
+      type: 'ComputeRunClaim',
+      programHash: job.programHash,
+      inputCommitment: job.inputCommitment,
+      claimedRunCommitmentHex,
+      depositAddress: deposit.address
+    }, worker.priv);
     const artifacts = {
       program: job.program,
       programHash: job.programHash,
       input: { n: 1 },
       inputCommitment: job.inputCommitment,
-      claimedRunCommitmentHex: 'ab'.repeat(32),
+      claimedRunCommitmentHex,
       workerPubkey: worker.xOnly,
       depositAddress: deposit.address,
-      deposit: { txid: fundedTxid, vout: 0 }
+      deposit: { txid: fundedTxid, vout: 0 },
+      claim: signedClaim
     };
+    assert.strictEqual(verifyWrongRun(Object.assign({}, artifacts, { claim: null })).ok, false);
     const forged = verifyWrongRun(artifacts);
     assert.strictEqual(forged.ok, true);
     assert.strictEqual(forged.offender, worker.xOnly);
     const proof = new Witness.FraudProof({ kind: 'wrong-run', artifacts });
     assert.strictEqual(proof.verify().ok, true);
+    assert.ok(proof.evidenceIds()[0].includes(worker.xOnly));
     const matched = verifyWrongRun(Object.assign({}, artifacts, {
       claimedRunCommitmentHex: honest.runCommitmentHex
     }));
