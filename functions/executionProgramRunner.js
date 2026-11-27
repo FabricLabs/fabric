@@ -113,8 +113,22 @@ function executionProgramFromHub (program) {
  *   machine?: object|null
  * }}
  */
+function isolateForced (options) {
+  if (options && options.inProcess === true) return true;
+  return typeof process !== 'undefined' && process != null && process.env &&
+    process.env.FABRIC_PROGRAM_ISOLATE === '1';
+}
+
+function clampLimit (value, fallback, max) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return fallback;
+  const whole = Math.floor(n);
+  if (whole > max) return max;
+  return whole;
+}
+
 function runExecutionProgram (program, options = {}) {
-  if (options.inProcess === true || process.env.FABRIC_PROGRAM_ISOLATE === '1') {
+  if (isolateForced(options)) {
     return runExecutionProgramInProcess(program, options);
   }
   const wrapped = Object.assign({}, options);
@@ -132,10 +146,10 @@ function runExecutionProgramInProcess (program, options = {}) {
     return { ok: false, error: 'program.steps must be an array', programHash: null, runCommitmentHex: null };
   }
 
-  const maxSteps = Math.min(Math.max(1, Number(options.maxSteps) || DEFAULT_MAX_STEPS), 4096);
-  const maxStack = Math.min(Math.max(1, Number(options.maxStack) || DEFAULT_MAX_STACK), 256);
-  const maxDepth = Math.min(Math.max(1, Number(options.maxDepth) || DEFAULT_MAX_DEPTH), 64);
-  const maxTrace = Math.min(Math.max(1, Number(options.maxTrace) || DEFAULT_MAX_TRACE), 8192);
+  const maxSteps = clampLimit(options.maxSteps, DEFAULT_MAX_STEPS, 4096);
+  const maxStack = clampLimit(options.maxStack, DEFAULT_MAX_STACK, 256);
+  const maxDepth = clampLimit(options.maxDepth, DEFAULT_MAX_DEPTH, 64);
+  const maxTrace = clampLimit(options.maxTrace, DEFAULT_MAX_TRACE, 8192);
   const resolveFabricEntry = typeof options.resolveFabricEntry === 'function'
     ? options.resolveFabricEntry
     : defaultResolveFabricEntry;

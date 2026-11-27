@@ -80,6 +80,9 @@ function prepareProgram (program) {
   if (!Array.isArray(steps) || steps.length > MAX_STEPS) {
     throw new Error(`compute: program exceeds ${MAX_STEPS} steps`);
   }
+  if (prog.language === 'fabric-opcodes' && steps.length > 0) {
+    throw new Error('compute: fabric-opcodes isolate has no opcode table');
+  }
   return prog;
 }
 
@@ -215,7 +218,12 @@ function verifyWrongRun (artifacts = {}) {
   if (artifacts.programHash && prog.programHash !== String(artifacts.programHash).toLowerCase()) {
     return fail('program bytes do not match programHash');
   }
-  const inputCommitment = inputCommitmentHex(artifacts.input);
+  let inputCommitment;
+  try {
+    inputCommitment = inputCommitmentHex(artifacts.input);
+  } catch (err) {
+    return fail(err && err.message ? err.message : 'input cannot be canonicalized');
+  }
   if (!artifacts.inputCommitment || inputCommitment !== String(artifacts.inputCommitment).toLowerCase()) {
     return fail('input does not match inputCommitment');
   }

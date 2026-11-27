@@ -296,6 +296,7 @@ describe('executionProgramRunner / Machine fabric-execution', function () {
       source: { version: 1, steps: [{ op: 'Push', value: 1 }, { op: 'Push', value: 2 }] }
     });
     assert.strictEqual(tooLong.ok, false);
+    assert.match(tooLong.error, /maxSteps/);
     const isolated = await new Machine().runProgram({
       language: 'fabric-opcodes',
       source: 'OP_UNDEFINED'
@@ -492,5 +493,53 @@ describe('Contract.observePayment / L1 payment', function () {
       () => applyPaymentObservation({}, { ok: false, code: 'NO_MATCH' }),
       /successful/
     );
+  });
+});
+
+describe('program execution limits', function () {
+  const { runExecutionProgram } = require('../functions/executionProgramRunner');
+
+  it('keeps the receiver stack for an in-process run', async function () {
+    const machine = new Machine();
+    const out = await machine.runProgram({
+      language: 'fabric-execution',
+      source: { version: 1, steps: [{ op: 'Push', value: 7 }] }
+    }, null, { inProcess: true });
+    assert.strictEqual(out.ok, true, out.error);
+    assert.strictEqual(machine.stack[machine.stack.length - 1], 7);
+  });
+
+  it('rejects a non-finite Push and a missing opcode resolution', function () {
+    const nan = runExecutionProgram({
+      version: 1,
+      steps: [{ op: 'Push', value: NaN }]
+    });
+    assert.strictEqual(nan.ok, false);
+    assert.match(nan.error, /non-finite/);
+    const missing = runExecutionProgram({
+      version: 1,
+      steps: [{ op: 'FabricOpcode', name: 'Missing' }]
+    }, { resolveFabricEntry () { return null; } });
+    assert.strictEqual(missing.ok, false);
+    assert.match(missing.error, /unresolved/);
+  });
+
+  it('treats a negative step cap as the default', function () {
+    const out = runExecutionProgram({
+      version: 1,
+      steps: [{ op: 'Push', value: 1 }, { op: 'Push', value: 2 }]
+    }, { inProcess: true, maxSteps: -1 });
+    assert.strictEqual(out.ok, true, out.error);
+  });
+
+  it('applies a per-call step cap to a local opcode run', async function () {
+    const machine = new Machine();
+    machine.define('OP_TRUE', () => true);
+    const out = await machine.runProgram({
+      language: 'fabric-opcodes',
+      source: ['OP_TRUE', 'OP_TRUE']
+    }, null, { maxSteps: 1 });
+    assert.strictEqual(out.ok, false);
+    assert.match(out.error, /maxSteps/);
   });
 });

@@ -1414,6 +1414,27 @@ function leafIndexFor (merkleRootHex, epoch, nonceHex, blobTotal) {
  *   asymmetric commitments: each party holds only its own commitment, so a
  *   broadcast of the revoked txid can only have come from the revoker.
  */
+/**
+ * Boolean result of a chain-view callback. A Promise is refused: an un-awaited
+ * Promise is truthy and would otherwise look like a successful check.
+ * @param {Function} fn
+ * @param {Array} args
+ * @returns {{ error: string }|{ value: boolean }}
+ * @private
+ */
+function chainBool (fn, args) {
+  let value;
+  try {
+    value = fn.apply(null, args);
+  } catch (err) {
+    return { error: err && err.message ? err.message : 'chain view failed' };
+  }
+  if (value && typeof value.then === 'function') {
+    return { error: 'chain view callbacks must return a boolean' };
+  }
+  return { value: value === true };
+}
+
 class FraudProof {
   constructor (body = {}) {
     this.kind = String(body.kind || '');
@@ -2169,7 +2190,9 @@ class FraudProof {
         return { ok: true, kind: 'chain-view' };
       }
       if (typeof ctx.txConfirmed === 'function') {
-        if (!ctx.txConfirmed(txid, depth)) return { ok: false, reason: 'transaction is not confirmed in the verifier\'s chain view' };
+        const confirmed = chainBool(ctx.txConfirmed, [txid, depth]);
+        if (confirmed.error) return { ok: false, reason: confirmed.error };
+        if (!confirmed.value) return { ok: false, reason: 'transaction is not confirmed in the verifier\'s chain view' };
         return { ok: true, kind: 'chain-view' };
       }
       return null;
@@ -2182,7 +2205,10 @@ class FraudProof {
           return { ok: false, reason: `inclusion artifact invalid: ${header.reason}` };
         }
         const blockHash = header.blockHash;
-        if (!blockHash || !ctx.headerKnown(blockHash)) return { ok: false, reason: `block ${blockHash} is not in the verifier's header chain` };
+        if (!blockHash) return { ok: false, reason: 'inclusion artifact has no block hash' };
+        const known = chainBool(ctx.headerKnown, [blockHash]);
+        if (known.error) return { ok: false, reason: known.error };
+        if (!known.value) return { ok: false, reason: `block ${blockHash} is not in the verifier's header chain` };
         if (typeof ctx.confirmations !== 'function') return { ok: false, reason: 'chain view required: ctx.confirmations(blockHash) for inclusion depth' };
         const confirmations = toInt(ctx.confirmations(blockHash));
         if (confirmations == null || confirmations < depth) return { ok: false, reason: `block ${blockHash} has ${confirmations || 0} of ${depth} confirmations` };
@@ -2243,7 +2269,9 @@ class FraudProof {
         else return fail(`deposit outpoint was spent${leafId ? ` through ${leafId}` : ''} — the provider checked in or answered`, base);
       }
     } else if (typeof ctx.outpointUnspent === 'function') {
-      if (!ctx.outpointUnspent(depTxid, depVout)) return fail('deposit outpoint was spent — the provider checked in, answered, or was already penalized', base);
+      const unspent = chainBool(ctx.outpointUnspent, [depTxid, depVout]);
+      if (unspent.error) return fail(unspent.error, base);
+      if (!unspent.value) return fail('deposit outpoint was spent — the provider checked in, answered, or was already penalized', base);
     } else {
       return fail('chain view required: ctx.outpointSpend or ctx.outpointUnspent', base);
     }

@@ -781,6 +781,13 @@ describe('Federation named federations', function () {
       assert.throws(() => Federation.verifyMembership(descriptor, body, members(1).pubs[0]), /not a member/);
       assert.throws(() => Federation.successor(descriptor, { add: pubs[0] }), /already a signer/);
       assert.throws(() => Federation.successor(descriptor, {}), /exactly one/);
+      const raised = Federation.membershipMessage({
+        descriptor,
+        add: members(1).pubs[0],
+        threshold: 4
+      });
+      assert.strictEqual(raised.threshold, 4);
+      assert.strictEqual(Federation.verifyMembership(descriptor, raised, pubs[1]).descriptor.threshold, 4);
     });
 
     it('accepts messages only from members, under the federation id', function () {

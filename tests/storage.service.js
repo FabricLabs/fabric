@@ -232,6 +232,9 @@ describe('services/storage', function () {
     const recalled = CLI.redactHistoryInput('/challenge c1 aa SECRET 4').split(/\s+/);
     assert.strictEqual(recalled[3], '***');
     assert.strictEqual(CLI.redactHistoryInput('/respond HASH SECRET 4 ff').split(/\s+/)[2], '***');
+    const tabbed = CLI.redactHistoryInput('/challenge c1\talias PUB KEY 4').split(' ');
+    assert.strictEqual(tabbed[3], '***');
+    assert.ok(tabbed[2].includes('PUB'));
   });
 
   it('a rejected response does not close the challenge', function () {

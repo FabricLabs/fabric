@@ -38,6 +38,27 @@ const program = {
 };
 
 describe('compute jobs', function () {
+  it('refuses a nonempty opcode script and a nested input', function () {
+    assert.throws(() => offer({
+      program: { language: 'fabric-opcodes', source: 'OP_TRUE' },
+      priceSats: 1,
+      bondSats: 1,
+      challengeWindowBlocks: 1
+    }), /opcode table/);
+    const empty = offer({
+      program: { language: 'fabric-opcodes', source: '' },
+      priceSats: 1,
+      bondSats: 1,
+      challengeWindowBlocks: 1
+    });
+    assert.strictEqual(empty.type, 'ComputeOffer');
+    let deep = { n: 0 };
+    for (let i = 0; i < 70; i++) deep = { n: deep };
+    const verdict = verifyWrongRun({ program, input: deep });
+    assert.strictEqual(verdict.ok, false);
+    assert.strictEqual(verdict.offender, null);
+  });
+
   this.timeout(20000);
   const publisher = keypair();
   const worker = keypair();

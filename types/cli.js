@@ -775,7 +775,12 @@ class CLI extends FabricShell {
       }
     }
 
-    await this.node.stop();
+    try {
+      await this.node.stop();
+    } catch (exception) {
+      this._stopping = false;
+      throw exception;
+    }
     this._restoreConsoleBridge();
     return process.exit(0);
   }
@@ -3014,7 +3019,7 @@ class CLI extends FabricShell {
 
   _processInput (input) {
     if (input.charAt(0) === '/') {
-      const parts = input.substring(1).split(' ');
+      const parts = commandTokens(input);
 
       if (this.commands[parts[0]]) {
         this.commands[parts[0]].apply(this, [ parts ]);
@@ -4290,9 +4295,15 @@ class CLI extends FabricShell {
  * @param {string} raw
  * @returns {string}
  */
+function commandTokens (raw) {
+  const text = String(raw || '');
+  const body = text.charAt(0) === '/' ? text.substring(1) : text;
+  return body.split(' ');
+}
+
 function redactHistoryInput (raw) {
   const text = String(raw || '');
-  const tokens = text.trim().split(/\s+/);
+  const tokens = commandTokens(text);
   const head = String(tokens[0] || '').replace(/^\//, '').toLowerCase();
   if (head === 'challenge' && tokens.length >= 4) {
     tokens[3] = '***';

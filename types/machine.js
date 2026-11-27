@@ -255,7 +255,7 @@ class Machine extends Actor {
    * @param  {Object} input Value to pass as input.
    * @return {Machine} Instance of the resulting machine.
    */
-  async compute (input) {
+  async compute (input, limits) {
     ++this.clock;
 
     this.emit('tick', this.clock);
@@ -263,8 +263,14 @@ class Machine extends Actor {
     const allow = this._allowedOpcodes;
     const restricted = allow && allow.length > 0;
     const script = Array.isArray(this.script) ? this.script : [];
-    const maxSteps = stepCap(this.settings);
-    const maxStack = stackCap(this.settings);
+    const capped = limits && typeof limits === 'object'
+      ? Object.assign({}, this.settings, {
+        maxSteps: limits.maxSteps != null ? limits.maxSteps : this.settings.maxSteps,
+        maxStack: limits.maxStack != null ? limits.maxStack : this.settings.maxStack
+      })
+      : this.settings;
+    const maxSteps = stepCap(capped);
+    const maxStack = stackCap(capped);
     if (script.length > maxSteps) {
       throw new Error(`program exceeds maxSteps (${maxSteps})`);
     }
@@ -390,6 +396,14 @@ class Machine extends Actor {
       throw new Error(compiled.error || 'program compile failed');
     }
 
+    if (prog.language === 'javascript' && prog.source && typeof prog.source === 'object' &&
+        !Array.isArray(prog.source)) {
+      const fns = Object.entries(prog.source).filter((entry) => typeof entry[1] === 'function');
+      if (fns.length && opts.trusted !== true) {
+        throw new Error('javascript program source requires trusted: true');
+      }
+    }
+
     // Program or caller genesis may install an allow-list when unrestricted.
     const fromExtra = normalizeOpcodeAllowList(
       opcodesFromGenesis(opts.genesis || {})
@@ -472,7 +486,10 @@ class Machine extends Actor {
         if (opts.isolateTimeoutMs != null) pass.isolateTimeoutMs = opts.isolateTimeoutMs;
         if (opts.isolateWorker != null) pass.isolateWorker = opts.isolateWorker;
         if (opts.workerUrl != null) pass.workerUrl = opts.workerUrl;
-        if (opts.inProcess === true) pass.inProcess = true;
+        if (opts.inProcess === true) {
+          pass.inProcess = true;
+          pass.machine = this;
+        }
         if (typeof opts.resolveFabricEntry === 'function') pass.resolveFabricEntry = opts.resolveFabricEntry;
         if (this._allowedOpcodes && this._allowedOpcodes.length) {
           pass.allowedOpcodes = this._allowedOpcodes;
@@ -494,7 +511,10 @@ class Machine extends Actor {
       }
       this.loadProgram(program, opts);
       const beforeLen = this.stack.length;
-      await this.compute(input);
+      await this.compute(input, {
+        maxSteps: opts.maxSteps,
+        maxStack: opts.maxStack
+      });
       const trace = this.stack.slice(beforeLen);
       const tip = this.stack.length ? this.stack[this.stack.length - 1] : null;
       const runCommitmentHex = this._program
@@ -801,6 +821,14 @@ class Machine extends Actor {
     if (!Array.isArray(steps)) {
       return { failure: Machine._isolateFailure('program.steps must be an array', null, null), built: null, payload: null };
     }
+    const stepCapForIsolate = isolateClampInt(options.maxSteps, 256, 4096);
+    if (steps.length > stepCapForIsolate) {
+      return {
+        failure: Machine._isolateFailure(`program exceeds maxSteps (${stepCapForIsolate})`, null, null),
+        built: null,
+        payload: null
+      };
+    }
     let built = null;
     try {
       built = executionProgramFromHub(program);
@@ -823,6 +851,9 @@ class Machine extends Actor {
         }
         if (typeof resolve !== 'function' || normalizeOpName(step.op) !== 'FabricOpcode') return copy;
         const entry = resolve(copy);
+        if (!entry || typeof entry !== 'object' || entry.name == null || String(entry.name) === '') {
+          throw new Error('FabricOpcode unresolved');
+        }
         copy.resolved = {
           name: entry && entry.name != null ? String(entry.name) : '',
           opcodeDec: entry && entry.opcodeDec != null && Number.isFinite(Number(entry.opcodeDec))
@@ -850,8 +881,19 @@ class Machine extends Actor {
     let allow = Array.isArray(options.allowedOpcodes) ? normalizeOpcodeAllowList(options.allowedOpcodes) : [];
     if (!allow.length && options.genesis) allow = opcodesFromGenesis(options.genesis);
     if (allow.length) childOptions.allowedOpcodes = allow;
-    if (Object.prototype.hasOwnProperty.call(options, 'seedValue')) {
-      childOptions.seedValue = jsonSafe(options.seedValue);
+    try {
+      rejectNonFinite(program);
+      rejectNonFinite(normalized);
+      if (Object.prototype.hasOwnProperty.call(options, 'seedValue')) {
+        rejectNonFinite(options.seedValue);
+        childOptions.seedValue = jsonSafe(options.seedValue);
+      }
+    } catch (err) {
+      return {
+        failure: Machine._isolateFailure(err && err.message ? err.message : String(err), built.programHash, built.program),
+        built,
+        payload: null
+      };
     }
     return {
       failure: null,
@@ -1080,6 +1122,20 @@ var OP_NAMES = {
   fabricopcode: 'FabricOpcode',
   delegationsignrequest: 'DelegationSignRequest'
 };
+
+function rejectNonFinite (value) {
+  if (typeof value === 'number' && !Number.isFinite(value)) {
+    throw new Error('non-finite number not allowed');
+  }
+  if (Array.isArray(value)) {
+    for (let i = 0; i < value.length; i++) rejectNonFinite(value[i]);
+    return;
+  }
+  if (value && typeof value === 'object') {
+    const keys = Object.keys(value);
+    for (let i = 0; i < keys.length; i++) rejectNonFinite(value[keys[i]]);
+  }
+}
 
 function isolateClampInt (value, fallback, max) {
   var n = Number(value);

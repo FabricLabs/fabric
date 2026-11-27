@@ -1880,6 +1880,7 @@ class Federation extends Contract {
       superseded: next.superseded,
       add: next.add,
       remove: next.remove,
+      threshold: next.descriptor.threshold,
       descriptor: next.descriptor
     };
   }
@@ -1950,7 +1951,12 @@ class Federation extends Contract {
     }
     const x = pubkeyXOnly(signer);
     if (!x || !Federation.isValidator(previous, x)) throw new Error('signer is not a member');
-    const expected = Federation.successor(previous, { add: body.add, remove: body.remove });
+    const threshold = (body.threshold != null && body.threshold !== '') ? Number(body.threshold) : undefined;
+    const expected = Federation.successor(previous, {
+      add: body.add,
+      remove: body.remove,
+      threshold
+    });
     let presented;
     try {
       presented = Federation.canonicalDescriptor(body.descriptor);
