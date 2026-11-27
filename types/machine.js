@@ -1403,3 +1403,6 @@ function isolateAttachPort () {
 }
 
 Machine.runPayload = isolateRunPayload;
+Machine._isolateOnMessage = isolateOnMessage;
+Machine._isolateReplyTo = isolateReplyTo;
+Machine._isolateAttachPort = isolateAttachPort;

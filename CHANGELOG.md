@@ -6,6 +6,7 @@ Recent changes to Fabric Core.
 - **CLI startup status is one line each.** The console shows the listen address, each peer as connected or why it failed, and Bitcoin and Lightning ready. Peer lifecycle, chain-sync hashes, header-refresh notes, and service JSON stay on debug (verbosity 4+).
 - **CLI quit shows a modal while managed subprocesses stop.** Lightning and Bitcoin children are listed as waiting, stopping, and stopped. A quit with no child process does not draw it.
 - **Onion peel depth survives a nested relay.** A `P2P_RELAY` unwrap keeps `forwardPeelDepth`, so alternating forwards and relays cannot restart the 8-hop cap.
+- **The isolate interpreter is covered in-process.** `Machine.runPayload` runs the same step functions the worker thread uses, including message reply and port attach.
 - **Keyed-body deletion does not use a computed `delete`.** Empty parents are still removed. The machine governor stops before it reports a rejected tick, and only when an `error` listener exists. A script index or keepalive name is read from the object itself.
 
 ## 2026-11-26
