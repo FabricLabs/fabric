@@ -26,6 +26,9 @@
   <div id="main">
     <h1 class="page-title">Source: types/peer.js</h1>
 
+    <p><a href="https://github.com/FabricLabs/fabric/edit/master/types/peer.js">Edit this page</a></p>
+
+
 
 
 
@@ -77,14 +80,13 @@ const {
   PEER_MUSIG_SESSION_TTL_MS,
   HEADER_SIZE,
   MAX_MESSAGE_SIZE,
-  LEGACY_MAX_FRAME_BYTES,
+  MAX_FRAME_BYTES,
   NOISE_HANDSHAKE_MAX_BYTES,
   MAX_DOCUMENT_ID_LENGTH,
   INVENTORY_RESPONSE_PAGE_BYTES,
   PEER_SCORE_OVERSIZE_FRAME_PENALTY,
   P2P_PORT,
   P2P_CHAIN_SYNC_REQUEST,
-  P2P_FLUSH_CHAIN,
   P2P_FORWARD,
   P2P_RELAY
 } = require('../constants');
@@ -104,20 +106,241 @@ const {
   isOnionChatSeal,
   tryOpenOnionChatText
 } = require('../functions/onionChatSeal');
-const { individualPk } = require('./witness/musig2');
-const musig2Session = require('./witness/musig2Session');
+const { individualPk } = require('../functions/musig2');
+const musig2Session = require('../functions/musig2Session');
 const sidechainState = require('../functions/sidechainState');
 const { epochCommitmentDigestHex } = require('../functions/beaconFederationSigning');
 const Federation = require('./federation');
 
-/** Session-advertised level of field-body support (`object.fieldBodies`). */
+/**
+ * Sealed document delivery wire type → the inner `type` its generic handler dispatches on.
+ * @private
+ */
+const SEALED_DELIVERY_INNER_TYPE_BY_WIRE = Object.freeze({
+  DOCUMENT_KEY_REVEAL: 'DocumentContentKeyReveal',
+  DOCUMENT_BLOB_QUOTE: 'DocumentBlobQuote',
+  DOCUMENT_BLOB_BATCH: 'DocumentBlobBatch'
+});
+/**
+ * Those inner types: refused inside a `GenericMessage` / `P2P_BASE_MESSAGE` carrier.
+ * @private
+ */
+const SEALED_DELIVERY_INNER_TYPES = new Set(Object.values(SEALED_DELIVERY_INNER_TYPE_BY_WIRE));
+
+/**
+ * Session-advertised level of field-body support (`object.fieldBodies`).
+ * @private
+ */
 const FIELD_BODIES_VERSION = 1;
+/**
+ * Default time a funded sealed-blob quote keeps its secret while its HTLC settles.
+ * @private
+ */
+const PEER_SEALED_BLOB_FUNDED_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 const {
   aggregatePeerBandwidth,
+  peerBandwidthByteLength,
   peerBandwidthSnapshot,
   perPeerBandwidthBudgetBytes,
-  recordPeerBandwidth
-} = require('../functions/peerBandwidth');
+  recordPeerBandwidth,
+  rollPeerBandwidthWindow
+} = (function () {
+const {
+  BITCOIN_L1_BLOCK_BYTES,
+  BITCOIN_L1_BLOCK_INTERVAL_MS,
+  MAX_PEERS
+} = require('../constants');
+
+/**
+ * Fair-share byte budget for one Fabric peer in the L1 window.
+ * Default: 1 MiB / 10 min / {@link MAX_PEERS} (32) = 32768 bytes per peer.
+ * Reporting only: Peer flags `overBudget` but does not throttle or drop a peer.
+ * @param {number} [windowBytes] node-wide window (default Bitcoin L1 1 MiB)
+ * @param {number} [maxPeers] slot count (default {@link MAX_PEERS})
+ * @returns {number}
+ */
+function perPeerBandwidthBudgetBytes (windowBytes, maxPeers) {
+  const total = Number(windowBytes);
+  const n = Number(maxPeers);
+  const bytes = Number.isFinite(total) &amp;&amp; total > 0 ? total : BITCOIN_L1_BLOCK_BYTES;
+  const peers = Number.isFinite(n) &amp;&amp; n > 0 ? Math.max(1, Math.floor(n)) : MAX_PEERS;
+  return Math.floor(bytes / peers);
+}
+
+/**
+ * Coerce a write/read payload to a non-negative integer byte length.
+ * @param {*} msg
+ * @returns {number}
+ */
+function peerBandwidthByteLength (msg) {
+  if (msg == null) return 0;
+  if (typeof msg === 'number') {
+    if (!Number.isFinite(msg) || msg &lt; 0) return 0;
+    return Math.floor(msg);
+  }
+  if (typeof Buffer !== 'undefined' &amp;&amp; Buffer.isBuffer &amp;&amp; Buffer.isBuffer(msg)) return msg.length;
+  if (msg instanceof Uint8Array) return msg.byteLength;
+  if (typeof msg === 'string') {
+    return (typeof Buffer !== 'undefined' &amp;&amp; Buffer.byteLength) ? Buffer.byteLength(msg) : msg.length;
+  }
+  if (typeof msg.length === 'number' &amp;&amp; Number.isFinite(msg.length) &amp;&amp; msg.length >= 0) {
+    return Math.floor(msg.length);
+  }
+  return 0;
+}
+
+/**
+ * @param {Object} [slot]
+ * @param {number} now
+ * @param {number} windowMs
+ * @returns {Object}
+ */
+function rollPeerBandwidthWindow (slot, now, windowMs) {
+  const t = Number.isFinite(now) ? now : Date.now();
+  const w = Number(windowMs) > 0 ? Number(windowMs) : BITCOIN_L1_BLOCK_INTERVAL_MS;
+  if (!slot || typeof slot !== 'object') {
+    return {
+      bytesIn: 0,
+      bytesOut: 0,
+      windowBytesIn: 0,
+      windowBytesOut: 0,
+      windowStart: t,
+      windowMs: w
+    };
+  }
+  if ((t - Number(slot.windowStart || 0)) >= w) {
+    return {
+      bytesIn: Number(slot.bytesIn) || 0,
+      bytesOut: Number(slot.bytesOut) || 0,
+      windowBytesIn: 0,
+      windowBytesOut: 0,
+      windowStart: t,
+      windowMs: w
+    };
+  }
+  return {
+    bytesIn: Number(slot.bytesIn) || 0,
+    bytesOut: Number(slot.bytesOut) || 0,
+    windowBytesIn: Number(slot.windowBytesIn) || 0,
+    windowBytesOut: Number(slot.windowBytesOut) || 0,
+    windowStart: Number(slot.windowStart) || t,
+    windowMs: w
+  };
+}
+
+/**
+ * Add inbound or outbound bytes onto a rolling L1 window slot.
+ * @param {Object} [slot]
+ * @param {string} direction `in` or `out`
+ * @param {*} n payload or byte count
+ * @param {number} [now]
+ * @param {number} [windowMs]
+ * @returns {Object}
+ */
+function recordPeerBandwidth (slot, direction, n, now, windowMs) {
+  const next = rollPeerBandwidthWindow(slot, now, windowMs);
+  const add = peerBandwidthByteLength(n);
+  if (direction === 'out') {
+    next.bytesOut += add;
+    next.windowBytesOut += add;
+  } else {
+    next.bytesIn += add;
+    next.windowBytesIn += add;
+  }
+  return next;
+}
+
+/**
+ * Operator-facing snapshot for {@link Peer#knownPeers} / Hub columns.
+ * @param {Object} [slot]
+ * @param {number} [now]
+ * @param {Object} [opts]
+ * @param {number} [opts.windowMs]
+ * @param {number} [opts.windowBytes]
+ * @param {number} [opts.maxPeers]
+ * @param {number} [opts.budgetBytes]
+ * @returns {Object}
+ */
+function peerBandwidthSnapshot (slot, now, opts) {
+  const options = opts &amp;&amp; typeof opts === 'object' ? opts : {};
+  const windowMs = Number(options.windowMs) > 0 ? Number(options.windowMs) : BITCOIN_L1_BLOCK_INTERVAL_MS;
+  const budget = Number.isFinite(Number(options.budgetBytes)) &amp;&amp; Number(options.budgetBytes) > 0
+    ? Math.floor(Number(options.budgetBytes))
+    : perPeerBandwidthBudgetBytes(options.windowBytes, options.maxPeers);
+  const rolled = rollPeerBandwidthWindow(slot, now, windowMs);
+  const windowBytes = rolled.windowBytesIn + rolled.windowBytesOut;
+  return {
+    bytesIn: rolled.bytesIn,
+    bytesOut: rolled.bytesOut,
+    windowBytesIn: rolled.windowBytesIn,
+    windowBytesOut: rolled.windowBytesOut,
+    windowBytes,
+    windowMs: rolled.windowMs,
+    windowStart: rolled.windowStart,
+    budgetBytes: budget,
+    budgetShare: budget > 0 ? windowBytes / budget : 0,
+    overBudget: budget > 0 &amp;&amp; windowBytes > budget
+  };
+}
+
+/**
+ * Sum snapshots for a node-wide GetNetworkStatus strip.
+ * @param {Object[]} snapshots
+ * @param {Object} [meta]
+ * @param {number} [meta.windowMs]
+ * @param {number} [meta.windowBytes]
+ * @param {number} [meta.maxPeers]
+ * @param {number} [meta.peerBudgetBytes]
+ * @returns {Object}
+ */
+function aggregatePeerBandwidth (snapshots, meta) {
+  const list = Array.isArray(snapshots) ? snapshots : [];
+  const m = meta &amp;&amp; typeof meta === 'object' ? meta : {};
+  let bytesIn = 0;
+  let bytesOut = 0;
+  let windowBytesIn = 0;
+  let windowBytesOut = 0;
+  let overBudgetPeers = 0;
+  for (const s of list) {
+    if (!s || typeof s !== 'object') continue;
+    bytesIn += Number(s.bytesIn) || 0;
+    bytesOut += Number(s.bytesOut) || 0;
+    windowBytesIn += Number(s.windowBytesIn) || 0;
+    windowBytesOut += Number(s.windowBytesOut) || 0;
+    if (s.overBudget) overBudgetPeers += 1;
+  }
+  const windowBytes = windowBytesIn + windowBytesOut;
+  const windowMs = Number(m.windowMs) > 0 ? Number(m.windowMs) : BITCOIN_L1_BLOCK_INTERVAL_MS;
+  const nodeWindowBytes = Number(m.windowBytes) > 0 ? Number(m.windowBytes) : BITCOIN_L1_BLOCK_BYTES;
+  const maxPeers = Number(m.maxPeers) > 0 ? Math.max(1, Math.floor(Number(m.maxPeers))) : MAX_PEERS;
+  const peerBudgetBytes = Number(m.peerBudgetBytes) > 0
+    ? Math.floor(Number(m.peerBudgetBytes))
+    : perPeerBandwidthBudgetBytes(nodeWindowBytes, maxPeers);
+  return {
+    bytesIn,
+    bytesOut,
+    windowBytesIn,
+    windowBytesOut,
+    windowBytes,
+    windowMs,
+    windowBudgetBytes: nodeWindowBytes,
+    maxPeers,
+    peerBudgetBytes,
+    overBudgetPeers,
+    overBudget: windowBytes > nodeWindowBytes
+  };
+}
+  return {
+    BITCOIN_L1_BLOCK_BYTES,
+    BITCOIN_L1_BLOCK_INTERVAL_MS,
+    aggregatePeerBandwidth,
+    peerBandwidthByteLength,
+    peerBandwidthSnapshot,
+    perPeerBandwidthBudgetBytes,
+    recordPeerBandwidth,
+    rollPeerBandwidthWindow
+  };
+})();
 
 /**
  * Max UTF-8 code units for first-class P2P_CHAT_MESSAGE body (text only).
@@ -238,7 +461,126 @@ const crypto = require('crypto');
 const { Level } = require('level');
 const stream = require('stream');
 const manager = require('fast-json-patch');
-const WireReplayFilter = require('../functions/wireReplayFilter');
+const WireReplayFilter = (function () {
+/**
+ * Remembers wire-envelope hashes across two Bloom filter generations, rotated
+ * when the current one is full (`capacity` hashes, or as many bits set as
+ * `capacity` hashes set on average) or older than `maxAgeMs`; the
+ * previous one is dropped `2 × maxAgeMs` after it started. That outlasts the
+ * Peer's exact FIFO cache (flushed by 10k frames), but capacity still bounds
+ * it: about `2 × capacity` distinct frames rotate a hash out, however soon.
+ * The price of a full filter is a rare false "seen", which drops a frame,
+ * never a replay accepted.
+ *
+ * The wire header has no timestamp or sequence number, so frames older than
+ * two generations can still be replayed; closing that needs a signed field in
+ * a new message version.
+ */
+
+const DEFAULTS = Object.freeze({
+  // Hashes per generation before it rotates.
+  capacity: 500000,
+  // Target false-positive rate of a full generation.
+  // 10^-6. Written as a division so the source is not a float literal
+  // static analysis rewrites.
+  falsePositiveRate: 1 / 1000000,
+  // A generation rotates after this long even when not full.
+  maxAgeMs: 24 * 60 * 60 * 1000
+});
+
+class WireReplayFilter {
+  /**
+   * @param {Object} [settings]
+   * @param {number} [settings.capacity]
+   * @param {number} [settings.falsePositiveRate]
+   * @param {number} [settings.maxAgeMs]
+   * @param {function(): number} [settings.now]
+   */
+  constructor (settings = {}) {
+    const s = Object.assign({}, DEFAULTS, settings);
+    this.capacity = Math.max(1, Math.floor(Number(s.capacity) || DEFAULTS.capacity));
+    const p = Number(s.falsePositiveRate) > 0 &amp;&amp; Number(s.falsePositiveRate) &lt; 1 ? Number(s.falsePositiveRate) : DEFAULTS.falsePositiveRate;
+    // Past 0.5 a full generation would call most new frames seen.
+    this.falsePositiveRate = Math.min(0.5, p);
+    this.bits = Math.max(64, Math.ceil(-this.capacity * Math.log(this.falsePositiveRate) / (Math.LN2 * Math.LN2)));
+    this.hashes = Math.max(1, Math.min(32, Math.round((this.bits / this.capacity) * Math.LN2)));
+    // Bits a generation sets, on average, by `capacity` hashes; always below
+    // every bit. A false "seen" adds no count, so the count alone could stall
+    // short of capacity while the bits fill up; the fill rotates it instead.
+    this.maxSetBits = this.bits * (1 - Math.exp(-this.hashes * this.capacity / this.bits));
+    this.maxAgeMs = Number(s.maxAgeMs) > 0 ? Number(s.maxAgeMs) : DEFAULTS.maxAgeMs;
+    this._now = typeof s.now === 'function' ? s.now : Date.now;
+    this._current = this._generation();
+    this._previous = null;
+  }
+
+  /** @private */
+  _generation () {
+    return { bits: new Uint8Array(Math.ceil(this.bits / 8)), count: 0, set: 0, since: this._now() };
+  }
+
+  /**
+   * Bit positions for a hash (double hashing over two 32-bit words of it).
+   * @private
+   * @param {string} hex SHA-256 hex (already uniform)
+   */
+  _positions (hex) {
+    const h1 = parseInt(hex.slice(0, 8), 16) >>> 0;
+    const h2 = (parseInt(hex.slice(8, 16), 16) | 1) >>> 0;
+    const out = new Array(this.hashes);
+    for (let i = 0; i &lt; this.hashes; i++) out[i] = (h1 + Math.imul(i, h2) >>> 0) % this.bits;
+    return out;
+  }
+
+  /** @private */
+  _test (gen, positions) {
+    for (const p of positions) if (!(gen.bits[p >>> 3] &amp; (1 &lt;&lt; (p &amp; 7)))) return false;
+    return true;
+  }
+
+  /** @private */
+  _rotateIfDue () {
+    const full = this._current.count >= this.capacity || this._current.set >= this.maxSetBits;
+    if (full || this._now() - this._current.since >= this.maxAgeMs) {
+      this._previous = this._current;
+      this._current = this._generation();
+    }
+    if (this._previous &amp;&amp; this._now() - this._previous.since >= 2 * this.maxAgeMs) this._previous = null;
+  }
+
+  /**
+   * @param {string} hex wire hash (SHA-256 hex)
+   * @returns {boolean} true when this hash was (probably) added within the window
+   */
+  has (hex) {
+    if (typeof hex !== 'string' || hex.length &lt; 16) return false;
+    this._rotateIfDue();
+    const positions = this._positions(hex);
+    return this._test(this._current, positions) || (!!this._previous &amp;&amp; this._test(this._previous, positions));
+  }
+
+  /**
+   * @param {string} hex wire hash (SHA-256 hex)
+   */
+  add (hex) {
+    if (typeof hex !== 'string' || hex.length &lt; 16) return;
+    this._rotateIfDue();
+    // Only a hash new to this generation counts toward rotation: repeats of
+    // one frame (fan-out, replays) must not age older hashes out early.
+    let fresh = false;
+    for (const p of this._positions(hex)) {
+      const mask = 1 &lt;&lt; (p &amp; 7);
+      if (this._current.bits[p >>> 3] &amp; mask) continue;
+      fresh = true;
+      this._current.bits[p >>> 3] |= mask;
+      this._current.set++;
+    }
+    if (fresh) this._current.count++;
+  }
+}
+  WireReplayFilter.WIRE_REPLAY_FILTER_DEFAULTS = DEFAULTS;
+  return WireReplayFilter;
+})();
 const noise = require('../functions/noiseProtocolStream');
 const merge = require('lodash.merge');
 const { EventEmitter } = require('events');
@@ -259,7 +601,9 @@ const {
   contentHashHexFromObject
 } = require('../functions/documentPaymentHash');
 const {
-  normalizeFabricDocumentOfferEnvelopeForHandlers
+  normalizeFabricDocumentOfferEnvelopeForHandlers,
+  isDocumentInventoryRequestType,
+  isDocumentInventoryResponseType
 } = require('../functions/publishedDocumentEnvelope');
 const Htlc = require('./htlc');
 const { resolveFabricPeerInterface } = require('../functions/fabricListenInterface');
@@ -268,7 +612,7 @@ const {
   buildForwardedDocumentRequest,
   paginateInventoryItems
 } = DocumentBook;
-const DocumentBlobTransferBook = require('./documentBlobTransferBook');
+const DocumentBlobTransferBook = require('./documentBook').DocumentBlobTransferBook;
 const {
   KEY_REVEAL_TYPE,
   BLOB_QUOTE_TYPE,
@@ -403,8 +747,8 @@ function meshDeliveryContext (opts = {}, originName = null) {
 }
 
 const Contract = require('./contract');
-const { normalizePeerPubkeyHex } = require('./key/pubkey');
-const SIGNING_TAGS = require('./key/signingTags');
+const { normalizePeerPubkeyHex } = require('./key');
+const SIGNING_TAGS = require('./key').TAGS;
 
 /**
  * Outer / generic types whose local registration side-effects are first-writer-wins.
@@ -427,8 +771,6 @@ const LOGICAL_REGISTER_ONCE_TYPES = new Set([
   // Tip / operator / identity registration frames (re-sign ≠ new event)
   'BitcoinBlock',
   'BITCOIN_BLOCK',
-  'P2P_FLUSH_CHAIN',
-  'FlushChain',
   'P2P_PEER_ALIAS',
   'DocumentContentKeyReveal',
   // Authorized sidechain patches: commitment-level replay (re-signed envelope ≠ new patch)
@@ -593,7 +935,6 @@ class Peer extends Service {
         windowMs: 60 * 1000,
         maxCreditsPerWindow: 520,
         chainSyncCreditCost: 55,
-        flushChainCreditCost: 120,
         bitcoinBlockCreditCost: 3,
         relayCreditCost: PEER_RELAY_CREDIT_COST,
         defaultCreditCost: 1,
@@ -614,11 +955,7 @@ class Peer extends Service {
         banOnHardMisbehavior: true,
         banTtlMs: PEER_BAN_TTL_MS,
         maxRelayNestDepth: PEER_MAX_RELAY_NEST_DEPTH
-      },
-      // Inbound P2P_FLUSH_CHAIN: sender registry score must be strictly greater than this (relay uses same threshold).
-      flushChainMinTrustedScore: 800,
-      // Inbound P2P_FLUSH_CHAIN: allowed signer pubkeys (hex/Buffers); empty = reject all until configured.
-      flushChainAuthorizedPubkeys: []
+      }
     }, config);
 
     this.settings.musig2 = Object.assign({
@@ -752,8 +1089,6 @@ class Peer extends Service {
     // Peers: keyed by public key (id). Persistent registry in _state.peers.
     // Map connection address (IP:port) -> peer id (public key). Learned on P2P_SESSION_OFFER/OPEN.
     this._addressToId = {};
-    /** Inbound address -> NOISE static pubkey hex (FLUSH_CHAIN allowlist only; never for AMP verify). */
-    this._inboundNoiseStaticPubkeyByAddress = Object.create(null);
     this.mailboxes = {};
     this.memory = {};
     this.handlers = {};
@@ -919,11 +1254,6 @@ class Peer extends Service {
             : (obj.content != null ? String(obj.content) : '')));
       if (!tip) return null;
       return `btcblock:${tip.toLowerCase()}`;
-    }
-    if (t === 'P2P_FLUSH_CHAIN' || t === 'FlushChain') {
-      const snap = obj.snapshotBlockHash != null ? String(obj.snapshotBlockHash).trim().toLowerCase() : '';
-      if (!snap) return null;
-      return `flush:${snap}`;
     }
     if (t === 'P2P_PEER_ALIAS') {
       const alias = obj.alias != null ? String(obj.alias).trim() : '';
@@ -1227,9 +1557,6 @@ class Peer extends Service {
     const t = wireType != null ? String(wireType) : '';
     if (t === 'P2P_CHAIN_SYNC_REQUEST' || t === 'ChainSyncRequest' || wireType === P2P_CHAIN_SYNC_REQUEST) {
       return Number(w.chainSyncCreditCost) || 55;
-    }
-    if (t === 'P2P_FLUSH_CHAIN' || t === 'FlushChain' || wireType === P2P_FLUSH_CHAIN) {
-      return Number(w.flushChainCreditCost) || 120;
     }
     if (t === 'BITCOIN_BLOCK' || t === 'BitcoinBlock') {
       return Number(w.bitcoinBlockCreditCost) || 3;
@@ -2360,121 +2687,6 @@ class Peer extends Service {
     return this;
   }
 
-  /**
-   * Relay an AMP message only to connected peers whose persistent registry score is strictly greater than
-   * {@link Peer#settings.flushChainMinTrustedScore} (default 800). Used for `P2P_FLUSH_CHAIN`.
-   * @param {string|null} origin - Connection key to skip (inbound sender), or null when originating locally.
-   * @param {Message|Buffer} message
-   * @param {number} [minScoreExclusive] - Override trust threshold (relay if peer score &amp;gt; this value).
-   */
-  relayFromTrustedPeers (origin, message, minScoreExclusive = null) {
-    const threshold = (minScoreExclusive != null &amp;&amp; Number.isFinite(Number(minScoreExclusive)))
-      ? Number(minScoreExclusive)
-      : (Number(this.settings.flushChainMinTrustedScore) || 800);
-    const buf = Buffer.isBuffer(message) ? message : message.toBuffer();
-    for (const id in this.connections) {
-      if (origin &amp;&amp; id === origin) continue;
-      const score = this._registryScoreForConnectionAddress(id);
-      if (!(score > threshold)) continue;
-      this.connections[id]._writeFabric(buf);
-    }
-  }
-
-  /**
-   * Best-effort registry score for a live connection key (`host:port`), using mapped Fabric id when known.
-   * @param {string} connAddress
-   * @returns {number}
-   */
-  _registryScoreForConnectionAddress (connAddress) {
-    const reg = this._state.peers || {};
-    const mappedId = this._addressToId &amp;&amp; this._addressToId[connAddress];
-    let best = 0;
-    for (const key of [mappedId, connAddress]) {
-      if (!key) continue;
-      const e = reg[key];
-      if (!e) continue;
-      const s = Number(e.score);
-      if (Number.isFinite(s) &amp;&amp; s > best) best = s;
-    }
-    return best;
-  }
-
-  /**
-   * FLUSH_CHAIN trust score bound to verified sender key.
-   *
-   * Prevents trusting attacker-controlled `P2P_SESSION_OFFER.actor.id` aliases
-   * by refusing `_addressToId`-mapped scores unless that mapped registry entry
-   * is explicitly bound to the same verified sender pubkey.
-   *
-   * @param {string} connAddress
-   * @param {string} senderPubkeyHex - verified sender pubkey hex (from NOISE/static or trusted peer record)
-   * @returns {number}
-   */
-  _registryScoreForFlushChainSender (connAddress, senderPubkeyHex) {
-    const reg = this._state.peers || {};
-    const senderHex = normalizePeerPubkeyHex(senderPubkeyHex);
-    const candidates = new Set();
-    if (connAddress) candidates.add(connAddress);
-    if (senderHex) candidates.add(senderHex);
-
-    const mappedId = this._addressToId &amp;&amp; this._addressToId[connAddress];
-    if (mappedId &amp;&amp; senderHex) {
-      const mapped = reg[mappedId];
-      if (mapped &amp;&amp; typeof mapped === 'object') {
-        const mappedPk = normalizePeerPubkeyHex(mapped.publicKey);
-        // Only trust mapped id score when mapped record is key-bound.
-        if (mappedPk &amp;&amp; mappedPk === senderHex) candidates.add(mappedId);
-      }
-    }
-
-    let best = 0;
-    for (const key of candidates) {
-      const e = reg[key];
-      if (!e) continue;
-      const s = Number(e.score);
-      if (Number.isFinite(s) &amp;&amp; s > best) best = s;
-    }
-
-    return best;
-  }
-
-  /**
-   * Sign and send `P2P_FLUSH_CHAIN` to all connected peers with registry score &amp;gt; threshold.
-   * Body `{ snapshotBlockHash, network?, label? }`, sent as `P2P_FLUSH_CHAIN` fields to peers
-   * that advertised `fieldBodies` in their session message, and as JSON to older peers.
-   *
-   * **Receivers** (see `P2P_FLUSH_CHAIN` handler) require **both**:
-   * 1. Sender pubkey in {@link Peer#settings.flushChainAuthorizedPubkeys} (non-empty allowlist), and
-   * 2. Registry score above {@link Peer#settings.flushChainMinTrustedScore}.
-   * Registry score bumps on `P2P_PONG` only when that pong answers an outbound ping on the same
-   * connection (`_fabricPingOutstanding`), so unsolicited pongs cannot inflate trust alone.
-   *
-   * @param {Object} object
-   * @returns {number} number of sockets written
-   */
-  sendFlushChainToTrustedPeers (object) {
-    const body = object &amp;&amp; typeof object === 'object' &amp;&amp; !Array.isArray(object) ? object : {};
-    let fields = null;
-    let json = null;
-    const threshold = Number(this.settings.flushChainMinTrustedScore) || 800;
-    let n = 0;
-    for (const id in this.connections) {
-      if (!(this._registryScoreForConnectionAddress(id) > threshold)) continue;
-      const socket = this.connections[id];
-      let buf;
-      if (socket._fabricRemoteFieldBodies) {
-        if (!fields) fields = Message.fromLegacyBody('P2P_FLUSH_CHAIN', body).signWithKey(this.key).toBuffer();
-        buf = fields;
-      } else {
-        if (!json) json = Message.fromVector(['P2P_FLUSH_CHAIN', JSON.stringify(body)]).signWithKey(this.key).toBuffer();
-        buf = json;
-      }
-      socket._writeFabric(buf);
-      n++;
-    }
-    return n;
-  }
-
   subscribe (_path) {
 
   }
@@ -2721,7 +2933,6 @@ class Peer extends Service {
 
     delete this.connections[target];
     delete this.peers[target];
-    if (this._inboundNoiseStaticPubkeyByAddress) delete this._inboundNoiseStaticPubkeyByAddress[target];
     if (this._addressToId) delete this._addressToId[target];
     this._unregisterSocketActor(target);
     this._prunePeerBandwidthMaps();
@@ -2800,18 +3011,6 @@ class Peer extends Service {
           this.emit('error', `Failed to save peer registry: ${message}`);
         });
     }, 500);
-  }
-
-  /** FLUSH_CHAIN sender hex: {@link Peer#peers}[addr].publicKey if set, else inbound NOISE static (allowlist must match). */
-  _flushChainSenderPubkeyHex (connectionAddress) {
-    if (!connectionAddress) return '';
-    const rec = this.peers[connectionAddress];
-    if (rec &amp;&amp; typeof rec === 'object' &amp;&amp; rec.publicKey != null &amp;&amp; rec.publicKey !== '') {
-      const h = normalizePeerPubkeyHex(rec.publicKey);
-      if (h) return h;
-    }
-    const noise = this._inboundNoiseStaticPubkeyByAddress[connectionAddress];
-    return noise ? normalizePeerPubkeyHex(noise) : '';
   }
 
   /**
@@ -3054,7 +3253,7 @@ class Peer extends Service {
   /**
    * Whether `message` is a JSON body of a type with a field layout
    * (`Message.LEGACY_BODY_TYPES`), which the wire no longer accepts
-   * (docs/MESSAGE_BODY_MIGRATION.md Phase 5). Stored frames are read with
+   * (docs/MESSAGE_BODY.md, Migration, Phase 5). Stored frames are read with
    * `Message.tryParseLegacyBody`, which still accepts JSON.
    * @private
    * @param {Message} message
@@ -3123,9 +3322,10 @@ class Peer extends Service {
     if (wire.length > maxWire) {
       this.emit('warning',
         `[FABRIC:PEER] Dropping oversized frame (${wire.length} > ${maxWire}) from ${originName || 'unknown'}`);
-      // Senders clamp to our advertised cap, and unannounced peers to the legacy 4096 bytes,
-      // so anything over both is a protocol violation (C fabricd: "oversize body").
-      if (wire.length > Math.max(maxWire, LEGACY_MAX_FRAME_BYTES) &amp;&amp; delivery.allowTcpOriginSideEffects) {
+      // A frame over our own (possibly lowered) cap may be honest: the sender may not
+      // have our session cap yet and assumes MAX_FRAME_BYTES. Only a frame over the
+      // protocol maximum is a violation (C fabricd: "oversize body").
+      if (wire.length > MAX_FRAME_BYTES &amp;&amp; delivery.allowTcpOriginSideEffects) {
         this._applyPeerMisbehavior(scoreOrigin, 'oversize-frame', {
           penalty: Number(ps.oversizeFramePenalty) || PEER_SCORE_OVERSIZE_FRAME_PENALTY,
           disconnect: delivery.hardDisconnect
@@ -3297,8 +3497,11 @@ class Peer extends Service {
               peeledForward: suppressTcpOriginPunish,
               relayedAsIs: softRelayOrigin
             });
-            // Only the outermost received envelope is mesh-flooded (bit-identical).
-            if (!opts.skipRelayFlood) {
+            // Only the outermost received envelope is mesh-flooded (bit-identical),
+            // and only when every frame inside is well formed, signed, and a
+            // registered type, and none is a Passport or delegation frame: those
+            // are point to point, and a relay would carry them past their audience.
+            if (!opts.skipRelayFlood &amp;&amp; this._relayMayFlood(inner, nestCap)) {
               this.relayFrom(origin.name, message, socket);
             }
           }
@@ -3339,8 +3542,7 @@ class Peer extends Service {
       case 'ChainSyncRequest':
         if (!origin || !origin.name) break;
         {
-          const raw = messageDataToString(message.data);
-          const pr = tryParseWireJsonBody(raw);
+          const pr = Message.tryParseLegacyBody(message);
           if (!pr.ok || pr.value === null || typeof pr.value !== 'object' || Array.isArray(pr.value)) {
             this.emit('warning', `[FABRIC:PEER] CHAIN_SYNC_REQUEST parse failed: ${pr.ok ? 'invalid body' : pr.error.message}`);
             break;
@@ -3348,64 +3550,6 @@ class Peer extends Service {
           this.emit('chainSyncRequest', { message, origin, socket, object: pr.value });
         }
         break;
-      case 'P2P_FLUSH_CHAIN':
-      case 'FlushChain': {
-        if (!origin || !origin.name) break;
-        const senderHex = signerPubkeyHex || this._flushChainSenderPubkeyHex(origin.name);
-        if (!senderHex) {
-          this.emit('warning', `[FABRIC:PEER] FLUSH_CHAIN ignored: no verified peer key for ${origin.name}`);
-          break;
-        }
-        const authList = this.settings.flushChainAuthorizedPubkeys;
-        if (!Array.isArray(authList) || authList.length === 0) {
-          this.emit('warning', `[FABRIC:PEER] FLUSH_CHAIN ignored: flushChainAuthorizedPubkeys is empty (configure allowed signer pubkeys)`);
-          break;
-        }
-        const allowed = new Set();
-        for (const e of authList) {
-          const h = normalizePeerPubkeyHex(e);
-          if (h) allowed.add(h);
-        }
-        if (!allowed.has(senderHex)) {
-          this.emit('warning', `[FABRIC:PEER] FLUSH_CHAIN ignored: sender pubkey not in flushChainAuthorizedPubkeys`);
-          break;
-        }
-        const threshold = Number(this.settings.flushChainMinTrustedScore) || 800;
-        const score = this._registryScoreForFlushChainSender(origin.name, senderHex);
-        if (!(score > threshold)) {
-          if (this.settings.debug) {
-            this.emit('debug', `[FABRIC:PEER] FLUSH_CHAIN ignored: sender score ${score} not > ${threshold}`);
-          }
-          break;
-        }
-        const prFc = Message.tryParseLegacyBody(message);
-        if (!prFc.ok) {
-          this.emit('warning', `[FABRIC:PEER] FLUSH_CHAIN parse failed: ${prFc.error.message}`);
-          break;
-        }
-        const object = prFc.value;
-        if (object === null || typeof object !== 'object' || Array.isArray(object)) {
-          this.emit('warning', '[FABRIC:PEER] FLUSH_CHAIN body must be a JSON object');
-          break;
-        }
-        const snap = object.snapshotBlockHash != null ? String(object.snapshotBlockHash).trim() : '';
-        if (!/^[0-9a-fA-F]{64}$/.test(snap)) {
-          this.emit('warning', '[FABRIC:PEER] FLUSH_CHAIN missing or invalid snapshotBlockHash (expect 64 hex)');
-          break;
-        }
-        object.snapshotBlockHash = snap.toLowerCase();
-        const claimFc = this._claimLogicalRegistrationOrPunish(
-          message.type, object, senderHex, scoreOrigin);
-        if (claimFc.duplicate) {
-          if (this.settings.debug) {
-            this.emit('debug', '[FABRIC:PEER] Ignoring duplicate FLUSH_CHAIN (snapshot already registered)');
-          }
-          break;
-        }
-        this.emit('flushChain', { message, origin, socket, object });
-        this.relayFromTrustedPeers(origin.name, message, threshold);
-        break;
-      }
       case 'P2P_CHAT_MESSAGE': {
         // Body = raw UTF-8 chat text only (no JSON chat envelope). Author is AMP header /
         // signature. Optional FabricOnionChatSeal JSON keeps onion tips confidential to
@@ -3693,12 +3837,33 @@ class Peer extends Service {
             this.emit('warning', '[FABRIC:PEER] Generic message body must be a JSON object');
             break;
           }
+          if (SEALED_DELIVERY_INNER_TYPES.has(bodyGm.type)) {
+            this.emit('warning', `[FABRIC:PEER] ${bodyGm.type} inside ${message.type} dropped: send it as its own field frame`);
+            break;
+          }
           this._handleGenericMessage(bodyGm, origin, socket, message, Object.assign({}, opts, {
             genericCarrier: true
           }));
         }
 
         break;
+      // Sealed document delivery: field frames whose legacy shape is the
+      // `{ type, object }` body the generic handlers already dispatch on.
+      case 'DOCUMENT_KEY_REVEAL':
+      case 'DOCUMENT_BLOB_QUOTE':
+      case 'DOCUMENT_BLOB_BATCH': {
+        const prSd = Message.tryParseLegacyBody(message);
+        if (!prSd.ok || !prSd.value || typeof prSd.value !== 'object') {
+          this.emit('warning', `[FABRIC:PEER] ${message.type} parse failed: ${prSd.ok ? 'invalid body' : prSd.error.message}`);
+          break;
+        }
+        const innerSd = SEALED_DELIVERY_INNER_TYPE_BY_WIRE[message.type];
+        const bodySd = prSd.value.object &amp;&amp; typeof prSd.value.object === 'object'
+          ? Object.assign({}, prSd.value, { type: innerSd })
+          : { type: innerSd, object: prSd.value };
+        this._handleGenericMessage(bodySd, origin, socket, message, opts);
+        break;
+      }
       // Lightning AMP types (0x2000+). Channel ops stay local; announcements may relay.
       case 'LIGHTNING_WARNING':
       case 'LightningWarning':
@@ -3783,15 +3948,18 @@ class Peer extends Service {
       this.relayFrom(originName, wireMessage, socket);
       return true;
     }
-    const innerType = (payload &amp;&amp; payload.type === 'INVENTORY_REQUEST')
+    // Only inventory reaches here without its original frame; it is rebuilt as
+    // fields. Anything else has no field layout to rebuild into, so it is not relayed.
+    const jsonType = payload &amp;&amp; typeof payload.type === 'string' ? payload.type : '';
+    const innerType = isDocumentInventoryRequestType(jsonType)
       ? 'P2P_INVENTORY_REQUEST'
-      : (payload &amp;&amp; payload.type === 'INVENTORY_RESPONSE')
-          ? 'P2P_INVENTORY_RESPONSE'
-          : 'P2P_BASE_MESSAGE';
-    const inner = (innerType === 'P2P_BASE_MESSAGE')
-      ? Message.fromVector([innerType, JSON.stringify(payload)])
-      : Message.fromLegacyBody(innerType,
-        (payload &amp;&amp; payload.object &amp;&amp; typeof payload.object === 'object' &amp;&amp; !Array.isArray(payload.object)) ? payload.object : {});
+      : (isDocumentInventoryResponseType(jsonType) ? 'P2P_INVENTORY_RESPONSE' : null);
+    if (!innerType) {
+      this.emit('warning', `[FABRIC:PEER] Not relaying ${jsonType || 'untyped'} payload without its original frame`);
+      return false;
+    }
+    const inner = Message.fromLegacyBody(innerType,
+      (payload &amp;&amp; payload.object &amp;&amp; typeof payload.object === 'object' &amp;&amp; !Array.isArray(payload.object)) ? payload.object : {});
     const innerBuffer = inner.signWithKey(this.key).toBuffer();
     return this._relayWirePayload(originName, innerBuffer, socket);
   }
@@ -3957,6 +4125,43 @@ class Peer extends Service {
     return this;
   }
 
+  /**
+   * May this P2P_RELAY body be mesh-flooded? At every nesting level (up to
+   * `nestCap`) the inner frame must decode to exactly its declared size, match
+   * its body hash, carry a valid author signature, and be a registered,
+   * non-deprecated opcode; and the innermost frame must not be a Passport or
+   * delegation frame, which are point to point.
+   * @private
+   * @param {Buffer} inner
+   * @param {number} nestCap
+   * @returns {boolean}
+   */
+  _relayMayFlood (inner, nestCap) {
+    let buffer = inner;
+    for (let depth = 0; depth &lt;= nestCap; depth++) {
+      if (!Buffer.isBuffer(buffer) || buffer.length &lt; HEADER_SIZE) return false;
+      let decoded = null;
+      try {
+        decoded = Message.fromBuffer(buffer);
+      } catch (_) {
+        return false;
+      }
+      if (!decoded || !decoded.raw || !Buffer.isBuffer(decoded.raw.type)) return false;
+      const body = Buffer.isBuffer(decoded.raw.data) ? decoded.raw.data : Buffer.alloc(0);
+      if (HEADER_SIZE + body.length !== buffer.length) return false;
+      const expected = Buffer.isBuffer(decoded.raw.hash) ? decoded.raw.hash.toString('hex') : decoded.raw.hash;
+      if (Hash256.doubleDigest(body) !== expected) return false;
+      if (!this._verifiedFabricSignerPubkeyHex(decoded)) return false;
+      if (!Message.isRegisteredType(decoded.raw.type.readUInt32BE(0))) return false;
+      const type = decoded.type;
+      if (typeof type !== 'string' || Message.DEPRECATED_WIRE_TYPES.includes(type)) return false;
+      if (/^(PASSPORT|DELEGATION)_/.test(type)) return false;
+      if (type !== 'P2P_RELAY') return true;
+      buffer = body;
+    }
+    return false;
+  }
+
   _handleGenericMessage (message, origin = null, socket = null, wireMessage = null, options = null) {
     const handleOpts = (options &amp;&amp; typeof options === 'object') ? options : {};
     const delivery = meshDeliveryContext(handleOpts, origin &amp;&amp; origin.name);
@@ -3986,6 +4191,13 @@ class Peer extends Service {
     switch (msg.type) {
       default:
         this.emit('debug', `Unhandled Generic Message: ${msg.type}`);
+        // Point-to-point app bodies (never mesh-relayed here): the app decides whether to forward.
+        this.emit('generic', {
+          type: msg.type,
+          body: msg,
+          origin,
+          signer: signerPubkeyHex || null
+        });
         break;
       case 'SIDECHAIN_STATE_PATCH': {
         const body = msg.object || msg;
@@ -4132,7 +4344,8 @@ class Peer extends Service {
           this._relayGenericPayload(origin &amp;&amp; origin.name, msg, socket, wireMessage);
         }
         break;
-      case 'DocumentContentKeyReveal': {
+      case 'DocumentContentKeyReveal':
+      case 'DOCUMENT_KEY_REVEAL': {
         const reveal = (msg &amp;&amp; msg.object) ? msg.object : msg;
         // Fail closed before claim / reverse-relay: public paymentHashHex alone must
         // not burn the logical slot or launder junk toward the buyer.
@@ -4151,7 +4364,7 @@ class Peer extends Service {
               type: KEY_REVEAL_TYPE,
               object: Object.assign({}, reveal, { routeId: route.prevRouteId || reveal.routeId })
             };
-            const fwdMsg = Message.fromVector(['GenericMessage', JSON.stringify(fwdBody)]);
+            const fwdMsg = Message.fromLegacyBody('DOCUMENT_KEY_REVEAL', fwdBody);
             fwdMsg.signWithKey(this.key);
             this.connections[prev]._writeFabric(fwdMsg.toBuffer());
             this.emit('documentRelayReturn', {
@@ -4179,7 +4392,8 @@ class Peer extends Service {
         }
         break;
       }
-      case BLOB_QUOTE_TYPE: {
+      case BLOB_QUOTE_TYPE:
+      case 'DOCUMENT_BLOB_QUOTE': {
         const quote = (msg &amp;&amp; msg.object) ? msg.object : msg;
         if (!isWellFormedBlobQuote(quote)) {
           this.emit('warning', '[FABRIC:PEER] DocumentBlobQuote rejected: malformed');
@@ -4191,10 +4405,10 @@ class Peer extends Service {
           if (prev &amp;&amp; this.connections[prev] &amp;&amp; this.connections[prev]._writeFabric &amp;&amp;
               !(origin &amp;&amp; origin.name === prev)) {
             // Re-signed by this relay: the buyer's fraud evidence names the relay.
-            const fwdMsg = Message.fromVector(['GenericMessage', JSON.stringify({
+            const fwdMsg = Message.fromLegacyBody('DOCUMENT_BLOB_QUOTE', {
               type: BLOB_QUOTE_TYPE,
               object: Object.assign({}, quote, { routeId: route.prevRouteId || quote.routeId })
-            })]);
+            });
             fwdMsg.signWithKey(this.key);
             this.connections[prev]._writeFabric(fwdMsg.toBuffer());
             break;
@@ -4203,7 +4417,8 @@ class Peer extends Service {
         this._ingestSealedBlobQuote(quote, origin, wireMessage);
         break;
       }
-      case BLOB_BATCH_TYPE: {
+      case BLOB_BATCH_TYPE:
+      case 'DOCUMENT_BLOB_BATCH': {
         const batch = (msg &amp;&amp; msg.object) ? msg.object : msg;
         if (!isWellFormedBlobBatch(batch)) {
           this.emit('warning', '[FABRIC:PEER] DocumentBlobBatch rejected: malformed');
@@ -4480,7 +4695,10 @@ class Peer extends Service {
           contract: publishedId,
           object: msg.object,
           origin,
-          signer: signerPubkeyHex || null
+          signer: signerPubkeyHex || null,
+          // Signed frame, so apps can keep the publish in a contract's history.
+          wireMessage: wireMessage || null,
+          messageId: wireMessage &amp;&amp; wireMessage.id ? wireMessage.id : null
         });
         // Peel / RELAY unwrap: deliver locally only (outer envelope already floods).
         if (delivery.allowMeshRelay &amp;&amp; origin &amp;&amp; origin.name &amp;&amp; wireMessage) {
@@ -4581,15 +4799,15 @@ class Peer extends Service {
 
   /**
    * Tie a NOISE pair to its TCP socket: a destroyed decrypt side (limit broken, handshake
-   * timeout, decrypt failure) destroys the socket. The remote frame cap starts at the
-   * legacy 4096 bytes until its session message advertises `maxFrameBytes`.
+   * timeout, decrypt failure) destroys the socket. The remote frame cap starts at
+   * {@link MAX_FRAME_BYTES}; a smaller `maxFrameBytes` in its session message lowers it.
    * @param {Object} noiseStream noise-protocol-stream duplex pair
    * @param {Object} socket
    * @returns {void}
    */
   _bindNoiseTransportToSocket (noiseStream, socket) {
     if (!noiseStream || !noiseStream.decrypt || !socket) return;
-    noiseStream._fabricRemoteMaxFrameBytes = LEGACY_MAX_FRAME_BYTES;
+    noiseStream._fabricRemoteMaxFrameBytes = MAX_FRAME_BYTES;
     noiseStream.decrypt.once('close', () => {
       if (!socket.destroyed &amp;&amp; typeof socket.destroy === 'function') socket.destroy();
     });
@@ -4608,7 +4826,7 @@ class Peer extends Service {
   /**
    * Record whether a remote parses field bodies for every legacy-JSON opcode
    * (`object.fieldBodies` in its session message). Absent = an older peer
-   * that parses `P2P_FLUSH_CHAIN` and the like as JSON only.
+   * that parses legacy-JSON opcodes as JSON only.
    * @param {string} connAddress
    * @param {Object} sessionObject Session message `object`
    * @returns {boolean}
@@ -4622,7 +4840,8 @@ class Peer extends Service {
 
   /**
    * Record the frame cap a remote advertised in `P2P_SESSION_OFFER` / `P2P_SESSION_OPEN`
-   * (`object.maxFrameBytes`). Absent or invalid = legacy 4096-byte peer.
+   * (`object.maxFrameBytes`). Absent or invalid = {@link MAX_FRAME_BYTES}; there is no
+   * smaller default for peers that don't advertise one.
    * @param {string} connAddress
    * @param {Object} sessionObject Session message `object`
    * @returns {number} Cap now used for frames sent to that connection
@@ -4631,8 +4850,8 @@ class Peer extends Service {
     this._recordRemoteFieldBodies(connAddress, sessionObject);
     const advertised = Number(sessionObject &amp;&amp; sessionObject.maxFrameBytes);
     const cap = (Number.isInteger(advertised) &amp;&amp; advertised > HEADER_SIZE)
-      ? Math.min(advertised, HEADER_SIZE + MAX_MESSAGE_SIZE)
-      : LEGACY_MAX_FRAME_BYTES;
+      ? Math.min(advertised, MAX_FRAME_BYTES)
+      : MAX_FRAME_BYTES;
     const socket = connAddress &amp;&amp; this.connections ? this.connections[connAddress] : null;
     if (!socket) return cap;
     socket._fabricRemoteMaxFrameBytes = cap;
@@ -4805,7 +5024,6 @@ class Peer extends Service {
       if (remotePk != null) {
         const pkHex = normalizePeerPubkeyHex(Buffer.isBuffer(remotePk) ? Buffer.from(remotePk) : remotePk);
         if (pkHex) {
-          this._inboundNoiseStaticPubkeyByAddress[target] = pkHex;
           if (this._isPeerBanned(target, pkHex)) {
             this.emit('warning', `[FABRIC:PEER] Closing inbound: banned Noise static ${pkHex.slice(0, 16)}…`);
             this._destroyFabric(socket, target);
@@ -5252,6 +5470,15 @@ class Peer extends Service {
    * no amount check is possible; settlement code must always pass it. With
    * `sealedBlobPaymentMode: 'perBuyer'` static hashes are never fulfilled
    * (that would publish `K_i`).
+   *
+   * A live quote that an HTLC paying its full price is checked against is
+   * pinned: it outlives its `expiresAt` and the quote cap. It is dropped by
+   * {@link Peer#settleSealedBlobQuote}, or when a later lookup or quote
+   * reservation sees that `sealedBlobFundedRetentionMs` (default 7 days) has
+   * passed since it was funded, even if the HTLC is still open. An idle funded
+   * quote is not removed when that period ends. Quotes are held in memory and
+   * do not survive a restart, so a later lookup returns `null`. Persist the
+   * returned preimage until the HTLC settles or fails.
    * @param {string} paymentHashHex
    * @param {Object} [htlc] `{ amountSats, expireAfter?, expireHeight? }`
    * @returns {{ documentId: string, blobIndex: number, preimageHex: string, keyHex: string, perBuyer: boolean, priceSats: number }|null}
@@ -5264,11 +5491,13 @@ class Peer extends Service {
     if (htlc &amp;&amp; !(paid >= 0)) return null;
     const quote = this._sealedBlobQuotes.get(ph);
     if (quote) {
-      if (quote.expiresAt &amp;&amp; Date.now() > quote.expiresAt) {
+      const now = Date.now();
+      if (this._sealedBlobQuoteLapsed(quote, now)) {
         this._sealedBlobQuotes.delete(ph);
         return null;
       }
       if (paid != null &amp;&amp; paid &lt; quote.priceSats) return null;
+      if (paid != null &amp;&amp; !quote.fundedAt) quote.fundedAt = now;
       return { documentId: quote.documentId, blobIndex: quote.blobIndex, preimageHex: quote.secretHex, keyHex: quote.secretHex, perBuyer: true, priceSats: quote.priceSats };
     }
     if (this.settings.sealedBlobPaymentMode === 'perBuyer') return null;
@@ -5314,6 +5543,7 @@ class Peer extends Service {
     const leaf = Number.isInteger(blobIndex) ? doc.blob(blobIndex) : null;
     const keyHex = leaf ? doc.keyFor(blobIndex) : null;
     if (!leaf || !keyHex) return { ok: false, error: 'unknown blob index' };
+    if (!this._reserveSealedBlobQuoteSlot()) return { ok: false, error: 'too many funded quotes waiting to settle' };
     const ttlSetting = Number(opts.ttlMs || this.settings.sealedBlobQuoteTtlMs);
     const ttl = Number.isFinite(ttlSetting) &amp;&amp; ttlSetting > 0 ? ttlSetting : 60 * 60 * 1000;
     const priceSats = this._sealedBlobPriceSats(documentId);
@@ -5327,15 +5557,6 @@ class Peer extends Service {
       amountSats: priceSats,
       expiresAt
     });
-    const now = Date.now();
-    for (const [h, q] of this._sealedBlobQuotes) {
-      if (q.expiresAt &amp;&amp; now > q.expiresAt) this._sealedBlobQuotes.delete(h);
-    }
-    const capSetting = Number(this.settings.maxSealedBlobQuotes);
-    const cap = Number.isFinite(capSetting) &amp;&amp; capSetting > 0 ? capSetting : 4096;
-    while (this._sealedBlobQuotes.size >= cap) {
-      this._sealedBlobQuotes.delete(this._sealedBlobQuotes.keys().next().value);
-    }
     this._sealedBlobQuotes.set(quote.paymentHashHex, {
       documentId,
       blobIndex,
@@ -5357,6 +5578,7 @@ class Peer extends Service {
    * @param {number} opts.end
    * @param {number} [opts.amountSats] Ask above the listed price (rate × blobs). It never lowers it: a lower, non-finite, or negative amount quotes the listed price.
    * @param {number} [opts.maxSats] The buyer's ceiling: a price above it is refused, and no quote is kept.
+   * @param {number} [opts.ttlMs] default `sealedBlobQuoteTtlMs` (1 h); the quote expires after it.
    * @returns {{ ok: boolean, batch: (Object|undefined), error: (string|undefined) }}
    */
   quoteSealedBatch (opts = {}) {
@@ -5366,6 +5588,9 @@ class Peer extends Service {
     const doc = documentId ? this._getSealedBlobDocument(documentId) : null;
     if (!doc) return { ok: false, error: 'unknown sealed document' };
     if (!Number.isInteger(start) || !Number.isInteger(end) || end &lt; start) return { ok: false, error: 'bad batch range' };
+    const rangeSetting = Number(this.settings.maxSealedBlobBatchBlobs);
+    const maxRange = Number.isSafeInteger(rangeSetting) &amp;&amp; rangeSetting > 0 ? rangeSetting : 4096;
+    if (end - start + 1 > maxRange) return { ok: false, error: `batch range over ${maxRange} blobs` };
     const blobs = [];
     for (let i = start; i &lt;= end; i++) {
       const leaf = doc.blob(i);
@@ -5379,11 +5604,15 @@ class Peer extends Service {
     const price = Number.isSafeInteger(asked) &amp;&amp; asked > listed ? asked : listed;
     const ceiling = opts.maxSats != null ? Number(opts.maxSats) : NaN;
     if (Number.isFinite(ceiling) &amp;&amp; price > ceiling) return { ok: false, error: 'price above maxSats' };
+    if (!this._reserveSealedBlobQuoteSlot()) return { ok: false, error: 'too many funded quotes waiting to settle' };
+    const ttlSetting = Number(opts.ttlMs || this.settings.sealedBlobQuoteTtlMs);
+    const ttl = Number.isFinite(ttlSetting) &amp;&amp; ttlSetting > 0 ? ttlSetting : 60 * 60 * 1000;
     const { batch, secretHex } = createBlobBatch({
       documentId,
       merkleRootHex: doc.merkleRootHex,
       blobs,
-      amountSats: price
+      amountSats: price,
+      expiresAt: Date.now() + ttl
     });
     this._sealedBlobQuotes.set(batch.paymentHashHex, {
       documentId,
@@ -5395,6 +5624,57 @@ class Peer extends Service {
       keyHashHex: null
     });
     return { ok: true, batch };
+  }
+
+  /**
+   * Seller: the HTLC for a funded quote has settled (or failed for good), so
+   * its secret is no longer needed.
+   * @param {string} paymentHashHex
+   * @returns {boolean} Whether a quote was dropped.
+   */
+  settleSealedBlobQuote (paymentHashHex) {
+    const ph = String(paymentHashHex || '').toLowerCase();
+    return /^[0-9a-f]{64}$/.test(ph) ? this._sealedBlobQuotes.delete(ph) : false;
+  }
+
+  /**
+   * Is a quote past use? An unfunded quote lapses at `expiresAt`; a funded
+   * one `sealedBlobFundedRetentionMs` (default 7 days) after it was funded.
+   * @private
+   * @param {Object} quote
+   * @param {number} now
+   * @returns {boolean}
+   */
+  _sealedBlobQuoteLapsed (quote, now) {
+    if (quote.fundedAt) {
+      const setting = Number(this.settings.sealedBlobFundedRetentionMs);
+      const retention = Number.isFinite(setting) &amp;&amp; setting > 0 ? setting : PEER_SEALED_BLOB_FUNDED_RETENTION_MS;
+      return now > quote.fundedAt + retention;
+    }
+    return !!(quote.expiresAt &amp;&amp; now > quote.expiresAt);
+  }
+
+  /**
+   * Seller: drop lapsed quotes, then the oldest unfunded ones, until one more
+   * fits under `maxSealedBlobQuotes`. Every kept quote holds a preimage, so a
+   * peer asking again and again cannot grow the table. Funded quotes are
+   * never evicted: when they alone fill the table, no new quote is made.
+   * @private
+   * @returns {boolean} Whether a slot is free.
+   */
+  _reserveSealedBlobQuoteSlot () {
+    const now = Date.now();
+    for (const [h, q] of this._sealedBlobQuotes) {
+      if (this._sealedBlobQuoteLapsed(q, now)) this._sealedBlobQuotes.delete(h);
+    }
+    const capSetting = Number(this.settings.maxSealedBlobQuotes);
+    const cap = Number.isFinite(capSetting) &amp;&amp; capSetting > 0 ? capSetting : 4096;
+    if (this._sealedBlobQuotes.size &lt; cap) return true;
+    for (const [h, q] of this._sealedBlobQuotes) {
+      if (this._sealedBlobQuotes.size &lt; cap) break;
+      if (!q.fundedAt) this._sealedBlobQuotes.delete(h);
+    }
+    return this._sealedBlobQuotes.size &lt; cap;
   }
 
   /**
@@ -5410,8 +5690,9 @@ class Peer extends Service {
         if (hit &amp;&amp; hit.documentId === documentId) this._sealedBlobByPaymentHash.delete(b.paymentHashHex);
       }
     }
+    // A funded quote stays until it settles: its buyer has already paid.
     for (const [h, q] of this._sealedBlobQuotes) {
-      if (q.documentId === documentId) this._sealedBlobQuotes.delete(h);
+      if (q.documentId === documentId &amp;&amp; !q.fundedAt) this._sealedBlobQuotes.delete(h);
     }
     this._sealedBlobSecrets.delete(documentId);
   }
@@ -5594,10 +5875,11 @@ class Peer extends Service {
         fileObj.iv = sealedMeta.encryption &amp;&amp; sealedMeta.encryption.iv;
         fileObj.scheme = sealedMeta.encryption &amp;&amp; sealedMeta.encryption.scheme;
       }
-      const reply = Message.fromVector(['P2P_FILE_SEND', JSON.stringify(fileObj)]);
+      const reply = Message.fromLegacyBody('P2P_FILE_SEND', fileObj);
       reply.signWithKey(this.key);
-      // `false` = refused (closed stream, or over a legacy peer's frame cap).
-      if (conn._writeFabric(reply.toBuffer()) !== false) wrote += 1;
+      const buf = reply.toBuffer();
+      if (this._refuseDocumentFrame(conn, buf, documentId, peerAddress)) break;
+      if (conn._writeFabric(buf) !== false) wrote += 1;
     }
     if (wrote > 0 &amp;&amp; opts.revealKey &amp;&amp; sealedMeta &amp;&amp; sealedMeta.keyHex) {
       this._sendDocumentContentKeyReveal(documentId, peerAddress, {
@@ -5641,7 +5923,7 @@ class Peer extends Service {
       return false;
     }
     if (opts.routeId) body.object.routeId = String(opts.routeId);
-    const msg = Message.fromVector(['GenericMessage', JSON.stringify(body)]);
+    const msg = Message.fromLegacyBody('DOCUMENT_KEY_REVEAL', body);
     msg.signWithKey(this.key);
     if (conn._writeFabric(msg.toBuffer()) === false) return false;
     this.emit('documentContentKeyRevealed', {
@@ -5649,6 +5931,26 @@ class Peer extends Service {
       peerAddress,
       paymentHashHex: sealedMeta.paymentHashHex
     });
+    return true;
+  }
+
+  /**
+   * Refuse a document blob frame over the cap the remote advertised, with one
+   * `documentDeliveryRefused` event and warning (the document's blobs are never
+   * re-split for a smaller cap). Callers stop sending that document to that
+   * peer on refusal: its other full-size blobs would be refused the same way.
+   * @private
+   * @param {Object} conn Connection with `_writeFabric`
+   * @param {Buffer} buf Signed frame
+   * @param {string} documentId
+   * @param {string} peerAddress
+   * @returns {boolean} whether the frame was refused
+   */
+  _refuseDocumentFrame (conn, buf, documentId, peerAddress) {
+    const remoteCap = conn._fabricRemoteMaxFrameBytes;
+    if (!Number.isInteger(remoteCap) || buf.length &lt;= remoteCap) return false;
+    this.emit('documentDeliveryRefused', { documentId, peerAddress, frameBytes: buf.length, remoteCap });
+    this.emit('warning', `[FABRIC:PEER] Not delivering ${documentId} to ${peerAddress}: ${buf.length}-byte blob frame over its frame cap ${remoteCap}`);
     return true;
   }
 
@@ -5674,9 +5976,11 @@ class Peer extends Service {
     const sent = [];
     for (const fileObj of frames) {
       if (opts.routeId) fileObj.routeId = String(opts.routeId);
-      const reply = Message.fromVector(['P2P_FILE_SEND', JSON.stringify(fileObj)]);
+      const reply = Message.fromLegacyBody('P2P_FILE_SEND', fileObj);
       reply.signWithKey(this.key);
-      if (conn._writeFabric(reply.toBuffer()) !== false) sent.push(fileObj.blobIndex);
+      const buf = reply.toBuffer();
+      if (this._refuseDocumentFrame(conn, buf, documentId, peerAddress)) break;
+      if (conn._writeFabric(buf) !== false) sent.push(fileObj.blobIndex);
     }
     if (opts.revealKey) {
       for (const blobIndex of sent) this._sendSealedBlobKeyReveal(doc, documentId, peerAddress, blobIndex, opts);
@@ -5705,7 +6009,7 @@ class Peer extends Service {
       return false;
     }
     if (opts.routeId) body.object.routeId = String(opts.routeId);
-    const msg = Message.fromVector(['GenericMessage', JSON.stringify(body)]);
+    const msg = Message.fromLegacyBody('DOCUMENT_KEY_REVEAL', body);
     msg.signWithKey(this.key);
     if (conn._writeFabric(msg.toBuffer()) === false) return false;
     this.emit('documentContentKeyRevealed', {
@@ -7185,7 +7489,7 @@ class Peer extends Service {
     }
     const object = Object.assign({}, out.quote);
     if (opts.routeId) object.routeId = String(opts.routeId);
-    const msg = Message.fromVector(['GenericMessage', JSON.stringify({ type: BLOB_QUOTE_TYPE, object })]);
+    const msg = Message.fromLegacyBody('DOCUMENT_BLOB_QUOTE', { type: BLOB_QUOTE_TYPE, object });
     msg.signWithKey(this.key);
     conn._writeFabric(msg.toBuffer());
     this.emit('documentBlobQuoted', { documentId, blobIndex, peerAddress, paymentHashHex: out.quote.paymentHashHex, amountSats: out.quote.amountSats });
@@ -7207,7 +7511,7 @@ class Peer extends Service {
     }
     const object = Object.assign({}, out.batch);
     if (opts.routeId) object.routeId = String(opts.routeId);
-    const msg = Message.fromVector(['GenericMessage', JSON.stringify({ type: BLOB_BATCH_TYPE, object })]);
+    const msg = Message.fromLegacyBody('DOCUMENT_BLOB_BATCH', { type: BLOB_BATCH_TYPE, object });
     msg.signWithKey(this.key);
     conn._writeFabric(msg.toBuffer());
     this.emit('documentBlobBatch', { documentId, start, end, peerAddress, paymentHashHex: out.batch.paymentHashHex });
@@ -7228,6 +7532,12 @@ class Peer extends Service {
     try {
       if (wireMessage &amp;&amp; typeof wireMessage.toBuffer === 'function') frame = wireMessage.toBuffer();
     } catch (_) { /* synthetic */ }
+    const capSetting = Number(this.settings.maxSealedBlobQuotes);
+    const cap = Number.isFinite(capSetting) &amp;&amp; capSetting > 0 ? capSetting : 4096;
+    this._receivedBlobQuotes.delete(paymentHashHex);
+    while (this._receivedBlobQuotes.size >= cap) {
+      this._receivedBlobQuotes.delete(this._receivedBlobQuotes.keys().next().value);
+    }
     const originName = origin &amp;&amp; typeof origin === 'object' ? (origin.name || origin.address || null) : (origin || null);
     this._receivedBlobQuotes.set(paymentHashHex, { quote: Object.assign({}, batch), origin: originName, frame, received: Date.now() });
     this.emit('documentBlobQuote', { quote: Object.assign({}, batch), origin: originName });
@@ -7909,7 +8219,7 @@ class Peer extends Service {
       routeId: route.prevRouteId || routeId,
       relayedBy: this.id || null
     });
-    const msg = Message.fromVector(['P2P_FILE_SEND', JSON.stringify(fwd)]);
+    const msg = Message.fromLegacyBody('P2P_FILE_SEND', fwd);
     msg.signWithKey(this.key);
     this.connections[prev]._writeFabric(msg.toBuffer());
     this.emit('documentRelayReturn', {
@@ -8085,7 +8395,7 @@ class Peer extends Service {
 
   /**
    * Periodic P2P_PING and track expected P2P_PONG replies so registry score cannot be
-   * self-inflated by unsolicited pongs (see FLUSH_CHAIN trust gate).
+   * self-inflated by unsolicited pongs.
    * @param {*} socket — connection object (stores `_fabricPingOutstanding`, `_keepalive`)
    * @param {*} encryptWrite — NOISE encrypt stream with `.write(Buffer)` (`client.encrypt` / `handler.encrypt`)
    */
@@ -8093,8 +8403,7 @@ class Peer extends Service {
     if (socket._keepalive) clearInterval(socket._keepalive);
     socket._fabricPingOutstanding = 0;
     socket._keepalive = setInterval(() => {
-      // At most one unanswered PING per connection so burst P2P_PONG cannot inflate registry score
-      // (FLUSH_CHAIN trust gate uses _registryScoreForConnectionAddress).
+      // At most one unanswered PING per connection so burst P2P_PONG cannot inflate registry score.
       if ((socket._fabricPingOutstanding | 0) >= 1) return;
       const P2P_PING = Message.fromLegacyBody('P2P_PING', {
         nonce: this._freshKeepaliveNonce()
@@ -8774,6 +9083,15 @@ class Swarm extends Actor {
 
 module.exports = Peer;
 module.exports.Swarm = Swarm;
+Peer.WireReplayFilter = WireReplayFilter;
+Peer.BITCOIN_L1_BLOCK_BYTES = BITCOIN_L1_BLOCK_BYTES;
+Peer.BITCOIN_L1_BLOCK_INTERVAL_MS = BITCOIN_L1_BLOCK_INTERVAL_MS;
+Peer.aggregatePeerBandwidth = aggregatePeerBandwidth;
+Peer.peerBandwidthByteLength = peerBandwidthByteLength;
+Peer.peerBandwidthSnapshot = peerBandwidthSnapshot;
+Peer.perPeerBandwidthBudgetBytes = perPeerBandwidthBudgetBytes;
+Peer.recordPeerBandwidth = recordPeerBandwidth;
+Peer.rollPeerBandwidthWindow = rollPeerBandwidthWindow;
 /**
  * Test/debug helper — never log private material.
  * @private
@@ -8790,28 +9108,9 @@ Peer.debugDerivedPublicSummary = peerDebugDerivedPublicSummary;
     <h2><a href="index.html">Home</a></h2>
     <h3>Modules</h3>
     <ul>
-      <li><a href="module-types_bech32_bech32.html">types/bech32/bech32</a></li>
-      <li><a href="module-types_bech32_fabricPaymentBech32.html">types/bech32/fabricPaymentBech32</a></li>
       <li><a href="module-types_delegation.html">types/delegation</a></li>
-      <li><a href="module-types_key_base58.html">types/key/base58</a></li>
-      <li><a href="module-types_key_bip32.html">types/key/bip32</a></li>
-      <li><a href="module-types_key_bip39.html">types/key/bip39</a></li>
-      <li><a href="module-types_key_bip49.html">types/key/bip49</a></li>
-      <li><a href="module-types_key_bip85.html">types/key/bip85</a></li>
-      <li><a href="module-types_key_fabricKeyMaterial.html">types/key/fabricKeyMaterial</a></li>
-      <li><a href="module-types_key_keyHasPrivateSigningMaterial.html">types/key/keyHasPrivateSigningMaterial</a></li>
-      <li><a href="module-types_key_pubkey.html">types/key/pubkey</a></li>
-      <li><a href="module-types_key_signingTags.html">types/key/signingTags</a></li>
       <li><a href="module-types_typetree.html">types/typetree</a></li>
-      <li><a href="module-types_wallet_accountKeys.html">types/wallet/accountKeys</a></li>
-      <li><a href="module-types_wallet_bip21.html">types/wallet/bip21</a></li>
       <li><a href="module-types_wallet_bip86.html">types/wallet/bip86</a></li>
-      <li><a href="module-types_witness_adaptor.html">types/witness/adaptor</a></li>
-      <li><a href="module-types_witness_bls.html">types/witness/bls</a></li>
-      <li><a href="module-types_witness_dleq.html">types/witness/dleq</a></li>
-      <li><a href="module-types_witness_musig2.html">types/witness/musig2</a></li>
-      <li><a href="module-types_witness_musig2Adaptor.html">types/witness/musig2Adaptor</a></li>
-      <li><a href="module-types_witness_musig2Session.html">types/witness/musig2Session</a></li>
       <li><a href="types_ecc.html#.module:selftest">types/ecc.selftest</a></li>
     </ul>
     <h3>Classes</h3>
@@ -8880,211 +9179,23 @@ Peer.debugDerivedPublicSummary = peerDebugDerivedPublicSummary;
       <li><a href="SetupTui.html">SetupTui</a></li>
       <li><a href="SignedBook.html">SignedBook</a></li>
       <li><a href="State.html">State</a></li>
+      <li><a href="Storage.html">Storage</a></li>
       <li><a href="Store.html">Store</a></li>
       <li><a href="Swap.html">Swap</a></li>
       <li><a href="global.html#Text">Text</a></li>
       <li><a href="Token.html">Token</a></li>
       <li><a href="Tree.html">Tree</a></li>
       <li><a href="Vector.html">Vector</a></li>
-      <li><a href="Wallet.html">Wallet</a></li>
       <li><a href="Watchtower.html">Watchtower</a></li>
+      <li><a href="WireReplayFilter.html">WireReplayFilter</a></li>
       <li><a href="Worker.html">Worker</a></li>
       <li><a href="ZMQ.html">ZMQ</a></li>
       <li><a href="module-types_delegation-Delegation.html">Delegation</a></li>
-      <li><a href="module-types_key_bip32-BIP32Factory.html">BIP32Factory</a></li>
-      <li><a href="module-types_witness_musig2-InvalidContributionError.html">InvalidContributionError</a></li>
+      <li><a href="module-types_wallet_bip86-Wallet.html">Wallet</a></li>
     </ul>
     <h3>Global</h3>
     <ul>
-      <li><a href="global.html#ASK_TYPE">ASK_TYPE</a></li>
-      <li><a href="global.html#BID_CLOCK_SKEW_SECONDS">BID_CLOCK_SKEW_SECONDS</a></li>
-      <li><a href="global.html#BID_TYPE">BID_TYPE</a></li>
-      <li><a href="global.html#BITCOIN_MESSAGE_TYPES">BITCOIN_MESSAGE_TYPES</a></li>
-      <li><a href="global.html#CHANNEL_BODY_TYPES">CHANNEL_BODY_TYPES</a></li>
-      <li><a href="global.html#CHANNEL_DEFAULTS">CHANNEL_DEFAULTS</a></li>
-      <li><a href="global.html#CLTV_TIMESTAMP_THRESHOLD">CLTV_TIMESTAMP_THRESHOLD</a></li>
-      <li><a href="global.html#DEFAULT_BID_TTL_SECONDS">DEFAULT_BID_TTL_SECONDS</a></li>
-      <li><a href="global.html#DEFAULT_FEE_SATS">DEFAULT_FEE_SATS</a></li>
-      <li><a href="global.html#DEFAULT_INVOICE_EXPIRY_SECONDS">DEFAULT_INVOICE_EXPIRY_SECONDS</a></li>
-      <li><a href="global.html#DEFAULT_INVOICE_MARGIN_SECONDS">DEFAULT_INVOICE_MARGIN_SECONDS</a></li>
-      <li><a href="global.html#DEFAULT_MAX_SIGNS">DEFAULT_MAX_SIGNS</a></li>
-      <li><a href="global.html#DEFAULT_MIN_CLAIM_BLOCKS">DEFAULT_MIN_CLAIM_BLOCKS</a></li>
-      <li><a href="global.html#DEFAULT_MIN_CONFIRMATIONS">DEFAULT_MIN_CONFIRMATIONS</a></li>
-      <li><a href="global.html#DEFAULT_MIN_EQUAL_OUTPUTS">DEFAULT_MIN_EQUAL_OUTPUTS</a></li>
-      <li><a href="global.html#DEFAULT_WEIGHTS">DEFAULT_WEIGHTS</a></li>
-      <li><a href="global.html#DEPRECATED_WIRE_TYPES">DEPRECATED_WIRE_TYPES</a></li>
-      <li><a href="global.html#DUST_SATS">DUST_SATS</a></li>
-      <li><a href="global.html#EXIT_KINDS">EXIT_KINDS</a></li>
-      <li><a href="global.html#EXIT_SIGNATURE_TYPE">EXIT_SIGNATURE_TYPE</a></li>
-      <li><a href="global.html#FIDELITY_LOCKTIME_GRID">FIDELITY_LOCKTIME_GRID</a></li>
-      <li><a href="global.html#FIDELITY_MAX_CERT_BLOCKS">FIDELITY_MAX_CERT_BLOCKS</a></li>
-      <li><a href="global.html#FIELD_BODIES_VERSION">FIELD_BODIES_VERSION</a></li>
-      <li><a href="global.html#GCM_TAG_BYTES">GCM_TAG_BYTES</a></li>
-      <li><a href="global.html#HOP_PENALTY_MS">HOP_PENALTY_MS</a></li>
-      <li><a href="global.html#INPUT_HEADROOM">INPUT_HEADROOM</a></li>
-      <li><a href="global.html#LEAF_VERSION">LEAF_VERSION</a></li>
-      <li><a href="global.html#LOCKTIME_SLACK_BLOCKS">LOCKTIME_SLACK_BLOCKS</a></li>
-      <li><a href="global.html#LOCKTIME_THRESHOLD">LOCKTIME_THRESHOLD</a></li>
-      <li><a href="global.html#MAX_EVIDENCE">MAX_EVIDENCE</a></li>
-      <li><a href="global.html#MAX_FEE_PPM">MAX_FEE_PPM</a></li>
-      <li><a href="global.html#MAX_LOCKTIME">MAX_LOCKTIME</a></li>
-      <li><a href="global.html#MAX_MAKERS">MAX_MAKERS</a></li>
-      <li><a href="global.html#MAX_MAKER_INPUTS">MAX_MAKER_INPUTS</a></li>
-      <li><a href="global.html#MAX_OFFERS">MAX_OFFERS</a></li>
-      <li><a href="global.html#MAX_PREMIUM_PPM">MAX_PREMIUM_PPM</a></li>
-      <li><a href="global.html#MAX_PROVIDERS">MAX_PROVIDERS</a></li>
-      <li><a href="global.html#MAX_PSBT_CHARS">MAX_PSBT_CHARS</a></li>
-      <li><a href="global.html#MAX_REFUND_LOCK_BLOCKS">MAX_REFUND_LOCK_BLOCKS</a></li>
-      <li><a href="global.html#MAX_SETTLED_CREDITS">MAX_SETTLED_CREDITS</a></li>
-      <li><a href="global.html#MAX_TRANSFERS">MAX_TRANSFERS</a></li>
-      <li><a href="global.html#MIN_COINJOIN_SATS">MIN_COINJOIN_SATS</a></li>
-      <li><a href="global.html#MIN_INVOICE_EXPIRY_SECONDS">MIN_INVOICE_EXPIRY_SECONDS</a></li>
-      <li><a href="global.html#MIN_REFUND_LOCK_BLOCKS">MIN_REFUND_LOCK_BLOCKS</a></li>
-      <li><a href="global.html#PODLE_BLACKLIST_SIZE">PODLE_BLACKLIST_SIZE</a></li>
-      <li><a href="global.html#PODLE_MAX_INDEX">PODLE_MAX_INDEX</a></li>
-      <li><a href="global.html#PODLE_MIN_AGE_CONFS">PODLE_MIN_AGE_CONFS</a></li>
-      <li><a href="global.html#PODLE_MIN_VALUE_PCT">PODLE_MIN_VALUE_PCT</a></li>
-      <li><a href="global.html#PODLE_TAG">PODLE_TAG</a></li>
-      <li><a href="global.html#ROUND_TYPES">ROUND_TYPES</a></li>
-      <li><a href="global.html#SCORE_INVENTORY_ONLY">SCORE_INVENTORY_ONLY</a></li>
-      <li><a href="global.html#SCORE_MAX">SCORE_MAX</a></li>
-      <li><a href="global.html#SCORE_UNKNOWN">SCORE_UNKNOWN</a></li>
-      <li><a href="global.html#SEALED_TYPE">SEALED_TYPE</a></li>
-      <li><a href="global.html#SEAL_NAMESPACE">SEAL_NAMESPACE</a></li>
-      <li><a href="global.html#SIGNER_FIELD">SIGNER_FIELD</a></li>
-      <li><a href="global.html#TAPROOT_INTERNAL_NUMS">TAPROOT_INTERNAL_NUMS</a></li>
-      <li><a href="global.html#TELEMETRY_TYPE">TELEMETRY_TYPE</a></li>
-      <li><a href="global.html#TELEMETRY_VERSION">TELEMETRY_VERSION</a></li>
-      <li><a href="global.html#UNSAFE_PATH_TOKENS">UNSAFE_PATH_TOKENS</a></li>
-      <li><a href="global.html#WALLET_TX_KINDS">WALLET_TX_KINDS</a></li>
-      <li><a href="global.html#WEIGHT_OVERHEAD">WEIGHT_OVERHEAD</a></li>
-      <li><a href="global.html#YEAR_BLOCKS">YEAR_BLOCKS</a></li>
-      <li><a href="global.html#assertMonotoneBudget">assertMonotoneBudget</a></li>
-      <li><a href="global.html#bitcoin">bitcoin</a></li>
-      <li><a href="global.html#bodyId">bodyId</a></li>
-      <li><a href="global.html#broadcastSettled">broadcastSettled</a></li>
-      <li><a href="global.html#buildContractTaproot">buildContractTaproot</a></li>
-      <li><a href="global.html#buildEscrow">buildEscrow</a></li>
-      <li><a href="global.html#buildFederationVaultFromPolicy">buildFederationVaultFromPolicy</a></li>
-      <li><a href="global.html#buildFidelity">buildFidelity</a></li>
-      <li><a href="global.html#buildForwardedDocumentRequest">buildForwardedDocumentRequest</a></li>
-      <li><a href="global.html#buildHashlockLeaf">buildHashlockLeaf</a></li>
-      <li><a href="global.html#buildHashlockTapscript">buildHashlockTapscript</a></li>
-      <li><a href="global.html#buildPsbt">buildPsbt</a></li>
-      <li><a href="global.html#buildScriptLeaf">buildScriptLeaf</a></li>
-      <li><a href="global.html#buildSpendLeaf">buildSpendLeaf</a></li>
-      <li><a href="global.html#buildWatchSet">buildWatchSet</a></li>
-      <li><a href="global.html#checkPodleUtxo">checkPodleUtxo</a></li>
-      <li><a href="global.html#classifyWalletTransaction">classifyWalletTransaction</a></li>
-      <li><a href="global.html#codec">codec</a></li>
-      <li><a href="global.html#compileLeaves">compileLeaves</a></li>
-      <li><a href="global.html#composePolicyWithRunHashlock">composePolicyWithRunHashlock</a></li>
-      <li><a href="global.html#composeTaprootTree">composeTaprootTree</a></li>
-      <li><a href="global.html#computeRelayFee">computeRelayFee</a></li>
-      <li><a href="global.html#contractMessageIndex">contractMessageIndex</a></li>
-      <li><a href="global.html#contractMessageMatches">contractMessageMatches</a></li>
-      <li><a href="global.html#createBlobMerkleTree">createBlobMerkleTree</a></li>
-      <li><a href="global.html#createDocumentPurchaseSession">createDocumentPurchaseSession</a></li>
-      <li><a href="global.html#describePsbt">describePsbt</a></li>
-      <li><a href="global.html#descriptorPrivateKey">descriptorPrivateKey</a></li>
-      <li><a href="global.html#envelopeRecipient">envelopeRecipient</a></li>
-      <li><a href="global.html#estimateVsize">estimateVsize</a></li>
-      <li><a href="global.html#evaluateTierWhen">evaluateTierWhen</a></li>
-      <li><a href="global.html#expireHeight">expireHeight</a></li>
-      <li><a href="global.html#fidelityLocktimes">fidelityLocktimes</a></li>
-      <li><a href="global.html#fidelityPath">fidelityPath</a></li>
-      <li><a href="global.html#fidelityValue">fidelityValue</a></li>
-      <li><a href="global.html#finalize">finalize</a></li>
-      <li><a href="global.html#finalizeHashlockPsbt">finalizeHashlockPsbt</a></li>
-      <li><a href="global.html#finalizeSpendPsbt">finalizeSpendPsbt</a></li>
-      <li><a href="global.html#findSession">findSession</a></li>
-      <li><a href="global.html#fromContractMessage">fromContractMessage</a></li>
-      <li><a href="global.html#generatePodle">generatePodle</a></li>
-      <li><a href="global.html#hashlockFromProgramRun">hashlockFromProgramRun</a></li>
-      <li><a href="global.html#invoiceAmountMsat">invoiceAmountMsat</a></li>
-      <li><a href="global.html#isDuplicateSettlement">isDuplicateSettlement</a></li>
-      <li><a href="global.html#isValidFidelityLocktime">isValidFidelityLocktime</a></li>
-      <li><a href="global.html#l1GiverTerms">l1GiverTerms</a></li>
-      <li><a href="global.html#leafScripts">leafScripts</a></li>
-      <li><a href="global.html#listRefundCandidates">listRefundCandidates</a></li>
-      <li><a href="global.html#lockFrom">lockFrom</a></li>
-      <li><a href="global.html#makerChange">makerChange</a></li>
-      <li><a href="global.html#makerFee">makerFee</a></li>
-      <li><a href="global.html#memoryChain">memoryChain</a></li>
-      <li><a href="global.html#memoryWallet">memoryWallet</a></li>
-      <li><a href="global.html#mergeMakerSignatures">mergeMakerSignatures</a></li>
-      <li><a href="global.html#nextPodleIndex">nextPodleIndex</a></li>
-      <li><a href="global.html#normalizeAuth">normalizeAuth</a></li>
-      <li><a href="global.html#normalizeCancel">normalizeCancel</a></li>
-      <li><a href="global.html#normalizeContractSpendPolicy">normalizeContractSpendPolicy</a></li>
-      <li><a href="global.html#normalizeExtraLeafSpecs">normalizeExtraLeafSpecs</a></li>
-      <li><a href="global.html#normalizeFidelity">normalizeFidelity</a></li>
-      <li><a href="global.html#normalizeFill">normalizeFill</a></li>
-      <li><a href="global.html#normalizeFillAck">normalizeFillAck</a></li>
-      <li><a href="global.html#normalizeFunded">normalizeFunded</a></li>
-      <li><a href="global.html#normalizeHashlockSpec">normalizeHashlockSpec</a></li>
-      <li><a href="global.html#normalizeIoAuth">normalizeIoAuth</a></li>
-      <li><a href="global.html#normalizeLeaf">normalizeLeaf</a></li>
-      <li><a href="global.html#normalizeLock">normalizeLock</a></li>
-      <li><a href="global.html#normalizeOffer">normalizeOffer</a></li>
-      <li><a href="global.html#normalizeOrder">normalizeOrder</a></li>
-      <li><a href="global.html#normalizeSig">normalizeSig</a></li>
-      <li><a href="global.html#normalizeTake">normalizeTake</a></li>
-      <li><a href="global.html#normalizeTakeAccept">normalizeTakeAccept</a></li>
-      <li><a href="global.html#normalizeTx">normalizeTx</a></li>
-      <li><a href="global.html#offerKey">offerKey</a></li>
-      <li><a href="global.html#openFiling">openFiling</a></li>
-      <li><a href="global.html#openRoundMessage">openRoundMessage</a></li>
-      <li><a href="global.html#paginateInventoryItems">paginateInventoryItems</a></li>
-      <li><a href="global.html#parseXOnlyPubkeysFromSpendScript">parseXOnlyPubkeysFromSpendScript</a></li>
-      <li><a href="global.html#planCoinjoin">planCoinjoin</a></li>
-      <li><a href="global.html#podleCommitment">podleCommitment</a></li>
-      <li><a href="global.html#podleGenerator">podleGenerator</a></li>
-      <li><a href="global.html#policyAfterDecay">policyAfterDecay</a></li>
-      <li><a href="global.html#prepareDecayMigrationPsbt">prepareDecayMigrationPsbt</a></li>
-      <li><a href="global.html#prepareFidelityRedeem">prepareFidelityRedeem</a></li>
-      <li><a href="global.html#prepareHashlockWithdrawalPsbt">prepareHashlockWithdrawalPsbt</a></li>
-      <li><a href="global.html#prepareTierWithdrawalPsbt">prepareTierWithdrawalPsbt</a></li>
-      <li><a href="global.html#quote">quote</a></li>
-      <li><a href="global.html#randomNonce">randomNonce</a></li>
-      <li><a href="global.html#randomPrivateKey">randomPrivateKey</a></li>
-      <li><a href="global.html#randomRoundId">randomRoundId</a></li>
-      <li><a href="global.html#rememberSettlement">rememberSettlement</a></li>
-      <li><a href="global.html#roleFor">roleFor</a></li>
-      <li><a href="global.html#roles">roles</a></li>
-      <li><a href="global.html#routePath">routePath</a></li>
-      <li><a href="global.html#scriptTreeFromLeaves">scriptTreeFromLeaves</a></li>
-      <li><a href="global.html#sealRoundMessage">sealRoundMessage</a></li>
-      <li><a href="global.html#selectActiveTiers">selectActiveTiers</a></li>
-      <li><a href="global.html#sellerDedupeKey">sellerDedupeKey</a></li>
-      <li><a href="global.html#settlementDedupeKey">settlementDedupeKey</a></li>
-      <li><a href="global.html#signFidelityCertificate">signFidelityCertificate</a></li>
-      <li><a href="global.html#signFidelityRedeem">signFidelityRedeem</a></li>
-      <li><a href="global.html#signKeyPathInputs">signKeyPathInputs</a></li>
-      <li><a href="global.html#signOwnership">signOwnership</a></li>
-      <li><a href="global.html#signingString">signingString</a></li>
-      <li><a href="global.html#spendAddress">spendAddress</a></li>
-      <li><a href="global.html#synthesizeDefaultLadder">synthesizeDefaultLadder</a></li>
-      <li><a href="global.html#taprootKeyPath">taprootKeyPath</a></li>
-      <li><a href="global.html#taprootOutputPrivateKey">taprootOutputPrivateKey</a></li>
-      <li><a href="global.html#tierWhenPath">tierWhenPath</a></li>
-      <li><a href="global.html#timelockMature">timelockMature</a></li>
-      <li><a href="global.html#toContractMessage">toContractMessage</a></li>
-      <li><a href="global.html#toIntegerSats">toIntegerSats</a></li>
-      <li><a href="global.html#unsignedTxid">unsignedTxid</a></li>
-      <li><a href="global.html#validateEscrow">validateEscrow</a></li>
-      <li><a href="global.html#validateFill">validateFill</a></li>
-      <li><a href="global.html#validateForMaker">validateForMaker</a></li>
-      <li><a href="global.html#validateForTaker">validateForTaker</a></li>
-      <li><a href="global.html#validateInvoice">validateInvoice</a></li>
-      <li><a href="global.html#validateTake">validateTake</a></li>
-      <li><a href="global.html#validateTakeAccept">validateTakeAccept</a></li>
-      <li><a href="global.html#verifyBlobPath">verifyBlobPath</a></li>
-      <li><a href="global.html#verifyFidelity">verifyFidelity</a></li>
-      <li><a href="global.html#verifyFidelityCertificate">verifyFidelityCertificate</a></li>
-      <li><a href="global.html#verifyOwnership">verifyOwnership</a></li>
-      <li><a href="global.html#verifyPodle">verifyPodle</a></li>
-      <li><a href="global.html#weightsForProximity">weightsForProximity</a></li>
+      <li><a href="global.html#crypto">crypto</a></li>
     </ul>
   </nav>
   <br class="clear" />

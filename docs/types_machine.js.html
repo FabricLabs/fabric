@@ -26,6 +26,9 @@
   <div id="main">
     <h1 class="page-title">Source: types/machine.js</h1>
 
+    <p><a href="https://github.com/FabricLabs/fabric/edit/master/types/machine.js">Edit this page</a></p>
+
+
 
 
 
@@ -59,6 +62,34 @@ const {
   opcodeAllowed,
   assertStepsAllowed
 } = require('../functions/opcodeAllowList');
+const {
+  DEFAULT_MAX_STEPS,
+  DEFAULT_MAX_STACK
+} = require('../functions/executionProgramRunner');
+
+/**
+ * Step cap for one `compute`. Settings may lower or raise it up to 4096.
+ * @param {Object} settings
+ * @returns {number}
+ * @private
+ */
+function stepCap (settings) {
+  const n = Number(settings &amp;&amp; settings.maxSteps);
+  if (Number.isFinite(n) &amp;&amp; n > 0) return Math.min(Math.floor(n), 4096);
+  return DEFAULT_MAX_STEPS;
+}
+
+/**
+ * Stack cap for one `compute`. Settings may lower or raise it up to 256.
+ * @param {Object} settings
+ * @returns {number}
+ * @private
+ */
+function stackCap (settings) {
+  const n = Number(settings &amp;&amp; settings.maxStack);
+  if (Number.isFinite(n) &amp;&amp; n > 0) return Math.min(Math.floor(n), 256);
+  return DEFAULT_MAX_STACK;
+}
 
 // Strict JSON
 const { parsePersistedJson } = require('../functions/wireJson');
@@ -116,8 +147,10 @@ class Machine extends Actor {
       precision: 8,
       script: [],
       type: 'x86',
-      // Opcode allow-list. Null or empty = unrestricted (legacy soft compute).
-      allowedOpcodes: null
+      // Opcode allow-list. Null or empty still fail-closes unknown opcodes.
+      allowedOpcodes: null,
+      maxSteps: null,
+      maxStack: null
     }, settings);
 
     // machine key
@@ -131,7 +164,7 @@ class Machine extends Actor {
     // `memory` is allocated on first access (see getter); most Machines never touch it.
     Object.defineProperty(this, '_memory', { value: null, writable: true, enumerable: false, configurable: true });
 
-    this.known = {}; // definitions
+    this.known = Object.create(null);
     this.opcodes = createDefaultOpcodeRegistry();
     this.stack = []; // output
     this.history = []; // State tree
@@ -184,7 +217,8 @@ class Machine extends Actor {
   }
 
   /**
-   * Active opcode allow-list (empty = unrestricted).
+   * Active opcode allow-list (empty = no extra name filter).
+   * Unknown opcodes still throw.
    * @returns {string[]}
    */
   get allowedOpcodes () {
@@ -193,7 +227,7 @@ class Machine extends Actor {
 
   /**
    * Restrict `define` / `loadProgram` / `compute` to this opcode set.
-   * Empty / null clears the restriction (legacy soft unknown-op behavior).
+   * Empty / null clears the name filter. Unknown opcodes still throw.
    * @param {Iterable&lt;*>|null} list
    * @returns {Machine}
    */
@@ -263,22 +297,36 @@ class Machine extends Actor {
 
     const allow = this._allowedOpcodes;
     const restricted = allow &amp;&amp; allow.length > 0;
+    const script = Array.isArray(this.script) ? this.script : [];
+    const maxSteps = stepCap(this.settings);
+    const maxStack = stackCap(this.settings);
+    if (script.length > maxSteps) {
+      throw new Error(`program exceeds maxSteps (${maxSteps})`);
+    }
 
-    for (const i in this.script) {
-      const instruction = this.script[i];
+    let executed = 0;
+    for (let i = 0; i &lt; script.length; i++) {
+      if (executed >= maxSteps) {
+        throw new Error(`program exceeds maxSteps (${maxSteps})`);
+      }
+      executed += 1;
+      const instruction = script[i];
       const name = String(instruction == null ? '' : instruction);
       if (restricted &amp;&amp; !opcodeAllowed(allow, name)) {
         throw new Error(`opcode not in primitives.opcodes allow-list: ${name}`);
       }
-      const method = this.known[instruction];
+      const method = Object.prototype.hasOwnProperty.call(this.known, name) ? this.known[name] : undefined;
 
-      if (method) {
+      if (typeof method === 'function') {
         const data = method.call(this.state, input);
         this.stack.push(data);
       } else if (restricted) {
         throw new Error(`opcode not defined (fail closed under allow-list): ${name}`);
       } else {
-        this.stack.push(instruction | 0);
+        throw new Error(`opcode not defined: ${name}`);
+      }
+      if (this.stack.length > maxStack) {
+        throw new Error('stack overflow');
       }
     }
 
@@ -359,10 +407,13 @@ class Machine extends Actor {
    * When an opcode allow-list is active (ctor `allowedOpcodes`,
    * {@link Machine#setAllowedOpcodes}, {@link Machine#applyGenesisOpcodes},
    * or Program/genesis `primitives.opcodes`), steps and javascript `source`
-   * keys must be listed — fail closed.
+   * keys must be listed — fail closed. Unknown opcodes throw even with no
+   * allow-list. A `javascript` program's functions register only when
+   * `opts.trusted` is true (local operator). Mesh and Hub runs omit it.
    * @param {Program|object} program
    * @param {Object} [opts]
    * @param {Object} [opts.genesis] ARC genesis; may supply `primitives.opcodes` allow-list
+   * @param {boolean} [opts.trusted] register `javascript` source functions on this host
    * @returns {Machine}
    */
   loadProgram (program, opts = {}) {
@@ -389,8 +440,12 @@ class Machine extends Actor {
 
     if (prog.language === 'javascript' &amp;&amp; prog.source &amp;&amp; typeof prog.source === 'object' &amp;&amp;
         !Array.isArray(prog.source)) {
-      for (const [name, fn] of Object.entries(prog.source)) {
-        if (typeof fn === 'function') this.define(name, fn);
+      const fns = Object.entries(prog.source).filter((entry) => typeof entry[1] === 'function');
+      if (fns.length &amp;&amp; opts.trusted !== true) {
+        throw new Error('javascript program source requires trusted: true');
+      }
+      if (opts.trusted === true) {
+        for (const [name, fn] of fns) this.define(name, fn);
       }
     }
     this.settings.script = steps;
@@ -410,6 +465,27 @@ class Machine extends Actor {
     try {
       const Program = require('./program');
       const prog = program instanceof Program ? program : Program.from(program || {});
+      if (opts.isolate === true &amp;&amp; prog.language === 'fabric-opcodes') {
+        const compiled = prog.compile();
+        if (!compiled.ok) {
+          return {
+            ok: false,
+            stack: [],
+            tip: null,
+            trace: [],
+            runCommitmentHex: null,
+            programHash: prog.programHash,
+            error: compiled.error || 'compile failed'
+          };
+        }
+        return Program.runIsolatedOpcodes(prog.steps, {
+          allowedOpcodes: this._allowedOpcodes,
+          maxSteps: opts.maxSteps != null ? opts.maxSteps : this.settings.maxSteps,
+          maxStack: opts.maxStack != null ? opts.maxStack : this.settings.maxStack,
+          isolateTimeoutMs: opts.isolateTimeoutMs,
+          isolateWorker: opts.isolateWorker
+        });
+      }
       if (prog.language === 'fabric-execution') {
         const {
           runExecutionProgram
@@ -418,10 +494,21 @@ class Machine extends Actor {
         const src = prog.settings.source &amp;&amp; typeof prog.settings.source === 'object'
           ? prog.settings.source
           : program;
-        const result = runExecutionProgram(src, Object.assign({}, opts, {
-          machine: this,
-          allowedOpcodes: this._allowedOpcodes
-        }));
+        const pass = {};
+        if (opts.genesis) pass.genesis = opts.genesis;
+        if (opts.maxSteps != null) pass.maxSteps = opts.maxSteps;
+        else if (this.settings.maxSteps != null) pass.maxSteps = this.settings.maxSteps;
+        if (opts.maxStack != null) pass.maxStack = opts.maxStack;
+        else if (this.settings.maxStack != null) pass.maxStack = this.settings.maxStack;
+        if (opts.maxDepth != null) pass.maxDepth = opts.maxDepth;
+        if (opts.maxTrace != null) pass.maxTrace = opts.maxTrace;
+        if (opts.isolateTimeoutMs != null) pass.isolateTimeoutMs = opts.isolateTimeoutMs;
+        if (opts.inProcess === true) pass.inProcess = true;
+        if (typeof opts.resolveFabricEntry === 'function') pass.resolveFabricEntry = opts.resolveFabricEntry;
+        if (this._allowedOpcodes &amp;&amp; this._allowedOpcodes.length) {
+          pass.allowedOpcodes = this._allowedOpcodes;
+        }
+        const result = runExecutionProgram(src, pass);
         return {
           ok: result.ok,
           stack: result.stack || [],
@@ -502,7 +589,12 @@ class Machine extends Actor {
       ? this.settings.interval
       : 60;
     const ms = Number.isFinite(fromFreq) &amp;&amp; fromFreq > 0 ? fromFreq : Math.max(1, intervalSec * 1000);
-    this._governor = setInterval(this.compute.bind(this), ms);
+    this._governor = setInterval(() => {
+      Promise.resolve(this.compute()).catch((err) => {
+        this.emit('error', err);
+        this.stop();
+      });
+    }, ms);
     this.status = 'STARTED';
     return this;
   }
@@ -527,28 +619,9 @@ module.exports = Machine;
     <h2><a href="index.html">Home</a></h2>
     <h3>Modules</h3>
     <ul>
-      <li><a href="module-types_bech32_bech32.html">types/bech32/bech32</a></li>
-      <li><a href="module-types_bech32_fabricPaymentBech32.html">types/bech32/fabricPaymentBech32</a></li>
       <li><a href="module-types_delegation.html">types/delegation</a></li>
-      <li><a href="module-types_key_base58.html">types/key/base58</a></li>
-      <li><a href="module-types_key_bip32.html">types/key/bip32</a></li>
-      <li><a href="module-types_key_bip39.html">types/key/bip39</a></li>
-      <li><a href="module-types_key_bip49.html">types/key/bip49</a></li>
-      <li><a href="module-types_key_bip85.html">types/key/bip85</a></li>
-      <li><a href="module-types_key_fabricKeyMaterial.html">types/key/fabricKeyMaterial</a></li>
-      <li><a href="module-types_key_keyHasPrivateSigningMaterial.html">types/key/keyHasPrivateSigningMaterial</a></li>
-      <li><a href="module-types_key_pubkey.html">types/key/pubkey</a></li>
-      <li><a href="module-types_key_signingTags.html">types/key/signingTags</a></li>
       <li><a href="module-types_typetree.html">types/typetree</a></li>
-      <li><a href="module-types_wallet_accountKeys.html">types/wallet/accountKeys</a></li>
-      <li><a href="module-types_wallet_bip21.html">types/wallet/bip21</a></li>
       <li><a href="module-types_wallet_bip86.html">types/wallet/bip86</a></li>
-      <li><a href="module-types_witness_adaptor.html">types/witness/adaptor</a></li>
-      <li><a href="module-types_witness_bls.html">types/witness/bls</a></li>
-      <li><a href="module-types_witness_dleq.html">types/witness/dleq</a></li>
-      <li><a href="module-types_witness_musig2.html">types/witness/musig2</a></li>
-      <li><a href="module-types_witness_musig2Adaptor.html">types/witness/musig2Adaptor</a></li>
-      <li><a href="module-types_witness_musig2Session.html">types/witness/musig2Session</a></li>
       <li><a href="types_ecc.html#.module:selftest">types/ecc.selftest</a></li>
     </ul>
     <h3>Classes</h3>
@@ -617,211 +690,23 @@ module.exports = Machine;
       <li><a href="SetupTui.html">SetupTui</a></li>
       <li><a href="SignedBook.html">SignedBook</a></li>
       <li><a href="State.html">State</a></li>
+      <li><a href="Storage.html">Storage</a></li>
       <li><a href="Store.html">Store</a></li>
       <li><a href="Swap.html">Swap</a></li>
       <li><a href="global.html#Text">Text</a></li>
       <li><a href="Token.html">Token</a></li>
       <li><a href="Tree.html">Tree</a></li>
       <li><a href="Vector.html">Vector</a></li>
-      <li><a href="Wallet.html">Wallet</a></li>
       <li><a href="Watchtower.html">Watchtower</a></li>
+      <li><a href="WireReplayFilter.html">WireReplayFilter</a></li>
       <li><a href="Worker.html">Worker</a></li>
       <li><a href="ZMQ.html">ZMQ</a></li>
       <li><a href="module-types_delegation-Delegation.html">Delegation</a></li>
-      <li><a href="module-types_key_bip32-BIP32Factory.html">BIP32Factory</a></li>
-      <li><a href="module-types_witness_musig2-InvalidContributionError.html">InvalidContributionError</a></li>
+      <li><a href="module-types_wallet_bip86-Wallet.html">Wallet</a></li>
     </ul>
     <h3>Global</h3>
     <ul>
-      <li><a href="global.html#ASK_TYPE">ASK_TYPE</a></li>
-      <li><a href="global.html#BID_CLOCK_SKEW_SECONDS">BID_CLOCK_SKEW_SECONDS</a></li>
-      <li><a href="global.html#BID_TYPE">BID_TYPE</a></li>
-      <li><a href="global.html#BITCOIN_MESSAGE_TYPES">BITCOIN_MESSAGE_TYPES</a></li>
-      <li><a href="global.html#CHANNEL_BODY_TYPES">CHANNEL_BODY_TYPES</a></li>
-      <li><a href="global.html#CHANNEL_DEFAULTS">CHANNEL_DEFAULTS</a></li>
-      <li><a href="global.html#CLTV_TIMESTAMP_THRESHOLD">CLTV_TIMESTAMP_THRESHOLD</a></li>
-      <li><a href="global.html#DEFAULT_BID_TTL_SECONDS">DEFAULT_BID_TTL_SECONDS</a></li>
-      <li><a href="global.html#DEFAULT_FEE_SATS">DEFAULT_FEE_SATS</a></li>
-      <li><a href="global.html#DEFAULT_INVOICE_EXPIRY_SECONDS">DEFAULT_INVOICE_EXPIRY_SECONDS</a></li>
-      <li><a href="global.html#DEFAULT_INVOICE_MARGIN_SECONDS">DEFAULT_INVOICE_MARGIN_SECONDS</a></li>
-      <li><a href="global.html#DEFAULT_MAX_SIGNS">DEFAULT_MAX_SIGNS</a></li>
-      <li><a href="global.html#DEFAULT_MIN_CLAIM_BLOCKS">DEFAULT_MIN_CLAIM_BLOCKS</a></li>
-      <li><a href="global.html#DEFAULT_MIN_CONFIRMATIONS">DEFAULT_MIN_CONFIRMATIONS</a></li>
-      <li><a href="global.html#DEFAULT_MIN_EQUAL_OUTPUTS">DEFAULT_MIN_EQUAL_OUTPUTS</a></li>
-      <li><a href="global.html#DEFAULT_WEIGHTS">DEFAULT_WEIGHTS</a></li>
-      <li><a href="global.html#DEPRECATED_WIRE_TYPES">DEPRECATED_WIRE_TYPES</a></li>
-      <li><a href="global.html#DUST_SATS">DUST_SATS</a></li>
-      <li><a href="global.html#EXIT_KINDS">EXIT_KINDS</a></li>
-      <li><a href="global.html#EXIT_SIGNATURE_TYPE">EXIT_SIGNATURE_TYPE</a></li>
-      <li><a href="global.html#FIDELITY_LOCKTIME_GRID">FIDELITY_LOCKTIME_GRID</a></li>
-      <li><a href="global.html#FIDELITY_MAX_CERT_BLOCKS">FIDELITY_MAX_CERT_BLOCKS</a></li>
-      <li><a href="global.html#FIELD_BODIES_VERSION">FIELD_BODIES_VERSION</a></li>
-      <li><a href="global.html#GCM_TAG_BYTES">GCM_TAG_BYTES</a></li>
-      <li><a href="global.html#HOP_PENALTY_MS">HOP_PENALTY_MS</a></li>
-      <li><a href="global.html#INPUT_HEADROOM">INPUT_HEADROOM</a></li>
-      <li><a href="global.html#LEAF_VERSION">LEAF_VERSION</a></li>
-      <li><a href="global.html#LOCKTIME_SLACK_BLOCKS">LOCKTIME_SLACK_BLOCKS</a></li>
-      <li><a href="global.html#LOCKTIME_THRESHOLD">LOCKTIME_THRESHOLD</a></li>
-      <li><a href="global.html#MAX_EVIDENCE">MAX_EVIDENCE</a></li>
-      <li><a href="global.html#MAX_FEE_PPM">MAX_FEE_PPM</a></li>
-      <li><a href="global.html#MAX_LOCKTIME">MAX_LOCKTIME</a></li>
-      <li><a href="global.html#MAX_MAKERS">MAX_MAKERS</a></li>
-      <li><a href="global.html#MAX_MAKER_INPUTS">MAX_MAKER_INPUTS</a></li>
-      <li><a href="global.html#MAX_OFFERS">MAX_OFFERS</a></li>
-      <li><a href="global.html#MAX_PREMIUM_PPM">MAX_PREMIUM_PPM</a></li>
-      <li><a href="global.html#MAX_PROVIDERS">MAX_PROVIDERS</a></li>
-      <li><a href="global.html#MAX_PSBT_CHARS">MAX_PSBT_CHARS</a></li>
-      <li><a href="global.html#MAX_REFUND_LOCK_BLOCKS">MAX_REFUND_LOCK_BLOCKS</a></li>
-      <li><a href="global.html#MAX_SETTLED_CREDITS">MAX_SETTLED_CREDITS</a></li>
-      <li><a href="global.html#MAX_TRANSFERS">MAX_TRANSFERS</a></li>
-      <li><a href="global.html#MIN_COINJOIN_SATS">MIN_COINJOIN_SATS</a></li>
-      <li><a href="global.html#MIN_INVOICE_EXPIRY_SECONDS">MIN_INVOICE_EXPIRY_SECONDS</a></li>
-      <li><a href="global.html#MIN_REFUND_LOCK_BLOCKS">MIN_REFUND_LOCK_BLOCKS</a></li>
-      <li><a href="global.html#PODLE_BLACKLIST_SIZE">PODLE_BLACKLIST_SIZE</a></li>
-      <li><a href="global.html#PODLE_MAX_INDEX">PODLE_MAX_INDEX</a></li>
-      <li><a href="global.html#PODLE_MIN_AGE_CONFS">PODLE_MIN_AGE_CONFS</a></li>
-      <li><a href="global.html#PODLE_MIN_VALUE_PCT">PODLE_MIN_VALUE_PCT</a></li>
-      <li><a href="global.html#PODLE_TAG">PODLE_TAG</a></li>
-      <li><a href="global.html#ROUND_TYPES">ROUND_TYPES</a></li>
-      <li><a href="global.html#SCORE_INVENTORY_ONLY">SCORE_INVENTORY_ONLY</a></li>
-      <li><a href="global.html#SCORE_MAX">SCORE_MAX</a></li>
-      <li><a href="global.html#SCORE_UNKNOWN">SCORE_UNKNOWN</a></li>
-      <li><a href="global.html#SEALED_TYPE">SEALED_TYPE</a></li>
-      <li><a href="global.html#SEAL_NAMESPACE">SEAL_NAMESPACE</a></li>
-      <li><a href="global.html#SIGNER_FIELD">SIGNER_FIELD</a></li>
-      <li><a href="global.html#TAPROOT_INTERNAL_NUMS">TAPROOT_INTERNAL_NUMS</a></li>
-      <li><a href="global.html#TELEMETRY_TYPE">TELEMETRY_TYPE</a></li>
-      <li><a href="global.html#TELEMETRY_VERSION">TELEMETRY_VERSION</a></li>
-      <li><a href="global.html#UNSAFE_PATH_TOKENS">UNSAFE_PATH_TOKENS</a></li>
-      <li><a href="global.html#WALLET_TX_KINDS">WALLET_TX_KINDS</a></li>
-      <li><a href="global.html#WEIGHT_OVERHEAD">WEIGHT_OVERHEAD</a></li>
-      <li><a href="global.html#YEAR_BLOCKS">YEAR_BLOCKS</a></li>
-      <li><a href="global.html#assertMonotoneBudget">assertMonotoneBudget</a></li>
-      <li><a href="global.html#bitcoin">bitcoin</a></li>
-      <li><a href="global.html#bodyId">bodyId</a></li>
-      <li><a href="global.html#broadcastSettled">broadcastSettled</a></li>
-      <li><a href="global.html#buildContractTaproot">buildContractTaproot</a></li>
-      <li><a href="global.html#buildEscrow">buildEscrow</a></li>
-      <li><a href="global.html#buildFederationVaultFromPolicy">buildFederationVaultFromPolicy</a></li>
-      <li><a href="global.html#buildFidelity">buildFidelity</a></li>
-      <li><a href="global.html#buildForwardedDocumentRequest">buildForwardedDocumentRequest</a></li>
-      <li><a href="global.html#buildHashlockLeaf">buildHashlockLeaf</a></li>
-      <li><a href="global.html#buildHashlockTapscript">buildHashlockTapscript</a></li>
-      <li><a href="global.html#buildPsbt">buildPsbt</a></li>
-      <li><a href="global.html#buildScriptLeaf">buildScriptLeaf</a></li>
-      <li><a href="global.html#buildSpendLeaf">buildSpendLeaf</a></li>
-      <li><a href="global.html#buildWatchSet">buildWatchSet</a></li>
-      <li><a href="global.html#checkPodleUtxo">checkPodleUtxo</a></li>
-      <li><a href="global.html#classifyWalletTransaction">classifyWalletTransaction</a></li>
-      <li><a href="global.html#codec">codec</a></li>
-      <li><a href="global.html#compileLeaves">compileLeaves</a></li>
-      <li><a href="global.html#composePolicyWithRunHashlock">composePolicyWithRunHashlock</a></li>
-      <li><a href="global.html#composeTaprootTree">composeTaprootTree</a></li>
-      <li><a href="global.html#computeRelayFee">computeRelayFee</a></li>
-      <li><a href="global.html#contractMessageIndex">contractMessageIndex</a></li>
-      <li><a href="global.html#contractMessageMatches">contractMessageMatches</a></li>
-      <li><a href="global.html#createBlobMerkleTree">createBlobMerkleTree</a></li>
-      <li><a href="global.html#createDocumentPurchaseSession">createDocumentPurchaseSession</a></li>
-      <li><a href="global.html#describePsbt">describePsbt</a></li>
-      <li><a href="global.html#descriptorPrivateKey">descriptorPrivateKey</a></li>
-      <li><a href="global.html#envelopeRecipient">envelopeRecipient</a></li>
-      <li><a href="global.html#estimateVsize">estimateVsize</a></li>
-      <li><a href="global.html#evaluateTierWhen">evaluateTierWhen</a></li>
-      <li><a href="global.html#expireHeight">expireHeight</a></li>
-      <li><a href="global.html#fidelityLocktimes">fidelityLocktimes</a></li>
-      <li><a href="global.html#fidelityPath">fidelityPath</a></li>
-      <li><a href="global.html#fidelityValue">fidelityValue</a></li>
-      <li><a href="global.html#finalize">finalize</a></li>
-      <li><a href="global.html#finalizeHashlockPsbt">finalizeHashlockPsbt</a></li>
-      <li><a href="global.html#finalizeSpendPsbt">finalizeSpendPsbt</a></li>
-      <li><a href="global.html#findSession">findSession</a></li>
-      <li><a href="global.html#fromContractMessage">fromContractMessage</a></li>
-      <li><a href="global.html#generatePodle">generatePodle</a></li>
-      <li><a href="global.html#hashlockFromProgramRun">hashlockFromProgramRun</a></li>
-      <li><a href="global.html#invoiceAmountMsat">invoiceAmountMsat</a></li>
-      <li><a href="global.html#isDuplicateSettlement">isDuplicateSettlement</a></li>
-      <li><a href="global.html#isValidFidelityLocktime">isValidFidelityLocktime</a></li>
-      <li><a href="global.html#l1GiverTerms">l1GiverTerms</a></li>
-      <li><a href="global.html#leafScripts">leafScripts</a></li>
-      <li><a href="global.html#listRefundCandidates">listRefundCandidates</a></li>
-      <li><a href="global.html#lockFrom">lockFrom</a></li>
-      <li><a href="global.html#makerChange">makerChange</a></li>
-      <li><a href="global.html#makerFee">makerFee</a></li>
-      <li><a href="global.html#memoryChain">memoryChain</a></li>
-      <li><a href="global.html#memoryWallet">memoryWallet</a></li>
-      <li><a href="global.html#mergeMakerSignatures">mergeMakerSignatures</a></li>
-      <li><a href="global.html#nextPodleIndex">nextPodleIndex</a></li>
-      <li><a href="global.html#normalizeAuth">normalizeAuth</a></li>
-      <li><a href="global.html#normalizeCancel">normalizeCancel</a></li>
-      <li><a href="global.html#normalizeContractSpendPolicy">normalizeContractSpendPolicy</a></li>
-      <li><a href="global.html#normalizeExtraLeafSpecs">normalizeExtraLeafSpecs</a></li>
-      <li><a href="global.html#normalizeFidelity">normalizeFidelity</a></li>
-      <li><a href="global.html#normalizeFill">normalizeFill</a></li>
-      <li><a href="global.html#normalizeFillAck">normalizeFillAck</a></li>
-      <li><a href="global.html#normalizeFunded">normalizeFunded</a></li>
-      <li><a href="global.html#normalizeHashlockSpec">normalizeHashlockSpec</a></li>
-      <li><a href="global.html#normalizeIoAuth">normalizeIoAuth</a></li>
-      <li><a href="global.html#normalizeLeaf">normalizeLeaf</a></li>
-      <li><a href="global.html#normalizeLock">normalizeLock</a></li>
-      <li><a href="global.html#normalizeOffer">normalizeOffer</a></li>
-      <li><a href="global.html#normalizeOrder">normalizeOrder</a></li>
-      <li><a href="global.html#normalizeSig">normalizeSig</a></li>
-      <li><a href="global.html#normalizeTake">normalizeTake</a></li>
-      <li><a href="global.html#normalizeTakeAccept">normalizeTakeAccept</a></li>
-      <li><a href="global.html#normalizeTx">normalizeTx</a></li>
-      <li><a href="global.html#offerKey">offerKey</a></li>
-      <li><a href="global.html#openFiling">openFiling</a></li>
-      <li><a href="global.html#openRoundMessage">openRoundMessage</a></li>
-      <li><a href="global.html#paginateInventoryItems">paginateInventoryItems</a></li>
-      <li><a href="global.html#parseXOnlyPubkeysFromSpendScript">parseXOnlyPubkeysFromSpendScript</a></li>
-      <li><a href="global.html#planCoinjoin">planCoinjoin</a></li>
-      <li><a href="global.html#podleCommitment">podleCommitment</a></li>
-      <li><a href="global.html#podleGenerator">podleGenerator</a></li>
-      <li><a href="global.html#policyAfterDecay">policyAfterDecay</a></li>
-      <li><a href="global.html#prepareDecayMigrationPsbt">prepareDecayMigrationPsbt</a></li>
-      <li><a href="global.html#prepareFidelityRedeem">prepareFidelityRedeem</a></li>
-      <li><a href="global.html#prepareHashlockWithdrawalPsbt">prepareHashlockWithdrawalPsbt</a></li>
-      <li><a href="global.html#prepareTierWithdrawalPsbt">prepareTierWithdrawalPsbt</a></li>
-      <li><a href="global.html#quote">quote</a></li>
-      <li><a href="global.html#randomNonce">randomNonce</a></li>
-      <li><a href="global.html#randomPrivateKey">randomPrivateKey</a></li>
-      <li><a href="global.html#randomRoundId">randomRoundId</a></li>
-      <li><a href="global.html#rememberSettlement">rememberSettlement</a></li>
-      <li><a href="global.html#roleFor">roleFor</a></li>
-      <li><a href="global.html#roles">roles</a></li>
-      <li><a href="global.html#routePath">routePath</a></li>
-      <li><a href="global.html#scriptTreeFromLeaves">scriptTreeFromLeaves</a></li>
-      <li><a href="global.html#sealRoundMessage">sealRoundMessage</a></li>
-      <li><a href="global.html#selectActiveTiers">selectActiveTiers</a></li>
-      <li><a href="global.html#sellerDedupeKey">sellerDedupeKey</a></li>
-      <li><a href="global.html#settlementDedupeKey">settlementDedupeKey</a></li>
-      <li><a href="global.html#signFidelityCertificate">signFidelityCertificate</a></li>
-      <li><a href="global.html#signFidelityRedeem">signFidelityRedeem</a></li>
-      <li><a href="global.html#signKeyPathInputs">signKeyPathInputs</a></li>
-      <li><a href="global.html#signOwnership">signOwnership</a></li>
-      <li><a href="global.html#signingString">signingString</a></li>
-      <li><a href="global.html#spendAddress">spendAddress</a></li>
-      <li><a href="global.html#synthesizeDefaultLadder">synthesizeDefaultLadder</a></li>
-      <li><a href="global.html#taprootKeyPath">taprootKeyPath</a></li>
-      <li><a href="global.html#taprootOutputPrivateKey">taprootOutputPrivateKey</a></li>
-      <li><a href="global.html#tierWhenPath">tierWhenPath</a></li>
-      <li><a href="global.html#timelockMature">timelockMature</a></li>
-      <li><a href="global.html#toContractMessage">toContractMessage</a></li>
-      <li><a href="global.html#toIntegerSats">toIntegerSats</a></li>
-      <li><a href="global.html#unsignedTxid">unsignedTxid</a></li>
-      <li><a href="global.html#validateEscrow">validateEscrow</a></li>
-      <li><a href="global.html#validateFill">validateFill</a></li>
-      <li><a href="global.html#validateForMaker">validateForMaker</a></li>
-      <li><a href="global.html#validateForTaker">validateForTaker</a></li>
-      <li><a href="global.html#validateInvoice">validateInvoice</a></li>
-      <li><a href="global.html#validateTake">validateTake</a></li>
-      <li><a href="global.html#validateTakeAccept">validateTakeAccept</a></li>
-      <li><a href="global.html#verifyBlobPath">verifyBlobPath</a></li>
-      <li><a href="global.html#verifyFidelity">verifyFidelity</a></li>
-      <li><a href="global.html#verifyFidelityCertificate">verifyFidelityCertificate</a></li>
-      <li><a href="global.html#verifyOwnership">verifyOwnership</a></li>
-      <li><a href="global.html#verifyPodle">verifyPodle</a></li>
-      <li><a href="global.html#weightsForProximity">weightsForProximity</a></li>
+      <li><a href="global.html#crypto">crypto</a></li>
     </ul>
   </nav>
   <br class="clear" />

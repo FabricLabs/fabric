@@ -26,6 +26,9 @@
   <div id="main">
     <h1 class="page-title">Module: types/delegation</h1>
 
+    <p><a href="https://github.com/FabricLabs/fabric/edit/master/types/delegation.js">Edit this page</a></p>
+
+
 
 
 
@@ -250,7 +253,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_delegation.js.html">types/delegation.js</a>, <a href="types_delegation.js.html#line77">line 77</a>
+                <a href="types_delegation.js.html">types/delegation.js</a>, <a href="types_delegation.js.html#line88">line 88</a>
               </li>
             </ul>
           </dd>
@@ -316,7 +319,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_delegation.js.html">types/delegation.js</a>, <a href="types_delegation.js.html#line73">line 73</a>
+                <a href="types_delegation.js.html">types/delegation.js</a>, <a href="types_delegation.js.html#line84">line 84</a>
               </li>
             </ul>
           </dd>
@@ -382,7 +385,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_delegation.js.html">types/delegation.js</a>, <a href="types_delegation.js.html#line79">line 79</a>
+                <a href="types_delegation.js.html">types/delegation.js</a>, <a href="types_delegation.js.html#line90">line 90</a>
               </li>
             </ul>
           </dd>
@@ -448,7 +451,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_delegation.js.html">types/delegation.js</a>, <a href="types_delegation.js.html#line75">line 75</a>
+                <a href="types_delegation.js.html">types/delegation.js</a>, <a href="types_delegation.js.html#line86">line 86</a>
               </li>
             </ul>
           </dd>
@@ -514,7 +517,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_delegation.js.html">types/delegation.js</a>, <a href="types_delegation.js.html#line71">line 71</a>
+                <a href="types_delegation.js.html">types/delegation.js</a>, <a href="types_delegation.js.html#line82">line 82</a>
               </li>
             </ul>
           </dd>
@@ -540,7 +543,10 @@
 
 
         <div class="description">
-          Protocol version carried in every frame.
+          Protocol version of every delegation frame except `DELEGATION_MAILBOX_FETCH`,
+          which carries MAILBOX_FETCH_VERSION instead. Restrictions (a grant's
+          `peers`, a request's `sessionKey` and `clientNonce`) are required fields,
+          empty when unused, never optional trailing fields a reader could skip.
         </div>
 
 
@@ -580,7 +586,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_delegation.js.html">types/delegation.js</a>, <a href="types_delegation.js.html#line69">line 69</a>
+                <a href="types_delegation.js.html">types/delegation.js</a>, <a href="types_delegation.js.html#line74">line 74</a>
               </li>
             </ul>
           </dd>
@@ -646,7 +652,210 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_delegation.js.html">types/delegation.js</a>, <a href="types_delegation.js.html#line82">line 82</a>
+                <a href="types_delegation.js.html">types/delegation.js</a>, <a href="types_delegation.js.html#line104">line 104</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+        <h4 class="name" id="~GENERIC_PROTOCOL_BODY_TYPES"><span class="type-signature">(inner, constant) </span>GENERIC_PROTOCOL_BODY_TYPES<span class="type-signature"></span></h4>
+
+
+
+
+        <div class="description">
+          GENERIC_MESSAGE body types Peer (`Peer#_handleGenericMessage`) or a Fabric
+          app acts on as protocol. A `message` grant never gets the user's signature
+          on one of these, nor on any body named like a registered wire type.
+        </div>
+
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_delegation.js.html">types/delegation.js</a>, <a href="types_delegation.js.html#line112">line 112</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+        <h4 class="name" id="~MAILBOX_FETCH_PURPOSES"><span class="type-signature">(inner, constant) </span>MAILBOX_FETCH_PURPOSES<span class="type-signature"></span></h4>
+
+
+
+
+        <div class="description">
+          Uses a mailbox read proof is signed for: reading delegation mail, cancelling
+          a pairing on a rendezvous, reading a Hub's federation mailbox.
+        </div>
+
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_delegation.js.html">types/delegation.js</a>, <a href="types_delegation.js.html#line96">line 96</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+        <h4 class="name" id="~MAILBOX_FETCH_VERSION"><span class="type-signature">(inner, constant) </span>MAILBOX_FETCH_VERSION<span class="type-signature"></span></h4>
+
+
+
+
+        <div class="description">
+          Version of `DELEGATION_MAILBOX_FETCH` bodies. Version 2 added `origin` and
+          `purpose` after `pubkey`, so each side refuses the other's layout instead of
+          reading its fields at the wrong offsets.
+        </div>
+
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_delegation.js.html">types/delegation.js</a>, <a href="types_delegation.js.html#line80">line 80</a>
               </li>
             </ul>
           </dd>
@@ -712,7 +921,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_delegation.js.html">types/delegation.js</a>, <a href="types_delegation.js.html#line84">line 84</a>
+                <a href="types_delegation.js.html">types/delegation.js</a>, <a href="types_delegation.js.html#line106">line 106</a>
               </li>
             </ul>
           </dd>
@@ -742,7 +951,7 @@
 
 
 
-        <h4 class="name" id="~answerError"><span class="type-signature">(inner) </span>answerError<span class="signature">(read, answer)</span><span class="type-signature"> &rarr; {string|null}</span></h4>
+        <h4 class="name" id="~answerError"><span class="type-signature">(inner) </span>answerError<span class="signature">(read, answer, options<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {string|null}</span></h4>
 
 
 
@@ -776,6 +985,8 @@
               <th>Type</th>
 
 
+              <th>Attributes</th>
+
 
 
 
@@ -800,6 +1011,14 @@
 
               </td>
 
+
+              <td class="attributes">
+
+
+
+
+
+              </td>
 
 
 
@@ -830,10 +1049,112 @@
               </td>
 
 
+              <td class="attributes">
+
+
+
+
+
+              </td>
+
 
 
 
               <td class="description last">The answer frame.</td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>options</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Object</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+                &lt;optional><br>
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last">
+                <h6>Properties</h6>
+
+
+                <table class="params">
+                  <thead>
+                    <tr>
+
+                      <th>Name</th>
+
+
+                      <th>Type</th>
+
+
+                      <th>Attributes</th>
+
+
+
+
+                      <th class="last">Description</th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+
+
+                    <tr>
+
+                      <td class="name"><code>now</code></td>
+
+
+                      <td class="type">
+
+
+                        <span class="param-type">number</span>
+
+
+
+                      </td>
+
+
+                      <td class="attributes">
+
+                        &lt;optional><br>
+
+
+
+
+
+                      </td>
+
+
+
+
+                      <td class="description last">Check the assertion window at this time (default: when it was signed).</td>
+                    </tr>
+
+
+                  </tbody>
+                </table>
+
+              </td>
             </tr>
 
 
@@ -876,7 +1197,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_delegation.js.html">types/delegation.js</a>, <a href="types_delegation.js.html#line1329">line 1329</a>
+                <a href="types_delegation.js.html">types/delegation.js</a>, <a href="types_delegation.js.html#line1529">line 1529</a>
               </li>
             </ul>
           </dd>
@@ -1061,7 +1382,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_delegation.js.html">types/delegation.js</a>, <a href="types_delegation.js.html#line1315">line 1315</a>
+                <a href="types_delegation.js.html">types/delegation.js</a>, <a href="types_delegation.js.html#line1513">line 1513</a>
               </li>
             </ul>
           </dd>
@@ -1456,7 +1777,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_delegation.js.html">types/delegation.js</a>, <a href="types_delegation.js.html#line1293">line 1293</a>
+                <a href="types_delegation.js.html">types/delegation.js</a>, <a href="types_delegation.js.html#line1490">line 1490</a>
               </li>
             </ul>
           </dd>
@@ -1788,7 +2109,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_delegation.js.html">types/delegation.js</a>, <a href="types_delegation.js.html#line1016">line 1016</a>
+                <a href="types_delegation.js.html">types/delegation.js</a>, <a href="types_delegation.js.html#line1170">line 1170</a>
               </li>
             </ul>
           </dd>
@@ -1993,7 +2314,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_delegation.js.html">types/delegation.js</a>, <a href="types_delegation.js.html#line220">line 220</a>
+                <a href="types_delegation.js.html">types/delegation.js</a>, <a href="types_delegation.js.html#line283">line 283</a>
               </li>
             </ul>
           </dd>
@@ -2176,7 +2497,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_delegation.js.html">types/delegation.js</a>, <a href="types_delegation.js.html#line339">line 339</a>
+                <a href="types_delegation.js.html">types/delegation.js</a>, <a href="types_delegation.js.html#line407">line 407</a>
               </li>
             </ul>
           </dd>
@@ -2712,7 +3033,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_delegation.js.html">types/delegation.js</a>, <a href="types_delegation.js.html#line648">line 648</a>
+                <a href="types_delegation.js.html">types/delegation.js</a>, <a href="types_delegation.js.html#line716">line 716</a>
               </li>
             </ul>
           </dd>
@@ -3091,7 +3412,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_delegation.js.html">types/delegation.js</a>, <a href="types_delegation.js.html#line454">line 454</a>
+                <a href="types_delegation.js.html">types/delegation.js</a>, <a href="types_delegation.js.html#line522">line 522</a>
               </li>
             </ul>
           </dd>
@@ -3497,7 +3818,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_delegation.js.html">types/delegation.js</a>, <a href="types_delegation.js.html#line380">line 380</a>
+                <a href="types_delegation.js.html">types/delegation.js</a>, <a href="types_delegation.js.html#line448">line 448</a>
               </li>
             </ul>
           </dd>
@@ -3878,7 +4199,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_delegation.js.html">types/delegation.js</a>, <a href="types_delegation.js.html#line519">line 519</a>
+                <a href="types_delegation.js.html">types/delegation.js</a>, <a href="types_delegation.js.html#line587">line 587</a>
               </li>
             </ul>
           </dd>
@@ -3934,7 +4255,7 @@
 
 
 
-        <h4 class="name" id="~createMailboxFetch"><span class="type-signature">(inner) </span>createMailboxFetch<span class="signature">(params<span class="signature-attributes">opt</span>, key)</span><span class="type-signature"> &rarr; {Object}</span></h4>
+        <h4 class="name" id="~createMailboxFetch"><span class="type-signature">(inner) </span>createMailboxFetch<span class="signature">(params, key)</span><span class="type-signature"> &rarr; {Object}</span></h4>
 
 
 
@@ -3942,7 +4263,7 @@
 
 
         <div class="description">
-          Prove this key may read its mailbox.
+          Prove this key may read its mailbox on one Hub, for one use.
         </div>
 
 
@@ -3965,8 +4286,6 @@
 
               <th>Type</th>
 
-
-              <th>Attributes</th>
 
 
 
@@ -3992,16 +4311,6 @@
 
               </td>
 
-
-              <td class="attributes">
-
-                &lt;optional><br>
-
-
-
-
-
-              </td>
 
 
 
@@ -4030,6 +4339,68 @@
                   </thead>
 
                   <tbody>
+
+
+                    <tr>
+
+                      <td class="name"><code>origin</code></td>
+
+
+                      <td class="type">
+
+
+                        <span class="param-type">string</span>
+
+
+
+                      </td>
+
+
+                      <td class="attributes">
+
+
+
+
+
+                      </td>
+
+
+
+
+                      <td class="description last">Origin of the Hub the proof is sent to.</td>
+                    </tr>
+
+
+
+                    <tr>
+
+                      <td class="name"><code>purpose</code></td>
+
+
+                      <td class="type">
+
+
+                        <span class="param-type">string</span>
+
+
+
+                      </td>
+
+
+                      <td class="attributes">
+
+
+
+
+
+                      </td>
+
+
+
+
+                      <td class="description last">One of `MAILBOX_FETCH_PURPOSES` (or another lowercase name a server checks).</td>
+                    </tr>
+
 
 
                     <tr>
@@ -4153,14 +4524,6 @@
               </td>
 
 
-              <td class="attributes">
-
-
-
-
-
-              </td>
-
 
 
 
@@ -4207,7 +4570,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_delegation.js.html">types/delegation.js</a>, <a href="types_delegation.js.html#line1152">line 1152</a>
+                <a href="types_delegation.js.html">types/delegation.js</a>, <a href="types_delegation.js.html#line1312">line 1312</a>
               </li>
             </ul>
           </dd>
@@ -4540,6 +4903,44 @@
 
                     <tr>
 
+                      <td class="name"><code>clientNonce</code></td>
+
+
+                      <td class="type">
+
+
+                        <span class="param-type">string</span>
+
+
+
+                      </td>
+
+
+                      <td class="attributes">
+
+                        &lt;optional><br>
+
+
+
+
+
+                      </td>
+
+
+
+                      <td class="default">
+
+                      </td>
+
+
+                      <td class="description last">v3 peer challenges: the `clientNonce`
+                        this participant sent the peer; the challenge must echo it.</td>
+                    </tr>
+
+
+
+                    <tr>
+
                       <td class="name"><code>account</code></td>
 
 
@@ -4793,7 +5194,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_delegation.js.html">types/delegation.js</a>, <a href="types_delegation.js.html#line874">line 874</a>
+                <a href="types_delegation.js.html">types/delegation.js</a>, <a href="types_delegation.js.html#line1017">line 1017</a>
               </li>
             </ul>
           </dd>
@@ -5172,7 +5573,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_delegation.js.html">types/delegation.js</a>, <a href="types_delegation.js.html#line1085">line 1085</a>
+                <a href="types_delegation.js.html">types/delegation.js</a>, <a href="types_delegation.js.html#line1243">line 1243</a>
               </li>
             </ul>
           </dd>
@@ -5446,7 +5847,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_delegation.js.html">types/delegation.js</a>, <a href="types_delegation.js.html#line763">line 763</a>
+                <a href="types_delegation.js.html">types/delegation.js</a>, <a href="types_delegation.js.html#line831">line 831</a>
               </li>
             </ul>
           </dd>
@@ -5611,7 +6012,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_delegation.js.html">types/delegation.js</a>, <a href="types_delegation.js.html#line1372">line 1372</a>
+                <a href="types_delegation.js.html">types/delegation.js</a>, <a href="types_delegation.js.html#line1587">line 1587</a>
               </li>
             </ul>
           </dd>
@@ -5775,7 +6176,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_delegation.js.html">types/delegation.js</a>, <a href="types_delegation.js.html#line254">line 254</a>
+                <a href="types_delegation.js.html">types/delegation.js</a>, <a href="types_delegation.js.html#line317">line 317</a>
               </li>
             </ul>
           </dd>
@@ -5943,7 +6344,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_delegation.js.html">types/delegation.js</a>, <a href="types_delegation.js.html#line102">line 102</a>
+                <a href="types_delegation.js.html">types/delegation.js</a>, <a href="types_delegation.js.html#line165">line 165</a>
               </li>
             </ul>
           </dd>
@@ -6102,7 +6503,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_delegation.js.html">types/delegation.js</a>, <a href="types_delegation.js.html#line628">line 628</a>
+                <a href="types_delegation.js.html">types/delegation.js</a>, <a href="types_delegation.js.html#line696">line 696</a>
               </li>
             </ul>
           </dd>
@@ -6339,7 +6740,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_delegation.js.html">types/delegation.js</a>, <a href="types_delegation.js.html#line1220">line 1220</a>
+                <a href="types_delegation.js.html">types/delegation.js</a>, <a href="types_delegation.js.html#line1407">line 1407</a>
               </li>
             </ul>
           </dd>
@@ -6612,7 +7013,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_delegation.js.html">types/delegation.js</a>, <a href="types_delegation.js.html#line1199">line 1199</a>
+                <a href="types_delegation.js.html">types/delegation.js</a>, <a href="types_delegation.js.html#line1386">line 1386</a>
               </li>
             </ul>
           </dd>
@@ -6774,7 +7175,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_delegation.js.html">types/delegation.js</a>, <a href="types_delegation.js.html#line268">line 268</a>
+                <a href="types_delegation.js.html">types/delegation.js</a>, <a href="types_delegation.js.html#line331">line 331</a>
               </li>
             </ul>
           </dd>
@@ -7040,7 +7441,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_delegation.js.html">types/delegation.js</a>, <a href="types_delegation.js.html#line1240">line 1240</a>
+                <a href="types_delegation.js.html">types/delegation.js</a>, <a href="types_delegation.js.html#line1427">line 1427</a>
               </li>
             </ul>
           </dd>
@@ -7248,7 +7649,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_delegation.js.html">types/delegation.js</a>, <a href="types_delegation.js.html#line699">line 699</a>
+                <a href="types_delegation.js.html">types/delegation.js</a>, <a href="types_delegation.js.html#line767">line 767</a>
               </li>
             </ul>
           </dd>
@@ -7453,7 +7854,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_delegation.js.html">types/delegation.js</a>, <a href="types_delegation.js.html#line826">line 826</a>
+                <a href="types_delegation.js.html">types/delegation.js</a>, <a href="types_delegation.js.html#line965">line 965</a>
               </li>
             </ul>
           </dd>
@@ -7664,7 +8065,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_delegation.js.html">types/delegation.js</a>, <a href="types_delegation.js.html#line482">line 482</a>
+                <a href="types_delegation.js.html">types/delegation.js</a>, <a href="types_delegation.js.html#line550">line 550</a>
               </li>
             </ul>
           </dd>
@@ -7875,7 +8276,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_delegation.js.html">types/delegation.js</a>, <a href="types_delegation.js.html#line409">line 409</a>
+                <a href="types_delegation.js.html">types/delegation.js</a>, <a href="types_delegation.js.html#line477">line 477</a>
               </li>
             </ul>
           </dd>
@@ -8086,7 +8487,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_delegation.js.html">types/delegation.js</a>, <a href="types_delegation.js.html#line556">line 556</a>
+                <a href="types_delegation.js.html">types/delegation.js</a>, <a href="types_delegation.js.html#line624">line 624</a>
               </li>
             </ul>
           </dd>
@@ -8145,7 +8546,7 @@
 
 
 
-        <h4 class="name" id="~readMailboxFetch"><span class="type-signature">(inner) </span>readMailboxFetch<span class="signature">(input, options<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {Object|Object}</span></h4>
+        <h4 class="name" id="~readMailboxFetch"><span class="type-signature">(inner) </span>readMailboxFetch<span class="signature">(input, options)</span><span class="type-signature"> &rarr; {Object|Object}</span></h4>
 
 
 
@@ -8153,7 +8554,11 @@
 
 
         <div class="description">
-          Read a `DELEGATION_MAILBOX_FETCH`. Spending the nonce once is the mailbox's job.
+          Read a `DELEGATION_MAILBOX_FETCH` for this server. The caller names the
+          origins it answers on and the use it is checking; a proof for another Hub
+          or another use is refused, and so is any read that names neither, so a
+          proof can never be replayed elsewhere. Spending the nonce once is the
+          mailbox's job, after this check.
         </div>
 
 
@@ -8176,8 +8581,6 @@
 
               <th>Type</th>
 
-
-              <th>Attributes</th>
 
 
 
@@ -8210,14 +8613,6 @@
               </td>
 
 
-              <td class="attributes">
-
-
-
-
-
-              </td>
-
 
 
 
@@ -8241,20 +8636,136 @@
               </td>
 
 
-              <td class="attributes">
-
-                &lt;optional><br>
 
 
 
+              <td class="description last">
+                <h6>Properties</h6>
 
+
+                <table class="params">
+                  <thead>
+                    <tr>
+
+                      <th>Name</th>
+
+
+                      <th>Type</th>
+
+
+                      <th>Attributes</th>
+
+
+
+
+                      <th class="last">Description</th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+
+
+                    <tr>
+
+                      <td class="name"><code>origin</code></td>
+
+
+                      <td class="type">
+
+
+                        <span class="param-type">string</span>
+                        |
+
+                        <span class="param-type">Array.&lt;string></span>
+
+
+
+                      </td>
+
+
+                      <td class="attributes">
+
+
+
+
+
+                      </td>
+
+
+
+
+                      <td class="description last">This server's origin, or the list it answers on.</td>
+                    </tr>
+
+
+
+                    <tr>
+
+                      <td class="name"><code>purpose</code></td>
+
+
+                      <td class="type">
+
+
+                        <span class="param-type">string</span>
+
+
+
+                      </td>
+
+
+                      <td class="attributes">
+
+
+
+
+
+                      </td>
+
+
+
+
+                      <td class="description last">The use being checked (`MAILBOX_FETCH_PURPOSES`).</td>
+                    </tr>
+
+
+
+                    <tr>
+
+                      <td class="name"><code>now</code></td>
+
+
+                      <td class="type">
+
+
+                        <span class="param-type">number</span>
+
+
+
+                      </td>
+
+
+                      <td class="attributes">
+
+                        &lt;optional><br>
+
+
+
+
+
+                      </td>
+
+
+
+
+                      <td class="description last"></td>
+                    </tr>
+
+
+                  </tbody>
+                </table>
 
               </td>
-
-
-
-
-              <td class="description last"></td>
             </tr>
 
 
@@ -8297,7 +8808,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_delegation.js.html">types/delegation.js</a>, <a href="types_delegation.js.html#line1175">line 1175</a>
+                <a href="types_delegation.js.html">types/delegation.js</a>, <a href="types_delegation.js.html#line1348">line 1348</a>
               </li>
             </ul>
           </dd>
@@ -8509,7 +9020,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_delegation.js.html">types/delegation.js</a>, <a href="types_delegation.js.html#line941">line 941</a>
+                <a href="types_delegation.js.html">types/delegation.js</a>, <a href="types_delegation.js.html#line1091">line 1091</a>
               </li>
             </ul>
           </dd>
@@ -8721,7 +9232,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_delegation.js.html">types/delegation.js</a>, <a href="types_delegation.js.html#line1113">line 1113</a>
+                <a href="types_delegation.js.html">types/delegation.js</a>, <a href="types_delegation.js.html#line1271">line 1271</a>
               </li>
             </ul>
           </dd>
@@ -8932,7 +9443,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_delegation.js.html">types/delegation.js</a>, <a href="types_delegation.js.html#line788">line 788</a>
+                <a href="types_delegation.js.html">types/delegation.js</a>, <a href="types_delegation.js.html#line856">line 856</a>
               </li>
             </ul>
           </dd>
@@ -9235,7 +9746,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_delegation.js.html">types/delegation.js</a>, <a href="types_delegation.js.html#line356">line 356</a>
+                <a href="types_delegation.js.html">types/delegation.js</a>, <a href="types_delegation.js.html#line424">line 424</a>
               </li>
             </ul>
           </dd>
@@ -9551,7 +10062,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_delegation.js.html">types/delegation.js</a>, <a href="types_delegation.js.html#line589">line 589</a>
+                <a href="types_delegation.js.html">types/delegation.js</a>, <a href="types_delegation.js.html#line657">line 657</a>
               </li>
             </ul>
           </dd>
@@ -9713,7 +10224,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_delegation.js.html">types/delegation.js</a>, <a href="types_delegation.js.html#line133">line 133</a>
+                <a href="types_delegation.js.html">types/delegation.js</a>, <a href="types_delegation.js.html#line196">line 196</a>
               </li>
             </ul>
           </dd>
@@ -9783,28 +10294,9 @@
     <h2><a href="index.html">Home</a></h2>
     <h3>Modules</h3>
     <ul>
-      <li><a href="module-types_bech32_bech32.html">types/bech32/bech32</a></li>
-      <li><a href="module-types_bech32_fabricPaymentBech32.html">types/bech32/fabricPaymentBech32</a></li>
       <li><a href="module-types_delegation.html">types/delegation</a></li>
-      <li><a href="module-types_key_base58.html">types/key/base58</a></li>
-      <li><a href="module-types_key_bip32.html">types/key/bip32</a></li>
-      <li><a href="module-types_key_bip39.html">types/key/bip39</a></li>
-      <li><a href="module-types_key_bip49.html">types/key/bip49</a></li>
-      <li><a href="module-types_key_bip85.html">types/key/bip85</a></li>
-      <li><a href="module-types_key_fabricKeyMaterial.html">types/key/fabricKeyMaterial</a></li>
-      <li><a href="module-types_key_keyHasPrivateSigningMaterial.html">types/key/keyHasPrivateSigningMaterial</a></li>
-      <li><a href="module-types_key_pubkey.html">types/key/pubkey</a></li>
-      <li><a href="module-types_key_signingTags.html">types/key/signingTags</a></li>
       <li><a href="module-types_typetree.html">types/typetree</a></li>
-      <li><a href="module-types_wallet_accountKeys.html">types/wallet/accountKeys</a></li>
-      <li><a href="module-types_wallet_bip21.html">types/wallet/bip21</a></li>
       <li><a href="module-types_wallet_bip86.html">types/wallet/bip86</a></li>
-      <li><a href="module-types_witness_adaptor.html">types/witness/adaptor</a></li>
-      <li><a href="module-types_witness_bls.html">types/witness/bls</a></li>
-      <li><a href="module-types_witness_dleq.html">types/witness/dleq</a></li>
-      <li><a href="module-types_witness_musig2.html">types/witness/musig2</a></li>
-      <li><a href="module-types_witness_musig2Adaptor.html">types/witness/musig2Adaptor</a></li>
-      <li><a href="module-types_witness_musig2Session.html">types/witness/musig2Session</a></li>
       <li><a href="types_ecc.html#.module:selftest">types/ecc.selftest</a></li>
     </ul>
     <h3>Classes</h3>
@@ -9873,211 +10365,23 @@
       <li><a href="SetupTui.html">SetupTui</a></li>
       <li><a href="SignedBook.html">SignedBook</a></li>
       <li><a href="State.html">State</a></li>
+      <li><a href="Storage.html">Storage</a></li>
       <li><a href="Store.html">Store</a></li>
       <li><a href="Swap.html">Swap</a></li>
       <li><a href="global.html#Text">Text</a></li>
       <li><a href="Token.html">Token</a></li>
       <li><a href="Tree.html">Tree</a></li>
       <li><a href="Vector.html">Vector</a></li>
-      <li><a href="Wallet.html">Wallet</a></li>
       <li><a href="Watchtower.html">Watchtower</a></li>
+      <li><a href="WireReplayFilter.html">WireReplayFilter</a></li>
       <li><a href="Worker.html">Worker</a></li>
       <li><a href="ZMQ.html">ZMQ</a></li>
       <li><a href="module-types_delegation-Delegation.html">Delegation</a></li>
-      <li><a href="module-types_key_bip32-BIP32Factory.html">BIP32Factory</a></li>
-      <li><a href="module-types_witness_musig2-InvalidContributionError.html">InvalidContributionError</a></li>
+      <li><a href="module-types_wallet_bip86-Wallet.html">Wallet</a></li>
     </ul>
     <h3>Global</h3>
     <ul>
-      <li><a href="global.html#ASK_TYPE">ASK_TYPE</a></li>
-      <li><a href="global.html#BID_CLOCK_SKEW_SECONDS">BID_CLOCK_SKEW_SECONDS</a></li>
-      <li><a href="global.html#BID_TYPE">BID_TYPE</a></li>
-      <li><a href="global.html#BITCOIN_MESSAGE_TYPES">BITCOIN_MESSAGE_TYPES</a></li>
-      <li><a href="global.html#CHANNEL_BODY_TYPES">CHANNEL_BODY_TYPES</a></li>
-      <li><a href="global.html#CHANNEL_DEFAULTS">CHANNEL_DEFAULTS</a></li>
-      <li><a href="global.html#CLTV_TIMESTAMP_THRESHOLD">CLTV_TIMESTAMP_THRESHOLD</a></li>
-      <li><a href="global.html#DEFAULT_BID_TTL_SECONDS">DEFAULT_BID_TTL_SECONDS</a></li>
-      <li><a href="global.html#DEFAULT_FEE_SATS">DEFAULT_FEE_SATS</a></li>
-      <li><a href="global.html#DEFAULT_INVOICE_EXPIRY_SECONDS">DEFAULT_INVOICE_EXPIRY_SECONDS</a></li>
-      <li><a href="global.html#DEFAULT_INVOICE_MARGIN_SECONDS">DEFAULT_INVOICE_MARGIN_SECONDS</a></li>
-      <li><a href="global.html#DEFAULT_MAX_SIGNS">DEFAULT_MAX_SIGNS</a></li>
-      <li><a href="global.html#DEFAULT_MIN_CLAIM_BLOCKS">DEFAULT_MIN_CLAIM_BLOCKS</a></li>
-      <li><a href="global.html#DEFAULT_MIN_CONFIRMATIONS">DEFAULT_MIN_CONFIRMATIONS</a></li>
-      <li><a href="global.html#DEFAULT_MIN_EQUAL_OUTPUTS">DEFAULT_MIN_EQUAL_OUTPUTS</a></li>
-      <li><a href="global.html#DEFAULT_WEIGHTS">DEFAULT_WEIGHTS</a></li>
-      <li><a href="global.html#DEPRECATED_WIRE_TYPES">DEPRECATED_WIRE_TYPES</a></li>
-      <li><a href="global.html#DUST_SATS">DUST_SATS</a></li>
-      <li><a href="global.html#EXIT_KINDS">EXIT_KINDS</a></li>
-      <li><a href="global.html#EXIT_SIGNATURE_TYPE">EXIT_SIGNATURE_TYPE</a></li>
-      <li><a href="global.html#FIDELITY_LOCKTIME_GRID">FIDELITY_LOCKTIME_GRID</a></li>
-      <li><a href="global.html#FIDELITY_MAX_CERT_BLOCKS">FIDELITY_MAX_CERT_BLOCKS</a></li>
-      <li><a href="global.html#FIELD_BODIES_VERSION">FIELD_BODIES_VERSION</a></li>
-      <li><a href="global.html#GCM_TAG_BYTES">GCM_TAG_BYTES</a></li>
-      <li><a href="global.html#HOP_PENALTY_MS">HOP_PENALTY_MS</a></li>
-      <li><a href="global.html#INPUT_HEADROOM">INPUT_HEADROOM</a></li>
-      <li><a href="global.html#LEAF_VERSION">LEAF_VERSION</a></li>
-      <li><a href="global.html#LOCKTIME_SLACK_BLOCKS">LOCKTIME_SLACK_BLOCKS</a></li>
-      <li><a href="global.html#LOCKTIME_THRESHOLD">LOCKTIME_THRESHOLD</a></li>
-      <li><a href="global.html#MAX_EVIDENCE">MAX_EVIDENCE</a></li>
-      <li><a href="global.html#MAX_FEE_PPM">MAX_FEE_PPM</a></li>
-      <li><a href="global.html#MAX_LOCKTIME">MAX_LOCKTIME</a></li>
-      <li><a href="global.html#MAX_MAKERS">MAX_MAKERS</a></li>
-      <li><a href="global.html#MAX_MAKER_INPUTS">MAX_MAKER_INPUTS</a></li>
-      <li><a href="global.html#MAX_OFFERS">MAX_OFFERS</a></li>
-      <li><a href="global.html#MAX_PREMIUM_PPM">MAX_PREMIUM_PPM</a></li>
-      <li><a href="global.html#MAX_PROVIDERS">MAX_PROVIDERS</a></li>
-      <li><a href="global.html#MAX_PSBT_CHARS">MAX_PSBT_CHARS</a></li>
-      <li><a href="global.html#MAX_REFUND_LOCK_BLOCKS">MAX_REFUND_LOCK_BLOCKS</a></li>
-      <li><a href="global.html#MAX_SETTLED_CREDITS">MAX_SETTLED_CREDITS</a></li>
-      <li><a href="global.html#MAX_TRANSFERS">MAX_TRANSFERS</a></li>
-      <li><a href="global.html#MIN_COINJOIN_SATS">MIN_COINJOIN_SATS</a></li>
-      <li><a href="global.html#MIN_INVOICE_EXPIRY_SECONDS">MIN_INVOICE_EXPIRY_SECONDS</a></li>
-      <li><a href="global.html#MIN_REFUND_LOCK_BLOCKS">MIN_REFUND_LOCK_BLOCKS</a></li>
-      <li><a href="global.html#PODLE_BLACKLIST_SIZE">PODLE_BLACKLIST_SIZE</a></li>
-      <li><a href="global.html#PODLE_MAX_INDEX">PODLE_MAX_INDEX</a></li>
-      <li><a href="global.html#PODLE_MIN_AGE_CONFS">PODLE_MIN_AGE_CONFS</a></li>
-      <li><a href="global.html#PODLE_MIN_VALUE_PCT">PODLE_MIN_VALUE_PCT</a></li>
-      <li><a href="global.html#PODLE_TAG">PODLE_TAG</a></li>
-      <li><a href="global.html#ROUND_TYPES">ROUND_TYPES</a></li>
-      <li><a href="global.html#SCORE_INVENTORY_ONLY">SCORE_INVENTORY_ONLY</a></li>
-      <li><a href="global.html#SCORE_MAX">SCORE_MAX</a></li>
-      <li><a href="global.html#SCORE_UNKNOWN">SCORE_UNKNOWN</a></li>
-      <li><a href="global.html#SEALED_TYPE">SEALED_TYPE</a></li>
-      <li><a href="global.html#SEAL_NAMESPACE">SEAL_NAMESPACE</a></li>
-      <li><a href="global.html#SIGNER_FIELD">SIGNER_FIELD</a></li>
-      <li><a href="global.html#TAPROOT_INTERNAL_NUMS">TAPROOT_INTERNAL_NUMS</a></li>
-      <li><a href="global.html#TELEMETRY_TYPE">TELEMETRY_TYPE</a></li>
-      <li><a href="global.html#TELEMETRY_VERSION">TELEMETRY_VERSION</a></li>
-      <li><a href="global.html#UNSAFE_PATH_TOKENS">UNSAFE_PATH_TOKENS</a></li>
-      <li><a href="global.html#WALLET_TX_KINDS">WALLET_TX_KINDS</a></li>
-      <li><a href="global.html#WEIGHT_OVERHEAD">WEIGHT_OVERHEAD</a></li>
-      <li><a href="global.html#YEAR_BLOCKS">YEAR_BLOCKS</a></li>
-      <li><a href="global.html#assertMonotoneBudget">assertMonotoneBudget</a></li>
-      <li><a href="global.html#bitcoin">bitcoin</a></li>
-      <li><a href="global.html#bodyId">bodyId</a></li>
-      <li><a href="global.html#broadcastSettled">broadcastSettled</a></li>
-      <li><a href="global.html#buildContractTaproot">buildContractTaproot</a></li>
-      <li><a href="global.html#buildEscrow">buildEscrow</a></li>
-      <li><a href="global.html#buildFederationVaultFromPolicy">buildFederationVaultFromPolicy</a></li>
-      <li><a href="global.html#buildFidelity">buildFidelity</a></li>
-      <li><a href="global.html#buildForwardedDocumentRequest">buildForwardedDocumentRequest</a></li>
-      <li><a href="global.html#buildHashlockLeaf">buildHashlockLeaf</a></li>
-      <li><a href="global.html#buildHashlockTapscript">buildHashlockTapscript</a></li>
-      <li><a href="global.html#buildPsbt">buildPsbt</a></li>
-      <li><a href="global.html#buildScriptLeaf">buildScriptLeaf</a></li>
-      <li><a href="global.html#buildSpendLeaf">buildSpendLeaf</a></li>
-      <li><a href="global.html#buildWatchSet">buildWatchSet</a></li>
-      <li><a href="global.html#checkPodleUtxo">checkPodleUtxo</a></li>
-      <li><a href="global.html#classifyWalletTransaction">classifyWalletTransaction</a></li>
-      <li><a href="global.html#codec">codec</a></li>
-      <li><a href="global.html#compileLeaves">compileLeaves</a></li>
-      <li><a href="global.html#composePolicyWithRunHashlock">composePolicyWithRunHashlock</a></li>
-      <li><a href="global.html#composeTaprootTree">composeTaprootTree</a></li>
-      <li><a href="global.html#computeRelayFee">computeRelayFee</a></li>
-      <li><a href="global.html#contractMessageIndex">contractMessageIndex</a></li>
-      <li><a href="global.html#contractMessageMatches">contractMessageMatches</a></li>
-      <li><a href="global.html#createBlobMerkleTree">createBlobMerkleTree</a></li>
-      <li><a href="global.html#createDocumentPurchaseSession">createDocumentPurchaseSession</a></li>
-      <li><a href="global.html#describePsbt">describePsbt</a></li>
-      <li><a href="global.html#descriptorPrivateKey">descriptorPrivateKey</a></li>
-      <li><a href="global.html#envelopeRecipient">envelopeRecipient</a></li>
-      <li><a href="global.html#estimateVsize">estimateVsize</a></li>
-      <li><a href="global.html#evaluateTierWhen">evaluateTierWhen</a></li>
-      <li><a href="global.html#expireHeight">expireHeight</a></li>
-      <li><a href="global.html#fidelityLocktimes">fidelityLocktimes</a></li>
-      <li><a href="global.html#fidelityPath">fidelityPath</a></li>
-      <li><a href="global.html#fidelityValue">fidelityValue</a></li>
-      <li><a href="global.html#finalize">finalize</a></li>
-      <li><a href="global.html#finalizeHashlockPsbt">finalizeHashlockPsbt</a></li>
-      <li><a href="global.html#finalizeSpendPsbt">finalizeSpendPsbt</a></li>
-      <li><a href="global.html#findSession">findSession</a></li>
-      <li><a href="global.html#fromContractMessage">fromContractMessage</a></li>
-      <li><a href="global.html#generatePodle">generatePodle</a></li>
-      <li><a href="global.html#hashlockFromProgramRun">hashlockFromProgramRun</a></li>
-      <li><a href="global.html#invoiceAmountMsat">invoiceAmountMsat</a></li>
-      <li><a href="global.html#isDuplicateSettlement">isDuplicateSettlement</a></li>
-      <li><a href="global.html#isValidFidelityLocktime">isValidFidelityLocktime</a></li>
-      <li><a href="global.html#l1GiverTerms">l1GiverTerms</a></li>
-      <li><a href="global.html#leafScripts">leafScripts</a></li>
-      <li><a href="global.html#listRefundCandidates">listRefundCandidates</a></li>
-      <li><a href="global.html#lockFrom">lockFrom</a></li>
-      <li><a href="global.html#makerChange">makerChange</a></li>
-      <li><a href="global.html#makerFee">makerFee</a></li>
-      <li><a href="global.html#memoryChain">memoryChain</a></li>
-      <li><a href="global.html#memoryWallet">memoryWallet</a></li>
-      <li><a href="global.html#mergeMakerSignatures">mergeMakerSignatures</a></li>
-      <li><a href="global.html#nextPodleIndex">nextPodleIndex</a></li>
-      <li><a href="global.html#normalizeAuth">normalizeAuth</a></li>
-      <li><a href="global.html#normalizeCancel">normalizeCancel</a></li>
-      <li><a href="global.html#normalizeContractSpendPolicy">normalizeContractSpendPolicy</a></li>
-      <li><a href="global.html#normalizeExtraLeafSpecs">normalizeExtraLeafSpecs</a></li>
-      <li><a href="global.html#normalizeFidelity">normalizeFidelity</a></li>
-      <li><a href="global.html#normalizeFill">normalizeFill</a></li>
-      <li><a href="global.html#normalizeFillAck">normalizeFillAck</a></li>
-      <li><a href="global.html#normalizeFunded">normalizeFunded</a></li>
-      <li><a href="global.html#normalizeHashlockSpec">normalizeHashlockSpec</a></li>
-      <li><a href="global.html#normalizeIoAuth">normalizeIoAuth</a></li>
-      <li><a href="global.html#normalizeLeaf">normalizeLeaf</a></li>
-      <li><a href="global.html#normalizeLock">normalizeLock</a></li>
-      <li><a href="global.html#normalizeOffer">normalizeOffer</a></li>
-      <li><a href="global.html#normalizeOrder">normalizeOrder</a></li>
-      <li><a href="global.html#normalizeSig">normalizeSig</a></li>
-      <li><a href="global.html#normalizeTake">normalizeTake</a></li>
-      <li><a href="global.html#normalizeTakeAccept">normalizeTakeAccept</a></li>
-      <li><a href="global.html#normalizeTx">normalizeTx</a></li>
-      <li><a href="global.html#offerKey">offerKey</a></li>
-      <li><a href="global.html#openFiling">openFiling</a></li>
-      <li><a href="global.html#openRoundMessage">openRoundMessage</a></li>
-      <li><a href="global.html#paginateInventoryItems">paginateInventoryItems</a></li>
-      <li><a href="global.html#parseXOnlyPubkeysFromSpendScript">parseXOnlyPubkeysFromSpendScript</a></li>
-      <li><a href="global.html#planCoinjoin">planCoinjoin</a></li>
-      <li><a href="global.html#podleCommitment">podleCommitment</a></li>
-      <li><a href="global.html#podleGenerator">podleGenerator</a></li>
-      <li><a href="global.html#policyAfterDecay">policyAfterDecay</a></li>
-      <li><a href="global.html#prepareDecayMigrationPsbt">prepareDecayMigrationPsbt</a></li>
-      <li><a href="global.html#prepareFidelityRedeem">prepareFidelityRedeem</a></li>
-      <li><a href="global.html#prepareHashlockWithdrawalPsbt">prepareHashlockWithdrawalPsbt</a></li>
-      <li><a href="global.html#prepareTierWithdrawalPsbt">prepareTierWithdrawalPsbt</a></li>
-      <li><a href="global.html#quote">quote</a></li>
-      <li><a href="global.html#randomNonce">randomNonce</a></li>
-      <li><a href="global.html#randomPrivateKey">randomPrivateKey</a></li>
-      <li><a href="global.html#randomRoundId">randomRoundId</a></li>
-      <li><a href="global.html#rememberSettlement">rememberSettlement</a></li>
-      <li><a href="global.html#roleFor">roleFor</a></li>
-      <li><a href="global.html#roles">roles</a></li>
-      <li><a href="global.html#routePath">routePath</a></li>
-      <li><a href="global.html#scriptTreeFromLeaves">scriptTreeFromLeaves</a></li>
-      <li><a href="global.html#sealRoundMessage">sealRoundMessage</a></li>
-      <li><a href="global.html#selectActiveTiers">selectActiveTiers</a></li>
-      <li><a href="global.html#sellerDedupeKey">sellerDedupeKey</a></li>
-      <li><a href="global.html#settlementDedupeKey">settlementDedupeKey</a></li>
-      <li><a href="global.html#signFidelityCertificate">signFidelityCertificate</a></li>
-      <li><a href="global.html#signFidelityRedeem">signFidelityRedeem</a></li>
-      <li><a href="global.html#signKeyPathInputs">signKeyPathInputs</a></li>
-      <li><a href="global.html#signOwnership">signOwnership</a></li>
-      <li><a href="global.html#signingString">signingString</a></li>
-      <li><a href="global.html#spendAddress">spendAddress</a></li>
-      <li><a href="global.html#synthesizeDefaultLadder">synthesizeDefaultLadder</a></li>
-      <li><a href="global.html#taprootKeyPath">taprootKeyPath</a></li>
-      <li><a href="global.html#taprootOutputPrivateKey">taprootOutputPrivateKey</a></li>
-      <li><a href="global.html#tierWhenPath">tierWhenPath</a></li>
-      <li><a href="global.html#timelockMature">timelockMature</a></li>
-      <li><a href="global.html#toContractMessage">toContractMessage</a></li>
-      <li><a href="global.html#toIntegerSats">toIntegerSats</a></li>
-      <li><a href="global.html#unsignedTxid">unsignedTxid</a></li>
-      <li><a href="global.html#validateEscrow">validateEscrow</a></li>
-      <li><a href="global.html#validateFill">validateFill</a></li>
-      <li><a href="global.html#validateForMaker">validateForMaker</a></li>
-      <li><a href="global.html#validateForTaker">validateForTaker</a></li>
-      <li><a href="global.html#validateInvoice">validateInvoice</a></li>
-      <li><a href="global.html#validateTake">validateTake</a></li>
-      <li><a href="global.html#validateTakeAccept">validateTakeAccept</a></li>
-      <li><a href="global.html#verifyBlobPath">verifyBlobPath</a></li>
-      <li><a href="global.html#verifyFidelity">verifyFidelity</a></li>
-      <li><a href="global.html#verifyFidelityCertificate">verifyFidelityCertificate</a></li>
-      <li><a href="global.html#verifyOwnership">verifyOwnership</a></li>
-      <li><a href="global.html#verifyPodle">verifyPodle</a></li>
-      <li><a href="global.html#weightsForProximity">weightsForProximity</a></li>
+      <li><a href="global.html#crypto">crypto</a></li>
     </ul>
   </nav>
   <br class="clear" />

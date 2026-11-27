@@ -26,6 +26,9 @@
   <div id="main">
     <h1 class="page-title">Class: Federation</h1>
 
+    <p><a href="https://github.com/FabricLabs/fabric/edit/master/types/federation.js">Edit this page</a></p>
+
+
 
 
 
@@ -1569,7 +1572,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_federation.js.html">types/federation.js</a>, <a href="types_federation.js.html#line1595">line 1595</a>
+                <a href="types_federation.js.html">types/federation.js</a>, <a href="types_federation.js.html#line1702">line 1702</a>
               </li>
             </ul>
           </dd>
@@ -2786,7 +2789,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_federation.js.html">types/federation.js</a>, <a href="types_federation.js.html#line1738">line 1738</a>
+                <a href="types_federation.js.html">types/federation.js</a>, <a href="types_federation.js.html#line1845">line 1845</a>
               </li>
             </ul>
           </dd>
@@ -2851,7 +2854,10 @@
 
         <div class="description">
           Build a canonical descriptor. The soft tier needs the full threshold after the
-          CSV delay (never a single key), and the internal key is NUMS so no key-path spend exists.
+          CSV delay (never a single key). A new n-of-n set records `internalKeyMode:
+          'musig2'` so a unanimous spend is a Taproot key-path signature. A threshold
+          below n stays `nums` (script-path only). Pass `internalKeyMode: 'nums'` to
+          keep an existing NUMS vault address; nothing sweeps those coins.
         </div>
 
 
@@ -3109,6 +3115,43 @@
                     </tr>
 
 
+
+                    <tr>
+
+                      <td class="name"><code>internalKeyMode</code></td>
+
+
+                      <td class="type">
+
+
+                        <span class="param-type">string</span>
+
+
+
+                      </td>
+
+
+                      <td class="attributes">
+
+                        &lt;optional><br>
+
+
+
+
+
+                      </td>
+
+
+
+                      <td class="default">
+
+                      </td>
+
+
+                      <td class="description last">`musig2` | `nums`</td>
+                    </tr>
+
+
                   </tbody>
                 </table>
 
@@ -3155,7 +3198,287 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_federation.js.html">types/federation.js</a>, <a href="types_federation.js.html#line1404">line 1404</a>
+                <a href="types_federation.js.html">types/federation.js</a>, <a href="types_federation.js.html#line1408">line 1408</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Object</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id=".buildFundingPsbt"><span class="type-signature">(static) </span>buildFundingPsbt<span class="signature">(opts)</span><span class="type-signature"> &rarr; {Object}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Collaborative funding PSBT: one input from each contributing signer, one
+          output to the vault, change back to those signers, no OP_RETURN. An n-of-n
+          descriptor needs every signer. A threshold descriptor takes a published
+          subset. Reserve credit still waits on `Federation.applyPegInCredit`.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>opts</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Object</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last">
+                <h6>Properties</h6>
+
+
+                <table class="params">
+                  <thead>
+                    <tr>
+
+                      <th>Name</th>
+
+
+                      <th>Type</th>
+
+
+
+
+
+                      <th class="last">Description</th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+
+
+                    <tr>
+
+                      <td class="name"><code>descriptor</code></td>
+
+
+                      <td class="type">
+
+
+                        <span class="param-type">Object</span>
+
+
+
+                      </td>
+
+
+
+
+
+                      <td class="description last"></td>
+                    </tr>
+
+
+
+                    <tr>
+
+                      <td class="name"><code>inputs</code></td>
+
+
+                      <td class="type">
+
+
+                        <span class="param-type">Array.&lt;Object></span>
+
+
+
+                      </td>
+
+
+
+
+
+                      <td class="description last">signer inputs: `txid`, `vout`, `valueSats`, native P2WPKH `address`, `pubkey`, and optional `changeAddress`</td>
+                    </tr>
+
+
+
+                    <tr>
+
+                      <td class="name"><code>vaultSats</code></td>
+
+
+                      <td class="type">
+
+
+                        <span class="param-type">number</span>
+
+
+
+                      </td>
+
+
+
+
+
+                      <td class="description last"></td>
+                    </tr>
+
+
+
+                    <tr>
+
+                      <td class="name"><code>feeSats</code></td>
+
+
+                      <td class="type">
+
+
+                        <span class="param-type">number</span>
+
+
+
+                      </td>
+
+
+
+
+
+                      <td class="description last"></td>
+                    </tr>
+
+
+                  </tbody>
+                </table>
+
+              </td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_federation.js.html">types/federation.js</a>, <a href="types_federation.js.html#line1559">line 1559</a>
               </li>
             </ul>
           </dd>
@@ -3314,7 +3637,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_federation.js.html">types/federation.js</a>, <a href="types_federation.js.html#line1448">line 1448</a>
+                <a href="types_federation.js.html">types/federation.js</a>, <a href="types_federation.js.html#line1466">line 1466</a>
               </li>
             </ul>
           </dd>
@@ -3769,7 +4092,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_federation.js.html">types/federation.js</a>, <a href="types_federation.js.html#line1470">line 1470</a>
+                <a href="types_federation.js.html">types/federation.js</a>, <a href="types_federation.js.html#line1489">line 1489</a>
               </li>
             </ul>
           </dd>
@@ -4567,7 +4890,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_federation.js.html">types/federation.js</a>, <a href="types_federation.js.html#line1630">line 1630</a>
+                <a href="types_federation.js.html">types/federation.js</a>, <a href="types_federation.js.html#line1737">line 1737</a>
               </li>
             </ul>
           </dd>
@@ -5036,7 +5359,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_federation.js.html">types/federation.js</a>, <a href="types_federation.js.html#line1661">line 1661</a>
+                <a href="types_federation.js.html">types/federation.js</a>, <a href="types_federation.js.html#line1768">line 1768</a>
               </li>
             </ul>
           </dd>
@@ -5195,7 +5518,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_federation.js.html">types/federation.js</a>, <a href="types_federation.js.html#line1649">line 1649</a>
+                <a href="types_federation.js.html">types/federation.js</a>, <a href="types_federation.js.html#line1756">line 1756</a>
               </li>
             </ul>
           </dd>
@@ -5377,7 +5700,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_federation.js.html">types/federation.js</a>, <a href="types_federation.js.html#line1500">line 1500</a>
+                <a href="types_federation.js.html">types/federation.js</a>, <a href="types_federation.js.html#line1519">line 1519</a>
               </li>
             </ul>
           </dd>
@@ -5736,383 +6059,6 @@
           <dd>
 
             <span class="param-type">Array.&lt;object></span>
-
-
-          </dd>
-        </dl>
-
-
-
-
-
-
-
-
-
-
-
-
-
-        <h4 class="name" id=".prepareWithdrawal"><span class="type-signature">(static) </span>prepareWithdrawal<span class="signature">(opts)</span><span class="type-signature"> &rarr; {Object}</span></h4>
-
-
-
-
-
-
-        <div class="description">
-          Build the unsigned withdrawal PSBT for a descriptor. Every member rebuilds
-          the same PSBT from the same request (the input txid commits to the funding
-          transaction), so a member signs only what it would have built itself.
-        </div>
-
-
-
-
-
-
-
-
-
-        <h5>Parameters:</h5>
-
-
-        <table class="params">
-          <thead>
-            <tr>
-
-              <th>Name</th>
-
-
-              <th>Type</th>
-
-
-
-
-
-              <th class="last">Description</th>
-            </tr>
-          </thead>
-
-          <tbody>
-
-
-            <tr>
-
-              <td class="name"><code>opts</code></td>
-
-
-              <td class="type">
-
-
-                <span class="param-type">Object</span>
-
-
-
-              </td>
-
-
-
-
-
-              <td class="description last">
-                <h6>Properties</h6>
-
-
-                <table class="params">
-                  <thead>
-                    <tr>
-
-                      <th>Name</th>
-
-
-                      <th>Type</th>
-
-
-                      <th>Attributes</th>
-
-
-
-
-                      <th class="last">Description</th>
-                    </tr>
-                  </thead>
-
-                  <tbody>
-
-
-                    <tr>
-
-                      <td class="name"><code>descriptor</code></td>
-
-
-                      <td class="type">
-
-
-                        <span class="param-type">Object</span>
-
-
-
-                      </td>
-
-
-                      <td class="attributes">
-
-
-
-
-
-                      </td>
-
-
-
-
-                      <td class="description last">Canonical federation descriptor</td>
-                    </tr>
-
-
-
-                    <tr>
-
-                      <td class="name"><code>fundedTxHex</code></td>
-
-
-                      <td class="type">
-
-
-                        <span class="param-type">string</span>
-
-
-
-                      </td>
-
-
-                      <td class="attributes">
-
-
-
-
-
-                      </td>
-
-
-
-
-                      <td class="description last">Raw transaction paying the vault</td>
-                    </tr>
-
-
-
-                    <tr>
-
-                      <td class="name"><code>vout</code></td>
-
-
-                      <td class="type">
-
-
-                        <span class="param-type">number</span>
-
-
-
-                      </td>
-
-
-                      <td class="attributes">
-
-                        &lt;optional><br>
-
-
-
-
-
-                      </td>
-
-
-
-
-                      <td class="description last">Expected vault output index (checked)</td>
-                    </tr>
-
-
-
-                    <tr>
-
-                      <td class="name"><code>destinationAddress</code></td>
-
-
-                      <td class="type">
-
-
-                        <span class="param-type">string</span>
-
-
-
-                      </td>
-
-
-                      <td class="attributes">
-
-
-
-
-
-                      </td>
-
-
-
-
-                      <td class="description last"></td>
-                    </tr>
-
-
-
-                    <tr>
-
-                      <td class="name"><code>amountSats</code></td>
-
-
-                      <td class="type">
-
-
-                        <span class="param-type">number</span>
-
-
-
-                      </td>
-
-
-                      <td class="attributes">
-
-
-
-
-
-                      </td>
-
-
-
-
-                      <td class="description last"></td>
-                    </tr>
-
-
-
-                    <tr>
-
-                      <td class="name"><code>feeSats</code></td>
-
-
-                      <td class="type">
-
-
-                        <span class="param-type">number</span>
-
-
-
-                      </td>
-
-
-                      <td class="attributes">
-
-
-
-
-
-                      </td>
-
-
-
-
-                      <td class="description last"></td>
-                    </tr>
-
-
-                  </tbody>
-                </table>
-
-              </td>
-            </tr>
-
-
-          </tbody>
-        </table>
-
-
-
-
-
-
-        <dl class="details">
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-          <dt class="tag-source">Source:</dt>
-          <dd class="tag-source">
-            <ul class="dummy">
-              <li>
-                <a href="types_federation.js.html">types/federation.js</a>, <a href="types_federation.js.html#line1528">line 1528</a>
-              </li>
-            </ul>
-          </dd>
-
-
-
-
-
-
-
-        </dl>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-        <h5>Returns:</h5>
-
-
-
-
-        <dl>
-          <dt>
-            Type
-          </dt>
-          <dd>
-
-            <span class="param-type">Object</span>
 
 
           </dd>
@@ -6601,7 +6547,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_federation.js.html">types/federation.js</a>, <a href="types_federation.js.html#line1686">line 1686</a>
+                <a href="types_federation.js.html">types/federation.js</a>, <a href="types_federation.js.html#line1793">line 1793</a>
               </li>
             </ul>
           </dd>
@@ -7416,7 +7362,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_federation.js.html">types/federation.js</a>, <a href="types_federation.js.html#line1574">line 1574</a>
+                <a href="types_federation.js.html">types/federation.js</a>, <a href="types_federation.js.html#line1681">line 1681</a>
               </li>
             </ul>
           </dd>
@@ -7621,7 +7567,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_federation.js.html">types/federation.js</a>, <a href="types_federation.js.html#line1727">line 1727</a>
+                <a href="types_federation.js.html">types/federation.js</a>, <a href="types_federation.js.html#line1834">line 1834</a>
               </li>
             </ul>
           </dd>
@@ -7780,7 +7726,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_federation.js.html">types/federation.js</a>, <a href="types_federation.js.html#line1695">line 1695</a>
+                <a href="types_federation.js.html">types/federation.js</a>, <a href="types_federation.js.html#line1802">line 1802</a>
               </li>
             </ul>
           </dd>
@@ -9155,7 +9101,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_federation.js.html">types/federation.js</a>, <a href="types_federation.js.html#line1479">line 1479</a>
+                <a href="types_federation.js.html">types/federation.js</a>, <a href="types_federation.js.html#line1498">line 1498</a>
               </li>
             </ul>
           </dd>
@@ -9341,7 +9287,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_federation.js.html">types/federation.js</a>, <a href="types_federation.js.html#line1748">line 1748</a>
+                <a href="types_federation.js.html">types/federation.js</a>, <a href="types_federation.js.html#line1855">line 1855</a>
               </li>
             </ul>
           </dd>
@@ -10294,7 +10240,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_federation.js.html">types/federation.js</a>, <a href="types_federation.js.html#line1766">line 1766</a>
+                <a href="types_federation.js.html">types/federation.js</a>, <a href="types_federation.js.html#line1873">line 1873</a>
               </li>
             </ul>
           </dd>
@@ -10480,7 +10426,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_federation.js.html">types/federation.js</a>, <a href="types_federation.js.html#line1780">line 1780</a>
+                <a href="types_federation.js.html">types/federation.js</a>, <a href="types_federation.js.html#line1887">line 1887</a>
               </li>
             </ul>
           </dd>
@@ -10511,7 +10457,7 @@
 
 
         <div class="param-desc">
-          <a href="Federation.html#.prepareWithdrawal">Federation.prepareWithdrawal</a> result
+          Federation.prepareWithdrawal result
         </div>
 
 
@@ -10667,7 +10613,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_federation.js.html">types/federation.js</a>, <a href="types_federation.js.html#line1706">line 1706</a>
+                <a href="types_federation.js.html">types/federation.js</a>, <a href="types_federation.js.html#line1813">line 1813</a>
               </li>
             </ul>
           </dd>
@@ -10826,7 +10772,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_federation.js.html">types/federation.js</a>, <a href="types_federation.js.html#line1511">line 1511</a>
+                <a href="types_federation.js.html">types/federation.js</a>, <a href="types_federation.js.html#line1530">line 1530</a>
               </li>
             </ul>
           </dd>
@@ -11083,28 +11029,9 @@
     <h2><a href="index.html">Home</a></h2>
     <h3>Modules</h3>
     <ul>
-      <li><a href="module-types_bech32_bech32.html">types/bech32/bech32</a></li>
-      <li><a href="module-types_bech32_fabricPaymentBech32.html">types/bech32/fabricPaymentBech32</a></li>
       <li><a href="module-types_delegation.html">types/delegation</a></li>
-      <li><a href="module-types_key_base58.html">types/key/base58</a></li>
-      <li><a href="module-types_key_bip32.html">types/key/bip32</a></li>
-      <li><a href="module-types_key_bip39.html">types/key/bip39</a></li>
-      <li><a href="module-types_key_bip49.html">types/key/bip49</a></li>
-      <li><a href="module-types_key_bip85.html">types/key/bip85</a></li>
-      <li><a href="module-types_key_fabricKeyMaterial.html">types/key/fabricKeyMaterial</a></li>
-      <li><a href="module-types_key_keyHasPrivateSigningMaterial.html">types/key/keyHasPrivateSigningMaterial</a></li>
-      <li><a href="module-types_key_pubkey.html">types/key/pubkey</a></li>
-      <li><a href="module-types_key_signingTags.html">types/key/signingTags</a></li>
       <li><a href="module-types_typetree.html">types/typetree</a></li>
-      <li><a href="module-types_wallet_accountKeys.html">types/wallet/accountKeys</a></li>
-      <li><a href="module-types_wallet_bip21.html">types/wallet/bip21</a></li>
       <li><a href="module-types_wallet_bip86.html">types/wallet/bip86</a></li>
-      <li><a href="module-types_witness_adaptor.html">types/witness/adaptor</a></li>
-      <li><a href="module-types_witness_bls.html">types/witness/bls</a></li>
-      <li><a href="module-types_witness_dleq.html">types/witness/dleq</a></li>
-      <li><a href="module-types_witness_musig2.html">types/witness/musig2</a></li>
-      <li><a href="module-types_witness_musig2Adaptor.html">types/witness/musig2Adaptor</a></li>
-      <li><a href="module-types_witness_musig2Session.html">types/witness/musig2Session</a></li>
       <li><a href="types_ecc.html#.module:selftest">types/ecc.selftest</a></li>
     </ul>
     <h3>Classes</h3>
@@ -11173,211 +11100,23 @@
       <li><a href="SetupTui.html">SetupTui</a></li>
       <li><a href="SignedBook.html">SignedBook</a></li>
       <li><a href="State.html">State</a></li>
+      <li><a href="Storage.html">Storage</a></li>
       <li><a href="Store.html">Store</a></li>
       <li><a href="Swap.html">Swap</a></li>
       <li><a href="global.html#Text">Text</a></li>
       <li><a href="Token.html">Token</a></li>
       <li><a href="Tree.html">Tree</a></li>
       <li><a href="Vector.html">Vector</a></li>
-      <li><a href="Wallet.html">Wallet</a></li>
       <li><a href="Watchtower.html">Watchtower</a></li>
+      <li><a href="WireReplayFilter.html">WireReplayFilter</a></li>
       <li><a href="Worker.html">Worker</a></li>
       <li><a href="ZMQ.html">ZMQ</a></li>
       <li><a href="module-types_delegation-Delegation.html">Delegation</a></li>
-      <li><a href="module-types_key_bip32-BIP32Factory.html">BIP32Factory</a></li>
-      <li><a href="module-types_witness_musig2-InvalidContributionError.html">InvalidContributionError</a></li>
+      <li><a href="module-types_wallet_bip86-Wallet.html">Wallet</a></li>
     </ul>
     <h3>Global</h3>
     <ul>
-      <li><a href="global.html#ASK_TYPE">ASK_TYPE</a></li>
-      <li><a href="global.html#BID_CLOCK_SKEW_SECONDS">BID_CLOCK_SKEW_SECONDS</a></li>
-      <li><a href="global.html#BID_TYPE">BID_TYPE</a></li>
-      <li><a href="global.html#BITCOIN_MESSAGE_TYPES">BITCOIN_MESSAGE_TYPES</a></li>
-      <li><a href="global.html#CHANNEL_BODY_TYPES">CHANNEL_BODY_TYPES</a></li>
-      <li><a href="global.html#CHANNEL_DEFAULTS">CHANNEL_DEFAULTS</a></li>
-      <li><a href="global.html#CLTV_TIMESTAMP_THRESHOLD">CLTV_TIMESTAMP_THRESHOLD</a></li>
-      <li><a href="global.html#DEFAULT_BID_TTL_SECONDS">DEFAULT_BID_TTL_SECONDS</a></li>
-      <li><a href="global.html#DEFAULT_FEE_SATS">DEFAULT_FEE_SATS</a></li>
-      <li><a href="global.html#DEFAULT_INVOICE_EXPIRY_SECONDS">DEFAULT_INVOICE_EXPIRY_SECONDS</a></li>
-      <li><a href="global.html#DEFAULT_INVOICE_MARGIN_SECONDS">DEFAULT_INVOICE_MARGIN_SECONDS</a></li>
-      <li><a href="global.html#DEFAULT_MAX_SIGNS">DEFAULT_MAX_SIGNS</a></li>
-      <li><a href="global.html#DEFAULT_MIN_CLAIM_BLOCKS">DEFAULT_MIN_CLAIM_BLOCKS</a></li>
-      <li><a href="global.html#DEFAULT_MIN_CONFIRMATIONS">DEFAULT_MIN_CONFIRMATIONS</a></li>
-      <li><a href="global.html#DEFAULT_MIN_EQUAL_OUTPUTS">DEFAULT_MIN_EQUAL_OUTPUTS</a></li>
-      <li><a href="global.html#DEFAULT_WEIGHTS">DEFAULT_WEIGHTS</a></li>
-      <li><a href="global.html#DEPRECATED_WIRE_TYPES">DEPRECATED_WIRE_TYPES</a></li>
-      <li><a href="global.html#DUST_SATS">DUST_SATS</a></li>
-      <li><a href="global.html#EXIT_KINDS">EXIT_KINDS</a></li>
-      <li><a href="global.html#EXIT_SIGNATURE_TYPE">EXIT_SIGNATURE_TYPE</a></li>
-      <li><a href="global.html#FIDELITY_LOCKTIME_GRID">FIDELITY_LOCKTIME_GRID</a></li>
-      <li><a href="global.html#FIDELITY_MAX_CERT_BLOCKS">FIDELITY_MAX_CERT_BLOCKS</a></li>
-      <li><a href="global.html#FIELD_BODIES_VERSION">FIELD_BODIES_VERSION</a></li>
-      <li><a href="global.html#GCM_TAG_BYTES">GCM_TAG_BYTES</a></li>
-      <li><a href="global.html#HOP_PENALTY_MS">HOP_PENALTY_MS</a></li>
-      <li><a href="global.html#INPUT_HEADROOM">INPUT_HEADROOM</a></li>
-      <li><a href="global.html#LEAF_VERSION">LEAF_VERSION</a></li>
-      <li><a href="global.html#LOCKTIME_SLACK_BLOCKS">LOCKTIME_SLACK_BLOCKS</a></li>
-      <li><a href="global.html#LOCKTIME_THRESHOLD">LOCKTIME_THRESHOLD</a></li>
-      <li><a href="global.html#MAX_EVIDENCE">MAX_EVIDENCE</a></li>
-      <li><a href="global.html#MAX_FEE_PPM">MAX_FEE_PPM</a></li>
-      <li><a href="global.html#MAX_LOCKTIME">MAX_LOCKTIME</a></li>
-      <li><a href="global.html#MAX_MAKERS">MAX_MAKERS</a></li>
-      <li><a href="global.html#MAX_MAKER_INPUTS">MAX_MAKER_INPUTS</a></li>
-      <li><a href="global.html#MAX_OFFERS">MAX_OFFERS</a></li>
-      <li><a href="global.html#MAX_PREMIUM_PPM">MAX_PREMIUM_PPM</a></li>
-      <li><a href="global.html#MAX_PROVIDERS">MAX_PROVIDERS</a></li>
-      <li><a href="global.html#MAX_PSBT_CHARS">MAX_PSBT_CHARS</a></li>
-      <li><a href="global.html#MAX_REFUND_LOCK_BLOCKS">MAX_REFUND_LOCK_BLOCKS</a></li>
-      <li><a href="global.html#MAX_SETTLED_CREDITS">MAX_SETTLED_CREDITS</a></li>
-      <li><a href="global.html#MAX_TRANSFERS">MAX_TRANSFERS</a></li>
-      <li><a href="global.html#MIN_COINJOIN_SATS">MIN_COINJOIN_SATS</a></li>
-      <li><a href="global.html#MIN_INVOICE_EXPIRY_SECONDS">MIN_INVOICE_EXPIRY_SECONDS</a></li>
-      <li><a href="global.html#MIN_REFUND_LOCK_BLOCKS">MIN_REFUND_LOCK_BLOCKS</a></li>
-      <li><a href="global.html#PODLE_BLACKLIST_SIZE">PODLE_BLACKLIST_SIZE</a></li>
-      <li><a href="global.html#PODLE_MAX_INDEX">PODLE_MAX_INDEX</a></li>
-      <li><a href="global.html#PODLE_MIN_AGE_CONFS">PODLE_MIN_AGE_CONFS</a></li>
-      <li><a href="global.html#PODLE_MIN_VALUE_PCT">PODLE_MIN_VALUE_PCT</a></li>
-      <li><a href="global.html#PODLE_TAG">PODLE_TAG</a></li>
-      <li><a href="global.html#ROUND_TYPES">ROUND_TYPES</a></li>
-      <li><a href="global.html#SCORE_INVENTORY_ONLY">SCORE_INVENTORY_ONLY</a></li>
-      <li><a href="global.html#SCORE_MAX">SCORE_MAX</a></li>
-      <li><a href="global.html#SCORE_UNKNOWN">SCORE_UNKNOWN</a></li>
-      <li><a href="global.html#SEALED_TYPE">SEALED_TYPE</a></li>
-      <li><a href="global.html#SEAL_NAMESPACE">SEAL_NAMESPACE</a></li>
-      <li><a href="global.html#SIGNER_FIELD">SIGNER_FIELD</a></li>
-      <li><a href="global.html#TAPROOT_INTERNAL_NUMS">TAPROOT_INTERNAL_NUMS</a></li>
-      <li><a href="global.html#TELEMETRY_TYPE">TELEMETRY_TYPE</a></li>
-      <li><a href="global.html#TELEMETRY_VERSION">TELEMETRY_VERSION</a></li>
-      <li><a href="global.html#UNSAFE_PATH_TOKENS">UNSAFE_PATH_TOKENS</a></li>
-      <li><a href="global.html#WALLET_TX_KINDS">WALLET_TX_KINDS</a></li>
-      <li><a href="global.html#WEIGHT_OVERHEAD">WEIGHT_OVERHEAD</a></li>
-      <li><a href="global.html#YEAR_BLOCKS">YEAR_BLOCKS</a></li>
-      <li><a href="global.html#assertMonotoneBudget">assertMonotoneBudget</a></li>
-      <li><a href="global.html#bitcoin">bitcoin</a></li>
-      <li><a href="global.html#bodyId">bodyId</a></li>
-      <li><a href="global.html#broadcastSettled">broadcastSettled</a></li>
-      <li><a href="global.html#buildContractTaproot">buildContractTaproot</a></li>
-      <li><a href="global.html#buildEscrow">buildEscrow</a></li>
-      <li><a href="global.html#buildFederationVaultFromPolicy">buildFederationVaultFromPolicy</a></li>
-      <li><a href="global.html#buildFidelity">buildFidelity</a></li>
-      <li><a href="global.html#buildForwardedDocumentRequest">buildForwardedDocumentRequest</a></li>
-      <li><a href="global.html#buildHashlockLeaf">buildHashlockLeaf</a></li>
-      <li><a href="global.html#buildHashlockTapscript">buildHashlockTapscript</a></li>
-      <li><a href="global.html#buildPsbt">buildPsbt</a></li>
-      <li><a href="global.html#buildScriptLeaf">buildScriptLeaf</a></li>
-      <li><a href="global.html#buildSpendLeaf">buildSpendLeaf</a></li>
-      <li><a href="global.html#buildWatchSet">buildWatchSet</a></li>
-      <li><a href="global.html#checkPodleUtxo">checkPodleUtxo</a></li>
-      <li><a href="global.html#classifyWalletTransaction">classifyWalletTransaction</a></li>
-      <li><a href="global.html#codec">codec</a></li>
-      <li><a href="global.html#compileLeaves">compileLeaves</a></li>
-      <li><a href="global.html#composePolicyWithRunHashlock">composePolicyWithRunHashlock</a></li>
-      <li><a href="global.html#composeTaprootTree">composeTaprootTree</a></li>
-      <li><a href="global.html#computeRelayFee">computeRelayFee</a></li>
-      <li><a href="global.html#contractMessageIndex">contractMessageIndex</a></li>
-      <li><a href="global.html#contractMessageMatches">contractMessageMatches</a></li>
-      <li><a href="global.html#createBlobMerkleTree">createBlobMerkleTree</a></li>
-      <li><a href="global.html#createDocumentPurchaseSession">createDocumentPurchaseSession</a></li>
-      <li><a href="global.html#describePsbt">describePsbt</a></li>
-      <li><a href="global.html#descriptorPrivateKey">descriptorPrivateKey</a></li>
-      <li><a href="global.html#envelopeRecipient">envelopeRecipient</a></li>
-      <li><a href="global.html#estimateVsize">estimateVsize</a></li>
-      <li><a href="global.html#evaluateTierWhen">evaluateTierWhen</a></li>
-      <li><a href="global.html#expireHeight">expireHeight</a></li>
-      <li><a href="global.html#fidelityLocktimes">fidelityLocktimes</a></li>
-      <li><a href="global.html#fidelityPath">fidelityPath</a></li>
-      <li><a href="global.html#fidelityValue">fidelityValue</a></li>
-      <li><a href="global.html#finalize">finalize</a></li>
-      <li><a href="global.html#finalizeHashlockPsbt">finalizeHashlockPsbt</a></li>
-      <li><a href="global.html#finalizeSpendPsbt">finalizeSpendPsbt</a></li>
-      <li><a href="global.html#findSession">findSession</a></li>
-      <li><a href="global.html#fromContractMessage">fromContractMessage</a></li>
-      <li><a href="global.html#generatePodle">generatePodle</a></li>
-      <li><a href="global.html#hashlockFromProgramRun">hashlockFromProgramRun</a></li>
-      <li><a href="global.html#invoiceAmountMsat">invoiceAmountMsat</a></li>
-      <li><a href="global.html#isDuplicateSettlement">isDuplicateSettlement</a></li>
-      <li><a href="global.html#isValidFidelityLocktime">isValidFidelityLocktime</a></li>
-      <li><a href="global.html#l1GiverTerms">l1GiverTerms</a></li>
-      <li><a href="global.html#leafScripts">leafScripts</a></li>
-      <li><a href="global.html#listRefundCandidates">listRefundCandidates</a></li>
-      <li><a href="global.html#lockFrom">lockFrom</a></li>
-      <li><a href="global.html#makerChange">makerChange</a></li>
-      <li><a href="global.html#makerFee">makerFee</a></li>
-      <li><a href="global.html#memoryChain">memoryChain</a></li>
-      <li><a href="global.html#memoryWallet">memoryWallet</a></li>
-      <li><a href="global.html#mergeMakerSignatures">mergeMakerSignatures</a></li>
-      <li><a href="global.html#nextPodleIndex">nextPodleIndex</a></li>
-      <li><a href="global.html#normalizeAuth">normalizeAuth</a></li>
-      <li><a href="global.html#normalizeCancel">normalizeCancel</a></li>
-      <li><a href="global.html#normalizeContractSpendPolicy">normalizeContractSpendPolicy</a></li>
-      <li><a href="global.html#normalizeExtraLeafSpecs">normalizeExtraLeafSpecs</a></li>
-      <li><a href="global.html#normalizeFidelity">normalizeFidelity</a></li>
-      <li><a href="global.html#normalizeFill">normalizeFill</a></li>
-      <li><a href="global.html#normalizeFillAck">normalizeFillAck</a></li>
-      <li><a href="global.html#normalizeFunded">normalizeFunded</a></li>
-      <li><a href="global.html#normalizeHashlockSpec">normalizeHashlockSpec</a></li>
-      <li><a href="global.html#normalizeIoAuth">normalizeIoAuth</a></li>
-      <li><a href="global.html#normalizeLeaf">normalizeLeaf</a></li>
-      <li><a href="global.html#normalizeLock">normalizeLock</a></li>
-      <li><a href="global.html#normalizeOffer">normalizeOffer</a></li>
-      <li><a href="global.html#normalizeOrder">normalizeOrder</a></li>
-      <li><a href="global.html#normalizeSig">normalizeSig</a></li>
-      <li><a href="global.html#normalizeTake">normalizeTake</a></li>
-      <li><a href="global.html#normalizeTakeAccept">normalizeTakeAccept</a></li>
-      <li><a href="global.html#normalizeTx">normalizeTx</a></li>
-      <li><a href="global.html#offerKey">offerKey</a></li>
-      <li><a href="global.html#openFiling">openFiling</a></li>
-      <li><a href="global.html#openRoundMessage">openRoundMessage</a></li>
-      <li><a href="global.html#paginateInventoryItems">paginateInventoryItems</a></li>
-      <li><a href="global.html#parseXOnlyPubkeysFromSpendScript">parseXOnlyPubkeysFromSpendScript</a></li>
-      <li><a href="global.html#planCoinjoin">planCoinjoin</a></li>
-      <li><a href="global.html#podleCommitment">podleCommitment</a></li>
-      <li><a href="global.html#podleGenerator">podleGenerator</a></li>
-      <li><a href="global.html#policyAfterDecay">policyAfterDecay</a></li>
-      <li><a href="global.html#prepareDecayMigrationPsbt">prepareDecayMigrationPsbt</a></li>
-      <li><a href="global.html#prepareFidelityRedeem">prepareFidelityRedeem</a></li>
-      <li><a href="global.html#prepareHashlockWithdrawalPsbt">prepareHashlockWithdrawalPsbt</a></li>
-      <li><a href="global.html#prepareTierWithdrawalPsbt">prepareTierWithdrawalPsbt</a></li>
-      <li><a href="global.html#quote">quote</a></li>
-      <li><a href="global.html#randomNonce">randomNonce</a></li>
-      <li><a href="global.html#randomPrivateKey">randomPrivateKey</a></li>
-      <li><a href="global.html#randomRoundId">randomRoundId</a></li>
-      <li><a href="global.html#rememberSettlement">rememberSettlement</a></li>
-      <li><a href="global.html#roleFor">roleFor</a></li>
-      <li><a href="global.html#roles">roles</a></li>
-      <li><a href="global.html#routePath">routePath</a></li>
-      <li><a href="global.html#scriptTreeFromLeaves">scriptTreeFromLeaves</a></li>
-      <li><a href="global.html#sealRoundMessage">sealRoundMessage</a></li>
-      <li><a href="global.html#selectActiveTiers">selectActiveTiers</a></li>
-      <li><a href="global.html#sellerDedupeKey">sellerDedupeKey</a></li>
-      <li><a href="global.html#settlementDedupeKey">settlementDedupeKey</a></li>
-      <li><a href="global.html#signFidelityCertificate">signFidelityCertificate</a></li>
-      <li><a href="global.html#signFidelityRedeem">signFidelityRedeem</a></li>
-      <li><a href="global.html#signKeyPathInputs">signKeyPathInputs</a></li>
-      <li><a href="global.html#signOwnership">signOwnership</a></li>
-      <li><a href="global.html#signingString">signingString</a></li>
-      <li><a href="global.html#spendAddress">spendAddress</a></li>
-      <li><a href="global.html#synthesizeDefaultLadder">synthesizeDefaultLadder</a></li>
-      <li><a href="global.html#taprootKeyPath">taprootKeyPath</a></li>
-      <li><a href="global.html#taprootOutputPrivateKey">taprootOutputPrivateKey</a></li>
-      <li><a href="global.html#tierWhenPath">tierWhenPath</a></li>
-      <li><a href="global.html#timelockMature">timelockMature</a></li>
-      <li><a href="global.html#toContractMessage">toContractMessage</a></li>
-      <li><a href="global.html#toIntegerSats">toIntegerSats</a></li>
-      <li><a href="global.html#unsignedTxid">unsignedTxid</a></li>
-      <li><a href="global.html#validateEscrow">validateEscrow</a></li>
-      <li><a href="global.html#validateFill">validateFill</a></li>
-      <li><a href="global.html#validateForMaker">validateForMaker</a></li>
-      <li><a href="global.html#validateForTaker">validateForTaker</a></li>
-      <li><a href="global.html#validateInvoice">validateInvoice</a></li>
-      <li><a href="global.html#validateTake">validateTake</a></li>
-      <li><a href="global.html#validateTakeAccept">validateTakeAccept</a></li>
-      <li><a href="global.html#verifyBlobPath">verifyBlobPath</a></li>
-      <li><a href="global.html#verifyFidelity">verifyFidelity</a></li>
-      <li><a href="global.html#verifyFidelityCertificate">verifyFidelityCertificate</a></li>
-      <li><a href="global.html#verifyOwnership">verifyOwnership</a></li>
-      <li><a href="global.html#verifyPodle">verifyPodle</a></li>
-      <li><a href="global.html#weightsForProximity">weightsForProximity</a></li>
+      <li><a href="global.html#crypto">crypto</a></li>
     </ul>
   </nav>
   <br class="clear" />

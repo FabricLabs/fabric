@@ -26,6 +26,9 @@
   <div id="main">
     <h1 class="page-title">Source: types/program.js</h1>
 
+    <p><a href="https://github.com/FabricLabs/fabric/edit/master/types/program.js">Edit this page</a></p>
+
+
 
 
 
@@ -45,6 +48,7 @@
  */
 
 const crypto = require('crypto');
+const path = require('path');
 const Circuit = require('./circuit');
 const Script = require('./script');
 const Hash256 = require('./hash256');
@@ -495,6 +499,217 @@ class Program extends Circuit {
     return crypto.createHash('sha256').update(Buffer.from(body, 'utf8')).digest('hex');
   }
 
+  /**
+   * Environment for an untrusted program child. Nothing else from `process.env` is copied.
+   * @returns {Object}
+   */
+  static isolateChildEnv () {
+    const env = { FABRIC_PROGRAM_ISOLATE: '1' };
+    if (process.env.PATH) env.PATH = process.env.PATH;
+    return env;
+  }
+
+  /**
+   * Run a JSON payload in a short-lived Node process. The default child is this file.
+   * @param {Object} payload
+   * @param {Object} [options]
+   * @param {number} [options.isolateTimeoutMs]
+   * @param {string} [options.isolateWorker] test-only worker script
+   * @returns {Object} `timedOut`, `parsed`, and `error`
+   */
+  static spawnIsolate (payload, options = {}) {
+    const timeout = Math.min(
+      Math.max(1, Number(options.isolateTimeoutMs) || Program.ISOLATE_TIMEOUT_MS),
+      60000
+    );
+    const worker = options.isolateWorker ? String(options.isolateWorker) : __filename;
+    let spawnSync;
+    try {
+      spawnSync = require('child_process').spawnSync;
+    } catch (err) {
+      return { timedOut: false, parsed: null, error: 'program isolate requires Node' };
+    }
+    if (typeof spawnSync !== 'function') {
+      return { timedOut: false, parsed: null, error: 'program isolate requires Node' };
+    }
+    const result = spawnSync(process.execPath, [worker], {
+      input: JSON.stringify(payload),
+      encoding: 'utf8',
+      timeout,
+      maxBuffer: 1024 * 1024,
+      env: Program.isolateChildEnv(),
+      cwd: path.join(__dirname, '..')
+    });
+    if (result.error &amp;&amp; result.error.code === 'ETIMEDOUT') {
+      return { timedOut: true, parsed: null, error: 'isolate timed out' };
+    }
+    if (result.error) {
+      return {
+        timedOut: false,
+        parsed: null,
+        error: result.error.message || 'isolate failed to start'
+      };
+    }
+    const text = String(result.stdout || '').trim();
+    if (result.status !== 0) {
+      const stderr = String(result.stderr || '').trim();
+      return {
+        timedOut: false,
+        parsed: null,
+        error: stderr || text || `isolate exited ${result.status}`
+      };
+    }
+    try {
+      const parsed = JSON.parse(text);
+      if (!parsed || typeof parsed !== 'object') {
+        return { timedOut: false, parsed: null, error: 'isolate produced no result' };
+      }
+      return { timedOut: false, parsed, error: undefined };
+    } catch (_) {
+      return { timedOut: false, parsed: null, error: 'isolate produced no result' };
+    }
+  }
+
+  /**
+   * Run a `fabric-execution` program outside this process.
+   * The parent resolves `FabricOpcode` steps. The child does not receive that function.
+   * @param {Object} program
+   * @param {Object} [options]
+   * @returns {Object}
+   */
+  static runIsolated (program, options = {}) {
+    const { executionProgramFromHub, normalizeOpName } = require('../functions/executionProgramRunner');
+    const steps = program &amp;&amp; program.steps;
+    if (!Array.isArray(steps)) {
+      return Program._isolateFailure('program.steps must be an array', null, null);
+    }
+    let built = null;
+    try {
+      built = executionProgramFromHub(program);
+    } catch (err) {
+      return Program._isolateFailure(err &amp;&amp; err.message ? err.message : String(err), null, null);
+    }
+    let normalized = steps;
+    const resolve = options.resolveFabricEntry;
+    try {
+      normalized = steps.map((step) => {
+        if (!step || typeof step !== 'object') return step;
+        const copy = {};
+        for (const key of Object.keys(step)) {
+          if (key === 'resolved') continue;
+          copy[key] = step[key];
+        }
+        if (typeof resolve !== 'function' || normalizeOpName(step.op) !== 'FabricOpcode') return copy;
+        const entry = resolve(copy);
+        copy.resolved = {
+          name: entry &amp;&amp; entry.name != null ? String(entry.name) : '',
+          opcodeDec: entry &amp;&amp; entry.opcodeDec != null &amp;&amp; Number.isFinite(Number(entry.opcodeDec))
+            ? Number(entry.opcodeDec)
+            : null,
+          stability: entry &amp;&amp; entry.stability != null ? entry.stability : null,
+          encoding: entry &amp;&amp; entry.encoding != null ? entry.encoding : null,
+          notes: entry &amp;&amp; entry.notes != null ? entry.notes : null
+        };
+        return copy;
+      });
+    } catch (err) {
+      return Program._isolateFailure(err &amp;&amp; err.message ? err.message : String(err), built.programHash, built.program);
+    }
+    const childOptions = {
+      inProcess: true,
+      useResolvedEntries: typeof resolve === 'function'
+    };
+    if (options.maxSteps != null) childOptions.maxSteps = options.maxSteps;
+    if (options.maxStack != null) childOptions.maxStack = options.maxStack;
+    if (options.maxDepth != null) childOptions.maxDepth = options.maxDepth;
+    if (options.maxTrace != null) childOptions.maxTrace = options.maxTrace;
+    if (Array.isArray(options.allowedOpcodes)) childOptions.allowedOpcodes = options.allowedOpcodes.slice();
+    if (options.genesis &amp;&amp; typeof options.genesis === 'object') childOptions.genesis = options.genesis;
+    const spawned = Program.spawnIsolate({
+      kind: 'fabric-execution',
+      program: jsonSafe(program),
+      steps: jsonSafe(normalized),
+      options: jsonSafe(childOptions)
+    }, options);
+    if (!spawned.parsed) {
+      return Program._isolateFailure(spawned.error || 'isolate produced no result', built.programHash, built.program);
+    }
+    const child = spawned.parsed;
+    const trace = Array.isArray(child.trace) ? child.trace : [];
+    const tip = child.tip != null ? child.tip : null;
+    return {
+      ok: child.ok === true,
+      stepsExecuted: child.stepsExecuted,
+      stack: Array.isArray(child.stack) ? child.stack : [],
+      tip,
+      trace,
+      error: child.ok === true ? undefined : (child.error || spawned.error || 'isolate failed'),
+      programHash: built.programHash,
+      runCommitmentHex: child.ok === true
+        ? built.program.runCommitmentHex({ tip, stack: trace })
+        : null,
+      program: built.program
+    };
+  }
+
+  /**
+   * Run `fabric-opcodes` in a child with an empty opcode table.
+   * Parent `define()` functions are not called.
+   * @param {Array} steps
+   * @param {Object} [options]
+   * @returns {Object}
+   */
+  static runIsolatedOpcodes (steps, options = {}) {
+    const spawned = Program.spawnIsolate({
+      kind: 'fabric-opcodes',
+      steps: jsonSafe(steps || []),
+      allowedOpcodes: Array.isArray(options.allowedOpcodes) ? options.allowedOpcodes.slice() : [],
+      maxSteps: options.maxSteps,
+      maxStack: options.maxStack
+    }, options);
+    if (!spawned.parsed) {
+      return {
+        ok: false,
+        stack: [],
+        tip: null,
+        trace: [],
+        runCommitmentHex: null,
+        programHash: null,
+        error: spawned.error || 'isolate produced no result'
+      };
+    }
+    const child = spawned.parsed;
+    return {
+      ok: child.ok === true,
+      stack: Array.isArray(child.stack) ? child.stack : [],
+      tip: child.tip != null ? child.tip : null,
+      trace: Array.isArray(child.trace) ? child.trace : [],
+      runCommitmentHex: child.runCommitmentHex || null,
+      programHash: child.programHash || null,
+      error: child.ok === true ? undefined : (child.error || 'isolate failed')
+    };
+  }
+
+  /**
+   * @param {string} error
+   * @param {string|null} programHash
+   * @param {Program|null} program
+   * @returns {Object}
+   * @private
+   */
+  static _isolateFailure (error, programHash, program) {
+    return {
+      ok: false,
+      error,
+      stack: [],
+      tip: null,
+      trace: [],
+      programHash: programHash || null,
+      runCommitmentHex: null,
+      program: program || null
+    };
+  }
+
   step () {
     return this;
   }
@@ -505,8 +720,178 @@ class Program extends Circuit {
 }
 
 Program.LANGUAGES = LANGUAGES;
+Program.ISOLATE_TIMEOUT_MS = 1000;
 
 module.exports = Program;
+
+const program_run = (function () {
+/**
+ * Federation attestation strings for execution program runs.
+ */
+
+const crypto = require('crypto');
+const fabricCanonicalJson = require('../functions/fabricCanonicalJson');
+const keyHasPrivateSigningMaterial = require('./key').hasPrivateSigningMaterial;
+
+
+const EXECUTION_RUN_SIGNING_KIND = 'FabricProgramRun';
+
+/**
+ * UTF-8 string federation members sign for an execution run commitment.
+ * @param {Object} run
+ * @param {string} run.programHash
+ * @param {string} run.runCommitmentHex
+ * @param {string|null} [run.contractId]
+ * @returns {string}
+ */
+function signingStringForExecutionRun (run) {
+  return fabricCanonicalJson({
+    version: 1,
+    kind: EXECUTION_RUN_SIGNING_KIND,
+    programHash: String(run.programHash || ''),
+    runCommitmentHex: String(run.runCommitmentHex || '').toLowerCase(),
+    contractId: run.contractId != null ? String(run.contractId) : null
+  });
+}
+
+/**
+ * SHA-256 hex digest of {@link signingStringForExecutionRun}.
+ * @param {Object} run
+ * @param {string} run.programHash
+ * @param {string} run.runCommitmentHex
+ * @param {string|null} [run.contractId]
+ * @returns {string}
+ */
+function executionRunCommitmentDigestHex (run) {
+  const s = signingStringForExecutionRun(run);
+  return crypto.createHash('sha256').update(Buffer.from(s, 'utf8')).digest('hex');
+}
+
+/**
+ * Build federation witness for an execution run attestation.
+ * @param {Object} opts
+ * @param {string} opts.programHash
+ * @param {string} opts.runCommitmentHex
+ * @param {string|null} [opts.contractId]
+ * @param {Object} opts.signKey
+ * @param {string[]} [opts.validators]
+ * @param {number} [opts.threshold]
+ * @returns {object|null}
+ */
+function buildFederationWitnessForExecutionRun (opts) {
+  const signKey = opts.signKey;
+  if (!signKey || typeof signKey.signSchnorr !== 'function') return null;
+  if (!keyHasPrivateSigningMaterial(signKey)) return null;
+  const msgBuf = Buffer.from(signingStringForExecutionRun(opts), 'utf8');
+  const sigHex = signKey.signSchnorr(msgBuf, require('../functions/beaconFederationSigning').FEDERATION_WITNESS_TAG).toString('hex');
+  const pk = signKey.pubkey != null ? String(signKey.pubkey) : '';
+  if (!pk) return null;
+  const witness = { version: 1, signatures: { [pk]: sigHex } };
+  if (Array.isArray(opts.validators) &amp;&amp; opts.validators.length) {
+    witness.validators = opts.validators.slice();
+    witness.threshold = Math.max(1, Number(opts.threshold) || 1);
+  }
+  return witness;
+}
+
+/**
+ * Verify federation witness over an execution run attestation.
+ * @param {Object} run
+ * @param {string} run.programHash
+ * @param {string} run.runCommitmentHex
+ * @param {string|null} [run.contractId]
+ * @param {object|null} federationWitness
+ * @param {string[]} validators
+ * @param {number} threshold
+ * @returns {boolean}
+ */
+function verifyExecutionRunFederationWitness (run, federationWitness, validators, threshold) {
+  const msgBuf = Buffer.from(signingStringForExecutionRun(run), 'utf8');
+  return require('../functions/beaconFederationSigning').verifyFederationWitnessOnMessage(msgBuf, federationWitness, validators, threshold);
+}
+  return {
+    EXECUTION_RUN_SIGNING_KIND,
+    signingStringForExecutionRun,
+    executionRunCommitmentDigestHex,
+    buildFederationWitnessForExecutionRun,
+    verifyExecutionRunFederationWitness
+  };
+})();
+Program.EXECUTION_RUN_SIGNING_KIND = program_run.EXECUTION_RUN_SIGNING_KIND;
+Program.signingStringForExecutionRun = program_run.signingStringForExecutionRun;
+Program.executionRunCommitmentDigestHex = program_run.executionRunCommitmentDigestHex;
+Program.buildFederationWitnessForExecutionRun = program_run.buildFederationWitnessForExecutionRun;
+Program.verifyExecutionRunFederationWitness = program_run.verifyExecutionRunFederationWitness;
+
+if (require.main === module) {
+  const { runExecutionProgramInProcess } = require('../functions/executionProgramRunner');
+
+  function write (value) {
+    process.stdout.write(JSON.stringify(value));
+  }
+
+  let raw = '';
+  process.stdin.setEncoding('utf8');
+  process.stdin.on('data', (chunk) => {
+    raw += chunk;
+  });
+  process.stdin.on('end', () => {
+    let payload;
+    try {
+      payload = JSON.parse(raw || '{}');
+    } catch (_) {
+      write({ ok: false, error: 'isolate input is not JSON' });
+      return;
+    }
+    try {
+      if (payload.kind === 'fabric-opcodes') {
+        const Machine = require('./machine');
+        const machine = new Machine({
+          deterministic: true,
+          allowedOpcodes: payload.allowedOpcodes || null,
+          maxSteps: payload.maxSteps,
+          maxStack: payload.maxStack
+        });
+        machine.runProgram({
+          language: 'fabric-opcodes',
+          steps: Array.isArray(payload.steps) ? payload.steps : []
+        }).then((result) => {
+          write({
+            ok: result.ok === true,
+            stack: result.stack || [],
+            tip: result.tip != null ? result.tip : null,
+            trace: result.trace || [],
+            runCommitmentHex: result.runCommitmentHex || null,
+            programHash: result.programHash || null,
+            error: result.error
+          });
+        }).catch((err) => {
+          write({ ok: false, error: err &amp;&amp; err.message ? err.message : String(err) });
+        });
+        return;
+      }
+      const program = Object.assign({}, payload.program, {
+        steps: Array.isArray(payload.steps) ? payload.steps : (payload.program &amp;&amp; payload.program.steps)
+      });
+      const result = runExecutionProgramInProcess(program, Object.assign({}, payload.options, {
+        inProcess: true,
+        useResolvedEntries: true
+      }));
+      write({
+        ok: result.ok === true,
+        stepsExecuted: result.stepsExecuted,
+        stack: result.stack || [],
+        tip: result.tip != null ? result.tip : null,
+        trace: result.trace || [],
+        programHash: result.programHash || null,
+        runCommitmentHex: result.runCommitmentHex || null,
+        error: result.error
+      });
+    } catch (err) {
+      write({ ok: false, error: err &amp;&amp; err.message ? err.message : String(err) });
+    }
+  });
+}
 </code></pre>
       </article>
     </section>
@@ -518,28 +903,9 @@ module.exports = Program;
     <h2><a href="index.html">Home</a></h2>
     <h3>Modules</h3>
     <ul>
-      <li><a href="module-types_bech32_bech32.html">types/bech32/bech32</a></li>
-      <li><a href="module-types_bech32_fabricPaymentBech32.html">types/bech32/fabricPaymentBech32</a></li>
       <li><a href="module-types_delegation.html">types/delegation</a></li>
-      <li><a href="module-types_key_base58.html">types/key/base58</a></li>
-      <li><a href="module-types_key_bip32.html">types/key/bip32</a></li>
-      <li><a href="module-types_key_bip39.html">types/key/bip39</a></li>
-      <li><a href="module-types_key_bip49.html">types/key/bip49</a></li>
-      <li><a href="module-types_key_bip85.html">types/key/bip85</a></li>
-      <li><a href="module-types_key_fabricKeyMaterial.html">types/key/fabricKeyMaterial</a></li>
-      <li><a href="module-types_key_keyHasPrivateSigningMaterial.html">types/key/keyHasPrivateSigningMaterial</a></li>
-      <li><a href="module-types_key_pubkey.html">types/key/pubkey</a></li>
-      <li><a href="module-types_key_signingTags.html">types/key/signingTags</a></li>
       <li><a href="module-types_typetree.html">types/typetree</a></li>
-      <li><a href="module-types_wallet_accountKeys.html">types/wallet/accountKeys</a></li>
-      <li><a href="module-types_wallet_bip21.html">types/wallet/bip21</a></li>
       <li><a href="module-types_wallet_bip86.html">types/wallet/bip86</a></li>
-      <li><a href="module-types_witness_adaptor.html">types/witness/adaptor</a></li>
-      <li><a href="module-types_witness_bls.html">types/witness/bls</a></li>
-      <li><a href="module-types_witness_dleq.html">types/witness/dleq</a></li>
-      <li><a href="module-types_witness_musig2.html">types/witness/musig2</a></li>
-      <li><a href="module-types_witness_musig2Adaptor.html">types/witness/musig2Adaptor</a></li>
-      <li><a href="module-types_witness_musig2Session.html">types/witness/musig2Session</a></li>
       <li><a href="types_ecc.html#.module:selftest">types/ecc.selftest</a></li>
     </ul>
     <h3>Classes</h3>
@@ -608,211 +974,23 @@ module.exports = Program;
       <li><a href="SetupTui.html">SetupTui</a></li>
       <li><a href="SignedBook.html">SignedBook</a></li>
       <li><a href="State.html">State</a></li>
+      <li><a href="Storage.html">Storage</a></li>
       <li><a href="Store.html">Store</a></li>
       <li><a href="Swap.html">Swap</a></li>
       <li><a href="global.html#Text">Text</a></li>
       <li><a href="Token.html">Token</a></li>
       <li><a href="Tree.html">Tree</a></li>
       <li><a href="Vector.html">Vector</a></li>
-      <li><a href="Wallet.html">Wallet</a></li>
       <li><a href="Watchtower.html">Watchtower</a></li>
+      <li><a href="WireReplayFilter.html">WireReplayFilter</a></li>
       <li><a href="Worker.html">Worker</a></li>
       <li><a href="ZMQ.html">ZMQ</a></li>
       <li><a href="module-types_delegation-Delegation.html">Delegation</a></li>
-      <li><a href="module-types_key_bip32-BIP32Factory.html">BIP32Factory</a></li>
-      <li><a href="module-types_witness_musig2-InvalidContributionError.html">InvalidContributionError</a></li>
+      <li><a href="module-types_wallet_bip86-Wallet.html">Wallet</a></li>
     </ul>
     <h3>Global</h3>
     <ul>
-      <li><a href="global.html#ASK_TYPE">ASK_TYPE</a></li>
-      <li><a href="global.html#BID_CLOCK_SKEW_SECONDS">BID_CLOCK_SKEW_SECONDS</a></li>
-      <li><a href="global.html#BID_TYPE">BID_TYPE</a></li>
-      <li><a href="global.html#BITCOIN_MESSAGE_TYPES">BITCOIN_MESSAGE_TYPES</a></li>
-      <li><a href="global.html#CHANNEL_BODY_TYPES">CHANNEL_BODY_TYPES</a></li>
-      <li><a href="global.html#CHANNEL_DEFAULTS">CHANNEL_DEFAULTS</a></li>
-      <li><a href="global.html#CLTV_TIMESTAMP_THRESHOLD">CLTV_TIMESTAMP_THRESHOLD</a></li>
-      <li><a href="global.html#DEFAULT_BID_TTL_SECONDS">DEFAULT_BID_TTL_SECONDS</a></li>
-      <li><a href="global.html#DEFAULT_FEE_SATS">DEFAULT_FEE_SATS</a></li>
-      <li><a href="global.html#DEFAULT_INVOICE_EXPIRY_SECONDS">DEFAULT_INVOICE_EXPIRY_SECONDS</a></li>
-      <li><a href="global.html#DEFAULT_INVOICE_MARGIN_SECONDS">DEFAULT_INVOICE_MARGIN_SECONDS</a></li>
-      <li><a href="global.html#DEFAULT_MAX_SIGNS">DEFAULT_MAX_SIGNS</a></li>
-      <li><a href="global.html#DEFAULT_MIN_CLAIM_BLOCKS">DEFAULT_MIN_CLAIM_BLOCKS</a></li>
-      <li><a href="global.html#DEFAULT_MIN_CONFIRMATIONS">DEFAULT_MIN_CONFIRMATIONS</a></li>
-      <li><a href="global.html#DEFAULT_MIN_EQUAL_OUTPUTS">DEFAULT_MIN_EQUAL_OUTPUTS</a></li>
-      <li><a href="global.html#DEFAULT_WEIGHTS">DEFAULT_WEIGHTS</a></li>
-      <li><a href="global.html#DEPRECATED_WIRE_TYPES">DEPRECATED_WIRE_TYPES</a></li>
-      <li><a href="global.html#DUST_SATS">DUST_SATS</a></li>
-      <li><a href="global.html#EXIT_KINDS">EXIT_KINDS</a></li>
-      <li><a href="global.html#EXIT_SIGNATURE_TYPE">EXIT_SIGNATURE_TYPE</a></li>
-      <li><a href="global.html#FIDELITY_LOCKTIME_GRID">FIDELITY_LOCKTIME_GRID</a></li>
-      <li><a href="global.html#FIDELITY_MAX_CERT_BLOCKS">FIDELITY_MAX_CERT_BLOCKS</a></li>
-      <li><a href="global.html#FIELD_BODIES_VERSION">FIELD_BODIES_VERSION</a></li>
-      <li><a href="global.html#GCM_TAG_BYTES">GCM_TAG_BYTES</a></li>
-      <li><a href="global.html#HOP_PENALTY_MS">HOP_PENALTY_MS</a></li>
-      <li><a href="global.html#INPUT_HEADROOM">INPUT_HEADROOM</a></li>
-      <li><a href="global.html#LEAF_VERSION">LEAF_VERSION</a></li>
-      <li><a href="global.html#LOCKTIME_SLACK_BLOCKS">LOCKTIME_SLACK_BLOCKS</a></li>
-      <li><a href="global.html#LOCKTIME_THRESHOLD">LOCKTIME_THRESHOLD</a></li>
-      <li><a href="global.html#MAX_EVIDENCE">MAX_EVIDENCE</a></li>
-      <li><a href="global.html#MAX_FEE_PPM">MAX_FEE_PPM</a></li>
-      <li><a href="global.html#MAX_LOCKTIME">MAX_LOCKTIME</a></li>
-      <li><a href="global.html#MAX_MAKERS">MAX_MAKERS</a></li>
-      <li><a href="global.html#MAX_MAKER_INPUTS">MAX_MAKER_INPUTS</a></li>
-      <li><a href="global.html#MAX_OFFERS">MAX_OFFERS</a></li>
-      <li><a href="global.html#MAX_PREMIUM_PPM">MAX_PREMIUM_PPM</a></li>
-      <li><a href="global.html#MAX_PROVIDERS">MAX_PROVIDERS</a></li>
-      <li><a href="global.html#MAX_PSBT_CHARS">MAX_PSBT_CHARS</a></li>
-      <li><a href="global.html#MAX_REFUND_LOCK_BLOCKS">MAX_REFUND_LOCK_BLOCKS</a></li>
-      <li><a href="global.html#MAX_SETTLED_CREDITS">MAX_SETTLED_CREDITS</a></li>
-      <li><a href="global.html#MAX_TRANSFERS">MAX_TRANSFERS</a></li>
-      <li><a href="global.html#MIN_COINJOIN_SATS">MIN_COINJOIN_SATS</a></li>
-      <li><a href="global.html#MIN_INVOICE_EXPIRY_SECONDS">MIN_INVOICE_EXPIRY_SECONDS</a></li>
-      <li><a href="global.html#MIN_REFUND_LOCK_BLOCKS">MIN_REFUND_LOCK_BLOCKS</a></li>
-      <li><a href="global.html#PODLE_BLACKLIST_SIZE">PODLE_BLACKLIST_SIZE</a></li>
-      <li><a href="global.html#PODLE_MAX_INDEX">PODLE_MAX_INDEX</a></li>
-      <li><a href="global.html#PODLE_MIN_AGE_CONFS">PODLE_MIN_AGE_CONFS</a></li>
-      <li><a href="global.html#PODLE_MIN_VALUE_PCT">PODLE_MIN_VALUE_PCT</a></li>
-      <li><a href="global.html#PODLE_TAG">PODLE_TAG</a></li>
-      <li><a href="global.html#ROUND_TYPES">ROUND_TYPES</a></li>
-      <li><a href="global.html#SCORE_INVENTORY_ONLY">SCORE_INVENTORY_ONLY</a></li>
-      <li><a href="global.html#SCORE_MAX">SCORE_MAX</a></li>
-      <li><a href="global.html#SCORE_UNKNOWN">SCORE_UNKNOWN</a></li>
-      <li><a href="global.html#SEALED_TYPE">SEALED_TYPE</a></li>
-      <li><a href="global.html#SEAL_NAMESPACE">SEAL_NAMESPACE</a></li>
-      <li><a href="global.html#SIGNER_FIELD">SIGNER_FIELD</a></li>
-      <li><a href="global.html#TAPROOT_INTERNAL_NUMS">TAPROOT_INTERNAL_NUMS</a></li>
-      <li><a href="global.html#TELEMETRY_TYPE">TELEMETRY_TYPE</a></li>
-      <li><a href="global.html#TELEMETRY_VERSION">TELEMETRY_VERSION</a></li>
-      <li><a href="global.html#UNSAFE_PATH_TOKENS">UNSAFE_PATH_TOKENS</a></li>
-      <li><a href="global.html#WALLET_TX_KINDS">WALLET_TX_KINDS</a></li>
-      <li><a href="global.html#WEIGHT_OVERHEAD">WEIGHT_OVERHEAD</a></li>
-      <li><a href="global.html#YEAR_BLOCKS">YEAR_BLOCKS</a></li>
-      <li><a href="global.html#assertMonotoneBudget">assertMonotoneBudget</a></li>
-      <li><a href="global.html#bitcoin">bitcoin</a></li>
-      <li><a href="global.html#bodyId">bodyId</a></li>
-      <li><a href="global.html#broadcastSettled">broadcastSettled</a></li>
-      <li><a href="global.html#buildContractTaproot">buildContractTaproot</a></li>
-      <li><a href="global.html#buildEscrow">buildEscrow</a></li>
-      <li><a href="global.html#buildFederationVaultFromPolicy">buildFederationVaultFromPolicy</a></li>
-      <li><a href="global.html#buildFidelity">buildFidelity</a></li>
-      <li><a href="global.html#buildForwardedDocumentRequest">buildForwardedDocumentRequest</a></li>
-      <li><a href="global.html#buildHashlockLeaf">buildHashlockLeaf</a></li>
-      <li><a href="global.html#buildHashlockTapscript">buildHashlockTapscript</a></li>
-      <li><a href="global.html#buildPsbt">buildPsbt</a></li>
-      <li><a href="global.html#buildScriptLeaf">buildScriptLeaf</a></li>
-      <li><a href="global.html#buildSpendLeaf">buildSpendLeaf</a></li>
-      <li><a href="global.html#buildWatchSet">buildWatchSet</a></li>
-      <li><a href="global.html#checkPodleUtxo">checkPodleUtxo</a></li>
-      <li><a href="global.html#classifyWalletTransaction">classifyWalletTransaction</a></li>
-      <li><a href="global.html#codec">codec</a></li>
-      <li><a href="global.html#compileLeaves">compileLeaves</a></li>
-      <li><a href="global.html#composePolicyWithRunHashlock">composePolicyWithRunHashlock</a></li>
-      <li><a href="global.html#composeTaprootTree">composeTaprootTree</a></li>
-      <li><a href="global.html#computeRelayFee">computeRelayFee</a></li>
-      <li><a href="global.html#contractMessageIndex">contractMessageIndex</a></li>
-      <li><a href="global.html#contractMessageMatches">contractMessageMatches</a></li>
-      <li><a href="global.html#createBlobMerkleTree">createBlobMerkleTree</a></li>
-      <li><a href="global.html#createDocumentPurchaseSession">createDocumentPurchaseSession</a></li>
-      <li><a href="global.html#describePsbt">describePsbt</a></li>
-      <li><a href="global.html#descriptorPrivateKey">descriptorPrivateKey</a></li>
-      <li><a href="global.html#envelopeRecipient">envelopeRecipient</a></li>
-      <li><a href="global.html#estimateVsize">estimateVsize</a></li>
-      <li><a href="global.html#evaluateTierWhen">evaluateTierWhen</a></li>
-      <li><a href="global.html#expireHeight">expireHeight</a></li>
-      <li><a href="global.html#fidelityLocktimes">fidelityLocktimes</a></li>
-      <li><a href="global.html#fidelityPath">fidelityPath</a></li>
-      <li><a href="global.html#fidelityValue">fidelityValue</a></li>
-      <li><a href="global.html#finalize">finalize</a></li>
-      <li><a href="global.html#finalizeHashlockPsbt">finalizeHashlockPsbt</a></li>
-      <li><a href="global.html#finalizeSpendPsbt">finalizeSpendPsbt</a></li>
-      <li><a href="global.html#findSession">findSession</a></li>
-      <li><a href="global.html#fromContractMessage">fromContractMessage</a></li>
-      <li><a href="global.html#generatePodle">generatePodle</a></li>
-      <li><a href="global.html#hashlockFromProgramRun">hashlockFromProgramRun</a></li>
-      <li><a href="global.html#invoiceAmountMsat">invoiceAmountMsat</a></li>
-      <li><a href="global.html#isDuplicateSettlement">isDuplicateSettlement</a></li>
-      <li><a href="global.html#isValidFidelityLocktime">isValidFidelityLocktime</a></li>
-      <li><a href="global.html#l1GiverTerms">l1GiverTerms</a></li>
-      <li><a href="global.html#leafScripts">leafScripts</a></li>
-      <li><a href="global.html#listRefundCandidates">listRefundCandidates</a></li>
-      <li><a href="global.html#lockFrom">lockFrom</a></li>
-      <li><a href="global.html#makerChange">makerChange</a></li>
-      <li><a href="global.html#makerFee">makerFee</a></li>
-      <li><a href="global.html#memoryChain">memoryChain</a></li>
-      <li><a href="global.html#memoryWallet">memoryWallet</a></li>
-      <li><a href="global.html#mergeMakerSignatures">mergeMakerSignatures</a></li>
-      <li><a href="global.html#nextPodleIndex">nextPodleIndex</a></li>
-      <li><a href="global.html#normalizeAuth">normalizeAuth</a></li>
-      <li><a href="global.html#normalizeCancel">normalizeCancel</a></li>
-      <li><a href="global.html#normalizeContractSpendPolicy">normalizeContractSpendPolicy</a></li>
-      <li><a href="global.html#normalizeExtraLeafSpecs">normalizeExtraLeafSpecs</a></li>
-      <li><a href="global.html#normalizeFidelity">normalizeFidelity</a></li>
-      <li><a href="global.html#normalizeFill">normalizeFill</a></li>
-      <li><a href="global.html#normalizeFillAck">normalizeFillAck</a></li>
-      <li><a href="global.html#normalizeFunded">normalizeFunded</a></li>
-      <li><a href="global.html#normalizeHashlockSpec">normalizeHashlockSpec</a></li>
-      <li><a href="global.html#normalizeIoAuth">normalizeIoAuth</a></li>
-      <li><a href="global.html#normalizeLeaf">normalizeLeaf</a></li>
-      <li><a href="global.html#normalizeLock">normalizeLock</a></li>
-      <li><a href="global.html#normalizeOffer">normalizeOffer</a></li>
-      <li><a href="global.html#normalizeOrder">normalizeOrder</a></li>
-      <li><a href="global.html#normalizeSig">normalizeSig</a></li>
-      <li><a href="global.html#normalizeTake">normalizeTake</a></li>
-      <li><a href="global.html#normalizeTakeAccept">normalizeTakeAccept</a></li>
-      <li><a href="global.html#normalizeTx">normalizeTx</a></li>
-      <li><a href="global.html#offerKey">offerKey</a></li>
-      <li><a href="global.html#openFiling">openFiling</a></li>
-      <li><a href="global.html#openRoundMessage">openRoundMessage</a></li>
-      <li><a href="global.html#paginateInventoryItems">paginateInventoryItems</a></li>
-      <li><a href="global.html#parseXOnlyPubkeysFromSpendScript">parseXOnlyPubkeysFromSpendScript</a></li>
-      <li><a href="global.html#planCoinjoin">planCoinjoin</a></li>
-      <li><a href="global.html#podleCommitment">podleCommitment</a></li>
-      <li><a href="global.html#podleGenerator">podleGenerator</a></li>
-      <li><a href="global.html#policyAfterDecay">policyAfterDecay</a></li>
-      <li><a href="global.html#prepareDecayMigrationPsbt">prepareDecayMigrationPsbt</a></li>
-      <li><a href="global.html#prepareFidelityRedeem">prepareFidelityRedeem</a></li>
-      <li><a href="global.html#prepareHashlockWithdrawalPsbt">prepareHashlockWithdrawalPsbt</a></li>
-      <li><a href="global.html#prepareTierWithdrawalPsbt">prepareTierWithdrawalPsbt</a></li>
-      <li><a href="global.html#quote">quote</a></li>
-      <li><a href="global.html#randomNonce">randomNonce</a></li>
-      <li><a href="global.html#randomPrivateKey">randomPrivateKey</a></li>
-      <li><a href="global.html#randomRoundId">randomRoundId</a></li>
-      <li><a href="global.html#rememberSettlement">rememberSettlement</a></li>
-      <li><a href="global.html#roleFor">roleFor</a></li>
-      <li><a href="global.html#roles">roles</a></li>
-      <li><a href="global.html#routePath">routePath</a></li>
-      <li><a href="global.html#scriptTreeFromLeaves">scriptTreeFromLeaves</a></li>
-      <li><a href="global.html#sealRoundMessage">sealRoundMessage</a></li>
-      <li><a href="global.html#selectActiveTiers">selectActiveTiers</a></li>
-      <li><a href="global.html#sellerDedupeKey">sellerDedupeKey</a></li>
-      <li><a href="global.html#settlementDedupeKey">settlementDedupeKey</a></li>
-      <li><a href="global.html#signFidelityCertificate">signFidelityCertificate</a></li>
-      <li><a href="global.html#signFidelityRedeem">signFidelityRedeem</a></li>
-      <li><a href="global.html#signKeyPathInputs">signKeyPathInputs</a></li>
-      <li><a href="global.html#signOwnership">signOwnership</a></li>
-      <li><a href="global.html#signingString">signingString</a></li>
-      <li><a href="global.html#spendAddress">spendAddress</a></li>
-      <li><a href="global.html#synthesizeDefaultLadder">synthesizeDefaultLadder</a></li>
-      <li><a href="global.html#taprootKeyPath">taprootKeyPath</a></li>
-      <li><a href="global.html#taprootOutputPrivateKey">taprootOutputPrivateKey</a></li>
-      <li><a href="global.html#tierWhenPath">tierWhenPath</a></li>
-      <li><a href="global.html#timelockMature">timelockMature</a></li>
-      <li><a href="global.html#toContractMessage">toContractMessage</a></li>
-      <li><a href="global.html#toIntegerSats">toIntegerSats</a></li>
-      <li><a href="global.html#unsignedTxid">unsignedTxid</a></li>
-      <li><a href="global.html#validateEscrow">validateEscrow</a></li>
-      <li><a href="global.html#validateFill">validateFill</a></li>
-      <li><a href="global.html#validateForMaker">validateForMaker</a></li>
-      <li><a href="global.html#validateForTaker">validateForTaker</a></li>
-      <li><a href="global.html#validateInvoice">validateInvoice</a></li>
-      <li><a href="global.html#validateTake">validateTake</a></li>
-      <li><a href="global.html#validateTakeAccept">validateTakeAccept</a></li>
-      <li><a href="global.html#verifyBlobPath">verifyBlobPath</a></li>
-      <li><a href="global.html#verifyFidelity">verifyFidelity</a></li>
-      <li><a href="global.html#verifyFidelityCertificate">verifyFidelityCertificate</a></li>
-      <li><a href="global.html#verifyOwnership">verifyOwnership</a></li>
-      <li><a href="global.html#verifyPodle">verifyPodle</a></li>
-      <li><a href="global.html#weightsForProximity">weightsForProximity</a></li>
+      <li><a href="global.html#crypto">crypto</a></li>
     </ul>
   </nav>
   <br class="clear" />
