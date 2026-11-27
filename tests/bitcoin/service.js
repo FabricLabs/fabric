@@ -8,6 +8,11 @@ const jayson = require('jayson/lib/client');
 // Fabric Types
 const Bitcoin = require('../../services/bitcoin');
 const Key = require('../../types/key');
+const Message = require('../../types/message');
+const {
+  isolatedManagedRegtestSettings,
+  rpcProbeLooksUnavailable
+} = require('../helpers/bitcoinRegtest');
 
 describe('@fabric/core/services/bitcoin', function () {
   describe('Bitcoin', function () {
@@ -82,6 +87,12 @@ describe('@fabric/core/services/bitcoin', function () {
         assert.strictEqual(btc.validateAddress(''), false);
       });
 
+      it('accepts a testnet5 bech32 address', function () {
+        const btc = new Bitcoin({ network: 'testnet5', mode: 'fabric' });
+        assert.strictEqual(btc.validateAddress('tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx'), true);
+        assert.strictEqual(btc.validateAddress('bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4'), false);
+      });
+
       it('fails closed set of networks safely', function () {
         const btc = new Bitcoin({ network: 'invalidnet', mode: 'fabric' });
         // Should not throw, but must return false on validation
@@ -98,6 +109,9 @@ describe('@fabric/core/services/bitcoin', function () {
         assert.strictEqual(btc._normalizeChainName('regtest'), 'regtest');
         assert.strictEqual(btc._normalizeChainName('signet'), 'signet');
         assert.strictEqual(btc._normalizeChainName('testnet4'), 'testnet4');
+        assert.strictEqual(btc._normalizeChainName('testnet5'), 'testnet5');
+        assert.strictEqual(btc._keyNetworkNameForWif(), 'regtest');
+        assert.strictEqual(new Bitcoin({ network: 'testnet5', mode: 'rpc' })._keyNetworkNameForWif(), 'testnet');
         assert.strictEqual(btc._normalizeChainName('unknown-custom'), 'unknown-custom');
       });
 
@@ -119,7 +133,8 @@ describe('@fabric/core/services/bitcoin', function () {
           testnet: { rpc: 18332, p2p: 18333 },
           regtest: { rpc: 18443, p2p: 18444 },
           signet: { rpc: 38332, p2p: 38333 },
-          testnet4: { rpc: 48332, p2p: 48333 }
+          testnet4: { rpc: 48332, p2p: 48333 },
+          testnet5: { rpc: 18352, p2p: 18353 }
         };
 
         for (const [network, ports] of Object.entries(expected)) {
@@ -485,14 +500,12 @@ describe('@fabric/core/services/bitcoin', function () {
           throw new Error(`unexpected method ${method}`);
         };
 
-        const payload = Buffer.from(JSON.stringify({ content: 'abc123tip' }), 'utf8');
-        await btc._handleZMQMessage({
-          type: 'BitcoinBlockHash',
-          data: payload
-        });
+        // What services/zmq emits for `hashblock`: a field-body Message.
+        const tip = 'ab'.repeat(32);
+        await btc._handleZMQMessage(Message.fromLegacyBody('BitcoinBlockHash', { content: tip }));
 
         assert.strictEqual(btc._state.content.height, 321);
-        assert.strictEqual(btc._state.content.tip, 'abc123tip');
+        assert.strictEqual(btc._state.content.tip, tip);
         assert.strictEqual(btc._state.content.supply, 123.45);
         assert.strictEqual(committed, 1);
       });
@@ -502,16 +515,22 @@ describe('@fabric/core/services/bitcoin', function () {
         let committed = 0;
         btc.commit = () => { committed++; };
         btc._makeRPCRequest = async (method) => {
-          if (method === 'getbalances') return { trusted: 10.5 };
+          if (method === 'getbalances') return { mine: { trusted: 10.5, untrusted_pending: 0, immature: 0 } };
           throw new Error(`unexpected method ${method}`);
         };
 
-        await btc._handleZMQMessage({
-          type: 'BitcoinTransaction',
-          data: Buffer.from('{}', 'utf8')
-        });
+        // What services/zmq emits for `rawtx`: a field-body Message of a real transaction.
+        const bitcoinjs = require('bitcoinjs-lib');
+        const tx = new bitcoinjs.Transaction();
+        tx.addInput(Buffer.alloc(32, 7), 0);
+        tx.addOutput(Buffer.from('0014' + '11'.repeat(20), 'hex'), BigInt(1000));
+        const events = [];
+        btc.broadcastWatchtower = async () => {};
+        btc.on('transaction', (event) => events.push(event));
+        await btc._handleZMQMessage(Message.fromLegacyBody('BitcoinTransaction', { content: tx.toHex() }));
 
-        assert.deepStrictEqual(btc._state.balances.mine.trusted, { trusted: 10.5 });
+        assert.deepStrictEqual(events, [{ hex: tx.toHex(), source: 'BitcoinTransaction', txid: tx.getId() }]);
+        assert.deepStrictEqual(btc._state.balances, { mine: { trusted: 10.5, untrusted_pending: 0, immature: 0 } });
         assert.strictEqual(committed, 1);
       });
 
@@ -524,14 +543,12 @@ describe('@fabric/core/services/bitcoin', function () {
           throw new Error(`unexpected method ${method}`);
         };
 
-        const raw = [
-          Buffer.from('BitcoinBlockHash', 'utf8'),
-          Buffer.from(JSON.stringify({ content: 'tip-raw-array' }), 'utf8')
-        ];
-        await btc._handleZMQMessage(raw);
+        // bitcoind's own frame: topic + the 32 hash bytes.
+        const tip = 'cd'.repeat(32);
+        await btc._handleZMQMessage([Buffer.from('hashblock', 'utf8'), Buffer.from(tip, 'hex')]);
 
         assert.strictEqual(btc._state.content.height, 9);
-        assert.strictEqual(btc._state.content.tip, 'tip-raw-array');
+        assert.strictEqual(btc._state.content.tip, tip);
         assert.strictEqual(btc._state.content.supply, 50);
         assert.strictEqual(committed, 1);
       });
@@ -577,12 +594,19 @@ describe('@fabric/core/services/bitcoin', function () {
 
       it('tolerates malformed BitcoinBlockHash payload content', async function () {
         const btc = new Bitcoin({ network: 'regtest', mode: 'rpc' });
-        // Should be ignored by internal try/catch.
+        const errors = [];
+        let committed = 0;
+        let blocks = 0;
+        btc.on('error', (msg) => errors.push(String(msg)));
+        btc.on('block', () => { blocks++; });
+        btc.commit = () => { committed++; };
         await btc._handleZMQMessage({
           type: 'BitcoinBlockHash',
           data: Buffer.from('not-json', 'utf8')
         });
-        assert.ok(true);
+        assert.strictEqual(errors.length, 0, 'malformed block-hash JSON must not emit error');
+        assert.strictEqual(committed, 0, 'malformed payload must not commit tip state');
+        assert.strictEqual(blocks, 0, 'malformed payload must not emit block');
       });
 
       it('swallows internal RPC failures while processing known ZMQ topics', async function () {
@@ -1133,11 +1157,14 @@ describe('@fabric/core/services/bitcoin', function () {
         await assert.rejects(() => btc.generateBlock('addr'), /Invalid mode/);
       });
 
-      it('getUnusedAddress derives sequential addresses in fabric mode', async function () {
+      it('getUnusedAddress derives sequential BIP-86 addresses in fabric mode', async function () {
         const btc = new Bitcoin({ network: 'regtest', mode: 'fabric' });
         const a = await btc.getUnusedAddress();
         const b = await btc.getUnusedAddress();
         assert.notStrictEqual(a, b);
+        assert.match(a, /^bcrt1p/);
+        assert.match(b, /^bcrt1p/);
+        assert.deepStrictEqual([btc.settings.state.addresses[a].index, btc.settings.state.addresses[b].index], [0, 1]);
         assert.ok(btc.settings.state.addresses[a]);
         assert.ok(btc.settings.state.addresses[b]);
       });
@@ -1282,42 +1309,86 @@ describe('@fabric/core/services/bitcoin real-world RPC command parity', function
     'verifychain'
   ];
 
-  const rpcHost = process.env.BITCOIN_RPC_HOST || '127.0.0.1';
-  const rpcPort = Number(process.env.BITCOIN_RPC_PORT || 18443);
-  const rpcUser = process.env.BITCOIN_RPC_USER || 'polaruser';
-  const rpcPass = process.env.BITCOIN_RPC_PASS || 'polarpass';
+  const useExternalRpc = Boolean(
+    process.env.BITCOIN_RPC_HOST ||
+    process.env.BITCOIN_RPC_PORT ||
+    process.env.BITCOIN_RPC_USER ||
+    process.env.BITCOIN_RPC_PASS
+  );
   let btc;
+  let managed = false;
 
   before(async function () {
-    btc = new Bitcoin({
-      mode: 'rpc',
-      network: 'regtest',
-      host: rpcHost,
-      rpcport: rpcPort,
-      username: rpcUser,
-      password: rpcPass,
-      secure: false
+    if (useExternalRpc) {
+      const rpcHost = process.env.BITCOIN_RPC_HOST || '127.0.0.1';
+      const rpcPort = Number(process.env.BITCOIN_RPC_PORT || 18443);
+      const rpcUser = process.env.BITCOIN_RPC_USER || 'polaruser';
+      const rpcPass = process.env.BITCOIN_RPC_PASS || 'polarpass';
+      btc = new Bitcoin({
+        mode: 'rpc',
+        network: 'regtest',
+        host: rpcHost,
+        rpcport: rpcPort,
+        username: rpcUser,
+        password: rpcPass,
+        secure: false
+      });
+
+      const config = {
+        host: rpcHost,
+        port: rpcPort,
+        timeout: 15000
+      };
+      const auth = `${rpcUser}:${rpcPass}`;
+      config.headers = { Authorization: `Basic ${Buffer.from(auth, 'utf8').toString('base64')}` };
+      btc.rpc = jayson.http(config);
+
+      try {
+        await btc._makeRPCRequest('getblockchaininfo');
+      } catch (error) {
+        if (rpcProbeLooksUnavailable(error)) {
+          this.skip();
+          return;
+        }
+        throw error;
+      }
+      return;
+    }
+
+    const settings = await isolatedManagedRegtestSettings({ mode: 'rpc' });
+    btc = new Bitcoin(settings);
+    btc.on('error', (msg) => {
+      console.warn(String(msg));
     });
 
-    const config = {
-      host: rpcHost,
-      port: rpcPort,
-      timeout: 15000
-    };
-    const auth = `${rpcUser}:${rpcPass}`;
-    config.headers = { Authorization: `Basic ${Buffer.from(auth, 'utf8').toString('base64')}` };
-    btc.rpc = require('jayson/lib/client').http(config);
+    // `start()` assigns the spawned child before the rest of startup runs, so claim
+    // cleanup ownership first: otherwise a later rejection leaves a live bitcoind
+    // behind while the `after` hook skips `stop()`.
+    managed = true;
 
-    // Connectivity sanity check.
     try {
-      await btc._makeRPCRequest('getblockchaininfo');
+      await btc.start();
     } catch (error) {
-      const msg = String(error && error.message ? error.message : error);
-      if (msg.includes('ECONNREFUSED') || msg.includes('connect')) {
+      try {
+        await btc.stop();
+      } catch (_) { /* already down */ }
+      managed = false;
+      // No local bitcoind to manage is a skip, not a failure.
+      if (error && (error.code === 'ENOENT' || rpcProbeLooksUnavailable(error))) {
         this.skip();
         return;
       }
       throw error;
+    }
+  });
+
+  after(async function () {
+    if (managed && btc) {
+      try {
+        await btc.stop();
+      } catch (e) {
+        console.warn('Cleanup error:', e);
+      }
     }
   });
 
@@ -1337,24 +1408,7 @@ describe('@fabric/core/services/bitcoin', function () {
   }
   this.timeout(120000);
 
-  let defaults = {
-    network: 'regtest',
-    mode: 'fabric',
-    port: 18444,
-    rpcport: 18443,
-    zmqport: 18445,
-    zmq: {
-      host: '127.0.0.1',
-      port: 18445
-    },
-    managed: true,
-    listen: 0,
-    debug: false,
-    username: 'bitcoinrpc',
-    password: 'password',
-    datadir: './stores/bitcoin-regtest-test'
-  };
-
+  let defaults;
   let bitcoin;
   let key;
 
@@ -1370,25 +1424,13 @@ describe('@fabric/core/services/bitcoin', function () {
   before(async function () {
     this.timeout(180000); // 3 minutes for setup
 
-    const seed = process.pid % 10000;
-    const basePort = 30000 + ((seed * 3) % 20000);
-    const p2pPort = basePort;
-    const rpcPort = basePort + 1;
-    const zmqPort = basePort + 2;
-    defaults = {
-      ...defaults,
-      port: p2pPort,
-      rpcport: rpcPort,
-      zmqport: zmqPort,
-      zmq: {
-        host: '127.0.0.1',
-        port: zmqPort
-      },
-      datadir: `./stores/bitcoin-regtest-test-${process.pid}-${Date.now()}`
-    };
+    defaults = await isolatedManagedRegtestSettings();
 
     // Initialize Bitcoin service first
     bitcoin = new Bitcoin(defaults);
+    bitcoin.on('error', (msg) => {
+      console.warn(String(msg));
+    });
 
     // Now create the key with the correct network configuration
     key = new Key({

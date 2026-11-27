@@ -1127,14 +1127,13 @@ FabricError peer_send_message(Peer *peer, int connection_id, const Message *mess
     return FABRIC_ERROR_NOISE_WRITE_FAILED;
   }
 
-  int sock_flags = fcntl(conn->sock, F_GETFL, 0);
-  if (sock_flags >= 0)
-    (void)fcntl(conn->sock, F_SETFL, sock_flags & ~O_NONBLOCK);
+  /* Do not clear O_NONBLOCK — fabric_noise_write_frame waits with select()+timeout. */
+  struct timeval send_tv;
+  send_tv.tv_sec = 30;
+  send_tv.tv_usec = 0;
+  (void)setsockopt(conn->sock, SOL_SOCKET, SO_SNDTIMEO, &send_tv, sizeof(send_tv));
 
   int fw = fabric_noise_write_frame(conn->sock, noise_buffer.data, noise_buffer.size);
-
-  if (sock_flags >= 0)
-    (void)fcntl(conn->sock, F_SETFL, sock_flags);
 
   if (fw != 0)
   {
@@ -1200,15 +1199,16 @@ FabricError peer_receive_message(Peer *peer, int connection_id, Message *message
     return FABRIC_ERROR_OUT_OF_MEMORY;
   }
 
-  int flags = fcntl(conn->sock, F_GETFL, 0);
-  if (flags >= 0)
-    (void)fcntl(conn->sock, F_SETFL, flags & ~O_NONBLOCK);
+  /* Keep socket flags (including O_NONBLOCK). fabric_noise_read_frame uses
+   * select()+budget so a stalled peer cannot freeze receive under locks. */
+  struct timeval io_tv;
+  io_tv.tv_sec = 30;
+  io_tv.tv_usec = 0;
+  (void)setsockopt(conn->sock, SOL_SOCKET, SO_RCVTIMEO, &io_tv, sizeof(io_tv));
+  (void)setsockopt(conn->sock, SOL_SOCKET, SO_SNDTIMEO, &io_tv, sizeof(io_tv));
 
   size_t enc_len = 0;
   int frame_rc = fabric_noise_read_frame(conn->sock, buffer, scratch_cap, &enc_len);
-
-  if (flags >= 0)
-    (void)fcntl(conn->sock, F_SETFL, flags);
 
   if (frame_rc != 0)
   {
@@ -1776,8 +1776,8 @@ static void *listener_thread_function(void *arg)
       goto continue_loop;
     }
 
-    // Reset socket to previous flags (likely non-blocking minus O_NONBLOCK)
-    fcntl(client_sock, F_SETFL, flags);
+    // Keep prior flags (includes O_NONBLOCK). Do not clear nonblocking after Noise.
+    fcntl(client_sock, F_SETFL, flags | O_NONBLOCK);
 
     // Increment connection count atomically
     int32_t new_count;

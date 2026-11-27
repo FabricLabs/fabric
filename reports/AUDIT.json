@@ -1,22 +1,77 @@
 {
   "auditReportVersion": 2,
-  "vulnerabilities": {},
+  "vulnerabilities": {
+    "jayson": {
+      "name": "jayson",
+      "severity": "moderate",
+      "isDirect": true,
+      "via": [
+        "uuid"
+      ],
+      "effects": [],
+      "range": ">=2.0.6",
+      "nodes": [
+        "node_modules/jayson"
+      ],
+      "fixAvailable": {
+        "name": "jayson",
+        "version": "2.0.5",
+        "isSemVerMajor": true
+      }
+    },
+    "uuid": {
+      "name": "uuid",
+      "severity": "moderate",
+      "isDirect": false,
+      "via": [
+        {
+          "source": 1119441,
+          "name": "uuid",
+          "dependency": "uuid",
+          "title": "uuid: Missing buffer bounds check in v3/v5/v6 when buf is provided",
+          "url": "https://github.com/advisories/GHSA-w5hq-g745-h8pq",
+          "severity": "moderate",
+          "cwe": [
+            "CWE-787",
+            "CWE-1285"
+          ],
+          "cvss": {
+            "score": 7.5,
+            "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:H/A:N"
+          },
+          "range": "<11.1.1"
+        }
+      ],
+      "effects": [
+        "jayson"
+      ],
+      "range": "<11.1.1",
+      "nodes": [
+        "node_modules/jayson/node_modules/uuid"
+      ],
+      "fixAvailable": {
+        "name": "jayson",
+        "version": "2.0.5",
+        "isSemVerMajor": true
+      }
+    }
+  },
   "metadata": {
     "vulnerabilities": {
       "info": 0,
       "low": 0,
-      "moderate": 0,
+      "moderate": 2,
       "high": 0,
       "critical": 0,
-      "total": 0
+      "total": 2
     },
     "dependencies": {
-      "prod": 139,
-      "dev": 522,
-      "optional": 4,
+      "prod": 140,
+      "dev": 223,
+      "optional": 1,
       "peer": 0,
       "peerOptional": 0,
-      "total": 660
+      "total": 362
     }
   }
 }

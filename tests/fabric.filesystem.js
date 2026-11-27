@@ -119,6 +119,81 @@ describe('@fabric/core/types/filesystem', function () {
       assert.strictEqual(actorJson.object.name, 'Satoshi Nakamoto');
     });
 
+    it('publish does not retain document bodies in memory', async function () {
+      await filesystem.start();
+      for (let i = 0; i < 20; i++) {
+        await filesystem.publish('blob-' + i + '.txt', 'payload-' + i);
+      }
+      assert.deepStrictEqual(Object.keys(filesystem.documents), []);
+      assert.strictEqual(fs.existsSync(path.join(testDir, 'blob-19.txt')), true);
+      assert.ok(filesystem.files.includes('blob-19.txt'));
+    });
+
+    it('writeFile/readFile refuse a final-component symlink (O_NOFOLLOW)', async function () {
+      await filesystem.start();
+      const outside = path.join(os.tmpdir(), 'fabric-fs-nofollow-' + process.pid + '.txt');
+      const linkName = 'symlink-escape.txt';
+      const linkPath = path.join(testDir, linkName);
+      fs.writeFileSync(outside, 'outside-target');
+      try {
+        fs.symlinkSync(outside, linkPath);
+        assert.strictEqual(filesystem.readFile(linkName), null);
+        assert.strictEqual(filesystem.writeFile(linkName, 'overwrite'), false);
+        assert.strictEqual(fs.readFileSync(outside, 'utf8'), 'outside-target');
+        assert.strictEqual(filesystem.delete(linkName), true);
+        assert.strictEqual(fs.existsSync(linkPath), false);
+        assert.strictEqual(fs.readFileSync(outside, 'utf8'), 'outside-target');
+      } finally {
+        if (fs.existsSync(linkPath)) fs.unlinkSync(linkPath);
+        if (fs.existsSync(outside)) fs.unlinkSync(outside);
+      }
+    });
+
+    it('writeFile/readFile/delete refuse paths that escape the store root', async function () {
+      await filesystem.start();
+      const probe = path.resolve(testDir, '..', 'filesystem-escape-probe.txt');
+      try {
+        if (fs.existsSync(probe)) fs.unlinkSync(probe);
+        assert.strictEqual(filesystem.writeFile('../filesystem-escape-probe.txt', 'escaped'), false);
+        assert.strictEqual(fs.existsSync(probe), false);
+        assert.strictEqual(filesystem.readFile('../filesystem-escape-probe.txt'), null);
+        fs.writeFileSync(probe, 'outside');
+        assert.strictEqual(filesystem.delete('../filesystem-escape-probe.txt'), false);
+        assert.strictEqual(fs.readFileSync(probe, 'utf8'), 'outside');
+        await assert.rejects(
+          () => filesystem.publish('../filesystem-escape-probe.txt', 'escaped'),
+          /Could not publish/
+        );
+      } finally {
+        if (fs.existsSync(probe)) fs.unlinkSync(probe);
+      }
+    });
+
+    it('tracks the store-relative name when publish is given an absolute path', async function () {
+      await filesystem.start();
+      const abs = path.join(path.resolve(testDir), 'abs-note.txt');
+      await filesystem.publish(abs, 'payload');
+      assert.ok(filesystem.files.includes('abs-note.txt'));
+      assert.ok(!filesystem.files.some((name) => name === 'Users' || name === 'home'));
+      assert.strictEqual(fs.readFileSync(path.join(testDir, 'abs-note.txt'), 'utf8'), 'payload');
+    });
+
+    it('publish fails closed when writeFile returns false', async function () {
+      await filesystem.start();
+      const originalWrite = filesystem.writeFile;
+      filesystem.writeFile = function () { return false; };
+      try {
+        await assert.rejects(
+          () => filesystem.publish('missing.txt', 'payload'),
+          /Could not publish missing\.txt/
+        );
+        assert.ok(!filesystem.files.includes('missing.txt'));
+        assert.strictEqual(fs.existsSync(path.join(testDir, 'missing.txt')), false);
+      } finally {
+        filesystem.writeFile = originalWrite;
+      }
+    });
+
     it('can delete from a local filesystem', async function () {
       const actor = new Actor({ name: 'Satoshi Nakamoto' });
       const filesystem = new Filesystem({

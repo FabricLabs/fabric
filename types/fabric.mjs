@@ -2,6 +2,10 @@
 
 // external dependencies
 import crypto from 'crypto';
+import { createRequire } from 'module';
+
+const require = createRequire(import.meta.url);
+const { randomUnit } = require('../functions/bytes.js');
 
 // components
 import Actor from '../types/actor.js';
@@ -126,12 +130,21 @@ class Fabric extends Service {
   static get Wallet () { return Wallet; }
   static get Worker () { return Worker; }
 
+  /**
+   * @deprecated Not a Fabric type. Use {@link Machine}, {@link Program},
+   * `functions/beaconFederationSigning`, and `functions/fabricCanonicalJson`.
+   * @returns {object}
+   */
+  static get DistributedExecution () {
+    return require('./distributedExecution');
+  }
+
   static sha256 (data) {
     return crypto.createHash('sha256').update(data).digest('hex');
   }
 
   static random () {
-    return Math.random();
+    return randomUnit();
   }
 
   async _GET (key) {

@@ -17,6 +17,24 @@ const Machine = require('../types/machine');
 // Contracts
 const OP_TEST = require('../contracts/test');
 
+// Operator directories stay absolute. The socket is one file name, so a
+// setting cannot walk out of the data directory through path.join/resolve.
+function absoluteDirectory (value) {
+  const text = String(value == null ? '' : value);
+  if (!text || text.includes('\0')) throw new Error('Lightning directory is invalid');
+  const rooted = path.isAbsolute(text) ? text : `${process.cwd()}${path.sep}${text}`;
+  const normalized = path.normalize(rooted);
+  if (normalized.length > 1 && normalized.endsWith(path.sep)) return normalized.slice(0, -1);
+  return normalized;
+}
+
+function socketInside (directory, name) {
+  const base = absoluteDirectory(directory);
+  const leaf = String(name == null ? '' : name);
+  if (!/^[A-Za-z0-9._-]+$/.test(leaf)) throw new Error('Lightning socket name is invalid');
+  return `${base}${path.sep}${leaf}`;
+}
+
 function redactSensitiveCommandArg (arg) {
   return String(arg).replace(
     /((?:--?rpcpassword|--?rpcuser|--?rpcauth|--bitcoin-rpcpassword|--bitcoin-rpcuser)=).*/i,
@@ -64,7 +82,10 @@ function flushLightningStderrBuffer (service) {
 }
 
 /**
- * Manage a Lightning node.
+ * Manage a Lightning node (Core Lightning JSON-RPC over Unix socket).
+ *
+ * BOLT checklist: `docs/BOLT_COMPATIBILITY.md`. RPC map: `docs/LIGHTNING_COMPAT.md`.
+ * @see Lightning.DOCS
  */
 class Lightning extends Service {
   /**
@@ -74,7 +95,7 @@ class Lightning extends Service {
    */
   static defaultListenPortForNetwork (network) {
     const n = String(network || 'mainnet').toLowerCase();
-    if (n === 'testnet' || n === 'testnet4') return 19735;
+    if (n === 'testnet' || n === 'testnet4' || n === 'testnet5') return 19735;
     if (n === 'signet') return 39735;
     return 9735;
   }
@@ -119,6 +140,7 @@ class Lightning extends Service {
     this.settings.bitcoin.rpcpassword = this.settings.bitcoin.rpcpassword || this.settings.bitcoin.password;
 
     this.machine = new Machine(this.settings);
+    /** Optional RPC client handle (e.g. REST/grpc); not used by Core Lightning socket `_makeRPCRequest`. */
     this.rpc = null;
     this.rest = null;
     this.status = 'disconnected';
@@ -163,6 +185,7 @@ class Lightning extends Service {
     const n = String(this.settings.network || 'regtest').toLowerCase();
     if (n === 'mainnet' || n === 'bitcoin' || n === 'main') return 'bitcoin';
     if (n === 'testnet4') return 'testnet4';
+    if (n === 'testnet5') return 'testnet5';
     if (n === 'testnet' || n === 'test') return 'testnet';
     if (n === 'signet') return 'signet';
     return 'regtest';
@@ -177,6 +200,7 @@ class Lightning extends Service {
       case 'test':
       case 'testnet': return '-testnet';
       case 'testnet4': return '-testnet4';
+      case 'testnet5': return '-testnet5';
       case 'signet': return '-signet';
       case 'regtest':
       default:
@@ -197,14 +221,11 @@ class Lightning extends Service {
   }
 
   commit () {
-    // this.emit('debug', `Committing...`);
-
+    const channels = (this.state && this.state.channels) || {};
     const commit = new Actor({
       type: 'Commit',
-      state: this.state
+      state: { channels }
     });
-
-    // this.emit('debug', `Committing Actor: ${commit}`);
 
     this.emit('commit', {
       id: commit.id,
@@ -262,9 +283,23 @@ class Lightning extends Service {
   /**
    * Create a new Lightning invoice.
    * @param {String} amount Amount in millisatoshi (msat).
+   * @param {String} [label]
+   * @param {String} [description]
+   * @param {Object} [options]
+   * @param {String} [options.preimage] 32-byte hex preimage to lock the invoice to (swaps: the HTLC hash must match)
+   * @param {Number} [options.expiry] seconds until the invoice expires
    */
-  async createInvoice (amount, label = 'Generic Invoice', description = 'Generic description.') {
-    const result = await this._makeRPCRequest('invoice', [amount, label, description]);
+  async createInvoice (amount, label = 'Generic Invoice', description = 'Generic description.', options = {}) {
+    const opts = options || {};
+    // JSON-RPC keyword params are the object itself; wrapped in an array it would be read as `amount_msat`.
+    const params = (opts.preimage != null || opts.expiry != null)
+      ? Object.assign(
+          { amount_msat: amount, label, description },
+          opts.preimage != null ? { preimage: String(opts.preimage) } : {},
+          opts.expiry != null ? { expiry: Number(opts.expiry) } : {}
+        )
+      : [amount, label, description];
+    const result = await this._makeRPCRequest('invoice', params);
     return {
       bolt11: result.bolt11,
       paymentHash: result.payment_hash,
@@ -272,18 +307,41 @@ class Lightning extends Service {
     };
   }
 
+  /**
+   * Invoke any Core Lightning JSON-RPC method over the lightningd socket (escape hatch for methods without a typed wrapper).
+   * Named `callRpc` so it does not shadow the `rpc` instance property.
+   * @param {String} method RPC method name (e.g. `listpeers`).
+   * @param {Array} [params=[]] Positional/object params as accepted by lightningd for that method.
+   * @param {Number} [timeoutMs=30000] Optional timeout.
+   * @returns {Promise<*>} RPC result.
+   */
   async callRpc (method, params = [], timeoutMs = 30000) {
     return this._makeRPCRequest(method, params, timeoutMs);
   }
 
+  /**
+   * Decode a BOLT11 invoice or BOLT12 offer string (Core Lightning `decode`).
+   * @param {String} boltString `lnbc...`, `lno1...`, etc.
+   * @returns {Promise<Object>} Decoded fields.
+   */
   async decodeLightning (boltString) {
     return this._makeRPCRequest('decode', [boltString]);
   }
 
+  /**
+   * Decode a BOLT11 invoice for payment fields (Core Lightning `decodepay`).
+   * @param {String} bolt11
+   * @returns {Promise<Object>} Decoded pay details.
+   */
   async decodePay (bolt11) {
     return this._makeRPCRequest('decodepay', [bolt11]);
   }
 
+  /**
+   * Create a BOLT12 offer (requires `experimental-offers` / modern CLN). Pass-through to `offer`.
+   * @param {Object} params Keyword args, e.g. `{ amount_msat, description, label, issuer, ... }`.
+   * @returns {Promise<Object>} Offer result (includes `bolt12` / offer id per CLN version).
+   */
   async createOffer (params) {
     if (!params || typeof params !== 'object' || Array.isArray(params)) {
       throw new Error('createOffer requires a params object (e.g. { amount_msat, description })');
@@ -291,6 +349,18 @@ class Lightning extends Service {
     return this._makeRPCRequest('offer', [params]);
   }
 
+  /**
+   * Request a BOLT11 invoice from a BOLT12 offer (Core Lightning `fetchinvoice`).
+   *
+   * Call either:
+   * - `fetchInvoice('lno1…')` or `fetchInvoice('lno1…', { amount_msat, quantity, payer_note, timeout, … })`
+   * - **Recurrence** (when the offer is recurring): `recurrence_counter` (start at 0), `recurrence_start`, `recurrence_label` (stable label linking the series; required when counter is set). See Core Lightning **`fetchinvoice`** and [BOLT #12](https://github.com/lightning/bolts/blob/master/12-offer-encoding.md).
+   * - `fetchInvoice({ offer: 'lno1…', amount_msat, … })` — single keyword object as accepted by CLN.
+   *
+   * @param {String|Object} offerOrParams Bolt12 offer string (`lno1…`), or one params object with an `offer` field.
+   * @param {Object} [invoiceParams] When the first arg is a string, optional extra fields merged into the RPC (second positional group).
+   * @returns {Promise<Object>} Invoice response (includes `invoice` bolt11 when successful).
+   */
   async fetchInvoice (offerOrParams, invoiceParams = null) {
     if (offerOrParams != null && typeof offerOrParams === 'object' && !Array.isArray(offerOrParams) && typeof offerOrParams.offer === 'string') {
       if (invoiceParams != null && typeof invoiceParams === 'object' && !Array.isArray(invoiceParams)) {
@@ -307,10 +377,25 @@ class Lightning extends Service {
     return this._makeRPCRequest('fetchinvoice', [offerOrParams]);
   }
 
+  /**
+   * Pay a BOLT11 invoice or BOLT12-fetched bolt11 string (Core Lightning `pay`).
+   * @param {String|Object} invoiceOrParams Bolt11 string, or keyword object (e.g. `{ bolt11 }`, `{ bolt12 }` per CLN).
+   * @param {Number} [timeoutMs=30000]
+   * @returns {Promise<Object>} Payment result; `paymentPreimage` mirrors CLN `payment_preimage`.
+   */
   async pay (invoiceOrParams, timeoutMs = 30000) {
-    return this._makeRPCRequest('pay', [invoiceOrParams], timeoutMs);
+    const result = await this._makeRPCRequest('pay', [invoiceOrParams], timeoutMs);
+    if (result && typeof result === 'object' && result.payment_preimage != null && result.paymentPreimage == null) {
+      return Object.assign({}, result, { paymentPreimage: result.payment_preimage });
+    }
+    return result;
   }
 
+  /**
+   * List offers created on this node (Core Lightning `listoffers`).
+   * @param {String|Object|null} [filter] `offer_id` string, or `{ offer_id?, active_only? }`, or null for all.
+   * @returns {Promise<Object>}
+   */
   async listOffers (filter = null) {
     if (filter == null) return this._makeRPCRequest('listoffers', []);
     if (typeof filter === 'string') return this._makeRPCRequest('listoffers', [filter]);
@@ -320,10 +405,20 @@ class Lightning extends Service {
     throw new Error('listOffers expects offer_id string, filter object, or null');
   }
 
+  /**
+   * Disable a local offer by id (Core Lightning `disableoffer`).
+   * @param {String} offerId
+   * @returns {Promise<Object>}
+   */
   async disableOffer (offerId) {
     return this._makeRPCRequest('disableoffer', [offerId]);
   }
 
+  /**
+   * Create a BOLT12 `invoice_request` (you request that someone else pay you via their offer flow). Returns `bolt12` (`lnr1…`). (Core Lightning `invoicerequest`, v22.11+.)
+   * @param {Object} params `{ amount, description, issuer?, label?, absolute_expiry?, single_use? }` — see CLN docs for amount formats.
+   * @returns {Promise<Object>}
+   */
   async createInvoiceRequest (params) {
     if (!params || typeof params !== 'object' || Array.isArray(params)) {
       throw new Error('createInvoiceRequest requires a params object (e.g. { amount, description })');
@@ -331,6 +426,11 @@ class Lightning extends Service {
     return this._makeRPCRequest('invoicerequest', [params]);
   }
 
+  /**
+   * List `invoice_request` records (Core Lightning `listinvoicerequests`).
+   * @param {String|Object|null} [filter] `invreq_id` string, or `{ invreq_id?, active_only? }`, or null for all.
+   * @returns {Promise<Object>}
+   */
   async listInvoiceRequests (filter = null) {
     if (filter == null) return this._makeRPCRequest('listinvoicerequests', []);
     if (typeof filter === 'string') return this._makeRPCRequest('listinvoicerequests', [filter]);
@@ -340,10 +440,20 @@ class Lightning extends Service {
     throw new Error('listInvoiceRequests expects invreq_id string, filter object, or null');
   }
 
+  /**
+   * Disable an `invoice_request` so no further invoices are accepted (Core Lightning `disableinvoicerequest`).
+   * @param {String} invreqId
+   * @returns {Promise<Object>}
+   */
   async disableInvoiceRequest (invreqId) {
     return this._makeRPCRequest('disableinvoicerequest', [invreqId]);
   }
 
+  /**
+   * Create and send a BOLT12 invoice to the issuer of an `invoice_request` (Core Lightning `sendinvoice`).
+   * @param {Object} params `{ invreq, label, amount_msat?, timeout?, quantity? }` — `invreq` is the `lnr1…` string.
+   * @returns {Promise<Object>}
+   */
   async sendInvoice (params) {
     if (!params || typeof params !== 'object' || Array.isArray(params)) {
       throw new Error('sendInvoice requires a params object (e.g. { invreq, label })');
@@ -351,6 +461,18 @@ class Lightning extends Service {
     return this._makeRPCRequest('sendinvoice', [params]);
   }
 
+  /**
+   * Route probe (Core Lightning `getroute`).
+   * CLN order: `id`, `amount_msat`, `riskfactor`, `cltv`, `fromid`, `fuzzpercent`, `exclude`, `maxhops`
+   * — the fourth **positional** is `cltv`, not `maxhops`. To set `maxhops` (or other tail fields) use the
+   * `routeOptions` object so intermediate slots are sent as `null` where needed.
+   * @param {String} destinationId Destination node id (pubkey).
+   * @param {Number|String} amountMsat
+   * @param {Number} [riskfactor=10]
+   * @param {Number|Object|null} [cltvOrRouteOptions] Omitted: three-arg RPC. If a number: fourth positional (`cltv`).
+   *   If an object: tail fields `cltv`, `fromid`, `fuzzpercent`, `exclude`, `maxhops` (each optional).
+   * @returns {Promise<Object>}
+   */
   async getRoute (destinationId, amountMsat, riskfactor = 10, cltvOrRouteOptions = null) {
     if (cltvOrRouteOptions != null && typeof cltvOrRouteOptions === 'object' && !Array.isArray(cltvOrRouteOptions)) {
       const o = cltvOrRouteOptions;
@@ -425,7 +547,7 @@ class Lightning extends Service {
         if (this.settings.debug) this.emit('debug', `[FABRIC:LIGHTNING] Attempt ${attempts + 1}/${maxAttempts} to connect to lightningd...`);
 
         // Check if the RPC socket exists
-        const socketPath = path.resolve(this.settings.datadir, this.settings.socket);
+        const socketPath = socketInside(this.settings.datadir, this.settings.socket);
         if (this.settings.debug) this.emit('debug', `[FABRIC:LIGHTNING] Checking for socket at: ${socketPath}`);
 
         if (!fs.existsSync(socketPath)) {
@@ -471,9 +593,9 @@ class Lightning extends Service {
 
   async createLocalNode () {
     if (this.settings.debug) this.emit('debug', '[FABRIC:LIGHTNING] Creating local Lightning node...');
-    const datadir = path.resolve(this.settings.datadir);
-    const bitcoinDatadir = path.resolve(this.settings.bitcoin.datadir);
-    const socketPath = path.join(datadir, this.settings.socket);
+    const datadir = absoluteDirectory(this.settings.datadir);
+    const bitcoinDatadir = absoluteDirectory(this.settings.bitcoin.datadir);
+    const socketPath = socketInside(datadir, this.settings.socket);
 
     // Ensure storage directory exists
     await mkdirp(datadir);
@@ -794,7 +916,7 @@ class Lightning extends Service {
         fn(arg);
       };
 
-      const socketPath = path.resolve(this.settings.datadir, this.settings.socket);
+      const socketPath = socketInside(this.settings.datadir, this.settings.socket);
       let client;
       const timeoutId = timeoutMs > 0 ? setTimeout(() => {
         finish(reject, new Error(`Lightning RPC timeout after ${timeoutMs}ms (${method})`));
@@ -837,11 +959,13 @@ class Lightning extends Service {
       return this;
     }
 
-    this._state.channels = channels.channels.reduce((acc, channel) => {
+    const synced = channels.channels.reduce((acc, channel) => {
       const actor = new Actor(channel);
       acc[actor.id] = actor.state;
       return acc;
     }, {});
+    this._state.channels = synced;
+    if (this._state.content) this._state.content.channels = synced;
 
     return this;
   }
@@ -960,7 +1084,7 @@ class Lightning extends Service {
       }
 
       // Clean up socket file
-      const socketPath = path.resolve(this.settings.datadir, this.settings.socket);
+      const socketPath = socketInside(this.settings.datadir, this.settings.socket);
       try {
         if (fs.existsSync(socketPath)) {
           if (this.settings.debug) this.emit('debug', `[FABRIC:LIGHTNING] Cleaning up socket file: ${socketPath}`);
@@ -1003,6 +1127,11 @@ Lightning.CLN_RPC_METHODS = Object.freeze([
   'stop'
 ]);
 
+/**
+ * Paths to canonical Markdown docs (relative to the `@fabric/core` package root).
+ * `fabricLightningMarkets` and `fabricLightningOffers` point at the same file (Fabric **markets** vs Lightning BOLT12 **offers**).
+ * @type {Readonly<{ boltCompatibility: string, fabricLightningOffers: string, fabricLightningMarkets: string, fabricPaymentBech32: string, lightningCompat: string }>}
+ */
 Lightning.DOCS = Object.freeze({
   boltCompatibility: 'docs/BOLT_COMPATIBILITY.md',
   fabricLightningOffers: 'docs/FABRIC_LIGHTNING_OFFERS.md',

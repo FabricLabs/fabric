@@ -111,14 +111,26 @@ class Session extends Entity {
     return crypto.createHash('sha256').update(buffer);
   }
 
-  // TODO: implement
-  encrypt (data) {
-    return data;
+  /**
+   * Session does not provide confidentiality — use Peer NOISE or {@link Key#encrypt}.
+   * @param {*} _data
+   * @throws {Error} always
+   */
+  encrypt (_data) {
+    throw new Error(
+      'Session.encrypt is unsupported; use Peer NOISE transport or Key.encrypt for confidentiality'
+    );
   }
 
-  // TODO: implement
-  decrypt (data) {
-    return data;
+  /**
+   * Session does not provide confidentiality — use Peer NOISE or {@link Key#decrypt}.
+   * @param {*} _data
+   * @throws {Error} always
+   */
+  decrypt (_data) {
+    throw new Error(
+      'Session.decrypt is unsupported; use Peer NOISE transport or Key.decrypt for confidentiality'
+    );
   }
 
   _getEvenKey () {

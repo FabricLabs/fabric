@@ -13,41 +13,22 @@ const Key = require('../../types/key');
 const Bitcoin = require('../../services/bitcoin');
 const Lightning = require('../../services/lightning');
 
+const { getFreePort } = require('../helpers/peer');
+
 const runLightning = !!process.env.FABRIC_E2E_REGTEST;
 const d = describe;
 
 d('@fabric/core/services/lightning', function () {
   this.timeout(180000);
 
-  const bitcoinDefaults = {
-    debug: false,
-    network: 'regtest',
-    mode: 'fabric',
-    host: '127.0.0.1',
-    port: 18444,
-    rpcport: 18443,
-    zmqport: 18445,
-    managed: true,
-    username: 'bitcoinrpc',
-    password: 'password',
-    datadir: './stores/bitcoin-regtest-test'
-  };
+  // Isolated from tests/bitcoin.regtest.js (shared 18443 + bitcoin-regtest-test).
+  const MINER_WALLET = 'lightning-e2e';
 
-  const lightningDefaults = {
-    debug: false,
-    bitcoin: {
-      rpcport: 18443,
-      rpcuser: 'bitcoinrpc',
-      rpcpassword: 'password',
-      host: '127.0.0.1',
-      datadir: './stores/bitcoin-regtest-test'
-    },
-    datadir: './stores/lightning-regtest-test',
-    managed: true,
-    socket: 'lightningd.sock',
-    mode: 'socket',
-    network: 'regtest'
-  };
+  let bitcoinDefaults;
+  let lightningDefaults;
+  let bitcoinDatadir;
+  let peerPort;
+  let carolPort;
 
   // Store node references for cleanup
   let key;
@@ -55,13 +36,21 @@ d('@fabric/core/services/lightning', function () {
   let lightning;
   let peer;
   let carol;
+  let minerAddress;
 
-  async function resetChain (chain) {
-    const height = await chain._makeRPCRequest('getblockcount', []);
-    if (height > 0) {
-      const secondblock = await chain._makeRPCRequest('getblockhash', [1]);
-      await chain._makeRPCRequest('invalidateblock', [secondblock]);
+  async function minerWallet (method, params = []) {
+    return bitcoin._makeWalletRequest(method, params, MINER_WALLET);
+  }
+
+  async function matureMinerCoinbase () {
+    await bitcoin._loadWallet(MINER_WALLET);
+    minerAddress = await minerWallet('getnewaddress', []);
+    await bitcoin._makeRPCRequest('generatetoaddress', [101, minerAddress]);
+    const balance = await minerWallet('getbalance', []);
+    if (!(Number(balance) >= 3)) {
+      throw new Error(`miner wallet balance ${balance} BTC is too low to fund three 1 BTC Lightning deposits`);
     }
+    return minerAddress;
   }
 
   before(async function () {
@@ -78,14 +67,58 @@ d('@fabric/core/services/lightning', function () {
       return;
     }
 
+    const stamp = `${process.pid}-${Date.now()}`;
+    bitcoinDatadir = `./stores/bitcoin-regtest-lightning-${stamp}`;
+    const p2pPort = await getFreePort();
+    const rpcPort = await getFreePort();
+    const zmqPort = await getFreePort();
+    const lightningPort = await getFreePort();
+    peerPort = await getFreePort();
+    carolPort = await getFreePort();
+
+    bitcoinDefaults = {
+      debug: false,
+      network: 'regtest',
+      mode: 'fabric',
+      host: '127.0.0.1',
+      port: p2pPort,
+      rpcport: rpcPort,
+      zmqport: zmqPort,
+      zmq: { host: '127.0.0.1', port: zmqPort },
+      managed: true,
+      listen: 0,
+      enforceIsolatedRegtest: true,
+      username: 'bitcoinrpc',
+      password: 'password',
+      datadir: bitcoinDatadir,
+      walletName: MINER_WALLET
+    };
+
+    lightningDefaults = {
+      debug: false,
+      bitcoin: {
+        rpcport: rpcPort,
+        rpcuser: 'bitcoinrpc',
+        rpcpassword: 'password',
+        host: '127.0.0.1',
+        datadir: bitcoinDatadir
+      },
+      datadir: `./stores/lightning-regtest-${stamp}`,
+      managed: true,
+      socket: 'lightningd.sock',
+      mode: 'socket',
+      network: 'regtest',
+      port: lightningPort
+    };
+
     // Clean up test directories
     try {
       const { execSync } = require('child_process');
       const dirs = [
-        path.resolve('./stores/bitcoin-regtest-test'),
-        path.resolve('./stores/lightning-regtest-test'),
-        path.resolve('./stores/lightning-regtest-test-peer'),
-        path.resolve('./stores/lightning-regtest-test-carol')
+        path.resolve(bitcoinDatadir),
+        path.resolve(lightningDefaults.datadir),
+        path.resolve(`${lightningDefaults.datadir}-peer`),
+        path.resolve(`${lightningDefaults.datadir}-carol`)
       ];
 
       dirs.forEach(dir => {
@@ -124,6 +157,9 @@ d('@fabric/core/services/lightning', function () {
 
     // Initialize Bitcoin service first
     bitcoin = new Bitcoin(bitcoinDefaults);
+    bitcoin.on('error', (msg) => {
+      console.error(msg);
+    });
 
     // Set the key on the Bitcoin service
     bitcoin.settings.key = { xpub: key.xpub };
@@ -139,17 +175,15 @@ d('@fabric/core/services/lightning', function () {
 
     peer = new Lightning({
       ...lightningDefaults,
-      datadir: './stores/lightning-regtest-test-peer',
-      // debug: true,
-      port: 9888,
+      datadir: `${lightningDefaults.datadir}-peer`,
+      port: peerPort,
       disablePlugins: ['cln-grpc']
     });
 
     carol = new Lightning({
       ...lightningDefaults,
-      datadir: './stores/lightning-regtest-test-carol',
-      // debug: true,
-      port: 9890,
+      datadir: `${lightningDefaults.datadir}-carol`,
+      port: carolPort,
       disablePlugins: ['cln-grpc']
     });
   });
@@ -217,23 +251,24 @@ d('@fabric/core/services/lightning', function () {
       assert.equal(Lightning instanceof Function, true);
     });
 
+    it('constructs in unmanaged mode without lightningd', function () {
+      const local = new Lightning({
+        network: 'regtest',
+        managed: false,
+        bitcoin: {
+          rpcport: 18443,
+          rpcuser: 'bitcoinrpc',
+          rpcpassword: 'password',
+          host: '127.0.0.1',
+          datadir: './stores/bitcoin-regtest-test'
+        }
+      });
+      assert.ok(local);
+      assert.strictEqual(typeof local._makeRPCRequest, 'function');
+    });
+
     it('can complete a payment (happy path)', async function () {
-      if (!runLightning) {
-        const local = new Lightning({
-          network: 'regtest',
-          managed: false,
-          bitcoin: {
-            rpcport: 18443,
-            rpcuser: 'bitcoinrpc',
-            rpcpassword: 'password',
-            host: '127.0.0.1',
-            datadir: './stores/bitcoin-regtest-test'
-          }
-        });
-        assert.ok(local);
-        assert.strictEqual(typeof local._makeRPCRequest, 'function');
-        return;
-      }
+      if (!runLightning) this.skip();
 
       this.timeout(180000); // 3 minutes for the test
 
@@ -242,15 +277,10 @@ d('@fabric/core/services/lightning', function () {
         throw new Error('Services not initialized properly in before() hook');
       }
 
-      // Reset chain to known state
-      await resetChain(bitcoin);
-
-      // Create a descriptor wallet
-      console.debug('\n[DEBUG] Creating test wallet...');
-      const wallet1 = await bitcoin._loadWallet('testwallet1');
-      const miner = await bitcoin._makeRPCRequest('getnewaddress', []);
-      const generated = await bitcoin._makeRPCRequest('generatetoaddress', [101, miner]);
-      // Some funds are now spendable
+      // Mine to a named wallet before Core Lightning loads extra bitcoind wallets.
+      // Node-level sendtoaddress after lightningd start hits an empty wallet (-6).
+      console.debug('\n[DEBUG] Creating miner wallet...');
+      const miner = await matureMinerCoinbase();
 
       // Start the Lightning nodes
       console.debug('Starting main lightning node...');
@@ -263,13 +293,13 @@ d('@fabric/core/services/lightning', function () {
       await carol.start();
       console.debug('Carol lightning node started');
 
-      // Fund nodes
+      // Fund nodes from the miner wallet (not the default loaded wallet)
       const fund1 = await lightning.newDepositAddress();
       const fund2 = await peer.newDepositAddress();
       const fund3 = await carol.newDepositAddress();
-      const deposit1 = await bitcoin._makeRPCRequest('sendtoaddress', [fund1, 1]);
-      const deposit2 = await bitcoin._makeRPCRequest('sendtoaddress', [fund2, 1]);
-      const deposit3 = await bitcoin._makeRPCRequest('sendtoaddress', [fund3, 1]);
+      const deposit1 = await minerWallet('sendtoaddress', [fund1, 1]);
+      const deposit2 = await minerWallet('sendtoaddress', [fund2, 1]);
+      const deposit3 = await minerWallet('sendtoaddress', [fund3, 1]);
       const confirmation = await bitcoin._makeRPCRequest('generatetoaddress', [1, miner]);
       await new Promise((resolve) => setTimeout(resolve, 15000)); // Wait for the transaction to be processed
 
@@ -319,19 +349,29 @@ d('@fabric/core/services/lightning', function () {
       // const inbound = await peer.createChannel(lightning.state.node.id, 100000);
       const finality = await bitcoin._makeRPCRequest('generatetoaddress', [6, miner]);
 
-      // Wait for the channel to be established
-      let channelEstablished = false;
-      attempts = 0;
-      while (!channelEstablished && attempts < 20) {
-        const channels = await lightning._makeRPCRequest('listchannels', []);
-        console.debug(`Attempt ${attempts + 1}/20 - channels:`, channels);
-        if (channels.channels && channels.channels.length > 0) {
-          channelEstablished = true;
-          break;
+      // `pay` refuses to route ("All N channels to the source are disabled")
+      // until the paying node has received the counterparty's `channel_update`,
+      // so wait for the channel to appear in gossip with BOTH directions active —
+      // not merely for the first direction to show up.
+      // Filter on the exact node pair (either direction) so an unrelated channel
+      // that merely touches `otherId` cannot satisfy the check.
+      const waitForActiveChannel = async (node, selfId, otherId, label, maxTries = 45) => {
+        for (let i = 0; i < maxTries; i++) {
+          const channels = await node._makeRPCRequest('listchannels', []);
+          const edges = (channels.channels || []).filter((c) =>
+            (c.source === selfId && c.destination === otherId) ||
+            (c.source === otherId && c.destination === selfId)
+          );
+          const active = edges.filter((c) => c.active);
+          const directions = new Set(active.map((c) => `${c.source}->${c.destination}`));
+          console.debug(`Attempt ${i + 1}/${maxTries} - ${label}: ${active.length} active edge(s), ${directions.size} direction(s)`);
+          if (directions.size >= 2) return edges;
+          await new Promise((resolve) => setTimeout(resolve, 2000));
         }
-        attempts++;
-        await new Promise(resolve => setTimeout(resolve, 2000));
-      }
+        throw new Error(`${label}: channel never became active in both gossip directions`);
+      };
+
+      await waitForActiveChannel(lightning, lightning.state.node.id, peer.state.node.id, 'main<->peer');
 
       // Connect peer to carol and create channel
       console.debug('Connecting peer to carol...');
@@ -345,9 +385,9 @@ d('@fabric/core/services/lightning', function () {
       // Wait for both channels to be active
       let allChannelsActive = false;
       attempts = 0;
-      while (!allChannelsActive && attempts < 20) {
+      while (!allChannelsActive && attempts < 45) {
         const peerInfo = await peer._makeRPCRequest('getinfo', []);
-        console.debug(`Attempt ${attempts + 1}/20 - peer info:`, peerInfo);
+        console.debug(`Attempt ${attempts + 1}/45 - peer info:`, peerInfo);
 
         if (peerInfo.num_active_channels === 2 && peerInfo.num_pending_channels === 0) {
           allChannelsActive = true;
@@ -356,6 +396,12 @@ d('@fabric/core/services/lightning', function () {
         attempts++;
         await new Promise(resolve => setTimeout(resolve, 2000));
       }
+      assert.ok(allChannelsActive, 'peer should have two active channels before paying');
+
+      // The paying node must see its own channel enabled in both directions
+      // right before `pay`; the peer<->carol channel only needs to be known.
+      await waitForActiveChannel(peer, peer.state.node.id, carol.state.node.id, 'peer<->carol');
+      await waitForActiveChannel(lightning, lightning.state.node.id, peer.state.node.id, 'main<->peer (pre-pay)');
 
       // Verify channel states
       const peerChannels = await peer._makeRPCRequest('listchannels', []);

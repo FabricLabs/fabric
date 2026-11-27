@@ -248,7 +248,7 @@ const ecc = {
 };
 
 if (typeof window !== 'undefined') {
-  // Skip under JSDOM (e.g. Sensemaker webpack bundler sets global.window); self-test is for real browsers.
+  // Skip under JSDOM (e.g. webpack bundler / browser tests set global.window); self-test is for real browsers.
   // Use window.navigator — Node may set global.window without a global `navigator`.
   const nav = typeof window.navigator !== 'undefined' ? window.navigator : null;
   const ua = nav && nav.userAgent ? nav.userAgent : '';

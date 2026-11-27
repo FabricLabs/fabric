@@ -6,7 +6,7 @@ const {
 } = require('../constants');
 
 const State = require('./state');
-const { MerkleTree } = require('merkletreejs');
+const Tree = require('./tree');
 
 class Stack extends State {
   constructor (list = []) {
@@ -75,14 +75,20 @@ class Stack extends State {
     return element;
   }
 
+  /**
+   * Copy of the stack's elements, bottom first.
+   * @returns {Array}
+   */
   asArray () {
     return Array.from(this['@data']);
   }
 
+  /**
+   * Merkle {@link Tree} over the stack's elements, bottom first.
+   * @returns {Tree}
+   */
   asMerkleTree () {
-    return new MerkleTree(this.asArray(), this.sha256, {
-      isBitcoinTree: true
-    });
+    return new Tree(this.asArray());
   }
 
   snapshot () {

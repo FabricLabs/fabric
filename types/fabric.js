@@ -2,6 +2,7 @@
 
 // external dependencies
 const crypto = require('crypto');
+const { randomUnit } = require('../functions/bytes');
 
 // components
 const Actor = require('../types/actor');
@@ -14,12 +15,14 @@ const Contract = require('./contract');
 // const Disk = require('./disk');
 const Entity = require('../types/entity');
 const Hash256 = require('../types/hash256');
+const Htlc = require('../types/htlc');
 const Key = require('../types/key');
 const Machine = require('../types/machine');
 const Message = require('../types/message');
 const Observer = require('../types/observer');
 const Oracle = require('../types/oracle');
 const Peer = require('../types/peer');
+const Policy = require('../types/policy');
 const Program = require('../types/program');
 const RoundRobin = require('../types/roundRobin');
 const Remote = require('../types/remote');
@@ -111,12 +114,14 @@ class Fabric extends Service {
   // static get Disk () { return Disk; }
   static get Entity () { return Entity; }
   static get Hash256 () { return Hash256; }
+  static get Htlc () { return Htlc; }
   static get Key () { return Key; }
   static get Machine () { return Machine; }
   static get Message () { return Message; }
   static get Observer () { return Observer; }
   static get Oracle () { return Oracle; }
   static get Peer () { return Peer; }
+  static get Policy () { return Policy; }
   static get Program () { return Program; }
   static get Remote () { return Remote; }
   static get Resource () { return Resource; }
@@ -142,7 +147,11 @@ class Fabric extends Service {
   /** @returns {Function} */
   static get Federation () { return require('./federation'); }
 
-  /** @returns {Function} */
+  /**
+   * @deprecated Not a Fabric type. Use {@link Machine}, {@link Program},
+   * `functions/beaconFederationSigning`, and `functions/fabricCanonicalJson`.
+   * @returns {object}
+   */
   static get DistributedExecution () { return require('./distributedExecution'); }
 
   static sha256 (data) {
@@ -150,9 +159,7 @@ class Fabric extends Service {
   }
 
   static random () {
-    // TODO: select random function
-    // do not trust keys until this is determined!
-    return Math.random();
+    return randomUnit();
   }
 
   async _GET (key) {

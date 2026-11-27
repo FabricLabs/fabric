@@ -6,7 +6,7 @@
   <title>swarm.js</title>
   <meta http-equiv="content-type" content="text/html; charset=UTF-8">
   <meta name="viewport" content="width=device-width, target-densitydpi=160dpi, initial-scale=1.0; maximum-scale=1.0; user-scalable=0;">
-  <link rel="stylesheet" media="all" href="docco.css" />
+  <link rel="stylesheet" media="all" href="../docco.css" />
 </head>
 
 <body>
@@ -22,98 +22,133 @@
             <div id="jump_page">
 
 
+              <a class="source" href="agents.html">
+                examples/agents.js
+              </a>
+
+
               <a class="source" href="app.html">
-                app.js
+                examples/app.js
               </a>
 
 
               <a class="source" href="bitcoin.html">
-                bitcoin.js
+                examples/bitcoin.js
               </a>
 
 
               <a class="source" href="blockchain.html">
-                blockchain.js
+                examples/blockchain.js
               </a>
 
 
               <a class="source" href="chain.html">
-                chain.js
+                examples/chain.js
               </a>
 
 
               <a class="source" href="cli.html">
-                cli.js
+                examples/cli.js
               </a>
 
 
               <a class="source" href="collection.html">
-                collection.js
+                examples/collection.js
+              </a>
+
+
+              <a class="source" href="environment.html">
+                examples/environment.js
+              </a>
+
+
+              <a class="source" href="fabric-basic-usage.html">
+                examples/fabric-basic-usage.js
+              </a>
+
+
+              <a class="source" href="fabric-demo.html">
+                examples/fabric-demo.js
               </a>
 
 
               <a class="source" href="fabric.html">
-                fabric.js
+                examples/fabric.js
               </a>
 
 
               <a class="source" href="game.html">
-                game.js
+                examples/game.js
               </a>
 
 
               <a class="source" href="heartbeat.html">
-                heartbeat.js
+                examples/heartbeat.js
               </a>
 
 
               <a class="source" href="http.html">
-                http.js
+                examples/http.js
               </a>
 
 
               <a class="source" href="index.html">
-                index.js
+                examples/index.js
+              </a>
+
+
+              <a class="source" href="lightning.html">
+                examples/lightning.js
+              </a>
+
+
+              <a class="source" href="message.html">
+                examples/message.js
               </a>
 
 
               <a class="source" href="network.html">
-                network.js
+                examples/network.js
+              </a>
+
+
+              <a class="source" href="onion-forward.html">
+                examples/onion-forward.js
               </a>
 
 
               <a class="source" href="oracle.html">
-                oracle.js
+                examples/oracle.js
               </a>
 
 
               <a class="source" href="p2pkh.html">
-                p2pkh.js
+                examples/p2pkh.js
               </a>
 
 
               <a class="source" href="relay.html">
-                relay.js
+                examples/relay.js
               </a>
 
 
               <a class="source" href="service.html">
-                service.js
+                examples/service.js
               </a>
 
 
               <a class="source" href="store.html">
-                store.js
+                examples/store.js
               </a>
 
 
               <a class="source" href="swarm.html">
-                swarm.js
+                examples/swarm.js
               </a>
 
 
               <a class="source" href="witness.html">
-                witness.js
+                examples/witness.js
               </a>
 
             </div>
@@ -134,8 +169,8 @@
       <li id="section-1">
         <div class="annotation">
 
-          <div class="pilwrap ">
-            <a class="pilcrow" href="#section-1">&#182;</a>
+          <div class="sswrap ">
+            <a class="ss" href="#section-1">&#x00a7;</a>
           </div>
 
         </div>
@@ -152,8 +187,8 @@
       <li id="section-2">
         <div class="annotation">
 
-          <div class="pilwrap ">
-            <a class="pilcrow" href="#section-2">&#182;</a>
+          <div class="sswrap ">
+            <a class="ss" href="#section-2">&#x00a7;</a>
           </div>
           <p>Dependencies</p>
 
@@ -161,8 +196,9 @@
 
         <div class="content">
           <div class='highlight'>
-            <pre><span class="hljs-keyword">const</span> <span class="hljs-title class_">Peer</span> = <span class="hljs-built_in">require</span>(<span class="hljs-string">&#x27;../types/peer&#x27;</span>);
-<span class="hljs-keyword">const</span> <span class="hljs-title class_">Swarm</span> = <span class="hljs-built_in">require</span>(<span class="hljs-string">&#x27;../types/swarm&#x27;</span>);
+            <pre><span class="hljs-keyword">const</span> { setMaxListeners } = <span class="hljs-built_in">require</span>(<span class="hljs-string">&#x27;events&#x27;</span>);
+<span class="hljs-keyword">const</span> <span class="hljs-title class_">Peer</span> = <span class="hljs-built_in">require</span>(<span class="hljs-string">&#x27;../types/peer&#x27;</span>);
+<span class="hljs-keyword">const</span> { <span class="hljs-title class_">Swarm</span> } = <span class="hljs-built_in">require</span>(<span class="hljs-string">&#x27;../types/peer&#x27;</span>);
 <span class="hljs-keyword">const</span> <span class="hljs-title class_">Message</span> = <span class="hljs-built_in">require</span>(<span class="hljs-string">&#x27;../types/message&#x27;</span>);</pre>
           </div>
         </div>
@@ -173,8 +209,8 @@
       <li id="section-3">
         <div class="annotation">
 
-          <div class="pilwrap ">
-            <a class="pilcrow" href="#section-3">&#182;</a>
+          <div class="sswrap ">
+            <a class="ss" href="#section-3">&#x00a7;</a>
           </div>
           <p>Configuration</p>
 
@@ -196,8 +232,27 @@
       <li id="section-4">
         <div class="annotation">
 
-          <div class="pilwrap ">
-            <a class="pilcrow" href="#section-4">&#182;</a>
+          <div class="sswrap ">
+            <a class="ss" href="#section-4">&#x00a7;</a>
+          </div>
+          <p>Swarm demos fan out listeners during NOISE handshakes.</p>
+
+        </div>
+
+        <div class="content">
+          <div class='highlight'>
+            <pre>  <span class="hljs-title function_">setMaxListeners</span>(<span class="hljs-number">0</span>);</pre>
+          </div>
+        </div>
+
+      </li>
+
+
+      <li id="section-5">
+        <div class="annotation">
+
+          <div class="sswrap ">
+            <a class="ss" href="#section-5">&#x00a7;</a>
           </div>
           <p>Create a Hub (seeder peer) and a Swarm (peer cluster)</p>
 
@@ -214,11 +269,11 @@
       </li>
 
 
-      <li id="section-5">
+      <li id="section-6">
         <div class="annotation">
 
-          <div class="pilwrap ">
-            <a class="pilcrow" href="#section-5">&#182;</a>
+          <div class="sswrap ">
+            <a class="ss" href="#section-6">&#x00a7;</a>
           </div>
           <p>Listeners</p>
 
@@ -239,11 +294,11 @@
       </li>
 
 
-      <li id="section-6">
+      <li id="section-7">
         <div class="annotation">
 
-          <div class="pilwrap ">
-            <a class="pilcrow" href="#section-6">&#182;</a>
+          <div class="sswrap ">
+            <a class="ss" href="#section-7">&#x00a7;</a>
           </div>
           <p>Start component services</p>
 
@@ -268,11 +323,11 @@
       </li>
 
 
-      <li id="section-7">
+      <li id="section-8">
         <div class="annotation">
 
-          <div class="pilwrap ">
-            <a class="pilcrow" href="#section-7">&#182;</a>
+          <div class="sswrap ">
+            <a class="ss" href="#section-8">&#x00a7;</a>
           </div>
           <p>Connect downstream “client” Peer
             console.log(‘[EXAMPLES:SWARM]’, ‘Connecting downstream Peer to Swarm…’);
@@ -283,11 +338,11 @@
       </li>
 
 
-      <li id="section-8">
+      <li id="section-9">
         <div class="annotation">
 
-          <div class="pilwrap ">
-            <a class="pilcrow" href="#section-8">&#182;</a>
+          <div class="sswrap ">
+            <a class="ss" href="#section-9">&#x00a7;</a>
           </div>
           <p>TODO: create entities on seed node
             TODO: receive entities from seed node
@@ -295,25 +350,36 @@
 
         </div>
 
-      </li>
-
-
-      <li id="section-9">
-        <div class="annotation">
-
-          <div class="pilwrap ">
-            <a class="pilcrow" href="#section-9">&#182;</a>
-          </div>
-          <p>Send Regular Updates (outside of internal ping/pong)</p>
-
-        </div>
-
         <div class="content">
           <div class='highlight'>
-            <pre>  <span class="hljs-keyword">let</span> heartbeat = <span class="hljs-built_in">setInterval</span>(<span class="hljs-keyword">function</span> (<span class="hljs-params"></span>) {
-    <span class="hljs-variable language_">console</span>.<span class="hljs-title function_">warn</span>(<span class="hljs-string">&#x27;[EXAMPLES:SWARM]&#x27;</span>, <span class="hljs-string">&#x27;Starting to send interval message...&#x27;</span>);
-    <span class="hljs-keyword">let</span> message = <span class="hljs-title class_">Message</span>.<span class="hljs-title function_">fromVector</span>([<span class="hljs-string">&#x27;Generic&#x27;</span>, <span class="hljs-title class_">Date</span>.<span class="hljs-title function_">now</span>().<span class="hljs-title function_">toString</span>()]);
-    <span class="hljs-variable language_">console</span>.<span class="hljs-title function_">log</span>(<span class="hljs-string">&#x27;[EXAMPLES:SWARM]&#x27;</span>, <span class="hljs-string">&#x27;Sending :&#x27;</span>, message.<span class="hljs-property">raw</span>);</pre>
+            <pre>
+  <span class="hljs-keyword">const</span> stopWithTimeout = <span class="hljs-keyword">async</span> (instance, label, timeoutMs = <span class="hljs-number">1200</span>) =&gt; {
+    <span class="hljs-keyword">if</span> (!instance || <span class="hljs-keyword">typeof</span> instance.<span class="hljs-property">stop</span> !== <span class="hljs-string">&#x27;function&#x27;</span>) <span class="hljs-keyword">return</span>;
+    <span class="hljs-keyword">try</span> {
+      <span class="hljs-keyword">await</span> <span class="hljs-title class_">Promise</span>.<span class="hljs-title function_">race</span>([
+        instance.<span class="hljs-title function_">stop</span>(),
+        <span class="hljs-keyword">new</span> <span class="hljs-title class_">Promise</span>(<span class="hljs-function">(<span class="hljs-params">resolve</span>) =&gt;</span> <span class="hljs-built_in">setTimeout</span>(resolve, timeoutMs))
+      ]);
+    } <span class="hljs-keyword">catch</span> (error) {
+      <span class="hljs-variable language_">console</span>.<span class="hljs-title function_">warn</span>(<span class="hljs-string">&#x27;[EXAMPLES:SWARM]&#x27;</span>, <span class="hljs-string">`<span class="hljs-subst">${label}</span> stop warning:`</span>, error.<span class="hljs-property">message</span>);
+    }
+  };
+
+  <span class="hljs-keyword">const</span> shutdown = <span class="hljs-keyword">async</span> () =&gt; {
+    <span class="hljs-keyword">await</span> <span class="hljs-title function_">stopWithTimeout</span>(downstream, <span class="hljs-string">&#x27;Downstream&#x27;</span>);
+    <span class="hljs-keyword">await</span> <span class="hljs-title function_">stopWithTimeout</span>(swarm, <span class="hljs-string">&#x27;Swarm&#x27;</span>);
+    <span class="hljs-keyword">await</span> <span class="hljs-title function_">stopWithTimeout</span>(seeder, <span class="hljs-string">&#x27;Seeder&#x27;</span>);
+  };
+
+  <span class="hljs-variable language_">console</span>.<span class="hljs-title function_">warn</span>(<span class="hljs-string">&#x27;[EXAMPLES:SWARM]&#x27;</span>, <span class="hljs-string">&#x27;Sending one swarm message...&#x27;</span>);
+  <span class="hljs-keyword">const</span> message = <span class="hljs-title class_">Message</span>.<span class="hljs-title function_">fromVector</span>([<span class="hljs-string">&#x27;P2P_BASE_MESSAGE&#x27;</span>, <span class="hljs-title class_">JSON</span>.<span class="hljs-title function_">stringify</span>({
+    <span class="hljs-attr">type</span>: <span class="hljs-string">&#x27;SwarmExample&#x27;</span>,
+    <span class="hljs-attr">object</span>: { <span class="hljs-attr">at</span>: <span class="hljs-title class_">Date</span>.<span class="hljs-title function_">now</span>() }
+  })]);
+  seeder.<span class="hljs-title function_">broadcast</span>(message.<span class="hljs-title function_">toBuffer</span>());
+
+  <span class="hljs-keyword">await</span> <span class="hljs-keyword">new</span> <span class="hljs-title class_">Promise</span>(<span class="hljs-function">(<span class="hljs-params">resolve</span>) =&gt;</span> <span class="hljs-built_in">setTimeout</span>(resolve, <span class="hljs-number">1500</span>));
+  <span class="hljs-keyword">await</span> <span class="hljs-title function_">shutdown</span>();</pre>
           </div>
         </div>
 
@@ -323,36 +389,16 @@
       <li id="section-10">
         <div class="annotation">
 
-          <div class="pilwrap ">
-            <a class="pilcrow" href="#section-10">&#182;</a>
+          <div class="sswrap ">
+            <a class="ss" href="#section-10">&#x00a7;</a>
           </div>
-          <p>Send interval message through seed node</p>
+          <p>Some peer transports may keep sockets around briefly in demos.</p>
 
         </div>
 
         <div class="content">
           <div class='highlight'>
-            <pre>    seeder.<span class="hljs-title function_">broadcast</span>(message);</pre>
-          </div>
-        </div>
-
-      </li>
-
-
-      <li id="section-11">
-        <div class="annotation">
-
-          <div class="pilwrap ">
-            <a class="pilcrow" href="#section-11">&#182;</a>
-          </div>
-          <p>Send interval message through swarm agent
-            swarm.broadcast(message);</p>
-
-        </div>
-
-        <div class="content">
-          <div class='highlight'>
-            <pre>  }, <span class="hljs-number">5000</span>);
+            <pre>  <span class="hljs-keyword">if</span> (<span class="hljs-built_in">require</span>.<span class="hljs-property">main</span> === <span class="hljs-variable language_">module</span>) process.<span class="hljs-title function_">exit</span>(<span class="hljs-number">0</span>);
 }
 
 <span class="hljs-title function_">main</span>().<span class="hljs-title function_">catch</span>(<span class="hljs-keyword">function</span> <span class="hljs-title function_">exceptionHandler</span> (exception) {

@@ -20,6 +20,40 @@ const {
   defineOpcode: defineOpcodeEntry,
   resolveOpcodeContract
 } = require('../functions/opcodeRegistry');
+const {
+  normalizeOpcodeAllowList,
+  opcodesFromGenesis,
+  opcodeAllowed,
+  assertStepsAllowed
+} = require('../functions/opcodeAllowList');
+const {
+  DEFAULT_MAX_STEPS,
+  DEFAULT_MAX_STACK
+} = require('../functions/executionProgramRunner');
+
+/**
+ * Step cap for one `compute`. Settings may lower or raise it up to 4096.
+ * @param {Object} settings
+ * @returns {number}
+ * @private
+ */
+function stepCap (settings) {
+  const n = Number(settings && settings.maxSteps);
+  if (Number.isFinite(n) && n > 0) return Math.min(Math.floor(n), 4096);
+  return DEFAULT_MAX_STEPS;
+}
+
+/**
+ * Stack cap for one `compute`. Settings may lower or raise it up to 256.
+ * @param {Object} settings
+ * @returns {number}
+ * @private
+ */
+function stackCap (settings) {
+  const n = Number(settings && settings.maxStack);
+  if (Number.isFinite(n) && n > 0) return Math.min(Math.floor(n), 256);
+  return DEFAULT_MAX_STACK;
+}
 
 // Strict JSON
 const { parsePersistedJson } = require('../functions/wireJson');
@@ -76,7 +110,11 @@ class Machine extends Actor {
       key: null,
       precision: 8,
       script: [],
-      type: 'x86'
+      type: 'x86',
+      // Opcode allow-list. Null or empty still fail-closes unknown opcodes.
+      allowedOpcodes: null,
+      maxSteps: null,
+      maxStack: null
     }, settings);
 
     // machine key
@@ -87,12 +125,14 @@ class Machine extends Actor {
 
     // deterministic entropy and RNG
     this.entropy = this.sip();
-    this.memory = Buffer.alloc(MACHINE_MAX_MEMORY);
+    // `memory` is allocated on first access (see getter); most Machines never touch it.
+    Object.defineProperty(this, '_memory', { value: null, writable: true, enumerable: false, configurable: true });
 
-    this.known = {}; // definitions
+    this.known = Object.create(null);
     this.opcodes = createDefaultOpcodeRegistry();
     this.stack = []; // output
     this.history = []; // State tree
+    this._allowedOpcodes = normalizeOpcodeAllowList(this.settings.allowedOpcodes || []);
 
     this._state = {
       content: {
@@ -106,6 +146,21 @@ class Machine extends Actor {
 
     // ensure chainability
     return this;
+  }
+
+  /**
+   * VM memory (`MACHINE_MAX_MEMORY` bytes), allocated on first access.
+   * @type {Buffer}
+   */
+  get memory () {
+    if (this._memory === null || this._memory === undefined) {
+      this._memory = Buffer.alloc(MACHINE_MAX_MEMORY);
+    }
+    return this._memory;
+  }
+
+  set memory (value) {
+    this._memory = value;
   }
 
   get interval () {
@@ -123,6 +178,41 @@ class Machine extends Actor {
   get tip () {
     this.log(`tip requested, history: ${JSON.stringify(this.history)}`);
     return this.history[this.history.length - 1] || null;
+  }
+
+  /**
+   * Active opcode allow-list (empty = no extra name filter).
+   * Unknown opcodes still throw.
+   * @returns {string[]}
+   */
+  get allowedOpcodes () {
+    return this._allowedOpcodes.slice();
+  }
+
+  /**
+   * Restrict `define` / `loadProgram` / `compute` to this opcode set.
+   * Empty / null clears the name filter. Unknown opcodes still throw.
+   * @param {Iterable<*>|null} list
+   * @returns {Machine}
+   */
+  setAllowedOpcodes (list) {
+    this._allowedOpcodes = normalizeOpcodeAllowList(list || []);
+    this.settings.allowedOpcodes = this._allowedOpcodes.length
+      ? this._allowedOpcodes.slice()
+      : null;
+    return this;
+  }
+
+  /**
+   * Apply ARC / Program genesis `primitives.opcodes` as the Machine allow-list.
+   * No-op when genesis has no opcodes (keeps unrestricted).
+   * @param {object} [genesis]
+   * @returns {Machine}
+   */
+  applyGenesisOpcodes (genesis) {
+    const list = opcodesFromGenesis(genesis);
+    if (list.length) this.setAllowedOpcodes(list);
+    return this;
   }
 
   bit () {
@@ -169,15 +259,38 @@ class Machine extends Actor {
 
     this.emit('tick', this.clock);
 
-    for (const i in this.script) {
-      const instruction = this.script[i];
-      const method = this.known[instruction];
+    const allow = this._allowedOpcodes;
+    const restricted = allow && allow.length > 0;
+    const script = Array.isArray(this.script) ? this.script : [];
+    const maxSteps = stepCap(this.settings);
+    const maxStack = stackCap(this.settings);
+    if (script.length > maxSteps) {
+      throw new Error(`program exceeds maxSteps (${maxSteps})`);
+    }
 
-      if (method) {
+    let executed = 0;
+    for (let i = 0; i < script.length; i++) {
+      if (executed >= maxSteps) {
+        throw new Error(`program exceeds maxSteps (${maxSteps})`);
+      }
+      executed += 1;
+      const instruction = script[i];
+      const name = String(instruction == null ? '' : instruction);
+      if (restricted && !opcodeAllowed(allow, name)) {
+        throw new Error(`opcode not in primitives.opcodes allow-list: ${name}`);
+      }
+      const method = Object.prototype.hasOwnProperty.call(this.known, name) ? this.known[name] : undefined;
+
+      if (typeof method === 'function') {
         const data = method.call(this.state, input);
         this.stack.push(data);
+      } else if (restricted) {
+        throw new Error(`opcode not defined (fail closed under allow-list): ${name}`);
       } else {
-        this.stack.push(instruction | 0);
+        throw new Error(`opcode not defined: ${name}`);
+      }
+      if (this.stack.length > maxStack) {
+        throw new Error('stack overflow');
       }
     }
 
@@ -198,11 +311,20 @@ class Machine extends Actor {
 
   // register a local function
   define (name, op, definition = {}) {
-    this.known[name] = op.bind(this.state);
-    defineOpcodeEntry(this.opcodes, name, Object.assign({}, definition, {
+    const opName = String(name == null ? '' : name);
+    if (!opName) throw new Error('opcode name required');
+    if (this._allowedOpcodes && this._allowedOpcodes.length
+      && !opcodeAllowed(this._allowedOpcodes, opName)) {
+      throw new Error(`define rejected: opcode not in primitives.opcodes allow-list: ${opName}`);
+    }
+    if (typeof op !== 'function') {
+      throw new Error(`define requires a function for opcode: ${opName}`);
+    }
+    this.known[opName] = op.bind(this.state);
+    defineOpcodeEntry(this.opcodes, opName, Object.assign({}, definition, {
       implementation: true
     }));
-    return this.known[name];
+    return this.known[opName];
   }
 
   defineOpcode (name, op, definition = {}) {
@@ -223,6 +345,176 @@ class Machine extends Actor {
       throw new Error(`Unknown opcodes in contract: ${resolved.unknown.join(', ')}`);
     }
     return resolved.lines;
+  }
+
+  /**
+   * Parse program manifest v1 (former DistributedExecution.parseDistributedManifestV1).
+   * @param {Object} raw
+   * @param {Program|null} [program] When provided, programId/hash must match.
+   * @returns {{ok: boolean, error: (string|undefined), manifest: (Object|undefined)}}
+   */
+  parseManifest (raw, program = null) {
+    const { parseProgramManifestV1 } = require('../functions/fabricProgramManifest');
+    const parsed = parseProgramManifestV1(raw);
+    if (!parsed.ok) return parsed;
+    if (program) {
+      const hash = program.programHash || (typeof program.hash === 'function' ? program.hash() : null);
+      if (hash && parsed.manifest.programHash !== hash) {
+        return { ok: false, error: 'manifest programHash does not match Program' };
+      }
+    }
+    return parsed;
+  }
+
+  /**
+   * Load a {@link Program} onto this machine (sets script steps).
+   * When an opcode allow-list is active (ctor `allowedOpcodes`,
+   * {@link Machine#setAllowedOpcodes}, {@link Machine#applyGenesisOpcodes},
+   * or Program/genesis `primitives.opcodes`), steps and javascript `source`
+   * keys must be listed — fail closed. Unknown opcodes throw even with no
+   * allow-list. A `javascript` program's functions register only when
+   * `opts.trusted` is true (local operator). Mesh and Hub runs omit it.
+   * @param {Program|object} program
+   * @param {Object} [opts]
+   * @param {Object} [opts.genesis] ARC genesis; may supply `primitives.opcodes` allow-list
+   * @param {boolean} [opts.trusted] register `javascript` source functions on this host
+   * @returns {Machine}
+   */
+  loadProgram (program, opts = {}) {
+    const Program = require('./program');
+    const prog = program instanceof Program ? program : Program.from(program || {});
+    const compiled = prog.compile();
+    if (!compiled.ok) {
+      throw new Error(compiled.error || 'program compile failed');
+    }
+
+    // Program or caller genesis may install an allow-list when unrestricted.
+    const fromExtra = normalizeOpcodeAllowList(
+      opcodesFromGenesis(opts.genesis || {})
+        .concat(opcodesFromGenesis(prog))
+        .concat(opcodesFromGenesis(prog.settings || {}))
+    );
+    if (fromExtra.length && !(this._allowedOpcodes && this._allowedOpcodes.length)) {
+      this.setAllowedOpcodes(fromExtra);
+    }
+
+    const steps = prog.steps.slice();
+    const stepCheck = assertStepsAllowed(this._allowedOpcodes, steps);
+    if (!stepCheck.ok) throw new Error(stepCheck.error);
+
+    if (prog.language === 'javascript' && prog.source && typeof prog.source === 'object' &&
+        !Array.isArray(prog.source)) {
+      const fns = Object.entries(prog.source).filter((entry) => typeof entry[1] === 'function');
+      if (fns.length && opts.trusted !== true) {
+        throw new Error('javascript program source requires trusted: true');
+      }
+      if (opts.trusted === true) {
+        for (const [name, fn] of fns) this.define(name, fn);
+      }
+    }
+    this.settings.script = steps;
+    this._program = prog;
+    return this;
+  }
+
+  /**
+   * Load and compute a Program; return stack tip + run commitment for L1 binding.
+   * @param {Program|Object} program
+   * @param {*} [input]
+   * @param {Object} [opts]
+   * @param {Object} [opts.genesis] ARC genesis for `primitives.opcodes` allow-list
+   * @returns {Promise.<{ok: boolean, stack: Array, tip: *, trace: Array, runCommitmentHex: (string|null), error: (string|undefined)}>}
+   */
+  async runProgram (program, input, opts = {}) {
+    try {
+      const Program = require('./program');
+      const prog = program instanceof Program ? program : Program.from(program || {});
+      if (opts.isolate === true && prog.language === 'fabric-opcodes') {
+        const compiled = prog.compile();
+        if (!compiled.ok) {
+          return {
+            ok: false,
+            stack: [],
+            tip: null,
+            trace: [],
+            runCommitmentHex: null,
+            programHash: prog.programHash,
+            error: compiled.error || 'compile failed'
+          };
+        }
+        return Program.runIsolatedOpcodes(prog.steps, {
+          allowedOpcodes: this._allowedOpcodes,
+          maxSteps: opts.maxSteps != null ? opts.maxSteps : this.settings.maxSteps,
+          maxStack: opts.maxStack != null ? opts.maxStack : this.settings.maxStack,
+          isolateTimeoutMs: opts.isolateTimeoutMs,
+          isolateWorker: opts.isolateWorker
+        });
+      }
+      if (prog.language === 'fabric-execution') {
+        const {
+          runExecutionProgram
+        } = require('../functions/executionProgramRunner');
+        if (opts.genesis) this.applyGenesisOpcodes(opts.genesis);
+        const src = prog.settings.source && typeof prog.settings.source === 'object'
+          ? prog.settings.source
+          : program;
+        const pass = {};
+        if (opts.genesis) pass.genesis = opts.genesis;
+        if (opts.maxSteps != null) pass.maxSteps = opts.maxSteps;
+        else if (this.settings.maxSteps != null) pass.maxSteps = this.settings.maxSteps;
+        if (opts.maxStack != null) pass.maxStack = opts.maxStack;
+        else if (this.settings.maxStack != null) pass.maxStack = this.settings.maxStack;
+        if (opts.maxDepth != null) pass.maxDepth = opts.maxDepth;
+        if (opts.maxTrace != null) pass.maxTrace = opts.maxTrace;
+        if (opts.isolateTimeoutMs != null) pass.isolateTimeoutMs = opts.isolateTimeoutMs;
+        if (opts.inProcess === true) pass.inProcess = true;
+        if (typeof opts.resolveFabricEntry === 'function') pass.resolveFabricEntry = opts.resolveFabricEntry;
+        if (this._allowedOpcodes && this._allowedOpcodes.length) {
+          pass.allowedOpcodes = this._allowedOpcodes;
+        }
+        const result = runExecutionProgram(src, pass);
+        return {
+          ok: result.ok,
+          stack: result.stack || [],
+          tip: result.tip != null
+            ? result.tip
+            : (result.stack && result.stack.length ? result.stack[result.stack.length - 1] : null),
+          trace: result.trace || [],
+          runCommitmentHex: result.runCommitmentHex || null,
+          programHash: result.programHash || null,
+          stepsExecuted: result.stepsExecuted,
+          error: result.error,
+          program: result.program || prog
+        };
+      }
+      this.loadProgram(program, opts);
+      const beforeLen = this.stack.length;
+      await this.compute(input);
+      const trace = this.stack.slice(beforeLen);
+      const tip = this.stack.length ? this.stack[this.stack.length - 1] : null;
+      const runCommitmentHex = this._program
+        ? this._program.runCommitmentHex({ tip, stack: trace })
+        : null;
+      return {
+        ok: true,
+        stack: this.stack.slice(),
+        tip,
+        trace,
+        runCommitmentHex,
+        programHash: this._program ? this._program.programHash : null,
+        program: this._program || null
+      };
+    } catch (err) {
+      return {
+        ok: false,
+        stack: this.stack.slice(),
+        tip: null,
+        trace: [],
+        runCommitmentHex: null,
+        programHash: null,
+        error: err && err.message ? err.message : String(err)
+      };
+    }
   }
 
   applyOperation (op) {
@@ -261,7 +553,12 @@ class Machine extends Actor {
       ? this.settings.interval
       : 60;
     const ms = Number.isFinite(fromFreq) && fromFreq > 0 ? fromFreq : Math.max(1, intervalSec * 1000);
-    this._governor = setInterval(this.compute.bind(this), ms);
+    this._governor = setInterval(() => {
+      Promise.resolve(this.compute()).catch((err) => {
+        this.emit('error', err);
+        this.stop();
+      });
+    }, ms);
     this.status = 'STARTED';
     return this;
   }

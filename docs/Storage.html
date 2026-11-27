@@ -1,0 +1,3342 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <title>Class: Storage &middot; Docs</title>
+  <script src="scripts/prettify/prettify.js"> </script>
+  <script src="scripts/prettify/lang-css.js"> </script>
+  <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+  <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+  <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+  <script>
+    window.dataLayer = window.dataLayer || [];
+
+    function gtag() {
+      dataLayer.push(arguments);
+    }
+    gtag('js', new Date());
+    gtag('config', 'G-09Y57FL980');
+  </script>
+</head>
+
+<body>
+  <div id="main">
+    <h1 class="page-title">Class: Storage</h1>
+
+    <p><a href="https://github.com/FabricLabs/fabric/edit/master/services/storage.js">Edit this page</a></p>
+
+
+
+
+
+    <section>
+
+      <header>
+
+        <h2><span class="attribs"><span class="type-signature"></span></span>Storage<span class="signature">(settings<span class="signature-attributes">opt</span>)</span><span class="type-signature"></span></h2>
+
+
+      </header>
+
+      <article>
+        <div class="container-overview">
+
+
+
+
+
+
+          <h4 class="name" id="Storage"><span class="type-signature"></span>new Storage<span class="signature">(settings<span class="signature-attributes">opt</span>)</span><span class="type-signature"></span></h4>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <h5>Parameters:</h5>
+
+
+          <table class="params">
+            <thead>
+              <tr>
+
+                <th>Name</th>
+
+
+                <th>Type</th>
+
+
+                <th>Attributes</th>
+
+
+
+
+                <th class="last">Description</th>
+              </tr>
+            </thead>
+
+            <tbody>
+
+
+              <tr>
+
+                <td class="name"><code>settings</code></td>
+
+
+                <td class="type">
+
+
+                  <span class="param-type">object</span>
+
+
+
+                </td>
+
+
+                <td class="attributes">
+
+                  &lt;optional><br>
+
+
+
+
+
+                </td>
+
+
+
+
+                <td class="description last">
+                  <h6>Properties</h6>
+
+
+                  <table class="params">
+                    <thead>
+                      <tr>
+
+                        <th>Name</th>
+
+
+                        <th>Type</th>
+
+
+                        <th>Attributes</th>
+
+
+
+
+                        <th class="last">Description</th>
+                      </tr>
+                    </thead>
+
+                    <tbody>
+
+
+                      <tr>
+
+                        <td class="name"><code>network</code></td>
+
+
+                        <td class="type">
+
+
+                          <span class="param-type">string</span>
+
+
+
+                        </td>
+
+
+                        <td class="attributes">
+
+                          &lt;optional><br>
+
+
+
+
+
+                        </td>
+
+
+
+
+                        <td class="description last"></td>
+                      </tr>
+
+
+
+                      <tr>
+
+                        <td class="name"><code>outpointUnspent</code></td>
+
+
+                        <td class="type">
+
+
+                          <span class="param-type">function</span>
+
+
+
+                        </td>
+
+
+                        <td class="attributes">
+
+                          &lt;optional><br>
+
+
+
+
+
+                        </td>
+
+
+
+
+                        <td class="description last"></td>
+                      </tr>
+
+
+
+                      <tr>
+
+                        <td class="name"><code>txConfirmed</code></td>
+
+
+                        <td class="type">
+
+
+                          <span class="param-type">function</span>
+
+
+
+                        </td>
+
+
+                        <td class="attributes">
+
+                          &lt;optional><br>
+
+
+
+
+
+                        </td>
+
+
+
+
+                        <td class="description last"></td>
+                      </tr>
+
+
+
+                      <tr>
+
+                        <td class="name"><code>headerKnown</code></td>
+
+
+                        <td class="type">
+
+
+                          <span class="param-type">function</span>
+
+
+
+                        </td>
+
+
+                        <td class="attributes">
+
+                          &lt;optional><br>
+
+
+
+
+
+                        </td>
+
+
+
+
+                        <td class="description last"></td>
+                      </tr>
+
+
+                    </tbody>
+                  </table>
+
+                </td>
+              </tr>
+
+
+            </tbody>
+          </table>
+
+
+
+
+
+
+          <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            <dt class="tag-source">Source:</dt>
+            <dd class="tag-source">
+              <ul class="dummy">
+                <li>
+                  <a href="services_storage.js.html">services/storage.js</a>, <a href="services_storage.js.html#line49">line 49</a>
+                </li>
+              </ul>
+            </dd>
+
+
+
+
+
+
+
+          </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h3 class="subsection-title">Members</h3>
+
+
+
+        <h4 class="name" id="challenges"><span class="type-signature"></span>challenges<span class="type-signature"> :Map.&lt;string, object></span></h4>
+
+
+
+
+
+
+        <h5>Type:</h5>
+        <ul>
+          <li>
+
+            <span class="param-type">Map.&lt;string, object></span>
+
+
+          </li>
+        </ul>
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="services_storage.js.html">services/storage.js</a>, <a href="services_storage.js.html#line61">line 61</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+        <h4 class="name" id="commitments"><span class="type-signature"></span>commitments<span class="type-signature"> :Map.&lt;string, object></span></h4>
+
+
+
+
+
+
+        <h5>Type:</h5>
+        <ul>
+          <li>
+
+            <span class="param-type">Map.&lt;string, object></span>
+
+
+          </li>
+        </ul>
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="services_storage.js.html">services/storage.js</a>, <a href="services_storage.js.html#line59">line 59</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+        <h4 class="name" id="contracts"><span class="type-signature"></span>contracts<span class="type-signature"> :Map.&lt;string, object></span></h4>
+
+
+
+
+
+
+        <h5>Type:</h5>
+        <ul>
+          <li>
+
+            <span class="param-type">Map.&lt;string, object></span>
+
+
+          </li>
+        </ul>
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="services_storage.js.html">services/storage.js</a>, <a href="services_storage.js.html#line57">line 57</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+        <h4 class="name" id="deposits"><span class="type-signature"></span>deposits<span class="type-signature"> :Map.&lt;string, object></span></h4>
+
+
+
+
+        <div class="description">
+          Deposit address to `{ deposit, fundedTxHex }`.
+        </div>
+
+
+
+        <h5>Type:</h5>
+        <ul>
+          <li>
+
+            <span class="param-type">Map.&lt;string, object></span>
+
+
+          </li>
+        </ul>
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="services_storage.js.html">services/storage.js</a>, <a href="services_storage.js.html#line66">line 66</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+        <h3 class="subsection-title">Methods</h3>
+
+
+
+
+
+
+
+        <h4 class="name" id="chainView"><span class="type-signature"></span>chainView<span class="signature">()</span><span class="type-signature"> &rarr; {Object|Object}</span></h4>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="services_storage.js.html">services/storage.js</a>, <a href="services_storage.js.html#line232">line 232</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Object</span>
+            |
+
+            <span class="param-type">Object</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="challenge"><span class="type-signature"></span>challenge<span class="signature">(opts)</span><span class="type-signature"> &rarr; {object}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Publisher-signed challenge for the contract's challenge tree.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>opts</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">object</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="services_storage.js.html">services/storage.js</a>, <a href="services_storage.js.html#line163">line 163</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">object</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="commit"><span class="type-signature"></span>commit<span class="signature">(opts)</span><span class="type-signature"> &rarr; {object}</span></h4>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>opts</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">object</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"><a href="Challenge.html#.commit">Challenge.commit</a> options</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="services_storage.js.html">services/storage.js</a>, <a href="services_storage.js.html#line152">line 152</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          signed commitment
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">object</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="missingChainCallbacks"><span class="type-signature"></span>missingChainCallbacks<span class="signature">()</span><span class="type-signature"> &rarr; {Array.&lt;string>}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Names of chain callbacks the host did not pass.
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="services_storage.js.html">services/storage.js</a>, <a href="services_storage.js.html#line221">line 221</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Array.&lt;string></span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="penalizeLateResponse"><span class="type-signature"></span>penalizeLateResponse<span class="signature">(opts)</span><span class="type-signature"> &rarr; {Object}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Late answer → non-response proof → penalty PSBT.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>opts</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">object</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="services_storage.js.html">services/storage.js</a>, <a href="services_storage.js.html#line290">line 290</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Object</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="preparePenalty"><span class="type-signature"></span>preparePenalty<span class="signature">(opts)</span><span class="type-signature"> &rarr; {object}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Build a penalty PSBT for a verifying fraud proof bound to a registered
+          deposit. Refuses to run without a chain view.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>opts</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">object</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last">
+                <h6>Properties</h6>
+
+
+                <table class="params">
+                  <thead>
+                    <tr>
+
+                      <th>Name</th>
+
+
+                      <th>Type</th>
+
+
+                      <th>Attributes</th>
+
+
+
+
+                      <th class="last">Description</th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+
+
+                    <tr>
+
+                      <td class="name"><code>fraudProof</code></td>
+
+
+                      <td class="type">
+
+
+                        <span class="param-type">object</span>
+
+
+
+                      </td>
+
+
+                      <td class="attributes">
+
+
+
+
+
+                      </td>
+
+
+
+
+                      <td class="description last"></td>
+                    </tr>
+
+
+
+                    <tr>
+
+                      <td class="name"><code>deposit</code></td>
+
+
+                      <td class="type">
+
+
+                        <span class="param-type">object</span>
+
+
+
+                      </td>
+
+
+                      <td class="attributes">
+
+                        &lt;optional><br>
+
+
+
+
+
+                      </td>
+
+
+
+
+                      <td class="description last"></td>
+                    </tr>
+
+
+
+                    <tr>
+
+                      <td class="name"><code>fundedTxHex</code></td>
+
+
+                      <td class="type">
+
+
+                        <span class="param-type">string</span>
+
+
+
+                      </td>
+
+
+                      <td class="attributes">
+
+                        &lt;optional><br>
+
+
+
+
+
+                      </td>
+
+
+
+
+                      <td class="description last"></td>
+                    </tr>
+
+
+
+                    <tr>
+
+                      <td class="name"><code>destinationAddress</code></td>
+
+
+                      <td class="type">
+
+
+                        <span class="param-type">string</span>
+
+
+
+                      </td>
+
+
+                      <td class="attributes">
+
+
+
+
+
+                      </td>
+
+
+
+
+                      <td class="description last"></td>
+                    </tr>
+
+
+
+                    <tr>
+
+                      <td class="name"><code>ctx</code></td>
+
+
+                      <td class="type">
+
+
+                        <span class="param-type">object</span>
+
+
+
+                      </td>
+
+
+                      <td class="attributes">
+
+                        &lt;optional><br>
+
+
+
+
+
+                      </td>
+
+
+
+
+                      <td class="description last"></td>
+                    </tr>
+
+
+                  </tbody>
+                </table>
+
+              </td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="services_storage.js.html">services/storage.js</a>, <a href="services_storage.js.html#line262">line 262</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">object</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="register"><span class="type-signature"></span>register<span class="signature">(contract, id<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {object}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Remember a published contract.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+              <th>Attributes</th>
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>contract</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">object</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last">from <a href="Storage.html#.publish">Storage.publish</a></td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>id</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">string</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+                &lt;optional><br>
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="services_storage.js.html">services/storage.js</a>, <a href="services_storage.js.html#line139">line 139</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">object</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="registerDeposit"><span class="type-signature"></span>registerDeposit<span class="signature">(deposit, fundedTxHex)</span><span class="type-signature"></span></h4>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>deposit</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">object</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last">from <a href="Bond.html#.buildDeposit">Bond.buildDeposit</a></td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>fundedTxHex</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">string</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="services_storage.js.html">services/storage.js</a>, <a href="services_storage.js.html#line210">line 210</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="respond"><span class="type-signature"></span>respond<span class="signature">(response, ctx<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {object}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Check a provider's answer. A timely valid answer resolves the challenge.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+              <th>Attributes</th>
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>response</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">object</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>ctx</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">object</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+                &lt;optional><br>
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="services_storage.js.html">services/storage.js</a>, <a href="services_storage.js.html#line184">line 184</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">object</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="sweep"><span class="type-signature"></span>sweep<span class="signature">(opts<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {Object}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Silence past the deadline does not become a penalty unless the chain
+          view is present. Missing callbacks return `failClosed` and build nothing.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+              <th>Attributes</th>
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>opts</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">object</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+                &lt;optional><br>
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last">
+                <h6>Properties</h6>
+
+
+                <table class="params">
+                  <thead>
+                    <tr>
+
+                      <th>Name</th>
+
+
+                      <th>Type</th>
+
+
+                      <th>Attributes</th>
+
+
+
+
+                      <th class="last">Description</th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+
+
+                    <tr>
+
+                      <td class="name"><code>epoch</code></td>
+
+
+                      <td class="type">
+
+
+                        <span class="param-type">number</span>
+
+
+
+                      </td>
+
+
+                      <td class="attributes">
+
+                        &lt;optional><br>
+
+
+
+
+
+                      </td>
+
+
+
+
+                      <td class="description last"></td>
+                    </tr>
+
+
+
+                    <tr>
+
+                      <td class="name"><code>tipHeight</code></td>
+
+
+                      <td class="type">
+
+
+                        <span class="param-type">number</span>
+
+
+
+                      </td>
+
+
+                      <td class="attributes">
+
+                        &lt;optional><br>
+
+
+
+
+
+                      </td>
+
+
+
+
+                      <td class="description last"></td>
+                    </tr>
+
+
+                  </tbody>
+                </table>
+
+              </td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="services_storage.js.html">services/storage.js</a>, <a href="services_storage.js.html#line318">line 318</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          `ok`. Failure adds `failClosed` and `error`. Success adds `late`.
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Object</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id=".buildBounty"><span class="type-signature">(static) </span>buildBounty<span class="signature">(opts)</span><span class="type-signature"> &rarr; {object}</span></h4>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>opts</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">object</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last">passed to <a href="Bond.html#.buildBounty">Bond.buildBounty</a>; mainnet throws</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="services_storage.js.html">services/storage.js</a>, <a href="services_storage.js.html#line121">line 121</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">object</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id=".buildDeposit"><span class="type-signature">(static) </span>buildDeposit<span class="signature">(opts)</span><span class="type-signature"> &rarr; {object}</span></h4>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>opts</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">object</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last">passed to <a href="Bond.html#.buildDeposit">Bond.buildDeposit</a>; mainnet throws</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="services_storage.js.html">services/storage.js</a>, <a href="services_storage.js.html#line129">line 129</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">object</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id=".challengeRoot"><span class="type-signature">(static) </span>challengeRoot<span class="signature">(blobHashes, claimedRoot<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {Object}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Challenge-tree root for raw blob hashes. Refuses a sale-tree root that
+          does not match.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+              <th>Attributes</th>
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>blobHashes</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Array.&lt;string></span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>claimedRoot</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">string</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+                &lt;optional><br>
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="services_storage.js.html">services/storage.js</a>, <a href="services_storage.js.html#line76">line 76</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Object</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id=".publish"><span class="type-signature">(static) </span>publish<span class="signature">(opts)</span><span class="type-signature"> &rarr; {object}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Publish a storage contract. `blobs` are hashed here; `blobHashes` are
+          used as given. The root is always the challenge tree.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>opts</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">object</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="services_storage.js.html">services/storage.js</a>, <a href="services_storage.js.html#line92">line 92</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          `StorageContract` body
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">object</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+      </article>
+
+    </section>
+
+
+
+  </div>
+  <nav>
+    <h2><a href="index.html">Home</a></h2>
+    <h3>Modules</h3>
+    <ul>
+      <li><a href="module-types_delegation.html">types/delegation</a></li>
+      <li><a href="module-types_typetree.html">types/typetree</a></li>
+      <li><a href="module-types_wallet_bip86.html">types/wallet/bip86</a></li>
+      <li><a href="types_ecc.html#.module:selftest">types/ecc.selftest</a></li>
+    </ul>
+    <h3>Classes</h3>
+    <ul>
+      <li><a href="Actor.html">Actor</a></li>
+      <li><a href="Beacon.html">Beacon</a></li>
+      <li><a href="Bitcoin.html">Bitcoin</a></li>
+      <li><a href="Block.html">Block</a></li>
+      <li><a href="Bond.html">Bond</a></li>
+      <li><a href="Book.html">Book</a></li>
+      <li><a href="Chain.html">Chain</a></li>
+      <li><a href="Challenge.html">Challenge</a></li>
+      <li><a href="Channel.html">Channel</a></li>
+      <li><a href="ChannelBook.html">ChannelBook</a></li>
+      <li><a href="ChannelSession.html">ChannelSession</a></li>
+      <li><a href="Circuit.html">Circuit</a></li>
+      <li><a href="Coinjoin.html">Coinjoin</a></li>
+      <li><a href="CoinjoinBook.html">CoinjoinBook</a></li>
+      <li><a href="CoinjoinMakerRound.html">CoinjoinMakerRound</a></li>
+      <li><a href="CoinjoinTakerRound.html">CoinjoinTakerRound</a></li>
+      <li><a href="Collection.html">Collection</a></li>
+      <li><a href="Component.html">Component</a></li>
+      <li><a href="Contract.html">Contract</a></li>
+      <li><a href="Disk.html">Disk</a></li>
+      <li><a href="Document.html">Document</a></li>
+      <li><a href="DocumentBlobTransferBook.html">DocumentBlobTransferBook</a></li>
+      <li><a href="DocumentBook.html">DocumentBook</a></li>
+      <li><a href="EncryptedPromise.html">EncryptedPromise</a></li>
+      <li><a href="Entity.html">Entity</a></li>
+      <li><a href="Entity.Transition.html">Transition</a></li>
+      <li><a href="Environment.html">Environment</a></li>
+      <li><a href="Fabric.html">Fabric</a></li>
+      <li><a href="Federation.html">Federation</a></li>
+      <li><a href="FidelityVerifier.html">FidelityVerifier</a></li>
+      <li><a href="Filesystem.html">Filesystem</a></li>
+      <li><a href="FraudProof.html">FraudProof</a></li>
+      <li><a href="HKDF.html">HKDF</a></li>
+      <li><a href="Hash256.html">Hash256</a></li>
+      <li><a href="Htlc.html">Htlc</a></li>
+      <li><a href="Identity.html">Identity</a></li>
+      <li><a href="Interface.html">Interface</a></li>
+      <li><a href="Key.html">Key</a></li>
+      <li><a href="Ledger.html">Ledger</a></li>
+      <li><a href="Lightning.html">Lightning</a></li>
+      <li><a href="LiquidityBook.html">LiquidityBook</a></li>
+      <li><a href="Logger.html">Logger</a></li>
+      <li><a href="Machine.html">Machine</a></li>
+      <li><a href="Market.html">Market</a></li>
+      <li><a href="Message.html">Message</a></li>
+      <li><a href="OrderBook.html">OrderBook</a></li>
+      <li><a href="Peer.html">Peer</a></li>
+      <li><a href="PodleBlacklist.html">PodleBlacklist</a></li>
+      <li><a href="Policy.html">Policy</a></li>
+      <li><a href="Program.html">Program</a></li>
+      <li><a href="Reader.html">Reader</a></li>
+      <li><a href="Redis.html">Redis</a></li>
+      <li><a href="Remote.html">Remote</a></li>
+      <li><a href="Resolutions.html">Resolutions</a></li>
+      <li><a href="Resource.html">Resource</a></li>
+      <li><a href="RoundRobin.html">RoundRobin</a></li>
+      <li><a href="Scribe.html">Scribe</a></li>
+      <li><a href="Script.html">Script</a></li>
+      <li><a href="Secret.html">Secret</a></li>
+      <li><a href="Service.html">Service</a></li>
+      <li><a href="Session.html">Session</a></li>
+      <li><a href="SetupTui.html">SetupTui</a></li>
+      <li><a href="SignedBook.html">SignedBook</a></li>
+      <li><a href="State.html">State</a></li>
+      <li><a href="Storage.html">Storage</a></li>
+      <li><a href="Store.html">Store</a></li>
+      <li><a href="Swap.html">Swap</a></li>
+      <li><a href="global.html#Text">Text</a></li>
+      <li><a href="Token.html">Token</a></li>
+      <li><a href="Tree.html">Tree</a></li>
+      <li><a href="Vector.html">Vector</a></li>
+      <li><a href="Watchtower.html">Watchtower</a></li>
+      <li><a href="WireReplayFilter.html">WireReplayFilter</a></li>
+      <li><a href="Worker.html">Worker</a></li>
+      <li><a href="ZMQ.html">ZMQ</a></li>
+      <li><a href="module-types_delegation-Delegation.html">Delegation</a></li>
+      <li><a href="module-types_wallet_bip86-Wallet.html">Wallet</a></li>
+    </ul>
+    <h3>Global</h3>
+    <ul>
+      <li><a href="global.html#crypto">crypto</a></li>
+    </ul>
+  </nav>
+  <br class="clear" />
+  <footer><a href="https://github.com/FabricLabs/fabric">git://</a> &middot; <a href="https://chat.fabric.pub/#/room/#hub:fabric.pub">Community</a></footer>
+  <script type="text/javascript">
+    prettyPrint();
+  </script>
+  <script src="scripts/linenumber.js"></script>
+</body>
+
+</html>

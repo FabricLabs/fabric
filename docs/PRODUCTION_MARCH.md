@@ -9,10 +9,15 @@ This is the single living document for driving `@fabric/core` to production read
 Related docs:
 - `docs/PRODUCTION.md`
 - `docs/RELEASE_CHECKLIST.md`
+- `docs/OUTSTANDING.md` — **security-first queue** (this repo)
+- `SECURITY.md` / `AUDIT.md`
 - `AGENTS.md`
+
+**Suite security blocker (not a core patch):** Hub / `@fabric/http` login and device-link **redeem** still treat QR `sessionId` as the capability. Advance that in `@fabric/http`, then Hub and other session-capable deploys — see those packages' `docs/OUTSTANDING.md`.
 
 ## Working Area
 ### Bad Classes (work to reduce)
+- `DistributedExecution` (reduce to `Execution`)
 - `Scribe`
 
 ### Dubious Classes (consider integrating/consolidating into existing classes)
@@ -29,7 +34,6 @@ This matrix is a production-first baseline to refine over the next PRs.
 - `Chain`
 - `Circuit`
 - `Collection`
-- `DistributedExecution`
 - `Entity`
 - `Federation`
 - `Hash256`
@@ -58,6 +62,7 @@ Rationale:
 - `Stack` + `Script` -> evaluate unification behind `Program`/`Machine` if no distinct production role.
 
 #### Deprecate/Compatibility-only (for this release cycle)
+- `DistributedExecution` (`types/distributedExecution.js`) — thin re-export of canonical JSON / beacon signing / manifest helpers; prefer those modules + `Machine`/`Program` directly. Keep `Fabric.DistributedExecution` alias one release.
 - `settings/deprecations.js` aliases that only preserve legacy names.
 - Any class only referenced by deprecation mapping + legacy docs, with no product-path usage.
 
@@ -70,28 +75,38 @@ Rationale:
 
 ### Step A: Inventory and tagging
 
-- [ ] Generate an authoritative list of all `types/*.js` with tags: `keep`, `consolidate`, `compat`, `remove-candidate`.
-- [ ] Record direct references from:
+- [x] Generate an authoritative list of all `types/*.js` with tags: `keep`, `consolidate`, `compat`, `remove-candidate`.
+- [x] Record direct references from:
   - `types/fabric.js`
   - `services/*.js`
   - `scripts/fabric.js` and `types/cli.js`
   - Hub-facing integration points (`publishedDocumentEnvelope`, security/delegation paths)
 
+**Locked inventory (2026-09-03):**
+
+| Tag | Types |
+|-----|--------|
+| **keep** | `Actor`, `Beacon`, `Chain`, `Circuit`, `Collection`, `Contract`, `Entity`, `Federation`, `Hash256`, `Key`, `Machine`, `Message`, `Peer`, `Program`, `Remote`, `Resource`, `Service`, `State`, `Store`, `Wallet`, `Worker`, `Block`, `Tree`, `Filesystem`, `Identity`, `Token`, `Environment` |
+| **consolidate** | `Scribe` (logging → Service helpers), `Reader` (→ Peer/Message ingest; `@deprecated`), `Interface` (→ Resource schema), `Stack`+`Script` (evaluate behind Program/Machine) |
+| **compat** | `DistributedExecution` (thin re-export; prefer leaf helpers + Machine/Program), `Vector`, `Observer`, `Oracle`, `RoundRobin`, `Session`, `Capability` (scaffold), `Channel` |
+| **remove-candidate / not shipped** | `authority`, `component`, `typetree` (excluded from `files[]`; CLI `renderer` moved to `@fabric/http`), plus dormant: `compiler`, `disk`, `datastore`, `transaction`, `history`, `promise`, `queue`, `router`, `setup`, `label`, `ledger`, `logger`, `network`, `node`, `path`, `secret`, `signature`, `validator`, `witness`, `instruction`, `challenge`, `bond`, `bech32` (prefer functions), `codec`, `document`, `ecc*`, `cli` (bin path), `hkdf` |
+
 ### Step B: Fast reductions
 
-- [ ] Mark `Scribe` and `Reader` with explicit deprecation notes in code comments/docs.
-- [ ] Stop advertising non-core classes in onboarding docs/examples.
-- [ ] Keep runtime compatibility for one release cycle through aliasing only where needed.
+- [x] Mark `Scribe` and `Reader` with explicit deprecation notes in code comments/docs.
+- [x] Stop advertising non-core classes in onboarding docs/examples.
+- [x] Keep runtime compatibility for one release cycle through aliasing only where needed.
 
 ### Step C: Facade hardening
 
-- [ ] Make `types/fabric.js` the curated public class surface for RC.
+- [x] Make `types/fabric.js` the curated public class surface for RC.
 - [ ] Remove stale commented exports once target decisions are finalized.
 - [ ] Ensure docs generation follows the curated surface and avoids promoting internal-only classes.
 
 ## Documentation Clutter Plan ("Global" cleanup)
 
-- [ ] Configure docs generation to avoid exposing broad "Global" buckets as first-class API.
+- [x] Configure docs generation to avoid exposing broad "Global" buckets as first-class API.
+- [x] Prefer `@fileoverview` / `@private` / `//` settings comments so helpers (`crypto`, `merge`, body schemas, Block digests, etc.) stay off `docs/global.html`.
 - [ ] Prefer module/class entry pages over generated global index noise.
 - [ ] Keep only operator/developer-relevant pages linked from `docs/README.md` and this tracker.
 
@@ -129,11 +144,11 @@ Everything else is either:
 ## Workstreams
 ### 1) Type Tree Consolidation
 
-- [ ] Build an authoritative inventory of currently exported/used classes.
-- [ ] Mark each class as `keep`, `consolidate`, `deprecate`, or `remove`.
+- [x] Build an authoritative inventory of currently exported/used classes.
+- [x] Mark each class as `keep`, `consolidate`, `deprecate`, or `remove`.
 - [ ] Collapse legacy/overlapping classes into canonical homes.
 - [ ] Ensure all removed/re-homed APIs have compatibility notes.
-- [ ] Keep `types/fabric.js` static exports aligned with final decisions.
+- [x] Keep `types/fabric.js` static exports aligned with final decisions.
 
 Definition of done:
 - Reduced public class surface with no unresolved runtime imports in tests.
@@ -167,16 +182,19 @@ Definition of done:
 - Coverage reflects shipped behavior, and failures clearly indicate product risk.
 
 ## Immediate Priority Queue
-1. **Finalize keep/remove matrix for classes** and lock the target type tree.
-2. **Trim docs generation target set** to production-relevant modules.
-3. **Trim example set** to Hub-facing workflows (documents, contracts, signing/delegation, network).
-4. **Resolve unfinished behavior in active APIs** before adding more coverage-only tests.
+1. **Security leftovers** in [OUTSTANDING.md](OUTSTANDING.md) — Blockers remain (third-party review, login/link Origin-GET, `contractId` rename); Next slices cleared on 2026-09-03 cut series.
+2. ~~Finalize keep/remove matrix for classes~~ — locked above (Step A inventory).
+3. **Trim docs generation target set** to production-relevant modules.
+4. **Trim example set** to Hub-facing workflows (documents, contracts, signing/delegation, network).
+5. **Resolve unfinished behavior in active APIs** before adding more coverage-only tests.
 
 ## Pending Test Triage (First Logical Pass)
-Observed baseline after hardening:
+Observed baseline after hardening (historical March pass):
 - `784 passing`
 - `50 pending`
 - `0 failing`
+
+Current `@fabric/core` baseline (see Progress Log **2026-08-12**): `1831 passing`, `1 pending`, `0 failing`. Suite-wide packages (http / hub / application / browser extension) also green on that run.
 
 Working buckets for pending tests:
 
@@ -221,6 +239,156 @@ Execution order:
 
 ## Progress Log
 Use this section as an append-only log (newest first).
+
+### 2026-09-06 — PR #187 unifications staged (append)
+Supporting cleanup on top of tip `2eb343def`: leaf `keyHasPrivateSigningMaterial` shared by sidechain + execution-run witness builders; Peer finishes `contractPublishAuthority` extract (delete local pubkey normalizer; `_signerMayPatchContract` → `authoritySetHasPubkey`); `fabricProgramManifest` top-level `sidechainState` require. Deferred: Environment/CLI identity, cross-repo federation policy bag, `contractIdentifier` adoption, MuSig2.
+
+### 2026-09-06 — PR #187 vs production plan (staged follow-ups)
+[#187](https://github.com/FabricLabs/fabric/pull/187) (`feature/rsi` → `master`, WIP) supplies the **core** Beacon ARC / registry / federation-witness sidechain path Hub playnet needs: fail-closed `SIDECHAIN_STATE_PATCH`, `contractPublishAuthority`, watch-only operator identity slots, Beacon federation sign helpers. CI green on tip `047210f`. **Gaps vs production claim:** MuSig2 aggregate remains incomplete; Hub pin/redeploy + login Origin-GET + rename blockers unchanged. **Staged locally:** CodeRabbit follow-ups — watch-only `FABRIC_XPRV` before `wallet.json`; independent `FABRIC_DISTRIBUTED_FEDERATION_THRESHOLD`; typetree optional-dep catch; private-material guard on sidechain witness/AMP builders (+ tests).
+
+### 2026-09-03 — OUTSTANDING Next slices emptied (staged cut series)
+Staged (no agent commits): #187 tip tests + c8 whitelist for authority/operator/MuSig2-stub;
+NOISE stream deps declared; unloadable modules out of `files[]`; type-tree inventory
+locked; `sensitive` ≠ encrypted + scaffold/VM doc honesty; `contractIdentifier` dual-field
+helper; Codacy path excludes marked wontfix. Core Next slices empty; Blockers keep
+third-party review, VM non-claim, login/link Origin-GET, and the rename. Hub owns NOISE
+redeploy verify (`npm run verify:noise-handshake`).
+
+### 2026-08-24 — PR #186 open review comments
+Cleared the open review surface on
+[#186](https://github.com/FabricLabs/fabric/pull/186). `npm run ci` **green** on
+Node 24.15.0 after the change: **2483 passing / 6 pending** (+21 tests, no
+production code touched). Both unresolved bot threads were **already fixed** in
+`aab3c983d`, which landed after the reviewed commit `f63a33f`; neither needed a
+patch:
+
+- **Bugbot, `functions/bip371.js` (Medium) — "BIP-371 helper skips required
+  checks."** At `f63a33f` `tapLeafScriptEntry` only asserted
+  `controlBlock.length >= 33`. It now enforces the BIP-341 `33 + 32*m` length,
+  an even leaf version, and that the control block's masked leaf version matches
+  — with a regression test per rule in `tests/functions.bip371.js`.
+- **CodeRabbit, `tests/lightning/lightning.service.js` (Minor) — "Disable
+  `cln-grpc` for Carol."** `disablePlugins: ['cln-grpc']` is on the `carol`
+  constructor.
+
+The one genuinely open item was **Codecov's patch report**, which is measured
+against current HEAD `8e756f2` rather than a stale commit: 94.45% patch coverage
+with **32 lines missing**, all in the two files this PR grew most. Closed by
+adding tests, not by adjusting thresholds:
+
+| File | Before | After |
+|------|--------|-------|
+| `types/tree.js` | 91.85% lines · 41.23% branch · 94.44% funcs | **100% lines · 78.16% branch · 100% funcs** |
+| `types/message.js` (patch lines) | 2 uncovered | **0 uncovered** |
+
+The `tree.js` gap mattered more than a coverage number suggests. The 30
+uncovered lines were concentrated in `proveNonInclusion` / `verifyNonInclusion`
+— the *adversarial* half of the new proof API — so the untested paths were
+precisely the ones a malicious prover would attack: the `sortLeaves` guard, the
+empty-tree case, a target that is actually present, and every rejection branch
+in the verifier. `tests/fabric.tree.js` now asserts each defence holds: tampered
+root, tampered or mismatched `leafCount`, a leaf set whose size disagrees with
+the commitment, neighbours widened to skip an in-range leaf, a target outside
+the claimed gap, stray/missing neighbours per side, and a document claiming
+inclusion. Two `catch` blocks are covered as **fail-closed** behaviour — a
+throwing verifier or proof builder yields an unproven leaf, not an exception.
+
+**Lesson worth keeping:** the coverage report was the only reviewer that flagged
+anything real here, and it pointed at security-relevant code. A patch-coverage
+miss on a *verifier* should be read as an untested trust boundary, not as
+housekeeping. Both bot findings, by contrast, were already stale — worth
+re-checking findings against HEAD before spending a change on them, since review
+bots pin to the commit they saw.
+
+### 2026-08-24 — suite release-readiness audit
+Ran sibling suite packages' release gates on Node 24.15.0. **Suite is green.**
+
+| Package | Gate | Result |
+|---------|------|--------|
+| `@fabric/core` | `npm run ci` | smoke + `lint:types` + `lint:pkg` + **2460 passing / 3 pending** + benchmark |
+| `@fabric/http` | `npm test` | **253 passing / 0 failing** (21 pending) |
+| `@fabric/hub` | `npm run test:unit` | **821 passing / 0 failing** (6 pending; see flake note) |
+| Browser wallet extension | `npm run test:unit` + `npm run build` | **93 passing**, webpack clean |
+| Application relay | `npm test` | **1244 passing / 0 failing** (was 1240/4) |
+
+The application relay gate is five separate summaries (mocha, unit+fabric, relay,
+integration, UI). Reading only one block can look green while another is red —
+worth knowing before trusting a headline number.
+
+Defects found and fixed in consuming packages; no core patch needed.
+
+1. **Federation invite re-export drift.** A consumer asserted reference equality
+   between a local `federationContractInvite` shim and `@fabric/http`, but the
+   shim only existed for pins predating `resolveFederationInviteExpiresAt`. That
+   API is now upstream in `@fabric/http`; the shim can return the http module
+   unchanged on the next lockfile bump. **Action for this repo: none.** Land the
+   http exports and refresh pins so shims collapse.
+2. **Browser extension manifest validation.** Invalid `host_permissions` /
+   `content_scripts` match patterns with explicit ports (`localhost:<port>/*`) —
+   Chrome match patterns cannot express a port. Latent Web Store submission
+   blocker; fixed with a regression guard in the extension test suite.
+3. **Session-gated relay tests.** Several relay tests read hosted endpoints
+   without a session after privacy hardening correctly returned **401**; fixed by
+   authenticating (signed login envelope → Bearer) and asserting both anon-401 and
+   authenticated reads.
+4. **P2P chat timestamp normalization.** A helper scan across suite `functions/`
+   trees found most pairs already `require` upstream. The gap was
+   `normalizeP2pChatMessage`: `Number(null)` / `Number('')` are finite `0`, so
+   an `isFinite` gate accepted epoch 0 and blocked the ISO `object.ts` fallback.
+   Fixed in `@fabric/http` with tests; Hub compatibility wrappers can collapse on
+   pin bump.
+
+Also traced, and needing **no patch anywhere**: Hub teardown noise
+`Could not wipe database: ModuleError: Database is not open`. `Store#flush`
+already has a `status !== 'open'` pre-check plus a `LEVEL_DATABASE_NOT_OPEN`
+guard here in `088dd9aff` (with tests in `tests/fabric.store.js`); Hub's vendored
+copy is the pre-guard version. RSS/NOISE P0 and this log spam both clear on the
+same core dep refresh.
+
+Documentation: the browser wallet extension was the only suite package without an
+`AUDIT.md`; one was added in the same shape as core / http / Hub. Two findings
+worth suite attention:
+
+- **`https://*/*` host breadth** — content script at `document_start` in
+  `all_frames` of every HTTPS origin while signing trusts only listed Fabric
+  origins. Normal for a wallet extension and load-bearing for site login, but it
+  drives a harsh install prompt. Owner decision, not silently narrowed.
+- **Extension background datastore key is not password-bound** — random AES-GCM
+  master key in extension storage beside ciphertext. Wallet seed is not in that
+  store; post-unlock binding plus migration is the fix. Same family as Hub
+  at-rest identity KDF — solve once in core/http, not per product.
+
+Unchanged suite blockers (still coordination, not code): device-link `sessionId`
+bind into attest messages, always-fresh device-link nonce, and the
+`X-Fabric-Poll-Secret` client rollout. Hub **RSS / NOISE P0** is still a
+pin-and-redeploy problem — handshake-bus cleanup is in this tree but not on live
+pin `f63a33f`.
+
+Hub `npm run test:unit` also emits repeated `Could not wipe database` teardown
+noise for the same `Store#flush` reason above — clears on core pin bump.
+
+### 2026-08-20
+- [#186](https://github.com/FabricLabs/fabric/pull/186) is the open `feature/rsi` wave after [#185](https://github.com/FabricLabs/fabric/pull/185) merged (`4db3be3`). HEAD **`9c6ade0`** (review follow-ups after **`aab3c98`**): effective Taproot `internalKeyMode` on `resolveSpend`, gossip numeric relay-as-is + constraint merge, NOISE native-pointer teardown, gossip-relay shutdown counts. Handshake-bus is **not** on live Hub pin **`f63a33f`** — Hub pin/redeploy before claiming RSS/NOISE is fixed.
+- Production Hub scan **10:39Z**: RSS tracks `external`/`arrayBuffers`, not named retainers. Do not raise `--max-old-space-size`.
+
+### 2026-08-13
+- Core `3745041e` (wallet lock / Environment) is on GitHub `feature/rsi`; http `e167d8e` and Hub `5441f838` follow.
+- Added [OUTSTANDING.md](OUTSTANDING.md) as the security-first queue; sibling suite packages have matching files.
+- Immediate queue now leads with security leftovers. **Suite blocker** remains http possession proof for `/sessions` and `/device-links` redeem (not a core patch).
+- Class-surface work (`Scribe` / `Reader` / Global) stays the in-repo march after that coordination.
+
+### 2026-08-12
+- Re-ran the Fabric package suite end-to-end (unrestricted host; extension Playwright needs Crashpad/xattr outside agent sandboxes). Log: `/tmp/fabric-suite-tests-1786512851.log`.
+- **`@fabric/core`** (`npm test`): `1831 passing`, `1 pending`, `0 failing`.
+- **`@fabric/http`** (`npm test`): `157 passing`, `21 pending`, `0 failing`.
+- **`@fabric/hub`** (`npm run test:unit`): `539 passing`, `4 pending`, `0 failing`.
+- **Application relay** (`npm test`): mocha fabric `43 passing`; fabric expectations `45 pass`; relay `322 pass` / `2 skipped` / `0 fail`.
+- **Browser wallet extension** (`npm test`): unit `55 passing` + extension Playwright `5 passing`, `0 failing`.
+- Suite hardening carried in from recent failure triage (not all in this repo):
+  - identity Schnorr resolution / leaf-key site-login paths (`@fabric/http` + extension verify coverage);
+  - application relay chat receipts when Fabric peer is off under `NODE_ENV=test`, mission Accept → apply, device-link verify via `Identity#fabricKey`;
+  - extension webpack CSS includes for npm-linked `@fabric/http` assets; extension launcher defaults to bundled Chromium and ignores `--disable-extensions`.
+- Core baseline vs earlier march entries: JS suite grew well past the March `834` mark; still `0 failing`. Remaining core pending is a single skip (triage under Coverage + Test Reliability).
 
 ### 2026-03-24
 - Closed the pending-test loop for JS unit/integration slices in this repo branch:

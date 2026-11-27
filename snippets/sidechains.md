@@ -16,8 +16,15 @@ In contrast to an **anchor chain**, a **sidechain** is only shared between a set
 ## The Elements Project
 To reduce complexity in sidechain implementations, [the Elements Project][elements-project] is forked from the Bitcoin Core source code — thereby retaining the same APIs as Bitcoin itself, but adding any new features or functionality as new RPC methods.
 
-## Fabric Statechains
-Fabric utilizes sidechains in the form of **Statechains**, which enable proof-by-execution modification of a shared, mutual state validated against rules pre-determined by the initial contract.
+## Fabric sidechain documents
+Fabric utilizes sidechains as **shared mutual-state documents** (Hub: “sidechain
+state”), enabling proof-by-authorization modification of a shared JSON value
+validated against rules pre-determined by the initial contract.
+
+**Implementation:** `@fabric/core/functions/sidechainState` — see
+[docs/DISTRIBUTED_EXECUTION.md](../docs/DISTRIBUTED_EXECUTION.md). Hub binds state
+digests to Beacon epochs and persists `sidechain/STATE`, `SNAPSHOTS`, and
+`JOURNAL`. Not a Fabric type.
 
 ### Bond Phase
 An initial bond is offered, typically at an `n:1` ratio where `n` is the number of contract counterparties.

@@ -6,11 +6,17 @@
 
 // Message/version constants
 #define FABRIC_MESSAGE_VERSION 1
-/* Max payload bytes (4096 byte frame − 208-byte on-wire header: magic…signature) */
-#define FABRIC_MAX_MESSAGE_BODY 3888
-
 /** Max ciphertext bytes per Noise transport frame (matches `noise-protocol-stream` MESSAGE_SIZE). */
 #define FABRIC_NOISE_MAX_FRAME_BYTES 65535
+/** Poly1305 tag on every Noise transport frame. */
+#define FABRIC_NOISE_MAC_BYTES 16
+/* Header bytes (magic, version, parent, author, type, size, hash, preimage, signature) */
+#define FABRIC_MESSAGE_HEADER_BYTES 208
+/* Max bytes of one AMP frame on the wire (header + body): the largest plaintext one Noise
+ * transport frame carries (65519 B). Keep in sync with `MAX_FRAME_BYTES` in `constants.js`. */
+#define FABRIC_MAX_FRAME_BYTES (FABRIC_NOISE_MAX_FRAME_BYTES - FABRIC_NOISE_MAC_BYTES)
+/* Max payload bytes (65311 B). Keep in sync with `MAX_MESSAGE_SIZE` in `constants.js`. */
+#define FABRIC_MAX_MESSAGE_BODY (FABRIC_MAX_FRAME_BYTES - FABRIC_MESSAGE_HEADER_BYTES)
 
 // Default networking
 #define FABRIC_DEFAULT_PORT 7777

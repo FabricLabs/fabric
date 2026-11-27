@@ -71,6 +71,60 @@ describe('L1 document exchange expectations', function () {
       const fromPreimage = crypto.createHash('sha256').update(preimage).digest('hex');
       assert.strictEqual(hex, fromPreimage);
     });
+    it('purchaseContentHashHex ignores created/edited metadata drift', function () {
+      const docId = 'doc-expectations-meta';
+      const buf = Buffer.from('stable', 'utf8');
+      const base = {
+        id: docId,
+        name: 'x.txt',
+        mime: 'text/plain',
+        revision: 1,
+        contentBase64: buf.toString('base64'),
+        size: buf.length,
+        sha256: crypto.createHash('sha256').update(buf).digest('hex')
+      };
+      const a = purchaseContentHashHex(docId, base);
+      const b = purchaseContentHashHex(docId, Object.assign({}, base, { created: 1, edited: 99 }));
+      assert.strictEqual(a, b);
+    });
+
+    it('rejects signed DocumentPublish buffers for payment preimage', function () {
+      const docId = 'doc-expectations-signed';
+      const buf = Buffer.from('no-sign-bind', 'utf8');
+      const parsed = {
+        id: docId,
+        contentBase64: buf.toString('base64'),
+        size: buf.length,
+        mime: 'text/plain',
+        name: 'n',
+        revision: 1,
+        sha256: crypto.createHash('sha256').update(buf).digest('hex')
+      };
+      const {
+        documentPublishEnvelopeBuffer,
+        inventoryHtlcPreimage32FromEnvelopeBuffer,
+        assertUnsignedDocumentPublishEnvelope
+      } = require('../functions/publishedDocumentEnvelope');
+      const Key = require('../types/key');
+      const unsigned = documentPublishEnvelopeBuffer(docId, parsed);
+      assertUnsignedDocumentPublishEnvelope(unsigned);
+      const key = new Key();
+      const signed = Message.fromBuffer(Buffer.from(unsigned));
+      signed.signWithKey(key);
+      const signedBuf = signed.toBuffer();
+      assert.throws(
+        () => inventoryHtlcPreimage32FromEnvelopeBuffer(signedBuf),
+        /unsigned/
+      );
+      const envHash = crypto.createHash('sha256').update(
+        crypto.createHash('sha256').update(unsigned).digest()
+      ).digest('hex');
+      const signedHash = crypto.createHash('sha256').update(
+        crypto.createHash('sha256').update(signedBuf).digest()
+      ).digest('hex');
+      assert.notStrictEqual(envHash, signedHash);
+      assert.strictEqual(purchaseContentHashHex(docId, parsed), envHash);
+    });
   });
 
   describe('Peer wire events', function () {
@@ -128,7 +182,14 @@ describe('L1 document exchange expectations', function () {
   });
 
   describe('Canonical publish alignment', function () {
-    it('_publishDocument (rate 0) broadcasts payload matching documentPublishEnvelopeBuffer data', function () {
+    const unsignedCopy = (buf) => {
+      const out = Buffer.from(buf);
+      out.fill(0, 40, 72);
+      out.fill(0, 144, 208);
+      return out;
+    };
+
+    it('_publishDocument (rate 0) broadcasts the documentPublishEnvelopeBuffer frame, signed', function () {
       const peer = new Peer({ listen: false, peersDb: null });
       const docId = 'align-doc';
       const body = 'same logical content';
@@ -141,9 +202,11 @@ describe('L1 document exchange expectations', function () {
       peer._publishDocument(docId, body, 0);
 
       assert.strictEqual(captured.length, 1);
-      const wire = Message.fromBuffer(captured[0]);
-      const envMsg = Message.fromBuffer(Buffer.from(envBuf));
-      assert.strictEqual(wire.data.toString('utf8'), envMsg.data.toString('utf8'));
+      const wire = Message.tryParseLegacyBody(Message.fromBuffer(captured[0]));
+      assert.strictEqual(wire.encoding, 'fields');
+      assert.ok(!captured[0].equals(envBuf), 'gossip frame is signed');
+      assert.ok(unsignedCopy(captured[0]).equals(envBuf));
+      assert.strictEqual(purchaseContentHashHex(docId, wire.value), purchaseContentHashHex(docId, parsed));
     });
 
     it('pricing gossip is distinct from canonical envelope bytes', function () {
@@ -159,8 +222,7 @@ describe('L1 document exchange expectations', function () {
       peer._publishDocument(docId, body, 99);
 
       assert.strictEqual(captured.length, 2);
-      const firstData = Message.fromBuffer(captured[0]).data.toString('utf8');
-      assert.strictEqual(firstData, Message.fromBuffer(Buffer.from(envBuf)).data.toString('utf8'));
+      assert.ok(unsignedCopy(captured[0]).equals(envBuf));
       const second = Message.fromBuffer(captured[1]);
       assert.strictEqual(second.type, 'P2P_DOCUMENT_PUBLISH');
     });
@@ -174,6 +236,29 @@ describe('L1 document exchange expectations', function () {
       const src = fs.readFileSync(cliPath, 'utf8');
       assert.ok(/on\('DocumentPublish'/.test(src), 'CLI should register DocumentPublish listener');
       assert.ok(/on\('DocumentRequest'/.test(src), 'CLI should register DocumentRequest listener');
+      // Publish + rateSats live in cliDocumentExchange (CLI thin-delegates after extract).
+      const exchangeSrc = fs.readFileSync(
+        path.join(__dirname, '../functions/cliDocumentExchange.js'),
+        'utf8'
+      );
+      assert.ok(
+        /_publishDocument\(id, body, rate\)/.test(exchangeSrc),
+        'cliDocumentExchange publish should pass rateSats into Peer._publishDocument'
+      );
+      assert.ok(
+        /syncDocumentToPeer\(.*rateSats/.test(exchangeSrc) ||
+          /syncDocumentToPeer\(id, body, rate\)/.test(exchangeSrc),
+        'cliDocumentExchange should sync local doc with rateSats'
+      );
+      // Slash commands are registered via CLI contracts (not inline _registerCommand).
+      const contractsSrc = fs.readFileSync(path.join(__dirname, '../functions/cliContracts.js'), 'utf8');
+      assert.ok(/approve:\s*'_handleApproveCommand'/.test(contractsSrc), 'CLI contract should register approve');
+      assert.ok(/pending:\s*'_handlePendingDocumentRequests'/.test(contractsSrc), 'CLI contract should register pending');
+      assert.ok(/buy:\s*'_handleBuyCommand'/.test(contractsSrc), 'CLI contract should register buy');
+      assert.ok(/confirm:\s*'_handleConfirmCommand'/.test(contractsSrc), 'CLI contract should register confirm');
+      assert.ok(/offers:\s*'_handleOffersCommand'/.test(contractsSrc), 'CLI contract should register offers');
+      assert.ok(/contentHashHexFromObject/.test(src) || /contentHashHexFromObject/.test(exchangeSrc),
+        'CLI buy path should normalize contentHashHex aliases');
 
       const peerPath = path.join(__dirname, '../types/peer.js');
       const peerSrc = fs.readFileSync(peerPath, 'utf8');
@@ -193,6 +278,8 @@ describe('L1 document exchange expectations', function () {
         /emit\('DocumentRequest'/.test(peerSrc),
         'Peer should emit DocumentRequest for CLI compatibility'
       );
+      assert.ok(/approveDocumentRequest/.test(peerSrc), 'Peer should expose approveDocumentRequest');
+      assert.ok(/requestPeerInventory/.test(peerSrc), 'Peer should expose requestPeerInventory');
     });
   });
 });

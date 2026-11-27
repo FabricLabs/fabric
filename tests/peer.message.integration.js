@@ -178,8 +178,7 @@ describe('peer/message integration (mesh & secure delivery)', function () {
     };
     hub.peers[addr] = { id: 'client', publicKey: clientKey.pubkey };
 
-    const content = { type: 'P2P_CHAT_MESSAGE', object: { text: 'secure-mesh' } };
-    const msg = Message.fromVector(['P2P_BASE_MESSAGE', JSON.stringify(content)]);
+    const msg = Message.fromVector(['P2P_CHAT_MESSAGE', 'secure-mesh']);
     msg.signWithKey(clientKey);
 
     let chat = null;
@@ -188,34 +187,59 @@ describe('peer/message integration (mesh & secure delivery)', function () {
     hub._handleFabricMessage(msg.toBuffer(), { name: addr }, null);
 
     assert.ok(chat);
-    assert.strictEqual(chat.object.text, 'secure-mesh');
-    assert.ok(relayWrites.length >= 1, 'relayFrom should write ChatMessage to non-origin edges');
+    assert.strictEqual(chat.text, 'secure-mesh');
+    assert.ok(relayWrites.length >= 1, 'relayFrom should write chat to non-origin edges');
   });
 
-  it('rejects messages with invalid signature when sender pubkey is known', function () {
+  it('rejects chat with a corrupted AMP signature', function () {
     const hub = mockHub();
-    const expectedSigner = new Key();
-    const attacker = new Key();
+    const author = new Key();
     const addr = '127.0.0.1:7400';
     hub.connections[addr] = { _writeFabric: () => {}, destroy: () => {} };
-    hub.peers[addr] = { id: 'victim', publicKey: expectedSigner.pubkey };
+    hub.peers[addr] = { id: 'peer', publicKey: author.pubkey };
 
-    const content = { type: 'P2P_CHAT_MESSAGE', object: { text: 'forged' } };
-    const msg = Message.fromVector(['P2P_BASE_MESSAGE', JSON.stringify(content)]);
-    msg.signWithKey(attacker);
+    const msg = Message.fromVector(['P2P_CHAT_MESSAGE', 'forged']);
+    msg.signWithKey(author);
+    // Flip a signature byte so AMP verify fails (author field still present).
+    msg.raw.signature[0] ^= 0xff;
 
     let warned = false;
     hub.once('warning', (w) => {
-      const s = String(w);
-      if (/Invalid message signature|signature|Signer mismatch/i.test(s)) warned = true;
+      if (/Invalid message signature/i.test(String(w))) warned = true;
     });
     let chats = 0;
     hub.on('chat', () => { chats++; });
 
     hub._handleFabricMessage(msg.toBuffer(), { name: addr }, null);
 
-    assert.ok(warned, 'expected warning when signature does not match stored peer pubkey');
-    assert.strictEqual(chats, 0, 'forged P2P_BASE_MESSAGE must not dispatch chat');
+    assert.ok(warned, 'expected warning for invalid AMP signature');
+    assert.strictEqual(chats, 0, 'invalid signature must not dispatch chat');
+  });
+
+  it('rejects non-relayable frames when signer mismatches pinned peer key', function () {
+    const hub = mockHub();
+    const expectedSigner = new Key();
+    const attacker = new Key();
+    const addr = '127.0.0.1:7401';
+    hub.connections[addr] = { _writeFabric: () => {}, destroy: () => {} };
+    hub.peers[addr] = { id: 'victim', publicKey: expectedSigner.pubkey };
+
+    // Inventory is mesh-relay-as-is (author may be a prior hop). Pin applies to local types.
+    const msg = Message.fromLegacyBody('P2P_DOCUMENT_PUBLISH', { id: 'doc', content: 'x' });
+    msg.signWithKey(attacker);
+
+    let warned = false;
+    hub.once('warning', (w) => {
+      if (/Signer mismatch/i.test(String(w))) warned = true;
+    });
+    let publishes = 0;
+    hub.on('documentPublish', () => { publishes++; });
+    hub.on('DocumentPublish', () => { publishes++; });
+
+    hub._handleFabricMessage(msg.toBuffer(), { name: addr }, null);
+
+    assert.ok(warned, 'expected signer mismatch for pinned non-relayable type');
+    assert.strictEqual(publishes, 0, 'pinned mismatch must not dispatch document publish');
   });
 
   it('drops duplicate wire envelopes (reliable dedup for mesh floods)', function () {
@@ -225,8 +249,7 @@ describe('peer/message integration (mesh & secure delivery)', function () {
     hub.connections[addr] = { _writeFabric: () => {}, destroy: () => {} };
     hub.peers[addr] = { id: 'p', publicKey: k.pubkey };
 
-    const content = { type: 'P2P_CHAT_MESSAGE', object: { text: 'once' } };
-    const msg = Message.fromVector(['P2P_BASE_MESSAGE', JSON.stringify(content)]);
+    const msg = Message.fromVector(['P2P_CHAT_MESSAGE', 'once']);
     msg.signWithKey(k);
     const buf = msg.toBuffer();
 
@@ -239,7 +262,275 @@ describe('peer/message integration (mesh & secure delivery)', function () {
     assert.strictEqual(chats, 1);
   });
 
-  it('drops body hash mismatch before signature (wire integrity warning)', function () {
+  it('dispatches first-class P2P_PEER_GOSSIP over the wire (not P2P_BASE_MESSAGE fallback)', function () {
+    const hub = mockHub();
+    const author = new Key();
+    const origin = '127.0.0.1:7650';
+    const relayWrites = [];
+    hub.connections[origin] = { _writeFabric: () => {}, destroy: () => {} };
+    hub.connections['127.0.0.1:7651'] = {
+      _writeFabric: (buf) => relayWrites.push(Buffer.isBuffer(buf) ? buf : Buffer.from(buf)),
+      destroy: () => {}
+    };
+    hub.peers[origin] = { id: 'relay-peer', publicKey: hub.key.pubkey };
+
+    const msg = Message.fromLegacyBody('P2P_PEER_GOSSIP', {
+      host: '10.0.0.9',
+      port: 9001,
+      gossipHop: 3
+    });
+    msg.signWithKey(author);
+    const original = msg.toBuffer();
+    assert.strictEqual(msg.type, 'P2P_PEER_GOSSIP');
+
+    let gossip = null;
+    hub.once('peeringGossip', (e) => { gossip = e; });
+    hub._handleFabricMessage(original, { name: origin }, null);
+
+    assert.ok(gossip, 'expected peeringGossip from first-class wire frame');
+    assert.ok(relayWrites.length >= 1, 'gossip should relay');
+    assert.ok(relayWrites[0].equals(original), 'gossip relayed bit-identical');
+  });
+
+  it('relays first-class P2P_CHAT_MESSAGE frames bit-identical (no hop re-sign)', function () {
+    const hub = mockHub();
+    const author = new Key();
+    const origin = '127.0.0.1:7700';
+    const relayWrites = [];
+    hub.connections[origin] = { _writeFabric: () => {}, destroy: () => {} };
+    hub.connections['127.0.0.1:7701'] = {
+      _writeFabric: (buf) => relayWrites.push(Buffer.isBuffer(buf) ? buf : Buffer.from(buf)),
+      destroy: () => {}
+    };
+    // Pin is the TCP peer (Noise identity), not necessarily the message author.
+    hub.peers[origin] = { id: 'relay-peer', publicKey: hub.key.pubkey };
+
+    const msg = Message.fromVector(['P2P_CHAT_MESSAGE', 'as-is']);
+    msg.signWithKey(author);
+    const original = msg.toBuffer();
+
+    hub._handleFabricMessage(original, { name: origin }, null);
+
+    assert.ok(relayWrites.length >= 1, 'chat should relay to non-origin edge');
+    assert.ok(relayWrites[0].equals(original), 'relay forwards original AMP bytes');
+    const relayed = Message.fromBuffer(relayWrites[0]);
+    assert.strictEqual(relayed.type, 'P2P_CHAT_MESSAGE', 'relay keeps first-class opcode');
+    const relayedSigner = hub._verifiedFabricSignerPubkeyHex(relayed);
+    const authorXOnly = author.pubkey.length === 66 ? author.pubkey.slice(2) : author.pubkey;
+    assert.strictEqual(relayedSigner, authorXOnly, 'original author signature preserved');
+    assert.strictEqual(relayed.raw.data.toString('utf8'), 'as-is', 'body is UTF-8 text');
+  });
+
+  it('relays CONTRACT_MESSAGE frames bit-identical (no hop re-sign)', function () {
+    const hub = mockHub();
+    const author = new Key();
+    const origin = '127.0.0.1:7750';
+    const relayWrites = [];
+    hub.connections[origin] = { _writeFabric: () => {}, destroy: () => {} };
+    hub.connections['127.0.0.1:7751'] = {
+      _writeFabric: (buf) => relayWrites.push(Buffer.isBuffer(buf) ? buf : Buffer.from(buf)),
+      destroy: () => {}
+    };
+    hub.peers[origin] = { id: 'relay-peer', publicKey: hub.key.pubkey };
+
+    const msg = Message.fromLegacyBody('CONTRACT_MESSAGE', {
+      contract: 'group-contract-id',
+      type: 'GroupChat',
+      object: { body: 'as-is-contract', author: author.pubkey }
+    });
+    msg.signWithKey(author);
+    const original = msg.toBuffer();
+
+    hub._handleFabricMessage(original, { name: origin }, null);
+
+    assert.ok(relayWrites.length >= 1, 'CONTRACT_MESSAGE should relay to non-origin edge');
+    assert.ok(relayWrites[0].equals(original), 'relay forwards original AMP bytes');
+    const relayed = Message.fromBuffer(relayWrites[0]);
+    assert.strictEqual(relayed.type, 'CONTRACT_MESSAGE');
+    const relayedSigner = hub._verifiedFabricSignerPubkeyHex(relayed);
+    const authorXOnly = author.pubkey.length === 66 ? author.pubkey.slice(2) : author.pubkey;
+    assert.strictEqual(relayedSigner, authorXOnly, 'original author signature preserved');
+  });
+
+  it('CONTRACT_MESSAGE dispatches by namespace and does not crash on unknown contract id', function () {
+    const hub = mockHub();
+    const k = new Key();
+    const origin = '127.0.0.1:7800';
+    hub.connections[origin] = { _writeFabric: () => {}, destroy: () => {} };
+    hub.connections['127.0.0.1:7801'] = { _writeFabric: () => {}, destroy: () => {} };
+    hub.peers[origin] = { id: 'p', publicKey: k.pubkey };
+
+    const events = [];
+    hub.on('contract:message', (e) => events.push(e));
+
+    const msg = Message.fromLegacyBody('CONTRACT_MESSAGE', {
+      contract: 'unregistered-contract-id',
+      type: 'MissionBroadcast',
+      object: { mission: { id: 'm1' } }
+    });
+    msg.signWithKey(k);
+    const wire = msg.toBuffer();
+
+    // Must not throw despite the contract not being registered locally.
+    hub._handleFabricMessage(wire, { name: origin }, null);
+
+    assert.strictEqual(events.length, 1);
+    assert.strictEqual(events[0].contract, 'unregistered-contract-id');
+    assert.strictEqual(events[0].registered, false);
+    assert.strictEqual(events[0].genesis, null);
+    assert.ok(events[0].wireMessage, 'journal attach carries wireMessage');
+    assert.strictEqual(typeof events[0].wireMessage.toBuffer, 'function');
+    assert.ok(events[0].wireMessage.toBuffer().equals(wire));
+    assert.strictEqual(events[0].messageHex, wire.toString('hex'));
+    assert.strictEqual(events[0].messageId, msg.id);
+    const firstHex = events[0].messageHex;
+    events[0].wireMessage.toBuffer = function () {
+      throw new Error('messageHex must not recompute toBuffer after the first read');
+    };
+    assert.strictEqual(events[0].messageHex, firstHex);
+  });
+
+  it('CONTRACT_MESSAGE without a contract namespace is dropped with a warning', function () {
+    const hub = mockHub();
+    const k = new Key();
+    const origin = '127.0.0.1:7850';
+    hub.connections[origin] = { _writeFabric: () => {}, destroy: () => {} };
+    hub.peers[origin] = { id: 'p', publicKey: k.pubkey };
+
+    let warned = false;
+    hub.on('warning', (w) => { if (/missing `contract` namespace id/.test(String(w))) warned = true; });
+    let events = 0;
+    hub.on('contract:message', () => { events++; });
+
+    // The field decoder refuses an empty `contract` first; this reaches the dispatch check itself.
+    hub._handleGenericMessage({ type: 'CONTRACT_MESSAGE', object: { contract: '', payload: JSON.stringify({ type: 'X', object: {} }) } }, { name: origin }, null);
+
+    assert.ok(warned, 'expected warning for missing contract namespace');
+    assert.strictEqual(events, 0);
+  });
+
+  it('CONTRACT_MESSAGE field body with an empty contract is refused before dispatch', function () {
+    const hub = mockHub();
+    const k = new Key();
+    const origin = '127.0.0.1:7851';
+    hub.connections[origin] = { _writeFabric: () => {}, destroy: () => {} };
+    hub.peers[origin] = { id: 'p', publicKey: k.pubkey };
+
+    let refused = false;
+    hub.on('warning', (w) => { if (/CONTRACT_MESSAGE parse failed: unusable field body/.test(String(w))) refused = true; });
+    let events = 0;
+    hub.on('contract:message', () => { events++; });
+
+    const msg = Message.fromFields('CONTRACT_MESSAGE', { contract: '', payload: JSON.stringify({ type: 'X', object: {} }) });
+    msg.signWithKey(k);
+    hub._handleFabricMessage(msg.toBuffer(), { name: origin }, null);
+
+    assert.ok(refused, 'expected the field body to be refused');
+    assert.strictEqual(events, 0);
+  });
+
+  it('CONTRACT_PUBLISH emits contract:publish with a deterministic id', function () {
+    const hub = mockHub();
+    const k = new Key();
+    const origin = '127.0.0.1:7900';
+    hub.connections[origin] = { _writeFabric: () => {}, destroy: () => {} };
+    hub.peers[origin] = { id: 'p', publicKey: k.pubkey };
+
+    let event = null;
+    hub.once('contract:publish', (e) => { event = e; });
+
+    const definition = { name: 'AppPeer', version: 1, state: {} };
+    const msg = Message.fromLegacyBody('CONTRACT_PUBLISH', definition);
+    msg.signWithKey(k);
+    hub._handleFabricMessage(msg.toBuffer(), { name: origin }, null);
+
+    assert.ok(event, 'expected contract:publish');
+    assert.ok(event.contract && /^[0-9a-f]{64}$/.test(event.contract), 'deterministic Actor id');
+  });
+
+  it('CONTRACT_MESSAGE includes genesis after CONTRACT_PUBLISH', function () {
+    const hub = mockHub();
+    const k = new Key();
+    const origin = '127.0.0.1:7910';
+    hub.connections[origin] = { _writeFabric: () => {}, destroy: () => {} };
+    hub.peers[origin] = { id: 'p', publicKey: k.pubkey };
+
+    const definition = {
+      name: 'ArcPeerGenesis',
+      members: { signers: [k.pubkey], threshold: 1 },
+      state: {}
+    };
+    const publish = Message.fromLegacyBody('CONTRACT_PUBLISH', definition);
+    publish.signWithKey(k);
+    hub._handleFabricMessage(publish.toBuffer(), { name: origin }, null);
+
+    const Actor = require('../types/actor');
+    const contractId = new Actor(definition).id;
+    const events = [];
+    hub.on('contract:message', (e) => events.push(e));
+    const msg = Message.fromLegacyBody('CONTRACT_MESSAGE', {
+      contract: contractId,
+      type: 'GroupChat',
+      object: { body: 'hi' }
+    });
+    msg.signWithKey(k);
+    hub._handleFabricMessage(msg.toBuffer(), { name: origin }, null);
+
+    assert.strictEqual(events.length, 1);
+    assert.strictEqual(events[0].registered, true);
+    assert.ok(events[0].genesis);
+    assert.strictEqual(events[0].genesis.name, 'ArcPeerGenesis');
+    assert.match(String(events[0].messageHex || ''), /^[0-9a-f]+$/i);
+  });
+
+  it('CONTRACT_PROPOSAL verifies payload and emits contract:proposal', function () {
+    const hub = mockHub();
+    const k = new Key();
+    const origin = '127.0.0.1:7950';
+    hub.connections[origin] = { _writeFabric: () => {}, destroy: () => {} };
+    hub.peers[origin] = { id: 'p', publicKey: k.pubkey };
+
+    const { createContractProposalMessage } = require('../functions/contractProposal');
+    const inner = Message.fromVector(['P2P_BASE_MESSAGE', JSON.stringify({ type: 'Accept', object: { n: 1 } })]);
+    inner.signWithKey(k);
+    const proposal = createContractProposalMessage(k, { messages: [inner], contractId: 'goon-contract' });
+
+    let event = null;
+    hub.once('contract:proposal', (e) => { event = e; });
+
+    hub._handleFabricMessage(proposal.toBuffer(), { name: origin }, null);
+
+    assert.ok(event, 'expected contract:proposal');
+    assert.strictEqual(event.contract, 'goon-contract');
+  });
+
+    it('drops body hash mismatch before signature (on-wire XOR)', function () {
+      const hub = mockHub();
+      const k = new Key();
+      const addr = '127.0.0.1:7601';
+      hub.connections[addr] = { _writeFabric: () => {}, destroy: () => {} };
+      hub.peers[addr] = { id: 'p', publicKey: k.pubkey };
+      hub._addressToId[addr] = 'xor-peer';
+      hub._state.peers = {
+        'xor-peer': { id: 'xor-peer', address: addr, score: 180, publicKey: k.pubkey }
+      };
+
+      const msg = Message.fromVector(['P2P_CHAT_MESSAGE', 'x']).signWithKey(k);
+      const buf = Buffer.from(msg.toBuffer());
+      if (buf.length > 208) buf[208] ^= 0xff;
+
+      let warned = false;
+      let chat = null;
+      hub.on('warning', (w) => {
+        if (/body hash mismatch/i.test(String(w))) warned = true;
+      });
+      hub.once('chat', (m) => { chat = m; });
+      hub._handleFabricMessage(buf, { name: addr }, null);
+      assert.ok(warned);
+      assert.strictEqual(chat, null);
+    });
+
+    it('drops body hash mismatch when parsed header hash is zeroed', function () {
     const hub = mockHub();
     const k = new Key();
     const addr = '127.0.0.1:7600';
