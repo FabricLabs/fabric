@@ -2,18 +2,23 @@
 
 const { PERSISTED_JSON_MAX_CHARS } = require('../constants');
 const { tryParsePersistedJson } = require('../functions/wireJson');
+const { randomUnit } = require('../functions/bytes');
 
 // Dependencies
+const fs = require('fs');
 const { Level } = require('level');
 const merge = require('lodash.merge');
+const monitor = require('fast-json-patch');
 const pointer = require('json-pointer');
 
 // Fabric Types
 const Actor = require('./actor');
 const Collection = require('./collection');
 const Entity = require('./entity');
+const Ledger = require('./ledger');
 const Stack = require('./stack');
 const State = require('./state');
+const Transaction = require('./transaction');
 
 /**
  * Level before abstract-level 2 throws `LEVEL_NOT_FOUND` for a missing key;
@@ -128,8 +133,12 @@ function decodePersisted (raw) {
 }
 
 /**
- * @classdesc Level-backed persistence extending {@link Actor}. Use optional {@link Codec} in <code>settings.codec</code> for
- * encrypted values; {@link Store.openEncrypted} matches Hub/shell keystore defaults. Commit/history behavior follows {@link Actor}.
+ * @classdesc Durable bag extending {@link Actor}. <code>type: 'leveldb'</code> (default) is Level;
+ * <code>type: 'disk'</code> is a directory, implemented by {@link Filesystem}.
+ * <code>settings.ledger</code> keeps a {@link Ledger} ({@link Datastore}).
+ * {@link History} is a disk Store that records events.
+ * Use optional {@link Codec} in <code>settings.codec</code> for
+ * encrypted values; {@link Store.openEncrypted} matches Hub/shell keystore defaults.
  * @class Store
  * @extends Actor
  * @property {Mixed} settings Current configuration.
@@ -168,6 +177,12 @@ class Store extends Actor {
     };
 
     this.keys = {};
+    this._clock = 0;
+    this._log = [];
+    if (this.settings.ledger) {
+      this.ledger = new Ledger();
+      this.data = {};
+    }
     this.commits = new Collection({
       type: 'State'
     });
@@ -1100,6 +1115,151 @@ class Store extends Actor {
     this.status = 'stopped';
 
     return this;
+  }
+
+  /**
+   * Event-log clock. {@link History} uses the same counter.
+   * @returns {number}
+   */
+  get clock () {
+    return this._clock || 0;
+  }
+
+  set clock (value) {
+    this._clock = value;
+  }
+
+  /**
+   * Split a path the way {@link Datastore} did: one segment stays, two segments
+   * keep the second, anything longer is refused.
+   * @param {string} path
+   * @returns {string|null}
+   */
+  route (path) {
+    const parts = String(path || '').split('/');
+    if (!parts.length) return '/';
+    switch (parts.length) {
+      case 1:
+        return path;
+      case 2:
+        return parts[1];
+      default:
+        return null;
+    }
+  }
+
+  /**
+   * @param {Object} identity
+   * @returns {void}
+   */
+  register (identity) {
+    this.identity = identity;
+  }
+
+  /**
+   * Read every file in a directory onto <code>@data</code>.
+   * @param {string} dir
+   * @returns {void}
+   * @private
+   */
+  _loadFrom (dir) {
+    const files = fs.readdirSync(dir);
+    this.log('_loadFrom', dir, 'files:', files);
+    for (let i = 0; i < files.length; i++) {
+      const content = fs.readFileSync(files[i]);
+      this.log('_loadFrom', 'content:', content);
+      this['@data'][files[i]] = content;
+    }
+  }
+
+  /**
+   * @param {Array} delta JSON Patch
+   * @returns {Object}
+   * @private
+   */
+  _apply (delta) {
+    const document = monitor.applyPatch(this['@data'], delta);
+    this._sign();
+    document.commit();
+    this.log('[STORE]', '_apply', 'document:', document);
+    return this['@data'];
+  }
+
+  /**
+   * Append one entropy-stamped transaction to the ledger.
+   * @returns {Transaction}
+   */
+  ping () {
+    const ping = new Transaction({
+      entropy: randomUnit(),
+      timestamp: Date.now(),
+      identity: this.identity
+    });
+
+    if (typeof ping._sign === 'function') ping._sign(this.identity);
+
+    const book = this['@data'] && this['@data']['/pings'] && this['@data']['/pings'].ledger;
+    if (book && typeof book.append === 'function') book.append(ping);
+    else if (this.ledger && typeof this.ledger.append === 'function') this.ledger.append(ping);
+
+    return ping;
+  }
+
+  pong () {
+    this.log('PONG!');
+  }
+
+  spam () {
+    for (let i = 0; i < 10; i++) this.ping();
+  }
+
+  /**
+   * Snapshot of the current state as a commit actor, then publish it when this
+   * store can write a file ({@link Filesystem#publish}).
+   * @param {*} event
+   * @returns {Promise<Store>}
+   */
+  async acceptEvent (event) {
+    const now = new Date();
+    const message = {
+      type: 'HistoryEvent',
+      published: now.toISOString(),
+      object: { content: event }
+    };
+    const actor = new Actor(message);
+
+    if (!this._state.documents) this._state.documents = {};
+    this._state.documents[actor.id] = message;
+    this._log.push(actor.id);
+
+    const state = new Actor(this.state);
+    const commit = new Actor({
+      type: 'Commit',
+      object: {
+        content: JSON.stringify(state.toGenericMessage()),
+        state: state.id
+      }
+    });
+
+    if (typeof this.publish === 'function') {
+      await this.publish(now.toISOString() + '.json', JSON.stringify(commit.toObject()));
+    }
+
+    this._clock = (this._clock || 0) + 1;
+    return this;
+  }
+
+  /**
+   * @param {Array} [log]
+   * @returns {Promise<Store>}
+   */
+  async replay (log = []) {
+    for (let i = 0; i < log.length; i++) await this.acceptEvent(log[i]);
+    return this;
+  }
+
+  render () {
+    return `<Store />`;
   }
 }
 

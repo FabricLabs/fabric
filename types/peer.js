@@ -66,7 +66,7 @@ const {
 const {
   isRelayAsIsWireType,
   isFirstClassOpcodeOnlyType
-} = require('../functions/gossipNetwork');
+} = require('./network');
 const {
   isOnionChatSeal,
   tryOpenOnionChatText

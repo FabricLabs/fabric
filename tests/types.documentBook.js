@@ -555,6 +555,13 @@ describe('@fabric/core chunk bids (P2P_DOCUMENT_BID / P2P_DOCUMENT_ASK)', functi
 });
 
 describe('DocumentBlobTransferBook', function () {
+  it('is a Book and keeps assembly rows on the book map', function () {
+    const book = new DocumentBlobTransferBook({ maxPending: 4 });
+    assert.ok(book instanceof Book);
+    assert.strictEqual(book._pending, book._entries);
+    assert.strictEqual(book.capacity, 4);
+  });
+
   it('rejects tampered blob bytes', function () {
     const split = Document.split(Buffer.alloc(3000, 1), 1000, 'doc');
     const book = new DocumentBlobTransferBook();

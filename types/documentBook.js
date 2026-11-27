@@ -1809,7 +1809,9 @@ function transferKey (documentId, merkleRootHex) {
 }
 
 /**
- * Buyer-side reassembly of indexed blob transfers.
+ * Buyer-side reassembly of indexed blob transfers. Extends {@link Book}:
+ * assembly rows are the book map (oldest first). Expectations stay in their
+ * own map so a purchase pin is not evicted as an ordinary row.
  *
  * Two tables:
  * - **Expectations** (`expectTransfer`): what the buyer asked / paid for.
@@ -1825,7 +1827,7 @@ function transferKey (documentId, merkleRootHex) {
  *   evicted (oldest first) before any pinned row. A row whose `total`
  *   contradicts the expectation (planted before the purchase) is replaced.
  */
-class DocumentBlobTransferBook {
+class DocumentBlobTransferBook extends Book {
   /**
    * @param {Object} [opts]
    * @param {number} [opts.ttlMs] drop unsolicited incomplete transfers idle this long
@@ -1836,15 +1838,20 @@ class DocumentBlobTransferBook {
    * @param {number} [opts.maxPendingBytesPerOrigin] unsolicited byte quota per origin (default a quarter of `maxPendingBytes`)
    * @param {number} [opts.maxParts] max `blobTotal` for one transfer
    * @param {number} [opts.maxPendingBytes] byte budget across every incomplete transfer
+   * @param {Function} [opts.now] clock in ms (tests)
    */
   constructor (opts = {}) {
     const positive = (v, fallback) => {
       const n = Number(v);
       return Number.isFinite(n) && n > 0 ? n : fallback;
     };
-    // Assembly rows.
+    const maxPending = positive(opts.maxPending, MAX_PENDING_BLOB_TRANSFERS);
+    const bookSettings = { maxEntries: maxPending };
+    if (typeof opts.now === 'function') bookSettings.now = opts.now;
+    super(bookSettings);
+    // Assembly rows are the Book map. Expectations stay separate.
     /** @type {Map<string, object>} */
-    this._pending = new Map();
+    this._pending = this._entries;
     // Purchase expectations.
     /** @type {Map<string, object>} */
     this._expectations = new Map();
@@ -1854,12 +1861,20 @@ class DocumentBlobTransferBook {
     this._pendingBytes = 0;
     this.ttlMs = opts.ttlMs != null ? Number(opts.ttlMs) : INCOMPLETE_TRANSFER_TTL_MS;
     this.expectationTtlMs = positive(opts.expectationTtlMs, EXPECTATION_TTL_MS);
-    this.maxPending = positive(opts.maxPending, MAX_PENDING_BLOB_TRANSFERS);
+    this.maxPending = maxPending;
     this.maxExpectations = positive(opts.maxExpectations, this.maxPending);
     this.maxPendingPerOrigin = positive(opts.maxPendingPerOrigin, MAX_PENDING_BLOB_TRANSFERS_PER_ORIGIN);
     this.maxParts = positive(opts.maxParts, MAX_DOCUMENT_BLOBS);
     this.maxPendingBytes = positive(opts.maxPendingBytes, MAX_PENDING_BLOB_BYTES);
     this.maxPendingBytesPerOrigin = positive(opts.maxPendingBytesPerOrigin, Math.floor(this.maxPendingBytes / 4));
+  }
+
+  /**
+   * Unsolicited assembly rows. Pinned expectations are not in this count.
+   * @returns {number}
+   */
+  get capacity () {
+    return this.maxPending;
   }
 
   /**

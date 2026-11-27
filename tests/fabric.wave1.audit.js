@@ -176,7 +176,8 @@ describe('ESM Fabric facade (types/fabric.mjs)', function () {
 
 describe('Datastore entropy + Turntable autobop', function () {
   it('Datastore.ping stamps entropy via randomUnit', function () {
-    const Datastore = require('../types/datastore');
+    const Store = require('../types/store');
+    const Datastore = Store;
     const Transaction = require('../types/transaction');
     // Avoid Datastore constructor (observe() needs a live object); call ping on a stub.
     const ds = Object.create(Datastore.prototype);
