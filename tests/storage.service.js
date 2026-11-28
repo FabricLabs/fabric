@@ -211,6 +211,77 @@ describe('services/storage', function () {
     );
   });
 
+  it('settles chain callbacks named by a proof before verification', async function () {
+    const tx = new bitcoin.Transaction();
+    tx.version = 2;
+    const calls = [];
+    const storage = new Storage({
+      network: 'regtest',
+      outpointUnspent: async (txid, vout) => {
+        calls.push(['unspent', txid, vout]);
+        return true;
+      },
+      txConfirmed: async (txid, depth) => {
+        calls.push(['confirmed', txid, depth]);
+        return false;
+      },
+      headerKnown: async (hash) => {
+        calls.push(['header', hash]);
+        return false;
+      }
+    });
+    const deposit = Storage.buildDeposit({
+      network: 'regtest',
+      providerPubkey: provider.pub,
+      publisherPubkey: publisher.pub,
+      withdrawAfter: 2000,
+      amountSats: 30000,
+      merkleRootHex: 'aa'.repeat(32)
+    });
+    const fundedTxHex = fundingFor(deposit.address);
+    const fundedTxid = bitcoin.Transaction.fromHex(fundedTxHex).getId();
+    await assert.rejects(storage.preparePenalty({
+      fraudProof: {
+        type: 'FraudProof',
+        kind: 'wrongful-penalty',
+        artifacts: {
+          challenge: { deposit: { txid: fundedTxid, vout: 0 } },
+          penaltyTxHex: tx.toHex(),
+          inclusion: { blockHash: 'ab'.repeat(32) }
+        }
+      },
+      deposit,
+      fundedTxHex,
+      destinationAddress: bitcoin.payments.p2wpkh({
+        pubkey: Buffer.from(publisher.pub, 'hex'),
+        network: bitcoin.networks.regtest
+      }).address,
+      ctx: {
+        outpointSpend: async () => null,
+        txConfirmations: async () => 3,
+        confirmations: async () => 1,
+        txCount: async () => 2
+      }
+    }));
+    assert.deepStrictEqual(calls[0], ['unspent', fundedTxid, 0]);
+    assert.ok(calls.some((row) => row[0] === 'confirmed' && row[1] === tx.getId() && row[2] === 6));
+    assert.deepStrictEqual(calls.find((row) => row[0] === 'header').slice(1), ['ab'.repeat(32)]);
+
+    await assert.rejects(storage.preparePenalty({
+      fraudProof: {
+        type: 'FraudProof',
+        kind: 'non-response',
+        artifacts: {
+          challenge: { deposit: { txid: fundedTxid, vout: 0 } }
+        }
+      },
+      deposit,
+      fundedTxHex,
+      destinationAddress: 'bcrt1qnotused',
+      ctx: { outpointSpend: async () => ({ leafId: 'checkin' }) }
+    }), /spent/);
+  });
+
   it('a peer sells one chunk with no Hub process', function () {
     const seller = new Peer({ listen: false, sealPricedDocuments: true });
     const plain = crypto.randomBytes(100);
@@ -302,5 +373,40 @@ describe('services/storage', function () {
     });
     assert.strictEqual(storage.respond(honest, { bytes: doc.bytesFor(challenge.blobIndex) }).ok, true);
     void contract;
+  });
+
+  it('challenge and respond commands cover usage, unknown ids, and a signed challenge', function () {
+    const ex = new CliDocumentExchange({});
+    assert.match(ex.storageChallenge(['challenge']).error, /Usage/);
+    assert.match(ex.storageRespond(['respond']).error, /Usage/);
+    assert.strictEqual(ex.storageRespond(['respond', 'ab'.repeat(32), provider.priv.toString('hex'), '1', '00']).error, 'unknown challenge');
+    const committed = ex.storageCommit(['commit', 'c1', hashes.join(',')]);
+    assert.strictEqual(committed.ok, true);
+    const challenged = ex.storageChallenge([
+      'challenge',
+      'c1',
+      provider.xOnly,
+      publisher.priv.toString('hex'),
+      '3'
+    ]);
+    assert.strictEqual(challenged.ok, true, challenged.error);
+    assert.strictEqual(challenged.challenge.epoch, 3);
+    const missing = ex.storageRespond([
+      'respond',
+      challenged.message.split(' ')[1],
+      provider.priv.toString('hex'),
+      '4',
+      '00'
+    ]);
+    assert.strictEqual(missing.ok, false);
+    ex.storage().contracts.delete('c1');
+    const orphan = ex.storageRespond([
+      'respond',
+      challenged.message.split(' ')[1],
+      provider.priv.toString('hex'),
+      '4',
+      '00'
+    ]);
+    assert.strictEqual(orphan.error, 'challenge has no storage contract');
   });
 });

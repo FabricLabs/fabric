@@ -310,5 +310,41 @@ describe('@fabric/core/types/filesystem', function () {
       assert.ok(leaves.length === Object.keys(files).length);
       assert.ok(leaves.every(leaf => typeof leaf === 'string' && leaf.length === 64));
     });
+
+    it('commits event documents and reloads them through History', async function () {
+      const History = require('../types/history');
+      const Datastore = require('../types/datastore');
+      await filesystem.start();
+      filesystem._state.documents = { evt: { type: 'HistoryEvent' } };
+      filesystem._log = ['evt'];
+      filesystem.commit();
+      const saved = JSON.parse(fs.readFileSync(path.join(testDir, '.fabric', 'STATE.json'), 'utf8'));
+      assert.strictEqual(saved.documents.evt.type, 'HistoryEvent');
+      assert.deepStrictEqual(saved.log, ['evt']);
+
+      const dir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'history-'));
+      const history = new History({ path: dir });
+      const published = [];
+      history.publish = async (name) => { published.push(name); return true; };
+      await history.acceptEvent({ kind: 'a' });
+      await history.acceptEvent({ kind: 'b' });
+      assert.strictEqual(published.length, 2);
+      assert.notStrictEqual(published[0], published[1]);
+      assert.strictEqual(history.writeFile('note.txt', Buffer.from('hello')), true);
+      history._state.content = history._state.content || {};
+      history._state.content.files = ['note.txt'];
+      const files = await history._syncFiles();
+      assert.strictEqual(Buffer.from(files['note.txt'].content).toString(), 'hello');
+      assert.strictEqual(files['note.txt'].hash.length, 64);
+      history._syncFiles = async () => { throw new Error('disk'); };
+      await history.start();
+      assert.strictEqual(history._state.status, 'ERROR');
+      assert.strictEqual(history._state.notices.length, 1);
+      fs.rmSync(dir, { recursive: true, force: true });
+
+      const datastore = new Datastore({ persistent: false });
+      assert.ok(datastore.ledger);
+      assert.ok(datastore.ping());
+    });
   });
 });

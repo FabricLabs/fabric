@@ -523,5 +523,55 @@ describe('@fabric/core/types/store', function () {
 
       assert.equal(result.length, LARGE_COLLECTION_SIZE);
     });
+
+    it('loads a directory, applies a patch, and publishes distinct events', async function () {
+      const fs = require('fs');
+      const os = require('os');
+      const path = require('path');
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'store-load-'));
+      fs.writeFileSync(path.join(dir, 'item.json'), '{"n":1}');
+      const store = new Store({ persistent: false });
+      store['@data'] = {};
+      store._sign = () => {};
+      store._loadFrom(dir);
+      assert.ok(Buffer.isBuffer(store['@data']['item.json']));
+      const patched = store._apply([{ op: 'add', path: '/note', value: 'kept' }]);
+      assert.strictEqual(patched.note, 'kept');
+
+      const names = [];
+      store.publish = async (name) => { names.push(name); };
+      store.register({ id: 'keeper' });
+      await store.acceptEvent({ kind: 'one' });
+      await store.acceptEvent({ kind: 'two' });
+      assert.strictEqual(store._log.length, 2);
+      assert.strictEqual(names.length, 2);
+      assert.notStrictEqual(names[0], names[1]);
+      assert.ok(names[0].endsWith('-1.json'));
+      await store.replay([{ kind: 'three' }]);
+      assert.strictEqual(store._clock, 3);
+      assert.strictEqual(store.render(), '<Store />');
+      assert.strictEqual(store.identity.id, 'keeper');
+      assert.strictEqual(typeof store._getPathForKey('alpha'), 'string');
+      fs.rmSync(dir, { recursive: true, force: true });
+    });
+
+    it('pings the ledger or a pings book and refuses an empty encrypted path', async function () {
+      const store = new Store({ persistent: false });
+      const bare = store.ping();
+      assert.ok(bare);
+      const book = [];
+      store['@data'] = { '/pings': { ledger: { append (item) { book.push(item); } } } };
+      store.ping();
+      assert.strictEqual(book.length, 1);
+      const ledger = [];
+      store.ledger = { append (item) { ledger.push(item); } };
+      delete store['@data']['/pings'];
+      store.spam();
+      assert.strictEqual(ledger.length, 10);
+      store.pong();
+      await assert.rejects(store._setEncrypted('', 1), /Path is required/);
+      assert.strictEqual(await store._getEncrypted(''), null);
+      assert.ok(Store.openEncrypted({ persistent: false }) instanceof Store);
+    });
   });
 });

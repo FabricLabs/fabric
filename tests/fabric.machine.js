@@ -542,4 +542,26 @@ describe('program execution limits', function () {
     assert.strictEqual(out.ok, false);
     assert.match(out.error, /maxSteps/);
   });
+
+  it('keeps constructor state and the small opcode helpers', function () {
+    const machine = new Machine({ state: { contest: 'open' }, interval: 2, precision: 2 });
+    assert.strictEqual(machine.state.contest, 'open');
+    assert.strictEqual(machine.state.clock, 0);
+    assert.strictEqual(machine.frequency, '0.50');
+    assert.strictEqual(machine.validateCycle(0), false);
+    assert.throws(() => Machine.fromObjectString(), /Must provide input/);
+    const buffers = Machine.fromObjectString(JSON.stringify({
+      0: [1, 2],
+      1: { type: 'Buffer', data: [3] }
+    }));
+    assert.strictEqual(buffers.length, 2);
+    machine.defineOpcode('OP_NOTE', () => 'noted');
+    machine.defineBitcoinOpcode('OP_BIT', () => 1);
+    machine.defineFabricOpcode('OP_FAB', () => 2);
+    assert.strictEqual(typeof machine.known.OP_NOTE, 'function');
+    machine.applyOperation({ op: 'add', path: '/mark', value: 1 });
+    const committed = machine.commit();
+    assert.ok(Array.isArray(committed));
+    assert.strictEqual(machine.parseManifest(null).ok, false);
+  });
 });
