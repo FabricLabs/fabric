@@ -6,6 +6,7 @@ const { randomUnit } = require('../functions/bytes');
 
 // Dependencies
 const fs = require('fs');
+const path = require('path');
 const { Level } = require('level');
 const merge = require('lodash.merge');
 const monitor = require('fast-json-patch');
@@ -1166,9 +1167,11 @@ class Store extends Actor {
     const files = fs.readdirSync(dir);
     this.log('_loadFrom', dir, 'files:', files);
     for (let i = 0; i < files.length; i++) {
-      const content = fs.readFileSync(files[i]);
+      const name = String(files[i]);
+      if (!name || name === '.' || name === '..' || name.includes('/') || name.includes('\\') || name.includes('\0')) continue;
+      const content = fs.readFileSync(dir + path.sep + name);
       this.log('_loadFrom', 'content:', content);
-      this['@data'][files[i]] = content;
+      this['@data'][name] = content;
     }
   }
 
@@ -1178,10 +1181,10 @@ class Store extends Actor {
    * @private
    */
   _apply (delta) {
-    const document = monitor.applyPatch(this['@data'], delta);
+    const patched = monitor.applyPatch(this['@data'], delta);
     this._sign();
-    document.commit();
-    this.log('[STORE]', '_apply', 'document:', document);
+    this.commit();
+    this.log('[STORE]', '_apply', 'document:', patched && patched.newDocument);
     return this['@data'];
   }
 
@@ -1232,7 +1235,12 @@ class Store extends Actor {
     this._state.documents[actor.id] = message;
     this._log.push(actor.id);
 
-    const state = new Actor(this.state);
+    const snapshot = {
+      content: this.state,
+      documents: this._state.documents,
+      log: this._log.slice()
+    };
+    const state = new Actor(snapshot);
     const commit = new Actor({
       type: 'Commit',
       object: {
@@ -1242,7 +1250,9 @@ class Store extends Actor {
     });
 
     if (typeof this.publish === 'function') {
-      await this.publish(now.toISOString() + '.json', JSON.stringify(commit.toObject()));
+      this._eventSeq = (this._eventSeq || 0) + 1;
+      const filename = `${now.toISOString()}-${this._eventSeq}.json`;
+      await this.publish(filename, JSON.stringify(commit.toObject()));
     }
 
     this._clock = (this._clock || 0) + 1;

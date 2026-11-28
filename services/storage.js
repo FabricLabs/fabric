@@ -27,6 +27,162 @@ function sha256Hex (buf) {
   return crypto.createHash('sha256').update(buf).digest('hex');
 }
 
+function proofBody (proof) {
+  return proof && typeof proof.toBody === 'function' ? proof.toBody() : proof;
+}
+
+function chainDepth (ctx) {
+  const n = Number(ctx && ctx.minConfirmations);
+  return Number.isInteger(n) && n >= 1 ? n : Witness.FraudProof.DEFAULT_CONFIRMATIONS;
+}
+
+function settle (value) {
+  return value && typeof value.then === 'function' ? value : Promise.resolve(value);
+}
+
+function outpointOf (dep) {
+  if (!dep || typeof dep !== 'object') return null;
+  const txid = String(dep.txid || '').trim().toLowerCase();
+  const vout = Number(dep.vout);
+  if (!HEX64.test(txid) || !Number.isInteger(vout) || vout < 0) return null;
+  return [txid, vout];
+}
+
+function txidOf (hex) {
+  if (!hex) return null;
+  try {
+    return require('bitcoinjs-lib').Transaction.fromHex(String(hex).trim()).getId().toLowerCase();
+  } catch (_) {
+    return null;
+  }
+}
+
+/**
+ * Ask the host's chain callbacks for the outpoints and transactions this proof
+ * names, then hand the verifier closures that return those settled values.
+ * A callback that returns a Promise is awaited here. An id that was not
+ * fetched fails closed.
+ * @param {object} body
+ * @param {object} ctx
+ * @returns {Promise<{ ctx: object, depositSpent: boolean }>}
+ * @private
+ */
+async function resolveChainCtx (body, ctx) {
+  const artifacts = (body && body.artifacts) || {};
+  const unspent = new Map();
+  const spends = new Map();
+  const confirmed = new Map();
+  const txDepths = new Map();
+  const headers = new Map();
+  const headerDepths = new Map();
+  const txCounts = new Map();
+  const outpoints = [];
+  for (const dep of [artifacts.challenge && artifacts.challenge.deposit, artifacts.deposit]) {
+    const outpoint = outpointOf(dep);
+    if (outpoint) outpoints.push(outpoint);
+  }
+  for (const [txid, vout] of outpoints) {
+    const key = `${txid}:${vout}`;
+    if (typeof ctx.outpointSpend === 'function') {
+      spends.set(key, await settle(ctx.outpointSpend(txid, vout)));
+    }
+    if (typeof ctx.outpointUnspent === 'function') {
+      unspent.set(key, (await settle(ctx.outpointUnspent(txid, vout))) === true);
+    }
+  }
+
+  const txids = [];
+  for (const hex of [artifacts.penaltyTxHex, artifacts.staleTxHex]) {
+    const txid = txidOf(hex);
+    if (txid) txids.push(txid);
+  }
+  const revoked = artifacts.revoke && artifacts.revoke.commitmentTxid;
+  if (HEX64.test(String(revoked || '').trim().toLowerCase())) txids.push(String(revoked).trim().toLowerCase());
+  const depth = chainDepth(ctx);
+  for (const txid of txids) {
+    if (typeof ctx.txConfirmations === 'function') {
+      const n = Number(await settle(ctx.txConfirmations(txid)));
+      txDepths.set(txid, Number.isInteger(n) && n >= 0 ? n : null);
+    }
+    if (typeof ctx.txConfirmed === 'function') {
+      confirmed.set(`${txid}:${depth}`, (await settle(ctx.txConfirmed(txid, depth))) === true);
+    }
+  }
+
+  const hashes = [];
+  const inclusion = artifacts.inclusion;
+  if (inclusion && typeof inclusion === 'object') {
+    const named = String(inclusion.blockHash || '').trim().toLowerCase();
+    if (HEX64.test(named)) hashes.push(named);
+  }
+  for (const hash of hashes) {
+    if (typeof ctx.headerKnown === 'function') {
+      headers.set(hash, (await settle(ctx.headerKnown(hash))) === true);
+    }
+    if (typeof ctx.confirmations === 'function') {
+      const n = Number(await settle(ctx.confirmations(hash)));
+      headerDepths.set(hash, Number.isInteger(n) && n >= 0 ? n : null);
+    }
+    if (typeof ctx.txCount === 'function') {
+      const n = Number(await settle(ctx.txCount(hash)));
+      txCounts.set(hash, Number.isInteger(n) && n >= 0 ? n : null);
+    }
+  }
+
+  let depositSpent = false;
+  for (const [txid, vout] of outpoints) {
+    const key = `${txid}:${vout}`;
+    if (spends.has(key) && spends.get(key)) depositSpent = true;
+    if (unspent.has(key) && unspent.get(key) !== true) depositSpent = true;
+  }
+
+  const resolved = Object.assign({}, ctx);
+  if (typeof ctx.outpointUnspent === 'function') {
+    resolved.outpointUnspent = (txid, vout) => {
+      const key = `${String(txid).toLowerCase()}:${Number(vout)}`;
+      return unspent.has(key) ? unspent.get(key) : false;
+    };
+  }
+  if (typeof ctx.outpointSpend === 'function') {
+    resolved.outpointSpend = (txid, vout) => {
+      const key = `${String(txid).toLowerCase()}:${Number(vout)}`;
+      // An unknown outpoint is not "unspent": that would let a penalty through.
+      return spends.has(key) ? spends.get(key) : { leafId: 'unknown' };
+    };
+  }
+  if (typeof ctx.txConfirmed === 'function') {
+    resolved.txConfirmed = (txid, asked) => {
+      const key = `${String(txid).toLowerCase()}:${Number(asked)}`;
+      return confirmed.has(key) ? confirmed.get(key) : false;
+    };
+  }
+  if (typeof ctx.txConfirmations === 'function') {
+    resolved.txConfirmations = (txid) => {
+      const key = String(txid).toLowerCase();
+      return txDepths.has(key) ? txDepths.get(key) : null;
+    };
+  }
+  if (typeof ctx.headerKnown === 'function') {
+    resolved.headerKnown = (hash) => {
+      const key = String(hash).toLowerCase();
+      return headers.has(key) ? headers.get(key) : false;
+    };
+  }
+  if (typeof ctx.confirmations === 'function') {
+    resolved.confirmations = (hash) => {
+      const key = String(hash).toLowerCase();
+      return headerDepths.has(key) ? headerDepths.get(key) : null;
+    };
+  }
+  if (typeof ctx.txCount === 'function') {
+    resolved.txCount = (hash) => {
+      const key = String(hash).toLowerCase();
+      return txCounts.has(key) ? txCounts.get(key) : null;
+    };
+  }
+  return { ctx: resolved, depositSpent };
+}
+
 function normalizeHashes (hashes) {
   if (!Array.isArray(hashes) || !hashes.length) {
     throw new Error('storage: blobHashes required');
@@ -257,9 +413,9 @@ class Storage extends Service {
    * @param {string} [opts.fundedTxHex]
    * @param {string} opts.destinationAddress
    * @param {object} [opts.ctx]
-   * @returns {object}
+   * @returns {Promise<object>}
    */
-  preparePenalty (opts = {}) {
+  async preparePenalty (opts = {}) {
     const view = this.chainView();
     if (!view.ok) {
       const err = new Error(`storage: ${view.error}`);
@@ -267,17 +423,20 @@ class Storage extends Service {
       throw err;
     }
     const proof = opts.fraudProof;
+    const body = proofBody(proof);
     const held = opts.deposit
       ? { deposit: opts.deposit, fundedTxHex: opts.fundedTxHex }
       : null;
     const deposit = held || this._depositForProof(proof);
     if (!deposit || !deposit.fundedTxHex) throw new Error('storage: funded deposit required');
+    const resolved = await resolveChainCtx(body, Object.assign({}, view.ctx, opts.ctx || {}));
+    if (resolved.depositSpent) throw new Error('storage: deposit outpoint was spent');
     return Bond.preparePenaltySpend(deposit.deposit, {
-      fraudProof: proof && proof.toBody ? proof.toBody() : proof,
+      fraudProof: body,
       fundedTxHex: deposit.fundedTxHex,
       destinationAddress: opts.destinationAddress,
       feeSats: opts.feeSats,
-      ctx: Object.assign({}, view.ctx, opts.ctx || {}),
+      ctx: resolved.ctx,
       consumed: opts.consumed
     });
   }
@@ -285,9 +444,9 @@ class Storage extends Service {
   /**
    * Late answer → non-response proof → penalty PSBT.
    * @param {object} opts
-   * @returns {{ proof: object, penalty: object }}
+   * @returns {Promise<{ proof: object, penalty: object }>}
    */
-  penalizeLateResponse (opts = {}) {
+  async penalizeLateResponse (opts = {}) {
     const proof = this._challenger.proofFor(opts.challenge, opts.response, {
       commitment: opts.commitment,
       anchor: opts.anchor
@@ -295,7 +454,7 @@ class Storage extends Service {
     if (!proof || proof.kind !== 'non-response') {
       throw new Error('storage: late response is not a non-response proof');
     }
-    const penalty = this.preparePenalty({
+    const penalty = await this.preparePenalty({
       fraudProof: proof,
       deposit: opts.deposit,
       fundedTxHex: opts.fundedTxHex,

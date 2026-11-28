@@ -55,7 +55,9 @@ class Filesystem extends Store {
         parent: null,
         status: 'INITIALIZED'
       },
-      documents: {}
+      documents: {},
+      metadata: {},
+      indices: {}
     };
 
     return this;
@@ -450,7 +452,10 @@ class Filesystem extends Store {
   }
 
   commit () {
-    const content = this._state.content || {};
+    const content = Object.assign({}, this._state.content || {});
+    const documents = this._state.documents;
+    if (documents && Object.keys(documents).length) content.documents = documents;
+    if (Array.isArray(this._log) && this._log.length) content.log = this._log.slice();
     const serialized = JSON.stringify(content);
 
     // Write state to STATE file using absolute path

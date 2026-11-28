@@ -135,10 +135,11 @@ class Machine extends Actor {
     this.history = []; // State tree
     this._allowedOpcodes = normalizeOpcodeAllowList(this.settings.allowedOpcodes || []);
 
+    const seeded = this.settings.state && typeof this.settings.state === 'object' && !Array.isArray(this.settings.state)
+      ? this.settings.state
+      : {};
     this._state = {
-      content: {
-        clock: this.clock
-      },
+      content: Object.assign({ clock: this.clock }, seeded),
       status: 'PAUSED'
     };
 

@@ -102,7 +102,7 @@ describe('services/storage', function () {
     assert.strictEqual(verdict.fraud, null);
   });
 
-  it('a late answer becomes a non-response penalty only when the chain view is present', function () {
+  it('a late answer becomes a non-response penalty only when the chain view is present', async function () {
     const storage = new Storage({ network: 'regtest' });
     const contract = storage.register(Storage.publish({ blobHashes: hashes }), 'c1');
     const deposit = Storage.buildDeposit({
@@ -144,8 +144,8 @@ describe('services/storage', function () {
       network: bitcoin.networks.regtest
     }).address;
 
-    assert.throws(
-      () => storage.penalizeLateResponse({
+    await assert.rejects(
+      storage.penalizeLateResponse({
         challenge, response: late, commitment, anchor, deposit, fundedTxHex, destinationAddress: dest
       }),
       /chain view required/
@@ -163,7 +163,7 @@ describe('services/storage', function () {
       txConfirmed: () => true,
       headerKnown: () => true
     });
-    const penalty = armed.penalizeLateResponse({
+    const penalty = await armed.penalizeLateResponse({
       challenge,
       response: late,
       commitment,
@@ -177,6 +177,38 @@ describe('services/storage', function () {
     assert.strictEqual(penalty.penalty.leafId, 'penalty');
     assert.strictEqual(penalty.penalty.offender, provider.xOnly);
     assert.strictEqual(armed.sweep({ epoch: 40, tipHeight: 1000 }).ok, true);
+
+    const asyncYes = new Storage({
+      network: 'regtest',
+      outpointUnspent: async () => true,
+      txConfirmed: async () => true,
+      headerKnown: async () => true
+    });
+    const asyncPenalty = await asyncYes.penalizeLateResponse({
+      challenge,
+      response: late,
+      commitment,
+      anchor,
+      deposit,
+      fundedTxHex,
+      destinationAddress: dest,
+      feeSats: 500,
+      consumed: new Set()
+    });
+    assert.strictEqual(asyncPenalty.penalty.leafId, 'penalty');
+
+    const asyncNo = new Storage({
+      network: 'regtest',
+      outpointUnspent: async () => false,
+      txConfirmed: async () => true,
+      headerKnown: async () => true
+    });
+    await assert.rejects(
+      asyncNo.penalizeLateResponse({
+        challenge, response: late, commitment, anchor, deposit, fundedTxHex, destinationAddress: dest
+      }),
+      /spent/
+    );
   });
 
   it('a peer sells one chunk with no Hub process', function () {
@@ -227,14 +259,16 @@ describe('services/storage', function () {
     const storage = wired.storage();
     assert.strictEqual(await storage._outpointUnspent('aa'.repeat(32), 0), true);
     assert.strictEqual(calls[0][0], 'gettxout');
+    assert.strictEqual(await storage._txConfirmed('bb'.repeat(32), 2), true);
+    assert.strictEqual(await storage._txConfirmed('bb'.repeat(32), 6), false);
     assert.strictEqual(wired.storageSweep(['sweep']).ok, true);
     const CLI = require('../types/cli');
     const recalled = CLI.redactHistoryInput('/challenge c1 aa SECRET 4').split(/\s+/);
     assert.strictEqual(recalled[3], '***');
     assert.strictEqual(CLI.redactHistoryInput('/respond HASH SECRET 4 ff').split(/\s+/)[2], '***');
-    const tabbed = CLI.redactHistoryInput('/challenge c1\talias PUB KEY 4').split(' ');
-    assert.strictEqual(tabbed[3], '***');
-    assert.ok(tabbed[2].includes('PUB'));
+    assert.strictEqual(CLI.redactHistoryInput('/challenge c1 provider  SECRET'), '/challenge c1 provider ***');
+    assert.strictEqual(CLI.redactHistoryInput('/respond HASH  SECRET 4 ff'), '/respond HASH *** 4 ff');
+    assert.strictEqual(CLI.redactHistoryInput('/challenge c1 aa\tSECRET 4'), '/challenge c1 aa *** 4');
   });
 
   it('a rejected response does not close the challenge', function () {

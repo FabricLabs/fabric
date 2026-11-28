@@ -2169,7 +2169,11 @@ Contract.OP_CONTRACT_SIGN = 'OP_CONTRACT_SIGN';
 // reach Federation, which extends this class. Journal is attached afterward.
 module.exports = Contract;
 
-const { normalizeContractId, stateDigest } = require('../functions/sidechainState');
+// Resolved at the call. An eager destructure stays undefined when
+// sidechainState is the module that loaded Contract.
+function sidechainStateApi () {
+  return require('../functions/sidechainState');
+}
 const {
   GOVERNANCE_ACTIONS,
   proposalIdOf,
@@ -2747,7 +2751,7 @@ function loadDoc (store, contractId) {
   if (!store || typeof store.get !== 'function' || typeof store.put !== 'function') {
     throw new TypeError('contractMessageAccumulate requires a Store (get/put)');
   }
-  const id = normalizeContractId(contractId);
+  const id = sidechainStateApi().normalizeContractId(contractId);
   const existing = store.get(COLLECTION, id);
   if (existing && typeof existing === 'object') {
     return {
@@ -3325,7 +3329,7 @@ function tipFromDoc (doc) {
   const tip = {
     contractId: doc.id,
     clock: state.clock,
-    stateDigest: stateDigest(state),
+    stateDigest: sidechainStateApi().stateDigest(state),
     content: state.content
   };
   const blockHash = doc.bitcoinBlockHash
@@ -3359,7 +3363,7 @@ function tipFromDoc (doc) {
  * @returns {{ accepted: boolean, duplicate: boolean, entry: object|null, tip: object, error?: string }}
  */
 function ingestMessageBuffer (store, contractId, bufferOrPaste, meta = {}) {
-  const id = normalizeContractId(contractId);
+  const id = sidechainStateApi().normalizeContractId(contractId);
   const origin = ORIGINS.includes(meta.origin) ? meta.origin : 'mesh';
   // Load once so rejected paths still return tipFromDoc without re-reading.
   const doc = loadDoc(store, id);
@@ -3642,7 +3646,7 @@ function loadQueueDoc (store, contractId) {
   if (!store || typeof store.get !== 'function' || typeof store.put !== 'function') {
     throw new TypeError('contractMessageQueue requires a Store (get/put)');
   }
-  const id = normalizeContractId(contractId);
+  const id = sidechainStateApi().normalizeContractId(contractId);
   const existing = store.get(QUEUE_COLLECTION, id);
   if (existing && typeof existing === 'object') {
     return {
@@ -3698,7 +3702,7 @@ function trimQueueDoc (doc) {
 function enqueueMessageBuffer (store, contractId, bufferOrPaste, meta = {}) {
   let id;
   try {
-    id = normalizeContractId(contractId);
+    id = sidechainStateApi().normalizeContractId(contractId);
   } catch (e) {
     return { accepted: false, duplicate: false, entry: null, error: e.message || 'invalid contractId' };
   }
@@ -3819,7 +3823,7 @@ function pendingForDelivery (store, contractId, peerKey) {
  * @returns {{ ok: boolean, entry: object|null }}
  */
 function markDelivered (store, contractId, hash, peerKey, at) {
-  const id = normalizeContractId(contractId);
+  const id = sidechainStateApi().normalizeContractId(contractId);
   const h = String(hash || '').trim().toLowerCase();
   const peer = String(peerKey || '').trim().toLowerCase();
   if (!h || !peer) return { ok: false, entry: null };

@@ -4296,22 +4296,23 @@ class CLI extends FabricShell {
  * @returns {string}
  */
 function commandTokens (raw) {
-  const text = String(raw || '');
+  const text = String(raw || '').trim();
   const body = text.charAt(0) === '/' ? text.substring(1) : text;
-  return body.split(' ');
+  return body.split(/\s+/).filter((part) => part.length > 0);
 }
 
 function redactHistoryInput (raw) {
   const text = String(raw || '');
+  const slash = text.charAt(0) === '/' ? '/' : '';
   const tokens = commandTokens(text);
   const head = String(tokens[0] || '').replace(/^\//, '').toLowerCase();
   if (head === 'challenge' && tokens.length >= 4) {
     tokens[3] = '***';
-    return tokens.join(' ');
+    return slash + tokens.join(' ');
   }
   if (head === 'respond' && tokens.length >= 3) {
     tokens[2] = '***';
-    return tokens.join(' ');
+    return slash + tokens.join(' ');
   }
   return text;
 }

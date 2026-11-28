@@ -1419,13 +1419,14 @@ function leafIndexFor (merkleRootHex, epoch, nonceHex, blobTotal) {
  * Promise is truthy and would otherwise look like a successful check.
  * @param {Function} fn
  * @param {Array} args
+ * @param {Object} [receiver] `this` for the callback
  * @returns {{ error: string }|{ value: boolean }}
  * @private
  */
-function chainBool (fn, args) {
+function chainBool (fn, args, receiver) {
   let value;
   try {
-    value = fn.apply(null, args);
+    value = fn.apply(receiver == null ? null : receiver, args);
   } catch (err) {
     return { error: err && err.message ? err.message : 'chain view failed' };
   }
@@ -2190,7 +2191,7 @@ class FraudProof {
         return { ok: true, kind: 'chain-view' };
       }
       if (typeof ctx.txConfirmed === 'function') {
-        const confirmed = chainBool(ctx.txConfirmed, [txid, depth]);
+        const confirmed = chainBool(ctx.txConfirmed, [txid, depth], ctx);
         if (confirmed.error) return { ok: false, reason: confirmed.error };
         if (!confirmed.value) return { ok: false, reason: 'transaction is not confirmed in the verifier\'s chain view' };
         return { ok: true, kind: 'chain-view' };
@@ -2206,7 +2207,7 @@ class FraudProof {
         }
         const blockHash = header.blockHash;
         if (!blockHash) return { ok: false, reason: 'inclusion artifact has no block hash' };
-        const known = chainBool(ctx.headerKnown, [blockHash]);
+        const known = chainBool(ctx.headerKnown, [blockHash], ctx);
         if (known.error) return { ok: false, reason: known.error };
         if (!known.value) return { ok: false, reason: `block ${blockHash} is not in the verifier's header chain` };
         if (typeof ctx.confirmations !== 'function') return { ok: false, reason: 'chain view required: ctx.confirmations(blockHash) for inclusion depth' };
@@ -2269,7 +2270,7 @@ class FraudProof {
         else return fail(`deposit outpoint was spent${leafId ? ` through ${leafId}` : ''} — the provider checked in or answered`, base);
       }
     } else if (typeof ctx.outpointUnspent === 'function') {
-      const unspent = chainBool(ctx.outpointUnspent, [depTxid, depVout]);
+      const unspent = chainBool(ctx.outpointUnspent, [depTxid, depVout], ctx);
       if (unspent.error) return fail(unspent.error, base);
       if (!unspent.value) return fail('deposit outpoint was spent — the provider checked in, answered, or was already penalized', base);
     } else {

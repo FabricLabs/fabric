@@ -1084,9 +1084,12 @@ class CliDocumentExchange {
           }
           : null,
         txConfirmed: rpc
-          ? async (txid) => {
+          ? async (txid, depth) => {
             const tx = await rpc('getrawtransaction', [String(txid), true]);
-            return !!(tx && Number(tx.confirmations) > 0);
+            const have = tx && Number(tx.confirmations);
+            const need = Number(depth);
+            if (!Number.isFinite(have)) return false;
+            return have >= (Number.isFinite(need) && need > 0 ? need : 1);
           }
           : null,
         headerKnown: rpc

@@ -122,7 +122,8 @@ function isolateForced (options) {
 function clampLimit (value, fallback, max) {
   const n = Number(value);
   if (!Number.isFinite(n) || n <= 0) return fallback;
-  const whole = Math.floor(n);
+  // A positive fraction floors to 0. The isolate treats that as one step.
+  const whole = Math.max(1, Math.floor(n));
   if (whole > max) return max;
   return whole;
 }

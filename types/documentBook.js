@@ -2068,7 +2068,7 @@ class DocumentBlobTransferBook extends Book {
     const expectedIvs = pins(opts.ivs, false);
     const expectedOrigins = pins(opts.origins, false);
     const key = transferKey(documentId, merkleRootHex);
-    const now = Date.now();
+    const now = this.now();
     const ttlMs = Number(opts.ttlMs) > 0 ? Number(opts.ttlMs) : this.expectationTtlMs;
     const expiresAt = Number(opts.expiresAt) > 0 ? Number(opts.expiresAt) : now + ttlMs;
     const prior = opts.merge ? this._expectations.get(key) : null;
@@ -2167,7 +2167,7 @@ class DocumentBlobTransferBook extends Book {
   touch (documentId, merkleRootHex = null) {
     const exp = this._expectations.get(transferKey(String(documentId || '').trim(), merkleRootHex ? String(merkleRootHex).toLowerCase() : null));
     if (!exp) return false;
-    const now = Date.now();
+    const now = this.now();
     exp.updated = now;
     exp.expiresAt = Math.max(exp.expiresAt || 0, now + (exp.ttlMs || this.expectationTtlMs));
     return true;
@@ -2196,7 +2196,7 @@ class DocumentBlobTransferBook extends Book {
    * @private
    */
   _purgeExpired () {
-    const now = Date.now();
+    const now = this.now();
     for (const [k, exp] of this._expectations.entries()) {
       if (now <= exp.expiresAt) continue;
       this._expectations.delete(k);
@@ -2330,15 +2330,15 @@ class DocumentBlobTransferBook extends Book {
         parts: new Map(),
         leaves: new Map(),
         bytes: 0,
-        created: Date.now(),
-        updated: Date.now()
+        created: this.now(),
+        updated: this.now()
       };
       this._pending.set(key, row);
       this._evictOldestIfOverCap(row.pinned ? null : key);
       // Cap eviction may have dropped this brand-new row under pressure.
       if (!this._pending.has(key)) return reject('too many pending blob transfers');
     }
-    row.updated = Date.now();
+    row.updated = this.now();
     if (exp) this.touch(frame.documentId, frame.merkleRootHex);
     if (row.total == null) row.total = frame.blobTotal;
     if (row.total !== frame.blobTotal) return reject('blobTotal mismatch');
