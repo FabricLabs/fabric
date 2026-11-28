@@ -2,18 +2,24 @@
 
 const { PERSISTED_JSON_MAX_CHARS } = require('../constants');
 const { tryParsePersistedJson } = require('../functions/wireJson');
+const { randomUnit } = require('../functions/bytes');
 
 // Dependencies
+const fs = require('fs');
+const path = require('path');
 const { Level } = require('level');
 const merge = require('lodash.merge');
+const monitor = require('fast-json-patch');
 const pointer = require('json-pointer');
 
 // Fabric Types
 const Actor = require('./actor');
 const Collection = require('./collection');
 const Entity = require('./entity');
+const Ledger = require('./ledger');
 const Stack = require('./stack');
 const State = require('./state');
+const Transaction = require('./transaction');
 
 /**
  * Level before abstract-level 2 throws `LEVEL_NOT_FOUND` for a missing key;
@@ -24,17 +30,24 @@ function isLevelNotFound (error) {
   return !!error && (error.code === 'LEVEL_NOT_FOUND' || error.notFound === true);
 }
 
-/** `path` as an absolute JSON Pointer path. */
+/**
+ * `path` as an absolute JSON Pointer path.
+ * @private
+ */
 function routePath (path) {
   return path.substring(0, 1) === '/' ? path : '/' + path;
 }
 
-/** Path tokens that would reach `Object.prototype` through `pointer.set`. */
+/**
+ * Path tokens that would reach `Object.prototype` through `pointer.set`.
+ * @private
+ */
 const UNSAFE_PATH_TOKENS = new Set(['__proto__', 'constructor', 'prototype']);
 
 /**
  * Under an array only an element index is a child: `length` or a name would
  * persist to Level and then fail (or truncate) in memory.
+ * @private
  */
 function isArrayIndex (token) {
   return /^(0|[1-9][0-9]{0,8})$/.test(token);
@@ -121,8 +134,12 @@ function decodePersisted (raw) {
 }
 
 /**
- * @classdesc Level-backed persistence extending {@link Actor}. Use optional {@link Codec} in <code>settings.codec</code> for
- * encrypted values; {@link Store.openEncrypted} matches Hub/shell keystore defaults. Commit/history behavior follows {@link Actor}.
+ * @classdesc Durable bag extending {@link Actor}. <code>type: 'leveldb'</code> (default) is Level;
+ * <code>type: 'disk'</code> is a directory, implemented by {@link Filesystem}.
+ * <code>settings.ledger</code> keeps a {@link Ledger} ({@link Datastore}).
+ * {@link History} is a disk Store that records events.
+ * Use optional {@link Codec} in <code>settings.codec</code> for
+ * encrypted values; {@link Store.openEncrypted} matches Hub/shell keystore defaults.
  * @class Store
  * @extends Actor
  * @property {Mixed} settings Current configuration.
@@ -161,6 +178,12 @@ class Store extends Actor {
     };
 
     this.keys = {};
+    this._clock = 0;
+    this._log = [];
+    if (this.settings.ledger) {
+      this.ledger = new Ledger();
+      this.data = {};
+    }
     this.commits = new Collection({
       type: 'State'
     });
@@ -1093,6 +1116,160 @@ class Store extends Actor {
     this.status = 'stopped';
 
     return this;
+  }
+
+  /**
+   * Event-log clock. {@link History} uses the same counter.
+   * @returns {number}
+   */
+  get clock () {
+    return this._clock || 0;
+  }
+
+  set clock (value) {
+    this._clock = value;
+  }
+
+  /**
+   * Split a path the way {@link Datastore} did: one segment stays, two segments
+   * keep the second, anything longer is refused.
+   * @param {string} path
+   * @returns {string|null}
+   */
+  route (path) {
+    const parts = String(path || '').split('/');
+    if (!parts.length) return '/';
+    switch (parts.length) {
+      case 1:
+        return path;
+      case 2:
+        return parts[1];
+      default:
+        return null;
+    }
+  }
+
+  /**
+   * @param {Object} identity
+   * @returns {void}
+   */
+  register (identity) {
+    this.identity = identity;
+  }
+
+  /**
+   * Read every file in a directory onto <code>@data</code>.
+   * @param {string} dir
+   * @returns {void}
+   * @private
+   */
+  _loadFrom (dir) {
+    const files = fs.readdirSync(dir);
+    this.log('_loadFrom', dir, 'files:', files);
+    for (let i = 0; i < files.length; i++) {
+      const name = String(files[i]);
+      if (!name || name === '.' || name === '..' || name.includes('/') || name.includes('\\') || name.includes('\0')) continue;
+      const content = fs.readFileSync(dir + path.sep + name);
+      this.log('_loadFrom', 'content:', content);
+      this['@data'][name] = content;
+    }
+  }
+
+  /**
+   * @param {Array} delta JSON Patch
+   * @returns {Object}
+   * @private
+   */
+  _apply (delta) {
+    const patched = monitor.applyPatch(this['@data'], delta);
+    this._sign();
+    this.commit();
+    this.log('[STORE]', '_apply', 'document:', patched && patched.newDocument);
+    return this['@data'];
+  }
+
+  /**
+   * Append one entropy-stamped transaction to the ledger.
+   * @returns {Transaction}
+   */
+  ping () {
+    const ping = new Transaction({
+      entropy: randomUnit(),
+      timestamp: Date.now(),
+      identity: this.identity
+    });
+
+    if (typeof ping._sign === 'function') ping._sign(this.identity);
+
+    const book = this['@data'] && this['@data']['/pings'] && this['@data']['/pings'].ledger;
+    if (book && typeof book.append === 'function') book.append(ping);
+    else if (this.ledger && typeof this.ledger.append === 'function') this.ledger.append(ping);
+
+    return ping;
+  }
+
+  pong () {
+    this.log('PONG!');
+  }
+
+  spam () {
+    for (let i = 0; i < 10; i++) this.ping();
+  }
+
+  /**
+   * Snapshot of the current state as a commit actor, then publish it when this
+   * store can write a file ({@link Filesystem#publish}).
+   * @param {*} event
+   * @returns {Promise<Store>}
+   */
+  async acceptEvent (event) {
+    const now = new Date();
+    const message = {
+      type: 'HistoryEvent',
+      published: now.toISOString(),
+      object: { content: event }
+    };
+    const actor = new Actor(message);
+
+    if (!this._state.documents) this._state.documents = {};
+    this._state.documents[actor.id] = message;
+    this._log.push(actor.id);
+
+    const snapshot = {
+      content: this.state,
+      documents: this._state.documents,
+      log: this._log.slice()
+    };
+    const state = new Actor(snapshot);
+    const commit = new Actor({
+      type: 'Commit',
+      object: {
+        content: JSON.stringify(state.toGenericMessage()),
+        state: state.id
+      }
+    });
+
+    if (typeof this.publish === 'function') {
+      this._eventSeq = (this._eventSeq || 0) + 1;
+      const filename = `${now.toISOString()}-${this._eventSeq}.json`;
+      await this.publish(filename, JSON.stringify(commit.toObject()));
+    }
+
+    this._clock = (this._clock || 0) + 1;
+    return this;
+  }
+
+  /**
+   * @param {Array} [log]
+   * @returns {Promise<Store>}
+   */
+  async replay (log = []) {
+    for (let i = 0; i < log.length; i++) await this.acceptEvent(log[i]);
+    return this;
+  }
+
+  render () {
+    return `<Store />`;
   }
 }
 

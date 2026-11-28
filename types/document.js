@@ -76,7 +76,10 @@ const DOCUMENT_TREE_NODE = 0x01;
 const DOCUMENT_TREE_ROOT = 0x02;
 const DOCUMENT_TREE_IV_BYTES = 12;
 
-/** AES-GCM tag appended to each sealed blob. */
+/**
+ * AES-GCM tag appended to each sealed blob.
+ * @private
+ */
 const GCM_TAG_BYTES = DOCUMENT_GCM_TAG_BYTES;
 
 /**
@@ -2027,7 +2030,7 @@ function frameIdOfInput (input) {
 /**
  * Parse and verify one frame of a document contract.
  * @param {*} input Message, Buffer, hex, `fabric:<hex>`, or a collection record.
- * @returns {{ ok: boolean, reason?: string, kind?: 'publish'|'revision', id?: string, hash?: string, hex?: string, parent?: string, author?: string, contractId?: string, definition?: object, body?: object }}
+ * @returns {Object} `ok`. On failure, `reason`. On success, `kind` (`publish` or `revision`), `id`, `hash`, `hex`, `parent`, `author`, `contractId`, and `definition` or `body`.
  */
 function parseDocumentContractFrame (input) {
   const decoded = collections().bufferFromInput(input);
@@ -2123,7 +2126,7 @@ function byId (a, b) {
  * @param {*} frames Publish + revision frames (any order; other contracts' frames are ignored).
  * @param {Object} [opts]
  * @param {string} [opts.contractId] Which contract, when the frames hold several.
- * @returns {{ ok: boolean, reason?: string, contractId: string|null, definition: object|null, editors: string[], publish: object|null, head: object|null, revisions: object[], forks: object[], invalid: object[], frames: object[] }}
+ * @returns {Object} `ok` and, when it fails, `reason`. Otherwise `contractId`, `definition`, `editors`, `publish`, `head`, `revisions`, `forks`, `invalid`, and `frames`.
  */
 function foldDocumentRevisions (frames, opts = {}) {
   const empty = {
@@ -2304,7 +2307,7 @@ function documentProvenance (frames, documentIdentifier, opts = {}) {
  * @param {string} [expect.documentIdentifier]
  * @param {string} [expect.contractId]
  * @param {string} [expect.sha256] Content digest the last revision must commit to (its `sha256`, or a 64-hex identifier when it has none); refused when it doesn't, and an empty string is refused as malformed.
- * @returns {{ ok: boolean, reason?: string, contractId?: string, documentIdentifier?: string, revision?: number, definition?: object, revisions?: object[] }}
+ * @returns {Object} `ok` and, when it fails, `reason`. On success, `contractId`, `documentIdentifier`, `revision`, `definition`, and `revisions`.
  */
 function verifyDocumentProvenance (provenance, expect = {}) {
   const fold = foldDocumentRevisions(provenance, { contractId: expect.contractId });

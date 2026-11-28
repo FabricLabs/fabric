@@ -52,6 +52,7 @@ const {
   P2P_PORT,
   P2P_CHAIN_SYNC_REQUEST,
   P2P_FORWARD,
+  P2P_FORWARD_MAX_HOPS,
   P2P_RELAY
 } = require('../constants');
 
@@ -65,7 +66,7 @@ const {
 const {
   isRelayAsIsWireType,
   isFirstClassOpcodeOnlyType
-} = require('../functions/gossipNetwork');
+} = require('./network');
 const {
   isOnionChatSeal,
   tryOpenOnionChatText
@@ -76,18 +77,30 @@ const sidechainState = require('../functions/sidechainState');
 const { epochCommitmentDigestHex } = require('../functions/beaconFederationSigning');
 const Federation = require('./federation');
 
-/** Sealed document delivery wire type → the inner `type` its generic handler dispatches on. */
+/**
+ * Sealed document delivery wire type → the inner `type` its generic handler dispatches on.
+ * @private
+ */
 const SEALED_DELIVERY_INNER_TYPE_BY_WIRE = Object.freeze({
   DOCUMENT_KEY_REVEAL: 'DocumentContentKeyReveal',
   DOCUMENT_BLOB_QUOTE: 'DocumentBlobQuote',
   DOCUMENT_BLOB_BATCH: 'DocumentBlobBatch'
 });
-/** Those inner types: refused inside a `GenericMessage` / `P2P_BASE_MESSAGE` carrier. */
+/**
+ * Those inner types: refused inside a `GenericMessage` / `P2P_BASE_MESSAGE` carrier.
+ * @private
+ */
 const SEALED_DELIVERY_INNER_TYPES = new Set(Object.values(SEALED_DELIVERY_INNER_TYPE_BY_WIRE));
 
-/** Session-advertised level of field-body support (`object.fieldBodies`). */
+/**
+ * Session-advertised level of field-body support (`object.fieldBodies`).
+ * @private
+ */
 const FIELD_BODIES_VERSION = 1;
-/** Default time a funded sealed-blob quote keeps its secret while its HTLC settles. */
+/**
+ * Default time a funded sealed-blob quote keeps its secret while its HTLC settles.
+ * @private
+ */
 const PEER_SEALED_BLOB_FUNDED_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 const {
   aggregatePeerBandwidth,
@@ -430,13 +443,13 @@ const WireReplayFilter = (function () {
  */
 
 const DEFAULTS = Object.freeze({
-  /** Hashes per generation before it rotates. */
+  // Hashes per generation before it rotates.
   capacity: 500000,
-  /** Target false-positive rate of a full generation. */
+  // Target false-positive rate of a full generation.
   // 10^-6. Written as a division so the source is not a float literal
   // static analysis rewrites.
   falsePositiveRate: 1 / 1000000,
-  /** A generation rotates after this long even when not full. */
+  // A generation rotates after this long even when not full.
   maxAgeMs: 24 * 60 * 60 * 1000
 });
 
@@ -2576,9 +2589,17 @@ class Peer extends Service {
   /**
    * Handle inbound {@code P2P_FORWARD}: peel when {@code nextPeer} is local, else
    * forward the bit-identical outer frame to that peer only (no mesh flood).
+   * Nested peels stop at {@link P2P_FORWARD_MAX_HOPS}. A peeled inner does not
+   * punish or disconnect the TCP last hop.
+   * @param {Message} message
+   * @param {object|null} origin
+   * @param {object|null} socket
+   * @param {Object} [opts]
+   * @param {number} [opts.forwardPeelDepth]
+   * @returns {Peer}
    * @private
    */
-  _handleP2PForward (message, origin, socket) {
+  _handleP2PForward (message, origin, socket, opts = {}) {
     const fields = tryDecodeForward(message);
     if (!fields) {
       this.emit('warning', '[FABRIC:PEER] P2P_FORWARD body undecodable');
@@ -2593,6 +2614,12 @@ class Peer extends Service {
 
     const local = this._localXOnlyPeerId();
     if (xOnlyEquals(fields.nextPeer, local)) {
+      const depth = Number(opts.forwardPeelDepth) || 0;
+      const nextDepth = depth + 1;
+      if (nextDepth > P2P_FORWARD_MAX_HOPS) {
+        this.emit('warning', '[FABRIC:PEER] Dropped P2P_FORWARD: peel depth exceeds max hops');
+        return this;
+      }
       this.emit('onion:peel', {
         ttl: fields.ttl,
         origin: origin && origin.name,
@@ -2602,7 +2629,10 @@ class Peer extends Service {
         // Peeled inners must not hard-disconnect / derank the TCP last hop:
         // relays forward bit-identical outers, so a malicious originator can
         // launder a bad inner through an honest relay (see SECURITY.md / P2P_FORWARD).
-        this._handleFabricMessage(fields.inner, origin, socket, { peeledForward: true });
+        this._handleFabricMessage(fields.inner, origin, socket, {
+          peeledForward: true,
+          forwardPeelDepth: nextDepth
+        });
       }
       return this;
     }
@@ -2783,7 +2813,7 @@ class Peer extends Service {
       this.emit('debug', `--- debug error from _connect() ---`);
       if (this._isTransientSocketError(error)) {
         const code = (error && error.code) || 'ECONNREFUSED';
-        this.emit('warning', `Suppressing transient outbound socket error (${code}) from _connect().`);
+        this.emit('warning', `Suppressing transient outbound socket error (${code}) from _connect() to ${target}.`);
       } else {
         const msg = `Socket error: ${error}`;
         // Avoid crashing consumers/tests that haven't registered an 'error' listener.
@@ -2820,7 +2850,7 @@ class Peer extends Service {
           // privateKey: _derived.privkey — enable when NOISE static === Fabric derived key.
           verify: this._verifyNOISE.bind(this)
         }));
-        this._attachNoiseStreamErrorHandlers(client, 'NOISE');
+        this._attachNoiseStreamErrorHandlers(client, 'NOISE', target);
         this._bindNoiseTransportToSocket(client, socket);
         const handshakeTimeoutMs = (typeof this.settings.handshakeTimeout === 'number')
           ? this.settings.handshakeTimeout
@@ -3183,6 +3213,7 @@ class Peer extends Service {
    * @param {number} [options.relayDepth]
    * @param {boolean} [options.skipRelayFlood]
    * @param {boolean} [options.peeledForward] true when delivered via {@link Peer#_handleP2PForward} peel
+   * @param {number} [options.forwardPeelDepth] onion layers already peeled on this delivery
    * @returns {Peer} Instance of the Peer.
    */
   /**
@@ -3447,7 +3478,8 @@ class Peer extends Service {
               relayDepth: relayDepth + 1,
               skipRelayFlood: true,
               peeledForward: suppressTcpOriginPunish,
-              relayedAsIs: softRelayOrigin
+              relayedAsIs: softRelayOrigin,
+              forwardPeelDepth: Number(opts.forwardPeelDepth) || 0
             });
             // Only the outermost received envelope is mesh-flooded (bit-identical),
             // and only when every frame inside is well formed, signed, and a
@@ -3460,7 +3492,7 @@ class Peer extends Service {
         }
         break;
       case 'P2P_FORWARD':
-        this._handleP2PForward(message, origin, socket);
+        this._handleP2PForward(message, origin, socket, opts);
         break;
       case 'BITCOIN_BLOCK':
       case 'BitcoinBlock': {
@@ -4820,8 +4852,9 @@ class Peer extends Service {
    * @param {stream.Duplex} noiseStream.encrypt
    * @param {stream.Duplex} noiseStream.decrypt
    * @param {string} [label='NOISE']
+   * @param {string} [peerAddress] Dial address, when this stream belongs to one peer.
    */
-  _attachNoiseStreamErrorHandlers (noiseStream, label = 'NOISE') {
+  _attachNoiseStreamErrorHandlers (noiseStream, label = 'NOISE', peerAddress = null) {
     if (!noiseStream || !noiseStream.encrypt || !noiseStream.decrypt) return;
     if (noiseStream._fabricNoiseErrorHandlers) {
       this._detachNoiseStreamErrorHandlers(noiseStream);
@@ -4833,7 +4866,8 @@ class Peer extends Service {
         return;
       }
       const text = String((error && error.message) || error || '');
-      const msg = `${label} ${side} error: ${error}`;
+      const where = peerAddress ? ` (${peerAddress})` : '';
+      const msg = `${label} ${side} error: ${error}${where}`;
       // Native teardown after a bad self-handshake / OOM, or a remote that broke a
       // transport limit (socket is destroyed by _bindNoiseTransportToSocket) — keep process alive.
       if (/noise_stream_new|\bmalloc\b|noise_message_too_large|noise_handshake_(budget|timeout)/i.test(text)) {
@@ -4989,7 +5023,7 @@ class Peer extends Service {
       this._destroyFabric(socket, target);
     });
 
-    this._attachNoiseStreamErrorHandlers(handler, 'NOISE');
+    this._attachNoiseStreamErrorHandlers(handler, 'NOISE', target);
     socket._noiseHandler = handler;
 
     handler.decrypt.on('close', (data) => {
@@ -8527,7 +8561,7 @@ class Peer extends Service {
     }
 
     let address = null;
-    this.emit('log', 'Peer starting...');
+    this.emit('debug', 'Peer starting...');
 
     // Ensure initial peers from config are in the registry
     if (this.settings.peers && Array.isArray(this.settings.peers)) {
@@ -8542,7 +8576,7 @@ class Peer extends Service {
     }
 
     if (this.settings.listen) {
-      this.emit('log', 'Listener starting...');
+      this.emit('debug', 'Listener starting...');
 
       const maxAttemptsRaw = this.settings.listenPortAttempts;
       const maxAttempts = (typeof maxAttemptsRaw === 'number' && maxAttemptsRaw > 0)
@@ -8567,7 +8601,7 @@ class Peer extends Service {
           if (attempt > 0) {
             this.emit('log', `[FABRIC:PEER] Port ${basePort} was busy; listening on ${this.settings.port} instead.`);
           }
-          this.emit('log', 'Listener started!');
+          this.emit('debug', 'Listener started!');
           break;
         } catch (exception) {
           const inUse = exception && exception.code === 'EADDRINUSE';
@@ -8587,7 +8621,7 @@ class Peer extends Service {
     }
 
     if (this.settings.networking && this.settings.peers && this.settings.peers.length) {
-      this.emit('warning', `Networking enabled.  Connecting to peers: ${JSON.stringify(this.settings.peers)}`);
+      this.emit('debug', `Networking enabled.  Connecting to peers: ${JSON.stringify(this.settings.peers)}`);
       for (const candidate of this.settings.peers) {
         this.emit('debug', `[FABRIC:PEER] Connecting to peer: ${candidate}`);
         try {

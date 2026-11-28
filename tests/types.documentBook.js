@@ -555,6 +555,13 @@ describe('@fabric/core chunk bids (P2P_DOCUMENT_BID / P2P_DOCUMENT_ASK)', functi
 });
 
 describe('DocumentBlobTransferBook', function () {
+  it('is a Book and keeps assembly rows on the book map', function () {
+    const book = new DocumentBlobTransferBook({ maxPending: 4 });
+    assert.ok(book instanceof Book);
+    assert.strictEqual(book._pending, book._entries);
+    assert.strictEqual(book.capacity, 4);
+  });
+
   it('rejects tampered blob bytes', function () {
     const split = Document.split(Buffer.alloc(3000, 1), 1000, 'doc');
     const book = new DocumentBlobTransferBook();
@@ -960,6 +967,31 @@ describe('DocumentBlobTransferBook', function () {
       assert.strictEqual(book.pendingBytes, 0);
       assert.strictEqual(book.ingest(frame(), { origin: 'seller' }).status, 'need_more');
       assert.strictEqual(book.ingest(frame({ blobIndex: 1 }), { origin: 'seller' }).status, 'complete');
+    });
+
+    it('replacing pins drops held parts that contradict the new hashes', function () {
+      const junk = Buffer.alloc(100, 9);
+      const junkHash = crypto.createHash('sha256').update(junk).digest('hex');
+      const book = new DocumentBlobTransferBook();
+      book.expectTransfer({ documentId: 'doc', merkleRootHex: root, total: 2 });
+      assert.strictEqual(book.ingest(frame({ bytes: junk, blobHashHex: junkHash }), { origin: 'attacker' }).status, 'need_more');
+      book.expectTransfer({ documentId: 'doc', merkleRootHex: root, total: 2, blobHashHexes: [blobHashHex, blobHashHex] });
+      assert.strictEqual(book.pendingBytes, 0, 'the part that misses the new pin was dropped');
+    });
+
+    it('an expired expectation stops pinning its row against the byte cap', function () {
+      const book = new DocumentBlobTransferBook({ maxPendingBytes: 100, ttlMs: 60000 });
+      book.expectTransfer({ documentId: 'doc', merkleRootHex: root, total: 2, ttlMs: 60000 });
+      assert.strictEqual(book.ingest(frame()).status, 'need_more');
+      const key = `doc|${root}`;
+      book._expectations.get(key).expiresAt = Date.now() - 1;
+      book._purgeExpired();
+      assert.strictEqual(book._pending.get(key).pinned, false);
+      const other = 'ee'.repeat(32);
+      book.expectTransfer({ documentId: 'other', merkleRootHex: other, total: 2, ttlMs: 60000 });
+      const again = book.ingest(frame({ documentId: 'other', merkleRootHex: other }));
+      assert.strictEqual(again.status, 'need_more');
+      assert.ok(!book._pending.has(key), 'the stale row was reclaimed');
     });
 
     it('per-origin row and byte quotas only cost the noisy origin', function () {

@@ -21,10 +21,10 @@ const adaptor = (function () {
  *
  * Adapting and extracting follow secp256k1-zkp `musig_adapt` /
  * `musig_extract_adaptor` (t is negated when the final nonce has an odd y);
- * {@link module:types/witness/musig2Adaptor} uses the same arithmetic for
+ * `Witness.MuSig2.Adaptor` uses the same arithmetic for
  * 64-byte MuSig2 pre-signatures plus their nonce parity.
  *
- * @module types/witness/adaptor
+ * Exposed as `Witness.Adaptor`.
  */
 
 const crypto = require('crypto');
@@ -672,7 +672,7 @@ const dleq = (function () {
  * `H_ECDSAadaptor/aux(aux)` when auxiliary randomness is given, challenge
  * `e = H_DLEQ(P1 ‖ H ‖ P2 ‖ k·G ‖ k·H)`, response `s = k + e·x`.
  *
- * @module types/witness/dleq
+ * Exposed as `Witness.DLEQ`.
  */
 
 const crypto = require('crypto');
@@ -796,7 +796,7 @@ const musig2Adaptor = (function () {
  * signer's partial signature is a share of a pre-signature `x(R̂) ‖ s'`. The
  * final nonce parity says whether completing it adds or subtracts t.
  *
- * @module types/witness/musig2Adaptor
+ * Exposed as `Witness.MuSig2.Adaptor`.
  */
 
 const { secp256k1 } = require('@noble/curves/secp256k1.js');
@@ -973,7 +973,8 @@ const FRAUD_PROOF_KINDS = Object.freeze({
   WRONG_BYTES: 'wrong-bytes',
   BAD_KEY: 'bad-key',
   WRONGFUL_PENALTY: 'wrongful-penalty',
-  STALE_COMMITMENT: 'stale-commitment'
+  STALE_COMMITMENT: 'stale-commitment',
+  WRONG_RUN: 'wrong-run'
 });
 
 const FRAUD_PROOF_TYPE = 'FraudProof';
@@ -1304,6 +1305,7 @@ function blobParent (left, right) {
  * @param {number} opts.leafCount committed number of leaves
  * @param {Array|object} opts.proof `[{ position, data }]` or `{ proof: [...], leafCount }` (as `Challenge#respond` emits)
  * @returns {boolean}
+ * @private
  */
 function verifyBlobPath (opts = {}) {
   const root = hex64(opts.merkleRootHex);
@@ -1412,6 +1414,28 @@ function leafIndexFor (merkleRootHex, epoch, nonceHex, blobTotal) {
  *   asymmetric commitments: each party holds only its own commitment, so a
  *   broadcast of the revoked txid can only have come from the revoker.
  */
+/**
+ * Boolean result of a chain-view callback. A Promise is refused: an un-awaited
+ * Promise is truthy and would otherwise look like a successful check.
+ * @param {Function} fn
+ * @param {Array} args
+ * @param {Object} [receiver] `this` for the callback
+ * @returns {{ error: string }|{ value: boolean }}
+ * @private
+ */
+function chainBool (fn, args, receiver) {
+  let value;
+  try {
+    value = fn.apply(receiver == null ? null : receiver, args);
+  } catch (err) {
+    return { error: err && err.message ? err.message : 'chain view failed' };
+  }
+  if (value && typeof value.then === 'function') {
+    return { error: 'chain view callbacks must return a boolean' };
+  }
+  return { value: value === true };
+}
+
 class FraudProof {
   constructor (body = {}) {
     this.kind = String(body.kind || '');
@@ -1461,6 +1485,7 @@ class FraudProof {
    * - `payment:<seller x-only>:<payment hash>` and `frame:<sha256 of frame>` wrong-bytes, bad-key
    * - `penalty-tx:<txid>` wrongful-penalty
    * - `stale-tx:<txid>` stale-commitment
+   * - `run:<programHash>:<claimedRunCommitmentHex>` wrong-run
    * @returns {string[]}
    */
   evidenceIds () {
@@ -1500,6 +1525,14 @@ class FraudProof {
         if (txid) ids.push(`stale-tx:${txid}`);
         break;
       }
+      case FRAUD_PROOF_KINDS.WRONG_RUN: {
+        const programHash = hex64(a.programHash);
+        const claimed = hex64(a.claimedRunCommitmentHex);
+        const worker = hex64(a.workerPubkey);
+        const input = hex64(a.inputCommitment) || 'none';
+        if (programHash && claimed && worker) ids.push(`run:${programHash}:${input}:${worker}:${claimed}`);
+        break;
+      }
     }
     return ids;
   }
@@ -1531,8 +1564,19 @@ class FraudProof {
       case FRAUD_PROOF_KINDS.BAD_KEY: return this._verifyBadKey(fail);
       case FRAUD_PROOF_KINDS.WRONGFUL_PENALTY: return this._verifyWrongfulPenalty(ctx, fail);
       case FRAUD_PROOF_KINDS.STALE_COMMITMENT: return this._verifyStaleCommitment(ctx, fail);
+      case FRAUD_PROOF_KINDS.WRONG_RUN: return this._verifyWrongRun(fail);
       default: return fail(`unknown fraud proof kind: ${this.kind}`);
     }
+  }
+
+  /**
+   * Rerun the known program. A claim that is not the rerun's commitment is fraud.
+   * @private
+   */
+  _verifyWrongRun (fail) {
+    const verdict = require('../functions/computeJob').verifyWrongRun(this.artifacts);
+    if (!verdict.ok) return fail(verdict.reason);
+    return convict(verdict.offender, verdict.reason, { evidence: 'wrong-run' });
   }
 
   /** @private */
@@ -2147,7 +2191,9 @@ class FraudProof {
         return { ok: true, kind: 'chain-view' };
       }
       if (typeof ctx.txConfirmed === 'function') {
-        if (!ctx.txConfirmed(txid, depth)) return { ok: false, reason: 'transaction is not confirmed in the verifier\'s chain view' };
+        const confirmed = chainBool(ctx.txConfirmed, [txid, depth], ctx);
+        if (confirmed.error) return { ok: false, reason: confirmed.error };
+        if (!confirmed.value) return { ok: false, reason: 'transaction is not confirmed in the verifier\'s chain view' };
         return { ok: true, kind: 'chain-view' };
       }
       return null;
@@ -2160,7 +2206,10 @@ class FraudProof {
           return { ok: false, reason: `inclusion artifact invalid: ${header.reason}` };
         }
         const blockHash = header.blockHash;
-        if (!blockHash || !ctx.headerKnown(blockHash)) return { ok: false, reason: `block ${blockHash} is not in the verifier's header chain` };
+        if (!blockHash) return { ok: false, reason: 'inclusion artifact has no block hash' };
+        const known = chainBool(ctx.headerKnown, [blockHash], ctx);
+        if (known.error) return { ok: false, reason: known.error };
+        if (!known.value) return { ok: false, reason: `block ${blockHash} is not in the verifier's header chain` };
         if (typeof ctx.confirmations !== 'function') return { ok: false, reason: 'chain view required: ctx.confirmations(blockHash) for inclusion depth' };
         const confirmations = toInt(ctx.confirmations(blockHash));
         if (confirmations == null || confirmations < depth) return { ok: false, reason: `block ${blockHash} has ${confirmations || 0} of ${depth} confirmations` };
@@ -2221,7 +2270,9 @@ class FraudProof {
         else return fail(`deposit outpoint was spent${leafId ? ` through ${leafId}` : ''} — the provider checked in or answered`, base);
       }
     } else if (typeof ctx.outpointUnspent === 'function') {
-      if (!ctx.outpointUnspent(depTxid, depVout)) return fail('deposit outpoint was spent — the provider checked in, answered, or was already penalized', base);
+      const unspent = chainBool(ctx.outpointUnspent, [depTxid, depVout], ctx);
+      if (unspent.error) return fail(unspent.error, base);
+      if (!unspent.value) return fail('deposit outpoint was spent — the provider checked in, answered, or was already penalized', base);
     } else {
       return fail('chain view required: ctx.outpointSpend or ctx.outpointUnspent', base);
     }

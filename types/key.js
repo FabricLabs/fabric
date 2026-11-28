@@ -137,9 +137,15 @@ const bip39 = require('../functions/bip39');
  * @fileoverview Classify FABRIC_XPRV / FABRIC_SEED / FABRIC_MNEMONIC material.
  */
 
-/** BIP32 `fromSeed` minimum length. */
+/**
+ * BIP32 `fromSeed` minimum length.
+ * @private
+ */
 const MIN_SEED_BYTES = 16;
-/** BIP32 `fromSeed` maximum length (BIP39 `mnemonicToSeed` is 64). */
+/**
+ * BIP32 `fromSeed` maximum length (BIP39 `mnemonicToSeed` is 64).
+ * @private
+ */
 const MAX_SEED_BYTES = 64;
 
 /**
@@ -147,6 +153,7 @@ const MAX_SEED_BYTES = 64;
  *
  * @param {*} value
  * @returns {Buffer|null}
+ * @private
  */
 function parseRawSeedHex (value) {
   if (value == null) return null;
@@ -172,6 +179,7 @@ function parseRawSeedHex (value) {
 /**
  * @param {*} value
  * @returns {Object} `kind` plus at most one of `xprv`, `seed`, `mnemonic`
+ * @private
  */
 function classifyFabricKeyMaterial (value) {
   const trimmed = value == null ? '' : String(value).trim();
@@ -194,6 +202,7 @@ function classifyFabricKeyMaterial (value) {
  *
  * @param {*} value
  * @returns {Object} `kind` plus `xprv`, `xpub`, or `public`
+ * @private
  */
 function classifyFabricIdentityEnvValue (value) {
   const trimmed = value == null ? '' : String(value).trim();
@@ -219,6 +228,7 @@ function classifyFabricIdentityEnvValue (value) {
  *
  * @param {NodeJS.ProcessEnv} [env]
  * @returns {Object|null} Key settings with `xprv`, `seed`, or `mnemonic`
+ * @private
  */
 function keySettingsFromEnv (env = process.env) {
   const identitySlot = classifyFabricIdentityEnvValue((env && env.FABRIC_XPRV) || '');
@@ -277,6 +287,7 @@ const bip85 = require('../functions/bip85');
  * Normalize to lowercase 64-hex x-only (accepts compressed 02/03||x).
  * @param {*} hex
  * @returns {string|null}
+ * @private
  */
 function pubkeyXOnly (hex) {
   const s = String(hex || '').toLowerCase().replace(/^0x/, '');
@@ -289,6 +300,7 @@ function pubkeyXOnly (hex) {
  * Compressed 33-byte pubkey hex from x-only or compressed input.
  * @param {*} hex
  * @returns {string|null}
+ * @private
  */
 function pubkeyCompressed (hex) {
   const s = String(hex || '').toLowerCase().replace(/^0x/, '');
@@ -320,6 +332,7 @@ function pubkeyCompressed (hex) {
  * @param {*} a
  * @param {*} b
  * @returns {boolean}
+ * @private
  */
 function pubkeysMatch (a, b) {
   const xa = pubkeyXOnly(a);
@@ -333,6 +346,7 @@ function pubkeysMatch (a, b) {
  * through lowercased, so it never returns null (`''` for none).
  * @param {string|Buffer|null|undefined} pk
  * @returns {string}
+ * @private
  */
 function normalizePeerPubkeyHex (pk) {
   if (pk == null) return '';
@@ -363,6 +377,7 @@ const pubkeyHelpers = {
  *
  * @param {object|null|undefined} signKey
  * @returns {boolean}
+ * @private
  */
 function keyHasPrivateSigningMaterial (signKey) {
   if (!signKey || signKey.private == null) return false;
@@ -1776,7 +1791,10 @@ const operatorIdentity = (function () {
   const classifyFabricKeyMaterial = keyMaterial.classifyFabricKeyMaterial;
   const classifyFabricIdentityEnvValue = keyMaterial.classifyFabricIdentityEnvValue;
   const keySettingsFromEnv = keyMaterial.keySettingsFromEnv;
-/** @private copies a non-empty `passphrase` (or `password`) from `bag` onto `out` */
+/**
+ * Copy a non-empty `passphrase` (or `password`) from `bag` onto `out`.
+ * @private
+ */
 function withPassphrase (out, bag) {
   if (!out || !bag || typeof bag !== 'object') return out;
   const passphrase = bag.passphrase != null ? bag.passphrase : bag.password;

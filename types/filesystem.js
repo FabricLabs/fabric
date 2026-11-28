@@ -12,29 +12,32 @@ const mkdirp = require('mkdirp');
 const Actor = require('./actor');
 const Hash256 = require('./hash256');
 const Key = require('./key');
+const Store = require('./store');
 const Tree = require('./tree');
 
 /**
- * Interact with a local filesystem.
+ * A {@link Store} whose engine is a directory. Level stays closed.
+ * Path containment, publish, and the <code>.fabric</code> STATE file stay here.
  */
-class Filesystem extends Actor {
+class Filesystem extends Store {
   /**
-   * Synchronize an {@link Actor} with a local filesystem.
+   * Synchronize a store with a local filesystem.
    * @param {Object} [settings] Configuration for the Fabric filesystem.
-   * @param {Object} [settings.path] Path of the local filesystem.
+   * @param {string} [settings.path] Path of the local filesystem.
    * @param {Object} [settings.key] Signing key for the filesystem.
    * @returns {Filesystem} Instance of the Fabric filesystem.
    */
   constructor (settings = {}) {
-    super(settings);
-
-    this.settings = Object.assign({
+    super(Object.assign({
+      name: '@fabric/filesystem',
+      type: 'disk',
       encoding: 'utf8',
       path: './',
-      key: null
-    }, this.settings, settings);
+      key: null,
+      persistent: true
+    }, settings));
 
-    // Ensure path is absolute
+    // Ensure path is absolute. Disk stores do not open Level.
     this.settings.path = path.resolve(this.settings.path);
 
     // Initialize signing key
@@ -52,7 +55,9 @@ class Filesystem extends Actor {
         parent: null,
         status: 'INITIALIZED'
       },
-      documents: {}
+      documents: {},
+      metadata: {},
+      indices: {}
     };
 
     return this;
@@ -378,6 +383,7 @@ class Filesystem extends Actor {
 
   async start () {
     if (this.settings.debug) console.debug('[FILESYSTEM]', 'Starting filesystem:', this.path);
+    if (!this._state.content || typeof this._state.content !== 'object') this._state.content = {};
     this._state.content.status = 'STARTING';
 
     // Create .fabric directory
@@ -446,7 +452,10 @@ class Filesystem extends Actor {
   }
 
   commit () {
-    const content = this._state.content || {};
+    const content = Object.assign({}, this._state.content || {});
+    const documents = this._state.documents;
+    if (documents && Object.keys(documents).length) content.documents = documents;
+    if (Array.isArray(this._log) && this._log.length) content.log = this._log.slice();
     const serialized = JSON.stringify(content);
 
     // Write state to STATE file using absolute path

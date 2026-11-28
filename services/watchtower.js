@@ -67,6 +67,7 @@ function seal (commitmentTxid, transactions) {
  * @param {object} filing
  * @param {string} txid
  * @returns {string[]|null}
+ * @private
  */
 function openFiling (filing, txid) {
   const id = String(txid || '').toLowerCase();
@@ -93,6 +94,7 @@ function openFiling (filing, txid) {
  * transaction is already known, or its inputs are already spent.
  * @param {Error|string} error
  * @returns {boolean}
+ * @private
  */
 function broadcastSettled (error) {
   const msg = String(error && error.message ? error.message : error || '');

@@ -113,7 +113,11 @@ const CLI_CONTRACTS = Object.freeze([
       claimwatch: '_handleClaimWatchCommand',
       refund: '_handleRefundCommand',
       refunds: '_handleRefundsCommand',
-      relayfees: '_handleRelayFeesCommand'
+      relayfees: '_handleRelayFeesCommand',
+      commit: '_handleStorageCommitCommand',
+      challenge: '_handleStorageChallengeCommand',
+      respond: '_handleStorageRespondCommand',
+      sweep: '_handleStorageSweepCommand'
     }
   }),
   defineContract({

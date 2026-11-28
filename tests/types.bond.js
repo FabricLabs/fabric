@@ -400,6 +400,7 @@ describe('Market bonds, challenges, and fraud proofs (Phase 3)', function () {
     assert.strictEqual(check({}).ok, false, 'no chain view');
     assert.match(check({ tipHeight: 1005, outpointUnspent: () => true }).reason, /blocks deep/);
     assert.strictEqual(check({ tipHeight: 1006, outpointUnspent: () => false }).ok, false, 'provider checked in');
+    assert.match(check({ tipHeight: 1006, outpointUnspent: () => Promise.resolve(true) }).reason, /boolean/);
     assert.match(check({ tipHeight: 1006, outpointSpend: () => ({ leafId: 'checkin' }) }).reason, /checkin/);
     const verdict = check({ tipHeight: 1006, outpointUnspent: (txid, vout) => txid === fundedTxid && vout === 0 });
     assert.strictEqual(verdict.ok, true);

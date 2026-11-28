@@ -52,6 +52,12 @@ mailbox, a loopback reply). This class never talks to the network itself.</p>
 <dt><del><a href="#module_types/typetree">types/typetree</a></del></dt>
 <dd><p>Quarantined TypeTree scaffold (not shipped).</p>
 </dd>
+<dt><a href="#module_types/wallet/bip86">types/wallet/bip86</a></dt>
+<dd><p>BIP-86 single-key Taproot outputs: key path only, with the
+output key <code>Q = P + int(taggedHash(&#39;TapTweak&#39;, P_x))·G</code> (no script tree).
+Wallet keys live on <code>m/86&#39;/B&#39;/n&#39;/&lt;change&gt;/&lt;index&gt;</code>, B = 0 on mainnet and 1
+elsewhere.</p>
+</dd>
 </dl>
 
 ## Classes
@@ -197,9 +203,15 @@ PSBT build and checks, key-path signing, ownership proofs, and PoDLE.</p>
 </dd>
 <dt><a href="#Contract">Contract</a> ⇐ <code><a href="#Service">Service</a></code></dt>
 <dd></dd>
+<dt><a href="#Resolutions">Resolutions</a> ⇐ <code><a href="#Actor">Actor</a></code></dt>
+<dd></dd>
+<dt><a href="#Resolutions">Resolutions</a></dt>
+<dd></dd>
 <dt><a href="#Disk">Disk</a></dt>
 <dd></dd>
 <dt><a href="#Document">Document</a></dt>
+<dd></dd>
+<dt><a href="#DocumentBook">DocumentBook</a></dt>
 <dd></dd>
 <dt><a href="#DocumentBlobTransferBook">DocumentBlobTransferBook</a></dt>
 <dd><p>Buyer-side reassembly of indexed blob transfers.</p>
@@ -219,8 +231,6 @@ evicted (oldest first) before any pinned row. A row whose <code>total</code>
 contradicts the expectation (planted before the purchase) is replaced.</li>
 </ul>
 </dd>
-<dt><a href="#DocumentBook">DocumentBook</a></dt>
-<dd></dd>
 <dt><a href="#Entity">Entity</a> ⇐ <code>EventEmitter</code></dt>
 <dd><p><strong>Structured document</strong> type: extends <a href="EventEmitter">EventEmitter</a> (not <a href="#Actor">Actor</a>) with
 <code>@type</code> / <code>@data</code> shape, JSON serialization, and <code>id</code> = SHA256(<code>toJSON()</code>).
@@ -318,6 +328,8 @@ JSON bridging is <strong>@fabric/http</strong>. See <code>docs/MESSAGE_BODY.md</
 <code>perMakerSetting</code>, the setting holding how many live entries one maker may
 hold (its oldest is dropped).</p>
 </dd>
+<dt><a href="#WireReplayFilter">WireReplayFilter</a></dt>
+<dd></dd>
 <dt><a href="#Peer">Peer</a> ⇐ <code><a href="#Service">Service</a></code></dt>
 <dd><p>P2P node: TCP/NOISE sessions, gossip, and relay of <a href="#Message">Message</a> (AMP) frames. Extends <a href="#Service">Service</a>
 (hence <a href="#Actor">Actor</a>). Opcode and receipt semantics must stay aligned with <strong>@fabric/http</strong> and Hub when you add types —
@@ -351,10 +363,6 @@ source, prefer moving richer HTTP to <code>@fabric/http</code>; this type stays 
 bridging. Uses browser/Node <code>WebSocket</code> with JSON <a href="#Message">Message</a> payloads where applicable.</p>
 </dd>
 <dt><a href="#Remote">Remote</a></dt>
-<dd></dd>
-<dt><a href="#Resolutions">Resolutions</a> ⇐ <code><a href="#Actor">Actor</a></code></dt>
-<dd></dd>
-<dt><a href="#Resolutions">Resolutions</a></dt>
 <dd></dd>
 <dt><a href="#Resource">Resource</a> ⇐ <code><a href="#Store">Store</a></code></dt>
 <dd><p>Declarative <strong>application resource</strong> (routes, components, roles) persisted via <a href="#Store">Store</a>. Pairs with
@@ -426,9 +434,6 @@ live on <a href="#Machine">Machine</a> and <a href="#State">State</a> / <a href=
 </dd>
 <dt><a href="#Vector">Vector</a></dt>
 <dd></dd>
-<dt><a href="#Wallet">Wallet</a> : <code>Object</code></dt>
-<dd><p>Manage keys and track their balances.</p>
-</dd>
 <dt><a href="#FraudProof">FraudProof</a></dt>
 <dd><p>Self-contained proof that a market counterparty broke a signed obligation.
 Shape: <code>{ type: &#39;FraudProof&#39;, kind, artifacts, claim }</code>. <code>verify()</code> is pure
@@ -504,6 +509,8 @@ contract&#39;s lifetime as &quot;fulfillment conditions&quot; for its closure.</
 <dt><a href="#Redis">Redis</a></dt>
 <dd><p>Connect and subscribe to Redis servers (node-redis v6).</p>
 </dd>
+<dt><a href="#Storage">Storage</a></dt>
+<dd></dd>
 <dt><a href="#Text">Text</a> ⇐ <code><a href="#Service">Service</a></code></dt>
 <dd></dd>
 <dt><a href="#Watchtower">Watchtower</a></dt>
@@ -518,725 +525,22 @@ contract&#39;s lifetime as &quot;fulfillment conditions&quot; for its closure.</
 </dd>
 </dl>
 
-## Members
-
-<dl>
-<dt><a href="#leafScripts">leafScripts</a></dt>
-<dd><p>Buffer-backed leaves for control-block / PSBT helpers.</p>
-</dd>
-<dt><a href="#spendAddress">spendAddress</a></dt>
-<dd><p>Alias aligned with ARC / tracked summaries.</p>
-</dd>
-</dl>
-
 ## Constants
 
 <dl>
-<dt><a href="#YEAR_BLOCKS">YEAR_BLOCKS</a></dt>
-<dd><p>Blocks in a year (10-minute blocks).</p>
-</dd>
-<dt><a href="#FIDELITY_LOCKTIME_GRID">FIDELITY_LOCKTIME_GRID</a></dt>
-<dd><p>Mainnet bond locktimes are multiples of this height.</p>
-</dd>
-<dt><a href="#FIDELITY_MAX_CERT_BLOCKS">FIDELITY_MAX_CERT_BLOCKS</a></dt>
-<dd><p>Furthest ahead a certificate may expire: about a year.</p>
-</dd>
-<dt><a href="#LEAF_VERSION">LEAF_VERSION</a></dt>
-<dd><p>Leaf version for BIP342 tapscript.</p>
-</dd>
-<dt><a href="#CHANNEL_BODY_TYPES">CHANNEL_BODY_TYPES</a></dt>
-<dd><p>CONTRACT_MESSAGE body types for the Fabric payment channel flow. These ride
-the existing <code>CONTRACT_MESSAGE</code> opcode as signed artifacts
-(<a href="#Witness.signArtifact">signArtifact</a>); <strong>no channel opcode is introduced</strong> — a
-dedicated opcode is a separate, later protocol decision.</p>
-</dd>
-<dt><a href="#CHANNEL_DEFAULTS">CHANNEL_DEFAULTS</a></dt>
-<dd><p>Channel defaults (Lightning-derived). Policy fields are negotiated at
-<code>ChannelOpen</code> — the stricter value wins. HTLCs are never trimmed: every one
-carries at least <code>HTLC_MINIMUM_SATS</code>, so it has a commitment output its
-receiver can claim on-chain.</p>
-<p><code>htlcClaimWindowBlocks</code> is part of the HTLC script (not negotiated): on the
-receiver&#39;s own commitment the sender&#39;s timeout waits <code>toSelfDelay + htlcClaimWindowBlocks</code> after confirmation, so the receiver&#39;s CSV-delayed
-claim always has that many blocks to itself, whatever the CLTV.
-<code>minToSelfDelay</code> / <code>maxToSelfDelay</code> / <code>minChannelLifetimeBlocks</code> are local
-(non-funder) acceptance limits, never negotiated.</p>
-</dd>
-<dt><a href="#MAX_TRANSFERS">MAX_TRANSFERS</a></dt>
-<dd><p>Balance transfers remembered per session (newest kept).</p>
-</dd>
-<dt><a href="#MAX_SETTLED_CREDITS">MAX_SETTLED_CREDITS</a></dt>
-<dd><p>Settled credit rows kept (open rows are bounded by the credit limit).</p>
-</dd>
-<dt><a href="#MAX_FEE_PPM">MAX_FEE_PPM</a></dt>
-<dd><p>Highest proportional maker fee an offer may ask: 5%.</p>
-</dd>
-<dt><a href="#MIN_COINJOIN_SATS">MIN_COINJOIN_SATS</a></dt>
-<dd><p>Smallest coinjoin amount.</p>
-</dd>
-<dt><a href="#DUST_SATS">DUST_SATS</a></dt>
-<dd><p>P2TR dust limit: change below this is dropped (it goes to miners).</p>
-</dd>
-<dt><a href="#MAX_MAKERS">MAX_MAKERS</a></dt>
-<dd><p>Most makers in one round.</p>
-</dd>
-<dt><a href="#MAX_MAKER_INPUTS">MAX_MAKER_INPUTS</a></dt>
-<dd><p>Most inputs one maker may contribute.</p>
-</dd>
-<dt><a href="#DEFAULT_MIN_EQUAL_OUTPUTS">DEFAULT_MIN_EQUAL_OUTPUTS</a></dt>
-<dd><p>Fewest equal outputs a maker accepts as a coinjoin (taker + one maker).</p>
-</dd>
-<dt><a href="#MAX_PSBT_CHARS">MAX_PSBT_CHARS</a></dt>
-<dd><p>Largest PSBT (base64 characters) a round message may carry: sealed, it must
-still fit one <code>CONTRACT_MESSAGE</code> under <code>MAX_MESSAGE_SIZE</code> (32 KiB).</p>
-</dd>
-<dt><a href="#SEAL_NAMESPACE">SEAL_NAMESPACE</a></dt>
-<dd><p>Contract namespace for sealed round messages and <code>CONTRACT_MESSAGE</code> bodies.</p>
-</dd>
-<dt><a href="#SEALED_TYPE">SEALED_TYPE</a></dt>
-<dd><p>Body type of a sealed round message.</p>
-</dd>
-<dt><a href="#WEIGHT_OVERHEAD">WEIGHT_OVERHEAD</a></dt>
-<dd><p>Transaction weight, in weight units: overhead, P2TR key-path input, P2TR output.</p>
-</dd>
-<dt><a href="#SIGNER_FIELD">SIGNER_FIELD</a></dt>
-<dd><p>Which field carries each body&#39;s author key.</p>
-</dd>
-<dt><a href="#ROUND_TYPES">ROUND_TYPES</a></dt>
-<dd><p>Round messages: sealed between taker and maker, never gossiped.</p>
-</dd>
-<dt><a href="#PODLE_MAX_INDEX">PODLE_MAX_INDEX</a></dt>
-<dd><p>Distinct commitments one UTXO can produce (indices <code>0 … PODLE_MAX_INDEX − 1</code>).</p>
-</dd>
-<dt><a href="#PODLE_TAG">PODLE_TAG</a></dt>
-<dd><p>Domain tag mixed into the DLEQ challenge.</p>
-</dd>
-<dt><a href="#PODLE_MIN_AGE_CONFS">PODLE_MIN_AGE_CONFS</a></dt>
-<dd><p>Default: the commitment UTXO must be this many blocks deep.</p>
-</dd>
-<dt><a href="#PODLE_MIN_VALUE_PCT">PODLE_MIN_VALUE_PCT</a></dt>
-<dd><p>Default: the commitment UTXO must be worth this percent of the coinjoin amount.</p>
-</dd>
-<dt><a href="#PODLE_BLACKLIST_SIZE">PODLE_BLACKLIST_SIZE</a></dt>
-<dd><p>Default size of a maker&#39;s used-commitment memory.</p>
-</dd>
-<dt><a href="#DEFAULT_MAX_SIGNS">DEFAULT_MAX_SIGNS</a></dt>
-<dd><p>Times a maker will sign a rebuilt transaction in one round.</p>
-</dd>
-<dt><a href="#LOCKTIME_SLACK_BLOCKS">LOCKTIME_SLACK_BLOCKS</a></dt>
-<dd><p>Blocks the transaction&#39;s <code>nLockTime</code> may run ahead of the maker&#39;s tip.</p>
-</dd>
-<dt><a href="#INPUT_HEADROOM">INPUT_HEADROOM</a></dt>
-<dd><p>Extra inputs budgeted when the taker selects coins.</p>
-</dd>
-<dt><a href="#GCM_TAG_BYTES">GCM_TAG_BYTES</a></dt>
-<dd><p>AES-GCM tag appended to each sealed blob.</p>
-</dd>
-<dt><a href="#BID_TYPE">BID_TYPE</a></dt>
-<dd><p>Wire type of a chunk bid.</p>
-</dd>
-<dt><a href="#ASK_TYPE">ASK_TYPE</a></dt>
-<dd><p>Wire type of a seller&#39;s answer to a bid.</p>
-</dd>
-<dt><a href="#DEFAULT_BID_TTL_SECONDS">DEFAULT_BID_TTL_SECONDS</a></dt>
-<dd><p>Bid lifetime when the buyer names none.</p>
-</dd>
-<dt><a href="#BID_CLOCK_SKEW_SECONDS">BID_CLOCK_SKEW_SECONDS</a></dt>
-<dd><p>Clock difference tolerated between peers when checking how far ahead a bid expires.</p>
-</dd>
-<dt><a href="#DEFAULT_WEIGHTS">DEFAULT_WEIGHTS</a></dt>
-<dd><p>Default ranking weights (sum to 1).</p>
-</dd>
-<dt><a href="#TELEMETRY_VERSION">TELEMETRY_VERSION</a></dt>
-<dd><p>Telemetry record schema version.</p>
-</dd>
-<dt><a href="#TELEMETRY_TYPE">TELEMETRY_TYPE</a></dt>
-<dd><p>Canonical <code>type</code> for an exported telemetry record.</p>
-</dd>
-<dt><a href="#SCORE_UNKNOWN">SCORE_UNKNOWN</a></dt>
-<dd><p>Score for a provider with no observations.</p>
-</dd>
-<dt><a href="#SCORE_MAX">SCORE_MAX</a></dt>
-<dd><p>Maximum provider score.</p>
-</dd>
-<dt><a href="#SCORE_INVENTORY_ONLY">SCORE_INVENTORY_ONLY</a></dt>
-<dd><p>A provider seen only in inventories ranks below a neutral record (500).</p>
-</dd>
-<dt><a href="#MAX_PROVIDERS">MAX_PROVIDERS</a></dt>
-<dd><p>Providers tracked before the least recently updated unpenalized one is evicted.</p>
-</dd>
-<dt><a href="#MAX_OFFERS">MAX_OFFERS</a></dt>
-<dd><p>Offer rows held before the oldest is evicted.</p>
-</dd>
-<dt><a href="#MAX_EVIDENCE">MAX_EVIDENCE</a></dt>
-<dd><p>Fraud-proof evidence ids remembered for dedupe.</p>
-</dd>
-<dt><a href="#HOP_PENALTY_MS">HOP_PENALTY_MS</a></dt>
-<dd><p>Each extra gossip hop counts as this many milliseconds of latency.</p>
-</dd>
-<dt><a href="#DUST_SATS">DUST_SATS</a></dt>
-<dd><p>Smallest output the claim / refund transaction may pay.</p>
-</dd>
-<dt><a href="#DEFAULT_FEE_SATS">DEFAULT_FEE_SATS</a></dt>
-<dd><p>Fee used when a spend names none.</p>
-</dd>
-<dt><a href="#LOCKTIME_THRESHOLD">LOCKTIME_THRESHOLD</a></dt>
-<dd><p>BIP65: lock values at or above this are unix times, not heights.</p>
-</dd>
-<dt><a href="#DEPRECATED_WIRE_TYPES">DEPRECATED_WIRE_TYPES</a></dt>
-<dd><p>Registered opcodes nothing sends or handles (docs/MESSAGE_BODY.md, Migration
-Phase 4). They still decode; Peer counts and warns when one arrives, and a
-later protocol version removes them. <code>P2P_BASE_MESSAGE</code> and
-<code>P2P_CHAIN_SYNC_REQUEST</code> are still in use and are not listed.</p>
-</dd>
-<dt><a href="#SEALED_DELIVERY_INNER_TYPE_BY_WIRE">SEALED_DELIVERY_INNER_TYPE_BY_WIRE</a></dt>
-<dd><p>Sealed document delivery wire type → the inner <code>type</code> its generic handler dispatches on.</p>
-</dd>
-<dt><a href="#SEALED_DELIVERY_INNER_TYPES">SEALED_DELIVERY_INNER_TYPES</a></dt>
-<dd><p>Those inner types: refused inside a <code>GenericMessage</code> / <code>P2P_BASE_MESSAGE</code> carrier.</p>
-</dd>
-<dt><a href="#FIELD_BODIES_VERSION">FIELD_BODIES_VERSION</a></dt>
-<dd><p>Session-advertised level of field-body support (<code>object.fieldBodies</code>).</p>
-</dd>
-<dt><a href="#PEER_SEALED_BLOB_FUNDED_RETENTION_MS">PEER_SEALED_BLOB_FUNDED_RETENTION_MS</a></dt>
-<dd><p>Default time a funded sealed-blob quote keeps its secret while its HTLC settles.</p>
-</dd>
-<dt><a href="#TAPROOT_INTERNAL_NUMS">TAPROOT_INTERNAL_NUMS</a></dt>
-<dd><p>BIP341-style NUMS x-only internal key (script-path spend only).</p>
-</dd>
-<dt><a href="#CLTV_TIMESTAMP_THRESHOLD">CLTV_TIMESTAMP_THRESHOLD</a></dt>
-<dd><p>BIP65 LOCKTIME_THRESHOLD: nLockTime / CLTV values ≥ this are unix timestamps.</p>
-</dd>
-<dt><a href="#MAX_LOCKTIME">MAX_LOCKTIME</a></dt>
-<dd><p>nLockTime / nSequence max (2^32 − 1). Avoid a 32-bit hex literal.</p>
-</dd>
-<dt><a href="#EXIT_KINDS">EXIT_KINDS</a></dt>
-<dd><p>Exit kinds.</p>
-</dd>
-<dt><a href="#EXIT_SIGNATURE_TYPE">EXIT_SIGNATURE_TYPE</a></dt>
-<dd><p><code>CONTRACT_MESSAGE</code> body carrying one exit signature.</p>
-</dd>
-<dt><a href="#UNSAFE_PATH_TOKENS">UNSAFE_PATH_TOKENS</a></dt>
-<dd><p>Path tokens that would reach <code>Object.prototype</code> through <code>pointer.set</code>.</p>
-</dd>
-<dt><a href="#MAX_PREMIUM_PPM">MAX_PREMIUM_PPM</a></dt>
-<dd><p>Largest premium (either sign) an order may quote: ±50%.</p>
-</dd>
-<dt><a href="#DEFAULT_MIN_CLAIM_BLOCKS">DEFAULT_MIN_CLAIM_BLOCKS</a></dt>
-<dd><p>Blocks the L2 giver needs left on the HTLC to claim after paying.</p>
-</dd>
-<dt><a href="#DEFAULT_MIN_CONFIRMATIONS">DEFAULT_MIN_CONFIRMATIONS</a></dt>
-<dd><p>HTLC confirmations before the L2 giver pays.</p>
-</dd>
-<dt><a href="#DEFAULT_INVOICE_MARGIN_SECONDS">DEFAULT_INVOICE_MARGIN_SECONDS</a></dt>
-<dd><p>Invoice must expire at least this long before the refund lock opens.</p>
-</dd>
-<dt><a href="#MIN_INVOICE_EXPIRY_SECONDS">MIN_INVOICE_EXPIRY_SECONDS</a></dt>
-<dd><p>Shortest expiry a swap invoice may carry.</p>
-</dd>
-<dt><a href="#MIN_REFUND_LOCK_BLOCKS">MIN_REFUND_LOCK_BLOCKS</a></dt>
-<dd><p>Shortest refund lock an order may ask for: room for the claim, the funding
-confirmations, one block of slack, the invoice margin, and the shortest
-invoice, at the default block time.</p>
-</dd>
-<dt><a href="#MAX_REFUND_LOCK_BLOCKS">MAX_REFUND_LOCK_BLOCKS</a></dt>
-<dd><p>Longest refund lock an order may ask for (about two weeks of blocks).</p>
-</dd>
-<dt><a href="#DEFAULT_INVOICE_EXPIRY_SECONDS">DEFAULT_INVOICE_EXPIRY_SECONDS</a></dt>
-<dd><p>BOLT11 default expiry when the invoice names none.</p>
-</dd>
-<dt><a href="#SIGNER_FIELD">SIGNER_FIELD</a></dt>
-<dd><p>Which field carries each body&#39;s author key.</p>
-</dd>
-<dt><a href="#ZMQ_TOPIC_CASES">ZMQ_TOPIC_CASES</a></dt>
-<dd><p>bitcoind ZMQ topic → <code>_handleZMQMessage</code> case.</p>
-</dd>
-<dt><a href="#ZMQ_TXID_MEMORY">ZMQ_TXID_MEMORY</a></dt>
-<dd><p>Max txids kept for <code>rawtx</code> / <code>hashtx</code> pair dedupe.</p>
-</dd>
-<dt><a href="#ZMQ_TX_DEDUPE_MS">ZMQ_TX_DEDUPE_MS</a></dt>
-<dd><p>Default window in which a <code>rawtx</code> / <code>hashtx</code> pair counts as one admission.</p>
-</dd>
-<dt><a href="#ZMQ_TX_TOPICS">ZMQ_TX_TOPICS</a></dt>
-<dd><p>Per-transaction topics, paused during initial block download.</p>
-</dd>
-<dt><a href="#ZMQ_IBD_POLL_MS">ZMQ_IBD_POLL_MS</a></dt>
-<dd><p>Default interval between initial-block-download checks while it lasts.</p>
-</dd>
-<dt><a href="#ZMQ_HASHTX_GRACE_MS">ZMQ_HASHTX_GRACE_MS</a></dt>
-<dd><p>Default wait for a <code>rawtx</code> before a lone <code>hashtx</code> is fetched over RPC.</p>
-</dd>
-<dt><a href="#BALANCE_REFRESH_MS">BALANCE_REFRESH_MS</a></dt>
-<dd><p>Default minimum interval between wallet balance reads driven by <code>rawtx</code>.</p>
-</dd>
-<dt><a href="#RPC_MAX_SOCKETS">RPC_MAX_SOCKETS</a></dt>
-<dd><p>Default cap on concurrent RPC connections to bitcoind.</p>
+<dt><a href="#crypto">crypto</a></dt>
+<dd><p>Peer storage market.</p>
+<p>Any Fabric peer can publish a storage contract, stake a deposit, answer a
+publisher&#39;s challenge, and build a penalty PSBT. The contract root is the
+challenge tree over raw blob hashes (<a href="Challenge.createBlobMerkleTree">Challenge.createBlobMerkleTree</a>),
+not the document sale tree (which also commits payment hashes and IVs).
+Bonds stay on regtest, signet, and testnet: <a href="#Bond">Bond</a> refuses mainnet.</p>
+<p>A penalty that depends on chain state fails closed unless the host passed
+<code>outpointUnspent</code>, <code>txConfirmed</code>, and <code>headerKnown</code>. Hub HTTP is an adapter
+over this service.</p>
 </dd>
 <dt><del><a href="#Text">Text</a></del></dt>
 <dd></dd>
-<dt><a href="#ZMQ_MESSAGE_TYPES">ZMQ_MESSAGE_TYPES</a></dt>
-<dd><p>bitcoind topic → message type for the field-encoded form.</p>
-</dd>
-<dt><a href="#ZMQ_MAX_FIELD_HEX">ZMQ_MAX_FIELD_HEX</a></dt>
-<dd><p>Hex characters that fit a field body beside its <code>present</code> / <code>extra</code> fields.</p>
-</dd>
-</dl>
-
-## Functions
-
-<dl>
-<dt><a href="#lockFrom">lockFrom()</a></dt>
-<dd><p>Accept a block height, a <code>{ type, height|unix|blocks }</code> lock, or a normalized lock. @private</p>
-</dd>
-<dt><a href="#fidelityPath">fidelityPath(index, [networkName])</a> ⇒ <code>string</code></dt>
-<dd><p>BIP-32 path of the <code>index</code>th bond key: <code>m/86&#39;/coin&#39;/0&#39;/2/index</code>
-(chain 2 beside the BIP-86 receive and change chains).</p>
-</dd>
-<dt><a href="#isValidFidelityLocktime">isValidFidelityLocktime(locktime, [networkName])</a> ⇒ <code>boolean</code></dt>
-<dd><p>Whether a bond may lock until <code>locktime</code> on this network: a block height,
-on the mainnet grid.</p>
-</dd>
-<dt><a href="#fidelityLocktimes">fidelityLocktimes(opts)</a> ⇒ <code>Array.&lt;number&gt;</code></dt>
-<dd><p>The next <code>count</code> locktimes a new bond may use, after <code>tipHeight</code>.</p>
-</dd>
-<dt><a href="#buildFidelity">buildFidelity(opts)</a> ⇒ <code>Object</code></dt>
-<dd><p>The bond output: NUMS internal key, one CLTV leaf.</p>
-</dd>
-<dt><a href="#prepareFidelityRedeem">prepareFidelityRedeem(opts)</a> ⇒ <code>string</code></dt>
-<dd><p>Unsigned PSBT spending a bond after its locktime (<code>nLockTime</code> = locktime,
-sequence <code>0xfffffffe</code> so CLTV applies).</p>
-</dd>
-<dt><a href="#signFidelityRedeem">signFidelityRedeem(psbtBase64, bondPriv32)</a> ⇒ <code>Object</code></dt>
-<dd><p>Sign a bond redeem PSBT with the bond key and extract the transaction.</p>
-</dd>
-<dt><a href="#signFidelityCertificate">signFidelityCertificate(opts)</a> ⇒ <code>Object</code></dt>
-<dd><p>Sign a certificate letting <code>makerPubkey</code> advertise this bond until block
-<code>certExpiresAt</code>.</p>
-</dd>
-<dt><a href="#normalizeFidelity">normalizeFidelity(input)</a> ⇒ <code>Object</code></dt>
-<dd><p>Shape of <code>CoinjoinOffer.fidelityBond</code>.</p>
-</dd>
-<dt><a href="#verifyFidelityCertificate">verifyFidelityCertificate(bond, opts)</a> ⇒ <code>boolean</code></dt>
-<dd><p>Check the bond key signed this certificate for <code>makerPubkey</code> on <code>network</code>.</p>
-</dd>
-<dt><a href="#fidelityValue">fidelityValue(opts)</a> ⇒ <code>number</code></dt>
-<dd><p>Value of a bond (JoinMarket&#39;s formula, heights in place of times):
-<code>T = (locktime − confirmHeight) / year</code>, <code>L = max(0, tip − locktime) / year</code>,
-<code>a = max(0, min(1, e^(rT) − 1) − min(1, e^(rL) − 1))</code>,
-<code>value = (valueSats × a)^exponent</code>.</p>
-</dd>
-<dt><a href="#verifyFidelity">verifyFidelity(bond, opts)</a> ⇒ <code>Promise.&lt;{ok: boolean, reason: (string|null), valueSats: number, confirmHeight: (number|null), value: number}&gt;</code></dt>
-<dd><p>Verify a bond on chain for one maker. <code>bitcoin.getTxOut(txid, vout)</code> must
-resolve to <code>{ valueSats, scriptPubKeyHex, confirmations }</code> for an unspent
-output, else <code>null</code>.</p>
-</dd>
-<dt><a href="#createBlobMerkleTree">createBlobMerkleTree(hashes)</a> ⇒ <code><a href="#Tree">Tree</a></code></dt>
-<dd><p>Storage tree over raw 32-byte blob hashes (its proofs are <a href="#Tree">Tree</a> proofs).</p>
-</dd>
-<dt><a href="#expireHeight">expireHeight(h)</a> ⇒ <code>number</code></dt>
-<dd></dd>
-<dt><a href="#randomRoundId">randomRoundId()</a> ⇒ <code>string</code></dt>
-<dd></dd>
-<dt><a href="#normalizeOffer">normalizeOffer(input)</a> ⇒ <code>Object</code></dt>
-<dd></dd>
-<dt><a href="#normalizeCancel">normalizeCancel(input)</a> ⇒ <code>Object</code></dt>
-<dd></dd>
-<dt><a href="#normalizeFill">normalizeFill(input)</a> ⇒ <code>Object</code></dt>
-<dd><p>Taker → maker: fill <code>amountSats</code> of an offer. <code>takerPubkey</code> is a fresh key
-for this round only (it signs the taker&#39;s bodies and receives sealed
-replies), so makers never learn the taker&#39;s identity.</p>
-</dd>
-<dt><a href="#normalizeFillAck">normalizeFillAck(input)</a> ⇒ <code>Object</code></dt>
-<dd><p>Maker → taker: the fill is accepted; <code>sealPubkey</code> receives the rest of the
-round.</p>
-</dd>
-<dt><a href="#normalizeAuth">normalizeAuth(input)</a> ⇒ <code>Object</code></dt>
-<dd><p>Taker → maker: open the PoDLE commitment named in the fill.</p>
-</dd>
-<dt><a href="#normalizeIoAuth">normalizeIoAuth(input)</a> ⇒ <code>Object</code></dt>
-<dd><p>Maker → taker: the maker&#39;s inputs and where it wants its coinjoin output
-and change. Inputs may carry an <code>ownershipSig</code> (<a href="#signOwnership">signOwnership</a>).</p>
-</dd>
-<dt><a href="#normalizeTx">normalizeTx(input)</a> ⇒ <code>Object</code></dt>
-<dd><p>Taker → maker: the unsigned transaction.</p>
-</dd>
-<dt><a href="#normalizeSig">normalizeSig(input)</a> ⇒ <code>Object</code></dt>
-<dd><p>Maker → taker: the transaction with the maker&#39;s inputs signed.</p>
-</dd>
-<dt><a href="#randomPrivateKey">randomPrivateKey()</a> ⇒ <code>Buffer</code></dt>
-<dd></dd>
-<dt><a href="#sealRoundMessage">sealRoundMessage(body, recipientPubkey)</a> ⇒ <code>Object</code></dt>
-<dd><p>Seal a signed round message to its recipient (participant ECDH seal).</p>
-</dd>
-<dt><a href="#toContractMessage">toContractMessage(value)</a> ⇒ <code>Object</code></dt>
-<dd><p>Wrap a public body (offer, cancel) or a sealed round envelope as a
-<code>CONTRACT_MESSAGE</code> body: <code>buildMessage(&#39;CONTRACT_MESSAGE&#39;, toContractMessage(x))</code>.
-Round bodies must be sealed first.</p>
-</dd>
-<dt><a href="#fromContractMessage">fromContractMessage(value)</a> ⇒ <code>Object</code> | <code>Object</code> | <code>null</code></dt>
-<dd><p>Read a coinjoin <code>CONTRACT_MESSAGE</code> body (the parsed legacy JSON). Public
-bodies are verified; sealed envelopes are returned for
-<a href="#openRoundMessage">openRoundMessage</a> (or for relaying when <code>to</code> is not ours).
-Unsealed round bodies and other contracts return <code>null</code>.</p>
-</dd>
-<dt><a href="#openRoundMessage">openRoundMessage(envelope, privateKey)</a> ⇒ <code>Object</code></dt>
-<dd><p>Open a sealed round message with the recipient&#39;s private key and verify
-the body inside.</p>
-</dd>
-<dt><a href="#makerFee">makerFee(offer, amountSats)</a> ⇒ <code>number</code></dt>
-<dd><p>The maker&#39;s fee for a coinjoin of <code>amountSats</code>: <code>feeSats + ⌊amount × feePpm / 1e6⌋</code>.</p>
-</dd>
-<dt><a href="#makerChange">makerChange(opts)</a> ⇒ <code>number</code></dt>
-<dd><p>Change owed to a maker: its inputs, less the coinjoin output, plus its
-fee, less its miner-fee contribution. Change under <a href="#DUST_SATS">DUST_SATS</a> is
-not paid (0).</p>
-</dd>
-<dt><a href="#estimateVsize">estimateVsize(inputs, outputs)</a> ⇒ <code>number</code></dt>
-<dd><p>Virtual size of a transaction with only P2TR key-path inputs and P2TR outputs.</p>
-</dd>
-<dt><a href="#planCoinjoin">planCoinjoin(opts)</a> ⇒ <code>Object</code></dt>
-<dd><p>Outputs and fees for a round. Makers are paid exactly their offer&#39;s fee;
-the taker pays the miner fee less the makers&#39; contributions, and takes
-what is left as change (dropped below dust).</p>
-</dd>
-<dt><a href="#buildPsbt">buildPsbt(opts)</a> ⇒ <code>Object</code></dt>
-<dd><p>Build the unsigned coinjoin PSBT (version 2, BIP-69, <code>nLockTime</code> = tip,
-sequence <code>0xfffffffe</code>, witness UTXOs on every input).</p>
-</dd>
-<dt><a href="#unsignedTxid">unsignedTxid(psbtBase64)</a> ⇒ <code>string</code></dt>
-<dd><p>The id the transaction will have (key-path spends do not change it).</p>
-</dd>
-<dt><a href="#describePsbt">describePsbt(psbtBase64)</a> ⇒ <code>Object</code></dt>
-<dd><p>Inputs and outputs of a PSBT as plain rows.</p>
-</dd>
-<dt><a href="#validateForMaker">validateForMaker(opts)</a> ⇒ <code>Object</code></dt>
-<dd><p>Everything a maker must see before signing. It refuses unless its inputs
-are present with the values it named, its coinjoin output pays exactly
-<code>amountSats</code>, its change is at least what its offer earns, at least
-<code>minEqualOutputs</code> outputs share the coinjoin amount, every input and output
-is P2TR, and nothing else pays the maker&#39;s scripts.</p>
-</dd>
-<dt><a href="#validateForTaker">validateForTaker(opts)</a> ⇒ <code>Object</code></dt>
-<dd><p>The taker&#39;s check of the final transaction: exactly the planned outputs
-(each maker paid its offer, no more), every planned input, and a feerate
-within bounds.</p>
-</dd>
-<dt><a href="#taprootOutputPrivateKey">taprootOutputPrivateKey(internalPriv32)</a> ⇒ <code>Buffer</code></dt>
-<dd><p>BIP-341 output private key for a BIP-86 key-path-only P2TR (internal key, no scripts).</p>
-</dd>
-<dt><a href="#taprootKeyPath">taprootKeyPath(internalPriv32, [networkName])</a> ⇒ <code>Object</code></dt>
-<dd><p>Key-path-only P2TR for an internal private key.</p>
-</dd>
-<dt><a href="#signKeyPathInputs">signKeyPathInputs(psbtBase64, internalPrivateKeys)</a> ⇒ <code>Object</code></dt>
-<dd><p>Sign the PSBT inputs spent by the given key-path keys (SIGHASH_DEFAULT).
-Inputs owned by other keys are left untouched.</p>
-</dd>
-<dt><a href="#mergeMakerSignatures">mergeMakerSignatures(basePsbtBase64, makerPsbtBase64, makerInputs)</a> ⇒ <code>string</code></dt>
-<dd><p>Copy a maker&#39;s signatures for its own inputs into the taker&#39;s PSBT. Refuses
-a PSBT for another transaction, a missing or invalid signature on any of the
-maker&#39;s inputs; nothing else is taken from the maker&#39;s copy.</p>
-</dd>
-<dt><a href="#finalize">finalize(psbtBase64)</a> ⇒ <code>Object</code></dt>
-<dd><p>Finalize every input and extract the transaction.</p>
-</dd>
-<dt><a href="#signOwnership">signOwnership(opts)</a> ⇒ <code>string</code></dt>
-<dd><p>Prove control of a key-path UTXO for one round: a BIP340 signature by the
-output key over <code>SHA256(tag ‖ roundId ‖ txid ‖ vout)</code>.</p>
-</dd>
-<dt><a href="#verifyOwnership">verifyOwnership(opts)</a> ⇒ <code>boolean</code></dt>
-<dd></dd>
-<dt><a href="#validateFill">validateFill(offer, fill, [opts])</a> ⇒ <code>Object</code></dt>
-<dd><p>Check a fill against the offer it names.</p>
-</dd>
-<dt><a href="#podleGenerator">podleGenerator(index)</a> ⇒ <code>Object</code></dt>
-<dd><p>Nothing-up-my-sleeve generator <code>J_index</code>: the first <code>SHA256(G ‖ index ‖ counter)</code>
-that is a valid x coordinate, lifted to even y. Nobody knows <code>log_G(J)</code>.</p>
-</dd>
-<dt><a href="#podleCommitment">podleCommitment(p2Hex)</a> ⇒ <code>string</code></dt>
-<dd><p>The commitment for a <code>P2</code> point.</p>
-</dd>
-<dt><a href="#generatePodle">generatePodle(opts)</a> ⇒ <code>Object</code></dt>
-<dd><p>Taker: commit to a UTXO it owns.</p>
-</dd>
-<dt><a href="#verifyPodle">verifyPodle(opts)</a> ⇒ <code>Object</code></dt>
-<dd><p>Maker: check a reveal against the commitment it was promised.</p>
-</dd>
-<dt><a href="#checkPodleUtxo">checkPodleUtxo(opts)</a> ⇒ <code>Object</code></dt>
-<dd><p>Maker: check the revealed UTXO itself, as read from the chain. The output
-must be P2TR to <code>P</code>&#39;s x coordinate, old enough, and large enough for the
-coinjoin it is used for.</p>
-</dd>
-<dt><a href="#nextPodleIndex">nextPodleIndex(used)</a> ⇒ <code>number</code> | <code>null</code></dt>
-<dd><p>Lowest commitment index the taker has not used for a UTXO.</p>
-</dd>
-<dt><a href="#descriptorPrivateKey">descriptorPrivateKey(info, descriptors)</a> ⇒ <code>Buffer</code></dt>
-<dd><p>Internal private key for a wallet address, from bitcoind <code>getaddressinfo</code>
-and <code>listdescriptors true</code> output (<code>tr(…/*)</code> descriptors only).</p>
-</dd>
-<dt><a href="#envelopeRecipient">envelopeRecipient(envelope)</a> ⇒ <code>string</code> | <code>null</code></dt>
-<dd><p>Whose round an envelope belongs to: the x-only key it is sealed to.</p>
-</dd>
-<dt><a href="#memoryWallet">memoryWallet(opts)</a> ⇒ <code>Object</code></dt>
-<dd><p>Test helper: a wallet adapter over in-memory P2TR coins and their keys.</p>
-</dd>
-<dt><a href="#memoryChain">memoryChain(opts)</a> ⇒ <code>Object</code></dt>
-<dd><p>Test helper: a chain adapter over a map of unspent outputs.</p>
-</dd>
-<dt><a href="#offerKey">offerKey(row)</a> ⇒ <code>string</code></dt>
-<dd><p>Stable key for one offer row.</p>
-</dd>
-<dt><a href="#settlementDedupeKey">settlementDedupeKey(session)</a> ⇒ <code>string</code></dt>
-<dd><p>Dedup key for paid settlements: (documentId, blobIndex|all, contentHash).</p>
-</dd>
-<dt><a href="#createDocumentPurchaseSession">createDocumentPurchaseSession(opts)</a> ⇒ <code>Object</code></dt>
-<dd><p>A buyer/seller document purchase session record (whole document or one blob).</p>
-</dd>
-<dt><a href="#isDuplicateSettlement">isDuplicateSettlement(paidKeys, session)</a> ⇒ <code>boolean</code></dt>
-<dd><p>True when this (documentId, blobIndex, contentHash) was already settled.</p>
-</dd>
-<dt><a href="#rememberSettlement">rememberSettlement(paidKeys, session)</a></dt>
-<dd></dd>
-<dt><a href="#findSession">findSession(store, key)</a> ⇒ <code>Object</code> | <code>null</code></dt>
-<dd></dd>
-<dt><a href="#listRefundCandidates">listRefundCandidates(store, tipHeight, [opts])</a> ⇒ <code>Array.&lt;Object&gt;</code></dt>
-<dd><p>Classify purchase sessions for refund listing.</p>
-</dd>
-<dt><a href="#computeRelayFee">computeRelayFee(policy, maxSatsIn)</a> ⇒ <code>Object</code></dt>
-<dd><p>Fee a private <code>DocumentRequest</code> relay skims from the buyer&#39;s budget.</p>
-</dd>
-<dt><a href="#buildForwardedDocumentRequest">buildForwardedDocumentRequest(inbound, policy)</a> ⇒ <code>Object</code></dt>
-<dd><p>Rewrite an inbound <code>DocumentRequest</code> for the next hop: a fresh route id, one
-hop fewer, and the budget less this relay&#39;s fee.</p>
-</dd>
-<dt><a href="#assertMonotoneBudget">assertMonotoneBudget(maxSatsIn, maxSatsOut)</a> ⇒ <code>boolean</code></dt>
-<dd></dd>
-<dt><a href="#paginateInventoryItems">paginateInventoryItems(items, [opts])</a> ⇒ <code>Object</code></dt>
-<dd><p>Split <code>P2P_INVENTORY_RESPONSE</code> items into pages whose JSON fits one AMP
-frame. Items that fit are packed greedily. An item larger than a page (e.g.
-a sealed document with ~130 per-blob rows) is repeated with consecutive
-slices of its <code>blobs</code> (<code>blobsPartial: true</code>) and its <code>documentBlobIndex</code>
-leaves dropped (<code>leavesInline: false</code>); every slice still carries the item
-id, root, and blob total, so a receiving <a href="#DocumentBook">DocumentBook</a> upserts the
-pages per blob without further work. Items that cannot be made to fit are
-returned in <code>skipped</code>.</p>
-</dd>
-<dt><a href="#contractMessageIndex">contractMessageIndex(messageOrFields)</a> ⇒ <code>Object</code></dt>
-<dd><p><code>recipient</code>, <code>ref</code>, and <code>slot</code> from a CONTRACT_MESSAGE field body.
-Does not read the JSON payload.</p>
-</dd>
-<dt><a href="#contractMessageMatches">contractMessageMatches(messageOrFields, [query])</a> ⇒ <code>boolean</code></dt>
-<dd><p>True when every non-empty query field equals the frame&#39;s index field.
-An empty query matches. A frame with no index does not match a query.</p>
-</dd>
-<dt><a href="#tierWhenPath">tierWhenPath(state, path)</a> ⇒ <code>*</code></dt>
-<dd></dd>
-<dt><a href="#evaluateTierWhen">evaluateTierWhen(when, [ctx])</a> ⇒ <code>boolean</code></dt>
-<dd></dd>
-<dt><a href="#normalizeLock">normalizeLock()</a> ⇒ <code>Object</code> | <code>null</code></dt>
-<dd><p>Normalize a lock descriptor <code>{ type: &#39;csv&#39;|&#39;cltv&#39;, blocks?|height?|unix? }</code>.</p>
-</dd>
-<dt><a href="#timelockMature">timelockMature()</a></dt>
-<dd><p>Whether a relative/absolute lock is mature given chain tip context.
-CSV uses <code>utxoAgeBlocks</code> (confirmations / age of the UTXO).
-CLTV uses tip height or median time.</p>
-</dd>
-<dt><a href="#synthesizeDefaultLadder">synthesizeDefaultLadder(opts)</a> ⇒ <code>object</code></dt>
-<dd><p>Synthesize the canonical 2-tier authority spend ladder:
-  t0-authority — k-of-n validators/signers (immediate)
-  t1-soft      — after ~csvBlocks (default 144) CSV, a softer rule
-                 (default: 1-of-publisher; optional reduced threshold)</p>
-<p>This is the single P2TR surface for Hub Beacon Federation vaults and ARC
-contract spend addresses when keys + network + csvBlocks match.</p>
-</dd>
-<dt><a href="#normalizeContractSpendPolicy">normalizeContractSpendPolicy(raw)</a> ⇒ <code>object</code></dt>
-<dd></dd>
-<dt><a href="#policyAfterDecay">policyAfterDecay()</a></dt>
-<dd><p>Drop tiers whose until &lt;= trigger lock; clear migrate leaf schedule for child.</p>
-</dd>
-<dt><a href="#normalizeHashlockSpec">normalizeHashlockSpec(raw)</a> ⇒ <code>Object</code> | <code>null</code></dt>
-<dd><p>Normalize optional hashlock leaf options (JSON-safe).
-<code>commitmentHex</code> MAY be Machine <code>runCommitmentHex</code> or SHA256(preimage).</p>
-</dd>
-<dt><a href="#normalizeExtraLeafSpecs">normalizeExtraLeafSpecs(list)</a> ⇒ <code>Array.&lt;object&gt;</code></dt>
-<dd></dd>
-<dt><a href="#buildHashlockTapscript">buildHashlockTapscript(opts)</a> ⇒ <code>Buffer</code></dt>
-<dd><p>Hashlock tapscript: SHA256(preimage) == commitment [+ optional CHECKSIG].</p>
-</dd>
-<dt><a href="#buildHashlockLeaf">buildHashlockLeaf(opts)</a> ⇒ <code>object</code></dt>
-<dd><p>First-class hashlock leaf (optional on authority trees).</p>
-</dd>
-<dt><a href="#buildSpendLeaf">buildSpendLeaf(opts)</a> ⇒ <code>object</code></dt>
-<dd><p>First-class k-of-n spend leaf (composable outside policy tiers).</p>
-</dd>
-<dt><a href="#buildScriptLeaf">buildScriptLeaf(opts)</a> ⇒ <code>object</code></dt>
-<dd><p>Arbitrary tapscript leaf from hex / ASM / Buffer (wallet UI composition).</p>
-</dd>
-<dt><a href="#normalizeLeaf">normalizeLeaf(raw)</a> ⇒ <code>object</code></dt>
-<dd><p>Normalize a leaf descriptor into a Buffer-backed leaf.</p>
-</dd>
-<dt><a href="#compileLeaves">compileLeaves()</a> ⇒ <code>Array.&lt;object&gt;</code></dt>
-<dd><p>Build leaf descriptors for a normalized policy (+ optional hashlock / extras).</p>
-</dd>
-<dt><a href="#scriptTreeFromLeaves">scriptTreeFromLeaves(leaves)</a> ⇒ <code>object</code></dt>
-<dd><p>bitcoinjs-lib Taptree is a binary tree of leaves (not a flat list of &gt;2).</p>
-</dd>
-<dt><a href="#composeTaprootTree">composeTaprootTree(opts)</a> ⇒ <code>object</code></dt>
-<dd><p>Compose an arbitrary Taproot tree for wallet UIs / custom scripts.
-Policy ladder leaves come first; <code>hashlock</code> / <code>extraLeaves</code> append.
-Adding optional leaves <strong>changes</strong> the address vs ladder-only.</p>
-</dd>
-<dt><a href="#buildContractTaproot">buildContractTaproot(policy)</a> ⇒ <code>object</code></dt>
-<dd></dd>
-<dt><a href="#selectActiveTiers">selectActiveTiers(policy, [ctx])</a></dt>
-<dd></dd>
-<dt><a href="#prepareTierWithdrawalPsbt">prepareTierWithdrawalPsbt()</a></dt>
-<dd><p>Prepare withdrawal via a spend tier leaf.</p>
-</dd>
-<dt><a href="#prepareDecayMigrationPsbt">prepareDecayMigrationPsbt()</a></dt>
-<dd><p>Prepare decay migration PSBT (output must be child policy address).</p>
-</dd>
-<dt><a href="#prepareHashlockWithdrawalPsbt">prepareHashlockWithdrawalPsbt(opts)</a> ⇒ <code>object</code></dt>
-<dd><p>Prepare hashlock-path PSBT. Pure hashlock needs only a preimage at finalize;
-hashlock+pubkey needs a Schnorr sig then preimage (inventory-style).</p>
-</dd>
-<dt><a href="#finalizeHashlockPsbt">finalizeHashlockPsbt(opts)</a> ⇒ <code>Object</code></dt>
-<dd><p>Finalize a hashlock script-path PSBT (pure preimage or preimage+sig).</p>
-</dd>
-<dt><a href="#parseXOnlyPubkeysFromSpendScript">parseXOnlyPubkeysFromSpendScript(scriptBuf)</a> ⇒ <code>Array.&lt;Buffer&gt;</code></dt>
-<dd><p>Collect x-only pubkeys from a k-of-n spend tapscript (<code>CHECKSIG</code> /
-<code>CHECKSIGADD</code>), skipping a leading CSV/CLTV prefix when present.</p>
-</dd>
-<dt><a href="#finalizeSpendPsbt">finalizeSpendPsbt(opts)</a> ⇒ <code>Object</code></dt>
-<dd><p>Finalize a k-of-n (CHECKSIG / CHECKSIGADD) script-path PSBT after co-signers
-have called <code>signInput</code>. Unused keys become empty witness elements (BIP342).</p>
-<p>Witness stack (before script + control block) is signatures in <strong>reverse</strong>
-script-pubkey order so the first <code>CHECKSIG</code> pops the last stack item.</p>
-</dd>
-<dt><a href="#buildFederationVaultFromPolicy">buildFederationVaultFromPolicy(opts)</a> ⇒ <code>object</code></dt>
-<dd><p>Authority P2TR vault from validator/signer set.</p>
-<p><strong>Default (RC):</strong> 2-tier ladder — k-of-n authority now; softer rule after
-<code>csvBlocks</code> (default 144) CSV. Same tree as <a href="#synthesizeDefaultLadder">synthesizeDefaultLadder</a> /
-<a href="#Contract.resolveSpend">resolveSpend</a> when inputs match.</p>
-<p><strong>Legacy:</strong> pass <code>{ legacySingleLeaf: true }</code> for the pre-ladder single k-of-n
-leaf address (opt-in only; not used by Hub vault summary).</p>
-<p><strong>Internal key:</strong> default n≥2 uses the MuSig2 aggregate (<code>internalKeyMode: &#39;musig2&#39;</code>) — a <strong>new address</strong> vs historical NUMS. Pass <code>internalKeyMode: &#39;nums&#39;</code> to keep coins at the old script-path-only vault. Rebuilds do not
-migrate UTXOs.</p>
-</dd>
-<dt><a href="#hashlockFromProgramRun">hashlockFromProgramRun(run)</a> ⇒ <code>Object</code></dt>
-<dd><p>Build hashlock leaf options from a sealed Program run.
-Commitment defaults to <code>runCommitmentHex</code> (32-byte hex).</p>
-</dd>
-<dt><a href="#composePolicyWithRunHashlock">composePolicyWithRunHashlock(opts)</a> ⇒ <code>object</code></dt>
-<dd><p>Compose an authority ladder (or policy) with a Program-run hashlock leaf.</p>
-</dd>
-<dt><a href="#signingString">signingString(body)</a> ⇒ <code>string</code></dt>
-<dd><p>Canonical signing bytes: the body without <code>signature</code>.</p>
-</dd>
-<dt><a href="#bodyId">bodyId(body)</a> ⇒ <code>string</code></dt>
-<dd><p>Stable id of a body: SHA-256 hex of <a href="#signingString">signingString</a>. Entries, takes,
-and accepts are referenced by it.</p>
-</dd>
-<dt><a href="#randomNonce">randomNonce()</a> ⇒ <code>string</code></dt>
-<dd></dd>
-<dt><a href="#codec">codec(spec)</a> ⇒ <code>Object</code></dt>
-<dd><p>Body codec for one signed market: every body is a JSON object with a
-<code>type</code>, normalized by that type&#39;s normalizer and BIP340-signed by the key
-named by <code>signerField</code> over <a href="#signingString">signingString</a>.</p>
-</dd>
-<dt><a href="#routePath">routePath()</a></dt>
-<dd><p><code>path</code> as an absolute JSON Pointer path.</p>
-</dd>
-<dt><a href="#isArrayIndex">isArrayIndex()</a></dt>
-<dd><p>Under an array only an element index is a child: <code>length</code> or a name would
-persist to Level and then fail (or truncate) in memory.</p>
-</dd>
-<dt><a href="#normalizeOrder">normalizeOrder(input)</a> ⇒ <code>Object</code></dt>
-<dd></dd>
-<dt><a href="#normalizeCancel">normalizeCancel(input)</a> ⇒ <code>Object</code></dt>
-<dd></dd>
-<dt><a href="#normalizeTake">normalizeTake(input)</a> ⇒ <code>Object</code></dt>
-<dd><p>A taker&#39;s request to fill part of an order. When the taker gives L1 (a
-take on a bid) it carries the L1 giver&#39;s terms.</p>
-</dd>
-<dt><a href="#normalizeTakeAccept">normalizeTakeAccept(input)</a> ⇒ <code>Object</code></dt>
-<dd><p>The maker&#39;s acceptance of a take. When the maker gives L1 (a take on an
-ask) it carries the L1 giver&#39;s terms and, for orders with <code>prepaySats</code>, a
-prepay invoice the taker pays before the maker funds.</p>
-</dd>
-<dt><a href="#normalizeFunded">normalizeFunded(input)</a> ⇒ <code>Object</code></dt>
-<dd><p>The L1 giver&#39;s notice that the HTLC is funded.</p>
-</dd>
-<dt><a href="#roles">roles(opts)</a> ⇒ <code>Object</code></dt>
-<dd><p>Settlement roles. The L1 giver owns the preimage and funds the HTLC; the
-L2 giver pays the invoice and claims. An ask&#39;s maker sells L1; a bid&#39;s
-maker buys it.</p>
-</dd>
-<dt><a href="#roleFor">roleFor(opts)</a> ⇒ <code>&#x27;l1Giver&#x27;</code> | <code>&#x27;l2Giver&#x27;</code></dt>
-<dd></dd>
-<dt><a href="#quote">quote(opts)</a> ⇒ <code>Object</code></dt>
-<dd><p>Amounts for filling <code>amountSats</code> of L1 against an order. The L1 giver
-funds the HTLC with <code>l1Sats</code>; the L2 giver pays an invoice of <code>l2Msat</code>:
-<code>amountSats × (1 + premiumPpm / 1e6)</code> sats, plus the maker&#39;s <code>feeSats</code>
-when the taker pays L2 (asks) or minus it when the maker does (bids), so
-the fee always reaches the maker.</p>
-</dd>
-<dt><a href="#buildEscrow">buildEscrow(opts)</a> ⇒ <code>Object</code></dt>
-<dd><p>Taproot HTLC for a swap: the L2 giver claims with the preimage, the L1
-giver refunds after <code>refundLockHeight</code>. A plain <a href="#Htlc">Htlc</a> (claim =
-seller leaf, refund = buyer leaf), so its claim / refund PSBT helpers spend
-it unchanged.</p>
-</dd>
-<dt><a href="#validateEscrow">validateEscrow(opts)</a> ⇒ <code>Object</code></dt>
-<dd><p>Rebuild the swap HTLC and compare with an advertised address. Never fund
-or pay against an address that does not match.</p>
-</dd>
-<dt><a href="#invoiceAmountMsat">invoiceAmountMsat(decoded)</a> ⇒ <code>number</code> | <code>null</code></dt>
-<dd><p>Millisatoshi amount from a decoded invoice (<code>amount_msat</code> as a number,
-numeric string, or legacy <code>&quot;123msat&quot;</code> string).</p>
-</dd>
-<dt><a href="#validateInvoice">validateInvoice(opts)</a> ⇒ <code>Object</code></dt>
-<dd><p>Check a decoded BOLT11 invoice (Core Lightning <code>decodepay</code>) before paying
-it for a swap: it must lock to the swap&#39;s payment hash, ask exactly the
-quoted amount, come from the expected node, and expire — plus a margin —
-before the HTLC&#39;s refund lock opens, with at least <code>minClaimBlocks</code> left
-for the claim.</p>
-</dd>
-<dt><a href="#validateTake">validateTake(order, take, [opts])</a> ⇒ <code>Object</code></dt>
-<dd><p>Check a take against the order it fills.</p>
-</dd>
-<dt><a href="#validateTakeAccept">validateTakeAccept(order, take, accept)</a> ⇒ <code>Object</code></dt>
-<dd><p>Check an acceptance against its order and take.</p>
-</dd>
-<dt><a href="#l1GiverTerms">l1GiverTerms(order, take, [accept])</a> ⇒ <code>Object</code> | <code>null</code></dt>
-<dd><p>The L1 giver&#39;s terms for a take, from whichever body carries them.</p>
-</dd>
-<dt><a href="#verifyBlobPath">verifyBlobPath(opts)</a> ⇒ <code>boolean</code></dt>
-<dd><p>Strict blob-tree inclusion check. Every left/right choice comes from
-<code>index</code> (not from the prover&#39;s <code>position</code> labels, which must agree), the
-branch must be exactly as deep as a tree of <code>leafCount</code> leaves, and a
-self-paired step is accepted only for the odd last node of a level. With
-<code>leafCount</code> pinned by a signed commitment, an inner node cannot pass as a
-leaf and a padded (CVE-2012-2459) tree cannot stand in for the real one.</p>
-</dd>
-<dt><a href="#toIntegerSats">toIntegerSats(value)</a> ⇒ <code>bigint</code></dt>
-<dd><p>PSBT output values are integer satoshis. Reject float BTC leftovers.</p>
-</dd>
-<dt><a href="#weightsForProximity">weightsForProximity(proximityWeight)</a> ⇒ <code>Object</code></dt>
-<dd><p>Translate <code>proximityWeight</code> (0..1) into offer-book ranking weights: higher
-proximity shifts weight from price toward measured latency + hops.</p>
-</dd>
-<dt><a href="#sellerDedupeKey">sellerDedupeKey(session)</a> ⇒ <code>string</code></dt>
-<dd><p>Seller-scoped settlement key: one purchase of a blob per seller. A failed
-or refunded purchase from one seller never blocks buying the blob from
-another.</p>
-</dd>
-<dt><a href="#openFiling">openFiling(filing, txid)</a> ⇒ <code>Array.&lt;string&gt;</code> | <code>null</code></dt>
-<dd><p>Decrypt a filing with the commitment txid. Null when the hint misses or
-the ciphertext was sealed for a different transaction (prefix collision).</p>
-</dd>
-<dt><a href="#broadcastSettled">broadcastSettled(error)</a> ⇒ <code>boolean</code></dt>
-<dd><p>A broadcast error that means this penalty will not confirm later: the
-transaction is already known, or its inputs are already spent.</p>
-</dd>
 </dl>
 
 ## Typedefs
@@ -1892,9 +1196,9 @@ Every frame this participant sent or received, oldest first, as
 
 ### types/delegation~DELEGATION\_VERSION
 Protocol version of every delegation frame except `DELEGATION_MAILBOX_FETCH`,
-which carries `MAILBOX_FETCH_VERSION` instead. Restrictions (a grant's `peers`,
-a request's `sessionKey` and `clientNonce`) are required fields, empty when
-unused, never optional trailing fields a reader could skip.
+which carries [MAILBOX_FETCH_VERSION](MAILBOX_FETCH_VERSION) instead. Restrictions (a grant's
+`peers`, a request's `sessionKey` and `clientNonce`) are required fields,
+empty when unused, never optional trailing fields a reader could skip.
 
 **Kind**: inner constant of [<code>types/delegation</code>](#module_types/delegation)  
 <a name="module_types/delegation..MAILBOX_FETCH_VERSION"></a>
@@ -2477,6 +1781,398 @@ Run a small sign/verify round-trip against an `ecc` binding.
 
 Quarantined TypeTree scaffold (not shipped).
 
+<a name="module_types/wallet/bip86"></a>
+
+## types/wallet/bip86
+BIP-86 single-key Taproot outputs: key path only, with the
+output key `Q = P + int(taggedHash('TapTweak', P_x))·G` (no script tree).
+Wallet keys live on `m/86'/B'/n'/<change>/<index>`, B = 0 on mainnet and 1
+elsewhere.
+
+
+* [types/wallet/bip86](#module_types/wallet/bip86)
+    * [~Wallet](#module_types/wallet/bip86..Wallet) : <code>Object</code>
+        * [new Wallet([settings])](#new_module_types/wallet/bip86..Wallet_new)
+        * _instance_
+            * [._emittedWalletTxKeys](#module_types/wallet/bip86..Wallet+_emittedWalletTxKeys) : <code>Set.&lt;string&gt;</code>
+            * [._ownedOutpoints](#module_types/wallet/bip86..Wallet+_ownedOutpoints) : <code>Map.&lt;string, object&gt;</code>
+            * [.derive([path])](#module_types/wallet/bip86..Wallet+derive)
+            * [.loadKey(input, [labels])](#module_types/wallet/bip86..Wallet+loadKey) ⇒ <code>Object</code>
+            * [.loadSeed(phrase, [labels], [opts])](#module_types/wallet/bip86..Wallet+loadSeed) ⇒ <code>Object</code>
+            * [.listSeeds()](#module_types/wallet/bip86..Wallet+listSeeds) ⇒ <code>Array.&lt;{seedId: string, xpub: string, labels: Array.&lt;string&gt;}&gt;</code>
+            * [.watchAddress(address, [meta])](#module_types/wallet/bip86..Wallet+watchAddress)
+            * [.watchPaymentHash(paymentHashHex, [meta])](#module_types/wallet/bip86..Wallet+watchPaymentHash)
+            * [.watchHtlc(htlc)](#module_types/wallet/bip86..Wallet+watchHtlc)
+            * [.getWatchSet()](#module_types/wallet/bip86..Wallet+getWatchSet) ⇒ <code>object</code>
+            * [._registerDerivedAddresses(key, [opts])](#module_types/wallet/bip86..Wallet+_registerDerivedAddresses)
+            * [.ingestBitcoinTransaction(txOrHex, [context])](#module_types/wallet/bip86..Wallet+ingestBitcoinTransaction) ⇒ <code>object</code>
+            * [.ingestBitcoinBlock(block)](#module_types/wallet/bip86..Wallet+ingestBitcoinBlock) ⇒ <code>Array.&lt;object&gt;</code>
+            * [.start()](#module_types/wallet/bip86..Wallet+start)
+            * [.getAddressForScript(script)](#module_types/wallet/bip86..Wallet+getAddressForScript)
+            * [.getAddressFromRedeemScript(redeemScript)](#module_types/wallet/bip86..Wallet+getAddressFromRedeemScript)
+            * ~~[.createHTLC()](#module_types/wallet/bip86..Wallet+createHTLC)~~
+            * [.getUnusedAddress()](#module_types/wallet/bip86..Wallet+getUnusedAddress) ⇒ <code>Promise.&lt;string&gt;</code>
+            * [._sign(tx)](#module_types/wallet/bip86..Wallet+_sign)
+            * [._createCrowdfund(fund)](#module_types/wallet/bip86..Wallet+_createCrowdfund)
+            * [._getSwapInputScript(redeemScript, secret)](#module_types/wallet/bip86..Wallet+_getSwapInputScript)
+            * [._getRefundInputScript(redeemScript)](#module_types/wallet/bip86..Wallet+_getRefundInputScript)
+            * [.publicKeyFromString(input)](#module_types/wallet/bip86..Wallet+publicKeyFromString)
+            * [.receiveAddress()](#module_types/wallet/bip86..Wallet+receiveAddress) ⇒ <code>Promise.&lt;string&gt;</code>
+        * _static_
+            * [.createSeed(passphrase)](#module_types/wallet/bip86..Wallet.createSeed) ⇒ <code>FabricSeed</code>
+            * [.fromSeed(seed)](#module_types/wallet/bip86..Wallet.fromSeed) ⇒ <code>Wallet</code>
+            * [.deriveTaprootAddress(key, [options])](#module_types/wallet/bip86..Wallet.deriveTaprootAddress) ⇒ <code>Object</code>
+            * [.resolveDocumentContentHashHex(opts)](#module_types/wallet/bip86..Wallet.resolveDocumentContentHashHex) ⇒ <code>Object</code>
+
+<a name="module_types/wallet/bip86..Wallet"></a>
+
+### types/wallet/bip86~Wallet : <code>Object</code>
+Manage keys and track their balances.
+
+**Kind**: inner class of [<code>types/wallet/bip86</code>](#module_types/wallet/bip86)  
+**Properties**
+
+| Name | Type | Description |
+| --- | --- | --- |
+| id | <code>String</code> | Unique identifier for this [Wallet](Wallet). |
+
+
+* [~Wallet](#module_types/wallet/bip86..Wallet) : <code>Object</code>
+    * [new Wallet([settings])](#new_module_types/wallet/bip86..Wallet_new)
+    * _instance_
+        * [._emittedWalletTxKeys](#module_types/wallet/bip86..Wallet+_emittedWalletTxKeys) : <code>Set.&lt;string&gt;</code>
+        * [._ownedOutpoints](#module_types/wallet/bip86..Wallet+_ownedOutpoints) : <code>Map.&lt;string, object&gt;</code>
+        * [.derive([path])](#module_types/wallet/bip86..Wallet+derive)
+        * [.loadKey(input, [labels])](#module_types/wallet/bip86..Wallet+loadKey) ⇒ <code>Object</code>
+        * [.loadSeed(phrase, [labels], [opts])](#module_types/wallet/bip86..Wallet+loadSeed) ⇒ <code>Object</code>
+        * [.listSeeds()](#module_types/wallet/bip86..Wallet+listSeeds) ⇒ <code>Array.&lt;{seedId: string, xpub: string, labels: Array.&lt;string&gt;}&gt;</code>
+        * [.watchAddress(address, [meta])](#module_types/wallet/bip86..Wallet+watchAddress)
+        * [.watchPaymentHash(paymentHashHex, [meta])](#module_types/wallet/bip86..Wallet+watchPaymentHash)
+        * [.watchHtlc(htlc)](#module_types/wallet/bip86..Wallet+watchHtlc)
+        * [.getWatchSet()](#module_types/wallet/bip86..Wallet+getWatchSet) ⇒ <code>object</code>
+        * [._registerDerivedAddresses(key, [opts])](#module_types/wallet/bip86..Wallet+_registerDerivedAddresses)
+        * [.ingestBitcoinTransaction(txOrHex, [context])](#module_types/wallet/bip86..Wallet+ingestBitcoinTransaction) ⇒ <code>object</code>
+        * [.ingestBitcoinBlock(block)](#module_types/wallet/bip86..Wallet+ingestBitcoinBlock) ⇒ <code>Array.&lt;object&gt;</code>
+        * [.start()](#module_types/wallet/bip86..Wallet+start)
+        * [.getAddressForScript(script)](#module_types/wallet/bip86..Wallet+getAddressForScript)
+        * [.getAddressFromRedeemScript(redeemScript)](#module_types/wallet/bip86..Wallet+getAddressFromRedeemScript)
+        * ~~[.createHTLC()](#module_types/wallet/bip86..Wallet+createHTLC)~~
+        * [.getUnusedAddress()](#module_types/wallet/bip86..Wallet+getUnusedAddress) ⇒ <code>Promise.&lt;string&gt;</code>
+        * [._sign(tx)](#module_types/wallet/bip86..Wallet+_sign)
+        * [._createCrowdfund(fund)](#module_types/wallet/bip86..Wallet+_createCrowdfund)
+        * [._getSwapInputScript(redeemScript, secret)](#module_types/wallet/bip86..Wallet+_getSwapInputScript)
+        * [._getRefundInputScript(redeemScript)](#module_types/wallet/bip86..Wallet+_getRefundInputScript)
+        * [.publicKeyFromString(input)](#module_types/wallet/bip86..Wallet+publicKeyFromString)
+        * [.receiveAddress()](#module_types/wallet/bip86..Wallet+receiveAddress) ⇒ <code>Promise.&lt;string&gt;</code>
+    * _static_
+        * [.createSeed(passphrase)](#module_types/wallet/bip86..Wallet.createSeed) ⇒ <code>FabricSeed</code>
+        * [.fromSeed(seed)](#module_types/wallet/bip86..Wallet.fromSeed) ⇒ <code>Wallet</code>
+        * [.deriveTaprootAddress(key, [options])](#module_types/wallet/bip86..Wallet.deriveTaprootAddress) ⇒ <code>Object</code>
+        * [.resolveDocumentContentHashHex(opts)](#module_types/wallet/bip86..Wallet.resolveDocumentContentHashHex) ⇒ <code>Object</code>
+
+<a name="new_module_types/wallet/bip86..Wallet_new"></a>
+
+#### new Wallet([settings])
+Create an instance of a [Wallet](Wallet).
+
+**Returns**: <code>Wallet</code> - Instance of the wallet.  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [settings] | <code>Object</code> | <code>{}</code> | Configure the wallet. |
+| [settings.verbosity] | <code>Number</code> | <code>2</code> | One of: 0 (none), 1 (error), 2 (warning), 3 (notice), 4 (debug), 5 (audit) |
+| [settings.key] | <code>Object</code> |  | Key to restore from. |
+| [settings.key.seed] | <code>String</code> |  | Mnemonic seed for a restored wallet. |
+
+<a name="module_types/wallet/bip86..Wallet+_emittedWalletTxKeys"></a>
+
+#### wallet.\_emittedWalletTxKeys : <code>Set.&lt;string&gt;</code>
+**Kind**: instance property of [<code>Wallet</code>](#module_types/wallet/bip86..Wallet)  
+<a name="module_types/wallet/bip86..Wallet+_ownedOutpoints"></a>
+
+#### wallet.\_ownedOutpoints : <code>Map.&lt;string, object&gt;</code>
+**Kind**: instance property of [<code>Wallet</code>](#module_types/wallet/bip86..Wallet)  
+<a name="module_types/wallet/bip86..Wallet+derive"></a>
+
+#### wallet.derive([path])
+Derive a key; the default is the first SegWit receive key of account 0
+on the wallet's network (`m/84'/{0|1}'/0'/0/0`).
+
+**Kind**: instance method of [<code>Wallet</code>](#module_types/wallet/bip86..Wallet)  
+
+| Param | Type |
+| --- | --- |
+| [path] | <code>string</code> | 
+
+<a name="module_types/wallet/bip86..Wallet+loadKey"></a>
+
+#### wallet.loadKey(input, [labels]) ⇒ <code>Object</code>
+Register a key with optional labels.
+Accepts a Key instance, pubkey hex string, or object-like key input.
+
+**Kind**: instance method of [<code>Wallet</code>](#module_types/wallet/bip86..Wallet)  
+**Returns**: <code>Object</code> - Stored key descriptor.  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| input | [<code>Key</code>](#Key) \| <code>String</code> \| <code>Object</code> |  | Key material to load. |
+| [labels] | <code>Array.&lt;String&gt;</code> | <code>[]</code> | Optional labels. |
+
+<a name="module_types/wallet/bip86..Wallet+loadSeed"></a>
+
+#### wallet.loadSeed(phrase, [labels], [opts]) ⇒ <code>Object</code>
+Load an additional BIP39 seed into this wallet's key collection (does not
+replace the primary `this.key`). Addresses derived from the seed are watched.
+
+**Kind**: instance method of [<code>Wallet</code>](#module_types/wallet/bip86..Wallet)  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| phrase | <code>string</code> |  | BIP39 mnemonic |
+| [labels] | <code>Array.&lt;string&gt;</code> | <code>[]</code> |  |
+| [opts] | <code>object</code> |  |  |
+| [opts.addressWindow] | <code>number</code> |  | receive indices to watch (default gapLimit) |
+
+<a name="module_types/wallet/bip86..Wallet+listSeeds"></a>
+
+#### wallet.listSeeds() ⇒ <code>Array.&lt;{seedId: string, xpub: string, labels: Array.&lt;string&gt;}&gt;</code>
+**Kind**: instance method of [<code>Wallet</code>](#module_types/wallet/bip86..Wallet)  
+<a name="module_types/wallet/bip86..Wallet+watchAddress"></a>
+
+#### wallet.watchAddress(address, [meta])
+Watch a Bitcoin address for wallet-associated transactions.
+
+**Kind**: instance method of [<code>Wallet</code>](#module_types/wallet/bip86..Wallet)  
+
+| Param | Type |
+| --- | --- |
+| address | <code>string</code> | 
+| [meta] | <code>object</code> | 
+
+<a name="module_types/wallet/bip86..Wallet+watchPaymentHash"></a>
+
+#### wallet.watchPaymentHash(paymentHashHex, [meta])
+Watch an HTLC payment hash (SHA256 preimage) so claim witnesses are detected.
+
+**Kind**: instance method of [<code>Wallet</code>](#module_types/wallet/bip86..Wallet)  
+
+| Param | Type |
+| --- | --- |
+| paymentHashHex | <code>string</code> | 
+| [meta] | <code>object</code> | 
+
+<a name="module_types/wallet/bip86..Wallet+watchHtlc"></a>
+
+#### wallet.watchHtlc(htlc)
+Watch an inventory HTLC offer (payment address + payment hash + optional settlement).
+
+**Kind**: instance method of [<code>Wallet</code>](#module_types/wallet/bip86..Wallet)  
+
+| Param | Type |
+| --- | --- |
+| htlc | <code>object</code> | 
+
+<a name="module_types/wallet/bip86..Wallet+getWatchSet"></a>
+
+#### wallet.getWatchSet() ⇒ <code>object</code>
+**Kind**: instance method of [<code>Wallet</code>](#module_types/wallet/bip86..Wallet)  
+**Returns**: <code>object</code> - watch set snapshot  
+<a name="module_types/wallet/bip86..Wallet+_registerDerivedAddresses"></a>
+
+#### wallet.\_registerDerivedAddresses(key, [opts])
+Derive and watch a window of addresses for a key on the wallet's network:
+SegWit on `m/84'/{coin}'/0'`, Taproot on `m/86'/{coin}'/0'`, and standard
+on `m/44'/{coin}'/0'`, receive and change chains — the same set as
+[Wallet.walletDescriptors](Wallet.walletDescriptors).
+
+**Kind**: instance method of [<code>Wallet</code>](#module_types/wallet/bip86..Wallet)  
+
+| Param | Type |
+| --- | --- |
+| key | [<code>Key</code>](#Key) | 
+| [opts] | <code>object</code> | 
+
+<a name="module_types/wallet/bip86..Wallet+ingestBitcoinTransaction"></a>
+
+#### wallet.ingestBitcoinTransaction(txOrHex, [context]) ⇒ <code>object</code>
+Ingest a Bitcoin transaction (verbose RPC object or raw hex) and emit when related.
+
+**Kind**: instance method of [<code>Wallet</code>](#module_types/wallet/bip86..Wallet)  
+**Returns**: <code>object</code> - classification  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| txOrHex | <code>object</code> \| <code>string</code> |  |
+| [context] | <code>object</code> | { tip, height, source } |
+
+<a name="module_types/wallet/bip86..Wallet+ingestBitcoinBlock"></a>
+
+#### wallet.ingestBitcoinBlock(block) ⇒ <code>Array.&lt;object&gt;</code>
+Process a new block tip (optionally with verbosity-2 `tx` / `transactions`).
+
+**Kind**: instance method of [<code>Wallet</code>](#module_types/wallet/bip86..Wallet)  
+**Returns**: <code>Array.&lt;object&gt;</code> - related classifications  
+
+| Param | Type |
+| --- | --- |
+| block | <code>object</code> | 
+
+<a name="module_types/wallet/bip86..Wallet+start"></a>
+
+#### wallet.start()
+Start the wallet, including listening for transactions.
+
+**Kind**: instance method of [<code>Wallet</code>](#module_types/wallet/bip86..Wallet)  
+<a name="module_types/wallet/bip86..Wallet+getAddressForScript"></a>
+
+#### wallet.getAddressForScript(script)
+Returns a bech32 address for the provided [Script](#Script).
+
+**Kind**: instance method of [<code>Wallet</code>](#module_types/wallet/bip86..Wallet)  
+
+| Param | Type |
+| --- | --- |
+| script | [<code>Script</code>](#Script) | 
+
+<a name="module_types/wallet/bip86..Wallet+getAddressFromRedeemScript"></a>
+
+#### wallet.getAddressFromRedeemScript(redeemScript)
+Generate a [BitcoinAddress](BitcoinAddress) for the supplied [BitcoinScript](BitcoinScript).
+
+**Kind**: instance method of [<code>Wallet</code>](#module_types/wallet/bip86..Wallet)  
+
+| Param | Type |
+| --- | --- |
+| redeemScript | <code>BitcoinScript</code> | 
+
+<a name="module_types/wallet/bip86..Wallet+createHTLC"></a>
+
+#### ~~wallet.createHTLC()~~
+***Legacy bcoin-style HTLC for channels — not the document-market P2TR profile.
+Use `@fabric/core/types/htlc` instead.***
+
+**Kind**: instance method of [<code>Wallet</code>](#module_types/wallet/bip86..Wallet)  
+<a name="module_types/wallet/bip86..Wallet+getUnusedAddress"></a>
+
+#### wallet.getUnusedAddress() ⇒ <code>Promise.&lt;string&gt;</code>
+Next unused receive address; see [Wallet#receiveAddress](Wallet#receiveAddress).
+
+**Kind**: instance method of [<code>Wallet</code>](#module_types/wallet/bip86..Wallet)  
+<a name="module_types/wallet/bip86..Wallet+_sign"></a>
+
+#### wallet.\_sign(tx)
+Signs a transaction with the keyring.
+
+**Kind**: instance method of [<code>Wallet</code>](#module_types/wallet/bip86..Wallet)  
+
+| Param | Type |
+| --- | --- |
+| tx | <code>BcoinTX</code> | 
+
+<a name="module_types/wallet/bip86..Wallet+_createCrowdfund"></a>
+
+#### wallet.\_createCrowdfund(fund)
+Create a crowdfunding transaction.
+
+**Kind**: instance method of [<code>Wallet</code>](#module_types/wallet/bip86..Wallet)  
+
+| Param | Type |
+| --- | --- |
+| fund | <code>Object</code> | 
+
+<a name="module_types/wallet/bip86..Wallet+_getSwapInputScript"></a>
+
+#### wallet.\_getSwapInputScript(redeemScript, secret)
+Generate [Script](#Script) for claiming a [Swap](#Swap).
+
+**Kind**: instance method of [<code>Wallet</code>](#module_types/wallet/bip86..Wallet)  
+
+| Param | Type |
+| --- | --- |
+| redeemScript | <code>\*</code> | 
+| secret | <code>\*</code> | 
+
+<a name="module_types/wallet/bip86..Wallet+_getRefundInputScript"></a>
+
+#### wallet.\_getRefundInputScript(redeemScript)
+Generate [Script](#Script) for reclaiming funds commited to a [Swap](#Swap).
+
+**Kind**: instance method of [<code>Wallet</code>](#module_types/wallet/bip86..Wallet)  
+
+| Param | Type |
+| --- | --- |
+| redeemScript | <code>\*</code> | 
+
+<a name="module_types/wallet/bip86..Wallet+publicKeyFromString"></a>
+
+#### wallet.publicKeyFromString(input)
+Create a public key from a string.
+
+**Kind**: instance method of [<code>Wallet</code>](#module_types/wallet/bip86..Wallet)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| input | <code>String</code> | Hex-encoded string to create key from. |
+
+<a name="module_types/wallet/bip86..Wallet+receiveAddress"></a>
+
+#### wallet.receiveAddress() ⇒ <code>Promise.&lt;string&gt;</code>
+Next BIP-86 Taproot receive address of account 0 (`m/86'/{coin}'/0'/0/i`),
+recorded in the wallet's address book and watched.
+
+**Kind**: instance method of [<code>Wallet</code>](#module_types/wallet/bip86..Wallet)  
+<a name="module_types/wallet/bip86..Wallet.createSeed"></a>
+
+#### Wallet.createSeed(passphrase) ⇒ <code>FabricSeed</code>
+Create a new seed phrase.
+
+**Kind**: static method of [<code>Wallet</code>](#module_types/wallet/bip86..Wallet)  
+**Returns**: <code>FabricSeed</code> - The seed object.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| passphrase | <code>String</code> | BIP 39 passphrase for key derivation. |
+
+<a name="module_types/wallet/bip86..Wallet.fromSeed"></a>
+
+#### Wallet.fromSeed(seed) ⇒ <code>Wallet</code>
+Create a new [Wallet](Wallet) from a seed object.
+
+**Kind**: static method of [<code>Wallet</code>](#module_types/wallet/bip86..Wallet)  
+**Returns**: <code>Wallet</code> - Instance of the wallet.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| seed | <code>FabricSeed</code> | Fabric seed. |
+
+<a name="module_types/wallet/bip86..Wallet.deriveTaprootAddress"></a>
+
+#### Wallet.deriveTaprootAddress(key, [options]) ⇒ <code>Object</code>
+BIP-86 Taproot address of a key with private derivation
+(`m/86'/{coin}'/account'/change/index`).
+
+**Kind**: static method of [<code>Wallet</code>](#module_types/wallet/bip86..Wallet)  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| key | [<code>Key</code>](#Key) |  | Key holding a master that can derive hardened children. |
+| [options] | <code>Object</code> |  |  |
+| [options.account] | <code>number</code> | <code>0</code> |  |
+| [options.change] | <code>number</code> | <code>0</code> |  |
+| [options.index] | <code>number</code> | <code>0</code> |  |
+| [options.network] | <code>string</code> | <code>&quot;&#x27;mainnet&#x27;&quot;</code> | Fabric network name. |
+
+<a name="module_types/wallet/bip86..Wallet.resolveDocumentContentHashHex"></a>
+
+#### Wallet.resolveDocumentContentHashHex(opts) ⇒ <code>Object</code>
+Single path for buy / HTLC `contentHashHex` (sealed | envelope | blob).
+
+**Kind**: static method of [<code>Wallet</code>](#module_types/wallet/bip86..Wallet)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| opts | <code>object</code> | see [module:functions/documentPaymentHash.resolveDocumentContentHashHex](module:functions/documentPaymentHash.resolveDocumentContentHashHex) |
+
 <a name="Actor"></a>
 
 ## Actor ⇐ <code>EventEmitter</code>
@@ -2505,6 +2201,7 @@ arbitrary app string hash. <strong>Wire traffic</strong> — see [Message](#Mess
 * [Actor](#Actor) ⇐ <code>EventEmitter</code>
     * [new Actor([actor])](#new_Actor_new)
     * _instance_
+        * [.contentDigest([clock])](#Actor+contentDigest) ⇒ <code>String</code>
         * [.adopt(changes)](#Actor+adopt) ⇒ [<code>Actor</code>](#Actor)
         * [.commit()](#Actor+commit) ⇒ <code>String</code>
         * [.export()](#Actor+export) ⇒ <code>Object</code>
@@ -2523,6 +2220,7 @@ arbitrary app string hash. <strong>Wire traffic</strong> — see [Message](#Mess
     * _static_
         * [.fromAny(input)](#Actor.fromAny) ⇒ [<code>Actor</code>](#Actor)
         * [.randomBytes([count])](#Actor.randomBytes) ⇒ <code>Buffer</code>
+        * [.contentDigest(clock, content)](#Actor.contentDigest) ⇒ <code>String</code>
 
 <a name="new_Actor_new"></a>
 
@@ -2540,6 +2238,18 @@ what you share with others!
 | [actor.seed] | <code>String</code> | Optional mnemonic or seed string stored into state (see BIP39 / wallet docs — not validated here). |
 | [actor.public] | <code>Buffer</code> | Public key. |
 | [actor.private] | <code>Buffer</code> | Private key. |
+
+<a name="Actor+contentDigest"></a>
+
+### actor.contentDigest([clock]) ⇒ <code>String</code>
+Digest of this actor's content at <code>clock</code>.
+
+**Kind**: instance method of [<code>Actor</code>](#Actor)  
+**Returns**: <code>String</code> - 64-character hex SHA-256.  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [clock] | <code>Number</code> | <code>0</code> | Sidechain clock covered by the digest. |
 
 <a name="Actor+adopt"></a>
 
@@ -2710,6 +2420,19 @@ Get a number of random bytes from the runtime environment.
 | Param | Type | Default | Description |
 | --- | --- | --- | --- |
 | [count] | <code>Number</code> | <code>32</code> | Number of random bytes to retrieve. |
+
+<a name="Actor.contentDigest"></a>
+
+### Actor.contentDigest(clock, content) ⇒ <code>String</code>
+Digest of a sidechain document <code>{ version, clock, content }</code>.
+
+**Kind**: static method of [<code>Actor</code>](#Actor)  
+**Returns**: <code>String</code> - 64-character hex SHA-256.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| clock | <code>Number</code> | Sidechain clock covered by the digest. |
+| content | <code>Object</code> | Document content. |
 
 <a name="Actor"></a>
 
@@ -2719,6 +2442,7 @@ Get a number of random bytes from the runtime environment.
 * [Actor](#Actor)
     * [new Actor([actor])](#new_Actor_new)
     * _instance_
+        * [.contentDigest([clock])](#Actor+contentDigest) ⇒ <code>String</code>
         * [.adopt(changes)](#Actor+adopt) ⇒ [<code>Actor</code>](#Actor)
         * [.commit()](#Actor+commit) ⇒ <code>String</code>
         * [.export()](#Actor+export) ⇒ <code>Object</code>
@@ -2737,6 +2461,7 @@ Get a number of random bytes from the runtime environment.
     * _static_
         * [.fromAny(input)](#Actor.fromAny) ⇒ [<code>Actor</code>](#Actor)
         * [.randomBytes([count])](#Actor.randomBytes) ⇒ <code>Buffer</code>
+        * [.contentDigest(clock, content)](#Actor.contentDigest) ⇒ <code>String</code>
 
 <a name="new_Actor_new"></a>
 
@@ -2754,6 +2479,18 @@ what you share with others!
 | [actor.seed] | <code>String</code> | Optional mnemonic or seed string stored into state (see BIP39 / wallet docs — not validated here). |
 | [actor.public] | <code>Buffer</code> | Public key. |
 | [actor.private] | <code>Buffer</code> | Private key. |
+
+<a name="Actor+contentDigest"></a>
+
+### actor.contentDigest([clock]) ⇒ <code>String</code>
+Digest of this actor's content at <code>clock</code>.
+
+**Kind**: instance method of [<code>Actor</code>](#Actor)  
+**Returns**: <code>String</code> - 64-character hex SHA-256.  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [clock] | <code>Number</code> | <code>0</code> | Sidechain clock covered by the digest. |
 
 <a name="Actor+adopt"></a>
 
@@ -2924,6 +2661,19 @@ Get a number of random bytes from the runtime environment.
 | Param | Type | Default | Description |
 | --- | --- | --- | --- |
 | [count] | <code>Number</code> | <code>32</code> | Number of random bytes to retrieve. |
+
+<a name="Actor.contentDigest"></a>
+
+### Actor.contentDigest(clock, content) ⇒ <code>String</code>
+Digest of a sidechain document <code>{ version, clock, content }</code>.
+
+**Kind**: static method of [<code>Actor</code>](#Actor)  
+**Returns**: <code>String</code> - 64-character hex SHA-256.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| clock | <code>Number</code> | Sidechain clock covered by the digest. |
+| content | <code>Object</code> | Document content. |
 
 <a name="Beacon"></a>
 
@@ -3219,6 +2969,7 @@ Author Schnorr over signingString (gossip).
         * [.defineOpcodeContract(name, body, [meta])](#Service+defineOpcodeContract) ⇒ <code>Object</code>
         * [.listOpcodes()](#Service+listOpcodes) ⇒ <code>Array.&lt;Object&gt;</code>
         * [.route(msg)](#Service+route) ⇒ <code>Promise</code>
+        * [.load()](#Service+load) ⇒ [<code>Promise.&lt;Service&gt;</code>](#Service)
         * [._GET(path)](#Service+_GET) ⇒ <code>Promise</code>
         * [._PUT(path, value, [commit])](#Service+_PUT) ⇒ <code>Promise</code>
         * [.connect(notify)](#Service+connect) ⇒ <code>Promise</code>
@@ -3436,7 +3187,9 @@ Move forward one clock cycle.
 <a name="Service+beat"></a>
 
 ### bond.beat() ⇒ [<code>Service</code>](#Service)
-Compute latest state.
+Advance one heartbeat. Outstanding changes are one transition: one unsealed
+message, or nothing if that message would not fit. An idle beat is a digest
+checkpoint. This does not commit.
 
 **Kind**: instance method of [<code>Bond</code>](#Bond)  
 **Emits**: <code>Message#event:beat</code>  
@@ -3582,6 +3335,13 @@ Resolve a [State](#State) from a particular [Message](#Message) object.
 | --- | --- | --- |
 | msg | [<code>Message</code>](#Message) | Explicit Fabric [Message](#Message). |
 
+<a name="Service+load"></a>
+
+### bond.load() ⇒ [<code>Promise.&lt;Service&gt;</code>](#Service)
+Load durable state after the store is open and before the observer and
+heartbeat attach, so a restored snapshot is not staged as one replace.
+
+**Kind**: instance method of [<code>Bond</code>](#Bond)  
 <a name="Service+_GET"></a>
 
 ### bond.\_GET(path) ⇒ <code>Promise</code>
@@ -4002,7 +3762,7 @@ Caches bond checks per (outpoint, maker, certificate) until the tip moves.
 
 ### fidelityVerifier.verify(bond, makerPubkey) ⇒ <code>Promise.&lt;Object&gt;</code>
 **Kind**: instance method of [<code>FidelityVerifier</code>](#FidelityVerifier)  
-**Returns**: <code>Promise.&lt;Object&gt;</code> - [verifyFidelity](#verifyFidelity) result  
+**Returns**: <code>Promise.&lt;Object&gt;</code> - `verifyFidelity` result  
 
 | Param | Type |
 | --- | --- |
@@ -4419,6 +4179,7 @@ wire safety still depends on the Lightning/Bitcoin services you attach, not this
         * [.set(path)](#State+set) ⇒ <code>Mixed</code>
         * [.commit()](#State+commit)
         * [.render()](#State+render) ⇒ <code>String</code>
+        * [.contentDigest([clock])](#Actor+contentDigest) ⇒ <code>String</code>
         * [.adopt(changes)](#Actor+adopt) ⇒ [<code>Actor</code>](#Actor)
         * [.export()](#Actor+export) ⇒ <code>Object</code>
         * [.stream([pipe])](#Actor+stream) ⇒ <code>TransformStream</code>
@@ -4605,6 +4366,18 @@ Compose a JSON string for network consumption.
 
 **Kind**: instance method of [<code>Channel</code>](#Channel)  
 **Returns**: <code>String</code> - JSON-encoded [String](String).  
+<a name="Actor+contentDigest"></a>
+
+### channel.contentDigest([clock]) ⇒ <code>String</code>
+Digest of this actor's content at <code>clock</code>.
+
+**Kind**: instance method of [<code>Channel</code>](#Channel)  
+**Returns**: <code>String</code> - 64-character hex SHA-256.  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [clock] | <code>Number</code> | <code>0</code> | Sidechain clock covered by the digest. |
+
 <a name="Actor+adopt"></a>
 
 ### channel.adopt(changes) ⇒ [<code>Actor</code>](#Actor)
@@ -5167,6 +4940,7 @@ proposal → reply → revoke.
         * [.set(path)](#State+set) ⇒ <code>Mixed</code>
         * [.commit()](#State+commit)
         * [.render()](#State+render) ⇒ <code>String</code>
+        * [.contentDigest([clock])](#Actor+contentDigest) ⇒ <code>String</code>
         * [.adopt(changes)](#Actor+adopt) ⇒ [<code>Actor</code>](#Actor)
         * [.export()](#Actor+export) ⇒ <code>Object</code>
         * [.stream([pipe])](#Actor+stream) ⇒ <code>TransformStream</code>
@@ -5353,6 +5127,18 @@ Compose a JSON string for network consumption.
 
 **Kind**: instance method of [<code>Channel</code>](#Channel)  
 **Returns**: <code>String</code> - JSON-encoded [String](String).  
+<a name="Actor+contentDigest"></a>
+
+### channel.contentDigest([clock]) ⇒ <code>String</code>
+Digest of this actor's content at <code>clock</code>.
+
+**Kind**: instance method of [<code>Channel</code>](#Channel)  
+**Returns**: <code>String</code> - 64-character hex SHA-256.  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [clock] | <code>Number</code> | <code>0</code> | Sidechain clock covered by the digest. |
+
 <a name="Actor+adopt"></a>
 
 ### channel.adopt(changes) ⇒ [<code>Actor</code>](#Actor)
@@ -8238,6 +8024,7 @@ Dead stub. Page composition lives in `@fabric/http` (`types/component.js`,
         * [.defineOpcodeContract(name, body, [meta])](#Service+defineOpcodeContract) ⇒ <code>Object</code>
         * [.listOpcodes()](#Service+listOpcodes) ⇒ <code>Array.&lt;Object&gt;</code>
         * [.route(msg)](#Service+route) ⇒ <code>Promise</code>
+        * [.load()](#Service+load) ⇒ [<code>Promise.&lt;Service&gt;</code>](#Service)
         * [._GET(path)](#Service+_GET) ⇒ <code>Promise</code>
         * [._PUT(path, value, [commit])](#Service+_PUT) ⇒ <code>Promise</code>
         * [.connect(notify)](#Service+connect) ⇒ <code>Promise</code>
@@ -8403,7 +8190,9 @@ Move forward one clock cycle.
 <a name="Service+beat"></a>
 
 ### contract.beat() ⇒ [<code>Service</code>](#Service)
-Compute latest state.
+Advance one heartbeat. Outstanding changes are one transition: one unsealed
+message, or nothing if that message would not fit. An idle beat is a digest
+checkpoint. This does not commit.
 
 **Kind**: instance method of [<code>Contract</code>](#Contract)  
 **Emits**: <code>Message#event:beat</code>  
@@ -8549,6 +8338,13 @@ Resolve a [State](#State) from a particular [Message](#Message) object.
 | --- | --- | --- |
 | msg | [<code>Message</code>](#Message) | Explicit Fabric [Message](#Message). |
 
+<a name="Service+load"></a>
+
+### contract.load() ⇒ [<code>Promise.&lt;Service&gt;</code>](#Service)
+Load durable state after the store is open and before the observer and
+heartbeat attach, so a restored snapshot is not staged as one replace.
+
+**Kind**: instance method of [<code>Contract</code>](#Contract)  
 <a name="Service+_GET"></a>
 
 ### contract.\_GET(path) ⇒ <code>Promise</code>
@@ -8991,6 +8787,773 @@ Count distinct validator BIP340 witnesses for a withdrawal request.
 | witnesses | <code>Array.&lt;object&gt;</code> | 
 | validatorPubkeys | <code>Array.&lt;string&gt;</code> | 
 | threshold | <code>number</code> | 
+
+<a name="Resolutions"></a>
+
+## Resolutions ⇐ [<code>Actor</code>](#Actor)
+**Kind**: global class  
+**Extends**: [<code>Actor</code>](#Actor)  
+
+* [Resolutions](#Resolutions) ⇐ [<code>Actor</code>](#Actor)
+    * [new Resolutions()](#new_Resolutions_new)
+    * [new Resolutions([settings])](#new_Resolutions_new)
+    * [._states](#Resolutions+_states) : <code>Map.&lt;string, {parent: (string\|null), exits: Map.&lt;string, Object&gt;}&gt;</code>
+    * [.stateIds](#Resolutions+stateIds) ⇒ <code>Array.&lt;string&gt;</code>
+    * [.rootHex](#Resolutions+rootHex) ⇒ <code>string</code>
+    * [.declare(stateId, [parent])](#Resolutions+declare) ⇒ [<code>Resolutions</code>](#Resolutions)
+    * [.addExit(stateId, exit)](#Resolutions+addExit) ⇒ <code>Object</code>
+    * [.getExit(stateId, exitId)](#Resolutions+getExit) ⇒ <code>Object</code> \| <code>null</code>
+    * [.signExit(stateId, exitId, priv32)](#Resolutions+signExit) ⇒ <code>Object</code>
+    * [.ingest(artifact)](#Resolutions+ingest) ⇒ <code>Object</code>
+    * [.verifyExit(stateId, exitId)](#Resolutions+verifyExit) ⇒ <code>Object</code>
+    * [.missingSigners(exit)](#Resolutions+missingSigners) ⇒ <code>Array.&lt;string&gt;</code>
+    * [.resolvable(stateId)](#Resolutions+resolvable) ⇒ <code>boolean</code>
+    * [.missing(stateId)](#Resolutions+missing) ⇒ <code>Array.&lt;{stateId: string, exitId: string, kind: string, missing: Array.&lt;string&gt;}&gt;</code>
+    * [.exitsAfter(height, [stateId])](#Resolutions+exitsAfter) ⇒ <code>Array.&lt;Object&gt;</code>
+    * [.finalizeExit(stateId, exitId)](#Resolutions+finalizeExit) ⇒ <code>Object</code>
+    * [.toTree()](#Resolutions+toTree) ⇒ [<code>Tree</code>](#Tree)
+    * [.export()](#Resolutions+export) ⇒ <code>Object</code>
+    * [.import(snapshot)](#Resolutions+import) ⇒ [<code>Resolutions</code>](#Resolutions)
+    * [.contentDigest([clock])](#Actor+contentDigest) ⇒ <code>String</code>
+    * [.adopt(changes)](#Actor+adopt) ⇒ [<code>Actor</code>](#Actor)
+    * [.commit()](#Actor+commit) ⇒ <code>String</code>
+    * [.get(path)](#Actor+get) ⇒ <code>Object</code>
+    * [.set(path, value)](#Actor+set) ⇒ <code>Object</code>
+    * [.stream([pipe])](#Actor+stream) ⇒ <code>TransformStream</code>
+    * [.toBuffer()](#Actor+toBuffer) ⇒ <code>Buffer</code>
+    * [.toGenericMessage([type])](#Actor+toGenericMessage) ⇒ <code>Object</code>
+    * [.toObject()](#Actor+toObject) ⇒ <code>Object</code>
+    * [.pause()](#Actor+pause) ⇒ [<code>Actor</code>](#Actor)
+    * [.serialize()](#Actor+serialize) ⇒ <code>String</code>
+    * [.sign()](#Actor+sign) ⇒ [<code>Actor</code>](#Actor)
+    * [.unpause()](#Actor+unpause) ⇒ [<code>Actor</code>](#Actor)
+    * [.value([format])](#Actor+value) ⇒ <code>Object</code>
+    * [._readObject(input)](#Actor+_readObject) ⇒ <code>Object</code>
+
+<a name="new_Resolutions_new"></a>
+
+### new Resolutions()
+State tree of pre-signed exits. Pure data plus Schnorr verification; no I/O.
+
+<a name="new_Resolutions_new"></a>
+
+### new Resolutions([settings])
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [settings] | <code>Object</code> |  |  |
+| [settings.network] | <code>string</code> | <code>&quot;&#x27;regtest&#x27;&quot;</code> | Fabric network name |
+| [settings.states] | <code>Object</code> |  | import snapshot (`export()` output) |
+
+<a name="Resolutions+_states"></a>
+
+### resolutions.\_states : <code>Map.&lt;string, {parent: (string\|null), exits: Map.&lt;string, Object&gt;}&gt;</code>
+**Kind**: instance property of [<code>Resolutions</code>](#Resolutions)  
+<a name="Resolutions+stateIds"></a>
+
+### resolutions.stateIds ⇒ <code>Array.&lt;string&gt;</code>
+**Kind**: instance property of [<code>Resolutions</code>](#Resolutions)  
+**Returns**: <code>Array.&lt;string&gt;</code> - known state ids (insertion order).  
+<a name="Resolutions+rootHex"></a>
+
+### resolutions.rootHex ⇒ <code>string</code>
+**Kind**: instance property of [<code>Resolutions</code>](#Resolutions)  
+**Returns**: <code>string</code> - hex Merkle root (empty tree → 64 zeros).  
+<a name="Resolutions+declare"></a>
+
+### resolutions.declare(stateId, [parent]) ⇒ [<code>Resolutions</code>](#Resolutions)
+Declare a state node (idempotent).
+
+**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| stateId | <code>string</code> |  |  |
+| [parent] | <code>string</code> \| <code>null</code> | <code>null</code> | parent state id (tree edge) |
+
+<a name="Resolutions+addExit"></a>
+
+### resolutions.addExit(stateId, exit) ⇒ <code>Object</code>
+Register an exit a state depends on. Signatures already present on the
+PSBT are harvested into `signers.have`.
+
+**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
+**Returns**: <code>Object</code> - stored exit record  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| stateId | <code>string</code> |  |
+| exit | <code>Object</code> |  |
+| exit.id | <code>string</code> | unique within the state |
+| exit.kind | <code>string</code> | one of [Resolutions.KINDS](Resolutions.KINDS) |
+| exit.psbtBase64 | <code>string</code> | unsigned (or partially signed) tapscript spend, input 0 |
+| exit.required | <code>Array.&lt;string&gt;</code> | pubkeys (compressed or x-only hex) whose signatures make it broadcastable |
+| [exit.locktime] | <code>Object</code> | `{ height }` (nLockTime / CLTV) and/or `{ csv }` (relative) |
+| [exit.spends] | <code>Object</code> | `{ txid, vout }` the exit consumes |
+| [exit.meta] | <code>Object</code> | free-form (never secrets) |
+
+<a name="Resolutions+getExit"></a>
+
+### resolutions.getExit(stateId, exitId) ⇒ <code>Object</code> \| <code>null</code>
+**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
+
+| Param | Type |
+| --- | --- |
+| stateId | <code>string</code> | 
+| exitId | <code>string</code> | 
+
+<a name="Resolutions+signExit"></a>
+
+### resolutions.signExit(stateId, exitId, priv32) ⇒ <code>Object</code>
+Sign an exit with a 32-byte private key and record the signature.
+
+**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
+**Returns**: <code>Object</code> - `ContractExitSignature` artifact (JSON-safe) for the counterparty  
+
+| Param | Type |
+| --- | --- |
+| stateId | <code>string</code> | 
+| exitId | <code>string</code> | 
+| priv32 | <code>Buffer</code> \| <code>string</code> | 
+
+<a name="Resolutions+ingest"></a>
+
+### resolutions.ingest(artifact) ⇒ <code>Object</code>
+Accept a counterparty's `ContractExitSignature` artifact after verifying
+both the artifact signature and the tapscript signature it carries.
+
+**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| artifact | <code>Object</code> | output of [signExit](#Resolutions+signExit) |
+
+<a name="Resolutions+verifyExit"></a>
+
+### resolutions.verifyExit(stateId, exitId) ⇒ <code>Object</code>
+Re-verify every held signature on an exit against its PSBT.
+
+**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
+
+| Param | Type |
+| --- | --- |
+| stateId | <code>string</code> | 
+| exitId | <code>string</code> | 
+
+<a name="Resolutions+missingSigners"></a>
+
+### resolutions.missingSigners(exit) ⇒ <code>Array.&lt;string&gt;</code>
+**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
+**Returns**: <code>Array.&lt;string&gt;</code> - required x-only pubkeys without a held signature  
+
+| Param | Type |
+| --- | --- |
+| exit | <code>Object</code> | 
+
+<a name="Resolutions+resolvable"></a>
+
+### resolutions.resolvable(stateId) ⇒ <code>boolean</code>
+A state is resolvable when it (and every ancestor it inherits exits from)
+holds all required signatures on all exits.
+
+**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
+
+| Param | Type |
+| --- | --- |
+| stateId | <code>string</code> | 
+
+<a name="Resolutions+missing"></a>
+
+### resolutions.missing(stateId) ⇒ <code>Array.&lt;{stateId: string, exitId: string, kind: string, missing: Array.&lt;string&gt;}&gt;</code>
+What still has to be exchanged before `stateId` is live.
+
+**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
+
+| Param | Type |
+| --- | --- |
+| stateId | <code>string</code> | 
+
+<a name="Resolutions+exitsAfter"></a>
+
+### resolutions.exitsAfter(height, [stateId]) ⇒ <code>Array.&lt;Object&gt;</code>
+Exits that become broadcastable at or after `height` (absolute locks only).
+
+**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| height | <code>number</code> |  |  |
+| [stateId] | <code>string</code> | <code>null</code> | restrict to one state |
+
+<a name="Resolutions+finalizeExit"></a>
+
+### resolutions.finalizeExit(stateId, exitId) ⇒ <code>Object</code>
+Fully-signed exit as a broadcastable transaction.
+
+**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
+
+| Param | Type |
+| --- | --- |
+| stateId | <code>string</code> | 
+| exitId | <code>string</code> | 
+
+<a name="Resolutions+toTree"></a>
+
+### resolutions.toTree() ⇒ [<code>Tree</code>](#Tree)
+Bitcoin-style Merkle tree over `SHA256(stateId|exitId|txid)` for audit.
+
+**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
+<a name="Resolutions+export"></a>
+
+### resolutions.export() ⇒ <code>Object</code>
+**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
+**Overrides**: [<code>export</code>](#Actor+export)  
+**Returns**: <code>Object</code> - JSON-safe snapshot (no private material).  
+<a name="Resolutions+import"></a>
+
+### resolutions.import(snapshot) ⇒ [<code>Resolutions</code>](#Resolutions)
+Load a snapshot. Every held signature is re-verified against its PSBT;
+ones that do not verify are dropped (the exit then reports them missing).
+
+**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| snapshot | <code>Object</code> | output of [export](#Resolutions+export) |
+
+<a name="Actor+contentDigest"></a>
+
+### resolutions.contentDigest([clock]) ⇒ <code>String</code>
+Digest of this actor's content at <code>clock</code>.
+
+**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
+**Returns**: <code>String</code> - 64-character hex SHA-256.  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [clock] | <code>Number</code> | <code>0</code> | Sidechain clock covered by the digest. |
+
+<a name="Actor+adopt"></a>
+
+### resolutions.adopt(changes) ⇒ [<code>Actor</code>](#Actor)
+Explicitly adopt a set of [JSONPatch](JSONPatch)-encoded changes.
+
+**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
+**Returns**: [<code>Actor</code>](#Actor) - Instance of the Actor.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| changes | <code>Array</code> | List of [JSONPatch](JSONPatch) operations to apply. |
+
+<a name="Actor+commit"></a>
+
+### resolutions.commit() ⇒ <code>String</code>
+Resolve the current state to a commitment.
+
+**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
+**Returns**: <code>String</code> - 32-byte ID  
+<a name="Actor+get"></a>
+
+### resolutions.get(path) ⇒ <code>Object</code>
+Retrieve a value from the Actor's state by [JSONPointer](JSONPointer) path.
+
+**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
+**Returns**: <code>Object</code> - Value of the path in the Actor's state.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| path | <code>String</code> | Path to retrieve using [JSONPointer](JSONPointer). |
+
+<a name="Actor+set"></a>
+
+### resolutions.set(path, value) ⇒ <code>Object</code>
+Set a value in the Actor's state by [JSONPointer](JSONPointer) path.
+
+**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
+**Returns**: <code>Object</code> - Value of the path in the Actor's state.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| path | <code>String</code> | Path to set using [JSONPointer](JSONPointer). |
+| value | <code>Object</code> | Value to set. |
+
+<a name="Actor+stream"></a>
+
+### resolutions.stream([pipe]) ⇒ <code>TransformStream</code>
+Returns a new output stream for the Actor.
+
+**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
+**Returns**: <code>TransformStream</code> - New output stream for the Actor.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| [pipe] | <code>TransformStream</code> | Pipe to stream to. |
+
+<a name="Actor+toBuffer"></a>
+
+### resolutions.toBuffer() ⇒ <code>Buffer</code>
+Casts the Actor to a normalized Buffer.
+
+**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
+<a name="Actor+toGenericMessage"></a>
+
+### resolutions.toGenericMessage([type]) ⇒ <code>Object</code>
+Casts the Actor to a generic message envelope for state announcements and history.
+Shape is stable: `{ type, object }` where `object` is sorted-key state ([toObject](#Actor+toObject)).
+[Actor#id](Actor#id) derives from a digest of the pretty-printed generic message; extending this
+envelope requires a format/version migration across the network.
+
+**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
+**Returns**: <code>Object</code> - `{ type, object }`  
+**See**
+
+- [https://en.wikipedia.org/wiki/Merkle_tree](https://en.wikipedia.org/wiki/Merkle_tree)
+- [https://dev.fabric.pub/messages](https://dev.fabric.pub/messages)
+
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [type] | <code>String</code> | <code>&#x27;FabricActorState&#x27;</code> | Logical message type string. |
+
+<a name="Actor+toObject"></a>
+
+### resolutions.toObject() ⇒ <code>Object</code>
+Returns the Actor's current state as an [Object](Object).
+
+**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
+<a name="Actor+pause"></a>
+
+### resolutions.pause() ⇒ [<code>Actor</code>](#Actor)
+Toggles `status` property to paused.
+
+**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
+**Returns**: [<code>Actor</code>](#Actor) - Instance of the Actor.  
+<a name="Actor+serialize"></a>
+
+### resolutions.serialize() ⇒ <code>String</code>
+Serialize the Actor's current state into a JSON-formatted string.
+
+**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
+<a name="Actor+sign"></a>
+
+### resolutions.sign() ⇒ [<code>Actor</code>](#Actor)
+Signs the Actor when `this.key` is a [Key](#Key); otherwise throws.
+Prefer [signWithKey](#Message+signWithKey) / [sign](#Key+sign) for wire auth.
+
+**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
+<a name="Actor+unpause"></a>
+
+### resolutions.unpause() ⇒ [<code>Actor</code>](#Actor)
+Toggles `status` property to unpaused.
+
+**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
+**Returns**: [<code>Actor</code>](#Actor) - Instance of the Actor.  
+<a name="Actor+value"></a>
+
+### resolutions.value([format]) ⇒ <code>Object</code>
+Get the inner value of the Actor with an optional cast type.
+
+**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
+**Returns**: <code>Object</code> - Inner value of the Actor as an [Object](Object), or cast to the requested `format`.  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [format] | <code>String</code> | <code>object</code> | Cast the value to one of: `buffer, hex, json, string` |
+
+<a name="Actor+_readObject"></a>
+
+### resolutions.\_readObject(input) ⇒ <code>Object</code>
+Parse an Object into a corresponding Fabric state.
+
+**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
+**Returns**: <code>Object</code> - Fabric state.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| input | <code>Object</code> | Object to read as input. |
+
+<a name="Resolutions"></a>
+
+## Resolutions
+**Kind**: global class  
+
+* [Resolutions](#Resolutions)
+    * [new Resolutions()](#new_Resolutions_new)
+    * [new Resolutions([settings])](#new_Resolutions_new)
+    * [._states](#Resolutions+_states) : <code>Map.&lt;string, {parent: (string\|null), exits: Map.&lt;string, Object&gt;}&gt;</code>
+    * [.stateIds](#Resolutions+stateIds) ⇒ <code>Array.&lt;string&gt;</code>
+    * [.rootHex](#Resolutions+rootHex) ⇒ <code>string</code>
+    * [.declare(stateId, [parent])](#Resolutions+declare) ⇒ [<code>Resolutions</code>](#Resolutions)
+    * [.addExit(stateId, exit)](#Resolutions+addExit) ⇒ <code>Object</code>
+    * [.getExit(stateId, exitId)](#Resolutions+getExit) ⇒ <code>Object</code> \| <code>null</code>
+    * [.signExit(stateId, exitId, priv32)](#Resolutions+signExit) ⇒ <code>Object</code>
+    * [.ingest(artifact)](#Resolutions+ingest) ⇒ <code>Object</code>
+    * [.verifyExit(stateId, exitId)](#Resolutions+verifyExit) ⇒ <code>Object</code>
+    * [.missingSigners(exit)](#Resolutions+missingSigners) ⇒ <code>Array.&lt;string&gt;</code>
+    * [.resolvable(stateId)](#Resolutions+resolvable) ⇒ <code>boolean</code>
+    * [.missing(stateId)](#Resolutions+missing) ⇒ <code>Array.&lt;{stateId: string, exitId: string, kind: string, missing: Array.&lt;string&gt;}&gt;</code>
+    * [.exitsAfter(height, [stateId])](#Resolutions+exitsAfter) ⇒ <code>Array.&lt;Object&gt;</code>
+    * [.finalizeExit(stateId, exitId)](#Resolutions+finalizeExit) ⇒ <code>Object</code>
+    * [.toTree()](#Resolutions+toTree) ⇒ [<code>Tree</code>](#Tree)
+    * [.export()](#Resolutions+export) ⇒ <code>Object</code>
+    * [.import(snapshot)](#Resolutions+import) ⇒ [<code>Resolutions</code>](#Resolutions)
+    * [.contentDigest([clock])](#Actor+contentDigest) ⇒ <code>String</code>
+    * [.adopt(changes)](#Actor+adopt) ⇒ [<code>Actor</code>](#Actor)
+    * [.commit()](#Actor+commit) ⇒ <code>String</code>
+    * [.get(path)](#Actor+get) ⇒ <code>Object</code>
+    * [.set(path, value)](#Actor+set) ⇒ <code>Object</code>
+    * [.stream([pipe])](#Actor+stream) ⇒ <code>TransformStream</code>
+    * [.toBuffer()](#Actor+toBuffer) ⇒ <code>Buffer</code>
+    * [.toGenericMessage([type])](#Actor+toGenericMessage) ⇒ <code>Object</code>
+    * [.toObject()](#Actor+toObject) ⇒ <code>Object</code>
+    * [.pause()](#Actor+pause) ⇒ [<code>Actor</code>](#Actor)
+    * [.serialize()](#Actor+serialize) ⇒ <code>String</code>
+    * [.sign()](#Actor+sign) ⇒ [<code>Actor</code>](#Actor)
+    * [.unpause()](#Actor+unpause) ⇒ [<code>Actor</code>](#Actor)
+    * [.value([format])](#Actor+value) ⇒ <code>Object</code>
+    * [._readObject(input)](#Actor+_readObject) ⇒ <code>Object</code>
+
+<a name="new_Resolutions_new"></a>
+
+### new Resolutions()
+State tree of pre-signed exits. Pure data plus Schnorr verification; no I/O.
+
+<a name="new_Resolutions_new"></a>
+
+### new Resolutions([settings])
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [settings] | <code>Object</code> |  |  |
+| [settings.network] | <code>string</code> | <code>&quot;&#x27;regtest&#x27;&quot;</code> | Fabric network name |
+| [settings.states] | <code>Object</code> |  | import snapshot (`export()` output) |
+
+<a name="Resolutions+_states"></a>
+
+### resolutions.\_states : <code>Map.&lt;string, {parent: (string\|null), exits: Map.&lt;string, Object&gt;}&gt;</code>
+**Kind**: instance property of [<code>Resolutions</code>](#Resolutions)  
+<a name="Resolutions+stateIds"></a>
+
+### resolutions.stateIds ⇒ <code>Array.&lt;string&gt;</code>
+**Kind**: instance property of [<code>Resolutions</code>](#Resolutions)  
+**Returns**: <code>Array.&lt;string&gt;</code> - known state ids (insertion order).  
+<a name="Resolutions+rootHex"></a>
+
+### resolutions.rootHex ⇒ <code>string</code>
+**Kind**: instance property of [<code>Resolutions</code>](#Resolutions)  
+**Returns**: <code>string</code> - hex Merkle root (empty tree → 64 zeros).  
+<a name="Resolutions+declare"></a>
+
+### resolutions.declare(stateId, [parent]) ⇒ [<code>Resolutions</code>](#Resolutions)
+Declare a state node (idempotent).
+
+**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| stateId | <code>string</code> |  |  |
+| [parent] | <code>string</code> \| <code>null</code> | <code>null</code> | parent state id (tree edge) |
+
+<a name="Resolutions+addExit"></a>
+
+### resolutions.addExit(stateId, exit) ⇒ <code>Object</code>
+Register an exit a state depends on. Signatures already present on the
+PSBT are harvested into `signers.have`.
+
+**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
+**Returns**: <code>Object</code> - stored exit record  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| stateId | <code>string</code> |  |
+| exit | <code>Object</code> |  |
+| exit.id | <code>string</code> | unique within the state |
+| exit.kind | <code>string</code> | one of [Resolutions.KINDS](Resolutions.KINDS) |
+| exit.psbtBase64 | <code>string</code> | unsigned (or partially signed) tapscript spend, input 0 |
+| exit.required | <code>Array.&lt;string&gt;</code> | pubkeys (compressed or x-only hex) whose signatures make it broadcastable |
+| [exit.locktime] | <code>Object</code> | `{ height }` (nLockTime / CLTV) and/or `{ csv }` (relative) |
+| [exit.spends] | <code>Object</code> | `{ txid, vout }` the exit consumes |
+| [exit.meta] | <code>Object</code> | free-form (never secrets) |
+
+<a name="Resolutions+getExit"></a>
+
+### resolutions.getExit(stateId, exitId) ⇒ <code>Object</code> \| <code>null</code>
+**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
+
+| Param | Type |
+| --- | --- |
+| stateId | <code>string</code> | 
+| exitId | <code>string</code> | 
+
+<a name="Resolutions+signExit"></a>
+
+### resolutions.signExit(stateId, exitId, priv32) ⇒ <code>Object</code>
+Sign an exit with a 32-byte private key and record the signature.
+
+**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
+**Returns**: <code>Object</code> - `ContractExitSignature` artifact (JSON-safe) for the counterparty  
+
+| Param | Type |
+| --- | --- |
+| stateId | <code>string</code> | 
+| exitId | <code>string</code> | 
+| priv32 | <code>Buffer</code> \| <code>string</code> | 
+
+<a name="Resolutions+ingest"></a>
+
+### resolutions.ingest(artifact) ⇒ <code>Object</code>
+Accept a counterparty's `ContractExitSignature` artifact after verifying
+both the artifact signature and the tapscript signature it carries.
+
+**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| artifact | <code>Object</code> | output of [signExit](#Resolutions+signExit) |
+
+<a name="Resolutions+verifyExit"></a>
+
+### resolutions.verifyExit(stateId, exitId) ⇒ <code>Object</code>
+Re-verify every held signature on an exit against its PSBT.
+
+**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
+
+| Param | Type |
+| --- | --- |
+| stateId | <code>string</code> | 
+| exitId | <code>string</code> | 
+
+<a name="Resolutions+missingSigners"></a>
+
+### resolutions.missingSigners(exit) ⇒ <code>Array.&lt;string&gt;</code>
+**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
+**Returns**: <code>Array.&lt;string&gt;</code> - required x-only pubkeys without a held signature  
+
+| Param | Type |
+| --- | --- |
+| exit | <code>Object</code> | 
+
+<a name="Resolutions+resolvable"></a>
+
+### resolutions.resolvable(stateId) ⇒ <code>boolean</code>
+A state is resolvable when it (and every ancestor it inherits exits from)
+holds all required signatures on all exits.
+
+**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
+
+| Param | Type |
+| --- | --- |
+| stateId | <code>string</code> | 
+
+<a name="Resolutions+missing"></a>
+
+### resolutions.missing(stateId) ⇒ <code>Array.&lt;{stateId: string, exitId: string, kind: string, missing: Array.&lt;string&gt;}&gt;</code>
+What still has to be exchanged before `stateId` is live.
+
+**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
+
+| Param | Type |
+| --- | --- |
+| stateId | <code>string</code> | 
+
+<a name="Resolutions+exitsAfter"></a>
+
+### resolutions.exitsAfter(height, [stateId]) ⇒ <code>Array.&lt;Object&gt;</code>
+Exits that become broadcastable at or after `height` (absolute locks only).
+
+**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| height | <code>number</code> |  |  |
+| [stateId] | <code>string</code> | <code>null</code> | restrict to one state |
+
+<a name="Resolutions+finalizeExit"></a>
+
+### resolutions.finalizeExit(stateId, exitId) ⇒ <code>Object</code>
+Fully-signed exit as a broadcastable transaction.
+
+**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
+
+| Param | Type |
+| --- | --- |
+| stateId | <code>string</code> | 
+| exitId | <code>string</code> | 
+
+<a name="Resolutions+toTree"></a>
+
+### resolutions.toTree() ⇒ [<code>Tree</code>](#Tree)
+Bitcoin-style Merkle tree over `SHA256(stateId|exitId|txid)` for audit.
+
+**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
+<a name="Resolutions+export"></a>
+
+### resolutions.export() ⇒ <code>Object</code>
+**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
+**Overrides**: [<code>export</code>](#Actor+export)  
+**Returns**: <code>Object</code> - JSON-safe snapshot (no private material).  
+<a name="Resolutions+import"></a>
+
+### resolutions.import(snapshot) ⇒ [<code>Resolutions</code>](#Resolutions)
+Load a snapshot. Every held signature is re-verified against its PSBT;
+ones that do not verify are dropped (the exit then reports them missing).
+
+**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| snapshot | <code>Object</code> | output of [export](#Resolutions+export) |
+
+<a name="Actor+contentDigest"></a>
+
+### resolutions.contentDigest([clock]) ⇒ <code>String</code>
+Digest of this actor's content at <code>clock</code>.
+
+**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
+**Returns**: <code>String</code> - 64-character hex SHA-256.  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [clock] | <code>Number</code> | <code>0</code> | Sidechain clock covered by the digest. |
+
+<a name="Actor+adopt"></a>
+
+### resolutions.adopt(changes) ⇒ [<code>Actor</code>](#Actor)
+Explicitly adopt a set of [JSONPatch](JSONPatch)-encoded changes.
+
+**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
+**Returns**: [<code>Actor</code>](#Actor) - Instance of the Actor.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| changes | <code>Array</code> | List of [JSONPatch](JSONPatch) operations to apply. |
+
+<a name="Actor+commit"></a>
+
+### resolutions.commit() ⇒ <code>String</code>
+Resolve the current state to a commitment.
+
+**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
+**Returns**: <code>String</code> - 32-byte ID  
+<a name="Actor+get"></a>
+
+### resolutions.get(path) ⇒ <code>Object</code>
+Retrieve a value from the Actor's state by [JSONPointer](JSONPointer) path.
+
+**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
+**Returns**: <code>Object</code> - Value of the path in the Actor's state.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| path | <code>String</code> | Path to retrieve using [JSONPointer](JSONPointer). |
+
+<a name="Actor+set"></a>
+
+### resolutions.set(path, value) ⇒ <code>Object</code>
+Set a value in the Actor's state by [JSONPointer](JSONPointer) path.
+
+**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
+**Returns**: <code>Object</code> - Value of the path in the Actor's state.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| path | <code>String</code> | Path to set using [JSONPointer](JSONPointer). |
+| value | <code>Object</code> | Value to set. |
+
+<a name="Actor+stream"></a>
+
+### resolutions.stream([pipe]) ⇒ <code>TransformStream</code>
+Returns a new output stream for the Actor.
+
+**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
+**Returns**: <code>TransformStream</code> - New output stream for the Actor.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| [pipe] | <code>TransformStream</code> | Pipe to stream to. |
+
+<a name="Actor+toBuffer"></a>
+
+### resolutions.toBuffer() ⇒ <code>Buffer</code>
+Casts the Actor to a normalized Buffer.
+
+**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
+<a name="Actor+toGenericMessage"></a>
+
+### resolutions.toGenericMessage([type]) ⇒ <code>Object</code>
+Casts the Actor to a generic message envelope for state announcements and history.
+Shape is stable: `{ type, object }` where `object` is sorted-key state ([toObject](#Actor+toObject)).
+[Actor#id](Actor#id) derives from a digest of the pretty-printed generic message; extending this
+envelope requires a format/version migration across the network.
+
+**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
+**Returns**: <code>Object</code> - `{ type, object }`  
+**See**
+
+- [https://en.wikipedia.org/wiki/Merkle_tree](https://en.wikipedia.org/wiki/Merkle_tree)
+- [https://dev.fabric.pub/messages](https://dev.fabric.pub/messages)
+
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [type] | <code>String</code> | <code>&#x27;FabricActorState&#x27;</code> | Logical message type string. |
+
+<a name="Actor+toObject"></a>
+
+### resolutions.toObject() ⇒ <code>Object</code>
+Returns the Actor's current state as an [Object](Object).
+
+**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
+<a name="Actor+pause"></a>
+
+### resolutions.pause() ⇒ [<code>Actor</code>](#Actor)
+Toggles `status` property to paused.
+
+**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
+**Returns**: [<code>Actor</code>](#Actor) - Instance of the Actor.  
+<a name="Actor+serialize"></a>
+
+### resolutions.serialize() ⇒ <code>String</code>
+Serialize the Actor's current state into a JSON-formatted string.
+
+**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
+<a name="Actor+sign"></a>
+
+### resolutions.sign() ⇒ [<code>Actor</code>](#Actor)
+Signs the Actor when `this.key` is a [Key](#Key); otherwise throws.
+Prefer [signWithKey](#Message+signWithKey) / [sign](#Key+sign) for wire auth.
+
+**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
+<a name="Actor+unpause"></a>
+
+### resolutions.unpause() ⇒ [<code>Actor</code>](#Actor)
+Toggles `status` property to unpaused.
+
+**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
+**Returns**: [<code>Actor</code>](#Actor) - Instance of the Actor.  
+<a name="Actor+value"></a>
+
+### resolutions.value([format]) ⇒ <code>Object</code>
+Get the inner value of the Actor with an optional cast type.
+
+**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
+**Returns**: <code>Object</code> - Inner value of the Actor as an [Object](Object), or cast to the requested `format`.  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [format] | <code>String</code> | <code>object</code> | Cast the value to one of: `buffer, hex, json, string` |
+
+<a name="Actor+_readObject"></a>
+
+### resolutions.\_readObject(input) ⇒ <code>Object</code>
+Parse an Object into a corresponding Fabric state.
+
+**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
+**Returns**: <code>Object</code> - Fabric state.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| input | <code>Object</code> | Object to read as input. |
 
 <a name="Disk"></a>
 
@@ -9588,185 +10151,6 @@ Per-blob payment commitment (distinct from whole-doc purchaseContentHashHex).
 | [opts] | <code>Object</code> |  |  |
 | [opts.leaves] | <code>Map.&lt;number, Object&gt;</code> \| <code>Array.&lt;Object&gt;</code> |  | `{ paymentHashHex?, iv? }` per blob index; a whole-document sale repeats one payment hash |
 
-<a name="DocumentBlobTransferBook"></a>
-
-## DocumentBlobTransferBook
-Buyer-side reassembly of indexed blob transfers.
-
-Two tables:
-- **Expectations** (`expectTransfer`): what the buyer asked / paid for.
-  Only the local caller writes them; unsolicited frames can never evict
-  them. Each lives until `expiresAt` (caller-set, default an hour), is
-  refreshed by matching frames
-  ([touch](#DocumentBlobTransferBook+touch)), and ends with
-  [releaseTransfer](#DocumentBlobTransferBook+releaseTransfer) or completion.
-- **Assembly rows** (`ingest`): bytes received so far. Rows backed by an
-  expectation are *pinned*; others are unsolicited and bounded by
-  `maxPending` rows overall, `maxPendingPerOrigin` rows and
-  `maxPendingBytesPerOrigin` bytes per sending peer, idle `ttlMs`, and are
-  evicted (oldest first) before any pinned row. A row whose `total`
-  contradicts the expectation (planted before the purchase) is replaced.
-
-**Kind**: global class  
-
-* [DocumentBlobTransferBook](#DocumentBlobTransferBook)
-    * [new DocumentBlobTransferBook([opts])](#new_DocumentBlobTransferBook_new)
-    * _instance_
-        * [._pending](#DocumentBlobTransferBook+_pending) : <code>Map.&lt;string, object&gt;</code>
-        * [._expectations](#DocumentBlobTransferBook+_expectations) : <code>Map.&lt;string, object&gt;</code>
-        * [._originBytes](#DocumentBlobTransferBook+_originBytes) : <code>Map.&lt;string, number&gt;</code>
-        * [.pendingCount](#DocumentBlobTransferBook+pendingCount) : <code>number</code>
-        * [.pendingBytes](#DocumentBlobTransferBook+pendingBytes) : <code>number</code>
-        * [.expectTransfer(opts)](#DocumentBlobTransferBook+expectTransfer) ⇒ <code>Object</code> \| <code>null</code>
-        * [.expectedFor(documentId)](#DocumentBlobTransferBook+expectedFor) ⇒ <code>Array.&lt;Object&gt;</code>
-        * [.touch(documentId, [merkleRootHex])](#DocumentBlobTransferBook+touch) ⇒ <code>boolean</code>
-        * [.releaseTransfer(opts)](#DocumentBlobTransferBook+releaseTransfer) ⇒ <code>boolean</code>
-        * [.ingest(frame, [opts])](#DocumentBlobTransferBook+ingest) ⇒ <code>Object</code>
-    * _static_
-        * [.parseFrame(obj)](#DocumentBlobTransferBook.parseFrame) ⇒ <code>Object</code>
-        * [.verifySealedFrame(obj, expected)](#DocumentBlobTransferBook.verifySealedFrame) ⇒ <code>Object</code>
-
-<a name="new_DocumentBlobTransferBook_new"></a>
-
-### new DocumentBlobTransferBook([opts])
-
-| Param | Type | Description |
-| --- | --- | --- |
-| [opts] | <code>Object</code> |  |
-| [opts.ttlMs] | <code>number</code> | drop unsolicited incomplete transfers idle this long |
-| [opts.expectationTtlMs] | <code>number</code> | default expectation lifetime |
-| [opts.maxPending] | <code>number</code> | max concurrent unsolicited incomplete transfers |
-| [opts.maxExpectations] | <code>number</code> | max concurrent expectations (oldest released first; defaults to `maxPending`) |
-| [opts.maxPendingPerOrigin] | <code>number</code> | max unsolicited rows one origin may hold |
-| [opts.maxPendingBytesPerOrigin] | <code>number</code> | unsolicited byte quota per origin (default a quarter of `maxPendingBytes`) |
-| [opts.maxParts] | <code>number</code> | max `blobTotal` for one transfer |
-| [opts.maxPendingBytes] | <code>number</code> | byte budget across every incomplete transfer |
-
-<a name="DocumentBlobTransferBook+_pending"></a>
-
-### documentBlobTransferBook.\_pending : <code>Map.&lt;string, object&gt;</code>
-**Kind**: instance property of [<code>DocumentBlobTransferBook</code>](#DocumentBlobTransferBook)  
-<a name="DocumentBlobTransferBook+_expectations"></a>
-
-### documentBlobTransferBook.\_expectations : <code>Map.&lt;string, object&gt;</code>
-**Kind**: instance property of [<code>DocumentBlobTransferBook</code>](#DocumentBlobTransferBook)  
-<a name="DocumentBlobTransferBook+_originBytes"></a>
-
-### documentBlobTransferBook.\_originBytes : <code>Map.&lt;string, number&gt;</code>
-**Kind**: instance property of [<code>DocumentBlobTransferBook</code>](#DocumentBlobTransferBook)  
-<a name="DocumentBlobTransferBook+pendingCount"></a>
-
-### documentBlobTransferBook.pendingCount : <code>number</code>
-Number of in-flight transfers (expected or with bytes held).
-
-**Kind**: instance property of [<code>DocumentBlobTransferBook</code>](#DocumentBlobTransferBook)  
-<a name="DocumentBlobTransferBook+pendingBytes"></a>
-
-### documentBlobTransferBook.pendingBytes : <code>number</code>
-Bytes held across every in-flight transfer.
-
-**Kind**: instance property of [<code>DocumentBlobTransferBook</code>](#DocumentBlobTransferBook)  
-<a name="DocumentBlobTransferBook+expectTransfer"></a>
-
-### documentBlobTransferBook.expectTransfer(opts) ⇒ <code>Object</code> \| <code>null</code>
-Pre-register expected leaves (from inventory DocumentBlobIndex).
-
-**Kind**: instance method of [<code>DocumentBlobTransferBook</code>](#DocumentBlobTransferBook)  
-**Returns**: <code>Object</code> \| <code>null</code> - the expectation row  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| opts | <code>object</code> |  |
-| [opts.blobHashHexes] | <code>Array.&lt;string&gt;</code> | expected blob hash per blob index; empty or null entries leave that index unchecked here (the sealed per-blob path refuses them once any index is pinned: that blob was not bought) |
-| [opts.paymentHashHexes] | <code>Array.&lt;string&gt;</code> | expected sealed payment hash (SHA256(K_i)) per blob index |
-| [opts.ivs] | <code>Array.&lt;string&gt;</code> | advertised AES-GCM IV (base64) per blob index |
-| [opts.origins] | <code>Array.&lt;string&gt;</code> | peer the index was bought from (its frame may displace another origin's alternate when the IV is not advertised) |
-| [opts.merge] | <code>boolean</code> | add these pins to an existing expectation for the same document and root (same `total`) instead of replacing it, so buying blob j keeps blob i pinned |
-| [opts.expiresAt] | <code>number</code> | epoch ms the expectation lapses (session lifetime) |
-| [opts.ttlMs] | <code>number</code> | lifetime from now (and refresh step) when `expiresAt` is not given |
-
-<a name="DocumentBlobTransferBook+expectedFor"></a>
-
-### documentBlobTransferBook.expectedFor(documentId) ⇒ <code>Array.&lt;Object&gt;</code>
-Expectations registered for a document (any root). Lets the per-blob
-sealed path refuse frames whose root / total disagree with what the buyer
-actually asked for.
-
-**Kind**: instance method of [<code>DocumentBlobTransferBook</code>](#DocumentBlobTransferBook)  
-**Returns**: <code>Array.&lt;Object&gt;</code> - rows from [expectTransfer](#DocumentBlobTransferBook+expectTransfer)  
-
-| Param | Type |
-| --- | --- |
-| documentId | <code>string</code> | 
-
-<a name="DocumentBlobTransferBook+touch"></a>
-
-### documentBlobTransferBook.touch(documentId, [merkleRootHex]) ⇒ <code>boolean</code>
-Extend an expectation by its refresh step (a matching frame arrived).
-
-**Kind**: instance method of [<code>DocumentBlobTransferBook</code>](#DocumentBlobTransferBook)  
-**Returns**: <code>boolean</code> - true when an expectation was refreshed  
-
-| Param | Type | Default |
-| --- | --- | --- |
-| documentId | <code>string</code> |  | 
-| [merkleRootHex] | <code>string</code> \| <code>null</code> | <code>null</code> | 
-
-<a name="DocumentBlobTransferBook+releaseTransfer"></a>
-
-### documentBlobTransferBook.releaseTransfer(opts) ⇒ <code>boolean</code>
-End a purchase session: drop its expectation and any partial bytes.
-
-**Kind**: instance method of [<code>DocumentBlobTransferBook</code>](#DocumentBlobTransferBook)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| opts | <code>Object</code> \| <code>string</code> | `{ documentId, merkleRootHex }` or a transfer key |
-
-<a name="DocumentBlobTransferBook+ingest"></a>
-
-### documentBlobTransferBook.ingest(frame, [opts]) ⇒ <code>Object</code>
-**Kind**: instance method of [<code>DocumentBlobTransferBook</code>](#DocumentBlobTransferBook)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| frame | <code>object</code> | from [parseFrame](#DocumentBlobTransferBook.parseFrame) |
-| [opts] | <code>Object</code> |  |
-| [opts.origin] | <code>string</code> | sending peer (per-origin quotas for unsolicited rows) |
-
-<a name="DocumentBlobTransferBook.parseFrame"></a>
-
-### DocumentBlobTransferBook.parseFrame(obj) ⇒ <code>Object</code>
-**Kind**: static method of [<code>DocumentBlobTransferBook</code>](#DocumentBlobTransferBook)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| obj | <code>object</code> | P2P_FILE_SEND JSON object |
-
-<a name="DocumentBlobTransferBook.verifySealedFrame"></a>
-
-### DocumentBlobTransferBook.verifySealedFrame(obj, expected) ⇒ <code>Object</code>
-Verify-before-pay: check one free sealed per-blob `P2P_FILE_SEND` body
-(ciphertext of blob `i`) against the document root **before** funding the
-HTLC for `K_i`. The ciphertext must hash to its `blobHashHex` and the leaf
-`(blobHash, paymentHash, iv)` must open to the root with the frame's
-inclusion proof (or `expected.proof`). Pins from verified offer leaves
-([verifyOfferLeaves](#Document.verifyOfferLeaves)) are enforced when given.
-
-**Kind**: static method of [<code>DocumentBlobTransferBook</code>](#DocumentBlobTransferBook)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| obj | <code>Object</code> | raw `P2P_FILE_SEND` body (`sealed`, `perBlob`) |
-| expected | <code>Object</code> |  |
-| expected.merkleRootHex | <code>string</code> |  |
-| expected.blobTotal | <code>number</code> |  |
-| [expected.blobIndex] | <code>number</code> |  |
-| [expected.blobHashHex] | <code>string</code> |  |
-| [expected.paymentHashHex] | <code>string</code> |  |
-| [expected.iv] | <code>string</code> |  |
-| [expected.proof] | <code>Array.&lt;string&gt;</code> |  |
-
 <a name="DocumentBook"></a>
 
 ## DocumentBook
@@ -9938,8 +10322,8 @@ Penalty count recorded against an AMP signer key.
 <a name="DocumentBook+scoreFor"></a>
 
 ### documentBook.scoreFor(sellerId) ⇒ <code>number</code>
-Derived 0..1000 score. Unknown providers score [SCORE_UNKNOWN](#SCORE_UNKNOWN),
-inventory-only ones [SCORE_INVENTORY_ONLY](#SCORE_INVENTORY_ONLY) (below a neutral
+Derived 0..1000 score. Unknown providers score `SCORE_UNKNOWN`,
+inventory-only ones `SCORE_INVENTORY_ONLY` (below a neutral
 record); a verified penalty — direct or on any AMP signer key the seller
 used — is weighted as ten failed deliveries.
 
@@ -10233,6 +10617,185 @@ the bid, and expiring no later than it.
 | [opts.now] | <code>number</code> |  | unix seconds |
 | [opts.verify] | <code>boolean</code> | <code>true</code> | check the author signature (Peer already has) |
 
+<a name="DocumentBlobTransferBook"></a>
+
+## DocumentBlobTransferBook
+Buyer-side reassembly of indexed blob transfers.
+
+Two tables:
+- **Expectations** (`expectTransfer`): what the buyer asked / paid for.
+  Only the local caller writes them; unsolicited frames can never evict
+  them. Each lives until `expiresAt` (caller-set, default an hour), is
+  refreshed by matching frames
+  ([touch](#DocumentBlobTransferBook+touch)), and ends with
+  [releaseTransfer](#DocumentBlobTransferBook+releaseTransfer) or completion.
+- **Assembly rows** (`ingest`): bytes received so far. Rows backed by an
+  expectation are *pinned*; others are unsolicited and bounded by
+  `maxPending` rows overall, `maxPendingPerOrigin` rows and
+  `maxPendingBytesPerOrigin` bytes per sending peer, idle `ttlMs`, and are
+  evicted (oldest first) before any pinned row. A row whose `total`
+  contradicts the expectation (planted before the purchase) is replaced.
+
+**Kind**: global class  
+
+* [DocumentBlobTransferBook](#DocumentBlobTransferBook)
+    * [new DocumentBlobTransferBook([opts])](#new_DocumentBlobTransferBook_new)
+    * _instance_
+        * [._pending](#DocumentBlobTransferBook+_pending) : <code>Map.&lt;string, object&gt;</code>
+        * [._expectations](#DocumentBlobTransferBook+_expectations) : <code>Map.&lt;string, object&gt;</code>
+        * [._originBytes](#DocumentBlobTransferBook+_originBytes) : <code>Map.&lt;string, number&gt;</code>
+        * [.pendingCount](#DocumentBlobTransferBook+pendingCount) : <code>number</code>
+        * [.pendingBytes](#DocumentBlobTransferBook+pendingBytes) : <code>number</code>
+        * [.expectTransfer(opts)](#DocumentBlobTransferBook+expectTransfer) ⇒ <code>Object</code> \| <code>null</code>
+        * [.expectedFor(documentId)](#DocumentBlobTransferBook+expectedFor) ⇒ <code>Array.&lt;Object&gt;</code>
+        * [.touch(documentId, [merkleRootHex])](#DocumentBlobTransferBook+touch) ⇒ <code>boolean</code>
+        * [.releaseTransfer(opts)](#DocumentBlobTransferBook+releaseTransfer) ⇒ <code>boolean</code>
+        * [.ingest(frame, [opts])](#DocumentBlobTransferBook+ingest) ⇒ <code>Object</code>
+    * _static_
+        * [.parseFrame(obj)](#DocumentBlobTransferBook.parseFrame) ⇒ <code>Object</code>
+        * [.verifySealedFrame(obj, expected)](#DocumentBlobTransferBook.verifySealedFrame) ⇒ <code>Object</code>
+
+<a name="new_DocumentBlobTransferBook_new"></a>
+
+### new DocumentBlobTransferBook([opts])
+
+| Param | Type | Description |
+| --- | --- | --- |
+| [opts] | <code>Object</code> |  |
+| [opts.ttlMs] | <code>number</code> | drop unsolicited incomplete transfers idle this long |
+| [opts.expectationTtlMs] | <code>number</code> | default expectation lifetime |
+| [opts.maxPending] | <code>number</code> | max concurrent unsolicited incomplete transfers |
+| [opts.maxExpectations] | <code>number</code> | max concurrent expectations (oldest released first; defaults to `maxPending`) |
+| [opts.maxPendingPerOrigin] | <code>number</code> | max unsolicited rows one origin may hold |
+| [opts.maxPendingBytesPerOrigin] | <code>number</code> | unsolicited byte quota per origin (default a quarter of `maxPendingBytes`) |
+| [opts.maxParts] | <code>number</code> | max `blobTotal` for one transfer |
+| [opts.maxPendingBytes] | <code>number</code> | byte budget across every incomplete transfer |
+
+<a name="DocumentBlobTransferBook+_pending"></a>
+
+### documentBlobTransferBook.\_pending : <code>Map.&lt;string, object&gt;</code>
+**Kind**: instance property of [<code>DocumentBlobTransferBook</code>](#DocumentBlobTransferBook)  
+<a name="DocumentBlobTransferBook+_expectations"></a>
+
+### documentBlobTransferBook.\_expectations : <code>Map.&lt;string, object&gt;</code>
+**Kind**: instance property of [<code>DocumentBlobTransferBook</code>](#DocumentBlobTransferBook)  
+<a name="DocumentBlobTransferBook+_originBytes"></a>
+
+### documentBlobTransferBook.\_originBytes : <code>Map.&lt;string, number&gt;</code>
+**Kind**: instance property of [<code>DocumentBlobTransferBook</code>](#DocumentBlobTransferBook)  
+<a name="DocumentBlobTransferBook+pendingCount"></a>
+
+### documentBlobTransferBook.pendingCount : <code>number</code>
+Number of in-flight transfers (expected or with bytes held).
+
+**Kind**: instance property of [<code>DocumentBlobTransferBook</code>](#DocumentBlobTransferBook)  
+<a name="DocumentBlobTransferBook+pendingBytes"></a>
+
+### documentBlobTransferBook.pendingBytes : <code>number</code>
+Bytes held across every in-flight transfer.
+
+**Kind**: instance property of [<code>DocumentBlobTransferBook</code>](#DocumentBlobTransferBook)  
+<a name="DocumentBlobTransferBook+expectTransfer"></a>
+
+### documentBlobTransferBook.expectTransfer(opts) ⇒ <code>Object</code> \| <code>null</code>
+Pre-register expected leaves (from inventory DocumentBlobIndex).
+
+**Kind**: instance method of [<code>DocumentBlobTransferBook</code>](#DocumentBlobTransferBook)  
+**Returns**: <code>Object</code> \| <code>null</code> - the expectation row  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| opts | <code>object</code> |  |
+| [opts.blobHashHexes] | <code>Array.&lt;string&gt;</code> | expected blob hash per blob index; empty or null entries leave that index unchecked here (the sealed per-blob path refuses them once any index is pinned: that blob was not bought) |
+| [opts.paymentHashHexes] | <code>Array.&lt;string&gt;</code> | expected sealed payment hash (SHA256(K_i)) per blob index |
+| [opts.ivs] | <code>Array.&lt;string&gt;</code> | advertised AES-GCM IV (base64) per blob index |
+| [opts.origins] | <code>Array.&lt;string&gt;</code> | peer the index was bought from (its frame may displace another origin's alternate when the IV is not advertised) |
+| [opts.merge] | <code>boolean</code> | add these pins to an existing expectation for the same document and root (same `total`) instead of replacing it, so buying blob j keeps blob i pinned |
+| [opts.expiresAt] | <code>number</code> | epoch ms the expectation lapses (session lifetime) |
+| [opts.ttlMs] | <code>number</code> | lifetime from now (and refresh step) when `expiresAt` is not given |
+
+<a name="DocumentBlobTransferBook+expectedFor"></a>
+
+### documentBlobTransferBook.expectedFor(documentId) ⇒ <code>Array.&lt;Object&gt;</code>
+Expectations registered for a document (any root). Lets the per-blob
+sealed path refuse frames whose root / total disagree with what the buyer
+actually asked for.
+
+**Kind**: instance method of [<code>DocumentBlobTransferBook</code>](#DocumentBlobTransferBook)  
+**Returns**: <code>Array.&lt;Object&gt;</code> - rows from [expectTransfer](#DocumentBlobTransferBook+expectTransfer)  
+
+| Param | Type |
+| --- | --- |
+| documentId | <code>string</code> | 
+
+<a name="DocumentBlobTransferBook+touch"></a>
+
+### documentBlobTransferBook.touch(documentId, [merkleRootHex]) ⇒ <code>boolean</code>
+Extend an expectation by its refresh step (a matching frame arrived).
+
+**Kind**: instance method of [<code>DocumentBlobTransferBook</code>](#DocumentBlobTransferBook)  
+**Returns**: <code>boolean</code> - true when an expectation was refreshed  
+
+| Param | Type | Default |
+| --- | --- | --- |
+| documentId | <code>string</code> |  | 
+| [merkleRootHex] | <code>string</code> \| <code>null</code> | <code>null</code> | 
+
+<a name="DocumentBlobTransferBook+releaseTransfer"></a>
+
+### documentBlobTransferBook.releaseTransfer(opts) ⇒ <code>boolean</code>
+End a purchase session: drop its expectation and any partial bytes.
+
+**Kind**: instance method of [<code>DocumentBlobTransferBook</code>](#DocumentBlobTransferBook)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| opts | <code>Object</code> \| <code>string</code> | `{ documentId, merkleRootHex }` or a transfer key |
+
+<a name="DocumentBlobTransferBook+ingest"></a>
+
+### documentBlobTransferBook.ingest(frame, [opts]) ⇒ <code>Object</code>
+**Kind**: instance method of [<code>DocumentBlobTransferBook</code>](#DocumentBlobTransferBook)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| frame | <code>object</code> | from [parseFrame](#DocumentBlobTransferBook.parseFrame) |
+| [opts] | <code>Object</code> |  |
+| [opts.origin] | <code>string</code> | sending peer (per-origin quotas for unsolicited rows) |
+
+<a name="DocumentBlobTransferBook.parseFrame"></a>
+
+### DocumentBlobTransferBook.parseFrame(obj) ⇒ <code>Object</code>
+**Kind**: static method of [<code>DocumentBlobTransferBook</code>](#DocumentBlobTransferBook)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| obj | <code>object</code> | P2P_FILE_SEND JSON object |
+
+<a name="DocumentBlobTransferBook.verifySealedFrame"></a>
+
+### DocumentBlobTransferBook.verifySealedFrame(obj, expected) ⇒ <code>Object</code>
+Verify-before-pay: check one free sealed per-blob `P2P_FILE_SEND` body
+(ciphertext of blob `i`) against the document root **before** funding the
+HTLC for `K_i`. The ciphertext must hash to its `blobHashHex` and the leaf
+`(blobHash, paymentHash, iv)` must open to the root with the frame's
+inclusion proof (or `expected.proof`). Pins from verified offer leaves
+([verifyOfferLeaves](#Document.verifyOfferLeaves)) are enforced when given.
+
+**Kind**: static method of [<code>DocumentBlobTransferBook</code>](#DocumentBlobTransferBook)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| obj | <code>Object</code> | raw `P2P_FILE_SEND` body (`sealed`, `perBlob`) |
+| expected | <code>Object</code> |  |
+| expected.merkleRootHex | <code>string</code> |  |
+| expected.blobTotal | <code>number</code> |  |
+| [expected.blobIndex] | <code>number</code> |  |
+| [expected.blobHashHex] | <code>string</code> |  |
+| [expected.paymentHashHex] | <code>string</code> |  |
+| [expected.iv] | <code>string</code> |  |
+| [expected.proof] | <code>Array.&lt;string&gt;</code> |  |
+
 <a name="Entity"></a>
 
 ## Entity ⇐ <code>EventEmitter</code>
@@ -10473,7 +11036,7 @@ Read a variable from the environment.
 <a name="Environment+setWallet"></a>
 
 ### environment.setWallet(wallet, force, [opts]) ⇒ [<code>Environment</code>](#Environment)
-Configure the Environment to use a Fabric [Wallet](#Wallet).
+Configure the Environment to use a Fabric [Wallet](Wallet).
 New wallets default to a password-sealed JSON document (`seal` blob).
 Pass `{ encrypt: false }` only for tests / explicit plaintext.
 
@@ -10482,7 +11045,7 @@ Pass `{ encrypt: false }` only for tests / explicit plaintext.
 
 | Param | Type | Default | Description |
 | --- | --- | --- | --- |
-| wallet | [<code>Wallet</code>](#Wallet) |  | Wallet to attach. |
+| wallet | <code>Wallet</code> |  | Wallet to attach. |
 | force | <code>Boolean</code> | <code>false</code> | Force existing wallets to be destroyed. |
 | [opts] | <code>Object</code> |  |  |
 | [opts.password] | <code>string</code> |  | Encryption password (required unless `encrypt` is false). |
@@ -10527,6 +11090,7 @@ types for experiments and apps. Prefer importing <strong>leaf</strong> types in 
         * [.listOpcodes()](#Service+listOpcodes) ⇒ <code>Array.&lt;Object&gt;</code>
         * [.route(msg)](#Service+route) ⇒ <code>Promise</code>
         * [.start()](#Service+start)
+        * [.load()](#Service+load) ⇒ [<code>Promise.&lt;Service&gt;</code>](#Service)
         * [._GET(path)](#Service+_GET) ⇒ <code>Promise</code>
         * [._PUT(path, value, [commit])](#Service+_PUT) ⇒ <code>Promise</code>
         * [.connect(notify)](#Service+connect) ⇒ <code>Promise</code>
@@ -10534,6 +11098,7 @@ types for experiments and apps. Prefer importing <strong>leaf</strong> types in 
         * [.commit()](#Service+commit) ⇒ <code>String</code>
         * [._registerActor(actor)](#Service+_registerActor) ⇒ <code>Promise</code>
         * [._send(message)](#Service+_send)
+        * [.contentDigest([clock])](#Actor+contentDigest) ⇒ <code>String</code>
         * [.adopt(changes)](#Actor+adopt) ⇒ [<code>Actor</code>](#Actor)
         * [.export()](#Actor+export) ⇒ <code>Object</code>
         * [.stream([pipe])](#Actor+stream) ⇒ <code>TransformStream</code>
@@ -10632,7 +11197,9 @@ Move forward one clock cycle.
 <a name="Service+beat"></a>
 
 ### fabric.beat() ⇒ [<code>Service</code>](#Service)
-Compute latest state.
+Advance one heartbeat. Outstanding changes are one transition: one unsealed
+message, or nothing if that message would not fit. An idle beat is a digest
+checkpoint. This does not commit.
 
 **Kind**: instance method of [<code>Fabric</code>](#Fabric)  
 **Emits**: <code>Message#event:beat</code>  
@@ -10775,6 +11342,13 @@ Start the service, including the initiation of an outbound connection
 to any peers designated in the service's configuration.
 
 **Kind**: instance method of [<code>Fabric</code>](#Fabric)  
+<a name="Service+load"></a>
+
+### fabric.load() ⇒ [<code>Promise.&lt;Service&gt;</code>](#Service)
+Load durable state after the store is open and before the observer and
+heartbeat attach, so a restored snapshot is not staged as one replace.
+
+**Kind**: instance method of [<code>Fabric</code>](#Fabric)  
 <a name="Service+_GET"></a>
 
 ### fabric.\_GET(path) ⇒ <code>Promise</code>
@@ -10860,6 +11434,18 @@ Sends a message.
 | Param | Type | Description |
 | --- | --- | --- |
 | message | <code>Mixed</code> | Message to send. |
+
+<a name="Actor+contentDigest"></a>
+
+### fabric.contentDigest([clock]) ⇒ <code>String</code>
+Digest of this actor's content at <code>clock</code>.
+
+**Kind**: instance method of [<code>Fabric</code>](#Fabric)  
+**Returns**: <code>String</code> - 64-character hex SHA-256.  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [clock] | <code>Number</code> | <code>0</code> | Sidechain clock covered by the digest. |
 
 <a name="Actor+adopt"></a>
 
@@ -11028,6 +11614,7 @@ EventEmitter-only instruction handle; use [State](#State) / [Machine](#Machine) 
         * [.listOpcodes()](#Service+listOpcodes) ⇒ <code>Array.&lt;Object&gt;</code>
         * [.route(msg)](#Service+route) ⇒ <code>Promise</code>
         * [.start()](#Service+start)
+        * [.load()](#Service+load) ⇒ [<code>Promise.&lt;Service&gt;</code>](#Service)
         * [._GET(path)](#Service+_GET) ⇒ <code>Promise</code>
         * [._PUT(path, value, [commit])](#Service+_PUT) ⇒ <code>Promise</code>
         * [.connect(notify)](#Service+connect) ⇒ <code>Promise</code>
@@ -11035,6 +11622,7 @@ EventEmitter-only instruction handle; use [State](#State) / [Machine](#Machine) 
         * [.commit()](#Service+commit) ⇒ <code>String</code>
         * [._registerActor(actor)](#Service+_registerActor) ⇒ <code>Promise</code>
         * [._send(message)](#Service+_send)
+        * [.contentDigest([clock])](#Actor+contentDigest) ⇒ <code>String</code>
         * [.adopt(changes)](#Actor+adopt) ⇒ [<code>Actor</code>](#Actor)
         * [.export()](#Actor+export) ⇒ <code>Object</code>
         * [.stream([pipe])](#Actor+stream) ⇒ <code>TransformStream</code>
@@ -11133,7 +11721,9 @@ Move forward one clock cycle.
 <a name="Service+beat"></a>
 
 ### fabric.beat() ⇒ [<code>Service</code>](#Service)
-Compute latest state.
+Advance one heartbeat. Outstanding changes are one transition: one unsealed
+message, or nothing if that message would not fit. An idle beat is a digest
+checkpoint. This does not commit.
 
 **Kind**: instance method of [<code>Fabric</code>](#Fabric)  
 **Emits**: <code>Message#event:beat</code>  
@@ -11276,6 +11866,13 @@ Start the service, including the initiation of an outbound connection
 to any peers designated in the service's configuration.
 
 **Kind**: instance method of [<code>Fabric</code>](#Fabric)  
+<a name="Service+load"></a>
+
+### fabric.load() ⇒ [<code>Promise.&lt;Service&gt;</code>](#Service)
+Load durable state after the store is open and before the observer and
+heartbeat attach, so a restored snapshot is not staged as one replace.
+
+**Kind**: instance method of [<code>Fabric</code>](#Fabric)  
 <a name="Service+_GET"></a>
 
 ### fabric.\_GET(path) ⇒ <code>Promise</code>
@@ -11361,6 +11958,18 @@ Sends a message.
 | Param | Type | Description |
 | --- | --- | --- |
 | message | <code>Mixed</code> | Message to send. |
+
+<a name="Actor+contentDigest"></a>
+
+### fabric.contentDigest([clock]) ⇒ <code>String</code>
+Digest of this actor's content at <code>clock</code>.
+
+**Kind**: instance method of [<code>Fabric</code>](#Fabric)  
+**Returns**: <code>String</code> - 64-character hex SHA-256.  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [clock] | <code>Number</code> | <code>0</code> | Sidechain clock covered by the digest. |
 
 <a name="Actor+adopt"></a>
 
@@ -11547,7 +12156,7 @@ Create and manage sets of {Signer} instances with the Federation class.
         * [.vaultForDescriptor(descriptor)](#Federation.vaultForDescriptor) ⇒ <code>Object</code>
         * [.isValidator(descriptor, pubkey)](#Federation.isValidator) ⇒ <code>boolean</code>
         * [.withdrawalRequestId(psbtBase64)](#Federation.withdrawalRequestId) ⇒ <code>string</code>
-        * [.prepareWithdrawal(opts)](#Federation.prepareWithdrawal) ⇒ <code>Object</code>
+        * [.buildFundingPsbt(opts)](#Federation.buildFundingPsbt) ⇒ <code>Object</code>
         * [.signWithdrawal(opts)](#Federation.signWithdrawal) ⇒ <code>Object</code>
         * [.addWithdrawalSignatures(opts)](#Federation.addWithdrawalSignatures) ⇒ <code>Object</code>
         * [.finalizeWithdrawal(opts)](#Federation.finalizeWithdrawal) ⇒ <code>Object</code>
@@ -11976,7 +12585,10 @@ Default path policy denying free-form balance invent outside typed reserve write
 
 ### Federation.buildDescriptor(opts) ⇒ <code>Object</code>
 Build a canonical descriptor. The soft tier needs the full threshold after the
-CSV delay (never a single key), and the internal key is NUMS so no key-path spend exists.
+CSV delay (never a single key). A new n-of-n set records `internalKeyMode:
+'musig2'` so a unanimous spend is a Taproot key-path signature. A threshold
+below n stays `nums` (script-path only). Pass `internalKeyMode: 'nums'` to
+keep an existing NUMS vault address; nothing sweeps those coins.
 
 **Kind**: static method of [<code>Federation</code>](#Federation)  
 
@@ -11988,6 +12600,7 @@ CSV delay (never a single key), and the internal key is NUMS so no key-path spen
 | opts.network | <code>string</code> |  | Bitcoin network name |
 | opts.publisher | <code>string</code> |  | Creator pubkey (must be a validator) |
 | [opts.csvBlocks] | <code>number</code> | <code>144</code> | Soft-tier CSV delay |
+| [opts.internalKeyMode] | <code>string</code> |  | `musig2` | `nums` |
 
 <a name="Federation.canonicalDescriptor"></a>
 
@@ -12049,23 +12662,22 @@ Withdrawal request id: SHA-256 of the unsigned PSBT.
 | --- | --- |
 | psbtBase64 | <code>string</code> | 
 
-<a name="Federation.prepareWithdrawal"></a>
+<a name="Federation.buildFundingPsbt"></a>
 
-### Federation.prepareWithdrawal(opts) ⇒ <code>Object</code>
-Build the unsigned withdrawal PSBT for a descriptor. Every member rebuilds
-the same PSBT from the same request (the input txid commits to the funding
-transaction), so a member signs only what it would have built itself.
+### Federation.buildFundingPsbt(opts) ⇒ <code>Object</code>
+Collaborative funding PSBT: one input from each contributing signer, one
+output to the vault, change back to those signers, no OP_RETURN. An n-of-n
+descriptor needs every signer. A threshold descriptor takes a published
+subset. Reserve credit still waits on `Federation.applyPegInCredit`.
 
 **Kind**: static method of [<code>Federation</code>](#Federation)  
 
 | Param | Type | Description |
 | --- | --- | --- |
 | opts | <code>Object</code> |  |
-| opts.descriptor | <code>Object</code> | Canonical federation descriptor |
-| opts.fundedTxHex | <code>string</code> | Raw transaction paying the vault |
-| [opts.vout] | <code>number</code> | Expected vault output index (checked) |
-| opts.destinationAddress | <code>string</code> |  |
-| opts.amountSats | <code>number</code> |  |
+| opts.descriptor | <code>Object</code> |  |
+| opts.inputs | <code>Array.&lt;Object&gt;</code> | signer inputs: `txid`, `vout`, `valueSats`, native P2WPKH `address`, `pubkey`, and optional `changeAddress` |
+| opts.vaultSats | <code>number</code> |  |
 | opts.feeSats | <code>number</code> |  |
 
 <a name="Federation.signWithdrawal"></a>
@@ -12229,7 +12841,7 @@ Check a message for a known federation: right namespace, signed by a member.
 Rebuild a withdrawal request's PSBT and check it matches its request id.
 
 **Kind**: static method of [<code>Federation</code>](#Federation)  
-**Returns**: <code>Object</code> - [prepareWithdrawal](#Federation.prepareWithdrawal) result  
+**Returns**: <code>Object</code> - [Federation.prepareWithdrawal](Federation.prepareWithdrawal) result  
 
 | Param | Type | Description |
 | --- | --- | --- |
@@ -12897,6 +13509,7 @@ IDENTITY.md). The HD <strong>master</strong> remains available as [master](#Iden
     * [.fabricKey](#Identity+fabricKey) ⇒ [<code>Key</code>](#Key)
     * [.toString()](#Identity+toString) ⇒ <code>String</code>
     * [._verifyKeyIsChild(key, [parent], [path])](#Identity+_verifyKeyIsChild) ⇒ <code>boolean</code>
+    * [.contentDigest([clock])](#Actor+contentDigest) ⇒ <code>String</code>
     * [.adopt(changes)](#Actor+adopt) ⇒ [<code>Actor</code>](#Actor)
     * [.commit()](#Actor+commit) ⇒ <code>String</code>
     * [.export()](#Actor+export) ⇒ <code>Object</code>
@@ -12966,6 +13579,18 @@ Fabric derivation path (or an explicit `path`).
 | key | [<code>Key</code>](#Key) \| <code>string</code> \| <code>Object</code> |  | Candidate key or pubkey hex. |
 | [parent] | [<code>Key</code>](#Key) | <code>this.master</code> | Parent HD key. |
 | [path] | <code>string</code> | <code>null</code> | Override derivation path (default [Identity#derivation](Identity#derivation)). |
+
+<a name="Actor+contentDigest"></a>
+
+### identity.contentDigest([clock]) ⇒ <code>String</code>
+Digest of this actor's content at <code>clock</code>.
+
+**Kind**: instance method of [<code>Identity</code>](#Identity)  
+**Returns**: <code>String</code> - 64-character hex SHA-256.  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [clock] | <code>Number</code> | <code>0</code> | Sidechain clock covered by the digest. |
 
 <a name="Actor+adopt"></a>
 
@@ -13125,6 +13750,7 @@ Parse an Object into a corresponding Fabric state.
     * [.fabricKey](#Identity+fabricKey) ⇒ [<code>Key</code>](#Key)
     * [.toString()](#Identity+toString) ⇒ <code>String</code>
     * [._verifyKeyIsChild(key, [parent], [path])](#Identity+_verifyKeyIsChild) ⇒ <code>boolean</code>
+    * [.contentDigest([clock])](#Actor+contentDigest) ⇒ <code>String</code>
     * [.adopt(changes)](#Actor+adopt) ⇒ [<code>Actor</code>](#Actor)
     * [.commit()](#Actor+commit) ⇒ <code>String</code>
     * [.export()](#Actor+export) ⇒ <code>Object</code>
@@ -13194,6 +13820,18 @@ Fabric derivation path (or an explicit `path`).
 | key | [<code>Key</code>](#Key) \| <code>string</code> \| <code>Object</code> |  | Candidate key or pubkey hex. |
 | [parent] | [<code>Key</code>](#Key) | <code>this.master</code> | Parent HD key. |
 | [path] | <code>string</code> | <code>null</code> | Override derivation path (default [Identity#derivation](Identity#derivation)). |
+
+<a name="Actor+contentDigest"></a>
+
+### identity.contentDigest([clock]) ⇒ <code>String</code>
+Digest of this actor's content at <code>clock</code>.
+
+**Kind**: instance method of [<code>Identity</code>](#Identity)  
+**Returns**: <code>String</code> - 64-character hex SHA-256.  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [clock] | <code>Number</code> | <code>0</code> | Sidechain clock covered by the digest. |
 
 <a name="Actor+adopt"></a>
 
@@ -13607,6 +14245,7 @@ An ordered stack of pages.
     * [.set(path)](#State+set) ⇒ <code>Mixed</code>
     * [.commit()](#State+commit)
     * [.render()](#State+render) ⇒ <code>String</code>
+    * [.contentDigest([clock])](#Actor+contentDigest) ⇒ <code>String</code>
     * [.adopt(changes)](#Actor+adopt) ⇒ [<code>Actor</code>](#Actor)
     * [.export()](#Actor+export) ⇒ <code>Object</code>
     * [.stream([pipe])](#Actor+stream) ⇒ <code>TransformStream</code>
@@ -13741,6 +14380,19 @@ Compose a JSON string for network consumption.
 **Kind**: instance method of [<code>Ledger</code>](#Ledger)  
 **Overrides**: [<code>render</code>](#State+render)  
 **Returns**: <code>String</code> - JSON-encoded [String](String).  
+<a name="Actor+contentDigest"></a>
+
+### ledger.contentDigest([clock]) ⇒ <code>String</code>
+Digest of this actor's content at <code>clock</code>.
+
+**Kind**: instance method of [<code>Ledger</code>](#Ledger)  
+**Overrides**: [<code>contentDigest</code>](#Actor+contentDigest)  
+**Returns**: <code>String</code> - 64-character hex SHA-256.  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [clock] | <code>Number</code> | <code>0</code> | Sidechain clock covered by the digest. |
+
 <a name="Actor+adopt"></a>
 
 ### ledger.adopt(changes) ⇒ [<code>Actor</code>](#Actor)
@@ -13962,6 +14614,7 @@ A basic logger that writes logs to the local file system
     * [.log(msg)](#Logger+log) ⇒ <code>Boolean</code>
     * [.start()](#Logger+start) ⇒ <code>Promise</code>
     * [.stop()](#Logger+stop) ⇒ <code>Promise</code>
+    * [.contentDigest([clock])](#Actor+contentDigest) ⇒ <code>String</code>
     * [.adopt(changes)](#Actor+adopt) ⇒ [<code>Actor</code>](#Actor)
     * [.commit()](#Actor+commit) ⇒ <code>String</code>
     * [.export()](#Actor+export) ⇒ <code>Object</code>
@@ -14013,6 +14666,19 @@ This method closes the log file and returns after it has been closed. Any
 errors on close would cause the return promise to be rejected.
 
 **Kind**: instance method of [<code>Logger</code>](#Logger)  
+<a name="Actor+contentDigest"></a>
+
+### logger.contentDigest([clock]) ⇒ <code>String</code>
+Digest of this actor's content at <code>clock</code>.
+
+**Kind**: instance method of [<code>Logger</code>](#Logger)  
+**Overrides**: [<code>contentDigest</code>](#Actor+contentDigest)  
+**Returns**: <code>String</code> - 64-character hex SHA-256.  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [clock] | <code>Number</code> | <code>0</code> | Sidechain clock covered by the digest. |
+
 <a name="Actor+adopt"></a>
 
 ### logger.adopt(changes) ⇒ [<code>Actor</code>](#Actor)
@@ -14198,6 +14864,7 @@ instruction entries from [push](#Fabric+push) — not the same as P2P [Message](
         * [.parseManifest(raw, [program])](#Machine+parseManifest) ⇒ <code>Object</code>
         * [.loadProgram(program, [opts])](#Machine+loadProgram) ⇒ [<code>Machine</code>](#Machine)
         * [.runProgram(program, [input], [opts])](#Machine+runProgram) ⇒ <code>Promise.&lt;{ok: boolean, stack: Array, tip: \*, trace: Array, runCommitmentHex: (string\|null), error: (string\|undefined)}&gt;</code>
+        * [.contentDigest([clock])](#Actor+contentDigest) ⇒ <code>String</code>
         * [.adopt(changes)](#Actor+adopt) ⇒ [<code>Actor</code>](#Actor)
         * [.commit()](#Actor+commit) ⇒ <code>String</code>
         * [.export()](#Actor+export) ⇒ <code>Object</code>
@@ -14235,14 +14902,15 @@ VM memory (`MACHINE_MAX_MEMORY` bytes), allocated on first access.
 <a name="Machine+allowedOpcodes"></a>
 
 ### machine.allowedOpcodes ⇒ <code>Array.&lt;string&gt;</code>
-Active opcode allow-list (empty = unrestricted).
+Active opcode allow-list (empty = no extra name filter).
+Unknown opcodes still throw.
 
 **Kind**: instance property of [<code>Machine</code>](#Machine)  
 <a name="Machine+setAllowedOpcodes"></a>
 
 ### machine.setAllowedOpcodes(list) ⇒ [<code>Machine</code>](#Machine)
 Restrict `define` / `loadProgram` / `compute` to this opcode set.
-Empty / null clears the restriction (legacy soft unknown-op behavior).
+Empty / null clears the name filter. Unknown opcodes still throw.
 
 **Kind**: instance method of [<code>Machine</code>](#Machine)  
 
@@ -14319,7 +14987,9 @@ Load a [Program](#Program) onto this machine (sets script steps).
 When an opcode allow-list is active (ctor `allowedOpcodes`,
 [setAllowedOpcodes](#Machine+setAllowedOpcodes), [applyGenesisOpcodes](#Machine+applyGenesisOpcodes),
 or Program/genesis `primitives.opcodes`), steps and javascript `source`
-keys must be listed — fail closed.
+keys must be listed — fail closed. Unknown opcodes throw even with no
+allow-list. A `javascript` program's functions register only when
+`opts.trusted` is true (local operator). Mesh and Hub runs omit it.
 
 **Kind**: instance method of [<code>Machine</code>](#Machine)  
 
@@ -14328,6 +14998,7 @@ keys must be listed — fail closed.
 | program | [<code>Program</code>](#Program) \| <code>object</code> |  |
 | [opts] | <code>Object</code> |  |
 | [opts.genesis] | <code>Object</code> | ARC genesis; may supply `primitives.opcodes` allow-list |
+| [opts.trusted] | <code>boolean</code> | register `javascript` source functions on this host |
 
 <a name="Machine+runProgram"></a>
 
@@ -14342,6 +15013,18 @@ Load and compute a Program; return stack tip + run commitment for L1 binding.
 | [input] | <code>\*</code> |  |
 | [opts] | <code>Object</code> |  |
 | [opts.genesis] | <code>Object</code> | ARC genesis for `primitives.opcodes` allow-list |
+
+<a name="Actor+contentDigest"></a>
+
+### machine.contentDigest([clock]) ⇒ <code>String</code>
+Digest of this actor's content at <code>clock</code>.
+
+**Kind**: instance method of [<code>Machine</code>](#Machine)  
+**Returns**: <code>String</code> - 64-character hex SHA-256.  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [clock] | <code>Number</code> | <code>0</code> | Sidechain clock covered by the digest. |
 
 <a name="Actor+adopt"></a>
 
@@ -14519,6 +15202,7 @@ Parse a JSON object of Buffer-like entries into an array of [Buffer](Buffer)s (l
         * [.parseManifest(raw, [program])](#Machine+parseManifest) ⇒ <code>Object</code>
         * [.loadProgram(program, [opts])](#Machine+loadProgram) ⇒ [<code>Machine</code>](#Machine)
         * [.runProgram(program, [input], [opts])](#Machine+runProgram) ⇒ <code>Promise.&lt;{ok: boolean, stack: Array, tip: \*, trace: Array, runCommitmentHex: (string\|null), error: (string\|undefined)}&gt;</code>
+        * [.contentDigest([clock])](#Actor+contentDigest) ⇒ <code>String</code>
         * [.adopt(changes)](#Actor+adopt) ⇒ [<code>Actor</code>](#Actor)
         * [.commit()](#Actor+commit) ⇒ <code>String</code>
         * [.export()](#Actor+export) ⇒ <code>Object</code>
@@ -14556,14 +15240,15 @@ VM memory (`MACHINE_MAX_MEMORY` bytes), allocated on first access.
 <a name="Machine+allowedOpcodes"></a>
 
 ### machine.allowedOpcodes ⇒ <code>Array.&lt;string&gt;</code>
-Active opcode allow-list (empty = unrestricted).
+Active opcode allow-list (empty = no extra name filter).
+Unknown opcodes still throw.
 
 **Kind**: instance property of [<code>Machine</code>](#Machine)  
 <a name="Machine+setAllowedOpcodes"></a>
 
 ### machine.setAllowedOpcodes(list) ⇒ [<code>Machine</code>](#Machine)
 Restrict `define` / `loadProgram` / `compute` to this opcode set.
-Empty / null clears the restriction (legacy soft unknown-op behavior).
+Empty / null clears the name filter. Unknown opcodes still throw.
 
 **Kind**: instance method of [<code>Machine</code>](#Machine)  
 
@@ -14640,7 +15325,9 @@ Load a [Program](#Program) onto this machine (sets script steps).
 When an opcode allow-list is active (ctor `allowedOpcodes`,
 [setAllowedOpcodes](#Machine+setAllowedOpcodes), [applyGenesisOpcodes](#Machine+applyGenesisOpcodes),
 or Program/genesis `primitives.opcodes`), steps and javascript `source`
-keys must be listed — fail closed.
+keys must be listed — fail closed. Unknown opcodes throw even with no
+allow-list. A `javascript` program's functions register only when
+`opts.trusted` is true (local operator). Mesh and Hub runs omit it.
 
 **Kind**: instance method of [<code>Machine</code>](#Machine)  
 
@@ -14649,6 +15336,7 @@ keys must be listed — fail closed.
 | program | [<code>Program</code>](#Program) \| <code>object</code> |  |
 | [opts] | <code>Object</code> |  |
 | [opts.genesis] | <code>Object</code> | ARC genesis; may supply `primitives.opcodes` allow-list |
+| [opts.trusted] | <code>boolean</code> | register `javascript` source functions on this host |
 
 <a name="Machine+runProgram"></a>
 
@@ -14663,6 +15351,18 @@ Load and compute a Program; return stack tip + run commitment for L1 binding.
 | [input] | <code>\*</code> |  |
 | [opts] | <code>Object</code> |  |
 | [opts.genesis] | <code>Object</code> | ARC genesis for `primitives.opcodes` allow-list |
+
+<a name="Actor+contentDigest"></a>
+
+### machine.contentDigest([clock]) ⇒ <code>String</code>
+Digest of this actor's content at <code>clock</code>.
+
+**Kind**: instance method of [<code>Machine</code>](#Machine)  
+**Returns**: <code>String</code> - 64-character hex SHA-256.  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [clock] | <code>Number</code> | <code>0</code> | Sidechain clock covered by the digest. |
 
 <a name="Actor+adopt"></a>
 
@@ -14869,6 +15569,7 @@ JSON bridging is <strong>@fabric/http</strong>. See <code>docs/MESSAGE_BODY.md</
         * [.verifyWithKey(key)](#Message+verifyWithKey) ⇒ <code>Boolean</code>
         * [._setSigner(key)](#Message+_setSigner) ⇒ [<code>Message</code>](#Message)
         * [.toFields()](#Message+toFields) ⇒ <code>object</code> \| <code>null</code>
+        * [.contentDigest([clock])](#Actor+contentDigest) ⇒ <code>String</code>
         * [.adopt(changes)](#Actor+adopt) ⇒ [<code>Actor</code>](#Actor)
         * [.commit()](#Actor+commit) ⇒ <code>String</code>
         * [.export()](#Actor+export) ⇒ <code>Object</code>
@@ -15040,6 +15741,18 @@ Truncated / malformed peer bodies return {@code null} (protocol violation) inste
 
 **Kind**: instance method of [<code>Message</code>](#Message)  
 **Returns**: <code>object</code> \| <code>null</code> - Field map, or null if no schema / empty / undecodable body.  
+<a name="Actor+contentDigest"></a>
+
+### message.contentDigest([clock]) ⇒ <code>String</code>
+Digest of this actor's content at <code>clock</code>.
+
+**Kind**: instance method of [<code>Message</code>](#Message)  
+**Returns**: <code>String</code> - 64-character hex SHA-256.  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [clock] | <code>Number</code> | <code>0</code> | Sidechain clock covered by the digest. |
+
 <a name="Actor+adopt"></a>
 
 ### message.adopt(changes) ⇒ [<code>Actor</code>](#Actor)
@@ -15229,6 +15942,7 @@ Whether `type` is a registered wire name, friendly alias, or opcode.
         * [.verifyWithKey(key)](#Message+verifyWithKey) ⇒ <code>Boolean</code>
         * [._setSigner(key)](#Message+_setSigner) ⇒ [<code>Message</code>](#Message)
         * [.toFields()](#Message+toFields) ⇒ <code>object</code> \| <code>null</code>
+        * [.contentDigest([clock])](#Actor+contentDigest) ⇒ <code>String</code>
         * [.adopt(changes)](#Actor+adopt) ⇒ [<code>Actor</code>](#Actor)
         * [.commit()](#Actor+commit) ⇒ <code>String</code>
         * [.export()](#Actor+export) ⇒ <code>Object</code>
@@ -15400,6 +16114,18 @@ Truncated / malformed peer bodies return {@code null} (protocol violation) inste
 
 **Kind**: instance method of [<code>Message</code>](#Message)  
 **Returns**: <code>object</code> \| <code>null</code> - Field map, or null if no schema / empty / undecodable body.  
+<a name="Actor+contentDigest"></a>
+
+### message.contentDigest([clock]) ⇒ <code>String</code>
+Digest of this actor's content at <code>clock</code>.
+
+**Kind**: instance method of [<code>Message</code>](#Message)  
+**Returns**: <code>String</code> - 64-character hex SHA-256.  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [clock] | <code>Number</code> | <code>0</code> | Sidechain clock covered by the digest. |
+
 <a name="Actor+adopt"></a>
 
 ### message.adopt(changes) ⇒ [<code>Actor</code>](#Actor)
@@ -15660,6 +16386,47 @@ Public shape of one listed row.
 | --- | --- | --- |
 | row | <code>Object</code> | `{ id, [field], seq }` |
 
+<a name="WireReplayFilter"></a>
+
+## WireReplayFilter
+**Kind**: global class  
+
+* [WireReplayFilter](#WireReplayFilter)
+    * [new WireReplayFilter([settings])](#new_WireReplayFilter_new)
+    * [.has(hex)](#WireReplayFilter+has) ⇒ <code>boolean</code>
+    * [.add(hex)](#WireReplayFilter+add)
+
+<a name="new_WireReplayFilter_new"></a>
+
+### new WireReplayFilter([settings])
+
+| Param | Type |
+| --- | --- |
+| [settings] | <code>Object</code> | 
+| [settings.capacity] | <code>number</code> | 
+| [settings.falsePositiveRate] | <code>number</code> | 
+| [settings.maxAgeMs] | <code>number</code> | 
+| [settings.now] | <code>function</code> | 
+
+<a name="WireReplayFilter+has"></a>
+
+### wireReplayFilter.has(hex) ⇒ <code>boolean</code>
+**Kind**: instance method of [<code>WireReplayFilter</code>](#WireReplayFilter)  
+**Returns**: <code>boolean</code> - true when this hash was (probably) added within the window  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| hex | <code>string</code> | wire hash (SHA-256 hex) |
+
+<a name="WireReplayFilter+add"></a>
+
+### wireReplayFilter.add(hex)
+**Kind**: instance method of [<code>WireReplayFilter</code>](#WireReplayFilter)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| hex | <code>string</code> | wire hash (SHA-256 hex) |
+
 <a name="Peer"></a>
 
 ## Peer ⇐ [<code>Service</code>](#Service)
@@ -15828,6 +16595,7 @@ see [Message](#Message) wire vs friendly names and <code>constants</code> opcode
     * [.defineOpcodeContract(name, body, [meta])](#Service+defineOpcodeContract) ⇒ <code>Object</code>
     * [.listOpcodes()](#Service+listOpcodes) ⇒ <code>Array.&lt;Object&gt;</code>
     * [.route(msg)](#Service+route) ⇒ <code>Promise</code>
+    * [.load()](#Service+load) ⇒ [<code>Promise.&lt;Service&gt;</code>](#Service)
     * [._GET(path)](#Service+_GET) ⇒ <code>Promise</code>
     * [._PUT(path, value, [commit])](#Service+_PUT) ⇒ <code>Promise</code>
     * [.connect(notify)](#Service+connect) ⇒ <code>Promise</code>
@@ -15835,6 +16603,7 @@ see [Message](#Message) wire vs friendly names and <code>constants</code> opcode
     * [.commit()](#Service+commit) ⇒ <code>String</code>
     * [._registerActor(actor)](#Service+_registerActor) ⇒ <code>Promise</code>
     * [._send(message)](#Service+_send)
+    * [.contentDigest([clock])](#Actor+contentDigest) ⇒ <code>String</code>
     * [.adopt(changes)](#Actor+adopt) ⇒ [<code>Actor</code>](#Actor)
     * [.export()](#Actor+export) ⇒ <code>Object</code>
     * [.stream([pipe])](#Actor+stream) ⇒ <code>TransformStream</code>
@@ -17401,7 +18170,9 @@ Move forward one clock cycle.
 <a name="Service+beat"></a>
 
 ### peer.beat() ⇒ [<code>Service</code>](#Service)
-Compute latest state.
+Advance one heartbeat. Outstanding changes are one transition: one unsealed
+message, or nothing if that message would not fit. An idle beat is a digest
+checkpoint. This does not commit.
 
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
 **Overrides**: [<code>beat</code>](#Service+beat)  
@@ -17548,6 +18319,13 @@ Resolve a [State](#State) from a particular [Message](#Message) object.
 | --- | --- | --- |
 | msg | [<code>Message</code>](#Message) | Explicit Fabric [Message](#Message). |
 
+<a name="Service+load"></a>
+
+### peer.load() ⇒ [<code>Promise.&lt;Service&gt;</code>](#Service)
+Load durable state after the store is open and before the observer and
+heartbeat attach, so a restored snapshot is not staged as one replace.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
 <a name="Service+_GET"></a>
 
 ### peer.\_GET(path) ⇒ <code>Promise</code>
@@ -17631,6 +18409,18 @@ Sends a message.
 | Param | Type | Description |
 | --- | --- | --- |
 | message | <code>Mixed</code> | Message to send. |
+
+<a name="Actor+contentDigest"></a>
+
+### peer.contentDigest([clock]) ⇒ <code>String</code>
+Digest of this actor's content at <code>clock</code>.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+**Returns**: <code>String</code> - 64-character hex SHA-256.  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [clock] | <code>Number</code> | <code>0</code> | Sidechain clock covered by the digest. |
 
 <a name="Actor+adopt"></a>
 
@@ -17910,6 +18700,7 @@ Parse an Object into a corresponding Fabric state.
     * [.defineOpcodeContract(name, body, [meta])](#Service+defineOpcodeContract) ⇒ <code>Object</code>
     * [.listOpcodes()](#Service+listOpcodes) ⇒ <code>Array.&lt;Object&gt;</code>
     * [.route(msg)](#Service+route) ⇒ <code>Promise</code>
+    * [.load()](#Service+load) ⇒ [<code>Promise.&lt;Service&gt;</code>](#Service)
     * [._GET(path)](#Service+_GET) ⇒ <code>Promise</code>
     * [._PUT(path, value, [commit])](#Service+_PUT) ⇒ <code>Promise</code>
     * [.connect(notify)](#Service+connect) ⇒ <code>Promise</code>
@@ -17917,6 +18708,7 @@ Parse an Object into a corresponding Fabric state.
     * [.commit()](#Service+commit) ⇒ <code>String</code>
     * [._registerActor(actor)](#Service+_registerActor) ⇒ <code>Promise</code>
     * [._send(message)](#Service+_send)
+    * [.contentDigest([clock])](#Actor+contentDigest) ⇒ <code>String</code>
     * [.adopt(changes)](#Actor+adopt) ⇒ [<code>Actor</code>](#Actor)
     * [.export()](#Actor+export) ⇒ <code>Object</code>
     * [.stream([pipe])](#Actor+stream) ⇒ <code>TransformStream</code>
@@ -19483,7 +20275,9 @@ Move forward one clock cycle.
 <a name="Service+beat"></a>
 
 ### peer.beat() ⇒ [<code>Service</code>](#Service)
-Compute latest state.
+Advance one heartbeat. Outstanding changes are one transition: one unsealed
+message, or nothing if that message would not fit. An idle beat is a digest
+checkpoint. This does not commit.
 
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
 **Overrides**: [<code>beat</code>](#Service+beat)  
@@ -19630,6 +20424,13 @@ Resolve a [State](#State) from a particular [Message](#Message) object.
 | --- | --- | --- |
 | msg | [<code>Message</code>](#Message) | Explicit Fabric [Message](#Message). |
 
+<a name="Service+load"></a>
+
+### peer.load() ⇒ [<code>Promise.&lt;Service&gt;</code>](#Service)
+Load durable state after the store is open and before the observer and
+heartbeat attach, so a restored snapshot is not staged as one replace.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
 <a name="Service+_GET"></a>
 
 ### peer.\_GET(path) ⇒ <code>Promise</code>
@@ -19713,6 +20514,18 @@ Sends a message.
 | Param | Type | Description |
 | --- | --- | --- |
 | message | <code>Mixed</code> | Message to send. |
+
+<a name="Actor+contentDigest"></a>
+
+### peer.contentDigest([clock]) ⇒ <code>String</code>
+Digest of this actor's content at <code>clock</code>.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+**Returns**: <code>String</code> - 64-character hex SHA-256.  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [clock] | <code>Number</code> | <code>0</code> | Sidechain clock covered by the digest. |
 
 <a name="Actor+adopt"></a>
 
@@ -19957,6 +20770,10 @@ This policy plus a Program-run hashlock leaf (see [Policy.withRunHashlock](Polic
         * [.validateBinding(opts)](#Program.validateBinding) ⇒ <code>Object</code>
         * [.verifyMachineRun(opts)](#Program.verifyMachineRun) ⇒ <code>Object</code>
         * [.runId(programHash, runCommitmentHex)](#Program.runId) ⇒ <code>string</code>
+        * [.isolateChildEnv()](#Program.isolateChildEnv) ⇒ <code>Object</code>
+        * [.spawnIsolate(payload, [options])](#Program.spawnIsolate) ⇒ <code>Object</code>
+        * [.runIsolated(program, [options])](#Program.runIsolated) ⇒ <code>Object</code>
+        * [.runIsolatedOpcodes(steps, [options])](#Program.runIsolatedOpcodes) ⇒ <code>Object</code>
 
 <a name="new_Program_new"></a>
 
@@ -20094,6 +20911,53 @@ Stable id for a program run (tests / logging; not a wire type).
 | --- | --- |
 | programHash | <code>string</code> | 
 | runCommitmentHex | <code>string</code> | 
+
+<a name="Program.isolateChildEnv"></a>
+
+### Program.isolateChildEnv() ⇒ <code>Object</code>
+Environment for an untrusted program child. Nothing else from `process.env` is copied.
+
+**Kind**: static method of [<code>Program</code>](#Program)  
+<a name="Program.spawnIsolate"></a>
+
+### Program.spawnIsolate(payload, [options]) ⇒ <code>Object</code>
+Run a JSON payload in a short-lived Node process. The default child is this file.
+
+**Kind**: static method of [<code>Program</code>](#Program)  
+**Returns**: <code>Object</code> - `timedOut`, `parsed`, and `error`  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| payload | <code>Object</code> |  |
+| [options] | <code>Object</code> |  |
+| [options.isolateTimeoutMs] | <code>number</code> |  |
+| [options.isolateWorker] | <code>string</code> | test-only worker script |
+
+<a name="Program.runIsolated"></a>
+
+### Program.runIsolated(program, [options]) ⇒ <code>Object</code>
+Run a `fabric-execution` program outside this process.
+The parent resolves `FabricOpcode` steps. The child does not receive that function.
+
+**Kind**: static method of [<code>Program</code>](#Program)  
+
+| Param | Type |
+| --- | --- |
+| program | <code>Object</code> | 
+| [options] | <code>Object</code> | 
+
+<a name="Program.runIsolatedOpcodes"></a>
+
+### Program.runIsolatedOpcodes(steps, [options]) ⇒ <code>Object</code>
+Run `fabric-opcodes` in a child with an empty opcode table.
+Parent `define()` functions are not called.
+
+**Kind**: static method of [<code>Program</code>](#Program)  
+
+| Param | Type |
+| --- | --- |
+| steps | <code>Array</code> | 
+| [options] | <code>Object</code> | 
 
 <a name="EncryptedPromise"></a>
 
@@ -20242,6 +21106,7 @@ bridging. Uses browser/Node <code>WebSocket</code> with JSON [Message](#Message)
     * [._OPTIONS(path, params)](#Remote+_OPTIONS) ⇒ <code>Object</code>
     * [._PATCH(path, body)](#Remote+_PATCH) ⇒ <code>Object</code>
     * [._DELETE(path, params)](#Remote+_DELETE) ⇒ <code>Object</code>
+    * [.contentDigest([clock])](#Actor+contentDigest) ⇒ <code>String</code>
     * [.adopt(changes)](#Actor+adopt) ⇒ [<code>Actor</code>](#Actor)
     * [.commit()](#Actor+commit) ⇒ <code>String</code>
     * [.export()](#Actor+export) ⇒ <code>Object</code>
@@ -20363,6 +21228,18 @@ HTTP DELETE on the configured Authority.
 | --- | --- | --- |
 | path | <code>String</code> | HTTP Path to request. |
 | params | <code>Object</code> | Map of parameters to supply. |
+
+<a name="Actor+contentDigest"></a>
+
+### remote.contentDigest([clock]) ⇒ <code>String</code>
+Digest of this actor's content at <code>clock</code>.
+
+**Kind**: instance method of [<code>Remote</code>](#Remote)  
+**Returns**: <code>String</code> - 64-character hex SHA-256.  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [clock] | <code>Number</code> | <code>0</code> | Sidechain clock covered by the digest. |
 
 <a name="Actor+adopt"></a>
 
@@ -20525,6 +21402,7 @@ Parse an Object into a corresponding Fabric state.
     * [._OPTIONS(path, params)](#Remote+_OPTIONS) ⇒ <code>Object</code>
     * [._PATCH(path, body)](#Remote+_PATCH) ⇒ <code>Object</code>
     * [._DELETE(path, params)](#Remote+_DELETE) ⇒ <code>Object</code>
+    * [.contentDigest([clock])](#Actor+contentDigest) ⇒ <code>String</code>
     * [.adopt(changes)](#Actor+adopt) ⇒ [<code>Actor</code>](#Actor)
     * [.commit()](#Actor+commit) ⇒ <code>String</code>
     * [.export()](#Actor+export) ⇒ <code>Object</code>
@@ -20646,6 +21524,18 @@ HTTP DELETE on the configured Authority.
 | --- | --- | --- |
 | path | <code>String</code> | HTTP Path to request. |
 | params | <code>Object</code> | Map of parameters to supply. |
+
+<a name="Actor+contentDigest"></a>
+
+### remote.contentDigest([clock]) ⇒ <code>String</code>
+Digest of this actor's content at <code>clock</code>.
+
+**Kind**: instance method of [<code>Remote</code>](#Remote)  
+**Returns**: <code>String</code> - 64-character hex SHA-256.  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [clock] | <code>Number</code> | <code>0</code> | Sidechain clock covered by the digest. |
 
 <a name="Actor+adopt"></a>
 
@@ -20793,747 +21683,6 @@ Parse an Object into a corresponding Fabric state.
 | --- | --- | --- |
 | input | <code>Object</code> | Object to read as input. |
 
-<a name="Resolutions"></a>
-
-## Resolutions ⇐ [<code>Actor</code>](#Actor)
-**Kind**: global class  
-**Extends**: [<code>Actor</code>](#Actor)  
-
-* [Resolutions](#Resolutions) ⇐ [<code>Actor</code>](#Actor)
-    * [new Resolutions()](#new_Resolutions_new)
-    * [new Resolutions([settings])](#new_Resolutions_new)
-    * [._states](#Resolutions+_states) : <code>Map.&lt;string, {parent: (string\|null), exits: Map.&lt;string, Object&gt;}&gt;</code>
-    * [.stateIds](#Resolutions+stateIds) ⇒ <code>Array.&lt;string&gt;</code>
-    * [.rootHex](#Resolutions+rootHex) ⇒ <code>string</code>
-    * [.declare(stateId, [parent])](#Resolutions+declare) ⇒ [<code>Resolutions</code>](#Resolutions)
-    * [.addExit(stateId, exit)](#Resolutions+addExit) ⇒ <code>Object</code>
-    * [.getExit(stateId, exitId)](#Resolutions+getExit) ⇒ <code>Object</code> \| <code>null</code>
-    * [.signExit(stateId, exitId, priv32)](#Resolutions+signExit) ⇒ <code>Object</code>
-    * [.ingest(artifact)](#Resolutions+ingest) ⇒ <code>Object</code>
-    * [.verifyExit(stateId, exitId)](#Resolutions+verifyExit) ⇒ <code>Object</code>
-    * [.missingSigners(exit)](#Resolutions+missingSigners) ⇒ <code>Array.&lt;string&gt;</code>
-    * [.resolvable(stateId)](#Resolutions+resolvable) ⇒ <code>boolean</code>
-    * [.missing(stateId)](#Resolutions+missing) ⇒ <code>Array.&lt;{stateId: string, exitId: string, kind: string, missing: Array.&lt;string&gt;}&gt;</code>
-    * [.exitsAfter(height, [stateId])](#Resolutions+exitsAfter) ⇒ <code>Array.&lt;Object&gt;</code>
-    * [.finalizeExit(stateId, exitId)](#Resolutions+finalizeExit) ⇒ <code>Object</code>
-    * [.toTree()](#Resolutions+toTree) ⇒ [<code>Tree</code>](#Tree)
-    * [.export()](#Resolutions+export) ⇒ <code>Object</code>
-    * [.import(snapshot)](#Resolutions+import) ⇒ [<code>Resolutions</code>](#Resolutions)
-    * [.adopt(changes)](#Actor+adopt) ⇒ [<code>Actor</code>](#Actor)
-    * [.commit()](#Actor+commit) ⇒ <code>String</code>
-    * [.get(path)](#Actor+get) ⇒ <code>Object</code>
-    * [.set(path, value)](#Actor+set) ⇒ <code>Object</code>
-    * [.stream([pipe])](#Actor+stream) ⇒ <code>TransformStream</code>
-    * [.toBuffer()](#Actor+toBuffer) ⇒ <code>Buffer</code>
-    * [.toGenericMessage([type])](#Actor+toGenericMessage) ⇒ <code>Object</code>
-    * [.toObject()](#Actor+toObject) ⇒ <code>Object</code>
-    * [.pause()](#Actor+pause) ⇒ [<code>Actor</code>](#Actor)
-    * [.serialize()](#Actor+serialize) ⇒ <code>String</code>
-    * [.sign()](#Actor+sign) ⇒ [<code>Actor</code>](#Actor)
-    * [.unpause()](#Actor+unpause) ⇒ [<code>Actor</code>](#Actor)
-    * [.value([format])](#Actor+value) ⇒ <code>Object</code>
-    * [._readObject(input)](#Actor+_readObject) ⇒ <code>Object</code>
-
-<a name="new_Resolutions_new"></a>
-
-### new Resolutions()
-State tree of pre-signed exits. Pure data plus Schnorr verification; no I/O.
-
-<a name="new_Resolutions_new"></a>
-
-### new Resolutions([settings])
-
-| Param | Type | Default | Description |
-| --- | --- | --- | --- |
-| [settings] | <code>Object</code> |  |  |
-| [settings.network] | <code>string</code> | <code>&quot;&#x27;regtest&#x27;&quot;</code> | Fabric network name |
-| [settings.states] | <code>Object</code> |  | import snapshot (`export()` output) |
-
-<a name="Resolutions+_states"></a>
-
-### resolutions.\_states : <code>Map.&lt;string, {parent: (string\|null), exits: Map.&lt;string, Object&gt;}&gt;</code>
-**Kind**: instance property of [<code>Resolutions</code>](#Resolutions)  
-<a name="Resolutions+stateIds"></a>
-
-### resolutions.stateIds ⇒ <code>Array.&lt;string&gt;</code>
-**Kind**: instance property of [<code>Resolutions</code>](#Resolutions)  
-**Returns**: <code>Array.&lt;string&gt;</code> - known state ids (insertion order).  
-<a name="Resolutions+rootHex"></a>
-
-### resolutions.rootHex ⇒ <code>string</code>
-**Kind**: instance property of [<code>Resolutions</code>](#Resolutions)  
-**Returns**: <code>string</code> - hex Merkle root (empty tree → 64 zeros).  
-<a name="Resolutions+declare"></a>
-
-### resolutions.declare(stateId, [parent]) ⇒ [<code>Resolutions</code>](#Resolutions)
-Declare a state node (idempotent).
-
-**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
-
-| Param | Type | Default | Description |
-| --- | --- | --- | --- |
-| stateId | <code>string</code> |  |  |
-| [parent] | <code>string</code> \| <code>null</code> | <code>null</code> | parent state id (tree edge) |
-
-<a name="Resolutions+addExit"></a>
-
-### resolutions.addExit(stateId, exit) ⇒ <code>Object</code>
-Register an exit a state depends on. Signatures already present on the
-PSBT are harvested into `signers.have`.
-
-**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
-**Returns**: <code>Object</code> - stored exit record  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| stateId | <code>string</code> |  |
-| exit | <code>Object</code> |  |
-| exit.id | <code>string</code> | unique within the state |
-| exit.kind | <code>string</code> | one of [Resolutions.KINDS](Resolutions.KINDS) |
-| exit.psbtBase64 | <code>string</code> | unsigned (or partially signed) tapscript spend, input 0 |
-| exit.required | <code>Array.&lt;string&gt;</code> | pubkeys (compressed or x-only hex) whose signatures make it broadcastable |
-| [exit.locktime] | <code>Object</code> | `{ height }` (nLockTime / CLTV) and/or `{ csv }` (relative) |
-| [exit.spends] | <code>Object</code> | `{ txid, vout }` the exit consumes |
-| [exit.meta] | <code>Object</code> | free-form (never secrets) |
-
-<a name="Resolutions+getExit"></a>
-
-### resolutions.getExit(stateId, exitId) ⇒ <code>Object</code> \| <code>null</code>
-**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
-
-| Param | Type |
-| --- | --- |
-| stateId | <code>string</code> | 
-| exitId | <code>string</code> | 
-
-<a name="Resolutions+signExit"></a>
-
-### resolutions.signExit(stateId, exitId, priv32) ⇒ <code>Object</code>
-Sign an exit with a 32-byte private key and record the signature.
-
-**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
-**Returns**: <code>Object</code> - `ContractExitSignature` artifact (JSON-safe) for the counterparty  
-
-| Param | Type |
-| --- | --- |
-| stateId | <code>string</code> | 
-| exitId | <code>string</code> | 
-| priv32 | <code>Buffer</code> \| <code>string</code> | 
-
-<a name="Resolutions+ingest"></a>
-
-### resolutions.ingest(artifact) ⇒ <code>Object</code>
-Accept a counterparty's `ContractExitSignature` artifact after verifying
-both the artifact signature and the tapscript signature it carries.
-
-**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| artifact | <code>Object</code> | output of [signExit](#Resolutions+signExit) |
-
-<a name="Resolutions+verifyExit"></a>
-
-### resolutions.verifyExit(stateId, exitId) ⇒ <code>Object</code>
-Re-verify every held signature on an exit against its PSBT.
-
-**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
-
-| Param | Type |
-| --- | --- |
-| stateId | <code>string</code> | 
-| exitId | <code>string</code> | 
-
-<a name="Resolutions+missingSigners"></a>
-
-### resolutions.missingSigners(exit) ⇒ <code>Array.&lt;string&gt;</code>
-**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
-**Returns**: <code>Array.&lt;string&gt;</code> - required x-only pubkeys without a held signature  
-
-| Param | Type |
-| --- | --- |
-| exit | <code>Object</code> | 
-
-<a name="Resolutions+resolvable"></a>
-
-### resolutions.resolvable(stateId) ⇒ <code>boolean</code>
-A state is resolvable when it (and every ancestor it inherits exits from)
-holds all required signatures on all exits.
-
-**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
-
-| Param | Type |
-| --- | --- |
-| stateId | <code>string</code> | 
-
-<a name="Resolutions+missing"></a>
-
-### resolutions.missing(stateId) ⇒ <code>Array.&lt;{stateId: string, exitId: string, kind: string, missing: Array.&lt;string&gt;}&gt;</code>
-What still has to be exchanged before `stateId` is live.
-
-**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
-
-| Param | Type |
-| --- | --- |
-| stateId | <code>string</code> | 
-
-<a name="Resolutions+exitsAfter"></a>
-
-### resolutions.exitsAfter(height, [stateId]) ⇒ <code>Array.&lt;Object&gt;</code>
-Exits that become broadcastable at or after `height` (absolute locks only).
-
-**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
-
-| Param | Type | Default | Description |
-| --- | --- | --- | --- |
-| height | <code>number</code> |  |  |
-| [stateId] | <code>string</code> | <code>null</code> | restrict to one state |
-
-<a name="Resolutions+finalizeExit"></a>
-
-### resolutions.finalizeExit(stateId, exitId) ⇒ <code>Object</code>
-Fully-signed exit as a broadcastable transaction.
-
-**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
-
-| Param | Type |
-| --- | --- |
-| stateId | <code>string</code> | 
-| exitId | <code>string</code> | 
-
-<a name="Resolutions+toTree"></a>
-
-### resolutions.toTree() ⇒ [<code>Tree</code>](#Tree)
-Bitcoin-style Merkle tree over `SHA256(stateId|exitId|txid)` for audit.
-
-**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
-<a name="Resolutions+export"></a>
-
-### resolutions.export() ⇒ <code>Object</code>
-**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
-**Overrides**: [<code>export</code>](#Actor+export)  
-**Returns**: <code>Object</code> - JSON-safe snapshot (no private material).  
-<a name="Resolutions+import"></a>
-
-### resolutions.import(snapshot) ⇒ [<code>Resolutions</code>](#Resolutions)
-Load a snapshot. Every held signature is re-verified against its PSBT;
-ones that do not verify are dropped (the exit then reports them missing).
-
-**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| snapshot | <code>Object</code> | output of [export](#Resolutions+export) |
-
-<a name="Actor+adopt"></a>
-
-### resolutions.adopt(changes) ⇒ [<code>Actor</code>](#Actor)
-Explicitly adopt a set of [JSONPatch](JSONPatch)-encoded changes.
-
-**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
-**Returns**: [<code>Actor</code>](#Actor) - Instance of the Actor.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| changes | <code>Array</code> | List of [JSONPatch](JSONPatch) operations to apply. |
-
-<a name="Actor+commit"></a>
-
-### resolutions.commit() ⇒ <code>String</code>
-Resolve the current state to a commitment.
-
-**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
-**Returns**: <code>String</code> - 32-byte ID  
-<a name="Actor+get"></a>
-
-### resolutions.get(path) ⇒ <code>Object</code>
-Retrieve a value from the Actor's state by [JSONPointer](JSONPointer) path.
-
-**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
-**Returns**: <code>Object</code> - Value of the path in the Actor's state.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| path | <code>String</code> | Path to retrieve using [JSONPointer](JSONPointer). |
-
-<a name="Actor+set"></a>
-
-### resolutions.set(path, value) ⇒ <code>Object</code>
-Set a value in the Actor's state by [JSONPointer](JSONPointer) path.
-
-**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
-**Returns**: <code>Object</code> - Value of the path in the Actor's state.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| path | <code>String</code> | Path to set using [JSONPointer](JSONPointer). |
-| value | <code>Object</code> | Value to set. |
-
-<a name="Actor+stream"></a>
-
-### resolutions.stream([pipe]) ⇒ <code>TransformStream</code>
-Returns a new output stream for the Actor.
-
-**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
-**Returns**: <code>TransformStream</code> - New output stream for the Actor.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| [pipe] | <code>TransformStream</code> | Pipe to stream to. |
-
-<a name="Actor+toBuffer"></a>
-
-### resolutions.toBuffer() ⇒ <code>Buffer</code>
-Casts the Actor to a normalized Buffer.
-
-**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
-<a name="Actor+toGenericMessage"></a>
-
-### resolutions.toGenericMessage([type]) ⇒ <code>Object</code>
-Casts the Actor to a generic message envelope for state announcements and history.
-Shape is stable: `{ type, object }` where `object` is sorted-key state ([toObject](#Actor+toObject)).
-[Actor#id](Actor#id) derives from a digest of the pretty-printed generic message; extending this
-envelope requires a format/version migration across the network.
-
-**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
-**Returns**: <code>Object</code> - `{ type, object }`  
-**See**
-
-- [https://en.wikipedia.org/wiki/Merkle_tree](https://en.wikipedia.org/wiki/Merkle_tree)
-- [https://dev.fabric.pub/messages](https://dev.fabric.pub/messages)
-
-
-| Param | Type | Default | Description |
-| --- | --- | --- | --- |
-| [type] | <code>String</code> | <code>&#x27;FabricActorState&#x27;</code> | Logical message type string. |
-
-<a name="Actor+toObject"></a>
-
-### resolutions.toObject() ⇒ <code>Object</code>
-Returns the Actor's current state as an [Object](Object).
-
-**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
-<a name="Actor+pause"></a>
-
-### resolutions.pause() ⇒ [<code>Actor</code>](#Actor)
-Toggles `status` property to paused.
-
-**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
-**Returns**: [<code>Actor</code>](#Actor) - Instance of the Actor.  
-<a name="Actor+serialize"></a>
-
-### resolutions.serialize() ⇒ <code>String</code>
-Serialize the Actor's current state into a JSON-formatted string.
-
-**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
-<a name="Actor+sign"></a>
-
-### resolutions.sign() ⇒ [<code>Actor</code>](#Actor)
-Signs the Actor when `this.key` is a [Key](#Key); otherwise throws.
-Prefer [signWithKey](#Message+signWithKey) / [sign](#Key+sign) for wire auth.
-
-**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
-<a name="Actor+unpause"></a>
-
-### resolutions.unpause() ⇒ [<code>Actor</code>](#Actor)
-Toggles `status` property to unpaused.
-
-**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
-**Returns**: [<code>Actor</code>](#Actor) - Instance of the Actor.  
-<a name="Actor+value"></a>
-
-### resolutions.value([format]) ⇒ <code>Object</code>
-Get the inner value of the Actor with an optional cast type.
-
-**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
-**Returns**: <code>Object</code> - Inner value of the Actor as an [Object](Object), or cast to the requested `format`.  
-
-| Param | Type | Default | Description |
-| --- | --- | --- | --- |
-| [format] | <code>String</code> | <code>object</code> | Cast the value to one of: `buffer, hex, json, string` |
-
-<a name="Actor+_readObject"></a>
-
-### resolutions.\_readObject(input) ⇒ <code>Object</code>
-Parse an Object into a corresponding Fabric state.
-
-**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
-**Returns**: <code>Object</code> - Fabric state.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| input | <code>Object</code> | Object to read as input. |
-
-<a name="Resolutions"></a>
-
-## Resolutions
-**Kind**: global class  
-
-* [Resolutions](#Resolutions)
-    * [new Resolutions()](#new_Resolutions_new)
-    * [new Resolutions([settings])](#new_Resolutions_new)
-    * [._states](#Resolutions+_states) : <code>Map.&lt;string, {parent: (string\|null), exits: Map.&lt;string, Object&gt;}&gt;</code>
-    * [.stateIds](#Resolutions+stateIds) ⇒ <code>Array.&lt;string&gt;</code>
-    * [.rootHex](#Resolutions+rootHex) ⇒ <code>string</code>
-    * [.declare(stateId, [parent])](#Resolutions+declare) ⇒ [<code>Resolutions</code>](#Resolutions)
-    * [.addExit(stateId, exit)](#Resolutions+addExit) ⇒ <code>Object</code>
-    * [.getExit(stateId, exitId)](#Resolutions+getExit) ⇒ <code>Object</code> \| <code>null</code>
-    * [.signExit(stateId, exitId, priv32)](#Resolutions+signExit) ⇒ <code>Object</code>
-    * [.ingest(artifact)](#Resolutions+ingest) ⇒ <code>Object</code>
-    * [.verifyExit(stateId, exitId)](#Resolutions+verifyExit) ⇒ <code>Object</code>
-    * [.missingSigners(exit)](#Resolutions+missingSigners) ⇒ <code>Array.&lt;string&gt;</code>
-    * [.resolvable(stateId)](#Resolutions+resolvable) ⇒ <code>boolean</code>
-    * [.missing(stateId)](#Resolutions+missing) ⇒ <code>Array.&lt;{stateId: string, exitId: string, kind: string, missing: Array.&lt;string&gt;}&gt;</code>
-    * [.exitsAfter(height, [stateId])](#Resolutions+exitsAfter) ⇒ <code>Array.&lt;Object&gt;</code>
-    * [.finalizeExit(stateId, exitId)](#Resolutions+finalizeExit) ⇒ <code>Object</code>
-    * [.toTree()](#Resolutions+toTree) ⇒ [<code>Tree</code>](#Tree)
-    * [.export()](#Resolutions+export) ⇒ <code>Object</code>
-    * [.import(snapshot)](#Resolutions+import) ⇒ [<code>Resolutions</code>](#Resolutions)
-    * [.adopt(changes)](#Actor+adopt) ⇒ [<code>Actor</code>](#Actor)
-    * [.commit()](#Actor+commit) ⇒ <code>String</code>
-    * [.get(path)](#Actor+get) ⇒ <code>Object</code>
-    * [.set(path, value)](#Actor+set) ⇒ <code>Object</code>
-    * [.stream([pipe])](#Actor+stream) ⇒ <code>TransformStream</code>
-    * [.toBuffer()](#Actor+toBuffer) ⇒ <code>Buffer</code>
-    * [.toGenericMessage([type])](#Actor+toGenericMessage) ⇒ <code>Object</code>
-    * [.toObject()](#Actor+toObject) ⇒ <code>Object</code>
-    * [.pause()](#Actor+pause) ⇒ [<code>Actor</code>](#Actor)
-    * [.serialize()](#Actor+serialize) ⇒ <code>String</code>
-    * [.sign()](#Actor+sign) ⇒ [<code>Actor</code>](#Actor)
-    * [.unpause()](#Actor+unpause) ⇒ [<code>Actor</code>](#Actor)
-    * [.value([format])](#Actor+value) ⇒ <code>Object</code>
-    * [._readObject(input)](#Actor+_readObject) ⇒ <code>Object</code>
-
-<a name="new_Resolutions_new"></a>
-
-### new Resolutions()
-State tree of pre-signed exits. Pure data plus Schnorr verification; no I/O.
-
-<a name="new_Resolutions_new"></a>
-
-### new Resolutions([settings])
-
-| Param | Type | Default | Description |
-| --- | --- | --- | --- |
-| [settings] | <code>Object</code> |  |  |
-| [settings.network] | <code>string</code> | <code>&quot;&#x27;regtest&#x27;&quot;</code> | Fabric network name |
-| [settings.states] | <code>Object</code> |  | import snapshot (`export()` output) |
-
-<a name="Resolutions+_states"></a>
-
-### resolutions.\_states : <code>Map.&lt;string, {parent: (string\|null), exits: Map.&lt;string, Object&gt;}&gt;</code>
-**Kind**: instance property of [<code>Resolutions</code>](#Resolutions)  
-<a name="Resolutions+stateIds"></a>
-
-### resolutions.stateIds ⇒ <code>Array.&lt;string&gt;</code>
-**Kind**: instance property of [<code>Resolutions</code>](#Resolutions)  
-**Returns**: <code>Array.&lt;string&gt;</code> - known state ids (insertion order).  
-<a name="Resolutions+rootHex"></a>
-
-### resolutions.rootHex ⇒ <code>string</code>
-**Kind**: instance property of [<code>Resolutions</code>](#Resolutions)  
-**Returns**: <code>string</code> - hex Merkle root (empty tree → 64 zeros).  
-<a name="Resolutions+declare"></a>
-
-### resolutions.declare(stateId, [parent]) ⇒ [<code>Resolutions</code>](#Resolutions)
-Declare a state node (idempotent).
-
-**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
-
-| Param | Type | Default | Description |
-| --- | --- | --- | --- |
-| stateId | <code>string</code> |  |  |
-| [parent] | <code>string</code> \| <code>null</code> | <code>null</code> | parent state id (tree edge) |
-
-<a name="Resolutions+addExit"></a>
-
-### resolutions.addExit(stateId, exit) ⇒ <code>Object</code>
-Register an exit a state depends on. Signatures already present on the
-PSBT are harvested into `signers.have`.
-
-**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
-**Returns**: <code>Object</code> - stored exit record  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| stateId | <code>string</code> |  |
-| exit | <code>Object</code> |  |
-| exit.id | <code>string</code> | unique within the state |
-| exit.kind | <code>string</code> | one of [Resolutions.KINDS](Resolutions.KINDS) |
-| exit.psbtBase64 | <code>string</code> | unsigned (or partially signed) tapscript spend, input 0 |
-| exit.required | <code>Array.&lt;string&gt;</code> | pubkeys (compressed or x-only hex) whose signatures make it broadcastable |
-| [exit.locktime] | <code>Object</code> | `{ height }` (nLockTime / CLTV) and/or `{ csv }` (relative) |
-| [exit.spends] | <code>Object</code> | `{ txid, vout }` the exit consumes |
-| [exit.meta] | <code>Object</code> | free-form (never secrets) |
-
-<a name="Resolutions+getExit"></a>
-
-### resolutions.getExit(stateId, exitId) ⇒ <code>Object</code> \| <code>null</code>
-**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
-
-| Param | Type |
-| --- | --- |
-| stateId | <code>string</code> | 
-| exitId | <code>string</code> | 
-
-<a name="Resolutions+signExit"></a>
-
-### resolutions.signExit(stateId, exitId, priv32) ⇒ <code>Object</code>
-Sign an exit with a 32-byte private key and record the signature.
-
-**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
-**Returns**: <code>Object</code> - `ContractExitSignature` artifact (JSON-safe) for the counterparty  
-
-| Param | Type |
-| --- | --- |
-| stateId | <code>string</code> | 
-| exitId | <code>string</code> | 
-| priv32 | <code>Buffer</code> \| <code>string</code> | 
-
-<a name="Resolutions+ingest"></a>
-
-### resolutions.ingest(artifact) ⇒ <code>Object</code>
-Accept a counterparty's `ContractExitSignature` artifact after verifying
-both the artifact signature and the tapscript signature it carries.
-
-**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| artifact | <code>Object</code> | output of [signExit](#Resolutions+signExit) |
-
-<a name="Resolutions+verifyExit"></a>
-
-### resolutions.verifyExit(stateId, exitId) ⇒ <code>Object</code>
-Re-verify every held signature on an exit against its PSBT.
-
-**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
-
-| Param | Type |
-| --- | --- |
-| stateId | <code>string</code> | 
-| exitId | <code>string</code> | 
-
-<a name="Resolutions+missingSigners"></a>
-
-### resolutions.missingSigners(exit) ⇒ <code>Array.&lt;string&gt;</code>
-**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
-**Returns**: <code>Array.&lt;string&gt;</code> - required x-only pubkeys without a held signature  
-
-| Param | Type |
-| --- | --- |
-| exit | <code>Object</code> | 
-
-<a name="Resolutions+resolvable"></a>
-
-### resolutions.resolvable(stateId) ⇒ <code>boolean</code>
-A state is resolvable when it (and every ancestor it inherits exits from)
-holds all required signatures on all exits.
-
-**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
-
-| Param | Type |
-| --- | --- |
-| stateId | <code>string</code> | 
-
-<a name="Resolutions+missing"></a>
-
-### resolutions.missing(stateId) ⇒ <code>Array.&lt;{stateId: string, exitId: string, kind: string, missing: Array.&lt;string&gt;}&gt;</code>
-What still has to be exchanged before `stateId` is live.
-
-**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
-
-| Param | Type |
-| --- | --- |
-| stateId | <code>string</code> | 
-
-<a name="Resolutions+exitsAfter"></a>
-
-### resolutions.exitsAfter(height, [stateId]) ⇒ <code>Array.&lt;Object&gt;</code>
-Exits that become broadcastable at or after `height` (absolute locks only).
-
-**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
-
-| Param | Type | Default | Description |
-| --- | --- | --- | --- |
-| height | <code>number</code> |  |  |
-| [stateId] | <code>string</code> | <code>null</code> | restrict to one state |
-
-<a name="Resolutions+finalizeExit"></a>
-
-### resolutions.finalizeExit(stateId, exitId) ⇒ <code>Object</code>
-Fully-signed exit as a broadcastable transaction.
-
-**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
-
-| Param | Type |
-| --- | --- |
-| stateId | <code>string</code> | 
-| exitId | <code>string</code> | 
-
-<a name="Resolutions+toTree"></a>
-
-### resolutions.toTree() ⇒ [<code>Tree</code>](#Tree)
-Bitcoin-style Merkle tree over `SHA256(stateId|exitId|txid)` for audit.
-
-**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
-<a name="Resolutions+export"></a>
-
-### resolutions.export() ⇒ <code>Object</code>
-**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
-**Overrides**: [<code>export</code>](#Actor+export)  
-**Returns**: <code>Object</code> - JSON-safe snapshot (no private material).  
-<a name="Resolutions+import"></a>
-
-### resolutions.import(snapshot) ⇒ [<code>Resolutions</code>](#Resolutions)
-Load a snapshot. Every held signature is re-verified against its PSBT;
-ones that do not verify are dropped (the exit then reports them missing).
-
-**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| snapshot | <code>Object</code> | output of [export](#Resolutions+export) |
-
-<a name="Actor+adopt"></a>
-
-### resolutions.adopt(changes) ⇒ [<code>Actor</code>](#Actor)
-Explicitly adopt a set of [JSONPatch](JSONPatch)-encoded changes.
-
-**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
-**Returns**: [<code>Actor</code>](#Actor) - Instance of the Actor.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| changes | <code>Array</code> | List of [JSONPatch](JSONPatch) operations to apply. |
-
-<a name="Actor+commit"></a>
-
-### resolutions.commit() ⇒ <code>String</code>
-Resolve the current state to a commitment.
-
-**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
-**Returns**: <code>String</code> - 32-byte ID  
-<a name="Actor+get"></a>
-
-### resolutions.get(path) ⇒ <code>Object</code>
-Retrieve a value from the Actor's state by [JSONPointer](JSONPointer) path.
-
-**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
-**Returns**: <code>Object</code> - Value of the path in the Actor's state.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| path | <code>String</code> | Path to retrieve using [JSONPointer](JSONPointer). |
-
-<a name="Actor+set"></a>
-
-### resolutions.set(path, value) ⇒ <code>Object</code>
-Set a value in the Actor's state by [JSONPointer](JSONPointer) path.
-
-**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
-**Returns**: <code>Object</code> - Value of the path in the Actor's state.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| path | <code>String</code> | Path to set using [JSONPointer](JSONPointer). |
-| value | <code>Object</code> | Value to set. |
-
-<a name="Actor+stream"></a>
-
-### resolutions.stream([pipe]) ⇒ <code>TransformStream</code>
-Returns a new output stream for the Actor.
-
-**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
-**Returns**: <code>TransformStream</code> - New output stream for the Actor.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| [pipe] | <code>TransformStream</code> | Pipe to stream to. |
-
-<a name="Actor+toBuffer"></a>
-
-### resolutions.toBuffer() ⇒ <code>Buffer</code>
-Casts the Actor to a normalized Buffer.
-
-**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
-<a name="Actor+toGenericMessage"></a>
-
-### resolutions.toGenericMessage([type]) ⇒ <code>Object</code>
-Casts the Actor to a generic message envelope for state announcements and history.
-Shape is stable: `{ type, object }` where `object` is sorted-key state ([toObject](#Actor+toObject)).
-[Actor#id](Actor#id) derives from a digest of the pretty-printed generic message; extending this
-envelope requires a format/version migration across the network.
-
-**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
-**Returns**: <code>Object</code> - `{ type, object }`  
-**See**
-
-- [https://en.wikipedia.org/wiki/Merkle_tree](https://en.wikipedia.org/wiki/Merkle_tree)
-- [https://dev.fabric.pub/messages](https://dev.fabric.pub/messages)
-
-
-| Param | Type | Default | Description |
-| --- | --- | --- | --- |
-| [type] | <code>String</code> | <code>&#x27;FabricActorState&#x27;</code> | Logical message type string. |
-
-<a name="Actor+toObject"></a>
-
-### resolutions.toObject() ⇒ <code>Object</code>
-Returns the Actor's current state as an [Object](Object).
-
-**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
-<a name="Actor+pause"></a>
-
-### resolutions.pause() ⇒ [<code>Actor</code>](#Actor)
-Toggles `status` property to paused.
-
-**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
-**Returns**: [<code>Actor</code>](#Actor) - Instance of the Actor.  
-<a name="Actor+serialize"></a>
-
-### resolutions.serialize() ⇒ <code>String</code>
-Serialize the Actor's current state into a JSON-formatted string.
-
-**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
-<a name="Actor+sign"></a>
-
-### resolutions.sign() ⇒ [<code>Actor</code>](#Actor)
-Signs the Actor when `this.key` is a [Key](#Key); otherwise throws.
-Prefer [signWithKey](#Message+signWithKey) / [sign](#Key+sign) for wire auth.
-
-**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
-<a name="Actor+unpause"></a>
-
-### resolutions.unpause() ⇒ [<code>Actor</code>](#Actor)
-Toggles `status` property to unpaused.
-
-**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
-**Returns**: [<code>Actor</code>](#Actor) - Instance of the Actor.  
-<a name="Actor+value"></a>
-
-### resolutions.value([format]) ⇒ <code>Object</code>
-Get the inner value of the Actor with an optional cast type.
-
-**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
-**Returns**: <code>Object</code> - Inner value of the Actor as an [Object](Object), or cast to the requested `format`.  
-
-| Param | Type | Default | Description |
-| --- | --- | --- | --- |
-| [format] | <code>String</code> | <code>object</code> | Cast the value to one of: `buffer, hex, json, string` |
-
-<a name="Actor+_readObject"></a>
-
-### resolutions.\_readObject(input) ⇒ <code>Object</code>
-Parse an Object into a corresponding Fabric state.
-
-**Kind**: instance method of [<code>Resolutions</code>](#Resolutions)  
-**Returns**: <code>Object</code> - Fabric state.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| input | <code>Object</code> | Object to read as input. |
-
 <a name="Resource"></a>
 
 ## Resource ⇐ [<code>Store</code>](#Store)
@@ -21558,6 +21707,7 @@ so commits and encryption options match the rest of the stack.
     * [.del(key)](#Store+del)
     * [.flush()](#Store+flush)
     * [.start()](#Store+start) ⇒ <code>Promise</code>
+    * [.contentDigest([clock])](#Actor+contentDigest) ⇒ <code>String</code>
     * [.adopt(changes)](#Actor+adopt) ⇒ [<code>Actor</code>](#Actor)
     * [.commit()](#Actor+commit) ⇒ <code>String</code>
     * [.export()](#Actor+export) ⇒ <code>Object</code>
@@ -21709,6 +21859,18 @@ Start running the process.
 
 **Kind**: instance method of [<code>Resource</code>](#Resource)  
 **Returns**: <code>Promise</code> - Resolves on complete.  
+<a name="Actor+contentDigest"></a>
+
+### resource.contentDigest([clock]) ⇒ <code>String</code>
+Digest of this actor's content at <code>clock</code>.
+
+**Kind**: instance method of [<code>Resource</code>](#Resource)  
+**Returns**: <code>String</code> - 64-character hex SHA-256.  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [clock] | <code>Number</code> | <code>0</code> | Sidechain clock covered by the digest. |
+
 <a name="Actor+adopt"></a>
 
 ### resource.adopt(changes) ⇒ [<code>Actor</code>](#Actor)
@@ -21939,6 +22101,7 @@ resources, and lifecycle (<code>start</code>/<code>stop</code> patterns — see 
     * [.listOpcodes()](#Service+listOpcodes) ⇒ <code>Array.&lt;Object&gt;</code>
     * [.route(msg)](#Service+route) ⇒ <code>Promise</code>
     * [.start()](#Service+start)
+    * [.load()](#Service+load) ⇒ [<code>Promise.&lt;Service&gt;</code>](#Service)
     * [._GET(path)](#Service+_GET) ⇒ <code>Promise</code>
     * [._PUT(path, value, [commit])](#Service+_PUT) ⇒ <code>Promise</code>
     * [.connect(notify)](#Service+connect) ⇒ <code>Promise</code>
@@ -21946,6 +22109,7 @@ resources, and lifecycle (<code>start</code>/<code>stop</code> patterns — see 
     * [.commit()](#Service+commit) ⇒ <code>String</code>
     * [._registerActor(actor)](#Service+_registerActor) ⇒ <code>Promise</code>
     * [._send(message)](#Service+_send)
+    * [.contentDigest([clock])](#Actor+contentDigest) ⇒ <code>String</code>
     * [.adopt(changes)](#Actor+adopt) ⇒ [<code>Actor</code>](#Actor)
     * [.export()](#Actor+export) ⇒ <code>Object</code>
     * [.stream([pipe])](#Actor+stream) ⇒ <code>TransformStream</code>
@@ -21998,7 +22162,9 @@ Move forward one clock cycle.
 <a name="Service+beat"></a>
 
 ### service.beat() ⇒ [<code>Service</code>](#Service)
-Compute latest state.
+Advance one heartbeat. Outstanding changes are one transition: one unsealed
+message, or nothing if that message would not fit. An idle beat is a digest
+checkpoint. This does not commit.
 
 **Kind**: instance method of [<code>Service</code>](#Service)  
 **Emits**: <code>Message#event:beat</code>  
@@ -22153,6 +22319,13 @@ Start the service, including the initiation of an outbound connection
 to any peers designated in the service's configuration.
 
 **Kind**: instance method of [<code>Service</code>](#Service)  
+<a name="Service+load"></a>
+
+### service.load() ⇒ [<code>Promise.&lt;Service&gt;</code>](#Service)
+Load durable state after the store is open and before the observer and
+heartbeat attach, so a restored snapshot is not staged as one replace.
+
+**Kind**: instance method of [<code>Service</code>](#Service)  
 <a name="Service+_GET"></a>
 
 ### service.\_GET(path) ⇒ <code>Promise</code>
@@ -22236,6 +22409,18 @@ Sends a message.
 | Param | Type | Description |
 | --- | --- | --- |
 | message | <code>Mixed</code> | Message to send. |
+
+<a name="Actor+contentDigest"></a>
+
+### service.contentDigest([clock]) ⇒ <code>String</code>
+Digest of this actor's content at <code>clock</code>.
+
+**Kind**: instance method of [<code>Service</code>](#Service)  
+**Returns**: <code>String</code> - 64-character hex SHA-256.  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [clock] | <code>Number</code> | <code>0</code> | Sidechain clock covered by the digest. |
 
 <a name="Actor+adopt"></a>
 
@@ -22375,6 +22560,7 @@ Parse an Object into a corresponding Fabric state.
     * [.listOpcodes()](#Service+listOpcodes) ⇒ <code>Array.&lt;Object&gt;</code>
     * [.route(msg)](#Service+route) ⇒ <code>Promise</code>
     * [.start()](#Service+start)
+    * [.load()](#Service+load) ⇒ [<code>Promise.&lt;Service&gt;</code>](#Service)
     * [._GET(path)](#Service+_GET) ⇒ <code>Promise</code>
     * [._PUT(path, value, [commit])](#Service+_PUT) ⇒ <code>Promise</code>
     * [.connect(notify)](#Service+connect) ⇒ <code>Promise</code>
@@ -22382,6 +22568,7 @@ Parse an Object into a corresponding Fabric state.
     * [.commit()](#Service+commit) ⇒ <code>String</code>
     * [._registerActor(actor)](#Service+_registerActor) ⇒ <code>Promise</code>
     * [._send(message)](#Service+_send)
+    * [.contentDigest([clock])](#Actor+contentDigest) ⇒ <code>String</code>
     * [.adopt(changes)](#Actor+adopt) ⇒ [<code>Actor</code>](#Actor)
     * [.export()](#Actor+export) ⇒ <code>Object</code>
     * [.stream([pipe])](#Actor+stream) ⇒ <code>TransformStream</code>
@@ -22434,7 +22621,9 @@ Move forward one clock cycle.
 <a name="Service+beat"></a>
 
 ### service.beat() ⇒ [<code>Service</code>](#Service)
-Compute latest state.
+Advance one heartbeat. Outstanding changes are one transition: one unsealed
+message, or nothing if that message would not fit. An idle beat is a digest
+checkpoint. This does not commit.
 
 **Kind**: instance method of [<code>Service</code>](#Service)  
 **Emits**: <code>Message#event:beat</code>  
@@ -22589,6 +22778,13 @@ Start the service, including the initiation of an outbound connection
 to any peers designated in the service's configuration.
 
 **Kind**: instance method of [<code>Service</code>](#Service)  
+<a name="Service+load"></a>
+
+### service.load() ⇒ [<code>Promise.&lt;Service&gt;</code>](#Service)
+Load durable state after the store is open and before the observer and
+heartbeat attach, so a restored snapshot is not staged as one replace.
+
+**Kind**: instance method of [<code>Service</code>](#Service)  
 <a name="Service+_GET"></a>
 
 ### service.\_GET(path) ⇒ <code>Promise</code>
@@ -22672,6 +22868,18 @@ Sends a message.
 | Param | Type | Description |
 | --- | --- | --- |
 | message | <code>Mixed</code> | Message to send. |
+
+<a name="Actor+contentDigest"></a>
+
+### service.contentDigest([clock]) ⇒ <code>String</code>
+Digest of this actor's content at <code>clock</code>.
+
+**Kind**: instance method of [<code>Service</code>](#Service)  
+**Returns**: <code>String</code> - 64-character hex SHA-256.  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [clock] | <code>Number</code> | <code>0</code> | Sidechain clock covered by the digest. |
 
 <a name="Actor+adopt"></a>
 
@@ -23058,6 +23266,7 @@ Sibling concept to [Entity](#Entity).
         * [.set(path)](#State+set) ⇒ <code>Mixed</code>
         * [.commit()](#State+commit)
         * [.render()](#State+render) ⇒ <code>String</code>
+        * [.contentDigest([clock])](#Actor+contentDigest) ⇒ <code>String</code>
         * [.adopt(changes)](#Actor+adopt) ⇒ [<code>Actor</code>](#Actor)
         * [.export()](#Actor+export) ⇒ <code>Object</code>
         * [.stream([pipe])](#Actor+stream) ⇒ <code>TransformStream</code>
@@ -23186,6 +23395,18 @@ Compose a JSON string for network consumption.
 
 **Kind**: instance method of [<code>State</code>](#State)  
 **Returns**: <code>String</code> - JSON-encoded [String](String).  
+<a name="Actor+contentDigest"></a>
+
+### state.contentDigest([clock]) ⇒ <code>String</code>
+Digest of this actor's content at <code>clock</code>.
+
+**Kind**: instance method of [<code>State</code>](#State)  
+**Returns**: <code>String</code> - 64-character hex SHA-256.  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [clock] | <code>Number</code> | <code>0</code> | Sidechain clock covered by the digest. |
+
 <a name="Actor+adopt"></a>
 
 ### state.adopt(changes) ⇒ [<code>Actor</code>](#Actor)
@@ -23328,6 +23549,7 @@ absolute authority over their own domain, so choose your States wisely.
         * [.set(path)](#State+set) ⇒ <code>Mixed</code>
         * [.commit()](#State+commit)
         * [.render()](#State+render) ⇒ <code>String</code>
+        * [.contentDigest([clock])](#Actor+contentDigest) ⇒ <code>String</code>
         * [.adopt(changes)](#Actor+adopt) ⇒ [<code>Actor</code>](#Actor)
         * [.export()](#Actor+export) ⇒ <code>Object</code>
         * [.stream([pipe])](#Actor+stream) ⇒ <code>TransformStream</code>
@@ -23456,6 +23678,18 @@ Compose a JSON string for network consumption.
 
 **Kind**: instance method of [<code>State</code>](#State)  
 **Returns**: <code>String</code> - JSON-encoded [String](String).  
+<a name="Actor+contentDigest"></a>
+
+### state.contentDigest([clock]) ⇒ <code>String</code>
+Digest of this actor's content at <code>clock</code>.
+
+**Kind**: instance method of [<code>State</code>](#State)  
+**Returns**: <code>String</code> - 64-character hex SHA-256.  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [clock] | <code>Number</code> | <code>0</code> | Sidechain clock covered by the digest. |
+
 <a name="Actor+adopt"></a>
 
 ### state.adopt(changes) ⇒ [<code>Actor</code>](#Actor)
@@ -23607,6 +23841,7 @@ encrypted values; [openEncrypted](#Store.openEncrypted) matches Hub/shell keysto
         * [.del(key)](#Store+del)
         * [.flush()](#Store+flush)
         * [.start()](#Store+start) ⇒ <code>Promise</code>
+        * [.contentDigest([clock])](#Actor+contentDigest) ⇒ <code>String</code>
         * [.adopt(changes)](#Actor+adopt) ⇒ [<code>Actor</code>](#Actor)
         * [.commit()](#Actor+commit) ⇒ <code>String</code>
         * [.export()](#Actor+export) ⇒ <code>Object</code>
@@ -23742,6 +23977,18 @@ Start running the process.
 
 **Kind**: instance method of [<code>Store</code>](#Store)  
 **Returns**: <code>Promise</code> - Resolves on complete.  
+<a name="Actor+contentDigest"></a>
+
+### store.contentDigest([clock]) ⇒ <code>String</code>
+Digest of this actor's content at <code>clock</code>.
+
+**Kind**: instance method of [<code>Store</code>](#Store)  
+**Returns**: <code>String</code> - 64-character hex SHA-256.  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [clock] | <code>Number</code> | <code>0</code> | Sidechain clock covered by the digest. |
+
 <a name="Actor+adopt"></a>
 
 ### store.adopt(changes) ⇒ [<code>Actor</code>](#Actor)
@@ -23905,6 +24152,7 @@ Settings object for a [Store](#Store) with [Codec](Codec) at-rest encryption
         * [.del(key)](#Store+del)
         * [.flush()](#Store+flush)
         * [.start()](#Store+start) ⇒ <code>Promise</code>
+        * [.contentDigest([clock])](#Actor+contentDigest) ⇒ <code>String</code>
         * [.adopt(changes)](#Actor+adopt) ⇒ [<code>Actor</code>](#Actor)
         * [.commit()](#Actor+commit) ⇒ <code>String</code>
         * [.export()](#Actor+export) ⇒ <code>Object</code>
@@ -24040,6 +24288,18 @@ Start running the process.
 
 **Kind**: instance method of [<code>Store</code>](#Store)  
 **Returns**: <code>Promise</code> - Resolves on complete.  
+<a name="Actor+contentDigest"></a>
+
+### store.contentDigest([clock]) ⇒ <code>String</code>
+Digest of this actor's content at <code>clock</code>.
+
+**Kind**: instance method of [<code>Store</code>](#Store)  
+**Returns**: <code>String</code> - 64-character hex SHA-256.  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [clock] | <code>Number</code> | <code>0</code> | Sidechain clock covered by the digest. |
+
 <a name="Actor+adopt"></a>
 
 ### store.adopt(changes) ⇒ [<code>Actor</code>](#Actor)
@@ -24786,355 +25046,6 @@ live on [Machine](#Machine) and [State](#State) / [push](#Fabric+push) instead.
 | --- | --- | --- |
 | [options] | <code>Object</code> | Optional emitter options (e.g. <code>captureRejections</code>). |
 
-<a name="Wallet"></a>
-
-## Wallet : <code>Object</code>
-Manage keys and track their balances.
-
-**Kind**: global class  
-**Properties**
-
-| Name | Type | Description |
-| --- | --- | --- |
-| id | <code>String</code> | Unique identifier for this [Wallet](#Wallet). |
-
-
-* [Wallet](#Wallet) : <code>Object</code>
-    * [new Wallet([settings])](#new_Wallet_new)
-    * _instance_
-        * [._emittedWalletTxKeys](#Wallet+_emittedWalletTxKeys) : <code>Set.&lt;string&gt;</code>
-        * [._ownedOutpoints](#Wallet+_ownedOutpoints) : <code>Map.&lt;string, object&gt;</code>
-        * [.derive([path])](#Wallet+derive)
-        * [.loadKey(input, [labels])](#Wallet+loadKey) ⇒ <code>Object</code>
-        * [.loadSeed(phrase, [labels], [opts])](#Wallet+loadSeed) ⇒ <code>Object</code>
-        * [.listSeeds()](#Wallet+listSeeds) ⇒ <code>Array.&lt;{seedId: string, xpub: string, labels: Array.&lt;string&gt;}&gt;</code>
-        * [.watchAddress(address, [meta])](#Wallet+watchAddress)
-        * [.watchPaymentHash(paymentHashHex, [meta])](#Wallet+watchPaymentHash)
-        * [.watchHtlc(htlc)](#Wallet+watchHtlc)
-        * [.getWatchSet()](#Wallet+getWatchSet) ⇒ <code>object</code>
-        * [._registerDerivedAddresses(key, [opts])](#Wallet+_registerDerivedAddresses)
-        * [.ingestBitcoinTransaction(txOrHex, [context])](#Wallet+ingestBitcoinTransaction) ⇒ <code>object</code>
-        * [.ingestBitcoinBlock(block)](#Wallet+ingestBitcoinBlock) ⇒ <code>Array.&lt;object&gt;</code>
-        * [.start()](#Wallet+start)
-        * [.getAddressForScript(script)](#Wallet+getAddressForScript)
-        * [.getAddressFromRedeemScript(redeemScript)](#Wallet+getAddressFromRedeemScript)
-        * ~~[.createHTLC()](#Wallet+createHTLC)~~
-        * [.getUnusedAddress()](#Wallet+getUnusedAddress) ⇒ <code>Promise.&lt;string&gt;</code>
-        * [._sign(tx)](#Wallet+_sign)
-        * [._createCrowdfund(fund)](#Wallet+_createCrowdfund)
-        * [._getSwapInputScript(redeemScript, secret)](#Wallet+_getSwapInputScript)
-        * [._getRefundInputScript(redeemScript)](#Wallet+_getRefundInputScript)
-        * [.publicKeyFromString(input)](#Wallet+publicKeyFromString)
-        * [.receiveAddress()](#Wallet+receiveAddress) ⇒ <code>Promise.&lt;string&gt;</code>
-    * _static_
-        * [.createSeed(passphrase)](#Wallet.createSeed) ⇒ <code>FabricSeed</code>
-        * [.fromSeed(seed)](#Wallet.fromSeed) ⇒ [<code>Wallet</code>](#Wallet)
-        * [.deriveTaprootAddress(key, [options])](#Wallet.deriveTaprootAddress) ⇒ <code>Object</code>
-        * [.resolveDocumentContentHashHex(opts)](#Wallet.resolveDocumentContentHashHex) ⇒ <code>Object</code>
-
-<a name="new_Wallet_new"></a>
-
-### new Wallet([settings])
-Create an instance of a [Wallet](#Wallet).
-
-**Returns**: [<code>Wallet</code>](#Wallet) - Instance of the wallet.  
-
-| Param | Type | Default | Description |
-| --- | --- | --- | --- |
-| [settings] | <code>Object</code> | <code>{}</code> | Configure the wallet. |
-| [settings.verbosity] | <code>Number</code> | <code>2</code> | One of: 0 (none), 1 (error), 2 (warning), 3 (notice), 4 (debug), 5 (audit) |
-| [settings.key] | <code>Object</code> |  | Key to restore from. |
-| [settings.key.seed] | <code>String</code> |  | Mnemonic seed for a restored wallet. |
-
-<a name="Wallet+_emittedWalletTxKeys"></a>
-
-### wallet.\_emittedWalletTxKeys : <code>Set.&lt;string&gt;</code>
-**Kind**: instance property of [<code>Wallet</code>](#Wallet)  
-<a name="Wallet+_ownedOutpoints"></a>
-
-### wallet.\_ownedOutpoints : <code>Map.&lt;string, object&gt;</code>
-**Kind**: instance property of [<code>Wallet</code>](#Wallet)  
-<a name="Wallet+derive"></a>
-
-### wallet.derive([path])
-Derive a key; the default is the first SegWit receive key of account 0
-on the wallet's network (`m/84'/{0|1}'/0'/0/0`).
-
-**Kind**: instance method of [<code>Wallet</code>](#Wallet)  
-
-| Param | Type |
-| --- | --- |
-| [path] | <code>string</code> | 
-
-<a name="Wallet+loadKey"></a>
-
-### wallet.loadKey(input, [labels]) ⇒ <code>Object</code>
-Register a key with optional labels.
-Accepts a Key instance, pubkey hex string, or object-like key input.
-
-**Kind**: instance method of [<code>Wallet</code>](#Wallet)  
-**Returns**: <code>Object</code> - Stored key descriptor.  
-
-| Param | Type | Default | Description |
-| --- | --- | --- | --- |
-| input | [<code>Key</code>](#Key) \| <code>String</code> \| <code>Object</code> |  | Key material to load. |
-| [labels] | <code>Array.&lt;String&gt;</code> | <code>[]</code> | Optional labels. |
-
-<a name="Wallet+loadSeed"></a>
-
-### wallet.loadSeed(phrase, [labels], [opts]) ⇒ <code>Object</code>
-Load an additional BIP39 seed into this wallet's key collection (does not
-replace the primary `this.key`). Addresses derived from the seed are watched.
-
-**Kind**: instance method of [<code>Wallet</code>](#Wallet)  
-
-| Param | Type | Default | Description |
-| --- | --- | --- | --- |
-| phrase | <code>string</code> |  | BIP39 mnemonic |
-| [labels] | <code>Array.&lt;string&gt;</code> | <code>[]</code> |  |
-| [opts] | <code>object</code> |  |  |
-| [opts.addressWindow] | <code>number</code> |  | receive indices to watch (default gapLimit) |
-
-<a name="Wallet+listSeeds"></a>
-
-### wallet.listSeeds() ⇒ <code>Array.&lt;{seedId: string, xpub: string, labels: Array.&lt;string&gt;}&gt;</code>
-**Kind**: instance method of [<code>Wallet</code>](#Wallet)  
-<a name="Wallet+watchAddress"></a>
-
-### wallet.watchAddress(address, [meta])
-Watch a Bitcoin address for wallet-associated transactions.
-
-**Kind**: instance method of [<code>Wallet</code>](#Wallet)  
-
-| Param | Type |
-| --- | --- |
-| address | <code>string</code> | 
-| [meta] | <code>object</code> | 
-
-<a name="Wallet+watchPaymentHash"></a>
-
-### wallet.watchPaymentHash(paymentHashHex, [meta])
-Watch an HTLC payment hash (SHA256 preimage) so claim witnesses are detected.
-
-**Kind**: instance method of [<code>Wallet</code>](#Wallet)  
-
-| Param | Type |
-| --- | --- |
-| paymentHashHex | <code>string</code> | 
-| [meta] | <code>object</code> | 
-
-<a name="Wallet+watchHtlc"></a>
-
-### wallet.watchHtlc(htlc)
-Watch an inventory HTLC offer (payment address + payment hash + optional settlement).
-
-**Kind**: instance method of [<code>Wallet</code>](#Wallet)  
-
-| Param | Type |
-| --- | --- |
-| htlc | <code>object</code> | 
-
-<a name="Wallet+getWatchSet"></a>
-
-### wallet.getWatchSet() ⇒ <code>object</code>
-**Kind**: instance method of [<code>Wallet</code>](#Wallet)  
-**Returns**: <code>object</code> - watch set snapshot  
-<a name="Wallet+_registerDerivedAddresses"></a>
-
-### wallet.\_registerDerivedAddresses(key, [opts])
-Derive and watch a window of addresses for a key on the wallet's network:
-SegWit on `m/84'/{coin}'/0'`, Taproot on `m/86'/{coin}'/0'`, and standard
-on `m/44'/{coin}'/0'`, receive and change chains — the same set as
-[Wallet.walletDescriptors](Wallet.walletDescriptors).
-
-**Kind**: instance method of [<code>Wallet</code>](#Wallet)  
-
-| Param | Type |
-| --- | --- |
-| key | [<code>Key</code>](#Key) | 
-| [opts] | <code>object</code> | 
-
-<a name="Wallet+ingestBitcoinTransaction"></a>
-
-### wallet.ingestBitcoinTransaction(txOrHex, [context]) ⇒ <code>object</code>
-Ingest a Bitcoin transaction (verbose RPC object or raw hex) and emit when related.
-
-**Kind**: instance method of [<code>Wallet</code>](#Wallet)  
-**Returns**: <code>object</code> - classification  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| txOrHex | <code>object</code> \| <code>string</code> |  |
-| [context] | <code>object</code> | { tip, height, source } |
-
-<a name="Wallet+ingestBitcoinBlock"></a>
-
-### wallet.ingestBitcoinBlock(block) ⇒ <code>Array.&lt;object&gt;</code>
-Process a new block tip (optionally with verbosity-2 `tx` / `transactions`).
-
-**Kind**: instance method of [<code>Wallet</code>](#Wallet)  
-**Returns**: <code>Array.&lt;object&gt;</code> - related classifications  
-
-| Param | Type |
-| --- | --- |
-| block | <code>object</code> | 
-
-<a name="Wallet+start"></a>
-
-### wallet.start()
-Start the wallet, including listening for transactions.
-
-**Kind**: instance method of [<code>Wallet</code>](#Wallet)  
-<a name="Wallet+getAddressForScript"></a>
-
-### wallet.getAddressForScript(script)
-Returns a bech32 address for the provided [Script](#Script).
-
-**Kind**: instance method of [<code>Wallet</code>](#Wallet)  
-
-| Param | Type |
-| --- | --- |
-| script | [<code>Script</code>](#Script) | 
-
-<a name="Wallet+getAddressFromRedeemScript"></a>
-
-### wallet.getAddressFromRedeemScript(redeemScript)
-Generate a [BitcoinAddress](BitcoinAddress) for the supplied [BitcoinScript](BitcoinScript).
-
-**Kind**: instance method of [<code>Wallet</code>](#Wallet)  
-
-| Param | Type |
-| --- | --- |
-| redeemScript | <code>BitcoinScript</code> | 
-
-<a name="Wallet+createHTLC"></a>
-
-### ~~wallet.createHTLC()~~
-***Legacy bcoin-style HTLC for channels — not the document-market P2TR profile.
-Use `@fabric/core/types/htlc` instead.***
-
-**Kind**: instance method of [<code>Wallet</code>](#Wallet)  
-<a name="Wallet+getUnusedAddress"></a>
-
-### wallet.getUnusedAddress() ⇒ <code>Promise.&lt;string&gt;</code>
-Next unused receive address; see [receiveAddress](#Wallet+receiveAddress).
-
-**Kind**: instance method of [<code>Wallet</code>](#Wallet)  
-<a name="Wallet+_sign"></a>
-
-### wallet.\_sign(tx)
-Signs a transaction with the keyring.
-
-**Kind**: instance method of [<code>Wallet</code>](#Wallet)  
-
-| Param | Type |
-| --- | --- |
-| tx | <code>BcoinTX</code> | 
-
-<a name="Wallet+_createCrowdfund"></a>
-
-### wallet.\_createCrowdfund(fund)
-Create a crowdfunding transaction.
-
-**Kind**: instance method of [<code>Wallet</code>](#Wallet)  
-
-| Param | Type |
-| --- | --- |
-| fund | <code>Object</code> | 
-
-<a name="Wallet+_getSwapInputScript"></a>
-
-### wallet.\_getSwapInputScript(redeemScript, secret)
-Generate [Script](#Script) for claiming a [Swap](#Swap).
-
-**Kind**: instance method of [<code>Wallet</code>](#Wallet)  
-
-| Param | Type |
-| --- | --- |
-| redeemScript | <code>\*</code> | 
-| secret | <code>\*</code> | 
-
-<a name="Wallet+_getRefundInputScript"></a>
-
-### wallet.\_getRefundInputScript(redeemScript)
-Generate [Script](#Script) for reclaiming funds commited to a [Swap](#Swap).
-
-**Kind**: instance method of [<code>Wallet</code>](#Wallet)  
-
-| Param | Type |
-| --- | --- |
-| redeemScript | <code>\*</code> | 
-
-<a name="Wallet+publicKeyFromString"></a>
-
-### wallet.publicKeyFromString(input)
-Create a public key from a string.
-
-**Kind**: instance method of [<code>Wallet</code>](#Wallet)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| input | <code>String</code> | Hex-encoded string to create key from. |
-
-<a name="Wallet+receiveAddress"></a>
-
-### wallet.receiveAddress() ⇒ <code>Promise.&lt;string&gt;</code>
-Next BIP-86 Taproot receive address of account 0 (`m/86'/{coin}'/0'/0/i`),
-recorded in the wallet's address book and watched.
-
-**Kind**: instance method of [<code>Wallet</code>](#Wallet)  
-<a name="Wallet.createSeed"></a>
-
-### Wallet.createSeed(passphrase) ⇒ <code>FabricSeed</code>
-Create a new seed phrase.
-
-**Kind**: static method of [<code>Wallet</code>](#Wallet)  
-**Returns**: <code>FabricSeed</code> - The seed object.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| passphrase | <code>String</code> | BIP 39 passphrase for key derivation. |
-
-<a name="Wallet.fromSeed"></a>
-
-### Wallet.fromSeed(seed) ⇒ [<code>Wallet</code>](#Wallet)
-Create a new [Wallet](#Wallet) from a seed object.
-
-**Kind**: static method of [<code>Wallet</code>](#Wallet)  
-**Returns**: [<code>Wallet</code>](#Wallet) - Instance of the wallet.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| seed | <code>FabricSeed</code> | Fabric seed. |
-
-<a name="Wallet.deriveTaprootAddress"></a>
-
-### Wallet.deriveTaprootAddress(key, [options]) ⇒ <code>Object</code>
-BIP-86 Taproot address of a key with private derivation
-(`m/86'/{coin}'/account'/change/index`).
-
-**Kind**: static method of [<code>Wallet</code>](#Wallet)  
-
-| Param | Type | Default | Description |
-| --- | --- | --- | --- |
-| key | [<code>Key</code>](#Key) |  | Key holding a master that can derive hardened children. |
-| [options] | <code>Object</code> |  |  |
-| [options.account] | <code>number</code> | <code>0</code> |  |
-| [options.change] | <code>number</code> | <code>0</code> |  |
-| [options.index] | <code>number</code> | <code>0</code> |  |
-| [options.network] | <code>string</code> | <code>&quot;&#x27;mainnet&#x27;&quot;</code> | Fabric network name. |
-
-<a name="Wallet.resolveDocumentContentHashHex"></a>
-
-### Wallet.resolveDocumentContentHashHex(opts) ⇒ <code>Object</code>
-Single path for buy / HTLC `contentHashHex` (sealed | envelope | blob).
-
-**Kind**: static method of [<code>Wallet</code>](#Wallet)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| opts | <code>object</code> | see [module:functions/documentPaymentHash.resolveDocumentContentHashHex](module:functions/documentPaymentHash.resolveDocumentContentHashHex) |
-
 <a name="FraudProof"></a>
 
 ## FraudProof
@@ -25236,6 +25147,7 @@ the same offence.
 - `payment:<seller x-only>:<payment hash>` and `frame:<sha256 of frame>` wrong-bytes, bad-key
 - `penalty-tx:<txid>` wrongful-penalty
 - `stale-tx:<txid>` stale-commitment
+- `run:<programHash>:<claimedRunCommitmentHex>` wrong-run
 
 **Kind**: instance method of [<code>FraudProof</code>](#FraudProof)  
 <a name="FraudProof+verify"></a>
@@ -25463,12 +25375,14 @@ Manages interaction with the Bitcoin network.
         * [.defineOpcodeContract(name, body, [meta])](#Service+defineOpcodeContract) ⇒ <code>Object</code>
         * [.listOpcodes()](#Service+listOpcodes) ⇒ <code>Array.&lt;Object&gt;</code>
         * [.route(msg)](#Service+route) ⇒ <code>Promise</code>
+        * [.load()](#Service+load) ⇒ [<code>Promise.&lt;Service&gt;</code>](#Service)
         * [._GET(path)](#Service+_GET) ⇒ <code>Promise</code>
         * [._PUT(path, value, [commit])](#Service+_PUT) ⇒ <code>Promise</code>
         * [.send(channel, message)](#Service+send) ⇒ [<code>Service</code>](#Service)
         * [.commit()](#Service+commit) ⇒ <code>String</code>
         * [._registerActor(actor)](#Service+_registerActor) ⇒ <code>Promise</code>
         * [._send(message)](#Service+_send)
+        * [.contentDigest([clock])](#Actor+contentDigest) ⇒ <code>String</code>
         * [.adopt(changes)](#Actor+adopt) ⇒ [<code>Actor</code>](#Actor)
         * [.export()](#Actor+export) ⇒ <code>Object</code>
         * [.stream([pipe])](#Actor+stream) ⇒ <code>TransformStream</code>
@@ -25820,7 +25734,9 @@ Move forward one clock cycle.
 <a name="Service+beat"></a>
 
 ### bitcoin.beat() ⇒ [<code>Service</code>](#Service)
-Compute latest state.
+Advance one heartbeat. Outstanding changes are one transition: one unsealed
+message, or nothing if that message would not fit. An idle beat is a digest
+checkpoint. This does not commit.
 
 **Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
 **Overrides**: [<code>beat</code>](#Service+beat)  
@@ -25979,6 +25895,14 @@ Resolve a [State](#State) from a particular [Message](#Message) object.
 | --- | --- | --- |
 | msg | [<code>Message</code>](#Message) | Explicit Fabric [Message](#Message). |
 
+<a name="Service+load"></a>
+
+### bitcoin.load() ⇒ [<code>Promise.&lt;Service&gt;</code>](#Service)
+Load durable state after the store is open and before the observer and
+heartbeat attach, so a restored snapshot is not staged as one replace.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Overrides**: [<code>load</code>](#Service+load)  
 <a name="Service+_GET"></a>
 
 ### bitcoin.\_GET(path) ⇒ <code>Promise</code>
@@ -26055,6 +25979,19 @@ Sends a message.
 | Param | Type | Description |
 | --- | --- | --- |
 | message | <code>Mixed</code> | Message to send. |
+
+<a name="Actor+contentDigest"></a>
+
+### bitcoin.contentDigest([clock]) ⇒ <code>String</code>
+Digest of this actor's content at <code>clock</code>.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Overrides**: [<code>contentDigest</code>](#Actor+contentDigest)  
+**Returns**: <code>String</code> - 64-character hex SHA-256.  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [clock] | <code>Number</code> | <code>0</code> | Sidechain clock covered by the digest. |
 
 <a name="Actor+adopt"></a>
 
@@ -26186,13 +26123,13 @@ Parse an Object into a corresponding Fabric state.
 
 ### Bitcoin.bitcoindChainDataDirSegment(network) ⇒ <code>string</code>
 Bitcoin Core chain data subdirectory under {@code -datadir} (empty string for mainnet cookie at datadir root).
-Matches Core layout: `regtest/`, `testnet3/`, `signet/`, `testnet4/`, or root for mainnet.
+Matches Core layout: `regtest/`, `testnet3/`, `signet/`, `testnet4/`, `testnet5/`, or root for mainnet.
 
 **Kind**: static method of [<code>Bitcoin</code>](#Bitcoin)  
 
 | Param | Type | Description |
 | --- | --- | --- |
-| network | <code>string</code> | Fabric network name (mainnet, testnet, regtest, signet, testnet4, playnet, …). |
+| network | <code>string</code> | Fabric network name (mainnet, testnet, regtest, signet, testnet4, testnet5, playnet, …). |
 
 <a name="Bitcoin.resolveBitcoinDatadirForLocalAccess"></a>
 
@@ -26658,7 +26595,7 @@ Default TCP port lightningd listens on when [settings.port](settings.port) is om
 | [settings.now] | <code>function</code> |  | clock override (`() => ms`), for tests. |
 | [settings.claimFeerate] | <code>number</code> | <code>1</code> | sat/vB assumed when opening an L1 document HTLC. No fee oracle. |
 | [settings.l1Batch] | <code>boolean</code> |  | Pay 128 chunks per L1 HTLC. Default on for mainnet. |
-| [settings.network] | <code>string</code> | <code>&quot;&#x27;regtest&#x27;&quot;</code> | `regtest` / `signet` / `testnet` / `testnet4` / `mainnet`. |
+| [settings.network] | <code>string</code> | <code>&quot;&#x27;regtest&#x27;&quot;</code> | `regtest` / `signet` / `testnet` / `testnet4` / `testnet5` / `mainnet`. |
 | [settings.book] | <code>Object</code> |  | `DocumentBook` settings. |
 
 <a name="Market+attach"></a>
@@ -27000,6 +26937,216 @@ Closes the connection to the Redis server.
 | --- | --- | --- |
 | name | <code>string</code> | Channel name |
 
+<a name="Storage"></a>
+
+## Storage
+**Kind**: global class  
+
+* [Storage](#Storage)
+    * [new Storage([settings])](#new_Storage_new)
+    * _instance_
+        * [.contracts](#Storage+contracts) : <code>Map.&lt;string, object&gt;</code>
+        * [.commitments](#Storage+commitments) : <code>Map.&lt;string, object&gt;</code>
+        * [.challenges](#Storage+challenges) : <code>Map.&lt;string, object&gt;</code>
+        * [.deposits](#Storage+deposits) : <code>Map.&lt;string, object&gt;</code>
+        * [.register(contract, [id])](#Storage+register) ⇒ <code>object</code>
+        * [.commit(opts)](#Storage+commit) ⇒ <code>object</code>
+        * [.challenge(opts)](#Storage+challenge) ⇒ <code>object</code>
+        * [.respond(response, [ctx])](#Storage+respond) ⇒ <code>object</code>
+        * [.registerDeposit(deposit, fundedTxHex)](#Storage+registerDeposit)
+        * [.missingChainCallbacks()](#Storage+missingChainCallbacks) ⇒ <code>Array.&lt;string&gt;</code>
+        * [.chainView()](#Storage+chainView) ⇒ <code>Object</code> \| <code>Object</code>
+        * [.preparePenalty(opts)](#Storage+preparePenalty) ⇒ <code>object</code>
+        * [.penalizeLateResponse(opts)](#Storage+penalizeLateResponse) ⇒ <code>Object</code>
+        * [.sweep([opts])](#Storage+sweep) ⇒ <code>Object</code>
+    * _static_
+        * [.challengeRoot(blobHashes, [claimedRoot])](#Storage.challengeRoot) ⇒ <code>Object</code>
+        * [.publish(opts)](#Storage.publish) ⇒ <code>object</code>
+        * [.buildBounty(opts)](#Storage.buildBounty) ⇒ <code>object</code>
+        * [.buildDeposit(opts)](#Storage.buildDeposit) ⇒ <code>object</code>
+
+<a name="new_Storage_new"></a>
+
+### new Storage([settings])
+
+| Param | Type |
+| --- | --- |
+| [settings] | <code>object</code> | 
+| [settings.network] | <code>string</code> | 
+| [settings.outpointUnspent] | <code>function</code> | 
+| [settings.txConfirmed] | <code>function</code> | 
+| [settings.headerKnown] | <code>function</code> | 
+
+<a name="Storage+contracts"></a>
+
+### storage.contracts : <code>Map.&lt;string, object&gt;</code>
+**Kind**: instance property of [<code>Storage</code>](#Storage)  
+<a name="Storage+commitments"></a>
+
+### storage.commitments : <code>Map.&lt;string, object&gt;</code>
+**Kind**: instance property of [<code>Storage</code>](#Storage)  
+<a name="Storage+challenges"></a>
+
+### storage.challenges : <code>Map.&lt;string, object&gt;</code>
+**Kind**: instance property of [<code>Storage</code>](#Storage)  
+<a name="Storage+deposits"></a>
+
+### storage.deposits : <code>Map.&lt;string, object&gt;</code>
+Deposit address to `{ deposit, fundedTxHex }`.
+
+**Kind**: instance property of [<code>Storage</code>](#Storage)  
+<a name="Storage+register"></a>
+
+### storage.register(contract, [id]) ⇒ <code>object</code>
+Remember a published contract.
+
+**Kind**: instance method of [<code>Storage</code>](#Storage)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| contract | <code>object</code> | from [publish](#Storage.publish) |
+| [id] | <code>string</code> |  |
+
+<a name="Storage+commit"></a>
+
+### storage.commit(opts) ⇒ <code>object</code>
+**Kind**: instance method of [<code>Storage</code>](#Storage)  
+**Returns**: <code>object</code> - signed commitment  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| opts | <code>object</code> | [commit](#Challenge.commit) options |
+
+<a name="Storage+challenge"></a>
+
+### storage.challenge(opts) ⇒ <code>object</code>
+Publisher-signed challenge for the contract's challenge tree.
+
+**Kind**: instance method of [<code>Storage</code>](#Storage)  
+
+| Param | Type |
+| --- | --- |
+| opts | <code>object</code> | 
+
+<a name="Storage+respond"></a>
+
+### storage.respond(response, [ctx]) ⇒ <code>object</code>
+Check a provider's answer. A timely valid answer resolves the challenge.
+
+**Kind**: instance method of [<code>Storage</code>](#Storage)  
+
+| Param | Type |
+| --- | --- |
+| response | <code>object</code> | 
+| [ctx] | <code>object</code> | 
+
+<a name="Storage+registerDeposit"></a>
+
+### storage.registerDeposit(deposit, fundedTxHex)
+**Kind**: instance method of [<code>Storage</code>](#Storage)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| deposit | <code>object</code> | from [buildDeposit](#Bond.buildDeposit) |
+| fundedTxHex | <code>string</code> |  |
+
+<a name="Storage+missingChainCallbacks"></a>
+
+### storage.missingChainCallbacks() ⇒ <code>Array.&lt;string&gt;</code>
+Names of chain callbacks the host did not pass.
+
+**Kind**: instance method of [<code>Storage</code>](#Storage)  
+<a name="Storage+chainView"></a>
+
+### storage.chainView() ⇒ <code>Object</code> \| <code>Object</code>
+**Kind**: instance method of [<code>Storage</code>](#Storage)  
+<a name="Storage+preparePenalty"></a>
+
+### storage.preparePenalty(opts) ⇒ <code>object</code>
+Build a penalty PSBT for a verifying fraud proof bound to a registered
+deposit. Refuses to run without a chain view.
+
+**Kind**: instance method of [<code>Storage</code>](#Storage)  
+
+| Param | Type |
+| --- | --- |
+| opts | <code>object</code> | 
+| opts.fraudProof | <code>object</code> | 
+| [opts.deposit] | <code>object</code> | 
+| [opts.fundedTxHex] | <code>string</code> | 
+| opts.destinationAddress | <code>string</code> | 
+| [opts.ctx] | <code>object</code> | 
+
+<a name="Storage+penalizeLateResponse"></a>
+
+### storage.penalizeLateResponse(opts) ⇒ <code>Object</code>
+Late answer → non-response proof → penalty PSBT.
+
+**Kind**: instance method of [<code>Storage</code>](#Storage)  
+
+| Param | Type |
+| --- | --- |
+| opts | <code>object</code> | 
+
+<a name="Storage+sweep"></a>
+
+### storage.sweep([opts]) ⇒ <code>Object</code>
+Silence past the deadline does not become a penalty unless the chain
+view is present. Missing callbacks return `failClosed` and build nothing.
+
+**Kind**: instance method of [<code>Storage</code>](#Storage)  
+**Returns**: <code>Object</code> - `ok`. Failure adds `failClosed` and `error`. Success adds `late`.  
+
+| Param | Type |
+| --- | --- |
+| [opts] | <code>object</code> | 
+| [opts.epoch] | <code>number</code> | 
+| [opts.tipHeight] | <code>number</code> | 
+
+<a name="Storage.challengeRoot"></a>
+
+### Storage.challengeRoot(blobHashes, [claimedRoot]) ⇒ <code>Object</code>
+Challenge-tree root for raw blob hashes. Refuses a sale-tree root that
+does not match.
+
+**Kind**: static method of [<code>Storage</code>](#Storage)  
+
+| Param | Type |
+| --- | --- |
+| blobHashes | <code>Array.&lt;string&gt;</code> | 
+| [claimedRoot] | <code>string</code> | 
+
+<a name="Storage.publish"></a>
+
+### Storage.publish(opts) ⇒ <code>object</code>
+Publish a storage contract. `blobs` are hashed here; `blobHashes` are
+used as given. The root is always the challenge tree.
+
+**Kind**: static method of [<code>Storage</code>](#Storage)  
+**Returns**: <code>object</code> - `StorageContract` body  
+
+| Param | Type |
+| --- | --- |
+| opts | <code>object</code> | 
+
+<a name="Storage.buildBounty"></a>
+
+### Storage.buildBounty(opts) ⇒ <code>object</code>
+**Kind**: static method of [<code>Storage</code>](#Storage)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| opts | <code>object</code> | passed to [buildBounty](#Bond.buildBounty); mainnet throws |
+
+<a name="Storage.buildDeposit"></a>
+
+### Storage.buildDeposit(opts) ⇒ <code>object</code>
+**Kind**: static method of [<code>Storage</code>](#Storage)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| opts | <code>object</code> | passed to [buildDeposit](#Bond.buildDeposit); mainnet throws |
+
 <a name="Text"></a>
 
 ## Text ⇐ [<code>Service</code>](#Service)
@@ -27026,6 +27173,7 @@ Closes the connection to the Redis server.
         * [.listOpcodes()](#Service+listOpcodes) ⇒ <code>Array.&lt;Object&gt;</code>
         * [.route(msg)](#Service+route) ⇒ <code>Promise</code>
         * [.start()](#Service+start)
+        * [.load()](#Service+load) ⇒ [<code>Promise.&lt;Service&gt;</code>](#Service)
         * [._GET(path)](#Service+_GET) ⇒ <code>Promise</code>
         * [._PUT(path, value, [commit])](#Service+_PUT) ⇒ <code>Promise</code>
         * [.connect(notify)](#Service+connect) ⇒ <code>Promise</code>
@@ -27033,6 +27181,7 @@ Closes the connection to the Redis server.
         * [.commit()](#Service+commit) ⇒ <code>String</code>
         * [._registerActor(actor)](#Service+_registerActor) ⇒ <code>Promise</code>
         * [._send(message)](#Service+_send)
+        * [.contentDigest([clock])](#Actor+contentDigest) ⇒ <code>String</code>
         * [.adopt(changes)](#Actor+adopt) ⇒ [<code>Actor</code>](#Actor)
         * [.export()](#Actor+export) ⇒ <code>Object</code>
         * [.stream([pipe])](#Actor+stream) ⇒ <code>TransformStream</code>
@@ -27084,7 +27233,9 @@ Move forward one clock cycle.
 <a name="Service+beat"></a>
 
 ### text.beat() ⇒ [<code>Service</code>](#Service)
-Compute latest state.
+Advance one heartbeat. Outstanding changes are one transition: one unsealed
+message, or nothing if that message would not fit. An idle beat is a digest
+checkpoint. This does not commit.
 
 **Kind**: instance method of [<code>Text</code>](#Text)  
 **Emits**: <code>Message#event:beat</code>  
@@ -27237,6 +27388,13 @@ Start the service, including the initiation of an outbound connection
 to any peers designated in the service's configuration.
 
 **Kind**: instance method of [<code>Text</code>](#Text)  
+<a name="Service+load"></a>
+
+### text.load() ⇒ [<code>Promise.&lt;Service&gt;</code>](#Service)
+Load durable state after the store is open and before the observer and
+heartbeat attach, so a restored snapshot is not staged as one replace.
+
+**Kind**: instance method of [<code>Text</code>](#Text)  
 <a name="Service+_GET"></a>
 
 ### text.\_GET(path) ⇒ <code>Promise</code>
@@ -27319,6 +27477,18 @@ Sends a message.
 | Param | Type | Description |
 | --- | --- | --- |
 | message | <code>Mixed</code> | Message to send. |
+
+<a name="Actor+contentDigest"></a>
+
+### text.contentDigest([clock]) ⇒ <code>String</code>
+Digest of this actor's content at <code>clock</code>.
+
+**Kind**: instance method of [<code>Text</code>](#Text)  
+**Returns**: <code>String</code> - 64-character hex SHA-256.  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [clock] | <code>Number</code> | <code>0</code> | Sidechain clock covered by the digest. |
 
 <a name="Actor+adopt"></a>
 
@@ -27843,479 +28013,20 @@ Receive topics paused by [pause](#ZMQ+pause) again.
 Deprecated 2021-11-06 — use [FabricState](FabricState) (<code>types/state</code>). <code>Scribe</code> was merged into <code>State</code>.
 
 **Kind**: global class  
-<a name="leafScripts"></a>
-
-## leafScripts
-Buffer-backed leaves for control-block / PSBT helpers.
-
-**Kind**: global variable  
-<a name="spendAddress"></a>
-
-## spendAddress
-Alias aligned with ARC / tracked summaries.
-
-**Kind**: global variable  
-<a name="YEAR_BLOCKS"></a>
-
-## YEAR\_BLOCKS
-Blocks in a year (10-minute blocks).
-
-**Kind**: global constant  
-<a name="FIDELITY_LOCKTIME_GRID"></a>
-
-## FIDELITY\_LOCKTIME\_GRID
-Mainnet bond locktimes are multiples of this height.
-
-**Kind**: global constant  
-<a name="FIDELITY_MAX_CERT_BLOCKS"></a>
-
-## FIDELITY\_MAX\_CERT\_BLOCKS
-Furthest ahead a certificate may expire: about a year.
-
-**Kind**: global constant  
-<a name="LEAF_VERSION"></a>
-
-## LEAF\_VERSION
-Leaf version for BIP342 tapscript.
-
-**Kind**: global constant  
-<a name="CHANNEL_BODY_TYPES"></a>
-
-## CHANNEL\_BODY\_TYPES
-CONTRACT_MESSAGE body types for the Fabric payment channel flow. These ride
-the existing `CONTRACT_MESSAGE` opcode as signed artifacts
-([signArtifact](#Witness.signArtifact)); **no channel opcode is introduced** — a
-dedicated opcode is a separate, later protocol decision.
-
-**Kind**: global constant  
-<a name="CHANNEL_DEFAULTS"></a>
-
-## CHANNEL\_DEFAULTS
-Channel defaults (Lightning-derived). Policy fields are negotiated at
-`ChannelOpen` — the stricter value wins. HTLCs are never trimmed: every one
-carries at least `HTLC_MINIMUM_SATS`, so it has a commitment output its
-receiver can claim on-chain.
-
-`htlcClaimWindowBlocks` is part of the HTLC script (not negotiated): on the
-receiver's own commitment the sender's timeout waits `toSelfDelay +
-htlcClaimWindowBlocks` after confirmation, so the receiver's CSV-delayed
-claim always has that many blocks to itself, whatever the CLTV.
-`minToSelfDelay` / `maxToSelfDelay` / `minChannelLifetimeBlocks` are local
-(non-funder) acceptance limits, never negotiated.
-
-**Kind**: global constant  
-<a name="MAX_TRANSFERS"></a>
-
-## MAX\_TRANSFERS
-Balance transfers remembered per session (newest kept).
-
-**Kind**: global constant  
-<a name="MAX_SETTLED_CREDITS"></a>
-
-## MAX\_SETTLED\_CREDITS
-Settled credit rows kept (open rows are bounded by the credit limit).
-
-**Kind**: global constant  
-<a name="MAX_FEE_PPM"></a>
-
-## MAX\_FEE\_PPM
-Highest proportional maker fee an offer may ask: 5%.
-
-**Kind**: global constant  
-<a name="MIN_COINJOIN_SATS"></a>
-
-## MIN\_COINJOIN\_SATS
-Smallest coinjoin amount.
-
-**Kind**: global constant  
-<a name="DUST_SATS"></a>
-
-## DUST\_SATS
-P2TR dust limit: change below this is dropped (it goes to miners).
-
-**Kind**: global constant  
-<a name="MAX_MAKERS"></a>
-
-## MAX\_MAKERS
-Most makers in one round.
-
-**Kind**: global constant  
-<a name="MAX_MAKER_INPUTS"></a>
-
-## MAX\_MAKER\_INPUTS
-Most inputs one maker may contribute.
-
-**Kind**: global constant  
-<a name="DEFAULT_MIN_EQUAL_OUTPUTS"></a>
-
-## DEFAULT\_MIN\_EQUAL\_OUTPUTS
-Fewest equal outputs a maker accepts as a coinjoin (taker + one maker).
-
-**Kind**: global constant  
-<a name="MAX_PSBT_CHARS"></a>
-
-## MAX\_PSBT\_CHARS
-Largest PSBT (base64 characters) a round message may carry: sealed, it must
-still fit one `CONTRACT_MESSAGE` under `MAX_MESSAGE_SIZE` (32 KiB).
-
-**Kind**: global constant  
-<a name="SEAL_NAMESPACE"></a>
-
-## SEAL\_NAMESPACE
-Contract namespace for sealed round messages and `CONTRACT_MESSAGE` bodies.
-
-**Kind**: global constant  
-<a name="SEALED_TYPE"></a>
-
-## SEALED\_TYPE
-Body type of a sealed round message.
-
-**Kind**: global constant  
-<a name="WEIGHT_OVERHEAD"></a>
-
-## WEIGHT\_OVERHEAD
-Transaction weight, in weight units: overhead, P2TR key-path input, P2TR output.
-
-**Kind**: global constant  
-<a name="SIGNER_FIELD"></a>
-
-## SIGNER\_FIELD
-Which field carries each body's author key.
-
-**Kind**: global constant  
-<a name="ROUND_TYPES"></a>
-
-## ROUND\_TYPES
-Round messages: sealed between taker and maker, never gossiped.
-
-**Kind**: global constant  
-<a name="PODLE_MAX_INDEX"></a>
-
-## PODLE\_MAX\_INDEX
-Distinct commitments one UTXO can produce (indices `0 … PODLE_MAX_INDEX − 1`).
-
-**Kind**: global constant  
-<a name="PODLE_TAG"></a>
-
-## PODLE\_TAG
-Domain tag mixed into the DLEQ challenge.
-
-**Kind**: global constant  
-<a name="PODLE_MIN_AGE_CONFS"></a>
-
-## PODLE\_MIN\_AGE\_CONFS
-Default: the commitment UTXO must be this many blocks deep.
-
-**Kind**: global constant  
-<a name="PODLE_MIN_VALUE_PCT"></a>
-
-## PODLE\_MIN\_VALUE\_PCT
-Default: the commitment UTXO must be worth this percent of the coinjoin amount.
-
-**Kind**: global constant  
-<a name="PODLE_BLACKLIST_SIZE"></a>
-
-## PODLE\_BLACKLIST\_SIZE
-Default size of a maker's used-commitment memory.
-
-**Kind**: global constant  
-<a name="DEFAULT_MAX_SIGNS"></a>
-
-## DEFAULT\_MAX\_SIGNS
-Times a maker will sign a rebuilt transaction in one round.
-
-**Kind**: global constant  
-<a name="LOCKTIME_SLACK_BLOCKS"></a>
-
-## LOCKTIME\_SLACK\_BLOCKS
-Blocks the transaction's `nLockTime` may run ahead of the maker's tip.
-
-**Kind**: global constant  
-<a name="INPUT_HEADROOM"></a>
-
-## INPUT\_HEADROOM
-Extra inputs budgeted when the taker selects coins.
-
-**Kind**: global constant  
-<a name="GCM_TAG_BYTES"></a>
-
-## GCM\_TAG\_BYTES
-AES-GCM tag appended to each sealed blob.
-
-**Kind**: global constant  
-<a name="BID_TYPE"></a>
-
-## BID\_TYPE
-Wire type of a chunk bid.
-
-**Kind**: global constant  
-<a name="ASK_TYPE"></a>
-
-## ASK\_TYPE
-Wire type of a seller's answer to a bid.
-
-**Kind**: global constant  
-<a name="DEFAULT_BID_TTL_SECONDS"></a>
-
-## DEFAULT\_BID\_TTL\_SECONDS
-Bid lifetime when the buyer names none.
-
-**Kind**: global constant  
-<a name="BID_CLOCK_SKEW_SECONDS"></a>
-
-## BID\_CLOCK\_SKEW\_SECONDS
-Clock difference tolerated between peers when checking how far ahead a bid expires.
-
-**Kind**: global constant  
-<a name="DEFAULT_WEIGHTS"></a>
-
-## DEFAULT\_WEIGHTS
-Default ranking weights (sum to 1).
-
-**Kind**: global constant  
-<a name="TELEMETRY_VERSION"></a>
-
-## TELEMETRY\_VERSION
-Telemetry record schema version.
-
-**Kind**: global constant  
-<a name="TELEMETRY_TYPE"></a>
-
-## TELEMETRY\_TYPE
-Canonical `type` for an exported telemetry record.
-
-**Kind**: global constant  
-<a name="SCORE_UNKNOWN"></a>
-
-## SCORE\_UNKNOWN
-Score for a provider with no observations.
-
-**Kind**: global constant  
-<a name="SCORE_MAX"></a>
-
-## SCORE\_MAX
-Maximum provider score.
-
-**Kind**: global constant  
-<a name="SCORE_INVENTORY_ONLY"></a>
-
-## SCORE\_INVENTORY\_ONLY
-A provider seen only in inventories ranks below a neutral record (500).
-
-**Kind**: global constant  
-<a name="MAX_PROVIDERS"></a>
-
-## MAX\_PROVIDERS
-Providers tracked before the least recently updated unpenalized one is evicted.
-
-**Kind**: global constant  
-<a name="MAX_OFFERS"></a>
-
-## MAX\_OFFERS
-Offer rows held before the oldest is evicted.
-
-**Kind**: global constant  
-<a name="MAX_EVIDENCE"></a>
-
-## MAX\_EVIDENCE
-Fraud-proof evidence ids remembered for dedupe.
-
-**Kind**: global constant  
-<a name="HOP_PENALTY_MS"></a>
-
-## HOP\_PENALTY\_MS
-Each extra gossip hop counts as this many milliseconds of latency.
-
-**Kind**: global constant  
-<a name="DUST_SATS"></a>
-
-## DUST\_SATS
-Smallest output the claim / refund transaction may pay.
-
-**Kind**: global constant  
-<a name="DEFAULT_FEE_SATS"></a>
-
-## DEFAULT\_FEE\_SATS
-Fee used when a spend names none.
-
-**Kind**: global constant  
-<a name="LOCKTIME_THRESHOLD"></a>
-
-## LOCKTIME\_THRESHOLD
-BIP65: lock values at or above this are unix times, not heights.
-
-**Kind**: global constant  
-<a name="DEPRECATED_WIRE_TYPES"></a>
-
-## DEPRECATED\_WIRE\_TYPES
-Registered opcodes nothing sends or handles (docs/MESSAGE_BODY.md, Migration
-Phase 4). They still decode; Peer counts and warns when one arrives, and a
-later protocol version removes them. `P2P_BASE_MESSAGE` and
-`P2P_CHAIN_SYNC_REQUEST` are still in use and are not listed.
-
-**Kind**: global constant  
-<a name="SEALED_DELIVERY_INNER_TYPE_BY_WIRE"></a>
-
-## SEALED\_DELIVERY\_INNER\_TYPE\_BY\_WIRE
-Sealed document delivery wire type → the inner `type` its generic handler dispatches on.
-
-**Kind**: global constant  
-<a name="SEALED_DELIVERY_INNER_TYPES"></a>
-
-## SEALED\_DELIVERY\_INNER\_TYPES
-Those inner types: refused inside a `GenericMessage` / `P2P_BASE_MESSAGE` carrier.
-
-**Kind**: global constant  
-<a name="FIELD_BODIES_VERSION"></a>
-
-## FIELD\_BODIES\_VERSION
-Session-advertised level of field-body support (`object.fieldBodies`).
-
-**Kind**: global constant  
-<a name="PEER_SEALED_BLOB_FUNDED_RETENTION_MS"></a>
-
-## PEER\_SEALED\_BLOB\_FUNDED\_RETENTION\_MS
-Default time a funded sealed-blob quote keeps its secret while its HTLC settles.
-
-**Kind**: global constant  
-<a name="TAPROOT_INTERNAL_NUMS"></a>
-
-## TAPROOT\_INTERNAL\_NUMS
-BIP341-style NUMS x-only internal key (script-path spend only).
-
-**Kind**: global constant  
-<a name="CLTV_TIMESTAMP_THRESHOLD"></a>
-
-## CLTV\_TIMESTAMP\_THRESHOLD
-BIP65 LOCKTIME_THRESHOLD: nLockTime / CLTV values ≥ this are unix timestamps.
-
-**Kind**: global constant  
-<a name="MAX_LOCKTIME"></a>
-
-## MAX\_LOCKTIME
-nLockTime / nSequence max (2^32 − 1). Avoid a 32-bit hex literal.
-
-**Kind**: global constant  
-<a name="EXIT_KINDS"></a>
-
-## EXIT\_KINDS
-Exit kinds.
-
-**Kind**: global constant  
-<a name="EXIT_SIGNATURE_TYPE"></a>
-
-## EXIT\_SIGNATURE\_TYPE
-`CONTRACT_MESSAGE` body carrying one exit signature.
-
-**Kind**: global constant  
-<a name="UNSAFE_PATH_TOKENS"></a>
-
-## UNSAFE\_PATH\_TOKENS
-Path tokens that would reach `Object.prototype` through `pointer.set`.
-
-**Kind**: global constant  
-<a name="MAX_PREMIUM_PPM"></a>
-
-## MAX\_PREMIUM\_PPM
-Largest premium (either sign) an order may quote: ±50%.
-
-**Kind**: global constant  
-<a name="DEFAULT_MIN_CLAIM_BLOCKS"></a>
-
-## DEFAULT\_MIN\_CLAIM\_BLOCKS
-Blocks the L2 giver needs left on the HTLC to claim after paying.
-
-**Kind**: global constant  
-<a name="DEFAULT_MIN_CONFIRMATIONS"></a>
-
-## DEFAULT\_MIN\_CONFIRMATIONS
-HTLC confirmations before the L2 giver pays.
-
-**Kind**: global constant  
-<a name="DEFAULT_INVOICE_MARGIN_SECONDS"></a>
-
-## DEFAULT\_INVOICE\_MARGIN\_SECONDS
-Invoice must expire at least this long before the refund lock opens.
-
-**Kind**: global constant  
-<a name="MIN_INVOICE_EXPIRY_SECONDS"></a>
-
-## MIN\_INVOICE\_EXPIRY\_SECONDS
-Shortest expiry a swap invoice may carry.
-
-**Kind**: global constant  
-<a name="MIN_REFUND_LOCK_BLOCKS"></a>
-
-## MIN\_REFUND\_LOCK\_BLOCKS
-Shortest refund lock an order may ask for: room for the claim, the funding
-confirmations, one block of slack, the invoice margin, and the shortest
-invoice, at the default block time.
-
-**Kind**: global constant  
-<a name="MAX_REFUND_LOCK_BLOCKS"></a>
-
-## MAX\_REFUND\_LOCK\_BLOCKS
-Longest refund lock an order may ask for (about two weeks of blocks).
-
-**Kind**: global constant  
-<a name="DEFAULT_INVOICE_EXPIRY_SECONDS"></a>
-
-## DEFAULT\_INVOICE\_EXPIRY\_SECONDS
-BOLT11 default expiry when the invoice names none.
-
-**Kind**: global constant  
-<a name="SIGNER_FIELD"></a>
-
-## SIGNER\_FIELD
-Which field carries each body's author key.
-
-**Kind**: global constant  
-<a name="ZMQ_TOPIC_CASES"></a>
-
-## ZMQ\_TOPIC\_CASES
-bitcoind ZMQ topic → `_handleZMQMessage` case.
-
-**Kind**: global constant  
-<a name="ZMQ_TXID_MEMORY"></a>
-
-## ZMQ\_TXID\_MEMORY
-Max txids kept for `rawtx` / `hashtx` pair dedupe.
-
-**Kind**: global constant  
-<a name="ZMQ_TX_DEDUPE_MS"></a>
-
-## ZMQ\_TX\_DEDUPE\_MS
-Default window in which a `rawtx` / `hashtx` pair counts as one admission.
-
-**Kind**: global constant  
-<a name="ZMQ_TX_TOPICS"></a>
-
-## ZMQ\_TX\_TOPICS
-Per-transaction topics, paused during initial block download.
-
-**Kind**: global constant  
-<a name="ZMQ_IBD_POLL_MS"></a>
-
-## ZMQ\_IBD\_POLL\_MS
-Default interval between initial-block-download checks while it lasts.
-
-**Kind**: global constant  
-<a name="ZMQ_HASHTX_GRACE_MS"></a>
-
-## ZMQ\_HASHTX\_GRACE\_MS
-Default wait for a `rawtx` before a lone `hashtx` is fetched over RPC.
-
-**Kind**: global constant  
-<a name="BALANCE_REFRESH_MS"></a>
-
-## BALANCE\_REFRESH\_MS
-Default minimum interval between wallet balance reads driven by `rawtx`.
-
-**Kind**: global constant  
-<a name="RPC_MAX_SOCKETS"></a>
-
-## RPC\_MAX\_SOCKETS
-Default cap on concurrent RPC connections to bitcoind.
+<a name="crypto"></a>
+
+## crypto
+Peer storage market.
+
+Any Fabric peer can publish a storage contract, stake a deposit, answer a
+publisher's challenge, and build a penalty PSBT. The contract root is the
+challenge tree over raw blob hashes ([Challenge.createBlobMerkleTree](Challenge.createBlobMerkleTree)),
+not the document sale tree (which also commits payment hashes and IVs).
+Bonds stay on regtest, signet, and testnet: [Bond](#Bond) refuses mainnet.
+
+A penalty that depends on chain state fails closed unless the host passed
+`outpointUnspent`, `txConfirmed`, and `headerKnown`. Hub HTTP is an adapter
+over this service.
 
 **Kind**: global constant  
 <a name="Text"></a>
@@ -28345,6 +28056,7 @@ Default cap on concurrent RPC connections to bitcoind.
         * [.listOpcodes()](#Service+listOpcodes) ⇒ <code>Array.&lt;Object&gt;</code>
         * [.route(msg)](#Service+route) ⇒ <code>Promise</code>
         * [.start()](#Service+start)
+        * [.load()](#Service+load) ⇒ [<code>Promise.&lt;Service&gt;</code>](#Service)
         * [._GET(path)](#Service+_GET) ⇒ <code>Promise</code>
         * [._PUT(path, value, [commit])](#Service+_PUT) ⇒ <code>Promise</code>
         * [.connect(notify)](#Service+connect) ⇒ <code>Promise</code>
@@ -28352,6 +28064,7 @@ Default cap on concurrent RPC connections to bitcoind.
         * [.commit()](#Service+commit) ⇒ <code>String</code>
         * [._registerActor(actor)](#Service+_registerActor) ⇒ <code>Promise</code>
         * [._send(message)](#Service+_send)
+        * [.contentDigest([clock])](#Actor+contentDigest) ⇒ <code>String</code>
         * [.adopt(changes)](#Actor+adopt) ⇒ [<code>Actor</code>](#Actor)
         * [.export()](#Actor+export) ⇒ <code>Object</code>
         * [.stream([pipe])](#Actor+stream) ⇒ <code>TransformStream</code>
@@ -28403,7 +28116,9 @@ Move forward one clock cycle.
 <a name="Service+beat"></a>
 
 ### text.beat() ⇒ [<code>Service</code>](#Service)
-Compute latest state.
+Advance one heartbeat. Outstanding changes are one transition: one unsealed
+message, or nothing if that message would not fit. An idle beat is a digest
+checkpoint. This does not commit.
 
 **Kind**: instance method of [<code>Text</code>](#Text)  
 **Emits**: <code>Message#event:beat</code>  
@@ -28556,6 +28271,13 @@ Start the service, including the initiation of an outbound connection
 to any peers designated in the service's configuration.
 
 **Kind**: instance method of [<code>Text</code>](#Text)  
+<a name="Service+load"></a>
+
+### text.load() ⇒ [<code>Promise.&lt;Service&gt;</code>](#Service)
+Load durable state after the store is open and before the observer and
+heartbeat attach, so a restored snapshot is not staged as one replace.
+
+**Kind**: instance method of [<code>Text</code>](#Text)  
 <a name="Service+_GET"></a>
 
 ### text.\_GET(path) ⇒ <code>Promise</code>
@@ -28638,6 +28360,18 @@ Sends a message.
 | Param | Type | Description |
 | --- | --- | --- |
 | message | <code>Mixed</code> | Message to send. |
+
+<a name="Actor+contentDigest"></a>
+
+### text.contentDigest([clock]) ⇒ <code>String</code>
+Digest of this actor's content at <code>clock</code>.
+
+**Kind**: instance method of [<code>Text</code>](#Text)  
+**Returns**: <code>String</code> - 64-character hex SHA-256.  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [clock] | <code>Number</code> | <code>0</code> | Sidechain clock covered by the digest. |
 
 <a name="Actor+adopt"></a>
 
@@ -28798,1695 +28532,6 @@ Join a list with an Oxford comma (delegates to [module:functions/oxfordJoin](mod
 | Param | Type |
 | --- | --- |
 | list | <code>Array.&lt;string&gt;</code> | 
-
-<a name="ZMQ_MESSAGE_TYPES"></a>
-
-## ZMQ\_MESSAGE\_TYPES
-bitcoind topic → message type for the field-encoded form.
-
-**Kind**: global constant  
-<a name="ZMQ_MAX_FIELD_HEX"></a>
-
-## ZMQ\_MAX\_FIELD\_HEX
-Hex characters that fit a field body beside its `present` / `extra` fields.
-
-**Kind**: global constant  
-<a name="lockFrom"></a>
-
-## lockFrom()
-Accept a block height, a `{ type, height|unix|blocks }` lock, or a normalized lock. @private
-
-**Kind**: global function  
-<a name="fidelityPath"></a>
-
-## fidelityPath(index, [networkName]) ⇒ <code>string</code>
-BIP-32 path of the `index`th bond key: `m/86'/coin'/0'/2/index`
-(chain 2 beside the BIP-86 receive and change chains).
-
-**Kind**: global function  
-
-| Param | Type | Default |
-| --- | --- | --- |
-| index | <code>number</code> |  | 
-| [networkName] | <code>string</code> | <code>&quot;&#x27;regtest&#x27;&quot;</code> | 
-
-<a name="isValidFidelityLocktime"></a>
-
-## isValidFidelityLocktime(locktime, [networkName]) ⇒ <code>boolean</code>
-Whether a bond may lock until `locktime` on this network: a block height,
-on the mainnet grid.
-
-**Kind**: global function  
-
-| Param | Type | Default |
-| --- | --- | --- |
-| locktime | <code>number</code> |  | 
-| [networkName] | <code>string</code> | <code>&quot;&#x27;regtest&#x27;&quot;</code> | 
-
-<a name="fidelityLocktimes"></a>
-
-## fidelityLocktimes(opts) ⇒ <code>Array.&lt;number&gt;</code>
-The next `count` locktimes a new bond may use, after `tipHeight`.
-
-**Kind**: global function  
-
-| Param | Type | Default | Description |
-| --- | --- | --- | --- |
-| opts | <code>Object</code> |  |  |
-| opts.tipHeight | <code>number</code> |  |  |
-| [opts.networkName] | <code>string</code> | <code>&quot;&#x27;regtest&#x27;&quot;</code> |  |
-| [opts.count] | <code>number</code> | <code>12</code> |  |
-| [opts.step] | <code>number</code> |  | blocks between choices (mainnet: the grid) |
-
-<a name="buildFidelity"></a>
-
-## buildFidelity(opts) ⇒ <code>Object</code>
-The bond output: NUMS internal key, one CLTV leaf.
-
-**Kind**: global function  
-
-| Param | Type | Default | Description |
-| --- | --- | --- | --- |
-| opts | <code>Object</code> |  |  |
-| [opts.networkName] | <code>string</code> | <code>&quot;&#x27;regtest&#x27;&quot;</code> |  |
-| opts.bondPubkey | <code>string</code> |  | compressed or x-only |
-| opts.locktime | <code>number</code> |  | block height |
-
-<a name="prepareFidelityRedeem"></a>
-
-## prepareFidelityRedeem(opts) ⇒ <code>string</code>
-Unsigned PSBT spending a bond after its locktime (`nLockTime` = locktime,
-sequence `0xfffffffe` so CLTV applies).
-
-**Kind**: global function  
-**Returns**: <code>string</code> - PSBT base64  
-
-| Param | Type | Default | Description |
-| --- | --- | --- | --- |
-| opts | <code>Object</code> |  |  |
-| [opts.networkName] | <code>string</code> | <code>&quot;&#x27;regtest&#x27;&quot;</code> |  |
-| opts.bond | <code>Object</code> |  | `{ txid, vout, valueSats, locktime, bondXOnly }` |
-| opts.destinationAddress | <code>string</code> |  |  |
-| [opts.feeSats] | <code>number</code> | <code>500</code> |  |
-
-<a name="signFidelityRedeem"></a>
-
-## signFidelityRedeem(psbtBase64, bondPriv32) ⇒ <code>Object</code>
-Sign a bond redeem PSBT with the bond key and extract the transaction.
-
-**Kind**: global function  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| psbtBase64 | <code>string</code> | [prepareFidelityRedeem](#prepareFidelityRedeem) output |
-| bondPriv32 | <code>Buffer</code> \| <code>string</code> |  |
-
-<a name="signFidelityCertificate"></a>
-
-## signFidelityCertificate(opts) ⇒ <code>Object</code>
-Sign a certificate letting `makerPubkey` advertise this bond until block
-`certExpiresAt`.
-
-**Kind**: global function  
-**Returns**: <code>Object</code> - bond descriptor for `CoinjoinOffer.fidelityBond`  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| opts | <code>Object</code> |  |
-| opts.network | <code>string</code> |  |
-| opts.txid | <code>string</code> |  |
-| opts.vout | <code>number</code> |  |
-| opts.locktime | <code>number</code> |  |
-| opts.makerPubkey | <code>string</code> | compressed offer key |
-| opts.certExpiresAt | <code>number</code> | block height |
-| opts.bondPrivateKey | <code>Buffer</code> \| <code>string</code> |  |
-
-<a name="normalizeFidelity"></a>
-
-## normalizeFidelity(input) ⇒ <code>Object</code>
-Shape of `CoinjoinOffer.fidelityBond`.
-
-**Kind**: global function  
-
-| Param | Type |
-| --- | --- |
-| input | <code>Object</code> | 
-
-<a name="verifyFidelityCertificate"></a>
-
-## verifyFidelityCertificate(bond, opts) ⇒ <code>boolean</code>
-Check the bond key signed this certificate for `makerPubkey` on `network`.
-
-**Kind**: global function  
-
-| Param | Type |
-| --- | --- |
-| bond | <code>Object</code> | 
-| opts | <code>Object</code> | 
-| opts.makerPubkey | <code>string</code> | 
-| opts.network | <code>string</code> | 
-
-<a name="fidelityValue"></a>
-
-## fidelityValue(opts) ⇒ <code>number</code>
-Value of a bond (JoinMarket's formula, heights in place of times):
-`T = (locktime − confirmHeight) / year`, `L = max(0, tip − locktime) / year`,
-`a = max(0, min(1, e^(rT) − 1) − min(1, e^(rL) − 1))`,
-`value = (valueSats × a)^exponent`.
-
-**Kind**: global function  
-
-| Param | Type | Default |
-| --- | --- | --- |
-| opts | <code>Object</code> |  | 
-| opts.valueSats | <code>number</code> |  | 
-| opts.locktime | <code>number</code> |  | 
-| opts.confirmHeight | <code>number</code> |  | 
-| opts.tipHeight | <code>number</code> |  | 
-| [opts.interestRate] | <code>number</code> | <code>0.015</code> | 
-| [opts.exponent] | <code>number</code> | <code>1.3</code> | 
-
-<a name="verifyFidelity"></a>
-
-## verifyFidelity(bond, opts) ⇒ <code>Promise.&lt;{ok: boolean, reason: (string\|null), valueSats: number, confirmHeight: (number\|null), value: number}&gt;</code>
-Verify a bond on chain for one maker. `bitcoin.getTxOut(txid, vout)` must
-resolve to `{ valueSats, scriptPubKeyHex, confirmations }` for an unspent
-output, else `null`.
-
-**Kind**: global function  
-
-| Param | Type | Default | Description |
-| --- | --- | --- | --- |
-| bond | <code>Object</code> |  | `CoinjoinOffer.fidelityBond` |
-| opts | <code>Object</code> |  |  |
-| opts.makerPubkey | <code>string</code> |  |  |
-| opts.network | <code>string</code> |  |  |
-| opts.bitcoin | <code>Object</code> |  | `{ getTipHeight(), getTxOut(txid, vout) }` |
-| [opts.tipHeight] | <code>number</code> |  | skip `getTipHeight` |
-| [opts.minConfs] | <code>number</code> | <code>6</code> |  |
-| [opts.maxCertBlocks] | <code>number</code> |  |  |
-
-<a name="createBlobMerkleTree"></a>
-
-## createBlobMerkleTree(hashes) ⇒ [<code>Tree</code>](#Tree)
-Storage tree over raw 32-byte blob hashes (its proofs are [Tree](#Tree) proofs).
-
-**Kind**: global function  
-
-| Param | Type |
-| --- | --- |
-| hashes | <code>Array.&lt;string&gt;</code> | 
-
-<a name="expireHeight"></a>
-
-## expireHeight(h) ⇒ <code>number</code>
-**Kind**: global function  
-**Returns**: <code>number</code> - CLTV expiry height (0 when none)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| h | <code>Object</code> | HTLC row |
-
-<a name="randomRoundId"></a>
-
-## randomRoundId() ⇒ <code>string</code>
-**Kind**: global function  
-**Returns**: <code>string</code> - 32 random bytes as hex  
-<a name="normalizeOffer"></a>
-
-## normalizeOffer(input) ⇒ <code>Object</code>
-**Kind**: global function  
-**Returns**: <code>Object</code> - normalized `CoinjoinOffer` body (keeps `signature`)  
-
-| Param | Type |
-| --- | --- |
-| input | <code>Object</code> | 
-
-<a name="normalizeCancel"></a>
-
-## normalizeCancel(input) ⇒ <code>Object</code>
-**Kind**: global function  
-**Returns**: <code>Object</code> - normalized `CoinjoinOfferCancel` body  
-
-| Param | Type |
-| --- | --- |
-| input | <code>Object</code> | 
-
-<a name="normalizeFill"></a>
-
-## normalizeFill(input) ⇒ <code>Object</code>
-Taker → maker: fill `amountSats` of an offer. `takerPubkey` is a fresh key
-for this round only (it signs the taker's bodies and receives sealed
-replies), so makers never learn the taker's identity.
-
-**Kind**: global function  
-**Returns**: <code>Object</code> - normalized `CoinjoinFill` body  
-
-| Param | Type |
-| --- | --- |
-| input | <code>Object</code> | 
-
-<a name="normalizeFillAck"></a>
-
-## normalizeFillAck(input) ⇒ <code>Object</code>
-Maker → taker: the fill is accepted; `sealPubkey` receives the rest of the
-round.
-
-**Kind**: global function  
-**Returns**: <code>Object</code> - normalized `CoinjoinFillAck` body  
-
-| Param | Type |
-| --- | --- |
-| input | <code>Object</code> | 
-
-<a name="normalizeAuth"></a>
-
-## normalizeAuth(input) ⇒ <code>Object</code>
-Taker → maker: open the PoDLE commitment named in the fill.
-
-**Kind**: global function  
-**Returns**: <code>Object</code> - normalized `CoinjoinAuth` body  
-
-| Param | Type |
-| --- | --- |
-| input | <code>Object</code> | 
-
-<a name="normalizeIoAuth"></a>
-
-## normalizeIoAuth(input) ⇒ <code>Object</code>
-Maker → taker: the maker's inputs and where it wants its coinjoin output
-and change. Inputs may carry an `ownershipSig` ([signOwnership](#signOwnership)).
-
-**Kind**: global function  
-**Returns**: <code>Object</code> - normalized `CoinjoinIoAuth` body  
-
-| Param | Type |
-| --- | --- |
-| input | <code>Object</code> | 
-
-<a name="normalizeTx"></a>
-
-## normalizeTx(input) ⇒ <code>Object</code>
-Taker → maker: the unsigned transaction.
-
-**Kind**: global function  
-**Returns**: <code>Object</code> - normalized `CoinjoinTx` body  
-
-| Param | Type |
-| --- | --- |
-| input | <code>Object</code> | 
-
-<a name="normalizeSig"></a>
-
-## normalizeSig(input) ⇒ <code>Object</code>
-Maker → taker: the transaction with the maker's inputs signed.
-
-**Kind**: global function  
-**Returns**: <code>Object</code> - normalized `CoinjoinSig` body  
-
-| Param | Type |
-| --- | --- |
-| input | <code>Object</code> | 
-
-<a name="randomPrivateKey"></a>
-
-## randomPrivateKey() ⇒ <code>Buffer</code>
-**Kind**: global function  
-**Returns**: <code>Buffer</code> - a random valid private key  
-<a name="sealRoundMessage"></a>
-
-## sealRoundMessage(body, recipientPubkey) ⇒ <code>Object</code>
-Seal a signed round message to its recipient (participant ECDH seal).
-
-**Kind**: global function  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| body | <code>Object</code> | signed round body |
-| recipientPubkey | <code>string</code> | compressed or x-only |
-
-<a name="toContractMessage"></a>
-
-## toContractMessage(value) ⇒ <code>Object</code>
-Wrap a public body (offer, cancel) or a sealed round envelope as a
-`CONTRACT_MESSAGE` body: `buildMessage('CONTRACT_MESSAGE', toContractMessage(x))`.
-Round bodies must be sealed first.
-
-**Kind**: global function  
-**Returns**: <code>Object</code> - `{ contract: SEAL_NAMESPACE, ...value }`  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| value | <code>Object</code> | signed offer / cancel, or [sealRoundMessage](#sealRoundMessage) output |
-
-<a name="fromContractMessage"></a>
-
-## fromContractMessage(value) ⇒ <code>Object</code> \| <code>Object</code> \| <code>null</code>
-Read a coinjoin `CONTRACT_MESSAGE` body (the parsed legacy JSON). Public
-bodies are verified; sealed envelopes are returned for
-[openRoundMessage](#openRoundMessage) (or for relaying when `to` is not ours).
-Unsealed round bodies and other contracts return `null`.
-
-**Kind**: global function  
-
-| Param | Type |
-| --- | --- |
-| value | <code>Object</code> | 
-
-<a name="openRoundMessage"></a>
-
-## openRoundMessage(envelope, privateKey) ⇒ <code>Object</code>
-Open a sealed round message with the recipient's private key and verify
-the body inside.
-
-**Kind**: global function  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| envelope | <code>Object</code> | [sealRoundMessage](#sealRoundMessage) output |
-| privateKey | <code>Buffer</code> \| <code>string</code> |  |
-
-<a name="makerFee"></a>
-
-## makerFee(offer, amountSats) ⇒ <code>number</code>
-The maker's fee for a coinjoin of `amountSats`: `feeSats + ⌊amount × feePpm / 1e6⌋`.
-
-**Kind**: global function  
-
-| Param | Type |
-| --- | --- |
-| offer | <code>Object</code> | 
-| amountSats | <code>number</code> | 
-
-<a name="makerChange"></a>
-
-## makerChange(opts) ⇒ <code>number</code>
-Change owed to a maker: its inputs, less the coinjoin output, plus its
-fee, less its miner-fee contribution. Change under [DUST_SATS](#DUST_SATS) is
-not paid (0).
-
-**Kind**: global function  
-
-| Param | Type | Default | Description |
-| --- | --- | --- | --- |
-| opts | <code>Object</code> |  |  |
-| opts.inputSats | <code>number</code> |  | sum of the maker's inputs |
-| opts.amountSats | <code>number</code> |  |  |
-| opts.cjfeeSats | <code>number</code> |  |  |
-| [opts.txFeeContributionSats] | <code>number</code> | <code>0</code> |  |
-
-<a name="estimateVsize"></a>
-
-## estimateVsize(inputs, outputs) ⇒ <code>number</code>
-Virtual size of a transaction with only P2TR key-path inputs and P2TR outputs.
-
-**Kind**: global function  
-
-| Param | Type |
-| --- | --- |
-| inputs | <code>number</code> | 
-| outputs | <code>number</code> | 
-
-<a name="planCoinjoin"></a>
-
-## planCoinjoin(opts) ⇒ <code>Object</code>
-Outputs and fees for a round. Makers are paid exactly their offer's fee;
-the taker pays the miner fee less the makers' contributions, and takes
-what is left as change (dropped below dust).
-
-**Kind**: global function  
-**Returns**: <code>Object</code> - plan `{ amountSats, inputs, outputs, minerFeeSats, vsize, feeRateSatVb, takerChangeSats, totalMakerFeesSats, makers }`  
-
-| Param | Type | Default | Description |
-| --- | --- | --- | --- |
-| opts | <code>Object</code> |  |  |
-| opts.amountSats | <code>number</code> |  |  |
-| opts.feeRateSatVb | <code>number</code> |  |  |
-| opts.taker | <code>Object</code> |  | `{ inputs, coinjoinScriptHex, changeScriptHex }` |
-| opts.makers | <code>Array.&lt;Object&gt;</code> |  | `{ id, offer, inputs, coinjoinScriptHex, changeScriptHex }` |
-| [opts.minMakers] | <code>number</code> | <code>2</code> |  |
-
-<a name="buildPsbt"></a>
-
-## buildPsbt(opts) ⇒ <code>Object</code>
-Build the unsigned coinjoin PSBT (version 2, BIP-69, `nLockTime` = tip,
-sequence `0xfffffffe`, witness UTXOs on every input).
-
-**Kind**: global function  
-
-| Param | Type | Default | Description |
-| --- | --- | --- | --- |
-| opts | <code>Object</code> |  | [planCoinjoin](#planCoinjoin) options plus: |
-| [opts.networkName] | <code>string</code> | <code>&quot;&#x27;regtest&#x27;&quot;</code> |  |
-| opts.lockTime | <code>number</code> |  | current tip height (anti fee sniping) |
-
-<a name="unsignedTxid"></a>
-
-## unsignedTxid(psbtBase64) ⇒ <code>string</code>
-The id the transaction will have (key-path spends do not change it).
-
-**Kind**: global function  
-
-| Param | Type |
-| --- | --- |
-| psbtBase64 | <code>string</code> | 
-
-<a name="describePsbt"></a>
-
-## describePsbt(psbtBase64) ⇒ <code>Object</code>
-Inputs and outputs of a PSBT as plain rows.
-
-**Kind**: global function  
-
-| Param | Type |
-| --- | --- |
-| psbtBase64 | <code>string</code> | 
-
-<a name="validateForMaker"></a>
-
-## validateForMaker(opts) ⇒ <code>Object</code>
-Everything a maker must see before signing. It refuses unless its inputs
-are present with the values it named, its coinjoin output pays exactly
-`amountSats`, its change is at least what its offer earns, at least
-`minEqualOutputs` outputs share the coinjoin amount, every input and output
-is P2TR, and nothing else pays the maker's scripts.
-
-**Kind**: global function  
-
-| Param | Type | Default | Description |
-| --- | --- | --- | --- |
-| opts | <code>Object</code> |  |  |
-| opts.psbtBase64 | <code>string</code> |  |  |
-| opts.amountSats | <code>number</code> |  |  |
-| opts.offer | <code>Object</code> |  | the maker's offer |
-| opts.inputs | <code>Array.&lt;Object&gt;</code> |  | the maker's inputs (`CoinjoinIoAuth.inputs`) |
-| opts.coinjoinScriptHex | <code>string</code> |  |  |
-| opts.changeScriptHex | <code>string</code> |  |  |
-| [opts.minEqualOutputs] | <code>number</code> | <code>2</code> |  |
-| [opts.lockTimeMax] | <code>number</code> |  | refuse an `nLockTime` above this height |
-
-<a name="validateForTaker"></a>
-
-## validateForTaker(opts) ⇒ <code>Object</code>
-The taker's check of the final transaction: exactly the planned outputs
-(each maker paid its offer, no more), every planned input, and a feerate
-within bounds.
-
-**Kind**: global function  
-
-| Param | Type | Default | Description |
-| --- | --- | --- | --- |
-| opts | <code>Object</code> |  |  |
-| opts.psbtBase64 | <code>string</code> |  |  |
-| opts.plan | <code>Object</code> |  | [planCoinjoin](#planCoinjoin) output |
-| [opts.minFeeRateSatVb] | <code>number</code> | <code>1</code> |  |
-| [opts.maxFeeRateSatVb] | <code>number</code> | <code>500</code> |  |
-
-<a name="taprootOutputPrivateKey"></a>
-
-## taprootOutputPrivateKey(internalPriv32) ⇒ <code>Buffer</code>
-BIP-341 output private key for a BIP-86 key-path-only P2TR (internal key, no scripts).
-
-**Kind**: global function  
-**Returns**: <code>Buffer</code> - tweaked private key  
-
-| Param | Type |
-| --- | --- |
-| internalPriv32 | <code>Buffer</code> \| <code>string</code> | 
-
-<a name="taprootKeyPath"></a>
-
-## taprootKeyPath(internalPriv32, [networkName]) ⇒ <code>Object</code>
-Key-path-only P2TR for an internal private key.
-
-**Kind**: global function  
-
-| Param | Type | Default |
-| --- | --- | --- |
-| internalPriv32 | <code>Buffer</code> \| <code>string</code> |  | 
-| [networkName] | <code>string</code> | <code>&quot;&#x27;regtest&#x27;&quot;</code> | 
-
-<a name="signKeyPathInputs"></a>
-
-## signKeyPathInputs(psbtBase64, internalPrivateKeys) ⇒ <code>Object</code>
-Sign the PSBT inputs spent by the given key-path keys (SIGHASH_DEFAULT).
-Inputs owned by other keys are left untouched.
-
-**Kind**: global function  
-**Returns**: <code>Object</code> - indexes signed  
-
-| Param | Type |
-| --- | --- |
-| psbtBase64 | <code>string</code> | 
-| internalPrivateKeys | <code>Array.&lt;(Buffer\|string)&gt;</code> | 
-
-<a name="mergeMakerSignatures"></a>
-
-## mergeMakerSignatures(basePsbtBase64, makerPsbtBase64, makerInputs) ⇒ <code>string</code>
-Copy a maker's signatures for its own inputs into the taker's PSBT. Refuses
-a PSBT for another transaction, a missing or invalid signature on any of the
-maker's inputs; nothing else is taken from the maker's copy.
-
-**Kind**: global function  
-**Returns**: <code>string</code> - merged PSBT (base64)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| basePsbtBase64 | <code>string</code> | the taker's copy |
-| makerPsbtBase64 | <code>string</code> | the maker's signed copy |
-| makerInputs | <code>Array.&lt;Object&gt;</code> | `{ txid, vout }` rows of that maker |
-
-<a name="finalize"></a>
-
-## finalize(psbtBase64) ⇒ <code>Object</code>
-Finalize every input and extract the transaction.
-
-**Kind**: global function  
-
-| Param | Type |
-| --- | --- |
-| psbtBase64 | <code>string</code> | 
-
-<a name="signOwnership"></a>
-
-## signOwnership(opts) ⇒ <code>string</code>
-Prove control of a key-path UTXO for one round: a BIP340 signature by the
-output key over `SHA256(tag ‖ roundId ‖ txid ‖ vout)`.
-
-**Kind**: global function  
-**Returns**: <code>string</code> - 64-byte signature hex  
-
-| Param | Type |
-| --- | --- |
-| opts | <code>Object</code> | 
-| opts.roundId | <code>string</code> | 
-| opts.txid | <code>string</code> | 
-| opts.vout | <code>number</code> | 
-| opts.internalPrivateKey | <code>Buffer</code> \| <code>string</code> | 
-
-<a name="verifyOwnership"></a>
-
-## verifyOwnership(opts) ⇒ <code>boolean</code>
-**Kind**: global function  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| opts | <code>Object</code> |  |
-| opts.roundId | <code>string</code> |  |
-| opts.input | <code>Object</code> | `{ txid, vout, scriptPubKeyHex, ownershipSig }` |
-
-<a name="validateFill"></a>
-
-## validateFill(offer, fill, [opts]) ⇒ <code>Object</code>
-Check a fill against the offer it names.
-
-**Kind**: global function  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| offer | <code>Object</code> | normalized offer |
-| fill | <code>Object</code> | normalized fill |
-| [opts] | <code>Object</code> |  |
-| [opts.now] | <code>number</code> | ms |
-
-<a name="podleGenerator"></a>
-
-## podleGenerator(index) ⇒ <code>Object</code>
-Nothing-up-my-sleeve generator `J_index`: the first `SHA256(G ‖ index ‖ counter)`
-that is a valid x coordinate, lifted to even y. Nobody knows `log_G(J)`.
-
-**Kind**: global function  
-**Returns**: <code>Object</code> - noble `Point`  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| index | <code>number</code> | 0 … [PODLE_MAX_INDEX](#PODLE_MAX_INDEX) − 1 |
-
-<a name="podleCommitment"></a>
-
-## podleCommitment(p2Hex) ⇒ <code>string</code>
-The commitment for a `P2` point.
-
-**Kind**: global function  
-**Returns**: <code>string</code> - 64 hex characters  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| p2Hex | <code>string</code> | compressed point |
-
-<a name="generatePodle"></a>
-
-## generatePodle(opts) ⇒ <code>Object</code>
-Taker: commit to a UTXO it owns.
-
-**Kind**: global function  
-
-| Param | Type | Default | Description |
-| --- | --- | --- | --- |
-| opts | <code>Object</code> |  |  |
-| opts.privateKey | <code>Buffer</code> \| <code>string</code> |  | 32-byte private key of the UTXO's P2TR output key |
-| opts.utxo | <code>Object</code> |  | `{ txid, vout }` |
-| [opts.index] | <code>number</code> | <code>0</code> | which of the UTXO's commitments to use |
-
-<a name="verifyPodle"></a>
-
-## verifyPodle(opts) ⇒ <code>Object</code>
-Maker: check a reveal against the commitment it was promised.
-
-**Kind**: global function  
-
-| Param | Type |
-| --- | --- |
-| opts | <code>Object</code> | 
-| opts.commitment | <code>string</code> | 
-| opts.reveal | <code>Object</code> | 
-
-<a name="checkPodleUtxo"></a>
-
-## checkPodleUtxo(opts) ⇒ <code>Object</code>
-Maker: check the revealed UTXO itself, as read from the chain. The output
-must be P2TR to `P`'s x coordinate, old enough, and large enough for the
-coinjoin it is used for.
-
-**Kind**: global function  
-
-| Param | Type | Default | Description |
-| --- | --- | --- | --- |
-| opts | <code>Object</code> |  |  |
-| opts.reveal | <code>Object</code> |  |  |
-| opts.utxo | <code>Object</code> \| <code>null</code> |  | `{ scriptPubKeyHex, valueSats, confirmations }` (`null` = spent / unknown) |
-| opts.amountSats | <code>number</code> |  | coinjoin amount |
-| [opts.minAgeConfs] | <code>number</code> | <code>5</code> |  |
-| [opts.minValuePct] | <code>number</code> | <code>20</code> |  |
-
-<a name="nextPodleIndex"></a>
-
-## nextPodleIndex(used) ⇒ <code>number</code> \| <code>null</code>
-Lowest commitment index the taker has not used for a UTXO.
-
-**Kind**: global function  
-**Returns**: <code>number</code> \| <code>null</code> - `null` once the UTXO is exhausted  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| used | <code>Array.&lt;number&gt;</code> | indices already spent on rounds |
-
-<a name="descriptorPrivateKey"></a>
-
-## descriptorPrivateKey(info, descriptors) ⇒ <code>Buffer</code>
-Internal private key for a wallet address, from bitcoind `getaddressinfo`
-and `listdescriptors true` output (`tr(…/*)` descriptors only).
-
-**Kind**: global function  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| info | <code>Object</code> | `getaddressinfo` result |
-| descriptors | <code>Array.&lt;Object&gt;</code> | `listdescriptors true` `descriptors` |
-
-<a name="envelopeRecipient"></a>
-
-## envelopeRecipient(envelope) ⇒ <code>string</code> \| <code>null</code>
-Whose round an envelope belongs to: the x-only key it is sealed to.
-
-**Kind**: global function  
-
-| Param | Type |
-| --- | --- |
-| envelope | <code>Object</code> | 
-
-<a name="memoryWallet"></a>
-
-## memoryWallet(opts) ⇒ <code>Object</code>
-Test helper: a wallet adapter over in-memory P2TR coins and their keys.
-
-**Kind**: global function  
-**Returns**: <code>Object</code> - wallet adapter (plus `coins`, `locked`)  
-
-| Param | Type | Default | Description |
-| --- | --- | --- | --- |
-| opts | <code>Object</code> |  |  |
-| opts.coins | <code>Array.&lt;Object&gt;</code> |  | `{ txid, vout, valueSats, internalPrivateKey, confirmations }` |
-| [opts.network] | <code>string</code> | <code>&quot;&#x27;regtest&#x27;&quot;</code> |  |
-
-<a name="memoryChain"></a>
-
-## memoryChain(opts) ⇒ <code>Object</code>
-Test helper: a chain adapter over a map of unspent outputs.
-
-**Kind**: global function  
-**Returns**: <code>Object</code> - chain adapter (plus `broadcasts`)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| opts | <code>Object</code> |  |
-| opts.utxos | <code>Map</code> | `txid:vout` → `{ valueSats, scriptPubKeyHex, confirmations }` |
-| opts.tip | <code>Object</code> | `{ height }` |
-
-<a name="offerKey"></a>
-
-## offerKey(row) ⇒ <code>string</code>
-Stable key for one offer row.
-
-**Kind**: global function  
-
-| Param | Type |
-| --- | --- |
-| row | <code>object</code> | 
-
-<a name="settlementDedupeKey"></a>
-
-## settlementDedupeKey(session) ⇒ <code>string</code>
-Dedup key for paid settlements: (documentId, blobIndex|all, contentHash).
-
-**Kind**: global function  
-
-| Param | Type |
-| --- | --- |
-| session | <code>Object</code> | 
-| session.documentId | <code>string</code> | 
-| [session.blobIndex] | <code>number</code> | 
-| [session.contentHashHex] | <code>string</code> | 
-
-<a name="createDocumentPurchaseSession"></a>
-
-## createDocumentPurchaseSession(opts) ⇒ <code>Object</code>
-A buyer/seller document purchase session record (whole document or one blob).
-
-**Kind**: global function  
-
-| Param | Type |
-| --- | --- |
-| opts | <code>Object</code> | 
-| opts.documentId | <code>string</code> | 
-| opts.seller | <code>string</code> | 
-| opts.contentHashHex | <code>string</code> | 
-| opts.amountSats | <code>number</code> | 
-| opts.paymentAddress | <code>string</code> | 
-| [opts.bitcoinUri] | <code>string</code> | 
-| [opts.network] | <code>string</code> | 
-| [opts.blobIndex] | <code>number</code> | 
-| [opts.blobTotal] | <code>number</code> | 
-| [opts.htlc] | <code>Object</code> | 
-
-<a name="isDuplicateSettlement"></a>
-
-## isDuplicateSettlement(paidKeys, session) ⇒ <code>boolean</code>
-True when this (documentId, blobIndex, contentHash) was already settled.
-
-**Kind**: global function  
-
-| Param | Type |
-| --- | --- |
-| paidKeys | <code>Set</code> \| <code>Map</code> \| <code>Object</code> | 
-| session | <code>Object</code> | 
-
-<a name="rememberSettlement"></a>
-
-## rememberSettlement(paidKeys, session)
-**Kind**: global function  
-
-| Param | Type |
-| --- | --- |
-| paidKeys | <code>Set</code> \| <code>Map</code> \| <code>Object</code> | 
-| session | <code>Object</code> | 
-
-<a name="findSession"></a>
-
-## findSession(store, key) ⇒ <code>Object</code> \| <code>null</code>
-**Kind**: global function  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| store | <code>Map</code> \| <code>Object</code> |  |
-| key | <code>string</code> | settlementId or documentId |
-
-<a name="listRefundCandidates"></a>
-
-## listRefundCandidates(store, tipHeight, [opts]) ⇒ <code>Array.&lt;Object&gt;</code>
-Classify purchase sessions for refund listing.
-
-**Kind**: global function  
-
-| Param | Type | Default | Description |
-| --- | --- | --- | --- |
-| store | <code>Map</code> \| <code>Iterable</code> \| <code>Object</code> |  | purchase sessions |
-| tipHeight | <code>number</code> \| <code>null</code> |  |  |
-| [opts] | <code>Object</code> |  |  |
-| [opts.filter] | <code>string</code> | <code>&quot;&#x27;outstanding&#x27;&quot;</code> | outstanding|mature|failed|pending|refunded|all |
-
-<a name="computeRelayFee"></a>
-
-## computeRelayFee(policy, maxSatsIn) ⇒ <code>Object</code>
-Fee a private `DocumentRequest` relay skims from the buyer's budget.
-
-**Kind**: global function  
-
-| Param | Type |
-| --- | --- |
-| policy | <code>Object</code> | 
-| maxSatsIn | <code>number</code> | 
-
-<a name="buildForwardedDocumentRequest"></a>
-
-## buildForwardedDocumentRequest(inbound, policy) ⇒ <code>Object</code>
-Rewrite an inbound `DocumentRequest` for the next hop: a fresh route id, one
-hop fewer, and the budget less this relay's fee.
-
-**Kind**: global function  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| inbound | <code>Object</code> | parsed DocumentRequest body |
-| policy | <code>Object</code> |  |
-
-<a name="assertMonotoneBudget"></a>
-
-## assertMonotoneBudget(maxSatsIn, maxSatsOut) ⇒ <code>boolean</code>
-**Kind**: global function  
-**Returns**: <code>boolean</code> - the forwarded budget is smaller and still at least 1 sat  
-
-| Param | Type |
-| --- | --- |
-| maxSatsIn | <code>number</code> | 
-| maxSatsOut | <code>number</code> | 
-
-<a name="paginateInventoryItems"></a>
-
-## paginateInventoryItems(items, [opts]) ⇒ <code>Object</code>
-Split `P2P_INVENTORY_RESPONSE` items into pages whose JSON fits one AMP
-frame. Items that fit are packed greedily. An item larger than a page (e.g.
-a sealed document with ~130 per-blob rows) is repeated with consecutive
-slices of its `blobs` (`blobsPartial: true`) and its `documentBlobIndex`
-leaves dropped (`leavesInline: false`); every slice still carries the item
-id, root, and blob total, so a receiving [DocumentBook](#DocumentBook) upserts the
-pages per blob without further work. Items that cannot be made to fit are
-returned in `skipped`.
-
-**Kind**: global function  
-
-| Param | Type | Default | Description |
-| --- | --- | --- | --- |
-| items | <code>Array.&lt;Object&gt;</code> |  |  |
-| [opts] | <code>Object</code> |  |  |
-| [opts.pageBytes] | <code>number</code> | <code>INVENTORY_RESPONSE_PAGE_BYTES</code> | Max JSON bytes of one page's `items` array. |
-
-<a name="contractMessageIndex"></a>
-
-## contractMessageIndex(messageOrFields) ⇒ <code>Object</code>
-`recipient`, `ref`, and `slot` from a CONTRACT_MESSAGE field body.
-Does not read the JSON payload.
-
-**Kind**: global function  
-
-| Param | Type |
-| --- | --- |
-| messageOrFields | [<code>Message</code>](#Message) \| <code>object</code> \| <code>null</code> | 
-
-<a name="contractMessageMatches"></a>
-
-## contractMessageMatches(messageOrFields, [query]) ⇒ <code>boolean</code>
-True when every non-empty query field equals the frame's index field.
-An empty query matches. A frame with no index does not match a query.
-
-**Kind**: global function  
-
-| Param | Type |
-| --- | --- |
-| messageOrFields | [<code>Message</code>](#Message) \| <code>object</code> \| <code>null</code> | 
-| [query] | <code>object</code> | 
-
-<a name="tierWhenPath"></a>
-
-## tierWhenPath(state, path) ⇒ <code>\*</code>
-**Kind**: global function  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| state | <code>object</code> | Contract / tip state bag |
-| path | <code>string</code> | JSON-pointer-ish `/a/b` |
-
-<a name="evaluateTierWhen"></a>
-
-## evaluateTierWhen(when, [ctx]) ⇒ <code>boolean</code>
-**Kind**: global function  
-
-| Param | Type |
-| --- | --- |
-| when | <code>object</code> \| <code>null</code> \| <code>undefined</code> | 
-| [ctx] | <code>Object</code> | 
-| [ctx.tipClock] | <code>number</code> | 
-| [ctx.contractState] | <code>Object</code> | 
-
-<a name="normalizeLock"></a>
-
-## normalizeLock() ⇒ <code>Object</code> \| <code>null</code>
-Normalize a lock descriptor `{ type: 'csv'|'cltv', blocks?|height?|unix? }`.
-
-**Kind**: global function  
-<a name="timelockMature"></a>
-
-## timelockMature()
-Whether a relative/absolute lock is mature given chain tip context.
-CSV uses `utxoAgeBlocks` (confirmations / age of the UTXO).
-CLTV uses tip height or median time.
-
-**Kind**: global function  
-<a name="synthesizeDefaultLadder"></a>
-
-## synthesizeDefaultLadder(opts) ⇒ <code>object</code>
-Synthesize the canonical 2-tier authority spend ladder:
-  t0-authority — k-of-n validators/signers (immediate)
-  t1-soft      — after ~csvBlocks (default 144) CSV, a softer rule
-                 (default: 1-of-publisher; optional reduced threshold)
-
-This is the single P2TR surface for Hub Beacon Federation vaults and ARC
-contract spend addresses when keys + network + csvBlocks match.
-
-**Kind**: global function  
-**Returns**: <code>object</code> - normalized spend policy  
-
-| Param | Type | Default | Description |
-| --- | --- | --- | --- |
-| opts | <code>object</code> |  |  |
-| [opts.validators] | <code>Array.&lt;string&gt;</code> |  |  |
-| [opts.validatorPubkeysHex] | <code>Array.&lt;string&gt;</code> |  |  |
-| [opts.threshold] | <code>number</code> |  |  |
-| [opts.publisher] | <code>string</code> |  | soft-tier key when softMode=publisher |
-| [opts.csvBlocks] | <code>number</code> | <code>144</code> | degradation window (BIP68 relative) |
-| [opts.network] | <code>string</code> |  |  |
-| [opts.softMode] | <code>string</code> | <code>&quot;&#x27;publisher&#x27;&quot;</code> | `publisher` | `reduced` |
-| [opts.softThreshold] | <code>number</code> |  | when softMode=reduced (default ceil(k/2)) |
-| [opts.hashlock] | <code>object</code> |  | optional L1 hashlock leaf (`commitmentHex` / `runCommitmentHex`) |
-| [opts.extraLeaves] | <code>Array.&lt;object&gt;</code> |  | additional composable leaves (script / spend / hashlock) |
-| [opts.internalKeyMode] | <code>string</code> |  | `musig2` (default when n≥2) | `nums` (legacy script-path-only).   Historical NUMS vaults MUST pass `nums` — a rebuild does not migrate UTXOs. |
-
-<a name="normalizeContractSpendPolicy"></a>
-
-## normalizeContractSpendPolicy(raw) ⇒ <code>object</code>
-**Kind**: global function  
-**Returns**: <code>object</code> - normalized policy  
-
-| Param | Type |
-| --- | --- |
-| raw | <code>object</code> | 
-
-<a name="policyAfterDecay"></a>
-
-## policyAfterDecay()
-Drop tiers whose until <= trigger lock; clear migrate leaf schedule for child.
-
-**Kind**: global function  
-<a name="normalizeHashlockSpec"></a>
-
-## normalizeHashlockSpec(raw) ⇒ <code>Object</code> \| <code>null</code>
-Normalize optional hashlock leaf options (JSON-safe).
-`commitmentHex` MAY be Machine `runCommitmentHex` or SHA256(preimage).
-
-**Kind**: global function  
-
-| Param | Type |
-| --- | --- |
-| raw | <code>object</code> | 
-
-<a name="normalizeExtraLeafSpecs"></a>
-
-## normalizeExtraLeafSpecs(list) ⇒ <code>Array.&lt;object&gt;</code>
-**Kind**: global function  
-
-| Param | Type |
-| --- | --- |
-| list | <code>unknown</code> | 
-
-<a name="buildHashlockTapscript"></a>
-
-## buildHashlockTapscript(opts) ⇒ <code>Buffer</code>
-Hashlock tapscript: SHA256(preimage) == commitment [+ optional CHECKSIG].
-
-**Kind**: global function  
-
-| Param | Type |
-| --- | --- |
-| opts | <code>Object</code> | 
-| opts.commitmentHex | <code>string</code> | 
-| [opts.pubkeyHex] | <code>string</code> \| <code>null</code> | 
-
-<a name="buildHashlockLeaf"></a>
-
-## buildHashlockLeaf(opts) ⇒ <code>object</code>
-First-class hashlock leaf (optional on authority trees).
-
-**Kind**: global function  
-
-| Param | Type |
-| --- | --- |
-| opts | <code>object</code> | 
-
-<a name="buildSpendLeaf"></a>
-
-## buildSpendLeaf(opts) ⇒ <code>object</code>
-First-class k-of-n spend leaf (composable outside policy tiers).
-
-**Kind**: global function  
-
-| Param | Type |
-| --- | --- |
-| opts | <code>object</code> | 
-
-<a name="buildScriptLeaf"></a>
-
-## buildScriptLeaf(opts) ⇒ <code>object</code>
-Arbitrary tapscript leaf from hex / ASM / Buffer (wallet UI composition).
-
-**Kind**: global function  
-
-| Param | Type |
-| --- | --- |
-| opts | <code>object</code> | 
-
-<a name="normalizeLeaf"></a>
-
-## normalizeLeaf(raw) ⇒ <code>object</code>
-Normalize a leaf descriptor into a Buffer-backed leaf.
-
-**Kind**: global function  
-
-| Param | Type |
-| --- | --- |
-| raw | <code>object</code> | 
-
-<a name="compileLeaves"></a>
-
-## compileLeaves() ⇒ <code>Array.&lt;object&gt;</code>
-Build leaf descriptors for a normalized policy (+ optional hashlock / extras).
-
-**Kind**: global function  
-<a name="scriptTreeFromLeaves"></a>
-
-## scriptTreeFromLeaves(leaves) ⇒ <code>object</code>
-bitcoinjs-lib Taptree is a binary tree of leaves (not a flat list of >2).
-
-**Kind**: global function  
-
-| Param | Type |
-| --- | --- |
-| leaves | <code>Array.&lt;{script: Buffer}&gt;</code> | 
-
-<a name="composeTaprootTree"></a>
-
-## composeTaprootTree(opts) ⇒ <code>object</code>
-Compose an arbitrary Taproot tree for wallet UIs / custom scripts.
-Policy ladder leaves come first; `hashlock` / `extraLeaves` append.
-Adding optional leaves **changes** the address vs ladder-only.
-
-**Kind**: global function  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| opts | <code>object</code> |  |
-| opts.network | <code>string</code> |  |
-| [opts.policy] | <code>object</code> | spend policy (tiers / validators) |
-| [opts.leaves] | <code>Array.&lt;object&gt;</code> | full leaf list (skips policy compile when set alone) |
-| [opts.hashlock] | <code>object</code> | optional hashlock sugar |
-| [opts.extraLeaves] | <code>Array.&lt;object&gt;</code> | additional leaves |
-| [opts.internalPubkeyHex] | <code>string</code> | x-only; default NUMS or MuSig2 from policy |
-| [opts.internalKeyMode] | <code>string</code> | `nums` | `musig2` |
-
-<a name="buildContractTaproot"></a>
-
-## buildContractTaproot(policy) ⇒ <code>object</code>
-**Kind**: global function  
-
-| Param | Type |
-| --- | --- |
-| policy | <code>object</code> | 
-
-<a name="selectActiveTiers"></a>
-
-## selectActiveTiers(policy, [ctx])
-**Kind**: global function  
-
-| Param | Type |
-| --- | --- |
-| policy | <code>object</code> | 
-| [ctx] | <code>Object</code> | 
-| [ctx.tipHeight] | <code>number</code> | 
-| [ctx.medianTime] | <code>number</code> | 
-| [ctx.utxoAgeBlocks] | <code>number</code> | 
-| [ctx.tipClock] | <code>number</code> | 
-| [ctx.contractState] | <code>Object</code> | 
-
-<a name="prepareTierWithdrawalPsbt"></a>
-
-## prepareTierWithdrawalPsbt()
-Prepare withdrawal via a spend tier leaf.
-
-**Kind**: global function  
-<a name="prepareDecayMigrationPsbt"></a>
-
-## prepareDecayMigrationPsbt()
-Prepare decay migration PSBT (output must be child policy address).
-
-**Kind**: global function  
-<a name="prepareHashlockWithdrawalPsbt"></a>
-
-## prepareHashlockWithdrawalPsbt(opts) ⇒ <code>object</code>
-Prepare hashlock-path PSBT. Pure hashlock needs only a preimage at finalize;
-hashlock+pubkey needs a Schnorr sig then preimage (inventory-style).
-
-**Kind**: global function  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| opts | <code>object</code> |  |
-| [opts.policy] | <code>object</code> |  |
-| [opts.leaves] | <code>Array.&lt;object&gt;</code> | Buffer-backed or public leaves (+ tapscriptHex) |
-| [opts.preimage32] | <code>string</code> \| <code>Buffer</code> |  |
-
-<a name="finalizeHashlockPsbt"></a>
-
-## finalizeHashlockPsbt(opts) ⇒ <code>Object</code>
-Finalize a hashlock script-path PSBT (pure preimage or preimage+sig).
-
-**Kind**: global function  
-
-| Param | Type | Default |
-| --- | --- | --- |
-| opts | <code>object</code> |  | 
-| opts.psbtBase64 | <code>string</code> |  | 
-| opts.preimage32 | <code>string</code> \| <code>Buffer</code> |  | 
-| [opts.witnessShape] | <code>string</code> | <code>&quot;&#x27;preimage&#x27;&quot;</code> | 
-
-<a name="parseXOnlyPubkeysFromSpendScript"></a>
-
-## parseXOnlyPubkeysFromSpendScript(scriptBuf) ⇒ <code>Array.&lt;Buffer&gt;</code>
-Collect x-only pubkeys from a k-of-n spend tapscript (`CHECKSIG` /
-`CHECKSIGADD`), skipping a leading CSV/CLTV prefix when present.
-
-**Kind**: global function  
-
-| Param | Type |
-| --- | --- |
-| scriptBuf | <code>Buffer</code> \| <code>Uint8Array</code> | 
-
-<a name="finalizeSpendPsbt"></a>
-
-## finalizeSpendPsbt(opts) ⇒ <code>Object</code>
-Finalize a k-of-n (CHECKSIG / CHECKSIGADD) script-path PSBT after co-signers
-have called `signInput`. Unused keys become empty witness elements (BIP342).
-
-Witness stack (before script + control block) is signatures in **reverse**
-script-pubkey order so the first `CHECKSIG` pops the last stack item.
-
-**Kind**: global function  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| opts | <code>object</code> |  |
-| [opts.psbtBase64] | <code>string</code> |  |
-| [opts.psbt] | <code>object</code> | bitcoinjs-lib `Psbt` |
-
-<a name="buildFederationVaultFromPolicy"></a>
-
-## buildFederationVaultFromPolicy(opts) ⇒ <code>object</code>
-Authority P2TR vault from validator/signer set.
-
-**Default (RC):** 2-tier ladder — k-of-n authority now; softer rule after
-`csvBlocks` (default 144) CSV. Same tree as [synthesizeDefaultLadder](#synthesizeDefaultLadder) /
-[resolveSpend](#Contract.resolveSpend) when inputs match.
-
-**Legacy:** pass `{ legacySingleLeaf: true }` for the pre-ladder single k-of-n
-leaf address (opt-in only; not used by Hub vault summary).
-
-**Internal key:** default n≥2 uses the MuSig2 aggregate (`internalKeyMode:
-'musig2'`) — a **new address** vs historical NUMS. Pass `internalKeyMode:
-'nums'` to keep coins at the old script-path-only vault. Rebuilds do not
-migrate UTXOs.
-
-**Kind**: global function  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| opts | <code>object</code> |  |
-| [opts.internalKeyMode] | <code>string</code> | `musig2` | `nums` |
-
-<a name="hashlockFromProgramRun"></a>
-
-## hashlockFromProgramRun(run) ⇒ <code>Object</code>
-Build hashlock leaf options from a sealed Program run.
-Commitment defaults to `runCommitmentHex` (32-byte hex).
-
-**Kind**: global function  
-
-| Param | Type | Default | Description |
-| --- | --- | --- | --- |
-| run | <code>object</code> |  |  |
-| run.runCommitmentHex | <code>string</code> |  |  |
-| [run.programHash] | <code>string</code> |  |  |
-| [run.commitmentHex] | <code>string</code> |  | Override commitment |
-| [run.id] | <code>string</code> | <code>&quot;&#x27;hashlock-run&#x27;&quot;</code> |  |
-| [run.pubkeyHex] | <code>string</code> |  | Optional Schnorr key for preimage+sig path |
-
-<a name="composePolicyWithRunHashlock"></a>
-
-## composePolicyWithRunHashlock(opts) ⇒ <code>object</code>
-Compose an authority ladder (or policy) with a Program-run hashlock leaf.
-
-**Kind**: global function  
-**Returns**: <code>object</code> - `composeTaprootTree` result (+ `programRunId`)  
-
-| Param | Type | Default | Description |
-| --- | --- | --- | --- |
-| opts | <code>object</code> |  |  |
-| [opts.policy] | <code>object</code> |  | Existing spend policy |
-| [opts.ladder] | <code>object</code> |  | Args for synthesizeDefaultLadder when policy omitted |
-| opts.run | <code>object</code> |  | `{ programHash?, runCommitmentHex, id?, pubkeyHex }` |
-| [opts.allowPreimageOnly] | <code>boolean</code> | <code>false</code> | Compose without `run.pubkeyHex` (preimage alone spends) |
-| [opts.network] | <code>string</code> |  |  |
-| [opts.extraLeaves] | <code>Array.&lt;object&gt;</code> |  |  |
-
-<a name="signingString"></a>
-
-## signingString(body) ⇒ <code>string</code>
-Canonical signing bytes: the body without `signature`.
-
-**Kind**: global function  
-
-| Param | Type |
-| --- | --- |
-| body | <code>Object</code> | 
-
-<a name="bodyId"></a>
-
-## bodyId(body) ⇒ <code>string</code>
-Stable id of a body: SHA-256 hex of [signingString](#signingString). Entries, takes,
-and accepts are referenced by it.
-
-**Kind**: global function  
-
-| Param | Type |
-| --- | --- |
-| body | <code>Object</code> | 
-
-<a name="randomNonce"></a>
-
-## randomNonce() ⇒ <code>string</code>
-**Kind**: global function  
-**Returns**: <code>string</code> - 16 random bytes as hex  
-<a name="codec"></a>
-
-## codec(spec) ⇒ <code>Object</code>
-Body codec for one signed market: every body is a JSON object with a
-`type`, normalized by that type's normalizer and BIP340-signed by the key
-named by `signerField` over [signingString](#signingString).
-
-**Kind**: global function  
-**Returns**: <code>Object</code> - `{ toBody, fromBody, signingString, bodyId, pubkeyFromPrivate, signBody, verifyBody, randomNonce }`  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| spec | <code>Object</code> |  |
-| spec.name | <code>string</code> | prefix of thrown messages (`coinjoin`) |
-| spec.version | <code>number</code> | accepted `version` of incoming bodies |
-| spec.normalizers | <code>Map.&lt;string, function()&gt;</code> | body type → `(fields) → body` (throws on bad input) |
-| spec.signerField | <code>Object</code> | body type → field holding the author's compressed key |
-
-
-* [codec(spec)](#codec) ⇒ <code>Object</code>
-    * [~toBody(type, fields)](#codec..toBody) ⇒ <code>Object</code>
-    * [~fromBody(body)](#codec..fromBody) ⇒ <code>Object</code> \| <code>null</code>
-    * [~pubkeyFromPrivate(priv32)](#codec..pubkeyFromPrivate) ⇒ <code>string</code>
-    * [~signBody(body, priv32)](#codec..signBody) ⇒ <code>Object</code>
-    * [~verifyBody(body)](#codec..verifyBody) ⇒ <code>Object</code>
-
-<a name="codec..toBody"></a>
-
-### codec~toBody(type, fields) ⇒ <code>Object</code>
-Build a normalized body of the given type (unsigned unless `fields.signature`).
-
-**Kind**: inner method of [<code>codec</code>](#codec)  
-
-| Param | Type |
-| --- | --- |
-| type | <code>string</code> | 
-| fields | <code>Object</code> | 
-
-<a name="codec..fromBody"></a>
-
-### codec~fromBody(body) ⇒ <code>Object</code> \| <code>null</code>
-Rehydrate a `CONTRACT_MESSAGE` body; `null` for other types or malformed bodies.
-
-**Kind**: inner method of [<code>codec</code>](#codec)  
-
-| Param | Type |
-| --- | --- |
-| body | <code>Object</code> | 
-
-<a name="codec..pubkeyFromPrivate"></a>
-
-### codec~pubkeyFromPrivate(priv32) ⇒ <code>string</code>
-Compressed public key for a 32-byte private key.
-
-**Kind**: inner method of [<code>codec</code>](#codec)  
-**Returns**: <code>string</code> - 66 hex characters  
-
-| Param | Type |
-| --- | --- |
-| priv32 | <code>Buffer</code> \| <code>string</code> | 
-
-<a name="codec..signBody"></a>
-
-### codec~signBody(body, priv32) ⇒ <code>Object</code>
-Normalize and BIP340-sign a body. The signer must own the body's author key.
-
-**Kind**: inner method of [<code>codec</code>](#codec)  
-**Returns**: <code>Object</code> - normalized body with `signature`  
-
-| Param | Type |
-| --- | --- |
-| body | <code>Object</code> | 
-| priv32 | <code>Buffer</code> \| <code>string</code> | 
-
-<a name="codec..verifyBody"></a>
-
-### codec~verifyBody(body) ⇒ <code>Object</code>
-Check a body's shape and its author's BIP340 signature.
-
-**Kind**: inner method of [<code>codec</code>](#codec)  
-
-| Param | Type |
-| --- | --- |
-| body | <code>Object</code> | 
-
-<a name="routePath"></a>
-
-## routePath()
-`path` as an absolute JSON Pointer path.
-
-**Kind**: global function  
-<a name="isArrayIndex"></a>
-
-## isArrayIndex()
-Under an array only an element index is a child: `length` or a name would
-persist to Level and then fail (or truncate) in memory.
-
-**Kind**: global function  
-<a name="normalizeOrder"></a>
-
-## normalizeOrder(input) ⇒ <code>Object</code>
-**Kind**: global function  
-**Returns**: <code>Object</code> - normalized `LiquidityOrder` body (keeps `signature`)  
-
-| Param | Type |
-| --- | --- |
-| input | <code>Object</code> | 
-
-<a name="normalizeCancel"></a>
-
-## normalizeCancel(input) ⇒ <code>Object</code>
-**Kind**: global function  
-**Returns**: <code>Object</code> - normalized `LiquidityOrderCancel` body  
-
-| Param | Type |
-| --- | --- |
-| input | <code>Object</code> | 
-
-<a name="normalizeTake"></a>
-
-## normalizeTake(input) ⇒ <code>Object</code>
-A taker's request to fill part of an order. When the taker gives L1 (a
-take on a bid) it carries the L1 giver's terms.
-
-**Kind**: global function  
-**Returns**: <code>Object</code> - normalized `LiquidityTake` body  
-
-| Param | Type |
-| --- | --- |
-| input | <code>Object</code> | 
-
-<a name="normalizeTakeAccept"></a>
-
-## normalizeTakeAccept(input) ⇒ <code>Object</code>
-The maker's acceptance of a take. When the maker gives L1 (a take on an
-ask) it carries the L1 giver's terms and, for orders with `prepaySats`, a
-prepay invoice the taker pays before the maker funds.
-
-**Kind**: global function  
-**Returns**: <code>Object</code> - normalized `LiquidityTakeAccept` body  
-
-| Param | Type |
-| --- | --- |
-| input | <code>Object</code> | 
-
-<a name="normalizeFunded"></a>
-
-## normalizeFunded(input) ⇒ <code>Object</code>
-The L1 giver's notice that the HTLC is funded.
-
-**Kind**: global function  
-**Returns**: <code>Object</code> - normalized `LiquiditySwapFunded` body  
-
-| Param | Type |
-| --- | --- |
-| input | <code>Object</code> | 
-
-<a name="roles"></a>
-
-## roles(opts) ⇒ <code>Object</code>
-Settlement roles. The L1 giver owns the preimage and funds the HTLC; the
-L2 giver pays the invoice and claims. An ask's maker sells L1; a bid's
-maker buys it.
-
-**Kind**: global function  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| opts | <code>Object</code> |  |
-| opts.side | <code>string</code> | order side |
-| opts.maker | <code>\*</code> | maker identifier (pubkey, record, …) |
-| opts.taker | <code>\*</code> | taker identifier |
-
-<a name="roleFor"></a>
-
-## roleFor(opts) ⇒ <code>&#x27;l1Giver&#x27;</code> \| <code>&#x27;l2Giver&#x27;</code>
-**Kind**: global function  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| opts | <code>Object</code> |  |
-| opts.side | <code>string</code> | order side |
-| opts.isMaker | <code>boolean</code> |  |
-
-<a name="quote"></a>
-
-## quote(opts) ⇒ <code>Object</code>
-Amounts for filling `amountSats` of L1 against an order. The L1 giver
-funds the HTLC with `l1Sats`; the L2 giver pays an invoice of `l2Msat`:
-`amountSats × (1 + premiumPpm / 1e6)` sats, plus the maker's `feeSats`
-when the taker pays L2 (asks) or minus it when the maker does (bids), so
-the fee always reaches the maker.
-
-**Kind**: global function  
-
-| Param | Type | Default | Description |
-| --- | --- | --- | --- |
-| opts | <code>Object</code> |  |  |
-| opts.side | <code>string</code> |  |  |
-| opts.premiumPpm | <code>number</code> |  |  |
-| [opts.feeSats] | <code>number</code> | <code>0</code> |  |
-| opts.amountSats | <code>number</code> |  | L1 sats |
-
-<a name="buildEscrow"></a>
-
-## buildEscrow(opts) ⇒ <code>Object</code>
-Taproot HTLC for a swap: the L2 giver claims with the preimage, the L1
-giver refunds after `refundLockHeight`. A plain [Htlc](#Htlc) (claim =
-seller leaf, refund = buyer leaf), so its claim / refund PSBT helpers spend
-it unchanged.
-
-**Kind**: global function  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| opts | <code>Object</code> |  |
-| opts.networkName | <code>string</code> |  |
-| opts.l2GiverPubkeyHex | <code>string</code> | claim key (compressed) |
-| opts.l1GiverPubkeyHex | <code>string</code> | refund key (compressed) |
-| opts.paymentHashHex | <code>string</code> | SHA256(preimage) |
-| opts.refundLockHeight | <code>number</code> | absolute block height |
-| [opts.amountSats] | <code>number</code> |  |
-
-<a name="validateEscrow"></a>
-
-## validateEscrow(opts) ⇒ <code>Object</code>
-Rebuild the swap HTLC and compare with an advertised address. Never fund
-or pay against an address that does not match.
-
-**Kind**: global function  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| opts | <code>Object</code> | [buildEscrow](#buildEscrow) options plus `paymentAddress` |
-
-<a name="invoiceAmountMsat"></a>
-
-## invoiceAmountMsat(decoded) ⇒ <code>number</code> \| <code>null</code>
-Millisatoshi amount from a decoded invoice (`amount_msat` as a number,
-numeric string, or legacy `"123msat"` string).
-
-**Kind**: global function  
-
-| Param | Type |
-| --- | --- |
-| decoded | <code>Object</code> | 
-
-<a name="validateInvoice"></a>
-
-## validateInvoice(opts) ⇒ <code>Object</code>
-Check a decoded BOLT11 invoice (Core Lightning `decodepay`) before paying
-it for a swap: it must lock to the swap's payment hash, ask exactly the
-quoted amount, come from the expected node, and expire — plus a margin —
-before the HTLC's refund lock opens, with at least `minClaimBlocks` left
-for the claim.
-
-**Kind**: global function  
-
-| Param | Type | Default | Description |
-| --- | --- | --- | --- |
-| opts | <code>Object</code> |  |  |
-| opts.decoded | <code>Object</code> |  | `decodepay` output |
-| opts.paymentHashHex | <code>string</code> |  |  |
-| opts.expectedMsat | <code>number</code> |  |  |
-| [opts.payee] | <code>string</code> |  | expected node id |
-| opts.refundLockHeight | <code>number</code> |  |  |
-| opts.tipHeight | <code>number</code> |  |  |
-| [opts.nowSeconds] | <code>number</code> |  |  |
-| [opts.secondsPerBlock] | <code>number</code> | <code>600</code> |  |
-| [opts.marginSeconds] | <code>number</code> | <code>3600</code> |  |
-| [opts.minClaimBlocks] | <code>number</code> | <code>6</code> |  |
-
-<a name="validateTake"></a>
-
-## validateTake(order, take, [opts]) ⇒ <code>Object</code>
-Check a take against the order it fills.
-
-**Kind**: global function  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| order | <code>Object</code> | normalized order |
-| take | <code>Object</code> | normalized take |
-| [opts] | <code>Object</code> |  |
-| [opts.now] | <code>number</code> | ms |
-
-<a name="validateTakeAccept"></a>
-
-## validateTakeAccept(order, take, accept) ⇒ <code>Object</code>
-Check an acceptance against its order and take.
-
-**Kind**: global function  
-
-| Param | Type |
-| --- | --- |
-| order | <code>Object</code> | 
-| take | <code>Object</code> | 
-| accept | <code>Object</code> | 
-
-<a name="l1GiverTerms"></a>
-
-## l1GiverTerms(order, take, [accept]) ⇒ <code>Object</code> \| <code>null</code>
-The L1 giver's terms for a take, from whichever body carries them.
-
-**Kind**: global function  
-**Returns**: <code>Object</code> \| <code>null</code> - `{ paymentHashHex, invoice, refundLockHeight, prepayInvoice? }`  
-
-| Param | Type |
-| --- | --- |
-| order | <code>Object</code> | 
-| take | <code>Object</code> | 
-| [accept] | <code>Object</code> | 
-
-<a name="verifyBlobPath"></a>
-
-## verifyBlobPath(opts) ⇒ <code>boolean</code>
-Strict blob-tree inclusion check. Every left/right choice comes from
-`index` (not from the prover's `position` labels, which must agree), the
-branch must be exactly as deep as a tree of `leafCount` leaves, and a
-self-paired step is accepted only for the odd last node of a level. With
-`leafCount` pinned by a signed commitment, an inner node cannot pass as a
-leaf and a padded (CVE-2012-2459) tree cannot stand in for the real one.
-
-**Kind**: global function  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| opts | <code>object</code> |  |
-| opts.merkleRootHex | <code>string</code> |  |
-| opts.leafHex | <code>string</code> | 32-byte blob hash |
-| opts.index | <code>number</code> | leaf position |
-| opts.leafCount | <code>number</code> | committed number of leaves |
-| opts.proof | <code>Array</code> \| <code>object</code> | `[{ position, data }]` or `{ proof: [...], leafCount }` (as `Challenge#respond` emits) |
-
-<a name="toIntegerSats"></a>
-
-## toIntegerSats(value) ⇒ <code>bigint</code>
-PSBT output values are integer satoshis. Reject float BTC leftovers.
-
-**Kind**: global function  
-
-| Param | Type |
-| --- | --- |
-| value | <code>bigint</code> \| <code>number</code> \| <code>string</code> | 
-
-<a name="weightsForProximity"></a>
-
-## weightsForProximity(proximityWeight) ⇒ <code>Object</code>
-Translate `proximityWeight` (0..1) into offer-book ranking weights: higher
-proximity shifts weight from price toward measured latency + hops.
-
-**Kind**: global function  
-
-| Param | Type |
-| --- | --- |
-| proximityWeight | <code>number</code> | 
-
-<a name="sellerDedupeKey"></a>
-
-## sellerDedupeKey(session) ⇒ <code>string</code>
-Seller-scoped settlement key: one purchase of a blob per seller. A failed
-or refunded purchase from one seller never blocks buying the blob from
-another.
-
-**Kind**: global function  
-
-| Param | Type |
-| --- | --- |
-| session | <code>Object</code> | 
-
-<a name="openFiling"></a>
-
-## openFiling(filing, txid) ⇒ <code>Array.&lt;string&gt;</code> \| <code>null</code>
-Decrypt a filing with the commitment txid. Null when the hint misses or
-the ciphertext was sealed for a different transaction (prefix collision).
-
-**Kind**: global function  
-
-| Param | Type |
-| --- | --- |
-| filing | <code>object</code> | 
-| txid | <code>string</code> | 
-
-<a name="broadcastSettled"></a>
-
-## broadcastSettled(error) ⇒ <code>boolean</code>
-A broadcast error that means this penalty will not confirm later: the
-transaction is already known, or its inputs are already spent.
-
-**Kind**: global function  
-
-| Param | Type |
-| --- | --- |
-| error | <code>Error</code> \| <code>string</code> | 
 
 <a name="BitcoinCookieProbeConstraints"></a>
 

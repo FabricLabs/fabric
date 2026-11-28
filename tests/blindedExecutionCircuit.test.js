@@ -75,6 +75,7 @@ describe('functions/blindedExecutionCircuit', function () {
     assert.deepStrictEqual(a.roles.evaluators, [pk(1).toLowerCase()]);
     assert.strictEqual(a.definition['@type'], 'FabricContract');
     assert.ok(a.definition.interfaces.includes('fabric.blinded-execution'));
+    assert.strictEqual(a.definition.spendPolicy.requireProgramRun, true);
     assert.strictEqual(a.definition.blindedExecution.circuitCommitment, a.circuitCommitment);
     assert.strictEqual(a.finalized, false);
     assert.strictEqual(a.coordinationRoot, null);

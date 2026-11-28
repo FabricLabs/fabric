@@ -1593,15 +1593,16 @@ class Service extends Actor {
     });
 
     this.on('identity', async function _registerActor (identity) {
-      if (self.settings.services && self.settings.services.includes(name)) {
-        self.emit('log', `Registering actor on service "${name}": ${JSON.stringify(identity)}`);
+      if (!(self.settings.services && self.settings.services.includes(name))) return;
 
-        try {
-          let registration = await self.services[name]._registerActor(identity);
-          self.emit('log', `Registered Actor: ${JSON.stringify(registration, null, '  ')}`);
-        } catch (exception) {
-          self.emit('error', `Error from service "${name}" during _registerActor: ${exception}`);
-        }
+      try {
+        const registration = await self.services[name]._registerActor(identity);
+        const id = registration && registration.id != null
+          ? String(registration.id)
+          : (identity && identity.id != null ? String(identity.id) : '');
+        self.emit('debug', `Registered actor on "${name}"${id ? `: ${id}` : ''}`);
+      } catch (exception) {
+        self.emit('error', `Error from service "${name}" during _registerActor: ${exception}`);
       }
     });
 
@@ -1927,14 +1928,14 @@ class FabricShell extends Service {
     });
 
     this.on('identity', function _registerActor (identity) {
-      if (this.settings.services.includes(name)) {
-        self._appendMessage(`Registering actor on service "${name}": ${JSON.stringify(identity)}`);
+      if (!(self.settings.services && self.settings.services.includes(name))) return;
 
-        try {
-          this.services[name]._registerActor(identity);
-        } catch (exception) {
-          self._appendError(`Error from service "${name}" during _registerActor: ${exception}`);
-        }
+      try {
+        self.services[name]._registerActor(identity);
+        const id = identity && identity.id != null ? String(identity.id) : '';
+        self.emit('debug', `Registered actor on "${name}"${id ? `: ${id}` : ''}`);
+      } catch (exception) {
+        self._appendError(`Error from service "${name}" during _registerActor: ${exception}`);
       }
     });
 

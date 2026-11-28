@@ -52,11 +52,20 @@ const {
 
 bitcoin.initEccLib(ecc);
 
-/** Smallest output the claim / refund transaction may pay. */
+/**
+ * Smallest output the claim / refund transaction may pay.
+ * @private
+ */
 const DUST_SATS = 546;
-/** Fee used when a spend names none. */
+/**
+ * Fee used when a spend names none.
+ * @private
+ */
 const DEFAULT_FEE_SATS = 1000;
-/** BIP65: lock values at or above this are unix times, not heights. */
+/**
+ * BIP65: lock values at or above this are unix times, not heights.
+ * @private
+ */
 const LOCKTIME_THRESHOLD = 500000000;
 
 /** @private */

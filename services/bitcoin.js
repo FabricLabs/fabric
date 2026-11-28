@@ -38,26 +38,50 @@ const Watchtower = require('../services/watchtower');
 const Actor = require('../types/actor');
 const Message = require('../types/message');
 
-/** bitcoind ZMQ topic → `_handleZMQMessage` case. */
+/**
+ * bitcoind ZMQ topic → `_handleZMQMessage` case.
+ * @private
+ */
 const ZMQ_TOPIC_CASES = Object.freeze({
   rawblock: 'BitcoinBlock',
   hashblock: 'BitcoinBlockHash',
   rawtx: 'BitcoinTransaction',
   hashtx: 'BitcoinTransactionHash'
 });
-/** Max txids kept for `rawtx` / `hashtx` pair dedupe. */
+/**
+ * Max txids kept for `rawtx` / `hashtx` pair dedupe.
+ * @private
+ */
 const ZMQ_TXID_MEMORY = 4096;
-/** Default window in which a `rawtx` / `hashtx` pair counts as one admission. */
+/**
+ * Default window in which a `rawtx` / `hashtx` pair counts as one admission.
+ * @private
+ */
 const ZMQ_TX_DEDUPE_MS = 30 * 1000;
-/** Per-transaction topics, paused during initial block download. */
+/**
+ * Per-transaction topics, paused during initial block download.
+ * @private
+ */
 const ZMQ_TX_TOPICS = Object.freeze(['rawtx', 'hashtx']);
-/** Default interval between initial-block-download checks while it lasts. */
+/**
+ * Default interval between initial-block-download checks while it lasts.
+ * @private
+ */
 const ZMQ_IBD_POLL_MS = 30 * 1000;
-/** Default wait for a `rawtx` before a lone `hashtx` is fetched over RPC. */
+/**
+ * Default wait for a `rawtx` before a lone `hashtx` is fetched over RPC.
+ * @private
+ */
 const ZMQ_HASHTX_GRACE_MS = 250;
-/** Default minimum interval between wallet balance reads driven by `rawtx`. */
+/**
+ * Default minimum interval between wallet balance reads driven by `rawtx`.
+ * @private
+ */
 const BALANCE_REFRESH_MS = 2000;
-/** Default cap on concurrent RPC connections to bitcoind. */
+/**
+ * Default cap on concurrent RPC connections to bitcoind.
+ * @private
+ */
 const RPC_MAX_SOCKETS = 16;
 const Collection = require('../types/collection');
 const Entity = require('../types/entity');
@@ -85,6 +109,7 @@ const SAT_ADJ_EPS = 1 / (10 ** 6);
  * PSBT output values are integer satoshis. Reject float BTC leftovers.
  * @param {bigint|number|string} value
  * @returns {bigint}
+ * @private
  */
 function toIntegerSats (value) {
   if (typeof value === 'bigint') {

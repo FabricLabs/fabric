@@ -648,9 +648,79 @@ class CLI extends FabricShell {
   }
 
   /**
+   * Managed child processes this stop waits on.
+   * @returns {Array<Object>}
+   * @private
+   */
+  _shutdownSubprocesses () {
+    const steps = [];
+    const lightning = this.lightning;
+    const bitcoin = this.bitcoin;
+    if (this.settings && this.settings.lightning && this.settings.lightning.enable &&
+        lightning && lightning.settings && lightning.settings.managed && lightning._child) {
+      steps.push({ name: 'Lightning', state: 'waiting' });
+    }
+    if (this.settings && this.settings.bitcoin && this.settings.bitcoin.enable &&
+        bitcoin && bitcoin._nodeProcess) {
+      steps.push({ name: 'Bitcoin', state: 'waiting' });
+    }
+    return steps;
+  }
+
+  /**
+   * Lines for the quit modal.
+   * @param {Array<Object>} steps
+   * @returns {Array<string>}
+   * @private
+   */
+  _shutdownModalLines (steps) {
+    const lines = ['Waiting for subprocesses to stop.', ''];
+    for (const step of steps) lines.push(`  ${step.name.padEnd(10)} ${step.state}`);
+    return lines;
+  }
+
+  _renderShutdownModal (steps) {
+    if (!this.settings || !this.settings.render || !this.screen || !steps || !steps.length) return;
+    const content = this._shutdownModalLines(steps).join('\n');
+    if (!this.elements) this.elements = {};
+    let box = this.elements.shutdown;
+    if (!box) {
+      if (typeof this.screen.append !== 'function') {
+        if (typeof this.screen.render === 'function') this.screen.render();
+        return;
+      }
+      box = blessed.box({
+        parent: this.screen,
+        top: 'center',
+        left: 'center',
+        width: 46,
+        height: 'shrink',
+        padding: { left: 1, right: 1 },
+        border: { type: 'line' },
+        label: ' Stopping ',
+        content,
+        tags: false,
+        style: {
+          border: { fg: 'cyan' },
+          bg: 'black',
+          fg: 'white'
+        }
+      });
+      this.elements.shutdown = box;
+    } else if (typeof box.setContent === 'function') {
+      box.setContent(content);
+    }
+    if (typeof box.setFront === 'function') box.setFront();
+    if (typeof this.screen.render === 'function') this.screen.render();
+  }
+
+  /**
    * Disconnect all interfaces and exit the process.
    */
   async stop () {
+    if (this._stopping) return;
+    this._stopping = true;
+
     // Clear all reconnection timers
     for (const address in this.reconnectTimers) {
       clearTimeout(this.reconnectTimers[address]);
@@ -673,23 +743,44 @@ class CLI extends FabricShell {
     }
 
     // Stop anchors before tearing down the peer node to avoid orphaned managed daemons.
+    const steps = this._shutdownSubprocesses();
+    const paint = () => this._renderShutdownModal(steps);
+    const mark = (name, state) => {
+      const step = steps.find((item) => item.name === name);
+      if (!step) return;
+      step.state = state;
+      paint();
+    };
+    paint();
+
     if (this.settings.lightning && this.settings.lightning.enable && this.lightning && typeof this.lightning.stop === 'function') {
+      mark('Lightning', 'stopping');
       try {
         await this.lightning.stop();
+        mark('Lightning', 'stopped');
       } catch (exception) {
+        mark('Lightning', 'failed');
         this._appendError(`[FABRIC:CLI] Lightning stop error: ${exception.message || exception}`);
       }
     }
 
     if (this.settings.bitcoin && this.settings.bitcoin.enable && this.bitcoin && typeof this.bitcoin.stop === 'function') {
+      mark('Bitcoin', 'stopping');
       try {
         await this.bitcoin.stop();
+        mark('Bitcoin', 'stopped');
       } catch (exception) {
+        mark('Bitcoin', 'failed');
         this._appendError(`[FABRIC:CLI] Bitcoin stop error: ${exception.message || exception}`);
       }
     }
 
-    await this.node.stop();
+    try {
+      await this.node.stop();
+    } catch (exception) {
+      this._stopping = false;
+      throw exception;
+    }
     this._restoreConsoleBridge();
     return process.exit(0);
   }
@@ -1322,6 +1413,22 @@ class CLI extends FabricShell {
     this._applyExchangeResult(await this.documentExchange.confirm(params[1], params[2]));
   }
 
+  async _handleStorageCommitCommand (params) {
+    this._applyExchangeResult(this.documentExchange.storageCommit(params));
+  }
+
+  async _handleStorageChallengeCommand (params) {
+    this._applyExchangeResult(this.documentExchange.storageChallenge(params));
+  }
+
+  async _handleStorageRespondCommand (params) {
+    this._applyExchangeResult(this.documentExchange.storageRespond(params));
+  }
+
+  async _handleStorageSweepCommand (params) {
+    this._applyExchangeResult(this.documentExchange.storageSweep(params));
+  }
+
   /**
    * Extract content key K from an on-chain HTLC claim witness and open sealed delivery.
    * Usage: /claimwatch <settlementId> [claimTxid]
@@ -1422,16 +1529,15 @@ class CLI extends FabricShell {
       case 'CollectionSnapshot':
         break;
       default:
-        if (this.settings.debug || Number(this.settings.verbosity) >= 3) {
-          this._appendMessage(`Bitcoin service emitted message: ${JSON.stringify(message)}`);
+        if (this.settings.debug || Number(this.settings.verbosity) >= 4) {
+          this._appendDebug(`Bitcoin service emitted message: ${JSON.stringify(message)}`);
         }
         break;
     }
   }
 
   async _handleBitcoinLog (log) {
-    if (!this.settings.debug && Number(this.settings.verbosity) < 3) return;
-    this._appendMessage(`[SERVICES:BITCOIN] ${log}`);
+    this._appendDebug(`[SERVICES:BITCOIN] ${log}`);
   }
 
   async _handleBitcoinCommit (_commit) {
@@ -1443,8 +1549,8 @@ class CLI extends FabricShell {
       this._state.content.bitcoin.best = sync.best;
       this.commit();
     }
-    if (this.settings.debug || Number(this.settings.verbosity) >= 3) {
-      this._appendMessage(`Bitcoin service emitted sync: ${JSON.stringify(sync)}`);
+    if (this.settings.debug || Number(this.settings.verbosity) >= 4) {
+      this._appendDebug(`Bitcoin service emitted sync: ${JSON.stringify(sync)}`);
     }
   }
 
@@ -1581,24 +1687,21 @@ class CLI extends FabricShell {
     this._appendWarning(msg);
   }
 
-  async _handleBitcoinReady (bitcoin) {
-    this._appendMessage(`Bitcoin ready: ${JSON.stringify(bitcoin)}`);
-    this._appendMessage(`Immediately updating header displays...`);
-    // Immediately update displays when Bitcoin becomes ready
+  async _handleBitcoinReady (_bitcoin) {
+    const height = this.bitcoin && Number(this.bitcoin.height);
+    const where = Number.isFinite(height) ? ` at height ${height}` : '';
+    this._appendMessage(`Bitcoin ready${where}`);
     try {
       await this._syncChainDisplay();
       await this._syncBalance();
-      this._appendMessage(`Header displays updated successfully.`);
     } catch (exception) {
       this._appendError(`Failed to update displays: ${exception.message}`);
     }
   }
 
   async _handleConnectionOpen (msg) {
-    this._appendMessage(`Node emitted "connections:open" event: ${JSON.stringify(msg)}`);
+    const address = (msg && (msg.address || msg.name)) || 'peer';
 
-    // Reset reconnection attempts for this address
-    const address = msg.address || msg.name;
     if (this.reconnectTimers[address]) {
       clearTimeout(this.reconnectTimers[address]);
       delete this.reconnectTimers[address];
@@ -1606,16 +1709,17 @@ class CLI extends FabricShell {
 
     delete this.reconnectAttempts[address];
 
-    // Mark peer as connected
+    let line = `Connected ${address}`;
     for (const id in this.peers) {
       const peer = this.peers[id];
       if (peer.address === address) {
+        if (peer.status === 'disconnected') line = `Reconnected ${address}`;
         peer.status = 'connected';
         delete peer.disconnectedAt;
-        this._appendMessage(`Peer ${address} successfully reconnected`);
         break;
       }
     }
+    this._appendMessage(line);
 
     await this._handleConnection(msg);
 
@@ -1624,22 +1728,33 @@ class CLI extends FabricShell {
   }
 
   async _handleConnectionClose (msg) {
-    this._appendMessage(`Node emitted "connections:close" event: ${JSON.stringify(msg, null, '  ')}`);
+    const address = (msg && (msg.address || msg.name)) || 'peer';
+    if (!this._takeDialOutcome(address)) {
+      let reason = null;
+      if (this._pendingHandshakeTimeout) {
+        this._pendingHandshakeTimeout = false;
+        reason = 'handshake timeout';
+      } else if (this._pendingDialReason) {
+        reason = this._pendingDialReason;
+        this._pendingDialReason = null;
+      }
+      const failed = reason === 'connection refused' || reason === 'timeout';
+      const line = failed
+        ? `Could not connect to ${address} (${reason})`
+        : (reason ? `Disconnected ${address} (${reason})` : `Disconnected ${address}`);
+      if (failed || reason) this._appendWarning(line);
+      else this._appendMessage(line);
+    }
 
-    // Mark peers as disconnected instead of deleting them
     for (const id in this.peers) {
       const peer = this.peers[id];
       if (peer.address === msg.name) {
-        this._appendMessage(`Address matches. Marking peer as disconnected.`);
         peer.status = 'disconnected';
         peer.disconnectedAt = Date.now();
-
-        // Start reconnection process
         this._scheduleReconnect(msg.name);
       }
     }
 
-    // Remove connections but keep peer records
     for (const id in this.connections) {
       const connections = this.connections[id];
       if (connections.address === msg.address) {
@@ -1673,7 +1788,7 @@ class CLI extends FabricShell {
     const attempt = this.reconnectAttempts[address];
     const delay = Math.min(baseDelay * Math.pow(2, attempt - 1), maxDelay);
 
-    this._appendMessage(`Scheduling reconnection to ${address} in ${delay/1000}s (attempt ${attempt})`);
+    this._appendDebug(`Scheduling reconnection to ${address} in ${delay/1000}s (attempt ${attempt})`);
 
     this.reconnectTimers[address] = setTimeout(() => {
       this._attemptReconnect(address);
@@ -1681,7 +1796,7 @@ class CLI extends FabricShell {
   }
 
   _attemptReconnect (address) {
-    this._appendMessage(`Attempting to reconnect to ${address}`);
+    this._appendDebug(`Attempting to reconnect to ${address}`);
 
     // Mark peer as connecting
     for (const id in this.peers) {
@@ -1764,7 +1879,12 @@ class CLI extends FabricShell {
   }
 
   async _handleLightningReady (lightning) {
-    this._appendMessage(`[SERVICES:LIGHTNING] ready: ${JSON.stringify(lightning, null, '  ')}`);
+    const node = lightning && (
+      lightning.node ||
+      (lightning.object && lightning.object.node)
+    );
+    const alias = node && node.alias != null ? String(node.alias).trim() : '';
+    this._appendMessage(alias ? `Lightning ready (${alias})` : 'Lightning ready');
   }
 
   async _handleLightningSync (sync) {
@@ -1984,12 +2104,76 @@ class CLI extends FabricShell {
     this._appendError(`[NODE] ${message}`);
   }
 
+  _noteDialOutcome (address) {
+    if (!address) return;
+    if (!this._dialOutcomes) this._dialOutcomes = new Set();
+    this._dialOutcomes.add(String(address));
+  }
+
+  _hasDialOutcome (address) {
+    return !!(address && this._dialOutcomes && this._dialOutcomes.has(String(address)));
+  }
+
+  _takeDialOutcome (address) {
+    if (!this._hasDialOutcome(address)) return false;
+    this._dialOutcomes.delete(String(address));
+    return true;
+  }
+
+  _startupPeerLine (text) {
+    const refused = text.match(/^Suppressing transient outbound socket error \(([^)]+)\) from _connect\(\) to (\S+)\.$/);
+    if (refused) {
+      const address = refused[2];
+      if (this._hasDialOutcome(address)) return false;
+      this._noteDialOutcome(address);
+      const reason = refused[1] === 'ECONNREFUSED' ? 'connection refused' : refused[1];
+      return `Could not connect to ${address} (${reason})`;
+    }
+    if (/^Suppressing transient/.test(text)) {
+      const code = text.match(/\(([^)]+)\)/);
+      this._pendingDialReason = code && code[1] === 'ECONNREFUSED' ? 'connection refused' : (code ? code[1] : 'error');
+      return false;
+    }
+
+    const connectTimeout = text.match(/^Socket timeout: connect (\S+) after /);
+    if (connectTimeout) {
+      if (this._hasDialOutcome(connectTimeout[1])) return false;
+      this._noteDialOutcome(connectTimeout[1]);
+      return `Could not connect to ${connectTimeout[1]} (timeout)`;
+    }
+    if (/^Socket error:/.test(text) && /Socket timeout:/.test(text)) return false;
+
+    const handshake = text.match(/^NOISE (?:decrypt|encrypt) error:.*noise_handshake_timeout \([^)]+\)(?: \((\S+)\))?$/);
+    if (handshake) {
+      const address = handshake[1];
+      if (address) {
+        if (this._hasDialOutcome(address)) return false;
+        this._noteDialOutcome(address);
+        return `Disconnected ${address} (handshake timeout)`;
+      }
+      this._pendingHandshakeTimeout = true;
+      return false;
+    }
+
+    if (/^Networking enabled\./.test(text)) return false;
+    return null;
+  }
+
   async _handlePeerWarning (message) {
-    this._appendWarning(`[NODE] ${message}`);
+    const text = String(message);
+    const line = this._startupPeerLine(text);
+    if (line === false) return this._appendDebug(`[NODE] ${text}`);
+    if (line) return this._appendWarning(line);
+    return this._appendWarning(`[NODE] ${text}`);
   }
 
   async _handlePeerLog (message) {
-    this._appendMessage(`[NODE] ${message}`);
+    const text = String(message);
+    const listen = text.match(/^Now listening on (\S+)/);
+    if (listen) return this._appendMessage(`Listening on ${listen[1]}`);
+    if (/^\[FABRIC:PEER\] Port \d+ was busy/.test(text)) return this._appendWarning(`[NODE] ${text}`);
+    if (text === 'Peer stopping...' || text === 'Peer stopped!') return this._appendMessage(`[NODE] ${text}`);
+    return this._appendDebug(`[NODE] ${text}`);
   }
 
   async _handlePeerChanges (changes) {
@@ -2178,7 +2362,7 @@ class CLI extends FabricShell {
     } else if (head === 'wallet' && sub === 'unlock') {
       self.history.push('/wallet unlock ***');
     } else {
-      self.history.push(data.input);
+      self.history.push(CLI.redactHistoryInput(data.input));
     }
 
     // Mesh shoutbox: first-class UTF-8 P2P_CHAT_MESSAGE (Hub UI + GoonCitizen).
@@ -2835,7 +3019,7 @@ class CLI extends FabricShell {
 
   _processInput (input) {
     if (input.charAt(0) === '/') {
-      const parts = input.substring(1).split(' ');
+      const parts = commandTokens(input);
 
       if (this.commands[parts[0]]) {
         this.commands[parts[0]].apply(this, [ parts ]);
@@ -3326,15 +3510,16 @@ class CLI extends FabricShell {
     });
 
     this.on('identity', async function _registerActor (identity) {
-      if (this.settings.services.includes(name)) {
-        self._appendMessage(`Registering actor on service "${name}": ${JSON.stringify(identity)}`);
+      if (!(self.settings.services && self.settings.services.includes(name))) return;
 
-        try {
-          const registration = await this.services[name]._registerActor(identity);
-          self._appendMessage(`Registered Actor: ${JSON.stringify(registration, null, '  ')}`);
-        } catch (exception) {
-          self._appendError(`Error from service "${name}" during _registerActor: ${exception}`);
-        }
+      try {
+        const registration = await self.services[name]._registerActor(identity);
+        const id = registration && registration.id != null
+          ? String(registration.id)
+          : (identity && identity.id != null ? String(identity.id) : '');
+        self._appendDebug(`Registered actor on "${name}"${id ? `: ${id}` : ''}`);
+      } catch (exception) {
+        self._appendError(`Error from service "${name}" during _registerActor: ${exception}`);
       }
     });
   }
@@ -4103,5 +4288,35 @@ class CLI extends FabricShell {
     });
   }
 }
+
+/**
+ * History text for a submitted line. Private-key arguments on `/challenge`
+ * and `/respond` are replaced so Up-arrow recall cannot restore them.
+ * @param {string} raw
+ * @returns {string}
+ */
+function commandTokens (raw) {
+  const text = String(raw || '').trim();
+  const body = text.charAt(0) === '/' ? text.substring(1) : text;
+  return body.split(/\s+/).filter((part) => part.length > 0);
+}
+
+function redactHistoryInput (raw) {
+  const text = String(raw || '');
+  const slash = text.charAt(0) === '/' ? '/' : '';
+  const tokens = commandTokens(text);
+  const head = String(tokens[0] || '').replace(/^\//, '').toLowerCase();
+  if (head === 'challenge' && tokens.length >= 4) {
+    tokens[3] = '***';
+    return slash + tokens.join(' ');
+  }
+  if (head === 'respond' && tokens.length >= 3) {
+    tokens[2] = '***';
+    return slash + tokens.join(' ');
+  }
+  return text;
+}
+
+CLI.redactHistoryInput = redactHistoryInput;
 
 module.exports = CLI;

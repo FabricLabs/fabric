@@ -15,7 +15,8 @@
  * - **Named federations:** a canonical descriptor (validators, threshold,
  *   network, publisher, ladder) whose hash is the federation id, the Taproot
  *   vault every member derives from it, withdrawals through the k-of-n
- *   authority leaf, and the `CONTRACT_MESSAGE` bodies members exchange.
+ *   authority leaf, and the `CONTRACT_MESSAGE` bodies members exchange
+ *   (including a one-key membership change that names the next descriptor).
  */
 
 // Dependencies
@@ -57,6 +58,7 @@ const MESSAGE_TYPES = Object.freeze({
   invite: 'FederationInvite',
   response: 'FederationInviteResponse',
   sync: 'FederationSync',
+  membership: 'FederationMembership',
   withdrawal: 'FederationWithdrawalRequest',
   signature: 'FederationWithdrawalSignature',
   broadcast: 'FederationWithdrawalBroadcast'
@@ -1392,13 +1394,17 @@ class Federation extends Contract {
 
   /**
    * Build a canonical descriptor. The soft tier needs the full threshold after the
-   * CSV delay (never a single key), and the internal key is NUMS so no key-path spend exists.
+   * CSV delay (never a single key). A new n-of-n set records `internalKeyMode:
+   * 'musig2'` so a unanimous spend is a Taproot key-path signature. A threshold
+   * below n stays `nums` (script-path only). Pass `internalKeyMode: 'nums'` to
+   * keep an existing NUMS vault address; nothing sweeps those coins.
    * @param {Object} opts
    * @param {string[]} opts.validators Compressed pubkeys (any order, deduplicated)
    * @param {number} opts.threshold Signatures required
    * @param {string} opts.network Bitcoin network name
    * @param {string} opts.publisher Creator pubkey (must be a validator)
    * @param {number} [opts.csvBlocks=144] Soft-tier CSV delay
+   * @param {string} [opts.internalKeyMode] `musig2` | `nums`
    * @returns {Object}
    */
   static buildDescriptor (opts = {}) {
@@ -1427,6 +1433,20 @@ class Federation extends Contract {
     if (!Number.isInteger(csvBlocks) || csvBlocks < 1 || csvBlocks > 65535) {
       throw new Error('csvBlocks must be an integer from 1 to 65535');
     }
+    const requested = opts.internalKeyMode != null
+      ? String(opts.internalKeyMode).trim().toLowerCase()
+      : '';
+    let internalKeyMode;
+    if (requested === 'nums' || requested === 'musig2') {
+      internalKeyMode = requested;
+    } else if (requested === '' || requested === 'auto') {
+      internalKeyMode = (validators.length >= 2 && threshold === validators.length) ? 'musig2' : 'nums';
+    } else {
+      throw new Error('internalKeyMode must be "musig2" or "nums"');
+    }
+    if (internalKeyMode === 'musig2' && threshold !== validators.length) {
+      throw new Error('internalKeyMode musig2 requires an n-of-n threshold');
+    }
     return {
       type: DESCRIPTOR_TYPE,
       version: DESCRIPTOR_VERSION,
@@ -1434,7 +1454,7 @@ class Federation extends Contract {
       validators,
       threshold,
       signatureScheme: 'schnorr',
-      internalKeyMode: 'nums',
+      internalKeyMode,
       ladder: { softMode: 'reduced', softThreshold: threshold, csvBlocks },
       publisher
     };
@@ -1454,7 +1474,8 @@ class Federation extends Contract {
       threshold: descriptor.threshold,
       network: descriptor.network,
       publisher: descriptor.publisher,
-      csvBlocks: ladder.csvBlocks
+      csvBlocks: ladder.csvBlocks,
+      internalKeyMode: descriptor.internalKeyMode
     });
     if (stableStringify(canonical) !== stableStringify(descriptor)) {
       throw new Error('descriptor is not canonical');
@@ -1504,6 +1525,57 @@ class Federation extends Contract {
   }
 
   /**
+   * The federation that follows a one-key change. The id changes. The previous
+   * vault is not swept. n-of-n records `internalKeyMode: musig2`; a lower
+   * threshold records `nums`.
+   * @param {Object} descriptor The federation being replaced
+   * @param {Object} opts
+   * @param {string} [opts.add] Compressed pubkey to add
+   * @param {string} [opts.remove] Compressed pubkey to remove
+   * @param {number} [opts.threshold] Defaults to the current threshold, clamped to the new set
+   * @returns {{ descriptor: Object, id: string, superseded: string, add: (string|null), remove: (string|null) }}
+   */
+  static successor (descriptor, opts = {}) {
+    const current = Federation.canonicalDescriptor(descriptor);
+    const add = opts.add != null && opts.add !== '' ? compressedPubkey(opts.add) : null;
+    const remove = opts.remove != null && opts.remove !== '' ? compressedPubkey(opts.remove) : null;
+    if ((opts.add != null && opts.add !== '' && !add) || (opts.remove != null && opts.remove !== '' && !remove)) {
+      throw new Error('successor pubkey must be compressed');
+    }
+    if (!!add === !!remove) throw new Error('successor changes exactly one validator');
+    let validators = current.validators.slice();
+    if (add) {
+      if (validators.some((v) => v.slice(2) === add.slice(2))) throw new Error('validator is already a signer');
+      validators = validators.concat([add]);
+    } else {
+      if (!validators.some((v) => v.slice(2) === remove.slice(2))) throw new Error('validator is not a signer');
+      validators = validators.filter((v) => v.slice(2) !== remove.slice(2));
+    }
+    if (!validators.length) throw new Error('a federation needs a signer');
+    let publisher = current.publisher;
+    if (!validators.some((v) => v.slice(2) === publisher.slice(2))) {
+      publisher = validators.slice().sort()[0];
+    }
+    const threshold = opts.threshold != null
+      ? Number(opts.threshold)
+      : Math.min(current.threshold, validators.length);
+    const next = Federation.buildDescriptor({
+      validators,
+      threshold,
+      network: current.network,
+      publisher,
+      csvBlocks: current.ladder && current.ladder.csvBlocks
+    });
+    return {
+      descriptor: next,
+      id: Federation.descriptorId(next),
+      superseded: Federation.descriptorId(current),
+      add: add || null,
+      remove: remove || null
+    };
+  }
+
+  /**
    * Withdrawal request id: SHA-256 of the unsigned PSBT.
    * @param {string} psbtBase64
    * @returns {string} 64 hex
@@ -1525,6 +1597,94 @@ class Federation extends Contract {
    * @param {number} opts.feeSats
    * @returns {{ requestId: string, psbtBase64: string, txid: string, vout: number, inputSats: number, amountSats: number, feeSats: number, changeSats: number, vaultAddress: string }}
    */
+  /**
+   * Collaborative funding PSBT: one input from each contributing signer, one
+   * output to the vault, change back to those signers, no OP_RETURN. An n-of-n
+   * descriptor needs every signer. A threshold descriptor takes a published
+   * subset. Reserve credit still waits on `Federation.applyPegInCredit`.
+   * @param {Object} opts
+   * @param {Object} opts.descriptor
+   * @param {Array<Object>} opts.inputs signer inputs: `txid`, `vout`, `valueSats`, native P2WPKH `address`, `pubkey`, and optional `changeAddress`
+   * @param {number} opts.vaultSats
+   * @param {number} opts.feeSats
+   * @returns {{ psbtBase64: string, vaultAddress: string, vaultSats: number, feeSats: number, changeSats: number }}
+   */
+  static buildFundingPsbt (opts = {}) {
+    const Policy = require('./policy');
+    const descriptor = Federation.canonicalDescriptor(opts.descriptor);
+    const vault = Federation.vaultForDescriptor(descriptor);
+    const network = Policy.networkForFabricName(descriptor.network);
+    const inputs = Array.isArray(opts.inputs) ? opts.inputs : [];
+    if (!inputs.length) throw new Error('buildFundingPsbt: at least one signer input is required');
+    const seen = new Set();
+    for (const input of inputs) {
+      const pk = compressedPubkey(input.pubkey);
+      if (!pk || !Federation.isValidator(descriptor, pk)) {
+        throw new Error('buildFundingPsbt: input pubkey is not a validator');
+      }
+      const x = pk.slice(2);
+      if (seen.has(x)) throw new Error('buildFundingPsbt: one input per signer');
+      seen.add(x);
+    }
+    if (descriptor.threshold === descriptor.validators.length && seen.size !== descriptor.validators.length) {
+      throw new Error('buildFundingPsbt: an n-of-n federation needs one input from each signer');
+    }
+    const feeSats = Number(opts.feeSats);
+    if (!Number.isSafeInteger(feeSats) || feeSats < 1) throw new Error('buildFundingPsbt: feeSats must be a positive integer');
+    const vaultSats = Number(opts.vaultSats);
+    if (!Number.isSafeInteger(vaultSats) || vaultSats < DUST_SATS) {
+      throw new Error(`buildFundingPsbt: vaultSats must be an integer of at least ${DUST_SATS}`);
+    }
+    let total = 0;
+    const psbt = new bitcoin.Psbt({ network });
+    for (const input of inputs) {
+      const valueSats = Number(input.valueSats);
+      if (!Number.isSafeInteger(valueSats) || valueSats < DUST_SATS) {
+        throw new Error('buildFundingPsbt: each input valueSats must be above dust');
+      }
+      total += valueSats;
+      const script = bitcoin.address.toOutputScript(String(input.address), network);
+      const nativeP2wpkh = script.length === 22 && script[0] === 0x00 && script[1] === 0x14;
+      if (!nativeP2wpkh) {
+        throw new Error('buildFundingPsbt: only native P2WPKH inputs are accepted');
+      }
+      psbt.addInput({
+        hash: String(input.txid),
+        index: Number(input.vout),
+        witnessUtxo: {
+          script,
+          value: BigInt(valueSats)
+        }
+      });
+    }
+    const changeSats = total - vaultSats - feeSats;
+    if (changeSats < 0) throw new Error('buildFundingPsbt: inputs do not cover the vault output and fee');
+    psbt.addOutput({ address: vault.address, value: BigInt(vaultSats) });
+    if (changeSats > 0) {
+      const share = Math.floor(changeSats / inputs.length);
+      let left = changeSats;
+      for (let i = 0; i < inputs.length; i++) {
+        const sats = i === inputs.length - 1 ? left : share;
+        left -= sats;
+        if (sats < DUST_SATS) throw new Error('buildFundingPsbt: signer change is below dust');
+        const changeAddress = inputs[i].changeAddress || inputs[i].address;
+        psbt.addOutput({ address: String(changeAddress), value: BigInt(sats) });
+      }
+    }
+    for (const out of psbt.txOutputs) {
+      if (out.script && out.script.length && out.script[0] === 0x6a) {
+        throw new Error('buildFundingPsbt: OP_RETURN is not part of a federation funding');
+      }
+    }
+    return {
+      psbtBase64: psbt.toBase64(),
+      vaultAddress: vault.address,
+      vaultSats,
+      feeSats,
+      changeSats
+    };
+  }
+
   static prepareWithdrawal (opts = {}) {
     const Policy = require('./policy');
     const descriptor = Federation.canonicalDescriptor(opts.descriptor);
@@ -1697,6 +1857,35 @@ class Federation extends Contract {
   }
 
   /**
+   * One signer added or removed. `federationId` is the successor. Receivers
+   * recompute that descriptor from the superseded federation and refuse the
+   * body when it does not match.
+   * @param {Object} opts
+   * @param {Object} opts.descriptor The federation being replaced
+   * @param {string} [opts.add]
+   * @param {string} [opts.remove]
+   * @param {number} [opts.threshold]
+   * @returns {Object}
+   */
+  static membershipMessage (opts = {}) {
+    const next = Federation.successor(opts.descriptor, {
+      add: opts.add,
+      remove: opts.remove,
+      threshold: opts.threshold
+    });
+    return {
+      contract: next.id,
+      type: MESSAGE_TYPES.membership,
+      federationId: next.id,
+      superseded: next.superseded,
+      add: next.add,
+      remove: next.remove,
+      threshold: next.descriptor.threshold,
+      descriptor: next.descriptor
+    };
+  }
+
+  /**
    * Withdrawal request: what to pay and from which funding transaction, so every
    * member can rebuild the PSBT ({@link Federation.verifyWithdrawalRequest}).
    * @param {string} federationId
@@ -1745,6 +1934,42 @@ class Federation extends Contract {
    * @param {string} signer verified author pubkey (compressed or x-only)
    * @returns {Object} canonical descriptor
    */
+  /**
+   * Refuse a membership body whose descriptor is not `successor` of the
+   * superseded federation. The signer must be a member of that federation.
+   * @param {Object} previousDescriptor
+   * @param {Object} body
+   * @param {string} signer
+   * @returns {{ descriptor: Object, id: string, superseded: string, add: (string|null), remove: (string|null) }}
+   */
+  static verifyMembership (previousDescriptor, body, signer) {
+    if (!body || body.type !== MESSAGE_TYPES.membership) throw new Error('not a federation membership');
+    if (body.contract !== body.federationId) throw new Error('contract must be the federation id');
+    const previous = Federation.canonicalDescriptor(previousDescriptor);
+    if (String(body.superseded) !== Federation.descriptorId(previous)) {
+      throw new Error('membership is for another federation');
+    }
+    const x = pubkeyXOnly(signer);
+    if (!x || !Federation.isValidator(previous, x)) throw new Error('signer is not a member');
+    const threshold = (body.threshold != null && body.threshold !== '') ? Number(body.threshold) : undefined;
+    const expected = Federation.successor(previous, {
+      add: body.add,
+      remove: body.remove,
+      threshold
+    });
+    let presented;
+    try {
+      presented = Federation.canonicalDescriptor(body.descriptor);
+    } catch (err) {
+      throw new Error('descriptor does not match its successor');
+    }
+    if (stableStringify(presented) !== stableStringify(expected.descriptor) ||
+        String(body.federationId) !== expected.id) {
+      throw new Error('descriptor does not match its successor');
+    }
+    return expected;
+  }
+
   static verifyInvite (body, signer) {
     if (!body || body.type !== MESSAGE_TYPES.invite) throw new Error('not a federation invite');
     if (body.contract !== body.federationId) throw new Error('contract must be the federation id');

@@ -766,6 +766,30 @@ describe('Federation named federations', function () {
       assert.throws(() => Federation.verifyInvite({ ...body, federationId: 'aa'.repeat(32), contract: 'aa'.repeat(32) }, pubs[1]), /does not match/);
     });
 
+    it('refuses a membership whose descriptor is not the successor', function () {
+      const body = Federation.membershipMessage({ descriptor, add: members(1).pubs[0] });
+      assert.strictEqual(body.type, Federation.MESSAGE_TYPES.membership);
+      assert.strictEqual(body.superseded, id);
+      assert.notStrictEqual(body.federationId, id);
+      const next = Federation.verifyMembership(descriptor, body, pubs[1]);
+      assert.strictEqual(next.id, body.federationId);
+      assert.strictEqual(next.descriptor.validators.length, 4);
+      const forged = Object.assign({}, body, {
+        descriptor: Object.assign({}, body.descriptor, { threshold: 1 })
+      });
+      assert.throws(() => Federation.verifyMembership(descriptor, forged, pubs[1]), /does not match its successor/);
+      assert.throws(() => Federation.verifyMembership(descriptor, body, members(1).pubs[0]), /not a member/);
+      assert.throws(() => Federation.successor(descriptor, { add: pubs[0] }), /already a signer/);
+      assert.throws(() => Federation.successor(descriptor, {}), /exactly one/);
+      const raised = Federation.membershipMessage({
+        descriptor,
+        add: members(1).pubs[0],
+        threshold: 4
+      });
+      assert.strictEqual(raised.threshold, 4);
+      assert.strictEqual(Federation.verifyMembership(descriptor, raised, pubs[1]).descriptor.threshold, 4);
+    });
+
     it('accepts messages only from members, under the federation id', function () {
       const body = Federation.responseMessage(id, true);
       assert.strictEqual(Federation.verifySender(descriptor, body, pubs[0]), pubs[0].slice(2));

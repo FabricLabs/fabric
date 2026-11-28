@@ -49,31 +49,59 @@ bitcoin.initEccLib(ecc);
 const BODY_VERSION = 1;
 const SCRIPT_TYPE = 'p2tr';
 const PPM = 1000000;
-/** Highest proportional maker fee an offer may ask: 5%. */
+/**
+ * Highest proportional maker fee an offer may ask: 5%.
+ * @private
+ */
 const MAX_FEE_PPM = 50000;
-/** Smallest coinjoin amount. */
+/**
+ * Smallest coinjoin amount.
+ * @private
+ */
 const MIN_COINJOIN_SATS = 10000;
-/** P2TR dust limit: change below this is dropped (it goes to miners). */
+/**
+ * P2TR dust limit: change below this is dropped (it goes to miners).
+ * @private
+ */
 const DUST_SATS = 330;
-/** Most makers in one round. */
+/**
+ * Most makers in one round.
+ * @private
+ */
 const MAX_MAKERS = 20;
-/** Most inputs one maker may contribute. */
+/**
+ * Most inputs one maker may contribute.
+ * @private
+ */
 const MAX_MAKER_INPUTS = 20;
 const DEFAULT_MIN_MAKERS = 2;
-/** Fewest equal outputs a maker accepts as a coinjoin (taker + one maker). */
+/**
+ * Fewest equal outputs a maker accepts as a coinjoin (taker + one maker).
+ * @private
+ */
 const DEFAULT_MIN_EQUAL_OUTPUTS = 2;
 /**
  * Largest PSBT (base64 characters) a round message may carry: sealed, it must
  * still fit one `CONTRACT_MESSAGE` under `MAX_MESSAGE_SIZE` (32 KiB).
+ * @private
  */
 const MAX_PSBT_CHARS = 22000;
-/** Contract namespace for sealed round messages and `CONTRACT_MESSAGE` bodies. */
+/**
+ * Contract namespace for sealed round messages and `CONTRACT_MESSAGE` bodies.
+ * @private
+ */
 const SEAL_NAMESPACE = 'fabric/coinjoin/v1';
-/** Body type of a sealed round message. */
+/**
+ * Body type of a sealed round message.
+ * @private
+ */
 const SEALED_TYPE = 'CoinjoinSealed';
 const OWNERSHIP_TAG = 'fabric/coinjoin/ownership/v1';
 
-/** Transaction weight, in weight units: overhead, P2TR key-path input, P2TR output. */
+/**
+ * Transaction weight, in weight units: overhead, P2TR key-path input, P2TR output.
+ * @private
+ */
 const WEIGHT_OVERHEAD = 42;
 const WEIGHT_P2TR_INPUT = 230;
 const WEIGHT_P2TR_OUTPUT = 172;
@@ -89,7 +117,10 @@ const BODY_TYPES = Object.freeze({
   SIG: 'CoinjoinSig'
 });
 
-/** Which field carries each body's author key. */
+/**
+ * Which field carries each body's author key.
+ * @private
+ */
 const SIGNER_FIELD = Object.freeze({
   [BODY_TYPES.OFFER]: 'makerPubkey',
   [BODY_TYPES.CANCEL]: 'makerPubkey',
@@ -101,7 +132,10 @@ const SIGNER_FIELD = Object.freeze({
   [BODY_TYPES.SIG]: 'makerPubkey'
 });
 
-/** Round messages: sealed between taker and maker, never gossiped. */
+/**
+ * Round messages: sealed between taker and maker, never gossiped.
+ * @private
+ */
 const ROUND_TYPES = Object.freeze([
   BODY_TYPES.FILL,
   BODY_TYPES.FILL_ACK,
@@ -179,7 +213,10 @@ function withSignature (body, signature) {
   return body;
 }
 
-/** @returns {string} 32 random bytes as hex */
+/**
+ * @returns {string} 32 random bytes as hex
+ * @private
+ */
 function randomRoundId () {
   return crypto.randomBytes(32).toString('hex');
 }
@@ -187,6 +224,7 @@ function randomRoundId () {
 /**
  * @param {Object} input
  * @returns {Object} normalized `CoinjoinOffer` body (keeps `signature`)
+ * @private
  */
 function normalizeOffer (input = {}) {
   const minSats = intOf('minSats', input.minSats, MIN_COINJOIN_SATS, Number.MAX_SAFE_INTEGER);
@@ -215,6 +253,7 @@ function normalizeOffer (input = {}) {
 /**
  * @param {Object} input
  * @returns {Object} normalized `CoinjoinOfferCancel` body
+ * @private
  */
 function normalizeCancel (input = {}) {
   const body = {
@@ -233,6 +272,7 @@ function normalizeCancel (input = {}) {
  * replies), so makers never learn the taker's identity.
  * @param {Object} input
  * @returns {Object} normalized `CoinjoinFill` body
+ * @private
  */
 function normalizeFill (input = {}) {
   const body = {
@@ -254,6 +294,7 @@ function normalizeFill (input = {}) {
  * round.
  * @param {Object} input
  * @returns {Object} normalized `CoinjoinFillAck` body
+ * @private
  */
 function normalizeFillAck (input = {}) {
   const body = {
@@ -286,6 +327,7 @@ function revealOf (input = {}) {
  * Taker → maker: open the PoDLE commitment named in the fill.
  * @param {Object} input
  * @returns {Object} normalized `CoinjoinAuth` body
+ * @private
  */
 function normalizeAuth (input = {}) {
   const body = {
@@ -319,6 +361,7 @@ function makerInputOf (input = {}, i) {
  * and change. Inputs may carry an `ownershipSig` ({@link signOwnership}).
  * @param {Object} input
  * @returns {Object} normalized `CoinjoinIoAuth` body
+ * @private
  */
 function normalizeIoAuth (input = {}) {
   if (!Array.isArray(input.inputs) || !input.inputs.length || input.inputs.length > MAX_MAKER_INPUTS) {
@@ -349,6 +392,7 @@ function normalizeIoAuth (input = {}) {
  * Taker → maker: the unsigned transaction.
  * @param {Object} input
  * @returns {Object} normalized `CoinjoinTx` body
+ * @private
  */
 function normalizeTx (input = {}) {
   const body = {
@@ -366,6 +410,7 @@ function normalizeTx (input = {}) {
  * Maker → taker: the transaction with the maker's inputs signed.
  * @param {Object} input
  * @returns {Object} normalized `CoinjoinSig` body
+ * @private
  */
 function normalizeSig (input = {}) {
   const body = {
@@ -417,7 +462,10 @@ function privOf (signer) {
   return priv;
 }
 
-/** @returns {Buffer} a random valid private key */
+/**
+ * @returns {Buffer} a random valid private key
+ * @private
+ */
 function randomPrivateKey () {
   let priv;
   do {
@@ -431,6 +479,7 @@ function randomPrivateKey () {
  * @param {Object} body signed round body
  * @param {string} recipientPubkey compressed or x-only
  * @returns {{ type: 'CoinjoinSealed', version: number, to: string, seal: Object }}
+ * @private
  */
 function sealRoundMessage (body, recipientPubkey) {
   const normalized = fromBody(body);
@@ -458,6 +507,7 @@ function isSealedEnvelope (value) {
  * Round bodies must be sealed first.
  * @param {Object} value signed offer / cancel, or {@link sealRoundMessage} output
  * @returns {Object} `{ contract: SEAL_NAMESPACE, ...value }`
+ * @private
  */
 function toContractMessage (value) {
   let inner;
@@ -481,6 +531,7 @@ function toContractMessage (value) {
  * Unsealed round bodies and other contracts return `null`.
  * @param {Object} value
  * @returns {({ kind: 'offer'|'cancel', body: Object, id: string }|{ kind: 'sealed', envelope: Object, to: string }|null)}
+ * @private
  */
 function fromContractMessage (value) {
   if (!value || typeof value !== 'object' || value.contract !== SEAL_NAMESPACE) return null;
@@ -501,6 +552,7 @@ function fromContractMessage (value) {
  * @param {Object} envelope {@link sealRoundMessage} output
  * @param {Buffer|string} privateKey
  * @returns {{ ok: boolean, reason: (string|null), body: (Object|null), id: (string|null) }}
+ * @private
  */
 function openRoundMessage (envelope, privateKey) {
   if (!envelope || envelope.type !== SEALED_TYPE || !envelope.seal) {
@@ -521,6 +573,7 @@ function openRoundMessage (envelope, privateKey) {
  * @param {Object} offer
  * @param {number} amountSats
  * @returns {number}
+ * @private
  */
 function makerFee (offer, amountSats) {
   const amount = intOf('amountSats', amountSats, 1, Number.MAX_SAFE_INTEGER);
@@ -539,6 +592,7 @@ function makerFee (offer, amountSats) {
  * @param {number} opts.cjfeeSats
  * @param {number} [opts.txFeeContributionSats=0]
  * @returns {number}
+ * @private
  */
 function makerChange (opts = {}) {
   const change = Number(opts.inputSats) - Number(opts.amountSats) + Number(opts.cjfeeSats) - Number(opts.txFeeContributionSats || 0);
@@ -552,6 +606,7 @@ function makerChange (opts = {}) {
  * @param {number} inputs
  * @param {number} outputs
  * @returns {number}
+ * @private
  */
 function estimateVsize (inputs, outputs) {
   return Math.ceil((WEIGHT_OVERHEAD + (WEIGHT_P2TR_INPUT * inputs) + (WEIGHT_P2TR_OUTPUT * outputs)) / 4);
@@ -609,6 +664,7 @@ function makerSideOf (maker = {}, amountSats) {
  * @param {Object[]} opts.makers `{ id, offer, inputs, coinjoinScriptHex, changeScriptHex }`
  * @param {number} [opts.minMakers=2]
  * @returns {Object} plan `{ amountSats, inputs, outputs, minerFeeSats, vsize, feeRateSatVb, takerChangeSats, totalMakerFeesSats, makers }`
+ * @private
  */
 function planCoinjoin (opts = {}) {
   const amountSats = intOf('amountSats', opts.amountSats, MIN_COINJOIN_SATS, Number.MAX_SAFE_INTEGER);
@@ -688,6 +744,7 @@ function planCoinjoin (opts = {}) {
  * @param {string} [opts.networkName='regtest']
  * @param {number} opts.lockTime current tip height (anti fee sniping)
  * @returns {{ psbtBase64: string, unsignedTxid: string, plan: Object }}
+ * @private
  */
 function buildPsbt (opts = {}) {
   const plan = planCoinjoin(opts);
@@ -732,6 +789,7 @@ function unsignedTxidOf (psbt) {
  * The id the transaction will have (key-path spends do not change it).
  * @param {string} psbtBase64
  * @returns {string}
+ * @private
  */
 function unsignedTxid (psbtBase64) {
   return unsignedTxidOf(psbtFrom(psbtBase64));
@@ -741,6 +799,7 @@ function unsignedTxid (psbtBase64) {
  * Inputs and outputs of a PSBT as plain rows.
  * @param {string} psbtBase64
  * @returns {{ version: number, lockTime: number, inputs: Object[], outputs: Object[], unsignedTxid: string }}
+ * @private
  */
 function describePsbt (psbtBase64) {
   const psbt = psbtFrom(psbtBase64);
@@ -786,6 +845,7 @@ function isP2trScript (hex) {
  * @param {number} [opts.minEqualOutputs=2]
  * @param {number} [opts.lockTimeMax] refuse an `nLockTime` above this height
  * @returns {{ ok: boolean, reason: (string|null), cjfeeSats: (number|null), expectedChangeSats: (number|null), inputIndexes: number[] }}
+ * @private
  */
 function validateForMaker (opts = {}) {
   const bad = (reason) => ({ ok: false, reason, cjfeeSats: null, expectedChangeSats: null, inputIndexes: [] });
@@ -863,6 +923,7 @@ function validateForMaker (opts = {}) {
  * @param {number} [opts.minFeeRateSatVb=1]
  * @param {number} [opts.maxFeeRateSatVb=500]
  * @returns {{ ok: boolean, reason: (string|null), feeRateSatVb: (number|null) }}
+ * @private
  */
 function validateForTaker (opts = {}) {
   const bad = (reason) => ({ ok: false, reason, feeRateSatVb: null });
@@ -897,6 +958,7 @@ function validateForTaker (opts = {}) {
  * BIP-341 output private key for a BIP-86 key-path-only P2TR (internal key, no scripts).
  * @param {Buffer|string} internalPriv32
  * @returns {Buffer} tweaked private key
+ * @private
  */
 function taprootOutputPrivateKey (internalPriv32) {
   let d = privOf(internalPriv32);
@@ -913,6 +975,7 @@ function taprootOutputPrivateKey (internalPriv32) {
  * @param {Buffer|string} internalPriv32
  * @param {string} [networkName='regtest']
  * @returns {{ internalXOnlyHex: string, outputXOnlyHex: string, scriptPubKeyHex: string, address: string }}
+ * @private
  */
 function taprootKeyPath (internalPriv32, networkName = 'regtest') {
   const internal = Buffer.from(ecc.pointFromScalar(privOf(internalPriv32), true)).subarray(1);
@@ -946,6 +1009,7 @@ function keyPathSigner (internalPriv32) {
  * @param {string} psbtBase64
  * @param {Array<Buffer|string>} internalPrivateKeys
  * @returns {{ psbtBase64: string, signed: number[] }} indexes signed
+ * @private
  */
 function signKeyPathInputs (psbtBase64, internalPrivateKeys = []) {
   const psbt = psbtFrom(psbtBase64);
@@ -1029,6 +1093,7 @@ function keyPathWitnessSignature (input) {
  * @param {string} makerPsbtBase64 the maker's signed copy
  * @param {Object[]} makerInputs `{ txid, vout }` rows of that maker
  * @returns {string} merged PSBT (base64)
+ * @private
  */
 function mergeMakerSignatures (basePsbtBase64, makerPsbtBase64, makerInputs = []) {
   const base = psbtFrom(basePsbtBase64);
@@ -1052,6 +1117,7 @@ function mergeMakerSignatures (basePsbtBase64, makerPsbtBase64, makerInputs = []
  * Finalize every input and extract the transaction.
  * @param {string} psbtBase64
  * @returns {{ txHex: string, txid: string, vsize: number, feeSats: number }}
+ * @private
  */
 function finalize (psbtBase64) {
   const psbt = psbtFrom(psbtBase64);
@@ -1089,6 +1155,7 @@ function ownershipHash (roundId, txid, vout) {
  * @param {number} opts.vout
  * @param {Buffer|string} opts.internalPrivateKey
  * @returns {string} 64-byte signature hex
+ * @private
  */
 function signOwnership (opts = {}) {
   const q = taprootOutputPrivateKey(opts.internalPrivateKey);
@@ -1100,6 +1167,7 @@ function signOwnership (opts = {}) {
  * @param {string} opts.roundId
  * @param {Object} opts.input `{ txid, vout, scriptPubKeyHex, ownershipSig }`
  * @returns {boolean}
+ * @private
  */
 function verifyOwnership (opts = {}) {
   const input = opts.input || {};
@@ -1122,6 +1190,7 @@ function verifyOwnership (opts = {}) {
  * @param {Object} [opts]
  * @param {number} [opts.now] ms
  * @returns {{ ok: boolean, reason: (string|null) }}
+ * @private
  */
 function validateFill (offer, fill, opts = {}) {
   const bad = (reason) => ({ ok: false, reason });
@@ -1139,15 +1208,30 @@ const Point = secp256k1.Point;
 const N = Point.Fn.ORDER;
 const G = Point.BASE;
 
-/** Distinct commitments one UTXO can produce (indices `0 … PODLE_MAX_INDEX − 1`). */
+/**
+ * Distinct commitments one UTXO can produce (indices `0 … PODLE_MAX_INDEX − 1`).
+ * @private
+ */
 const PODLE_MAX_INDEX = 3;
-/** Domain tag mixed into the DLEQ challenge. */
+/**
+ * Domain tag mixed into the DLEQ challenge.
+ * @private
+ */
 const PODLE_TAG = 'fabric/podle/v1';
-/** Default: the commitment UTXO must be this many blocks deep. */
+/**
+ * Default: the commitment UTXO must be this many blocks deep.
+ * @private
+ */
 const PODLE_MIN_AGE_CONFS = 5;
-/** Default: the commitment UTXO must be worth this percent of the coinjoin amount. */
+/**
+ * Default: the commitment UTXO must be worth this percent of the coinjoin amount.
+ * @private
+ */
 const PODLE_MIN_VALUE_PCT = 20;
-/** Default size of a maker's used-commitment memory. */
+/**
+ * Default size of a maker's used-commitment memory.
+ * @private
+ */
 const PODLE_BLACKLIST_SIZE = 100000;
 
 /** @private */
@@ -1194,6 +1278,7 @@ const generators = new Map();
  * that is a valid x coordinate, lifted to even y. Nobody knows `log_G(J)`.
  * @param {number} index 0 … {@link PODLE_MAX_INDEX} − 1
  * @returns {Object} noble `Point`
+ * @private
  */
 function podleGenerator (index) {
   const i = Number(index);
@@ -1215,6 +1300,7 @@ function podleGenerator (index) {
  * The commitment for a `P2` point.
  * @param {string} p2Hex compressed point
  * @returns {string} 64 hex characters
+ * @private
  */
 function podleCommitment (p2Hex) {
   return sha256(Buffer.from(hexOf('P2', p2Hex, 33), 'hex')).toString('hex');
@@ -1273,6 +1359,7 @@ function challenge ({ Kg, Kj, P, P2, txid, vout, index }) {
  * @param {Object} opts.utxo `{ txid, vout }`
  * @param {number} [opts.index=0] which of the UTXO's commitments to use
  * @returns {{ commitment: string, reveal: { txid: string, vout: number, index: number, P: string, P2: string, e: string, s: string } }}
+ * @private
  */
 function generatePodle (opts = {}) {
   const { txid, vout } = outpointOf(opts.utxo);
@@ -1304,6 +1391,7 @@ function generatePodle (opts = {}) {
  * @param {string} opts.commitment
  * @param {Object} opts.reveal
  * @returns {{ ok: boolean, reason: (string|null) }}
+ * @private
  */
 function verifyPodle (opts = {}) {
   const bad = (reason) => ({ ok: false, reason });
@@ -1341,6 +1429,7 @@ function verifyPodle (opts = {}) {
  * @param {number} [opts.minAgeConfs=5]
  * @param {number} [opts.minValuePct=20]
  * @returns {{ ok: boolean, reason: (string|null) }}
+ * @private
  */
 function checkPodleUtxo (opts = {}) {
   const bad = (reason) => ({ ok: false, reason });
@@ -1367,6 +1456,7 @@ function checkPodleUtxo (opts = {}) {
  * Lowest commitment index the taker has not used for a UTXO.
  * @param {number[]} used indices already spent on rounds
  * @returns {number|null} `null` once the UTXO is exhausted
+ * @private
  */
 function nextPodleIndex (used = []) {
   const taken = new Set(used.map(Number));
@@ -1608,6 +1698,8 @@ class CoinjoinBook extends OrderBook {
     });
     // maker → `{ ok, value, outpoint, reason, checkedAt }`
     this._bonds = new Map();
+    // A refresh that started later must not be overwritten by one still in flight.
+    this._bondRefresh = 0;
   }
 
   /**
@@ -1663,6 +1755,7 @@ class CoinjoinBook extends OrderBook {
    * @returns {Promise<{ checked: number, valid: number, shared: number }>}
    */
   async refreshBonds (verifier) {
+    const generation = ++this._bondRefresh;
     this.prune();
     const perMaker = new Map();
     for (const row of this._rows()) {
@@ -1713,6 +1806,7 @@ class CoinjoinBook extends OrderBook {
       best.checkedAt = this.now();
       next.set(maker, best);
     }
+    if (generation !== this._bondRefresh) return { checked, valid, shared };
     this._bonds = next;
     return { checked, valid, shared };
   }

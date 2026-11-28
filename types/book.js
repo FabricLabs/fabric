@@ -3,7 +3,8 @@
 /**
  * @fileoverview Capped, keyed, insertion-ordered row store at the root of the
  * locally held books: {@link SignedBook} → {@link OrderBook}
- * (`types/coinjoinBook`, `types/liquidityBook`), `types/documentBook`, and
+ * (`types/coinjoinBook`, `types/liquidityBook`), `types/documentBook`
+ * ({@link DocumentBook} and {@link DocumentBlobTransferBook}), and
  * `types/channelBook`. Rows live in a `Map` so arrival order is iteration
  * order; past the capacity the oldest row goes. Subclasses own the row shape
  * and the public vocabulary (offers, orders, sessions); this class only keeps

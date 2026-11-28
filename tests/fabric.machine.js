@@ -114,6 +114,48 @@ describe('@fabric/core/types/machine', function () {
       const machine = new Machine(false);
       assert.throws(() => machine.compileOpcodeContract('OP_TRUE\nOP_NOT_REAL'), /Unknown opcodes/);
     });
+
+    it('does not run inherited or extra script properties', async function () {
+      const machine = new Machine({ maxSteps: 1, maxStack: 2 });
+      machine.define('OP_TRUE', function () { return true; });
+      const script = ['OP_TRUE'];
+      script.extra = 'OP_TRUE';
+      machine.settings.script = script;
+      await machine.compute();
+      assert.strictEqual(machine.stack.length, 1);
+      machine.settings.script = ['toString'];
+      await assert.rejects(machine.compute(), /opcode not defined/);
+      const inherited = [];
+      Object.setPrototypeOf(inherited, { 0: 'OP_TRUE' });
+      inherited.length = 1;
+      machine.stack = [];
+      machine.settings.script = inherited;
+      await machine.compute();
+      assert.strictEqual(machine.stack.length, 0);
+    });
+
+    it('stops the governor when compute rejects and nobody is listening', async function () {
+      const machine = new Machine({ maxStack: 1, frequency: 0.02 });
+      machine.define('PUSH', function () { return 1; });
+      machine.settings.script = ['PUSH', 'PUSH'];
+      await machine.start();
+      const deadline = Date.now() + 500;
+      while (machine.status !== 'STOPPED' && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      assert.strictEqual(machine.status, 'STOPPED');
+    });
+
+    it('stops the governor when compute rejects', async function () {
+      const machine = new Machine({ maxStack: 1, frequency: 0.05 });
+      machine.define('PUSH', function () { return 1; });
+      machine.settings.script = ['PUSH', 'PUSH'];
+      const failed = new Promise((resolve) => machine.once('error', resolve));
+      await machine.start();
+      const err = await failed;
+      assert.match(String(err && err.message), /stack overflow/);
+      assert.strictEqual(machine.status, 'STOPPED');
+    });
   });
 });
 
@@ -245,6 +287,22 @@ describe('executionProgramRunner / Machine fabric-execution', function () {
   it('Program.compile fabric-execution requires steps', function () {
     const bad = Program.from({ language: 'fabric-execution', source: {} }).compile();
     assert.strictEqual(bad.ok, false);
+  });
+
+  it('applies Machine step limits and compiles isolated opcode source', async function () {
+    const limited = new Machine({ maxSteps: 1 });
+    const tooLong = await limited.runProgram({
+      language: 'fabric-execution',
+      source: { version: 1, steps: [{ op: 'Push', value: 1 }, { op: 'Push', value: 2 }] }
+    });
+    assert.strictEqual(tooLong.ok, false);
+    assert.match(tooLong.error, /maxSteps/);
+    const isolated = await new Machine().runProgram({
+      language: 'fabric-opcodes',
+      source: 'OP_UNDEFINED'
+    }, null, { isolate: true });
+    assert.strictEqual(isolated.ok, false);
+    assert.match(String(isolated.error || ''), /opcode not defined|OP_UNDEFINED/);
   });
 });
 const crypto = require('crypto');
@@ -435,5 +493,75 @@ describe('Contract.observePayment / L1 payment', function () {
       () => applyPaymentObservation({}, { ok: false, code: 'NO_MATCH' }),
       /successful/
     );
+  });
+});
+
+describe('program execution limits', function () {
+  const { runExecutionProgram } = require('../functions/executionProgramRunner');
+
+  it('keeps the receiver stack for an in-process run', async function () {
+    const machine = new Machine();
+    const out = await machine.runProgram({
+      language: 'fabric-execution',
+      source: { version: 1, steps: [{ op: 'Push', value: 7 }] }
+    }, null, { inProcess: true });
+    assert.strictEqual(out.ok, true, out.error);
+    assert.strictEqual(machine.stack[machine.stack.length - 1], 7);
+  });
+
+  it('rejects a non-finite Push and a missing opcode resolution', function () {
+    const nan = runExecutionProgram({
+      version: 1,
+      steps: [{ op: 'Push', value: NaN }]
+    });
+    assert.strictEqual(nan.ok, false);
+    assert.match(nan.error, /non-finite/);
+    const missing = runExecutionProgram({
+      version: 1,
+      steps: [{ op: 'FabricOpcode', name: 'Missing' }]
+    }, { resolveFabricEntry () { return null; } });
+    assert.strictEqual(missing.ok, false);
+    assert.match(missing.error, /unresolved/);
+  });
+
+  it('treats a negative step cap as the default', function () {
+    const out = runExecutionProgram({
+      version: 1,
+      steps: [{ op: 'Push', value: 1 }, { op: 'Push', value: 2 }]
+    }, { inProcess: true, maxSteps: -1 });
+    assert.strictEqual(out.ok, true, out.error);
+  });
+
+  it('applies a per-call step cap to a local opcode run', async function () {
+    const machine = new Machine();
+    machine.define('OP_TRUE', () => true);
+    const out = await machine.runProgram({
+      language: 'fabric-opcodes',
+      source: ['OP_TRUE', 'OP_TRUE']
+    }, null, { maxSteps: 1 });
+    assert.strictEqual(out.ok, false);
+    assert.match(out.error, /maxSteps/);
+  });
+
+  it('keeps constructor state and the small opcode helpers', function () {
+    const machine = new Machine({ state: { contest: 'open' }, interval: 2, precision: 2 });
+    assert.strictEqual(machine.state.contest, 'open');
+    assert.strictEqual(machine.state.clock, 0);
+    assert.strictEqual(machine.frequency, '0.50');
+    assert.strictEqual(machine.validateCycle(0), false);
+    assert.throws(() => Machine.fromObjectString(), /Must provide input/);
+    const buffers = Machine.fromObjectString(JSON.stringify({
+      0: [1, 2],
+      1: { type: 'Buffer', data: [3] }
+    }));
+    assert.strictEqual(buffers.length, 2);
+    machine.defineOpcode('OP_NOTE', () => 'noted');
+    machine.defineBitcoinOpcode('OP_BIT', () => 1);
+    machine.defineFabricOpcode('OP_FAB', () => 2);
+    assert.strictEqual(typeof machine.known.OP_NOTE, 'function');
+    machine.applyOperation({ op: 'add', path: '/mark', value: 1 });
+    const committed = machine.commit();
+    assert.ok(Array.isArray(committed));
+    assert.strictEqual(machine.parseManifest(null).ok, false);
   });
 });

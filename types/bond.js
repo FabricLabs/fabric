@@ -44,8 +44,74 @@ const PENALTY_PRESIG_TYPE = 'DepositPenaltyPreSig';
 
 // Only these verdicts may move a deposit through a fresh penalty spend; the
 // timelocked absence is enforced by the provider's own pre-signed penalty.
-const PENALTY_KINDS = new Set(['wrong-leaf', 'non-response']);
+const PENALTY_KINDS = new Set(['wrong-leaf', 'non-response', 'wrong-run']);
 const DEFAULT_MAX_FEE_SATS = 20000;
+
+/**
+ * Penalty spend for a `wrong-run` proof. The deposit's `merkleRootHex` is the
+ * program hash. The proof names that hash, this deposit address, and the
+ * funded outpoint.
+ * @param {object} deposit
+ * @param {object} proof
+ * @param {object} verdict
+ * @param {object} opts
+ * @returns {object}
+ * @private
+ */
+function prepareWrongRunPenalty (deposit, proof, verdict, opts) {
+  const artifacts = proof.artifacts || {};
+  const root = deposit.merkleRootHex ? String(deposit.merkleRootHex).toLowerCase() : null;
+  const programHash = String(artifacts.programHash || '').toLowerCase();
+  if (!root || programHash !== root) {
+    throw new Error('preparePenaltySpend: proof is for another program than this deposit backs');
+  }
+  const named = String(artifacts.depositAddress || '').toLowerCase();
+  if (!named || named !== String(deposit.address).toLowerCase()) {
+    throw new Error('preparePenaltySpend: offer does not name this deposit address');
+  }
+  const outpoint = artifacts.deposit || {};
+  if (!HEX64.test(String(outpoint.txid || '')) || outpoint.vout == null) {
+    throw new Error('preparePenaltySpend: proof names no deposit outpoint');
+  }
+  const funded = require('bitcoinjs-lib').Transaction.fromHex(String(opts.fundedTxHex || '').trim());
+  if (funded.getId() !== String(outpoint.txid).toLowerCase()) {
+    throw new Error('preparePenaltySpend: fundedTxHex is not the challenged deposit transaction');
+  }
+  const out = funded.outs[Number(outpoint.vout)];
+  if (!out || !Buffer.from(out.script).equals(scriptFor(deposit.network, deposit.address))) {
+    throw new Error('preparePenaltySpend: challenged outpoint does not pay this deposit');
+  }
+  const consumed = opts.consumed instanceof Set ? opts.consumed : CONSUMED_EVIDENCE;
+  const ids = proof.evidenceIds();
+  if (!ids.length) throw new Error('preparePenaltySpend: proof carries no evidence id');
+  const reused = ids.find((e) => consumed.has(e));
+  if (reused) throw new Error(`preparePenaltySpend: evidence ${reused} already spent`);
+  const leaf = Bond._leaf(deposit, 'penalty');
+  const psbt = prepareLeafPsbt({
+    networkName: deposit.network,
+    fundedTxHex: opts.fundedTxHex,
+    vaultAddress: deposit.address,
+    leafScript: leaf.script,
+    leaves: deposit._leaves,
+    internalPubkeyHex: deposit.internalPubkeyHex,
+    destinationAddress: opts.destinationAddress,
+    feeSats: opts.feeSats
+  });
+  if (psbt.vout !== Number(outpoint.vout)) {
+    throw new Error('preparePenaltySpend: deposit address paid more than once in the funding transaction');
+  }
+  for (const e of ids) consumed.add(e);
+  return Object.assign(psbt, {
+    leafId: 'penalty',
+    witnessShape: 'sigs',
+    fraudProofHash: proof.hash,
+    fraudProofKind: proof.kind,
+    evidenceIds: ids,
+    offender: verdict.offender,
+    enforceable: false,
+    signaturesRequired: [deposit.publisherPubkey, deposit.providerPubkey]
+  });
+}
 
 // Evidence ids already turned into a penalty spend in this process (see
 // `preparePenaltySpend`; pass `opts.consumed` for a persistent ledger).
@@ -64,7 +130,10 @@ function compressedOrThrow (label, hex) {
   return s;
 }
 
-/** Accept a block height, a `{ type, height|unix|blocks }` lock, or a normalized lock. @private */
+/**
+ * Accept a block height, a `{ type, height|unix|blocks }` lock, or a normalized lock.
+ * @private
+ */
 function lockFrom (raw) {
   if (typeof raw === 'number') return normalizeLock({ type: 'cltv', height: raw });
   if (raw && typeof raw === 'object' && raw.type === 'cltv' && raw.value != null && raw.height == null && raw.unix == null) {
@@ -820,6 +889,9 @@ class Bond extends Contract {
     if (!verdict.reputational || String(verdict.offender || '').toLowerCase() !== xOnly) {
       throw new Error('preparePenaltySpend: fraud proof names a different offender');
     }
+    if (proof.kind === 'wrong-run') {
+      return prepareWrongRunPenalty(deposit, proof, verdict, opts);
+    }
     const { challenge, commitment } = proof.artifacts;
     const root = deposit.merkleRootHex ? String(deposit.merkleRootHex).toLowerCase() : null;
     if (!root || String(challenge.merkleRootHex).toLowerCase() !== root) throw new Error('preparePenaltySpend: proof is for another tree than this deposit backs');
@@ -910,16 +982,28 @@ class Bond extends Contract {
 Bond.PENALTY_KINDS = PENALTY_KINDS;
 
 // Fidelity bonds (coinjoin market)
-/** Blocks in a year (10-minute blocks). */
+/**
+ * Blocks in a year (10-minute blocks).
+ * @private
+ */
 const YEAR_BLOCKS = 52560;
 const FIDELITY_INTEREST_RATE = 0.015;
 const FIDELITY_EXPONENT = 1.3;
-/** Mainnet bond locktimes are multiples of this height. */
+/**
+ * Mainnet bond locktimes are multiples of this height.
+ * @private
+ */
 const FIDELITY_LOCKTIME_GRID = 4320;
-/** Furthest ahead a certificate may expire: about a year. */
+/**
+ * Furthest ahead a certificate may expire: about a year.
+ * @private
+ */
 const FIDELITY_MAX_CERT_BLOCKS = 2016 * 26;
 const FIDELITY_MIN_CONFS = 6;
-/** Leaf version for BIP342 tapscript. */
+/**
+ * Leaf version for BIP342 tapscript.
+ * @private
+ */
 const LEAF_VERSION = 0xc0;
 const LOCKTIME_MAX_HEIGHT = 499999999;
 const FIDELITY_CERTIFICATE_TYPE = 'FidelityBondCertificate';
@@ -973,6 +1057,7 @@ function isMainnet (networkName) {
  * @param {number} index
  * @param {string} [networkName='regtest']
  * @returns {string}
+ * @private
  */
 function fidelityPath (index, networkName = 'regtest') {
   const i = intOf('index', index, 0, 0x7fffffff);
@@ -985,6 +1070,7 @@ function fidelityPath (index, networkName = 'regtest') {
  * @param {number} locktime
  * @param {string} [networkName='regtest']
  * @returns {boolean}
+ * @private
  */
 function isValidFidelityLocktime (locktime, networkName = 'regtest') {
   const n = Number(locktime);
@@ -1000,6 +1086,7 @@ function isValidFidelityLocktime (locktime, networkName = 'regtest') {
  * @param {number} [opts.count=12]
  * @param {number} [opts.step] blocks between choices (mainnet: the grid)
  * @returns {number[]}
+ * @private
  */
 function fidelityLocktimes (opts = {}) {
   const tip = intOf('tipHeight', opts.tipHeight, 0, LOCKTIME_MAX_HEIGHT);
@@ -1018,6 +1105,7 @@ function fidelityLocktimes (opts = {}) {
  * @param {string} opts.bondPubkey compressed or x-only
  * @param {number} opts.locktime block height
  * @returns {{ address: string, scriptPubKeyHex: string, leafScriptHex: string, controlBlockHex: string, bondXOnly: string, locktime: number }}
+ * @private
  */
 function buildFidelity (opts = {}) {
   const networkName = opts.networkName || 'regtest';
@@ -1057,6 +1145,7 @@ function buildFidelity (opts = {}) {
  * @param {string} opts.destinationAddress
  * @param {number} [opts.feeSats=500]
  * @returns {string} PSBT base64
+ * @private
  */
 function prepareFidelityRedeem (opts = {}) {
   const networkName = opts.networkName || 'regtest';
@@ -1089,6 +1178,7 @@ function prepareFidelityRedeem (opts = {}) {
  * @param {string} psbtBase64 {@link prepareFidelityRedeem} output
  * @param {Buffer|string} bondPriv32
  * @returns {{ txHex: string, txid: string }}
+ * @private
  */
 function signFidelityRedeem (psbtBase64, bondPriv32) {
   const psbt = bitcoin.Psbt.fromBase64(String(psbtBase64 || ''));
@@ -1131,6 +1221,7 @@ function certificateHash (fields) {
  * @param {number} opts.certExpiresAt block height
  * @param {Buffer|string} opts.bondPrivateKey
  * @returns {Object} bond descriptor for `CoinjoinOffer.fidelityBond`
+ * @private
  */
 function signFidelityCertificate (opts = {}) {
   const priv = privOf(opts.bondPrivateKey);
@@ -1151,6 +1242,7 @@ function signFidelityCertificate (opts = {}) {
  * Shape of `CoinjoinOffer.fidelityBond`.
  * @param {Object} input
  * @returns {{ txid: string, vout: number, locktime: number, bondXOnly: string, certExpiresAt: number, certSig: string }}
+ * @private
  */
 function normalizeFidelity (input = {}) {
   return {
@@ -1170,6 +1262,7 @@ function normalizeFidelity (input = {}) {
  * @param {string} opts.makerPubkey
  * @param {string} opts.network
  * @returns {boolean}
+ * @private
  */
 function verifyFidelityCertificate (bond, opts = {}) {
   try {
@@ -1194,6 +1287,7 @@ function verifyFidelityCertificate (bond, opts = {}) {
  * @param {number} [opts.interestRate=0.015]
  * @param {number} [opts.exponent=1.3]
  * @returns {number}
+ * @private
  */
 function fidelityValue (opts = {}) {
   const valueSats = Number(opts.valueSats);
@@ -1223,6 +1317,7 @@ function fidelityValue (opts = {}) {
  * @param {number} [opts.minConfs=6]
  * @param {number} [opts.maxCertBlocks]
  * @returns {Promise<{ ok: boolean, reason: (string|null), valueSats: number, confirmHeight: (number|null), value: number }>}
+ * @private
  */
 async function verifyFidelity (bond, opts = {}) {
   const bad = (reason) => ({ ok: false, reason, valueSats: 0, confirmHeight: null, value: 0 });
@@ -1290,7 +1385,7 @@ class FidelityVerifier {
   /**
    * @param {Object} bond
    * @param {string} makerPubkey
-   * @returns {Promise<Object>} {@link verifyFidelity} result
+   * @returns {Promise<Object>} `verifyFidelity` result
    */
   async verify (bond, makerPubkey) {
     const tip = Number(await this.settings.bitcoin.getTipHeight());

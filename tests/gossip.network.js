@@ -152,6 +152,26 @@ describe('@fabric/core gossip network catalog', function () {
     assert.strictEqual(settings.constraints.documents.max, 2);
     assert.strictEqual(settings.constraints.peers.max, 3);
   });
+
+  it('rejects frames that are not buffers and keeps odd relay settings', function () {
+    const Network = require('../types/network');
+    assert.strictEqual(Network.lookupGossipType(null), null);
+    assert.strictEqual(Network.isRelayAsIsWireType(null), false);
+    assert.strictEqual(Network.isFirstClassOpcodeOnlyType(null), false);
+    assert.strictEqual(validateGossipFrame('nope').error, 'not a buffer');
+    assert.strictEqual(validateGossipFrame(new Uint8Array(4)).error, 'undersize');
+    const huge = Buffer.alloc(HEADER_SIZE + 8);
+    assert.strictEqual(validateGossipFrame(huge, { maxBodySize: 1 }).error, 'oversized');
+    const odd = gossipRelayPeerSettings({
+      constraints: { peers: { max: 4 }, label: 'plain' },
+      musig2: { autoAccept: true }
+    });
+    assert.strictEqual(odd.constraints.label, 'plain');
+    assert.strictEqual(odd.musig2.autoAccept, true);
+    assert.strictEqual(odd.constraints.peers.max, 4);
+    const bare = gossipRelayPeerSettings(null);
+    assert.strictEqual(bare.registerInboundContracts, false);
+  });
 });
 
 describe('@fabric/core gossip-relay Peer (mocked mesh)', function () {

@@ -9,6 +9,7 @@ const { verifyBlob } = require('./document');
  * Storage tree over raw 32-byte blob hashes (its proofs are {@link Tree} proofs).
  * @param {string[]} hashes
  * @returns {Tree}
+ * @private
  */
 function createBlobMerkleTree (hashes) {
   return new Tree({ leaves: hashes.map((h) => Buffer.from(h, 'hex')) });
@@ -216,7 +217,7 @@ class Challenge {
     let deadlineHeight = null;
     if (opts.deadlineHeight != null) deadlineHeight = Math.floor(Number(opts.deadlineHeight));
     else if (opts.tipHeight != null && opts.deadlineBlocks != null) deadlineHeight = Math.floor(Number(opts.tipHeight)) + Math.max(1, Math.floor(Number(opts.deadlineBlocks)));
-    if (deadlineHeight != null && !(Number.isSafeInteger(deadlineHeight) && deadlineHeight > 0 && deadlineHeight < 500000000)) {
+    if (deadlineHeight != null && !(Number.isSafeInteger(deadlineHeight) && deadlineHeight > 0 && deadlineHeight < (5 * (10 ** 8)))) {
       throw new Error('issue: deadlineHeight must be a positive block height');
     }
     let deposit = null;

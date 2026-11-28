@@ -11,7 +11,6 @@
 
 const { jsonSafe } = require('./fabricCanonicalJson');
 const {
-  opcodeAllowed,
   opcodesFromGenesis,
   normalizeOpcodeAllowList
 } = require('./opcodeAllowList');
@@ -36,29 +35,6 @@ let _resolveFabricEntry = null;
  */
 function setFabricEntryResolver (fn) {
   _resolveFabricEntry = typeof fn === 'function' ? fn : null;
-}
-
-function assertPlainJson (value, depth, maxDepth) {
-  if (depth > maxDepth) throw new Error('value exceeds max nesting depth');
-  if (value === null) return;
-  const t = typeof value;
-  if (t === 'string' || t === 'number' || t === 'boolean') {
-    if (t === 'number' && !Number.isFinite(value)) throw new Error('non-finite number not allowed');
-    return;
-  }
-  if (t === 'bigint' || t === 'function' || t === 'symbol' || t === 'undefined') {
-    throw new Error('unsupported value type in Push');
-  }
-  if (Array.isArray(value)) {
-    for (let i = 0; i < value.length; i++) assertPlainJson(value[i], depth + 1, maxDepth);
-    return;
-  }
-  if (t === 'object') {
-    const proto = Object.getPrototypeOf(value);
-    if (proto !== Object.prototype && proto !== null) throw new Error('non-plain object in Push');
-    const keys = Object.keys(value);
-    for (let i = 0; i < keys.length; i++) assertPlainJson(value[keys[i]], depth + 1, maxDepth);
-  }
 }
 
 function normalizeOpName (op) {
@@ -137,16 +113,44 @@ function executionProgramFromHub (program) {
  *   machine?: object|null
  * }}
  */
+function isolateForced (options) {
+  if (options && options.inProcess === true) return true;
+  return typeof process !== 'undefined' && process != null && process.env &&
+    process.env.FABRIC_PROGRAM_ISOLATE === '1';
+}
+
+function clampLimit (value, fallback, max) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return fallback;
+  // A positive fraction floors to 0. The isolate treats that as one step.
+  const whole = Math.max(1, Math.floor(n));
+  if (whole > max) return max;
+  return whole;
+}
+
 function runExecutionProgram (program, options = {}) {
+  if (isolateForced(options)) {
+    return runExecutionProgramInProcess(program, options);
+  }
+  const wrapped = Object.assign({}, options);
+  if (typeof wrapped.resolveFabricEntry !== 'function') {
+    wrapped.resolveFabricEntry = defaultResolveFabricEntry;
+  }
+  const Machine = require('../types/machine');
+  if (!Machine.nodeIsolate()) return Machine.runIsolatedAsync(program, wrapped);
+  return Machine.runIsolated(program, wrapped);
+}
+
+function runExecutionProgramInProcess (program, options = {}) {
   const steps = program && program.steps;
   if (!Array.isArray(steps)) {
     return { ok: false, error: 'program.steps must be an array', programHash: null, runCommitmentHex: null };
   }
 
-  const maxSteps = Math.min(Math.max(1, Number(options.maxSteps) || DEFAULT_MAX_STEPS), 4096);
-  const maxStack = Math.min(Math.max(1, Number(options.maxStack) || DEFAULT_MAX_STACK), 256);
-  const maxDepth = Math.min(Math.max(1, Number(options.maxDepth) || DEFAULT_MAX_DEPTH), 64);
-  const maxTrace = Math.min(Math.max(1, Number(options.maxTrace) || DEFAULT_MAX_TRACE), 8192);
+  const maxSteps = clampLimit(options.maxSteps, DEFAULT_MAX_STEPS, 4096);
+  const maxStack = clampLimit(options.maxStack, DEFAULT_MAX_STACK, 256);
+  const maxDepth = clampLimit(options.maxDepth, DEFAULT_MAX_DEPTH, 64);
+  const maxTrace = clampLimit(options.maxTrace, DEFAULT_MAX_TRACE, 8192);
   const resolveFabricEntry = typeof options.resolveFabricEntry === 'function'
     ? options.resolveFabricEntry
     : defaultResolveFabricEntry;
@@ -195,152 +199,57 @@ function runExecutionProgram (program, options = {}) {
     }
   }
 
-  // Structured execution owns the stack; clear any prior compute residue.
+  // Structured execution owns the stack. The thread interpreter is the same
+  // loop a Worker runs, so an in-process call cannot drift from the isolate.
   machine.stack = [];
   machine._program = prog;
-
-  const stack = machine.stack;
-  const trace = [];
-
-  function pushTrace (entry) {
-    if (trace.length >= maxTrace) {
-      if (trace.length === maxTrace) trace.push({ truncated: true });
-      return;
-    }
-    trace.push(entry);
+  const threadOptions = {
+    maxSteps,
+    maxStack,
+    maxDepth,
+    maxTrace,
+    allowedOpcodes: allowList,
+    useResolvedEntries: options.useResolvedEntries === true
+  };
+  if (Object.prototype.hasOwnProperty.call(options, 'seedValue')) {
+    threadOptions.seedValue = options.seedValue;
   }
-
-  const ops = Object.assign(Object.create(null), {
-    FabricOpcode (step, pc) {
-      const entry = resolveFabricEntry(step);
-      if (NON_EXECUTION_FABRIC_TYPES.has(entry.name)) {
-        throw new Error(`${entry.name} is a transport keepalive, not an Execution program opcode`);
-      }
-      if (!opcodeAllowed(allowList, entry.name)) {
-        throw new Error(`FabricOpcode "${entry.name}" not in primitives.opcodes allow-list`);
-      }
-      const frame = {
-        kind: 'fabric',
-        name: entry.name,
-        opcodeDec: entry.opcodeDec,
-        stability: entry.stability,
-        encoding: entry.encoding,
-        notes: entry.notes
-      };
-      stack.push(frame);
-      pushTrace({ pc, op: 'FabricOpcode', name: entry.name, opcodeDec: entry.opcodeDec });
-    },
-    Push (step, pc) {
-      if (!Object.prototype.hasOwnProperty.call(step, 'value')) {
-        throw new Error('Push requires value');
-      }
-      assertPlainJson(step.value, 0, maxDepth);
-      stack.push(step.value);
-      pushTrace({ pc, op: 'Push' });
-    },
-    Pop (_step, pc) {
-      if (stack.length < 1) throw new Error('stack underflow');
-      stack.pop();
-      pushTrace({ pc, op: 'Pop' });
-    },
-    Dup (_step, pc) {
-      if (stack.length < 1) throw new Error('stack underflow');
-      stack.push(stack[stack.length - 1]);
-      pushTrace({ pc, op: 'Dup' });
-    },
-    ADD (_step, pc) {
-      if (stack.length < 2) throw new Error('stack underflow');
-      const b = stack.pop();
-      const a = stack.pop();
-      if (typeof a !== 'number' || typeof b !== 'number' || !Number.isFinite(a) || !Number.isFinite(b)) {
-        throw new Error('ADD requires two finite numbers');
-      }
-      stack.push(a + b);
-      pushTrace({ pc, op: 'ADD' });
-    },
-    DelegationSignRequest (step, pc) {
-      if (!step || typeof step.envelope !== 'object' || !step.envelope) {
-        throw new Error('DelegationSignRequest requires envelope object');
-      }
-      assertPlainJson(step.envelope, 0, maxDepth);
-      stack.push({ kind: 'DelegationSignRequest', envelope: step.envelope });
-      pushTrace({ pc, op: 'DelegationSignRequest' });
-    }
-  });
-
-  try {
-    for (let i = 0; i < steps.length; i++) {
-      const step = steps[i];
-      if (!step || typeof step !== 'object') {
-        return {
-          ok: false,
-          error: `invalid step at index ${i}`,
-          trace,
-          stack: stack.slice(),
-          programHash,
-          runCommitmentHex: null,
-          program: prog,
-          machine
-        };
-      }
-      const op = normalizeOpName(step.op);
-      if (!op || !Object.prototype.hasOwnProperty.call(ops, op)) {
-        return {
-          ok: false,
-          error: `unknown op "${step.op}" at index ${i}`,
-          trace,
-          stack: stack.slice(),
-          programHash,
-          runCommitmentHex: null,
-          program: prog,
-          machine
-        };
-      }
-      ops[op](step, i);
-      if (stack.length > maxStack) {
-        return {
-          ok: false,
-          error: 'stack overflow',
-          trace,
-          stack: stack.slice(),
-          programHash,
-          runCommitmentHex: null,
-          program: prog,
-          machine
-        };
-      }
-    }
-
+  const result = require('../types/machine').runPayload({
+    kind: 'fabric-execution',
+    steps,
+    options: threadOptions
+  }, { resolveFabricEntry });
+  const trace = Array.isArray(result.trace) ? result.trace : [];
+  const stack = Array.isArray(result.stack) ? result.stack.slice() : [];
+  machine.stack = stack;
+  if (result.ok === true) {
     ++machine.clock;
-    const tip = stack.length ? stack[stack.length - 1] : null;
+    const tip = result.tip != null ? result.tip : (stack.length ? stack[stack.length - 1] : null);
     machine._state.content = tip != null ? tip : machine._state.content;
     if (typeof machine.commit === 'function') machine.commit();
-
-    const runCommitmentHex = prog.runCommitmentHex({ tip, stack: trace });
     return {
       ok: true,
-      stepsExecuted: steps.length,
-      stack: stack.slice(),
+      stepsExecuted: result.stepsExecuted,
+      stack,
       tip,
       trace,
       programHash,
-      runCommitmentHex,
-      program: prog,
-      machine
-    };
-  } catch (err) {
-    return {
-      ok: false,
-      error: err && err.message ? err.message : String(err),
-      trace,
-      stack: stack.slice(),
-      tip: null,
-      programHash,
-      runCommitmentHex: null,
+      runCommitmentHex: prog.runCommitmentHex({ tip, stack: trace }),
       program: prog,
       machine
     };
   }
+  return {
+    ok: false,
+    error: result.error,
+    trace,
+    stack,
+    tip: null,
+    programHash,
+    runCommitmentHex: null,
+    program: prog,
+    machine
+  };
 }
 
 module.exports = {
@@ -352,5 +261,6 @@ module.exports = {
   setFabricEntryResolver,
   executionProgramFromHub,
   runExecutionProgram,
+  runExecutionProgramInProcess,
   normalizeOpName
 };

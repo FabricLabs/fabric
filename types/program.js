@@ -489,7 +489,10 @@ const EXECUTION_RUN_SIGNING_KIND = 'FabricProgramRun';
 
 /**
  * UTF-8 string federation members sign for an execution run commitment.
- * @param {{ programHash: string, runCommitmentHex: string, contractId?: string|null }} run
+ * @param {Object} run
+ * @param {string} run.programHash
+ * @param {string} run.runCommitmentHex
+ * @param {string|null} [run.contractId]
  * @returns {string}
  */
 function signingStringForExecutionRun (run) {
@@ -504,7 +507,10 @@ function signingStringForExecutionRun (run) {
 
 /**
  * SHA-256 hex digest of {@link signingStringForExecutionRun}.
- * @param {{ programHash: string, runCommitmentHex: string, contractId?: string|null }} run
+ * @param {Object} run
+ * @param {string} run.programHash
+ * @param {string} run.runCommitmentHex
+ * @param {string|null} [run.contractId]
  * @returns {string}
  */
 function executionRunCommitmentDigestHex (run) {
@@ -514,7 +520,13 @@ function executionRunCommitmentDigestHex (run) {
 
 /**
  * Build federation witness for an execution run attestation.
- * @param {{ programHash: string, runCommitmentHex: string, contractId?: string|null, signKey: object, validators?: string[], threshold?: number }} opts
+ * @param {Object} opts
+ * @param {string} opts.programHash
+ * @param {string} opts.runCommitmentHex
+ * @param {string|null} [opts.contractId]
+ * @param {Object} opts.signKey
+ * @param {string[]} [opts.validators]
+ * @param {number} [opts.threshold]
  * @returns {object|null}
  */
 function buildFederationWitnessForExecutionRun (opts) {
@@ -535,7 +547,10 @@ function buildFederationWitnessForExecutionRun (opts) {
 
 /**
  * Verify federation witness over an execution run attestation.
- * @param {{ programHash: string, runCommitmentHex: string, contractId?: string|null }} run
+ * @param {Object} run
+ * @param {string} run.programHash
+ * @param {string} run.runCommitmentHex
+ * @param {string|null} [run.contractId]
  * @param {object|null} federationWitness
  * @param {string[]} validators
  * @param {number} threshold

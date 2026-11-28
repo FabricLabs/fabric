@@ -6,8 +6,9 @@
  * Regtest: `createEpoch()` mines one block (`generatetoaddress`) then appends
  * a `BEACON_EPOCH` entry. Non-regtest: `recordEpochFromBlock` follows tips.
  *
- * Hub product wiring lives in hub.fabric.pub `contracts/beacon.js` (extends this
- * type). Ready-round retry finalize is implemented here so Hub and CLI share it.
+ * Hub and Sensemaker each keep a thin subclass (`contracts/beacon.js`) that
+ * only sets the name. Ready-round retry finalize is implemented here so Hub
+ * and CLI share it.
  *
  * Federation rounds seal in clock order: a round seals only directly on top of
  * the sealed tip (`clock === tip.clock + 1`, higher L1 height). Rounds above a

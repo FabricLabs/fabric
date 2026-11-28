@@ -93,6 +93,35 @@ describe('@fabric/core/functions/noiseProtocolStream', function () {
     });
   }
 
+  it('rejects a ciphertext shorter than the MAC without throwing', function () {
+    const pair = noise({
+      initiator: false,
+      prologue: Buffer.from('FABRIC'),
+      handshakeTimeout: 0
+    });
+    const before = noise.countNativeStreams();
+    pair.decrypt._streamPtr = 1;
+    pair.decrypt._macSize = 16;
+    try {
+      for (const len of [0, 1, 15]) {
+        let thrown = null;
+        let called = null;
+        try {
+          pair.decrypt._writeOutput(Buffer.alloc(len), (err) => { called = err; });
+        } catch (err) {
+          thrown = err;
+        }
+        assert.strictEqual(thrown, null, `len ${len} threw ${thrown && thrown.message}`);
+        assert.ok(called && /noise_stream_decrypt/.test(called.message), `len ${len} got ${called && called.message}`);
+      }
+      assert.strictEqual(noise.countNativeStreams(), before);
+    } finally {
+      pair.decrypt._streamPtr = null;
+      pair.encrypt.destroy();
+      pair.decrypt.destroy();
+    }
+  });
+
   it('rejects an oversize length prefix before allocating it', async function () {
     const pair = noise({ initiator: false, prologue: Buffer.from('FABRIC') });
     const closed = closedWithError(pair);
